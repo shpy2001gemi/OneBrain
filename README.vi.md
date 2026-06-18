@@ -546,9 +546,37 @@ Cơ chế này hoạt động **tự động và phi tập trung** — được 
 | **Ownership** | Nền tảng sở hữu | Nền tảng sở hữu | Người đóng góp sở hữu |
 | **Bản quyền** | CC BY-SA | Nền tảng sở hữu | Tự do trong mạng, bảo vệ bên ngoài |
 
+## 10. Tổng quan Cây tính năng (Feature Tree)
+
+Trước khi xây dựng, chúng ta cần vẽ bản đồ toàn bộ tính năng. OneBrain bao gồm **122 tính năng** trên **9 nhánh chính:**
+
+```
+OneBrain
+├── 1. 🧩 Quản lý Tri thức ──────── KU, Knowledge Graph, phân loại, tìm kiếm, trùng lặp (20)
+├── 2. 📥 Nhập liệu Tri thức ────── Thủ công → AI hỗ trợ → BCI (13)
+├── 3. ✅ Đánh giá & Đồng thuận ──── Sàng lọc, bỏ phiếu, chấm điểm, tính nguyên bản, PoK (17)
+├── 4. 👤 Hệ thống Người dùng ────── Danh tính, uy tín, cá nhân hóa (13)
+├── 5. 💰 Kinh tế Token ──────────── Phát hành, phần thưởng, chi tiêu, quản trị (13)
+├── 6. 🛡️ Bản quyền & SHTT ─────── Chứng cứ on-chain, tính nguyên bản, tranh chấp (10)
+├── 7. 🏛️ Quản trị (DAO) ──────── Đề xuất, tham số, ngân quỹ (9)
+├── 8. 🖥️ Nền tảng & Hạ tầng ────── Web, mobile, API/SDK, blockchain, đa ngôn ngữ (16)
+└── 9. 🔮 Khả năng Tương lai ────── BCI, AI nâng cao, Bản đồ Tri thức Toàn cầu (11)
+```
+
+**Ma trận Ưu tiên:**
+
+| Ưu tiên | Tính năng | Khi nào |
+|---|---|---|
+| 🔴 P0 — Phải có | KU CRUD, Nhập thủ công, Sàng lọc, Bỏ phiếu, Ví, Phát hành token, Web App | Phase 2 |
+| 🟠 P1 — Nên có | Knowledge Graph, Phân loại, Tìm kiếm, Tính nguyên bản, Uy tín, Bản quyền | Phase 3 |
+| 🟡 P2 — Tốt nếu có | Cá nhân hóa, Quản trị, Tranh chấp, Mobile, API/SDK | Phase 3-4 |
+| 🔵 P3 — Tương lai | AI hỗ trợ ghi nhận, BCI, Bản đồ Tri thức Toàn cầu | Phase 4-5 |
+
+> 📄 **Chi tiết đầy đủ:** [Cây tính năng](docs/features/FEATURE_TREE.md) | [Đặc tả tính năng](docs/features/FEATURE_DETAILS.md)
+
 ---
 
-## 10. Lộ trình phát triển (Roadmap)
+## 11. Lộ trình phát triển (Roadmap)
 
 ### Phase 1 — Foundation (Nền tảng) 🏗️
 > *Thiết kế bản thiết kế của bộ não chung*
@@ -607,7 +635,7 @@ Cơ chế này hoạt động **tự động và phi tập trung** — được 
 
 ---
 
-## 11. Tuyên ngôn (Manifesto)
+## 12. Tuyên ngôn (Manifesto)
 
 > **Tri thức là sức mạnh. Tri thức được chia sẻ là sức mạnh nhân lên.**
 >
@@ -621,7 +649,7 @@ Cơ chế này hoạt động **tự động và phi tập trung** — được 
 
 ---
 
-## 12. Liên hệ & Đóng góp
+## 13. Liên hệ & Đóng góp
 
 OneBrain là dự án **mã nguồn mở**. Chúng tôi hoan nghênh mọi đóng góp từ cộng đồng.
 

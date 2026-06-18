@@ -537,9 +537,37 @@ This mechanism operates **automatically and in a decentralized manner** — perf
 | **Ownership** | Platform owns | Platform owns | Contributors own |
 | **Copyright** | CC BY-SA | Platform owns | Free in network, protected outside |
 
+## 10. Feature Tree Overview
+
+Before building, we map every feature. OneBrain comprises **122 features** across **9 branches:**
+
+```
+OneBrain
+├── 1. 🧩 Knowledge Management ─── KU, Knowledge Graph, classification, search, duplicates (20)
+├── 2. 📥 Knowledge Input ──────── Manual → AI-Assisted → BCI (13)
+├── 3. ✅ Evaluation & Consensus ── Screening, voting, value scoring, originality, PoK (17)
+├── 4. 👤 User System ──────────── Identity, reputation, personalization (13)
+├── 5. 💰 Token Economy ────────── Minting, rewards, spending, governance (13)
+├── 6. 🛡️ Copyright & IP ────────── On-chain proof, originality, disputes (10)
+├── 7. 🏛️ Governance (DAO) ──────── Proposals, parameters, treasury (9)
+├── 8. 🖥️ Platform & Infra ──────── Web, mobile, API/SDK, blockchain, i18n (16)
+└── 9. 🔮 Future Capabilities ──── BCI, advanced AI, Global Knowledge Map (11)
+```
+
+**Priority Matrix:**
+
+| Priority | Features | When |
+|---|---|---|
+| 🔴 P0 — Must Have | KU CRUD, Manual Input, Screening, Voting, Wallet, Minting, Web App | Phase 2 |
+| 🟠 P1 — Should Have | Knowledge Graph, Classification, Search, Originality, Reputation, Copyright | Phase 3 |
+| 🟡 P2 — Nice to Have | Personalization, Governance, Disputes, Mobile, API/SDK | Phase 3-4 |
+| 🔵 P3 — Future | AI-Assisted Capture, BCI, Global Knowledge Map | Phase 4-5 |
+
+> 📄 **Full details:** [Feature Tree](docs/features/FEATURE_TREE.md) | [Feature Details & Specifications](docs/features/FEATURE_DETAILS.md)
+
 ---
 
-## 10. Roadmap
+## 11. Roadmap
 
 ### Phase 1 — Foundation 🏗️
 > *Design the blueprint of the shared brain*
@@ -598,7 +626,7 @@ This mechanism operates **automatically and in a decentralized manner** — perf
 
 ---
 
-## 11. Manifesto
+## 12. Manifesto
 
 > **Knowledge is power. Shared knowledge is power multiplied.**
 >
@@ -612,7 +640,7 @@ This mechanism operates **automatically and in a decentralized manner** — perf
 
 ---
 
-## 12. Contact & Contributing
+## 13. Contact & Contributing
 
 OneBrain is an **open-source** project. We welcome all contributions from the community.
 
