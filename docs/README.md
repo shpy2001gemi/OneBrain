@@ -7,6 +7,10 @@ Detailed documentation for the OneBrain project.
 ### Overview
 - [README](../README.md) — Project introduction & vision
 
+### Features
+- [Feature Tree](features/FEATURE_TREE.md) — Hierarchical map of all 122 features
+- [Feature Details](features/FEATURE_DETAILS.md) — Detailed specifications for each feature
+
 ### Architecture
 - [Architecture](architecture/) — System architecture design *(coming soon)*
 
