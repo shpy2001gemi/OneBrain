@@ -132,37 +132,60 @@ Instead of "mining" coins with computing power, OneBrain users **"mine" coins wi
 
 - 🎁 **Earn OBT** by contributing valuable knowledge
 - 🔓 **Spend OBT** to access in-depth, premium knowledge
-- 🗳️ **Stake OBT** to participate in governance and voting
-- 💱 **Trade OBT** on exchanges (future)
+- 🗳️ **Stake OBT** to participate in governanc```mermaid
+flowchart TD
+    subgraph USER_LAYER ["👤 USER LAYER"]
+        direction LR
+        WebApp["Web App"]
+        MobileApp["Mobile App"]
+        BCI["BCI / AR / VR"]
+        PersonalAI["Personal AI"]
+    end
 
----
+    subgraph AI_LAYER ["🤖 AI LAYER"]
+        direction TB
+        subgraph AI_Engines ["AI Engines"]
+            direction LR
+            Classifier["Knowledge Classifier"]
+            Assessor["Quality Assessor"]
+            RewardCalc["Reward Calculator"]
+        end
+        subgraph AI_Helpers ["AI Helpers"]
+            direction LR
+            DupDetector["Duplicate Detector"]
+            ConnMapper["Connection Mapper"]
+            Mediator["Personal AI Mediator"]
+        end
+        AI_Engines --- AI_Helpers
+    end
 
-## 4. High-Level Architecture
+    subgraph CONSENSUS_LAYER ["⛓️ CONSENSUS LAYER"]
+        PoK["Proof of Knowledge (PoK) Engine\n• Voting & Validation   • Reputation Scoring\n• Knowledge Valuation   • Dispute Resolution"]
+    end
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    👤 USER LAYER                                │
-│                                                                 │
-│   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐   │
-│   │ Web App  │  │Mobile App│  │ BCI/AR/VR│  │ Personal AI  │   │
-│   └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘   │
-│        └──────────────┴─────────────┴───────────────┘           │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
-│                    🤖 AI LAYER                                  │
-│                                                                 │
-│   ┌───────────────┐  ┌────────────────┐  ┌─────────────────┐   │
-│   │  Knowledge     │  │  Quality        │  │  Reward          │   │
-│   │  Classifier    │  │  Assessor       │  │  Calculator      │   │
-│   └───────────────┘  └────────────────┘  └─────────────────┘   │
-│   ┌───────────────┐  ┌────────────────┐  ┌─────────────────┐   │
-│   │  Duplicate     │  │  Connection     │  │  Personal AI     │   │
-│   │  Detector      │  │  Mapper         │  │  Mediator        │   │
-│   └───────────────┘  └────────────────┘  └─────────────────┘   │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
+    subgraph DATA_LAYER ["📦 DATA LAYER"]
+        direction TB
+        subgraph CoreData ["Core Data"]
+            direction LR
+            KGraph["Knowledge Graph"]
+            Profiles["User Profiles & Reputation"]
+            Ledger["Token Ledger"]
+        end
+        Storage["Decentralized Storage (IPFS / Custom)"]
+        CoreData --- Storage
+    end
+
+    USER_LAYER --> AI_LAYER
+    AI_LAYER --> CONSENSUS_LAYER
+    CONSENSUS_LAYER --> DATA_LAYER
+
+    %% Styling
+    classDef layerClass fill:#f8fafc,stroke:#334155,stroke-width:2px,color:#0f172a,font-weight:bold;
+    classDef nodeClass fill:#ffffff,stroke:#2563eb,stroke-width:1px,color:#1e40af;
+    
+    class USER_LAYER,AI_LAYER,CONSENSUS_LAYER,DATA_LAYER layerClass;
+    class WebApp,MobileApp,BCI,PersonalAI,Classifier,Assessor,RewardCalc,DupDetector,ConnMapper,Mediator,PoK,KGraph,Profiles,Ledger,Storage nodeClass;
+```�─────────────────────▼──────────────────────────────────┐
 │              ⛓️ CONSENSUS LAYER                                  │
 │                                                                 │
 │   ┌───────────────────────────────────────────────────────────┐ │
@@ -233,31 +256,18 @@ The graph structure enables:
 ### 5.3. Voting & Evaluation System
 
 ```
-                    Knowledge Unit submitted
-                              │
-                              ▼
-                 ┌────────────────────────┐
-                 │  AI Pre-screening      │  ← Automated checks:
-                 │                        │    spam, duplicates, format
-                 └───────────┬────────────┘
-                             │
-                             ▼
-                 ┌────────────────────────┐
-                 │  Community Review      │  ← Expert community
-                 │                        │    reviews and votes
-                 └───────────┬────────────┘
-                             │
-                             ▼
-                 ┌────────────────────────┐
-                 │  Value Calculation     │  ← Calculates value based on
-                 │                        │    votes, usage, novelty, ...
-                 └───────────┬────────────┘
-                             │
-                             ▼
-                 ┌────────────────────────┐
-                 │  Reward Distribution   │  ← Distributes OBT to
-                 │                        │    contributor
-                 └────────────────────────┘
+```mermaid
+flowchart TD
+    Start([Knowledge Unit Submitted]) --> PreScreen["🤖 AI Pre-screening<br/>(Automated checks: spam, duplicates, format)"]
+    PreScreen --> CommReview["👥 Community Review<br/>(Expert community reviews and votes)"]
+    CommReview --> ValueCalc["📊 Value Calculation<br/>(Calculates value based on votes, usage, novelty, etc.)"]
+    ValueCalc --> RewardDist["💰 Reward Distribution<br/>(Distributes OBT to contributor)"]
+
+    classDef stepClass fill:#ffffff,stroke:#2563eb,stroke-width:1.5px,color:#1e40af;
+    classDef startClass fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px,color:#1e3a8a,font-weight:bold;
+    class PreScreen,CommReview,ValueCalc,RewardDist stepClass;
+    class Start startClass;
+```
 ```
 
 ### 5.4. Reputation System
@@ -280,51 +290,44 @@ Reputation is built through:
 BCI is the ultimate vision, but OneBrain must work **today**, long before brain-computer interfaces become mainstream. Knowledge sharing evolves through three stages:
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                                                                     │
-│  STAGE 1: Manual Input (Phase 1-2)              📱💻               │
-│  ─────────────────────────────────                                  │
-│  The user directly creates and submits knowledge:                   │
-│                                                                     │
-│  • Text — Write articles, notes, how-to guides                     │
-│  • Photos & Video — Upload visual demonstrations                   │
-│  • Voice — Dictate explanations (AI transcribes & structures)      │
-│  • Screen capture — Record workflows, tutorials                    │
-│  • Structured forms — Fill in step-by-step templates               │
-│                                                                     │
-│  → Similar to writing a blog post or Stack Overflow answer,        │
-│    but with AI assistance for formatting & classification          │
-│                                                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  STAGE 2: AI-Assisted Capture (Phase 3-4)       🤖📷              │
-│  ────────────────────────────────────────                           │
-│  Personal AI observes and helps package knowledge:                  │
-│                                                                     │
-│  • AI watches you work and suggests: "That was clever.             │
-│    Want me to turn that into a Knowledge Unit?"                    │
-│  • AI auto-records via phone camera, smart glasses, or             │
-│    wearable devices                                                │
-│  • AI generates descriptions, step-by-step guides, and             │
-│    tags from raw footage                                           │
-│  • User reviews & approves before publishing                       │
-│  • Voice command: "Hey AI, share what I just did"                  │
-│                                                                     │
-│  → You do the work, AI does the documenting                        │
-│                                                                     │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  STAGE 3: Thought-to-Knowledge (Phase 5)        🧠⚡              │
-│  ───────────────────────────────────────                            │
-│  BCI enables direct brain-to-network sharing:                       │
-│                                                                     │
-│  • Think "share this" → AI captures the experience                 │
-│  • Sensory data (sight, sound, emotion) encoded directly           │
-│  • Near-zero friction between knowing and sharing                  │
-│                                                                     │
-│  → You think it, the world knows it                                │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Stage1 ["STAGE 1: Manual Input (Phase 1-2) 📱💻"]
+        direction TB
+        S1_Desc["The user directly creates and submits knowledge:"]
+        S1_Items["• Text: Articles, notes, how-to guides<br/>• Photos & Video: Visual demonstrations<br/>• Voice: Dictated explanations (AI transcribes & structures)<br/>• Screen capture: Workflows, tutorials<br/>• Structured forms: Step-by-step templates"]
+        S1_Summary["→ Similar to writing a blog post, but with AI assistance for formatting & classification"]
+        S1_Desc --> S1_Items --> S1_Summary
+    end
+
+    subgraph Stage2 ["STAGE 2: AI-Assisted Capture (Phase 3-4) 🤖📷"]
+        direction TB
+        S2_Desc["Personal AI observes and helps package knowledge:"]
+        S2_Items["• AI watches you work and suggests: 'That was clever. Want me to package it?'<br/>• AI auto-records via phone camera, smart glasses, or wearables<br/>• AI generates descriptions, guides, and tags from raw footage<br/>• User reviews & approves before publishing<br/>• Voice command: 'Hey AI, share what I just did'"]
+        S2_Summary["→ You do the work, AI does the documenting"]
+        S2_Desc --> S2_Items --> S2_Summary
+    end
+
+    subgraph Stage3 ["STAGE 3: Thought-to-Knowledge (Phase 5) 🧠⚡"]
+        direction TB
+        S3_Desc["BCI enables direct brain-to-network sharing:"]
+        S3_Items["• Think 'share this' → AI captures the experience<br/>• Sensory data (sight, sound, emotion) encoded directly<br/>• Near-zero friction between knowing and sharing"]
+        S3_Summary["→ You think it, the world knows it"]
+        S3_Desc --> S3_Items --> S3_Summary
+    end
+
+    Stage1 --> Stage2 --> Stage3
+
+    classDef stageClass fill:#f8fafc,stroke:#cbd5e1,stroke-width:1.5px,color:#0f172a;
+    classDef descClass fill:#ffffff,stroke:none,color:#334155,text-align:left;
+    classDef itemsClass fill:#ffffff,stroke:#e2e8f0,stroke-width:1px,color:#475569,text-align:left;
+    classDef sumClass fill:#eff6ff,stroke:#bfdbfe,stroke-width:1px,color:#1e40af,font-weight:bold,text-align:left;
+    
+    class Stage1,Stage2,Stage3 stageClass;
+    class S1_Desc,S2_Desc,S3_Desc descClass;
+    class S1_Items,S2_Items,S3_Items itemsClass;
+    class S1_Summary,S2_Summary,S3_Summary sumClass;
+```
 ```
 
 **The key principle:** At every stage, the barrier to sharing should be as low as possible. A bicycle mechanic shouldn't need to be a writer. A grandmother shouldn't need to understand technology. The system meets people where they are.
@@ -381,21 +384,20 @@ A critical question: **Where does OBT come from?**
 
 ### 7.1. Minting Mechanism
 
-```
-Total OBT Supply
-     │
-     ├── 🌱 Knowledge Mining (60%)
-     │       Gradually minted through knowledge contributions
-     │       (decreasing over time — similar to Bitcoin halving)
-     │
-     ├── 🏗️ Foundation Reserve (15%)
-     │       Project development fund
-     │
-     ├── 👥 Community & Ecosystem (15%)
-     │       Rewards for reviewers, validators, and ecosystem
-     │
-     └── 🧑‍💼 Team & Advisors (10%)
-             Development team (vesting schedule)
+```mermaid
+flowchart LR
+    Supply([Total OBT Supply]) --> KM["🌱 Knowledge Mining (60%)<br/>Gradually minted through contributions<br/>(decreases over time - similar to halving)"]
+    Supply --> FR["🏗️ Foundation Reserve (15%)<br/>Project development fund"]
+    Supply --> CE["👥 Community & Ecosystem (15%)<br/>Rewards for reviewers, validators, etc."]
+    Supply --> TA["🧑‍💼 Team & Advisors (10%)<br/>Development team (vesting schedule)"]
+
+    classDef supplyClass fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px,color:#1e3a8a,font-weight:bold;
+    classDef kmClass fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#15803d;
+    classDef normalClass fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#334155;
+    
+    class Supply supplyClass;
+    class KM kmClass;
+    class FR,CE,TA normalClass;
 ```
 
 ### 7.2. Token Circulation
@@ -428,19 +430,18 @@ If an individual or organization takes knowledge from OneBrain to **profit comme
 
 And at that point, OneBrain becomes **irrefutable evidence:**
 
-```
-┌─────────────────────────────────────────────────────┐
-│              OneBrain as Evidence                    │
-│                                                     │
-│  ✅ Who shared the knowledge (on-chain identity)    │
-│  ✅ When it was shared (immutable timestamp)        │
-│  ✅ What exactly was shared (content hash)          │
-│  ✅ Who validated it (community verification)       │
-│  ✅ Knowledge development chain (lineage)           │
-│                                                     │
-│  → All recorded on a decentralized network,         │
-│    impossible to modify or delete.                  │
-└─────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Evidence["⚖️ OneBrain as Prior Art & Copyright Evidence"] --> ID["👤 Who: On-chain identity of the contributor"]
+    Evidence --> Time["📅 When: Immutable timestamp of sharing"]
+    Evidence --> Hash["🔒 What: Content hash of the exact knowledge"]
+    Evidence --> Proof["👥 Proof: Community review & verification records"]
+    Evidence --> Lineage["🔗 Lineage: Knowledge development chain (provenance)"]
+
+    classDef mainClass fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px,color:#1e3a8a,font-weight:bold;
+    classDef subClass fill:#ffffff,stroke:#cbd5e1,stroke-width:1.5px,color:#334155,text-align:left;
+    class Evidence mainClass;
+    class ID,Time,Hash,Proof,Lineage subClass;
 ```
 
 In other words: **Within OneBrain, knowledge is free. Outside OneBrain, contributors are protected.**
@@ -459,54 +460,28 @@ How to differentiate? Through the **Originality Voting mechanism:**
 
 When a Knowledge Unit is shared, the network of Personal AIs on OneBrain **automatically assesses its originality:**
 
-```
-Knowledge Unit shared
-         │
-         ▼
-┌─────────────────────────────┐
-│   AI Network Analysis       │
-│                             │
-│   • Compare with existing   │
-│     knowledge on the        │
-│     Knowledge Graph         │
-│   • Analyze novelty         │
-│   • Evaluate creativity     │
-│     vs. resharing           │
-│   • Check provenance        │
-└──────────┬──────────────────┘
-           │
-           ▼
-┌─────────────────────────────┐
-│   Originality Score          │
-│                             │
-│   ⭐⭐⭐⭐⭐ (90-100%)       │
-│   → Fully original creation │
-│     e.g., new equation      │
-│                             │
-│   ⭐⭐⭐☆☆ (50-70%)         │
-│   → Creative improvement    │
-│     e.g., improved technique│
-│                             │
-│   ⭐⭐☆☆☆ (20-40%)         │
-│   → Experience sharing      │
-│     e.g., family recipe     │
-│                             │
-│   ⭐☆☆☆☆ (0-20%)           │
-│   → Resharing / observation │
-│     e.g., beautiful scenery │
-└──────────┬──────────────────┘
-           │
-           ▼
-┌─────────────────────────────┐
-│   Corresponding Rights       │
-│                             │
-│   High score → Strong claim │
-│   if commercialized outside │
-│                             │
-│   Low score → Contribution  │
-│   acknowledged, but no      │
-│   exclusive copyright claim │
-└─────────────────────────────┘
+```mermaid
+flowchart TD
+    Start([Knowledge Unit Shared]) --> Analysis["🧠 AI Network Analysis<br/>• Compare with existing Knowledge Graph<br/>• Analyze novelty & check provenance<br/>• Evaluate creativity vs. resharing"]
+    Analysis --> Score["⭐ Originality Score"]
+    
+    Score --> S5["⭐⭐⭐⭐⭐ (90-100%)<br/>Fully original creation<br/>(e.g., new equation)"]
+    Score --> S3["⭐⭐⭐☆☆ (50-70%)<br/>Creative improvement<br/>(e.g., improved technique)"]
+    Score --> S2["⭐⭐☆☆☆ (20-40%)<br/>Experience sharing<br/>(e.g., family recipe)"]
+    Score --> S1["⭐☆☆☆☆ (0-20%)<br/>Resharing / observation<br/>(e.g., beautiful scenery)"]
+
+    S5 & S3 --> HighRights["⚖️ High score → Strong copyright claim<br/>if commercialized outside"]
+    S2 & S1 --> LowRights["🤝 Low score → Contribution acknowledged,<br/>but no exclusive copyright claim"]
+
+    classDef startClass fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px,color:#1e3a8a,font-weight:bold;
+    classDef analysisClass fill:#ffffff,stroke:#2563eb,stroke-width:1.5px,color:#1e40af;
+    classDef scoreClass fill:#fafaf9,stroke:#d6d3d1,stroke-width:1.5px,color:#44403c;
+    classDef rightClass fill:#f8fafc,stroke:#cbd5e1,stroke-width:1.5px,color:#1e293b;
+
+    class Start startClass;
+    class Analysis analysisClass;
+    class Score,S5,S3,S2,S1 scoreClass;
+    class HighRights,LowRights rightClass;
 ```
 
 This mechanism operates **automatically and in a decentralized manner** — performed by the network of Personal AIs, similar to how nodes in a blockchain validate transactions. No central authority decides who has copyright — the AI community decides.
