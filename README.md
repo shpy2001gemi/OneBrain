@@ -6,142 +6,142 @@
 
 ---
 
-## 1. Tầm nhìn (Vision)
+## 1. Vision
 
-Trong thế giới AI, các hệ thống trí tuệ nhân tạo có thể chia sẻ tri thức cho nhau gần như tức thời thông qua kết nối mạng. Một robot học được cách mở cánh cửa, tất cả các robot khác cũng biết ngay lập tức. Một mô hình AI được huấn luyện trên dữ liệu mới, kiến thức đó có thể được phân phối đến hàng triệu hệ thống khác trong tích tắc.
+In the world of AI, intelligent systems share knowledge with each other almost instantly through network connections. A robot learns to open a door — all other robots know immediately. An AI model trained on new data can distribute that knowledge to millions of other systems in the blink of an eye.
 
-**Nhưng con người thì không.**
+**But humans can't.**
 
-Kiến thức của loài người bị phân mảnh, bị giam cầm trong từng bộ não riêng lẻ, bị giới hạn bởi ngôn ngữ, địa lý, và thời gian. Một bác sĩ ở Việt Nam phát hiện ra phương pháp điều trị mới, có thể mất hàng năm để kiến thức đó đến được với đồng nghiệp ở Brazil. Một kỹ sư giải được bài toán phức tạp, nhưng hàng nghìn kỹ sư khác vẫn đang vật lộn với chính bài toán đó mà không hề hay biết.
+Human knowledge is fragmented, trapped inside individual brains, limited by language, geography, and time. A doctor in Kenya discovers a new treatment method — it may take years for that knowledge to reach a colleague in Brazil. An engineer solves a complex problem, but thousands of other engineers are still struggling with the exact same problem, completely unaware.
 
-**OneBrain ra đời để thay đổi điều này.**
+**OneBrain was created to change this.**
 
-OneBrain là một mạng lưới phi tập trung (decentralized network) lấy cảm hứng từ blockchain, được thiết kế để con người có thể chia sẻ, đóng góp, và tiếp nhận tri thức một cách hiệu quả — giống như cách các AI chia sẻ kiến thức cho nhau qua mạng.
+OneBrain is a decentralized network inspired by blockchain, designed for humans to share, contribute, and absorb knowledge efficiently — just like how AI systems share knowledge with each other over the network.
 
-### 1.1. Triết lý: Tri thức không có gì cao siêu
+### 1.1. Philosophy: Knowledge Is Not Something Lofty
 
-Khi nói đến "tri thức" hay "kiến thức", người ta thường nghĩ đến những thứ hàn lâm — công thức toán học, lý thuyết khoa học, phát minh đột phá. Nhưng **OneBrain không nghĩ vậy.**
+When people hear "knowledge," they tend to think of academic things — mathematical formulas, scientific theories, breakthrough inventions. **OneBrain sees it differently.**
 
-**Tri thức là mọi thứ con người quan sát, trải nghiệm, và học được trong cuộc sống hàng ngày.** Nó có thể là:
+**Knowledge is everything humans observe, experience, and learn in daily life.** It can be:
 
-- 🌅 Một khung cảnh đẹp mà bạn bắt gặp trên đường đi làm
-- 🔧 Một mẹo hay để tháo bánh xe đạp mà bạn vô tình phát hiện ra
-- 🍜 Một cách nấu phở mà bà bạn truyền lại, không có trong bất kỳ sách dạy nấu ăn nào
-- 🌿 Một loài hoa lạ bạn thấy trong rừng mà bạn chưa từng thấy trước đó
-- 🛠️ Cách sửa ống nước bị rò mà bạn tự mày mò ra lúc nửa đêm
-- 🚗 Con đường tắt tránh kẹt xe mà chỉ dân địa phương mới biết
+- 🌅 A beautiful view you stumble upon during your commute
+- 🔧 A clever trick to remove a bicycle tire that you accidentally discovered
+- 🍲 A family recipe passed down for generations, not found in any cookbook
+- 🌿 A rare wildflower you spotted on a forest trail that you'd never seen before
+- 🛠️ A plumbing fix you figured out at midnight on your own
+- 🚗 A shortcut to avoid traffic that only locals know
 
-Hãy tưởng tượng:
+Imagine:
 
-> **Anh Tùng, một thợ sửa xe đạp ở Huế**, đang làm việc và phát hiện ra một cách tháo bánh xe nhanh hơn, ít tốn sức hơn. Anh không cần phải viết bài báo khoa học. Anh chỉ cần **nghĩ** — ra lệnh cho AI cá nhân của mình. AI cá nhân tự động xử lý: quay lại hình ảnh, phân tích động tác tay, ghi nhận dụng cụ được dùng, tạo ra mô tả chi tiết kèm chỉ dẫn từng bước — rồi đóng gói tất cả thành một Knowledge Unit và chia sẻ lên OneBrain. Anh Tùng nhận được OBT. Và ở đâu đó trên thế giới, một người đang loay hoay với chiếc xe đạp hỏng sẽ nhận được kiến thức này qua AI cá nhân của họ.
+> **Marco, a bicycle mechanic in Rome**, is working and discovers a faster, less strenuous way to remove a tire. He doesn't need to write a scientific paper. He just needs to **think** — commanding his Personal AI. The Personal AI automatically processes: records the footage, analyzes hand movements, identifies tools used, generates detailed descriptions with step-by-step instructions — then packages everything as a Knowledge Unit and shares it on OneBrain. Marco earns OBT. And somewhere in the world, someone struggling with a broken bicycle will receive this knowledge through their Personal AI.
 
-> **Chị Lan đi du lịch Sapa**, đứng trên đỉnh đồi nhìn xuống thung lũng lúa chín vàng lúc hoàng hôn. Chị cảm thấy khung cảnh đẹp đến nghẹt thở. Chị nghĩ: *"Chia sẻ điều này."* AI cá nhân lập tức ghi nhận — tọa độ GPS, hướng nhìn, thời điểm trong ngày, điều kiện thời tiết, và cảm nhận thị giác qua BCI — đóng gói thành tri thức trải nghiệm và đưa lên OneBrain. Những người khác có thể "nhìn thấy" Sapa qua đôi mắt của chị Lan, từ chính góc nhìn đó, vào chính khoảnh khắc đó.
+> **Priya is hiking in the Himalayas**, standing on a ridge watching the sunset paint the valley gold. She feels breathless. She thinks: *"Share this."* Her Personal AI immediately captures everything — GPS coordinates, viewing direction, time of day, weather conditions, and visual perception via BCI — packaging it as experiential knowledge on OneBrain. Others can "see" the Himalayas through Priya's eyes, from that exact angle, at that exact moment.
 
-### 1.2. Tri thức "trùng lặp" vẫn có giá trị
+### 1.2. "Duplicate" Knowledge Still Has Value
 
-Một câu hỏi tự nhiên: *"Nếu đã có người chia sẻ cách tháo bánh xe rồi, thì đóng góp thêm có ý nghĩa gì?"*
+A natural question: *"If someone already shared how to remove a tire, what's the point of sharing again?"*
 
-**Câu trả lời: Rất có ý nghĩa.**
+**Answer: Very much worth it.**
 
-Trong thế giới thực, không có hai trải nghiệm nào giống hệt nhau. Mỗi người mang đến:
+In the real world, no two experiences are exactly alike. Each person brings:
 
-- **Góc nhìn khác biệt** — cùng một kỹ thuật nhưng được giải thích theo cách khác, phù hợp với nhóm người khác
-- **Kinh nghiệm bổ sung** — "cách này hiệu quả hơn khi trời mưa", "dùng với loại xe này thì cần điều chỉnh thế này"
-- **Độ tin cậy cộng dồn** — khi 100 người xác nhận cùng một kiến thức, nó trở nên đáng tin hơn rất nhiều so với khi chỉ 1 người nói
-- **Sự phong phú của dữ liệu** — nhiều góc quay, nhiều cách diễn đạt, nhiều ngữ cảnh giúp AI tổng hợp kiến thức tốt hơn
+- **A different perspective** — the same technique explained differently, suited to different people
+- **Supplementary experience** — "this works better in the rain," "with this type of bike, you need to adjust like this"
+- **Cumulative reliability** — when 100 people confirm the same knowledge, it becomes far more trustworthy than when only 1 person says it
+- **Data richness** — multiple angles, multiple ways of expression, multiple contexts help AI synthesize knowledge better
 
-OneBrain coi mỗi đóng góp như một **neuron** trong bộ não chung. Một neuron đơn lẻ thì yếu, nhưng hàng nghìn neuron cùng kích hoạt cho một kiến thức thì tạo nên **sự hiểu biết sâu sắc và đáng tin cậy** — giống cách bộ não con người thực sự hoạt động.
+OneBrain treats each contribution like a **neuron** in the shared brain. A single neuron is weak, but thousands of neurons firing together for the same knowledge create **deep, reliable understanding** — just like how the real human brain actually works.
 
-### 1.3. Tri thức dở dang — Mảnh ghép chờ được hoàn thiện
+### 1.3. Incomplete Knowledge — Puzzle Pieces Waiting to Be Completed
 
-Bên cạnh tri thức đời thường, những **tri thức hàn lâm, tri thức khó, thậm chí tri thức còn dở dang** cũng là thứ vô cùng quý giá trên OneBrain — có lẽ còn quý giá hơn cả tri thức đã hoàn chỉnh.
+Beyond everyday knowledge, **academic knowledge, hard knowledge, even unfinished knowledge** is incredibly valuable on OneBrain — perhaps even more valuable than complete knowledge.
 
-**Vì sao?** Vì lịch sử loài người cho thấy những bước nhảy vĩ đại nhất thường không đến từ một bộ não duy nhất, mà từ sự **kết nối giữa nhiều bộ não** — dù họ không hề biết nhau.
+**Why?** Because human history shows that the greatest leaps forward usually don't come from a single brain, but from the **connection between many brains** — even when they don't know each other.
 
-Hãy tưởng tượng:
+Imagine:
 
-> **Giáo sư Khoa, một nhà vật lý ở Hà Nội**, cảm thấy mình đang đi đúng hướng trong nghiên cứu về động cơ phản trọng lực. Ông có một lý thuyết, một vài phương trình, một trực giác mạnh mẽ — nhưng chưa thể chứng minh hoàn chỉnh. Trong thế giới cũ, ông sẽ giữ nghiên cứu dở dang này trong ngăn kéo, chờ ngày nào đó hoàn thiện — và có thể ngày đó không bao giờ đến.
+> **Professor Ayumi, a physicist in Tokyo**, feels she's on the right track in her research on anti-gravity engines. She has a theory, a few equations, a strong intuition — but can't fully prove it. In the old world, she'd keep this unfinished research in a drawer, waiting for someday to complete it — and perhaps that day would never come.
 >
-> Nhưng trên OneBrain, ông chia sẻ tri thức dở dang đó.
+> But on OneBrain, she shares that unfinished knowledge.
 >
-> Điều kỳ diệu xảy ra: **tri thức của ông không đơn độc.** Trên Knowledge Graph, AI phát hiện ra rằng:
-> - Một kỹ sư vật liệu ở Đức đã đóng góp dữ liệu về hợp kim siêu dẫn ở nhiệt độ phòng — chính xác là thứ lý thuyết của Giáo sư Khoa cần
-> - Một nhà toán học ở Nhật đã giải một phương trình vi phân mà ông đang bế tắc — nhưng trong ngữ cảnh hoàn toàn khác
-> - Một **thợ sửa xe đạp ở Cần Thơ** đã chia sẻ quan sát về hiện tượng từ trường kỳ lạ khi xoay bánh xe trong điều kiện nhất định — một bằng chứng thực nghiệm mà Giáo sư Khoa chưa bao giờ nghĩ tới
+> The magic happens: **Her knowledge is not alone.** On the Knowledge Graph, AI discovers that:
+> - A materials engineer in Germany contributed data on room-temperature superconducting alloys — exactly what Professor Ayumi's theory needs
+> - A mathematician in Brazil solved a differential equation she was stuck on — but in a completely different context
+> - A **bicycle mechanic in Nairobi** shared observations about strange magnetic phenomena when spinning wheels under certain conditions — empirical evidence Professor Ayumi never thought of
 >
-> Mỗi mảnh tri thức riêng lẻ tưởng như không liên quan. Nhưng khi được **kết nối trong cùng một bộ não chung**, chúng ghép lại thành bức tranh hoàn chỉnh.
+> Each piece of knowledge seemed unrelated. But when **connected in one shared brain**, they complete the picture.
 
-Đây chính là sức mạnh thực sự của OneBrain: **không ai cần phải hoàn thiện một mình.** Bạn chỉ cần đóng góp mảnh ghép của bạn — dù nó nhỏ bé, dở dang, hay có vẻ không quan trọng. Bộ não chung sẽ tìm ra cách kết nối nó với những mảnh ghép khác.
+This is the true power of OneBrain: **nobody needs to finish alone.** You just need to contribute your piece — however small, incomplete, or seemingly unimportant. The collective brain will find ways to connect it with other pieces.
 
-Cách tiếp cận này giải quyết một trong những bi kịch lớn nhất của tri thức nhân loại: **biết bao nhiêu nghiên cứu dở dang đã chết theo người tạo ra chúng**, biết bao nhiêu ý tưởng thiên tài đã bị lãng quên trong ngăn kéo, biết bao nhiêu bước đột phá đã không xảy ra — chỉ vì hai bộ não đúng không tìm thấy nhau.
+This approach solves one of humanity's greatest tragedies of knowledge: **how much unfinished research has died with its creators**, how many brilliant ideas have been forgotten in drawers, how many breakthroughs never happened — simply because two right brains never found each other.
 
-OneBrain đảm bảo rằng **không tri thức nào bị lãng phí. Không ý tưởng nào bị bỏ quên. Không bộ não nào phải chiến đấu một mình.**
+OneBrain ensures that **no knowledge is wasted. No idea is forgotten. No brain fights alone.**
 
 ---
 
-## 2. Bối cảnh & Xu hướng (Context & Trends)
+## 2. Context & Trends
 
-OneBrain được xây dựng trên nền tảng của ba xu hướng công nghệ đang hội tụ:
+OneBrain is built on the convergence of three technology trends:
 
-### 2.1. AI cá nhân — Bộ não thứ hai
+### 2.1. Personal AI — The Second Brain
 
-Trong tương lai gần, mỗi người sẽ sở hữu một **AI cá nhân (Personal AI)** — một trợ lý trí tuệ nhân tạo hiểu sâu về bạn: kiến thức của bạn, cách bạn tư duy, những gì bạn cần học, và những gì bạn có thể đóng góp. AI cá nhân chính là **bộ não thứ hai** của mỗi người.
+In the near future, every person will own a **Personal AI** — an intelligent assistant that deeply understands you: your knowledge, how you think, what you need to learn, and what you can contribute. Personal AI is the **second brain** of every individual.
 
-### 2.2. Giao tiếp não — máy hai chiều (Brain-Computer Interface)
+### 2.2. Brain-Computer Interface (BCI)
 
-Công nghệ **BCI (Brain-Computer Interface)** đang phát triển nhanh chóng với các dự án như Neuralink, Synchron, và nhiều nghiên cứu khác. Việc giao tiếp hai chiều giữa não người và máy tính — nơi con người có thể **xuất** suy nghĩ ra dạng số và **nhập** kiến thức mới trực tiếp — sẽ trở thành hiện thực phổ biến.
+**BCI (Brain-Computer Interface)** technology is rapidly advancing with projects like Neuralink, Synchron, and many other research initiatives. Two-way communication between the human brain and computers — where humans can **export** thoughts into digital form and **import** new knowledge directly — will become a common reality.
 
-### 2.3. Nhu cầu về một "Knowledge Layer" toàn cầu
+### 2.3. The Need for a Global Knowledge Layer
 
-Khi AI cá nhân và BCI trở nên phổ biến, sẽ xuất hiện nhu cầu cấp thiết về một **tầng kiến thức toàn cầu (Global Knowledge Layer)** — nơi tri thức được:
-- **Chuẩn hóa** để máy và người đều có thể hiểu
-- **Xác minh** để đảm bảo chất lượng và độ tin cậy
-- **Định giá** để người đóng góp được công nhận và trả thưởng
-- **Phân phối** một cách công bằng và hiệu quả
+As Personal AI and BCI become widespread, an urgent need will emerge for a **Global Knowledge Layer** — where knowledge is:
+- **Standardized** so both machines and humans can understand
+- **Verified** to ensure quality and reliability
+- **Valued** so contributors are recognized and rewarded
+- **Distributed** fairly and efficiently
 
-**OneBrain chính là tầng kiến thức đó.**
+**OneBrain is that layer.**
 
 ---
 
-## 3. Ý tưởng cốt lõi (Core Concept)
+## 3. Core Concept
 
-### 3.1. So sánh với Blockchain truyền thống
+### 3.1. Comparison with Traditional Blockchain
 
-| Khía cạnh | Blockchain (Bitcoin) | OneBrain |
+| Aspect | Blockchain (Bitcoin) | OneBrain |
 |---|---|---|
-| **Đơn vị cốt lõi** | Transaction (giao dịch) | Knowledge Unit (đơn vị kiến thức) |
-| **Cách kiếm token** | Mining — giải bài toán toán học | Contributing — đóng góp kiến thức có giá trị |
-| **Cơ chế đồng thuận** | Proof of Work / Proof of Stake | **Proof of Knowledge (PoK)** — chứng minh bằng tri thức |
-| **Giá trị nội tại** | Sự khan hiếm và niềm tin | Giá trị thực của tri thức được đóng góp |
-| **Mạng lưới** | Ngang hàng (peer-to-peer) | Ngang hàng (brain-to-brain) |
-| **Mục tiêu** | Hệ thống tài chính phi tập trung | Hệ thống tri thức phi tập trung |
+| **Core unit** | Transaction | Knowledge Unit |
+| **How to earn tokens** | Mining — solving mathematical puzzles | Contributing — sharing valuable knowledge |
+| **Consensus mechanism** | Proof of Work / Proof of Stake | **Proof of Knowledge (PoK)** |
+| **Intrinsic value** | Scarcity and trust | Real value of contributed knowledge |
+| **Network** | Peer-to-peer | Brain-to-brain |
+| **Goal** | Decentralized finance | Decentralized knowledge |
 
-### 3.2. Proof of Knowledge (PoK) — Chứng minh bằng Tri thức
+### 3.2. Proof of Knowledge (PoK)
 
-Thay vì "đào" coin bằng sức mạnh tính toán, người dùng OneBrain **"đào" coin bằng tri thức**. Giá trị của phần thưởng phụ thuộc vào:
+Instead of "mining" coins with computing power, OneBrain users **"mine" coins with knowledge**. The value of the reward depends on:
 
-- **Tính mới (Novelty):** Kiến thức này có mới không? Đã ai đóng góp trước đó chưa?
-- **Tính đúng đắn (Accuracy):** Kiến thức có chính xác, đáng tin cậy không?
-- **Tính hữu ích (Utility):** Bao nhiêu người đã sử dụng và hưởng lợi từ kiến thức này?
-- **Chiều sâu (Depth):** Kiến thức ở mức độ nông hay sâu?
-- **Tính kết nối (Connectivity):** Kiến thức này liên kết và bổ sung cho bao nhiêu tri thức khác?
+- **Novelty:** Is this knowledge new? Has anyone contributed something similar before?
+- **Accuracy:** Is the knowledge correct and reliable?
+- **Utility:** How many people have used and benefited from this knowledge?
+- **Depth:** Is the knowledge surface-level or in-depth?
+- **Connectivity:** How many other pieces of knowledge does it connect to and complement?
 
 ### 3.3. OneBrain Token (OBT)
 
-**OBT** là đồng tiền số (cryptocurrency) của hệ sinh thái OneBrain:
+**OBT** is the cryptocurrency of the OneBrain ecosystem:
 
-- 🎁 **Kiếm OBT** bằng cách đóng góp kiến thức có giá trị
-- 🔓 **Chi OBT** để truy cập kiến thức chuyên sâu, premium
-- 🗳️ **Stake OBT** để tham gia quản trị và bỏ phiếu trong mạng lưới
-- 💱 **Giao dịch OBT** trên các sàn trao đổi (tương lai)
+- 🎁 **Earn OBT** by contributing valuable knowledge
+- 🔓 **Spend OBT** to access in-depth, premium knowledge
+- 🗳️ **Stake OBT** to participate in governance and voting
+- 💱 **Trade OBT** on exchanges (future)
 
 ---
 
-## 4. Kiến trúc tổng quan (High-Level Architecture)
+## 4. High-Level Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    👤 USER LAYER (Tầng Người dùng)              │
+│                    👤 USER LAYER                                │
 │                                                                 │
 │   ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐   │
 │   │ Web App  │  │Mobile App│  │ BCI/AR/VR│  │ Personal AI  │   │
@@ -150,22 +150,20 @@ Thay vì "đào" coin bằng sức mạnh tính toán, người dùng OneBrain *
 └──────────────────────────────┬──────────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────────┐
-│                 🤖 AI LAYER (Tầng Trí tuệ nhân tạo)            │
+│                    🤖 AI LAYER                                  │
 │                                                                 │
 │   ┌───────────────┐  ┌────────────────┐  ┌─────────────────┐   │
 │   │  Knowledge     │  │  Quality        │  │  Reward          │   │
 │   │  Classifier    │  │  Assessor       │  │  Calculator      │   │
-│   │  (Phân loại)   │  │  (Đánh giá)     │  │  (Tính thưởng)   │   │
 │   └───────────────┘  └────────────────┘  └─────────────────┘   │
 │   ┌───────────────┐  ┌────────────────┐  ┌─────────────────┐   │
 │   │  Duplicate     │  │  Connection     │  │  Personal AI     │   │
 │   │  Detector      │  │  Mapper         │  │  Mediator        │   │
-│   │  (Chống trùng) │  │  (Liên kết)     │  │  (Trung gian)    │   │
 │   └───────────────┘  └────────────────┘  └─────────────────┘   │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────────┐
-│              ⛓️ CONSENSUS LAYER (Tầng Đồng thuận)               │
+│              ⛓️ CONSENSUS LAYER                                  │
 │                                                                 │
 │   ┌───────────────────────────────────────────────────────────┐ │
 │   │              Proof of Knowledge (PoK) Engine              │ │
@@ -176,14 +174,12 @@ Thay vì "đào" coin bằng sức mạnh tính toán, người dùng OneBrain *
 └──────────────────────────────┬──────────────────────────────────┘
                                │
 ┌──────────────────────────────▼──────────────────────────────────┐
-│             📦 DATA LAYER (Tầng Dữ liệu)                       │
+│              📦 DATA LAYER                                      │
 │                                                                 │
 │   ┌───────────────┐  ┌────────────────┐  ┌─────────────────┐   │
 │   │  Knowledge     │  │  User           │  │  Token           │   │
 │   │  Graph         │  │  Profiles &     │  │  Ledger          │   │
-│   │  (Đồ thị      │  │  Reputation     │  │  (Sổ cái         │   │
-│   │   tri thức)    │  │  (Hồ sơ &      │  │   token)         │   │
-│   │                │  │   uy tín)       │  │                  │   │
+│   │                │  │  Reputation     │  │                  │   │
 │   └───────────────┘  └────────────────┘  └─────────────────┘   │
 │   ┌─────────────────────────────────────────────────────────┐   │
 │   │           Decentralized Storage (IPFS / Custom)         │   │
@@ -193,230 +189,230 @@ Thay vì "đào" coin bằng sức mạnh tính toán, người dùng OneBrain *
 
 ---
 
-## 5. Các thành phần chính (Core Components)
+## 5. Core Components
 
-### 5.1. Knowledge Unit (Đơn vị Kiến thức)
+### 5.1. Knowledge Unit
 
-Đây là đơn vị cơ bản nhất trong OneBrain — tương đương với "transaction" trong blockchain. Mỗi Knowledge Unit chứa:
+The most basic unit in OneBrain — equivalent to a "transaction" in blockchain. Each Knowledge Unit contains:
 
 ```
 Knowledge Unit {
-    id:             Mã định danh duy nhất (hash)
-    author:         Người đóng góp (địa chỉ ví)
-    timestamp:      Thời điểm tạo
-    content:        Nội dung kiến thức
-    category:       Phân loại (khoa học, kỹ thuật, nghệ thuật, ...)
-    tags:           Các nhãn liên quan
-    references:     Các Knowledge Unit được tham chiếu
-    evidence:       Bằng chứng / nguồn xác minh
-    language:       Ngôn ngữ gốc
-    difficulty:     Độ khó / chuyên sâu
+    id:             Unique identifier (hash)
+    author:         Contributor (wallet address)
+    timestamp:      Creation time
+    content:        Knowledge content
+    category:       Classification (science, engineering, arts, ...)
+    tags:           Related labels
+    references:     Referenced Knowledge Units
+    evidence:       Verification evidence / sources
+    language:       Original language
+    difficulty:     Difficulty / depth level
     
-    // Metadata tự động tính toán
-    votes:          Số phiếu bầu (upvote / downvote)
-    usage_count:    Số lần được truy cập / sử dụng
-    novelty_score:  Điểm tính mới
-    value_score:    Điểm giá trị tổng hợp
-    connections:    Các liên kết đến Knowledge Unit khác
+    // Automatically computed metadata
+    votes:          Vote count (upvote / downvote)
+    usage_count:    Access / usage count
+    novelty_score:  Novelty score
+    value_score:    Composite value score
+    connections:    Links to other Knowledge Units
 }
 ```
 
-### 5.2. Knowledge Graph (Đồ thị Tri thức)
+### 5.2. Knowledge Graph
 
-Toàn bộ kiến thức trong OneBrain được tổ chức dưới dạng **đồ thị (graph)** — không phải chuỗi tuyến tính như blockchain:
+All knowledge in OneBrain is organized as a **graph** — not a linear chain like blockchain:
 
 - **Nodes** = Knowledge Units
-- **Edges** = Mối quan hệ giữa các Knowledge Units (bổ sung, phản bác, mở rộng, phụ thuộc, ...)
+- **Edges** = Relationships between Knowledge Units (supplements, refutes, extends, depends on, ...)
 
-Cấu trúc đồ thị cho phép:
-- 🔍 Tìm kiếm kiến thức liên quan một cách thông minh
-- 🧩 Phát hiện các "lỗ hổng" tri thức cần được lấp đầy
-- 🌐 Xây dựng "bản đồ tri thức" toàn cầu
-- 🔗 Tự động gợi ý kiến thức liên quan cho người dùng
+The graph structure enables:
+- 🔍 Intelligent search for related knowledge
+- 🧩 Detection of knowledge "gaps" that need to be filled
+- 🌐 Building a global "knowledge map"
+- 🔗 Automatic recommendation of related knowledge to users
 
-### 5.3. Hệ thống Bỏ phiếu & Đánh giá (Voting & Evaluation)
+### 5.3. Voting & Evaluation System
 
 ```
-                    Knowledge Unit được đăng
+                    Knowledge Unit submitted
                               │
                               ▼
                  ┌────────────────────────┐
-                 │  AI Pre-screening      │  ← Kiểm tra tự động:
-                 │  (Sàng lọc sơ bộ)     │    spam, trùng lặp, format
+                 │  AI Pre-screening      │  ← Automated checks:
+                 │                        │    spam, duplicates, format
                  └───────────┬────────────┘
                              │
                              ▼
                  ┌────────────────────────┐
-                 │  Community Review      │  ← Cộng đồng chuyên gia
-                 │  (Đánh giá cộng đồng) │    review và vote
+                 │  Community Review      │  ← Expert community
+                 │                        │    reviews and votes
                  └───────────┬────────────┘
                              │
                              ▼
                  ┌────────────────────────┐
-                 │  Value Calculation     │  ← Tính giá trị dựa trên
-                 │  (Tính toán giá trị)  │    votes, usage, novelty, ...
+                 │  Value Calculation     │  ← Calculates value based on
+                 │                        │    votes, usage, novelty, ...
                  └───────────┬────────────┘
                              │
                              ▼
                  ┌────────────────────────┐
-                 │  Reward Distribution   │  ← Phân phối OBT cho
-                 │  (Phân phối thưởng)   │    người đóng góp
+                 │  Reward Distribution   │  ← Distributes OBT to
+                 │                        │    contributor
                  └────────────────────────┘
 ```
 
-### 5.4. Hệ thống Danh tiếng (Reputation System)
+### 5.4. Reputation System
 
-Mỗi người dùng có một **Reputation Score (Điểm uy tín)** ảnh hưởng đến:
+Each user has a **Reputation Score** that affects:
 
-- **Trọng lượng vote:** Người có uy tín cao, vote có trọng lượng lớn hơn
-- **Quyền truy cập:** Mở khóa các tính năng và khu vực kiến thức nâng cao
-- **Mức thưởng:** Hệ số nhân thưởng cao hơn cho đóng góp
-- **Quyền quản trị:** Tham gia các quyết định quan trọng của mạng lưới
+- **Vote weight:** High-reputation users' votes carry more weight
+- **Access:** Unlocks advanced features and knowledge areas
+- **Reward multiplier:** Higher multiplier for contributions
+- **Governance rights:** Participation in important network decisions
 
-Uy tín được xây dựng qua:
-- ✅ Đóng góp kiến thức chất lượng cao
-- ✅ Review chính xác kiến thức của người khác
-- ✅ Được cộng đồng công nhận chuyên môn
-- ❌ Bị giảm khi đóng góp sai lệch hoặc spam
-
----
-
-## 6. Kịch bản sử dụng (Use Cases)
-
-### 🌍 Tri thức đời thường — Xương sống của OneBrain
-
-### 🚲 Kịch bản 1: Người thợ sửa xe và mẹo tháo bánh
-
-> Anh Tùng, thợ sửa xe đạp ở Huế, phát hiện ra cách tháo bánh xe nhanh hơn bằng cách đặt nghiêng xe một góc 30 độ. Anh nghĩ: *"Hay đấy, chia sẻ cái này."* AI cá nhân của anh lập tức hành động: ghi lại video góc nhìn thứ nhất qua camera/BCI, phân tích từng động tác tay, nhận diện dụng cụ, đo góc nghiêng, và tự động tạo ra hướng dẫn từng bước kèm hình minh họa. Knowledge Unit được đóng gói và đưa lên OneBrain. Dù đã có 47 hướng dẫn tháo bánh xe trên mạng lưới, đóng góp của anh Tùng vẫn có giá trị — vì nó bổ sung thêm góc nhìn từ một người thợ lành nghề 20 năm kinh nghiệm, với dụng cụ đơn giản và điều kiện thực tế.
-
-### 🌅 Kịch bản 2: Khoảnh khắc đẹp ở Sapa
-
-> Chị Lan đứng trên đỉnh đồi Sapa, nhìn xuống thung lũng lúa chín vàng trong ánh hoàng hôn. Tim chị đập nhanh hơn. Chị chỉ cần nghĩ: *"Chia sẻ."* AI cá nhân qua BCI ghi nhận toàn bộ — tọa độ chính xác, hướng nhìn, góc mắt, cảm xúc sinh học, ánh sáng, âm thanh gió, nhiệt độ — và đóng gói thành một trải nghiệm có thể được "sống lại" bởi bất kỳ ai trên thế giới. Đó không chỉ là một bức ảnh. Đó là một **trải nghiệm tri thức** — biết rằng ở tọa độ này, vào tháng 9, lúc 5:45 chiều, khi trời trong, bạn sẽ thấy điều kỳ diệu.
-
-### 👵 Kịch bản 3: Bí quyết nấu ăn của bà
-
-> Bà Năm, 78 tuổi, ở Cần Thơ, có công thức kho cá bằng nồi đất mà cả xóm ai cũng khen ngon. Bà không biết viết blog, không có mạng xã hội. Nhưng bà có AI cá nhân. Khi bà nấu, AI quan sát, ghi nhận nguyên liệu, thời gian, nhiệt độ, thứ tự các bước, và cả những chi tiết "bí truyền" mà bà thường nói bằng miệng — *"kho lửa liu riu cho tới khi nước sánh lại là được."* Tri thức ẩm thực này, vốn sẽ mất đi khi bà qua đời, giờ được bảo tồn vĩnh viễn trên OneBrain.
+Reputation is built through:
+- ✅ Contributing high-quality knowledge
+- ✅ Accurately reviewing others' knowledge
+- ✅ Being recognized by the community for expertise
+- ❌ Decreased when contributing misleading content or spam
 
 ---
 
-### 🏢 Tri thức chuyên môn — Nâng tầm giá trị
+## 6. Use Cases
 
-### 🩺 Kịch bản 4: Bác sĩ chia sẻ ca lâm sàng
+### 🌍 Everyday Knowledge — The Backbone of OneBrain
 
-> Bác sĩ Minh ở TP.HCM gặp một ca bệnh hiếm và tìm ra phương pháp điều trị hiệu quả. Anh đóng góp kiến thức này lên OneBrain. Hệ thống AI phân loại, kiểm tra tính mới, và đưa vào review bởi các bác sĩ chuyên khoa trên toàn cầu. Sau khi được xác nhận, kiến thức tự động được phân phối đến AI cá nhân của các bác sĩ trên khắp thế giới. Bác sĩ Minh nhận OBT tương xứng với giá trị đóng góp.
+### 🚲 Scenario 1: The Bicycle Mechanic's Trick
 
-### 💻 Kịch bản 5: Lập trình viên giải quyết bug phức tạp
+> Marco, a bicycle mechanic in Rome, discovers a faster tire removal technique by tilting the bike at a 30-degree angle. He thinks: *"Nice, let me share this."* His Personal AI immediately takes action: records first-person video via camera/BCI, analyzes each hand movement, identifies tools, measures the tilt angle, and auto-generates step-by-step instructions with illustrations. The Knowledge Unit is packaged and uploaded to OneBrain. Although 47 tire removal guides already exist on the network, Marco's contribution still has value — it adds the perspective of a 20-year veteran mechanic, using simple tools in real-world conditions.
 
-> Một lập trình viên tìm ra cách giải quyết một lỗi bảo mật nghiêm trọng. Thay vì chỉ sửa trong dự án của mình, cô ấy đóng góp kiến thức lên OneBrain. AI cá nhân của hàng nghìn lập trình viên khác tự động nhận và tích hợp kiến thức này, ngăn chặn lỗi tương tự trước khi nó xảy ra.
+### 🌅 Scenario 2: A Breathtaking Moment in the Alps
 
-### 🎓 Kịch bản 6: Học tập cá nhân hóa
+> Sarah, standing on a ridge in the Swiss Alps, watches the sunset paint the valley gold. Her heart races. She simply thinks: *"Share."* Her Personal AI via BCI captures everything — exact coordinates, viewing direction, eye angle, biometric emotions, light, wind sounds, temperature — and packages it as an experience that can be "relived" by anyone in the world. It's not just a photo. It's **experiential knowledge** — knowing that at these coordinates, in September, at 5:45 PM, when the sky is clear, you'll witness something magical.
 
-> Sinh viên Hùng muốn học về vật lý lượng tử. AI cá nhân của Hùng kết nối với OneBrain, tìm kiếm và tổng hợp các Knowledge Units phù hợp với trình độ và phong cách học của Hùng, tạo ra một lộ trình học tập cá nhân hóa. Mỗi kiến thức đã được xác minh và đánh giá bởi cộng đồng.
+### 👵 Scenario 3: Grandmother's Secret Recipe
 
-### 🧠 Kịch bản 7: Tương lai với BCI
-
-> Năm 2035. An đeo thiết bị BCI, kết nối trực tiếp với AI cá nhân. Khi An gặp một vấn đề kỹ thuật, AI cá nhân tự động truy vấn OneBrain, tìm kiến thức liên quan, và "truyền" kiến thức đó vào nhận thức của An gần như tức thời — giống như cách Neo học kung fu trong The Matrix, nhưng là đời thực.
+> Rosa, 78 years old, in a small town in Tuscany, makes a ragù that the whole neighborhood loves. She doesn't know how to blog or use social media. But she has a Personal AI. As she cooks, the AI observes — recording ingredients, timing, temperature, step sequences, and all those "secret" details she usually says by mouth — *"simmer on low heat until the sauce thickens just right."* This culinary knowledge, which would vanish when she passes, is now preserved forever on OneBrain.
 
 ---
 
-## 7. Nguồn phần thưởng (Reward Source)
+### 🏢 Professional Knowledge — Amplified Value
 
-Một câu hỏi quan trọng: **OBT đến từ đâu?**
+### 🩺 Scenario 4: A Doctor Sharing a Rare Clinical Case
 
-### 7.1. Cơ chế phát hành (Minting)
+> Dr. Amara in Nairobi encounters a rare disease and discovers an effective treatment. She contributes this knowledge to OneBrain. The AI system classifies it, checks novelty, and sends it for review by specialist doctors worldwide. Once confirmed, the knowledge is automatically distributed to doctors' Personal AIs across the globe. Dr. Amara earns OBT proportional to the value of her contribution.
+
+### 💻 Scenario 5: A Developer Solving a Critical Bug
+
+> A developer finds a way to fix a critical security vulnerability. Instead of only fixing it in her own project, she contributes the knowledge to OneBrain. Thousands of other developers' Personal AIs automatically receive and integrate this knowledge, preventing similar bugs before they happen.
+
+### 🎓 Scenario 6: Personalized Learning
+
+> Alex wants to learn quantum physics. His Personal AI connects to OneBrain, searches and synthesizes Knowledge Units that match his level and learning style, creating a personalized learning path. Every piece of knowledge has been verified and evaluated by the community.
+
+### 🧠 Scenario 7: The BCI Future
+
+> Year 2035. Kai wears a BCI device, connected directly to his Personal AI. When Kai faces a technical problem, his Personal AI automatically queries OneBrain, finds related knowledge, and "transmits" it into Kai's awareness almost instantly — like how Neo learned kung fu in The Matrix, but in real life.
+
+---
+
+## 7. Reward Source
+
+A critical question: **Where does OBT come from?**
+
+### 7.1. Minting Mechanism
 
 ```
-Tổng cung OBT
+Total OBT Supply
      │
      ├── 🌱 Knowledge Mining (60%)
-     │       Phát hành dần qua đóng góp kiến thức
-     │       (giảm dần theo thời gian — tương tự Bitcoin halving)
+     │       Gradually minted through knowledge contributions
+     │       (decreasing over time — similar to Bitcoin halving)
      │
      ├── 🏗️ Foundation Reserve (15%)
-     │       Quỹ phát triển dự án
+     │       Project development fund
      │
      ├── 👥 Community & Ecosystem (15%)
-     │       Thưởng cho reviewer, validator, và hệ sinh thái
+     │       Rewards for reviewers, validators, and ecosystem
      │
      └── 🧑‍💼 Team & Advisors (10%)
-             Đội ngũ phát triển (vesting schedule)
+             Development team (vesting schedule)
 ```
 
-### 7.2. Cơ chế tuần hoàn (Token Circulation)
+### 7.2. Token Circulation
 
-- **Người đóng góp** → nhận OBT khi kiến thức được chấp nhận
-- **Người sử dụng** → chi OBT để truy cập kiến thức premium
-- **Doanh nghiệp** → mua OBT để truy cập tri thức cho nhân viên
-- **Reviewer** → nhận OBT khi đánh giá kiến thức chính xác
-- **Staker** → nhận OBT từ phí giao dịch khi stake token
+- **Contributors** → earn OBT when knowledge is accepted
+- **Users** → spend OBT to access premium knowledge
+- **Enterprises** → buy OBT to access knowledge for employees
+- **Reviewers** → earn OBT for accurate knowledge reviews
+- **Stakers** → earn OBT from transaction fees when staking
 
 ---
 
-## 8. Bản quyền & Quyền sở hữu tri thức (Copyright & Intellectual Property)
+## 8. Copyright & Intellectual Property
 
-### 8.1. Nguyên tắc cốt lõi: Tri thức đã chia sẻ là tự do
+### 8.1. Core Principle: Shared Knowledge Is Free
 
-OneBrain đi theo triết lý rõ ràng:
+OneBrain follows a clear philosophy:
 
-> **Tri thức một khi đã được chia sẻ lên OneBrain, nó thuộc về nhân loại.**
+> **Knowledge, once shared on OneBrain, belongs to humanity.**
 
-Người đóng góp đã nhận phần thưởng OBT tại thời điểm chia sẻ — đó là sự ghi nhận và đền đáp cho công sức của họ. Tri thức sau đó được tự do lưu thông, ai cũng có thể tiếp cận, học hỏi, và xây dựng tiếp.
+Contributors receive OBT rewards at the moment of sharing — that is the recognition and compensation for their effort. Knowledge then flows freely — anyone can access, learn from, and build upon it.
 
-**Tại sao?** Vì nếu tri thức bị khóa sau bản quyền, OneBrain sẽ không khác gì thế giới cũ — nơi kiến thức bị phân mảnh, bị giam cầm, và không thể kết nối thành bộ não chung.
+**Why?** Because if knowledge is locked behind copyright, OneBrain would be no different from the old world — where knowledge is fragmented, imprisoned, and unable to connect into a shared brain.
 
-### 8.2. OneBrain như chứng cứ bản quyền
+### 8.2. OneBrain as Copyright Evidence
 
-Tuy nhiên, **tự do trong OneBrain không có nghĩa là bất kỳ ai cũng được lợi dụng bên ngoài OneBrain.**
+However, **freedom within OneBrain does not mean anyone can exploit it outside OneBrain.**
 
-Nếu một cá nhân hoặc tổ chức lấy tri thức từ OneBrain để **kiếm lợi thương mại bên ngoài mạng lưới** (ví dụ: đăng ký bằng sáng chế, thương mại hóa sản phẩm, xuất bản sách...), thì người đóng góp gốc hoàn toàn có quyền yêu cầu bản quyền.
+If an individual or organization takes knowledge from OneBrain to **profit commercially outside the network** (e.g., filing patents, commercializing products, publishing books...), the original contributor has every right to claim copyright.
 
-Và lúc này, OneBrain trở thành **bằng chứng không thể chối cãi:**
+And at that point, OneBrain becomes **irrefutable evidence:**
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│              OneBrain như Chứng cứ                   │
+│              OneBrain as Evidence                    │
 │                                                     │
-│  ✅ Ai đã chia sẻ tri thức đó (identity on-chain)  │
-│  ✅ Chia sẻ lúc nào (timestamp bất biến)            │
-│  ✅ Nội dung chính xác là gì (content hash)         │
-│  ✅ Ai đã vote xác nhận (community validation)      │
-│  ✅ Chuỗi phát triển tri thức (knowledge lineage)   │
+│  ✅ Who shared the knowledge (on-chain identity)    │
+│  ✅ When it was shared (immutable timestamp)        │
+│  ✅ What exactly was shared (content hash)          │
+│  ✅ Who validated it (community verification)       │
+│  ✅ Knowledge development chain (lineage)           │
 │                                                     │
-│  → Tất cả được ghi trên mạng lưới phi tập trung,   │
-│    không ai có thể sửa đổi hay xóa bỏ.             │
+│  → All recorded on a decentralized network,         │
+│    impossible to modify or delete.                  │
 └─────────────────────────────────────────────────────┘
 ```
 
-Nói cách khác: **Trong OneBrain, tri thức tự do. Ra ngoài OneBrain, người đóng góp được bảo vệ.**
+In other words: **Within OneBrain, knowledge is free. Outside OneBrain, contributors are protected.**
 
-### 8.3. Không phải ai cũng "sở hữu" cái mình chia sẻ
+### 8.3. Not Everyone "Owns" What They Share
 
-Đây là điểm tinh tế nhất trong cơ chế bản quyền của OneBrain.
+This is the most subtle point in OneBrain's copyright framework.
 
-Khi bà Năm chia sẻ công thức kho cá — **bà có thực sự là "chủ sở hữu" công thức đó không?** Có lẽ không. Công thức đó có thể đã tồn tại hàng trăm năm, được truyền từ đời này sang đời khác. Bà Năm là **người chia sẻ**, đóng góp **góc nhìn và kinh nghiệm cá nhân** của bà — nhưng bà không "phát minh" ra món kho cá.
+When Rosa shares her ragù recipe — **is she truly the "owner" of that recipe?** Probably not. That recipe may have existed for hundreds of years, passed down from generation to generation. Rosa is **the sharer**, contributing her **personal perspective and experience** — but she didn't "invent" ragù.
 
-Ngược lại, nếu Giáo sư Khoa chia sẻ một phương trình hoàn toàn mới mà ông tự phát triển — đó rõ ràng là **sáng tạo gốc** của ông.
+Conversely, if Professor Ayumi shares a completely new equation she developed herself — that is clearly her **original creation**.
 
-Vậy làm sao phân biệt? Bằng **cơ chế bỏ phiếu tính nguyên bản (Originality Voting):**
+How to differentiate? Through the **Originality Voting mechanism:**
 
-### 8.4. Originality Voting — Bỏ phiếu tính nguyên bản
+### 8.4. Originality Voting
 
-Khi một Knowledge Unit được chia sẻ, mạng lưới AI cá nhân tham gia OneBrain sẽ **tự động đánh giá mức độ nguyên bản** của nó:
+When a Knowledge Unit is shared, the network of Personal AIs on OneBrain **automatically assesses its originality:**
 
 ```
-Knowledge Unit được chia sẻ
+Knowledge Unit shared
          │
          ▼
 ┌─────────────────────────────┐
 │   AI Network Analysis       │
 │                             │
-│   • So sánh với tri thức    │
-│     đã có trên Knowledge    │
-│     Graph                   │
-│   • Phân tích tính mới      │
-│   • Đánh giá mức độ sáng    │
-│     tạo vs. chia sẻ lại     │
-│   • Kiểm tra nguồn gốc      │
+│   • Compare with existing   │
+│     knowledge on the        │
+│     Knowledge Graph         │
+│   • Analyze novelty         │
+│   • Evaluate creativity     │
+│     vs. resharing           │
+│   • Check provenance        │
 └──────────┬──────────────────┘
            │
            ▼
@@ -424,137 +420,133 @@ Knowledge Unit được chia sẻ
 │   Originality Score          │
 │                             │
 │   ⭐⭐⭐⭐⭐ (90-100%)       │
-│   → Sáng tạo gốc hoàn toàn │
-│     Ví dụ: phương trình mới │
+│   → Fully original creation │
+│     e.g., new equation      │
 │                             │
 │   ⭐⭐⭐☆☆ (50-70%)         │
-│   → Có yếu tố sáng tạo     │
-│     Ví dụ: kỹ thuật cải     │
-│     tiến từ cái đã có       │
+│   → Creative improvement    │
+│     e.g., improved technique│
 │                             │
 │   ⭐⭐☆☆☆ (20-40%)         │
-│   → Chia sẻ kinh nghiệm    │
-│     Ví dụ: công thức kho cá │
-│     của bà Năm              │
+│   → Experience sharing      │
+│     e.g., family recipe     │
 │                             │
 │   ⭐☆☆☆☆ (0-20%)           │
-│   → Chia sẻ lại / quan sát │
-│     Ví dụ: khung cảnh đẹp   │
+│   → Resharing / observation │
+│     e.g., beautiful scenery │
 └──────────┬──────────────────┘
            │
            ▼
 ┌─────────────────────────────┐
-│   Quyền bản quyền tương ứng │
+│   Corresponding Rights       │
 │                             │
-│   Score cao → Quyền yêu cầu │
-│   bản quyền mạnh nếu bị     │
-│   thương mại hóa bên ngoài  │
+│   High score → Strong claim │
+│   if commercialized outside │
 │                             │
-│   Score thấp → Ghi nhận      │
-│   đóng góp, nhưng không     │
-│   thể claim bản quyền       │
-│   độc quyền                  │
+│   Low score → Contribution  │
+│   acknowledged, but no      │
+│   exclusive copyright claim │
 └─────────────────────────────┘
 ```
 
-Cơ chế này hoạt động **tự động và phi tập trung** — được thực hiện bởi mạng lưới AI cá nhân, tương tự cách các node trong blockchain xác nhận giao dịch. Không có một tổ chức trung ương nào quyết định ai có bản quyền — cộng đồng AI quyết định.
+This mechanism operates **automatically and in a decentralized manner** — performed by the network of Personal AIs, similar to how nodes in a blockchain validate transactions. No central authority decides who has copyright — the AI community decides.
 
-### 8.5. Tóm tắt triết lý bản quyền
+### 8.5. Copyright Philosophy Summary
 
-| Tình huống | Xử lý |
+| Situation | Handling |
 |---|---|
-| Học hỏi từ OneBrain cho bản thân | ✅ Hoàn toàn tự do |
-| Sử dụng tri thức để làm việc, giải quyết vấn đề | ✅ Hoàn toàn tự do |
-| Xây dựng tiếp, phát triển tri thức | ✅ Hoàn toàn tự do, khuyến khích |
-| Thương mại hóa bên ngoài OneBrain | ⚠️ Người đóng góp gốc có thể yêu cầu quyền lợi |
-| Đăng ký bằng sáng chế từ tri thức OneBrain | ⚠️ OneBrain là chứng cứ prior art chống lại |
-| Claim bản quyền cho tri thức không nguyên bản | ❌ Originality Score thấp → không đủ cơ sở |
+| Learning from OneBrain for yourself | ✅ Completely free |
+| Using knowledge for work or problem-solving | ✅ Completely free |
+| Building upon and developing further | ✅ Completely free, encouraged |
+| Commercializing outside OneBrain | ⚠️ Original contributor may claim rights |
+| Filing patents from OneBrain knowledge | ⚠️ OneBrain serves as prior art evidence |
+| Claiming copyright for non-original knowledge | ❌ Low Originality Score = insufficient basis |
 
 ---
 
-## 9. Điểm khác biệt (Differentiators)
+## 9. Differentiators
 
-| So sánh | Wikipedia | Stack Overflow | OneBrain |
+| Comparison | Wikipedia | Stack Overflow | OneBrain |
 |---|---|---|---|
-| **Cấu trúc** | Bài viết dài | Hỏi & Đáp | Đồ thị tri thức (Knowledge Graph) |
-| **Phần thưởng** | Không có | Điểm danh tiếng | Tiền số (OBT) có giá trị thật |
-| **AI tích hợp** | Không | Không | AI phân loại, đánh giá, phân phối |
-| **Cá nhân hóa** | Không | Không | AI cá nhân tùy chỉnh kiến thức |
-| **BCI Ready** | Không | Không | Thiết kế sẵn sàng cho BCI |
-| **Phi tập trung** | Tập trung | Tập trung | Phi tập trung (decentralized) |
-| **Ownership** | Nền tảng sở hữu | Nền tảng sở hữu | Người đóng góp sở hữu |
-| **Bản quyền** | CC BY-SA | Nền tảng sở hữu | Tự do trong mạng, bảo vệ bên ngoài |
+| **Structure** | Long articles | Q&A | Knowledge Graph |
+| **Rewards** | None | Reputation points | Cryptocurrency (OBT) with real value |
+| **AI Integration** | No | No | AI classifies, evaluates, distributes |
+| **Personalization** | No | No | Personal AI customizes knowledge |
+| **BCI Ready** | No | No | Designed for BCI |
+| **Decentralized** | Centralized | Centralized | Decentralized |
+| **Ownership** | Platform owns | Platform owns | Contributors own |
+| **Copyright** | CC BY-SA | Platform owns | Free in network, protected outside |
 
 ---
 
-## 10. Lộ trình phát triển (Roadmap)
+## 10. Roadmap
 
-### Phase 1 — Foundation (Nền tảng) 🏗️
-- [ ] Thiết kế chi tiết kiến trúc hệ thống
-- [ ] Xây dựng Knowledge Unit schema & Knowledge Graph
-- [ ] Phát triển Proof of Knowledge (PoK) protocol
-- [ ] Xây dựng prototype web application
-- [ ] Thiết kế tokenomics chi tiết cho OBT
+### Phase 1 — Foundation 🏗️
+- [ ] Detailed system architecture design
+- [ ] Knowledge Unit schema & Knowledge Graph development
+- [ ] Proof of Knowledge (PoK) protocol development
+- [ ] Prototype web application
+- [ ] Detailed OBT tokenomics design
 
-### Phase 2 — Alpha Network (Mạng thử nghiệm) 🧪
-- [ ] Triển khai mạng lưới thử nghiệm (testnet)
-- [ ] Hệ thống voting & reputation cơ bản
-- [ ] AI phân loại và đánh giá kiến thức v1
-- [ ] Cộng đồng early adopters
+### Phase 2 — Alpha Network 🧪
+- [ ] Testnet deployment
+- [ ] Basic voting & reputation system
+- [ ] AI knowledge classification and evaluation v1
+- [ ] Early adopter community
 
-### Phase 3 — Beta Network (Mạng mở rộng) 🚀
-- [ ] Mainnet launch với OBT token
+### Phase 3 — Beta Network 🚀
+- [ ] Mainnet launch with OBT token
 - [ ] Mobile applications (iOS & Android)
-- [ ] API cho Personal AI integration
-- [ ] Hệ thống quản trị phi tập trung (DAO)
+- [ ] API for Personal AI integration
+- [ ] Decentralized governance (DAO)
 
-### Phase 4 — AI Integration (Tích hợp AI) 🤖
-- [ ] SDK cho Personal AI kết nối OneBrain
-- [ ] Tự động hóa đóng góp và tiếp nhận kiến thức
+### Phase 4 — AI Integration 🤖
+- [ ] SDK for Personal AI to connect with OneBrain
+- [ ] Automated knowledge contribution and consumption
 - [ ] AI-powered knowledge discovery & recommendation
 - [ ] Multi-language real-time translation
 
-### Phase 5 — BCI Ready (Sẵn sàng BCI) 🧠
-- [ ] Protocol cho brain-computer interface
+### Phase 5 — BCI Ready 🧠
+- [ ] Brain-computer interface protocol
 - [ ] Neural knowledge encoding/decoding standards
 - [ ] Real-time knowledge streaming
 - [ ] "Thought-to-knowledge" pipeline
 
 ---
 
-## 11. Tuyên ngôn (Manifesto)
+## 11. Manifesto
 
-> **Tri thức là sức mạnh. Tri thức được chia sẻ là sức mạnh nhân lên.**
+> **Knowledge is power. Shared knowledge is power multiplied.**
 >
-> Chúng tôi tin rằng mỗi bộ não con người chứa đựng những tri thức độc đáo và có giá trị. Chúng tôi tin rằng rào cản lớn nhất của tiến bộ nhân loại không phải là thiếu kiến thức, mà là thiếu khả năng chia sẻ kiến thức.
+> We believe that every human brain holds unique and valuable knowledge. We believe that the greatest barrier to human progress is not the lack of knowledge, but the lack of ability to share it.
 >
-> OneBrain được tạo ra để phá bỏ rào cản đó.
+> OneBrain was created to break that barrier.
 >
-> Trong tương lai mà chúng tôi hình dung, mỗi người không chỉ mang bộ não của riêng mình, mà còn được kết nối với **một bộ não chung** — nơi tri thức của toàn nhân loại được lưu trữ, xác minh, và chia sẻ. Nơi mà khi một người học được điều gì mới, cả thế giới cùng khôn lên.
+> In the future we envision, each person carries not just their own brain, but is connected to **a shared brain** — where all of humanity's knowledge is stored, verified, and shared. Where when one person learns something new, the whole world grows wiser.
 >
 > **One Brain. Shared Knowledge. Unlimited Potential.**
 
 ---
 
-## 12. Liên hệ & Đóng góp
+## 12. Contact & Contributing
 
-OneBrain là dự án **mã nguồn mở**. Chúng tôi hoan nghênh mọi đóng góp từ cộng đồng.
+OneBrain is an **open-source** project. We welcome all contributions from the community.
 
 - 📧 **Email:** shpy2001@gmail.com
 - 🌐 **Website:** Coming Soon
 - 💬 **Community:** Coming Soon
 - 📄 **Whitepaper:** [Coming Soon](docs/whitepaper.md)
 
-### 🤝 Bắt đầu đóng góp
+### 🤝 Start Contributing
 
-- Đọc [Hướng dẫn Đóng góp](CONTRIBUTING.md) để biết cách tham gia
-- Xem [Quy tắc Ứng xử](CODE_OF_CONDUCT.md) để hiểu văn hóa cộng đồng
-- Kiểm tra [Issues](../../issues) để tìm việc cần làm
-- Xem [CONTRIBUTORS.md](CONTRIBUTORS.md) — danh sách những bộ não đã đóng góp
+- Read the [Contributing Guide](CONTRIBUTING.md) to learn how to participate
+- Review the [Code of Conduct](CODE_OF_CONDUCT.md) to understand our community culture
+- Check [Issues](../../issues) to find work that needs to be done
+- See [CONTRIBUTORS.md](CONTRIBUTORS.md) — the list of brains that have contributed
 
-### 📜 Giấy phép
+### 📜 License
 
-Dự án này được phân phối dưới giấy phép [MIT License](LICENSE) — tự do sử dụng, sửa đổi, và phân phối, đúng tinh thần OneBrain.
+This project is distributed under the [MIT License](LICENSE) — free to use, modify, and distribute, true to the spirit of OneBrain.
 
 ---
 

@@ -1,14 +1,14 @@
-# 🏆 Contributors — Những người đóng góp
+# 🏆 Contributors
 
-Cảm ơn tất cả những bộ não tuyệt vời đã đóng góp cho OneBrain! 🧠
+Thank you to all the brilliant minds who have contributed to OneBrain! 🧠
 
-> *"Mỗi đóng góp là một neuron trong bộ não chung của nhân loại."*
+> *"Every contribution is a neuron in humanity's shared brain."*
 
 ---
 
 ## 👑 Founder
 
-| Tên | Vai trò | Liên hệ |
+| Name | Role | Contact |
 |---|---|---|
 | **shpy** | Founder & Visionary | shpy2001@gmail.com |
 
@@ -16,27 +16,27 @@ Cảm ơn tất cả những bộ não tuyệt vời đã đóng góp cho OneBra
 
 ## 🌟 Contributors
 
-<!-- 
-Khi có người đóng góp, thêm vào bảng theo format:
+<!--
+When a new contributor joins, add them to the table below:
 
-| Tên | Đóng góp | GitHub |
+| Name | Contribution | GitHub |
 |---|---|---|
-| @username | Mô tả đóng góp | [Profile](https://github.com/username) |
+| @username | Description of contribution | [Profile](https://github.com/username) |
 -->
 
-*Chưa có contributors. Hãy là người đầu tiên!* 🚀
+*No contributors yet. Be the first one!* 🚀
 
-Xem [CONTRIBUTING.md](CONTRIBUTING.md) để biết cách đóng góp.
+See [CONTRIBUTING.md](CONTRIBUTING.md) to learn how you can contribute.
 
 ---
 
-## 💡 Cách được ghi nhận
+## 💡 How to Get Recognized
 
-Mọi đóng góp đều được trân trọng, bao gồm:
+All contributions are valued and recognized, including:
 - 💻 Code
-- 📖 Tài liệu
-- 🐛 Báo cáo lỗi
-- 💡 Ý tưởng & đề xuất
-- 🌐 Dịch thuật
-- 🎨 Thiết kế
-- 📣 Truyền thông & quảng bá
+- 📖 Documentation
+- 🐛 Bug reports
+- 💡 Ideas & proposals
+- 🌐 Translations
+- 🎨 Design
+- 📣 Outreach & advocacy

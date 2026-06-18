@@ -1,40 +1,40 @@
 ---
-name: 🐛 Báo cáo lỗi (Bug Report)
-about: Báo cáo lỗi để giúp chúng tôi cải thiện OneBrain
+name: 🐛 Bug Report
+about: Report a bug to help us improve OneBrain
 title: '[BUG] '
 labels: bug
 assignees: ''
 ---
 
-## 🐛 Mô tả lỗi
+## 🐛 Bug Description
 
-Mô tả ngắn gọn, rõ ràng về lỗi.
+A clear and concise description of the bug.
 
-## 📝 Các bước tái hiện
+## 📝 Steps to Reproduce
 
-1. Đi đến '...'
-2. Click vào '...'
-3. Cuộn xuống đến '...'
-4. Thấy lỗi
+1. Go to '...'
+2. Click on '...'
+3. Scroll down to '...'
+4. See the error
 
-## ✅ Kết quả mong đợi
+## ✅ Expected Behavior
 
-Mô tả kết quả mà bạn mong đợi.
+Describe what you expected to happen.
 
-## ❌ Kết quả thực tế
+## ❌ Actual Behavior
 
-Mô tả kết quả thực tế xảy ra.
+Describe what actually happened.
 
 ## 📸 Screenshots
 
-Nếu có thể, đính kèm screenshots để minh họa.
+If applicable, add screenshots to help illustrate the problem.
 
-## 🖥️ Môi trường
+## 🖥️ Environment
 
-- **OS:** [ví dụ: Windows 11, macOS 15, Ubuntu 24.04]
-- **Browser:** [ví dụ: Chrome 128, Firefox 130]
-- **Phiên bản OneBrain:** [ví dụ: 0.1.0]
+- **OS:** [e.g., Windows 11, macOS 15, Ubuntu 24.04]
+- **Browser:** [e.g., Chrome 128, Firefox 130]
+- **OneBrain Version:** [e.g., 0.1.0]
 
-## 📋 Thông tin bổ sung
+## 📋 Additional Context
 
-Bất kỳ thông tin nào khác giúp hiểu rõ hơn về lỗi.
+Any other information that might help us understand the issue.

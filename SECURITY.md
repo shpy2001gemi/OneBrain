@@ -1,42 +1,42 @@
-# 🔒 Chính sách Bảo mật (Security Policy)
+# 🔒 Security Policy
 
-## Phiên bản được hỗ trợ
+## Supported Versions
 
-| Phiên bản | Hỗ trợ |
+| Version | Supported |
 |---|---|
-| Đang phát triển (pre-release) | ✅ |
+| In development (pre-release) | ✅ |
 
-## Báo cáo lỗ hổng bảo mật
+## Reporting a Vulnerability
 
-Bảo mật là ưu tiên hàng đầu của OneBrain — đặc biệt khi chúng tôi xây dựng một mạng lưới phi tập trung xử lý tri thức của nhân loại.
+Security is a top priority for OneBrain — especially as we build a decentralized network that handles humanity's collective knowledge.
 
-### ⚠️ KHÔNG báo cáo lỗ hổng bảo mật qua GitHub Issues công khai
+### ⚠️ Do NOT report security vulnerabilities through public GitHub Issues
 
-Thay vào đó, vui lòng gửi email đến:
+Instead, please send an email to:
 
 📧 **shpy2001@gmail.com**
 
-Với tiêu đề: `[SECURITY] Mô tả ngắn gọn`
+With the subject line: `[SECURITY] Brief description`
 
-### Thông tin cần cung cấp
+### What to Include
 
-1. **Loại lỗ hổng** (ví dụ: XSS, SQL injection, privilege escalation, ...)
-2. **Vị trí** file/module bị ảnh hưởng
-3. **Các bước tái hiện**
-4. **Mức độ nghiêm trọng** bạn đánh giá
-5. **Đề xuất sửa lỗi** (nếu có)
+1. **Type of vulnerability** (e.g., XSS, SQL injection, privilege escalation, etc.)
+2. **Location** of the affected file(s) or module(s)
+3. **Steps to reproduce** the issue
+4. **Severity assessment** in your estimation
+5. **Suggested fix** (if you have one)
 
-### Cam kết của chúng tôi
+### Our Commitment
 
-- Xác nhận nhận được báo cáo trong vòng **48 giờ**
-- Đánh giá và phản hồi chi tiết trong vòng **7 ngày**
-- Ghi nhận công lao của bạn (nếu bạn đồng ý) sau khi lỗ hổng được sửa
-- Không có hành động pháp lý đối với báo cáo bảo mật có thiện chí
+- We will **acknowledge** receipt of your report within **48 hours**
+- We will provide a **detailed response** within **7 days**
+- We will **credit your contribution** (with your permission) once the vulnerability is resolved
+- We will take **no legal action** against good-faith security reports
 
-### Phạm vi
+### Scope
 
-Chính sách này áp dụng cho tất cả repository và dịch vụ thuộc dự án OneBrain.
+This policy applies to all repositories and services under the OneBrain project.
 
 ---
 
-*Bảo vệ OneBrain = Bảo vệ tri thức của nhân loại.* 🛡️
+*Protecting OneBrain = Protecting humanity's knowledge.* 🛡️

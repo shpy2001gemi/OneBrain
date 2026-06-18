@@ -1,23 +1,23 @@
 # OneBrain Whitepaper
 
-> 🚧 **Coming Soon** — Whitepaper đang được phát triển.
+> 🚧 **Coming Soon** — The whitepaper is currently under development.
 
-## Nội dung dự kiến
+## Planned Table of Contents
 
-1. **Abstract** — Tóm tắt dự án
-2. **Introduction** — Bối cảnh và vấn đề
-3. **Vision** — Tầm nhìn OneBrain
-4. **Architecture** — Kiến trúc kỹ thuật chi tiết
-5. **Proof of Knowledge Protocol** — Giao thức đồng thuận
-6. **Knowledge Graph Design** — Thiết kế đồ thị tri thức
-7. **Tokenomics** — Kinh tế token OBT
-8. **Copyright & IP Framework** — Khung bản quyền
-9. **Governance** — Quản trị phi tập trung (DAO)
-10. **Security Model** — Mô hình bảo mật
-11. **Roadmap** — Lộ trình chi tiết
-12. **Team** — Đội ngũ
-13. **References** — Tài liệu tham khảo
+1. **Abstract** — Project summary
+2. **Introduction** — Background and problem statement
+3. **Vision** — The OneBrain vision
+4. **Architecture** — Detailed technical architecture
+5. **Proof of Knowledge Protocol** — Consensus protocol
+6. **Knowledge Graph Design** — Knowledge graph architecture
+7. **Tokenomics** — OBT token economics
+8. **Copyright & IP Framework** — Intellectual property framework
+9. **Governance** — Decentralized governance (DAO)
+10. **Security Model** — Security architecture
+11. **Roadmap** — Detailed project roadmap
+12. **Team** — The team behind OneBrain
+13. **References** — Bibliography and references
 
 ---
 
-*Theo dõi dự án để nhận thông báo khi whitepaper được phát hành.*
+*Watch the project to be notified when the whitepaper is published.*

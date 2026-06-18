@@ -1,28 +1,28 @@
 # 📚 OneBrain Documentation
 
-Tài liệu chi tiết của dự án OneBrain.
+Detailed documentation for the OneBrain project.
 
-## 📖 Mục lục
+## 📖 Table of Contents
 
-### Tổng quan
-- [README](../README.md) — Giới thiệu dự án & tầm nhìn
+### Overview
+- [README](../README.md) — Project introduction & vision
 
-### Kiến trúc
-- [Architecture](architecture/) — Thiết kế kiến trúc hệ thống *(coming soon)*
+### Architecture
+- [Architecture](architecture/) — System architecture design *(coming soon)*
 
-### Thiết kế
-- [Knowledge Unit Spec](design/knowledge-unit-spec.md) — Đặc tả Knowledge Unit *(coming soon)*
-- [Proof of Knowledge](design/proof-of-knowledge.md) — Giao thức PoK *(coming soon)*
-- [Tokenomics](design/tokenomics.md) — Thiết kế kinh tế token OBT *(coming soon)*
-- [Copyright & IP](design/copyright.md) — Cơ chế bản quyền chi tiết *(coming soon)*
+### Design
+- [Knowledge Unit Spec](design/knowledge-unit-spec.md) — Knowledge Unit specification *(coming soon)*
+- [Proof of Knowledge](design/proof-of-knowledge.md) — PoK protocol *(coming soon)*
+- [Tokenomics](design/tokenomics.md) — OBT token economics *(coming soon)*
+- [Copyright & IP](design/copyright.md) — Detailed copyright framework *(coming soon)*
 
 ### API
-- [API Reference](api/) — Tài liệu API *(coming soon)*
+- [API Reference](api/) — API documentation *(coming soon)*
 
-### Hướng dẫn
-- [Getting Started](guides/getting-started.md) — Bắt đầu nhanh *(coming soon)*
-- [Personal AI Integration](guides/personal-ai-integration.md) — Tích hợp AI cá nhân *(coming soon)*
+### Guides
+- [Getting Started](guides/getting-started.md) — Quick start guide *(coming soon)*
+- [Personal AI Integration](guides/personal-ai-integration.md) — Personal AI integration *(coming soon)*
 
 ---
 
-> *Tài liệu đang được phát triển. Đóng góp tại [CONTRIBUTING.md](../CONTRIBUTING.md)*
+> *Documentation is a work in progress. Contribute at [CONTRIBUTING.md](../CONTRIBUTING.md).*

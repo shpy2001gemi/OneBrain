@@ -1,114 +1,112 @@
-# 🤝 Hướng dẫn Đóng góp (Contributing Guide)
+# 🤝 Contributing Guide
 
-Cảm ơn bạn đã quan tâm đến OneBrain! Mọi đóng góp đều được trân trọng — từ sửa lỗi chính tả đến đề xuất kiến trúc hệ thống.
+Thank you for your interest in OneBrain! Every contribution is valued — from fixing a typo to proposing a new system architecture.
 
-> *"OneBrain tin rằng không đóng góp nào là nhỏ bé — giống như không tri thức nào là không có giá trị."*
+> *"OneBrain believes no contribution is too small — just as no knowledge is without value."*
 
 ---
 
-## 📋 Mục lục
+## 📋 Table of Contents
 
-- [Cách đóng góp](#cách-đóng-góp)
-- [Quy trình làm việc](#quy-trình-làm-việc)
-- [Quy ước đặt tên](#quy-ước-đặt-tên)
+- [How to Contribute](#how-to-contribute)
+- [Workflow](#workflow)
+- [Branch Naming Conventions](#branch-naming-conventions)
 - [Commit Messages](#commit-messages)
-- [Pull Request](#pull-request)
-- [Báo cáo lỗi](#báo-cáo-lỗi)
-- [Đề xuất tính năng](#đề-xuất-tính-năng)
-- [Cộng đồng](#cộng-đồng)
+- [Pull Requests](#pull-requests)
+- [Reporting Bugs](#reporting-bugs)
+- [Requesting Features](#requesting-features)
+- [Community](#community)
 
 ---
 
-## Cách đóng góp
+## How to Contribute
 
-### 🌟 Dành cho người mới
+### 🌟 For Beginners
 
-Nếu bạn chưa quen với open source, đừng lo! Đây là những cách bạn có thể bắt đầu:
+New to open source? No worries! Here are some easy ways to get started:
 
-1. **⭐ Star** repository này để ủng hộ dự án
-2. **📖 Đọc** tài liệu và góp ý cải thiện
-3. **🐛 Báo lỗi** nếu bạn tìm thấy vấn đề
-4. **💡 Đề xuất ý tưởng** cho tính năng mới
-5. **🌐 Dịch** tài liệu sang ngôn ngữ khác
-6. **📝 Cải thiện** tài liệu hiện có
+1. **⭐ Star** this repository to show your support
+2. **📖 Read** the documentation and suggest improvements
+3. **🐛 Report bugs** if you find any issues
+4. **💡 Suggest ideas** for new features
+5. **🌐 Translate** documentation into other languages
+6. **📝 Improve** existing documentation
 
-### 🔧 Dành cho lập trình viên
+### 🔧 For Developers
 
-1. **Fork** repository
-2. **Clone** về máy local
-3. Tạo **branch** mới cho tính năng/sửa lỗi
-4. **Code** và viết test
-5. Gửi **Pull Request**
+1. **Fork** the repository
+2. **Clone** it to your local machine
+3. Create a new **branch** for your feature or fix
+4. **Develop** and write tests
+5. Submit a **Pull Request**
 
 ---
 
-## Quy trình làm việc
+## Workflow
 
 ### 1. Fork & Clone
 
 ```bash
-# Fork repo trên GitHub, sau đó:
+# Fork the repo on GitHub, then:
 git clone https://github.com/<your-username>/OneBrain.git
 cd OneBrain
 git remote add upstream https://github.com/onebrain-project/OneBrain.git
 ```
 
-### 2. Tạo Branch
+### 2. Create a Branch
 
 ```bash
-# Cập nhật main branch
+# Update the main branch
 git checkout main
 git pull upstream main
 
-# Tạo branch mới
-git checkout -b feature/ten-tinh-nang
-# hoặc
-git checkout -b fix/ten-loi
-# hoặc
-git checkout -b docs/ten-tai-lieu
+# Create a new branch
+git checkout -b feature/your-feature-name
+# or
+git checkout -b fix/your-bug-fix
+# or
+git checkout -b docs/your-doc-update
 ```
 
-### 3. Phát triển
+### 3. Develop
 
-- Viết code sạch, có comment
-- Tuân theo coding style của dự án
-- Viết tests cho code mới
-- Cập nhật tài liệu nếu cần
+- Write clean, well-commented code
+- Follow the project's coding style
+- Write tests for new code
+- Update documentation as needed
 
 ### 4. Commit & Push
 
 ```bash
 git add .
-git commit -m "feat: mô tả ngắn gọn thay đổi"
-git push origin feature/ten-tinh-nang
+git commit -m "feat: brief description of the change"
+git push origin feature/your-feature-name
 ```
 
-### 5. Tạo Pull Request
+### 5. Open a Pull Request
 
-- Vào GitHub và tạo Pull Request từ branch của bạn
-- Điền đầy đủ thông tin theo template
-- Chờ review từ maintainers
+- Go to GitHub and create a Pull Request from your branch
+- Fill in all the details following the PR template
+- Wait for a review from the maintainers
 
 ---
 
-## Quy ước đặt tên
+## Branch Naming Conventions
 
-### Branches
-
-| Prefix | Mục đích | Ví dụ |
+| Prefix | Purpose | Example |
 |---|---|---|
-| `feature/` | Tính năng mới | `feature/knowledge-graph-api` |
-| `fix/` | Sửa lỗi | `fix/voting-calculation` |
-| `docs/` | Tài liệu | `docs/api-reference` |
-| `refactor/` | Tái cấu trúc code | `refactor/consensus-engine` |
-| `test/` | Thêm/sửa tests | `test/pok-protocol` |
-| `chore/` | Việc bảo trì | `chore/update-dependencies` |
+| `feature/` | New feature | `feature/knowledge-graph-api` |
+| `fix/` | Bug fix | `fix/voting-calculation` |
+| `docs/` | Documentation | `docs/api-reference` |
+| `refactor/` | Code refactoring | `refactor/consensus-engine` |
+| `test/` | Adding or updating tests | `test/pok-protocol` |
+| `chore/` | Maintenance tasks | `chore/update-dependencies` |
 
 ---
 
 ## Commit Messages
 
-Sử dụng [Conventional Commits](https://www.conventionalcommits.org/):
+We use [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
 <type>(<scope>): <description>
@@ -120,18 +118,18 @@ Sử dụng [Conventional Commits](https://www.conventionalcommits.org/):
 
 ### Types
 
-| Type | Mô tả |
+| Type | Description |
 |---|---|
-| `feat` | Tính năng mới |
-| `fix` | Sửa lỗi |
-| `docs` | Thay đổi tài liệu |
-| `style` | Format, thiếu dấu chấm phẩy, etc. |
-| `refactor` | Tái cấu trúc code |
-| `test` | Thêm hoặc sửa tests |
-| `chore` | Bảo trì, cập nhật dependencies |
-| `perf` | Cải thiện hiệu suất |
+| `feat` | A new feature |
+| `fix` | A bug fix |
+| `docs` | Documentation changes |
+| `style` | Formatting, missing semicolons, etc. (no logic change) |
+| `refactor` | Code refactoring (no feature or fix) |
+| `test` | Adding or updating tests |
+| `chore` | Maintenance, dependency updates |
+| `perf` | Performance improvements |
 
-### Ví dụ
+### Examples
 
 ```
 feat(knowledge-graph): add knowledge unit linking algorithm
@@ -141,65 +139,64 @@ docs(readme): add BCI integration use case
 
 ---
 
-## Pull Request
+## Pull Requests
 
-Khi tạo PR, vui lòng:
+When creating a PR, please:
 
-1. **Mô tả rõ ràng** thay đổi của bạn
-2. **Liên kết issue** liên quan (nếu có): `Fixes #123`
-3. **Screenshots/recordings** cho thay đổi UI
-4. **Checklist:**
-   - [ ] Code tuân theo coding style của dự án
-   - [ ] Đã tự review code của mình
-   - [ ] Đã thêm comment cho code phức tạp
-   - [ ] Đã cập nhật tài liệu
-   - [ ] Thay đổi không tạo ra warnings mới
-   - [ ] Đã thêm tests
-   - [ ] Tất cả tests pass
-
----
-
-## Báo cáo lỗi
-
-Khi báo cáo lỗi, vui lòng bao gồm:
-
-1. **Tiêu đề** ngắn gọn, rõ ràng
-2. **Các bước tái hiện** lỗi
-3. **Kết quả mong đợi** vs. **kết quả thực tế**
-4. **Môi trường**: OS, browser, phiên bản, etc.
-5. **Screenshots** nếu có thể
+1. **Clearly describe** what your changes do
+2. **Link related issues** (if any): `Fixes #123`
+3. **Include screenshots/recordings** for UI changes
+4. **Complete the checklist:**
+   - [ ] Code follows the project's coding style
+   - [ ] I have reviewed my own code
+   - [ ] I have added comments for complex logic
+   - [ ] I have updated the relevant documentation
+   - [ ] My changes produce no new warnings
+   - [ ] I have added tests for my changes
+   - [ ] All tests (new and existing) pass
 
 ---
 
-## Đề xuất tính năng
+## Reporting Bugs
 
-Khi đề xuất tính năng, vui lòng mô tả:
+When reporting a bug, please include:
 
-1. **Vấn đề** mà tính năng giải quyết
-2. **Giải pháp** bạn đề xuất
-3. **Alternatives** — các giải pháp thay thế đã cân nhắc
-4. **Ngữ cảnh** — bối cảnh bổ sung
+1. **A clear, concise title**
+2. **Steps to reproduce** the bug
+3. **Expected result** vs. **actual result**
+4. **Environment details**: OS, browser, version, etc.
+5. **Screenshots**, if possible
 
 ---
 
-## Cộng đồng
+## Requesting Features
 
-### 💬 Liên hệ
+When requesting a feature, please describe:
+
+1. **The problem** the feature would solve
+2. **Your proposed solution**
+3. **Alternatives** — other solutions you have considered
+4. **Additional context** — any background information
+
+---
+
+## Community
+
+### 💬 Contact
 
 - **Email:** shpy2001@gmail.com
-- **Discussions:** GitHub Discussions (coming soon)
+- **Discussions:** GitHub Discussions *(coming soon)*
 - **Discord:** Coming soon
 
-### 🌍 Ngôn ngữ
+### 🌍 Language Policy
 
-- Tài liệu chính: **Tiếng Việt** và **Tiếng Anh**
-- Code comments: **Tiếng Anh**
-- Issues & PRs: Tiếng Việt hoặc Tiếng Anh đều được
+- **Code and documentation:** English
+- **Issues & PRs:** Any language is welcome — write in whatever you're most comfortable with
 
-### 🏆 Ghi nhận đóng góp
+### 🏆 Recognizing Contributions
 
-Tất cả contributors sẽ được ghi nhận trong file [CONTRIBUTORS.md](CONTRIBUTORS.md). Đúng tinh thần OneBrain — mọi đóng góp đều có giá trị!
+All contributors are recognized in [CONTRIBUTORS.md](CONTRIBUTORS.md). True to the spirit of OneBrain — every contribution matters!
 
 ---
 
-*Cảm ơn bạn đã giúp xây dựng OneBrain — bộ não chung của nhân loại!* 🧠
+*Thank you for helping build OneBrain — humanity's shared brain!* 🧠

@@ -1,39 +1,39 @@
 ---
-name: 💡 Đề xuất tính năng (Feature Request)
-about: Đề xuất ý tưởng mới cho OneBrain
+name: 💡 Feature Request
+about: Suggest a new idea for OneBrain
 title: '[FEATURE] '
 labels: enhancement
 assignees: ''
 ---
 
-## 💡 Mô tả tính năng
+## 💡 Feature Description
 
-Mô tả ngắn gọn, rõ ràng về tính năng bạn đề xuất.
+A clear and concise description of the feature you are proposing.
 
-## 🤔 Vấn đề cần giải quyết
+## 🤔 Problem Statement
 
-Mô tả vấn đề mà tính năng này giải quyết.
-Ví dụ: "Tôi luôn gặp khó khăn khi [...]"
+Describe the problem this feature would solve.
+Example: "I always find it difficult to [...]"
 
-## 🎯 Giải pháp đề xuất
+## 🎯 Proposed Solution
 
-Mô tả giải pháp bạn muốn thấy.
+Describe the solution you would like to see.
 
-## 🔄 Giải pháp thay thế
+## 🔄 Alternatives Considered
 
-Mô tả các giải pháp hoặc tính năng thay thế mà bạn đã cân nhắc.
+Describe any alternative solutions or features you have considered.
 
-## 🧠 Liên kết với triết lý OneBrain
+## 🧠 Link to OneBrain Philosophy
 
-Tính năng này đóng góp vào tầm nhìn của OneBrain như thế nào?
-- [ ] Giúp chia sẻ tri thức dễ dàng hơn
-- [ ] Cải thiện chất lượng tri thức
-- [ ] Tăng cường cơ chế phần thưởng
-- [ ] Cải thiện trải nghiệm người dùng
-- [ ] Hỗ trợ tích hợp AI cá nhân
-- [ ] Chuẩn bị cho BCI
-- [ ] Khác: ___
+How does this feature contribute to the OneBrain vision?
+- [ ] Makes knowledge sharing easier
+- [ ] Improves knowledge quality
+- [ ] Enhances reward mechanisms
+- [ ] Improves user experience
+- [ ] Supports personal AI integration
+- [ ] Prepares for BCI (Brain-Computer Interface)
+- [ ] Other: ___
 
-## 📋 Thông tin bổ sung
+## 📋 Additional Context
 
-Screenshots, mockups, hoặc bất kỳ ngữ cảnh nào khác.
+Screenshots, mockups, or any other relevant context.

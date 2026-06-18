@@ -1,30 +1,30 @@
 ---
-name: 📖 Đề xuất tri thức / Ý tưởng (Knowledge Proposal)
-about: Đề xuất ý tưởng mới về cơ chế tri thức, tokenomics, hoặc kiến trúc OneBrain
+name: 📖 Knowledge / Idea Proposal
+about: Propose a new idea about knowledge mechanisms, tokenomics, or OneBrain architecture
 title: '[IDEA] '
 labels: idea, discussion
 assignees: ''
 ---
 
-## 📖 Tóm tắt ý tưởng
+## 📖 Idea Summary
 
-Mô tả ngắn gọn ý tưởng của bạn.
+A brief description of your idea.
 
-## 🎯 Vấn đề / Cơ hội
+## 🎯 Problem / Opportunity
 
-Ý tưởng này giải quyết vấn đề gì hoặc tận dụng cơ hội nào?
+What problem does this idea solve, or what opportunity does it capitalize on?
 
-## 📐 Chi tiết đề xuất
+## 📐 Proposal Details
 
-Mô tả chi tiết ý tưởng. Có thể bao gồm:
-- Cơ chế hoạt động
-- Ảnh hưởng đến hệ sinh thái
-- Yêu cầu kỹ thuật
+Describe your idea in detail. This may include:
+- How the mechanism works
+- Impact on the ecosystem
+- Technical requirements
 
-## 🔗 Liên kết
+## 🔗 References
 
-Tài liệu, nghiên cứu, hoặc dự án tham khảo.
+Links to relevant research, documentation, or related projects.
 
-## 💬 Thảo luận
+## 💬 Discussion Points
 
-Những câu hỏi hoặc điểm bạn muốn cộng đồng thảo luận.
+Questions or topics you would like the community to discuss.
