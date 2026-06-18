@@ -1,0 +1,83 @@
+# ===========================
+# OneBrain .gitignore
+# ===========================
+
+# Dependencies
+node_modules/
+vendor/
+.pnp/
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+*.egg-info/
+__pycache__/
+*.py[cod]
+*.class
+*.jar
+
+# Environment & Config
+.env
+.env.local
+.env.*.local
+*.local
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+*.lcov
+
+# Cache
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.turbo/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Package manager locks (keep one, ignore others if switching)
+# Uncomment the ones you don't use:
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Secrets & Keys
+*.pem
+*.key
+*.cert
+*.p12
+secrets/
