@@ -490,35 +490,59 @@ Cơ chế này hoạt động **tự động và phi tập trung** — được 
 ## 10. Lộ trình phát triển (Roadmap)
 
 ### Phase 1 — Foundation (Nền tảng) 🏗️
+> *Thiết kế bản thiết kế của bộ não chung*
+
 - [ ] Thiết kế chi tiết kiến trúc hệ thống
-- [ ] Xây dựng Knowledge Unit schema & Knowledge Graph
-- [ ] Phát triển Proof of Knowledge (PoK) protocol
-- [ ] Xây dựng prototype web application
-- [ ] Thiết kế tokenomics chi tiết cho OBT
+- [ ] Xây dựng Knowledge Unit schema & mô hình dữ liệu Knowledge Graph
+- [ ] Đặc tả giao thức Proof of Knowledge (PoK)
+- [ ] Thiết kế tokenomics OBT (phát hành, tuần hoàn, mô hình halving)
+- [ ] Đặc tả khung bản quyền & sở hữu trí tuệ (Copyright & IP)
+- [ ] Thiết kế thuật toán Originality Voting (bỏ phiếu tính nguyên bản)
+- [ ] Xuất bản Whitepaper v1.0
+- [ ] Thiết lập cộng đồng open-source (GitHub, Discord, tài liệu quản trị)
 
 ### Phase 2 — Alpha Network (Mạng thử nghiệm) 🧪
+> *Xây dựng những neuron đầu tiên*
+
 - [ ] Triển khai mạng lưới thử nghiệm (testnet)
 - [ ] Hệ thống voting & reputation cơ bản
 - [ ] AI phân loại và đánh giá kiến thức v1
-- [ ] Cộng đồng early adopters
+- [ ] Hệ thống phát hiện trùng lặp kèm cộng dồn giá trị (ghi nhận đóng góp "trùng" vẫn có giá trị)
+- [ ] Engine chấm điểm Originality Scoring v1
+- [ ] Web app đóng góp & duyệt Knowledge Unit (prototype)
+- [ ] Cộng đồng early adopters (nhà nghiên cứu, giáo viên, lập trình viên)
 
 ### Phase 3 — Beta Network (Mạng mở rộng) 🚀
+> *Bộ não bắt đầu suy nghĩ*
+
 - [ ] Mainnet launch với OBT token
-- [ ] Mobile applications (iOS & Android)
-- [ ] API cho Personal AI integration
-- [ ] Hệ thống quản trị phi tập trung (DAO)
+- [ ] Knowledge Graph v1 — liên kết tri thức, phát hiện lỗ hổng, trực quan hóa bản đồ tri thức
+- [ ] Liên kết tri thức dở dang — AI tự động phát hiện tri thức bổ sung nhau giữa các người đóng góp
+- [ ] Hệ thống chứng cứ bản quyền — bằng chứng đóng góp bất biến trên chain (timestamp, hash, lineage)
+- [ ] Ứng dụng di động (iOS & Android)
+- [ ] Dịch đa ngôn ngữ thời gian thực
+- [ ] Nền tảng quản trị cộng đồng (DAO v1)
 
 ### Phase 4 — AI Integration (Tích hợp AI) 🤖
-- [ ] SDK cho Personal AI kết nối OneBrain
-- [ ] Tự động hóa đóng góp và tiếp nhận kiến thức
-- [ ] AI-powered knowledge discovery & recommendation
-- [ ] Multi-language real-time translation
+> *AI cá nhân gia nhập mạng lưới*
+
+- [ ] SDK & API cho Personal AI kết nối OneBrain
+- [ ] Tự động đóng góp tri thức — AI quan sát, đóng gói, và chia sẻ thay cho người dùng
+- [ ] Tự động tiếp nhận tri thức — AI tìm kiếm, tổng hợp, và truyền tải tri thức phù hợp
+- [ ] Engine khám phá & đề xuất tri thức bằng AI
+- [ ] Liên kết tri thức liên ngành — kết nối tri thức giữa các lĩnh vực không liên quan (ví dụ: thợ xe đạp ↔ vật lý)
+- [ ] Originality Voting v2 — đánh giá phi tập trung bởi mạng lưới AI cá nhân
+- [ ] Giao thức giải quyết tranh chấp bản quyền
 
 ### Phase 5 — BCI Ready (Sẵn sàng BCI) 🧠
-- [ ] Protocol cho brain-computer interface
-- [ ] Neural knowledge encoding/decoding standards
-- [ ] Real-time knowledge streaming
-- [ ] "Thought-to-knowledge" pipeline
+> *Truyền tri thức não-tới-não*
+
+- [ ] Đặc tả giao thức giao tiếp não-máy (BCI)
+- [ ] Tiêu chuẩn mã hóa / giải mã tri thức thần kinh
+- [ ] Streaming tri thức thời gian thực (chia sẻ trải nghiệm trực tiếp)
+- [ ] Pipeline "Thought-to-knowledge" — nghĩ là chia sẻ
+- [ ] Định dạng tri thức trải nghiệm — ghi lại không chỉ dữ liệu mà cả ngữ cảnh giác quan (hình ảnh, âm thanh, cảm xúc)
+- [ ] Bản đồ Tri thức Toàn cầu — trực quan hóa sống động, có thể duyệt, toàn bộ tri thức nhân loại
 
 ---
 

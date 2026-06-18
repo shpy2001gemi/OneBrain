@@ -482,35 +482,59 @@ This mechanism operates **automatically and in a decentralized manner** — perf
 ## 10. Roadmap
 
 ### Phase 1 — Foundation 🏗️
+> *Design the blueprint of the shared brain*
+
 - [ ] Detailed system architecture design
-- [ ] Knowledge Unit schema & Knowledge Graph development
-- [ ] Proof of Knowledge (PoK) protocol development
-- [ ] Prototype web application
-- [ ] Detailed OBT tokenomics design
+- [ ] Knowledge Unit schema & Knowledge Graph data model
+- [ ] Proof of Knowledge (PoK) protocol specification
+- [ ] OBT tokenomics design (minting, circulation, halving model)
+- [ ] Copyright & IP framework specification
+- [ ] Originality Voting algorithm design
+- [ ] Whitepaper v1.0 publication
+- [ ] Open-source community setup (GitHub, Discord, governance docs)
 
 ### Phase 2 — Alpha Network 🧪
+> *Build the first neurons*
+
 - [ ] Testnet deployment
 - [ ] Basic voting & reputation system
 - [ ] AI knowledge classification and evaluation v1
-- [ ] Early adopter community
+- [ ] Duplicate detection with value stacking (recognize "duplicate" contributions as valuable)
+- [ ] Originality Scoring engine v1
+- [ ] Knowledge Unit contribution & browsing web app (prototype)
+- [ ] Early adopter community (researchers, educators, developers)
 
 ### Phase 3 — Beta Network 🚀
+> *The brain starts thinking*
+
 - [ ] Mainnet launch with OBT token
+- [ ] Knowledge Graph v1 — connection mapping, gap detection, knowledge visualization
+- [ ] Incomplete knowledge linking — AI-powered discovery of complementary knowledge across contributors
+- [ ] Copyright evidence system — immutable on-chain proof of contribution (timestamp, hash, lineage)
 - [ ] Mobile applications (iOS & Android)
-- [ ] API for Personal AI integration
-- [ ] Decentralized governance (DAO)
+- [ ] Multi-language real-time translation
+- [ ] Community governance foundation (DAO v1)
 
 ### Phase 4 — AI Integration 🤖
-- [ ] SDK for Personal AI to connect with OneBrain
-- [ ] Automated knowledge contribution and consumption
-- [ ] AI-powered knowledge discovery & recommendation
-- [ ] Multi-language real-time translation
+> *Personal AIs join the network*
+
+- [ ] SDK & API for Personal AI to connect with OneBrain
+- [ ] Automated knowledge contribution — AI observes, packages, and shares on behalf of users
+- [ ] Automated knowledge consumption — AI finds, synthesizes, and delivers relevant knowledge to users
+- [ ] AI-powered knowledge discovery & recommendation engine
+- [ ] Cross-domain knowledge connection — linking knowledge across unrelated fields (e.g., bicycle mechanics ↔ physics)
+- [ ] Originality Voting v2 — decentralized assessment by Personal AI network
+- [ ] Copyright dispute resolution protocol
 
 ### Phase 5 — BCI Ready 🧠
-- [ ] Brain-computer interface protocol
+> *Brain-to-brain knowledge transfer*
+
+- [ ] Brain-computer interface protocol specification
 - [ ] Neural knowledge encoding/decoding standards
-- [ ] Real-time knowledge streaming
-- [ ] "Thought-to-knowledge" pipeline
+- [ ] Real-time knowledge streaming (live experience sharing)
+- [ ] "Thought-to-knowledge" pipeline — think it, share it
+- [ ] Experiential knowledge format — capturing not just data but sensory context (sight, sound, emotion)
+- [ ] Global Knowledge Map — a living, navigable visualization of all human knowledge
 
 ---
 
