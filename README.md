@@ -275,6 +275,66 @@ Reputation is built through:
 - ✅ Being recognized by the community for expertise
 - ❌ Decreased when contributing misleading content or spam
 
+### 5.5. How Knowledge Is Shared — From Keyboard to Thought
+
+BCI is the ultimate vision, but OneBrain must work **today**, long before brain-computer interfaces become mainstream. Knowledge sharing evolves through three stages:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                     │
+│  STAGE 1: Manual Input (Phase 1-2)              📱💻               │
+│  ─────────────────────────────────                                  │
+│  The user directly creates and submits knowledge:                   │
+│                                                                     │
+│  • Text — Write articles, notes, how-to guides                     │
+│  • Photos & Video — Upload visual demonstrations                   │
+│  • Voice — Dictate explanations (AI transcribes & structures)      │
+│  • Screen capture — Record workflows, tutorials                    │
+│  • Structured forms — Fill in step-by-step templates               │
+│                                                                     │
+│  → Similar to writing a blog post or Stack Overflow answer,        │
+│    but with AI assistance for formatting & classification          │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  STAGE 2: AI-Assisted Capture (Phase 3-4)       🤖📷              │
+│  ────────────────────────────────────────                           │
+│  Personal AI observes and helps package knowledge:                  │
+│                                                                     │
+│  • AI watches you work and suggests: "That was clever.             │
+│    Want me to turn that into a Knowledge Unit?"                    │
+│  • AI auto-records via phone camera, smart glasses, or             │
+│    wearable devices                                                │
+│  • AI generates descriptions, step-by-step guides, and             │
+│    tags from raw footage                                           │
+│  • User reviews & approves before publishing                       │
+│  • Voice command: "Hey AI, share what I just did"                  │
+│                                                                     │
+│  → You do the work, AI does the documenting                        │
+│                                                                     │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  STAGE 3: Thought-to-Knowledge (Phase 5)        🧠⚡              │
+│  ───────────────────────────────────────                            │
+│  BCI enables direct brain-to-network sharing:                       │
+│                                                                     │
+│  • Think "share this" → AI captures the experience                 │
+│  • Sensory data (sight, sound, emotion) encoded directly           │
+│  • Near-zero friction between knowing and sharing                  │
+│                                                                     │
+│  → You think it, the world knows it                                │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**The key principle:** At every stage, the barrier to sharing should be as low as possible. A bicycle mechanic shouldn't need to be a writer. A grandmother shouldn't need to understand technology. The system meets people where they are.
+
+> **Example — Marco the mechanic in Stage 1:** Marco doesn't have BCI. He doesn't even have a Personal AI yet. But he can open the OneBrain app on his phone, record a 2-minute video of his tire removal trick, add a brief text description, and submit. The platform's AI auto-generates tags, classifies the category, creates thumbnail illustrations, and translates the description into 40 languages. Marco's contribution is live within minutes.
+>
+> **Example — Marco in Stage 2:** A year later, Marco has a Personal AI running on his phone. As he works, the AI watches through the phone camera mounted on his workbench. When Marco does something the AI recognizes as novel, it gently suggests: *"That's a technique I haven't seen before. Want me to package it?"* Marco says "Yes" — and the AI handles everything. Marco doesn't even stop working.
+>
+> **Example — Marco in Stage 3:** In 2035, Marco wears a lightweight BCI headband. He doesn't even need to speak. He discovers a new trick, feels satisfied, and thinks: *"Others should know this."* Done.
+
 ---
 
 ## 6. Use Cases
