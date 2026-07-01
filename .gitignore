@@ -75,9 +75,19 @@ temp/
 # yarn.lock
 # pnpm-lock.yaml
 
+# Analysis (internal working documents)
+.analysis/
+
 # Secrets & Keys
 *.pem
 *.key
 *.cert
 *.p12
 secrets/
+
+# Rust
+target/
+
+# General
+*.log
+.DS_Store

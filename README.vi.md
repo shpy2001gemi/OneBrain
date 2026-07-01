@@ -2,6 +2,10 @@
 
 **A Decentralized Knowledge-Sharing Network for Humanity**
 
+<p align="center">
+  <img src="docs/images/onebrain_hero.png" alt="OneBrain — Mạng lưới Chia sẻ Tri thức Phi tập trung" width="800" />
+</p>
+
 > *"If machines can share knowledge instantly through networks, why can't humans?"*
 
 ---
@@ -83,112 +87,129 @@ OneBrain đảm bảo rằng **không tri thức nào bị lãng phí. Không ý
 
 OneBrain được xây dựng trên nền tảng của ba xu hướng công nghệ đang hội tụ:
 
+```mermaid
+graph LR
+    A["🧠 AI Cá nhân<br/>Bộ não thứ hai"] --> D["🌐 OneBrain<br/>Tầng Kiến thức Toàn cầu"]
+    B["⚡ Giao tiếp<br/>Não-Máy (BCI)"] --> D
+    C["📚 Nhu cầu về<br/>Knowledge Layer"] --> D
+    D --> E["🚀 Mạng lưới Tri thức<br/>Phi tập trung"]
+
+    style A fill:#1a1a2e,stroke:#6c63ff,color:#e0e0ff,stroke-width:2px
+    style B fill:#1a1a2e,stroke:#ff6584,color:#ffe0e6,stroke-width:2px
+    style C fill:#1a1a2e,stroke:#43e97b,color:#e0ffe8,stroke-width:2px
+    style D fill:#0d0d3b,stroke:#ffd700,color:#fff8dc,stroke-width:3px
+    style E fill:#1a0a2e,stroke:#a855f7,color:#f0e0ff,stroke-width:2px
+```
+
 ### 2.1. AI cá nhân — Bộ não thứ hai
 
 Trong tương lai gần, mỗi người sẽ sở hữu một **AI cá nhân (Personal AI)** — một trợ lý trí tuệ nhân tạo hiểu sâu về bạn: kiến thức của bạn, cách bạn tư duy, những gì bạn cần học, và những gì bạn có thể đóng góp. AI cá nhân chính là **bộ não thứ hai** của mỗi người.
 
 ### 2.2. Giao tiếp não — máy hai chiều (Brain-Computer Interface)
 
+<p align="center">
+  <img src="docs/images/bci_future.png" alt="BCI — Tương lai Giao tiếp Não-Máy" width="700" />
+</p>
+
 Công nghệ **BCI (Brain-Computer Interface)** đang phát triển nhanh chóng với các dự án như Neuralink, Synchron, và nhiều nghiên cứu khác. Việc giao tiếp hai chiều giữa não người và máy tính — nơi con người có thể **xuất** suy nghĩ ra dạng số và **nhập** kiến thức mới trực tiếp — sẽ trở thành hiện thực phổ biến.
 
-### 2.3. Nhu cầu v�```mermaid
-flowchart TD
-    subgraph USER_LAYER ["👤 USER LAYER (Tầng Người dùng)"]
-        direction LR
-        WebApp["Web App"]
-        MobileApp["Mobile App"]
-        BCI["BCI / AR / VR"]
-        PersonalAI["Personal AI"]
+### 2.3. Nhu cầu về một "Knowledge Layer" toàn cầu
+
+Khi AI cá nhân và BCI trở nên phổ biến, sẽ xuất hiện nhu cầu cấp thiết về một **tầng kiến thức toàn cầu (Global Knowledge Layer)** — nơi tri thức được:
+- **Chuẩn hóa** để máy và người đều có thể hiểu
+- **Xác minh** để đảm bảo chất lượng và độ tin cậy
+- **Định giá** để người đóng góp được công nhận và trả thưởng
+- **Phân phối** một cách công bằng và hiệu quả
+
+**OneBrain chính là tầng kiến thức đó.**
+
+---
+
+## 3. Ý tưởng cốt lõi (Core Concept)
+
+### 3.1. So sánh với Blockchain truyền thống
+
+| Khía cạnh | Blockchain (Bitcoin) | OneBrain |
+|---|---|---|
+| **Đơn vị cốt lõi** | Transaction (giao dịch) | Knowledge Unit (đơn vị kiến thức) |
+| **Cách kiếm token** | Mining — giải bài toán toán học | Contributing — đóng góp kiến thức có giá trị |
+| **Cơ chế đồng thuận** | Proof of Work / Proof of Stake | **Proof of Knowledge (PoK)** — chứng minh bằng tri thức |
+| **Giá trị nội tại** | Sự khan hiếm và niềm tin | Giá trị thực của tri thức được đóng góp |
+| **Mạng lưới** | Ngang hàng (peer-to-peer) | Ngang hàng (brain-to-brain) |
+| **Mục tiêu** | Hệ thống tài chính phi tập trung | Hệ thống tri thức phi tập trung |
+
+### 3.2. Proof of Knowledge (PoK) — Chứng minh bằng Tri thức
+
+Thay vì "đào" coin bằng sức mạnh tính toán, người dùng OneBrain **"đào" coin bằng tri thức**. Giá trị của phần thưởng phụ thuộc vào:
+
+- **Tính mới (Novelty):** Kiến thức này có mới không? Đã ai đóng góp trước đó chưa?
+- **Tính đúng đắn (Accuracy):** Kiến thức có chính xác, đáng tin cậy không?
+- **Tính hữu ích (Utility):** Bao nhiêu người đã sử dụng và hưởng lợi từ kiến thức này?
+- **Chiều sâu (Depth):** Kiến thức ở mức độ nông hay sâu?
+- **Tính kết nối (Connectivity):** Kiến thức này liên kết và bổ sung cho bao nhiêu tri thức khác?
+
+### 3.3. OneBrain Token (OBT)
+
+**OBT** là đồng tiền số (cryptocurrency) của hệ sinh thái OneBrain:
+
+- 🎁 **Kiếm OBT** bằng cách đóng góp kiến thức có giá trị
+- 🔓 **Chi OBT** để truy cập kiến thức chuyên sâu, premium
+- 🗳️ **Stake OBT** để tham gia quản trị và bỏ phiếu trong mạng lưới
+- 💱 **Giao dịch OBT** trên các sàn trao đổi (tương lai)
+
+---
+
+## 4. Kiến trúc tổng quan (High-Level Architecture)
+
+```mermaid
+block-beta
+    columns 4
+
+    block:user["👤 USER LAYER (Tầng Người dùng)"]:4
+        columns 4
+        WebApp["🌐 Web App"]
+        MobileApp["📱 Mobile App"]
+        BCI["🧠 BCI/AR/VR"]
+        PAI["🤖 Personal AI"]
     end
 
-    subgraph AI_LAYER ["🤖 AI LAYER (Tầng Trí tuệ nhân tạo)"]
-        direction TB
-        subgraph AI_Engines ["Động cơ AI"]
-            direction LR
-            Classifier["Knowledge Classifier<br/>(Phân loại)"]
-            Assessor["Quality Assessor<br/>(Đánh giá)"]
-            RewardCalc["Reward Calculator<br/>(Tính thưởng)"]
-        end
-        subgraph AI_Helpers ["Trợ lý AI"]
-            direction LR
-            DupDetector["Duplicate Detector<br/>(Chống trùng)"]
-            ConnMapper["Connection Mapper<br/>(Liên kết)"]
-            Mediator["Personal AI Mediator<br/>(Trung gian)"]
-        end
-        AI_Engines --- AI_Helpers
+    space:4
+
+    block:ai["🤖 AI LAYER (Tầng Trí tuệ nhân tạo)"]:4
+        columns 3
+        KC["Knowledge<br/>Classifier<br/>(Phân loại)"]
+        QA["Quality<br/>Assessor<br/>(Đánh giá)"]
+        RC["Reward<br/>Calculator<br/>(Tính thưởng)"]
+        DD["Duplicate<br/>Detector<br/>(Chống trùng)"]
+        CM["Connection<br/>Mapper<br/>(Liên kết)"]
+        PM["Personal AI<br/>Mediator<br/>(Trung gian)"]
     end
 
-    subgraph CONSENSUS_LAYER ["⛓️ CONSENSUS LAYER (Tầng Đồng thuận)"]
-        PoK["Proof of Knowledge (PoK) Engine<br/>• Bỏ phiếu & Xác minh   • Tính điểm uy tín<br/>• Định giá kiến thức     • Giải quyết tranh chấp"]
+    space:4
+
+    block:consensus["⛓️ CONSENSUS LAYER (Tầng Đồng thuận)"]:4
+        columns 1
+        PoK["Proof of Knowledge (PoK) Engine<br/>Voting & Validation · Reputation Scoring · Knowledge Valuation · Dispute Resolution"]
     end
 
-    subgraph DATA_LAYER ["📦 DATA LAYER (Tầng Dữ liệu)"]
-        direction TB
-        subgraph CoreData ["Dữ liệu cốt lõi"]
-            direction LR
-            KGraph["Knowledge Graph<br/>(Đồ thị tri thức)"]
-            Profiles["User Profiles & Reputation<br/>(Hồ sơ & Uy tín)"]
-            Ledger["Token Ledger<br/>(Sổ cái token)"]
-        end
-        Storage["Decentralized Storage<br/>(Lưu trữ phi tập trung IPFS / Tùy chỉnh)"]
-        CoreData --- Storage
+    space:4
+
+    block:data["📦 DATA LAYER (Tầng Dữ liệu)"]:4
+        columns 4
+        KG["Knowledge<br/>Graph<br/>(Đồ thị tri thức)"]
+        UP["User Profiles<br/>& Reputation<br/>(Hồ sơ & uy tín)"]
+        TL["Token<br/>Ledger<br/>(Sổ cái token)"]
+        DS["Decentralized Storage<br/>(IPFS / Custom)"]
     end
 
-    USER_LAYER --> AI_LAYER
-    AI_LAYER --> CONSENSUS_LAYER
-    CONSENSUS_LAYER --> DATA_LAYER
+    user --> ai
+    ai --> consensus
+    consensus --> data
 
-    %% Styling
-    classDef layerClass fill:#f8fafc,stroke:#334155,stroke-width:2px,color:#0f172a,font-weight:bold;
-    classDef nodeClass fill:#ffffff,stroke:#2563eb,stroke-width:1px,color:#1e40af;
-    
-    class USER_LAYER,AI_LAYER,CONSENSUS_LAYER,DATA_LAYER layerClass;
-    class WebApp,MobileApp,BCI,PersonalAI,Classifier,Assessor,RewardCalc,DupDetector,ConnMapper,Mediator,PoK,KGraph,Profiles,Ledger,Storage nodeClass;
-```BCI/AR/VR│  │ Personal AI  │   │
-│   └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────┬───────┘   │
-│        └──────────────┴─────────────┴───────────────┘           │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
-│                 🤖 AI LAYER (Tầng Trí tuệ nhân tạo)            │
-│                                                                 │
-│   ┌───────────────┐  ┌────────────────┐  ┌─────────────────┐   │
-│   │  Knowledge     │  │  Quality        │  │  Reward          │   │
-│   │  Classifier    │  │  Assessor       │  │  Calculator      │   │
-│   │  (Phân loại)   │  │  (Đánh giá)     │  │  (Tính thưởng)   │   │
-│   └───────────────┘  └────────────────┘  └─────────────────┘   │
-│   ┌───────────────┐  ┌────────────────┐  ┌─────────────────┐   │
-│   │  Duplicate     │  │  Connection     │  │  Personal AI     │   │
-│   │  Detector      │  │  Mapper         │  │  Mediator        │   │
-│   │  (Chống trùng) │  │  (Liên kết)     │  │  (Trung gian)    │   │
-│   └───────────────┘  └────────────────┘  └─────────────────┘   │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
-│              ⛓️ CONSENSUS LAYER (Tầng Đồng thuận)               │
-│                                                                 │
-│   ┌───────────────────────────────────────────────────────────┐ │
-│   │              Proof of Knowledge (PoK) Engine              │ │
-│   │                                                           │ │
-│   │  • Voting & Validation   • Reputation Scoring             │ │
-│   │  • Knowledge Valuation   • Dispute Resolution             │ │
-│   └───────────────────────────────────────────────────────────┘ │
-└──────────────────────────────┬──────────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────────┐
-│             📦 DATA LAYER (Tầng Dữ liệu)                       │
-│                                                                 │
-│   ┌───────────────┐  ┌────────────────┐  ┌─────────────────┐   │
-│   │  Knowledge     │  │  User           │  │  Token           │   │
-│   │  Graph         │  │  Profiles &     │  │  Ledger          │   │
-│   │  (Đồ thị      │  │  Reputation     │  │  (Sổ cái         │   │
-│   │   tri thức)    │  │  (Hồ sơ &      │  │   token)         │   │
-│   │                │  │   uy tín)       │  │                  │   │
-│   └───────────────┘  └────────────────┘  └─────────────────┘   │
-│   ┌─────────────────────────────────────────────────────────┐   │
-│   │           Decentralized Storage (IPFS / Custom)         │   │
-│   └─────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
+    style user fill:#1a1a3e,color:#c8c8ff
+    style ai fill:#1a2e1a,color:#c8ffc8
+    style consensus fill:#2e1a1a,color:#ffc8c8
+    style data fill:#1a2e2e,color:#c8ffff
 ```
 
 ---
@@ -228,6 +249,36 @@ Toàn bộ kiến thức trong OneBrain được tổ chức dưới dạng **đ
 - **Nodes** = Knowledge Units
 - **Edges** = Mối quan hệ giữa các Knowledge Units (bổ sung, phản bác, mở rộng, phụ thuộc, ...)
 
+```mermaid
+graph TD
+    A["🔧 Tháo bánh xe<br/>đạp"] -->|"bổ sung"| B["🔧 Hướng dẫn<br/>bảo trì xe"]
+    A -->|"mở rộng"| C["🔧 Kỹ thuật<br/>sửa chữa nâng cao"]
+    D["🌡️ Ảnh hưởng thời tiết<br/>lên cao su"] -->|"bổ sung"| A
+    E["🧪 Khoa học<br/>vật liệu"] -->|"phụ thuộc"| D
+    F["👵 Công thức<br/>nấu ăn truyền thống"] -->|"liên quan"| G["🔥 Vật lý<br/>truyền nhiệt"]
+    G -->|"kết nối"| E
+    H["🩺 Điều trị<br/>bệnh hiếm"] -->|"mở rộng"| I["💊 Cơ sở dữ liệu<br/>dược học"]
+    J["💻 Sửa lỗi<br/>bảo mật"] -->|"bổ sung"| K["🔐 An ninh<br/>mạng"]
+    C -->|"liên ngành"| G
+    B -->|"liên ngành"| J
+
+    style A fill:#ff6b6b,stroke:#ff4757,color:#fff
+    style B fill:#ff6b6b,stroke:#ff4757,color:#fff
+    style C fill:#ff6b6b,stroke:#ff4757,color:#fff
+    style D fill:#5352ed,stroke:#3742fa,color:#fff
+    style E fill:#5352ed,stroke:#3742fa,color:#fff
+    style F fill:#ff9f43,stroke:#ee5a24,color:#fff
+    style G fill:#5352ed,stroke:#3742fa,color:#fff
+    style H fill:#2ed573,stroke:#05c46b,color:#fff
+    style I fill:#2ed573,stroke:#05c46b,color:#fff
+    style J fill:#a55eea,stroke:#8854d0,color:#fff
+    style K fill:#a55eea,stroke:#8854d0,color:#fff
+```
+
+<p align="center">
+  <img src="docs/images/knowledge_graph_viz.png" alt="Trực quan hóa Đồ thị Tri thức" width="700" />
+</p>
+
 Cấu trúc đồ thị cho phép:
 - 🔍 Tìm kiếm kiến thức liên quan một cách thông minh
 - 🧩 Phát hiện các "lỗ hổng" tri thức cần được lấp đầy
@@ -236,19 +287,33 @@ Cấu trúc đồ thị cho phép:
 
 ### 5.3. Hệ thống Bỏ phiếu & Đánh giá (Voting & Evaluation)
 
-```
 ```mermaid
 flowchart TD
-    Start([Knowledge Unit Được Đăng]) --> PreScreen["🤖 AI Pre-screening<br/>(Sàng lọc sơ bộ tự động: spam, trùng lặp, định dạng)"]
-    PreScreen --> CommReview["👥 Community Review<br/>(Đánh giá và bỏ phiếu từ cộng đồng chuyên gia)"]
-    CommReview --> ValueCalc["📊 Value Calculation<br/>(Tính toán giá trị dựa trên phiếu bầu, lượt dùng, tính mới...)"]
-    ValueCalc --> RewardDist["💰 Reward Distribution<br/>(Phân phối token OBT cho người đóng góp)"]
+    A["📤 Knowledge Unit được đăng"] --> B{"🤖 AI Sàng lọc sơ bộ"}
+    B -->|"✅ Đạt"| C["👥 Cộng đồng đánh giá"]
+    B -->|"❌ Spam / Không hợp lệ"| X["🚫 Từ chối"]
+    C -->|"👍 Được duyệt"| D["📊 Tính toán giá trị"]
+    C -->|"👎 Từ chối"| Y["🔄 Phản hồi cho tác giả"]
+    D --> E["💰 Phân phối thưởng"]
+    E --> F["🎁 OBT gửi cho người đóng góp"]
 
-    classDef stepClass fill:#ffffff,stroke:#2563eb,stroke-width:1.5px,color:#1e40af;
-    classDef startClass fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px,color:#1e3a8a,font-weight:bold;
-    class PreScreen,CommReview,ValueCalc,RewardDist stepClass;
-    class Start startClass;
-```
+    B -.->|"Kiểm tra"| B1["Phát hiện Spam"]
+    B -.->|"Kiểm tra"| B2["Kiểm tra trùng lặp"]
+    B -.->|"Kiểm tra"| B3["Xác thực định dạng"]
+
+    D -.->|"Yếu tố"| D1["Số phiếu bầu"]
+    D -.->|"Yếu tố"| D2["Lượt sử dụng"]
+    D -.->|"Yếu tố"| D3["Tính mới"]
+    D -.->|"Yếu tố"| D4["Tính kết nối"]
+
+    style A fill:#6c63ff,stroke:#5a52d5,color:#fff
+    style B fill:#ffd700,stroke:#e6c300,color:#333
+    style C fill:#43e97b,stroke:#38c96a,color:#fff
+    style D fill:#ff6584,stroke:#d9546f,color:#fff
+    style E fill:#a855f7,stroke:#9333ea,color:#fff
+    style F fill:#22c55e,stroke:#16a34a,color:#fff
+    style X fill:#ef4444,stroke:#dc2626,color:#fff
+    style Y fill:#f59e0b,stroke:#d97706,color:#fff
 ```
 
 ### 5.4. Hệ thống Danh tiếng (Reputation System)
@@ -270,46 +335,31 @@ Uy tín được xây dựng qua:
 
 BCI là tầm nhìn cuối cùng, nhưng OneBrain phải hoạt động **ngay hôm nay**, rất lâu trước khi giao tiếp não-máy trở nên phổ biến. Việc chia sẻ tri thức tiến hóa qua ba giai đoạn:
 
-```
 ```mermaid
-flowchart TD
-    subgraph Stage1 ["GIAI ĐOẠN 1: Nhập liệu thủ công (Phase 1-2) 📱💻"]
-        direction TB
-        S1_Desc["Người dùng trực tiếp tạo và gửi tri thức:"]
-        S1_Items["• Văn bản: Viết bài, ghi chú, tài liệu hướng dẫn<br/>• Ảnh & Video: Tải lên minh họa trực quan<br/>• Giọng nói: Đọc giải thích (AI chuyển thành text & cấu trúc hóa)<br/>• Quay màn hình: Ghi lại quy trình, thao tác mẫu<br/>• Biểu mẫu có cấu trúc: Điền theo các template có sẵn"]
-        S1_Summary["→ Tương tự viết blog hay Stack Overflow, nhưng có AI hỗ trợ định dạng & phân loại"]
-        S1_Desc --> S1_Items --> S1_Summary
-    end
-
-    subgraph Stage2 ["GIAI ĐOẠN 2: AI hỗ trợ ghi nhận (Phase 3-4) 🤖📷"]
-        direction TB
-        S2_Desc["AI cá nhân quan sát và giúp đóng gói tri thức:"]
-        S2_Items["• AI theo dõi bạn làm việc và gợi ý: 'Cách đó hay đấy. Để tôi đóng gói nhé?'<br/>• AI tự động quay video qua điện thoại, kính thông minh, thiết bị đeo<br/>• AI tự tạo mô tả, hướng dẫn từng bước và gắn thẻ từ video gốc<br/>• Người dùng chỉ cần xem lại và duyệt trước khi xuất bản<br/>• Ra lệnh bằng giọng nói: 'AI ơi, chia sẻ cái tôi vừa làm đi'"]
-        S2_Summary["→ Bạn tập trung làm việc, AI lo phần lập tài liệu"]
-        S2_Desc --> S2_Items --> S2_Summary
-    end
-
-    subgraph Stage3 ["GIAI ĐOẠN 3: Nghĩ-là-chia-sẻ (Phase 5) 🧠⚡"]
-        direction TB
-        S3_Desc["Thiết bị BCI cho phép chia sẻ trực tiếp từ não bộ:"]
-        S3_Items["• Chỉ cần nghĩ 'chia sẻ cái này' → AI tự động ghi nhận trải nghiệm<br/>• Dữ liệu giác quan (hình ảnh, âm thanh, cảm xúc) được mã hóa trực tiếp<br/>• Gần như loại bỏ hoàn toàn khoảng cách giữa suy nghĩ và chia sẻ"]
-        S3_Summary["→ Bạn nghĩ, thế giới lập tức thấu hiểu"]
-        S3_Desc --> S3_Items --> S3_Summary
-    end
-
-    Stage1 --> Stage2 --> Stage3
-
-    classDef stageClass fill:#f8fafc,stroke:#cbd5e1,stroke-width:1.5px,color:#0f172a;
-    classDef descClass fill:#ffffff,stroke:none,color:#334155,text-align:left;
-    classDef itemsClass fill:#ffffff,stroke:#e2e8f0,stroke-width:1px,color:#475569,text-align:left;
-    classDef sumClass fill:#eff6ff,stroke:#bfdbfe,stroke-width:1px,color:#1e40af,font-weight:bold,text-align:left;
-    
-    class Stage1,Stage2,Stage3 stageClass;
-    class S1_Desc,S2_Desc,S3_Desc descClass;
-    class S1_Items,S2_Items,S3_Items itemsClass;
-    class S1_Summary,S2_Summary,S3_Summary sumClass;
+journey
+    title Qua trinh Tien hoa Chia se Tri thuc
+    section Giai doan 1 - Nhap lieu thu cong (Phase 1-2)
+      Viet bai va ghi chu: 3: User
+      Tai anh va video: 3: User
+      Doc bang giong noi: 4: User, AI
+      Quay man hinh: 3: User
+      Dien bieu mau co cau truc: 3: User
+    section Giai doan 2 - AI ho tro ghi nhan (Phase 3-4)
+      AI theo doi ban lam viec: 5: AI
+      AI goi y dong goi: 5: AI
+      AI tu dong ghi hinh: 5: AI
+      Nguoi dung duyet lai: 4: User, AI
+      Ra lenh bang giong noi: 5: User, AI
+    section Giai doan 3 - Nghi-la-chia-se (Phase 5)
+      Nghi la chia se: 5: User, BCI
+      Ma hoa du lieu giac quan: 5: BCI
+      Khong rao can chia se: 5: User, BCI, AI
 ```
-```
+
+<p align="center">
+  <img src="docs/images/knowledge_contribution_ui.png" alt="OneBrain Mobile App — Giao diện Đóng góp Tri thức" width="500" />
+</p>
+<p align="center"><em>Concept: OneBrain Mobile App — Giao diện Đóng góp Tri thức</em></p>
 
 **Nguyên tắc then chốt:** Ở mọi giai đoạn, rào cản chia sẻ phải thấp nhất có thể. Một thợ sửa xe đạp không cần phải biết viết văn. Một bà ngoại không cần phải hiểu công nghệ. Hệ thống phải đến gặp con người ở nơi họ đang đứng.
 
@@ -366,28 +416,42 @@ Một câu hỏi quan trọng: **OBT đến từ đâu?**
 ### 7.1. Cơ chế phát hành (Minting)
 
 ```mermaid
-flowchart LR
-    Supply([Tổng Cung OBT]) --> KM["🌱 Knowledge Mining (60%)<br/>Phát hành dần qua đóng góp tri thức<br/>(giảm dần theo thời gian - tương tự Bitcoin halving)"]
-    Supply --> FR["🏗️ Foundation Reserve (15%)<br/>Quỹ phát triển dự án"]
-    Supply --> CE["👥 Community & Ecosystem (15%)<br/>Thưởng cho reviewer, validator & hệ sinh thái"]
-    Supply --> TA["🧑‍💼 Team & Advisors (10%)<br/>Đội ngũ phát triển (lịch trình vesting)"]
-
-    classDef supplyClass fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px,color:#1e3a8a,font-weight:bold;
-    classDef kmClass fill:#f0fdf4,stroke:#16a34a,stroke-width:1.5px,color:#15803d;
-    classDef normalClass fill:#f8fafc,stroke:#475569,stroke-width:1.5px,color:#334155;
-    
-    class Supply supplyClass;
-    class KM kmClass;
-    class FR,CE,TA normalClass;
+pie title Phân bổ Token OBT
+    "🌱 Knowledge Mining" : 60
+    "🏗️ Foundation Reserve" : 15
+    "👥 Community & Ecosystem" : 15
+    "🧑‍💼 Team & Advisors" : 10
 ```
+
+| Phân bổ | % | Mô tả |
+|---|---|---|
+| 🌱 Knowledge Mining | 60% | Phát hành dần qua đóng góp kiến thức (giảm dần theo thời gian — tương tự Bitcoin halving) |
+| 🏗️ Foundation Reserve | 15% | Quỹ phát triển dự án |
+| 👥 Community & Ecosystem | 15% | Thưởng cho reviewer, validator, và hệ sinh thái |
+| 🧑‍💼 Team & Advisors | 10% | Đội ngũ phát triển (vesting schedule) |
 
 ### 7.2. Cơ chế tuần hoàn (Token Circulation)
 
-- **Người đóng góp** → nhận OBT khi kiến thức được chấp nhận
-- **Người sử dụng** → chi OBT để truy cập kiến thức premium
-- **Doanh nghiệp** → mua OBT để truy cập tri thức cho nhân viên
-- **Reviewer** → nhận OBT khi đánh giá kiến thức chính xác
-- **Staker** → nhận OBT từ phí giao dịch khi stake token
+```mermaid
+flowchart LR
+    C["👨‍🔧 Người đóng góp"] -->|"Chia sẻ kiến thức"| OB["🧠 OneBrain<br/>Network"]
+    OB -->|"💰 Nhận OBT"| C
+    U["👤 Người dùng"] -->|"🔓 Chi OBT"| OB
+    OB -->|"📚 Kiến thức premium"| U
+    E["🏢 Doanh nghiệp"] -->|"💳 Mua OBT"| OB
+    OB -->|"🎓 Tri thức cho nhân viên"| E
+    R["🔍 Reviewer"] -->|"✅ Đánh giá kiến thức"| OB
+    OB -->|"💰 Nhận OBT"| R
+    S["🔒 Staker"] -->|"📌 Stake OBT"| OB
+    OB -->|"💰 Phí giao dịch"| S
+
+    style OB fill:#ffd700,stroke:#e6c300,color:#333,stroke-width:3px
+    style C fill:#43e97b,stroke:#38c96a,color:#fff
+    style U fill:#6c63ff,stroke:#5a52d5,color:#fff
+    style E fill:#ff6584,stroke:#d9546f,color:#fff
+    style R fill:#a855f7,stroke:#9333ea,color:#fff
+    style S fill:#00b4d8,stroke:#0096c7,color:#fff
+```
 
 ---
 
@@ -413,16 +477,22 @@ Và lúc này, OneBrain trở thành **bằng chứng không thể chối cãi:*
 
 ```mermaid
 flowchart TD
-    Evidence["⚖️ OneBrain làm Chứng cứ bản quyền & Tiền lệ nghệ thuật"] --> ID["👤 Ai chia sẻ: Định danh on-chain của người đóng góp"]
-    Evidence --> Time["📅 Khi nào: Dấu thời gian bất biến (immutable timestamp)"]
-    Evidence --> Hash["🔒 Cái gì: Nội dung tri thức chính xác thông qua content hash"]
-    Evidence --> Proof["👥 Bằng chứng: Lịch sử bỏ phiếu & xác minh từ cộng đồng"]
-    Evidence --> Lineage["🔗 Nguồn gốc: Chuỗi liên kết phát triển tri thức (knowledge lineage)"]
+    subgraph evidence["🛡️ OneBrain như Chứng cứ Không thể Chối cãi"]
+        E1["✅ Ai đã chia sẻ tri thức<br/>(identity on-chain)"]
+        E2["✅ Chia sẻ lúc nào<br/>(timestamp bất biến)"]
+        E3["✅ Nội dung chính xác là gì<br/>(content hash)"]
+        E4["✅ Ai đã vote xác nhận<br/>(community validation)"]
+        E5["✅ Chuỗi phát triển tri thức<br/>(knowledge lineage)"]
+    end
+    evidence --> R["🔐 Tất cả được ghi trên mạng lưới phi tập trung<br/>Không ai có thể sửa đổi hay xóa bỏ"]
 
-    classDef mainClass fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px,color:#1e3a8a,font-weight:bold;
-    classDef subClass fill:#ffffff,stroke:#cbd5e1,stroke-width:1.5px,color:#334155,text-align:left;
-    class Evidence mainClass;
-    class ID,Time,Hash,Proof,Lineage subClass;
+    style evidence fill:#0d1b2a,stroke:#ffd700,color:#ffd700,stroke-width:2px
+    style E1 fill:#1b2838,stroke:#22c55e,color:#bbf7d0
+    style E2 fill:#1b2838,stroke:#22c55e,color:#bbf7d0
+    style E3 fill:#1b2838,stroke:#22c55e,color:#bbf7d0
+    style E4 fill:#1b2838,stroke:#22c55e,color:#bbf7d0
+    style E5 fill:#1b2838,stroke:#22c55e,color:#bbf7d0
+    style R fill:#1a1a2e,stroke:#a855f7,color:#e9d5ff
 ```
 
 Nói cách khác: **Trong OneBrain, tri thức tự do. Ra ngoài OneBrain, người đóng góp được bảo vệ.**
@@ -443,26 +513,34 @@ Khi một Knowledge Unit được chia sẻ, mạng lưới AI cá nhân tham gi
 
 ```mermaid
 flowchart TD
-    Start([Knowledge Unit Được Chia Sẻ]) --> Analysis["🧠 AI Network Analysis<br/>• So sánh với tri thức sẵn có trên Knowledge Graph<br/>• Phân tích tính mới & kiểm tra nguồn gốc<br/>• Đánh giá mức độ sáng tạo thực tế vs. chia sẻ lại"]
-    Analysis --> Score["⭐ Originality Score (Điểm nguyên bản)"]
-    
-    Score --> S5["⭐⭐⭐⭐⭐ (90-100%)<br/>Sáng tạo gốc hoàn toàn<br/>(Ví dụ: phương trình mới)"]
-    Score --> S3["⭐⭐⭐☆☆ (50-70%)<br/>Có yếu tố sáng tạo, cải tiến<br/>(Ví dụ: kỹ thuật cải tiến từ cái cũ)"]
-    Score --> S2["⭐⭐☆☆☆ (20-40%)<br/>Chia sẻ góc nhìn/kinh nghiệm cá nhân<br/>(Ví dụ: công thức kho cá của bà Năm)"]
-    Score --> S1["⭐☆☆☆☆ (0-20%)<br/>Quan sát / chia sẻ lại đơn thuần<br/>(Ví dụ: ảnh chụp cảnh hoàng hôn đẹp)"]
+    A["📤 Knowledge Unit được chia sẻ"] --> B["🤖 AI Network Phân tích"]
+    B --> B1["So sánh với tri thức đã có"]
+    B --> B2["Phân tích tính mới"]
+    B --> B3["Đánh giá sáng tạo vs. chia sẻ lại"]
+    B --> B4["Kiểm tra nguồn gốc"]
+    B1 & B2 & B3 & B4 --> C{"📊 Điểm Nguyên bản"}
 
-    S5 & S3 --> HighRights["⚖️ Score cao → Quyền yêu cầu bản quyền mạnh<br/>nếu bị thương mại hóa trái phép bên ngoài"]
-    S2 & S1 --> LowRights["🤝 Score thấp → Ghi nhận đóng góp vào mạng lưới,<br/>nhưng không đủ cơ sở yêu cầu độc quyền bên ngoài"]
+    C -->|"⭐⭐⭐⭐⭐ 90-100%"| D1["🏆 Sáng tạo gốc hoàn toàn<br/>VD: phương trình mới"]
+    C -->|"⭐⭐⭐ 50-70%"| D2["🔧 Cải tiến sáng tạo<br/>VD: kỹ thuật cải tiến"]
+    C -->|"⭐⭐ 20-40%"| D3["📝 Chia sẻ kinh nghiệm<br/>VD: công thức kho cá"]
+    C -->|"⭐ 0-20%"| D4["👁️ Chia sẻ lại / quan sát<br/>VD: khung cảnh đẹp"]
 
-    classDef startClass fill:#eff6ff,stroke:#1d4ed8,stroke-width:2px,color:#1e3a8a,font-weight:bold;
-    classDef analysisClass fill:#ffffff,stroke:#2563eb,stroke-width:1.5px,color:#1e40af;
-    classDef scoreClass fill:#fafaf9,stroke:#d6d3d1,stroke-width:1.5px,color:#44403c;
-    classDef rightClass fill:#f8fafc,stroke:#cbd5e1,stroke-width:1.5px,color:#1e293b;
+    D1 --> E1["🛡️ Quyền bản quyền mạnh<br/>nếu bị thương mại hóa"]
+    D2 --> E2["⚖️ Bảo vệ vừa phải"]
+    D3 --> E3["📋 Ghi nhận đóng góp<br/>quyền hạn chế"]
+    D4 --> E4["✅ Ghi nhận<br/>không bản quyền độc quyền"]
 
-    class Start startClass;
-    class Analysis analysisClass;
-    class Score,S5,S3,S2,S1 scoreClass;
-    class HighRights,LowRights rightClass;
+    style A fill:#6c63ff,stroke:#5a52d5,color:#fff
+    style B fill:#1a1a2e,stroke:#a855f7,color:#e9d5ff
+    style C fill:#ffd700,stroke:#e6c300,color:#333
+    style D1 fill:#22c55e,stroke:#16a34a,color:#fff
+    style D2 fill:#43e97b,stroke:#38c96a,color:#fff
+    style D3 fill:#f59e0b,stroke:#d97706,color:#fff
+    style D4 fill:#94a3b8,stroke:#64748b,color:#fff
+    style E1 fill:#059669,stroke:#047857,color:#fff
+    style E2 fill:#0891b2,stroke:#0e7490,color:#fff
+    style E3 fill:#d97706,stroke:#b45309,color:#fff
+    style E4 fill:#6b7280,stroke:#4b5563,color:#fff
 ```
 
 Cơ chế này hoạt động **tự động và phi tập trung** — được thực hiện bởi mạng lưới AI cá nhân, tương tự cách các node trong blockchain xác nhận giao dịch. Không có một tổ chức trung ương nào quyết định ai có bản quyền — cộng đồng AI quyết định.
@@ -493,37 +571,53 @@ Cơ chế này hoạt động **tự động và phi tập trung** — được 
 | **Ownership** | Nền tảng sở hữu | Nền tảng sở hữu | Người đóng góp sở hữu |
 | **Bản quyền** | CC BY-SA | Nền tảng sở hữu | Tự do trong mạng, bảo vệ bên ngoài |
 
-## 10. Tổng quan Cây tính năng (Feature Tree)
-
-Trước khi xây dựng, chúng ta cần vẽ bản đồ toàn bộ tính năng. OneBrain bao gồm **122 tính năng** trên **9 nhánh chính:**
-
-```
-OneBrain
-├── 1. 🧩 Quản lý Tri thức ──────── KU, Knowledge Graph, phân loại, tìm kiếm, trùng lặp (20)
-├── 2. 📥 Nhập liệu Tri thức ────── Thủ công → AI hỗ trợ → BCI (13)
-├── 3. ✅ Đánh giá & Đồng thuận ──── Sàng lọc, bỏ phiếu, chấm điểm, tính nguyên bản, PoK (17)
-├── 4. 👤 Hệ thống Người dùng ────── Danh tính, uy tín, cá nhân hóa (13)
-├── 5. 💰 Kinh tế Token ──────────── Phát hành, phần thưởng, chi tiêu, quản trị (13)
-├── 6. 🛡️ Bản quyền & SHTT ─────── Chứng cứ on-chain, tính nguyên bản, tranh chấp (10)
-├── 7. 🏛️ Quản trị (DAO) ──────── Đề xuất, tham số, ngân quỹ (9)
-├── 8. 🖥️ Nền tảng & Hạ tầng ────── Web, mobile, API/SDK, blockchain, đa ngôn ngữ (16)
-└── 9. 🔮 Khả năng Tương lai ────── BCI, AI nâng cao, Bản đồ Tri thức Toàn cầu (11)
-```
-
-**Ma trận Ưu tiên:**
-
-| Ưu tiên | Tính năng | Khi nào |
-|---|---|---|
-| 🔴 P0 — Phải có | KU CRUD, Nhập thủ công, Sàng lọc, Bỏ phiếu, Ví, Phát hành token, Web App | Phase 2 |
-| 🟠 P1 — Nên có | Knowledge Graph, Phân loại, Tìm kiếm, Tính nguyên bản, Uy tín, Bản quyền | Phase 3 |
-| 🟡 P2 — Tốt nếu có | Cá nhân hóa, Quản trị, Tranh chấp, Mobile, API/SDK | Phase 3-4 |
-| 🔵 P3 — Tương lai | AI hỗ trợ ghi nhận, BCI, Bản đồ Tri thức Toàn cầu | Phase 4-5 |
-
-> 📄 **Chi tiết đầy đủ:** [Cây tính năng](docs/features/FEATURE_TREE.md) | [Đặc tả tính năng](docs/features/FEATURE_DETAILS.md)
-
 ---
 
-## 11. Lộ trình phát triển (Roadmap)
+## 10. Lộ trình phát triển (Roadmap)
+
+```mermaid
+timeline
+    title Lộ trình Phát triển OneBrain
+    section Phase 1 — Nền tảng 🏗️
+        Kiến trúc Hệ thống     : Thiết kế Knowledge Unit schema
+                               : Đặc tả giao thức PoK
+                               : Thiết kế tokenomics OBT
+        Khung & Cộng đồng    : Khung bản quyền & IP
+                               : Thuật toán Originality Voting
+                               : Whitepaper v1.0
+                               : Cộng đồng open-source
+    section Phase 2 — Mạng thử nghiệm 🧪
+        Hệ thống cốt lõi      : Triển khai testnet
+                               : Hệ thống voting & reputation
+                               : AI phân loại v1
+        Ứng dụng             : Phát hiện trùng lặp cộng dồn giá trị
+                               : Engine Originality Scoring v1
+                               : Web app prototype
+                               : Cộng đồng early adopters
+    section Phase 3 — Mạng mở rộng 🚀
+        Ra mắt                : Mainnet launch với OBT
+                               : Knowledge Graph v1
+                               : Liên kết tri thức dở dang
+        Mở rộng              : Hệ thống chứng cứ bản quyền
+                               : Ứng dụng iOS & Android
+                               : Dịch đa ngôn ngữ
+                               : DAO v1
+    section Phase 4 — Tích hợp AI 🤖
+        Hệ thống AI           : SDK & API cho Personal AI
+                               : Tự động đóng góp tri thức
+                               : Tự động tiếp nhận tri thức
+        Nâng cao              : Engine khám phá tri thức
+                               : Liên kết liên ngành
+                               : Originality Voting v2
+                               : Giải quyết tranh chấp
+    section Phase 5 — Sẵn sàng BCI 🧠
+        Nền tảng BCI         : Đặc tả giao thức BCI
+                               : Tiêu chuẩn mã hóa thần kinh
+                               : Streaming thời gian thực
+        Tầm nhìn cuối cùng   : Pipeline Thought-to-knowledge
+                               : Định dạng tri thức trải nghiệm
+                               : Bản đồ Tri thức Toàn cầu
+```
 
 ### Phase 1 — Foundation (Nền tảng) 🏗️
 > *Thiết kế bản thiết kế của bộ não chung*
@@ -582,7 +676,7 @@ OneBrain
 
 ---
 
-## 12. Tuyên ngôn (Manifesto)
+## 11. Tuyên ngôn (Manifesto)
 
 > **Tri thức là sức mạnh. Tri thức được chia sẻ là sức mạnh nhân lên.**
 >
@@ -596,7 +690,7 @@ OneBrain
 
 ---
 
-## 13. Liên hệ & Đóng góp
+## 12. Liên hệ & Đóng góp
 
 OneBrain là dự án **mã nguồn mở**. Chúng tôi hoan nghênh mọi đóng góp từ cộng đồng.
 

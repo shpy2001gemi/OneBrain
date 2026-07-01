@@ -1,23 +1,20 @@
-# OneBrain Whitepaper
+# OneBrain: A Bio-Inspired Decentralized Knowledge Management System
 
-> 🚧 **Coming Soon** — The whitepaper is currently under development.
+> **Status**: Draft — Work in Progress
 
-## Planned Table of Contents
+## Abstract
 
-1. **Abstract** — Project summary
-2. **Introduction** — Background and problem statement
-3. **Vision** — The OneBrain vision
-4. **Architecture** — Detailed technical architecture
-5. **Proof of Knowledge Protocol** — Consensus protocol
-6. **Knowledge Graph Design** — Knowledge graph architecture
-7. **Tokenomics** — OBT token economics
-8. **Copyright & IP Framework** — Intellectual property framework
-9. **Governance** — Decentralized governance (DAO)
-10. **Security Model** — Security architecture
-11. **Roadmap** — Detailed project roadmap
-12. **Team** — The team behind OneBrain
-13. **References** — Bibliography and references
+OneBrain is a decentralized knowledge management system that encodes human knowledge as ultra-compact binary structures (Core DNA), evaluates knowledge quality through metabolic observation (Proof of Metabolic Value), and distributes knowledge across a P2P network (OneBrain Protocol). Unlike traditional knowledge systems, OneBrain uses no voting, no blockchain, and no central authority — instead relying on biological metaphors of DNA, epigenetics, metabolism, and natural selection.
 
----
+## Table of Contents
 
-*Watch the project to be notified when the whitepaper is published.*
+1. Introduction
+2. Knowledge as DNA — The 3-Layer Architecture
+3. Proof of Metabolic Value — Observable Trust
+4. KQL — Knowledge Query Language
+5. OneBrain Protocol — Decentralized Network
+6. Evaluation
+7. Related Work
+8. Conclusion
+
+> Full paper: See `docs/paper/` directory.

@@ -1,0 +1,38 @@
+[package]
+name = "ku-net"
+version = "0.1.0"
+edition = "2021"
+description = "OBP Network Protocol — Identity, Messages, SWIM Membership, Peer Discovery, QUIC Transport"
+license = "MIT"
+
+[features]
+default = []
+# Enable QUIC transport (requires C compiler for TLS crypto)
+quic = ["dep:quinn", "dep:rustls", "dep:tokio", "dep:rcgen"]
+
+[dependencies]
+# Crypto
+blake3 = "1"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+
+# Serialization (shared approach with ku-core)
+serde = { version = "1", features = ["derive"] }
+ciborium = "0.2"
+
+# Utilities
+thiserror = "1"
+
+# Core types (for CRDT sync)
+ku-core = { path = "../ku-core" }
+
+# QUIC Transport (SPEC A §3) — behind 'quic' feature flag
+quinn = { version = "0.11", default-features = false, features = ["rustls-aws-lc-rs", "runtime-tokio"], optional = true }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"], optional = true }
+rcgen = { version = "0.13", default-features = false, features = ["aws_lc_rs"], optional = true }
+
+[dev-dependencies]
+ku-core = { path = "../ku-core" }
+blake3 = "1"
+crc32fast = "1"

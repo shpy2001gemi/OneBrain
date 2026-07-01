@@ -1,0 +1,12 @@
+[package]
+name = "ku-demo"
+version = "0.1.0"
+edition = "2021"
+description = "OneBrain Protocol E2E demo — 3 simulated nodes exchanging Knowledge Units"
+license = "MIT"
+
+[dependencies]
+ku-core = { path = "../ku-core" }
+ku-net = { path = "../ku-net" }
+ku-kql = { path = "../ku-kql" }
+blake3 = "1"

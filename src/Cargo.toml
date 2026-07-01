@@ -1,0 +1,9 @@
+[workspace]
+members = ["ku-core", "ku-net", "ku-kql", "ku-demo"]
+resolver = "2"
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
