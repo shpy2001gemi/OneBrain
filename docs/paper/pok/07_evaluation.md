@@ -22,10 +22,10 @@ PoMV is implemented across **16 modules** in two Rust crates:
 | 10 | EigenTrust | [eigentrust.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/eigentrust.rs) | 272 | 3 | 5 | 9 |
 | 11 | Spread Analysis | [spread_analysis.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/spread_analysis.rs) | 308 | 2 | 4 | 11 |
 | 12 | Runtime | [pomv_runtime.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/pomv_runtime.rs) | 466 | 3 | 0 | 9 |
-| 13 | CRDT | [crdt.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/crdt.rs) | 485 | 4 | 2 | 18 |
-| 14 | KU Lifecycle | [ku_lifecycle.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/ku_lifecycle.rs) | 246 | 1 | 0 | 5 |
-| 15 | Epigenetics | [epigenetics.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/epigenetics.rs) | 219 | 2 | 3 | 7 |
-| | **Core Subtotal** | | **4,865** | **39** | **62** | **161** |
+| 13 | KU Lifecycle | [ku_lifecycle.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/ku_lifecycle.rs) | 246 | 1 | 0 | 5 |
+| 14 | Epigenetics | [epigenetics.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/epigenetics.rs) | 219 | 2 | 3 | 7 |
+| 15 | OBT Integration | [obt_integration.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_integration.rs) | 354 | 1 | 0 | 8 |
+| | **Core Subtotal** | | **4,734** | **36** | **60** | **151** |
 
 *Table 12: PoMV core modules with size, complexity, and test metrics.*
 
@@ -36,11 +36,11 @@ PoMV is implemented across **16 modules** in two Rust crates:
 | 16 | Metabolism Gossip | [metabolism_gossip.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-net/src/metabolism_gossip.rs) | 278 | 4 | 6 |
 | | **Network Subtotal** | | **278** | **4** | **6** |
 
-**Grand Total:** 5,143 LOC | 43 types | 62 constants | 167 tests
+**Grand Total:** 5,012 LOC | 40 types | 60 constants | 157 tests
 
 ### 7.1.2 Type Safety
 
-All 43 struct/enum definitions enforce type safety at compile time:
+All 40 struct/enum definitions enforce type safety at compile time:
 
 - `MetabolismEvent` (7 variants) — prevents recording undefined event types
 - `ResolutionMethod` (4 variants) — constrains prediction resolution modes
@@ -62,7 +62,7 @@ All 43 struct/enum definitions enforce type safety at compile time:
 
 ## 7.2 Test Coverage
 
-### 7.2.1 Unit Tests by Module (167 tests)
+### 7.2.1 Unit Tests by Module (157 tests)
 
 **Metabolism (16 tests):**
 
@@ -159,7 +159,7 @@ PoMV is a complete redesign of the original PoK v1, which used a vote-based arch
 | **Complexity** | 11+ defense layers | 6 signals + 4 antibodies |
 | **Decentralization** | Needs quorum (partial) | Each node evaluates independently (full) |
 | **Philosophical alignment** | "Is this knowledge correct?" | "Is this knowledge used?" |
-| **Code complexity** | Not implemented | 5,143 LOC, 167 tests, fully implemented |
+| **Code complexity** | Not implemented | 5,012 LOC, 157 tests, fully implemented |
 
 *Table 13: PoK v1 vs PoMV v2 comparison.*
 

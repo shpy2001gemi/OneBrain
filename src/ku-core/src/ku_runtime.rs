@@ -573,6 +573,8 @@ impl KuRuntime {
 
             "cid" => Some(ExtractedValue::Text(self.cid.iter().map(|b| format!("{:02x}", b)).collect::<String>())),
 
+            // Future: "encoding_time_ms" — requires EncodingConsensus data attachment
+
             _ => None,
         }
     }

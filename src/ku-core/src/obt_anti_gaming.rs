@@ -152,10 +152,18 @@ pub fn gate_2_encoding_consensus(verifier_count: u32, is_duplicate: bool) -> boo
     verifier_count >= ENCODING_CONSENSUS_MIN_VERIFIERS && !is_duplicate
 }
 
-/// Gate 3 – PoMV score check with grace period.
+/// Quality Gate 3: PoMV score threshold.
+///
+/// - New KUs (age <= 168 epochs = 7 days): always pass (grace period)
+/// - Young KUs (age <= 720 epochs = 30 days): must meet 7-day threshold (0.01)
+/// - Mature KUs (age > 720 epochs): must meet 30-day threshold (0.05)
 pub fn gate_3_pomv(pomv_score: f32, age_epochs: u64) -> bool {
     if age_epochs <= POMV_GRACE_PERIOD_EPOCHS {
         return true; // grace window
+    }
+    // 30-day boundary: 720 epochs (30 * 24)
+    if age_epochs > 720 {
+        return pomv_score >= POMV_GATE_30D_THRESHOLD;
     }
     pomv_score >= POMV_GATE_7D_THRESHOLD
 }
@@ -441,6 +449,15 @@ mod tests {
     #[test]
     fn test_gate_3_fail_after_grace() {
         assert!(!gate_3_pomv(0.005, 200));
+    }
+
+    #[test]
+    fn test_gate_3_pomv_30d_threshold() {
+        // Mature KU (>720 epochs) must meet higher 30D threshold (0.05)
+        assert!(!gate_3_pomv(0.03, 800));  // 0.03 < 0.05 threshold
+        assert!(gate_3_pomv(0.06, 800));   // 0.06 >= 0.05 threshold
+        // Young KU (168-720 epochs) only needs 7D threshold (0.01)
+        assert!(gate_3_pomv(0.03, 500));   // 0.03 >= 0.01 threshold
     }
 
     #[test]

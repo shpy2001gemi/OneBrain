@@ -1,12 +1,12 @@
 # §4. Wire Format & Encoding
 
-The Knowledge Unit's wire format constitutes the physical representation through which semantic knowledge traverses network boundaries, persists on storage media, and achieves content-addressable identity. This section presents the Core DNA v6 binary encoding specification — a custom instruction-stream format that replaces the v4/v5 CBOR encoding and achieves the previously unattained goal of binary representations that are *smaller* than natural language text. We detail the complete wire layout, the 30-instruction opcode set, a novel 5-tier variable-length integer encoding aligned with Zipfian frequency classes, and a three-tier encoding pipeline that progressively transforms natural language into language-agnostic binary.
+The Knowledge Unit's wire format constitutes the physical representation through which semantic knowledge traverses network boundaries, persists on storage media, and achieves content-addressable identity. This section presents the Core DNA binary encoding specification — a custom instruction-stream format that achieves the goal of binary representations that are *smaller* than natural language text. We detail the complete wire layout, the 30-instruction opcode set, a novel 5-tier variable-length integer encoding aligned with Zipfian frequency classes, and a three-tier encoding pipeline that progressively transforms natural language into language-agnostic binary.
 
 ## 4.1 Design Goals
 
 The wire format design is governed by six orthogonal objectives, each motivated by concrete deployment constraints within the OneBrain decentralized network.
 
-**Compactness — smaller than text.** The v4/v5 CBOR format suffered from a fundamental failing: the "compact binary" encoding was *larger* than the natural language it represented. For example, the Vietnamese text "bơi ếch" (breaststroke swimming technique, 323 bytes UTF-8) inflated to 1,053 bytes under CBOR v5 — a 3.3× size *increase*. Core DNA v6 inverts this relationship entirely: the same knowledge encodes to 88 bytes, achieving a 3.7× compression *below* the source text. This transformation is possible because Core DNA encodes semantic *structure* (concept identifiers, typed instructions, numeric literals) rather than linguistic *surface forms* (natural language strings with their inherent redundancy). Every superfluous byte imposes measurable cost in latency, energy consumption, and monetary expenditure on bandwidth-constrained links — including mobile cellular connections, Bluetooth Low Energy mesh relays, and intermittently connected satellite uplinks.
+**Compactness — smaller than text.** Core DNA achieves wire sizes consistently *smaller* than the natural language it represents. For example, the Vietnamese text "bơi ếch" (breaststroke swimming technique, 323 bytes UTF-8) encodes to 88 bytes — a 3.7× compression *below* the source text. This transformation is possible because Core DNA encodes semantic *structure* (concept identifiers, typed instructions, numeric literals) rather than linguistic *surface forms* (natural language strings with their inherent redundancy). Every superfluous byte imposes measurable cost in latency, energy consumption, and monetary expenditure on bandwidth-constrained links — including mobile cellular connections, Bluetooth Low Energy mesh relays, and intermittently connected satellite uplinks.
 
 **Language-agnostic representation.** The core binary layer contains only unsigned integer ConceptIds, typed numeric literals, and structural opcodes. No natural language strings appear in the Core DNA instruction stream. A Knowledge Unit about "breaststroke swimming" and one about "bơi ếch" produce *identical* binary encodings when they reference the same ConceptIds, enabling convergence across linguistic boundaries without translation.
 
@@ -16,11 +16,11 @@ The wire format design is governed by six orthogonal objectives, each motivated 
 
 **CRC-protected integrity.** In a decentralized network lacking central arbiters, bit-level corruption during transmission or storage must be detected with high probability before a KU enters any node's knowledge base. A CRC-16/CCITT checksum (§4.4), computed over the header and instruction stream, provides lightweight error detection with the polynomial $x^{16} + x^{12} + x^5 + 1$. This checksum operates independently of transport-layer error detection, providing defense-in-depth against silent corruption in store-and-forward relay scenarios. The choice of CRC-16 over CRC-32 saves 2 bytes per KU — significant when the total wire size may be as small as 9 bytes.
 
-**Backward compatibility.** Existing v4/v5 CBOR-encoded KUs must remain decodable without migration. A `decode_any()` function (§4.8) auto-detects the wire format from the first two bytes and dispatches to the appropriate decoder, enabling transparent protocol evolution.
+**Extensibility.** The 5-bit opcode field supports up to 32 opcodes, with 30 currently defined and 2 reserved for future extension. The `EXTENDED` opcode (`0x1F`) provides an escape mechanism for future instruction set expansion beyond 32 opcodes.
 
 ## 4.2 Wire Format Structure
 
-The Core DNA v6 wire format follows a compact architecture with only 5 bytes of fixed overhead:
+The Core DNA wire format follows a compact architecture with only 5 bytes of fixed overhead:
 
 ```
 ┌────────┬──────────┬──────────────────────────────┬──────────┬──────────┐
@@ -36,7 +36,7 @@ The Core DNA v6 wire format follows a compact architecture with only 5 bytes of 
 
 ### 4.2.1 Magic Byte
 
-The magic byte is the single byte `0x4B` (ASCII `'K'`), positioned at offset 0. This distinguishes v6 Core DNA from v4/v5 CBOR, which uses the *two-byte* magic `0x4B 0x44` (ASCII `"KD"`). The single-byte design serves dual purposes: rapid rejection of non-KU byte streams during parsing, and human-readable identification in hex dumps during debugging.
+The magic byte is the single byte `0x4B` (ASCII `'K'`), positioned at offset 0. The single-byte design serves dual purposes: rapid rejection of non-KU byte streams during parsing, and human-readable identification in hex dumps during debugging.
 
 ### 4.2.2 VER_META Byte
 
@@ -81,7 +81,7 @@ $$\text{version} = (\text{VER\_META} \gg 5) \wedge \texttt{0x07}, \quad \text{ge
 | 10 | Composite | Composite KU aggregating member KUs by CID reference |
 | 11–15 | *Reserved* | Future gene types |
 
-> Core DNA stores all 11 gene types directly in 4 bits (values 0–10). This is simpler than the v4/v5 CBOR encoding, where types with ordinal ≥ 7 require an `EXTENDED` mechanism with a separate extension byte. The v6 approach eliminates this indirection entirely.
+> Core DNA stores all 11 gene types directly in 4 bits (values 0–10), with values 11–15 reserved for future gene types.
 
 **Worked example.** A Fact gene (type 0), version 1, no qualifiers:
 $$\text{VER\_META} = (1 \ll 5) \mid (0 \ll 1) \mid 0 = \texttt{0x20}$$
@@ -122,7 +122,7 @@ The CRC-16 occupies the final 2 bytes of the wire format, stored as a big-endian
 | CRC-16 | 2 bytes | Fixed trailer |
 | **Total overhead** | **5 bytes** | Constant regardless of instruction count |
 
-For a typical 88-byte Fact KU (the "bơi ếch" example), the 5-byte overhead represents 5.7% of the total wire size — a 50% reduction from the v4/v5 CBOR overhead of 10 bytes. For a minimal 9-byte KU encoding a single triple, the overhead is 55.6%, reflecting the format's efficiency even at the smallest scales.
+For a typical 88-byte Fact KU (the "bơi ếch" example), the 5-byte overhead represents 5.7% of the total wire size. For a minimal 9-byte KU encoding a single triple, the overhead is 55.6%, reflecting the format's efficiency even at the smallest scales.
 
 ### 4.2.6 Worked Example — Complete Hex Diagram
 
@@ -142,7 +142,7 @@ Offset  Hex    Description
  07-08  XX XX  CRC-16/CCITT over bytes [00..06]
 ```
 
-Total: **9 bytes** for a complete, CRC-protected Knowledge Unit — approximately $\frac{1}{29}$ of the equivalent v5 CBOR encoding.
+Total: **9 bytes** for a complete, CRC-protected Knowledge Unit.
 
 ## 4.3 Instruction Set
 
@@ -244,7 +244,7 @@ The `op_code` operand of the `CONSTRAINT` instruction is a single unsigned byte 
 
 ### 4.4.1 Algorithm Specification
 
-Core DNA v6 replaces the v4/v5 CRC-32 with CRC-16/CCITT (XMODEM variant), saving 2 bytes per KU while providing sufficient error detection for the format's typical wire sizes.
+Core DNA uses CRC-16/CCITT (XMODEM variant), providing efficient error detection for the format's typical wire sizes while minimising overhead at 2 bytes.
 
 | Parameter | Value |
 |-----------|-------|
@@ -285,7 +285,7 @@ CRC-16/CCITT with polynomial `0x1021` provides the following guarantees:
 
 The CRC-16 checksum is explicitly *not* a cryptographic integrity mechanism. Tamper detection is provided separately by the BLAKE3 Content Identifier (§4.6), which serves as a cryptographic commitment to the wire bytes.
 
-> **Theorem 4.1 (Overhead reduction).** The transition from CRC-32 (4 bytes) to CRC-16 (2 bytes), combined with the elimination of the VERSION byte, FLAGS byte, and PAYLOAD\_LEN field (2 bytes), reduces fixed overhead from 10 bytes to 5 bytes — a 50% reduction. For a minimal KU, this reduces the overhead-to-payload ratio from $\frac{10}{10 + |P|}$ to $\frac{5}{5 + |P|}$.
+> **Theorem 4.1 (Fixed overhead bound).** The fixed overhead of the Core DNA wire format is exactly 5 bytes: MAGIC(1) + VER\_META(1) + END(1) + CRC-16(2). For a minimal KU, this yields an overhead-to-payload ratio of $\frac{5}{5 + |P|}$.
 
 ### 4.4.4 Verification
 
@@ -458,7 +458,7 @@ BLAKE3 was selected over alternative hash functions (SHA-256, SHA-3, BLAKE2b) ba
 
 **Security.** BLAKE3 provides 256-bit preimage resistance and 128-bit collision resistance, matching the security level of SHA-256 while offering superior performance. The hash function's design derives from the well-analyzed BLAKE2 and ChaCha constructions, with formal security proofs in the ideal cipher model.
 
-**Parallelism.** BLAKE3's internal Merkle tree structure enables parallel hashing of large inputs across multiple cores and SIMD lanes. While individual KUs are small (typically < 200 bytes in v6), the parallel structure benefits batch CID computation when a node ingests a large set of KUs simultaneously.
+**Parallelism.** BLAKE3's internal Merkle tree structure enables parallel hashing of large inputs across multiple cores and SIMD lanes. While individual KUs are small (typically < 200 bytes), the parallel structure benefits batch CID computation when a node ingests a large set of KUs simultaneously.
 
 ### 4.6.3 CID Properties
 
@@ -472,7 +472,7 @@ The CID provides a decentralized, coordination-free identity system:
 
 ### 4.7.1 Measured Encoding Sizes
 
-The following measurements are obtained from the reference Rust implementation encoding real-world knowledge content into Core DNA v6.
+The following measurements are obtained from the reference Rust implementation encoding real-world knowledge content into Core DNA.
 
 **Test Case 1: "Bơi ếch" (Breaststroke).** Vietnamese text describing breaststroke swimming technique (323 bytes UTF-8), decomposed into 3 Knowledge Units:
 
@@ -483,7 +483,7 @@ The following measurements are obtained from the reference Rust implementation e
 | Core DNA KU #2 (Procedure: Swimming Cycle) — 9 instructions | ~38 bytes | — |
 | Core DNA KU #3 (Fact: Properties) — 3 instructions | ~14 bytes | — |
 | **Core DNA total (3 KUs)** | **88 bytes** | **3.7× smaller** |
-| CBOR v5 total | 1,053 bytes | 3.3× LARGER |
+
 
 **Test Case 2: Rocket Systems ("Tên lửa").** 1,078-byte Vietnamese text about rocket systems, decomposed into 5 Knowledge Units:
 
@@ -512,69 +512,13 @@ The smallest meaningful KU — a single `Triple(s, p, o)` with all three Concept
 
 $$|\text{wire}|_{\min} = \underbrace{1}_{\text{MAGIC}} + \underbrace{1}_{\text{VER\_META}} + \underbrace{1}_{\text{opcode}} + \underbrace{3}_{\text{3 × varint(Tier 0)}} + \underbrace{1}_{\text{END}} + \underbrace{2}_{\text{CRC-16}} = 9 \text{ bytes}$$
 
-A minimal fact with a certainty level adds only 3 bytes (1 opcode + 2 u16\_be), yielding ~12 bytes. By comparison, the equivalent v5 CBOR encoding of a minimal fact required approximately 264 bytes due to CBOR map overhead, field names, and the 10-byte header/trailer.
+A minimal fact with a certainty level adds only 3 bytes (1 opcode + 2 u16\_be), yielding ~12 bytes.
 
-### 4.7.3 Summary: v5 CBOR vs. v6 Core DNA
+### 4.7.3 Bandwidth Implications
 
-| Metric | v5 CBOR | v6 Core DNA | Improvement |
-|--------|---------|-------------|-------------|
-| "Bơi ếch" encoding | 1,053 B | 88 B | **12× smaller** |
-| vs. text (323 B) | 3.3× LARGER | 3.7× SMALLER | — |
-| Overhead per KU | ~100–300 B | ~5–40 B | ~10× less |
-| Minimum wire size | ~264 B | 5 B | **53× smaller** |
-| Fixed overhead | 10 B | 5 B | 50% reduction |
+At the typical KU size of 20–172 bytes (median ~60 bytes), a 2G cellular connection (50 Kbps) can transmit approximately 104 KUs per second, while a 4G connection (10 Mbps) achieves approximately 20,800 KUs per second. These throughput figures confirm that the Core DNA wire format is viable for real-time knowledge synchronization on bandwidth-constrained mobile devices.
 
-### 4.7.4 Bandwidth Implications
-
-At the typical v6 KU size of 20–172 bytes (median ~60 bytes), a 2G cellular connection (50 Kbps) can transmit approximately 104 KUs per second, while a 4G connection (10 Mbps) achieves approximately 20,800 KUs per second. These throughput figures represent a 7× improvement over the v5 CBOR format's median of 450 bytes, confirming that the Core DNA wire format is viable for real-time knowledge synchronization on bandwidth-constrained mobile devices.
-
-## 4.8 Backward Compatibility
-
-### 4.8.1 Auto-Detection via Magic Bytes
-
-The `decode_any()` function provides a unified decoder that accepts *both* v4/v5 CBOR and v6 Core DNA wire formats and returns a `KnowledgeUnit`. Format detection examines the first two bytes:
-
-```
-function decode_any(data: &[u8]) → KnowledgeUnit:
-    if data.len() < 2:
-        error("Insufficient data")
-
-    if data[0] == 0x4B and data[1] == 0x44:
-        return decode_cbor_v4v5(data)           // Two-byte magic "KD" → CBOR
-
-    elif data[0] == 0x4B:
-        dna = decode_core_dna(data)             // Single-byte magic 'K' → Core DNA
-        return core_dna_to_ku(dna)              // Bridge to KnowledgeUnit
-
-    else:
-        error("Unknown wire format")
-```
-
-```mermaid
-flowchart TD
-    A["data[0] == 0x4B?"] -->|Yes| B["data[1] == 0x44?"]
-    A -->|No| C["❌ Unknown format"]
-    B -->|Yes| D["📦 v4/v5 CBOR decoder"]
-    B -->|No| E["🧬 v6 Core DNA decoder"]
-```
-
-### 4.8.2 Detection Correctness
-
-The detection relies on the observation that v4/v5 CBOR uses the two-byte magic `0x4B 0x44` (ASCII `"KD"`), while v6 Core DNA uses `0x4B` followed by a VER\_META byte that *cannot* be `0x44` in practice. Specifically, `0x44 = 0b01000100` would decode to `version=2, gene_type=2, has_qualifiers=false` — a combination that is reserved. The detection logic checks for `0x44` first (CBOR takes priority), ensuring unambiguous dispatch.
-
-### 4.8.3 Roundtrip Fidelity
-
-The conversion pipeline between formats follows a layered fidelity model:
-
-$$\text{KU} \xrightarrow{\text{lossy}} \text{CoreDna} \xrightarrow{\text{lossless}} \text{bytes} \xrightarrow{\text{lossless}} \text{CoreDna} \xrightarrow{\text{inflatable}} \text{KU}'$$
-
-- **KU → CoreDna:** Lossy. Trust metadata, bonds, qualifiers, epistemic status, and epigenetic state are dropped — they reside in the Epigenetics layer, not in the Core DNA.
-- **CoreDna ↔ bytes:** Lossless, bit-perfect roundtrip, CRC-verified.
-- **CoreDna → KU':** Inflatable. Missing metadata fields are restored to defaults (`bonds=[]`, `trust=None`, `epistemic_status=None`, etc.).
-
-> For full-fidelity persistence of a KnowledgeUnit including bonds, trust, and epigenetics, the CBOR v4/v5 encoder remains available. Core DNA is optimized for compact, network-efficient transmission of the essential knowledge content — the semantic "genes."
-
-## 4.9 Three-Tier Encoding Pipeline
+## 4.8 Three-Tier Encoding Pipeline
 
 ### 4.9.1 Overview
 
@@ -694,7 +638,7 @@ Encoding participation is compensated through OBT token rewards, proportional to
 | Corrector | 3× | Found and fixed encoding errors |
 | Pro-Bono | 2× + bonus | Encoded for a node without AI capability |
 
-OBT rewards are **internal accounting credits** that compensate AI compute cost — they are not cryptocurrency tokens and carry no speculative value. The reward model incentivises verification participation while the corrector multiplier creates a natural error-detection bounty.
+OBT rewards are **utility tokens** that incentivize knowledge contribution, encoding, verification, and storage. Value derives from knowledge utility, not speculation — see the OBT specification (docs/specs/obt/) for the complete tokenomics design. The reward model incentivises verification participation while the corrector multiplier creates a natural error-detection bounty.
 
 #### 4.9.4.6 Relationship to PoMV
 

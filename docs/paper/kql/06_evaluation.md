@@ -8,12 +8,12 @@
 
 | Module | File | LOC | Purpose |
 |--------|------|----:|---------|
-| AST | [ast.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/ast.rs) | 361 | 30+ AST node types: Query, Pattern, Condition, Value, etc. |
-| Parser | [parser.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/parser.rs) | 1,310 | nom-based recursive descent parser, 6 query types |
-| Executor | [executor.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/executor.rs) | 1,124 | Local executor: FIND/CREATE/UPDATE/DEPRECATE/WATCH/EXPLAIN |
-| Storage | [storage.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/storage.rs) | 366 | redb-backed ACID persistent storage, BLAKE3 CID indexing |
-| lib.rs | [lib.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/lib.rs) | 14 | Module exports |
-| **Subtotal** | | **3,175** | |
+| AST | [ast.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/ast.rs) | 402 | 30+ AST node types: Query, Pattern, Condition, Value, etc. |
+| Parser | [parser.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/parser.rs) | 1,456 | nom-based recursive descent parser, 6 query types |
+| Executor | [executor.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/executor.rs) | 1,263 | Local executor: FIND/CREATE/UPDATE/DEPRECATE/WATCH/EXPLAIN |
+| Storage | [storage.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/storage.rs) | 447 | redb-backed ACID persistent storage, BLAKE3 CID indexing |
+| lib.rs | [lib.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/lib.rs) | 15 | Module exports |
+| **Subtotal** | | **3,583** | |
 
 *Table 5: KQL core modules.*
 
@@ -37,7 +37,7 @@
 
 *Table 6: Distributed query engine modules.*
 
-**Combined total:** ~3,175 LOC (core) + ~2,859 LOC (distributed) ≈ **~6,034 LOC** across 17 modules.
+**Combined total:** ~3,583 LOC (core) + ~2,859 LOC (distributed) ≈ **~6,442 LOC** across 17 modules.
 
 ### 6.1.2 Dependencies
 
@@ -53,7 +53,7 @@ All dependencies are pure Rust — enabling cross-compilation to mobile and WebA
 
 ## 6.2 Test Coverage
 
-### 6.2.1 Parser Tests (28 tests)
+### 6.2.1 Parser Tests (34 tests)
 
 | Test | Validates |
 |------|-----------|
@@ -86,7 +86,7 @@ All dependencies are pure Rust — enabling cross-compilation to mobile and WebA
 | `test_parse_trailing_input_rejected` | Rejects trailing garbage |
 | `test_parse_multiple_aggregations` | Multiple aggregations in RETURN |
 
-### 6.2.2 Executor Tests (23 tests)
+### 6.2.2 Executor Tests (24 tests)
 
 | Test | Validates |
 |------|-----------|
@@ -164,7 +164,7 @@ The integration test suite ([query_integration.rs](file:///c:/Users/shpy2/Docume
 
 | Feature | SQL | SPARQL | Cypher | **KQL** |
 |---------|-----|--------|--------|---------|
-| **LOC** | N/A (spec) | N/A (spec) | N/A (spec) | ~3,175 (core) + ~2,859 (distributed) |
+| **LOC** | N/A (spec) | N/A (spec) | N/A (spec) | ~3,583 (core) + ~2,859 (distributed) |
 | **Data model** | Relational | RDF triples | Property graph | Knowledge Units |
 | **Parser** | Yacc/Bison | Custom | ANTLR | nom (Rust) |
 | **Query types** | SELECT/INSERT/UPDATE/DELETE | SELECT/CONSTRUCT/ASK/DESCRIBE | MATCH/CREATE/MERGE/DELETE | FIND/CREATE/UPDATE/DEPRECATE/WATCH/EXPLAIN |

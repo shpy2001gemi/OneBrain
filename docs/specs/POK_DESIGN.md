@@ -44,7 +44,7 @@ graph LR
     POMV --> ES["Epistemic Status"]
 ```
 
-### Signal 1: Metabolism (Weight: 0.25)
+### Signal 1: Metabolism (Weight: 0.35)
 
 **Source**: `metabolism.rs`, `metabolism_store.rs`
 
@@ -77,7 +77,7 @@ Measures whether the KU's predictions come true:
 - Correct predictions → higher score
 - Failed predictions → lower score (but refutable ≠ worthless)
 
-### Signal 3: Entropy (Weight: 0.20)
+### Signal 3: Entropy (Weight: 0.10)
 
 **Source**: `entropy.rs`
 
@@ -89,7 +89,7 @@ $$E = novelty \cdot (1 + bridge\_bonus) \cdot decay(age)$$
 - **Bridge bonus**: Cross-domain connections increase entropy
 - **Decay**: Novelty diminishes over time (entropy decay period: configurable)
 
-### Signal 4: Survival (Weight: 0.15)
+### Signal 4: Survival (Weight: 0.10)
 
 **Source**: `immune.rs`
 
@@ -113,7 +113,7 @@ $$S = \frac{\sum strength_i}{\sqrt{bond\_count + 1}}$$
 - Bonds evaporate over time (periodic `evaporate()` call)
 - Normalized to [0, 1]
 
-### Signal 6: Niche Fitness (Weight: 0.10)
+### Signal 6: Niche Fitness (Weight: 0.15)
 
 **Source**: `ecosystem.rs`
 
@@ -128,12 +128,12 @@ Ecological competition within knowledge domains (niches):
 
 ```rust
 pub struct PomvWeights {
-    pub metabolism: f32,    // 0.25
+    pub metabolism: f32,    // 0.35
     pub prediction: f32,   // 0.15
-    pub entropy: f32,      // 0.20
-    pub survival: f32,     // 0.15
+    pub entropy: f32,      // 0.10
+    pub survival: f32,     // 0.10
     pub synaptic: f32,     // 0.15
-    pub niche: f32,        // 0.10
+    pub niche: f32,        // 0.15
 }
 
 // Final score
@@ -299,6 +299,8 @@ Merge strategy: `merged[node] = max(local[node], remote[node])`
 | `eigentrust.rs` | EigenTrust computation |
 | `spread_analysis.rs` | SpreadAnalysis |
 | `ku_lifecycle.rs` | KuLifecycle (KuRuntime ↔ PomvRuntime) |
+| `obt_integration.rs` | KU↔OBT bridge: builds FormulaInputs from PoMV scores |
+| `obt_minting.rs` | Uses pomv_score for R1 owner reward calculation |
 
 ---
 
@@ -308,7 +310,7 @@ Merge strategy: `merged[node] = max(local[node], remote[node])`
 |----------|--------|-----------|
 | No voting | PoMV observes usage | Voting is subjective and gameable |
 | No blockchain | CRDT counters | Blockchain is heavy, slow, and centralizing |
-| No token economics | Pure usage metrics | Tokens incentivize gaming, not quality. **Note**: OBT rewards for encoding verification are internal accounting credits, not cryptocurrency — they compensate AI compute, not knowledge quality |
+| OBT utility token | Value = knowledge utility, not speculation | PoMV scores feed into OBT reward formula (R1). OBT token is a full utility token with Account-Chain ledger — see docs/specs/obt/ for complete specification |
 | Anti-fragile | Refutation = positive | Challenged knowledge that survives is stronger |
 | Local computation | Each node runs tick() | No central server, fully distributed |
 | Half-life decay | 30 days default | Knowledge that stops being used naturally fades |

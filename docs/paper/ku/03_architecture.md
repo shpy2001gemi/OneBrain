@@ -14,11 +14,11 @@ Concepts are represented exclusively as numeric identifiers (`ConceptId: u64`), 
 
 ### Principle 2: Content Addressing
 
-Every serialised KU is identified by its BLAKE3 content identifier (CID). The CID is computed deterministically over the canonical Core DNA wire bytes of the unit's payload (or, for legacy v4/v5 units, over the CBOR-encoded byte sequence). Two KUs with identical content will always produce the same CID; a single-bit mutation produces a completely different identifier. Content addressing provides three guarantees simultaneously: (a) deduplication is trivially detectable via CID comparison, (b) integrity verification requires only recomputing the hash, and (c) immutability is enforced without requiring a centralised authority—once a KU is published, its CID is its permanent, tamper-evident name.
+Every serialised KU is identified by its BLAKE3 content identifier (CID). The CID is computed deterministically over the canonical Core DNA wire bytes of the unit's payload. Two KUs with identical content will always produce the same CID; a single-bit mutation produces a completely different identifier. Content addressing provides three guarantees simultaneously: (a) deduplication is trivially detectable via CID comparison, (b) integrity verification requires only recomputing the hash, and (c) immutability is enforced without requiring a centralised authority—once a KU is published, its CID is its permanent, tamper-evident name.
 
 ### Principle 3: Incremental Parseability
 
-The Core DNA wire format is designed as a sequential instruction stream terminated by an explicit `END` marker (`0xF0`). Each instruction is self-delimiting: the opcode byte determines the operand count and types, so a decoder can skip unknown instructions without losing synchronisation. A query engine that needs only `TRIPLE` instructions can ignore `STEP`, `AFFECT`, and other opcodes. For legacy v4/v5 units, a length-prefixed CBOR structure provides equivalent skip-ahead capability. Incremental parseability is essential for constrained environments (embedded devices, edge nodes) and for network protocols where partial KU exchange reduces bandwidth.
+The Core DNA wire format is designed as a sequential instruction stream terminated by an explicit `END` marker (`0xF0`). Each instruction is self-delimiting: the opcode byte determines the operand count and types, so a decoder can skip unknown instructions without losing synchronisation. A query engine that needs only `TRIPLE` instructions can ignore `STEP`, `AFFECT`, and other opcodes. Incremental parseability is essential for constrained environments (embedded devices, edge nodes) and for network protocols where partial KU exchange reduces bandwidth.
 
 ### Principle 4: Evolutionary Extensibility
 
@@ -30,7 +30,7 @@ Every mutable field in the KU architecture uses an appropriate Conflict-free Rep
 
 ### Principle 6: Wire Efficiency
 
-A minimal Fact-type KU—one triple, no bonds, no trust metadata—serialises to approximately **16 bytes** in the Core DNA v6 wire format, down from ~264 bytes in the legacy CBOR v5 format. This figure includes the 1-byte magic (`0x4B`), 1-byte `VER_META`, the instruction stream, the `END` marker (`0xF0`), and the trailing CRC-16 checksum. A richer KU with multiple triples, procedural steps, and metadata instructions typically occupies **16–88 bytes**—consistently *smaller than the equivalent natural-language text* in UTF-8. By using varint encoding for concept IDs (1–4 bytes depending on tier), typed numeric values (`NumericValue` enum selecting the minimal wire width), and structured opcodes that replace entire grammatical patterns with single bytes, the Core DNA format achieves information density that surpasses hand-tuned binary protocols.
+A minimal Fact-type KU—one triple, no bonds, no trust metadata—serialises to approximately **16 bytes** in the Core DNA wire format. This figure includes the 1-byte magic (`0x4B`), 1-byte `VER_META`, the instruction stream, the `END` marker (`0xF0`), and the trailing CRC-16 checksum. A richer KU with multiple triples, procedural steps, and metadata instructions typically occupies **16–88 bytes**—consistently *smaller than the equivalent natural-language text* in UTF-8. By using varint encoding for concept IDs (1–4 bytes depending on tier), typed numeric values (`NumericValue` enum selecting the minimal wire width), and structured opcodes that replace entire grammatical patterns with single bytes, the Core DNA format achieves information density that surpasses hand-tuned binary protocols.
 
 ### Principle 7: Bio-Inspired Throughout
 
@@ -40,7 +40,7 @@ The biological metaphor is not decorative; it is carried to the implementation l
 
 ## 3.2 Three-Layer Architecture Overview
 
-The v6 KU architecture splits a Knowledge Unit into three orthogonal layers, each optimised for a distinct concern: persistence, runtime management, and human consumption. The layers are designed so that any layer can be omitted, extended, or replaced without affecting the others.
+The KU architecture splits a Knowledge Unit into three orthogonal layers, each optimised for a distinct concern: persistence, runtime management, and human consumption. The layers are designed so that any layer can be omitted, extended, or replaced without affecting the others.
 
 ```mermaid
 graph TB
@@ -83,24 +83,9 @@ graph TB
     style L3 fill:#7d3c98,stroke:#8e44ad,color:#ecf0f1
 ```
 
-### 3.2.1 Migration from Five-Layer to Three-Layer
+### 3.2.1 Design Rationale
 
-The v6 architecture consolidates the previous five layers into three. The following table maps the original layers to their new locations:
-
-**Table 3.0.** Five-to-three layer migration mapping.
-
-| v4/v5 Layer | v6 Layer | Rationale |
-|---|---|---|
-| L1 · Concept Codons | **Core DNA** | Codons are now encoded as opcode instructions (e.g., `TRIPLE`, `QUALITY`, `QUANTITY`). ConceptIDs remain language-agnostic varints. |
-| L2 · Relation Bonds | **Epigenetics** | Bonds are runtime metadata managed by the Epistemic Engine, not persisted in the Core DNA wire format. Bond structure is unchanged. |
-| L3 · Knowledge Genes | **Core DNA** | Gene content is expressed directly through the instruction set. The 11 gene types now use 4-bit direct encoding in `VER_META`. |
-| L4 · Trust Section | **Epigenetics** | Trust, evidence type, and PoMV signals are computed and stored at runtime in CBOR format (existing `types.rs` structs). |
-| L4.5 · Epigenetic Section | **Epigenetics** | Embeddings, temporal validity, KRL, SimHash, and version chains remain in the Epigenetics layer. |
-| *(new)* | **Expression** | Natural-language rendering is generated on-demand from Core DNA + ConceptDict. Never stored. |
-
-### 3.2.2 Design Rationale
-
-The consolidation was driven by a key insight: the legacy CBOR v5 format was **3.3× larger** than the original natural-language text. By separating the persistent encoding (Core DNA) from runtime metadata (Epigenetics) and ephemeral rendering (Expression), the v6 architecture achieves **3.7× smaller** wire size than text while preserving all semantic expressiveness. Only the Core DNA layer is persisted to disk or transmitted over the network; the Epigenetics layer is managed by local subsystems (Epistemic Engine, Metabolism Store), and the Expression layer is regenerated on demand.
+The three-layer separation was driven by a key insight: by separating the persistent encoding (Core DNA) from runtime metadata (Epigenetics) and ephemeral rendering (Expression), the architecture achieves wire sizes consistently **smaller than natural-language text** while preserving all semantic expressiveness. Only the Core DNA layer is persisted to disk or transmitted over the network; the Epigenetics layer is managed by local subsystems (Epistemic Engine, Metabolism Store), and the Expression layer is regenerated on demand.
 
 ### 3.2.3 Biological Analogy
 
@@ -178,7 +163,7 @@ The instruction set is designed so that any *type* of knowledge—facts, procedu
 
 ### 3.3.2 Codons as Instructions
 
-In the v4/v5 architecture, the **codon** was the smallest semantic unit, defined as a triple $\langle c, r, Q \rangle$. In the v6 Core DNA architecture, codons are no longer a distinct layer; instead, each codon maps directly to one or more opcode instructions. The formal definition is preserved for backward compatibility:
+In the Core DNA architecture, the **codon** is the smallest semantic unit, defined as a triple $\langle c, r, Q \rangle$. Each codon maps directly to one or more opcode instructions. The formal definition is:
 
 A **codon** is a triple:
 
@@ -215,7 +200,7 @@ This encoding ensures that the most frequently referenced concepts consume the f
 
 ### 3.3.4 Semantic Roles
 
-The `RoleId` enumeration defines 14 semantic roles, each assigned a fixed byte value. These roles are inspired by case grammar (Fillmore, 1968) and thematic role theory (Dowty, 1991), extended with two compound-concept roles introduced in v4.
+The `RoleId` enumeration defines 14 semantic roles, each assigned a fixed byte value. These roles are inspired by case grammar (Fillmore, 1968) and thematic role theory (Dowty, 1991), extended with two compound-concept roles for complex concept composition.
 
 **Table 3.2.** Complete RoleId enumeration.
 
@@ -233,10 +218,10 @@ The `RoleId` enumeration defines 14 semantic roles, each assigned a fixed byte v
 | `0x0A` | `Quantity` | Measure | Numeric amount or magnitude |
 | `0x0B` | `Quality` | Attribute | Qualitative property or characteristic |
 | `0x0C` | `Purpose` | Benefactive / Purpose | The goal or intended benefit |
-| `0x0D` | `CompoundHead` | Head (X-bar) | Head of a compound concept (v4) |
-| `0x0E` | `CompoundMod` | Modifier / Adjunct | Modifier of a compound concept (v4) |
+| `0x0D` | `CompoundHead` | Head (X-bar) | Head of a compound concept |
+| `0x0E` | `CompoundMod` | Modifier / Adjunct | Modifier of a compound concept |
 
-The `CompoundHead` and `CompoundMod` roles, introduced in v4, enable the representation of complex concepts as compositional structures. For example, the concept *"sea level atmospheric pressure"* can be decomposed into a head concept (*atmospheric pressure*) modified by a location concept (*sea level*), without requiring a dedicated concept ID for every possible compound.
+The `CompoundHead` and `CompoundMod` roles enable the representation of complex concepts as compositional structures. For example, the concept *"sea level atmospheric pressure"* can be decomposed into a head concept (*atmospheric pressure*) modified by a location concept (*sea level*), without requiring a dedicated concept ID for every possible compound.
 
 ### 3.3.5 Qualifiers
 
@@ -265,7 +250,7 @@ To illustrate Core DNA encoding concretely, consider the scientific fact *"Water
 | Sea level | `1044` (Tier 1) |
 | Standard pressure | `1045` (Tier 1) |
 
-**Core DNA instruction stream (v6):**
+**Core DNA instruction stream:**
 
 ```
 0x4B                         — Magic byte
@@ -279,24 +264,13 @@ VER_META (gene_type=0 Fact)  — Version + gene type
 [CRC-16]                     — Integrity checksum
 ```
 
-This instruction stream serialises to approximately **18–22 bytes**, depending on the varint lengths of the concept IDs. Compare this to the equivalent v4/v5 codon representation:
-
-```
-Codon₁ = ⟨ 42,   Agent,     ∅ ⟩           — Water (the subject)
-Codon₂ = ⟨ 187,  Object,    ∅ ⟩           — Boiling (the process)
-Codon₃ = ⟨ 91,   Quality,   {("value", Integer(100)),
-                               ("unit",  Concept(203))} ⟩  — 100°C
-Codon₄ = ⟨ 1044, Condition, ∅ ⟩           — At sea level
-Codon₅ = ⟨ 1045, Condition, ∅ ⟩           — Standard pressure
-```
-
-The codon representation serialised to approximately 35–45 bytes in CBOR. The Core DNA instruction set achieves the same semantic content in roughly half the space, while the qualifier on `Codon₃` is naturally expressed as a `QUANTITY` instruction with typed numeric value and unit operands. The semantic content is fully preserved, entirely language-independent, and directly queryable.
+This instruction stream serialises to approximately **18–22 bytes**, depending on the varint lengths of the concept IDs. The semantic content is fully preserved, entirely language-independent, and directly queryable.
 
 ---
 
 ## 3.4 Epigenetics Layer: Relation Bonds
 
-> **Architectural note.** In the v6 three-layer architecture, Bonds belong to the **Epigenetics layer**—they are runtime metadata managed by the Epistemic Engine and Metabolism Store, not persisted in the Core DNA wire format. The Bond data structure and its semantics are unchanged from v4/v5; only its storage location has moved from the persisted payload to the runtime metadata store (CBOR-encoded `types.rs` structs).
+> **Architectural note.** Bonds belong to the **Epigenetics layer**—they are runtime metadata managed by the Epistemic Engine and Metabolism Store, not persisted in the Core DNA wire format.
 
 ### 3.4.1 Overview
 
@@ -380,7 +354,7 @@ graph LR
         G3["ReviewedBy 0x62"]
     end
     
-    subgraph H["H · Experiential (v4)"]
+    subgraph H["H · Experiential"]
         H1["ReactionTo 0x70"]
         H2["TestimonyAbout 0x71"]
         H3["FormallyProves 0x72"]
@@ -439,7 +413,7 @@ graph LR
 | | `0x75` | `SensoryEvidenceFor` | This KU provides sensory data supporting target |
 | | `0x76` | `CulturallyContextualizes` | This KU provides cultural framing for target |
 
-Category H (Experiential) was introduced in v4 to support first-person knowledge, sensory evidence, and cultural contextualisation—capabilities absent from prior versions and from most existing knowledge representation systems.
+Category H (Experiential) supports first-person knowledge, sensory evidence, and cultural contextualisation—capabilities absent from most existing knowledge representation systems.
 
 ### 3.4.4 Edge Weight Decay Model
 
@@ -468,7 +442,7 @@ The reinforcement bonus $(1 + 0.1 \times n_{\text{reinforce}})$ ensures that fre
 
 The gene type classifies the kind of knowledge a KU encodes—the *what* of the content payload. The KU architecture defines 11 gene types, reflecting the observation that human knowledge is not monolithic but falls into qualitatively distinct categories that demand different structural representations.
 
-In the v6 Core DNA format, gene types are encoded using a **4-bit direct scheme** within the `VER_META` byte (bits 0–3), supporting all 11 types without an extension mechanism. The remaining 4 bits (bits 4–7) encode the format version. In the legacy v4/v5 format, gene types used a two-tier scheme within the `FLAGS` byte (3-bit direct for types 0–6, `EXTENDED` byte for types 7+).
+Gene types are encoded using a **4-bit direct scheme** within the `VER_META` byte (bits 0–3), supporting all 11 types without an extension mechanism. The remaining 4 bits (bits 4–7) encode the format version.
 
 ```rust
 #[repr(u8)]
@@ -487,7 +461,7 @@ pub enum GeneType {
 }
 ```
 
-> **Note on Core DNA mapping.** In v6, the gene type determines the *expected* instruction patterns in the Core DNA stream, but the content itself is expressed through the 32-opcode instruction set (§3.3.1). For example, a Fact gene typically contains `TRIPLE`, `QUALITY`, `QUANTITY`, and `CERTAINTY` instructions; a Procedure gene contains `STEP`, `PRECOND`, `EFFECT`, and `TOOL` instructions. The Epigenetics layer (§3.6–§3.7) retains the full `Gene` enum for backward compatibility with runtime processing.
+> **Note on Core DNA mapping.** The gene type determines the *expected* instruction patterns in the Core DNA stream, but the content itself is expressed through the 32-opcode instruction set (§3.3.1). For example, a Fact gene typically contains `TRIPLE`, `QUALITY`, `QUANTITY`, and `CERTAINTY` instructions; a Procedure gene contains `STEP`, `PRECOND`, `EFFECT`, and `TOOL` instructions.
 
 ### 3.5.2 Type 0: Fact Gene
 
@@ -595,7 +569,7 @@ Gene::Creative {
 }
 ```
 
-### 3.5.6 Type 4: MediaExperience Gene (v4)
+### 3.5.6 Type 4: MediaExperience Gene
 
 The MediaExperience gene encodes reactions to media works (films, books, music, games) with structured affect and spoiler management.
 
@@ -610,7 +584,7 @@ Gene::MediaExperience {
 }
 ```
 
-### 3.5.7 Type 5: Testimony Gene (v4)
+### 3.5.7 Type 5: Testimony Gene
 
 The Testimony gene represents witness accounts and eyewitness reports, capturing claim characteristics, witness reliability metadata, and verification status.
 
@@ -625,7 +599,7 @@ Gene::Testimony {
 }
 ```
 
-### 3.5.8 Type 6: Formal Gene (v4)
+### 3.5.8 Type 6: Formal Gene
 
 The Formal gene captures mathematical, logical, and scientific formalisms in their native notation.
 
@@ -639,7 +613,7 @@ Gene::Formal {
 }
 ```
 
-### 3.5.9 Type 7: Hypothesis Gene (v4, EXTENDED 0x00)
+### 3.5.9 Type 7: Hypothesis Gene
 
 The Hypothesis gene represents knowledge in draft or speculative form, with explicit maturity tracking that enables a KU to graduate from intuition to established fact.
 
@@ -657,7 +631,7 @@ Gene::Hypothesis {
 
 The `maturity_level` field provides an 8-point Likert scale that tracks the hypothesis through the scientific method. A hypothesis at level 7 (`REPLICATED`) with high confidence is a candidate for promotion to a Fact gene via the `EvolvesInto` bond type—a computational analog of the peer review process.
 
-### 3.5.10 Type 8: Narrative Gene (v4, EXTENDED 0x01)
+### 3.5.10 Type 8: Narrative Gene
 
 The Narrative gene represents myths, folktales, legends, parables, and other narrative forms of knowledge transmission.
 
@@ -673,7 +647,7 @@ Gene::Narrative {
 }
 ```
 
-### 3.5.11 Type 9: Sensory Gene (v4, EXTENDED 0x02)
+### 3.5.11 Type 9: Sensory Gene
 
 The Sensory gene captures raw or processed sensory observations with explicit modality, sensor characterisation, and quality metadata.
 
@@ -693,7 +667,7 @@ Gene::Sensory {
 
 ## 3.6 Epigenetics Layer: Trust Section
 
-> **Architectural note.** In the v6 three-layer architecture, the Trust Section belongs to the **Epigenetics layer**—it is computed and maintained at runtime by the Epistemic Engine, not stored in the Core DNA wire format. The `CERTAINTY` instruction in Core DNA captures a snapshot of the trust score at encoding time; the full Trust Section is managed separately in CBOR format.
+> **Architectural note.** The Trust Section belongs to the **Epigenetics layer**—it is computed and maintained at runtime by the Epistemic Engine, not stored in the Core DNA wire format. The `CERTAINTY` instruction in Core DNA captures a snapshot of the trust score at encoding time; the full Trust Section is managed separately.
 
 ### 3.6.1 Rationale
 
@@ -854,7 +828,7 @@ The PoMV subsystem provides six bio-inspired metrics that collectively assess a 
 
 ## 3.7 Epigenetics Layer: Epigenetic Section
 
-> **Architectural note.** The Epigenetic Section, like the Trust Section (§3.6), belongs to the **Epigenetics layer** in the v6 architecture. It is maintained at runtime and not persisted in the Core DNA wire format.
+> **Architectural note.** The Epigenetic Section, like the Trust Section (§3.6), belongs to the **Epigenetics layer**. It is maintained at runtime and not persisted in the Core DNA wire format.
 
 ### 3.7.1 Rationale
 
@@ -958,7 +932,7 @@ pub struct KnowledgeUnit {
     // === Core DNA (Layer 1 — persisted) ===
     pub codons: Vec<Codon>,          // Decoded from Core DNA instructions
     pub gene: Gene,                   // Content payload (11 gene types)
-    pub flags: HeaderFlags,           // Header flags (legacy v4/v5)
+    pub flags: HeaderFlags,           // Header flags
 
     // === Epigenetics (Layer 2 — runtime) ===
     pub bonds: Vec<Bond>,             // Relation bonds (33 types)
@@ -974,7 +948,7 @@ pub struct KnowledgeUnit {
 
 ### 3.8.2 Header and `VER_META` Byte
 
-In the v6 Core DNA format, the legacy `HeaderFlags` struct is replaced by the `VER_META` byte, which packs the format version and gene type into a single byte:
+In the Core DNA format, the `HeaderFlags` struct is replaced by the `VER_META` byte, which packs the format version and gene type into a single byte:
 
 ```
 VER_META byte layout:
@@ -984,11 +958,11 @@ Bit:  7  6  5  4  3  2  1  0
       (4 bits)    (4 bits, 0–10)
 ```
 
-The legacy `HeaderFlags` struct (packing boolean flags and gene type into bits 0–7) is retained for backward compatibility with v4/v5 CBOR-encoded KUs.
+The `HeaderFlags` struct packs boolean flags and gene type into bits 0–7.
 
 ### 3.8.3 Wire Format
 
-The v6 Core DNA wire format is:
+The Core DNA wire format is:
 
 ```
 ┌──────────┬──────────┬──────────────────────────────┬───────┬───────┐
@@ -1000,23 +974,12 @@ The v6 Core DNA wire format is:
 
 The magic byte `0x4B` encodes "K" (Knowledge). The `VER_META` byte packs the format version (bits 4–7) and gene type (bits 0–3). The instruction stream contains a variable number of opcode instructions terminated by the `END` marker (`0xF0`). The trailing CRC-16/CCITT provides integrity verification for transport.
 
-For backward compatibility, the legacy v4/v5 CBOR wire format is also supported:
-
-```
-┌──────────┬─────────┬───────┬─────────────┬──────────────────┬───────┐
-│ MAGIC    │ VERSION │ FLAGS │ PAYLOAD_LEN │ PAYLOAD (CBOR)   │ CRC32 │
-│ 0x4B44   │ 0x04    │ u8    │ u16         │ variable         │ u32   │
-│ 2 bytes  │ 1 byte  │ 1 byte│ 2 bytes     │ ≤65535 bytes     │ 4 bytes│
-└──────────┴─────────┴───────┴─────────────┴──────────────────┴───────┘
-```
-
-The `decode_any()` function auto-detects the wire format by inspecting the first two bytes: `0x4B 0x44` indicates CBOR v4/v5, while `0x4B` followed by any non-`0x44` byte indicates Core DNA v6.
 
 ### 3.8.4 Integration Diagram
 
 ```mermaid
 graph TB
-    subgraph Wire["v6 Core DNA Wire Format"]
+    subgraph Wire["Core DNA Wire Format"]
         MAGIC["MAGIC 0x4B"]
         VM["VER_META (u8)"]
         CRC["CRC-16"]
@@ -1085,15 +1048,15 @@ graph TB
 
 **Table 3.8.** Approximate wire sizes for representative KU configurations.
 
-| Configuration | Core DNA (v6) | Epigenetics (runtime) | Legacy CBOR (v5) | Ratio vs Text |
-|---|---|---|---|---|
-| Minimal fact (1 triple) | **~16 B** | — | ~264 B | 1.3× smaller |
-| Typical fact (2 triples + certainty) | **~28 B** | Basic trust | ~420 B | 3.7× smaller |
-| Rich experience (VAD + sensory) | **~52 B** | Full trust + embeddings | ~1,200 B | 4.2× smaller |
-| Full procedure (10 steps) | **~88 B** | Full trust + metabolism | ~2,100 B | 6.3× smaller |
-| Composite (multi-KU aggregation) | **~172 B** | Full + PoMV + embeddings | ~3,500 B | 6.3× smaller |
+| Configuration | Core DNA | Epigenetics (runtime) | Ratio vs Text |
+|---|---|---|---|
+| Minimal fact (1 triple) | **~16 B** | — | 1.3× smaller |
+| Typical fact (2 triples + certainty) | **~28 B** | Basic trust | 3.7× smaller |
+| Rich experience (VAD + sensory) | **~52 B** | Full trust + embeddings | 4.2× smaller |
+| Full procedure (10 steps) | **~88 B** | Full trust + metabolism | 6.3× smaller |
+| Composite (multi-KU aggregation) | **~172 B** | Full + PoMV + embeddings | 6.3× smaller |
 
-The Core DNA wire size is consistently **smaller than the equivalent natural-language text** in UTF-8, and **12–14× smaller** than the legacy CBOR v5 format. Epigenetics metadata is stored separately at runtime and does not contribute to the wire size for persistence or network transmission.
+The Core DNA wire size is consistently **smaller than the equivalent natural-language text** in UTF-8. Epigenetics metadata is stored separately at runtime and does not contribute to the wire size for persistence or network transmission.
 
 ### 3.8.6 Optionality and Graceful Degradation
 
@@ -1105,4 +1068,4 @@ The three-layer architecture enables graceful degradation by design. A minimal K
 
 The three-layer KU architecture achieves a rare combination of properties: language independence, content addressability, type safety, epistemic rigour, wire efficiency, and biological coherence. **Core DNA** (Layer 1) provides the persistent binary encoding—32 opcodes capture semantic relationships, procedural steps, causal chains, experiential affect, and structural patterns in a wire format consistently smaller than natural-language text. **Epigenetics** (Layer 2) provides the runtime metadata layer—bonds, trust, metabolism, embeddings, and version chains govern how knowledge is connected, assessed, discovered, and evolved without altering the underlying DNA. **Expression** (Layer 3) provides the ephemeral rendering layer—natural language text generated on-demand from Core DNA and the ConceptDict, enabling multilingual output without storing any language-specific data.
 
-The consolidation from five layers (v4/v5) to three layers (v6) was driven by the insight that separating persistent encoding from runtime metadata yields a **12–14× reduction** in wire size while preserving all semantic expressiveness. Together, these layers define a data structure that treats knowledge not as static text to be stored, but as a living entity—born, connected, assessed, discovered, and eventually deprecated—within a self-organising ecosystem governed by metabolic selection pressure.
+The three-layer separation was driven by the insight that separating persistent encoding from runtime metadata yields compact wire sizes while preserving all semantic expressiveness. Together, these layers define a data structure that treats knowledge not as static text to be stored, but as a living entity—born, connected, assessed, discovered, and eventually deprecated—within a self-organising ecosystem governed by metabolic selection pressure.

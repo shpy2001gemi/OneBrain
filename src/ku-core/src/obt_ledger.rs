@@ -235,26 +235,47 @@ impl TransferBlock {
 
     /// Verify the Ed25519 signature against the given public key.
     ///
-    /// **Stub implementation**: Returns `Ok(())` for 64-byte signatures,
-    /// `Err` for invalid length. Actual Ed25519 verification requires
-    /// the `ed25519-dalek` crate which lives in `ku-net`.
+    /// Verifies that `self.signature` is a valid Ed25519 signature over
+    /// `self.signing_payload()` using the provided public key bytes.
     ///
-    /// # Integration Plan
-    /// When `ku-net`'s crypto module is unified:
-    /// ```ignore
-    /// let pubkey = ed25519_dalek::VerifyingKey::from_bytes(pubkey)?;
-    /// let sig = ed25519_dalek::Signature::from_bytes(&self.signature)?;
-    /// pubkey.verify(&self.signing_payload(), &sig)?;
-    /// ```
-    pub fn validate_signature(&self, _pubkey: &[u8; 32]) -> Result<(), LedgerError> {
+    /// # Errors
+    /// - `InvalidSignatureLength` if signature is not 64 bytes
+    /// - `InvalidSignature` if the public key is invalid or signature doesn't verify
+    pub fn validate_signature(&self, pubkey: &[u8; 32]) -> Result<(), LedgerError> {
+        use ed25519_dalek::{Signature, VerifyingKey, Verifier};
+
         if self.signature.len() != 64 {
             return Err(LedgerError::InvalidSignatureLength {
                 expected: 64,
                 actual: self.signature.len(),
             });
         }
-        // TODO: Wire to ed25519-dalek in ku-net when crypto layer is unified.
-        // For now, accept all 64-byte signatures to enable ledger logic testing.
+
+        let verifying_key = VerifyingKey::from_bytes(pubkey)
+            .map_err(|_| LedgerError::InvalidSignature)?;
+
+        let sig_bytes: [u8; 64] = self.signature[..64]
+            .try_into()
+            .map_err(|_| LedgerError::InvalidSignature)?;
+        let signature = Signature::from_bytes(&sig_bytes);
+
+        let payload = self.signing_payload();
+        verifying_key.verify(&payload, &signature)
+            .map_err(|_| LedgerError::InvalidSignature)
+    }
+
+    /// Check only that the signature field has the correct length (64 bytes).
+    ///
+    /// This is a lightweight structural check that does NOT perform
+    /// cryptographic verification. Use `validate_signature()` for full
+    /// Ed25519 verification.
+    pub fn validate_signature_length(&self) -> Result<(), LedgerError> {
+        if self.signature.len() != 64 {
+            return Err(LedgerError::InvalidSignatureLength {
+                expected: 64,
+                actual: self.signature.len(),
+            });
+        }
         Ok(())
     }
 
@@ -734,6 +755,7 @@ impl std::error::Error for LedgerError {}
 // Helpers
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+
 /// Produce a deterministic byte representation of a VectorClock for hashing.
 ///
 /// Serialize a VectorClock to deterministic canonical bytes for hashing.
@@ -875,6 +897,66 @@ pub fn create_receive_block(
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Tests
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+/// Creates a signed TransferBlock using an Ed25519 signing key.
+///
+/// The block is first constructed with a stub signature to compute the
+/// signing payload, then signed with the provided key, and finally the
+/// block_hash is computed over the real signature.
+pub fn create_signed_block(
+    previous: [u8; 32],
+    account: [u8; 32],
+    sequence: u64,
+    balance: u64,
+    operation: TransferOp,
+    clock: VectorClock,
+    timestamp: u64,
+    signing_key: &ed25519_dalek::SigningKey,
+) -> TransferBlock {
+    use ed25519_dalek::Signer;
+
+    // Create block without signature first to compute signing payload
+    let mut block = TransferBlock {
+        previous,
+        account,
+        sequence,
+        balance,
+        operation,
+        clock,
+        timestamp,
+        signature: vec![0u8; 64],
+        block_hash: [0u8; 32],
+    };
+
+    let payload = block.signing_payload();
+    let sig = signing_key.sign(&payload);
+    block.signature = sig.to_bytes().to_vec();
+    block.block_hash = block.compute_hash();
+    block
+}
+
+/// Creates a signed genesis (Open) block using an Ed25519 signing key.
+///
+/// Convenience wrapper around `create_signed_block` for Open blocks.
+pub fn create_signed_open_block(
+    signing_key: &ed25519_dalek::SigningKey,
+    timestamp: u64,
+    node_id: u64,
+) -> TransferBlock {
+    let pubkey = signing_key.verifying_key().to_bytes();
+    let mut clock = VectorClock::new();
+    clock.tick(node_id);
+    create_signed_block(
+        GENESIS_BLOCK_PREVIOUS,
+        pubkey,
+        0,
+        0,
+        TransferOp::Open,
+        clock,
+        timestamp,
+        signing_key,
+    )
+}
 
 #[cfg(test)]
 mod tests {
@@ -1236,15 +1318,70 @@ mod tests {
         assert!(!p1.is_empty(), "payload must not be empty");
     }
 
-    // ─── Test 18: validate_signature length ────────────────────────────
+    // ─── Test 18: validate_signature_length (structural check) ───────────
 
     #[test]
     fn test_validate_signature_length() {
         let mut block = create_open_block(alice_pubkey(), 1000, 1);
-        // 64 bytes = valid
-        assert!(block.validate_signature(&alice_pubkey()).is_ok());
+        // 64 bytes = valid length
+        assert!(block.validate_signature_length().is_ok());
         // Wrong length = error
         block.signature = vec![0u8; 32];
-        assert!(block.validate_signature(&alice_pubkey()).is_err());
+        assert!(block.validate_signature_length().is_err());
+    }
+
+    // ─── Test 19: Real Ed25519 signature verification ──────────────────
+
+    #[test]
+    fn test_real_ed25519_signature_verification() {
+        use ed25519_dalek::SigningKey;
+        use rand::rngs::OsRng;
+
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let pubkey = signing_key.verifying_key().to_bytes();
+
+        let block = create_signed_open_block(&signing_key, 1000, 1);
+
+        // Real signature should verify
+        assert!(block.validate_signature(&pubkey).is_ok());
+
+        // Tampered block should fail (signature no longer matches payload)
+        let mut tampered = block.clone();
+        tampered.balance = 999999;
+        assert!(tampered.validate_signature(&pubkey).is_err());
+    }
+
+    // ─── Test 20: Wrong key signature fails ────────────────────────────
+
+    #[test]
+    fn test_wrong_key_signature_fails() {
+        use ed25519_dalek::SigningKey;
+        use rand::rngs::OsRng;
+
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let wrong_key = SigningKey::generate(&mut OsRng);
+        let wrong_pubkey = wrong_key.verifying_key().to_bytes();
+
+        // Sign with one key but verify against a different pubkey
+        let block = create_signed_open_block(&signing_key, 1000, 1);
+
+        assert!(block.validate_signature(&wrong_pubkey).is_err());
+    }
+
+    // ─── Test 21: Signed block hash is valid ───────────────────────────
+
+    #[test]
+    fn test_signed_block_hash_valid() {
+        use ed25519_dalek::SigningKey;
+        use rand::rngs::OsRng;
+
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let block = create_signed_open_block(&signing_key, 1000, 1);
+
+        // Hash should be valid
+        assert!(block.validate_hash().is_ok());
+        // Signature should be 64 bytes
+        assert_eq!(block.signature.len(), 64);
     }
 }
+

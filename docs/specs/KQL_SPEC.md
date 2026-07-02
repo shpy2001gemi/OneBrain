@@ -154,22 +154,60 @@ FIND (k:KU) WHERE k.encoding_status != "Raw" AND k.gene_type = "Definition"
 
 #### Extractable Fields
 
-Các field trích xuất được từ `KuRuntime::extract_field()`:
+Các field trích xuất được từ `KuRuntime::extract_field()` — tổng cộng **28 fields**:
 
-| Layer | Field | Kiểu |
+**Core DNA Fields** (instruction scan):
+
+| Field | Kiểu | Mô tả |
 |---|---|---|
-| CoreDna | `gene_type` | `Integer` |
-| CoreDna | `certainty` | `Integer` |
-| CoreDna | `concept_ids` | collection (dùng với CONTAINS) |
-| Epigenetics | `trust_score` | `Integer` (u16) |
-| Epigenetics | `confidence` | `Integer` (u16) |
-| Epigenetics | `verification_level` | `Integer` (u8) |
-| Epigenetics | `corroboration_count` | `Integer` (u16) |
-| Epigenetics | `challenge_count` | `Integer` (u16) |
-| Epigenetics | `metabolic_rate` | `Integer` (u16) |
-| Epigenetics | `epistemic_status` | `Text` |
-| Epigenetics | `evidence_type` | `Text` |
-| Epigenetics | `encoding_status` | `Text` (giá trị: `Raw`, `Self`, `Part`, `Full`) |
+| `gene_type` | `Text` | Tên gene type (Fact, Hypothesis, Experience, Procedure, Rule, Definition, Relation, Meta, Creative, Belief, FormalProof) |
+| `primary_concept` | `Integer` | Primary concept ID |
+| `certainty` | `Integer` | Certainty score (cast từ u16) |
+| `difficulty` | `Integer` | Difficulty score (cast từ u16) |
+| `instruction_count` | `Integer` | Số instructions trong CoreDna |
+| `has_triple` | `Bool` | Có TripleRelation gene hay không |
+| `has_step` | `Bool` | Có Step gene hay không |
+| `wire_size` | `Integer` | Wire format size (bytes) |
+
+**Epigenetics Fields** (direct access):
+
+| Field | Kiểu | Mô tả |
+|---|---|---|
+| `trust_score` | `Integer` | Composite trust score (u16 → i64) |
+| `confidence` | `Integer` | Confidence level (u16 → i64) |
+| `verification_level` | `Integer` | Verification level 0-4 (u8 → i64) |
+| `corroboration_count` | `Integer` | Số lần corroboration (u16 → i64) |
+| `challenge_count` | `Integer` | Số lần challenge (u16 → i64) |
+| `error_susceptibility` | `Integer` | Error susceptibility score (u16 → i64) |
+| `bond_count` | `Integer` | Số epistemic bonds |
+| `epistemic_status` | `Text` | Trạng thái nhận thức (Rumor, Hearsay, Testimony, Observation, Hypothesis, Evidence, Corroborated, PeerReviewed, Consensus, FormallyProven, Axiomatic) |
+| `evidence_type` | `Integer` | Evidence type (u8 → i64) |
+
+**PoMV Signal Fields**:
+
+| Field | Kiểu | Mô tả |
+|---|---|---|
+| `metabolic_rate` | `Integer` | PoMV metabolic rate (u16 → i64) |
+| `prediction_score` | `Integer` | Prediction accuracy score (u16 → i64) |
+| `entropy_at_creation` | `Integer` | Information entropy at creation (u16 → i64) |
+| `survival_score` | `Integer` | Evolutionary survival score (u16 → i64) |
+| `synaptic_centrality` | `Integer` | Network centrality (u16 → i64) |
+| `niche_fitness` | `Integer` | Ecological niche fitness (u16 → i64) |
+
+**Expression Fields**:
+
+| Field | Kiểu | Mô tả |
+|---|---|---|
+| `text` | `Text` | Text expression content |
+
+**System Fields**:
+
+| Field | Kiểu | Mô tả |
+|---|---|---|
+| `epi` | `Bool` | Epigenetics data tồn tại (always true trong v6) |
+| `expression` | `Bool` | Expression data tồn tại |
+| `encoding_status` | `Text` | Encoding status (Raw/Self/Part/Full) |
+| `cid` | `Text` | Content identifier (hex string) |
 
 ---
 
@@ -923,7 +961,7 @@ flowchart TD
 | AST (`ast.rs`) | ✅ Complete | 7 query types, 14 create clauses |
 | Executor (`executor.rs`) | ✅ Complete | Tất cả 7 query types |
 | Storage (`storage.rs`) | ✅ Complete | redb-backed, behind feature flag |
-| Tests | ✅ 54 tests passing | Unit + integration |
+| Tests | ✅ 58 tests passing | Unit + integration |
 
 ### 5.2 Query Support Matrix
 

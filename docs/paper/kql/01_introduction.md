@@ -26,7 +26,7 @@ None of these languages provides:
 
 ## 1.2 Motivation: Why a New Query Language?
 
-The OneBrain knowledge network stores data in **Knowledge Units (KUs)** [7] — bio-inspired data structures with 10 gene types, 33 bond types, epistemic status tracking, CRDT-based trust scores, and multi-dimensional metadata. Querying this data requires a language that understands:
+The OneBrain knowledge network stores data in **Knowledge Units (KUs)** [7] — bio-inspired data structures with 11 gene types, 33 bond types, epistemic status tracking, CRDT-based trust scores, and multi-dimensional metadata. Querying this data requires a language that understands:
 
 1. **Knowledge-specific types**: Gene types (Fact, Hypothesis, Procedure, Analogy, Narrative, etc.), epistemic status (Rumor → Observation → Evidence → Theorem → Law), and evidence types (Anecdotal, Statistical, Experimental, etc.)
 2. **Trust and verification**: Trust scores, confidence intervals, corroboration counts, challenge histories, and verification levels — all of which are CRDT-backed and continuously evolving.
@@ -55,7 +55,7 @@ KQL follows six design principles:
 ```mermaid
 graph TD
     User["User / Agent"] --> KQL["KQL Query String"]
-    KQL --> Parser["nom Parser<br/>~1,310 LOC"]
+    KQL --> Parser["nom Parser<br/>~1,456 LOC"]
     Parser --> AST["Typed AST<br/>30+ node types"]
     AST --> Cache{"Query Cache<br/>LRU + BLAKE3"}
     Cache -->|Hit| Results["QueryResult"]

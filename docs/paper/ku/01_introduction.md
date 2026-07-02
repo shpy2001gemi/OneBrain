@@ -31,7 +31,7 @@ Existing platforms address subsets of these dimensions but none addresses all fi
 
 The Knowledge Unit is designed to simultaneously satisfy five requirements that, taken together, are not met by any existing system:
 
-1. **Compactness.** The wire format must be efficient enough for mobile and IoT deployment — ideally **smaller than the original natural-language text**. Our v6 Core DNA format achieves ≤100 bytes for typical KUs (as low as ~16 bytes for minimal facts), enabling billions of KUs to be stored and transmitted on resource-constrained devices.
+1. **Compactness.** The wire format must be efficient enough for mobile and IoT deployment — ideally **smaller than the original natural-language text**. Our Core DNA format achieves ≤100 bytes for typical KUs (as low as ~16 bytes for minimal facts), enabling billions of KUs to be stored and transmitted on resource-constrained devices.
 
 2. **Expressiveness.** The representation must accommodate at least 10 distinct knowledge modalities — from structured factual triples to unstructured experiential narratives, formal mathematical proofs, procedural instructions, sensory observations, and cultural testimony.
 
@@ -114,7 +114,7 @@ This analogy yields four critical design properties that would be difficult to a
 
 **3. Incremental parseability.** DNA's reading frame mechanism allows ribosomes to begin translation at any start codon (AUG) without parsing the entire chromosome. Analogously, the Core DNA wire format's opcode-based instruction stream supports incremental parsing — a decoder can scan instructions sequentially, extracting semantic information from the byte stream without buffering the entire message. The END marker (0xF0) clearly delineates the instruction boundary, a property critical for streaming and resource-constrained environments.
 
-**4. Evolutionary extensibility.** Biological evolution introduces new genes through mechanisms like gene duplication and mutation without disrupting existing functional sequences. The KU mirrors this through two mechanisms: (a) the 4-bit gene type field in the VER_META byte directly encodes 11 gene types (0–10), with codes 11–15 reserved for future modalities; and (b) the 32-opcode instruction set reserves opcodes 0x55–0xEF for future instructions. Furthermore, the `decode_any()` auto-detect function ensures backward compatibility — it inspects magic bytes to distinguish v4/v5 CBOR from v6 Core DNA, providing a concrete path for accommodating future wire format versions without breaking existing implementations.
+**4. Evolutionary extensibility.** Biological evolution introduces new genes through mechanisms like gene duplication and mutation without disrupting existing functional sequences. The KU mirrors this through two mechanisms: (a) the 4-bit gene type field in the VER_META byte directly encodes 11 gene types (0–10), with codes 11–15 reserved for future modalities; and (b) the 32-opcode instruction set reserves opcodes 0x55–0xEF for future instructions. Furthermore, the opcode byte (`u8`) supports up to 256 distinct instruction types, with only 32 currently defined, providing ample room for future semantic extensions without breaking existing implementations.
 
 ## 1.4 Contributions
 
@@ -122,7 +122,7 @@ This paper makes the following specific contributions:
 
 1. **A bio-inspired 3-layer knowledge representation (§2, §3).** We present the Knowledge Unit architecture comprising Core DNA (Layer 1 — stored binary with 32 opcodes), Epigenetics (Layer 2 — runtime trust, bonds, metabolism), and Expression (Layer 3 — generated natural language). We demonstrate that the biological metaphor is not merely pedagogical but yields concrete design properties — language agnosticism, content addressability, incremental parseability, and evolutionary extensibility — that are structurally necessitated by the analogy.
 
-2. **A custom binary instruction set with 32 opcodes (§3, §4).** We design and implement a compact opcode-based wire format that encodes knowledge as typed instructions (Triple, PartOf, Quality, Quantity, Step, Causal, etc.), achieving wire sizes consistently **smaller than the original natural-language text** — a 16.5× reduction from the prior CBOR-based format.
+2. **A custom binary instruction set with 32 opcodes (§3, §4).** We design and implement a compact opcode-based wire format that encodes knowledge as typed instructions (Triple, PartOf, Quality, Quantity, Step, Causal, etc.), achieving wire sizes consistently **smaller than the original natural-language text**.
 
 3. **A semantically-tiered 5-tier variable-length integer encoding (§4.5).** We introduce a varint scheme where encoding length correlates with semantic frequency: 128 universal primitives occupy 1 byte, ~16K common concepts occupy 2 bytes, ~2M standard concepts occupy 3 bytes, and extended/community concepts occupy 4–5 bytes. We prove that this scheme achieves near-optimal compression for Zipfian concept frequency distributions typical of natural language knowledge [16].
 
@@ -132,9 +132,7 @@ This paper makes the following specific contributions:
 
 6. **A 3-tier encoding pipeline (§4.9).** We present a progressive encoding pipeline: Tier 1 applies rule-based pattern matching (offline, ~60–70% accuracy); Tier 2 employs local AI models via 15 function-calling tools (pluggable runtime); Tier 3 verifies encoding fidelity through a distributed Encoding Consensus Protocol with a 4-state lifecycle (RAW → SELF → PART → FULL), 2-phase verification (AI decomposition agreement + tool round-trip), and weighted consensus scoring — enabling trustworthy encoding without centralised authority.
 
-7. **Backward-compatible wire format evolution (§4.8).** We demonstrate automatic format detection via magic byte inspection, enabling seamless coexistence of v4/v5 CBOR and v6 Core DNA wire formats without migration or coordination.
-
-8. **A comprehensive open-source implementation (§6).** We provide a reference implementation in Rust comprising approximately **10,000+ lines of code** across 27 modules (types, core_dna, text_parser, ku_tools, ku_tool_executor, ku_system_prompt, varint, encoder, decoder, CRDT, metabolism, epistemic engine, entropy, prediction, synaptic, immune, ecosystem, and more) with **267 unit and integration tests** covering Core DNA encode/decode roundtrips, bridge conversion, text parser patterns, AI tool executor workflows, CRDT merge correctness, varint boundary conditions, and epistemic engine computations. The implementation is released under the MIT License.
+7. **A comprehensive open-source implementation (§6).** We provide a reference implementation in Rust comprising approximately **10,000+ lines of code** across 27 modules with **267 unit and integration tests** covering Core DNA encode/decode roundtrips, text parser patterns, AI tool executor workflows, CRDT merge correctness, varint boundary conditions, and epistemic engine computations. The implementation is released under the MIT License.
 
 ## 1.5 Paper Organization
 

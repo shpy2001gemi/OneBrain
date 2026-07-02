@@ -65,6 +65,64 @@ pub fn build_stored_ku_info(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Bridge: DHT Replica Tracking → Storage Reward Computation
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Replica metadata from DHT layer, passed into ku-core for storage reward computation.
+///
+/// This mirrors ku-net's `StoredKuMeta` but lives in ku-core to avoid circular dependency.
+/// Populated by converting `ReplicaTracker::all_stored()` entries at the network boundary.
+#[derive(Debug, Clone)]
+pub struct ReplicaSnapshot {
+    /// CID of the stored KU (BLAKE3 hash).
+    pub ku_cid: [u8; 32],
+    /// Current replica count on the DHT.
+    pub actual_replicas: u32,
+    /// Epoch when this node first stored this KU.
+    pub first_stored_epoch: u64,
+    /// Number of consecutive epochs this node has stored this KU.
+    pub epochs_stored: u64,
+    /// Wire-encoded size of the KU in bytes.
+    pub wire_bytes: u32,
+}
+
+/// Computes storage rewards for a node based on its stored KUs and their replica metadata.
+///
+/// This is the bridge function that connects DHT replica tracking (ku-net)
+/// with storage reward computation (ku-core).
+///
+/// # Arguments
+/// * `replicas` — Snapshot of all KUs stored by this node (from `ReplicaTracker::all_stored()`)
+/// * `node_trust` — Node's EigenTrust score [0.0, 1.0]
+/// * `median_metabolism` — Network-wide median metabolism rate for demand_weight calculation
+/// * `current_epoch` — Current epoch number (reserved for future per-epoch logic)
+///
+/// # Returns
+/// Total storage reward in milliOBT for this node for the current epoch.
+pub fn compute_epoch_storage_rewards(
+    replicas: &[ReplicaSnapshot],
+    node_trust: f64,
+    median_metabolism: f64,
+    _current_epoch: u64,
+) -> u64 {
+    use crate::obt_storage_reward::{StoredKuInfo, compute_node_storage_reward};
+
+    let stored_kus: Vec<StoredKuInfo> = replicas.iter().map(|r| {
+        StoredKuInfo {
+            ku_cid: r.ku_cid,
+            wire_bytes_len: r.wire_bytes,
+            actual_replicas: r.actual_replicas,
+            metabolism_rate: 1.0, // Default: at-median; real value from KUMetabolism in future
+            epochs_stored: r.epochs_stored,
+        }
+    }).collect();
+
+    // compute_node_storage_reward returns f64 OBT; convert to milliOBT (u64)
+    let raw_reward = compute_node_storage_reward(&stored_kus, node_trust, median_metabolism);
+    (raw_reward * 1000.0) as u64
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Quality Gate Orchestration
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -383,5 +441,52 @@ mod tests {
         let proof = build_storage_mint_proof(&ku, storer, 500, factors, 100, 360000);
         assert_eq!(proof.activity, MintActivity::StorageReward);
         assert!(proof.formula_inputs.storage_factors.is_some());
+    }
+
+    // ── compute_epoch_storage_rewards bridge ──────────────────────────
+
+    #[test]
+    fn test_compute_epoch_storage_rewards_empty() {
+        let result = compute_epoch_storage_rewards(&[], 0.8, 1.0, 100);
+        assert_eq!(result, 0);
+    }
+
+    #[test]
+    fn test_compute_epoch_storage_rewards_basic() {
+        let replicas = vec![
+            ReplicaSnapshot {
+                ku_cid: [1u8; 32],
+                actual_replicas: 10,
+                first_stored_epoch: 0,
+                epochs_stored: 200,
+                wire_bytes: 2048,
+            },
+            ReplicaSnapshot {
+                ku_cid: [2u8; 32],
+                actual_replicas: 20,
+                first_stored_epoch: 50,
+                epochs_stored: 50,
+                wire_bytes: 512,
+            },
+        ];
+        let result = compute_epoch_storage_rewards(&replicas, 0.9, 1.0, 200);
+        assert!(result > 0, "Should earn non-zero storage reward, got {result}");
+    }
+
+    #[test]
+    fn test_compute_epoch_storage_rewards_trust_impact() {
+        let replicas = vec![ReplicaSnapshot {
+            ku_cid: [1u8; 32],
+            actual_replicas: 10,
+            first_stored_epoch: 0,
+            epochs_stored: 100,
+            wire_bytes: 1024,
+        }];
+        let high_trust = compute_epoch_storage_rewards(&replicas, 0.9, 1.0, 100);
+        let low_trust = compute_epoch_storage_rewards(&replicas, 0.1, 1.0, 100);
+        assert!(
+            high_trust > low_trust,
+            "Higher trust should yield higher reward: high={high_trust}, low={low_trust}"
+        );
     }
 }

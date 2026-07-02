@@ -102,7 +102,7 @@ This paper makes the following contributions:
 
 6. **EigenTrust-based node reputation** (§5.5) with per-domain trust, quarantine penalty, and diversity bonus — providing Sybil resistance without proof-of-work or proof-of-stake.
 
-7. **A complete implementation** (§7) of 12 modules (~3,500 LOC Rust) with 136 tests, demonstrating that the mechanism is not merely theoretical but implementable and testable.
+7. **A complete implementation** (§7) of 16 modules (~5,012 LOC Rust) with 157 tests, demonstrating that the mechanism is not merely theoretical but implementable and testable.
 
 ## 1.6 Paper Organization
 

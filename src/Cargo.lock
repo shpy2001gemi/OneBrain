@@ -400,6 +400,8 @@ dependencies = [
  "blake3",
  "ciborium",
  "crc32fast",
+ "ed25519-dalek",
+ "rand 0.8.6",
  "redb",
  "serde",
  "serde_bytes",

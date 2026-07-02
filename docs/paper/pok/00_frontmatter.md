@@ -15,7 +15,7 @@ This paper presents **Proof-of-Metabolic-Value (PoMV)**, a consensus mechanism t
 
 The mechanism is **fully decentralized** (each node computes independently, CRDT merge ensures convergence), **content-agnostic** (no node judges content correctness), and **non-punitive** (G-Counters only increment — past rewards are permanent). Epistemic status transitions (Rumor → Formally Proven) occur through 9 observable thresholds without voting. An adversarial immune memory system creates **antifragility** — attacks make the network stronger.
 
-The implementation comprises **16 core modules** (~5,143 LOC Rust) with **167 tests**, plus a gossip protocol for CRDT-based metabolism propagation. EigenTrust-based node reputation, content-agnostic spread analysis, and ecological carrying capacity jointly defend against Sybil attacks, spam, and disinformation — without censoring content.
+The implementation comprises **16 modules** (~5,012 LOC Rust) with **157 tests**, plus a gossip protocol for CRDT-based metabolism propagation. EigenTrust-based node reputation, content-agnostic spread analysis, and ecological carrying capacity jointly defend against Sybil attacks, spam, and disinformation — without censoring content.
 
 PoMV embodies the philosophical position that *knowledge is not right or wrong — it is only replaced by better knowledge*, translating this into a formally specified, implementable, and testable mechanism.
 

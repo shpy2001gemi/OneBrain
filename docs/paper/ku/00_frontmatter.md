@@ -6,7 +6,7 @@
 **Contact:** shpy2001@gmail.com  
 **Affiliation:** OneBrain Open Source Project  
 **Date:** June 2026  
-**Version:** 2.0 (v6 Core DNA — Preprint)
+**Version:** 2.0 (Core DNA — Preprint)
 
 ---
 
@@ -24,10 +24,10 @@ A **3-tier encoding pipeline** converts natural language text into Core DNA: **T
 
 The KU integrates five Conflict-Free Replicated Data Type (CRDT) primitives — G-Counter, PN-Counter, LWW-Register, OR-Set, and Vector Clock — enabling fully decentralized eventual consistency without any coordination or consensus protocol.
 
-The Core DNA wire format achieves approximately **16 bytes** for a minimal Fact-type KU — a **16.5× reduction** from the prior CBOR-based v5 format (~264 bytes). Real-world benchmarks demonstrate that Core DNA is consistently **smaller than the original natural-language text**: a Vietnamese breaststroke swimming description (323 bytes UTF-8) encodes to **88 bytes** across 3 KUs (3.7× compression), while a comprehensive rocket systems description (1,078 bytes) encodes to **172 bytes** across 5 KUs (6.3× compression). Backward compatibility with the prior v4/v5 CBOR format is maintained through automatic wire format detection via magic byte inspection.
+The Core DNA wire format achieves approximately **16 bytes** for a minimal Fact-type KU. Real-world benchmarks demonstrate that Core DNA is consistently **smaller than the original natural-language text**: a Vietnamese breaststroke swimming description (323 bytes UTF-8) encodes to **88 bytes** across 3 KUs (3.7× compression), while a comprehensive rocket systems description (1,078 bytes) encodes to **172 bytes** across 5 KUs (6.3× compression).
 
 The reference implementation, written in Rust, comprises approximately **10,000+ lines of code** across 27 modules with **267 unit and integration tests**, covering Core DNA encode/decode roundtrips, bridge conversion, text parser patterns, AI tool executor workflows, CRDT merge semantics, varint boundary conditions, epistemic engine computations, and metabolic value scoring.
 
-We present eight novel contributions: (1) a bio-inspired 3-layer knowledge representation (Core DNA / Epigenetics / Expression) with deep structural parallels to DNA encoding and gene expression; (2) a custom binary instruction set with 32 opcodes achieving wire sizes consistently smaller than natural-language text; (3) a semantically-tiered 5-tier variable-length integer scheme for concept identifiers; (4) integration of 5 CRDT types for coordination-free decentralized consistency; (5) a content-agnostic epistemic framework spanning 11 maturity levels with error susceptibility tracking; (6) a 3-tier encoding pipeline from rule-based text parsing through AI function calling to distributed Encoding Consensus with 2-phase verification and OBT token rewards; (7) backward-compatible wire format evolution via automatic format detection; and (8) a fully open-source Rust implementation with comprehensive test coverage.
+We present seven novel contributions: (1) a bio-inspired 3-layer knowledge representation (Core DNA / Epigenetics / Expression) with deep structural parallels to DNA encoding and gene expression; (2) a custom binary instruction set with 32 opcodes achieving wire sizes consistently smaller than natural-language text; (3) a semantically-tiered 5-tier variable-length integer scheme for concept identifiers; (4) integration of 5 CRDT types for coordination-free decentralized consistency; (5) a content-agnostic epistemic framework spanning 11 maturity levels with error susceptibility tracking; (6) a 3-tier encoding pipeline from rule-based text parsing through AI function calling to distributed Encoding Consensus with 2-phase verification and OBT token rewards; and (7) a fully open-source Rust implementation with comprehensive test coverage.
 
 **Keywords:** knowledge representation, decentralized systems, bio-inspired computing, Core DNA, opcode instruction set, CRDT, conflict-free replicated data types, knowledge graph, epistemic metadata, variable-length encoding, function calling, AI encoding, Rust, content-addressable storage, knowledge unit, OneBrain

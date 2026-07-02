@@ -195,20 +195,60 @@ fn evaluate_condition(ku: &KnowledgeUnit, cond: &Condition) -> bool {
 }
 ```
 
-**Field extraction** maps dotted paths to KU struct fields:
+**Field extraction** maps dotted paths to KU struct fields (28 fields total):
+
+*Core DNA Fields:*
 
 | Field Path | Extracted From | Type Coercion |
 |-----------|---------------|----------------|
-| `trust_score` | `ku.trust?.trust_score` | u16 → i64 |
-| `confidence` | `ku.trust?.confidence` | u16 → i64 |
-| `certainty` | Gene::Fact `certainty` | u16 → i64 |
-| `concept_id` | `ku.codons[0].concept_id` | u64 → i64 |
-| `verification_level` | `ku.trust?.verification_level` | u8 → i64 |
-| `trust` | `ku.trust` | Some/None → bool |
-| `encoding_status` | `ku.encoding_status` | EncodingStatus → Text ("Raw"/"Self"/"Part"/"Full") |
-| `gene_type` | Core DNA VER_META | u4 → Text |
-| `epistemic_status` | `ku.epi.epistemic_status` | u8 → Text |
+| `gene_type` | `ku.gene_type()` → name string | u8 → Text |
+| `primary_concept` | `ku.primary_concept()` | u64 → i64 |
+| `certainty` | `ku.certainty()` | u16 → i64 |
+| `difficulty` | `ku.difficulty()` | u16 → i64 |
+| `instruction_count` | `ku.instruction_count()` | usize → i64 |
+| `has_triple` | `ku.has_triple()` | bool |
+| `has_step` | `ku.has_step()` | bool |
+| `wire_size` | `ku.wire_size()` | usize → i64 |
+
+*Epigenetics Fields:*
+
+| Field Path | Extracted From | Type Coercion |
+|-----------|---------------|----------------|
+| `trust_score` | `ku.epi.trust.trust_score` | u16 → i64 |
+| `confidence` | `ku.epi.trust.confidence` | u16 → i64 |
+| `verification_level` | `ku.epi.trust.verification_level` | u8 → i64 |
+| `corroboration_count` | `ku.epi.trust.corroboration_count` | u16 → i64 |
+| `challenge_count` | `ku.epi.trust.challenge_count` | u16 → i64 |
+| `error_susceptibility` | `ku.epi.trust.error_susceptibility` | u16 → i64 |
+| `bond_count` | `ku.bond_count()` | usize → i64 |
+| `epistemic_status` | `ku.epi.epistemic_status` | u8 → Text (11 values) |
+| `evidence_type` | `ku.epi.evidence_type` | u8 → i64 |
+
+*PoMV Signal Fields:*
+
+| Field Path | Extracted From | Type Coercion |
+|-----------|---------------|----------------|
 | `metabolic_rate` | `ku.epi.trust.metabolic_rate` | u16 → i64 |
+| `prediction_score` | `ku.epi.trust.prediction_score` | u16 → i64 |
+| `entropy_at_creation` | `ku.epi.trust.entropy_at_creation` | u16 → i64 |
+| `survival_score` | `ku.epi.trust.survival_score` | u16 → i64 |
+| `synaptic_centrality` | `ku.epi.trust.synaptic_centrality` | u16 → i64 |
+| `niche_fitness` | `ku.epi.trust.niche_fitness` | u16 → i64 |
+
+*Expression Fields:*
+
+| Field Path | Extracted From | Type Coercion |
+|-----------|---------------|----------------|
+| `text` | `ku.expr?.text` | Option → Text |
+
+*System Fields:*
+
+| Field Path | Extracted From | Type Coercion |
+|-----------|---------------|----------------|
+| `epi` | always `true` (v6) | bool |
+| `expression` | `ku.expr.is_some()` | bool |
+| `encoding_status` | `ku.encoding_status` | EncodingStatus → Text |
+| `cid` | `ku.cid` | [u8; 32] → hex Text |
 
 ### 4.3.3 Aggregation Engine
 
@@ -245,7 +285,7 @@ The `unwatch(watch_id)` function removes a registration, returning `true` if fou
 
 ## 4.4 Persistent Storage
 
-The storage module ([storage.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/storage.rs), 366 LOC) provides **ACID-compliant persistent KU storage** using the `redb` embedded database [2].
+The storage module ([storage.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/storage.rs), 447 LOC) provides **ACID-compliant persistent KU storage** using the `redb` embedded database [2].
 
 ### 4.4.1 Table Schema
 

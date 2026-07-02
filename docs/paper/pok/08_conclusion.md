@@ -183,7 +183,7 @@ PageRank is a *ranking algorithm*. PoMV is a *consensus mechanism* that also pro
 
 **L6: Immune memory false positive risk.** Over time, the accumulation of antibody patterns may create false positive risks for legitimate but unusual spread patterns. Antibody expiration/decay is needed.
 
-**L7: No formal security proofs.** The adversarial defense system is tested empirically (167 tests) but lacks formal game-theoretic analysis. A formal analysis of the attack cost vs. reward function would strengthen the security argument.
+**L7: No formal security proofs.** The adversarial defense system is tested empirically (157 tests) but lacks formal game-theoretic analysis. A formal analysis of the attack cost vs. reward function would strengthen the security argument.
 
 ## 8.4 Future Work
 
@@ -230,7 +230,7 @@ Our seven principal contributions are:
 
 **Contribution 6: EigenTrust with per-domain trust and diversity bonus.** Node reputation is computed via power iteration with three extensions: quarantine penalty for nodes with flagged KUs, diversity bonus ($\sqrt{d}/10$) for nodes contributing to multiple niches, and configurable pre-trust (0.01) for cold-start nodes.
 
-**Contribution 7: Complete implementation.** 16 modules, 5,143 LOC of Rust, 43 type definitions, 62 constants, 167 tests. Pure Rust, no C dependencies, cross-compiles to mobile and WebAssembly. Every formula in this paper has a corresponding unit test.
+**Contribution 7: Complete implementation.** 16 modules, 5,012 LOC of Rust, 40 type definitions, 60 constants, 157 tests. Pure Rust, no C dependencies, cross-compiles to mobile and WebAssembly. Every formula in this paper has a corresponding unit test.
 
 ### 8.5.2 The Philosophical Position
 

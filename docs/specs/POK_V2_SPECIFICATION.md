@@ -91,6 +91,13 @@ pub struct KUMetabolism {
 }
 ```
 
+> **Implementation note**: In the actual code, `last_activity` uses `LWWRegister<u64>` for CRDT
+> conflict resolution, and an additional `unique_nodes: GCounter` field tracks distinct node interactions.
+
+```rust
+// (continued from above)
+```
+
 ### 2.6 PomvSignals & PomvScore
 
 ```rust
@@ -113,12 +120,12 @@ pub struct PomvScore {
 
 ```rust
 pub const DEFAULT_WEIGHTS: PomvWeights = PomvWeights {
-    metabolism: 0.25,
+    metabolism: 0.35,
     prediction: 0.15,
-    entropy: 0.20,
-    survival: 0.15,
+    entropy: 0.10,
+    survival: 0.10,
     synaptic: 0.15,
-    niche: 0.10,
+    niche: 0.15,
 };
 ```
 
@@ -233,7 +240,13 @@ The PoMV epistemic lifecycle (Rumor → … → Axiomatic) and the Encoding Cons
 
 Both lifecycles run concurrently on each KU. A KU may reach `Corroborated` epistemic status while still at `SELF` encoding status (awaiting network verification), or vice versa. The two lifecycles inform but do not gate each other.
 
-**OBT Rewards**: Encoding participants (Verifiers, Correctors, Pro-Bono encoders) receive OBT token rewards via `encoding_reward.rs` — proportional to raw text complexity. These are **internal accounting credits** compensating AI compute cost, not PoMV scores. Contributors (people who provide knowledge) are rewarded through PoMV lifecycle, not encoding rewards. See [ENCODING_CONSENSUS_SPEC §9](ENCODING_CONSENSUS_SPEC.md) for reward model.
+**OBT Rewards**: OBT tokens are **utility tokens** that reward knowledge contribution.
+The PoMV score feeds directly into the OBT minting formula:
+- R1 (Owner reward) = pomv_score × max_reward_per_epoch
+- Quality Gate 3 requires minimum PoMV score for reward eligibility
+See `docs/specs/obt/03_MINTING.md` for the complete reward formula.
+
+Encoding participants (Verifiers, Correctors, Pro-Bono encoders) receive separate encoding rewards via `encoding_reward.rs` — proportional to raw text complexity. Contributors (people who provide knowledge) are rewarded through PoMV lifecycle. See [ENCODING_CONSENSUS_SPEC §9](ENCODING_CONSENSUS_SPEC.md) for reward model.
 
 ---
 
@@ -351,3 +364,19 @@ pub struct KuLifecycle {
 | ecosystem.rs | Niche fitness |
 | ku_lifecycle.rs | Full lifecycle integration |
 | **Total** | 375+ tests across ku-core |
+
+---
+
+## §7 PoMV ↔ OBT Epoch Alignment
+
+The OBT token system uses 1-hour epochs (3,600 seconds) for reward settlement.
+PoMV runtime runs independently with configurable tick intervals (recommended: 60-300 seconds).
+
+At each OBT epoch boundary, the epoch settlement process:
+1. Collects PoMV scores from all active KUs
+2. Computes `avg_pomv_score` across the epoch
+3. Uses this average in the emission formula's Q factor
+4. Distributes R1 (owner) rewards proportional to individual PoMV scores
+
+This design keeps PoMV computation independent from OBT economics while
+providing clean integration via the `obt_integration.rs` bridge layer.

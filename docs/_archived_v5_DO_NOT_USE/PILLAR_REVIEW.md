@@ -1,7 +1,7 @@
 # 🧠 OneBrain — Tổng quan Trụ cột & Tiến độ
 
 > **Review toàn diện dự án OneBrain — 10 trụ cột chính và mức độ hoàn thiện**
-> Ngày review: 29/06/2026 | Codebase: ~21,000 dòng Rust | 267+ tests (ku-core) | 45+ tài liệu nghiên cứu
+> Ngày review: 01/07/2026 | Codebase: ~30,000+ dòng Rust | 757 tests (ku-core 565 + ku-net 192) | 60+ tài liệu nghiên cứu
 > **Update lớn**: KU v6 Core DNA redesign — 3-layer architecture (Core DNA / Epigenetics / Expression), 32 opcodes, ~16-88B per KU (16.5× reduction vs CBOR v5)
 
 ---
@@ -17,7 +17,7 @@ graph TD
         P2["P2: Network Protocol - 95%"]
         P3["P3: KQL Query - 95%"]
         P4["P4: Consensus PoK v2 - 95%"]
-        P5["P5: OBT Token - 25%"]
+        P5["P5: OBT Token - 95%"]
         P6["P6: AI Layer - 25%"]
         P7["P7: Knowledge Graph - 40%"]
         P8["P8: Storage Layer - 60%"]
@@ -29,7 +29,7 @@ graph TD
     style P2 fill:#16a34a,stroke:#15803d,color:#fff
     style P3 fill:#16a34a,stroke:#15803d,color:#fff
     style P4 fill:#16a34a,stroke:#15803d,color:#fff
-    style P5 fill:#f97316,stroke:#ea580c,color:#fff
+    style P5 fill:#22c55e,stroke:#16a34a,color:#fff
     style P6 fill:#f97316,stroke:#ea580c,color:#fff
     style P7 fill:#eab308,stroke:#ca8a04,color:#333
     style P8 fill:#22c55e,stroke:#16a34a,color:#fff
@@ -44,11 +44,11 @@ graph TD
 
 | # | Trụ cột | Tài liệu | Nghiên cứu | Code | Tests | Tiến độ |
 |---|---------|-----------|-------------|------|-------|---------|
-| 1 | **Knowledge Unit** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 267 | 🟢 **v6 Core DNA** |
-| 2 | **Network Protocol** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 162 | 🟢 **Hoàn thiện** |
-| 3 | **KQL (Query Language)** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 64 | 🟢 **Hoàn thiện** |
-| 4 | **Consensus (PoK v2)** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 136 | 🟢 **Hoàn thiện** |
-| 5 | **OBT Token** | ⬛⬛⬛⬜⬜ | ⬛⬛⬛⬜⬜ | ⬜⬜⬜⬜⬜ | — | 🟠 **Chỉ nghiên cứu** |
+| 1 | **Knowledge Unit** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 565 | 🟢 **v6 Core DNA** |
+| 2 | **Network Protocol** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 192 | 🟢 **Hoàn thiện** |
+| 3 | **KQL (Query Language)** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 58 | 🟢 **Hoàn thiện** |
+| 4 | **Consensus (PoK v2)** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 157 | 🟢 **Hoàn thiện** |
+| 5 | **OBT Token** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 264+ | 🟢 **~95% implemented** |
 | 6 | **AI Layer** | ⬛⬛⬜⬜⬜ | ⬛⬛⬛⬜⬜ | ⬜⬜⬜⬜⬜ | — | 🟠 **Chỉ nghiên cứu** |
 | 7 | **Knowledge Graph** | ⬛⬛⬛⬜⬜ | ⬛⬛⬛⬛⬜ | ⬛⬛⬛⬜⬜ | — | 🟡 **Đang phát triển** |
 | 8 | **Storage Layer** | ⬛⬛⬜⬜⬜ | ⬛⬛⬜⬜⬜ | ⬛⬛⬛⬛⬜ | 6 | 🟢 **Đã có nền tảng** |
@@ -63,7 +63,7 @@ graph TD
 
 ### 🟢 Pillar 1: Knowledge Unit (KU) — Nền tảng dữ liệu
 
-> **Trạng thái: ✅ Hoàn thiện Phase 2 | ~10,000+ dòng Rust | 267 tests | 27 modules**
+> **Trạng thái: ✅ Hoàn thiện Phase 2 | ~18,000+ dòng Rust | 541 tests | 40+ modules**
 >
 > **v6 Major Redesign (29/06/2026)**: Chuyển từ CBOR monolithic sang **Core DNA** — custom binary format ultra-compact.
 > Kết quả: CBOR v5 (1053B, 3.3x LỚN hơn text) → **Core DNA v6 (88B, 3.7x NHỎ hơn text)** — cải thiện **12x**.
@@ -161,7 +161,9 @@ graph LR
 
 ### 🟢 Pillar 2: Network Protocol — Hạ tầng P2P
 
-> **Trạng thái: ✅ Hoàn thiện | ~4,700 dòng Rust | 90+ tests | Trụ cột lớn nhất**
+> **Trạng thái: ✅ Hoàn thiện | ~9,500+ dòng Rust | 192 tests | Trụ cột lớn nhất**
+>
+> **Update (07/2026)**: Thêm OBT gossip, transfer validation, fork warrant modules. 192 tests (tăng từ 162).
 
 Network Protocol cho phép các node OneBrain kết nối phi tập trung, chia sẻ KU, và đồng bộ tri thức — không cần server trung tâm.
 
@@ -204,6 +206,9 @@ graph LR
 | PubSub | [pubsub.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-net/src/pubsub.rs) | Topic subscription, interest vectors (128-bit Bloom) | ✅ |
 | Sync | [sync.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-net/src/sync.rs) | **Delta-state CRDT sync** with VectorClock, bidirectional exchange | ✅ |
 | Constants | [constants.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-net/src/constants.rs) | Full constant registry (QUIC, SWIM, DHT, fitness weights) | ✅ |
+| OBT Transfer | [obt_transfer.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-net/src/obt_transfer.rs) | OBT transfer validation, eligibility | ✅ |
+| OBT Gossip | [obt_gossip.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-net/src/obt_gossip.rs) | Fork warrant validation, mint broadcast | ✅ |
+| DHT Replica | [dht.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-net/src/dht.rs) (extension) | ReplicaTracker for OBT storage rewards | ✅ |
 
 #### Đặc biệt: Bio-inspired Design
 - **Stigmergy** (lấy cảm hứng từ kiến): Query routing dựa trên "pheromone trails" — routes thành công được reinforced, routes thất bại bị penalty
@@ -224,7 +229,7 @@ graph LR
 
 ### 🟢 Pillar 3: Knowledge Query Language (KQL)
 
-> **Trạng thái: ✅ Hoàn thiện | ~5,300 dòng Rust | 64 tests | Spec: [KQL_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KQL_SPEC.md)**
+> **Trạng thái: ✅ Hoàn thiện | ~5,300 dòng Rust | 58 tests | Spec: [KQL_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KQL_SPEC.md)**
 
 KQL là **ngôn ngữ truy vấn riêng** cho OneBrain — tương tự SQL cho database, nhưng chuyên biệt cho Knowledge Graph phi tập trung. Đã triển khai **7 phases (A→G)** bao gồm parser, executor, distributed query, discovery engine, optimization.
 
@@ -356,7 +361,9 @@ EXPLAIN FIND (ku:KU) WHERE ku.confidence > 50 SCOPE DHT
 
 ### 🟢 Pillar 4: Consensus — Proof of Knowledge v2 (PoMV)
 
-> **Trạng thái: ✅ Hoàn thiện | 12 modules | ~3,500 dòng Rust mới | 136 tests | Spec: [POK_V2_SPECIFICATION.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/POK_V2_SPECIFICATION.md)**
+> **Trạng thái: ✅ Hoàn thiện | 16 modules | ~5,012 dòng Rust | 157 tests | Spec: [POK_V2_SPECIFICATION.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/POK_V2_SPECIFICATION.md)**
+>
+> **Update (07/2026)**: Thêm obt_integration, ku_lifecycle, epigenetics, spread_analysis. PoMV scores feed trực tiếp vào OBT minting formula.
 
 PoK v2 là cơ chế đồng thuận **Proof-of-Metabolic-Value (PoMV)** — tri thức tự chứng minh giá trị qua 6 tín hiệu **quan sát được**, hoàn toàn **observation-based**, không cần voting.
 
@@ -420,31 +427,70 @@ graph LR
 | **Anti-fragile** | Survive attack → stronger | Robust: KU sống sót qua attack được bonus |
 
 > [!TIP]
-> PoK v2 là trụ cột **phức tạp nhất** — 12 modules, 136 tests, 6 tín hiệu, phát minh mới hoàn toàn. Remaining 5% là fine-tuning weights khi có dữ liệu thực từ production.
+> PoK v2 là trụ cột **phức tạp nhất** — 16 modules, 157 tests, 6 tín hiệu, phát minh mới hoàn toàn. Remaining 5% là fine-tuning weights khi có dữ liệu thực từ production.
 
 ---
 
-### 🟠 Pillar 5: Token Economics (OBT)
+### 🟢 Pillar 5: Token Economics (OBT) — Knowledge Utility Token
 
-> **Trạng thái: Thiết kế + Nghiên cứu | Tiến độ ~25%**
+> **Trạng thái: ✅ ~95% implemented | 11 modules | ~260 KB Rust | 264+ tests**
+>
+> **Major update (06-07/2026)**: OBT redesigned from scratch. NOT a cryptocurrency — it's a Knowledge Utility Token ("kWh for knowledge").
+> Account-Chain ledger (Nano-inspired), output-based minting, 4 reward streams, 5-tier penalty system.
+> **Update 01/07**: Closed 3 gaps — DHT replica wiring ✅, Ed25519 real verification ✅, GovernanceConfig ✅.
 
-OBT là cryptocurrency của OneBrain — phần thưởng cho việc đóng góp tri thức.
+OBT là **utility token** của OneBrain — phần thưởng cho việc đóng góp, mã hóa, xác thực và lưu trữ tri thức.
 
-#### Đã nghiên cứu
+#### Core Design Decisions (đã giải quyết)
 
-| Hạng mục | Nội dung |
-|----------|---------|
-| Distribution | 60% Mining, 15% Foundation, 15% Community, 10% Team |
-| Halving | Bitcoin-inspired, nhưng adapted cho utility token |
-| Supply curve | Modeling hoàn thành |
-| Reward formula | Thiết kế xong |
-| Sustainability | Economic analysis done |
+| # | Quyết định | Giải pháp |
+|---|------------|----------|
+| Q1 | Global emission cap? | ✅ E(epoch) = B × A × Q |
+| Q2 | Trust-gated rewards? | ✅ 7-tier NodeTier (Leaf 0.10× → GlobalBackbone 2.00×) |
+| Q3 | Fraud punishment? | ✅ 5-tier graduated penalties |
+| Q4 | Balance structure? | ✅ Account-Chain (Nano-style, NOT CRDTs) |
+| Q5 | Permanent ban? | ✅ Tombstone (Tier 5) |
+| Q6 | Epoch duration? | ✅ 1 hour (3,600s) |
 
-#### Vấn đề được phát hiện (từ [analysis_results.md](file:///c:/Users/shpy2/Documents/OneBrain/.analysis/analysis_results.md))
-- ⚠️ OBT **chưa có initial value driver**
-- ⚠️ 60% mining allocation có rủi ro **inflation**
-- ⚠️ "Premium Knowledge" **mâu thuẫn** với sứ mệnh "knowledge is free"
-- ⚠️ **Token velocity problem** chưa giải quyết
+#### Code đã triển khai — OBT Engine (ku-core)
+
+| Module | File | Nội dung | Tests |
+|--------|------|---------|-------|
+| Constants | [obt_constants.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_constants.rs) | 96 governance constants, NodeTier enum, 7-tier hierarchy | 25+ |
+| Ledger | [obt_ledger.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_ledger.rs) | TransferBlock, AccountState, **real Ed25519 verification**, fork detection | 43+ |
+| Minting | [obt_minting.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_minting.rs) | Emission formula E=B×A×Q, 4 reward streams (R1-R4), MintProof | 30+ |
+| Storage Reward | [obt_storage_reward.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_storage_reward.rs) | 5-factor formula, PoS-KU challenges, strike system | 25+ |
+| Penalty | [obt_penalty.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_penalty.rs) | 5-tier penalties, correlation multiplier, appeal framework | 30+ |
+| Anti-Gaming | [obt_anti_gaming.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_anti_gaming.rs) | Rate limiting, 4 quality gates, 4 pattern detectors | 35+ |
+| Gossip Security | [obt_gossip_security.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_gossip_security.rs) | GossipGapDetector, ConnectivityProof, EpochSummary | 17+ |
+| Fork Pipeline | [obt_fork_pipeline.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_fork_pipeline.rs) | ForkWarrant lifecycle: Detected → Verified → Penalized | 12+ |
+| Epoch | [obt_epoch.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_epoch.rs) | EpochAccumulator, settlement, epoch boundaries | 17+ |
+| Integration | [obt_integration.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_integration.rs) | KU↔OBT bridge, **ReplicaSnapshot**, **compute_epoch_storage_rewards()** | 11+ |
+| **Governance** | [obt_governance.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obt_governance.rs) | **GovernanceConfig** (15 params), validate(), runtime-configurable | **18** |
+
+#### Key Formulas (đã implement)
+
+- **Emission**: E(epoch) = B × A(epoch) × Q(epoch), B=10,000 OBT/epoch
+- **Trust decay**: trust(t) = trust₀ × e^(-0.01×t), half-life ≈ 69.3 hours
+- **Storage reward**: base × size_w × rarity_w × demand_w × duration_f × trust_f
+- **Correlation penalty**: multiplier = 1 + log₂(simultaneous_nodes)
+
+#### Documentation
+
+| Doc | Files | Nội dung |
+|-----|-------|---------|
+| Specs | 9 files (docs/specs/obt/) | Complete specification: Ledger, Minting, Storage, Anti-Gaming, Transfer, Security, Penalty, Constants |
+| Research | 6 files (docs/research/obt/) | CRDT ledger analysis, penalty research, anti-gaming research, synthesis |
+| Paper | 11 chapters (docs/paper/obt/) | Full academic paper: ~3,000 lines, 45 tables, 13 figures |
+| Design | OBT_DESIGN.md, OBT_CURRENT_STATE.md | Architecture decisions, security analysis |
+
+#### Đã hoàn thành (01/07/2026)
+- ~~🔲 DHT replica tracking full wiring~~ ✅ `ReplicaSnapshot` + `compute_epoch_storage_rewards()` bridge
+- ~~🔲 Ed25519 full key management integration~~ ✅ Real Ed25519 verify in `validate_signature()`, `create_signed_block()`
+- ~~🔲 Governance parameter runtime adjustment~~ ✅ `GovernanceConfig` struct (15 params, validation, serde)
+
+#### Remaining ~5%
+- 🔲 Cross-shard transfers (future architectural feature — requires multi-shard design)
 
 ---
 
@@ -561,12 +607,12 @@ Knowledge Graph kết nối tất cả KU — phát hiện tri thức liên quan
 ## Cấu trúc Source Code
 
 ```
-src/                                    # ~21,000 dòng Rust | 423 tests
+src/                                    # ~30,000+ dòng Rust | 733 tests
 ├── Cargo.toml                          # Workspace root
 │
-├── ku-core/                            # 🟢 Pillar 1+4 — ~10,000+ LOC | 267 tests
+├── ku-core/                            # 🟢 Pillar 1+4+5 — ~18,000+ LOC | 541 tests
 │   └── src/
-│       ├── lib.rs                      # Module exports (27 modules)
+│       ├── lib.rs                      # Module exports (40+ modules)
 │       ├── types.rs                    # KU struct, Genes, Bonds, Trust+PoMV, Epigenetic (1023L)
 │       ├── encoder.rs                  # Wire format encoder (229L)
 │       ├── decoder.rs                  # Wire format decoder + CRC (149L)
@@ -588,11 +634,24 @@ src/                                    # ~21,000 dòng Rust | 423 tests
 │       ├── spread_analysis.rs         # ★ Organic spread detection (308L, 12 tests)
 │       ├── pomv_runtime.rs            # ★ Orchestrator: tick + update (310L, 9 tests)
 │       │
+│       │  ── OBT: OneBrain Token ──
+│       ├── obt_constants.rs          # 96 constants, NodeTier (723L)
+│       ├── obt_ledger.rs             # Account-Chain, TransferBlock (55KB)
+│       ├── obt_minting.rs            # Emission formula, 4 streams (613L)
+│       ├── obt_storage_reward.rs     # 5-factor formula, PoS-KU (27KB)
+│       ├── obt_penalty.rs            # 5-tier penalties (29KB)
+│       ├── obt_anti_gaming.rs        # Rate limits, quality gates (17KB)
+│       ├── obt_gossip_security.rs    # Gap detection, connectivity (15KB)
+│       ├── obt_fork_pipeline.rs      # Fork warrants (17KB)
+│       ├── obt_epoch.rs              # Epoch settlement (16KB)
+│       ├── obt_integration.rs        # KU↔OBT bridge + ReplicaSnapshot (14KB)
+│       ├── obt_governance.rs         # ★ GovernanceConfig (15 params, 18 tests)
+│       │
 │       ├── tests.rs                    # Integration tests (~1185L)
 │       ├── benchmark.rs               # Performance benchmarks (~1003L)
 │       └── demo.rs                    # Demo scenarios (~1002L)
 │
-├── ku-net/                             # 🟢 Pillar 2+3 — ~8,500 LOC | 162 tests
+├── ku-net/                             # 🟢 Pillar 2+3 — ~9,500+ LOC | 192 tests
 │   ├── src/
 │   │   ├── lib.rs                      # 12 modules, 9 protocol layers
 │   │   ├── constants.rs               # QUIC, SWIM, DHT, fitness constants (116L)
@@ -645,7 +704,7 @@ src/                                    # ~21,000 dòng Rust | 423 tests
 
 ---
 
-## Tài liệu & Nghiên cứu (45+ files, ~1.55 MB)
+## Tài liệu & Nghiên cứu (60+ files, ~2.5 MB)
 
 ### 6 Rounds nghiên cứu
 
@@ -669,6 +728,9 @@ src/                                    # ~21,000 dòng Rust | 423 tests
 | **SPEC B** | 81KB | Overlay + Routing |
 | **SPEC C** | 72KB | Query + Security |
 | **SPEC D** | 57KB | Message Catalog (56 types) |
+| **OBT Specs** | 9 files | Ledger, Minting, Storage, Anti-Gaming, Transfer, Security, Penalty, Constants |
+| **OBT Paper** | 11 chapters | Full academic paper: ~3,000 lines, 45 tables, 13 figures |
+| **Papers** | 5 pillars | KU, Network, KQL, PoK, OBT — full academic papers |
 
 ### Phân tích & Review
 
@@ -692,7 +754,7 @@ src/                                    # ~21,000 dòng Rust | 423 tests
 | 4 | **CRDT foundation** | GCounter, PNCounter, LWW, ORSet, VectorClock — sẵn sàng cho distributed consensus |
 | 5 | **KQL innovation** | Ngôn ngữ truy vấn riêng cho knowledge — unique trong lĩnh vực |
 | 6 | **PoK v2 (PoMV)** | Proof-of-Metabolic-Value — phát minh mới, observation-based, no voting, 6 tín hiệu |
-| 7 | **Test coverage** | 423 tests covering encoding, networking, wire format, query, discovery, consensus, integration |
+| 7 | **Test coverage** | 733 tests covering encoding, networking, wire format, query, discovery, consensus, OBT token, integration |
 | 8 | **Nghiên cứu sâu** | 1.55MB research across 45+ documents, 6 rounds, formal specifications |
 | 9 | **Scalability design** | 100B+ node capacity, mobile-first energy-conscious, serverless |
 
@@ -700,13 +762,14 @@ src/                                    # ~21,000 dòng Rust | 423 tests
 
 | # | Gap | Impact | Priority |
 |---|-----|--------|----------|
-| ~~1~~ | ~~**PoK Engine chưa code**~~ | ✅ **ĐÃ HOÀN THÀNH** — PoK v2 (PoMV), 12 modules, 136 tests | ✅ Done |
-| 1 | **OBT Token chưa tồn tại** | Không có incentive → không ai đóng góp | 🔴 Critical |
+| ~~1~~ | ~~**PoK Engine chưa code**~~ | ✅ **ĐÃ HOÀN THÀNH** — PoK v2 (PoMV), 16 modules, 157 tests | ✅ Done |
+| ~~2~~ | ~~**OBT Token chưa tồn tại**~~ | ✅ **~95% HOÀN THÀNH** — 11 modules, 264+ tests, 11-chapter paper, Ed25519 real, GovernanceConfig | 🟢 ~95% |
+| ~~3~~ | ~~**Whitepaper chưa viết**~~ | ✅ **5 papers đã viết** — KU, Network, KQL, PoK, OBT | ✅ Done |
+| ~~4~~ | ~~**OBT remaining ~20%**~~ | ✅ DHT wiring + Ed25519 + GovernanceConfig done. Remaining: cross-shard only (~5%) | 🟢 ~95% |
 | 2 | **AI Layer = 0 code** | Manual screening không scale | 🟠 High |
 | 3 | **Graph database chưa tích hợp** | Bonds/edges exist in code nhưng chưa queryable | 🟠 High |
-| 4 | **Whitepaper chưa viết** | Cần cho fundraise & community | 🟡 Medium |
-| 5 | **UI chưa có** | Chỉ CLI, không demo được | 🟡 Medium |
-| 6 | **Team = 1 người** | Phân tích ước tính cần **14-22 người** | 🔴 Critical |
+| 4 | **UI chưa có** | Chỉ CLI, không demo được | 🟡 Medium |
+| 5 | **Team = 1 người** | Phân tích ước tính cần **14-22 người** | 🔴 Critical |
 
 ---
 
@@ -726,17 +789,18 @@ gantt
     CRDT Primitives                :done, p1e, 2026-01, 2026-06
     Storage redb                   :done, p1f, 2026-03, 2026-06
     PoK v2 PoMV Engine             :done, p1g, 2026-06, 2026-06
-    Whitepaper v1.0                :crit, p1h, 2026-07, 2026-12
+    Papers (5 pillars)             :done, p1h, 2026-06, 2026-07
 
     section Phase 2 Alpha
-    OBT Token prototype            :active, p2a, 2026-07, 2027-01
+    OBT Token Engine               :done, p2a, 2026-06, 2026-07
+    OBT gaps (DHT, Ed25519, Gov)   :done, p2a2, 2026-07, 2026-07
     Knowledge Graph integration    :p2b, 2026-08, 2027-03
     AI Classification v1           :p2c, 2026-09, 2027-03
     Web App prototype              :p2d, 2027-01, 2027-06
 ```
 
 > [!IMPORTANT]
-> **Dự án đã hoàn thành Phase 1 + PoK v2!** Bốn trụ cột nền tảng (KU 95% + Network 95% + KQL 95% + **PoK v2 95%**) đều ở trạng thái hoàn thiện. Codebase: 21,000+ LOC, 423 tests. KU v6 Core DNA: 3-layer architecture, 32 opcodes, ~16-88B per KU. Để sang Phase 2 Alpha cần OBT Token và graph database.
+> **Dự án đã hoàn thành Phase 1 + PoK v2 + OBT ~95%!** Năm trụ cột nền tảng (KU 95% + Network 95% + KQL 95% + PoK v2 95% + **OBT 95%**) đều ở trạng thái hoàn thiện. Codebase: 30,000+ LOC, **757 tests**. 5 papers đã viết (KU, Network, KQL, PoK, OBT). Ed25519 real crypto, GovernanceConfig runtime.
 
 ---
 
@@ -744,10 +808,11 @@ gantt
 
 | # | Bước | Mô tả | Dựa trên |
 |---|------|-------|----------|
-| 🥇 | **OBT Token prototype** | Token minting, staking, reward distribution dựa trên PoMV scores | PoMV scores đã tính xong, cần token layer |
+| ~~🥇~~ | ~~**OBT remaining ~20%**~~ | ✅ DHT wiring + Ed25519 + GovernanceConfig done (01/07). Remaining: cross-shard (future) | **95% DONE** |
 | 🥈 | **Knowledge Graph DB** | Tích hợp graph database (Neo4j hoặc custom) để 33 bond types có thể traversal/query | Bond types đã code, cần DB backend |
-| ~~🥉~~ | ~~**PoK Engine**~~ | ✅ **ĐÃ HOÀN THÀNH** — PoK v2 (PoMV), 12 modules, 136 tests | **DONE** |
-| ~~4️⃣~~ | ~~**Distributed KQL**~~ | ✅ Đã triển khai: 6-layer router, ResultMerger, WatchEngine, Discovery Engine | **DONE** |
-| 3️⃣ | **AI Classifier v1** | BERT-based knowledge classification — first AI component | Research đã hoàn thành |
+| 🥉 | **AI Classifier v1** | BERT-based knowledge classification — first AI component | Research đã hoàn thành |
 | 4️⃣ | **Web Dashboard** | Visualize Knowledge Graph, browse KUs, demo contribution flow | Cần để attract community |
-| 5️⃣ | **Whitepaper v1.0** | Tổng hợp 45+ research docs thành formal whitepaper | Tất cả material đã có |
+| ~~5️⃣~~ | ~~**OBT Token prototype**~~ | ✅ **~80% HOÀN THÀNH** — 10 modules, 240+ tests, 11-chapter paper | **DONE** |
+| ~~6️⃣~~ | ~~**PoK Engine**~~ | ✅ **ĐÃ HOÀN THÀNH** — PoK v2 (PoMV), 16 modules, 157 tests | **DONE** |
+| ~~7️⃣~~ | ~~**Distributed KQL**~~ | ✅ Đã triển khai: 6-layer router, ResultMerger, WatchEngine, Discovery Engine | **DONE** |
+| ~~8️⃣~~ | ~~**Whitepaper**~~ | ✅ **5 papers đã viết** — KU, Network, KQL, PoK, OBT | **DONE** |

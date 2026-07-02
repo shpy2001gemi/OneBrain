@@ -38,19 +38,60 @@ Identifiers match `[a-zA-Z0-9_]+`. They serve as node aliases (`k` in `(k:KU)`),
 
 Dotted field paths access nested KU fields: `k.trust_score`, `k.trust.confidence`, `k.epistemic_status`. The FieldPath struct contains a `Vec<String>` of path segments.
 
-**Accessible fields** (mapped to KU structure):
+**Accessible fields** (28 fields, mapped to KuRuntime structure):
+
+*Core DNA Fields:*
 
 | Field Path | KU Source | Type |
 |------------|-----------|------|
-| `k.trust_score` | `ku.trust.trust_score` | u16 |
-| `k.confidence` | `ku.trust.confidence` | u16 |
-| `k.certainty` | `ku.gene.certainty` (Fact only) | u16 |
-| `k.concept_id` | `ku.codons[0].concept_id` | u64 |
-| `k.verification_level` | `ku.trust.verification_level` | u8 |
-| `k.corroboration_count` | `ku.trust.corroboration_count` | u16 |
-| `k.challenge_count` | `ku.trust.challenge_count` | u16 |
-| `k.error_susceptibility` | `ku.trust.error_susceptibility` | u16 |
-| `k.trust` | `ku.trust` (existence check) | Option |
+| `k.gene_type` | `ku.gene_type()` → name | Text |
+| `k.primary_concept` | `ku.primary_concept()` | Integer (u64 → i64) |
+| `k.certainty` | `ku.certainty()` | Integer (u16 → i64) |
+| `k.difficulty` | `ku.difficulty()` | Integer (u16 → i64) |
+| `k.instruction_count` | `ku.instruction_count()` | Integer |
+| `k.has_triple` | `ku.has_triple()` | Bool |
+| `k.has_step` | `ku.has_step()` | Bool |
+| `k.wire_size` | `ku.wire_size()` | Integer |
+
+*Epigenetics Fields:*
+
+| Field Path | KU Source | Type |
+|------------|-----------|------|
+| `k.trust_score` | `ku.epi.trust.trust_score` | Integer (u16 → i64) |
+| `k.confidence` | `ku.epi.trust.confidence` | Integer (u16 → i64) |
+| `k.verification_level` | `ku.epi.trust.verification_level` | Integer (u8 → i64) |
+| `k.corroboration_count` | `ku.epi.trust.corroboration_count` | Integer (u16 → i64) |
+| `k.challenge_count` | `ku.epi.trust.challenge_count` | Integer (u16 → i64) |
+| `k.error_susceptibility` | `ku.epi.trust.error_susceptibility` | Integer (u16 → i64) |
+| `k.bond_count` | `ku.bond_count()` | Integer |
+| `k.epistemic_status` | `ku.epi.epistemic_status` | Text (11 values) |
+| `k.evidence_type` | `ku.epi.evidence_type` | Integer (u8 → i64) |
+
+*PoMV Signal Fields:*
+
+| Field Path | KU Source | Type |
+|------------|-----------|------|
+| `k.metabolic_rate` | `ku.epi.trust.metabolic_rate` | Integer (u16 → i64) |
+| `k.prediction_score` | `ku.epi.trust.prediction_score` | Integer (u16 → i64) |
+| `k.entropy_at_creation` | `ku.epi.trust.entropy_at_creation` | Integer (u16 → i64) |
+| `k.survival_score` | `ku.epi.trust.survival_score` | Integer (u16 → i64) |
+| `k.synaptic_centrality` | `ku.epi.trust.synaptic_centrality` | Integer (u16 → i64) |
+| `k.niche_fitness` | `ku.epi.trust.niche_fitness` | Integer (u16 → i64) |
+
+*Expression Fields:*
+
+| Field Path | KU Source | Type |
+|------------|-----------|------|
+| `k.text` | `ku.expr.text` | Text (Option) |
+
+*System Fields:*
+
+| Field Path | KU Source | Type |
+|------------|-----------|------|
+| `k.epi` | always present (v6) | Bool |
+| `k.expression` | `ku.expr.is_some()` | Bool |
+| `k.encoding_status` | `ku.encoding_status` | Text (Raw/Self/Part/Full) |
+| `k.cid` | `ku.cid` | Text (hex) |
 
 ## 3.2 Query Types
 

@@ -17,9 +17,11 @@ ciborium = "0.2"     # CBOR serialization — will migrate to serde_ipld_dagcbor
 serde_bytes = "0.11"  # Efficient byte vector serialization
 crc32fast = "1.4"
 blake3 = "1"         # ★ v6: BLAKE3 hash for CID computation
+ed25519-dalek = { version = "2", features = ["rand_core"] }  # Ed25519 signature verification
 
 # Persistent storage (pure Rust, ACID) — behind 'persist' feature
 redb = { version = "2", optional = true }
 
 [dev-dependencies]
+rand = "0.8"          # For generating test signing keys
 # criterion = "0.5"  # for benchmarks later

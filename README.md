@@ -167,8 +167,9 @@ Instead of "mining" coins with computing power, OneBrain users **"mine" coins wi
 block-beta
     columns 4
 
-    block:user["👤 USER LAYER"]:4
+    block:user[" "]:4
         columns 4
+        UserLabel["👤 USER LAYER"]:4
         WebApp["🌐 Web App"]
         MobileApp["📱 Mobile App"]
         BCI["🧠 BCI/AR/VR"]
@@ -177,8 +178,9 @@ block-beta
 
     space:4
 
-    block:ai["🤖 AI LAYER"]:4
+    block:ai[" "]:4
         columns 3
+        AILabel["🤖 AI LAYER"]:3
         KC["Knowledge<br/>Classifier"]
         QA["Quality<br/>Assessor"]
         RC["Reward<br/>Calculator"]
@@ -189,15 +191,17 @@ block-beta
 
     space:4
 
-    block:consensus["⛓️ CONSENSUS LAYER"]:4
+    block:consensus[" "]:4
         columns 1
+        ConsensusLabel["⛓️ CONSENSUS LAYER"]:1
         PoK["Proof of Knowledge (PoK) Engine<br/>Voting & Validation · Reputation Scoring · Knowledge Valuation · Dispute Resolution"]
     end
 
     space:4
 
-    block:data["📦 DATA LAYER"]:4
+    block:data[" "]:4
         columns 4
+        DataLabel["📦 DATA LAYER"]:4
         KG["Knowledge<br/>Graph"]
         UP["User Profiles<br/>& Reputation"]
         TL["Token<br/>Ledger"]
@@ -208,10 +212,15 @@ block-beta
     ai --> consensus
     consensus --> data
 
-    style user fill:#1a1a3e,color:#c8c8ff
-    style ai fill:#1a2e1a,color:#c8ffc8
-    style consensus fill:#2e1a1a,color:#ffc8c8
-    style data fill:#1a2e2e,color:#c8ffff
+    style user fill:#1a1a3e,stroke:#c8c8ff,stroke-width:2px
+    style ai fill:#1a2e1a,stroke:#c8ffc8,stroke-width:2px
+    style consensus fill:#2e1a1a,stroke:#ffc8c8,stroke-width:2px
+    style data fill:#1a2e2e,stroke:#c8ffff,stroke-width:2px
+
+    style UserLabel fill:transparent,stroke:none,color:#c8c8ff,font-weight:bold
+    style AILabel fill:transparent,stroke:none,color:#c8ffc8,font-weight:bold
+    style ConsensusLabel fill:transparent,stroke:none,color:#ffc8c8,font-weight:bold
+    style DataLabel fill:transparent,stroke:none,color:#c8ffff,font-weight:bold
 ```
 
 ---

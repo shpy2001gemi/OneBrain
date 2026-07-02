@@ -19,7 +19,7 @@ The Knowledge Unit system is implemented as an open-source Rust library (`ku-cor
 | **Minimum Supported Rust** | 1.70+ |
 | **License** | MIT |
 
-The dependency footprint is deliberately minimal. The five external crates serve essential purposes: `serde` and `serde_json` provide Rust's standard serialization framework and JSON support for the AI tool-calling interface; `ciborium` provides RFC 8949-compliant CBOR serialization [20] for the Epigenetics layer and backward-compatible v5 decoding; `crc32fast` provides hardware-accelerated CRC-32 computation (used by legacy encoder; Core DNA v6 uses a built-in CRC-16 implementation); and `blake3` provides the BLAKE3 cryptographic hash function [39] for content-addressed identification.
+The dependency footprint is deliberately minimal. The five external crates serve essential purposes: `serde` and `serde_json` provide Rust's standard serialization framework and JSON support for the AI tool-calling interface; `ciborium` provides RFC 8949-compliant CBOR serialization [20] for the Epigenetics layer; `crc32fast` provides hardware-accelerated CRC-32 computation; and `blake3` provides the BLAKE3 cryptographic hash function [39] for content-addressed identification.
 
 ### Module Architecture
 
@@ -27,7 +27,7 @@ The crate is organized into three functional groups:
 
 ```mermaid
 graph TD
-    subgraph CoreDNA["Core DNA v6 Modules"]
+    subgraph CoreDNA["Core DNA Modules"]
         types["types.rs<br/>1,023 LOC"]
         core_dna["core_dna.rs<br/>~1,800 LOC"]
         text_parser["text_parser.rs<br/>~1,100 LOC"]
@@ -36,7 +36,7 @@ graph TD
         ku_prompt["ku_system_prompt.rs<br/>~400 LOC"]
     end
 
-    subgraph Legacy["Legacy v5 (backward compat)"]
+    subgraph Encoding["Encoding"]
         encoder["encoder.rs<br/>255 LOC"]
         decoder["decoder.rs<br/>168 LOC"]
     end
@@ -70,7 +70,7 @@ graph TD
     crdt --> PoMV
 
     style CoreDNA fill:#16a34a,color:#fff
-    style Legacy fill:#6b7280,color:#fff
+    style Encoding fill:#6b7280,color:#fff
     style Shared fill:#8b5cf6,color:#fff
     style PoMV fill:#3b82f6,color:#fff
 ```
@@ -109,13 +109,13 @@ The test suite comprises 267 test functions organized into five categories, foll
 | `test_full_roundtrip_all_layers` | L1→L5 complete roundtrip fidelity |
 | `test_empty_optional_fields` | Backward compatibility (None trust/epigenetic) |
 
-### 6.2.3 Core DNA v6 Tests — Opcode-Based Encoding
+### 6.2.3 Core DNA Tests — Opcode-Based Encoding
 
 | Test | What It Validates |
 |------|-------------------|
 | Core DNA encode/decode roundtrip | 32 opcodes encode/decode correctly, CRC-16 integrity |
-| Bridge KU↔CoreDna | Conversion between v5 KU struct and v6 CoreDna binary |
-| Auto-detect decoder | `decode_any()` correctly identifies v4/v5 CBOR vs v6 Core DNA |
+| Bridge KU↔CoreDna | Conversion between KU struct and CoreDna binary |
+| Auto-detect decoder | `decode_any()` correctly identifies wire format |
 | Rocket body encoding | Complex multi-instruction fact (8 instructions → 50 bytes) |
 | Full rocket 5 KUs | 27 instructions across 5 KUs → 172 bytes (vs 1078B text) |
 | Text parser patterns | 24 tests covering Vietnamese/English pattern matching |
@@ -159,30 +159,30 @@ All CRDT tests verify the three fundamental properties: **commutativity** ($\tex
 
 ## 6.3 Wire Format Efficiency
 
-### 6.3.1 Core DNA v6 vs CBOR v5 — Size Comparison
+### 6.3.1 Core DNA Wire Format — Size Analysis
 
-The v6 Core DNA redesign achieved dramatic size reductions compared to the prior CBOR-based v5 format. We measured actual wire format sizes for real-world knowledge encoding tasks:
+We measured actual wire format sizes for real-world knowledge encoding tasks:
 
-| Knowledge | Text (UTF-8) | CBOR v5 | **Core DNA v6** | v6 vs Text | v6 vs CBOR |
-|-----------|-------------|---------|----------------|------------|------------|
-| "Water boils at 100°C" | 21 B | ~226 B | **~16 B** | 1.3× smaller | **14× smaller** |
-| "Bơi ếch" (Vietnamese breaststroke, 3 KUs) | 323 B | 1,053 B | **88 B** | 3.7× smaller | **12× smaller** |
-| Rocket systems (5 KUs, 27 instructions) | 1,078 B | — | **172 B** | 6.3× smaller | — |
-| Airplane wing (precision tolerances) | 131 B | ~1,500 B | **118 B** | 1.1× smaller | **~12× smaller** |
+| Knowledge | Text (UTF-8) | **Core DNA** | Ratio vs Text |
+|-----------|-------------|-------------|---------------|
+| "Water boils at 100°C" | 21 B | **~16 B** | 1.3× smaller |
+| "Bơi ếch" (Vietnamese breaststroke, 3 KUs) | 323 B | **88 B** | 3.7× smaller |
+| Rocket systems (5 KUs, 27 instructions) | 1,078 B | **172 B** | 6.3× smaller |
+| Airplane wing (precision tolerances) | 131 B | **118 B** | 1.1× smaller |
 
-**Key finding:** Core DNA v6 is consistently **smaller than the original natural-language text** — a fundamental design goal that was not met by the prior CBOR-based format (which was 3.3× LARGER than text).
+**Key finding:** Core DNA is consistently **smaller than the original natural-language text** — a fundamental design goal for efficient decentralized knowledge transmission.
 
 ### 6.3.2 Fixed Overhead Comparison
 
-| Component | CBOR v5 | Core DNA v6 | Savings |
-|-----------|---------|-------------|--------|
-| Magic | 2 B (0x4B44) | 1 B (0x4B) | 50% |
-| Metadata | 1 B (VERSION) + 1 B (FLAGS) + 2 B (PAYLOAD_LEN) | 1 B (VER_META) | 75% |
-| Instruction end | — (length-delimited) | 1 B (END 0xF0) | — |
-| Integrity check | 4 B (CRC-32) | 2 B (CRC-16) | 50% |
-| **Total fixed overhead** | **10 B** | **5 B** | **50%** |
+| Component | Core DNA | Notes |
+|-----------|----------|-------|
+| Magic | 1 B (0x4B) | ASCII 'K' for rapid format identification |
+| Metadata | 1 B (VER_META) | Version (3 bits) + gene type (4 bits) + qualifier flag (1 bit) |
+| Instruction end | 1 B (END 0xF0) | Explicit stream terminator |
+| Integrity check | 2 B (CRC-16) | CRC-16/CCITT for transport integrity |
+| **Total fixed overhead** | **5 B** | Constant regardless of instruction count |
 
-The VER_META byte packs 3 fields into a single byte: version (3 bits), gene_type (4 bits), and has_qualifiers (1 bit). This eliminates the need for separate VERSION and FLAGS bytes.
+The VER_META byte packs 3 fields into a single byte: version (3 bits), gene_type (4 bits), and has_qualifiers (1 bit).
 
 ### 6.3.3 Why Core DNA is Always Smaller Than Text
 
@@ -195,19 +195,19 @@ The VER_META byte packs 3 fields into a single byte: version (3 bits), gene_type
 
 ### 6.3.4 Comparison with Alternative Encodings
 
-To contextualize the Core DNA v6 wire format efficiency, we compared the encoding size for the canonical "Water boils at 100°C at sea level" fact across multiple approaches:
+To contextualize the Core DNA wire format efficiency, we compared the encoding size for the canonical "Water boils at 100°C at sea level" fact across multiple approaches:
 
 | Format | Size (bytes) | Ratio vs Core DNA | Notes |
 |--------|-------------|-------------------|-------|
-| **Core DNA v6** | **~16** | **baseline** | 32-opcode binary + CRC-16 |
+| **Core DNA** | **~16** | **baseline** | 32-opcode binary + CRC-16 |
 | RDF/Turtle | ~120 | 7.5× larger | Text only, no trust/metadata |
 | RDF/N-Triples | ~180 | 11× larger | Text only, no trust/metadata |
 | Protocol Buffers | ~210 | 13× larger | Schema-required, no self-describing |
 | CBOR (raw) | ~230 | 14× larger | No integrity, no gene typing |
-| CBOR v5 (KU) | ~264 | 16.5× larger | Prior KU format with header + CRC-32 |
+
 | JSON-LD | ~850 | 53× larger | Verbose, self-describing |
 
-**Critical insight:** Core DNA v6 achieves wire sizes smaller than even bare RDF/Turtle triples, while simultaneously carrying gene type classification, certainty metadata, and integrity checks that RDF lacks entirely. When equivalent trust metadata is added to RDF (using RDF-star reification), the gap widens to **50-75×**.
+**Critical insight:** Core DNA achieves wire sizes smaller than even bare RDF/Turtle triples, while simultaneously carrying gene type classification, certainty metadata, and integrity checks that RDF lacks entirely. When equivalent trust metadata is added to RDF (using RDF-star reification), the gap widens to **50-75×**.
 
 ## 6.4 Varint Encoding Efficiency
 
@@ -317,7 +317,7 @@ The varint encoding provides sufficient concept ID capacity for millennia of ope
 | **Language-agnostic** | URI-based | Multilingual labels | N/A | URI-based | **Numeric ConceptIDs** |
 | **Schema evolution** | OWL versioning | Property proposals | N/A | Manual | **4-bit gene type + reserved opcodes** |
 | **Error detection** | None | None | Merkle | Blockchain | **CRC-16 + BLAKE3** |
-| **Backward compat** | N/A | N/A | N/A | N/A | **Auto-detect decode_any()** |
+| **Backward compat** | N/A | N/A | N/A | N/A | **Reserved opcodes + gene types** |
 | **Decay/lifecycle** | No | No | Pinning | No | **Exponential decay + KRL** |
 | **Implementation** | Various | PHP/Java | Go | Various | **Rust (memory-safe)** |
 | **Test coverage** | Varies | Unknown | Moderate | Unknown | **267 tests** |
@@ -328,4 +328,4 @@ The comparison reveals that OneBrain KU is the **only system** that simultaneous
 
 ---
 
-*The evaluation demonstrates that the Knowledge Unit system achieves its design goals of compactness, expressiveness, and decentralized consistency. The Core DNA v6 wire format's ~16-byte minimal size for fact-type KUs (a 16.5× reduction from v5), combined with the 76.4% varint savings and sub-15μs CRDT merge operations, positions the KU as a practical foundation for large-scale decentralized knowledge networks.*
+*The evaluation demonstrates that the Knowledge Unit system achieves its design goals of compactness, expressiveness, and decentralized consistency. The Core DNA wire format's ~16-byte minimal size for fact-type KUs, combined with the 76.4% varint savings and sub-15μs CRDT merge operations, positions the KU as a practical foundation for large-scale decentralized knowledge networks.*

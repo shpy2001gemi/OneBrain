@@ -14,7 +14,7 @@ The Knowledge Unit (KU) system introduces a novel bio-inspired knowledge represe
 
 **Finding 4: The epistemic framework captures knowledge maturity more granularly than any existing system.** The 11-level epistemic status ladder (Rumor → Axiomatic), combined with 9 GRADE-aligned evidence types and a 16-bit error susceptibility bitfield, provides a structured vocabulary for expressing uncertainty that is absent in all surveyed knowledge representation systems. This framework is observation-based — epistemic status advances through measurable signals (citations, retrievals, corroborations) rather than subjective voting.
 
-**Finding 5: Core DNA wire format achieves sizes smaller than natural language text.** The v6 Core DNA format achieves approximately **16 bytes** for a minimal Fact-type KU and **88 bytes** for a typical multi-instruction Vietnamese knowledge encoding ("bơi ếch") — a **16.5× reduction** from the prior CBOR v5 format (~264 bytes) and **3.7× smaller** than the original text. This is a fundamental improvement: the prior CBOR format was 3.3× *LARGER* than text, making it unsuitable for the "DNA" metaphor. Core DNA v6 achieves the best size-to-functionality ratio among all compared formats, being smaller than even bare RDF/Turtle triples while carrying gene type, certainty, and integrity metadata.
+**Finding 5: Core DNA wire format achieves sizes smaller than natural language text.** The Core DNA format achieves approximately **16 bytes** for a minimal Fact-type KU and **88 bytes** for a typical multi-instruction Vietnamese knowledge encoding ("bơi ếch") — **3.7× smaller** than the original text. Core DNA achieves the best size-to-functionality ratio among all compared formats, being smaller than even bare RDF/Turtle triples while carrying gene type, certainty, and integrity metadata.
 
 **Finding 6: AI-assisted encoding via function calling is practical and effective.** The 3-tier encoding pipeline (rule-based → AI local → distributed consensus) enables knowledge encoding without cloud dependency. Tier 2, using 15 JSON-schema function-calling tools, allows any local AI model (Gemma 4, Qwen, Phi-3, etc.) to produce high-quality KU encodings by simply calling tools — without needing to understand the binary format. Tier 3, the Encoding Consensus Protocol, provides distributed verification through a 4-state lifecycle (RAW → SELF → PART → FULL) with 2-phase verification (AI decomposition agreement + tool round-trip) and weighted consensus scoring — ensuring encoding fidelity without centralised authority. The pluggable runtime architecture (Option C) future-proofs against hardware and model evolution.
 
@@ -26,7 +26,7 @@ Several design decisions involve trade-offs that merit discussion:
 
 **CRDT state growth.** GCounters grow linearly with the number of contributing nodes. In a global network with millions of nodes, this could lead to unbounded state growth per KU. We address this through: (1) the PoMV metabolism system, which applies exponential decay with a 30-day half-life, naturally pruning irrelevant state; and (2) the immune system, which detects and quarantines anomalous contribution patterns (temporal bursts, source concentration).
 
-**Custom binary vs. CBOR vs. Protobuf.** Our initial v4/v5 implementation used CBOR encoding over a binary header, prioritizing schema flexibility and IETF standardization. However, empirical measurement revealed that CBOR was **3.3× LARGER** than the original text — unacceptable for a system metaphorically inspired by DNA compression. The v6 redesign replaced CBOR with a custom binary instruction set (Core DNA), achieving **3.7× SMALLER** than text — a 12× improvement over CBOR. The trade-off is loss of CBOR's self-describing nature, but this is mitigated by the structured opcode format and the ConceptDict shared vocabulary. CBOR is retained for the Epigenetics layer (runtime-only, not persisted).
+**Custom binary vs. CBOR vs. Protobuf.** We chose a custom binary instruction set (Core DNA) over CBOR and Protocol Buffers for the persistent encoding layer. While CBOR offers self-describing encoding and IETF standardization, it introduces significant overhead for the compact, typed instruction patterns that Core DNA uses. The custom format achieves wire sizes **3.7× smaller** than the original natural-language text — a result not achievable with general-purpose serialization formats. The trade-off is loss of CBOR's self-describing nature, but this is mitigated by the structured opcode format and the ConceptDict shared vocabulary. CBOR is retained for the Epigenetics layer (runtime-only, not persisted).
 
 **Content addressing vs. mutability.** The BLAKE3 CID provides immutable content identification, but KU metadata (trust scores, usage counts) is mutable via CRDTs. We resolve this by computing the CID over Core DNA wire bytes only (the persistent, immutable knowledge encoding), while metadata evolves independently in the Epigenetics layer.
 
@@ -41,7 +41,7 @@ To our knowledge, the Knowledge Unit system is the first to combine all of the f
 5. **Observation-based epistemic advancement** through 11 levels with measurable transition criteria
 6. **3-tier encoding pipeline** from rule-based text parsing through AI function calling to distributed Encoding Consensus with 2-phase verification and OBT token rewards
 7. **Content-agnostic immune system** detecting manipulation through behavioral patterns, not content moderation
-8. **Backward-compatible wire format evolution** via automatic format detection
+
 
 No prior system identified in our literature review (§2) combines more than two of these eight capabilities.
 
@@ -97,7 +97,7 @@ Our eight principal contributions are:
 
 1. **A bio-inspired three-layer knowledge representation** (§3) that maps biological concepts (DNA sequence, epigenetic marks, phenotype) to knowledge encoding layers (Core DNA binary, runtime metadata, text rendering), with 11 gene types and 33 relation bond types spanning 8 semantic categories.
 
-2. **A custom binary instruction set with 32 opcodes** (§4) achieving wire sizes consistently **smaller than natural language text** — approximately **16 bytes** for a minimal fact, **88 bytes** for a typical Vietnamese knowledge encoding, and **172 bytes** for a comprehensive 5-KU rocket systems description (vs. 1,078 bytes of original text). This represents a **16.5× reduction** from the prior CBOR-based v5 format and a **12× improvement** over the same.
+2. **A custom binary instruction set with 32 opcodes** (§4) achieving wire sizes consistently **smaller than natural language text** — approximately **16 bytes** for a minimal fact, **88 bytes** for a typical Vietnamese knowledge encoding, and **172 bytes** for a comprehensive 5-KU rocket systems description (vs. 1,078 bytes of original text).
 
 3. **A semantically-tiered variable-length integer encoding** (§4.5) that assigns byte widths based on concept frequency, achieving an expected 1.89 bytes per concept ID (76.4% savings over fixed-width encoding) with $O(1)$ length determination from the first byte.
 
@@ -107,9 +107,9 @@ Our eight principal contributions are:
 
 6. **A 3-tier encoding pipeline** (§4.9) from rule-based text parsing (offline, ~60–70% accuracy) through local AI function calling (15 tools, pluggable runtime) to distributed Encoding Consensus — a 4-state lifecycle (RAW → SELF → PART → FULL) with 2-phase verification (AI decomposition agreement + tool encoding round-trip), weighted consensus scoring ($S_{\text{consensus}} = 0.50 \cdot S_{\text{agreement}} + 0.30 \cdot S_{\text{detail}} + 0.20 \cdot S_{\text{reputation}}$), and OBT token rewards for verification participation.
 
-7. **Backward-compatible wire format evolution** (§4.8) via automatic format detection (`decode_any()`), enabling seamless coexistence of v4/v5 CBOR and v6 Core DNA formats without migration.
+7. **A comprehensive open-source implementation** (§6) comprising ~10,000+ lines of Rust across 27 modules with 267 tests, covering Core DNA encode/decode roundtrips, text parser patterns, AI tool executor workflows, and comprehensive CRDT merge verification.
 
-8. **A full open-source implementation in Rust** (§6) comprising ~10,000+ lines of code across 27 modules with 267 tests, including Core DNA encode/decode roundtrips, bridge conversion, text parser validation, AI tool executor workflows, and comprehensive CRDT merge verification.
+
 
 The Knowledge Unit system positions itself at the intersection of knowledge representation, distributed systems, and bio-inspired computing — three fields that have historically evolved independently. By combining insights from all three, we present a novel approach to the fundamental challenge of decentralized knowledge management: how to encode, share, and evolve human knowledge across millions of heterogeneous nodes without central coordination.
 

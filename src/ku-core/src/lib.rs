@@ -59,6 +59,7 @@ pub mod obt_epoch;            // ★ OBT: Epoch boundary settlement
 pub mod obt_anti_gaming;      // ★ OBT: Anti-gaming rate limits, quality gates & pattern detection
 pub mod obt_gossip_security;  // ★ OBT: Gossip gap detection, connectivity proofs & epoch settlement
 pub mod obt_integration;      // ★ OBT: KU↔OBT integration layer (builders, quality gates)
+pub mod obt_governance;       // ★ OBT: Runtime-configurable governance parameters
 
 #[cfg(test)]
 #[allow(unused)]

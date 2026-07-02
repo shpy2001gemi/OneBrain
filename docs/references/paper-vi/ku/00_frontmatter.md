@@ -1,0 +1,33 @@
+# Knowledge Unit: Một biểu diễn tri thức lấy cảm hứng từ sinh học với Mã hóa Core DNA cho các Mạng lưới Tri thức Phi tập trung
+
+---
+
+**Authors:** OneBrain Project Contributors  
+**Contact:** shpy2001@gmail.com  
+**Affiliation:** OneBrain Open Source Project  
+**Date:** June 2026  
+**Version:** 2.0 (Core DNA — Preprint)
+
+---
+
+## Abstract
+
+Sự phân mảnh tri thức của nhân loại giữa các tâm trí cá nhân, ngôn ngữ, địa lý và ranh giới thời gian vẫn là một trong những vấn đề chưa được giải quyết quan trọng nhất trong kỹ thuật tri thức (knowledge engineering). Các hệ thống quản lý tri thức hiện tại — từ các bách khoa toàn thư tập trung như Wikipedia đến các đồ thị tri thức (knowledge graph) độc quyền như Google's Knowledge Graph — phải gánh chịu một loạt các hạn chế cơ bản: chúng thiếu siêu dữ liệu nhận thức (epistemic metadata) mô tả mức độ xác thực của một phần tri thức (*how well* a piece of knowledge is established), chúng không cung cấp lớp khuyến khích kinh tế (economic incentive layer) cho việc đóng góp tri thức, và chúng áp đặt sự kiểm soát tập trung tạo ra các điểm lỗi đơn lẻ (single points of failure) và khả năng bị kiểm duyệt. Trong khi đó, các hệ thống trí tuệ nhân tạo thường xuyên chia sẻ các biểu diễn đã học (learned representations) qua các ranh giới mạng với độ trễ gần như bằng không, một khả năng vốn vẫn chưa khả dụng đối với những người đóng góp tri thức là con người.
+
+Bài báo này giới thiệu về **Knowledge Unit (KU)**, một biểu diễn tri thức lấy cảm hứng từ sinh học đóng vai trò là đơn vị nguyên tử của một mạng lưới chia sẻ tri thức phi tập trung hoàn toàn mang tên OneBrain. Rút ra một phép so sánh cấu trúc sâu sắc từ sinh học phân tử, kiến trúc KU tổ chức tri thức thành một **mô hình 3 lớp**: (1) **Core DNA** — một luồng lệnh nhị phân nhỏ gọn luôn được lưu trữ vĩnh viễn; (2) **Epigenetics** — siêu dữ liệu runtime phong phú (lòng tin, liên kết, sự chuyển hóa) xuất hiện từ tương tác mạng; và (3) **Expression** — kết xuất ngôn ngữ tự nhiên được tạo ra theo yêu cầu.
+
+Lớp **Core DNA** mã hóa tri thức bằng cách sử dụng một định dạng nhị phân tùy chỉnh với **32 opcodes** và các toán hạng có độ dài biến đổi, đạt được biểu diễn độc lập với ngôn ngữ thông qua các ConceptID dạng số với một cơ chế mã hóa số nguyên có độ dài biến đổi 5 tầng (5-tier variable-length integer encoding) mới lạ. Tập lệnh bao gồm 30 phần tử tri thức nguyên thủy có kiểu (typed knowledge primitives) được tổ chức trên 7 danh mục: Relationship (Triple, PartOf, Quality, Quantity, Tolerance, Range, EnumVal, Formula), Procedural (Step, Precond, Effect, Tool, Duration), Causal-Spatial (Causal, Temporal, Located, SpatialRel), Meta (Certainty, Difficulty, Importance, Context, Source, Timestamp), Experiential (Affect, Sensory, Witness), Structural (Analogy, Contrast, Example, Composite, Constraint), và Control (End, Nop). Mỗi lệnh được mã hóa dưới dạng một byte opcode duy nhất theo sau bởi các toán hạng được mã hóa varint, tạo ra một wire format có cấu trúc `MAGIC(1B) | VER_META(1B) | INSTRUCTIONS(var) | END(1B) | CRC-16(2B)`.
+
+Lớp **Epigenetics** bảo tồn toàn bộ sự phong phú của khung nhận thức (epistemic framework) — 11 cấp độ trưởng thành của tri thức (từ `Rumor` đến `Axiomatic`), 9 loại bằng chứng được liên kết với hệ phân cấp Cochrane/GRADE, 33 loại liên kết có hướng, và các cờ nhạy cảm lỗi 16-bit — dưới dạng các lớp phủ CBOR chỉ hoạt động khi chạy (runtime-only overlays) không được lưu trữ trong wire format chính.
+
+Một **quy trình mã hóa 3 tầng (3-tier encoding pipeline)** chuyển đổi văn bản ngôn ngữ tự nhiên thành Core DNA: **Tier 1** áp dụng so khớp mẫu dựa trên quy tắc (offline, không yêu cầu AI, độ chính xác ~60–70%); **Tier 2** sử dụng một mô hình AI cục bộ thông qua 15 công cụ gọi hàm (function-calling tools) JSON-schema (runtime có thể cắm nóng — Gemma 4, Qwen, Phi-3, hoặc bất kỳ mô hình nào hỗ trợ gọi công cụ); **Tier 3** xác minh độ trung thực của mã hóa thông qua một Nghị thức Đồng thuận Mã hóa (Encoding Consensus Protocol) phân tán với vòng đời 4 trạng thái (RAW → SELF → PART → FULL), xác minh 2 pha (2-phase verification), và chấm điểm đồng thuận có trọng số.
+
+KU tích hợp năm kiểu dữ liệu nguyên thủy Loại trừ Xung đột được Sao chép (Conflict-Free Replicated Data Type - CRDT) — G-Counter, PN-Counter, LWW-Register, OR-Set, và Vector Clock — cho phép đạt được tính nhất quán cuối cùng (eventual consistency) phi tập trung hoàn toàn mà không cần bất kỳ giao thức điều phối hoặc đồng thuận nào.
+
+Định dạng wire format của Core DNA đạt khoảng **16 bytes** đối với một KU kiểu Fact tối thiểu. Các thử nghiệm đo lường thực tế chứng minh rằng Core DNA luôn **nhỏ hơn văn bản ngôn ngữ tự nhiên ban đầu**: một mô tả bơi ếch bằng tiếng Việt (323 bytes UTF-8) mã hóa thành **88 bytes** trên 3 KUs (nén 3.7×), trong khi mô tả toàn diện về hệ thống tên lửa (1,078 bytes) mã hóa thành **172 bytes** trên 5 KUs (nén 6.3×).
+
+Triển khai tham chiếu (reference implementation), được viết bằng Rust, bao gồm khoảng **10,000+ dòng mã** trên 27 mô-đun với **267 kiểm thử đơn vị và tích hợp (unit and integration tests)**, bao phủ toàn bộ các chu trình mã hóa/giải mã Core DNA, chuyển đổi cầu nối (bridge conversion), các mẫu phân tích văn bản (text parser patterns), luồng công việc thực thi công cụ AI (AI tool executor workflows), ngữ nghĩa hợp nhất CRDT, các điều kiện biên varint, tính toán của công cụ nhận thức (epistemic engine), và tính điểm giá trị trao đổi chất (metabolic value scoring).
+
+Chúng tôi trình bày bảy đóng góp mới: (1) một biểu diễn tri thức 3 lớp lấy cảm hứng từ sinh học (Core DNA / Epigenetics / Expression) với các tương đồng cấu trúc sâu sắc với mã hóa DNA và biểu hiện gen; (2) một tập lệnh nhị phân tùy chỉnh với 32 opcodes đạt kích thước wire format luôn nhỏ hơn văn bản ngôn ngữ tự nhiên; (3) một cơ chế số nguyên có độ dài biến đổi 5 tầng phân tầng theo ngữ nghĩa cho các định danh khái niệm; (4) tích hợp 5 loại CRDT cho tính nhất quán phi tập trung không cần điều phối; (5) một khung nhận thức độc lập với nội dung trải dài 11 cấp độ trưởng thành với khả năng theo dõi mức độ nhạy cảm lỗi; (6) một quy trình mã hóa 3 tầng từ phân tích văn bản dựa trên quy tắc qua gọi hàm AI đến Đồng thuận Mã hóa phân tán với xác minh 2 pha và phần thưởng token OBT; và (7) một triển khai Rust mã nguồn mở hoàn toàn với độ bao phủ kiểm thử toàn diện.
+
+**Từ khóa:** biểu diễn tri thức, hệ thống phi tập trung, tính toán lấy cảm hứng từ sinh học, Core DNA, tập lệnh opcode, CRDT, kiểu dữ liệu sao chép không xung đột, đồ thị tri thức, siêu dữ liệu nhận thức, mã hóa độ dài biến đổi, gọi hàm, mã hóa AI, Rust, lưu trữ định địa chỉ theo nội dung (content-addressable storage), knowledge unit, OneBrain
