@@ -1,18 +1,18 @@
-# Major Knowledge Graph Systems — Survey for ONKG
+﻿# Major Knowledge Graph Systems — Survey for OBKG
 
 > **Author**: OneBrain Research Team  
 > **Date**: 2026-07-02  
-> **Purpose**: Extract innovations from existing Knowledge Graph systems applicable to OneBrain Knowledge Graph (ONKG)
+> **Purpose**: Extract innovations from existing Knowledge Graph systems applicable to OneBrain Knowledge Graph (OBKG)
 
 ---
 
 ## Executive Summary
 
-This survey examines eight major Knowledge Graph (KG) systems — Google Knowledge Graph, Wikidata, DBpedia, YAGO, ConceptNet, Freebase, Cyc/OpenCyc, and WordNet — to identify architectural patterns, schema designs, and operational strategies that can inform the design of OneBrain's Knowledge Graph (ONKG). Each system represents a distinct philosophy in knowledge representation: from Google's proprietary, AI-driven entity resolution at web scale (~51 billion entities), to Cyc's hand-curated microtheory-based common sense reasoning (~500K concepts with trillions of inferrable facts), to ConceptNet's crowdsourced common-sense network (~8M concepts, 34 relation types).
+This survey examines eight major Knowledge Graph (KG) systems — Google Knowledge Graph, Wikidata, DBpedia, YAGO, ConceptNet, Freebase, Cyc/OpenCyc, and WordNet — to identify architectural patterns, schema designs, and operational strategies that can inform the design of OneBrain's Knowledge Graph (OBKG). Each system represents a distinct philosophy in knowledge representation: from Google's proprietary, AI-driven entity resolution at web scale (~51 billion entities), to Cyc's hand-curated microtheory-based common sense reasoning (~500K concepts with trillions of inferrable facts), to ConceptNet's crowdsourced common-sense network (~8M concepts, 34 relation types).
 
-OneBrain occupies a unique position in this landscape as a **decentralized, binary-encoded, bio-inspired** knowledge network. Its 33 RelationType taxonomy across 8 categories (Epistemic, Structural, Causal, Derivation, Similarity, Temporal, Provenance, Experiential) is more semantically rich than most surveyed systems. Its 11-level EpistemicStatus classification (Rumor → Axiomatic) is unmatched — no other system provides granular epistemic grading at the protocol level. However, several systems offer innovations that ONKG can adopt: Wikidata's statement ranking and deprecation model for conflict management, YAGO's SPOTL quintuple model for spatiotemporal facts, Cyc's microtheory architecture for context-dependent reasoning, Freebase's Compound Value Types for n-ary relations, and ConceptNet's weighted edge model for defeasible common-sense knowledge.
+OneBrain occupies a unique position in this landscape as a **decentralized, binary-encoded, bio-inspired** knowledge network. Its 33 RelationType taxonomy across 8 categories (Epistemic, Structural, Causal, Derivation, Similarity, Temporal, Provenance, Experiential) is more semantically rich than most surveyed systems. Its 11-level EpistemicStatus classification (Rumor → Axiomatic) is unmatched — no other system provides granular epistemic grading at the protocol level. However, several systems offer innovations that OBKG can adopt: Wikidata's statement ranking and deprecation model for conflict management, YAGO's SPOTL quintuple model for spatiotemporal facts, Cyc's microtheory architecture for context-dependent reasoning, Freebase's Compound Value Types for n-ary relations, and ConceptNet's weighted edge model for defeasible common-sense knowledge.
 
-The most critical lessons for ONKG center on four themes: (1) **Conflict handling** — adopting Wikidata's rank-based coexistence rather than deletion, perfectly aligned with PoMV's philosophy; (2) **Spatiotemporal representation** — extending the Temporal category (currently only Precedes/Cooccurs) with YAGO-style location anchoring; (3) **Context scoping** — adapting Cyc's microtheory concept as lightweight "knowledge contexts" within KU metadata; and (4) **Provenance depth** — learning from the PROV-O standard and Freebase's CVT model to enrich the existing Provenance category (Cites/AuthoredBy/ReviewedBy).
+The most critical lessons for OBKG center on four themes: (1) **Conflict handling** — adopting Wikidata's rank-based coexistence rather than deletion, perfectly aligned with PoMV's philosophy; (2) **Spatiotemporal representation** — extending the Temporal category (currently only Precedes/Cooccurs) with YAGO-style location anchoring; (3) **Context scoping** — adapting Cyc's microtheory concept as lightweight "knowledge contexts" within KU metadata; and (4) **Provenance depth** — learning from the PROV-O standard and Freebase's CVT model to enrich the existing Provenance category (Cites/AuthoredBy/ReviewedBy).
 
 ---
 
@@ -46,10 +46,10 @@ Schema.org vocabulary with JSON-LD for structured data. Uses `sameAs` linking fo
 | **Provenance** | "Evidence" in EAV-E model links to authoritative external sources (LinkedIn, Wikipedia, Crunchbase) |
 | **Temporal** | Dynamic "data river" updates; historical versions not publicly accessible |
 
-**Lesson for ONKG:**  
-- **Adopt EAV-E model concept** → ONKG's Bond already has `relation` and `target_id`; adding an "Evidence" field pointing to supporting KUs would strengthen provenance (partially addressed by `Cites` and `Corroborates` RelationTypes)
-- **Data River approach** → ONKG's Hebbian learning and pheromone decay already implement continuous evolution; validate this as aligned with industry best practice
-- **Entity reconciliation** → ONKG needs a `Duplicates` (0x40) bond detection mechanism at the protocol level — consider adding a deduplication service in the stigmergy routing layer
+**Lesson for OBKG:**  
+- **Adopt EAV-E model concept** → OBKG's Bond already has `relation` and `target_id`; adding an "Evidence" field pointing to supporting KUs would strengthen provenance (partially addressed by `Cites` and `Corroborates` RelationTypes)
+- **Data River approach** → OBKG's Hebbian learning and pheromone decay already implement continuous evolution; validate this as aligned with industry best practice
+- **Entity reconciliation** → OBKG needs a `Duplicates` (0x40) bond detection mechanism at the protocol level — consider adding a deduplication service in the stigmergy routing layer
 
 ---
 
@@ -78,10 +78,10 @@ Document-oriented knowledge base built on Wikibase software. Each entity is an "
 | **Provenance** | First-class References on every statement. Each reference contains property-value pairs citing sources |
 | **Temporal** | Qualifiers like `start time` (P580), `end time` (P582), `point in time` (P585) on statements |
 
-**Lesson for ONKG:**  
-- **★ CRITICAL: Adopt Rank-based conflict model** → Map directly to PoMV: PoMV's usage-based value is analogous to Wikidata's community-driven ranking. ONKG should support a "Deprecated" status for KUs that doesn't delete but marks as superseded — the `Supersedes` (0x05) RelationType partially handles this, but a first-class deprecation flag in TrustSection would be valuable
-- **Qualifier model for Bonds** → ONKG Bonds currently have `relation`, `target_id`, and `weight`. Consider adding qualifiers (key-value pairs) to bonds to capture context like time range, confidence, scope — similar to Wikidata's qualifier mechanism
-- **Reference tracking** → ONKG's `Cites` (0x60) is already aligned, but Wikidata's model of multiple references per statement suggests ONKG should support multiple provenance bonds per claim
+**Lesson for OBKG:**  
+- **★ CRITICAL: Adopt Rank-based conflict model** → Map directly to PoMV: PoMV's usage-based value is analogous to Wikidata's community-driven ranking. OBKG should support a "Deprecated" status for KUs that doesn't delete but marks as superseded — the `Supersedes` (0x05) RelationType partially handles this, but a first-class deprecation flag in TrustSection would be valuable
+- **Qualifier model for Bonds** → OBKG Bonds currently have `relation`, `target_id`, and `weight`. Consider adding qualifiers (key-value pairs) to bonds to capture context like time range, confidence, scope — similar to Wikidata's qualifier mechanism
+- **Reference tracking** → OBKG's `Cites` (0x60) is already aligned, but Wikidata's model of multiple references per statement suggests OBKG should support multiple provenance bonds per claim
 
 ---
 
@@ -100,10 +100,10 @@ Automated extraction framework that converts Wikipedia infobox templates into RD
 - ~6 million entities (English), 850 million+ core semantic triples
 - Billions of triples across all language editions, 125+ languages
 
-**Lesson for ONKG:**  
-- **Linked Data URI pattern** → ONKG's ConceptId (varint u64 with 4-tier resolution) provides compact addressing. Consider a URI scheme that maps ConceptIds to HTTP URIs for interoperability: `obp://onebrain.network/ku/{concept_id}`
+**Lesson for OBKG:**  
+- **Linked Data URI pattern** → OBKG's ConceptId (varint u64 with 4-tier resolution) provides compact addressing. Consider a URI scheme that maps ConceptIds to HTTP URIs for interoperability: `obp://onebrain.network/ku/{concept_id}`
 - **Entity linking service** → A "KU Spotlight" equivalent that annotates free text with KU references would be valuable for ingestion pipelines
-- **Automatic extraction pipeline** → While ONKG is human-created, automated KU extraction from text could bootstrap the network
+- **Automatic extraction pipeline** → While OBKG is human-created, automated KU extraction from text could bootstrap the network
 
 ---
 
@@ -130,12 +130,12 @@ YAGO merges structured data from Wikipedia, WordNet (for taxonomic backbone), an
 | **Provenance** | Each fact traces to a specific Wikipedia source |
 | **Temporal** | **★ First-class**: SPOTL model with explicit time intervals on facts |
 
-**Lesson for ONKG:**  
-- **★ CRITICAL: Extend Temporal category** → ONKG's Category F (Temporal) only has `Precedes` (0x50) and `Cooccurs` (0x51). YAGO's SPOTL model suggests adding:
+**Lesson for OBKG:**  
+- **★ CRITICAL: Extend Temporal category** → OBKG's Category F (Temporal) only has `Precedes` (0x50) and `Cooccurs` (0x51). YAGO's SPOTL model suggests adding:
   - `ValidDuring` (0x52) — fact valid during time range
   - `ValidAt` (0x53) — fact valid at specific location
   - Or alternatively, add temporal qualifiers to Bond struct (start_time, end_time fields)
-- **Constraint checking at protocol level** → ONKG could implement type constraints in the KU validation layer
+- **Constraint checking at protocol level** → OBKG could implement type constraints in the KU validation layer
 - **Spatial anchoring** → Consider adding a Location category or extending Temporal to "Spatiotemporal"
 
 ---
@@ -155,9 +155,9 @@ Multilingual semantic network of nodes (concepts = words/phrases) connected by l
 
 **Scale:** ~8 million nodes, ~21 million edges, 80+ languages
 
-**Lesson for ONKG:**  
-- **Edge weight model validation** → ONKG's Bond weight system (u16 initial_weight with decay) is MORE sophisticated than ConceptNet's static weights. ONKG's Hebbian reinforcement through usage is a clear innovation
-- **Common-sense relation gaps** → ConceptNet has `UsedFor`, `CapableOf`, `HasProperty`, `AtLocation` — ONKG may want to add these to a future Category I (Functional)
+**Lesson for OBKG:**  
+- **Edge weight model validation** → OBKG's Bond weight system (u16 initial_weight with decay) is MORE sophisticated than ConceptNet's static weights. OBKG's Hebbian reinforcement through usage is a clear innovation
+- **Common-sense relation gaps** → ConceptNet has `UsedFor`, `CapableOf`, `HasProperty`, `AtLocation` — OBKG may want to add these to a future Category I (Functional)
 
 ---
 
@@ -173,12 +173,12 @@ Graph database built on custom Graphd engine. Schema-flexible design with Topics
 
 **Scale:** 39 million topics, 1.9 billion facts (at shutdown)
 
-**Lesson for ONKG:**  
-- **★ CRITICAL: CVT / Mediator Node pattern for n-ary relations** → Options for ONKG:
+**Lesson for OBKG:**  
+- **★ CRITICAL: CVT / Mediator Node pattern for n-ary relations** → Options for OBKG:
   1. **Composite KU gene** (already exists as GeneType::Composite = 10) — use as mediator node
   2. **Bond qualifiers** — add key-value qualifier fields to Bond struct
   3. Both approaches can coexist
-- **Anti-vandalism** → Freebase's spam problems validate ONKG's immune system / anti-gaming mechanisms as essential
+- **Anti-vandalism** → Freebase's spam problems validate OBKG's immune system / anti-gaming mechanisms as essential
 
 ---
 
@@ -204,13 +204,13 @@ Hand-curated knowledge base with CycL (formal language based on first-order pred
 | **Provenance** | Every assertion traceable to ontological engineers or inference chains |
 | **Temporal** | Temporal microtheories — different time periods are separate contexts |
 
-**Lesson for ONKG:**  
+**Lesson for OBKG:**  
 - **★ CRITICAL: Microtheory concept for context scoping** → Cyc's microtheory model can be adapted as lightweight "Knowledge Contexts" (KCs):
   - Each KU could carry an optional `context_id` grouping it into a specific domain/perspective/time
   - KUs in different contexts can contradict without violating consistency
   - Context hierarchies enable inheritance (e.g., "Physics" inherits from "Science")
   - Maps naturally to `CulturallyContextualizes` (0x76) relation
-- **Predicate richness** → Cyc's 40,000 vs ONKG's 33. The tradeoff is valid for binary protocol, but consider domain-specific sub-relations via Bond qualifiers
+- **Predicate richness** → Cyc's 40,000 vs OBKG's 33. The tradeoff is valid for binary protocol, but consider domain-specific sub-relations via Bond qualifiers
 
 ---
 
@@ -228,16 +228,16 @@ Lexical database organized by word senses, not alphabetical order. Core unit is 
 
 **Scale:** 155,287 unique words, 117,659 synsets, 206,941 word-sense pairs
 
-**Lesson for ONKG:**  
+**Lesson for OBKG:**  
 - **Synset concept for ConceptId disambiguation** → Multiple surface forms should map to the same ConceptId. Aligns with `Translates` (0x41) and `Paraphrases` (0x42)
-- **Meronymy/Holonymy refinement** → ONKG has `PartOf` (0x10) but no explicit `HasPart` inverse. Consider bidirectional support
+- **Meronymy/Holonymy refinement** → OBKG has `PartOf` (0x10) but no explicit `HasPart` inverse. Consider bidirectional support
 - **Troponymy for procedures** → For `GeneType::Procedure` KUs, a "manner-of" relation would be valuable
 
 ---
 
 ## Cross-System Comparison
 
-| Feature | Google KG | Wikidata | DBpedia | YAGO | ConceptNet | Freebase | Cyc | WordNet | **ONKG** |
+| Feature | Google KG | Wikidata | DBpedia | YAGO | ConceptNet | Freebase | Cyc | WordNet | **OBKG** |
 |---------|-----------|----------|---------|------|------------|----------|-----|---------|----------|
 | **Scale (entities)** | ~51B | 122M | 6M | 49M | 8M | 39M† | 500K | 117K | — (new) |
 | **Scale (facts)** | ~1.6T | 1.65B | 850M+ | 132M-2B | 21M | 1.9B† | 7-25M | 206K | — |
@@ -255,7 +255,7 @@ Lexical database organized by word senses, not alphabetical order. Core unit is 
 
 ---
 
-## Key Innovations to Adopt for ONKG
+## Key Innovations to Adopt for OBKG
 
 ### Priority 1: Critical Adoptions
 
@@ -288,9 +288,9 @@ Lexical database organized by word senses, not alphabetical order. Core unit is 
 
 ---
 
-## ONKG's Unique Advantages in Relation Design
+## OBKG's Unique Advantages in Relation Design
 
-| Feature | ONKG | Nearest Competitor | Advantage |
+| Feature | OBKG | Nearest Competitor | Advantage |
 |---------|------|-------------------|-----------|
 | **Epistemic relations** | 6 types (Extends, Supplements, Refutes, Corroborates, Supersedes, Qualifies) | None | No other KG has first-class epistemic bonds |
 | **Experiential relations** | 7 types (ReactionTo, TestimonyAbout, SensoryEvidenceFor, etc.) | ConceptNet (crude) | Subjective/experiential knowledge as first-class |

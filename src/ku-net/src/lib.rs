@@ -42,6 +42,7 @@ pub mod encoding_gossip;     // ★ v6 NEW: Encoding consensus network protocol
 pub mod encoding_stigmergy;  // ★ v6 NEW: Pheromone-based job load balancing
 pub mod obt_transfer;        // ★ OBT: Token transfer protocol messages
 pub mod obt_gossip;          // ★ OBT: Gossip protocol (fork warrants, mint relay, epoch summary)
+pub mod graph_gossip;        // ★ OBKG: Graph gossip (FedR deltas, graph stats, dream reports)
 
 #[cfg(test)]
 mod tests;

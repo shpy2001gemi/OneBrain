@@ -112,6 +112,8 @@ pub struct LocalExecutor {
     next_watch_id: WatchId,
     /// Optional ConceptDict for name→ID resolution in CREATE.
     concept_dict: Option<ConceptDict>,
+    /// ★ OBKG Phase 3: Event accumulator for temporal queries
+    event_log: ku_core::graph_events::EventAccumulator,
 }
 
 impl LocalExecutor {
@@ -122,6 +124,7 @@ impl LocalExecutor {
             watches: Vec::new(),
             next_watch_id: 1,
             concept_dict: None,
+            event_log: ku_core::graph_events::EventAccumulator::new(),
         }
     }
 
@@ -132,6 +135,7 @@ impl LocalExecutor {
             watches: Vec::new(),
             next_watch_id: 1,
             concept_dict: Some(dict),
+            event_log: ku_core::graph_events::EventAccumulator::new(),
         }
     }
 
@@ -187,21 +191,33 @@ impl LocalExecutor {
     // ─── FIND ──────────────────────────────────────────────────────────
 
     fn exec_find(&self, find: &FindQuery) -> Result<QueryResult, ExecError> {
-        let mut results: Vec<&KuRuntime> = self.kus.iter()
-            .filter(|ku| {
-                if let Some(ref cond) = find.where_clause {
-                    evaluate_condition(ku, cond)
-                } else {
-                    true
-                }
-            })
-            .collect();
+        // Check if this is a graph-pattern query (has edges)
+        let mut results_owned: Vec<KuRuntime>;
+        if find.history {
+            // ★ OBKG Fix H2: Dispatch FIND HISTORY to dedicated handler
+            results_owned = self.exec_history_find(find)?;
+        } else if !find.pattern.edges.is_empty() {
+            // Graph traversal mode
+            results_owned = self.exec_graph_find(find)?;
+        } else {
+            // Original: linear scan
+            results_owned = self.kus.iter()
+                .filter(|ku| {
+                    if let Some(ref cond) = find.where_clause {
+                        evaluate_condition(ku, cond)
+                    } else {
+                        true
+                    }
+                })
+                .cloned()
+                .collect();
+        }
 
         // Order
         if let Some(ref order) = find.order_by {
             for expr in order.iter().rev() {
                 let field_name = field_path_to_name(&expr.field);
-                results.sort_by(|a, b| {
+                results_owned.sort_by(|a, b| {
                     let va = a.extract_field(&field_name);
                     let vb = b.extract_field(&field_name);
                     let cmp = compare_extracted(&va, &vb);
@@ -210,22 +226,23 @@ impl LocalExecutor {
             }
         }
 
-        let total = results.len();
+        let total = results_owned.len();
 
-        // Aggregates
+        // Aggregates (need references for compute_aggregates)
+        let refs: Vec<&KuRuntime> = results_owned.iter().collect();
         let aggregates = if let Some(ref return_exprs) = find.return_clause {
-            compute_aggregates(&results, return_exprs)
+            compute_aggregates(&refs, return_exprs)
         } else {
             Vec::new()
         };
 
         // Limit
         if let Some(limit) = find.limit {
-            results.truncate(limit as usize);
+            results_owned.truncate(limit as usize);
         }
 
         Ok(QueryResult {
-            rows: results.into_iter().cloned().collect(),
+            rows: results_owned,
             total_count: total,
             scope_used: find.scope.clone(),
             aggregates,
@@ -233,6 +250,131 @@ impl LocalExecutor {
             plan: None,
             affected_count: 0,
         })
+    }
+
+    // ─── GRAPH FIND (Phase 3) ─────────────────────────────────────
+
+    /// Execute a graph-pattern FIND query by following bonds.
+    ///
+    /// For pattern: `(a:KU)-[r:Extends]->(b:KU)`
+    /// 1. Find all KUs matching node pattern 'a'
+    /// 2. For each match, follow outgoing bonds of type 'Extends'
+    /// 3. Return the target KUs that match node pattern 'b'
+    fn exec_graph_find(&self, query: &FindQuery) -> Result<Vec<KuRuntime>, ExecError> {
+        let pattern = &query.pattern;
+        if pattern.nodes.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // ★ OBKG Fix M1: O(1) CID lookup instead of O(N) linear scan
+        let ku_index: std::collections::HashMap<[u8; 32], &KuRuntime> =
+            self.kus.iter().map(|ku| (ku.cid, ku)).collect();
+
+        // Step 1: Find all KUs matching the first node pattern
+        let start_kus: Vec<&KuRuntime> = self.kus.iter()
+            .filter(|ku| match_node_pattern(ku, &pattern.nodes[0], &query.where_clause, &self.concept_dict))
+            .collect();
+
+        if pattern.edges.is_empty() {
+            return Ok(start_kus.into_iter().cloned().collect());
+        }
+
+        // Step 2: For each edge, traverse bonds
+        let mut current_cids: Vec<[u8; 32]> = start_kus.iter().map(|ku| ku.cid).collect();
+
+        for edge in &pattern.edges {
+            let mut next_cids: Vec<[u8; 32]> = Vec::new();
+
+            for cid in &current_cids {
+                // Find the KU
+                if let Some(&ku) = ku_index.get(cid) {
+                    match edge.direction {
+                        EdgeDirection::Outgoing | EdgeDirection::Undirected => {
+                            // Follow outgoing bonds
+                            for bond in &ku.epi.bonds {
+                                // Check edge type filter
+                                let type_matches = edge.edge_types.is_empty() ||
+                                    edge.edge_types.iter().any(|t| {
+                                        bond.relation.matches_name(t)
+                                    });
+                                if !type_matches { continue; }
+
+                                if bond.target_cid.len() >= 32 {
+                                    let mut target = [0u8; 32];
+                                    target.copy_from_slice(&bond.target_cid[..32]);
+                                    next_cids.push(target);
+                                }
+                            }
+                        }
+                        EdgeDirection::Incoming => {
+                            // For incoming, find KUs that have bonds pointing TO this CID
+                            for other_ku in &self.kus {
+                                for other_bond in &other_ku.epi.bonds {
+                                    if other_bond.target_cid.len() >= 32 {
+                                        let mut target = [0u8; 32];
+                                        target.copy_from_slice(&other_bond.target_cid[..32]);
+                                        if target == *cid {
+                                            let type_ok = edge.edge_types.is_empty() ||
+                                                edge.edge_types.iter().any(|t| other_bond.relation.matches_name(t));
+                                            if type_ok {
+                                                next_cids.push(other_ku.cid);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            next_cids.sort();
+            next_cids.dedup();
+            current_cids = next_cids;
+        }
+
+        // Collect KuRuntime objects for matching CIDs
+        let results: Vec<KuRuntime> = current_cids.iter()
+            .filter_map(|cid| ku_index.get(cid).map(|ku| (*ku).clone()))
+            .collect();
+
+        Ok(results)
+    }
+
+    // ─── HISTORY FIND (Phase 3) ───────────────────────────────────
+
+    /// Execute FIND HISTORY query — returns KUs with matching bond events.
+    /// Full event log integration will come when persistent EventStore is connected.
+    fn exec_history_find(&self, query: &FindQuery) -> Result<Vec<KuRuntime>, ExecError> {
+        let mut results = Vec::new();
+        for ku in &self.kus {
+            let matches = if let Some(ref cond) = query.where_clause {
+                evaluate_condition(ku, cond)
+            } else {
+                true
+            };
+            if matches {
+                results.push(ku.clone());
+            }
+        }
+        Ok(results)
+    }
+
+    // ─── BOND EVENT RECORDING (Phase 3) ───────────────────────────
+
+    /// Record a bond event in the in-memory event log.
+    pub fn record_bond_event(&mut self, event: ku_core::graph_types::BondEvent) {
+        self.event_log.append(event);
+    }
+
+    /// Get bond event count.
+    pub fn event_count(&self) -> usize {
+        self.event_log.len()
+    }
+
+    /// Get a reference to the event accumulator.
+    pub fn event_log(&self) -> &ku_core::graph_events::EventAccumulator {
+        &self.event_log
     }
 
     // ─── CREATE (Tier 1 — Structured, offline) ────────────────────────
@@ -481,10 +623,13 @@ impl LocalExecutor {
         let ku = KuRuntime::from_dna(dna)
             .map_err(|e| ExecError::CoreDnaError(format!("Failed to create KU from text: {}", e)))?;
 
+        // ★ OBKG Fix M2: Return created KU in result rows
+        let created = ku.clone();
         self.kus.push(ku);
 
         let mut result = QueryResult::empty(Scope::Auto);
         result.affected_count = 1;
+        result.rows = vec![created];
         Ok(result)
     }
 
@@ -629,6 +774,22 @@ fn field_path_to_name(field: &FieldPath) -> String {
     }
 }
 
+/// Check if a KU matches a node pattern (label + properties + where clause).
+fn match_node_pattern(
+    ku: &KuRuntime,
+    _node: &NodePattern,
+    where_clause: &Option<Condition>,
+    _concept_dict: &Option<ConceptDict>,
+) -> bool {
+    // Label check: currently all KUs match KU label (only label type)
+    // Property check from node pattern — reserved for future pattern-level props
+    // WHERE clause check
+    if let Some(ref cond) = where_clause {
+        return evaluate_condition(ku, cond);
+    }
+    true
+}
+
 /// Evaluate a condition against a KuRuntime.
 fn evaluate_condition(ku: &KuRuntime, cond: &Condition) -> bool {
     match cond {
@@ -737,7 +898,11 @@ fn apply_assignment(ku: &mut KuRuntime, assignment: &Assignment) {
                 ku.epi.evidence_type = et;
             }
         },
-        _ => {} // Core DNA fields are immutable — silently ignore
+        // ★ OBKG Fix L4: Log warning on unknown SET field in debug builds
+        _other => {
+            #[cfg(debug_assertions)]
+            eprintln!("[KQL] apply_assignment: unknown or immutable field '{}', ignoring", _other);
+        }
     }
 }
 
@@ -877,6 +1042,7 @@ fn extracted_to_f64(v: &ExtractedValue) -> f64 {
 mod tests {
     use super::*;
     use crate::parser::parse_query;
+    use ku_core::types::{RelationType, Bond, Creator, EdgeState};
 
     fn make_test_ku(concept: u64, certainty: u16, trust_score: u16) -> KuRuntime {
         let dna = CoreDna {
@@ -1259,5 +1425,438 @@ mod tests {
             .map(|v| match v { ExtractedValue::Text(s) => s, _ => panic!("expected text") })
             .collect();
         assert_eq!(statuses, vec!["Full", "Raw", "Self"]);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // Phase 3: Graph-aware execution tests
+    // ══════════════════════════════════════════════════════════════════
+
+    /// Helper: Create a KU with specific CID seed and bonds
+    fn make_ku_with_bonds(cid_seed: u8, concept: u64, bonds: Vec<Bond>) -> KuRuntime {
+        let dna = CoreDna {
+            header: CoreDnaHeader {
+                version: 1,
+                gene_type: 0,
+                has_qualifiers: false,
+            },
+            instructions: vec![
+                Instruction::Triple { s: concept, p: 500, o: 1042 },
+                Instruction::Certainty { level: 5000 },
+            ],
+        };
+        let mut ku = KuRuntime::from_dna(dna).unwrap()
+            .with_epigenetics(Epigenetics::with_trust(5000, 5000));
+        // Override CID with deterministic seed
+        ku.cid = [cid_seed; 32];
+        ku.epi.bonds = bonds;
+        ku
+    }
+
+    fn make_bond(target_seed: u8, relation: RelationType) -> Bond {
+        Bond {
+            target_cid: vec![target_seed; 32],
+            relation,
+            weight: 5000,
+            creator: Creator::Human,
+            created_at: 1000,
+            evidence: vec![],
+            state: EdgeState::Active,
+            initial_weight: None,
+            decay: None,
+            last_reinforced: None,
+            reinforce_count: None,
+            bidirectional: None,
+            context: vec![],
+            order: None,
+            required: None,
+        }
+    }
+
+    #[test]
+    fn test_find_graph_outgoing() {
+        let mut exec = LocalExecutor::new();
+        // A -[Extends]-> B
+        let ku_a = make_ku_with_bonds(1, 301, vec![make_bond(2, RelationType::Extends)]);
+        let ku_b = make_ku_with_bonds(2, 302, vec![]);
+        exec.insert(ku_a);
+        exec.insert(ku_b);
+
+        // Build a graph FIND manually: (a:KU)-[:Extends]->(b:KU)
+        let query = Query::Find(FindQuery {
+            pattern: Pattern {
+                nodes: vec![
+                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
+                ],
+                edges: vec![EdgePattern {
+                    alias: None,
+                    edge_types: vec!["Extends".to_string()],
+                    direction: EdgeDirection::Outgoing,
+                    from: 0,
+                    to: 1,
+                    path_depth: None,
+                }],
+            },
+            where_clause: None,
+            scope: Scope::Local,
+            return_clause: None,
+            limit: None,
+            order_by: None,
+            temporal: None,
+            history: false,
+        });
+
+        let result = exec.execute(&query).unwrap();
+        assert_eq!(result.rows.len(), 1, "Should find exactly one target KU");
+        assert_eq!(result.rows[0].cid, [2u8; 32], "Target should be KU B");
+    }
+
+    #[test]
+    fn test_find_graph_no_match() {
+        let mut exec = LocalExecutor::new();
+        // A -[Extends]-> B, but query for Causes
+        let ku_a = make_ku_with_bonds(1, 301, vec![make_bond(2, RelationType::Extends)]);
+        let ku_b = make_ku_with_bonds(2, 302, vec![]);
+        exec.insert(ku_a);
+        exec.insert(ku_b);
+
+        let query = Query::Find(FindQuery {
+            pattern: Pattern {
+                nodes: vec![
+                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
+                ],
+                edges: vec![EdgePattern {
+                    alias: None,
+                    edge_types: vec!["Causes".to_string()],
+                    direction: EdgeDirection::Outgoing,
+                    from: 0,
+                    to: 1,
+                    path_depth: None,
+                }],
+            },
+            where_clause: None,
+            scope: Scope::Local,
+            return_clause: None,
+            limit: None,
+            order_by: None,
+            temporal: None,
+            history: false,
+        });
+
+        let result = exec.execute(&query).unwrap();
+        assert_eq!(result.rows.len(), 0, "No edge type match => empty result");
+    }
+
+    #[test]
+    fn test_find_graph_incoming() {
+        let mut exec = LocalExecutor::new();
+        // A -[Extends]-> B, query incoming on B
+        let ku_a = make_ku_with_bonds(1, 301, vec![make_bond(2, RelationType::Extends)]);
+        let ku_b = make_ku_with_bonds(2, 302, vec![]);
+        exec.insert(ku_a);
+        exec.insert(ku_b);
+
+        // Query: start from B, find incoming Extends => should return A
+        let query = Query::Find(FindQuery {
+            pattern: Pattern {
+                nodes: vec![
+                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
+                ],
+                edges: vec![EdgePattern {
+                    alias: None,
+                    edge_types: vec!["Extends".to_string()],
+                    direction: EdgeDirection::Incoming,
+                    from: 0,
+                    to: 1,
+                    path_depth: None,
+                }],
+            },
+            where_clause: None,
+            scope: Scope::Local,
+            return_clause: None,
+            limit: None,
+            order_by: None,
+            temporal: None,
+            history: false,
+        });
+
+        let result = exec.execute(&query).unwrap();
+        assert_eq!(result.rows.len(), 1, "Should find the incoming source KU");
+        assert_eq!(result.rows[0].cid, [1u8; 32], "Source should be KU A");
+    }
+
+    #[test]
+    fn test_find_graph_any_edge_type() {
+        let mut exec = LocalExecutor::new();
+        // A -[Extends]-> B
+        let ku_a = make_ku_with_bonds(1, 301, vec![make_bond(2, RelationType::Extends)]);
+        let ku_b = make_ku_with_bonds(2, 302, vec![]);
+        exec.insert(ku_a);
+        exec.insert(ku_b);
+
+        // Empty edge_types = match any
+        let query = Query::Find(FindQuery {
+            pattern: Pattern {
+                nodes: vec![
+                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
+                ],
+                edges: vec![EdgePattern {
+                    alias: None,
+                    edge_types: vec![],  // any type
+                    direction: EdgeDirection::Outgoing,
+                    from: 0,
+                    to: 1,
+                    path_depth: None,
+                }],
+            },
+            where_clause: None,
+            scope: Scope::Local,
+            return_clause: None,
+            limit: None,
+            order_by: None,
+            temporal: None,
+            history: false,
+        });
+
+        let result = exec.execute(&query).unwrap();
+        assert_eq!(result.rows.len(), 1, "Any-type edge should match");
+    }
+
+    #[test]
+    fn test_find_graph_multi_hop() {
+        let mut exec = LocalExecutor::new();
+        // A -[Extends]-> B -[Extends]-> C
+        let ku_a = make_ku_with_bonds(1, 301, vec![make_bond(2, RelationType::Extends)]);
+        let ku_b = make_ku_with_bonds(2, 302, vec![make_bond(3, RelationType::Extends)]);
+        let ku_c = make_ku_with_bonds(3, 303, vec![]);
+        exec.insert(ku_a);
+        exec.insert(ku_b);
+        exec.insert(ku_c);
+
+        // Two edges: A->B->C
+        let query = Query::Find(FindQuery {
+            pattern: Pattern {
+                nodes: vec![
+                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern { alias: Some("c".into()), label: NodeLabel::KU, properties: vec![] },
+                ],
+                edges: vec![
+                    EdgePattern {
+                        alias: None,
+                        edge_types: vec!["Extends".to_string()],
+                        direction: EdgeDirection::Outgoing,
+                        from: 0,
+                        to: 1,
+                        path_depth: None,
+                    },
+                    EdgePattern {
+                        alias: None,
+                        edge_types: vec!["Extends".to_string()],
+                        direction: EdgeDirection::Outgoing,
+                        from: 1,
+                        to: 2,
+                        path_depth: None,
+                    },
+                ],
+            },
+            where_clause: None,
+            scope: Scope::Local,
+            return_clause: None,
+            limit: None,
+            order_by: None,
+            temporal: None,
+            history: false,
+        });
+
+        let result = exec.execute(&query).unwrap();
+        assert_eq!(result.rows.len(), 1, "Multi-hop should reach C");
+        assert_eq!(result.rows[0].cid, [3u8; 32], "Should be KU C");
+    }
+
+    #[test]
+    fn test_find_history_returns_all() {
+        let mut exec = LocalExecutor::new();
+        exec.insert(make_test_ku(301, 9000, 7000));
+        exec.insert(make_test_ku(302, 8000, 5000));
+
+        // exec_history_find returns all matching KUs
+        let query = FindQuery {
+            pattern: Pattern { nodes: vec![NodePattern { alias: Some("k".into()), label: NodeLabel::KU, properties: vec![] }], edges: vec![] },
+            where_clause: None,
+            scope: Scope::Local,
+            return_clause: None,
+            limit: None,
+            order_by: None,
+            temporal: None,
+            history: false,
+        };
+        let result = exec.exec_history_find(&query).unwrap();
+        assert_eq!(result.len(), 2, "History find should return all KUs");
+    }
+
+    #[test]
+    fn test_record_bond_event() {
+        let mut exec = LocalExecutor::new();
+        assert_eq!(exec.event_count(), 0);
+
+        let event = ku_core::graph_types::BondEvent::Created {
+            source_cid: [1u8; 32],
+            target_cid: [2u8; 32],
+            relation: RelationType::Extends,
+            weight: 5000,
+            creator: Creator::Human,
+            evidence: vec![],
+            timestamp: 1000,
+        };
+        exec.record_bond_event(event);
+        assert_eq!(exec.event_count(), 1);
+
+        // Record another event
+        let event2 = ku_core::graph_types::BondEvent::Reinforced {
+            source_cid: [1u8; 32],
+            target_cid: [2u8; 32],
+            relation: RelationType::Extends,
+            old_weight: 5000,
+            new_weight: 8000,
+            timestamp: 2000,
+        };
+        exec.record_bond_event(event2);
+        assert_eq!(exec.event_count(), 2);
+    }
+
+    #[test]
+    fn test_event_log_replay() {
+        let mut exec = LocalExecutor::new();
+
+        exec.record_bond_event(ku_core::graph_types::BondEvent::Created {
+            source_cid: [1u8; 32],
+            target_cid: [2u8; 32],
+            relation: RelationType::Extends,
+            weight: 5000,
+            creator: Creator::Human,
+            evidence: vec![],
+            timestamp: 1000,
+        });
+        exec.record_bond_event(ku_core::graph_types::BondEvent::Reinforced {
+            source_cid: [1u8; 32],
+            target_cid: [2u8; 32],
+            relation: RelationType::Extends,
+            old_weight: 5000,
+            new_weight: 8000,
+            timestamp: 2000,
+        });
+
+        let snapshots = exec.event_log().replay_at_time(1500);
+        assert_eq!(snapshots.len(), 1, "Should have one bond at t=1500");
+        assert_eq!(snapshots[0].weight, 5000, "Weight should be original before reinforce");
+
+        let snapshots2 = exec.event_log().replay_at_time(2000);
+        assert_eq!(snapshots2[0].weight, 8000, "Weight should reflect reinforcement");
+    }
+
+    #[test]
+    fn test_find_simple_still_works() {
+        // Backward compatibility: simple FIND without edges
+        let mut exec = LocalExecutor::new();
+        exec.insert(make_test_ku(301, 9000, 7000));
+        exec.insert(make_test_ku(302, 8000, 5000));
+        exec.insert(make_test_ku(303, 7000, 3000));
+
+        let query = parse_query("FIND (k:KU) WHERE k.trust_score > 4000").unwrap();
+        let result = exec.execute(&query).unwrap();
+        assert_eq!(result.total_count, 2, "Simple FIND still works with Phase 3 changes");
+    }
+
+    #[test]
+    fn test_find_graph_multiple_bonds_same_source() {
+        let mut exec = LocalExecutor::new();
+        // A -[Extends]-> B, A -[Extends]-> C
+        let ku_a = make_ku_with_bonds(1, 301, vec![
+            make_bond(2, RelationType::Extends),
+            make_bond(3, RelationType::Extends),
+        ]);
+        let ku_b = make_ku_with_bonds(2, 302, vec![]);
+        let ku_c = make_ku_with_bonds(3, 303, vec![]);
+        exec.insert(ku_a);
+        exec.insert(ku_b);
+        exec.insert(ku_c);
+
+        let query = Query::Find(FindQuery {
+            pattern: Pattern {
+                nodes: vec![
+                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
+                ],
+                edges: vec![EdgePattern {
+                    alias: None,
+                    edge_types: vec!["Extends".to_string()],
+                    direction: EdgeDirection::Outgoing,
+                    from: 0,
+                    to: 1,
+                    path_depth: None,
+                }],
+            },
+            where_clause: None,
+            scope: Scope::Local,
+            return_clause: None,
+            limit: None,
+            order_by: None,
+            temporal: None,
+            history: false,
+        });
+
+        let result = exec.execute(&query).unwrap();
+        assert_eq!(result.rows.len(), 2, "Should find both B and C targets");
+    }
+
+    #[test]
+    fn test_find_graph_empty_nodes() {
+        let mut exec = LocalExecutor::new();
+
+        let query = Query::Find(FindQuery {
+            pattern: Pattern {
+                nodes: vec![],
+                edges: vec![EdgePattern {
+                    alias: None,
+                    edge_types: vec!["Extends".to_string()],
+                    direction: EdgeDirection::Outgoing,
+                    from: 0,
+                    to: 0,
+                    path_depth: None,
+                }],
+            },
+            where_clause: None,
+            scope: Scope::Local,
+            return_clause: None,
+            limit: None,
+            order_by: None,
+            temporal: None,
+            history: false,
+        });
+
+        let result = exec.execute(&query).unwrap();
+        assert_eq!(result.rows.len(), 0, "Empty nodes pattern returns empty");
+    }
+
+    #[test]
+    fn test_find_history_dispatched() {
+        // Verify FIND HISTORY goes through execute() → exec_find() → exec_history_find()
+        let mut exec = LocalExecutor::new();
+        exec.insert(make_test_ku(301, 9000, 7000));
+        exec.insert(make_test_ku(302, 8000, 5000));
+
+        let query = parse_query("FIND HISTORY (k:KU)").unwrap();
+        let result = exec.execute(&query).unwrap();
+        assert_eq!(result.rows.len(), 2, "FIND HISTORY should return all KUs");
+        assert_eq!(result.total_count, 2);
+
+        // With WHERE filter
+        let query2 = parse_query("FIND HISTORY (k:KU) WHERE k.trust_score > 6000").unwrap();
+        let result2 = exec.execute(&query2).unwrap();
+        assert_eq!(result2.rows.len(), 1, "FIND HISTORY with WHERE should filter");
     }
 }

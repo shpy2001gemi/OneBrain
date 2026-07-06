@@ -40,6 +40,19 @@ pub struct FindQuery {
     pub limit: Option<u32>,
     /// Ordering.
     pub order_by: Option<Vec<OrderExpr>>,
+    /// Temporal clause: AT TIME or DURING.
+    pub temporal: Option<TemporalClause>,
+    /// Whether to query historical versions.
+    pub history: bool,
+}
+
+/// Temporal query clause.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TemporalClause {
+    /// Query state at a specific timestamp.
+    AtTime(u64),
+    /// Query state during a time range.
+    During { from: u64, to: u64 },
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -239,6 +252,23 @@ pub struct EdgePattern {
     pub from: usize,
     /// Target node index.
     pub to: usize,
+    /// Variable-length path depth (e.g., *1..3).
+    pub path_depth: Option<PathDepth>,
+}
+
+/// Variable-length path depth: `*min..max`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PathDepth {
+    /// Minimum hops (default: 1)
+    pub min: usize,
+    /// Maximum hops (default: 1)
+    pub max: usize,
+}
+
+impl Default for PathDepth {
+    fn default() -> Self {
+        Self { min: 1, max: 1 }
+    }
 }
 
 /// Edge direction in pattern matching.
@@ -327,6 +357,8 @@ pub enum Value {
     EpistemicStatus(EpistemicStatus),
     EvidenceType(EvidenceType),
     Role(RoleId),
+    /// ★ OBKG Phase 3: Unix timestamp value
+    Timestamp(u64),
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

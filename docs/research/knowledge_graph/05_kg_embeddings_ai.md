@@ -1,15 +1,15 @@
-# Knowledge Graph Embeddings & AI — Survey for ONKG
+﻿# Knowledge Graph Embeddings & AI — Survey for OBKG
 
 > **Author**: OneBrain Research Team  
 > **Date**: 2026-07-02  
-> **Purpose**: Evaluate KGE models and AI techniques for ONKG edge deployment
+> **Purpose**: Evaluate KGE models and AI techniques for OBKG edge deployment
 
 ---
 
 ## Executive Summary
 
 > [!IMPORTANT]
-> **Primary Recommendation**: **RotatE with int8 quantization** at dimension 64 is the optimal choice for ONKG. It handles all critical relational patterns in ONKG's 33 bond types (symmetry, antisymmetry, inversion, composition), requires only **64 bytes per entity** in int8, and can be trained incrementally via federated learning.
+> **Primary Recommendation**: **RotatE with int8 quantization** at dimension 64 is the optimal choice for OBKG. It handles all critical relational patterns in OBKG's 33 bond types (symmetry, antisymmetry, inversion, composition), requires only **64 bytes per entity** in int8, and can be trained incrementally via federated learning.
 
 **Key Constraints:**
 - Edge devices: 1-4 GB RAM, ARM CPU, no GPU
@@ -88,11 +88,11 @@ Each $r_i = e^{i\theta_i}$, so only $d/2$ angle parameters per relation.
 
 ### 3.2 HAKE (Zhang et al., 2020)
 
-Modulus captures hierarchy level, phase captures position. Explicitly models hierarchical relations. Very relevant for ONKG's 5+ hierarchical relations, but 2× memory.
+Modulus captures hierarchy level, phase captures position. Explicitly models hierarchical relations. Very relevant for OBKG's 5+ hierarchical relations, but 2× memory.
 
-### 3.3 Mapping to ONKG Relations
+### 3.3 Mapping to OBKG Relations
 
-| ONKG Category | Best Model | Why |
+| OBKG Category | Best Model | Why |
 |---------------|-----------|-----|
 | B: Structural (PartOf, InstanceOf) | **HAKE** | Explicit hierarchy |
 | C: Causal (Causes, Enables) | **RotatE** | Antisymmetry + composition |
@@ -139,7 +139,7 @@ Modulus captures hierarchy level, phase captures position. Explicitly models hie
 | HAKE | 0.346 | 0.542 | 500 |
 | TuckER | 0.358 | 0.544 | 200 |
 
-### 6.2 ONKG Application
+### 6.2 OBKG Application
 
 | Task | Example | Impact |
 |------|---------|--------|
@@ -192,7 +192,7 @@ fn rotate_score(h: &[i8; 64], r_re: &[i8; 32], r_im: &[i8; 32], t: &[i8; 64]) ->
 
 ```
                 ┌──────────────────────────┐
-                │     ONKG Anomaly Layer    │
+                │     OBKG Anomaly Layer    │
                 ├──────────────┬────────────┤
                 │ Behavioral   │ Structural │
                 │ (immune.rs)  │ (KGE-new)  │
@@ -208,12 +208,12 @@ fn rotate_score(h: &[i8; 64], r_re: &[i8; 32], r_im: &[i8; 32], t: &[i8; 64]) ->
 
 ## 9. Federated KG Embedding
 
-### FedR Protocol (Best Match for ONKG)
+### FedR Protocol (Best Match for OBKG)
 
-Since ONKG has only 33 relation types, nodes can safely share relation embeddings (33 × 32 int8 = **1,056 bytes**) while keeping entity embeddings local.
+Since OBKG has only 33 relation types, nodes can safely share relation embeddings (33 × 32 int8 = **1,056 bytes**) while keeping entity embeddings local.
 
 ```
-FedR-ONKG Protocol:
+FedR-OBKG Protocol:
 1. INIT: Seed 33 relation embeddings (1,056 bytes total)
 2. LOCAL TRAIN: SGD on local triples, 10-20 steps
 3. GOSSIP: Send Δr to K random peers (~1 KB per round)

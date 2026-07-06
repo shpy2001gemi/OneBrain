@@ -175,3 +175,16 @@ pub const OBT_MAX_WITNESSES: u32 = 7;
 pub const OBT_UNRECEIVED_SEND_EXPIRY_S: u64 = 7 * 24 * 3_600;
 /// PoS-KU challenge response timeout (seconds).
 pub const OBT_POS_KU_TIMEOUT_S: u64 = 30;
+
+// ─── OBKG Graph Gossip (SPEC §OBKG) ──────────────────────────────────────
+
+// Message type codes 0xB0–0xB3 for OBKG graph gossip protocol.
+
+/// FedR Delta Push: peer_id, epoch, deltas, signature.
+pub const MSG_FEDR_DELTA_PUSH: u8 = 0xB0;
+/// FedR Delta Pull: requester_id, min_epoch.
+pub const MSG_FEDR_DELTA_PULL: u8 = 0xB1;
+/// Graph Stats: bond counts, KU count, FedR epoch, last dream time.
+pub const MSG_GRAPH_STATS: u8 = 0xB2;
+/// Dream Report: reinforcement/pruning results from dream consolidation.
+pub const MSG_DREAM_REPORT: u8 = 0xB3;

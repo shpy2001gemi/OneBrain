@@ -1,8 +1,8 @@
-# Temporal, Streaming & Dynamic Knowledge Graphs — Survey for ONKG
+﻿# Temporal, Streaming & Dynamic Knowledge Graphs — Survey for OBKG
 
 > **Author**: OneBrain Research Team  
 > **Date**: 2026-07-02  
-> **Purpose**: Survey temporal KG models, event sourcing, streaming algorithms, and decay models for ONKG
+> **Purpose**: Survey temporal KG models, event sourcing, streaming algorithms, and decay models for OBKG
 
 ---
 
@@ -38,7 +38,7 @@ TKGs extend triples `(s, r, o)` to quadruples `(s, r, o, t)`.
 
 ### Time Representation Strategies
 
-| Strategy | Description | ONKG Mapping |
+| Strategy | Description | OBKG Mapping |
 |----------|-------------|-------------|
 | Point-based | Single timestamp t | `created_at: u32` |
 | Interval-based | Valid during [t_start, t_end] | Bond `created_at` + `last_reinforced` |
@@ -97,7 +97,7 @@ enum BondEvent {
 
 ### 2.2 Similarity to OBT Account-Chain
 
-| Property | OBT Account-Chain | ONKG Edge Events |
+| Property | OBT Account-Chain | OBKG Edge Events |
 |----------|------------------|------------------|
 | Immutability | Blocks append-only | Events append-only |
 | Ordering | VectorClock + sequence | VectorClock + timestamp |
@@ -122,7 +122,7 @@ Pheromone Table = Streaming Graph Algorithm
 └── truncate(10) = bounded memory per topic
 ```
 
-Key algorithms for ONKG:
+Key algorithms for OBKG:
 - **Streaming Connected Components**: Union-Find with rollback
 - **Streaming PageRank**: Forward/Reverse Push — localized updates
 - **Sliding Window Analysis**: Only edges within recent time window W — maps to bond decay
@@ -135,11 +135,11 @@ Key algorithms for ONKG:
 |--------|-------|-------------|---------------|
 | TerminusDB | Document-Graph | ✅ Any commit | Immutable delta layers |
 | Dolt | Relational SQL | ✅ `AS OF` queries | Prolly Trees + Merkle DAG |
-| ONKG (proposed) | KU + Bond | ✅ Replay events | VectorClock-ordered event log |
+| OBKG (proposed) | KU + Bond | ✅ Replay events | VectorClock-ordered event log |
 
 ### Snapshot Strategy
 
-| Approach | Space | Query Speed | ONKG Recommendation |
+| Approach | Space | Query Speed | OBKG Recommendation |
 |----------|-------|-------------|-------------------|
 | Full snapshot | O(V+E) per snap | O(1) | ❌ Too expensive |
 | Delta chain | O(Δ) per version | O(Δ × versions) | ❌ Slow for old versions |
@@ -193,7 +193,7 @@ FIND (ku:KU)-[r]->(m:KU) WHERE r.effective_weight(NOW() + 30d) < 0.1
 
 ### Kuhn's Paradigm Shift Mapping
 
-| Kuhn Phase | ONKG Mapping |
+| Kuhn Phase | OBKG Mapping |
 |------------|-------------|
 | Pre-paradigm | Many KUs with `EpistemicStatus::Hypothesis` |
 | Normal Science | KUs reaching `Corroborated` → `PeerReviewed` |
@@ -291,15 +291,15 @@ impl Decayable for PheromoneHop { /* λ=0.0513 (from τ=0.95) */ }
 
 ### Pearl's Ladder of Causation
 
-| Level | Question | ONKG Capability |
+| Level | Question | OBKG Capability |
 |-------|----------|----------------|
 | 1. Association | "What does X tell me about Y?" | Bond traversal (existing) |
 | 2. Intervention | "What if I do X?" | Causal bonds (Causes, Enables, Prevents) |
 | 3. Counterfactual | "What if X hadn't happened?" | Event replay with modified history |
 
-ONKG's Category C (Causal) relations: `Causes (0x20)`, `Enables (0x21)`, `Prevents (0x22)`, `DependsOn (0x23)`.
+OBKG's Category C (Causal) relations: `Causes (0x20)`, `Enables (0x21)`, `Prevents (0x22)`, `DependsOn (0x23)`.
 
-With event sourcing, ONKG can answer counterfactuals by replaying events while filtering specific operations.
+With event sourcing, OBKG can answer counterfactuals by replaying events while filtering specific operations.
 
 ---
 
@@ -329,7 +329,7 @@ Each GCounter in metabolism tracking is implicitly a time series:
 
 ## 10. Design Proposals
 
-### 10.1 Event-Sourced ONKG Architecture
+### 10.1 Event-Sourced OBKG Architecture
 
 ```
 Write Path:  KQL Command → Validator → Event Store (append-only) → VectorClock

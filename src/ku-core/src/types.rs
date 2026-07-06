@@ -228,7 +228,63 @@ impl RelationType {
             _ => '?',
         }
     }
+
+    /// ★ OBKG Fix: Match a string name (case-insensitive) to this RelationType.
+    /// Used by KQL edge pattern matching instead of fragile Debug format comparison.
+    pub fn matches_name(&self, name: &str) -> bool {
+        Self::from_name(name) == Some(*self)
+    }
+
+    /// ★ OBKG Fix: Parse a relation type name (case-insensitive).
+    pub fn from_name(name: &str) -> Option<Self> {
+        // All 33 variants — case-insensitive match
+        let lower = name.to_ascii_lowercase();
+        match lower.as_str() {
+            "extends" => Some(Self::Extends),
+            "supplements" => Some(Self::Supplements),
+            "refutes" => Some(Self::Refutes),
+            "corroborates" => Some(Self::Corroborates),
+            "supersedes" => Some(Self::Supersedes),
+            "qualifies" => Some(Self::Qualifies),
+            "partof" | "part_of" => Some(Self::PartOf),
+            "instanceof" | "instance_of" => Some(Self::InstanceOf),
+            "specializes" => Some(Self::Specializes),
+            "generalizes" => Some(Self::Generalizes),
+            "causes" => Some(Self::Causes),
+            "enables" => Some(Self::Enables),
+            "prevents" => Some(Self::Prevents),
+            "dependson" | "depends_on" => Some(Self::DependsOn),
+            "exampleof" | "example_of" => Some(Self::ExampleOf),
+            "analogyof" | "analogy_of" => Some(Self::AnalogyOf),
+            "appliesto" | "applies_to" => Some(Self::AppliesTo),
+            "derivedfrom" | "derived_from" => Some(Self::DerivedFrom),
+            "duplicates" => Some(Self::Duplicates),
+            "translates" => Some(Self::Translates),
+            "paraphrases" => Some(Self::Paraphrases),
+            "inspires" => Some(Self::Inspires),
+            "precedes" => Some(Self::Precedes),
+            "cooccurs" | "co_occurs" => Some(Self::Cooccurs),
+            "cites" => Some(Self::Cites),
+            "authoredby" | "authored_by" => Some(Self::AuthoredBy),
+            "reviewedby" | "reviewed_by" => Some(Self::ReviewedBy),
+            "reactionto" | "reaction_to" => Some(Self::ReactionTo),
+            "testimonyabout" | "testimony_about" => Some(Self::TestimonyAbout),
+            "formallyproves" | "formally_proves" => Some(Self::FormallyProves),
+            "evolvesinto" | "evolves_into" => Some(Self::EvolvesInto),
+            "variantof" | "variant_of" => Some(Self::VariantOf),
+            "sensoryevidencefor" | "sensory_evidence_for" => Some(Self::SensoryEvidenceFor),
+            "culturallycontextualizes" | "culturally_contextualizes" => Some(Self::CulturallyContextualizes),
+            _ => None,
+        }
+    }
 }
+
+impl std::fmt::Display for RelationType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 
 /// Edge State — lifecycle of a bond.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

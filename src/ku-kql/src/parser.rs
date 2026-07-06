@@ -6,7 +6,7 @@
 use nom::{
     IResult,
     branch::alt,
-    bytes::complete::{tag, tag_no_case, take_while1},
+    bytes::complete::{tag, tag_no_case, take_while, take_while1},
     character::complete::{char, digit1, multispace0, multispace1},
     combinator::{map, map_res, opt, value},
     multi::separated_list1,
@@ -74,6 +74,14 @@ fn query(input: &str) -> IResult<&str, Query> {
 fn find_query(input: &str) -> IResult<&str, FindQuery> {
     let (input, _) = tag_no_case("FIND")(input)?;
     let (input, _) = multispace1(input)?;
+
+    // Check for HISTORY keyword
+    let (input, history) = opt(preceded(
+        tag_no_case("HISTORY"),
+        value(true, multispace1),
+    ))(input)?;
+    let history = history.unwrap_or(false);
+
     let (input, pattern) = pattern(input)?;
     let (input, _) = multispace0(input)?;
     let (input, where_clause) = opt(where_clause)(input)?;
@@ -85,6 +93,8 @@ fn find_query(input: &str) -> IResult<&str, FindQuery> {
     let (input, order_by) = opt(order_clause)(input)?;
     let (input, _) = multispace0(input)?;
     let (input, limit) = opt(limit_clause)(input)?;
+    let (input, _) = multispace0(input)?;
+    let (input, temporal) = opt(parse_temporal_clause)(input)?;
 
     Ok((input, FindQuery {
         pattern,
@@ -93,6 +103,8 @@ fn find_query(input: &str) -> IResult<&str, FindQuery> {
         return_clause,
         limit,
         order_by,
+        temporal,
+        history,
     }))
 }
 
@@ -574,11 +586,161 @@ fn explain_query(input: &str) -> IResult<&str, Query> {
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn pattern(input: &str) -> IResult<&str, Pattern> {
-    let (input, node) = node_pattern(input)?;
-    Ok((input, Pattern {
-        nodes: vec![node],
-        edges: vec![],
+    let (input, first_node) = node_pattern(input)?;
+    let mut nodes = vec![first_node];
+    let mut edges = vec![];
+    let mut remaining = input;
+
+    // Parse chains of edge + node: -[...]->(node) or <-[...]-(node)
+    loop {
+        let trimmed = remaining.trim_start();
+        match edge_pattern(trimmed, nodes.len() - 1) {
+            Ok((rest, edge)) => {
+                let rest = rest.trim_start();
+                match node_pattern(rest) {
+                    Ok((rest2, node)) => {
+                        let mut e = edge;
+                        e.to = nodes.len();
+                        edges.push(e);
+                        nodes.push(node);
+                        remaining = rest2;
+                    }
+                    Err(_) => break,
+                }
+            }
+            Err(_) => break,
+        }
+    }
+
+    Ok((remaining, Pattern { nodes, edges }))
+}
+
+/// Parse an edge pattern: `-[alias:Type1|Type2]->` or `<-[alias:Type1|Type2]-`
+fn edge_pattern(input: &str, from_idx: usize) -> IResult<&str, EdgePattern> {
+    // Detect direction prefix
+    let (input, direction) = if input.starts_with("<-[") {
+        (&input[2..], EdgeDirection::Incoming)  // skip "<-", keep "["
+    } else if input.starts_with("-[") {
+        (&input[1..], EdgeDirection::Outgoing)  // skip "-", keep "["
+    } else {
+        return Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)));
+    };
+
+    // Parse [...] content
+    let (input, _) = tag("[")(input)?;
+    let (input, _) = multispace0(input)?;
+
+    // Optional path depth: *1..3
+    let (input, path_depth) = opt(parse_path_depth)(input)?;
+
+    // Optional alias and types
+    let (input, _) = multispace0(input)?;
+    let (input, (alias, edge_types)) = parse_edge_label(input)?;
+
+    let (input, _) = multispace0(input)?;
+    let (input, _) = tag("]")(input)?;
+
+    // Direction suffix
+    let input = if direction == EdgeDirection::Outgoing {
+        let (input, _) = tag("->")(input)?;
+        input
+    } else {
+        let (input, _) = tag("-")(input)?;
+        input
+    };
+
+    Ok((input, EdgePattern {
+        alias,
+        edge_types,
+        direction,
+        from: from_idx,
+        to: 0, // will be set by pattern()
+        path_depth,
     }))
+}
+
+/// Parse `*min..max` path depth (e.g., `*1..3`, `*2..5`)
+fn parse_path_depth(input: &str) -> IResult<&str, PathDepth> {
+    let (input, _) = tag("*")(input)?;
+    let (input, min) = nom::character::complete::u32(input)?;
+    let (input, _) = tag("..")(input)?;
+    let (input, max) = nom::character::complete::u32(input)?;
+    Ok((input, PathDepth { min: min as usize, max: max as usize }))
+}
+
+/// Parse an edge alias: identifier followed by `:`
+fn parse_edge_alias(input: &str) -> IResult<&str, String> {
+    let (input, name) = identifier(input)?;
+    let (input, _) = tag(":")(input)?;
+    Ok((input, name.to_string()))
+}
+
+/// Parse optional `alias:Type1|Type2` inside edge brackets.
+fn parse_edge_label(input: &str) -> IResult<&str, (Option<String>, Vec<String>)> {
+    // Empty bracket: -[]->
+    if input.starts_with(']') {
+        return Ok((input, (None, vec![])));
+    }
+
+    // Check for alias (identifier followed by ':')
+    let (rest, alias) = opt(parse_edge_alias)(input)?;
+
+    // If no alias, check for bare ':'
+    let (rest, _) = if alias.is_none() {
+        opt(tag(":"))(rest)?
+    } else {
+        (rest, None)
+    };
+
+    // Parse pipe-separated type names
+    let (rest, types) = parse_edge_types(rest)?;
+
+    Ok((rest, (alias, types)))
+}
+
+/// Parse pipe-separated edge type names (e.g., `Extends|Supplements`).
+fn parse_edge_types(input: &str) -> IResult<&str, Vec<String>> {
+    if input.starts_with(']') {
+        return Ok((input, vec![]));
+    }
+    let (input, first) = identifier(input)?;
+    let mut types = vec![first.to_string()];
+    let mut remaining = input;
+    loop {
+        match tag::<&str, &str, nom::error::Error<&str>>("|") (remaining) {
+            Ok((rest, _)) => {
+                match identifier(rest) {
+                    Ok((rest2, next)) => {
+                        types.push(next.to_string());
+                        remaining = rest2;
+                    }
+                    Err(_) => break,
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    Ok((remaining, types))
+}
+
+/// Parse temporal clause: `AT TIME <ts>` or `DURING <from> <to>`
+fn parse_temporal_clause(input: &str) -> IResult<&str, TemporalClause> {
+    let input = input.trim_start();
+    // Try AT TIME <timestamp>
+    if let Ok((rest, _)) = tag_no_case::<&str, &str, nom::error::Error<&str>>("AT")(input) {
+        let (rest, _) = multispace1(rest)?;
+        let (rest, _) = tag_no_case("TIME")(rest)?;
+        let (rest, _) = multispace1(rest)?;
+        let (rest, ts) = nom::character::complete::u64(rest)?;
+        return Ok((rest, TemporalClause::AtTime(ts)));
+    }
+    // Try DURING <from> <to>
+    let (input, _) = tag_no_case("DURING")(input)?;
+    let (input, _) = multispace1(input)?;
+    let (input, from) = nom::character::complete::u64(input)?;
+    let (input, _) = multispace1(input)?;
+    let (input, to) = nom::character::complete::u64(input)?;
+    Ok((input, TemporalClause::During { from, to }))
 }
 
 fn node_pattern(input: &str) -> IResult<&str, NodePattern> {
@@ -852,7 +1014,7 @@ fn parse_number(input: &str) -> IResult<&str, Value> {
 
 fn quoted_string(input: &str) -> IResult<&str, String> {
     let (input, _) = char('"')(input)?;
-    let (input, content) = take_while1(|c: char| c != '"')(input)?;
+    let (input, content) = take_while(|c: char| c != '"')(input)?;
     let (input, _) = char('"')(input)?;
     Ok((input, content.to_string()))
 }
@@ -1451,6 +1613,222 @@ mod tests {
                 Query::Create(c) => assert_eq!(c.gene_type, Some(expected), "Failed for {}", kw),
                 _ => panic!("Expected Create for {}", kw),
             }
+        }
+    }
+
+    // ─── Phase 3: Edge pattern tests ────────────────────────────────────
+
+    #[test]
+    fn test_parse_find_with_edge_outgoing() {
+        let q = parse_query("FIND (k:KU)-[:Extends]->(m:KU)").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.pattern.nodes.len(), 2);
+                assert_eq!(f.pattern.edges.len(), 1);
+                assert_eq!(f.pattern.edges[0].direction, EdgeDirection::Outgoing);
+                assert_eq!(f.pattern.edges[0].edge_types, vec!["Extends"]);
+                assert_eq!(f.pattern.edges[0].from, 0);
+                assert_eq!(f.pattern.edges[0].to, 1);
+                assert!(f.pattern.edges[0].alias.is_none());
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    #[test]
+    fn test_parse_find_with_edge_incoming() {
+        let q = parse_query("FIND (k:KU)<-[:Causes]-(m:KU)").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.pattern.nodes.len(), 2);
+                assert_eq!(f.pattern.edges.len(), 1);
+                assert_eq!(f.pattern.edges[0].direction, EdgeDirection::Incoming);
+                assert_eq!(f.pattern.edges[0].edge_types, vec!["Causes"]);
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    #[test]
+    fn test_parse_find_with_edge_alias() {
+        let q = parse_query("FIND (k:KU)-[r:Extends]->(m:KU)").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.pattern.edges[0].alias, Some("r".to_string()));
+                assert_eq!(f.pattern.edges[0].edge_types, vec!["Extends"]);
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    #[test]
+    fn test_parse_find_with_multiple_edge_types() {
+        let q = parse_query("FIND (k:KU)-[:Extends|Supplements]->(m:KU)").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.pattern.edges[0].edge_types, vec!["Extends", "Supplements"]);
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    #[test]
+    fn test_parse_find_with_path_depth() {
+        let q = parse_query("FIND (k:KU)-[*1..3:Extends]->(m:KU)").unwrap();
+        match q {
+            Query::Find(f) => {
+                let depth = f.pattern.edges[0].path_depth.as_ref().unwrap();
+                assert_eq!(depth.min, 1);
+                assert_eq!(depth.max, 3);
+                assert_eq!(f.pattern.edges[0].edge_types, vec!["Extends"]);
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    #[test]
+    fn test_parse_find_chain_two_edges() {
+        let q = parse_query("FIND (a:KU)-[:Extends]->(b:KU)-[:Causes]->(c:KU)").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.pattern.nodes.len(), 3);
+                assert_eq!(f.pattern.edges.len(), 2);
+                assert_eq!(f.pattern.edges[0].from, 0);
+                assert_eq!(f.pattern.edges[0].to, 1);
+                assert_eq!(f.pattern.edges[0].edge_types, vec!["Extends"]);
+                assert_eq!(f.pattern.edges[1].from, 1);
+                assert_eq!(f.pattern.edges[1].to, 2);
+                assert_eq!(f.pattern.edges[1].edge_types, vec!["Causes"]);
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    #[test]
+    fn test_parse_find_empty_edge() {
+        let q = parse_query("FIND (k:KU)-[]->(m:KU)").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.pattern.edges[0].edge_types.len(), 0);
+                assert!(f.pattern.edges[0].alias.is_none());
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    // ─── Phase 3: Temporal parsing tests ────────────────────────────────
+
+    #[test]
+    fn test_parse_find_at_time() {
+        let q = parse_query("FIND (k:KU) AT TIME 1719900000").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.temporal, Some(TemporalClause::AtTime(1719900000)));
+                assert!(!f.history);
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    #[test]
+    fn test_parse_find_during() {
+        let q = parse_query("FIND (k:KU) DURING 1719800000 1719900000").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.temporal, Some(TemporalClause::During { from: 1719800000, to: 1719900000 }));
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    #[test]
+    fn test_parse_find_history() {
+        let q = parse_query("FIND HISTORY (k:KU)").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert!(f.history);
+                assert_eq!(f.pattern.nodes[0].alias, Some("k".to_string()));
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    #[test]
+    fn test_parse_find_history_with_where() {
+        let q = parse_query("FIND HISTORY (k:KU) WHERE k.trust_score > 5000").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert!(f.history);
+                assert!(f.where_clause.is_some());
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    // ─── Phase 3: Combined edge + temporal tests ───────────────────────
+
+    #[test]
+    fn test_parse_find_edge_at_time() {
+        let q = parse_query("FIND (k:KU)-[:Extends]->(m:KU) AT TIME 1719900000").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.pattern.edges.len(), 1);
+                assert_eq!(f.temporal, Some(TemporalClause::AtTime(1719900000)));
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    #[test]
+    fn test_parse_find_edge_with_where_and_temporal() {
+        let q = parse_query(
+            "FIND (k:KU)-[:Extends]->(m:KU) WHERE k.trust_score > 5000 DURING 1719800000 1719900000"
+        ).unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.pattern.edges.len(), 1);
+                assert!(f.where_clause.is_some());
+                assert_eq!(f.temporal, Some(TemporalClause::During { from: 1719800000, to: 1719900000 }));
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    // ─── Phase 3: Backward compatibility ───────────────────────────────
+
+    #[test]
+    fn test_parse_simple_find_still_works() {
+        let q = parse_query("FIND (k:KU) WHERE k.trust_score > 5000 LIMIT 10").unwrap();
+        match q {
+            Query::Find(f) => {
+                assert_eq!(f.pattern.nodes.len(), 1);
+                assert_eq!(f.pattern.edges.len(), 0);
+                assert!(f.where_clause.is_some());
+                assert_eq!(f.limit, Some(10));
+                assert_eq!(f.temporal, None);
+                assert!(!f.history);
+            },
+            _ => panic!("Expected Find"),
+        }
+    }
+
+    #[test]
+    fn test_parse_find_history_edge_temporal_full() {
+        let q = parse_query(
+            "FIND HISTORY (a:KU)-[r:Extends]->(b:KU) WHERE a.trust_score > 1000 SCOPE LOCAL LIMIT 5 AT TIME 1719900000"
+        ).unwrap();
+        match q {
+            Query::Find(f) => {
+                assert!(f.history);
+                assert_eq!(f.pattern.nodes.len(), 2);
+                assert_eq!(f.pattern.edges.len(), 1);
+                assert_eq!(f.pattern.edges[0].alias, Some("r".to_string()));
+                assert!(f.where_clause.is_some());
+                assert_eq!(f.scope, Scope::Local);
+                assert_eq!(f.limit, Some(5));
+                assert_eq!(f.temporal, Some(TemporalClause::AtTime(1719900000)));
+            },
+            _ => panic!("Expected Find"),
         }
     }
 }

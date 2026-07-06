@@ -16,6 +16,12 @@
 //! 3. Engagement ratio: high replication but low actual usage
 //! 4. Diversity deficit: spread only among similar nodes
 //!
+//! ## ★ OBKG Structural Signals (graph-aware):
+//! 5. Low triple score: RotatE embedding mismatch
+//! 6. Cluster outlier: KU embedding far from any centroid
+//! 7. Temporal drift: embedding changed suspiciously fast
+//! 8. Inverse violation: bond violates known inverse relation rules
+//!
 //! ## Key Constraint (Founder Q5):
 //! "Có những kẻ xấu vì lý do tôn giáo, chính trị ... sẽ nạp kiến thức
 //! sai lệch khổng lồ và tự cho phe họ (bot) vote."
@@ -48,6 +54,25 @@ pub const SURVIVAL_BONUS: f32 = 0.1;
 /// Maximum survival score
 pub const MAX_SURVIVAL_SCORE: f32 = 1.0;
 
+// ★ OBKG: Structural antibody thresholds
+/// RotatE anomaly score above this is suspicious [0.0, 1.0]
+pub const TRIPLE_SCORE_THRESHOLD: f64 = 0.85;
+
+/// Cosine distance from nearest cluster centroid above this = outlier
+pub const CLUSTER_OUTLIER_THRESHOLD: f64 = 0.90;
+
+/// Maximum allowed embedding version change per hour
+pub const TEMPORAL_DRIFT_MAX_VERSIONS_PER_HOUR: u32 = 10;
+
+/// Known inverse relation pairs
+pub const INVERSE_PAIRS: &[(u8, u8)] = &[
+    (0x20, 0x22), // Causes ↔ Prevents
+    (0x21, 0x22), // Enables ↔ Prevents
+    (0x01, 0x03), // Extends ↔ Refutes
+    (0x04, 0x03), // Corroborates ↔ Refutes
+    (0x12, 0x13), // Specializes ↔ Generalizes
+];
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
 // ═══════════════════════════════════════════════════════════════════════════
@@ -55,6 +80,7 @@ pub const MAX_SURVIVAL_SCORE: f32 = 1.0;
 /// Type of suspicious pattern detected
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AntibodyType {
+    // Existing behavioral antibodies (4)
     /// Too many replications too fast
     TemporalBurst,
     /// Most replications from same source cluster
@@ -63,6 +89,16 @@ pub enum AntibodyType {
     LowEngagement,
     /// Spread only among similar/clustered nodes
     DiversityDeficit,
+
+    // ★ OBKG: Structural antibodies (4) — graph-aware detection
+    /// Bond has very low RotatE triple score (embedding mismatch)
+    LowTripleScore,
+    /// KU embedding is far from any cluster centroid (outlier)
+    ClusterOutlier,
+    /// Entity embedding changed too rapidly (suspiciously fast retraining)
+    TemporalDrift,
+    /// Bond violates known inverse relation rules (e.g., A→Causes→B but B→Prevents→A)
+    InverseViolation,
 }
 
 /// An antibody detection record (privacy-safe: no NodeIDs)
@@ -273,6 +309,108 @@ impl ImmuneEngine {
 
         unique_types.len() >= 2 && avg_confidence > 0.7
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ★ OBKG: Structural antibody detection (graph-aware)
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// ★ OBKG: Detect low triple score (embedding mismatch).
+    ///
+    /// If the RotatE anomaly score exceeds the threshold, the bond's
+    /// embedding relationship is suspect.
+    pub fn check_low_triple_score(
+        anomaly_score: f64,
+        pattern_hash: [u8; 32],
+        now: u64,
+    ) -> Option<Antibody> {
+        if anomaly_score > TRIPLE_SCORE_THRESHOLD {
+            Some(Antibody {
+                pattern_hash,
+                antibody_type: AntibodyType::LowTripleScore,
+                confidence: anomaly_score as f32,
+                detected_at: now,
+                confirmation_count: 1,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// ★ OBKG: Detect cluster outlier.
+    ///
+    /// If the cosine distance from the nearest cluster centroid exceeds
+    /// the threshold, the KU embedding is an outlier.
+    pub fn check_cluster_outlier(
+        distance_to_centroid: f64,
+        pattern_hash: [u8; 32],
+        now: u64,
+    ) -> Option<Antibody> {
+        if distance_to_centroid > CLUSTER_OUTLIER_THRESHOLD {
+            Some(Antibody {
+                pattern_hash,
+                antibody_type: AntibodyType::ClusterOutlier,
+                confidence: (distance_to_centroid as f32).min(1.0),
+                detected_at: now,
+                confirmation_count: 1,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// ★ OBKG: Detect temporal drift (embedding changes too fast).
+    ///
+    /// If the rate of embedding version changes per hour exceeds the
+    /// threshold, someone may be suspiciously re-training the embedding.
+    pub fn check_temporal_drift(
+        version_changes: u32,
+        time_window_hours: f64,
+        pattern_hash: [u8; 32],
+        now: u64,
+    ) -> Option<Antibody> {
+        if time_window_hours <= 0.0 {
+            return None;
+        }
+        let rate = version_changes as f64 / time_window_hours;
+        if rate > TEMPORAL_DRIFT_MAX_VERSIONS_PER_HOUR as f64 {
+            let confidence = (rate / (TEMPORAL_DRIFT_MAX_VERSIONS_PER_HOUR as f64 * 2.0)).min(1.0);
+            Some(Antibody {
+                pattern_hash,
+                antibody_type: AntibodyType::TemporalDrift,
+                confidence: confidence as f32,
+                detected_at: now,
+                confirmation_count: 1,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// ★ OBKG: Detect inverse relation violation.
+    ///
+    /// If two bonds between the same entities use relations that are
+    /// known inverses (e.g., Causes ↔ Prevents), flag the inconsistency.
+    pub fn check_inverse_violation(
+        relation_a: u8,
+        relation_b: u8,
+        pattern_hash: [u8; 32],
+        now: u64,
+    ) -> Option<Antibody> {
+        let violates = INVERSE_PAIRS.iter().any(|&(a, b)| {
+            (relation_a == a && relation_b == b) || (relation_a == b && relation_b == a)
+        });
+        if violates {
+            Some(Antibody {
+                pattern_hash,
+                antibody_type: AntibodyType::InverseViolation,
+                confidence: 0.9,
+                detected_at: now,
+                confirmation_count: 1,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -435,5 +573,94 @@ mod tests {
         // Should NOT flag diversity/engagement with too few replications
         assert!(!abs.iter().any(|a| a.antibody_type == AntibodyType::LowEngagement));
         assert!(!abs.iter().any(|a| a.antibody_type == AntibodyType::DiversityDeficit));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ★ OBKG: Structural antibody tests
+    // ═══════════════════════════════════════════════════════════════════
+
+    #[test]
+    fn test_detect_low_triple_score_above_threshold() {
+        let ab = ImmuneEngine::check_low_triple_score(0.9, test_hash(10), T0);
+        assert!(ab.is_some(), "anomaly 0.9 > threshold 0.85 → should detect");
+        let ab = ab.unwrap();
+        assert_eq!(ab.antibody_type, AntibodyType::LowTripleScore);
+        assert!((ab.confidence - 0.9).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_detect_low_triple_score_below_threshold() {
+        let ab = ImmuneEngine::check_low_triple_score(0.5, test_hash(11), T0);
+        assert!(ab.is_none(), "anomaly 0.5 < threshold 0.85 → no detection");
+    }
+
+    #[test]
+    fn test_detect_cluster_outlier() {
+        let ab = ImmuneEngine::check_cluster_outlier(0.95, test_hash(12), T0);
+        assert!(ab.is_some(), "distance 0.95 > threshold 0.90 → should detect");
+        let ab = ab.unwrap();
+        assert_eq!(ab.antibody_type, AntibodyType::ClusterOutlier);
+        assert!((ab.confidence - 0.95).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_detect_cluster_outlier_below_threshold() {
+        let ab = ImmuneEngine::check_cluster_outlier(0.5, test_hash(13), T0);
+        assert!(ab.is_none(), "distance 0.5 < threshold 0.90 → no detection");
+    }
+
+    #[test]
+    fn test_detect_temporal_drift_fast() {
+        // 20 versions in 1 hour → rate=20 > threshold=10
+        let ab = ImmuneEngine::check_temporal_drift(20, 1.0, test_hash(14), T0);
+        assert!(ab.is_some(), "20 versions/hr > 10 → should detect");
+        let ab = ab.unwrap();
+        assert_eq!(ab.antibody_type, AntibodyType::TemporalDrift);
+        // confidence = (20 / 20).min(1.0) = 1.0
+        assert!((ab.confidence - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_detect_temporal_drift_slow() {
+        // 5 versions in 1 hour → rate=5 < threshold=10
+        let ab = ImmuneEngine::check_temporal_drift(5, 1.0, test_hash(15), T0);
+        assert!(ab.is_none(), "5 versions/hr < 10 → no detection");
+    }
+
+    #[test]
+    fn test_detect_temporal_drift_zero_window() {
+        // 0 time window → should return None (division guard)
+        let ab = ImmuneEngine::check_temporal_drift(100, 0.0, test_hash(16), T0);
+        assert!(ab.is_none(), "zero time window → no detection");
+    }
+
+    #[test]
+    fn test_detect_inverse_violation_causes_prevents() {
+        // 0x20 (Causes) + 0x22 (Prevents) → violation
+        let ab = ImmuneEngine::check_inverse_violation(0x20, 0x22, test_hash(17), T0);
+        assert!(ab.is_some(), "Causes + Prevents → should violate");
+        assert_eq!(ab.unwrap().antibody_type, AntibodyType::InverseViolation);
+    }
+
+    #[test]
+    fn test_detect_inverse_violation_reversed_order() {
+        // Reversed: 0x22 (Prevents) + 0x20 (Causes) → still violation
+        let ab = ImmuneEngine::check_inverse_violation(0x22, 0x20, test_hash(18), T0);
+        assert!(ab.is_some(), "Prevents + Causes (reversed) → should violate");
+    }
+
+    #[test]
+    fn test_detect_inverse_violation_no_violation() {
+        // 0x20 (Causes) + 0x01 (Extends) → no violation
+        let ab = ImmuneEngine::check_inverse_violation(0x20, 0x01, test_hash(19), T0);
+        assert!(ab.is_none(), "Causes + Extends → no violation");
+    }
+
+    #[test]
+    fn test_detect_inverse_violation_specializes_generalizes() {
+        // 0x12 (Specializes) + 0x13 (Generalizes) → violation
+        let ab = ImmuneEngine::check_inverse_violation(0x12, 0x13, test_hash(20), T0);
+        assert!(ab.is_some(), "Specializes + Generalizes → should violate");
+        assert_eq!(ab.unwrap().antibody_type, AntibodyType::InverseViolation);
     }
 }

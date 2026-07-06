@@ -1,14 +1,14 @@
-# Bio-Inspired & Novel Graph Architectures for ONKG
+﻿# Bio-Inspired & Novel Graph Architectures for OBKG
 
 > **Author**: OneBrain Research Team  
 > **Date**: 2026-07-02  
-> **Purpose**: Survey bio-inspired paradigms and extensions for ONKG's biological knowledge model
+> **Purpose**: Survey bio-inspired paradigms and extensions for OBKG's biological knowledge model
 
 ---
 
 ## Executive Summary
 
-OneBrain already implements 5 bio-inspired mechanisms (Stigmergy, Hebbian bonds, Immune system, Ecological niche, Metabolic value). This research identifies **extensions, new paradigms, and specific algorithms** to evolve ONKG from a bio-inspired knowledge graph into a **living knowledge organism**.
+OneBrain already implements 5 bio-inspired mechanisms (Stigmergy, Hebbian bonds, Immune system, Ecological niche, Metabolic value). This research identifies **extensions, new paradigms, and specific algorithms** to evolve OBKG from a bio-inspired knowledge graph into a **living knowledge organism**.
 
 ---
 
@@ -25,9 +25,9 @@ $$C_i = \frac{2 \times \text{triangles}_i}{\text{degree}_i \times (\text{degree}
 
 **Small-world coefficient:** σ = (C/C_random) / (L/L_random) — σ >> 1 = small-world
 
-### 1.2 ONKG Integration
+### 1.2 OBKG Integration
 
-| Brain Feature | ONKG Implementation |
+| Brain Feature | OBKG Implementation |
 |:---|:---|
 | Small-world topology | Monitor σ coefficient across KU bond graph |
 | Hierarchical organization | Map 11 Gene types to hierarchical levels |
@@ -41,7 +41,7 @@ $$C_i = \frac{2 \times \text{triangles}_i}{\text{degree}_i \times (\text{degree}
 
 ### 2.1 Memetic Algorithm for KU Evolution
 
-| Genetic Evolution | Memetic (Knowledge) | ONKG Mechanism |
+| Genetic Evolution | Memetic (Knowledge) | OBKG Mechanism |
 |:---|:---|:---|
 | Gene | Meme (KU content) | KU Gene payload |
 | Biological reproduction | Imitation, citation | Derivative KUs, citations |
@@ -208,7 +208,7 @@ fn knowledge_diffusion_step(graph: &mut KuGraph, dt: f32) {
 
 ### 7.2 Self-Organized Criticality (SOC)
 
-Systems naturally evolve toward critical state. Power-law distributions. "Sandpile model": small perturbations → occasional large avalanches. Monitor if ONKG operates near SOC — too subcritical = static, too supercritical = chaotic.
+Systems naturally evolve toward critical state. Power-law distributions. "Sandpile model": small perturbations → occasional large avalanches. Monitor if OBKG operates near SOC — too subcritical = static, too supercritical = chaotic.
 
 ---
 
@@ -216,7 +216,7 @@ Systems naturally evolve toward critical state. Power-law distributions. "Sandpi
 
 ### 8.1 Key Mechanisms
 
-| Biological | Function | ONKG Analog |
+| Biological | Function | OBKG Analog |
 |:---|:---|:---|
 | Hyphal branching | Explore new territory | Speculative bonds to distant clusters |
 | Anastomosis (fusion) | Redundant pathways | Cross-domain bond reinforcement |
@@ -319,9 +319,9 @@ fn dream_reorganization(graph: &mut KuGraph) {
 
 ---
 
-## 10. Biological Concept → ONKG Mapping Table
+## 10. Biological Concept → OBKG Mapping Table
 
-| Biological System | Concept | ONKG Mechanism | Status | Priority |
+| Biological System | Concept | OBKG Mechanism | Status | Priority |
 |:---|:---|:---|:---|:---|
 | **Brain** | Neuron | Knowledge Unit (KU) | ✅ Exists | — |
 | **Brain** | Synapse | Hebbian bond (synaptic.rs) | ✅ Exists | — |

@@ -1,14 +1,14 @@
-# Graph Database Technologies — Survey for ONKG
+﻿# Graph Database Technologies — Survey for OBKG
 
 > **Author**: OneBrain Research Team  
 > **Date**: 2026-07-02  
-> **Purpose**: Evaluate graph database technologies for ONKG's storage and query layer
+> **Purpose**: Evaluate graph database technologies for OBKG's storage and query layer
 
 ---
 
 ## Executive Summary
 
-This survey evaluates 12 graph database technologies to identify the best storage, indexing, and query patterns for OneBrain's Knowledge Graph (ONKG). ONKG currently uses **redb** (embedded Rust B+tree KV store) with 4 tables. The key limitation is that bonds are stored as `Vec<Bond>` inside each KU's Epigenetics JSON — NO dedicated edge index. This means finding "all KUs that point to KU-X" requires scanning ALL KUs.
+This survey evaluates 12 graph database technologies to identify the best storage, indexing, and query patterns for OneBrain's Knowledge Graph (OBKG). OBKG currently uses **redb** (embedded Rust B+tree KV store) with 4 tables. The key limitation is that bonds are stored as `Vec<Bond>` inside each KU's Epigenetics JSON — NO dedicated edge index. This means finding "all KUs that point to KU-X" requires scanning ALL KUs.
 
 **Primary Recommendation**: Build a native "Biological Graph Engine" on redb, borrowing the best ideas from each system studied. Add 6 new edge index tables for O(1) adjacency lookups. Adopt Datalog-inspired recursive queries from CozoDB. Follow TerminusDB's delta-layer concept for CRDT sync.
 
@@ -30,7 +30,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Embeddability** | No (JVM-based server only) |
 | **Rust** | No native Rust |
 | **Key Innovation** | Index-free adjacency — O(1) traversal per hop. Native vector types (4096 dims) for AI/RAG |
-| **Lesson for ONKG** | Cypher's pattern matching syntax inspired KQL's edge patterns. Index-free adjacency concept is excellent for local traversal but complex in distributed P2P. Consider hybrid approach: index-free for local hot path, index-based for P2P |
+| **Lesson for OBKG** | Cypher's pattern matching syntax inspired KQL's edge patterns. Index-free adjacency concept is excellent for local traversal but complex in distributed P2P. Consider hybrid approach: index-free for local hot path, index-based for P2P |
 
 ### 2. TigerGraph + GSQL
 
@@ -43,7 +43,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Embeddability** | No (enterprise cluster-oriented) |
 | **Rust** | No |
 | **Key Innovation** | Every vertex/edge is both storage and compute unit. Bulk Synchronous Parallel model. TigerVector for vector+graph fusion |
-| **Lesson for ONKG** | BSP model interesting for P2P gossip-based graph analytics. GSQL's compiled query approach could inspire KQL query compilation |
+| **Lesson for OBKG** | BSP model interesting for P2P gossip-based graph analytics. GSQL's compiled query approach could inspire KQL query compilation |
 
 ### 3. Amazon Neptune
 
@@ -55,7 +55,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Scalability** | Auto-scaling to 128 TiB. 15 read replicas |
 | **Embeddability** | No (AWS managed service only) |
 | **Key Innovation** | Dual-model (property graph + RDF) in single managed service. 6x replication across 3 AZs |
-| **Lesson for ONKG** | Dual-model concept valuable — ONKG could expose both property-graph-like API (bonds) and RDF-like API (Core DNA triples) from same storage |
+| **Lesson for OBKG** | Dual-model concept valuable — OBKG could expose both property-graph-like API (bonds) and RDF-like API (Core DNA triples) from same storage |
 
 ### 4. Dgraph + GraphQL
 
@@ -65,7 +65,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Query Language** | DQL (GraphQL-derived) + native GraphQL API |
 | **Storage Engine** | **Badger** (Go) — LSM tree KV store (WiscKey design) |
 | **Key Innovation** | "GraphQL-native". Predicate-based sharding (each predicate distributed independently) |
-| **Lesson for ONKG** | Predicate-based sharding maps well to RelationType-based distribution. A node could specialize in certain relation categories |
+| **Lesson for OBKG** | Predicate-based sharding maps well to RelationType-based distribution. A node could specialize in certain relation categories |
 
 ### 5. JanusGraph
 
@@ -75,7 +75,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Query Language** | Gremlin |
 | **Storage Engine** | **Modular** — pluggable backends (Cassandra, HBase, BerkeleyDB). Adjacency-list-in-a-row model |
 | **Key Innovation** | Adjacency-list-per-vertex model on top of wide-column stores. Backend-agnostic graph abstraction |
-| **Lesson for ONKG** | **JanusGraph's adjacency-list-per-vertex model is closest to ONKG's current bond storage** (Vec<Bond> per KU). Shows how to build graph semantics on KV storage |
+| **Lesson for OBKG** | **JanusGraph's adjacency-list-per-vertex model is closest to OBKG's current bond storage** (Vec<Bond> per KU). Shows how to build graph semantics on KV storage |
 
 ### 6. ArangoDB + AQL
 
@@ -85,7 +85,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Query Language** | AQL (declarative, unified across models) |
 | **Storage Engine** | **RocksDB** (LSM tree). Document-level locking |
 | **Key Innovation** | True multi-model — single AQL query spans documents, graphs, and KV lookups. **Edges ARE documents** (with properties) |
-| **Lesson for ONKG** | **Edges-as-documents pattern directly parallels ONKG's bonds-as-rich-structs**. AQL's unified multi-model approach validates KQL's aspiration to query both content and relationships |
+| **Lesson for OBKG** | **Edges-as-documents pattern directly parallels OBKG's bonds-as-rich-structs**. AQL's unified multi-model approach validates KQL's aspiration to query both content and relationships |
 
 ### 7. SurrealDB (Rust) ★★★★★
 
@@ -98,7 +98,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Embeddability** | **Yes** — full in-process embedded mode. WASM support |
 | **Rust** | **Rust-native** |
 | **Key Innovation** | Rust multi-model that scales from embedded to distributed. RELATE statement creates graph edges. Row-level permissions |
-| **Lesson for ONKG** | **Most directly relevant**. Proves Rust embedded multi-model is viable. SurrealQL's RELATE could inspire KQL bond creation syntax. Embedded-to-distributed scaling model matches ONKG's local-first → P2P sync |
+| **Lesson for OBKG** | **Most directly relevant**. Proves Rust embedded multi-model is viable. SurrealQL's RELATE could inspire KQL bond creation syntax. Embedded-to-distributed scaling model matches OBKG's local-first → P2P sync |
 
 ### 8. Oxigraph (Rust) ★★★★
 
@@ -110,7 +110,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Embeddability** | **Yes** — pure Rust library. Python/JS (WASM) bindings |
 | **Rust** | **Rust-native** (modular crates: oxrdf, oxrdfio, spargebra, spareval) |
 | **Key Innovation** | Compact binary encoding. Modular Rust crate design — can reuse individual parsing/evaluation crates independently |
-| **Lesson for ONKG** | Oxigraph's **binary encoding scheme** (type byte + hash) is directly applicable. Modular crate design validates ONKG's ku-core/ku-kql/ku-net separation. RDF triple model parallels `Instruction::Triple{s,p,o}`. Multi-index strategy applicable to redb |
+| **Lesson for OBKG** | Oxigraph's **binary encoding scheme** (type byte + hash) is directly applicable. Modular crate design validates OBKG's ku-core/ku-kql/ku-net separation. RDF triple model parallels `Instruction::Triple{s,p,o}`. Multi-index strategy applicable to redb |
 
 ### 9. IndraDB (Rust) ★★★
 
@@ -121,7 +121,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Embeddability** | **Yes** — embeddable Rust library OR gRPC server |
 | **Rust** | **Rust-native** |
 | **Key Innovation** | Pluggable storage trait. Facebook TAO-inspired simplicity |
-| **Lesson for ONKG** | IndraDB's **pluggable storage trait** directly maps to what ONKG needs — define a `GraphStorage` trait over redb. TAO's directed typed graph model almost identical to ONKG's Bond model |
+| **Lesson for OBKG** | IndraDB's **pluggable storage trait** directly maps to what OBKG needs — define a `GraphStorage` trait over redb. TAO's directed typed graph model almost identical to OBKG's Bond model |
 
 ### 10. CozoDB (Rust) ★★★★★
 
@@ -134,7 +134,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Embeddability** | **Yes** — SQLite-like embedded design. Rust/Python/Node/Java/C/WASM bindings |
 | **Rust** | **Rust-native** |
 | **Key Innovation** | **Datalog for graph queries** — recursive path queries as first-class primitives. Time-travel queries. Built-in graph algorithms (PageRank, shortest path, community detection). **cozo-redb fork exists!** |
-| **Lesson for ONKG** | **Strongest candidate for inspiration**. Datalog's recursive query capability solves KQL's multi-hop traversal needs. The cozo-redb fork proves graph queries CAN run on redb. Time-travel maps to CRDT versioning. Graph algorithms as built-ins (PageRank = trust propagation, community detection = cluster discovery) directly serve ONKG |
+| **Lesson for OBKG** | **Strongest candidate for inspiration**. Datalog's recursive query capability solves KQL's multi-hop traversal needs. The cozo-redb fork proves graph queries CAN run on redb. Time-travel maps to CRDT versioning. Graph algorithms as built-ins (PageRank = trust propagation, community detection = cluster discovery) directly serve OBKG |
 
 ### 11. Apache AGE (PostgreSQL)
 
@@ -143,7 +143,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Data Model** | Property graph (stored as PostgreSQL tables) |
 | **Query Language** | openCypher (integrated with SQL) |
 | **Key Innovation** | Graph queries on top of relational storage with zero data movement. Hybrid SQL + openCypher |
-| **Lesson for ONKG** | **Proves graph semantics work as a layer on top of tabular/KV storage** — exactly ONKG's architecture. AGE's approach of compiling Cypher into execution plans informs how KQL could be compiled into redb range queries |
+| **Lesson for OBKG** | **Proves graph semantics work as a layer on top of tabular/KV storage** — exactly OBKG's architecture. AGE's approach of compiling Cypher into execution plans informs how KQL could be compiled into redb range queries |
 
 ### 12. TerminusDB ★★★★★
 
@@ -155,7 +155,7 @@ This survey evaluates 12 graph database technologies to identify the best storag
 | **Embeddability** | Partial (Prolog core + Rust storage) |
 | **Rust** | **Storage layer (terminus-store) is Rust** |
 | **Key Innovation** | **Git-for-data** — branch, merge, diff, time-travel on graph data. Delta encoding (only store changes). Lock-free concurrency (immutable committed layers). ACID per commit |
-| **Lesson for ONKG** | **MOST ARCHITECTURALLY ALIGNED with OneBrain**. Delta-encoded, immutable layers parallel ONKG's content-addressed immutable Core DNA + mutable Epigenetics. Branch/merge/diff maps to CRDT sync. Delta rollups = CRDT compaction. Git-like clone/sync maps to P2P replication |
+| **Lesson for OBKG** | **MOST ARCHITECTURALLY ALIGNED with OneBrain**. Delta-encoded, immutable layers parallel OBKG's content-addressed immutable Core DNA + mutable Epigenetics. Branch/merge/diff maps to CRDT sync. Delta rollups = CRDT compaction. Git-like clone/sync maps to P2P replication |
 
 ---
 
@@ -210,7 +210,7 @@ Value for TABLE_EDGES_OUT: `weight(2B) + creator(1B) + state(1B) + decay(1B) + t
 
 ## Index-Free Adjacency vs Index-Based for P2P
 
-For ONKG's P2P architecture, **index-based is better** because:
+For OBKG's P2P architecture, **index-based is better** because:
 
 | Factor | Index-Free | Index-Based |
 |--------|-----------|-------------|
@@ -253,8 +253,8 @@ For ONKG's P2P architecture, **index-based is better** because:
 
 **Why NOT use an existing graph DB directly**:
 - Neo4j/TigerGraph/Neptune: Too heavy, no embedded mode
-- SurrealDB: Good candidate but ONKG's content-addressed model doesn't fit its document model
-- CozoDB: Best candidate for embedding, but ONKG needs P2P-native features no existing DB provides
+- SurrealDB: Good candidate but OBKG's content-addressed model doesn't fit its document model
+- CozoDB: Best candidate for embedding, but OBKG needs P2P-native features no existing DB provides
 - **Bottom line**: Build the graph layer in Rust on redb, borrowing the best ideas
 
 ---

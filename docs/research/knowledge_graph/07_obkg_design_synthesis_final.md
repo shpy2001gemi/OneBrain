@@ -1,46 +1,41 @@
-# ONKG — Bản Thiết Kế Tổng Hợp
+# OBKG — Bản Thiết Kế Tổng Hợp
 
-> **OneBrain Knowledge Graph (ONKG) — "Bộ Não Sống của Tri Thức"**
+> **OneBrain Knowledge Graph (OBKG) — "Bộ Não Sống của Tri Thức"**
 > Tổng hợp từ 52 hệ thống nghiên cứu qua 6 tài liệu
 
 ---
 
 ## Mục Lục
 
-1. [Tầm Nhìn: ONKG Là Gì?](#1-tầm-nhìn-onkg-là-gì)
-2. [Vị Trí Của ONKG Trong Bản Đồ Tri Thức Thế Giới](#2-vị-trí-của-onkg)
+1. [Tầm Nhìn: OBKG Là Gì?](#1-tầm-nhìn-OBKG-là-gì)
+2. [Vị Trí Của OBKG Trong Bản Đồ Tri Thức Thế Giới](#2-vị-trí-của-OBKG)
 3. [Kiến Trúc 6 Tầng](#3-kiến-trúc-6-tầng)
-4. [Tầng 1 — Storage: &#34;Bộ Nhớ Sinh Học&#34;](#4-tầng-1--storage)
-5. [Tầng 2 — Graph Model: &#34;Nơ-ron &amp; Synapse&#34;](#5-tầng-2--graph-model)
-6. [Tầng 3 — Sync: &#34;Hệ Thần Kinh Phân Tán&#34;](#6-tầng-3--sync)
-7. [Tầng 4 — Intelligence: &#34;Trí Tuệ Nhân Tạo Sinh Học&#34;](#7-tầng-4--intelligence)
-8. [Tầng 5 — Temporal: &#34;Ký Ức &amp; Tiến Hóa&#34;](#8-tầng-5--temporal)
-9. [Tầng 6 — Query: &#34;Ngôn Ngữ Tư Duy&#34;](#9-tầng-6--query)
+4. [Tầng 1 — Storage: "Bộ Nhớ Sinh Học"](#4-tầng-1--storage)
+5. [Tầng 2 — Graph Model: "Nơ-ron & Synapse"](#5-tầng-2--graph-model)
+6. [Tầng 3 — Sync: "Hệ Thần Kinh Phân Tán"](#6-tầng-3--sync)
+7. [Tầng 4 — Intelligence: "Trí Tuệ Nhân Tạo Sinh Học"](#7-tầng-4--intelligence)
+8. [Tầng 5 — Temporal: "Ký Ức & Tiến Hóa"](#8-tầng-5--temporal)
+9. [Tầng 6 — Query: "Ngôn Ngữ Tư Duy"](#9-tầng-6--query)
 10. [3 Đổi Mới Cốt Lõi](#10-ba-đổi-mới-cốt-lõi)
 11. [So Sánh Tổng Thể](#11-so-sánh-tổng-thể)
 12. [Lộ Trình Triển Khai](#12-lộ-trình)
 
 ---
 
-## 1. Tầm Nhìn: ONKG Là Gì?
+## 1. Tầm Nhìn: OBKG Là Gì?
 
-### Một câu:
-
-> **ONKG là một đồ thị tri thức phi tập trung, mã hóa nhị phân, hoạt động như một sinh vật sống — nơi tri thức được sinh ra, tiến hóa, cạnh tranh, và chìm vào giấc ngủ đông khi không còn ai tìm đến.**
-
-> [!NOTE]
-> **"Chết" trong ONKG không phải "bị xóa".**
-> Tri thức không bao giờ bị xóa khỏi mạng lưới. Nó vẫn tồn tại ở mọi node đã clone nó — giống như một cuốn sách cũ vẫn nằm trên kệ thư viện, chỉ là không ai mượn. Khi không có nhu cầu, bond weight suy giảm (decay), tri thức trở nên "vô hình" trong kết quả tìm kiếm — nhưng nó **vẫn ở đó**. Và khi một ngày ai đó tìm đến, truy vấn, trích dẫn — bond được reinforced, tri thức "tỉnh dậy" từ giấc ngủ đông và sống lại mạnh mẽ hơn. Đây là triết lý cốt lõi: **tri thức tưởng như đã chết hôm nay có thể là vàng của ngày mai.**
+### Một câu: 
+> **OBKG là một đồ thị tri thức phi tập trung, mã hóa nhị phân, hoạt động như một sinh vật sống — nơi tri thức được sinh ra, tiến hóa, cạnh tranh, và tự chết đi khi không còn giá trị.**
 
 ### Ba từ khóa:
 
-| Từ khóa                | Ý nghĩa                                                                          | Không giống ai                     |
-| ------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------ |
-| **Decentralized**  | Không có server trung tâm. Mỗi node giữ một phần KG                         | Google KG/Wikidata đều centralized |
-| **Binary-encoded** | Mọi thứ mã hóa nhị phân (u8, varint) thay vì RDF/JSON                       | Compact hơn RDF 10-100x             |
-| **Bio-inspired**   | Tri thức hoạt động theo quy luật sinh học (tiến hóa, miễn dịch, synapse) | Không KG nào khác có             |
+| Từ khóa | Ý nghĩa | Không giống ai |
+|---------|---------|----------------|
+| **Decentralized** | Không có server trung tâm. Mỗi node giữ một phần KG | Google KG/Wikidata đều centralized |
+| **Binary-encoded** | Mọi thứ mã hóa nhị phân (u8, varint) thay vì RDF/JSON | Compact hơn RDF 10-100x |
+| **Bio-inspired** | Tri thức hoạt động theo quy luật sinh học (tiến hóa, miễn dịch, synapse) | Không KG nào khác có |
 
-### Tại sao cần ONKG?
+### Tại sao cần OBKG?
 
 ```
 Vấn đề của KG hiện tại:
@@ -52,7 +47,7 @@ Vấn đề của KG hiện tại:
 │ Cyc            → 40 năm vẫn không phổ biến            │
 └─────────────────────────────────────────────────────┘
 
-ONKG giải quyết bằng:
+OBKG giải quyết bằng:
 ┌─────────────────────────────────────────────────────┐
 │ ✅ Phi tập trung → Không ai kiểm soát                │
 │ ✅ Tự tiến hóa   → Bond mạnh lên/yếu đi theo sử dụng│
@@ -64,13 +59,13 @@ ONKG giải quyết bằng:
 
 ---
 
-## 2. Vị Trí Của ONKG
+## 2. Vị Trí Của OBKG
 
 ```
                           Living / Adaptive
                                ▲
                                │
-                    Cyc ·      │           · ONKG ★★★
+                    Cyc ·      │           · OBKG ★★★
                                │
                                │      · Holochain
                                │
@@ -86,9 +81,9 @@ ONKG giải quyết bằng:
                             Static
 ```
 
-> ONKG chiếm vị trí **duy nhất**: Decentralized + Living. Không hệ thống nào khác ở góc này.
+> OBKG chiếm vị trí **duy nhất**: Decentralized + Living. Không hệ thống nào khác ở góc này.
 
-**Không có hệ thống nào nằm ở góc phần tư "Decentralized + Living"** — đó chính là vị trí duy nhất của ONKG.
+**Không có hệ thống nào nằm ở góc phần tư "Decentralized + Living"** — đó chính là vị trí duy nhất của OBKG.
 
 ---
 
@@ -159,13 +154,13 @@ graph TB
 
 ### Học từ ai?
 
-| Nguồn               | Bài học                                      | Áp dụng                                          |
-| -------------------- | ---------------------------------------------- | -------------------------------------------------- |
-| **CozoDB**     | Datalog trên redb (fork thực tế tồn tại!) | Chứng minh graph queries CHẠY ĐƯỢC trên redb |
-| **TerminusDB** | Git-for-data, delta layers, immutable          | Delta sync = CRDT compaction                       |
-| **JanusGraph** | Adjacency-list-per-vertex trên KV store       | Gần nhất với cách ONKG lưu Vec<Bond></bond>   |
-| **Oxigraph**   | Binary encoding (type byte + hash)             | Mã hóa nhị phân key cho redb                   |
-| **SurrealDB**  | Rust-native, embedded → distributed           | Validate mô hình local-first → P2P              |
+| Nguồn | Bài học | Áp dụng |
+|-------|---------|---------|
+| **CozoDB** | Datalog trên redb (fork thực tế tồn tại!) | Chứng minh graph queries CHẠY ĐƯỢC trên redb |
+| **TerminusDB** | Git-for-data, delta layers, immutable | Delta sync = CRDT compaction |
+| **JanusGraph** | Adjacency-list-per-vertex trên KV store | Gần nhất với cách OBKG lưu Vec<Bond> |
+| **Oxigraph** | Binary encoding (type byte + hash) | Mã hóa nhị phân key cho redb |
+| **SurrealDB** | Rust-native, embedded → distributed | Validate mô hình local-first → P2P |
 
 ### Thiết kế: 4 bảng cũ + 6 bảng mới
 
@@ -246,41 +241,40 @@ Mỗi KU (Knowledge Unit) là một tế bào thần kinh trong bộ não tri th
 
 ### Gene Types — 11 "loài" tri thức
 
-| Loài                       | Ý nghĩa                | Ví dụ                            |
-| --------------------------- | ------------------------ | ---------------------------------- |
-| 🔬**Fact**            | Sự thật khách quan    | "Nước sôi ở 100°C"            |
-| 📋**Procedure**       | Quy trình, cách làm   | "Cách nấu phở"                  |
-| 💭**Experience**      | Trải nghiệm cá nhân  | "Tôi đã đi Đà Lạt"          |
-| 🎨**Creative**        | Sáng tạo nghệ thuật  | Bài thơ, bản nhạc              |
-| 🎬**MediaExperience** | Media                    | Review phim, podcast               |
-| 👁️**Testimony**     | Chứng kiến trực tiếp | "Tôi thấy tai nạn lúc 3h"      |
-| 📐**Formal**          | Toán học, logic        | Định lý Pythagoras              |
-| 💡**Hypothesis**      | Giả thuyết             | "Dark matter tồn tại"            |
-| 📖**Narrative**       | Câu chuyện             | Truyện ngắn                      |
-| 👃**Sensory**         | Dữ liệu cảm giác     | Nhiệt độ, âm thanh             |
-| 🧩**Composite**       | Tổ hợp nhiều KU       | Bài báo = abstract + body + refs |
+| Loài | Ý nghĩa | Ví dụ |
+|------|---------|-------|
+| 🔬 **Fact** | Sự thật khách quan | "Nước sôi ở 100°C" |
+| 📋 **Procedure** | Quy trình, cách làm | "Cách nấu phở" |
+| 💭 **Experience** | Trải nghiệm cá nhân | "Tôi đã đi Đà Lạt" |
+| 🎨 **Creative** | Sáng tạo nghệ thuật | Bài thơ, bản nhạc |
+| 🎬 **MediaExperience** | Media | Review phim, podcast |
+| 👁️ **Testimony** | Chứng kiến trực tiếp | "Tôi thấy tai nạn lúc 3h" |
+| 📐 **Formal** | Toán học, logic | Định lý Pythagoras |
+| 💡 **Hypothesis** | Giả thuyết | "Dark matter tồn tại" |
+| 📖 **Narrative** | Câu chuyện | Truyện ngắn |
+| 👃 **Sensory** | Dữ liệu cảm giác | Nhiệt độ, âm thanh |
+| 🧩 **Composite** | Tổ hợp nhiều KU | Bài báo = abstract + body + refs |
 
 ### EpistemicStatus — 11 mức "độ chín" của tri thức
 
-Đây là **đặc điểm DUY NHẤT** của ONKG — không KG nào khác có:
+Đây là **đặc điểm DUY NHẤT** của OBKG — không KG nào khác có:
 
-| Mức (Hex) | Trạng thái (Epistemic Status) | Ví dụ minh họa               | Độ chín (Weight) | Trực quan hóa          |
-| :--------: | :------------------------------ | :------------------------------ | :-----------------: | :----------------------- |
-|  `0x0A`  | 🏆**Axiomatic**           | `"1 + 1 = 2"`                 |   **100%**   | `██████████` |
-|  `0x09`  | 🛡️**FormallyProven**    | `"Định lý Fermat"`         |    **95%**    | `█████████▌` |
-|  `0x08`  | 🤝**Consensus**           | `"Trái đất tròn"`         |    **90%**    | `█████████░` |
-|  `0x07`  | 📝**PeerReviewed**        | `"Paper trên Nature"`        |    **80%**    | `████████░░` |
-|  `0x06`  | 🔍**Corroborated**        | `"3 nguồn xác nhận"`       |    **70%**    | `███████░░░` |
-|  `0x05`  | 📊**Evidence**            | `"Có dữ liệu chứng minh"` |    **60%**    | `██████░░░░` |
-|  `0x04`  | 💡**Hypothesis**          | `"Giả thuyết có logic"`    |    **50%**    | `█████░░░░░` |
-|  `0x03`  | 👁️**Observation**       | `"Tôi quan sát thấy"`      |    **40%**    | `████░░░░░░` |
-|  `0x02`  | 🗣️**Testimony**         | `"Người A kể lại"`        |    **30%**    | `███░░░░░░░` |
-|  `0x01`  | 👂**Hearsay**             | `"Nghe nói rằng..."`        |    **20%**    | `██░░░░░░░░` |
-|  `0x00`  | 💬**Rumor**               | `"Tin đồn"`                 |    **10%**    | `█░░░░░░░░░` |
-
+```
+     Axiomatic (0x0A) ──── "1 + 1 = 2"           ████████████ 100%
+  FormallyProven (0x09) ── "Định lý Fermat"       ███████████  95%
+     Consensus (0x08) ──── "Trái đất tròn"        ██████████   90%
+  PeerReviewed (0x07) ──── "Paper trên Nature"     █████████    80%
+  Corroborated (0x06) ──── "3 nguồn xác nhận"     ████████     70%
+     Evidence (0x05) ───── "Có dữ liệu chứng minh" ███████      60%
+   Hypothesis (0x04) ──── "Giả thuyết có logic"   ██████       50%
+  Observation (0x03) ──── "Tôi quan sát thấy"     █████        40%
+   Testimony (0x02) ───── "Người A kể lại"        ████         30%
+     Hearsay (0x01) ───── "Nghe nói rằng..."      ███          20%
+      Rumor (0x00) ────── "Tin đồn"               ██           10%
+```
 
 > [!NOTE]
-> **So sánh**: Wikidata có 3 mức (Preferred/Normal/Deprecated). ConceptNet có weight số thực. Cyc có boolean (đúng/sai trong microtheory). ONKG có **11 mức liên tục** — từ tin đồn đến tiên đề.
+> **So sánh**: Wikidata có 3 mức (Preferred/Normal/Deprecated). ConceptNet có weight số thực. Cyc có boolean (đúng/sai trong microtheory). OBKG có **11 mức liên tục** — từ tin đồn đến tiên đề.
 
 ### Bond = Synapse — 33 kiểu quan hệ
 
@@ -350,7 +344,6 @@ Bond là **mối liên kết giữa 2 KU**, giống synapse nối 2 nơ-ron:
 **Vấn đề**: Bond hiện tại chỉ nối 2 KU. Nhưng nhiều tri thức cần ngữ cảnh phức tạp hơn.
 
 **Ví dụ**: "Einstein giữ chức Giáo sư tại Princeton từ 1933 đến 1955"
-
 - Cần nối: Einstein → Princeton → Professor → 1933 → 1955
 
 **Giải pháp**: Thêm `qualifiers` (bộ phận bổ nghĩa) vào Bond:
@@ -370,12 +363,11 @@ pub struct BondQualifier {
 }
 ```
 
-**Nguồn gốc**: Wikidata dùng qualifier trên mỗi Statement. Freebase dùng CVT (Compound Value Type) — node trung gian cho quan hệ n-ary. ONKG kết hợp cả hai: qualifier cho bổ nghĩa đơn giản, Composite KU (GeneType=10) cho quan hệ phức tạp.
+**Nguồn gốc**: Wikidata dùng qualifier trên mỗi Statement. Freebase dùng CVT (Compound Value Type) — node trung gian cho quan hệ n-ary. OBKG kết hợp cả hai: qualifier cho bổ nghĩa đơn giản, Composite KU (GeneType=10) cho quan hệ phức tạp.
 
 #### Đổi mới 2: Knowledge Context / Microtheory (từ Cyc)
 
 **Vấn đề**: Tri thức có thể mâu thuẫn nhau tùy ngữ cảnh.
-
 - Trong vật lý Newton: "Thời gian tuyệt đối"
 - Trong vật lý Einstein: "Thời gian tương đối"
 - Cả hai đều đúng — trong ngữ cảnh riêng!
@@ -526,12 +518,9 @@ Latency: ~50ms              Latency: ~500ms
 
 **Giải pháp**: Mỗi KU có một vector 64 chiều trong không gian phức. Mỗi relation là một phép quay (rotation):
 
-$$
-f(h, r, t) = -\|h \circ r - t\|
-$$
+$$f(h, r, t) = -\|h \circ r - t\|$$
 
 Trong đó:
-
 - $h$ = embedding entity nguồn (64 int8 values)
 - $r$ = rotation vector cho relation (32 complex dims, $|r_i| = 1$)
 - $t$ = embedding entity đích
@@ -539,17 +528,16 @@ Trong đó:
 
 **Tại sao RotatE?** Vì nó xử lý được TẤT CẢ 4 pattern trong 33 RelationType:
 
-| Pattern                 | Ví dụ ONKG             | RotatE giải quyết                  |
-| ----------------------- | ------------------------ | ------------------------------------ |
-| **Symmetric**     | Duplicates, Cooccurs     | $r = e^{i\pi}$ (quay 180°)        |
-| **Antisymmetric** | Causes, PartOf, Precedes | $r \neq \pm 1$                     |
-| **Inverse**       | Extends ↔ DerivedFrom   | $r_2 = \bar{r}_1$ (conjugate)      |
-| **Composition**   | Causes ∘ Enables        | $r_3 = r_1 \circ r_2$ (cộng góc) |
+| Pattern | Ví dụ OBKG | RotatE giải quyết |
+|---------|-----------|-------------------|
+| **Symmetric** | Duplicates, Cooccurs | $r = e^{i\pi}$ (quay 180°) |
+| **Antisymmetric** | Causes, PartOf, Precedes | $r \neq \pm 1$ |
+| **Inverse** | Extends ↔ DerivedFrom | $r_2 = \bar{r}_1$ (conjugate) |
+| **Composition** | Causes ∘ Enables | $r_3 = r_1 \circ r_2$ (cộng góc) |
 
 **Memory**: 33 relations × 32 bytes = **1,056 bytes** cho TOÀN BỘ relation embeddings. Mỗi KU thêm **64 bytes**. Cực nhẹ!
 
 **Federated Training (FedR)**:
-
 ```
 1. INIT:   Seed 33 relation embeddings (1,056 bytes)
 2. LOCAL:  Mỗi node train trên local triples (SGD, 10-20 steps)
@@ -678,27 +666,25 @@ enum BondEvent {
 
 ### Unified Decay — "Cái Chết Có Kiểm Soát"
 
-$$
-w_{eff}(t) = w_0 \times e^{-\lambda \cdot \Delta t}
-$$
+$$w_{eff}(t) = w_0 \times e^{-\lambda \cdot \Delta t}$$
 
 **Quy tắc vàng**: Không phải mọi bond đều nên decay!
 
-| Loại bond                                   | λ (per day) | Half-life    | Lý do                                                |
-| -------------------------------------------- | ------------ | ------------ | ----------------------------------------------------- |
-| **Structural** (PartOf, InstanceOf)    | **0**  | **∞** | "Hà Nội là thủ đô VN" không bao giờ hết hạn |
-| **Provenance** (Cites, AuthoredBy)     | **0**  | **∞** | "Einstein viết E=mc²" là sự thật vĩnh viễn     |
-| **Temporal** (Precedes, Cooccurs)      | **0**  | **∞** | Trình tự thời gian không thay đổi               |
-| **Causal** (Causes, Enables)           | 0.0019       | 365 ngày    | Nhân quả ổn định nhưng có thể bị bác bỏ    |
-| **Epistemic** (Supplements, Qualifies) | 0.0077       | 90 ngày     | Bổ sung có thể lỗi thời                          |
-| **Experiential** (ReactionTo)          | 0.099        | 7 ngày      | Phản ứng cảm xúc phai nhanh                       |
+| Loại bond | λ (per day) | Half-life | Lý do |
+|-----------|-------------|-----------|-------|
+| **Structural** (PartOf, InstanceOf) | **0** | **∞** | "Hà Nội là thủ đô VN" không bao giờ hết hạn |
+| **Provenance** (Cites, AuthoredBy) | **0** | **∞** | "Einstein viết E=mc²" là sự thật vĩnh viễn |
+| **Temporal** (Precedes, Cooccurs) | **0** | **∞** | Trình tự thời gian không thay đổi |
+| **Causal** (Causes, Enables) | 0.0019 | 365 ngày | Nhân quả ổn định nhưng có thể bị bác bỏ |
+| **Epistemic** (Supplements, Qualifies) | 0.0077 | 90 ngày | Bổ sung có thể lỗi thời |
+| **Experiential** (ReactionTo) | 0.099 | 7 ngày | Phản ứng cảm xúc phai nhanh |
 
 ```rust
 trait Decayable {
     fn decay_lambda(&self) -> f64;
     fn last_reinforced(&self) -> u64;
     fn floor(&self) -> f64 { 0.0 }
-  
+    
     fn effective_value(&self, current: f64, now: u64) -> f64 {
         let hours = (now - self.last_reinforced()) as f64 / 3600.0;
         let decayed = current * (-self.decay_lambda() * hours).exp();
@@ -781,8 +767,8 @@ FIND SHORTEST_PATH(ku₁, ku₂)
 ### Đổi mới 1: "Tri Thức Sống" — Knowledge as Living Organism
 
 ```
-         Truyền thống                    ONKG
-       
+         Truyền thống                    OBKG
+         
   KG = cơ sở dữ liệu          KG = sinh vật sống
   Truy vấn = SELECT            Truy vấn = kích thích neuron
   Update = INSERT/DELETE        Update = tiến hóa / suy yếu
@@ -796,18 +782,18 @@ FIND SHORTEST_PATH(ku₁, ku₂)
 
 ### Đổi mới 2: "Epistemic-First" — Nhận Thức Là Trung Tâm
 
-| Đặc điểm                                    | ONKG | Nearest competitor        |
-| ----------------------------------------------- | ---- | ------------------------- |
-| 11 mức EpistemicStatus                         | ✅   | Wikidata: 3 ranks         |
-| 9 loại EvidenceType (Cochrane pyramid)         | ✅   | Không ai có             |
-| 6 quan hệ Epistemic (Refutes, Corroborates...) | ✅   | Không ai có             |
-| 7 quan hệ Experiential                         | ✅   | Không ai có             |
-| Bond decay theo RelationType                    | ✅   | ConceptNet: static weight |
+| Đặc điểm | OBKG | Nearest competitor |
+|-----------|------|-------------------|
+| 11 mức EpistemicStatus | ✅ | Wikidata: 3 ranks |
+| 9 loại EvidenceType (Cochrane pyramid) | ✅ | Không ai có |
+| 6 quan hệ Epistemic (Refutes, Corroborates...) | ✅ | Không ai có |
+| 7 quan hệ Experiential | ✅ | Không ai có |
+| Bond decay theo RelationType | ✅ | ConceptNet: static weight |
 
 ### Đổi mới 3: "Decentralized Biological Protocol"
 
 ```
-                    ONKG
+                    OBKG
                      │
         ┌────────────┼────────────┐
         │            │            │
@@ -828,17 +814,17 @@ FIND SHORTEST_PATH(ku₁, ku₂)
 
 ## 11. So Sánh Tổng Thể
 
-| Tiêu chí        | Google KG    | Wikidata   | ConceptNet  | Holochain   | OrbitDB | **ONKG**             |
-| ----------------- | ------------ | ---------- | ----------- | ----------- | ------- | -------------------------- |
-| Quy mô           | 51B entities | 122M items | 8M nodes    | —          | —      | New                        |
-| Phi tập trung    | ❌           | ❌         | ❌          | ✅          | ✅      | **✅**               |
-| Binary protocol   | ❌           | ❌         | ❌          | ❌          | ❌      | **✅**               |
-| Epistemic grading | ❌           | 3 ranks    | Weights     | ❌          | ❌      | **✅ 11 levels**     |
-| Bond decay        | ❌           | ❌         | Static      | ❌          | ❌      | **✅ Hebbian**       |
-| Immune system     | ❌           | Community  | ❌          | ✅ Warrants | ❌      | **✅ 8 antibodies**  |
-| KGE embeddings    | Internal     | ❌         | Numberbatch | ❌          | ❌      | **✅ RotatE int8**   |
-| Temporal model    | Data river   | Qualifiers | ❌          | ❌          | ❌      | **✅ Event-sourced** |
-| Token economics   | ❌           | ❌         | ❌          | HOT         | ❌      | **✅ OBT**           |
+| Tiêu chí | Google KG | Wikidata | ConceptNet | Holochain | OrbitDB | **OBKG** |
+|----------|-----------|----------|------------|-----------|---------|----------|
+| Quy mô | 51B entities | 122M items | 8M nodes | — | — | New |
+| Phi tập trung | ❌ | ❌ | ❌ | ✅ | ✅ | **✅** |
+| Binary protocol | ❌ | ❌ | ❌ | ❌ | ❌ | **✅** |
+| Epistemic grading | ❌ | 3 ranks | Weights | ❌ | ❌ | **✅ 11 levels** |
+| Bond decay | ❌ | ❌ | Static | ❌ | ❌ | **✅ Hebbian** |
+| Immune system | ❌ | Community | ❌ | ✅ Warrants | ❌ | **✅ 8 antibodies** |
+| KGE embeddings | Internal | ❌ | Numberbatch | ❌ | ❌ | **✅ RotatE int8** |
+| Temporal model | Data river | Qualifiers | ❌ | ❌ | ❌ | **✅ Event-sourced** |
+| Token economics | ❌ | ❌ | ❌ | HOT | ❌ | **✅ OBT** |
 
 ---
 
@@ -846,7 +832,7 @@ FIND SHORTEST_PATH(ku₁, ku₂)
 
 ```mermaid
 timeline
-    title ONKG Implementation Roadmap
+    title OBKG Implementation Roadmap
     section Phase 1 - Foundation
         2026-07 : Edge index tables on redb
                 : Event sourcing BondEvent
@@ -869,12 +855,11 @@ timeline
 ---
 
 > [!IMPORTANT]
-> **Tóm tắt 1 câu**: ONKG là sự kết hợp chưa từng có giữa **Merkle-CRDTs của OrbitDB** (sync), **MST của AT Protocol** (consistency), **Immune system của Holochain** (defense), **RotatE embeddings** (intelligence), **Hebbian plasticity** (adaptation), và **Event sourcing** (temporal) — tất cả trên nền tảng **redb** siêu nhẹ, mã hóa nhị phân — tạo thành một **đồ thị tri thức sống, phi tập trung, tự tiến hóa**.
+> **Tóm tắt 1 câu**: OBKG là sự kết hợp chưa từng có giữa **Merkle-CRDTs của OrbitDB** (sync), **MST của AT Protocol** (consistency), **Immune system của Holochain** (defense), **RotatE embeddings** (intelligence), **Hebbian plasticity** (adaptation), và **Event sourcing** (temporal) — tất cả trên nền tảng **redb** siêu nhẹ, mã hóa nhị phân — tạo thành một **đồ thị tri thức sống, phi tập trung, tự tiến hóa**.
 
 ---
 
-> **Author**: OneBrain Research Team
-> **Date**: 2026-07-02
-> **Sources**: 6 research documents, 52 systems surveyed
+> **Author**: OneBrain Research Team  
+> **Date**: 2026-07-02  
+> **Sources**: 6 research documents, 52 systems surveyed  
 > **Status**: Design Synthesis — Ready for Implementation Planning
-

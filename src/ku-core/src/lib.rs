@@ -60,6 +60,17 @@ pub mod obt_anti_gaming;      // ★ OBT: Anti-gaming rate limits, quality gates
 pub mod obt_gossip_security;  // ★ OBT: Gossip gap detection, connectivity proofs & epoch settlement
 pub mod obt_integration;      // ★ OBT: KU↔OBT integration layer (builders, quality gates)
 pub mod obt_governance;       // ★ OBT: Runtime-configurable governance parameters
+pub mod graph_types;         // ★ OBKG: Graph domain types (BondMeta, BondEvent, Decayable)
+pub mod graph_events;         // ★ OBKG: In-memory event accumulator for bond lifecycle
+pub mod graph_decay;          // ★ OBKG: Unified decay engine (Decayable impls, DecayRunner)
+pub mod graph_embeddings;     // ★ OBKG: RotatE int8 knowledge graph embeddings
+pub mod graph_dream;          // ★ OBKG: Dream Mode — offline graph restructuring (sleep consolidation)
+pub mod graph_bio;            // ★ OBKG: Bio-inspired mechanisms (STDP, Consolidation, Spreading Activation)
+pub mod graph_fedr;           // ★ OBKG: Federated RotatE training protocol (FedR)
+pub mod graph_qualifiers;     // ★ OBKG: Bond qualifiers (temporal, confidence, source, context)
+pub mod obkg_orchestrator;    // ★ OBKG: KuLifecycle wrapper + graph engines orchestrator
+pub mod obkg_bridge;          // ★ OBKG: Read-only adapter (KuRuntime/Bond → OBKG types)
+pub mod obkg_rewards;         // ★ OBKG↔OBT: Graph contribution scoring bridge
 
 #[cfg(test)]
 #[allow(unused)]
@@ -104,3 +115,14 @@ pub use encoding_reward::{VerifierRole, EncodingReward, calculate_reward};
 pub use obt_ledger::{TransferBlock, TransferOp, AccountState, MintSource, ForkWarrant};
 pub use obt_minting::{MintProof, MintActivity};
 pub use obt_penalty::{PenaltyTier, FraudType, PenaltyRecord};
+
+// ★ OBKG: Re-export graph types for convenience
+pub use graph_types::{BondMeta, BondEvent, WeakeningReason};
+pub use types::{EdgeState, Creator, DecayRate};
+pub use graph_events::EventAccumulator;
+pub use graph_decay::{DecayRunner, DecayReport};
+pub use graph_embeddings::{EntityEmbedding, RelationEmbedding, RelationTable};
+pub use graph_bio::{StdpEngine, ConsolidationEngine, spreading_activation};
+pub use graph_dream::{DreamEngine, DreamConfig, DreamReport};
+pub use graph_fedr::{FedRProtocol, FedRConfig, RelationDelta};
+pub use graph_qualifiers::{QualifiedBond, BondQualifier, QualifierKey, QualifierValue};

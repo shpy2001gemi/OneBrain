@@ -13,3 +13,9 @@ pub mod parser;
 pub mod executor;
 #[cfg(feature = "storage")]
 pub mod storage;
+#[cfg(feature = "storage")]
+pub mod graph_storage;
+
+// Re-export graph types for convenience
+#[cfg(feature = "storage")]
+pub use graph_storage::GraphStorage;
