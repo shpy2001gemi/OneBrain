@@ -93,6 +93,7 @@ Each node has a unique identity for CRDT coordination:
 | OBT Fork Pipeline | `obt_fork_pipeline.rs` | Fork detection → penalty lifecycle |
 | OBT Epoch | `obt_epoch.rs` | Epoch boundary settlement, EpochAccumulator |
 | OBT Integration | `obt_integration.rs` | KU↔OBT builders, quality gate orchestration |
+| Graph Gossip | `graph_gossip.rs` | OBKG FedR delta exchange, graph stats, dream reports (4 wire structs) |
 
 > **Note:** OBT core logic (ledger, minting, penalties, storage rewards, anti-gaming, fork pipeline, epoch settlement) is implemented in `ku-core`. The modules listed above in `ku-net` handle only the network-facing aspects: message serialization, gossip security, and integration with the P2P transport layer.
 
@@ -196,6 +197,7 @@ All messages use binary encoding with a 6-byte header:
 | PubSub | Subscribe, Unsubscribe, Publish |
 | Encoding (0x90–0x95) | EncodingJobAnnounce (0x90), EncodingClaimReq (0x91), EncodingClaimResp (0x92), EncodingSubmission (0x93), EncodingConsensusResult (0x94), EncodingJobUpdate (0x95) |
 | OBT Token (0xA0–0xA6) | ObtTransferRequest (0xA0), ObtTransferConfirm (0xA1), ObtBalanceQuery (0xA2), ObtBalanceResponse (0xA3), ObtMintBroadcast (0xA4), ObtStorageChallenge (0xA5), ObtForkWarrant (0xA6) |
+| Graph/OBKG (0xB0–0xB3) | FedR Delta Push (0xB0), FedR Delta Pull (0xB1), Graph Stats (0xB2), Dream Report (0xB3) |
 
 ---
 
@@ -270,4 +272,5 @@ sequenceDiagram
 | OBT Fork Pipeline | ✅ Implemented |
 | OBT Epoch | ✅ Implemented |
 | OBT Integration | ✅ Implemented |
+| Graph Gossip | ✅ Implemented |
 | E2E encryption | 📋 Planned |

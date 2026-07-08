@@ -43,6 +43,9 @@ pub mod encoding_stigmergy;  // ★ v6 NEW: Pheromone-based job load balancing
 pub mod obt_transfer;        // ★ OBT: Token transfer protocol messages
 pub mod obt_gossip;          // ★ OBT: Gossip protocol (fork warrants, mint relay, epoch summary)
 pub mod graph_gossip;        // ★ OBKG: Graph gossip (FedR deltas, graph stats, dream reports)
+#[cfg(feature = "persist")]
+pub mod dht_store;           // ★ Phase 3: DHT persistence (redb-backed)
+pub mod replication;         // ★ Phase 4: R=7 tier-aware replication manager
 
 #[cfg(test)]
 mod tests;

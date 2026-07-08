@@ -2,13 +2,13 @@
 
 > Last updated: 2026-07-01
 
-## Progress: ~80% Implemented
+## Progress: ~82% Implemented
 
 ```
-████████████████░░░░  ~80% implemented
+████████████████▒░░░  ~82% implemented
 ```
 
-## Implemented Modules (10 modules, ~243KB)
+## Implemented Modules (11 modules, ~243KB+)
 
 | Module | File | Size | Tests | Description |
 |--------|------|------|-------|-------------|
@@ -22,6 +22,7 @@
 | Fork Pipeline | `obt_fork_pipeline.rs` | 17KB | 12+ | Fork detection → penalty lifecycle |
 | Epoch | `obt_epoch.rs` | 16KB | 17+ | Epoch boundary, EpochAccumulator, finalization |
 | Integration | `obt_integration.rs` | 14KB | 8+ | KU↔OBT builders, quality gate orchestration |
+| OBKG Rewards | `obkg_rewards.rs` | — | 14 | OBKG↔OBT bridge — GraphContributionScore (4-dimension graph quality metric) |
 
 ## Specification Documents (9 files)
 

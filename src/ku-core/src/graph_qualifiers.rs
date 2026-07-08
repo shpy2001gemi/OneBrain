@@ -49,12 +49,12 @@ pub enum QualifierKey {
 }
 
 // ============================================================================
-// 2. QualifierValue — Typed qualifier value
+// 2. BondQualifierValue — Typed qualifier value
 // ============================================================================
 
 /// Typed qualifier value.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum QualifierValue {
+pub enum BondQualifierValue {
     /// Unix timestamp (seconds)
     Timestamp(u64),
     /// Floating-point value (confidence, score, etc.)
@@ -79,17 +79,17 @@ pub struct BondQualifier {
     pub key: QualifierKey,
     /// Custom key ID (only used when key == Custom)
     pub custom_key_id: Option<u16>,
-    pub value: QualifierValue,
+    pub value: BondQualifierValue,
 }
 
 impl BondQualifier {
     /// Create a standard qualifier.
-    pub fn new(key: QualifierKey, value: QualifierValue) -> Self {
+    pub fn new(key: QualifierKey, value: BondQualifierValue) -> Self {
         Self { key, custom_key_id: None, value }
     }
 
     /// Create a custom qualifier with a domain-specific key.
-    pub fn custom(key_id: u16, value: QualifierValue) -> Self {
+    pub fn custom(key_id: u16, value: BondQualifierValue) -> Self {
         Self {
             key: QualifierKey::Custom,
             custom_key_id: Some(key_id),
@@ -99,32 +99,32 @@ impl BondQualifier {
 
     /// Create a temporal ValidFrom qualifier.
     pub fn valid_from(timestamp: u64) -> Self {
-        Self::new(QualifierKey::ValidFrom, QualifierValue::Timestamp(timestamp))
+        Self::new(QualifierKey::ValidFrom, BondQualifierValue::Timestamp(timestamp))
     }
 
     /// Create a temporal ValidUntil qualifier.
     pub fn valid_until(timestamp: u64) -> Self {
-        Self::new(QualifierKey::ValidUntil, QualifierValue::Timestamp(timestamp))
+        Self::new(QualifierKey::ValidUntil, BondQualifierValue::Timestamp(timestamp))
     }
 
     /// Create a confidence qualifier (clamped to [0.0, 1.0]).
     pub fn confidence(value: f64) -> Self {
-        Self::new(QualifierKey::Confidence, QualifierValue::Float(value.clamp(0.0, 1.0)))
+        Self::new(QualifierKey::Confidence, BondQualifierValue::Float(value.clamp(0.0, 1.0)))
     }
 
     /// Create a source qualifier (reference to evidence KU).
     pub fn source(cid: [u8; 32]) -> Self {
-        Self::new(QualifierKey::Source, QualifierValue::Cid(cid))
+        Self::new(QualifierKey::Source, BondQualifierValue::Cid(cid))
     }
 
     /// Create a context qualifier.
     pub fn context(name: &str) -> Self {
-        Self::new(QualifierKey::Context, QualifierValue::Text(name.to_string()))
+        Self::new(QualifierKey::Context, BondQualifierValue::Text(name.to_string()))
     }
 
     /// Create a rank qualifier.
     pub fn rank(r: i64) -> Self {
-        Self::new(QualifierKey::Rank, QualifierValue::Integer(r))
+        Self::new(QualifierKey::Rank, BondQualifierValue::Integer(r))
     }
 }
 
@@ -181,14 +181,14 @@ impl QualifiedBond {
     pub fn is_valid_at(&self, timestamp: u64) -> bool {
         let valid_from = self.get_qualifier(QualifierKey::ValidFrom)
             .and_then(|q| match &q.value {
-                QualifierValue::Timestamp(t) => Some(*t),
+                BondQualifierValue::Timestamp(t) => Some(*t),
                 _ => None,
             })
             .unwrap_or(0); // No ValidFrom = always valid from start
 
         let valid_until = self.get_qualifier(QualifierKey::ValidUntil)
             .and_then(|q| match &q.value {
-                QualifierValue::Timestamp(t) => Some(*t),
+                BondQualifierValue::Timestamp(t) => Some(*t),
                 _ => None,
             })
             .unwrap_or(u64::MAX); // No ValidUntil = always valid
@@ -200,7 +200,7 @@ impl QualifiedBond {
     pub fn confidence(&self) -> f64 {
         self.get_qualifier(QualifierKey::Confidence)
             .and_then(|q| match &q.value {
-                QualifierValue::Float(f) => Some(*f),
+                BondQualifierValue::Float(f) => Some(*f),
                 _ => None,
             })
             .unwrap_or(1.0)
@@ -210,7 +210,7 @@ impl QualifiedBond {
     pub fn context(&self) -> Option<&str> {
         self.get_qualifier(QualifierKey::Context)
             .and_then(|q| match &q.value {
-                QualifierValue::Text(s) => Some(s.as_str()),
+                BondQualifierValue::Text(s) => Some(s.as_str()),
                 _ => None,
             })
     }
@@ -227,12 +227,12 @@ impl QualifiedBond {
         self.qualifiers.iter().map(|q| {
             // key(1) + custom_key_id(2) + value
             1 + 2 + match &q.value {
-                QualifierValue::Timestamp(_) => 8,
-                QualifierValue::Float(_) => 8,
-                QualifierValue::Integer(_) => 8,
-                QualifierValue::Cid(_) => 32,
-                QualifierValue::Text(s) => 2 + s.len(),
-                QualifierValue::Bool(_) => 1,
+                BondQualifierValue::Timestamp(_) => 8,
+                BondQualifierValue::Float(_) => 8,
+                BondQualifierValue::Integer(_) => 8,
+                BondQualifierValue::Cid(_) => 32,
+                BondQualifierValue::Text(s) => 2 + s.len(),
+                BondQualifierValue::Bool(_) => 1,
             }
         }).sum::<usize>()
     }
@@ -257,7 +257,7 @@ mod tests {
     fn qualifier_valid_from() {
         let q = BondQualifier::valid_from(1_700_000_000);
         assert_eq!(q.key, QualifierKey::ValidFrom);
-        assert_eq!(q.value, QualifierValue::Timestamp(1_700_000_000));
+        assert_eq!(q.value, BondQualifierValue::Timestamp(1_700_000_000));
         assert!(q.custom_key_id.is_none());
     }
 
@@ -265,22 +265,22 @@ mod tests {
     fn qualifier_valid_until() {
         let q = BondQualifier::valid_until(1_800_000_000);
         assert_eq!(q.key, QualifierKey::ValidUntil);
-        assert_eq!(q.value, QualifierValue::Timestamp(1_800_000_000));
+        assert_eq!(q.value, BondQualifierValue::Timestamp(1_800_000_000));
     }
 
     #[test]
     fn qualifier_confidence_clamped() {
         // Values above 1.0 should be clamped
         let q_high = BondQualifier::confidence(1.5);
-        assert_eq!(q_high.value, QualifierValue::Float(1.0));
+        assert_eq!(q_high.value, BondQualifierValue::Float(1.0));
 
         // Values below 0.0 should be clamped
         let q_low = BondQualifier::confidence(-0.5);
-        assert_eq!(q_low.value, QualifierValue::Float(0.0));
+        assert_eq!(q_low.value, BondQualifierValue::Float(0.0));
 
         // Normal value should pass through
         let q_ok = BondQualifier::confidence(0.85);
-        assert_eq!(q_ok.value, QualifierValue::Float(0.85));
+        assert_eq!(q_ok.value, BondQualifierValue::Float(0.85));
     }
 
     #[test]
@@ -288,22 +288,22 @@ mod tests {
         let cid = dummy_cid(0xAB);
         let q = BondQualifier::source(cid);
         assert_eq!(q.key, QualifierKey::Source);
-        assert_eq!(q.value, QualifierValue::Cid(cid));
+        assert_eq!(q.value, BondQualifierValue::Cid(cid));
     }
 
     #[test]
     fn qualifier_context() {
         let q = BondQualifier::context("physics");
         assert_eq!(q.key, QualifierKey::Context);
-        assert_eq!(q.value, QualifierValue::Text("physics".to_string()));
+        assert_eq!(q.value, BondQualifierValue::Text("physics".to_string()));
     }
 
     #[test]
     fn qualifier_custom() {
-        let q = BondQualifier::custom(42, QualifierValue::Bool(true));
+        let q = BondQualifier::custom(42, BondQualifierValue::Bool(true));
         assert_eq!(q.key, QualifierKey::Custom);
         assert_eq!(q.custom_key_id, Some(42));
-        assert_eq!(q.value, QualifierValue::Bool(true));
+        assert_eq!(q.value, BondQualifierValue::Bool(true));
     }
 
     // --- QualifiedBond tests ---

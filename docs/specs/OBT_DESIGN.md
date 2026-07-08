@@ -135,6 +135,19 @@ OneBrain đã có sẵn **tất cả primitives cần thiết** để xây token
 > [!NOTE]
 > **R2 và R3 đã merge trong `encoding_reward.rs`** — cùng file, cùng flow, khác role. R1 đã có formula. **Chỉ R4 (Storage) là hoàn toàn mới.**
 
+#### OBKG Graph Contribution (via obkg_rewards.rs)
+
+`GraphContributionScore` enriches PoMV-based rewards (R1) with 4 graph dimensions:
+- **Bond Richness** (0.35) — active bond count + weight quality
+- **Dream Contribution** (0.25) — bonds reinforced + associations discovered
+- **FedR Participation** (0.20) — federated training epochs contributed
+- **Graph Health** (0.20) — active/total bond ratio
+
+This does NOT create a new reward stream — it provides an additional quality signal for existing rewards.
+
+> [!NOTE]
+> `obkg_rewards.rs` acts as a **cross-pillar bridge module** between OBKG (Knowledge Graph) and OBT (Token Economics). It lives in `ku-core` alongside other reward modules.
+
 ---
 
 ## Phân Tích Nguyên Tắc 3: Supply Gần Vô Hạn

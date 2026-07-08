@@ -16,7 +16,6 @@
 //! - CID computation consistency
 
 use crate::core_dna::{CoreDna, Instruction, encode_core_dna, decode_core_dna};
-use crate::error::KuError;
 use crate::types::ConceptId;
 use std::collections::HashSet;
 

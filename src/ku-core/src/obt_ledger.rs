@@ -417,10 +417,10 @@ pub struct AccountState {
     /// Sequence number of the head block.
     pub sequence: u64,
 
-    /// Cumulative OBT ever earned (G-Counter â€” analytics only, never authoritative).
+    /// Cumulative OBT ever earned (G-Counter — analytics only, never authoritative).
     pub total_earned: GCounter,
 
-    /// Cumulative OBT ever spent (G-Counter â€” analytics only, never authoritative).
+    /// Cumulative OBT ever spent (G-Counter — analytics only, never authoritative).
     pub total_spent: GCounter,
 }
 
@@ -485,17 +485,21 @@ impl AccountState {
                 // No counter updates for Open
             }
             TransferOp::Mint { amount, .. } => {
-                self.total_earned.increment_by(node_id, *amount);
+                self.total_earned.increment_by(node_id, *amount)
+                    .map_err(|e| LedgerError::IntegrityViolation { reason: format!("GCounter overflow: {}", e) })?;
             }
             TransferOp::Receive { amount, .. } => {
-                self.total_earned.increment_by(node_id, *amount);
+                self.total_earned.increment_by(node_id, *amount)
+                    .map_err(|e| LedgerError::IntegrityViolation { reason: format!("GCounter overflow: {}", e) })?;
             }
             TransferOp::Send { amount, .. } => {
-                self.total_spent.increment_by(node_id, *amount);
+                self.total_spent.increment_by(node_id, *amount)
+                    .map_err(|e| LedgerError::IntegrityViolation { reason: format!("GCounter overflow: {}", e) })?;
             }
             TransferOp::Refund { amount, .. } => {
-                // Refund reverses a Send â€” credit back to earned
-                self.total_earned.increment_by(node_id, *amount);
+                // Refund reverses a Send — credit back to earned
+                self.total_earned.increment_by(node_id, *amount)
+                    .map_err(|e| LedgerError::IntegrityViolation { reason: format!("GCounter overflow: {}", e) })?;
             }
         }
 
@@ -763,20 +767,34 @@ impl std::error::Error for LedgerError {}
 /// Format: sorted (node_id as u64 LE, timestamp as u64 LE) pairs.
 /// Deterministic because BTreeMap iteration is always sorted by key.
 ///
-/// We avoid `serde_json` here because JSON output format can change
-/// between library versions, breaking block hash verification across
-/// node upgrades.
+/// We avoid relying on `format!("{:?}", ...)` because the Debug output format
+/// is not guaranteed stable across Rust versions.
+///
+/// Instead we serialize via serde_json to extract the BTreeMap entries
+/// (which are already sorted by node_id), then write each (node_id, counter)
+/// pair as big-endian u64 bytes — giving a deterministic, version-stable hash input.
 fn clock_canonical_bytes(clock: &VectorClock) -> Vec<u8> {
-    // VectorClock uses BTreeMap<u64, u64> internally.
-    // We serialize by extracting known node counts via the merge method.
-    // Since we can't access private fields, we serialize a snapshot
-    // using a deterministic binary format.
-    //
-    // Fallback: serialize the Debug representation which is deterministic
-    // for BTreeMap (sorted keys). This is a temporary solution until
-    // VectorClock exposes an iterator.
-    let debug_str = format!("{:?}", clock);
-    debug_str.into_bytes()
+    // Serialize to JSON Value to access the internal BTreeMap entries.
+    // VectorClock { clocks: BTreeMap<u64, u64> } serializes as {"clocks":{"<id>":"<ts>",...}}.
+    let value = serde_json::to_value(clock).unwrap_or_default();
+    let mut buf = Vec::new();
+    if let Some(map) = value.get("clocks").and_then(|v| v.as_object()) {
+        // BTreeMap serialization is sorted by key; collect and sort to be doubly sure.
+        let mut entries: Vec<(u64, u64)> = map
+            .iter()
+            .filter_map(|(k, v)| {
+                let node_id = k.parse::<u64>().ok()?;
+                let counter = v.as_u64()?;
+                Some((node_id, counter))
+            })
+            .collect();
+        entries.sort_by_key(|(nid, _)| *nid);
+        for (node_id, counter) in entries {
+            buf.extend_from_slice(&node_id.to_be_bytes());
+            buf.extend_from_slice(&counter.to_be_bytes());
+        }
+    }
+    buf
 }
 
 /// Create a genesis (Open) block for a new account.

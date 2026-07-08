@@ -61,7 +61,8 @@ ku-kql/src/
 ├── ast.rs          // Query AST types (§3)
 ├── parser.rs       // nom-based parser
 ├── executor.rs     // LocalExecutor (§4)
-└── storage.rs      // redb storage (behind 'storage' feature)
+├── storage.rs      // redb storage (behind 'storage' feature)
+└── graph_storage.rs // redb-backed graph edge persistence, adjacency queries
 ```
 
 ---
@@ -961,7 +962,7 @@ flowchart TD
 | AST (`ast.rs`) | ✅ Complete | 7 query types, 14 create clauses |
 | Executor (`executor.rs`) | ✅ Complete | Tất cả 7 query types |
 | Storage (`storage.rs`) | ✅ Complete | redb-backed, behind feature flag |
-| Tests | ✅ 58 tests passing | Unit + integration |
+| Tests | ✅ 125 tests passing | Unit + integration |
 
 ### 5.2 Query Support Matrix
 
@@ -984,6 +985,7 @@ flowchart TD
 | ConceptDict bridge | `text_parser` dùng dict riêng, chưa bridge với v6 ConceptDict |
 | Edge pattern matching | Parsed nhưng chưa evaluate trong FIND |
 | WATCH notification | Đăng ký thành công nhưng chưa push notification thực tế |
+| Graph edge persistence | `graph_storage.rs` cung cấp OBKG edge persistence (redb-backed), adjacency queries cho knowledge graph |
 
 ---
 

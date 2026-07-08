@@ -25,7 +25,6 @@
 
 use crate::core_dna::{CoreDna, encode_core_dna, decode_core_dna};
 use crate::error::KuError;
-use crate::types::ConceptId;
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 

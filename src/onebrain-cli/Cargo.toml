@@ -1,0 +1,19 @@
+[package]
+name = "onebrain-cli"
+version = "0.1.0"
+edition = "2021"
+description = "OneBrain CLI — interactive terminal interface"
+license = "MIT"
+
+[[bin]]
+name = "onebrain"
+path = "src/main.rs"
+
+[dependencies]
+onebrain-node = { path = "../onebrain-node" }
+onebrain-api = { path = "../onebrain-api" }
+ku-core = { path = "../ku-core" }
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-std", "io-util"] }
+blake3 = "1"
+

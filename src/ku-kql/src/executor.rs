@@ -213,6 +213,23 @@ impl LocalExecutor {
                 .collect();
         }
 
+        // ★ W8: Temporal filtering — filter by recorded_at timestamp
+        // The timestamp is on the optional EpigeneticSection (epi.epigenetic.recorded_at).
+        if let Some(ref temporal) = find.temporal {
+            results_owned.retain(|ku| {
+                // recorded_at lives in the optional EpigeneticSection.
+                // If no EpigeneticSection or no recorded_at, keep the KU by default.
+                let ts = match ku.epi.epigenetic.as_ref().and_then(|ep| ep.recorded_at) {
+                    Some(t) if t > 0 => t,
+                    _ => return true, // no timestamp data → keep by default
+                };
+                match temporal {
+                    TemporalClause::AtTime(target_ts) => ts == *target_ts,
+                    TemporalClause::During { from, to } => ts >= *from && ts <= *to,
+                }
+            });
+        }
+
         // Order
         if let Some(ref order) = find.order_by {
             for expr in order.iter().rev() {
@@ -285,45 +302,72 @@ impl LocalExecutor {
         for edge in &pattern.edges {
             let mut next_cids: Vec<[u8; 32]> = Vec::new();
 
-            for cid in &current_cids {
-                // Find the KU
-                if let Some(&ku) = ku_index.get(cid) {
-                    match edge.direction {
-                        EdgeDirection::Outgoing | EdgeDirection::Undirected => {
-                            // Follow outgoing bonds
-                            for bond in &ku.epi.bonds {
-                                // Check edge type filter
-                                let type_matches = edge.edge_types.is_empty() ||
-                                    edge.edge_types.iter().any(|t| {
-                                        bond.relation.matches_name(t)
-                                    });
-                                if !type_matches { continue; }
+            // ★ W9: Determine traversal depth from path_depth
+            let (min_depth, max_depth) = match &edge.path_depth {
+                Some(pd) => (pd.min, pd.max),
+                None => (1, 1), // default: single hop
+            };
 
-                                if bond.target_cid.len() >= 32 {
-                                    let mut target = [0u8; 32];
-                                    target.copy_from_slice(&bond.target_cid[..32]);
-                                    next_cids.push(target);
+            for cid in &current_cids {
+                // BFS for variable-length path traversal
+                // frontier[i] = CIDs reachable at depth i
+                let mut frontier = vec![vec![*cid]];
+                let mut visited: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::new();
+                visited.insert(*cid);
+
+                for _depth in 0..max_depth {
+                    let current_level = frontier.last().unwrap().clone();
+                    let mut next_level: Vec<[u8; 32]> = Vec::new();
+
+                    for hop_cid in &current_level {
+                        if let Some(&ku) = ku_index.get(hop_cid) {
+                            match edge.direction {
+                                EdgeDirection::Outgoing | EdgeDirection::Undirected => {
+                                    for bond in &ku.epi.bonds {
+                                        let type_matches = edge.edge_types.is_empty() ||
+                                            edge.edge_types.iter().any(|t| bond.relation.matches_name(t));
+                                        if !type_matches { continue; }
+                                        if bond.target_cid.len() >= 32 {
+                                            let mut target = [0u8; 32];
+                                            target.copy_from_slice(&bond.target_cid[..32]);
+                                            if visited.insert(target) {
+                                                next_level.push(target);
+                                            }
+                                        }
+                                    }
                                 }
-                            }
-                        }
-                        EdgeDirection::Incoming => {
-                            // For incoming, find KUs that have bonds pointing TO this CID
-                            for other_ku in &self.kus {
-                                for other_bond in &other_ku.epi.bonds {
-                                    if other_bond.target_cid.len() >= 32 {
-                                        let mut target = [0u8; 32];
-                                        target.copy_from_slice(&other_bond.target_cid[..32]);
-                                        if target == *cid {
-                                            let type_ok = edge.edge_types.is_empty() ||
-                                                edge.edge_types.iter().any(|t| other_bond.relation.matches_name(t));
-                                            if type_ok {
-                                                next_cids.push(other_ku.cid);
+                                EdgeDirection::Incoming => {
+                                    for other_ku in &self.kus {
+                                        for other_bond in &other_ku.epi.bonds {
+                                            if other_bond.target_cid.len() >= 32 {
+                                                let mut target = [0u8; 32];
+                                                target.copy_from_slice(&other_bond.target_cid[..32]);
+                                                if target == *hop_cid {
+                                                    let type_ok = edge.edge_types.is_empty() ||
+                                                        edge.edge_types.iter().any(|t| other_bond.relation.matches_name(t));
+                                                    if type_ok && visited.insert(other_ku.cid) {
+                                                        next_level.push(other_ku.cid);
+                                                    }
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                    }
+
+                    if next_level.is_empty() {
+                        break;
+                    }
+                    frontier.push(next_level);
+                }
+
+                // Collect CIDs at depths [min_depth..=max_depth]
+                for (depth_idx, level) in frontier.iter().enumerate() {
+                    // depth_idx 0 = source, depth_idx 1 = 1 hop, etc.
+                    if depth_idx >= min_depth && depth_idx <= max_depth {
+                        next_cids.extend_from_slice(level);
                     }
                 }
             }

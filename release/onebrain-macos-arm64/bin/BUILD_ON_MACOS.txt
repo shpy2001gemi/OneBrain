@@ -1,0 +1,1 @@
+[!] Binary not included. Build on macOS: cargo build --release -p onebrain-cli

@@ -37,6 +37,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This struct is serialized separately from Core DNA (e.g., to SQLite as CBOR).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Epigenetics {
     /// Trust & PoMV scores — the core quality/reputation data.
     /// Contains: trust_score, confidence, 6 PoMV signals, verification_level, etc.
@@ -51,11 +52,11 @@ pub struct Epigenetics {
 
     /// Current epistemic maturity level (11 levels: Rumor → Axiomatic).
     /// Transitions are driven by observable signals via the EpistemicEngine.
-    #[serde(rename = "es")]
+    #[serde(rename = "es", default)]
     pub epistemic_status: EpistemicStatus,
 
     /// Type of evidence supporting this KU (9 GRADE-aligned types).
-    #[serde(rename = "et")]
+    #[serde(rename = "et", default)]
     pub evidence_type: EvidenceType,
 
     /// Rich metadata: embeddings, temporal validity, versioning, categories.
@@ -242,5 +243,17 @@ mod tests {
         let decoded: Epigenetics = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded.trust.trust_score, 5000);
         assert_eq!(decoded.trust.confidence, 6000);
+    }
+
+    #[test]
+    fn test_epigenetics_forward_compatible_deserialization() {
+        // Simulate older JSON missing some fields — serde(default) should handle it
+        let minimal_json = r#"{"tr":{"es":"Rumor","et":"None","vl":0,"cc":0,"ch":0,"er":0,"ts":5000,"cf":6000}}"#;
+        let decoded: Epigenetics = serde_json::from_str(minimal_json).unwrap();
+        assert_eq!(decoded.trust.trust_score, 5000);
+        assert!(decoded.bonds.is_empty());
+        assert_eq!(decoded.epistemic_status, EpistemicStatus::Rumor);
+        assert_eq!(decoded.evidence_type, EvidenceType::default());
+        assert!(decoded.epigenetic.is_none());
     }
 }

@@ -1,8 +1,8 @@
 # 🧠 OneBrain — Tổng quan Trụ cột & Tiến độ
 
 > **Review toàn diện dự án OneBrain — 10 trụ cột chính và mức độ hoàn thiện**
-> Ngày review: 01/07/2026 | Codebase: ~30,000+ dòng Rust | 757 tests (ku-core 565 + ku-net 192) | 60+ tài liệu nghiên cứu
-> **Update lớn**: KU v6 Core DNA redesign — 3-layer architecture (Core DNA / Epigenetics / Expression), 32 opcodes, ~16-88B per KU (16.5× reduction vs CBOR v5)
+> Ngày review: 07/07/2026 | Codebase: ~35,000+ dòng Rust | 757+ tests (ku-core 565 + ku-net 192) | 60+ tài liệu nghiên cứu
+> **Update lớn (07/2026)**: Pillar 6 AI Layer — `onebrain` CLI node hoàn chỉnh (13 source files), P2P networking với seed node, encoding pipeline, anti-Sybil 12-layer, cross-node verification. Seed node binary (`onebrain-seed`) cho VPS deployment.
 
 ---
 
@@ -18,11 +18,11 @@ graph TD
         P3["P3: KQL Query - 95%"]
         P4["P4: Consensus PoK v2 - 95%"]
         P5["P5: OBT Token - 95%"]
-        P6["P6: AI Layer - 25%"]
+        P6["P6: AI Layer - 75%"]
         P7["P7: Knowledge Graph - 40%"]
         P8["P8: Storage Layer - 60%"]
         P9["P9: BCI Protocol - 15%"]
-        P10["P10: User Interface - 10%"]
+        P10["P10: User Interface - 25%"]
     end
 
     style P1 fill:#16a34a,stroke:#15803d,color:#fff
@@ -30,11 +30,11 @@ graph TD
     style P3 fill:#16a34a,stroke:#15803d,color:#fff
     style P4 fill:#16a34a,stroke:#15803d,color:#fff
     style P5 fill:#22c55e,stroke:#16a34a,color:#fff
-    style P6 fill:#f97316,stroke:#ea580c,color:#fff
+    style P6 fill:#22c55e,stroke:#16a34a,color:#fff
     style P7 fill:#eab308,stroke:#ca8a04,color:#333
     style P8 fill:#22c55e,stroke:#16a34a,color:#fff
     style P9 fill:#ef4444,stroke:#dc2626,color:#fff
-    style P10 fill:#ef4444,stroke:#dc2626,color:#fff
+    style P10 fill:#f97316,stroke:#ea580c,color:#fff
     style PILLARS fill:none,stroke:#666,stroke-width:2px
 ```
 
@@ -49,11 +49,11 @@ graph TD
 | 3 | **KQL (Query Language)** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 58 | 🟢 **Hoàn thiện** |
 | 4 | **Consensus (PoK v2)** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 157 | 🟢 **Hoàn thiện** |
 | 5 | **OBT Token** | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | ⬛⬛⬛⬛⬛ | 264+ | 🟢 **~95% implemented** |
-| 6 | **AI Layer** | ⬛⬛⬜⬜⬜ | ⬛⬛⬛⬜⬜ | ⬜⬜⬜⬜⬜ | — | 🟠 **Chỉ nghiên cứu** |
+| 6 | **AI Layer** | ⬛⬛⬛⬛⬜ | ⬛⬛⬛⬛⬜ | ⬛⬛⬛⬛⬜ | — | 🟢 **3 crates, 17 files, P2P + AI** |
 | 7 | **Knowledge Graph** | ⬛⬛⬛⬜⬜ | ⬛⬛⬛⬛⬜ | ⬛⬛⬛⬜⬜ | — | 🟡 **Đang phát triển** |
 | 8 | **Storage Layer** | ⬛⬛⬜⬜⬜ | ⬛⬛⬜⬜⬜ | ⬛⬛⬛⬛⬜ | 6 | 🟢 **Đã có nền tảng** |
 | 9 | **BCI Protocol** | ⬛⬛⬜⬜⬜ | ⬛⬛⬜⬜⬜ | ⬜⬜⬜⬜⬜ | — | 🔴 **Tầm nhìn xa** |
-| 10 | **User Interface** | ⬛⬜⬜⬜⬜ | ⬜⬜⬜⬜⬜ | ⬜⬜⬜⬜⬜ | — | 🔴 **Chưa bắt đầu** |
+| 10 | **User Interface** | ⬛⬛⬜⬜⬜ | ⬛⬜⬜⬜⬜ | ⬛⬛⬜⬜⬜ | — | 🟠 **CLI + P2P demo** |
 
 ---
 
@@ -494,28 +494,88 @@ OBT là **utility token** của OneBrain — phần thưởng cho việc đóng 
 
 ---
 
-### 🟠 Pillar 6: AI Layer
+### 🟢 Pillar 6: AI Layer — Local AI + P2P Network Node
 
-> **Trạng thái: Nghiên cứu | Tiến độ ~25%**
+> **Trạng thái: ✅ ~75% implemented | 3 crates, 17 source files | Spec: [PILLAR6_AI_TECHNICAL_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/PILLAR6_AI_TECHNICAL_SPEC.md)**
+>
+> **Major update (07/07/2026)**: Triển khai hoàn chỉnh `onebrain` CLI node — encoding pipeline với local Ollama AI, persistent storage (redb), anti-Sybil 12-layer, TCP P2P networking với cross-node verification. Thêm `onebrain-seed` (lightweight relay cho VPS) và `onebrain-protocol` (shared message types).
 
-6 AI components phục vụ phân loại, đánh giá, phát hiện trùng lặp, và kết nối tri thức.
+#### Quyết định kiến trúc (đã giải quyết)
 
-#### Đã nghiên cứu (trong [ai_layer_research.md](file:///c:/Users/shpy2/Documents/OneBrain/.analysis/research/ai_layer_research.md))
+| # | Quyết định | Giải pháp |
+|---|------------|----------|
+| Q1 | Cloud vs Local | ✅ **100% Local** — Ollama, không cloud API |
+| Q2 | Model management | ✅ **Curated + Custom** — default `qwen3:8b` + `nomic-embed-text` |
+| Q3 | Runtime | ✅ **OllamaBackend** trait-based abstraction |
+| Q4 | 1 model hay nhiều? | ✅ **1 chat model + 1 embedding model** per node |
+| Q5 | Anti-bot | ✅ **12-layer defense** (rate limit + quality gates + encoding consensus) |
+| Q6 | NAT traversal | ✅ **Seed node relay** (n1.onebrain.live, n2.onebrain.live) |
 
-| Component | Nghiên cứu | Code | Model dự kiến |
-|-----------|-----------|------|---------------|
-| Knowledge Classifier | ✅ | ❌ | BERT-based |
-| Quality Assessor | ✅ | ❌ | Custom scoring |
-| Duplicate Detector | ✅ | ❌ | Sentence transformers |
-| Connection Mapper | ✅ | ❌ | Graph neural networks |
-| Reward Calculator | ✅ | ❌ | Formula-based |
-| Personal AI Mediator | ✅ | ❌ | Architecture sketch only |
+#### 3 Crates đã triển khai
 
-#### Thách thức đã xác định
-- ⚠️ **9 AI models** cần thiết — chưa chọn model cụ thể
-- ⚠️ Inference cost: **$0.16-$0.81/KU** ($16K-$81K/ngày at 100K KUs/ngày)
-- ⚠️ Training data **chicken-and-egg problem**
-- ⚠️ Self-hosted vs API chưa quyết định
+**`onebrain` — Full client node (13 files)**
+
+| Module | File | Nội dung |
+|--------|------|---------|
+| Entry | [main.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/main.rs) | Clap CLI (`start` subcommand), P2P auto-discovery startup |
+| Node | [node.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/node.rs) | `OneBrainNode` — ties mediator, storage, network, anti-gaming |
+| CLI | [cli.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/cli.rs) | Interactive REPL (encode, search, peers, connect, status) |
+| Config | [config.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/config.rs) | `NodeConfig` (port, data-dir, ollama-url, model, seeds) |
+| Error | [error.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/error.rs) | `NodeError` enum unifying all subsystem errors |
+| Network | [network.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/network.rs) | TCP transport, `NetMessage`, `NodeEvent` |
+| Peers | [peer_manager.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/peer_manager.rs) | Peer tracking with deduplication |
+| Anti-Sybil | [anti_gaming_guard.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/anti_gaming_guard.rs) | Rate limiting (1 KU/hr Leaf) + Gate 1 quality check |
+| Verifier | [verifier_service.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/verifier_service.rs) | Cross-node verification via `core_dna_agreement()` |
+| Seed Client | [seed_client.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/seed_client.rs) | Connect to seed, register, get peers, relay |
+| Peer Memory | [peer_memory.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/peer_memory.rs) | Remember peers across restarts (JSON) |
+| UPnP | [upnp.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/upnp.rs) | UPnP stub (ready for `igd-next`) |
+| mDNS | [mdns_discovery.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/src/mdns_discovery.rs) | mDNS stub (ready for `mdns-sd`) |
+
+**`onebrain-seed` — Lightweight relay for VPS (4 files)**
+
+| Module | File | Nội dung |
+|--------|------|---------|
+| Entry | [main.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain-seed/src/main.rs) | Clap CLI (--port, --max-peers, --name) |
+| Registry | [registry.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain-seed/src/registry.rs) | Peer tracking, heartbeat, stale cleanup |
+| Relay | [relay.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain-seed/src/relay.rs) | Message forwarding between NAT'd peers |
+| Server | [server.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain-seed/src/server.rs) | TCP accept loop, message routing, stats |
+
+**`onebrain-protocol` — Shared P2P protocol (1 file)**
+
+| Module | File | Nội dung |
+|--------|------|---------|
+| Protocol | [lib.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain-protocol/src/lib.rs) | `PeerMessage`, `SeedMessage`, `PeerSummary`, wire format, hardcoded seeds |
+
+#### Encoding Pipeline (hoàn chỉnh)
+
+```
+User text → Mediator (intent routing)
+    → AiEncoder (Ollama qwen3:8b) → CoreDna wire_bytes
+    → AntiGamingGuard (rate limit + Gate 1)
+    → KuStorage.put() (redb, ACID)
+    → KuRetriever.index() (keyword search)
+    → broadcast_ku() (TCP push to peers)
+    → request_verification() (3-node consensus)
+```
+
+#### Anti-Sybil 12-Layer (6 layers wired)
+
+| Layer | Mechanism | Status |
+|:------|:----------|:-------|
+| 1 | BLAKE3 crypto puzzle (NodeID) | ✅ Implemented in ku-net |
+| 2 | Rate limiting (1 KU/hr Leaf) | ✅ **Enforced in AntiGamingGuard** |
+| 3 | Quality Gate 1 (min 256B + 2 instr) | ✅ **Enforced in AntiGamingGuard** |
+| 4 | Encoding consensus (3 verifiers) | ✅ **Wired via VerifyRequest/Response** |
+| 5 | Semantic agreement (≥0.6) | ✅ **Used in verifier_service** |
+| 6 | Duplicate detection (BLAKE3 CID) | ✅ **Enforced in KuStorage.put()** |
+| 7-12 | Gaming detection, PoMV, SWIM, caps | Implemented in ku-core/ku-net |
+
+#### Còn thiếu (~25%)
+- 🔲 UPnP auto port forward (crate integration)
+- 🔲 mDNS LAN discovery (crate integration)
+- 🔲 QUIC transport thay TCP (production)
+- 🔲 UDP hole punching (NAT traversal không cần relay)
+- 🔲 Full DHT-based peer discovery
 
 ---
 
@@ -585,30 +645,37 @@ Knowledge Graph kết nối tất cả KU — phát hiện tri thức liên quan
 
 ---
 
-### 🔴 Pillar 10: User Interface
+### 🟠 Pillar 10: User Interface
 
-> **Trạng thái: Chỉ có CLI demo | Tiến độ ~10%**
+> **Trạng thái: CLI node hoàn chỉnh + Demo cũ | Tiến độ ~25%**
+>
+> **Update (07/07/2026)**: `onebrain` CLI node thay thế `ku-demo` cũ — interactive REPL với encoding, search, peer management, P2P networking. Có thể chạy multi-node demo thực tế.
 
 #### Đã có
-- ✅ [ku-demo](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-demo/src/main.rs) — 10-step CLI demo (402 dòng)
+- ✅ **[onebrain CLI](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/)** — Full interactive node (13 files)
+  - REPL: `encode`, `search`, `peers`, `connect`, `status`, `help`, `quit`
+  - P2P: auto-connect to seed, broadcast KU, cross-node verify
+  - Storage: persistent redb, keyword search index
+  - Anti-Sybil: rate limiting + quality gates
+- ✅ **[onebrain-seed](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain-seed/)** — VPS relay node (4 files)
+- ✅ [ku-demo](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-demo/src/main.rs) — 10-step CLI demo cũ (402 dòng)
 - ✅ [runtime.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-demo/src/runtime.rs) — `OBPNode` unified runtime (204 dòng)
 - ✅ [testbed.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-demo/src/testbed.rs) — 3-node testbed (322 dòng)
+- ✅ [README.md](file:///c:/Users/shpy2/Documents/OneBrain/src/onebrain/README.md) — User guide (Vietnamese)
 
 #### Chưa có
-- 🔲 Web App
-- 🔲 Knowledge browsing & search UI
-- 🔲 KU contribution form
+- 🔲 Web App (dashboard, KU browser)
 - 🔲 Knowledge Graph visualization
-- 🔲 User dashboard
-- 🔲 Mobile App
+- 🔲 Mobile App (Android/iOS)
+- 🔲 Desktop App (Tauri/Electron)
 
 ---
 
 ## Cấu trúc Source Code
 
 ```
-src/                                    # ~30,000+ dòng Rust | 733 tests
-├── Cargo.toml                          # Workspace root
+src/                                    # ~35,000+ dòng Rust | 757+ tests | 10 crates
+├── Cargo.toml                          # Workspace root (10 members)
 │
 ├── ku-core/                            # 🟢 Pillar 1+4+5 — ~18,000+ LOC | 541 tests
 │   └── src/
@@ -695,7 +762,48 @@ src/                                    # ~30,000+ dòng Rust | 733 tests
 │       ├── executor.rs               # Full executor with aggregation (~700L)
 │       └── storage.rs                 # redb persistence (351L)
 │
-└── ku-demo/                            # Demo — ~930 LOC | 17 tests
+├── ku-ai/                              # 🟢 Pillar 6 — AI runtime
+│   └── src/
+│       ├── ollama.rs                   # OllamaBackend: REST API client
+│       └── model_backend.rs           # ModelBackend trait abstraction
+│
+├── ku-encoder/                         # 🟢 Pillar 6 — AI encoding pipeline
+│   └── src/
+│       └── encoder.rs                  # AiEncoder: text → CoreDna via AI
+│
+├── ku-mediator/                        # 🟢 Pillar 6 — Personal AI orchestrator
+│   └── src/
+│       ├── mediator.rs                 # Intent routing, session management
+│       └── retriever.rs               # Keyword search index
+│
+├── onebrain-protocol/                  # 🟢 Pillar 6 — Shared P2P protocol
+│   └── src/
+│       └── lib.rs                      # PeerMessage, SeedMessage, wire format
+│
+├── onebrain-seed/                      # 🟢 Pillar 6 — VPS seed node binary
+│   └── src/
+│       ├── main.rs                    # CLI entry (--port, --max-peers)
+│       ├── registry.rs               # Peer tracking + heartbeat + cleanup
+│       ├── relay.rs                   # Message forwarding
+│       └── server.rs                  # TCP accept loop + routing
+│
+├── onebrain/                           # 🟢 Pillar 6+10 — Full client node binary
+│   └── src/
+│       ├── main.rs                    # Clap CLI + P2P startup sequence
+│       ├── node.rs                    # OneBrainNode (storage + mediator + network)
+│       ├── cli.rs                     # Interactive REPL
+│       ├── config.rs                  # NodeConfig
+│       ├── error.rs                   # NodeError
+│       ├── network.rs                 # TCP transport + messages
+│       ├── peer_manager.rs            # Peer tracking
+│       ├── anti_gaming_guard.rs       # Rate limiting + quality gates
+│       ├── verifier_service.rs        # Cross-node verification
+│       ├── seed_client.rs             # Seed node client
+│       ├── peer_memory.rs             # Remember peers (JSON)
+│       ├── upnp.rs                    # UPnP stub
+│       └── mdns_discovery.rs          # mDNS stub
+│
+└── ku-demo/                            # Demo (legacy) — ~930 LOC | 17 tests
     └── src/
         ├── main.rs                    # 10-step E2E demo (402L)
         ├── runtime.rs                 # OBPNode unified runtime (204L)
@@ -763,13 +871,15 @@ src/                                    # ~30,000+ dòng Rust | 733 tests
 | # | Gap | Impact | Priority |
 |---|-----|--------|----------|
 | ~~1~~ | ~~**PoK Engine chưa code**~~ | ✅ **ĐÃ HOÀN THÀNH** — PoK v2 (PoMV), 16 modules, 157 tests | ✅ Done |
-| ~~2~~ | ~~**OBT Token chưa tồn tại**~~ | ✅ **~95% HOÀN THÀNH** — 11 modules, 264+ tests, 11-chapter paper, Ed25519 real, GovernanceConfig | 🟢 ~95% |
-| ~~3~~ | ~~**Whitepaper chưa viết**~~ | ✅ **5 papers đã viết** — KU, Network, KQL, PoK, OBT | ✅ Done |
-| ~~4~~ | ~~**OBT remaining ~20%**~~ | ✅ DHT wiring + Ed25519 + GovernanceConfig done. Remaining: cross-shard only (~5%) | 🟢 ~95% |
-| 2 | **AI Layer = 0 code** | Manual screening không scale | 🟠 High |
-| 3 | **Graph database chưa tích hợp** | Bonds/edges exist in code nhưng chưa queryable | 🟠 High |
-| 4 | **UI chưa có** | Chỉ CLI, không demo được | 🟡 Medium |
-| 5 | **Team = 1 người** | Phân tích ước tính cần **14-22 người** | 🔴 Critical |
+| ~~2~~ | ~~**OBT Token chưa tồn tại**~~ | ✅ **~95% HOÀN THÀNH** — 11 modules, 264+ tests | 🟢 ~95% |
+| ~~3~~ | ~~**Whitepaper chưa viết**~~ | ✅ **5 papers đã viết** | ✅ Done |
+| ~~4~~ | ~~**OBT remaining ~20%**~~ | ✅ DHT wiring + Ed25519 + GovernanceConfig done | 🟢 ~95% |
+| ~~5~~ | ~~**AI Layer = 0 code**~~ | ✅ **~75% HOÀN THÀNH** — 3 crates, 17 files, full pipeline + P2P | 🟢 ~75% |
+| ~~6~~ | ~~**UI chưa có**~~ | ✅ **CLI node hoàn chỉnh** — REPL + P2P + storage | 🟢 ~25% |
+| 1 | **Graph database chưa tích hợp** | Bonds/edges exist in code nhưng chưa queryable | 🟠 High |
+| 2 | **Web/Mobile App chưa có** | CLI chỉ dùng được cho dev/demo | 🟡 Medium |
+| 3 | **UPnP + mDNS chưa active** | Stub only, cần crate integration | 🟡 Medium |
+| 4 | **Team = 1 người** | Phân tích ước tính cần **14-22 người** | 🔴 Critical |
 
 ---
 
@@ -794,25 +904,26 @@ gantt
     section Phase 2 Alpha
     OBT Token Engine               :done, p2a, 2026-06, 2026-07
     OBT gaps (DHT, Ed25519, Gov)   :done, p2a2, 2026-07, 2026-07
+    AI Layer + P2P Node            :done, p2c, 2026-07, 2026-07
+    Seed Node + Protocol           :done, p2c2, 2026-07, 2026-07
     Knowledge Graph integration    :p2b, 2026-08, 2027-03
-    AI Classification v1           :p2c, 2026-09, 2027-03
     Web App prototype              :p2d, 2027-01, 2027-06
 ```
 
 > [!IMPORTANT]
-> **Dự án đã hoàn thành Phase 1 + PoK v2 + OBT ~95%!** Năm trụ cột nền tảng (KU 95% + Network 95% + KQL 95% + PoK v2 95% + **OBT 95%**) đều ở trạng thái hoàn thiện. Codebase: 30,000+ LOC, **757 tests**. 5 papers đã viết (KU, Network, KQL, PoK, OBT). Ed25519 real crypto, GovernanceConfig runtime.
+> **Dự án đã hoàn thành Phase 1 + PoK v2 + OBT ~95% + AI Layer ~75%!** Sáu trụ cột nền tảng (KU 95% + Network 95% + KQL 95% + PoK v2 95% + OBT 95% + **AI 75%**) đều ở trạng thái hoạt động. Codebase: 35,000+ LOC, **757+ tests**, 10 crates. `onebrain` CLI node chạy được multi-node demo thực tế với local AI + P2P networking.
 
 ---
 
-## 6 bước tiếp theo (đề xuất)
+## Bước tiếp theo (đề xuất)
 
-| # | Bước | Mô tả | Dựa trên |
-|---|------|-------|----------|
-| ~~🥇~~ | ~~**OBT remaining ~20%**~~ | ✅ DHT wiring + Ed25519 + GovernanceConfig done (01/07). Remaining: cross-shard (future) | **95% DONE** |
-| 🥈 | **Knowledge Graph DB** | Tích hợp graph database (Neo4j hoặc custom) để 33 bond types có thể traversal/query | Bond types đã code, cần DB backend |
-| 🥉 | **AI Classifier v1** | BERT-based knowledge classification — first AI component | Research đã hoàn thành |
+| # | Bước | Mô tả | Status |
+|---|------|-------|--------|
+| ~~🥇~~ | ~~**AI Layer + P2P Node**~~ | ✅ 3 crates (onebrain, onebrain-seed, onebrain-protocol), 17 files | **~75% DONE** |
+| ~~🥈~~ | ~~**OBT Token**~~ | ✅ 11 modules, 264+ tests, Ed25519, GovernanceConfig | **~95% DONE** |
+| ~~🥉~~ | ~~**PoK Engine**~~ | ✅ PoK v2 (PoMV), 16 modules, 157 tests | **DONE** |
+| 1️⃣ | **Deploy seed + test remote** | Deploy onebrain-seed lên n1/n2.onebrain.live, test multi-node xa | VPS sẵn sàng |
+| 2️⃣ | **UPnP + mDNS activation** | Kích hoạt crate `igd-next` + `mdns-sd` cho auto port/LAN discovery | Stub đã có |
+| 3️⃣ | **Knowledge Graph DB** | Tích hợp graph database để 33 bond types traversal/query | Bond types đã code |
 | 4️⃣ | **Web Dashboard** | Visualize Knowledge Graph, browse KUs, demo contribution flow | Cần để attract community |
-| ~~5️⃣~~ | ~~**OBT Token prototype**~~ | ✅ **~80% HOÀN THÀNH** — 10 modules, 240+ tests, 11-chapter paper | **DONE** |
-| ~~6️⃣~~ | ~~**PoK Engine**~~ | ✅ **ĐÃ HOÀN THÀNH** — PoK v2 (PoMV), 16 modules, 157 tests | **DONE** |
-| ~~7️⃣~~ | ~~**Distributed KQL**~~ | ✅ Đã triển khai: 6-layer router, ResultMerger, WatchEngine, Discovery Engine | **DONE** |
-| ~~8️⃣~~ | ~~**Whitepaper**~~ | ✅ **5 papers đã viết** — KU, Network, KQL, PoK, OBT | **DONE** |
+| 5️⃣ | **Mobile App** | Android/iOS client node | Cần cho mass adoption |

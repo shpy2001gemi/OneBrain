@@ -19,6 +19,7 @@ mod impl_ {
 
     use ku_core::graph_types::{BondMeta, GraphStats};
     use ku_core::types::{RelationType, EdgeState};
+    use ku_core::obs_schema;
 
     use crate::storage::StorageError;
 
@@ -134,6 +135,10 @@ mod impl_ {
                 let _ = txn.open_table(TABLE_EDGE_TIME)?;
             }
             txn.commit()?;
+
+            // Initialize/validate graph schema version
+            obs_schema::redb_schema::ensure_schema(&db, &obs_schema::graph_storage_registry())
+                .map_err(|e| StorageError::DatabaseError(format!("Graph schema init failed: {}", e)))?;
 
             Ok(Self { db })
         }

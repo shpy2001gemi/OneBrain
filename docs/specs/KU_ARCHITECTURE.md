@@ -668,6 +668,22 @@ Source: [lib.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/lib.r
 | Epoch | `obt_epoch.rs` | Epoch boundary settlement |
 | Integration | `obt_integration.rs` | KU↔OBT builders, quality gate orchestration |
 
+### OBKG — OneBrain Knowledge Graph (P7)
+
+| Module | File | Purpose |
+|--------|------|---------|
+| Graph Types | `graph_types.rs` | OBKG: BondMeta, BondEvent, Decayable trait, 4 decay curves |
+| Graph Events | `graph_events.rs` | OBKG: EventAccumulator (event sourcing for bond lifecycle) |
+| Graph Decay | `graph_decay.rs` | OBKG: DecayRunner (biologic bond decay) |
+| Graph Embeddings | `graph_embeddings.rs` | OBKG: RotatE KGE, 64-dim complex embeddings |
+| Graph Bio | `graph_bio.rs` | OBKG: STDP, Consolidation, Spreading Activation |
+| Graph Dream | `graph_dream.rs` | OBKG: Dream Mode (replay + association discovery) |
+| Graph FedR | `graph_fedr.rs` | OBKG: Federated RotatE training (FedR) |
+| Graph Qualifiers | `graph_qualifiers.rs` | OBKG: Bond qualifiers (temporal, confidence, source) |
+| OBKG Bridge | `obkg_bridge.rs` | OBKG: Read-only adapter (KuRuntime/Bond → OBKG types) |
+| OBKG Orchestrator | `obkg_orchestrator.rs` | OBKG: KuLifecycle wrapper + graph engines |
+| OBKG Rewards | `obkg_rewards.rs` | OBKG↔OBT: Graph contribution scoring bridge |
+
 ### Re-exports (from `lib.rs`)
 
 ```rust
@@ -759,6 +775,16 @@ graph LR
         OBP["OBP Protocol<br/>(network transport)"]
     end
 
+    subgraph "P5: OBT Token"
+        OBT["OBT Ledger<br/>(incentive mechanism)"]
+    end
+
+    subgraph "P7: OBKG"
+        OBKG["Knowledge Graph<br/>(bond lifecycle, KGE, dream)"]
+        BRIDGE["obkg_bridge<br/>(read-only adapter)"]
+        REWARDS["obkg_rewards<br/>(contribution scoring)"]
+    end
+
     LC -->|"ingest / tick / gc"| PR
     PR -->|"TrustSectionUpdate"| KR
     EE -->|"epistemic transitions"| EP
@@ -769,10 +795,18 @@ graph LR
     OBP -->|"wire_bytes serialize"| CD
     OBP -->|"from_wire() deserialize"| KR
 
+    BRIDGE -->|"reads KuRuntime/Bond"| KR
+    REWARDS -->|"GraphContributionScore"| OBT
+    OBKG -->|"graph_gossip FedR deltas"| OBP
+
     style KR fill:#2c3e50,stroke:#3498db,color:#ecf0f1
     style PR fill:#8e44ad,stroke:#9b59b6,color:#ecf0f1
     style KQL fill:#27ae60,stroke:#2ecc71,color:#ecf0f1
     style OBP fill:#d35400,stroke:#e67e22,color:#ecf0f1
+    style OBT fill:#d4ac0d,stroke:#f1c40f,color:#1a1a1a
+    style OBKG fill:#0e6655,stroke:#1abc9c,color:#ecf0f1
+    style BRIDGE fill:#0e6655,stroke:#1abc9c,color:#ecf0f1
+    style REWARDS fill:#0e6655,stroke:#1abc9c,color:#ecf0f1
 ```
 
 ### P2: PoK/PoMV — via PomvRuntime Bridge

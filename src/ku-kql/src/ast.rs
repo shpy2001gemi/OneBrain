@@ -276,6 +276,7 @@ impl Default for PathDepth {
 pub enum EdgeDirection {
     Outgoing,   // -[r:TYPE]->
     Incoming,   // <-[r:TYPE]-
+    /// Programmatic only — no KQL text syntax currently parses this direction.
     Undirected, // -[r:TYPE]-
 }
 
@@ -353,10 +354,15 @@ pub enum Value {
     Float(f64),
     Text(String),
     Bool(bool),
+    /// Programmatic only — no KQL text syntax currently parses this variant.
     ConceptId(u64),
+    /// Programmatic only — no KQL text syntax currently parses this variant.
     EpistemicStatus(EpistemicStatus),
+    /// Programmatic only — no KQL text syntax currently parses this variant.
     EvidenceType(EvidenceType),
+    /// Programmatic only — no KQL text syntax currently parses this variant.
     Role(RoleId),
+    /// Programmatic only — no KQL text syntax currently parses this variant.
     /// ★ OBKG Phase 3: Unix timestamp value
     Timestamp(u64),
 }

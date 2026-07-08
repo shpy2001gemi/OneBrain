@@ -71,6 +71,9 @@ pub mod graph_qualifiers;     // ★ OBKG: Bond qualifiers (temporal, confidence
 pub mod obkg_orchestrator;    // ★ OBKG: KuLifecycle wrapper + graph engines orchestrator
 pub mod obkg_bridge;          // ★ OBKG: Read-only adapter (KuRuntime/Bond → OBKG types)
 pub mod obkg_rewards;         // ★ OBKG↔OBT: Graph contribution scoring bridge
+pub mod obs_schema;            // ★ OBS: Schema versioning & migration framework
+pub mod obs_cache;             // ★ OBS: Metabolism-Aware ARC Cache (M-ARC)
+pub mod blob_store;            // ★ OBS: Blob Store core types (BlobCid, BlobMeta, BlobType)
 
 #[cfg(test)]
 #[allow(unused)]
@@ -118,11 +121,10 @@ pub use obt_penalty::{PenaltyTier, FraudType, PenaltyRecord};
 
 // ★ OBKG: Re-export graph types for convenience
 pub use graph_types::{BondMeta, BondEvent, WeakeningReason};
-pub use types::{EdgeState, Creator, DecayRate};
 pub use graph_events::EventAccumulator;
 pub use graph_decay::{DecayRunner, DecayReport};
 pub use graph_embeddings::{EntityEmbedding, RelationEmbedding, RelationTable};
 pub use graph_bio::{StdpEngine, ConsolidationEngine, spreading_activation};
 pub use graph_dream::{DreamEngine, DreamConfig, DreamReport};
 pub use graph_fedr::{FedRProtocol, FedRConfig, RelationDelta};
-pub use graph_qualifiers::{QualifiedBond, BondQualifier, QualifierKey, QualifierValue};
+pub use graph_qualifiers::{QualifiedBond, BondQualifier, QualifierKey, BondQualifierValue};

@@ -13,7 +13,6 @@
 //! ## This module provides POSITIVE signal: how organic is the spread?
 //! (Immune system provides NEGATIVE signal: how bot-like is the spread?)
 
-use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 // ═══════════════════════════════════════════════════════════════════════════

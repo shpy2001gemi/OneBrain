@@ -1,0 +1,18 @@
+[package]
+name = "ku-encoder"
+version = "0.1.0"
+edition = "2021"
+description = "OneBrain AI-assisted KU encoding — text to CoreDna via local LLM tool calling"
+license = "MIT"
+
+[dependencies]
+ku-core = { path = "../ku-core" }
+ku-ai = { path = "../ku-ai" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["sync", "time"] }
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

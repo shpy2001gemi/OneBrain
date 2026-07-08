@@ -825,10 +825,19 @@ fn condition(input: &str) -> IResult<&str, Condition> {
 
 fn simple_condition(input: &str) -> IResult<&str, Condition> {
     alt((
+        not_condition,
         exists_condition,
         contains_condition,
         comparison_condition,
     ))(input)
+}
+
+/// Parse `NOT <condition>` — wraps the inner condition in `Condition::Not`.
+fn not_condition(input: &str) -> IResult<&str, Condition> {
+    let (input, _) = tag_no_case("NOT")(input)?;
+    let (input, _) = multispace1(input)?;
+    let (input, inner) = simple_condition(input)?;
+    Ok((input, Condition::Not(Box::new(inner))))
 }
 
 fn exists_condition(input: &str) -> IResult<&str, Condition> {

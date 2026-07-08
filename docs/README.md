@@ -14,7 +14,7 @@ Text → CoreDna → Epigenetics → Expression
 
 ---
 
-## Architecture — 5 Pillars
+## Architecture — 10 Pillars
 
 ```mermaid
 graph LR
@@ -23,6 +23,7 @@ graph LR
     P3["P3: KQL<br/>Knowledge Query Language"]
     P4["P4: OBP Network<br/>Decentralized Protocol"]
     P5["P5: OBT Token<br/>Incentive Mechanism"]
+    P7["P7: Knowledge Graph (OBKG) - 85%"]
 
     P1 --> P2
     P2 --> P3
@@ -30,12 +31,16 @@ graph LR
     P4 -->|gossip| P1
     P2 -->|rewards| P5
     P5 -->|incentives| P1
+    P7 -->|reads KuRuntime| P1
+    P7 -->|GraphContributionScore| P5
+    P7 -->|graph_gossip FedR| P4
 
     style P1 fill:#2563eb,color:#fff
     style P2 fill:#059669,color:#fff
     style P3 fill:#d97706,color:#fff
     style P4 fill:#7c3aed,color:#fff
     style P5 fill:#f59e0b,color:#fff
+    style P7 fill:#059669,color:#fff
 ```
 
 | Pillar | Crate | Mô tả |
@@ -94,6 +99,7 @@ cargo build --features persist
 | 15 | `obt/07_GOSSIP_SECURITY.md` | P5 | Gossip gap and connectivity proofs |
 | 16 | `obt/08_PENALTY.md` | P5 | 5-tier graduated penalty system |
 | 17 | `obt/09_CONSTANTS.md` | P5 | All protocol constants with rationale |
+| 18 | [OBKG_WALKTHROUGH.md](specs/OBKG_WALKTHROUGH.md) | P7 | OBKG Knowledge Graph — 4 phases, 13 modules, 280 tests |
 
 ### Cross-cutting Documents
 
@@ -134,6 +140,17 @@ cargo build --features persist
 | `encoding_verifier` | [encoding_verifier.rs](../src/ku-core/src/encoding_verifier.rs) | [Encoding Consensus](specs/ENCODING_CONSENSUS_SPEC.md) | 2-phase verification: AI decomposition agreement + tool encoding round-trip |
 | `encoding_reward` | [encoding_reward.rs](../src/ku-core/src/encoding_reward.rs) | [Encoding Consensus](specs/ENCODING_CONSENSUS_SPEC.md) | OBT token rewards for encoding verification participation |
 | `error` | [error.rs](../src/ku-core/src/error.rs) | — | `KuError` enum |
+| `graph_types` | [graph_types.rs](../src/ku-core/src/graph_types.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: BondMeta, BondEvent, Decayable trait, 4 decay curves |
+| `graph_events` | [graph_events.rs](../src/ku-core/src/graph_events.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: EventAccumulator (event sourcing for bond lifecycle) |
+| `graph_decay` | [graph_decay.rs](../src/ku-core/src/graph_decay.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: DecayRunner (biologic bond decay) |
+| `graph_embeddings` | [graph_embeddings.rs](../src/ku-core/src/graph_embeddings.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: RotatE KGE, 64-dim complex embeddings |
+| `graph_bio` | [graph_bio.rs](../src/ku-core/src/graph_bio.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: STDP, Consolidation, Spreading Activation |
+| `graph_dream` | [graph_dream.rs](../src/ku-core/src/graph_dream.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: Dream Mode (replay + association discovery) |
+| `graph_fedr` | [graph_fedr.rs](../src/ku-core/src/graph_fedr.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: Federated RotatE training (FedR) |
+| `graph_qualifiers` | [graph_qualifiers.rs](../src/ku-core/src/graph_qualifiers.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: Bond qualifiers (temporal, confidence, source) |
+| `obkg_bridge` | [obkg_bridge.rs](../src/ku-core/src/obkg_bridge.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: Read-only adapter (KuRuntime/Bond → OBKG types) |
+| `obkg_orchestrator` | [obkg_orchestrator.rs](../src/ku-core/src/obkg_orchestrator.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: KuLifecycle wrapper + graph engines |
+| `obkg_rewards` | [obkg_rewards.rs](../src/ku-core/src/obkg_rewards.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG↔OBT: Graph contribution scoring bridge |
 
 ### P2: PoK/PoMV Modules
 
@@ -170,6 +187,7 @@ cargo build --features persist
 | `parser` | [parser.rs](../src/ku-kql/src/parser.rs) | [KQL Spec](specs/KQL_SPEC.md) | nom-based KQL parser |
 | `executor` | [executor.rs](../src/ku-kql/src/executor.rs) | [KQL Spec](specs/KQL_SPEC.md) | Local query execution engine |
 | `storage` | [storage.rs](../src/ku-kql/src/storage.rs) | [KQL Spec](specs/KQL_SPEC.md) | redb-backed persistent KU storage |
+| `graph_storage` | [graph_storage.rs](../src/ku-kql/src/graph_storage.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: Graph-aware KU storage and retrieval |
 
 ### P4: OBP Network Modules
 
@@ -190,6 +208,7 @@ cargo build --features persist
 | `encoding_gossip` | [encoding_gossip.rs](../src/ku-net/src/encoding_gossip.rs) | [Encoding Consensus](specs/ENCODING_CONSENSUS_SPEC.md) | Encoding status & verification result propagation |
 | `encoding_stigmergy` | [encoding_stigmergy.rs](../src/ku-net/src/encoding_stigmergy.rs) | [Encoding Consensus](specs/ENCODING_CONSENSUS_SPEC.md) | Pheromone-based load balancing for encoding tasks |
 | `obt_transfer` | [obt_transfer.rs](../src/ku-net/src/obt_transfer.rs) | [OBT Transfer](specs/obt/06_TRANSFER.md) | OBT transfer message handling, wire protocol (0xA0-0xA6) |
+| `graph_gossip` | [graph_gossip.rs](../src/ku-net/src/graph_gossip.rs) | [OBKG Walkthrough](specs/OBKG_WALKTHROUGH.md) | OBKG: FedR delta exchange via gossip protocol |
 
 ### P5: OBT Token Modules (`ku-core/src/obt_*.rs`)
 

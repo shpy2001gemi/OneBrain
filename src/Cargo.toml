@@ -1,5 +1,37 @@
 [workspace]
-members = ["ku-core", "ku-net", "ku-kql", "ku-demo"]
+members = [
+    # ── Core Libraries ──
+    "ku-core",          # Core types, storage, PoMV, OBT, OBKG, CRDT
+    "ku-net",           # P2P networking, DHT, SWIM, transport
+    "ku-kql",           # Knowledge Query Language
+    "ku-ai",            # AI backend (Ollama integration)
+    "ku-encoder",       # Text → KU encoding pipeline
+    "ku-mediator",      # User intent → AI → response pipeline
+
+    # ── Shared Protocol ──
+    "onebrain-protocol",# Shared P2P message types (node ↔ seed)
+
+    # ── Node Runtime (shared by ALL interfaces) ──
+    "onebrain-node",    # ★ Library: OneBrainNode, networking, config
+
+    # ── Interface Projects (Rust) ──
+    "onebrain-cli",     # Interface: CLI REPL (Phase 0 ✅)
+    "onebrain-api",     # Interface: Local REST + WebSocket API (Phase 1)
+
+    # ── Server / Infrastructure ──
+    "onebrain-seed",    # Seed node — cross-platform (Windows, Linux, Arduino...)
+
+    # ── Demo / Test ──
+    "ku-demo",          # 3-node simulation demo
+
+    # ── Non-Rust Interface Projects (NOT workspace members) ──
+    # onebrain-web        → React + Vite + TypeScript (Phase 1)
+    # onebrain-desktop    → Tauri 2.x (Phase 2)
+    # onebrain-mobile     → Flutter + flutter_rust_bridge (Phase 3)
+    # onebrain-glasses    → Web App / visionOS (Phase 4)
+    # onebrain-bot        → Node.js / Python (Phase 2, low priority)
+    # onebrain-extension  → WebExtension API (Phase 3)
+]
 resolver = "2"
 
 [profile.release]

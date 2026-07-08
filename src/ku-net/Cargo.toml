@@ -9,6 +9,8 @@ license = "MIT"
 default = []
 # Enable QUIC transport (requires C compiler for TLS crypto)
 quic = ["dep:quinn", "dep:rustls", "dep:tokio", "dep:rcgen"]
+# Enable DHT persistence (redb-backed storage for DHT entries + replica metadata)
+persist = ["dep:redb", "ku-core/persist"]
 
 [dependencies]
 # Crypto
@@ -25,6 +27,9 @@ thiserror = "1"
 
 # Core types (for CRDT sync)
 ku-core = { path = "../ku-core" }
+
+# Persistent storage (pure Rust, ACID) — behind 'persist' feature
+redb = { version = "2", optional = true }
 
 # QUIC Transport (SPEC A §3) — behind 'quic' feature flag
 quinn = { version = "0.11", default-features = false, features = ["rustls-aws-lc-rs", "runtime-tokio"], optional = true }

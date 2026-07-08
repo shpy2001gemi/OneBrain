@@ -11,6 +11,7 @@
 //! | `meta`      | "next_id"  | u64                  |
 
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
+use crate::obs_schema;
 use crate::types::ConceptId;
 use crate::error::KuError;
 use crate::concept_dict::ConceptEntry;
@@ -35,6 +36,10 @@ impl PersistentConceptDict {
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, KuError> {
         let db = Database::create(path)
             .map_err(|e| KuError::InvalidData(format!("DB open error: {}", e)))?;
+
+        // Initialize/validate schema version
+        obs_schema::redb_schema::ensure_schema(&db, &obs_schema::concept_dict_registry())
+            .map_err(|e| KuError::InvalidData(format!("Schema init failed: {}", e)))?;
 
         let dict = Self { db };
         dict.init_tables()?;

@@ -922,8 +922,8 @@ impl CoreDna {
 
 use crate::types::{
     KnowledgeUnit, Gene, GeneType, Codon, RoleId, Triple, ProcedureStep,
-    HeaderFlags, Bond, EpistemicStatus, EvidenceType,
-    CompositeEntry, CompositeConstraint, CompositeType, Completeness, StructuralRole,
+    HeaderFlags,
+    CompositeEntry, CompositeType, Completeness, StructuralRole,
 };
 
 /// Convert a rich KnowledgeUnit into a compact CoreDna.

@@ -14,7 +14,7 @@
 
 use crate::ku_runtime::KuRuntime;
 use crate::encoding_consensus::EncodingConsensus;
-use crate::obt_minting::{FormulaInputs, StorageFactors, MintProof, MintActivity, WitnessSignature};
+use crate::obt_minting::{FormulaInputs, StorageFactors, MintProof, MintActivity};
 use crate::obt_storage_reward::StoredKuInfo;
 use crate::obt_anti_gaming;
 use crate::obt_epoch::epoch_from_timestamp;

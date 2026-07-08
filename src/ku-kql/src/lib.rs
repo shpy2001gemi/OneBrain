@@ -15,6 +15,8 @@ pub mod executor;
 pub mod storage;
 #[cfg(feature = "storage")]
 pub mod graph_storage;
+#[cfg(feature = "storage")]
+pub mod blob_storage;
 
 // Re-export graph types for convenience
 #[cfg(feature = "storage")]

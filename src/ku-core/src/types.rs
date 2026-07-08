@@ -9,7 +9,7 @@
 //! - GeneType: 11 gene variants (0-6 direct, 7=EXTENDED + ext byte)
 //! - EpistemicStatus: 11-level epistemic classification
 //! - EvidenceType: 9 evidence types (Cochrane/GRADE pyramid)
-//! - RelationType: 33 edge types across 8 categories
+//! - RelationType: 34 edge types across 8 categories
 //! - TrustSection: Trust & epistemic metadata (v4 spec §8)
 //! - EpigeneticSection: Layer 4 metadata (v4 spec §6)
 //! - Codon, Bond, Gene, KnowledgeUnit structs
@@ -112,10 +112,10 @@ pub struct Codon {
 }
 
 // ============================================================================
-// Layer 2: Relation Bonds — 33 Edge Types
+// Layer 2: Relation Bonds — 34 Edge Types
 // ============================================================================
 
-/// RelationType — 33 edge types across 8 categories.
+/// RelationType — 34 edge types across 8 categories.
 ///
 /// Categories: A=Epistemic, B=Structural, C=Causal, D=Derivation,
 ///             E=Similarity, F=Temporal, G=Provenance, H=Experiential(★v4)
@@ -237,7 +237,7 @@ impl RelationType {
 
     /// ★ OBKG Fix: Parse a relation type name (case-insensitive).
     pub fn from_name(name: &str) -> Option<Self> {
-        // All 33 variants — case-insensitive match
+        // All 34 variants — case-insensitive match
         let lower = name.to_ascii_lowercase();
         match lower.as_str() {
             "extends" => Some(Self::Extends),

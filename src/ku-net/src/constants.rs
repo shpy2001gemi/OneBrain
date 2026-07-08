@@ -188,3 +188,51 @@ pub const MSG_FEDR_DELTA_PULL: u8 = 0xB1;
 pub const MSG_GRAPH_STATS: u8 = 0xB2;
 /// Dream Report: reinforcement/pruning results from dream consolidation.
 pub const MSG_DREAM_REPORT: u8 = 0xB3;
+
+// ─── Replication (Phase 4 — DHT Storage Replication) ─────────────────────
+
+/// Storage replication factor (distinct from routing K=20).
+/// Each KU is replicated to R=7 nodes for durability.
+pub const STORAGE_REPLICATION_FACTOR: usize = 7;
+/// Minimum healthy replicas before triggering repair.
+pub const MIN_HEALTHY_REPLICAS: usize = 4;
+/// Target replicas after repair (same as STORAGE_REPLICATION_FACTOR).
+pub const REPAIR_TARGET_REPLICAS: usize = 7;
+
+// Message type codes 0x24–0x26 for replication protocol.
+
+/// STORE RPC: request a peer to store a KU value.
+pub const MSG_STORE_RPC: u8 = 0x24;
+/// STORE ACK: acknowledgment of successful STORE.
+pub const MSG_STORE_ACK: u8 = 0x25;
+/// Replication health check: query replica count for a CID.
+pub const MSG_REPLICATION_CHECK: u8 = 0x26;
+
+// ── Blob Storage ───────────────────────────────────────────────────────────
+
+/// Blob chunk size: 256KB (IPFS-compatible fixed chunks).
+pub const BLOB_CHUNK_SIZE: usize = 256 * 1024;
+
+/// Maximum single blob size: 100MB.
+pub const BLOB_MAX_SIZE: u64 = 100 * 1024 * 1024;
+
+/// Blob replication factor for hot blobs.
+pub const BLOB_REPLICATION_HOT: usize = 3;
+
+/// OB-CID version byte.
+pub const BLOB_CID_VERSION: u8 = 0x01;
+
+/// MediaRef system byte for OBS Blob Store.
+pub const BLOB_MEDIAREF_SYSTEM: u8 = 0x01;
+
+/// Message code: Blob STORE request.
+pub const MSG_BLOB_STORE_RPC: u8 = 0x30;
+
+/// Message code: Blob STORE acknowledgment.
+pub const MSG_BLOB_STORE_ACK: u8 = 0x31;
+
+/// Message code: Blob chunk request.
+pub const MSG_BLOB_CHUNK_REQ: u8 = 0x32;
+
+/// Message code: Blob chunk response.
+pub const MSG_BLOB_CHUNK_RES: u8 = 0x33;

@@ -1,0 +1,24 @@
+[package]
+name = "onebrain-node"
+version = "0.1.0"
+edition = "2021"
+description = "OneBrain Node runtime — core logic shared by all interfaces"
+license = "MIT"
+
+[lib]
+name = "onebrain_node"
+path = "src/lib.rs"
+
+[dependencies]
+ku-core = { path = "../ku-core" }
+ku-net = { path = "../ku-net" }
+ku-kql = { path = "../ku-kql", features = ["storage"] }
+ku-ai = { path = "../ku-ai" }
+ku-encoder = { path = "../ku-encoder" }
+ku-mediator = { path = "../ku-mediator" }
+onebrain-protocol = { path = "../onebrain-protocol" }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-std", "io-util"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+blake3 = "1"

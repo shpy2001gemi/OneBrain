@@ -65,6 +65,11 @@ pub const UNKNOWN_CONCEPT: ConceptId = 127;
 ///
 /// This is the T1 "vocabulary" — a simple HashMap used to resolve
 /// natural language tokens into language-agnostic concept identifiers.
+///
+/// **Note:** This is the lightweight, encoding-only variant used by
+/// the text parser pipeline. For the full bidirectional dictionary with
+/// multilingual aliases and tier-based ID allocation, see
+/// [`concept_dict::ConceptDict`](crate::concept_dict::ConceptDict).
 #[derive(Debug, Clone)]
 pub struct ConceptDict {
     map: HashMap<String, ConceptId>,
@@ -695,6 +700,8 @@ fn split_first_token(s: &str) -> (&str, &str) {
 
 /// After parsing, link orphan Tolerance instructions back to the most recent
 /// Quantity by copying its value and subject.
+// TODO: Wire this function into the parsing pipeline or remove once confirmed unnecessary.
+#[allow(dead_code)]
 fn link_tolerances(instructions: &mut [Instruction]) {
     let mut last_quantity: Option<(ConceptId, NumericValue)> = None;
 

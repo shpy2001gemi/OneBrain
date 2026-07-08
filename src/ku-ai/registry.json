@@ -1,0 +1,133 @@
+{
+  "version": "1.0",
+  "models": [
+    {
+      "id": "qwen2.5-0.5b-q4",
+      "display_name": "Qwen 2.5 0.5B (Q4_K_M)",
+      "hf_repo": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+      "hf_filename": "qwen2.5-0.5b-instruct-q4_k_m.gguf",
+      "ollama_name": "qwen2.5:0.5b",
+      "size_bytes": 397000000,
+      "sha256": "",
+      "min_tier": "T0",
+      "model_type": "llm",
+      "features": {
+        "tool_calling": true,
+        "multilingual": true,
+        "context_length": 32768
+      }
+    },
+    {
+      "id": "qwen2.5-1.5b-q4",
+      "display_name": "Qwen 2.5 1.5B (Q4_K_M)",
+      "hf_repo": "Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+      "hf_filename": "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+      "ollama_name": "qwen2.5:1.5b",
+      "size_bytes": 986000000,
+      "sha256": "",
+      "min_tier": "T1",
+      "model_type": "llm",
+      "features": {
+        "tool_calling": true,
+        "multilingual": true,
+        "context_length": 32768
+      }
+    },
+    {
+      "id": "qwen2.5-3b-q4",
+      "display_name": "Qwen 2.5 3B (Q4_K_M)",
+      "hf_repo": "Qwen/Qwen2.5-3B-Instruct-GGUF",
+      "hf_filename": "qwen2.5-3b-instruct-q4_k_m.gguf",
+      "ollama_name": "qwen2.5:3b",
+      "size_bytes": 1900000000,
+      "sha256": "",
+      "min_tier": "T2",
+      "model_type": "llm",
+      "features": {
+        "tool_calling": true,
+        "multilingual": true,
+        "context_length": 32768
+      }
+    },
+    {
+      "id": "qwen2.5-7b-q4",
+      "display_name": "Qwen 2.5 7B (Q4_K_M)",
+      "hf_repo": "Qwen/Qwen2.5-7B-Instruct-GGUF",
+      "hf_filename": "qwen2.5-7b-instruct-q4_k_m.gguf",
+      "ollama_name": "qwen2.5:7b",
+      "size_bytes": 4700000000,
+      "sha256": "",
+      "min_tier": "T3",
+      "model_type": "llm",
+      "features": {
+        "tool_calling": true,
+        "multilingual": true,
+        "context_length": 32768
+      }
+    },
+    {
+      "id": "qwen2.5-14b-q4",
+      "display_name": "Qwen 2.5 14B (Q4_K_M)",
+      "hf_repo": "Qwen/Qwen2.5-14B-Instruct-GGUF",
+      "hf_filename": "qwen2.5-14b-instruct-q4_k_m.gguf",
+      "ollama_name": "qwen2.5:14b",
+      "size_bytes": 9000000000,
+      "sha256": "",
+      "min_tier": "T4",
+      "model_type": "llm",
+      "features": {
+        "tool_calling": true,
+        "multilingual": true,
+        "context_length": 32768
+      }
+    },
+    {
+      "id": "qwen2.5-32b-q4",
+      "display_name": "Qwen 2.5 32B (Q4_K_M)",
+      "hf_repo": "Qwen/Qwen2.5-32B-Instruct-GGUF",
+      "hf_filename": "qwen2.5-32b-instruct-q4_k_m.gguf",
+      "ollama_name": "qwen2.5:32b",
+      "size_bytes": 20000000000,
+      "sha256": "",
+      "min_tier": "T5",
+      "model_type": "llm",
+      "features": {
+        "tool_calling": true,
+        "multilingual": true,
+        "context_length": 32768
+      }
+    },
+    {
+      "id": "nomic-embed-text-v1.5",
+      "display_name": "Nomic Embed Text v1.5",
+      "hf_repo": "nomic-ai/nomic-embed-text-v1.5-GGUF",
+      "hf_filename": "nomic-embed-text-v1.5.Q4_K_M.gguf",
+      "ollama_name": "nomic-embed-text",
+      "size_bytes": 274000000,
+      "sha256": "",
+      "min_tier": "T0",
+      "model_type": "embedding",
+      "features": {
+        "tool_calling": false,
+        "multilingual": true,
+        "context_length": 8192
+      }
+    },
+    {
+      "id": "mxbai-embed-large",
+      "display_name": "MxBai Embed Large v1",
+      "hf_repo": "mixedbread-ai/mxbai-embed-large-v1",
+      "hf_filename": "mxbai-embed-large-v1.Q4_K_M.gguf",
+      "ollama_name": "mxbai-embed-large",
+      "size_bytes": 670000000,
+      "sha256": "",
+      "min_tier": "T2",
+      "model_type": "embedding",
+      "features": {
+        "tool_calling": false,
+        "multilingual": false,
+        "context_length": 512
+      }
+    }
+  ]
+}

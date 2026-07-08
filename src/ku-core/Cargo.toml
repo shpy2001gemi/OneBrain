@@ -17,6 +17,7 @@ ciborium = "0.2"     # CBOR serialization — will migrate to serde_ipld_dagcbor
 serde_bytes = "0.11"  # Efficient byte vector serialization
 crc32fast = "1.4"
 blake3 = "1"         # ★ v6: BLAKE3 hash for CID computation
+indexmap = "2"          # Insertion-ordered map for O(1) LRU cache
 ed25519-dalek = { version = "2", features = ["rand_core"] }  # Ed25519 signature verification
 
 # Persistent storage (pure Rust, ACID) — behind 'persist' feature

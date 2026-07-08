@@ -130,6 +130,7 @@ pub struct WatchEngine {
     /// Maximum concurrent watches.
     max_watches: usize,
     /// Our node ID.
+    #[allow(dead_code)]
     my_id: NodeId,
 }
 

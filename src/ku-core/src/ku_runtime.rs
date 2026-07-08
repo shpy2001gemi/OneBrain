@@ -19,7 +19,7 @@
 //! ```
 
 use crate::concept_dict::ConceptDict;
-use crate::core_dna::{CoreDna, CoreDnaHeader, ConstraintOp, Instruction, NumericValue, decode_core_dna, encode_core_dna};
+use crate::core_dna::{CoreDna, Instruction, decode_core_dna, encode_core_dna};
 use crate::encoding_consensus::EncodingStatus;
 use crate::epigenetics::{Epigenetics, Expression};
 use crate::error::KuError;

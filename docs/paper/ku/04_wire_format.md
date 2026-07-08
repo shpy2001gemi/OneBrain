@@ -201,7 +201,46 @@ The 30 data instructions are organized into five functional categories:
 
 **Gene-specific instructions** (opcodes `0x16`–`0x1D`) encode data structures unique to particular gene types. `AFFECT` stores VAD emotional dimensions as signed 16-bit integers; `TEXT_REF` and `FORMULA` embed compressed text blobs with language or format tags; `WITNESS` carries testimony metadata; `MEDIA_REF` references external media systems; `COMPOSITE_HDR` and `MEMBER` define composite KU structures with typed membership.
 
-### 4.3.3 NumericValue Inline Encoding
+### 4.3.3 MediaRef and OBS Blob Store Integration
+
+The `MEDIA_REF` instruction (opcode `0x1B`, wire byte `0xD8`) provides the linkage between a Knowledge Unit and external binary large objects (blobs). The instruction encodes a typed reference to a storage backend:
+
+```
+MEDIA_REF wire layout:
+┌──────────┬──────────┬──────────┬─────────────────────┐
+│  OPCODE  │  SYSTEM  │   LEN    │      ID BYTES       │
+│  (1 B)   │  (1 B)   │  (1 B)   │    (LEN bytes)      │
+├──────────┼──────────┼──────────┼─────────────────────┤
+│   0xD8   │   0x01   │   0x22   │  OB-CID (34 bytes)  │
+└──────────┴──────────┴──────────┴─────────────────────┘
+ Total: 37 bytes for an OBS Blob Store reference
+```
+
+The `system` byte identifies the storage backend:
+
+| System | Value | ID Format | ID Size | Status |
+|--------|-------|-----------|---------|--------|
+| OneBrain Blob Store | `0x01` | OB-CID `[version:u8][type:u8][blake3:32B]` | 34 bytes | **Implemented** |
+| IPFS CIDv1 | `0x02` | CIDv1 multihash | variable | Designed (Phase 2) |
+| Arweave | `0x03` | Transaction ID | 32 bytes | Designed (Phase 2) |
+
+For `system = 0x01` (OneBrain Blob Store), the `id` field carries a 34-byte **OB-CID** (OneBrain Content Identifier):
+
+$$\text{OB-CID} = [\text{version}: \text{u8}] \parallel [\text{type}: \text{u8}] \parallel [\text{blake3}: 32\text{B}] = 34 \text{ bytes}$$
+
+The `type` byte encodes the media type of the referenced blob:
+
+| Type Code | Name | Description |
+|-----------|------|-------------|
+| `0x00` | `Raw` | Unclassified binary data |
+| `0x01` | `Image` | Image files (JPEG, PNG, WebP, GIF, etc.) |
+| `0x02` | `Video` | Video files (MP4, WebM, MKV, etc.) |
+| `0x03` | `Audio` | Audio files (MP3, OGG, FLAC, WAV, etc.) |
+| `0x04` | `Document` | Document files (PDF, DOCX, TXT, etc.) |
+
+**Implementation constraints.** A single KU may contain up to **10 `MEDIA_REF` instructions** (`BLOB_MAX_PER_KU = 10`), enabling rich multi-media knowledge units while bounding the reference count. Each referenced blob is limited to **100 MB** (`BLOB_MAX_SIZE`). The encoding verifier currently **skips** `MEDIA_REF` instructions during semantic agreement checks — media references are not subject to Tier 3 encoding consensus verification (§4.9.4). Expression rendering also currently omits `MEDIA_REF` instructions, as visual rendering of blob references is deferred to Phase 2.
+
+### 4.3.4 NumericValue Inline Encoding
 
 Numeric values within `QUANTITY`, `RANGE`, and `TOLERANCE` instructions are encoded inline using a 1-byte type prefix followed by the value in big-endian byte order. The prefix bytes (`0xFA`–`0xFF`) are chosen to lie *outside* the varint range (varints use `0x00`–`0xF7` as first bytes), enabling unambiguous disambiguation:
 
@@ -227,7 +266,7 @@ NumericValue::F32(35.2)    → [0xFF, 0x42, 0x0C, 0xCC, 0xCD] (5 bytes)
 NumericValue::I16(-500)    → [0xFC, 0xFE, 0x0C]             (3 bytes)
 ```
 
-### 4.3.4 Constraint Operators
+### 4.3.5 Constraint Operators
 
 The `op_code` operand of the `CONSTRAINT` instruction is a single unsigned byte encoding six relational operators:
 

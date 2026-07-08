@@ -1,0 +1,24 @@
+[package]
+name = "ku-ai"
+version = "0.1.0"
+edition = "2021"
+description = "OneBrain AI Layer — pluggable local LLM runtime, device detection, model management"
+license = "MIT"
+
+[features]
+default = ["ollama"]
+ollama = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "fs"] }
+reqwest = { version = "0.12", features = ["json", "native-tls"] }
+sysinfo = "0.33"
+directories = "5"
+toml = "0.8"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

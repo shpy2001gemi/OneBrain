@@ -54,6 +54,11 @@ pub struct ConceptEntry {
 ///
 /// Maps: name → ConceptId and ConceptId → ConceptEntry.
 ///
+/// # Related
+/// A simpler, encoding-only [`ConceptDict`](crate::text_parser::ConceptDict)
+/// exists in `text_parser` for lightweight word→ID mapping during text parsing.
+/// That struct is *not* interchangeable with this one.
+///
 /// # Thread Safety
 /// Not thread-safe. Wrap in `Arc<RwLock<ConceptDict>>` for concurrent access.
 pub struct ConceptDict {

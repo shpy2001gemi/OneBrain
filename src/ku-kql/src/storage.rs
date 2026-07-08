@@ -12,6 +12,7 @@ use std::path::Path;
 
 use ku_core::{KuRuntime, Epigenetics, TrustSection};
 use ku_core::core_dna::decode_core_dna;
+use ku_core::obs_schema;
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 
 // ─── Table Definitions ─────────────────────────────────────────────────────
@@ -118,6 +119,10 @@ impl KuStorage {
         }
         txn.commit()?;
 
+        // Initialize/validate schema version
+        obs_schema::redb_schema::ensure_schema(&db, &obs_schema::ku_storage_registry())
+            .map_err(|e| StorageError::DatabaseError(format!("Schema init failed: {}", e)))?;
+
         // Create graph storage with neighboring file
         let graph_path = path.with_extension("graph.redb");
         let graph = crate::graph_storage::GraphStorage::open(&graph_path)?;
@@ -208,6 +213,12 @@ impl KuStorage {
         let value = table.get(cid.as_slice())?
             .ok_or(StorageError::NotFound)?;
         let wire_bytes = value.value().to_vec();
+
+        // Verify content integrity: BLAKE3(wire_bytes) must match the CID key
+        let computed_cid = blake3::hash(&wire_bytes);
+        if computed_cid.as_bytes() != cid {
+            return Err(StorageError::CodecError("CID mismatch: stored data corrupted".into()));
+        }
 
         // Decode Core DNA
         let core_dna = decode_core_dna(&wire_bytes)
@@ -697,6 +708,26 @@ mod tests {
         let stats = storage.graph().stats().unwrap();
         assert_eq!(stats.total_edges, 1);
         assert_eq!(stats.active_edges, 1);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn test_cid_verification_on_get() {
+        let path = temp_db_path();
+        let storage = KuStorage::open(&path).unwrap();
+
+        let ku = make_test_ku(7500);
+        let cid = storage.put(&ku).unwrap();
+
+        // Verify that get() succeeds with valid CID
+        let retrieved = storage.get(&cid).unwrap();
+        assert_eq!(retrieved.cid, cid);
+        assert_eq!(retrieved.trust_score(), 7500);
+
+        // Verify that get() with a non-existent CID returns NotFound
+        let fake_cid = [0xDE; 32];
+        assert!(matches!(storage.get(&fake_cid), Err(StorageError::NotFound)));
 
         cleanup(&path);
     }

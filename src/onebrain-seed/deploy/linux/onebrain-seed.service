@@ -1,0 +1,29 @@
+[Unit]
+Description=OneBrain Seed Node — P2P relay and peer discovery
+Documentation=https://github.com/onebrain/onebrain
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=onebrain
+Group=onebrain
+ExecStart=/usr/local/bin/onebrain-seed --port 4242 --name "Seed-VN1" --max-peers 10000
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/onebrain
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=onebrain-seed
+
+[Install]
+WantedBy=multi-user.target

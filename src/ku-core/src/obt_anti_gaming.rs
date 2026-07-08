@@ -201,6 +201,7 @@ pub enum PenaltyRecommendation {
     Warning,
     TrustReduction,
     Jail,
+    /// Reserved for manual escalation — never auto-recommended by `recommend_penalty()`.
     Tombstone,
 }
 

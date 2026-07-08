@@ -7,7 +7,7 @@
 //! > "Pillar sau build bridges, đừng break foundations."
 //! OBKG (P7) adapts to P1-P5, not the other way around.
 
-use crate::types::{Bond, RelationType, Creator, EdgeState, DecayRate};
+use crate::types::{Bond, RelationType};
 use crate::ku_runtime::KuRuntime;
 use crate::graph_types::{BondMeta, BondEvent};
 use crate::graph_embeddings::EntityEmbedding;
