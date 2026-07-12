@@ -488,10 +488,11 @@ mod tests {
     fn make_dna(gene_type: u8, instructions: Vec<Instruction>) -> CoreDna {
         CoreDna {
             header: CoreDnaHeader {
-                version: 1,
+                version: 2,
                 gene_type,
-                has_qualifiers: false,
+                has_concept_table: false,
             },
+            concept_table: Vec::new(),
             instructions,
         }
     }

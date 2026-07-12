@@ -1,9 +1,10 @@
-# KU v6 Architecture — Core DNA 3-Layer Knowledge Unit
+# KU v7 Architecture — Core DNA 3-Layer Knowledge Unit
 
 > **Pillar**: P1 — Knowledge Representation Engine
-> **Crate**: `ku-core` v0.2.0
+> **Crate**: `ku-core` v0.3.0
 > **Source**: [`src/ku-core/`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core)
-> **Last Updated**: 2026-06-30
+> **Last Updated**: 2026-07-11
+> **Previous version**: [KU v6 Architecture](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KU_V6_PILLAR_IMPACT.md) (archived)
 
 ---
 
@@ -11,7 +12,7 @@
 
 ### Triết lý: "Knowledge as Living Organisms"
 
-Kiến trúc KU v6 mô phỏng sinh học phân tử: mỗi đơn vị tri thức (Knowledge Unit — KU) được thiết kế như một **sinh vật sống** với DNA, biểu hiện gene, và vòng đời tiến hóa.
+Kiến trúc KU v7 mô phỏng sinh học phân tử: mỗi đơn vị tri thức (Knowledge Unit — KU) được thiết kế như một **sinh vật sống** với DNA, biểu hiện gene, và vòng đời tiến hóa.
 
 Thiết kế gồm **3 lớp** tách biệt hoàn toàn:
 
@@ -21,12 +22,14 @@ Thiết kế gồm **3 lớp** tách biệt hoàn toàn:
 
 ### Bảng tương đồng sinh học
 
-| Sinh học | KU v6 | Vai trò |
+| Sinh học | KU v7 | Vai trò |
 |----------|-------|---------|
-| Chuỗi nucleotide (ATCG) | `CoreDna` — instruction stream (32 opcodes) | Lưu trữ bất biến, compact, language-agnostic |
+| Chuỗi nucleotide (ATCG) | `CoreDna` — instruction stream (32 opcodes) + ConceptTable | Lưu trữ bất biến, compact, self-contained |
 | Histone modification / Methylation | `Epigenetics` — TrustSection, Bond, EpistemicStatus | Điều chỉnh "biểu hiện" mà không thay đổi DNA |
 | Protein synthesis | `Expression` — rendered natural language text | Phenotype tạo on-demand từ DNA |
 | Genome hash | `cid: [u8; 32]` — BLAKE3 hash của wire bytes | Định danh nội dung bất biến |
+| Gene identity | `Ccid: [u8; 16]` — BLAKE3 truncated concept hash | Định danh khái niệm toàn cầu, deterministic |
+| Species catalog | `ConceptRegistry` — 200MB offline lookup (~8M concepts) | Từ điển khái niệm phân tán, CCID-based |
 | Metabolism / Ecosystem | `PomvRuntime` — 6 tín hiệu PoMV | Đánh giá "sức sống" của tri thức |
 | Cell lifecycle | `KuLifecycle` — ingest/tick/gc | Vòng đời: sinh ra → tiến hóa → chết |
 
@@ -40,7 +43,7 @@ Thiết kế gồm **3 lớp** tách biệt hoàn toàn:
 graph TB
     subgraph "KuRuntime — Composite struct"
         direction TB
-        L1["Layer 1: CoreDna<br/>Immutable binary stream<br/>32 opcodes, varint ConceptIDs<br/>16–172 bytes on wire"]
+        L1["Layer 1: CoreDna<br/>Immutable binary stream<br/>32 opcodes, varint ConceptIDs<br/>ConceptTable (local→CCID mapping)<br/>16–300 bytes on wire"]
         L2["Layer 2: Epigenetics<br/>Mutable runtime metadata<br/>TrustSection (6 PoMV signals)<br/>Bonds (33 types), EpistemicStatus"]
         L3["Layer 3: Expression<br/>Lazy-rendered text<br/>On-demand from DNA + ConceptDict<br/>Multilingual (vi, en, ja...)"]
     end
@@ -62,16 +65,19 @@ graph TB
 
 ### Layer 1: CoreDna — Immutable Binary Instruction Stream
 
-Chuỗi opcode nhị phân ultra-compact, nhỏ hơn cả văn bản tự nhiên. Language-agnostic — không chứa text nào, chỉ có ConceptID dạng varint.
+Chuỗi opcode nhị phân ultra-compact, nhỏ hơn cả văn bản tự nhiên. Language-agnostic — không chứa text nào, chỉ có ConceptID dạng varint. **v7 thêm ConceptTable** giúp KU self-contained (không cần external ConceptDict để decode).
 
 ```text
-Wire Format:
-MAGIC(0x4B) | VER_META(1B) | INSTRUCTION_STREAM | END(0x1E) | CRC-16(2B)
+Wire Format (v7):
+MAGIC(0x4B) | VER_META(1B) | [CONCEPT_TABLE] | INSTRUCTION_STREAM | END(0x1E) | CRC-16(2B)
              ┌─────────────┐
-             │ bits 7-5: version (3 bits, current = 1)
+             │ bits 7-5: version (3 bits, current = 2 for v7)
              │ bits 4-1: gene_type (4 bits, 0-15)
-             │ bit 0:    has_qualifiers
+             │ bit 0:    has_concept_table
              └─────────────┘
+
+Concept Table (if has_concept_table = 1):
+  varint(entry_count) | { varint(local_id) + CCID(16 bytes) } × entry_count
 ```
 
 **Rust struct** — source: [core_dna.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/core_dna.rs):
@@ -79,14 +85,23 @@ MAGIC(0x4B) | VER_META(1B) | INSTRUCTION_STREAM | END(0x1E) | CRC-16(2B)
 ```rust
 pub struct CoreDna {
     pub header: CoreDnaHeader,
+    pub concept_table: ConceptTable,  // ★ v7: local_id → CCID mapping
     pub instructions: Vec<Instruction>,
 }
 
 pub struct CoreDnaHeader {
-    pub version: u8,        // 0-7 (current = 1)
-    pub gene_type: u8,      // 0-15 → GeneType mapping
-    pub has_qualifiers: bool,
+    pub version: u8,             // 0-7 (current = 2 for v7)
+    pub gene_type: u8,           // 0-15 → GeneType mapping
+    pub has_concept_table: bool,  // ★ v7: replaces has_qualifiers
 }
+
+/// ★ v7: ConceptTable entry — maps local varint ID to global CCID
+pub struct ConceptTableEntry {
+    pub local_id: ConceptId,  // Tier 2+ only (≥16512)
+    pub ccid: [u8; 16],       // 128-bit BLAKE3 truncated
+}
+
+pub type ConceptTable = Vec<ConceptTableEntry>;
 ```
 
 ### Layer 2: Epigenetics — Runtime Metadata Overlay
@@ -313,9 +328,87 @@ Dùng bởi opcode `CONSTRAINT` (0x0E):
 
 ---
 
-## §5 ConceptDict — Bilingual Concept Dictionary
+## §5 Concept System — CCID, Tier 0, ConceptRegistry (v7)
 
-Hệ thống từ điển khái niệm ánh xạ hai chiều giữa tên human-readable và ConceptID dạng varint, hỗ trợ đa ngôn ngữ.
+### §5.1 CCID — Content-Addressed Concept Identity
+
+v7 giới thiệu **CCID** — mã định danh khái niệm 128-bit dựa trên nội dung, không cần central authority.
+
+Source: [ccid.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/ccid.rs)
+
+```rust
+/// 16-byte Content-Addressed Concept Identity.
+pub type Ccid = [u8; 16];
+
+/// Generate CCID: lowercase + trim + BLAKE3 → first 16 bytes.
+pub fn ccid(canonical: &[u8]) -> Ccid;
+
+/// Convenience: Wikidata QID → CCID (e.g., Q283 = water)
+pub fn ccid_from_wikidata(qid: u32) -> Ccid;
+
+/// Other sources: GeoNames, NCBI taxonomy, ChEBI, OneBrain namespaced
+pub fn ccid_from_geonames(gn_id: u32) -> Ccid;
+pub fn ccid_from_ncbi(taxid: u32) -> Ccid;
+pub fn ccid_from_chebi(chebi_id: u32) -> Ccid;
+pub fn ccid_from_onebrain(path: &str) -> Ccid;
+```
+
+**Canonical form priority**: 1) External ontology (`wd:Q283`, `cas:7732-18-5`), 2) Definition KU CID, 3) Namespaced (`ob:chemistry/water`)
+
+**Collision resistance**: 128-bit → birthday bound ~18 quintillion. Với 50B concepts (2526 projection), xác suất va chạm ≈ 3.67×10⁻¹⁸.
+
+### §5.2 Tier 0 — 80 Universal Concept Constants
+
+Source: [tier0_concepts.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/tier0_concepts.rs)
+
+74 concepts hardcoded (IDs 0–79), 47 reserved (80–126), 1 sentinel (127). Tất cả encode bằng 1-byte varint, không cần ConceptTable entry.
+
+| Range | Category | Ví dụ |
+|-------|----------|-------|
+| 0–15 | Structural Predicates | `IS_A(1)`, `HAS_PART(2)`, `INSTANCE_OF(4)`, `SIMILAR_TO(7)` |
+| 16–27 | Causal & Temporal | `CAUSES(16)`, `ENABLES(18)`, `PRECEDES(19)`, `REQUIRES(26)` |
+| 28–35 | Spatial | `AT(28)`, `CONTAINS(29)`, `NEAR(32)`, `INSIDE(33)` |
+| 36–43 | Logical & Modal | `NOT(36)`, `AND(37)`, `IF_THEN(39)`, `POSSIBLE(40)` |
+| 44–50 | Units: SI Base | `UNIT_METER(44)`, `UNIT_KELVIN(48)`, `UNIT_MOLE(49)` |
+| 51–63 | Units: Derived | `UNIT_HERTZ(51)`, `UNIT_JOULE(54)`, `UNIT_PERCENT(59)` |
+| 64–69 | Epistemological | `TRUE_VAL(64)`, `FALSE_VAL(65)`, `APPROXIMATE(67)` |
+| 70–79 | Agentive Roles | `AGENT(70)`, `PATIENT(71)`, `INSTRUMENT(72)`, `PURPOSE(76)` |
+| 127 | Sentinel | `UNKNOWN_CONCEPT` |
+
+### §5.3 ConceptRegistry — Offline Concept Lookup (v7, replaces ConceptDict)
+
+Source: [concept_registry.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/concept_registry.rs)
+
+O(1) offline lookup từ concept name → CCID. Loaded từ file `concepts.obr` (~200MB, ~8M concepts).
+
+```rust
+pub struct ConceptRegistry {
+    label_index: HashMap<String, Vec<usize>>,  // name → entry indices
+    fuzzy_index: HashMap<String, String>,       // stripped diacritics → original
+    entries: Vec<ResolvedConcept>,
+}
+
+pub enum ResolveResult {
+    Found(ResolvedConcept),       // Exact match
+    Ambiguous(Vec<ResolvedConcept>), // Multiple matches → AI disambiguate
+    Fuzzy(ResolvedConcept),       // Close match (typo/diacritics)
+    NotFound,                     // → AI creates fallback CCID
+}
+
+pub struct ResolvedConcept {
+    pub ccid: Ccid,
+    pub qid: u32,                 // Wikidata QID (0 if N/A)
+    pub category: ConceptCategory, // Entity, Property, Unit, Taxon, ...
+    pub canonical_name: String,
+}
+```
+
+> [!WARNING]
+> **ConceptDict deprecated**: `ConceptDict` (sequential ID-based) và `PersistentConceptDict` (redb-backed) vẫn tồn tại trong code nhưng được thay thế bởi `ConceptRegistry` (CCID-based) cho tất cả operations mới. Legacy code sẽ được migrate dần.
+
+### §5.4 ConceptDict — Legacy Bilingual Dictionary (deprecated)
+
+Hệ thống từ điển khái niệm ánh xạ hai chiều giữa tên human-readable và ConceptID dạng varint, hỗ trợ đa ngôn ngữ. **Deprecated in v7 — use ConceptRegistry instead.**
 
 ### ConceptEntry
 
@@ -392,26 +485,34 @@ Methods: `insert(word, id)`, `lookup(word) -> ConceptId`, `lookup_or_create(word
 
 ---
 
-## §6 Gene Types — 11 Content Classifications
+## §6 Gene Types — 13 Content Classifications (v7)
 
-Mỗi KU có một `gene_type` (4 bits, 0–15) trong CoreDnaHeader VER_META byte, xác định loại tri thức:
+Mỗi KU có một `gene_type` trong CoreDnaHeader VER_META byte. Types 0–6 mã hóa trực tiếp (3 bits). Types 7+ dùng cơ chế EXTENDED (base=7, byte mở rộng 0x00–0x05).
 
-| Value | Gene Type | Mô tả | Ví dụ |
-|-------|-----------|-------|-------|
-| 0 | `Fact` | Sự kiện khách quan | "Nước sôi ở 100°C" |
-| 1 | `Hypothesis` | Giả thuyết chưa chứng minh | "Nước tối tồn tại ở vùng cực Mặt Trăng" |
-| 2 | `Experience` | Trải nghiệm cá nhân | "Tôi thấy trời mưa hôm qua" |
-| 3 | `Procedure` | Quy trình từng bước | "Cách pha cà phê phin" |
-| 4 | `Rule` | Luật/nguyên tắc | "Không được đỗ xe ở đây" |
-| 5 | `Definition` | Định nghĩa khái niệm | "Entropy là thước đo hỗn loạn" |
-| 6 | `Relation` | Quan hệ giữa các khái niệm | "Python thuộc nhóm ngôn ngữ kịch bản" |
-| 7 | `Meta` | Metadata về KU khác | "KU #abc có 5 trích dẫn" |
-| 8 | `Creative` | Nội dung sáng tạo | "Bài thơ về mùa thu" |
-| 9 | `Belief` | Niềm tin/quan điểm cá nhân | "Tôi tin AI sẽ thay đổi giáo dục" |
-| 10 | `FormalProof` | Chứng minh toán học chính thức | "Chứng minh √2 là số vô tỉ" |
+Source: [types.rs — `GeneType`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/types.rs#L392-L406)
+
+| Value | Wire | Gene Type | Mô tả | Ví dụ |
+|-------|------|-----------|-------|-------|
+| 0 | `0` | `Fact` | Sự kiện khách quan | "Nước sôi ở 100°C" |
+| 1 | `1` | `Procedure` | Quy trình từng bước | "Cách pha cà phê phin" |
+| 2 | `2` | `Experience` | Trải nghiệm cá nhân | "Tôi thấy trời mưa hôm qua" |
+| 3 | `3` | `Creative` | Nội dung sáng tạo | "Bài thơ về mùa thu" |
+| 4 | `4` | `MediaExperience` | Trải nghiệm đa phương tiện | "Video ghi lại cuộc thí nghiệm" |
+| 5 | `5` | `Testimony` | Chứng ngôn/lời khai | "Nhân chứng kể lại sự việc" |
+| 6 | `6` | `Formal` | Hình thức hóa (logic/toán) | "∀x: P(x) → Q(x)" |
+| 7 | `7+0x00` | `Hypothesis` | Giả thuyết chưa chứng minh | "Nước tối tồn tại ở vùng cực Mặt Trăng" |
+| 8 | `7+0x01` | `Narrative` | Kể chuyện/tường thuật | "Câu chuyện về chuyến đi" |
+| 9 | `7+0x02` | `Sensory` | Dữ liệu cảm giác | "Mùi cà phê buổi sáng" |
+| 10 | `7+0x03` | `Composite` | KU tổ hợp (chứa member KUs) | "Bài viết gồm 5 phần" |
+| 11 | `7+0x04` | `Normative` | Luật/quy tắc/chuẩn mực | "Không được đỗ xe ở đây" |
+| 12 | `7+0x05` | `Definition` | Định nghĩa khái niệm (★ CCID source) | "Entropy là thước đo hỗn loạn" |
+
+> [!IMPORTANT]
+> **v7 breaking change**: Gene type numbering đã thay đổi so với v6. Xem [KU_CORE_DNA_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KU_CORE_DNA_SPEC.md) §3 cho chi tiết.
+> `Definition` (12) có vai trò đặc biệt: khi ConceptRegistry không tìm thấy concept, AI tạo Definition KU và BLAKE3 hash của nó trở thành CCID mới.
 
 > [!NOTE]
-> Giá trị 11–15 được dự trữ cho mở rộng tương lai.
+> Giá trị 13–15 (EXTENDED 0x06–0x08) được dự trữ cho mở rộng tương lai.
 
 ---
 
@@ -606,17 +707,31 @@ Source: [lib.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/lib.r
 
 | Module | Mô tả |
 |--------|-------|
-| `core_dna` | Layer 1: Op enum (32 opcodes), Instruction, CoreDna, CoreDnaHeader, encode/decode |
+| `core_dna` | Layer 1: Op enum (32 opcodes), Instruction, CoreDna, CoreDnaHeader, ConceptTable, encode/decode |
 | `epigenetics` | Layer 2: Epigenetics struct, Layer 3: Expression struct |
 | `ku_runtime` | KuRuntime composite (3 layers + CID), ExtractedValue for KQL |
-| `types` | Shared types: ConceptId, TrustSection, Bond, RelationType, EpistemicStatus, EvidenceType, GeneType |
+| `types` | Shared types: ConceptId, TrustSection, Bond, RelationType, EpistemicStatus, EvidenceType, GeneType (13 types) |
 | `error` | `KuError` error type |
 | `varint` | Varint encode/decode for ConceptID wire encoding |
 | `encoder` | Legacy KU encoder functions |
 | `decoder` | Legacy KU decoder functions |
 | `encoding_consensus` | EncodingStatus state machine, EncodingSubmission, EncodingConsensus logic |
-| `encoding_verifier` | 2-phase verification: (A) AI decomposition agreement (gene_type + opcode Jaccard + concept Jaccard), (B) tool encoding round-trip |
+| `encoding_verifier` | 2-phase verification: (A) AI decomposition agreement, (B) tool encoding round-trip |
 | `encoding_reward` | OBT token reward calculation and distribution |
+
+### ★ v7 NEW — CCID & Concept System
+
+| Module | Mô tả |
+|--------|-------|
+| `ccid` | Content-Addressed Concept Identity (128-bit BLAKE3 truncated) |
+| `tier0_concepts` | 80 universal concept constants (IDs 0–79, 1-byte varint) |
+| `concept_registry` | Offline concept name → CCID lookup (200MB .obr file, ~8M concepts) |
+
+### ★ v7 NEW — Blob Store
+
+| Module | Mô tả |
+|--------|-------|
+| `blob_store` | BlobCid (34B OB-CID), BlobType (5 variants), BlobMeta, BlobRef — media storage types |
 
 ### PoMV — Proof-of-Metabolic-Value
 
@@ -639,8 +754,8 @@ Source: [lib.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/lib.r
 
 | Module | Mô tả |
 |--------|-------|
-| `concept_dict` | In-memory bidirectional ConceptDict (name ↔ ConceptId) |
-| `persistent_concept_dict` | redb-backed persistent ConceptDict (feature: `persist`) |
+| `concept_dict` | ~~In-memory bidirectional ConceptDict~~ (deprecated — use `concept_registry`) |
+| `persistent_concept_dict` | ~~redb-backed persistent ConceptDict~~ (deprecated — use `concept_registry`) |
 | `crdt` | CRDT merge operations for distributed KU synchronization |
 | `ku_lifecycle` | KuRuntime + PomvRuntime lifecycle orchestrator |
 
@@ -667,6 +782,7 @@ Source: [lib.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/lib.r
 | Fork Pipeline | `obt_fork_pipeline.rs` | Fork detection → penalty lifecycle |
 | Epoch | `obt_epoch.rs` | Epoch boundary settlement |
 | Integration | `obt_integration.rs` | KU↔OBT builders, quality gate orchestration |
+| Governance | `obt_governance.rs` | Runtime-configurable governance parameters |
 
 ### OBKG — OneBrain Knowledge Graph (P7)
 
@@ -829,7 +945,7 @@ SELECT * WHERE gene_type = "Fact" AND trust_score > 7000 AND certainty > 8000
 
 → Calls `extract_field("gene_type")`, `extract_field("trust_score")`, `extract_field("certainty")` trên mỗi KuRuntime → trả về `ExtractedValue` cho comparison.
 
-ConceptDict cũng được dùng trong KQL `CREATE` statements qua `resolve_or_register()`.
+ConceptRegistry (v7) dùng trong KQL `CREATE` statements qua `resolve()` → CCID lookup. ConceptDict deprecated.
 
 ### P4: OBP — Serializes CoreDna for Network
 

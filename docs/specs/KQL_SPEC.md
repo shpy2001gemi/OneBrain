@@ -1,9 +1,9 @@
 # KQL — Knowledge Query Language Specification
 
-> **Version**: 3.0 — KU v6 Core DNA  
-> **Crate**: `ku-kql` v0.1.0  
-> **Cập nhật**: 2026-06-30  
-> **Depends on**: `ku-core` (KuRuntime, CoreDna, ConceptDict, text\_parser)
+> **Version**: 4.0 — KU v7 Core DNA  
+> **Crate**: `ku-kql` v0.2.0  
+> **Cập nhật**: 2026-07-11  
+> **Depends on**: `ku-core` (KuRuntime, CoreDna, ConceptRegistry, ConceptTable, text\_parser)
 
 ---
 
@@ -22,17 +22,20 @@
 
 ### 1.2 Kiến trúc 3 lớp — KuRuntime
 
-KQL hoạt động trên **KuRuntime** — cấu trúc composite 3 lớp của kiến trúc v6:
+KQL hoạt động trên **KuRuntime** — cấu trúc composite 3 lớp của kiến trúc v7:
 
 ```
 ┌─────────────────────────────────────────┐
 │              KuRuntime                  │
 ├─────────────────────────────────────────┤
-│  Layer 1: CoreDna        (bất biến)     │  ← Gene type + Instructions
+│  Layer 1: CoreDna        (bất biến)     │  ← Gene type + ConceptTable + Instructions
 │  Layer 2: Epigenetics    (biến đổi)     │  ← Trust, epistemic status
 │  Layer 3: Membrane       (runtime)      │  ← Network, routing
 └─────────────────────────────────────────┘
 ```
+
+> [!IMPORTANT]
+> **v7**: CoreDna giờ có `ConceptTable` self-contained (local_id → CCID mapping). Concept names được resolve qua `ConceptRegistry` (thay thế ConceptDict deprecated).
 
 > [!IMPORTANT]
 > **CoreDna là bất biến.** Mọi mutation (UPDATE, DEPRECATE) chỉ tác động lên Epigenetics layer. Đây là nguyên tắc thiết kế cốt lõi.
@@ -47,9 +50,9 @@ KQL hoạt động trên **KuRuntime** — cấu trúc composite 3 lớp của k
 
 | Dependency | Mục đích |
 |---|---|
-| `ku-core` | KuRuntime, CoreDna, ConceptDict, text\_parser |
+| `ku-core` | KuRuntime, CoreDna, ConceptRegistry, ConceptTable, text\_parser |
 | `nom` 7 | Parser combinator |
-| `blake3` 1 | Hash concept names → IDs |
+| `blake3` 1 | Hash concept names → CCID |
 | `serde` + `serde_json` | Serialization |
 | `redb` 2 *(optional, feature `storage`)* | Persistent ACID storage |
 
@@ -161,7 +164,7 @@ Các field trích xuất được từ `KuRuntime::extract_field()` — tổng c
 
 | Field | Kiểu | Mô tả |
 |---|---|---|
-| `gene_type` | `Text` | Tên gene type (Fact, Hypothesis, Experience, Procedure, Rule, Definition, Relation, Meta, Creative, Belief, FormalProof) |
+| `gene_type` | `Text` | Tên gene type (v7: Fact, Procedure, Experience, Creative, MediaExperience, Testimony, Formal, Hypothesis, Narrative, Sensory, Composite, Normative, Definition) |
 | `primary_concept` | `Integer` | Primary concept ID |
 | `certainty` | `Integer` | Certainty score (cast từ u16) |
 | `difficulty` | `Integer` | Difficulty score (cast từ u16) |
@@ -169,6 +172,7 @@ Các field trích xuất được từ `KuRuntime::extract_field()` — tổng c
 | `has_triple` | `Bool` | Có TripleRelation gene hay không |
 | `has_step` | `Bool` | Có Step gene hay không |
 | `wire_size` | `Integer` | Wire format size (bytes) |
+| `concept_table_size` | `Integer` | ★ v7: Số entries trong ConceptTable |
 
 **Epigenetics Fields** (direct access):
 
@@ -254,25 +258,30 @@ CREATE (k:KU) HYPOTHESIS certainty=4000 {
 }
 ```
 
-#### Gene Types — Loại tri thức
+#### Gene Types — Loại tri thức (v7)
 
-| Keyword | `to_u8()` | Mô tả |
-|---|---|---|
-| `FACT` | 0 | Sự thật đã được xác minh |
-| `HYPOTHESIS` | 1 | Giả thuyết chưa chứng minh |
-| `EXPERIENCE` | 2 | Kinh nghiệm thực tế |
-| `PROCEDURE` | 3 | Quy trình, hướng dẫn |
-| `RULE` | 4 | Quy tắc, luật |
-| `DEFINITION` | 5 | Định nghĩa |
-| `RELATION` | 6 | Quan hệ giữa các khái niệm |
-| `META` | 7 | Metadata về tri thức khác |
-| `CREATIVE` | 8 | Sáng tạo, tường thuật |
-| `BELIEF` | 9 | Niềm tin, quan điểm |
-| `FORMALPROOF` | 10 | Chứng minh hình thức |
+> [!WARNING]
+> **v7 breaking change**: Gene type numbering đã thay đổi hoàn toàn so với v6. Xem [KU_CORE_DNA_SPEC.md §3](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KU_CORE_DNA_SPEC.md) cho chi tiết.
+
+| Keyword | `to_u8()` | Wire | Mô tả |
+|---|---|---|---|
+| `FACT` | 0 | `0` | Sự thật đã được xác minh |
+| `PROCEDURE` | 1 | `1` | Quy trình, hướng dẫn |
+| `EXPERIENCE` | 2 | `2` | Kinh nghiệm thực tế |
+| `CREATIVE` | 3 | `3` | Sáng tạo, tường thuật |
+| `MEDIAEXPERIENCE` | 4 | `4` | Trải nghiệm đa phương tiện |
+| `TESTIMONY` | 5 | `5` | Chứng ngôn, lời khai |
+| `FORMAL` | 6 | `6` | Hình thức hóa (logic/toán) |
+| `HYPOTHESIS` | 7 | `7+0x00` | Giả thuyết chưa chứng minh |
+| `NARRATIVE` | 8 | `7+0x01` | Kể chuyện, tường thuật |
+| `SENSORY` | 9 | `7+0x02` | Dữ liệu cảm giác |
+| `COMPOSITE` | 10 | `7+0x03` | KU tổ hợp (chứa member KUs) |
+| `NORMATIVE` | 11 | `7+0x04` | Luật, quy tắc, chuẩn mực |
+| `DEFINITION` | 12 | `7+0x05` | Định nghĩa khái niệm (★ CCID source) |
 
 #### Instruction Clauses — Chỉ thị cấu trúc
 
-Mỗi clause được chuyển đổi thành `CoreDna::Instruction` tại thời điểm thực thi. Concept names được phân giải qua `ConceptDict`.
+Mỗi clause được chuyển đổi thành `CoreDna::Instruction` tại thời điểm thực thi. Concept names được phân giải qua `ConceptRegistry` (v7, thay thế ConceptDict).
 
 | Clause | Tham số | Ví dụ | AST Variant |
 |---|---|---|---|
@@ -301,8 +310,8 @@ flowchart TD
     B --> C[CreateQuery AST]
     C --> D{"gene_type present?"}
     D -->|Yes: Tier 1| E["clause_to_instruction()"]
-    E --> F["ConceptDict: name → u64"]
-    F --> G["Build CoreDna"]
+    E --> F["ConceptRegistry: name → CCID (v7)"]
+    F --> G["Build CoreDna + ConceptTable"]
     G --> H["KuRuntime::from_dna()"]
     H --> I["Set Epigenetics: Observation"]
     I --> J["Insert into LocalExecutor"]
@@ -910,23 +919,27 @@ pub enum ExecError {
 }
 ```
 
-### 4.4 ConceptDict Integration
+### 4.4 Concept Resolution (v7: ConceptRegistry)
 
-Executor phân giải concept names thành `u64` IDs theo thứ tự ưu tiên:
+> [!NOTE]
+> **v7**: ConceptDict được thay thế bởi `ConceptRegistry::resolve()` → CCID. Legacy fallback vẫn dùng ConceptDict cho Tier 1 parser.
+
+Executor phân giải concept names theo thứ tự ưu tiên:
 
 ```mermaid
 flowchart TD
     A["Concept name: \"water\""] --> B{"Parse as u64?"}
     B -->|Yes| C["Use numeric ID directly"]
-    B -->|No| D{"ConceptDict attached?"}
-    D -->|Yes| E["dict.try_resolve(name)"]
-    E -->|Found| F["Use resolved ID"]
-    E -->|Not found| G["blake3 hash → u32 → max(128)"]
+    B -->|No| D{"ConceptRegistry available?"}
+    D -->|Yes| E["registry.resolve(name) → CCID"]
+    E -->|Found| F["Use CCID + local_id"]
+    E -->|Ambiguous| F2["Return candidates for disambiguation"]
+    E -->|NotFound| G["blake3 hash → u32 → max(128)"]
     D -->|No| G
 ```
 
 - **Numeric strings** (e.g., `"301"`) → parse trực tiếp thành `u64`
-- **ConceptDict** → lookup/register nếu có dict
+- **ConceptRegistry** (v7) → `resolve(name)` → CCID + local_id + ConceptTable entry
 - **Fallback** → `blake3::hash(name)` → lấy 4 bytes đầu → `u32` → đảm bảo `>= 128` (tránh tier 0 reserved)
 
 ### 4.5 Aggregation Functions

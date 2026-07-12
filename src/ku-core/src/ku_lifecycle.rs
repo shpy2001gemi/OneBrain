@@ -181,7 +181,8 @@ mod tests {
 
     fn make_ku(concept_id: u64, gene_type: u8) -> KuRuntime {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: concept_id, p: 133, o: 132 },
                 Instruction::Certainty { level: 9000 },
@@ -256,7 +257,7 @@ mod tests {
         let cid = store.ingest(ku, vec![1], 0.5, 0.3, 1000);
 
         // Initially should be Rumor
-        assert_eq!(store.get(&cid).unwrap().epi.epistemic_status, EpistemicStatus::Rumor);
+        assert_eq!(store.get(&cid).unwrap().epi.trust.epistemic_status, EpistemicStatus::Rumor);
 
         // Generate enough activity for RUMOR → HEARSAY (metabolic activity)
         store.record_event(&cid, MetabolismEvent::Retrieval { dwell_ms: 500 }, 1100);
@@ -271,7 +272,7 @@ mod tests {
         store.tick(2000, &niche_stats);
 
         // Epistemic status should have advanced (at least HEARSAY = 1)
-        let status = store.get(&cid).unwrap().epi.epistemic_status;
+        let status = store.get(&cid).unwrap().epi.trust.epistemic_status;
         assert!(status != EpistemicStatus::Rumor, "Expected at least HEARSAY, got {:?}", status);
     }
 

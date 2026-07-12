@@ -1,12 +1,14 @@
 # OBS — OneBrain Storage Layer (Pillar 8)
 
-> Technical Specification v1.0 | Last updated: 2026-07-07
+> Technical Specification v1.1 | Last updated: 2026-07-11
+>
+> *v7 note: BlobStore (media attachments) added. ConceptDict → ConceptRegistry migration. ConceptRegistry distribution via OBP planned.*
 
 ---
 
 ## §1 Overview
 
-OneBrain Storage (OBS) is the persistent, distributed, cache-optimized storage subsystem responsible for durably storing Knowledge Units (KUs), graph bonds, concept dictionaries, and DHT state across the OneBrain network. It spans two crates — `ku-core` (schema versioning, in-memory cache) and `ku-net` (DHT persistence, replication) — and provides the foundation for all data lifecycle operations.
+OneBrain Storage (OBS) is the persistent, distributed, cache-optimized storage subsystem responsible for durably storing Knowledge Units (KUs), graph bonds, concept registries, blob media, and DHT state across the OneBrain network. It spans two crates — `ku-core` (schema versioning, in-memory cache) and `ku-net` (DHT persistence, replication) — and provides the foundation for all data lifecycle operations.
 
 ### 1.1 Purpose
 
@@ -15,7 +17,9 @@ OneBrain Storage (OBS) is the persistent, distributed, cache-optimized storage s
 | KU Core DNA wire bytes | `kus` table (redb) | Raw binary, 16–172 bytes |
 | KU Epigenetics | `epigenetics` table (redb) | JSON with `#[serde(default)]` |
 | Graph bonds & edge indexes | 6 tables in `.graph.redb` | Composite byte keys + 9-byte BondMeta |
-| Concept dictionary | 3 tables in concept `.redb` | JSON ConceptEntry |
+| Concept dictionary | 3 tables in concept `.redb` | JSON ConceptEntry | **Deprecated in v7** → ConceptRegistry |
+| ★ Blob content | filesystem (v7) | Raw binary media files |
+| ★ Blob metadata | redb (v7) | BlobMeta + BlobCid (34B OB-CID) |
 | DHT entries | `dht_entries` table (redb) | CBOR via ciborium |
 | Replica metadata | `replica_meta` table (redb) | CBOR via ciborium |
 | Schema version tracking | `_schema_meta` table per DB | String key-value pairs |

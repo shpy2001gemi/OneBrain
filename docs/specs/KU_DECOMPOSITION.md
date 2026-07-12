@@ -1,6 +1,8 @@
 # 🔬 Phân tích: KU xử lý tri thức phức tạp, dài, cần chính xác cao như thế nào?
 
 > **Câu hỏi cốt lõi:** Nếu một kiến thức dài, phức tạp và cần chính xác (ví dụ: thiết kế máy bay), thì KU sẽ lưu trữ và chia nhỏ ra sao?
+>
+> *Updated for KU v7 (2026-07-11). Composite Gene đã được implement (GeneType::Composite = 10, EXTENDED 0x03).*
 
 ---
 
@@ -13,8 +15,9 @@ Theo kiến trúc hiện tại trong [types.rs](file:///c:/Users/shpy2/Documents
 | Max payload | **65,535 bytes** (u16 PAYLOAD_LEN) |
 | Minimal fact KU | ~264 bytes |
 | Maximal KU (full layers) | ~3,500 bytes |
-| Gene types | 10 loại (Fact, Procedure, Formal, ...) |
+| Gene types | **13 loại** (Fact, Procedure, Experience, Creative, ..., Normative, Definition) — v7 |
 | Cơ chế kết nối | 33 Bond types (đặc biệt: `PartOf`, `DependsOn`, `Specializes`) |
+| Concept identity | **CCID** (128-bit BLAKE3) + ConceptRegistry + Tier 0 (80 constants) — v7 |
 
 > [!IMPORTANT]
 > KU được thiết kế như **"atomic unit"** — tương đương 1 fact, 1 procedure, 1 formula. **Không có cơ chế chính thức nào để nhóm nhiều KU thành 1 tài liệu phức tạp có cấu trúc phân cấp.**
@@ -121,13 +124,16 @@ graph TD
 
 ### 3.2 Gene Types — Mỗi loại tri thức dùng gene phù hợp
 
-| Tri thức | Gene Type | Ví dụ |
-|----------|-----------|-------|
-| Thông số kỹ thuật | **Fact** | Sweep angle = 25° |
-| Phương trình | **Formal** | Cd = 0.015 + 0.045·Cl² |
-| Quy trình lắp ráp | **Procedure** | 10 bước rivet wing skin |
-| Kết quả thử nghiệm | **Testimony** / **Sensory** | Static test load = 150% DLL |
-| Giả thuyết thiết kế | **Hypothesis** | "Winglet giảm drag 4%" |
+| Tri thức | Gene Type | Value | Ví dụ |
+|----------|-----------|:---:|-------|
+| Thông số kỹ thuật | **Fact** | 0 | Sweep angle = 25° |
+| Phương trình | **Formal** | 6 | Cd = 0.015 + 0.045·Cl² |
+| Quy trình lắp ráp | **Procedure** | 1 | 10 bước rivet wing skin |
+| Kết quả thử nghiệm | **Testimony** | 5 | Static test load = 150% DLL |
+| Giả thuyết thiết kế | **Hypothesis** | 7 | "Winglet giảm drag 4%" |
+| Luật/quy định | **Normative** | 11 | FAR 25.571 damage tolerance |
+| Định nghĩa khái niệm | **Definition** | 12 | "Supercritical airfoil là..." |
+| KU tổ hợp | **Composite** | 10 | Root manifest (xem §5 bên dưới) |
 
 ### 3.3 Trust Layer — Đảm bảo chính xác
 
@@ -227,7 +233,10 @@ graph TB
 
 ### Phương án B: "Composite Gene" — Dùng 1 KU đặc biệt làm manifest
 
-Tận dụng cơ chế `EXTENDED` gene (hiện mới dùng 3/256 slot), thêm gene type mới:
+Tận dụng cơ chế `EXTENDED` gene, thêm gene type mới:
+
+> [!NOTE]
+> **Đã implement trong v7**: `GeneType::Composite = 10` (EXTENDED 0x03). Opcodes: `COMPOSITE_HDR(0x1C)`, `MEMBER(0x1D)`.
 
 ```rust
 // Gene type EXTENDED 0x03 (slot chưa dùng)
@@ -336,7 +345,7 @@ KU_drag_polar (Gene::Formal)
 
 ### Với phương án này:
 
-1. **Query:** `FIND (ku:KU) WHERE ku.gene_type = "composite" AND ku.codons CONTAINS "Boeing 737 wing"` → trả về root KU → traversal members
+1. **Query:** `FIND (ku:KU) WHERE ku.gene_type = "Composite" AND ku.concept_ids CONTAINS <Boeing_737_wing_CCID>` → trả về root KU → traversal members
 2. **Completeness:** Đọc root composite → biết thiếu section nào
 3. **Ordering:** Mỗi member có order → render đúng thứ tự  
 4. **Versioning:** Thay đổi 1 KU → tạo composite mới với `prev_cid` → version cả cluster

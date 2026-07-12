@@ -2,6 +2,8 @@
 
 > **Tri thức không đúng hay sai — nó chỉ được thay thế bởi tri thức tốt hơn.**
 > — OneBrain Philosophy
+>
+> *v7 compatible (2026-07-11). PoMV is gene-type-agnostic by design. New gene types (Normative=11, Definition=12) integrate seamlessly. BlobStore metabolism events (BlobRead/Write) planned.*
 
 ## §1 Overview
 

@@ -163,6 +163,41 @@ export function ExplorerPage() {
                 </div>
               </div>
             )}
+            {selectedKu.decoded_instructions && selectedKu.decoded_instructions.length > 0 && (
+              <div>
+                <span className="stat-label">Decoded Instructions ({selectedKu.decoded_instructions.length})</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                  {selectedKu.decoded_instructions.map((instr, i) => (
+                    <div key={i} style={{
+                      padding: '8px 12px',
+                      borderRadius: 'var(--ob-radius-sm)',
+                      background: 'var(--ob-surface)',
+                      border: '1px solid var(--ob-glass-border)',
+                      fontSize: '0.82rem',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{
+                          background: '#00e5ff',
+                          color: '#000',
+                          padding: '2px 10px',
+                          borderRadius: 10,
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                        }}>{instr.op}</span>
+                        <span className="mono" style={{ fontSize: '0.72rem', color: 'var(--ob-text-muted)' }}>
+                          IDs: [{instr.concept_ids.join(', ')}]
+                        </span>
+                      </div>
+                      <div style={{ color: '#e0f7fa', fontFamily: 'var(--ob-font-mono, monospace)', fontSize: '0.85rem' }}>
+                        {instr.description}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {selectedKu.bonds.length > 0 && (
               <div>
                 <span className="stat-label">Bonds ({selectedKu.bonds.length})</span>

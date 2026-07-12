@@ -1,13 +1,13 @@
-//! # ku-core — KU v6 Core DNA Knowledge Unit Engine
+//! # ku-core — KU v7 Core DNA Knowledge Unit Engine
 //!
 //! Implements the 3-layer Knowledge Unit architecture:
-//! - **Layer 1 (Core DNA)**: Compact binary instruction stream — 32 opcodes, varint ConceptIDs
+//! - **Layer 1 (Core DNA)**: Compact binary instruction stream — 32 opcodes, varint ConceptIDs, CCID
 //! - **Layer 2 (Epigenetics)**: Runtime trust/bond metadata — PoMV 6 signals, 33 bond types
 //! - **Layer 3 (Expression)**: Natural language rendering — on-demand from Core DNA + ConceptDict
 //!
-//! ## Wire Format (Core DNA v6)
+//! ## Wire Format (Core DNA v7)
 //! ```text
-//! MAGIC(0x4B) | VER_META(version:3|gene_type:4|qualifier:1) | INSTRUCTIONS(opcodes) | END(0x1E) | CRC-16
+//! MAGIC(0x4B) | VER_META(version:3|gene_type:4|concept_table:1) | [CONCEPT_TABLE] | INSTRUCTIONS | END(0x1E) | CRC-16
 //! ```
 //!
 //! ## Key Types
@@ -20,6 +20,9 @@
 pub mod error;
 pub mod types;
 pub mod varint;
+pub mod tier0_concepts; // ★ v7 NEW: 74 Tier 0 universal concept constants
+pub mod ccid;            // ★ v7 NEW: Content-Addressed Concept Identity (128-bit BLAKE3)
+pub mod concept_registry; // ★ v7 NEW: Offline concept name → CCID lookup (200MB registry)
 pub mod encoder;
 pub mod decoder;
 pub mod core_dna;
@@ -101,12 +104,19 @@ pub use ku_runtime::{KuRuntime, ExtractedValue};
 pub use epigenetics::{Epigenetics, Expression};
 pub use concept_dict::{ConceptDict, ConceptEntry};
 
-// ★ v6 NEW: Re-export Core DNA encode/decode functions
+// ★ v7: Re-export Core DNA encode/decode functions + ConceptTable
 pub use core_dna::{
     encode_core_dna, decode_core_dna,
     ku_to_core_dna, core_dna_to_ku, decode_any,
-    CoreDna, CoreDnaHeader, Instruction,
+    CoreDna, CoreDnaHeader, Instruction, ConceptTableEntry,
     CORE_DNA_MAGIC, CORE_DNA_VERSION,
+};
+
+// ★ v7 NEW: Re-export CCID and Concept Registry
+pub use ccid::{Ccid, ccid, ccid_from_wikidata};
+pub use concept_registry::{
+    ConceptRegistry, ResolveResult, ResolvedConcept,
+    ConceptCategory, AddResult, CollisionRecord,
 };
 
 // ★ v6 NEW: Re-export Encoding Consensus types

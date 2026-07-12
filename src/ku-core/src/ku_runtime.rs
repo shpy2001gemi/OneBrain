@@ -138,15 +138,10 @@ impl KuRuntime {
     /// Apply a PoMV trust section update to this KU's epigenetics.
     ///
     /// This is the bridge between `PomvRuntime::tick()` output and a live
-    /// `KuRuntime`. It:
-    /// 1. Copies all 7 signal fields into `epi.trust` via `TrustSectionUpdate::apply_to`
-    /// 2. Syncs `epi.epistemic_status` with `epi.trust.epistemic_status`
-    ///    (the two copies must always agree; `set_epistemic_status` enforces this)
+    /// `KuRuntime`. It copies all signal fields into `epi.trust` via
+    /// `TrustSectionUpdate::apply_to` (which also sets epistemic_status).
     pub fn apply_pomv_update(&mut self, update: &TrustSectionUpdate) {
         update.apply_to(&mut self.epi.trust);
-        // Sync the top-level epistemic_status field in Epigenetics
-        // so both epi.epistemic_status and epi.trust.epistemic_status agree.
-        self.epi.set_epistemic_status(update.epistemic_status);
     }
 
     /// Return the raw CID bytes for PomvRuntime key lookup.
@@ -504,16 +499,18 @@ impl KuRuntime {
             "gene_type" => {
                 let name = match self.gene_type() {
                     0 => "Fact",
-                    1 => "Hypothesis",
+                    1 => "Procedure",
                     2 => "Experience",
-                    3 => "Procedure",
-                    4 => "Rule",
-                    5 => "Definition",
-                    6 => "Relation",
-                    7 => "Meta",
-                    8 => "Creative",
-                    9 => "Belief",
-                    10 => "FormalProof",
+                    3 => "Creative",
+                    4 => "MediaExperience",
+                    5 => "Testimony",
+                    6 => "Formal",
+                    7 => "Hypothesis",
+                    8 => "Narrative",
+                    9 => "Sensory",
+                    10 => "Composite",
+                    11 => "Normative",
+                    12 => "Definition",
                     _ => "Unknown",
                 };
                 Some(ExtractedValue::Text(name.to_string()))
@@ -525,6 +522,7 @@ impl KuRuntime {
             "has_triple" => Some(ExtractedValue::Bool(self.has_triple())),
             "has_step" => Some(ExtractedValue::Bool(self.has_step())),
             "wire_size" => Some(ExtractedValue::Integer(self.wire_size() as i64)),
+            "concept_table_size" => Some(ExtractedValue::Integer(self.dna.concept_table.len() as i64)),
 
             // Epigenetics fields (direct access)
             "trust_score" => Some(ExtractedValue::Integer(self.epi.trust.trust_score as i64)),
@@ -535,7 +533,7 @@ impl KuRuntime {
             "error_susceptibility" => Some(ExtractedValue::Integer(self.epi.trust.error_susceptibility as i64)),
             "bond_count" => Some(ExtractedValue::Integer(self.bond_count() as i64)),
             "epistemic_status" => {
-                let name = match self.epi.epistemic_status as u8 {
+                let name = match self.epi.trust.epistemic_status as u8 {
                     0x00 => "Rumor",
                     0x01 => "Hearsay",
                     0x02 => "Testimony",
@@ -551,7 +549,7 @@ impl KuRuntime {
                 };
                 Some(ExtractedValue::Text(name.to_string()))
             },
-            "evidence_type" => Some(ExtractedValue::Integer(self.epi.evidence_type as u8 as i64)),
+            "evidence_type" => Some(ExtractedValue::Integer(self.epi.trust.evidence_type as u8 as i64)),
 
             // PoMV signals
             "metabolic_rate" => Some(ExtractedValue::Integer(self.epi.trust.metabolic_rate as i64)),
@@ -606,15 +604,16 @@ pub enum ExtractedValue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core_dna::{CoreDna, CoreDnaHeader, Instruction};
+    use crate::core_dna::{CoreDna, CoreDnaHeader, Instruction, NumericValue};
 
     fn make_test_dna() -> CoreDna {
         CoreDna {
             header: CoreDnaHeader {
                 version: 1,
                 gene_type: 0, // Fact
-                has_qualifiers: false,
+                has_concept_table: false,
             },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: 301, p: 500, o: 1042 },
                 Instruction::Located { s: 301, location: 600 },
@@ -846,7 +845,8 @@ mod tests {
     #[test]
     fn test_expression_procedure_gene_type() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 3, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 3, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Precond { concept: 204 },       // fuel
                 Instruction::Step { ord: 1, action: 201, target: 202 }, // ignite burner
@@ -867,7 +867,8 @@ mod tests {
     #[test]
     fn test_expression_quantity_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 0, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Quantity {
                     s: 206, // temperature
@@ -885,7 +886,8 @@ mod tests {
     #[test]
     fn test_expression_tolerance_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 0, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Tolerance {
                     s: 206,
@@ -903,7 +905,8 @@ mod tests {
     #[test]
     fn test_expression_range_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 0, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Range {
                     s: 207, // pressure
@@ -921,7 +924,8 @@ mod tests {
     #[test]
     fn test_expression_constraint_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 4, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 4, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Constraint {
                     source: 206, // temperature
@@ -939,7 +943,8 @@ mod tests {
     #[test]
     fn test_expression_partof_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 6, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 6, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::PartOf { part: 210, whole: 209 }, // atom ⊂ molecule
             ],
@@ -953,7 +958,8 @@ mod tests {
     #[test]
     fn test_expression_causal_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 0, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Causal { cause: 200, effect: 203 }, // heat → boiling
             ],
@@ -967,7 +973,8 @@ mod tests {
     #[test]
     fn test_expression_temporal_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 2, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 2, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Temporal { s: 203, time: 300 }, // boiling → yesterday
             ],
@@ -981,7 +988,8 @@ mod tests {
     #[test]
     fn test_expression_quality_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 5, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 5, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Quality { s: 301, q: 211 }, // water: red
             ],
@@ -995,7 +1003,8 @@ mod tests {
     #[test]
     fn test_expression_remaining_instruction_types() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 0, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Simulates { s: 301, model: 217 },
                 Instruction::Condition { cond: 218, result: 219 },
@@ -1029,7 +1038,8 @@ mod tests {
     #[test]
     fn test_expression_unknown_concepts_show_question_mark() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 0, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: 99999, p: 99998, o: 99997 },
             ],
@@ -1043,7 +1053,8 @@ mod tests {
     #[test]
     fn test_expression_empty_instructions() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 0, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![],
         };
         let dict = make_test_dict();
@@ -1091,7 +1102,7 @@ mod tests {
 
         let dna = make_test_dna();
         let mut rt = KuRuntime::from_dna(dna).unwrap();
-        assert_eq!(rt.epi.epistemic_status, EpistemicStatus::Rumor);
+        assert_eq!(rt.epi.trust.epistemic_status, EpistemicStatus::Rumor);
 
         let update = TrustSectionUpdate {
             epistemic_status: EpistemicStatus::Evidence,
@@ -1106,8 +1117,7 @@ mod tests {
 
         rt.apply_pomv_update(&update);
 
-        // Both copies must be in sync
-        assert_eq!(rt.epi.epistemic_status, EpistemicStatus::Evidence);
+        // Single source of truth in trust
         assert_eq!(rt.epi.trust.epistemic_status, EpistemicStatus::Evidence);
     }
 

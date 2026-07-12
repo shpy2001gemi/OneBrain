@@ -30,17 +30,20 @@ use serde::{Deserialize, Serialize};
 /// Layer 2: Epigenetics — runtime metadata overlay.
 ///
 /// Contains all mutable, non-content data associated with a KU:
-/// - Trust section with PoMV 6-signal scores
+/// - Trust section with PoMV 6-signal scores (includes epistemic_status, evidence_type)
 /// - Relation bonds to other KUs
-/// - Epistemic status and evidence type
 /// - Optional embedding/temporal metadata
+///
+/// Epistemic status and evidence type live in `trust` (TrustSection) — the single
+/// source of truth for all quality/reputation data.
 ///
 /// This struct is serialized separately from Core DNA (e.g., to SQLite as CBOR).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Epigenetics {
     /// Trust & PoMV scores — the core quality/reputation data.
-    /// Contains: trust_score, confidence, 6 PoMV signals, verification_level, etc.
+    /// Contains: trust_score, confidence, 6 PoMV signals, verification_level,
+    /// epistemic_status, evidence_type, etc.
     #[serde(rename = "tr")]
     pub trust: TrustSection,
 
@@ -49,15 +52,6 @@ pub struct Epigenetics {
     /// not encoded in Core DNA.
     #[serde(rename = "bn", skip_serializing_if = "Vec::is_empty", default)]
     pub bonds: Vec<Bond>,
-
-    /// Current epistemic maturity level (11 levels: Rumor → Axiomatic).
-    /// Transitions are driven by observable signals via the EpistemicEngine.
-    #[serde(rename = "es", default)]
-    pub epistemic_status: EpistemicStatus,
-
-    /// Type of evidence supporting this KU (9 GRADE-aligned types).
-    #[serde(rename = "et", default)]
-    pub evidence_type: EvidenceType,
 
     /// Rich metadata: embeddings, temporal validity, versioning, categories.
     /// Optional because new KUs may not yet have embedding/temporal data.
@@ -70,8 +64,6 @@ impl Default for Epigenetics {
         Self {
             trust: TrustSection::default(),
             bonds: Vec::new(),
-            epistemic_status: EpistemicStatus::default(),
-            evidence_type: EvidenceType::default(),
             epigenetic: None,
         }
     }
@@ -89,14 +81,8 @@ impl Epigenetics {
     /// Create with specific epistemic status.
     pub fn with_status(status: EpistemicStatus) -> Self {
         let mut epi = Self::default();
-        epi.set_epistemic_status(status);
+        epi.trust.epistemic_status = status;
         epi
-    }
-
-    /// Set epistemic status — keeps both copies in sync.
-    pub fn set_epistemic_status(&mut self, status: EpistemicStatus) {
-        self.epistemic_status = status;
-        self.trust.epistemic_status = status;
     }
 
     /// Add a bond to another KU.
@@ -188,7 +174,7 @@ mod tests {
     fn test_epigenetics_default() {
         let epi = Epigenetics::default();
         assert_eq!(epi.trust.trust_score, 0);
-        assert_eq!(epi.epistemic_status, EpistemicStatus::Rumor);
+        assert_eq!(epi.trust.epistemic_status, EpistemicStatus::Rumor);
         assert!(epi.bonds.is_empty());
         assert!(epi.epigenetic.is_none());
     }
@@ -203,7 +189,6 @@ mod tests {
     #[test]
     fn test_epigenetics_with_status() {
         let epi = Epigenetics::with_status(EpistemicStatus::Observation);
-        assert_eq!(epi.epistemic_status, EpistemicStatus::Observation);
         assert_eq!(epi.trust.epistemic_status, EpistemicStatus::Observation);
     }
 
@@ -252,8 +237,8 @@ mod tests {
         let decoded: Epigenetics = serde_json::from_str(minimal_json).unwrap();
         assert_eq!(decoded.trust.trust_score, 5000);
         assert!(decoded.bonds.is_empty());
-        assert_eq!(decoded.epistemic_status, EpistemicStatus::Rumor);
-        assert_eq!(decoded.evidence_type, EvidenceType::default());
+        assert_eq!(decoded.trust.epistemic_status, EpistemicStatus::Rumor);
+        assert_eq!(decoded.trust.evidence_type, EvidenceType::default());
         assert!(decoded.epigenetic.is_none());
     }
 }

@@ -129,6 +129,9 @@ struct OllamaChatRequest {
     model: String,
     messages: Vec<OllamaChatMessage>,
     stream: bool,
+    /// Disable thinking/reasoning mode for qwen3 models.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    think: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     options: Option<OllamaOptions>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -247,6 +250,7 @@ impl ModelBackend for OllamaBackend {
             model: self.llm_model.clone(),
             messages: Self::to_ollama_messages(messages),
             stream: false,
+            think: Some(false),
             options: Some(Self::to_ollama_options(options)),
             tools: None,
             format: None,
@@ -307,6 +311,7 @@ impl ModelBackend for OllamaBackend {
             model: self.llm_model.clone(),
             messages: Self::to_ollama_messages(messages),
             stream: false,
+            think: Some(false),
             options: Some(Self::to_ollama_options(options)),
             tools: None,
             format: Some(schema.clone()),
@@ -366,6 +371,7 @@ impl ModelBackend for OllamaBackend {
             model: self.llm_model.clone(),
             messages: Self::to_ollama_messages(messages),
             stream: false,
+            think: Some(false),
             options: Some(Self::to_ollama_options(options)),
             tools: Some(tools_json),
             format: None,

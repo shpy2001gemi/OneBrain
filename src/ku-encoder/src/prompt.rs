@@ -42,7 +42,7 @@ impl PromptBuilder {
         vec![
             ChatMessage::system(system),
             ChatMessage::user(format!(
-                "Please encode the following knowledge into Knowledge Units \
+                "/no_think\nPlease encode the following knowledge into Knowledge Units \
                  using the available tools:\n\n{}",
                 text
             )),

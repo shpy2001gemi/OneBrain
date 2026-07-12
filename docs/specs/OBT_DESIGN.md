@@ -1,6 +1,8 @@
 # 💰 OBT Token — Phân Tích 3 Nguyên Tắc Thiết Kế
 
 > Owner directives + technical analysis | 30/06/2026
+>
+> *v7 note (2026-07-11): BlobStore introduces `StorageReward` for media hosting. ConceptRegistry hosting does not need separate incentive (bundled with node participation).*
 
 ---
 

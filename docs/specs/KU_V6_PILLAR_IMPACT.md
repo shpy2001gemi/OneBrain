@@ -1,5 +1,9 @@
 # Giải quyết 3 câu hỏi kiến trúc KU v6
 
+> [!WARNING]
+> **ARCHIVED** — Tài liệu này mô tả kiến trúc KU v6 (đã thay thế bởi v7).
+> Xem [KU v7 Architecture](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KU_ARCHITECTURE.md) cho thiết kế hiện tại.
+
 ## Bối cảnh
 
 - **Không có backward compatibility** — thiết kế mới hoàn toàn cho v6

@@ -127,21 +127,56 @@ impl AiEncoder {
             return Err(EncoderError::NoToolCalls);
         }
 
-        // 5. Execute tool calls via KuToolExecutor
+        // DEBUG: Log what tool calls the AI generated
+        eprintln!("[ENCODER DEBUG] Got {} tool calls:", tool_calls.len());
+        for (i, tc) in tool_calls.iter().enumerate() {
+            eprintln!("  [{}] {} => {}", i, tc.name, tc.arguments);
+        }
+
+        // 5. Auto-fix: inject missing new_ku at the start if model forgot it
+        let has_new_ku = tool_calls.iter().any(|tc| tc.name == "new_ku");
+        let has_finalize = tool_calls.iter().any(|tc| tc.name == "finalize");
+
         let mut executor = KuToolExecutor::new(self.dict.clone());
         let mut results: Vec<CoreToolResult> = Vec::new();
 
+        if !has_new_ku {
+            eprintln!("[ENCODER FIX] Auto-injecting new_ku(gene_type=fact)");
+            let auto_new = CoreToolCall {
+                name: "new_ku".into(),
+                arguments: serde_json::json!({"gene_type": "fact"}),
+            };
+            let r = executor.execute(&auto_new);
+            eprintln!("  [EXEC] new_ku(auto) => success={}, msg={}", r.success, r.message);
+            results.push(r);
+        }
+
+        // Execute model's tool calls
         for tc in &tool_calls {
             let core_call = CoreToolCall {
                 name: tc.name.clone(),
                 arguments: tc.arguments.clone(),
             };
             let result = executor.execute(&core_call);
+            eprintln!("  [EXEC] {} => success={}, msg={}", tc.name, result.success, result.message);
             results.push(result);
+        }
+
+        // Auto-fix: inject finalize if model forgot it
+        if !has_finalize {
+            eprintln!("[ENCODER FIX] Auto-injecting finalize");
+            let auto_fin = CoreToolCall {
+                name: "finalize".into(),
+                arguments: serde_json::json!({}),
+            };
+            let r = executor.execute(&auto_fin);
+            eprintln!("  [EXEC] finalize(auto) => success={}, msg={}", r.success, r.message);
+            results.push(r);
         }
 
         // 6. Finalize and get wire bytes
         let wire_bytes = executor.finalize_all();
+        eprintln!("[ENCODER DEBUG] finalize_all => {} KUs produced", wire_bytes.len());
 
         if wire_bytes.is_empty() {
             return Err(EncoderError::ToolExecution(

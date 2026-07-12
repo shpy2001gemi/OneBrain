@@ -1,4 +1,4 @@
-//! # Persistent KU Storage — redb backend (v6)
+//! # Persistent KU Storage — redb backend (v7)
 //!
 //! ACID-compliant persistent storage for KuRuntime (Core DNA + Epigenetics).
 //!
@@ -10,7 +10,7 @@
 
 use std::path::Path;
 
-use ku_core::{KuRuntime, Epigenetics, TrustSection};
+use ku_core::{KuRuntime, Epigenetics};
 use ku_core::core_dna::decode_core_dna;
 use ku_core::obs_schema;
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
@@ -315,10 +315,11 @@ mod tests {
     fn make_test_ku(trust_score: u16) -> KuRuntime {
         let dna = CoreDna {
             header: CoreDnaHeader {
-                version: 1,
+                version: 2,
                 gene_type: 0, // Fact
-                has_qualifiers: false,
+                has_concept_table: false,
             },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: 128, p: 133, o: 132 },
                 Instruction::Certainty { level: 9500 },
@@ -326,7 +327,7 @@ mod tests {
         };
         let mut ku = KuRuntime::from_dna(dna).expect("create KuRuntime");
         ku.epi = Epigenetics::with_trust(trust_score, 8000);
-        ku.epi.set_epistemic_status(EpistemicStatus::Evidence);
+        ku.epi.trust.epistemic_status = EpistemicStatus::Evidence;
         ku
     }
 
@@ -334,7 +335,7 @@ mod tests {
     static TEST_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     fn temp_db_path() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join("ku_test_v6");
+        let dir = std::env::temp_dir().join("ku_test_v7");
         fs::create_dir_all(&dir).ok();
         let id = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
         dir.join(format!("test_{}_{}.redb", std::process::id(), id))
@@ -470,13 +471,13 @@ mod tests {
         // Update epigenetics
         let mut new_epi = ku.epi.clone();
         new_epi.trust.trust_score = 9999;
-        new_epi.set_epistemic_status(EpistemicStatus::Consensus);
+        new_epi.trust.epistemic_status = EpistemicStatus::Consensus;
         storage.update_epi(&cid, &new_epi).unwrap();
 
         // Verify Core DNA unchanged, epigenetics updated
         let retrieved = storage.get(&cid).unwrap();
         assert_eq!(retrieved.trust_score(), 9999);
-        assert_eq!(retrieved.epi.epistemic_status, EpistemicStatus::Consensus);
+        assert_eq!(retrieved.epi.trust.epistemic_status, EpistemicStatus::Consensus);
         assert_eq!(retrieved.gene_type(), 0); // Core DNA unchanged
 
         cleanup(&path);

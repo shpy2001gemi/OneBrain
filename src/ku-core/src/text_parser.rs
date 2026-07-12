@@ -335,10 +335,11 @@ pub fn parse_text_to_core_dna(text: &str, dict: &ConceptDict) -> Result<CoreDna,
 
     Ok(CoreDna {
         header: CoreDnaHeader {
-            version: 1,
+            version: 2,
             gene_type,
-            has_qualifiers: false,
+            has_concept_table: false,
         },
+        concept_table: Vec::new(),
         instructions,
     })
 }
@@ -946,8 +947,8 @@ Góc gập khuỷu tay khoảng 90°"#;
 
         let dna = parse_text_to_core_dna(text, &dict).unwrap();
         println!("\n=== Bơi Ếch Full Parse ===");
-        println!("Header: version={}, gene_type={}, has_qualifiers={}",
-            dna.header.version, dna.header.gene_type, dna.header.has_qualifiers);
+        println!("Header: version={}, gene_type={}, has_concept_table={}",
+            dna.header.version, dna.header.gene_type, dna.header.has_concept_table);
         for (i, instr) in dna.instructions.iter().enumerate() {
             println!("  [{}] {:?}", i, instr);
         }

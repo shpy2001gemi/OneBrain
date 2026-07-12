@@ -429,21 +429,43 @@ impl LocalExecutor {
             let gene_type_num = gene_type.to_u8();
             let certainty = create.certainty.unwrap_or(5000);
 
+            // Track concept names → IDs for ConceptTable generation
+            let mut concept_names: Vec<String> = Vec::new();
+
             // Convert CreateClause → Instruction via ConceptDict
             let mut instructions = Vec::new();
             for clause in &create.instructions {
+                Self::collect_clause_concept_names(clause, &mut concept_names);
                 instructions.push(self.clause_to_instruction(clause)?);
             }
 
             // Add certainty if specified
             instructions.push(Instruction::Certainty { level: certainty });
 
+            // Build ConceptTable: for each unique concept name, if its resolved ID
+            // is Tier 2+ (>= 16512), create a ConceptTableEntry with CCID.
+            let mut concept_table = Vec::new();
+            let mut seen_ids = std::collections::HashSet::new();
+            for name in &concept_names {
+                let local_id = self.resolve_concept(name);
+                if local_id >= 16512 && seen_ids.insert(local_id) {
+                    let ccid = ku_core::ccid::ccid(name.as_bytes());
+                    concept_table.push(ku_core::core_dna::ConceptTableEntry {
+                        local_id,
+                        ccid,
+                    });
+                }
+            }
+
+            let has_concept_table = !concept_table.is_empty();
+
             let dna = CoreDna {
                 header: CoreDnaHeader {
-                    version: 1,
+                    version: 2,
                     gene_type: gene_type_num,
-                    has_qualifiers: false,
+                    has_concept_table,
                 },
+                concept_table,
                 instructions,
             };
 
@@ -470,16 +492,18 @@ impl LocalExecutor {
             .and_then(|p| match &p.value {
                 Value::Text(s) => match s.as_str() {
                     "Fact" => Some(0u8),
-                    "Hypothesis" => Some(1),
+                    "Procedure" => Some(1),
                     "Experience" => Some(2),
-                    "Procedure" => Some(3),
-                    "Rule" => Some(4),
-                    "Definition" => Some(5),
-                    "Relation" => Some(6),
-                    "Meta" => Some(7),
-                    "Creative" | "Narrative" => Some(8),
-                    "Belief" => Some(9),
-                    "FormalProof" => Some(10),
+                    "Creative" => Some(3),
+                    "MediaExperience" => Some(4),
+                    "Testimony" => Some(5),
+                    "Formal" => Some(6),
+                    "Hypothesis" => Some(7),
+                    "Narrative" => Some(8),
+                    "Sensory" => Some(9),
+                    "Composite" => Some(10),
+                    "Normative" => Some(11),
+                    "Definition" => Some(12),
                     _ => Some(0),
                 },
                 Value::Integer(i) => Some(*i as u8),
@@ -510,10 +534,11 @@ impl LocalExecutor {
 
         let dna = CoreDna {
             header: CoreDnaHeader {
-                version: 1,
+                version: 2,
                 gene_type: gene_type_num,
-                has_qualifiers: false,
+                has_concept_table: false,
             },
+            concept_table: Vec::new(),
             instructions,
         };
 
@@ -633,6 +658,46 @@ impl LocalExecutor {
         }
     }
 
+    /// Collect concept name strings from a CreateClause for ConceptTable generation.
+    fn collect_clause_concept_names(clause: &CreateClause, names: &mut Vec<String>) {
+        match clause {
+            CreateClause::Triple { s, p, o } => {
+                names.push(s.clone()); names.push(p.clone()); names.push(o.clone());
+            }
+            CreateClause::Quality { s, q } => {
+                names.push(s.clone()); names.push(q.clone());
+            }
+            CreateClause::Quantity { s, value: _, unit } => {
+                names.push(s.clone()); names.push(unit.clone());
+            }
+            CreateClause::PartOf { part, whole } => {
+                names.push(part.clone()); names.push(whole.clone());
+            }
+            CreateClause::Located { s, location } => {
+                names.push(s.clone()); names.push(location.clone());
+            }
+            CreateClause::Temporal { s, time } => {
+                names.push(s.clone()); names.push(time.clone());
+            }
+            CreateClause::Causal { cause, effect } => {
+                names.push(cause.clone()); names.push(effect.clone());
+            }
+            CreateClause::Step { ord: _, action, target } => {
+                names.push(action.clone()); names.push(target.clone());
+            }
+            CreateClause::Precond { concept } | CreateClause::Effect { concept } => {
+                names.push(concept.clone());
+            }
+            CreateClause::Certainty { .. } => {} // no concepts
+            CreateClause::Tolerance { s, .. } | CreateClause::Range { s, .. } => {
+                names.push(s.clone());
+            }
+            CreateClause::Constraint { source, op: _, target } => {
+                names.push(source.clone()); names.push(target.clone());
+            }
+        }
+    }
+
     // ─── CREATE FROM TEXT (Tier 2 — AI-assisted) ─────────────────────
 
     fn exec_create_from_text(&mut self, cft: &CreateFromTextQuery) -> Result<QueryResult, ExecError> {
@@ -649,19 +714,7 @@ impl LocalExecutor {
 
         // Override gene_type if hint provided
         if let Some(ref hint) = cft.gene_hint {
-            dna.header.gene_type = match hint {
-                KqlGeneType::Fact => 0,
-                KqlGeneType::Hypothesis => 1,
-                KqlGeneType::Experience => 2,
-                KqlGeneType::Procedure => 3,
-                KqlGeneType::Rule => 4,
-                KqlGeneType::Definition => 5,
-                KqlGeneType::Relation => 6,
-                KqlGeneType::Meta => 7,
-                KqlGeneType::Creative => 8,
-                KqlGeneType::Belief => 9,
-                KqlGeneType::FormalProof => 10,
-            };
+            dna.header.gene_type = hint.to_u8();
         }
 
         let ku = KuRuntime::from_dna(dna)
@@ -724,7 +777,7 @@ impl LocalExecutor {
                 // Deprecate via Epigenetics layer
                 ku.epi.trust.trust_score = 0;
                 ku.epi.trust.verification_level = 0;
-                ku.epi.set_epistemic_status(EpistemicStatus::Rumor);
+                ku.epi.trust.epistemic_status = EpistemicStatus::Rumor;
                 affected += 1;
             }
         }
@@ -923,7 +976,7 @@ fn apply_assignment(ku: &mut KuRuntime, assignment: &Assignment) {
                     "Axiomatic" => EpistemicStatus::Axiomatic,
                     _ => return,
                 };
-                ku.epi.set_epistemic_status(status);
+                ku.epi.trust.epistemic_status = status;
             }
         },
         "evidence_type" => {
@@ -939,7 +992,7 @@ fn apply_assignment(ku: &mut KuRuntime, assignment: &Assignment) {
                     "Computational" => ku_core::EvidenceType::Computational,
                     _ => return,
                 };
-                ku.epi.evidence_type = et;
+                ku.epi.trust.evidence_type = et;
             }
         },
         // ★ OBKG Fix L4: Log warning on unknown SET field in debug builds
@@ -1091,10 +1144,11 @@ mod tests {
     fn make_test_ku(concept: u64, certainty: u16, trust_score: u16) -> KuRuntime {
         let dna = CoreDna {
             header: CoreDnaHeader {
-                version: 1,
+                version: 2,
                 gene_type: 0, // Fact
-                has_qualifiers: false,
+                has_concept_table: false,
             },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: concept, p: 500, o: 1042 },
                 Instruction::Certainty { level: certainty },
@@ -1328,7 +1382,7 @@ mod tests {
         assert_eq!(result.affected_count, 1);
 
         let ku = &result.rows[0];
-        assert_eq!(ku.gene_type(), 3); // Procedure
+        assert_eq!(ku.gene_type(), 1); // Procedure (v7)
         // 3 Steps + 1 Precond + 1 Effect + 1 Certainty = 6 instructions
         assert_eq!(ku.dna.instructions.len(), 6);
     }
@@ -1395,6 +1449,30 @@ mod tests {
         let result = exec.execute(&query).unwrap();
         assert_eq!(result.affected_count, 1);
         assert_eq!(result.rows[0].gene_type(), 0);
+    }
+
+    #[test]
+    fn test_tier1_create_builds_concept_table() {
+        let mut exec = LocalExecutor::new();
+        let query = parse_query(
+            r#"CREATE (k:KU) FACT certainty=9000 { TRIPLE(water, boils_at, 100_celsius) }"#
+        ).unwrap();
+        let result = exec.execute(&query).unwrap();
+        let ku = &result.rows[0];
+
+        // Concept names are hashed to IDs > 128, which are >= 16512 for blake3 hashes
+        // so ConceptTable should have entries
+        assert!(ku.dna.header.has_concept_table, "has_concept_table should be true");
+        assert!(!ku.dna.concept_table.is_empty(), "concept_table should not be empty");
+
+        // Should have 3 unique concepts: water, boils_at, 100_celsius
+        assert_eq!(ku.dna.concept_table.len(), 3);
+
+        // Each entry should have a 16-byte CCID
+        for entry in &ku.dna.concept_table {
+            assert!(entry.local_id >= 128, "local_id should be Tier 1+");
+            assert_ne!(entry.ccid, [0u8; 16], "CCID should not be zero");
+        }
     }
 
     // ── Encoding Status Tests ─────────────────────────────────────────────
@@ -1479,10 +1557,11 @@ mod tests {
     fn make_ku_with_bonds(cid_seed: u8, concept: u64, bonds: Vec<Bond>) -> KuRuntime {
         let dna = CoreDna {
             header: CoreDnaHeader {
-                version: 1,
+                version: 2,
                 gene_type: 0,
-                has_qualifiers: false,
+                has_concept_table: false,
             },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: concept, p: 500, o: 1042 },
                 Instruction::Certainty { level: 5000 },

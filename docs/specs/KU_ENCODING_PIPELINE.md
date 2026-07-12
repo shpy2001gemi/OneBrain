@@ -1,6 +1,6 @@
 # KU Encoding Pipeline — 3-Tier Knowledge Encoding
 
-> Specification version: 6.0 | Last updated: 2026-06-30
+> Specification version: 7.0 | Last updated: 2026-07-11
 
 ## §1 Overview
 
@@ -9,8 +9,8 @@ The encoding pipeline converts natural language text into compact binary CoreDna
 ```mermaid
 graph LR
     TEXT["Natural Language Text"] --> T1["Tier 1: Rule-Based Parser"]
-    T1 --> DNA["CoreDna (binary)<br/>EncodingStatus: RAW"]
-    TEXT --> T2["Tier 2: AI Local Model"]
+    T1 --> DNA["CoreDna (binary)<br/>+ ConceptTable (v7)<br/>EncodingStatus: RAW"]
+    TEXT --> T2["Tier 2: AI Local Model<br/>+ ConceptRegistry lookup"]
     T2 --> DNA
     DNA --> SELF["Self-Verify<br/>EncodingStatus: SELF"]
     SELF --> NET["Tier 3: P2P Consensus<br/>DHT Job Board + 2-Phase Verification"]
@@ -43,21 +43,29 @@ pub struct ConceptDict {
 
 Methods: `insert()`, `lookup()`, `lookup_or_create()`, `len()`, `is_empty()`, `iter()`
 
-### 2.2 Well-Known ConceptIds
+### 2.2 Well-Known ConceptIds (Tier 0 — v7)
+
+v7 defines 80 universal Tier 0 concepts (IDs 0–79) in [tier0_concepts.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/tier0_concepts.rs). These replace the ad-hoc well-known IDs from v6:
 
 | ID | Constant | Meaning |
 |----|----------|---------|
+| 0 | SELF_REF | Self-reference (identity) |
 | 1 | IS_A | "is a" / "là" relationship |
 | 2 | HAS_PART | "has part" / "gồm" relationship |
 | 3 | RELATED_TO | Generic relation (fallback) |
-| 10 | UNIT_DEGREE | ° (degree) |
-| 11 | UNIT_METER | m (meter) |
-| 12 | UNIT_SECOND | s (second) |
-| 13 | UNIT_KILOGRAM | kg (kilogram) |
-| 14 | UNIT_PERCENT | % (percent) |
-| 15-19 | UNIT_* | cm, km, ms, min, h |
-| 20 | UNIT_DIMENSIONLESS | Dimensionless quantity |
-| 127 | UNKNOWN_CONCEPT | Unknown/fallback |
+| 16 | CAUSES | Causation |
+| 18 | ENABLES | Enablement |
+| 28 | AT | Location |
+| 44 | UNIT_METER | m (meter) |
+| 45 | UNIT_KILOGRAM | kg (kilogram) |
+| 46 | UNIT_SECOND | s (second) |
+| 48 | UNIT_KELVIN | K (kelvin) |
+| 59 | UNIT_PERCENT | % (percent) |
+| 63 | UNIT_DIMENSIONLESS | Dimensionless quantity |
+| 127 | UNKNOWN_CONCEPT | Unknown/fallback (sentinel) |
+
+> [!NOTE]
+> Full list: 80 constants across 8 categories (Structural, Causal, Spatial, Logical, SI Units, Derived Units, Epistemological, Agentive Roles). See [tier0_concepts.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/tier0_concepts.rs).
 
 ### 2.3 Default Dictionary
 
@@ -88,7 +96,7 @@ pub fn parse_text_to_core_dna(
 ) -> Result<CoreDna, KuError>
 ```
 
-Output: `CoreDna` with auto-detected `gene_type` based on text patterns.
+Output: `CoreDna` with auto-detected `gene_type` based on text patterns (v7: 13 gene types, values 0–12).
 
 ---
 
@@ -119,7 +127,7 @@ pub struct CreateFromTextQuery {
 3. Create `KuRuntime::from_dna(dna)`
 4. Insert into executor's KU store
 
-**TODO**: When local AI models are integrated, the executor will call the model via `ku_tools.rs` / `ku_tool_executor.rs` for higher-accuracy decomposition.
+**TODO**: When local AI models are integrated, the executor will call the model via `ku_tools.rs` / `ku_tool_executor.rs` for higher-accuracy decomposition. v7 adds `ConceptRegistry::resolve()` for CCID-based concept lookup instead of ConceptDict.
 
 ---
 
@@ -254,15 +262,37 @@ Sử dụng **pheromone-based load balancing** (stigmergy) để phân phối jo
 
 ---
 
-## §5 ConceptDict Architecture
+## §5 Concept System Architecture (v7)
 
-Two distinct ConceptDict implementations coexist:
+### 5.1 ConceptRegistry (v7 — primary)
 
-### 5.1 text_parser::ConceptDict (Tier 1)
+Offline concept name → CCID lookup from `concepts.obr` file (~200MB, ~8M concepts). See [concept_registry.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/concept_registry.rs).
 
-Simple `HashMap<String, ConceptId>` for fast word → ID lookups during parsing.
+```rust
+pub struct ConceptRegistry {
+    label_index: HashMap<String, Vec<usize>>,
+    fuzzy_index: HashMap<String, String>,
+    entries: Vec<ResolvedConcept>,
+}
 
-### 5.2 concept_dict::ConceptDict (v6)
+pub enum ResolveResult {
+    Found(ResolvedConcept),
+    Ambiguous(Vec<ResolvedConcept>),
+    Fuzzy(ResolvedConcept),
+    NotFound,  // → AI creates Definition KU, BLAKE3 → CCID
+}
+```
+
+Encoding flow: AI extracts concept → `registry.resolve(name)` → CCID → local_id + ConceptTable entry.
+
+### 5.2 text_parser::ConceptDict (Tier 1 — legacy)
+
+Simple `HashMap<String, ConceptId>` for fast word → ID lookups during rule-based parsing. Still used by Tier 1 parser.
+
+### 5.3 concept_dict::ConceptDict (deprecated)
+
+> [!WARNING]
+> **Deprecated in v7** — use `ConceptRegistry` for new code. Legacy code will be migrated.
 
 Rich bilingual dictionary with `ConceptEntry`:
 
@@ -277,21 +307,11 @@ pub struct ConceptEntry {
 }
 ```
 
-Used by `KuRuntime::expression()` for multilingual rendering.
+Still used by `KuRuntime::expression()` for multilingual rendering until migration complete.
 
-### 5.3 PersistentConceptDict (redb)
+### 5.4 PersistentConceptDict (deprecated)
 
-ACID-transactional persistence behind `#[cfg(feature = "persist")]`:
-
-```rust
-pub struct PersistentConceptDict {
-    db: Database,  // redb — pure Rust, zero C deps
-}
-```
-
-Three tables: `concepts` (name→JSON), `ids` (u64→name), `meta` (next_id).
-
-Methods: `open()`, `resolve()`, `register()`, `register_multilingual()`, `resolve_or_register()`, `bulk_insert()`
+redb-backed persistence. **Deprecated in v7** — will be replaced by ConceptRegistry persistence.
 
 ---
 
@@ -311,8 +331,18 @@ Lower-tier concepts use fewer bytes → more compact encoding for common knowled
 ## §7 Binary Wire Format
 
 ```
-MAGIC(0x4B) | VER_META(1B) | INSTRUCTION_STREAM | END(0x1E) | CRC-16(2B)
+MAGIC(0x4B) | VER_META(1B) | [CONCEPT_TABLE] | INSTRUCTION_STREAM | END(0x1E) | CRC-16(2B)
 ```
+
+v7: VER_META bit[0] = `has_concept_table`. If set, ConceptTable follows header before instructions.
+
+### Concept Table (v7)
+
+```
+varint(entry_count) | { varint(local_id) + CCID(16 bytes) } × entry_count
+```
+
+Only Tier 2+ concepts (ID ≥ 16512) need entries. Tier 0 (0–127) and Tier 1 (128–16511) are universal.
 
 ### Instruction Encoding
 

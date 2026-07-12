@@ -232,8 +232,9 @@ mod tests {
             header: CoreDnaHeader {
                 version: 1,
                 gene_type: 0,
-                has_qualifiers: false,
+                has_concept_table: false,
             },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: 301, p: 500, o: 1042 },
             ],
@@ -334,7 +335,8 @@ mod tests {
         let ku2 = {
             // Create a different KU with different CID
             let dna = CoreDna {
-                header: CoreDnaHeader { version: 1, gene_type: 1, has_qualifiers: false },
+                header: CoreDnaHeader { version: 2, gene_type: 1, has_concept_table: false },
+                concept_table: Vec::new(),
                 instructions: vec![Instruction::Triple { s: 100, p: 200, o: 300 }],
             };
             let mut ku = KuRuntime::from_dna(dna).unwrap();
@@ -481,7 +483,8 @@ mod tests {
         let ku1 = make_test_ku();
         let ku2 = {
             let dna = CoreDna {
-                header: CoreDnaHeader { version: 1, gene_type: 1, has_qualifiers: false },
+                header: CoreDnaHeader { version: 2, gene_type: 1, has_concept_table: false },
+                concept_table: Vec::new(),
                 instructions: vec![Instruction::Triple { s: 100, p: 200, o: 300 }],
             };
             KuRuntime::from_dna(dna).unwrap()

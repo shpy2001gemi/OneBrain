@@ -1,6 +1,8 @@
 # OBP Specification — OneBrain Protocol
 
-> Specification version: 2.0 | Last updated: 2026-06-30
+> Specification version: 2.1 | Last updated: 2026-07-11
+>
+> *v7 note: OBP is wire-format agnostic (opaque `Vec<u8>`) — no breaking changes from KU v7. Future: BlobStore sync protocol (BlobPush/BlobPull) and ConceptRegistry distribution.*
 
 ## §1 Overview
 

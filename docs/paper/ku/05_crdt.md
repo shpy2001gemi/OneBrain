@@ -1,350 +1,372 @@
-# §5. CRDT Integration for Decentralized Knowledge Convergence
+# 5. Decentralized State Convergence
 
-Conflict-Free Replicated Data Types (CRDTs) form the consistency substrate upon which the OneBrain network achieves eventual convergence of mutable knowledge metadata without centralized coordination. This section presents the five CRDT primitives implemented in the Knowledge Unit core, provides formal proofs of their convergence properties, maps each primitive to specific KU fields, and details the integration between CRDT merge semantics and the Proof-of-Metabolic-Value (PoMV) metabolism system.
+## 5.1 Motivation for CRDTs in Knowledge Networks
 
-## 5.1 Motivation: Why CRDTs for Knowledge
+Decentralized knowledge systems operate under fundamentally different assumptions than centralized databases. In a peer-to-peer network where Knowledge Units propagate across heterogeneous nodes, several operational realities impose stringent requirements on the consistency model.
 
-The OneBrain network operates as a fully decentralized, peer-to-peer system in which nodes may be offline for extended periods, experience network partitions, and process knowledge updates asynchronously. This operational model directly precludes the use of centralized conflict resolution mechanisms—no single node possesses authoritative state, and no global total ordering of updates can be assumed.
+**Network partitions are the norm, not the exception.** Nodes join and leave the network unpredictably. A research institution may operate behind restrictive firewalls; a mobile device may lose connectivity for hours; an edge node in a resource-constrained environment may synchronize only during scheduled windows. Any consistency mechanism that requires synchronous coordination — leader election, two-phase commit, Paxos-family consensus — becomes impractical when partitions are frequent and prolonged [Gilbert and Lynch, 2002].
 
-Yet knowledge metadata is inherently mutable. A Knowledge Unit's trust score evolves as corroborations and challenges accumulate. Its epistemic status may be upgraded from `Hypothesis` to `Established` as evidence accrues. Usage statistics—query hits, citation counts, dwell times—grow continuously as the KU participates in the network's knowledge economy. These mutable fields must converge to a consistent state across all replicas, even when updates arrive out of order, are duplicated, or are applied during network partitions.
+**Concurrent mutations are unavoidable.** Multiple nodes may independently modify the metadata of the same Knowledge Unit. A node in Tokyo increments the access count while a node in Berlin simultaneously updates a trust score. These concurrent modifications must eventually converge to a consistent state without requiring real-time coordination.
 
-CRDTs provide a mathematically rigorous solution to this challenge through **Strong Eventual Consistency (SEC)**: any two nodes that have received the same set of updates—regardless of reception order—are guaranteed to reach identical states. This guarantee requires no consensus protocol, no leader election, and no global coordination. It derives purely from the algebraic properties of the data types themselves.
+**Mutable metadata demands domain-specific conflict resolution.** While the CoreDna of a Knowledge Unit — its content hash, semantic encoding, and structural identity — is immutable and content-addressed, the Epigenetics layer is inherently mutable. Trust scores rise and fall as a KU proves or disproves its utility. Epistemic status transitions from *hypothesis* to *established* as evidence accumulates. Usage counts grow monotonically. Domain classifications expand as a KU finds relevance in new fields. Each metadata category exhibits distinct conflict semantics that a uniform last-writer-wins strategy cannot adequately capture.
 
-The SEC property is particularly valuable for knowledge systems because it preserves the following invariant: *if two nodes have ingested the same knowledge updates, they will render identical knowledge graphs*. This eliminates the class of consistency anomalies (stale reads, conflicting writes, lost updates) that plague eventually consistent systems lacking formal convergence guarantees.
+**Strong Eventual Consistency (SEC) is the appropriate guarantee.** SEC, as formalized by Shapiro et al. [2011], provides two properties: (1) eventual delivery — if one correct node delivers a message, all correct nodes eventually deliver it; and (2) convergence — correct nodes that have delivered the same set of updates have equivalent state. Conflict-free Replicated Data Types (CRDTs) achieve SEC by construction, encoding conflict resolution directly into the data structure's merge operation [Shapiro et al., 2011]. This eliminates the need for consensus protocols while guaranteeing that all replicas converge to the same state regardless of message ordering or delivery timing.
 
-## 5.2 CRDT Primitives
+The KU system therefore adopts CRDTs as the foundational mechanism for replicating and merging mutable metadata across the decentralized network. The CAP theorem [Gilbert and Lynch, 2002] dictates that a distributed system cannot simultaneously guarantee consistency, availability, and partition tolerance. The KU system chooses **AP** (availability and partition tolerance) with eventual consistency, aligning with the design philosophy of Dynamo [DeCandia et al., 2007] while providing stronger convergence guarantees through CRDT semantics.
 
-The `ku-core` module implements five CRDT primitives, each selected for its alignment with specific KU metadata access patterns. All implementations reside in `ku-core/src/crdt.rs` and are generic over their element types where applicable.
+---
 
-### 5.2.1 GCounter (Grow-only Counter)
+## 5.2 Formal Foundations
 
-The GCounter is a state-based CRDT that models a monotonically increasing counter in a distributed setting. Each node maintains its own local count, and the global value is the sum of all per-node counts.
+### 5.2.1 Join Semi-Lattice
 
-**Structure:**
+A *join semi-lattice* $(S, \sqcup)$ is a set $S$ equipped with a binary operation $\sqcup : S \times S \rightarrow S$ (called *join* or *merge*) that satisfies three algebraic properties:
+
+1. **Commutativity.** $\forall a, b \in S: a \sqcup b = b \sqcup a$
+2. **Associativity.** $\forall a, b, c \in S: (a \sqcup b) \sqcup c = a \sqcup (b \sqcup c)$
+3. **Idempotency.** $\forall a \in S: a \sqcup a = a$
+
+These properties jointly induce a partial order $\leq$ on $S$ defined by $a \leq b \iff a \sqcup b = b$, under which $\sqcup$ computes the *least upper bound* of its arguments.
+
+### 5.2.2 Convergence Theorem
+
+**Theorem (Shapiro et al., 2011).** *A state-based object whose states form a join semi-lattice under the merge operation, and whose local update operations are monotonically non-decreasing with respect to the induced partial order, achieves Strong Eventual Consistency: any two replicas that have received the same set of updates — in any order, with any number of duplicates — converge to identical states.*
+
+This theorem provides the formal foundation for all CRDT-based replication in the KU system. Each mutable field in the Epigenetics layer is backed by a CRDT whose merge operation forms a join semi-lattice, thereby guaranteeing SEC by construction.
+
+### 5.2.3 CAP Positioning
+
+The KU system occupies the AP region of the CAP space: it prioritizes availability (every non-failing node can process reads and writes) and partition tolerance (the system continues to operate despite arbitrary network partitions) at the cost of linearizable consistency. CRDTs provide a principled recovery path: once a partition heals and all updates propagate, replicas converge to an identical state without requiring rollback, retry, or conflict resolution protocols.
+
+---
+
+## 5.3 Five CRDT Types
+
+The KU system employs five CRDT primitives, each selected for its algebraic properties and suitability for specific metadata categories.
+
+### 5.3.1 GCounter (Grow-Only Counter)
+
+**Definition.** A GCounter is a state-based CRDT that models a monotonically non-decreasing counter in a distributed system with $n$ identified nodes. It is a map from node identifiers to non-negative integers:
+
+$$G : \text{NodeId} \rightarrow \mathbb{N}_0$$
+
+**Rust Implementation.**
 
 ```rust
-struct GCounter {
-    counts: BTreeMap<u64, u64>,  // node_id → local_count
+pub struct GCounter {
+    counts: BTreeMap<u64, u64>,
+}
+
+impl GCounter {
+    pub fn increment(&mut self, node_id: u64) {
+        *self.counts.entry(node_id).or_insert(0) += 1;
+    }
+
+    pub fn value(&self) -> u64 {
+        self.counts.values().sum()
+    }
+
+    pub fn merge(&mut self, other: &GCounter) {
+        for (&node, &count) in &other.counts {
+            let entry = self.counts.entry(node).or_insert(0);
+            *entry = (*entry).max(count);
+        }
+    }
 }
 ```
 
-The use of `BTreeMap` (rather than `HashMap`) ensures deterministic iteration order, which is essential for reproducible serialization and debugging.
+**KU Use Cases.** The `access_count` field in Epigenetics is backed by a GCounter. Access counts are monotonically non-decreasing — a KU that has been accessed cannot become un-accessed. Each node independently tracks its local access count; the global count is the sum across all nodes.
 
-**Operations:**
+**Merge Semantics.** Element-wise maximum: $\text{merge}(G_1, G_2)[n] = \max(G_1[n], G_2[n])$ for all $n$.
 
-- `increment(node_id: u64)`: Increments the count for the specified node by 1.
-- `increment_by(node_id: u64, amount: u64)`: Increments the count for the specified node by the given amount.
-- `value() → u64`: Returns the sum of all per-node counts.
+---
 
-**Merge:**
+### 5.3.2 PNCounter (Positive-Negative Counter)
 
-$$\text{merge}(G_1, G_2) = \{(n, \max(G_1[n], G_2[n])) \mid n \in \text{keys}(G_1) \cup \text{keys}(G_2)\}$$
+**Definition.** A PNCounter extends the GCounter to support both increments and decrements by maintaining two GCounters — one for positive contributions ($P$) and one for negative contributions ($N$):
 
-where $G[n] = 0$ if $n \notin \text{keys}(G)$.
+$$C = (P, N), \quad \text{value}(C) = \text{value}(P) - \text{value}(N)$$
 
-**Value:**
-
-$$\text{value}(G) = \sum_{n \in \text{keys}(G)} G[n]$$
-
-**Properties:**
-
-- *Monotonicity:* The `value()` function is monotonically non-decreasing under any sequence of `increment` and `merge` operations.
-- *Commutativity:* $\text{merge}(G_1, G_2) = \text{merge}(G_2, G_1)$, since $\max$ is commutative.
-- *Associativity:* $\text{merge}(\text{merge}(G_1, G_2), G_3) = \text{merge}(G_1, \text{merge}(G_2, G_3))$, since $\max$ is associative.
-- *Idempotency:* $\text{merge}(G, G) = G$, since $\max(x, x) = x$.
-
-**Application:** The GCounter is used for `corroboration_count`, `query_hits`, `citation_count`, `retrieval_count`, `derivative_count`, and `dwell_time_ms`—all metrics that only increase over the lifetime of a KU.
-
-### 5.2.2 PNCounter (Positive-Negative Counter)
-
-The PNCounter extends the GCounter to support both increment and decrement operations by maintaining two independent GCounters: one for positive contributions and one for negative contributions.
-
-**Structure:**
+**Rust Implementation.**
 
 ```rust
-struct PNCounter {
+pub struct PNCounter {
     positive: GCounter,
     negative: GCounter,
 }
+
+impl PNCounter {
+    pub fn increment(&mut self, node_id: u64) {
+        self.positive.increment(node_id);
+    }
+
+    pub fn decrement(&mut self, node_id: u64) {
+        self.negative.increment(node_id);
+    }
+
+    pub fn value(&self) -> i64 {
+        self.positive.value() as i64 - self.negative.value() as i64
+    }
+
+    pub fn merge(&mut self, other: &PNCounter) {
+        self.positive.merge(&other.positive);
+        self.negative.merge(&other.negative);
+    }
+}
 ```
 
-**Operations:**
+**KU Use Cases.** The six PoMV trust signals — `metabolic_rate`, `prediction_score`, `entropy_at_creation`, `survival_score`, `synaptic_centrality`, and `niche_fitness` — are each backed by a PNCounter. Trust assessments are inherently revisable: a KU may demonstrate high prediction accuracy in one context and subsequently fail in another.
 
-- `increment(node_id: u64)`: Increments the positive GCounter for the specified node.
-- `decrement(node_id: u64)`: Increments the negative GCounter for the specified node.
-- `value() → i64`: Returns the difference between the positive and negative counter values.
+**Merge Semantics.** Component-wise GCounter merge: $\text{merge}(C_1, C_2) = (\text{merge}(P_1, P_2), \text{merge}(N_1, N_2))$.
 
-**Value:**
+---
 
-$$\text{value}(PN) = \text{value}(PN.P) - \text{value}(PN.N)$$
+### 5.3.3 LWWRegister (Last-Writer-Wins Register)
 
-**Merge:**
+**Definition.** An LWWRegister stores a single value with an associated timestamp. Concurrent writes are resolved by selecting the write with the highest timestamp:
 
-$$\text{merge}(PN_1, PN_2) = (\text{merge}(PN_1.P, PN_2.P), \text{merge}(PN_1.N, PN_2.N))$$
+$$R = (v, t), \quad \text{merge}(R_1, R_2) = \begin{cases} R_1 & \text{if } t_1 > t_2 \\ R_2 & \text{if } t_2 > t_1 \\ \max_{\prec}(R_1, R_2) & \text{if } t_1 = t_2 \end{cases}$$
 
-The PNCounter inherits all convergence properties from the GCounter, since its merge operation is defined component-wise over two GCounters, each of which independently satisfies commutativity, associativity, and idempotency.
+where $\prec$ is a deterministic total order on values (e.g., lexicographic comparison) serving as a tiebreaker.
 
-**Application:** The PNCounter is used for `trust_score` derivation, where corroborations increment the positive counter and challenges increment the negative counter, yielding a net trust value that can increase or decrease over time.
-
-### 5.2.3 LWWRegister\<T\> (Last-Writer-Wins Register)
-
-The LWWRegister is a state-based CRDT that stores a single value of type `T`, resolving concurrent writes by selecting the value with the highest timestamp.
-
-**Structure:**
+**Rust Implementation.**
 
 ```rust
-struct LWWRegister<T> {
+pub struct LWWRegister<T: Ord + Clone> {
     value: T,
     timestamp: u64,
-    node_id: u64,
+}
+
+impl<T: Ord + Clone> LWWRegister<T> {
+    pub fn write(&mut self, value: T, timestamp: u64) {
+        if timestamp > self.timestamp
+            || (timestamp == self.timestamp && value > self.value)
+        {
+            self.value = value;
+            self.timestamp = timestamp;
+        }
+    }
+
+    pub fn merge(&mut self, other: &LWWRegister<T>) {
+        self.write(other.value.clone(), other.timestamp);
+    }
 }
 ```
 
-**Merge:**
+**KU Use Cases.** The `epistemic_status` field — taking values from the 11-level enumeration (e.g., *rumor*, *hypothesis*, *emerging*, *established*, *axiom*, *deprecated*) — is backed by an LWWRegister. Epistemic status is a singular categorical state; the most recent authoritative assessment should prevail.
 
-$$\text{merge}(R_1, R_2) = \begin{cases} R_1 & \text{if } R_1.\text{ts} > R_2.\text{ts} \\ R_2 & \text{if } R_2.\text{ts} > R_1.\text{ts} \\ R_1 & \text{if } R_1.\text{ts} = R_2.\text{ts} \wedge R_1.\text{node\_id} \geq R_2.\text{node\_id} \\ R_2 & \text{otherwise} \end{cases}$$
+**Merge Semantics.** Maximum under the total order $(t, v)$: the entry with the higher timestamp wins; ties are broken by value comparison.
 
-The tie-breaking rule on `node_id` ensures determinism when two nodes write at the exact same logical timestamp. The choice of `≥` (rather than `>`) for the tie-break is arbitrary but fixed, ensuring that all nodes apply the same deterministic rule.
+---
 
-**Properties:**
+### 5.3.4 ORSet (Observed-Remove Set)
 
-- *Commutativity:* The merge function produces the same result regardless of argument order, since the timestamp comparison and tie-breaking rule are symmetric.
-- *Idempotency:* $\text{merge}(R, R) = R$, since the timestamp and node_id comparisons yield equality.
-- *Associativity:* For any three registers, the merge is associative because the total order induced by (timestamp, node_id) pairs is transitive.
+**Definition.** An ORSet implements a set with both add and remove operations, using unique tags to disambiguate concurrent modifications. The ORSet provides *add-wins* semantics: if an add and a remove for the same element are concurrent, the add takes effect [Bieniusa et al., 2012].
 
-**Application:** The LWWRegister is used for `epistemic_status` and `verification_level`, both of which represent single authoritative values that should reflect the most recent assessment.
+$$S : E \rightarrow \mathcal{P}(\text{UniqueTag})$$
 
-**Limitation:** The LWWRegister assumes loosely synchronized clocks. In practice, the OneBrain network uses hybrid logical clocks (HLCs), which combine physical timestamps with logical counters to ensure causal consistency even under clock skew.
+An element $e$ is present if and only if $S[e] \neq \emptyset$.
 
-### 5.2.4 ORSet\<T\> (Observed-Remove Set)
-
-The ORSet (Observed-Remove Set) is a state-based CRDT that supports both add and remove operations on a set, with **add-wins semantics**: if one node adds an element concurrently with another node removing it, the add takes precedence.
-
-**Structure:**
+**Rust Implementation.**
 
 ```rust
-struct ORSet<T> {
-    elements: BTreeMap<T, BTreeSet<u64>>,  // element → set of unique tags
-    tombstones: BTreeSet<u64>,              // tags of removed elements
+pub struct ORSet<T: Eq + Hash + Clone> {
+    elements: HashMap<T, HashSet<(u64, u64)>>, // (node_id, seq_num) tags
+    seq: u64,
+}
+
+impl<T: Eq + Hash + Clone> ORSet<T> {
+    pub fn add(&mut self, element: T, node_id: u64) {
+        self.seq += 1;
+        self.elements
+            .entry(element)
+            .or_default()
+            .insert((node_id, self.seq));
+    }
+
+    pub fn remove(&mut self, element: &T) {
+        self.elements.remove(element);
+    }
+
+    pub fn merge(&mut self, other: &ORSet<T>) {
+        for (elem, tags) in &other.elements {
+            self.elements
+                .entry(elem.clone())
+                .or_default()
+                .extend(tags);
+        }
+    }
 }
 ```
 
-Each add operation generates a globally unique tag (constructed as `node_id << 32 | local_counter`), which is associated with the added element. A remove operation moves all of the element's current tags to the tombstone set, effectively marking those specific add observations as removed.
+**KU Use Cases.** The `domain_codes` and `tags` fields in Epigenetics are backed by ORSets. A KU may be independently tagged by different nodes: one adds "neuroscience" while another removes "psychology." The add-wins semantics ensure that concurrent additions are never silently lost.
 
-**Operations:**
+**Merge Semantics.** Per-element tag union: $\text{merge}(S_1, S_2)[e] = S_1[e] \cup S_2[e]$ for all $e$.
 
-- `add(element: T, node_id: u64)`: Generates a new unique tag, associates it with the element. Any tags for this element that are in the tombstone set remain there (they record historical removals).
-- `remove(element: T)`: Moves all current tags associated with the element to the tombstone set.
-- `contains(element: &T) → bool`: Returns `true` if the element has at least one tag not in the tombstone set.
-- `elements() → Vec<T>`: Returns all elements with at least one live (non-tombstoned) tag.
+---
 
-**Merge:**
+### 5.3.5 VectorClock
 
-$$\text{merge}(S_1, S_2).\text{elements} = \{(e, T_1[e] \cup T_2[e]) \mid e \in \text{dom}(T_1) \cup \text{dom}(T_2)\}$$
-$$\text{merge}(S_1, S_2).\text{tombstones} = S_1.\text{tombstones} \cup S_2.\text{tombstones}$$
+**Definition.** A VectorClock captures causal ordering of events in a distributed system [Lamport, 1978; Mattern, 1989]. It is a map from node identifiers to logical timestamps:
 
-An element is considered present in the merged set if and only if it has at least one tag that is not in the merged tombstone set:
+$$V : \text{NodeId} \rightarrow \mathbb{N}_0$$
 
-$$e \in \text{merge}(S_1, S_2) \iff \exists\, t \in (T_1[e] \cup T_2[e]) : t \notin (S_1.\text{tombstones} \cup S_2.\text{tombstones})$$
-
-**Add-wins semantics:** If node A adds element $e$ (generating tag $t_{\text{new}}$) concurrently with node B removing element $e$ (tombstoning tags $\{t_1, t_2\}$), the merged state contains $e$ because $t_{\text{new}} \notin \{t_1, t_2\}$—the new tag was not observed by the removing node and therefore cannot be tombstoned.
-
-**Application:** The ORSet is used for `domain_codes` (the set of domain classifications for a KU), `verifications` (the set of verification CIDs), and `challenges` (the set of challenge CIDs). These fields require both addition and removal of elements with well-defined concurrent semantics.
-
-### 5.2.5 VectorClock
-
-The VectorClock is not a CRDT in the strict sense but serves as a causal ordering mechanism that complements the CRDT primitives.
-
-**Structure:**
+**Rust Implementation.**
 
 ```rust
-struct VectorClock {
-    clocks: BTreeMap<u64, u64>,  // node_id → logical_timestamp
+pub struct VectorClock {
+    clocks: BTreeMap<u64, u64>,
+}
+
+impl VectorClock {
+    pub fn tick(&mut self, node_id: u64) {
+        *self.clocks.entry(node_id).or_insert(0) += 1;
+    }
+
+    pub fn merge(&mut self, other: &VectorClock) {
+        for (&node, &time) in &other.clocks {
+            let entry = self.clocks.entry(node).or_insert(0);
+            *entry = (*entry).max(time);
+        }
+    }
+
+    pub fn partial_cmp(&self, other: &VectorClock) -> Option<std::cmp::Ordering> {
+        let all_keys: BTreeSet<_> =
+            self.clocks.keys().chain(other.clocks.keys()).collect();
+        let mut less = false;
+        let mut greater = false;
+        for &k in &all_keys {
+            let a = self.clocks.get(k).copied().unwrap_or(0);
+            let b = other.clocks.get(k).copied().unwrap_or(0);
+            if a < b { less = true; }
+            if a > b { greater = true; }
+        }
+        match (less, greater) {
+            (true, true) => None,      // concurrent
+            (true, false) => Some(std::cmp::Ordering::Less),
+            (false, true) => Some(std::cmp::Ordering::Greater),
+            (false, false) => Some(std::cmp::Ordering::Equal),
+        }
+    }
 }
 ```
 
-**Operations:**
+**KU Use Cases.** VectorClocks are attached to Epigenetics updates to establish causal ordering. When a node updates a KU's metadata, it ticks its local entry and attaches the resulting clock. Receiving nodes can distinguish causally related updates from concurrent ones ($V_1 \| V_2 \iff \neg(V_1 \leq V_2) \land \neg(V_2 \leq V_1)$), enabling informed merge decisions.
 
-- `tick(node_id: u64)`: Increments the logical timestamp for the specified node.
-- `merge(other: &VectorClock)`: Per-node maximum, identical to GCounter merge.
-- `dominates(other: &VectorClock) → bool`: Returns `true` if this clock is ≥ the other clock for all nodes, and strictly > for at least one node.
-- `is_concurrent(other: &VectorClock) → bool`: Returns `true` if neither clock dominates the other.
-- `covers(other: &VectorClock) → bool`: Returns `true` if this clock is ≥ the other clock for all nodes.
+**Merge Semantics.** Element-wise maximum — identical to GCounter merge: $\text{merge}(V_1, V_2)[n] = \max(V_1[n], V_2[n])$.
 
-**Application:** VectorClocks are used to establish causal ordering of KU updates, enabling nodes to determine whether two updates are causally related (one happened-before the other) or concurrent (neither is aware of the other). This information is critical for the LWWRegister's timestamp comparison and for detecting concurrent modifications that require CRDT merge resolution.
+---
 
-## 5.3 Formal Properties
+## 5.4 KU-Specific Merge Semantics
 
-### 5.3.1 Join Semi-Lattice Structure
+### 5.4.1 Field-Level Independent Merge
 
-All five CRDT primitives form **join semi-lattices** under their respective merge operations. A join semi-lattice $(S, \sqcup)$ is a partially ordered set in which every pair of elements has a least upper bound (join). The merge operation corresponds to the join:
+The merge of two KU replicas operates at the *field level*: each Epigenetics field is merged independently using its corresponding CRDT merge function. If $\mathcal{E} = (f_1, f_2, \ldots, f_k)$ is a product type where each $f_i$ is a CRDT with merge function $\sqcup_i$, then:
 
-$$\text{merge}(a, b) = a \sqcup b$$
+$$\text{merge}(\mathcal{E}_a, \mathcal{E}_b) = (f_{1,a} \sqcup_1 f_{1,b}, \; f_{2,a} \sqcup_2 f_{2,b}, \; \ldots, \; f_{k,a} \sqcup_k f_{k,b})$$
 
-The partial order is defined by the "is a predecessor of" relation:
+This field-level composition guarantees isolation (a conflict in one field does not affect resolution of others) and minimality (only changed fields need to be transmitted for delta-based replication [Almeida et al., 2015]).
 
-$$a \leq b \iff \text{merge}(a, b) = b$$
+### 5.4.2 Epigenetics Field Mapping
 
-**Theorem 1 (Convergence).** *Any state-based CRDT whose states form a join semi-lattice with a monotonically increasing merge function achieves Strong Eventual Consistency.*
+The complete mapping from Epigenetics fields to CRDT types is driven by the semantic requirements of each field:
 
-This theorem, due to Shapiro et al. (2011), guarantees that any two replicas that have received the same set of updates (in any order, with any number of duplicates) converge to the same state.
+| **Field** | **CRDT Type** | **Rationale** |
+|---|---|---|
+| `access_count` | GCounter | Monotonically non-decreasing; sum of per-node counts |
+| `metabolic_rate` | PNCounter | Bidirectional: rises with active use, falls during dormancy |
+| `prediction_score` | PNCounter | Fluctuates as predictions are validated or refuted |
+| `entropy_at_creation` | PNCounter | May be recalculated if creation context is re-evaluated |
+| `survival_score` | PNCounter | Evolves as a KU withstands or fails challenges |
+| `synaptic_centrality` | PNCounter | Changes as knowledge graph connections form and dissolve |
+| `niche_fitness` | PNCounter | Fluctuates with domain landscape evolution |
+| `epistemic_status` | LWWRegister | Singular categorical state; latest assessment prevails |
+| `domain_codes` | ORSet | Set with add-wins semantics; prevents accidental classification loss |
+| `tags` | ORSet | User-assigned tags follow add-remove set pattern |
+| Event ordering | VectorClock | Causal ordering for distinguishing concurrent updates |
 
-### 5.3.2 GCounter Convergence Proof
+### 5.4.3 Trust Score Convergence (PoMV Signals)
 
-**Claim:** The GCounter with per-node-max merge forms a join semi-lattice.
+The six Proof of Metabolic Value (PoMV) signals are each represented as `u16` values in $[0, 10000]$, encoding a fixed-point decimal with four significant digits. All six are backed by PNCounters, reflecting the fundamental characteristic that knowledge assessments are revisable. After merge, the signal value is clamped:
 
-**Proof sketch:**
+$$\text{signal\_value} = \text{clamp}\left(\sum_{n} P[n] - \sum_{n} N[n], \; 0, \; 10000\right)$$
 
-1. *Partial order:* Define $G_1 \leq G_2 \iff \forall n \in \text{keys}(G_1) \cup \text{keys}(G_2): G_1[n] \leq G_2[n]$. This is reflexive ($G \leq G$), antisymmetric ($G_1 \leq G_2 \wedge G_2 \leq G_1 \implies G_1 = G_2$), and transitive.
+This ensures the result remains within the valid `u16` range while preserving the causal contributions of each evaluating node.
 
-2. *Least upper bound:* For any $G_1, G_2$, define $G_{\sqcup} = \text{merge}(G_1, G_2)$. Then $G_1 \leq G_{\sqcup}$ and $G_2 \leq G_{\sqcup}$ (since $\max(a, b) \geq a$ and $\max(a, b) \geq b$). For any $G'$ such that $G_1 \leq G'$ and $G_2 \leq G'$, we have $G_{\sqcup} \leq G'$ (since $\max(G_1[n], G_2[n]) \leq G'[n]$ for all $n$). Thus $G_{\sqcup}$ is the least upper bound. $\square$
+### 5.4.4 Bond Semantics
 
-### 5.3.3 ORSet Convergence Proof
+The 33 bond types governing inter-KU relationships (e.g., `supports`, `contradicts`, `extends`, `cites`) are managed through ORSet semantics at the collection level. A bond between two KUs is identified by the tuple (source CID, target CID, bond type); concurrent creation of the same bond at different nodes is idempotent, while removal requires observation of the existing bond. Bond strength values, where applicable, use LWWRegister semantics.
 
-**Claim:** The ORSet with tag-union/tombstone-union merge forms a join semi-lattice.
+### 5.4.5 Epistemic Status Transitions
 
-**Proof sketch:**
+The 11 epistemic status levels form a lattice of evidential certainty. While the LWWRegister ensures convergence on a single status value, the system imposes application-level invariants on transitions. For example, a KU's status cannot regress from *axiom* to *rumor* without an explicit deprecation event. These invariants are enforced post-merge as defense-in-depth constraints.
 
-1. *State space:* An ORSet state is a pair $(E, T)$ where $E: \text{Element} \to \mathcal{P}(\text{Tag})$ maps elements to tag sets, and $T \subseteq \text{Tag}$ is the tombstone set.
+### 5.4.6 Immutability of CoreDna
 
-2. *Partial order:* $(E_1, T_1) \leq (E_2, T_2) \iff (\forall e: E_1[e] \subseteq E_2[e]) \wedge (T_1 \subseteq T_2)$.
+The CoreDna of a Knowledge Unit — comprising the content hash (CID), semantic encoding, and structural metadata — is immutable. Two replicas of the same KU (identified by the same CID) are guaranteed to have identical CoreDna. If the content changes, a new KU with a new CID is created. This clean separation confines all CRDT machinery to the Epigenetics layer, reducing the surface area for consistency-related defects.
 
-3. *Least upper bound:* $\text{merge}((E_1, T_1), (E_2, T_2)) = (\lambda e. E_1[e] \cup E_2[e],\; T_1 \cup T_2)$. Set union is the join operation for the subset partial order, so both components form join semi-lattices, and the product of two join semi-lattices is a join semi-lattice. $\square$
+---
 
-The visible set (elements considered present) is derived as $\{e \mid \exists\, t \in E[e] : t \notin T\}$, which is a monotone function of the lattice state with respect to the add-wins interpretation.
+## 5.5 Convergence Guarantees
 
-## 5.4 Application to KU Fields
+### 5.5.1 Semi-Lattice Proofs
 
-The following table maps each mutable KU field to its CRDT type, with rationale for the selection:
+Each of the five CRDT primitives satisfies the three join semi-lattice properties:
 
-| KU Field             | CRDT Type       | Rationale                                                   |
-|----------------------|-----------------|-------------------------------------------------------------|
-| `corroboration_count`| GCounter        | Corroborations only accumulate; never retracted             |
-| `challenge_count`    | GCounter        | Challenges only accumulate; never retracted                 |
-| `trust_score`        | PNCounter       | Net trust may increase (corroboration) or decrease (challenge) |
-| `epistemic_status`   | LWWRegister     | Single authoritative classification; latest assessment wins |
-| `verification_level` | LWWRegister     | Verification upgrades reflect most recent evaluation        |
-| `domain_codes`       | ORSet\<u32\>    | Domain classifications may be added or removed              |
-| `verifications`      | ORSet\<CID\>    | Set of verification proof CIDs; may be added or invalidated |
-| `challenges`         | ORSet\<CID\>    | Set of challenge CIDs; may be added or resolved             |
-| `query_hits`         | GCounter        | Query frequency only increases                              |
-| `citation_count`     | GCounter        | Citations only accumulate                                   |
-| `derivative_count`   | GCounter        | Derivative works only accumulate                            |
-| `dwell_time_ms`      | GCounter        | Cumulative reading time across all nodes                    |
+**GCounter.** The merge function is element-wise $\max$. Since $\max$ over $\mathbb{N}_0$ is commutative, associative, and idempotent, GCounter merge inherits all three properties. $\square$
 
-This mapping ensures that every mutable field on a KU has well-defined concurrent update semantics. Fields that only grow use GCounters. Fields that can both grow and shrink use PNCounters. Fields requiring a single authoritative value use LWWRegisters. Fields representing mutable sets use ORSets.
+**PNCounter.** The merge is a pair of GCounter merges applied independently to the positive and negative components. Component-wise application of commutative, associative, and idempotent functions preserves all three properties. $\square$
 
-## 5.5 Merge Semantics & Conflict Resolution
+**LWWRegister.** The merge selects the maximum under the total order $(t, v)$. The $\max$ operation over any total order is commutative, associative, and idempotent. $\square$
 
-### 5.5.1 Full KU Merge Procedure
+**ORSet.** The merge is per-element set union. Set union is commutative, associative, and idempotent. $\square$
 
-When two nodes exchange KU states during synchronization, the merge proceeds field-by-field according to each field's CRDT type:
+**VectorClock.** The merge is element-wise $\max$ — structurally identical to GCounter merge. The proof follows by the same argument. $\square$
 
-```
-function merge_ku(local: KuState, remote: KuState) → KuState:
-    result.corroboration_count  = GCounter.merge(local.corroboration_count, remote.corroboration_count)
-    result.challenge_count      = GCounter.merge(local.challenge_count, remote.challenge_count)
-    result.trust_score          = PNCounter.merge(local.trust_score, remote.trust_score)
-    result.epistemic_status     = LWWRegister.merge(local.epistemic_status, remote.epistemic_status)
-    result.verification_level   = LWWRegister.merge(local.verification_level, remote.verification_level)
-    result.domain_codes         = ORSet.merge(local.domain_codes, remote.domain_codes)
-    result.verifications        = ORSet.merge(local.verifications, remote.verifications)
-    result.challenges           = ORSet.merge(local.challenges, remote.challenges)
-    result.query_hits           = GCounter.merge(local.query_hits, remote.query_hits)
-    result.citation_count       = GCounter.merge(local.citation_count, remote.citation_count)
-    result.derivative_count     = GCounter.merge(local.derivative_count, remote.derivative_count)
-    result.dwell_time_ms        = GCounter.merge(local.dwell_time_ms, remote.dwell_time_ms)
-    result.vector_clock         = VectorClock.merge(local.vector_clock, remote.vector_clock)
-    return result
-```
+### 5.5.2 Composite Convergence
 
-### 5.5.2 Conflict-Free Resolution Guarantees
+Since each Epigenetics field is backed by a CRDT whose merge forms a join semi-lattice, and the composite merge applies each field merge independently (Section 5.4.1), the composite Epigenetics merge is itself a join semi-lattice over the product space. By the convergence theorem (Section 5.2.2), any two replicas that have received the same set of updates converge to identical states.
 
-Each CRDT type resolves concurrent updates without conflicts:
+### 5.5.3 Merge Validity Invariants
 
-1. **GCounters:** Per-node maximum ensures that the highest observed count for each node is preserved. No information is lost, and no double-counting occurs (each node's count reflects its own local observations).
+A critical invariant is that the merge result is always a valid KU state:
 
-2. **PNCounters:** Both the positive and negative GCounters are merged independently via per-node maximum. The resulting net value reflects the aggregate of all positive and negative contributions observed by either node.
+- **GCounter values** are non-negative by construction (sums of non-negative entries).
+- **PNCounter values** may be negative arithmetically, but the application clamps them to $[0, 10000]$ after merge.
+- **LWWRegister values** are drawn from the `EpistemicStatus` enumeration; only valid values can be written.
+- **ORSet elements** are validated at insertion time; union of valid sets produces a valid set.
+- **VectorClock entries** are non-negative integers whose element-wise max preserves non-negativity.
 
-3. **LWWRegisters:** The timestamp comparison produces a deterministic winner. The tie-breaking rule on `node_id` ensures that even with identical timestamps, exactly one value is selected consistently across all nodes.
+Post-merge validation provides defense-in-depth beyond the structural correctness of the CRDT merge.
 
-4. **ORSets:** The union of element-tag mappings and the union of tombstone sets produce a merged state where: (a) any element added by either node is present unless explicitly removed by a node that observed the specific add, and (b) concurrent add-remove conflicts resolve in favor of the add (add-wins semantics).
+### 5.5.4 Convergence Under Concurrent Evaluation
 
-5. **VectorClocks:** Per-node maximum produces a clock that dominates both input clocks, correctly reflecting the causal union of both nodes' histories.
+Consider three nodes $A$, $B$, $C$ concurrently evaluating a KU's `prediction_score`:
 
-### 5.5.3 Merge Scenario Illustration
+- Node $A$ increments the positive counter by 50 (prediction confirmed).
+- Node $B$ increments the negative counter by 30 (prediction partially refuted).
+- Node $C$ increments the positive counter by 20 (confirmed in a different context).
 
-Consider two nodes, $A$ (node_id = 1) and $B$ (node_id = 2), that diverge after initial synchronization and independently update a KU's metadata:
+Regardless of propagation order, the final state converges to $P = \{A: 50, C: 20, \ldots\}$, $N = \{B: 30, \ldots\}$, yielding $\text{prediction\_score} = (50 + 20 + \ldots) - (30 + \ldots)$. The PNCounter's algebraic properties guarantee this convergence without coordination.
 
-```
-Initial State (both nodes):
-  corroboration_count = {1: 3, 2: 5}     → value = 8
-  epistemic_status    = {value: Hypothesis, ts: 100, node: 1}
-  domain_codes        = {biology: {tag_1}, chemistry: {tag_2}}
+---
 
-Node A updates (offline):
-  corroboration_count: increment(1)       → {1: 4, 2: 5}     → value = 9
-  epistemic_status: set(Established, 150) → {value: Established, ts: 150, node: 1}
-  domain_codes: add(physics, tag_3)       → {biology: {tag_1}, chemistry: {tag_2}, physics: {tag_3}}
+## References
 
-Node B updates (offline):
-  corroboration_count: increment(2)       → {1: 3, 2: 6}     → value = 9
-  corroboration_count: increment(2)       → {1: 3, 2: 7}     → value = 10
-  domain_codes: remove(chemistry)         → tombstones += {tag_2}
+- Shapiro, M., Preguiça, N., Baquero, C., and Zawirski, M. (2011). A Comprehensive Study of Convergent and Commutative Replicated Data Types. *INRIA Research Report RR-7506*.
 
-Merged State (after sync):
-  corroboration_count = {1: max(4,3), 2: max(5,7)} = {1: 4, 2: 7}  → value = 11
-  epistemic_status    = {value: Established, ts: 150, node: 1}  (ts 150 > ts 100)
-  domain_codes        = {biology: {tag_1}, chemistry: {tag_2}∖{tag_2}=∅, physics: {tag_3}}
-                      → visible: {biology, physics}
-                      (chemistry removed because tag_2 is tombstoned; physics preserved)
-```
+- Shapiro, M., Preguiça, N., Baquero, C., and Zawirski, M. (2011). Conflict-free Replicated Data Types. In *Proceedings of the 13th International Symposium on Stabilization, Safety, and Security of Distributed Systems (SSS 2011)*, Lecture Notes in Computer Science, 6976, 386–400.
 
-Both nodes, upon merging, arrive at identical state regardless of which node initiates the merge or the order of message delivery.
+- Lamport, L. (1978). Time, Clocks, and the Ordering of Events in a Distributed System. *Communications of the ACM*, 21(7), 558–565.
 
-## 5.6 Integration with PoMV Metabolism
+- Mattern, F. (1989). Virtual Time and Global States of Distributed Systems. In *Proceedings of the International Workshop on Parallel and Distributed Algorithms*, 215–226.
 
-### 5.6.1 GCounters as Metabolic Signal Accumulators
+- Bieniusa, A., Zawirski, M., Preguiça, N., Shapiro, M., Baquero, C., Balegas, V., and Duarte, S. (2012). An Optimized Conflict-free Replicated Set. *arXiv preprint arXiv:1210.3368*.
 
-The Proof-of-Metabolic-Value (PoMV) system quantifies the ongoing utility of each Knowledge Unit through metabolic signals: discrete events that indicate the KU is being actively used within the network's knowledge economy. Each metabolic signal is accumulated via a dedicated GCounter:
+- Gilbert, S. and Lynch, N. (2002). Brewer's Conjecture and the Feasibility of Consistent, Available, Partition-Tolerant Web Services. *ACM SIGACT News*, 33(2), 51–59.
 
-| Metabolic Signal    | GCounter Field       | Weight ($\alpha$) | Interpretation                        |
-|---------------------|----------------------|-------------------|---------------------------------------|
-| Query hit           | `query_hits`         | 0.25              | KU retrieved in response to a query   |
-| Retrieval           | `retrieval_count`    | 0.20              | KU actively accessed/read by a node   |
-| Citation            | `citation_count`     | 0.25              | KU referenced by another KU's bond    |
-| Derivative          | `derivative_count`   | 0.15              | New KU created building on this KU    |
-| Dwell/Study         | `dwell_time_ms`      | 0.15              | Cumulative time spent engaging with KU |
+- DeCandia, G., Hastorun, D., Jampani, M., Kakulapati, G., Lakshman, A., Pilchin, A., Sivasubramanian, S., Vosshall, P., and Vogels, W. (2007). Dynamo: Amazon's Highly Available Key-value Store. In *Proceedings of the 21st ACM Symposium on Operating Systems Principles (SOSP 2007)*, 205–220.
 
-The GCounter's per-node-max merge semantics are essential for accurate metabolic accounting across the decentralized network. When node $A$ records 5 query hits and node $B$ independently records 3 query hits for the same KU, the merged GCounter correctly yields 8 total hits (5 from $A$ + 3 from $B$), not 5 (as a simple max would produce) or 11 (as naive addition of both states would produce if applied after duplication). The per-node accounting prevents double-counting: even if node $A$'s state is propagated to nodes $C$, $D$, and $E$ before reaching $B$, the merge at $B$ correctly attributes 5 hits to node $A$ and 3 to node $B$.
+- Almeida, P. S., Shoker, A., and Baquero, C. (2015). Efficient State-based CRDTs by Delta-Mutation. In *Proceedings of the International Conference on Networked Systems (NETYS 2015)*, Lecture Notes in Computer Science, 9466, 62–76.
 
-### 5.6.2 Metabolic Rate Computation
-
-The metabolic rate of a KU at time $t$ is computed as a weighted sum of signal velocities (rates of change), subject to exponential decay:
-
-$$\text{metabolic\_rate}(t) = \left(\alpha_1 \cdot v_q(t) + \alpha_2 \cdot v_r(t) + \alpha_3 \cdot v_c(t) + \alpha_4 \cdot v_d(t) + \alpha_5 \cdot v_{ds}(t)\right) \times e^{-\lambda \cdot \frac{\text{age}}{T_{1/2}}}$$
-
-where:
-- $v_q(t)$, $v_r(t)$, $v_c(t)$, $v_d(t)$, $v_{ds}(t)$ are the signal velocities for query, retrieval, citation, derivative, and dwell/study signals respectively, computed as the rate of GCounter value change over a sliding window.
-- $\boldsymbol{\alpha} = (0.25,\, 0.20,\, 0.25,\, 0.15,\, 0.15)$ are the signal weights, reflecting the relative importance of each metabolic signal type.
-- $T_{1/2} = 30$ days is the metabolic half-life.
-- $\lambda = \ln(2) / T_{1/2}$ is the decay constant.
-- $\text{age}$ is the elapsed time since the KU's creation.
-
-The exponential decay factor ensures that knowledge which ceases to be actively used gradually loses metabolic vitality, analogous to biological metabolism where unused cellular components are recycled. The 30-day half-life was chosen empirically to balance between preserving recently relevant knowledge and recycling genuinely obsolete information.
-
-### 5.6.3 CRDT-Decay Interaction
-
-The exponential decay is applied as a **read-time transformation** on top of the CRDT state, not as a mutation to the CRDT itself. This distinction is critical: the GCounter values represent the cumulative, monotonically increasing count of metabolic events, which must never decrease (preserving the GCounter's lattice property). The decay function transforms these raw counts into a time-weighted metabolic rate at query time.
-
-This layered architecture—immutable CRDT accumulation at the storage layer, decay-adjusted computation at the query layer—ensures that:
-
-1. **CRDT convergence is preserved:** The underlying GCounter states always satisfy the semi-lattice properties, regardless of decay computation.
-2. **Decay is eventually consistent:** Since all nodes compute decay using the same formula and the same CRDT-derived counts (which converge via SEC), the computed metabolic rates also converge.
-3. **Historical accuracy is maintained:** The raw GCounter values serve as an immutable audit log of metabolic activity, enabling retrospective analysis independent of the current decay function.
-
-### 5.6.4 Refutation Signal
-
-One metabolic signal—refutation—operates through the PNCounter (`trust_score`) rather than a GCounter. When a KU is challenged, the trust_score's negative GCounter is incremented. A KU whose metabolic rate falls below a configurable threshold (default: 0.01) and whose trust_score is negative is eligible for garbage collection. This creates a biologically inspired lifecycle: knowledge that is neither used nor trusted is eventually recycled, while actively cited or studied knowledge persists regardless of age.
-
-The integration of CRDTs with the PoMV metabolism system thus establishes a self-regulating knowledge ecosystem: convergent, decentralized accounting of metabolic signals feeds into a decay-adjusted vitality metric that governs knowledge retention, prioritization, and eventual recycling—all without centralized coordination.
+- Kleppmann, M. and Beresford, A. R. (2017). A Conflict-Free Replicated JSON Datatype. *IEEE Transactions on Parallel and Distributed Systems*, 28(10), 2733–2746.

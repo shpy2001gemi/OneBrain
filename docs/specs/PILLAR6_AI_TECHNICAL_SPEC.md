@@ -4,6 +4,8 @@
 
 Pillar 6 introduces a **local-first AI layer** to OneBrain through three new Rust crates that provide pluggable LLM inference, AI-assisted knowledge encoding, and a personal AI mediator interface. The implementation prioritizes offline capability, device adaptability, and seamless integration with the existing 7-pillar architecture.
 
+> *Updated for KU v7 (2026-07-11). ConceptDict → ConceptRegistry migration. CCID-based concept resolution.*
+
 | Metric | Value |
 |:-------|:------|
 | New crates | 3 (`ku-ai`, `ku-encoder`, `ku-mediator`) |
@@ -61,10 +63,10 @@ Layer 3:  ku-mediator → ku-encoder, ku-ai, ku-core
 │              ku-core (existing)         │
 │                                         │
 │  KuToolExecutor  ←  15 ToolDefs         │
-│  CoreDna encode/decode                  │
-│  ConceptDict                            │
-│  ku_system_prompt                       │
-│  text_parser (Tier 1 fallback)          │
+│  CoreDna encode/decode + ConceptTable    │
+│  ConceptRegistry (v7, replaces Dict)     │
+│  ku_system_prompt                        │
+│  text_parser (Tier 1 fallback)           │
 └─────────────────────────────────────────┘
 ```
 
@@ -160,7 +162,7 @@ Full HTTP REST client implementing both `ModelBackend` and `EmbeddingProvider`:
                     │                                          │
                     │  system prompt from                      │  JSON tool calls:
                     │  ku_system_prompt +                      │  new_ku("fact"),
-                    │  ConceptDict context                     │  lookup_or_create("water"),
+                    │  ConceptRegistry context (v7)            │  registry.resolve("water") → CCID,
                     │                                          │  add_quantity(...),
                     │                                          │  set_certainty(9500),
                     ▼                                          │  finalize()

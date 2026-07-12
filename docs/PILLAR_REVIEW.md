@@ -64,13 +64,13 @@ graph TD
 
 > **Trạng thái: ✅ Hoàn thiện | ~17,600 dòng Rust | 353 tests | 9-chapter paper**
 
-Knowledge Unit là **đơn vị cơ bản nhất** của OneBrain — tương đương "transaction" trong blockchain. Mỗi KU đại diện cho một mẩu tri thức, được mã hóa bằng **Core DNA v6** — định dạng nhị phân tự mô tả.
+Knowledge Unit là **đơn vị cơ bản nhất** của OneBrain — tương đương "transaction" trong blockchain. Mỗi KU đại diện cho một mẩu tri thức, được mã hóa bằng **Core DNA v7** — định dạng nhị phân tự mô tả với ConceptTable self-contained.
 
-#### Kiến trúc 3 tầng KuRuntime (v6)
+#### Kiến trúc 3 tầng KuRuntime (v7)
 
 ```mermaid
 graph TD
-    L1["Layer 1: Core DNA - 31 opcodes, binary encoding"] --> L2["Layer 2: Epigenetics - TrustSection + Bonds + Expression"]
+    L1["Layer 1: Core DNA - 32 opcodes, binary encoding, ConceptTable"] --> L2["Layer 2: Epigenetics - TrustSection + Bonds + Expression"]
     L2 --> L3["Layer 3: KuRuntime - Unified 3-layer composite"]
     L3 --> EC["Encoding Consensus - RAW to FULL"]
     L3 --> EV["Encoding Verifier - 2-phase AI + tool"]
@@ -84,20 +84,27 @@ graph TD
     style ER fill:#16a34a,color:#fff
 ```
 
-#### Code đã triển khai (35 modules)
+#### Code đã triển khai (35+ modules)
+
+> [!NOTE]
+> v7 thêm 4 modules mới: `ccid`, `tier0_concepts`, `concept_registry`, `blob_store`
 
 | Module | File | Nội dung | Tests |
 |--------|------|---------|-------|
-| Core DNA | [core_dna.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/core_dna.rs) | 31 opcodes, binary encode/decode, 2,078 LOC | 13 |
-| Types | [types.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/types.rs) | KU struct, 10 Gene types, 33 BondType, TrustSection, EpigeneticSection (1,117 LOC) | — |
+| Core DNA | [core_dna.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/core_dna.rs) | 32 opcodes, binary encode/decode, ConceptTable (v7), 2,078+ LOC | 13 |
+| Types | [types.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/types.rs) | KU struct, **13 Gene types** (v7), 33 BondType, TrustSection (1,314 LOC) | — |
 | KuRuntime | [ku_runtime.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/ku_runtime.rs) | Unified 3-layer composite, 25+ extractable fields (1,140 LOC) | 33 |
 | Epigenetics | [epigenetics.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/epigenetics.rs) | TrustSection, Bonds, Expression (260 LOC) | 8 |
 | Text Parser | [text_parser.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/text_parser.rs) | Rule-based text → CoreDna Tier 1 (1,101 LOC) | 24 |
 | Encoding Consensus | [encoding_consensus.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/encoding_consensus.rs) | RAW→SELF→PART→FULL lifecycle (681 LOC) | 12 |
 | Encoding Verifier | [encoding_verifier.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/encoding_verifier.rs) | 2-phase: AI decomposition + tool round-trip (354 LOC) | 8 |
 | Encoding Reward | [encoding_reward.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/encoding_reward.rs) | OBT token rewards for encoding participation (253 LOC) | 9 |
-| ConceptDict | [concept_dict.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/concept_dict.rs) | Bilingual name ↔ ID lookup (331 LOC) | 9 |
-| Persistent ConceptDict | [persistent_concept_dict.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/persistent_concept_dict.rs) | redb-backed persistence (427 LOC) | 6 |
+| ConceptDict | [concept_dict.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/concept_dict.rs) | ~~Bilingual name ↔ ID lookup~~ (deprecated → ConceptRegistry) (331 LOC) | 9 |
+| Persistent ConceptDict | [persistent_concept_dict.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/persistent_concept_dict.rs) | ~~redb-backed persistence~~ (deprecated → ConceptRegistry) (427 LOC) | 6 |
+| **★ CCID** | [ccid.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/ccid.rs) | **v7**: Content-Addressed Concept Identity, 128-bit BLAKE3 (128 LOC) | 6 |
+| **★ Tier 0** | [tier0_concepts.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/tier0_concepts.rs) | **v7**: 80 universal concept constants (231 LOC) | — |
+| **★ ConceptRegistry** | [concept_registry.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/concept_registry.rs) | **v7**: Offline name→CCID lookup, ~8M concepts (316 LOC) | — |
+| **★ BlobStore** | [blob_store.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/blob_store.rs) | **v7**: Media storage types, OB-CID (34B), BlobMeta (397 LOC) | — |
 | KU Tools | [ku_tools.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/ku_tools.rs) | Tool definitions for AI encoding (454 LOC) | 8 |
 | KU Tool Executor | [ku_tool_executor.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/ku_tool_executor.rs) | Tool execution engine (754 LOC) | 5 |
 | KU System Prompt | [ku_system_prompt.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/ku_system_prompt.rs) | AI system prompt generation (521 LOC) | 20 |
@@ -112,12 +119,16 @@ graph TD
 **+ 16 PoMV modules** (xem Pillar 4)
 
 #### Điểm nổi bật
-- **Core DNA v6**: 31 opcodes, binary encoding, 6-byte universal header
-- **10 Gene types**: Fact, Procedure, Narrative, Taxonomy, Temporal, Spatial, Causal, Analogy, Meta, Composite
+- **Core DNA v7**: 32 opcodes, binary encoding, 6-byte universal header + ConceptTable
+- **13 Gene types** (v7): Fact, Procedure, Experience, Creative, MediaExperience, Testimony, Formal, Hypothesis, Narrative, Sensory, Composite, **Normative**, **Definition**
+- **CCID**: 128-bit content-addressed concept identity — global, decentralized, deterministic
+- **Tier 0**: 80 universal concept constants (1-byte varint)
+- **ConceptRegistry**: Offline ~200MB concept lookup file (~8M concepts)
 - **33 Bond types**: Causal, Spatial, Temporal, Analogical, etc.
 - **11 Epistemic Status levels**: Rumor → Hearsay → Testimony → ... → Formally Proven
 - **Encoding Consensus**: 4-phase distributed encoding (RAW→SELF→PART→FULL)
 - **Wire efficiency**: ~264 bytes/fact KU, varint encoding, CRC-16 validation
+- **BlobStore**: Media attachment types (Image/Video/Audio/Document), 34B OB-CID
 - **Academic paper**: [9 chapters](file:///c:/Users/shpy2/Documents/OneBrain/docs/paper/ku/) — complete formal specification
 
 > [!TIP]
@@ -218,6 +229,8 @@ graph LR
 
 > [!IMPORTANT]
 > Đây là trụ cột **hoàn thiện nhất** và **độc đáo nhất** — kết hợp QUIC + Kademlia + SWIM + Stigmergy + Encoding Consensus trong protocol thống nhất. **Phiên bản mới** có thêm production node binary, seed server, và real TCP networking.
+>
+> **v7**: OBP wire-format agnostic — no breaking changes. Planned additions: BlobStore sync protocol (BlobPush/BlobPull), ConceptRegistry distribution via gossip.
 
 ---
 
@@ -288,6 +301,9 @@ EXPLAIN FIND (ku:KU) WHERE ku.confidence > 50
 > **Còn lại để lên "Hoàn thiện":**
 > 1. Parser hỗ trợ 3/6 query types (`FIND`, `CREATE`, `EXPLAIN`). Cần implement parser cho `UPDATE`, `DEPRECATE`, `WATCH` (AST đã có sẵn).
 > 2. Distributed Query Engine cần end-to-end integration test qua network thực.
+> 3. **v7**: Gene type numbering đã thay đổi (13 types, renumbered). Parser/executor cần cập nhật gene type literals.
+> 4. **v7**: `storage.rs` vẫn v5 (Critical C1) — cần rewrite cho KuRuntime v7 với ConceptTable.
+> 5. **v7**: ConceptDict → ConceptRegistry migration trong CREATE execution flow.
 
 ---
 
@@ -358,6 +374,7 @@ Mỗi bước chuyển đổi dựa trên **ngưỡng quan sát được** (meta
 > **Còn lại để lên "Hoàn thiện":**
 > 1. PoMV modules chạy local — cần wire full orchestration loop qua network (metabolism_gossip có nhưng chưa end-to-end).
 > 2. EigenTrust cần test distributed với nhiều node thực.
+> 3. **v7**: `prediction.rs` cần thêm ResolutionMethod mapping cho 2 gene types mới: Normative(11), Definition(12).
 
 ---
 
@@ -394,6 +411,7 @@ OBT là utility token của OneBrain — phần thưởng cho việc đóng góp
 - ⬜ DHT replica tracking — NOT YET
 - ⬜ Ed25519 full integration — STUB ONLY
 - ~~⬜ Governance parameter adjustment — NOT DESIGNED~~ → ✅ **DONE** (obt_governance.rs)
+- ⬜ **v7**: BlobStore storage reward model (media hosting incentives via `StorageReward`)
 
 ---
 
@@ -501,6 +519,8 @@ graph TD
 
 > [!IMPORTANT]
 > AI Layer đã **nhảy từ 30% → 60%**. Có 3 crate mới hoàn toàn (ku-ai, ku-encoder, ku-mediator) với 7,025 LOC và 189 tests. Ollama integration hoạt động, model registry 8 models (Qwen 2.5 family). Còn thiếu: production fine-tuning, embedding-based semantic search, multi-model orchestration.
+>
+> **v7**: ConceptDict → ConceptRegistry migration cần thiết trong `ku-encoder` PromptBuilder và `ku-mediator` GraphAgent. CCID-based concept resolution thay thế integer ID lookup.
 
 ---
 
@@ -600,6 +620,7 @@ graph TD
 > 1. ObkgOrchestrator chưa integrate end-to-end với distributed network (graph_gossip transport layer).
 > 2. FedR chưa test multi-node federation qua QUIC.
 > 3. Dream Mode scheduling chưa wire vào node runtime loop.
+> 4. **v7**: `obkg_bridge.rs` adapter pattern — no changes needed (reads via KuRuntime, gene-type-agnostic). Gene types Normative(11) and Definition(12) auto-supported via existing bond generation logic.
 
 ---
 
@@ -614,7 +635,8 @@ Storage Layer đã được mở rộng đáng kể với **OBS schema versionin
 | Module | File | Nội dung | Tests |
 |--------|------|---------|-------|
 | **KuStorage** | [storage.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-kql/src/storage.rs) | redb-backed ACID storage, content-addressed (BLAKE3 CID), 3 tables (735 LOC) | 14 |
-| **Persistent ConceptDict** | [persistent_concept_dict.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/persistent_concept_dict.rs) | redb-backed concept persistence (427 LOC) | 6 |
+| **Persistent ConceptDict** | [persistent_concept_dict.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/persistent_concept_dict.rs) | ~~redb-backed concept persistence~~ (**deprecated v7** → ConceptRegistry) (427 LOC) | 6 |
+| **★ BlobStore** | [blob_store.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/blob_store.rs) | **v7**: Media storage types, OB-CID (34B), hybrid persistence (redb metadata + FS content) (397 LOC) | — |
 | **Metabolism Store** | [metabolism_store.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/metabolism_store.rs) | redb-backed metabolism persistence (283 LOC) | 7 |
 | **OBS Schema** | [obs_schema.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obs_schema.rs) | Schema versioning & migration (539 LOC) | 13 |
 | **OBS Cache** | [obs_cache.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/obs_cache.rs) | **M-ARC** metabolism-aware cache (841 LOC) | 25 |
@@ -636,7 +658,8 @@ Storage Layer đã được mở rộng đáng kể với **OBS schema versionin
 
 #### Còn thiếu
 - 🔲 IPFS/decentralized storage integration (đã nghiên cứu, chưa implement)
-- 🔲 Media storage pipeline (audio/video/image)
+- 🔲 **v7**: BlobStore persistence layer (types định nghĩa đầy đủ, chưa có actual persistence)
+- 🔲 **v7**: ConceptRegistry distribution/sync protocol
 - 🔲 Storage quota management per node
 
 ---

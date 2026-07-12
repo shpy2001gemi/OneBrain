@@ -310,10 +310,11 @@ mod tests {
     fn test_dna() -> CoreDna {
         CoreDna {
             header: CoreDnaHeader {
-                version: 1,
+                version: 2,
                 gene_type: 0,
-                has_qualifiers: false,
+                has_concept_table: false,
             },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: 1, p: 2, o: 3 },
                 Instruction::Certainty { level: 9000 },

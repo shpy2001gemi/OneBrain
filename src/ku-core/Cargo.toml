@@ -1,8 +1,8 @@
 [package]
 name = "ku-core"
-version = "0.2.0"
+version = "0.7.0"
 edition = "2021"
-description = "KU v6 Core DNA — 3-layer Knowledge Unit engine (Core DNA / Epigenetics / Expression)"
+description = "KU v7 Core DNA — Self-contained Knowledge Unit engine with CCID and Concept Registry"
 license = "MIT"
 
 [features]

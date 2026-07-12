@@ -230,7 +230,8 @@ mod tests {
 
     fn make_ku(concept_id: u64, trust_score: u16) -> KuRuntime {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 0, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: concept_id, p: 133, o: 132 },
                 Instruction::Certainty { level: 9500 },
@@ -299,7 +300,8 @@ mod tests {
         let detector = GapDetector::new();
         // gene_type: 1 = Hypothesis
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 1, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 1, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: 42, p: 133, o: 132 },
                 Instruction::Certainty { level: 5000 },

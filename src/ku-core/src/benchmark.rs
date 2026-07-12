@@ -698,16 +698,16 @@ mod benchmark {
             }
         }
 
-        // 6. InvalidVarintPrefix — byte with invalid prefix
+        // 6. InvalidData — byte with reserved varint prefix (Tier 5+)
         {
-            // 0xF8 is not a valid varint prefix (11111000)
+            // 0xF8 is a reserved varint prefix (111110xx = Tier 5)
             let result = decode_varint(&[0xF8]);
             match result.unwrap_err() {
-                KuError::InvalidVarintPrefix(b) => {
-                    assert_eq!(b, 0xF8);
+                KuError::InvalidData(msg) => {
+                    assert!(msg.contains("reserved"), "Expected reserved tier message, got: {}", msg);
                     covered.push("InvalidVarintPrefix");
                 }
-                other => panic!("Expected InvalidVarintPrefix, got: {:?}", other),
+                other => panic!("Expected InvalidData for reserved tier, got: {:?}", other),
             }
         }
 

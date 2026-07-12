@@ -61,11 +61,18 @@ export interface KuDetail {
   verification_status: string;
   outgoing_bond_count: number;
   incoming_bond_count: number;
+  decoded_instructions: InstructionView[];
 }
 
 export interface CodonView {
   name: string;
   role: string;
+}
+
+export interface InstructionView {
+  op: string;
+  description: string;
+  concept_ids: number[];
 }
 
 export interface BondView {

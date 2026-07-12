@@ -105,10 +105,10 @@ impl OBPNode {
             runtime.epi.epigenetic = Some(epigenetic);
         }
         if let Some(es) = ku.epistemic_status {
-            runtime.epi.epistemic_status = es;
+            runtime.epi.trust.epistemic_status = es;
         }
         if let Some(et) = ku.evidence_type {
-            runtime.epi.evidence_type = et;
+            runtime.epi.trust.evidence_type = et;
         }
 
         let cid = runtime.cid;

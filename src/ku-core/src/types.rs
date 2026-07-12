@@ -1,12 +1,13 @@
-//! UKRL Type definitions — v4/v5 legacy types + v6 shared types (Trust, Bonds, Epigenetics)
+//! UKRL Type definitions — v4/v5 legacy types + v6/v7 shared types (Trust, Bonds, Epigenetics, GeneType)
 //!
+//! v7 additions: Normative (type 11), Definition (type 12) gene types. 13 total.
 //! v5 additions: Composite Gene (type 10), Bond order/required fields,
 //! u32 PAYLOAD_LEN in wire header.
 //!
 //! All types derived from the v4 specification:
 //! - ConceptId: varint-encoded u64 (4-tier resolution)
 //! - RoleId: 14 semantic roles  
-//! - GeneType: 11 gene variants (0-6 direct, 7=EXTENDED + ext byte)
+//! - GeneType: 13 gene variants (0-6 direct, 7=EXTENDED + ext byte)
 //! - EpistemicStatus: 11-level epistemic classification
 //! - EvidenceType: 9 evidence types (Cochrane/GRADE pyramid)
 //! - RelationType: 34 edge types across 8 categories
@@ -383,7 +384,7 @@ pub struct Bond {
 // Layer 3: Content Genes — 11 Gene Types
 // ============================================================================
 
-/// GeneType — 11 types from v4/v5 spec.
+/// GeneType — 13 types from v4/v5/v7 spec.
 ///
 /// Wire encoding: bits 5-7 of FLAGS byte for types 0-6,
 /// type 7 = EXTENDED → read gene_type_ext from first payload byte.
@@ -401,6 +402,8 @@ pub enum GeneType {
     Narrative       = 8,  // ★ v4 NEW (EXTENDED 0x01)
     Sensory         = 9,  // ★ v4 NEW (EXTENDED 0x02)
     Composite       = 10, // ★ v5 NEW (EXTENDED 0x03)
+    Normative       = 11, // ★ v7 NEW (EXTENDED 0x04)
+    Definition      = 12, // ★ v7 NEW (EXTENDED 0x05)
 }
 
 impl GeneType {
@@ -418,6 +421,8 @@ impl GeneType {
             Self::Narrative       => (7, Some(0x01)),
             Self::Sensory         => (7, Some(0x02)),
             Self::Composite       => (7, Some(0x03)),
+            Self::Normative       => (7, Some(0x04)),
+            Self::Definition      => (7, Some(0x05)),
         }
     }
 
@@ -434,6 +439,8 @@ impl GeneType {
             (7, Some(0x01)) => Some(Self::Narrative),
             (7, Some(0x02)) => Some(Self::Sensory),
             (7, Some(0x03)) => Some(Self::Composite),
+            (7, Some(0x04)) => Some(Self::Normative),
+            (7, Some(0x05)) => Some(Self::Definition),
             _ => None,
         }
     }

@@ -94,37 +94,41 @@ pub struct CreateFromTextQuery {
     pub signed_by: String,
 }
 
-/// Gene type keyword in Tier 1 CREATE syntax.
+/// Gene type keyword in Tier 1 CREATE syntax (v7: 13 types).
 #[derive(Debug, Clone, PartialEq)]
 pub enum KqlGeneType {
     Fact,
-    Hypothesis,
-    Experience,
     Procedure,
-    Rule,
-    Definition,
-    Relation,
-    Meta,
+    Experience,
     Creative,
-    Belief,
-    FormalProof,
+    MediaExperience,
+    Testimony,
+    Formal,
+    Hypothesis,
+    Narrative,
+    Sensory,
+    Composite,
+    Normative,
+    Definition,
 }
 
 impl KqlGeneType {
-    /// Convert to Core DNA gene_type number.
+    /// Convert to Core DNA gene_type number (v7 numbering).
     pub fn to_u8(&self) -> u8 {
         match self {
             Self::Fact => 0,
-            Self::Hypothesis => 1,
+            Self::Procedure => 1,
             Self::Experience => 2,
-            Self::Procedure => 3,
-            Self::Rule => 4,
-            Self::Definition => 5,
-            Self::Relation => 6,
-            Self::Meta => 7,
-            Self::Creative => 8,
-            Self::Belief => 9,
-            Self::FormalProof => 10,
+            Self::Creative => 3,
+            Self::MediaExperience => 4,
+            Self::Testimony => 5,
+            Self::Formal => 6,
+            Self::Hypothesis => 7,
+            Self::Narrative => 8,
+            Self::Sensory => 9,
+            Self::Composite => 10,
+            Self::Normative => 11,
+            Self::Definition => 12,
         }
     }
 }

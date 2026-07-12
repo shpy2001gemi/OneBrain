@@ -221,6 +221,14 @@ pub struct BlobMeta {
     pub referencing_kus: Vec<String>,
     /// Whether this blob is pinned (exempt from GC).
     pub pinned: bool,
+    /// Where chunks are stored: "redb" (inline) or "filesystem" (spilled).
+    /// Defaults to "redb" for backwards compatibility.
+    #[serde(default = "default_storage_mode")]
+    pub storage_mode: String,
+}
+
+fn default_storage_mode() -> String {
+    "redb".to_string()
 }
 
 impl BlobMeta {
@@ -380,6 +388,7 @@ mod tests {
             blake3_hex: "00".repeat(32),
             referencing_kus: vec![],
             pinned: false,
+            storage_mode: "redb".into(),
         };
         assert!(meta.is_orphaned());
 

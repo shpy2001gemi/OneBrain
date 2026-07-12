@@ -1,4 +1,4 @@
-//! Core DNA v6 — Ultra-compact binary knowledge encoding.
+//! Core DNA v7 — Ultra-compact binary knowledge encoding with CCID.
 //!
 //! Replaces CBOR with a custom binary instruction stream that is
 //! **smaller than natural language text** while remaining language-agnostic.
@@ -26,7 +26,7 @@ use std::fmt;
 pub const CORE_DNA_MAGIC: u8 = 0x4B;
 
 /// Core DNA format version (3 bits, stored in VER_META byte bits 7-5).
-pub const CORE_DNA_VERSION: u8 = 1;
+pub const CORE_DNA_VERSION: u8 = 2;
 
 // ============================================================================
 // Numeric literal prefixes (0xFA-0xFF, outside varint range)
@@ -38,6 +38,7 @@ const NUM_I16: u8 = 0xFC;
 const NUM_U32: u8 = 0xFD;
 const NUM_I32: u8 = 0xFE;
 const NUM_F32: u8 = 0xFF;
+const NUM_F64: u8 = 0xF9;
 
 // ============================================================================
 // Opcodes (5-bit, values 0x00-0x1F)
@@ -167,6 +168,7 @@ pub enum NumericValue {
     U32(u32),
     I32(i32),
     F32(f32),
+    F64(f64),
 }
 
 impl NumericValue {
@@ -179,6 +181,7 @@ impl NumericValue {
             Self::U32(v) => { let mut out = vec![NUM_U32]; out.extend_from_slice(&v.to_be_bytes()); out },
             Self::I32(v) => { let mut out = vec![NUM_I32]; out.extend_from_slice(&v.to_be_bytes()); out },
             Self::F32(v) => { let mut out = vec![NUM_F32]; out.extend_from_slice(&v.to_be_bytes()); out },
+            Self::F64(v) => { let mut out = vec![NUM_F64]; out.extend_from_slice(&v.to_be_bytes()); out },
         }
     }
 
@@ -217,6 +220,14 @@ impl NumericValue {
                 let v = f32::from_be_bytes([data[pos + 1], data[pos + 2], data[pos + 3], data[pos + 4]]);
                 Ok((Self::F32(v), 5))
             }
+            NUM_F64 => {
+                if pos + 8 >= data.len() { return Err(KuError::InvalidData("Truncated f64".into())); }
+                let v = f64::from_be_bytes([
+                    data[pos + 1], data[pos + 2], data[pos + 3], data[pos + 4],
+                    data[pos + 5], data[pos + 6], data[pos + 7], data[pos + 8],
+                ]);
+                Ok((Self::F64(v), 9))
+            }
             other => Err(KuError::InvalidData(format!("Invalid numeric prefix: 0x{:02X}", other))),
         }
     }
@@ -230,6 +241,7 @@ impl NumericValue {
             Self::U32(v) => *v as f64,
             Self::I32(v) => *v as f64,
             Self::F32(v) => *v as f64,
+            Self::F64(v) => *v,
         }
     }
 }
@@ -244,6 +256,13 @@ impl fmt::Display for NumericValue {
             Self::I32(v) => write!(f, "{}", v),
             Self::F32(v) => {
                 // Display integers without decimal point
+                if v.fract() == 0.0 && v.is_finite() {
+                    write!(f, "{}", *v as i64)
+                } else {
+                    write!(f, "{}", v)
+                }
+            }
+            Self::F64(v) => {
                 if v.fract() == 0.0 && v.is_finite() {
                     write!(f, "{}", *v as i64)
                 } else {
@@ -376,20 +395,41 @@ pub enum Instruction {
 /// Core DNA header metadata.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoreDnaHeader {
-    /// Format version (0-7, current = 1).
+    /// Format version (0-7, current = 2 for v7).
     pub version: u8,
     /// Gene type (0-15, maps to GeneType).
     pub gene_type: u8,
-    /// Whether any instructions contain qualifiers.
-    pub has_qualifiers: bool,
+    /// Whether this KU contains a concept table (v7+).
+    pub has_concept_table: bool,
 }
 
 /// A complete Core DNA unit — the smallest persistable knowledge unit.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CoreDna {
     pub header: CoreDnaHeader,
+    pub concept_table: ConceptTable,
     pub instructions: Vec<Instruction>,
 }
+
+// ============================================================================
+// Concept Table — v7 self-contained concept mapping
+// ============================================================================
+
+/// A single entry in the KU's concept table.
+///
+/// Maps a local ConceptId (used within this KU's instruction stream)
+/// to a global CCID (Content-Addressed Concept Identity).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConceptTableEntry {
+    /// Local ID used in the instruction stream (Tier 2+ only).
+    pub local_id: ConceptId,
+    /// 16-byte CCID = blake3(canonical_form)[0..16].
+    pub ccid: [u8; 16],
+}
+
+/// The concept table maps local IDs to global CCIDs.
+/// Only Tier 2+ concepts (ID >= 16512) need entries.
+pub type ConceptTable = Vec<ConceptTableEntry>;
 
 // ============================================================================
 // CRC-16/CCITT implementation
@@ -425,8 +465,13 @@ pub fn encode_core_dna(dna: &CoreDna) -> Result<Vec<u8>, KuError> {
     let ver_meta: u8 =
         ((dna.header.version & 0x07) << 5) |
         ((dna.header.gene_type & 0x0F) << 1) |
-        (dna.header.has_qualifiers as u8);
+        (dna.header.has_concept_table as u8);
     buf.push(ver_meta);
+
+    // v7: Concept table (if present)
+    if dna.header.has_concept_table {
+        encode_concept_table(&mut buf, &dna.concept_table)?;
+    }
 
     // Instruction stream
     for instr in &dna.instructions {
@@ -441,6 +486,16 @@ pub fn encode_core_dna(dna: &CoreDna) -> Result<Vec<u8>, KuError> {
     buf.extend_from_slice(&crc.to_be_bytes());
 
     Ok(buf)
+}
+
+/// Encode the concept table into the buffer.
+fn encode_concept_table(buf: &mut Vec<u8>, table: &ConceptTable) -> Result<(), KuError> {
+    buf.extend(encode_varint(table.len() as u64)?);
+    for entry in table {
+        buf.extend(encode_varint(entry.local_id)?);
+        buf.extend_from_slice(&entry.ccid);
+    }
+    Ok(())
 }
 
 /// Encode an opcode byte: [op:5][modifier:3].
@@ -646,7 +701,7 @@ pub fn decode_core_dna(data: &[u8]) -> Result<CoreDna, KuError> {
     let ver_meta = data[1];
     let version = (ver_meta >> 5) & 0x07;
     let gene_type = (ver_meta >> 1) & 0x0F;
-    let has_qualifiers = (ver_meta & 0x01) != 0;
+    let has_concept_table = (ver_meta & 0x01) != 0;
 
     // Verify CRC-16 (last 2 bytes)
     let payload_end = data.len() - 2;
@@ -659,8 +714,26 @@ pub fn decode_core_dna(data: &[u8]) -> Result<CoreDna, KuError> {
         });
     }
 
-    // Decode instruction stream (bytes 2..payload_end)
+    // Decode concept table (v7+)
     let mut pos = 2usize;
+    let mut concept_table = Vec::new();
+    if has_concept_table {
+        let (count, consumed) = decode_varint(&data[pos..])?;
+        pos += consumed;
+        for _ in 0..count {
+            let (local_id, consumed) = decode_varint(&data[pos..])?;
+            pos += consumed;
+            if pos + 16 > payload_end {
+                return Err(KuError::InvalidData("Truncated concept table CCID".into()));
+            }
+            let mut ccid = [0u8; 16];
+            ccid.copy_from_slice(&data[pos..pos + 16]);
+            pos += 16;
+            concept_table.push(ConceptTableEntry { local_id, ccid });
+        }
+    }
+
+    // Decode instruction stream
     let mut instructions = Vec::new();
 
     while pos < payload_end {
@@ -683,7 +756,8 @@ pub fn decode_core_dna(data: &[u8]) -> Result<CoreDna, KuError> {
     }
 
     Ok(CoreDna {
-        header: CoreDnaHeader { version, gene_type, has_qualifiers },
+        header: CoreDnaHeader { version, gene_type, has_concept_table },
+        concept_table,
         instructions,
     })
 }
@@ -695,13 +769,13 @@ fn read_varint(data: &[u8], pos: usize) -> Result<(ConceptId, usize), KuError> {
 }
 
 /// Read a numeric value (prefixed) or a varint concept ID.
-/// If the byte at `pos` is a numeric prefix (0xFA-0xFF), reads a numeric literal.
+/// If the byte at `pos` is a numeric prefix (0xF9-0xFF), reads a numeric literal.
 /// Otherwise reads a varint ConceptId.
 fn read_numeric_or_varint(data: &[u8], pos: usize) -> Result<(NumericValue, usize), KuError> {
     if pos >= data.len() {
         return Err(KuError::InvalidData("Unexpected end reading operand".into()));
     }
-    if data[pos] >= NUM_U8 {
+    if data[pos] >= NUM_F64 {
         let (val, consumed) = NumericValue::decode(data, pos)?;
         Ok((val, pos + consumed))
     } else {
@@ -889,8 +963,9 @@ impl CoreDna {
             header: CoreDnaHeader {
                 version: CORE_DNA_VERSION,
                 gene_type,
-                has_qualifiers: false,
+                has_concept_table: false,
             },
+            concept_table: Vec::new(),
             instructions,
         }
     }
@@ -1251,7 +1326,7 @@ pub fn core_dna_to_ku(dna: &CoreDna) -> Result<KnowledgeUnit, KuError> {
 }
 
 // ============================================================================
-// Auto-detect decoder: v4/v5 CBOR vs v6 Core DNA
+// Auto-detect decoder: v4/v5 CBOR vs v6/v7 Core DNA
 // ============================================================================
 
 /// Detected wire format.
@@ -1259,8 +1334,10 @@ pub fn core_dna_to_ku(dna: &CoreDna) -> Result<KnowledgeUnit, KuError> {
 pub enum WireFormat {
     /// v4/v5 CBOR format (MAGIC = 0x4B44 "KD")
     CborV4V5,
-    /// v6 Core DNA format (MAGIC = 0x4B, second byte is VER_META)
+    /// v6 Core DNA format (MAGIC = 0x4B, version = 1)
     CoreDnaV6,
+    /// v7 Core DNA format (MAGIC = 0x4B, version = 2)
+    CoreDnaV7,
     /// Unknown format
     Unknown,
 }
@@ -1273,7 +1350,11 @@ pub fn detect_wire_format(data: &[u8]) -> WireFormat {
     if data[0] == 0x4B && data[1] == 0x44 {
         WireFormat::CborV4V5
     } else if data[0] == CORE_DNA_MAGIC {
-        WireFormat::CoreDnaV6
+        let version = (data[1] >> 5) & 0x07;
+        match version {
+            2 => WireFormat::CoreDnaV7,
+            _ => WireFormat::CoreDnaV6,
+        }
     } else {
         WireFormat::Unknown
     }
@@ -1282,14 +1363,14 @@ pub fn detect_wire_format(data: &[u8]) -> WireFormat {
 /// Unified decoder: auto-detects format and returns a KnowledgeUnit.
 ///
 /// - v4/v5 CBOR → uses existing decoder
-/// - v6 Core DNA → decodes to CoreDna then bridges to KnowledgeUnit
+/// - v6/v7 Core DNA → decodes to CoreDna then bridges to KnowledgeUnit
 pub fn decode_any(data: &[u8]) -> Result<KnowledgeUnit, KuError> {
     match detect_wire_format(data) {
         WireFormat::CborV4V5 => {
             let (_, ku) = crate::decoder::decode_full_knowledge_unit(data)?;
             Ok(ku)
         }
-        WireFormat::CoreDnaV6 => {
+        WireFormat::CoreDnaV6 | WireFormat::CoreDnaV7 => {
             let dna = decode_core_dna(data)?;
             core_dna_to_ku(&dna)
         }
@@ -1787,13 +1868,13 @@ mod tests {
         println!("  TEST: Auto-detect wire format");
         println!("══════════════════════════════════════════════════");
 
-        // Core DNA v6 wire
+        // Core DNA v7 wire
         let dna = CoreDna::new(0, vec![
             Instruction::Triple { s: 1, p: 2, o: 3 },
         ]);
         let core_wire = dna.encode().unwrap();
-        assert_eq!(detect_wire_format(&core_wire), WireFormat::CoreDnaV6);
-        println!("  Core DNA detected: ✓");
+        assert_eq!(detect_wire_format(&core_wire), WireFormat::CoreDnaV7);
+        println!("  Core DNA v7 detected: ✓");
 
         // v4/v5 CBOR wire (starts with 0x4B 0x44)
         let cbor_wire = vec![0x4B, 0x44, 0x05, 0x00]; // KD magic
@@ -1804,7 +1885,7 @@ mod tests {
         assert_eq!(detect_wire_format(&[0xFF, 0xFF]), WireFormat::Unknown);
         println!("  Unknown detected: ✓");
 
-        // v6 wire → decode_any → KnowledgeUnit
+        // v7 wire → decode_any → KnowledgeUnit
         let ku = decode_any(&core_wire).unwrap();
         assert_eq!(ku.gene.gene_type(), GeneType::Fact);
         println!("  decode_any(Core DNA): ✓");

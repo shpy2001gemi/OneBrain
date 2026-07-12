@@ -62,6 +62,19 @@ pub struct KuDetail {
     pub outgoing_bond_count: usize,
     /// Number of incoming bonds.
     pub incoming_bond_count: usize,
+    /// Decoded instructions in human-readable form.
+    pub decoded_instructions: Vec<InstructionView>,
+}
+
+/// Human-readable decoded instruction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstructionView {
+    /// Instruction type (Triple, Quality, Quantity, Step, etc.).
+    pub op: String,
+    /// Human-readable description.
+    pub description: String,
+    /// Raw concept IDs involved.
+    pub concept_ids: Vec<u64>,
 }
 
 /// A codon/concept extracted from a KU.

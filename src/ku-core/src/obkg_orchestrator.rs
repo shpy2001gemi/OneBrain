@@ -495,7 +495,8 @@ mod tests {
 
     fn make_ku(concept_id: u64, gene_type: u8) -> KuRuntime {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: concept_id, p: 133, o: 132 },
                 Instruction::Certainty { level: 9000 },

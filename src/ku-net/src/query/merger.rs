@@ -178,7 +178,8 @@ mod tests {
 
     fn make_ku(trust_score: u16, concept_id: u64) -> KuRuntime {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 1, gene_type: 0, has_qualifiers: false },
+            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Triple { s: concept_id, p: 133, o: 132 },
                 Instruction::Certainty { level: 9500 },

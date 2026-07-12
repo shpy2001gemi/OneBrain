@@ -1,6 +1,8 @@
 # PoK v2 Technical Specification — PoMV Runtime
 
-> Specification version: 2.0 | Last updated: 2026-06-30
+> Specification version: 2.1 | Last updated: 2026-07-11
+>
+> *v7 note: Gene types renumbered (13 types, values 0–12). Two new types (Normative=11, Definition=12) need ResolutionMethod mapping in prediction.rs.*
 
 ## §1 Scope
 

@@ -46,6 +46,7 @@ pub mod graph_gossip;        // ★ OBKG: Graph gossip (FedR deltas, graph stats
 #[cfg(feature = "persist")]
 pub mod dht_store;           // ★ Phase 3: DHT persistence (redb-backed)
 pub mod replication;         // ★ Phase 4: R=7 tier-aware replication manager
+pub mod registry_gossip;     // ★ v7 NEW: ConceptRegistry delta gossip + bloom anti-entropy
 
 #[cfg(test)]
 mod tests;

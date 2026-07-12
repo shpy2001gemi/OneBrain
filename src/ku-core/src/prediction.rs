@@ -9,11 +9,20 @@
 //! - Prediction score = correct / total × confidence
 //! - Experience/Narrative KUs use NoResolution (founder Q2)
 //!
-//! ## Resolution Methods:
-//! - Fact: "Water boils at 100°C" → TemporalConsistency (still true?)
-//! - Procedure: "Do X to achieve Y" → UsageOutcome (users report success?)
-//! - Hypothesis: "A causes B" → CrossReference (new evidence confirms?)
-//! - Experience: "Đà Lạt đẹp" → NoResolution (pure metabolism)
+//! ## Resolution Methods (v7 — 13 gene types):
+//! - Fact (0): `TemporalConsistency` — still true over time?
+//! - Procedure (1): `UsageOutcome` — users report success?
+//! - Experience (2): `NoResolution` — pure metabolism
+//! - Creative (3): `NoResolution` — pure metabolism
+//! - MediaExperience (4): `NoResolution` — pure metabolism
+//! - Testimony (5): `NoResolution` — pure metabolism
+//! - Formal (6): `CrossReference` — formal verification
+//! - Hypothesis (7): `CrossReference` — new evidence confirms?
+//! - Narrative (8): `NoResolution` — pure metabolism
+//! - Sensory (9): `NoResolution` — pure metabolism
+//! - Composite (10): `NoResolution` — sub-genes may override
+//! - Normative (11): `TemporalConsistency` — rules can be amended/revoked
+//! - Definition (12): `TemporalConsistency` — definitions evolve with science
 
 use serde::{Serialize, Deserialize};
 
@@ -21,18 +30,53 @@ use serde::{Serialize, Deserialize};
 // Types
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// How a prediction should be resolved
+/// How a prediction should be resolved.
+///
+/// Use [`default_resolution_method`] to get the recommended method for a gene type.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResolutionMethod {
-    /// Fact — still true over time? Auto-check periodically
+    /// Fact/Normative/Definition — still true over time? Auto-check periodically.
+    /// Normative: rules can be amended or revoked.
+    /// Definition: terminology evolves with scientific progress.
     TemporalConsistency,
-    /// Procedure — users report success after following steps
+    /// Procedure — users report success after following steps.
     UsageOutcome,
-    /// Hypothesis — new evidence confirms/refutes
+    /// Hypothesis/Formal — new evidence confirms/refutes.
     CrossReference,
-    /// Experience/Narrative — NO resolution, pure metabolism
+    /// Experience/Narrative/Creative/Sensory/Testimony/MediaExperience —
+    /// NO resolution, pure metabolism.
     /// (Founder Q2: "không thể đúng sai, thuộc về trải nghiệm")
     NoResolution,
+}
+
+/// Returns the recommended default `ResolutionMethod` for a given v7 gene type.
+///
+/// # Gene type mapping (v7)
+/// | Gene Type       | #  | Resolution          |
+/// |----------------:|:--:|:-------------------:|
+/// | Fact            |  0 | TemporalConsistency |
+/// | Procedure       |  1 | UsageOutcome        |
+/// | Experience      |  2 | NoResolution        |
+/// | Creative        |  3 | NoResolution        |
+/// | MediaExperience |  4 | NoResolution        |
+/// | Testimony       |  5 | NoResolution        |
+/// | Formal          |  6 | CrossReference      |
+/// | Hypothesis      |  7 | CrossReference      |
+/// | Narrative       |  8 | NoResolution        |
+/// | Sensory         |  9 | NoResolution        |
+/// | Composite       | 10 | NoResolution        |
+/// | Normative       | 11 | TemporalConsistency |
+/// | Definition      | 12 | TemporalConsistency |
+pub fn default_resolution_method(gene_type: u8) -> ResolutionMethod {
+    match gene_type {
+        0  => ResolutionMethod::TemporalConsistency,  // Fact
+        1  => ResolutionMethod::UsageOutcome,          // Procedure
+        6  => ResolutionMethod::CrossReference,        // Formal
+        7  => ResolutionMethod::CrossReference,        // Hypothesis
+        11 => ResolutionMethod::TemporalConsistency,   // Normative
+        12 => ResolutionMethod::TemporalConsistency,   // Definition
+        _  => ResolutionMethod::NoResolution,          // Experience, Creative, Media, Testimony, Narrative, Sensory, Composite, unknown
+    }
 }
 
 /// A registered prediction for a KU
@@ -401,5 +445,33 @@ mod tests {
         reg.register_prediction(make_prediction(1, ResolutionMethod::TemporalConsistency));
         // No resolution yet
         assert_eq!(reg.prediction_score(), 0.5, "Unresolved = neutral");
+    }
+
+    #[test]
+    fn test_default_resolution_method_v7() {
+        // TemporalConsistency: Fact, Normative, Definition
+        assert_eq!(default_resolution_method(0), ResolutionMethod::TemporalConsistency);  // Fact
+        assert_eq!(default_resolution_method(11), ResolutionMethod::TemporalConsistency); // Normative
+        assert_eq!(default_resolution_method(12), ResolutionMethod::TemporalConsistency); // Definition
+
+        // UsageOutcome: Procedure
+        assert_eq!(default_resolution_method(1), ResolutionMethod::UsageOutcome); // Procedure
+
+        // CrossReference: Formal, Hypothesis
+        assert_eq!(default_resolution_method(6), ResolutionMethod::CrossReference); // Formal
+        assert_eq!(default_resolution_method(7), ResolutionMethod::CrossReference); // Hypothesis
+
+        // NoResolution: Experience, Creative, MediaExperience, Testimony, Narrative, Sensory, Composite
+        assert_eq!(default_resolution_method(2), ResolutionMethod::NoResolution);  // Experience
+        assert_eq!(default_resolution_method(3), ResolutionMethod::NoResolution);  // Creative
+        assert_eq!(default_resolution_method(4), ResolutionMethod::NoResolution);  // MediaExperience
+        assert_eq!(default_resolution_method(5), ResolutionMethod::NoResolution);  // Testimony
+        assert_eq!(default_resolution_method(8), ResolutionMethod::NoResolution);  // Narrative
+        assert_eq!(default_resolution_method(9), ResolutionMethod::NoResolution);  // Sensory
+        assert_eq!(default_resolution_method(10), ResolutionMethod::NoResolution); // Composite
+
+        // Unknown gene types → NoResolution
+        assert_eq!(default_resolution_method(13), ResolutionMethod::NoResolution);
+        assert_eq!(default_resolution_method(255), ResolutionMethod::NoResolution);
     }
 }

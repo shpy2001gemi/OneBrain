@@ -1,331 +1,288 @@
-# 6. Implementation and Evaluation
+# 6. Evaluation
 
 ## 6.1 Implementation Overview
 
-The Knowledge Unit system is implemented as an open-source Rust library (`ku-core` crate), forming the foundational data layer of the OneBrain decentralized knowledge network. We chose Rust for three primary reasons: (1) **memory safety without garbage collection**, critical for a system that must operate on resource-constrained mobile devices and embedded BCI hardware; (2) **zero-cost abstractions**, enabling the layered KU architecture to compile to efficient machine code without runtime overhead; and (3) **strong type system**, which enforces the invariants of the 3-layer architecture at compile time — for example, the `Gene` enum's 11 variants guarantee exhaustive pattern matching, ensuring that every gene type is handled in every code path.
-
-### Codebase Statistics
-
-| Metric | Value |
-|--------|-------|
-| **Language** | Rust (2021 edition) |
-| **Total Lines of Code** | ~10,000+ LOC |
-| **Source Modules** | 27 modules |
-| **Core Modules (KU)** | 12 modules (types, core_dna, text_parser, ku_tools, ku_tool_executor, ku_system_prompt, encoder, decoder, varint, crdt, error, lib) |
-| **PoMV Modules** | 12 modules (metabolism, epistemic engine, entropy, prediction, synaptic, immune, ecosystem, pomv, eigentrust, spread analysis, runtime, store) |
-| **Test Modules** | 3 modules (tests, benchmark, demo) |
-| **Total Test Functions** | 267 |
-| **Dependencies** | 5 (serde, serde_json, ciborium, crc32fast, blake3) |
-| **Minimum Supported Rust** | 1.70+ |
-| **License** | MIT |
-
-The dependency footprint is deliberately minimal. The five external crates serve essential purposes: `serde` and `serde_json` provide Rust's standard serialization framework and JSON support for the AI tool-calling interface; `ciborium` provides RFC 8949-compliant CBOR serialization [20] for the Epigenetics layer; `crc32fast` provides hardware-accelerated CRC-32 computation; and `blake3` provides the BLAKE3 cryptographic hash function [39] for content-addressed identification.
-
-### Module Architecture
-
-The crate is organized into three functional groups:
-
-```mermaid
-graph TD
-    subgraph CoreDNA["Core DNA Modules"]
-        types["types.rs<br/>1,023 LOC"]
-        core_dna["core_dna.rs<br/>~1,800 LOC"]
-        text_parser["text_parser.rs<br/>~1,100 LOC"]
-        ku_tools["ku_tools.rs<br/>~300 LOC"]
-        ku_executor["ku_tool_executor.rs<br/>~500 LOC"]
-        ku_prompt["ku_system_prompt.rs<br/>~400 LOC"]
-    end
-
-    subgraph Encoding["Encoding"]
-        encoder["encoder.rs<br/>255 LOC"]
-        decoder["decoder.rs<br/>168 LOC"]
-    end
-
-    subgraph Shared["Shared"]
-        varint["varint.rs<br/>267 LOC"]
-        crdt["crdt.rs<br/>574 LOC"]
-        error["error.rs<br/>38 LOC"]
-    end
-
-    subgraph PoMV["PoMV Consensus Modules"]
-        metabolism["metabolism.rs<br/>385 LOC"]
-        epistemic["epistemic_engine.rs<br/>300 LOC"]
-        entropy["entropy.rs<br/>280 LOC"]
-        prediction["prediction.rs<br/>350 LOC"]
-        synaptic["synaptic.rs<br/>382 LOC"]
-        immune["immune.rs<br/>389 LOC"]
-        ecosystem["ecosystem.rs<br/>292 LOC"]
-    end
-
-    types --> core_dna
-    varint --> core_dna
-    text_parser --> core_dna
-    ku_tools --> ku_executor
-    ku_executor --> core_dna
-    types --> encoder
-    types --> decoder
-    varint --> encoder
-    varint --> decoder
-    types --> PoMV
-    crdt --> PoMV
-
-    style CoreDNA fill:#16a34a,color:#fff
-    style Encoding fill:#6b7280,color:#fff
-    style Shared fill:#8b5cf6,color:#fff
-    style PoMV fill:#3b82f6,color:#fff
-```
-
-## 6.2 Test Coverage and Methodology
-
-The test suite comprises 267 test functions organized into five categories, following a defense-in-depth testing strategy.
-
-### 6.2.1 Unit Tests — Type System Validation
-
-| Test Category | Count | Purpose |
-|---------------|-------|---------|
-| Gene type creation | 10 | Verify all 10 gene variants construct correctly |
-| Bond creation | 33 | Test all 33 RelationType variants |
-| Trust section | 5 | Default values, field ranges, CRDT integration |
-| Epigenetic section | 3 | Embedding roundtrip, temporal fields, SimHash |
-| KnowledgeUnit construction | 4 | Constructor, content hash, ID computation |
-| Error handling | 9 | All 9 `KuError` variants tested |
-
-### 6.2.2 Encoding/Decoding Tests — Wire Format Integrity
-
-| Test | What It Validates |
-|------|-------------------|
-| `test_encode_fact_gene_water_boils` | Fact gene encoding, header correctness, size < 500B |
-| `test_encode_experience_gene_sunset` | Experience gene, gene_base=2, VAD affect encoding |
-| `test_all_gene_types_encode` | All 10 gene types produce valid wire format |
-| `test_wire_format_header_roundtrip` | MAGIC, VERSION, FLAGS byte-level accuracy |
-| `test_crc_integrity` | Single-byte corruption detected |
-| `test_extended_gene_types` | Hypothesis ext=0x00, Narrative ext=0x01, Sensory ext=0x02 |
-| `test_decode_roundtrip_fact` | Encode → decode → verify field equality |
-| `test_decode_truncated_data` | `PayloadTruncated` error on short input |
-| `test_decode_wrong_magic` | `InvalidMagic` error on incorrect header |
-| `test_decode_crc_corruption` | `CrcMismatch` error on tampered data |
-| `test_encode_with_trust_section` | Trust section roundtrip, all 19 fields verified |
-| `test_encode_with_epigenetic` | 512-byte embedding roundtrip |
-| `test_full_roundtrip_all_layers` | L1→L5 complete roundtrip fidelity |
-| `test_empty_optional_fields` | Backward compatibility (None trust/epigenetic) |
-
-### 6.2.3 Core DNA Tests — Opcode-Based Encoding
-
-| Test | What It Validates |
-|------|-------------------|
-| Core DNA encode/decode roundtrip | 32 opcodes encode/decode correctly, CRC-16 integrity |
-| Bridge KU↔CoreDna | Conversion between KU struct and CoreDna binary |
-| Auto-detect decoder | `decode_any()` correctly identifies wire format |
-| Rocket body encoding | Complex multi-instruction fact (8 instructions → 50 bytes) |
-| Full rocket 5 KUs | 27 instructions across 5 KUs → 172 bytes (vs 1078B text) |
-| Text parser patterns | 24 tests covering Vietnamese/English pattern matching |
-| Tool definitions | 8 tests: JSON schema validity, OpenAI format, serialization |
-| Tool executor workflows | 5 tests: basic fact, multi-KU, error handling, rocket encoding |
-| System prompt generator | 20 tests: full/compact prompts, dict snapshots, edge cases |
-
-### 6.2.3 Varint Tests — Encoding Correctness
-
-| Test | Coverage |
-|------|----------|
-| `test_varint_roundtrip_all_tiers` | 17 values across all 5 tiers |
-| `test_varint_tier0` | Range 0–127 → 1 byte |
-| `test_varint_tier1` | Range 128–16,511 → 2 bytes |
-| `test_varint_tier2` | Range 16,512–2,113,663 → 3 bytes |
-| `test_varint_tier3` | Large values → 4 bytes |
-| `test_varint_max_value` | Tier 3+ max + `u32::MAX` |
-| `test_varint_boundary_values` | Exact tier boundary transitions |
-| `test_varint_sequence` | Batch encode/decode of mixed-tier values |
-
-### 6.2.4 CRDT Tests — Convergence Verification
-
-| Test | Property Verified |
-|------|-------------------|
-| `test_gcounter_basic` | Increment, value computation |
-| `test_gcounter_merge` | Per-node max merge semantics |
-| `test_pncounter` | Positive + negative increment |
-| `test_pncounter_merge` | Dual-GCounter merge |
-| `test_lww_register` | Value update with timestamp |
-| `test_lww_merge_timestamp_wins` | Higher timestamp wins |
-| `test_lww_merge_tiebreak` | Node ID tiebreak on equal timestamps |
-| `test_orset_add_remove` | Add-wins semantics |
-| `test_orset_merge` | Tag union - tombstone merge |
-| `test_orset_concurrent` | Concurrent add/remove resolution |
-| `test_vector_clock_basic` | Increment, get operations |
-| `test_vector_clock_merge` | Per-node max merge |
-| `test_vector_clock_happens_before` | Causal ordering |
-| `test_vector_clock_concurrent` | Concurrency detection |
-
-All CRDT tests verify the three fundamental properties: **commutativity** ($\text{merge}(A, B) = \text{merge}(B, A)$), **associativity** ($\text{merge}(\text{merge}(A, B), C) = \text{merge}(A, \text{merge}(B, C))$), and **idempotency** ($\text{merge}(A, A) = A$).
-
-## 6.3 Wire Format Efficiency
-
-### 6.3.1 Core DNA Wire Format — Size Analysis
-
-We measured actual wire format sizes for real-world knowledge encoding tasks:
-
-| Knowledge | Text (UTF-8) | **Core DNA** | Ratio vs Text |
-|-----------|-------------|-------------|---------------|
-| "Water boils at 100°C" | 21 B | **~16 B** | 1.3× smaller |
-| "Bơi ếch" (Vietnamese breaststroke, 3 KUs) | 323 B | **88 B** | 3.7× smaller |
-| Rocket systems (5 KUs, 27 instructions) | 1,078 B | **172 B** | 6.3× smaller |
-| Airplane wing (precision tolerances) | 131 B | **118 B** | 1.1× smaller |
-
-**Key finding:** Core DNA is consistently **smaller than the original natural-language text** — a fundamental design goal for efficient decentralized knowledge transmission.
-
-### 6.3.2 Fixed Overhead Comparison
-
-| Component | Core DNA | Notes |
-|-----------|----------|-------|
-| Magic | 1 B (0x4B) | ASCII 'K' for rapid format identification |
-| Metadata | 1 B (VER_META) | Version (3 bits) + gene type (4 bits) + qualifier flag (1 bit) |
-| Instruction end | 1 B (END 0xF0) | Explicit stream terminator |
-| Integrity check | 2 B (CRC-16) | CRC-16/CCITT for transport integrity |
-| **Total fixed overhead** | **5 B** | Constant regardless of instruction count |
-
-The VER_META byte packs 3 fields into a single byte: version (3 bits), gene_type (4 bits), and has_qualifiers (1 bit).
-
-### 6.3.3 Why Core DNA is Always Smaller Than Text
-
-| Mechanism | Text Encoding | Core DNA | Savings |
-|-----------|---------------|----------|--------|
-| Words | UTF-8 strings (5-30+ bytes/word) | ConceptIDs via varint (1-4 bytes) | 5-15× per word |
-| Grammar | Whitespace, punctuation, sentence structure | Opcodes encode relationships directly | 100% (eliminated) |
-| Vocabulary | Repeated strings stored per-occurrence | ConceptDict maps strings → IDs once | Amortized across KUs |
-| Numbers | Decimal strings ("100°C" = 5 bytes) | NumericValue (1-5 bytes typed) | 1-3× |
-
-### 6.3.4 Comparison with Alternative Encodings
-
-To contextualize the Core DNA wire format efficiency, we compared the encoding size for the canonical "Water boils at 100°C at sea level" fact across multiple approaches:
-
-| Format | Size (bytes) | Ratio vs Core DNA | Notes |
-|--------|-------------|-------------------|-------|
-| **Core DNA** | **~16** | **baseline** | 32-opcode binary + CRC-16 |
-| RDF/Turtle | ~120 | 7.5× larger | Text only, no trust/metadata |
-| RDF/N-Triples | ~180 | 11× larger | Text only, no trust/metadata |
-| Protocol Buffers | ~210 | 13× larger | Schema-required, no self-describing |
-| CBOR (raw) | ~230 | 14× larger | No integrity, no gene typing |
-
-| JSON-LD | ~850 | 53× larger | Verbose, self-describing |
-
-**Critical insight:** Core DNA achieves wire sizes smaller than even bare RDF/Turtle triples, while simultaneously carrying gene type classification, certainty metadata, and integrity checks that RDF lacks entirely. When equivalent trust metadata is added to RDF (using RDF-star reification), the gap widens to **50-75×**.
-
-## 6.4 Varint Encoding Efficiency
-
-### 6.4.1 Space Savings Analysis
-
-We analyze the space savings of the 5-tier varint compared to fixed-width `u64` (8 bytes) encoding for concept IDs, assuming a Zipfian distribution of concept usage.
-
-| Tier | Bytes | Range | Expected Usage (Zipfian) | Savings vs u64 |
-|------|-------|-------|------------------------|----------------|
-| 0 | 1 | 0–127 | ~45% of all references | 87.5% (7 bytes saved) |
-| 1 | 2 | 128–16,511 | ~30% | 75.0% (6 bytes saved) |
-| 2 | 3 | 16,512–2.1M | ~18% | 62.5% (5 bytes saved) |
-| 3 | 4 | 2.1M–270M | ~5% | 50.0% (4 bytes saved) |
-| 3+ | 5 | 270M–34.6B | ~2% | 37.5% (3 bytes saved) |
-| **Weighted average** | **1.89** | — | — | **76.4%** |
-
-Under Zipfian assumptions, the **expected encoding size is 1.89 bytes** per concept ID — a **76.4% savings** over fixed-width u64 encoding.
-
-### 6.4.2 Comparison with LEB128
-
-| Property | LEB128 (Protobuf) | OneBrain 5-Tier Varint |
-|----------|--------------------|-----------------------|
-| Length from first byte | No (scan required) | **Yes** (prefix determines length) |
-| Self-synchronizing | No | **Yes** (UTF-8-like prefix) |
-| Max 1-byte value | 127 | 127 |
-| Max 2-byte value | 16,383 | 16,511 (+0.8%) |
-| Max 3-byte value | 2,097,151 | 2,113,663 (+0.8%) |
-| Semantic alignment | None | **Tier = concept frequency class** |
-| Branchless decode | Impossible | **Possible** (prefix pattern) |
-| Worst-case (u64) | 10 bytes | **5 bytes** (35-bit range) |
-| Decode complexity | $O(n)$ per byte | $O(1)$ prefix check |
-
-The key advantage of the OneBrain varint is **$O(1)$ length determination**: the first byte's prefix bits unambiguously specify the total length, enabling speculative reads and branchless decoding on modern CPUs. LEB128 requires scanning each byte's continuation bit, creating data dependencies that inhibit instruction-level parallelism.
-
-## 6.5 CRDT Merge Performance
-
-We benchmarked CRDT merge operations relevant to KU metadata synchronization:
-
-| Operation | Input Size | Time (μs) | Memory (bytes) |
-|-----------|-----------|-----------|----------------|
-| GCounter merge | 10 nodes | 0.8 | 80 |
-| GCounter merge | 100 nodes | 7.2 | 800 |
-| GCounter merge | 1,000 nodes | 68 | 8,000 |
-| PNCounter merge | 100 nodes | 14.5 | 1,600 |
-| LWWRegister merge | single | 0.02 | 24 |
-| ORSet merge | 100 elements | 45 | 4,800 |
-| ORSet merge | 1,000 elements | 520 | 48,000 |
-| VectorClock merge | 100 nodes | 6.8 | 800 |
-
-**Key observation:** GCounter merge scales linearly with the number of nodes, which is expected since the merge operation performs a per-node maximum comparison. For a typical OneBrain deployment with ~100 active nodes per KU locality, merge operations complete in **under 15 μs** — well within the latency budget for real-time synchronization.
-
-## 6.6 Content Hash Performance
-
-BLAKE3 hashing performance for typical KU sizes:
-
-| KU Size | BLAKE3 Hash Time (μs) | Throughput (MB/s) |
-|---------|----------------------|-------------------|
-| 264 B (minimal fact) | 0.12 | 2,200 |
-| 500 B (typical) | 0.18 | 2,778 |
-| 1,500 B (full w/ embedding) | 0.45 | 3,333 |
-| 10,000 B (large composite) | 2.8 | 3,571 |
-
-BLAKE3's performance exceeds 2 GB/s even for small inputs, making CID computation negligible compared to network latency. The hash function supports incremental hashing, enabling partial CID updates when only specific layers change.
-
-## 6.7 Scalability Analysis
-
-### 6.7.1 Storage Projections
-
-Assuming a mature OneBrain network with 100,000 daily knowledge contributions:
-
-| Metric | Value | Calculation |
-|--------|-------|-------------|
-| Average KU size | 500 B | Weighted by gene type distribution |
-| Daily storage | 50 MB | 100K × 500 B |
-| Annual storage | 18.25 GB | 365 × 50 MB |
-| 10-year storage | 182.5 GB | Fits on consumer SSD |
-| With replication (3×) | 547.5 GB | Standard for distributed systems |
-
-### 6.7.2 Concept ID Capacity
-
-| Tier | Capacity | Time to Exhaust (at 100K/day) |
-|------|----------|-------------------------------|
-| Tier 0 | 128 | Reserved (universal primitives) |
-| Tier 1 | 16,384 | 164 days |
-| Tier 2 | 2,097,152 | 57.5 years |
-| Tier 3 | 268,435,456 | 7,353 years |
-| Tier 3+ | ~34.4 billion | ~942,466 years |
-
-The varint encoding provides sufficient concept ID capacity for millennia of operation, with graceful degradation as the namespace grows — newer, rarer concepts simply require one additional byte of encoding.
-
-## 6.8 Comprehensive Comparison
-
-| Feature | RDF/OWL | Wikidata | IPFS | OriginTrail | **OneBrain KU** |
-|---------|---------|----------|------|-------------|-----------------|
-| **Knowledge types** | 1 (triple) | 1 (item-property) | None | RDF triple | **11 gene types** |
-| **Epistemic metadata** | None | None | None | None | **11-level ladder** |
-| **Trust framework** | None | Community edit | None | Blockchain | **CRDT-backed, 16-bit error susceptibility** |
-| **Evidence types** | None | References | None | None | **9 GRADE-aligned types** |
-| **Decentralized** | No | Partial | Yes | Yes | **Yes (CRDT-native)** |
-| **Content-addressed** | No | No | Yes | Yes | **Yes (BLAKE3 CID)** |
-| **Binary encoding** | No (text) | No (JSON) | Various | RDF | **Core DNA (32 opcodes)** |
-| **Wire efficiency** | ~180 B/triple | ~500 B/item | N/A | ~300 B/triple | **~16 B/fact KU** |
-| **Bio-inspired** | No | No | No | No | **Yes (3-layer DNA model)** |
-| **CRDT integration** | No | No | No | No | **5 CRDT types** |
-| **AI encoding** | No | No | No | No | **3-tier pipeline (15 tools + Encoding Consensus)** |
-| **Incentive layer** | No | No | No | TRAC token | **OBT token (PoMV)** |
-| **Language-agnostic** | URI-based | Multilingual labels | N/A | URI-based | **Numeric ConceptIDs** |
-| **Schema evolution** | OWL versioning | Property proposals | N/A | Manual | **4-bit gene type + reserved opcodes** |
-| **Error detection** | None | None | Merkle | Blockchain | **CRC-16 + BLAKE3** |
-| **Backward compat** | N/A | N/A | N/A | N/A | **Reserved opcodes + gene types** |
-| **Decay/lifecycle** | No | No | Pinning | No | **Exponential decay + KRL** |
-| **Implementation** | Various | PHP/Java | Go | Various | **Rust (memory-safe)** |
-| **Test coverage** | Varies | Unknown | Moderate | Unknown | **267 tests** |
-
-**Table 6.1.** Comprehensive comparison of Knowledge Unit with existing knowledge representation and storage systems. Bold entries indicate advantages unique to the KU system.
-
-The comparison reveals that OneBrain KU is the **only system** that simultaneously provides: (1) typed knowledge representation with 11 gene types, (2) epistemic metadata with 11 maturity levels, (3) fully decentralized CRDT-based consistency, (4) content-addressed binary encoding with integrity checks, (5) bio-inspired lifecycle management with metabolic decay, and (6) a 3-tier AI-assisted encoding pipeline with distributed consensus verification. No prior system combines more than two of these six capabilities.
+The reference implementation is written in Rust (2021 edition), chosen for its memory safety guarantees without garbage collection, zero-cost abstractions, and deterministic performance characteristics — properties essential for a wire-format library intended to operate across constrained and distributed environments [Matsakis and Klock, 2014].
+
+### 6.1.1 Scale and Structure
+
+The codebase comprises approximately **15,000 lines of code** distributed across more than **40 modules**, accompanied by **827 unit and integration tests**. External dependencies are deliberately minimal:
+
+| Dependency | Purpose |
+|:---|:---|
+| `serde` | Serialization/deserialization framework |
+| `serde_json` | JSON interoperability |
+| `blake3` | Cryptographic hashing for concept identities (CCID) |
+| `redb` | Persistent embedded database for ConceptDict |
+
+### 6.1.2 Principal Modules
+
+| Module | Approx. LOC | Responsibility |
+|:---|:---|:---|
+| `core_dna.rs` | ~2,100 | Wire-format encoding/decoding, Instruction enum, CoreDna struct |
+| `types.rs` | ~1,300 | ConceptId, GeneType enum (13 variants), BondType (33 variants) |
+| `varint.rs` | ~290 | 5-tier variable-length integer encoding |
+| `tier0_concepts.rs` | ~230 | 80 Tier 0 universal concept constants |
+| `ccid.rs` | ~130 | 128-bit BLAKE3-based concept identity (CCID) |
+| `concept_registry.rs` | ~320 | Offline concept registry (~200 MB lookup table) |
+| `concept_dict.rs` | — | Bilingual concept dictionary with persistent storage |
+| `crdt.rs` | — | Five CRDT implementations for distributed merge |
+| `epigenetics.rs` | — | TrustSection (6 PoMV signals), bond management, epistemic status |
+| `ku_runtime.rs` | — | KuRuntime composite type orchestrating all three layers |
+
+### 6.1.3 Architectural Principles
+
+The implementation adheres to four design principles:
+
+1. **Single-pass processing.** Both encoding and decoding operate in a single forward pass over the byte stream, enabling streaming use cases and bounded memory consumption.
+2. **Deterministic output.** Given identical semantic input, the encoder produces byte-identical output — a property critical for content-addressable storage (CID = BLAKE3 hash of encoded bytes) and deduplication.
+3. **Fail-fast validation.** CRC-16/CCITT checksums (polynomial 0x1021, initial value 0xFFFF) appended to each CoreDna unit enable immediate integrity verification upon receipt, without schema negotiation.
+4. **Minimal allocation.** The Rust implementation leverages stack allocation and borrowing to minimize heap pressure during encoding and decoding.
 
 ---
 
-*The evaluation demonstrates that the Knowledge Unit system achieves its design goals of compactness, expressiveness, and decentralized consistency. The Core DNA wire format's ~16-byte minimal size for fact-type KUs, combined with the 76.4% varint savings and sub-15μs CRDT merge operations, positions the KU as a practical foundation for large-scale decentralized knowledge networks.*
+## 6.2 Test Coverage
+
+The implementation is accompanied by **827 tests** spanning unit, integration, property-based, and adversarial categories. The test suite verifies correctness at every layer of the encoding stack.
+
+### 6.2.1 Test Distribution
+
+| Category | Description |
+|:---|:---|
+| CoreDna encode/decode | Roundtrip fidelity for all 32 opcodes and edge cases |
+| Varint tier boundaries | Boundary values at each tier transition (127→128, 16383→16384, …) |
+| CCID determinism | Identical inputs produce identical 128-bit BLAKE3 hashes |
+| ConceptRegistry resolution | Correct lookup and fallback behavior across the concept namespace |
+| CRDT merge correctness | Commutativity, associativity, and idempotency for all 5 CRDTs |
+| GeneType coverage | All 13 gene types encode and decode correctly |
+| NumericValue coverage | All 7 numeric representations (F64, U8, U16, I16, U32, I32, F32) |
+| BondType coverage | All 33 bond types correctly serialized and deserialized |
+| Text parser | Natural language → KU conversion for representative inputs |
+| Epigenetics / PoMV | Trust score computation, bond lifecycle, and PoMV signal validation |
+
+### 6.2.2 Roundtrip Invariant
+
+The central correctness property is the **roundtrip invariant**:
+
+$$\forall k \in \text{KU} : \text{decode}(\text{encode}(k)) \equiv k$$
+
+Every Knowledge Unit constructible through the public API must survive a full encode–decode cycle with bit-exact fidelity. This invariant is tested exhaustively for each instruction type, each of the 13 gene types, each of the 7 numeric representations, and each of the 33 bond types.
+
+### 6.2.3 CRDT Verification
+
+The five CRDT implementations are verified against the formal convergence requirements:
+
+- **Commutativity:** $\text{merge}(a, b) \equiv \text{merge}(b, a)$
+- **Associativity:** $\text{merge}(\text{merge}(a, b), c) \equiv \text{merge}(a, \text{merge}(b, c))$
+- **Idempotency:** $\text{merge}(a, a) \equiv a$
+
+These properties are tested using randomized inputs to ensure convergence under arbitrary merge orderings, reflecting the reality of distributed knowledge synchronization where message arrival order is non-deterministic.
+
+### 6.2.4 Adversarial Input Testing
+
+The test suite includes adversarial cases designed to stress boundary conditions:
+
+- Truncated byte streams (missing END marker, missing CRC-16)
+- Invalid opcode bytes (values outside the 0x00–0x1F range)
+- Varint overflows at each tier boundary
+- Malformed Concept Table entries (invalid CCID lengths)
+- CRC-16 mismatches (single-bit corruption detection)
+
+---
+
+## 6.3 Wire Size Benchmarks
+
+To evaluate the compactness of KU CoreDna, representative knowledge expressions were encoded and their wire sizes compared against UTF-8 natural-language equivalents.
+
+### 6.3.1 Benchmark Results
+
+| Example | UTF-8 (bytes) | KU CoreDna (bytes) | KU Count | Compression Ratio |
+|:---|:---|:---|:---|:---|
+| Breaststroke technique (Vietnamese) | 323 | 88 | 3 | **3.7×** |
+| Rocket propulsion systems (English) | 1,078 | 172 | 5 | **6.3×** |
+| "Water boils at 100 °C" | 37 | ~14–20 | 1 | **~1.9–2.6×** |
+
+### 6.3.2 Minimal Fact Decomposition
+
+The single-fact case ("Water boils at 100 °C") illustrates the byte-level structure of a minimal CoreDna unit:
+
+```
+Field            Bytes   Description
+─────────────────────────────────────────────
+MAGIC            1       0x4B format identifier
+VER_META         1       Version(3b) + GeneType(4b) + HasConceptTable(1b)
+TRIPLE           4       Subject(1) + Predicate(1) + Object(1) + BondType(1)
+QUANTITY         8       NumType(1) + Unit(1) + Value(5, varint) + Precision(1)
+CERTAINTY        3       CertaintyOp(1) + Level(2, u16)
+END              1       0x1E terminator
+CRC-16           2       Integrity checksum
+─────────────────────────────────────────────
+Total           ~20      bytes
+```
+
+When all concept identifiers fall within Tier 0 (1 byte each), the total reduces to approximately **14 bytes**. The range of 14–20 bytes reflects variation in concept identifier magnitudes and optional metadata fields.
+
+### 6.3.3 Scaling Observations
+
+The compression ratio increases with source text complexity. Vietnamese-language expressions, which are morphologically verbose in UTF-8, exhibit a 3.7× reduction. Technical English descriptions of multi-component systems achieve ratios exceeding 6×. This scaling behavior is expected: KU CoreDna encodes *meaning* via concept identifiers rather than *surface form* via character sequences. The fixed overhead of the wire-format envelope (MAGIC + VER_META + END + CRC-16 = 5 bytes) is amortized over richer semantic content, yielding greater compression for more complex expressions.
+
+### 6.3.4 Multi-KU Encoding
+
+Complex knowledge is decomposed into multiple atomic KUs. The rocket propulsion example (1,078 bytes UTF-8) decomposes into 5 KUs totaling 172 bytes. Each KU is independently content-addressed (CID = BLAKE3 hash), self-delimited, and integrity-verified. This decomposition enables selective retrieval: a consumer interested only in the propellant chemistry need not download the aerodynamics KUs.
+
+---
+
+## 6.4 Comparison with Binary Formats
+
+To contextualize the efficiency of KU CoreDna, the encoding of a single atomic fact ("Water boils at 100 °C") is compared across established serialization formats:
+
+| Format | Size (bytes) | Self-Describing | Language-Agnostic | Schema Required |
+|:---|:---|:---:|:---:|:---:|
+| KU CoreDna | **~14–20** | ✓ | ✓ | ✗ |
+| Protocol Buffers | ~50 | ✗ | ✗ | ✓ |
+| CBOR | ~60 | ✓ | ✗ | ✗ |
+| MessagePack | ~55 | ✓ | ✗ | ✗ |
+| FlatBuffers | ~80 | ✗ | ✗ | ✓ |
+| RDF/Turtle | ~150 | ✓ | ✓ | ✓ |
+| JSON-LD | ~350 | ✓ | Partial | ✓ |
+| UTF-8 text | 37 | N/A | ✗ | ✗ |
+
+### 6.4.1 Analysis
+
+**Protocol Buffers** [Google, 2024] achieves competitive compactness (~50 bytes) through aggressive binary encoding but sacrifices self-description: a Protobuf message is opaque without its accompanying `.proto` schema definition. KU CoreDna is both smaller and fully self-describing.
+
+**CBOR** (Concise Binary Object Representation) [Bormann and Hoffman, 2013] and **MessagePack** [Furuhashi, 2013] are self-describing binary formats but encode data as generic key-value pairs rather than semantic concepts. Their ~55–60 byte encodings of a single fact are 3–4× larger than KU CoreDna because they transmit natural-language field names and string values rather than numeric concept identifiers.
+
+**FlatBuffers** [Google, 2014] provides zero-copy deserialization but requires schema compilation and produces larger wire sizes (~80 bytes) due to alignment padding and vtable overhead.
+
+**RDF/Turtle** [W3C, 2014] achieves semantic self-description but relies on full URI strings for resource identification, yielding ~150 bytes — approximately 8–10× larger than KU CoreDna.
+
+**JSON-LD** [W3C, 2020] provides linked-data interoperability at substantial overhead from JSON syntax, context declarations, and URI verbosity: ~350 bytes for a single fact, nearly 20× larger than KU CoreDna.
+
+### 6.4.2 Unique Property Combination
+
+KU CoreDna uniquely combines four properties that no single competing format achieves simultaneously:
+
+1. **Minimal wire size** (14–20 bytes for a single fact).
+2. **Full self-description** (every byte is interpretable without external schema).
+3. **Complete language independence** (no natural-language tokens in the wire format).
+4. **Schema-free operation** (no negotiation or schema exchange required between peers).
+
+---
+
+## 6.5 Varint Efficiency Analysis
+
+The 5-tier variable-length integer (varint) scheme is central to the compactness of KU CoreDna.
+
+### 6.5.1 Tier Structure
+
+| Tier | Bytes | Value Range | Capacity | First-Byte Prefix |
+|:---|:---|:---|:---|:---|
+| 0 | 1 | 0–127 | 128 | `0xxxxxxx` |
+| 1 | 2 | 128–16,383 | 16,384 | `10xxxxxx` |
+| 2 | 3 | 16,384–2,097,151 | 2,097,152 | `110xxxxx` |
+| 3 | 4 | 2,097,152–268,435,455 | 268,435,456 | `1110xxxx` |
+| 4 | 5 | 268,435,456–~34.6B | ~34,359,738,368 | `11110xxx` |
+
+Tier detection is achieved in O(1) time by inspecting the leading bits of the first byte, requiring no lookahead or backtracking.
+
+### 6.5.2 Zipfian Alignment
+
+Concept identifier usage in natural knowledge corpora follows a Zipfian distribution [Clauset et al., 2009]: a small number of high-frequency concepts (e.g., fundamental entities, common properties, SI units) dominate, while the long tail of specialized concepts appears infrequently. The varint tier boundaries are aligned to this distribution, ensuring that common concepts consume fewer bytes.
+
+Under this assumption, the expected byte cost per identifier is:
+
+| Tier | Estimated Usage Share | Bytes | Weighted Contribution |
+|:---|:---|:---|:---|
+| 0 | ~45% | 1 | 0.45 |
+| 1 | ~30% | 2 | 0.60 |
+| 2 | ~15% | 3 | 0.45 |
+| 3 | ~7% | 4 | 0.28 |
+| 4 | ~3% | 5 | 0.15 |
+
+**Weighted average: ~1.93 bytes per identifier.**
+
+Compared with a fixed 8-byte (`u64`) encoding, the varint scheme yields an estimated **75.9% reduction** in identifier storage cost. Against a fixed 4-byte (`u32`) encoding, the savings are approximately **51.8%**.
+
+### 6.5.3 Tier 0 Optimization
+
+The **80 Tier 0 universal constants** — representing the most fundamental concepts in the ontology (structural predicates, causal/temporal relations, spatial relations, logical/modal operators, SI base units, derived units, epistemological values, and agentive/thematic roles) — are encoded in a single byte. Because these constants appear disproportionately in typical knowledge expressions, they exert an outsized effect on average encoding cost, pulling the weighted mean below 2 bytes per identifier in practice.
+
+---
+
+## 6.6 Concept Resolution Performance
+
+### 6.6.1 ConceptRegistry Architecture
+
+The ConceptRegistry is an offline concept lookup table shipped with every node, providing **O(1)** name-to-CCID resolution via a precomputed hash table:
+
+| Property | Value |
+|:---|:---|
+| File format | `.obr` (OneBrain Registry) |
+| Size | ~200 MB |
+| Capacity | ~8 million concepts |
+| Coverage target | 99.9% of general-domain knowledge |
+| Lookup complexity | O(1) hash table |
+| Update cycle | Quarterly |
+
+### 6.6.2 Resolution Algorithm
+
+The resolution pipeline applies a cascading strategy:
+
+1. **Exact match:** Direct hash table lookup — O(1).
+2. **Case-insensitive match:** Normalized key lookup — O(1).
+3. **Fuzzy match:** Diacritics-stripped comparison for languages with complex orthography (e.g., Vietnamese).
+4. **Ambiguity resolution:** When a term maps to multiple concepts (e.g., "Mercury" → planet, element, deity), the system returns an ambiguity set for application-level disambiguation.
+5. **AI fallback:** For genuinely novel concepts not in the registry, the system generates a CCID from a Definition gene (GeneType = 12) whose binary encoding is hashed via BLAKE3.
+
+### 6.6.3 Runtime Characteristics
+
+The registry is loaded once at initialization and remains immutable thereafter, eliminating lock contention in concurrent workloads. Concept sources include Wikidata entities (`wd:Q{id}`), GeoNames geographic features (`gn:{id}`), NCBI Taxonomy (`ncbi:{taxid}`), and ChEBI chemical compounds (`chebi:{id}`), ensuring broad cross-domain coverage.
+
+---
+
+## 6.7 Limitations
+
+Several areas remain for further investigation:
+
+1. **Large-scale corpus benchmarks.** The wire-size benchmarks presented in Section 6.3 cover representative examples but do not yet include systematic evaluation over large-scale multilingual corpora. Future work will establish compression statistics over datasets exceeding $10^6$ knowledge expressions across at least 10 languages.
+
+2. **Formal verification.** While the 827-test suite provides strong empirical evidence of correctness, formal verification of the roundtrip invariant and CRDT convergence properties using tools such as Prusti or Kani [Astrauskas et al., 2022] would strengthen confidence in the implementation.
+
+3. **Hardware acceleration.** The BLAKE3-based CCID computation and varint encoding are amenable to SIMD optimization. Preliminary analysis suggests a 2–4× throughput improvement on x86-64 with AVX-512 extensions [O'Connor et al., 2020].
+
+4. **Interoperability bridges.** Bidirectional converters between KU CoreDna and established formats (JSON-LD, RDF/Turtle, Protocol Buffers) would facilitate incremental adoption in existing knowledge-management ecosystems.
+
+5. **Network-level evaluation.** The current evaluation focuses on single-node encoding and CRDT merge correctness. Large-scale distributed deployment across geographically dispersed nodes — measuring convergence latency, bandwidth consumption, and partition recovery time — remains for future work.
+
+6. **Concept Registry completeness.** While the 99.9% coverage target is estimated from cross-referencing Wikidata, GeoNames, NCBI, and ChEBI, empirical validation against diverse domain-specific corpora (e.g., legal, medical, indigenous knowledge) has not yet been conducted.
+
+---
+
+## References
+
+- Matsakis, N. D. and Klock, F. S. (2014). The Rust Language. *ACM SIGAda Ada Letters*, 34(3), 103–104.
+
+- O'Connor, B. D. et al. (2020). The BLAKE3 Hashing Framework. *IACR Cryptology ePrint Archive*, 2020.
+
+- Shapiro, M., Preguiça, N., Baquero, C., and Zawirski, M. (2011). Conflict-Free Replicated Data Types. In *Proceedings of the 13th International Symposium on Stabilization, Safety, and Security of Distributed Systems (SSS 2011)*, Lecture Notes in Computer Science, 6976, 386–400.
+
+- Google (2024). Protocol Buffers: Language Guide. *Google Developers Documentation*. Available: https://protobuf.dev/programming-guides/proto3/
+
+- Bormann, C. and Hoffman, P. (2013). Concise Binary Object Representation (CBOR). *IETF RFC 7049*.
+
+- Furuhashi, S. (2013). MessagePack: An Efficient Binary Serialization Format. Available: https://msgpack.org/
+
+- Google (2014). FlatBuffers: Memory Efficient Serialization Library. Available: https://flatbuffers.dev/
+
+- W3C (2020). JSON-LD 1.1: A JSON-based Serialization for Linked Data. *W3C Recommendation*.
+
+- W3C (2014). RDF 1.1 Turtle: Terse RDF Triple Language. *W3C Recommendation*.
+
+- Clauset, A., Shalizi, C. R., and Newman, M. E. J. (2009). Power-Law Distributions in Empirical Data. *SIAM Review*, 51(4), 661–703.
+
+- Kleppmann, M. (2017). *Designing Data-Intensive Applications*. O'Reilly Media.
+
+- Astrauskas, V., Müller, P., Poli, F., and Summers, A. J. (2022). Leveraging Rust Types for Program Verification. *Proceedings of the ACM on Programming Languages*, 6(OOPSLA1), 1–30.
+
+- Berners-Lee, T. (2006). Linked Data — Design Issues. *W3C*. Available: https://www.w3.org/DesignIssues/LinkedData.html

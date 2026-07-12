@@ -83,7 +83,7 @@ cargo build --features persist
 | # | Document | Pillar | Nội dung |
 |---|----------|--------|----------|
 | 1 | [KU Architecture](specs/KU_ARCHITECTURE.md) | P1 | 3-layer architecture overview, KuRuntime, CID |
-| 2 | [Core DNA v6 Spec](specs/KU_CORE_DNA_V6_SPEC.md) | P1 | Wire format, 31 opcodes, 11 gene types, varint encoding |
+| 2 | [Core DNA Spec](specs/KU_CORE_DNA_SPEC.md) | P1 | Wire format, 32 opcodes, 13 gene types, varint encoding, CCID, Concept Registry |
 | 3 | [KU Encoding Pipeline](specs/KU_ENCODING_PIPELINE.md) | P1 | Text → CoreDna conversion, 3-tier pipeline |
 | 4 | [PoK Design](specs/POK_DESIGN.md) | P2 | Philosophy, 6 PoMV signals, anti-fragile immune system |
 | 5 | [PoK v2 Specification](specs/POK_V2_SPECIFICATION.md) | P2 | PoMV formula, weights, epistemic ladder, CRDT metabolism |
@@ -126,15 +126,18 @@ cargo build --features persist
 
 | Module | File | Spec | Description |
 |--------|------|------|-------------|
-| `core_dna` | [core_dna.rs](../src/ku-core/src/core_dna.rs) | [Core DNA v6](specs/KU_CORE_DNA_V6_SPEC.md) | `CoreDna`, `CoreDnaHeader`, `Instruction`, `Op` (31 opcodes), encode/decode |
+| `core_dna` | [core_dna.rs](../src/ku-core/src/core_dna.rs) | [Core DNA](specs/KU_CORE_DNA_SPEC.md) | `CoreDna`, `CoreDnaHeader`, `Instruction`, `Op` (32 opcodes), `ConceptTableEntry`, encode/decode |
 | `epigenetics` | [epigenetics.rs](../src/ku-core/src/epigenetics.rs) | [KU Architecture](specs/KU_ARCHITECTURE.md) | `Epigenetics` (Layer 2), `Expression` (Layer 3) |
 | `ku_runtime` | [ku_runtime.rs](../src/ku-core/src/ku_runtime.rs) | [KU Architecture](specs/KU_ARCHITECTURE.md) | `KuRuntime` — unified 3-layer composite with CID |
-| `concept_dict` | [concept_dict.rs](../src/ku-core/src/concept_dict.rs) | [Core DNA v6](specs/KU_CORE_DNA_V6_SPEC.md) | `ConceptDict`, `ConceptEntry` — bilingual name↔ID |
+| `concept_dict` | [concept_dict.rs](../src/ku-core/src/concept_dict.rs) | [Core DNA](specs/KU_CORE_DNA_SPEC.md) | `ConceptDict`, `ConceptEntry` — bilingual name↔ID |
 | `persistent_concept_dict` | [persistent_concept_dict.rs](../src/ku-core/src/persistent_concept_dict.rs) | — | redb-backed persistent ConceptDict |
-| `types` | [types.rs](../src/ku-core/src/types.rs) | [KU Architecture](specs/KU_ARCHITECTURE.md) | `ConceptId`, `GeneType`, `EpistemicStatus`, `EvidenceType`, `RelationType`, `Bond`, `TrustSection`, `EpigeneticSection` |
+| `types` | [types.rs](../src/ku-core/src/types.rs) | [KU Architecture](specs/KU_ARCHITECTURE.md) | `ConceptId`, `GeneType` (13 variants), `EpistemicStatus`, `EvidenceType`, `RelationType`, `Bond`, `TrustSection` |
+| `tier0_concepts` | [tier0_concepts.rs](../src/ku-core/src/tier0_concepts.rs) | [Core DNA](specs/KU_CORE_DNA_SPEC.md) | 80 Tier 0 universal concept constants (IS_A, CAUSES, UNIT_METER, …) |
+| `ccid` | [ccid.rs](../src/ku-core/src/ccid.rs) | [Core DNA](specs/KU_CORE_DNA_SPEC.md) | CCID — 128-bit truncated BLAKE3 for concept identity |
+| `concept_registry` | [concept_registry.rs](../src/ku-core/src/concept_registry.rs) | [Core DNA](specs/KU_CORE_DNA_SPEC.md) | Offline concept name → CCID registry (200MB, ~8M concepts) |
 | `encoder` | [encoder.rs](../src/ku-core/src/encoder.rs) | [Encoding Pipeline](specs/KU_ENCODING_PIPELINE.md) | Legacy encoder functions |
 | `decoder` | [decoder.rs](../src/ku-core/src/decoder.rs) | [Encoding Pipeline](specs/KU_ENCODING_PIPELINE.md) | Legacy decoder functions |
-| `varint` | [varint.rs](../src/ku-core/src/varint.rs) | [Core DNA v6](specs/KU_CORE_DNA_V6_SPEC.md) | Varint encode/decode for ConceptIDs |
+| `varint` | [varint.rs](../src/ku-core/src/varint.rs) | [Core DNA](specs/KU_CORE_DNA_SPEC.md) | Varint encode/decode for ConceptIDs (5 tiers, 3 reserved) |
 | `text_parser` | [text_parser.rs](../src/ku-core/src/text_parser.rs) | [Encoding Pipeline](specs/KU_ENCODING_PIPELINE.md) | Tier 1 rule-based text→CoreDna parser (VI/EN) |
 | `encoding_consensus` | [encoding_consensus.rs](../src/ku-core/src/encoding_consensus.rs) | [Encoding Consensus](specs/ENCODING_CONSENSUS_SPEC.md) | Consensus orchestrator — EncodingStatus lifecycle (RAW→SELF→PART→FULL) |
 | `encoding_verifier` | [encoding_verifier.rs](../src/ku-core/src/encoding_verifier.rs) | [Encoding Consensus](specs/ENCODING_CONSENSUS_SPEC.md) | 2-phase verification: AI decomposition agreement + tool encoding round-trip |

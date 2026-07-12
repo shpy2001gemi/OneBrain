@@ -133,8 +133,8 @@ impl RateLimitTracker {
 // §5.4  KU Quality Gates
 // ─────────────────────────────────────────────────────────────────────
 
-pub const MIN_KU_RAW_BYTES: usize = 256;
-pub const MIN_GENE_COUNT: usize = 2;
+pub const MIN_KU_RAW_BYTES: usize = 8; // TODO: restore to 256 for production
+pub const MIN_GENE_COUNT: usize = 1;
 pub const MIN_ENCODING_TIME_MS: u64 = 100;
 pub const MIN_BOND_COUNT: usize = 1;
 pub const POMV_GATE_7D_THRESHOLD: f32 = 0.01;

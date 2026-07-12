@@ -131,52 +131,52 @@ pub fn tool_definitions() -> Vec<ToolDef> {
         // ── Relationship instructions ──
         ToolDef {
             name: "add_triple",
-            description: "Add a Subject-Predicate-Object triple. Use for: 'X is Y', 'X has property P', \
-                          'X uses material M'. The most general relationship instruction.",
+            description: "Add a Subject-Predicate-Object triple. Use for: 'X is Y', 'X has property P'. \
+                          Pass concept NAMES as strings (e.g. subject=\"water\", predicate=\"is_a\", object=\"liquid\").",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "subject": { "type": "integer", "description": "Subject ConceptId" },
-                    "predicate": { "type": "integer", "description": "Predicate ConceptId (relationship type)" },
-                    "object": { "type": "integer", "description": "Object ConceptId" }
+                    "subject": { "type": "string", "description": "Subject concept name" },
+                    "predicate": { "type": "string", "description": "Predicate/relationship concept name" },
+                    "object": { "type": "string", "description": "Object concept name" }
                 },
                 "required": ["subject", "predicate", "object"]
             }),
         },
         ToolDef {
             name: "add_part_of",
-            description: "Declare that 'part' is a component of 'whole'. Use for: 'X contains Y', \
-                          'Y belongs to X', 'Y is part of X'.",
+            description: "Declare that 'part' is a component of 'whole'. Use for: 'X contains Y'. \
+                          Pass concept NAMES as strings.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "part": { "type": "integer", "description": "Part ConceptId" },
-                    "whole": { "type": "integer", "description": "Whole ConceptId" }
+                    "part": { "type": "string", "description": "Part concept name" },
+                    "whole": { "type": "string", "description": "Whole concept name" }
                 },
                 "required": ["part", "whole"]
             }),
         },
         ToolDef {
             name: "add_quality",
-            description: "Assign a quality/property to a subject. Use for: 'X is lightweight', \
-                          'X is reliable', 'X is complex'.",
+            description: "Assign a quality/property to a subject. Use for: 'X is lightweight'. \
+                          Pass concept NAMES as strings.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "subject": { "type": "integer", "description": "Subject ConceptId" },
-                    "quality": { "type": "integer", "description": "Quality ConceptId" }
+                    "subject": { "type": "string", "description": "Subject concept name" },
+                    "quality": { "type": "string", "description": "Quality concept name" }
                 },
                 "required": ["subject", "quality"]
             }),
         },
         ToolDef {
             name: "add_quantity",
-            description: "Assign a numeric measurement to a subject. Use for: 'temperature = 100°C', \
-                          'wingspan = 35.2m', 'speed = 340 m/s'.",
+            description: "Assign a numeric measurement to a subject. Use for: 'temperature = 100°C'. \
+                          Pass subject as concept NAME string.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "subject": { "type": "integer", "description": "Subject ConceptId" },
+                    "subject": { "type": "string", "description": "Subject concept name" },
                     "value": { "type": "number", "description": "Numeric value (float)" },
                     "unit": { "type": "string", "description": "Unit: degree, meter, second, kg, percent, cm, km, ms, min, hour, dimensionless" }
                 },
@@ -185,11 +185,12 @@ pub fn tool_definitions() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "add_tolerance",
-            description: "Add a tolerance/margin to a measurement. Use for: '± 0.5°', '± 2mm'.",
+            description: "Add a tolerance/margin to a measurement. Use for: '± 0.5°'. \
+                          Pass subject as concept NAME string.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "subject": { "type": "integer", "description": "Subject ConceptId" },
+                    "subject": { "type": "string", "description": "Subject concept name" },
                     "value": { "type": "number", "description": "Nominal value" },
                     "delta": { "type": "number", "description": "Tolerance delta (±)" }
                 },
@@ -198,12 +199,12 @@ pub fn tool_definitions() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "add_enum_val",
-            description: "Declare a set of possible values/options. Use for: 'material can be A, B, or C', \
-                          'payload contains satellite, equipment, or warhead'.",
+            description: "Declare a set of possible values/options. \
+                          Pass subject as concept NAME string, values as array of integers.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "subject": { "type": "integer", "description": "Subject ConceptId" },
+                    "subject": { "type": "string", "description": "Subject concept name" },
                     "values": {
                         "type": "array",
                         "items": { "type": "integer" },
@@ -215,25 +216,26 @@ pub fn tool_definitions() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "add_causal",
-            description: "Declare a cause-effect relationship. Use for: 'high pressure → needs strength', \
-                          'combustion → thrust'.",
+            description: "Declare a cause-effect relationship. Use for: 'heat → boiling'. \
+                          Pass concept NAMES as strings.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "cause": { "type": "integer", "description": "Cause ConceptId" },
-                    "effect": { "type": "integer", "description": "Effect ConceptId" }
+                    "cause": { "type": "string", "description": "Cause concept name" },
+                    "effect": { "type": "string", "description": "Effect concept name" }
                 },
                 "required": ["cause", "effect"]
             }),
         },
         ToolDef {
             name: "add_located",
-            description: "Declare spatial location. Use for: 'payload is at nose', 'engine is at tail'.",
+            description: "Declare spatial location. Use for: 'payload is at nose'. \
+                          Pass concept NAMES as strings.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "subject": { "type": "integer", "description": "Subject ConceptId" },
-                    "location": { "type": "integer", "description": "Location ConceptId" }
+                    "subject": { "type": "string", "description": "Subject concept name" },
+                    "location": { "type": "string", "description": "Location concept name" }
                 },
                 "required": ["subject", "location"]
             }),
@@ -242,14 +244,14 @@ pub fn tool_definitions() -> Vec<ToolDef> {
         // ── Procedure instructions ──
         ToolDef {
             name: "add_step",
-            description: "Add a procedure step (for gene_type='procedure'). Steps are ordered by 'ord'. \
-                          Use for: 'Step 1: pump fuel', 'Step 2: ignite combustion'.",
+            description: "Add a procedure step. Steps are ordered by 'ord'. \
+                          Pass action and target as concept NAME strings.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "ord": { "type": "integer", "description": "Step order (0-based)" },
-                    "action": { "type": "integer", "description": "Action ConceptId (verb)" },
-                    "target": { "type": "integer", "description": "Target ConceptId (object of action)" }
+                    "action": { "type": "string", "description": "Action concept name (verb)" },
+                    "target": { "type": "string", "description": "Target concept name" }
                 },
                 "required": ["ord", "action", "target"]
             }),
@@ -271,8 +273,7 @@ pub fn tool_definitions() -> Vec<ToolDef> {
         },
         ToolDef {
             name: "set_difficulty",
-            description: "Set complexity/difficulty level for a procedure KU. Scale: 0-5 \
-                          (0 = trivial, 1 = easy, 2 = moderate, 3 = complex, 4 = very complex, 5 = expert).",
+            description: "Set complexity/difficulty level for a procedure KU. Scale: 0-5.",
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {

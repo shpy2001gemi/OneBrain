@@ -6,6 +6,10 @@
 //! - Tier 2 (3 bytes): 0xC0XXXX → values 16,512-2,113,663 (~2M standard)
 //! - Tier 3 (4 bytes): 0xE0XXXXXX → values 2,113,664-270,549,119 (~268M extended)
 //! - Tier 3+ (5 bytes): 0xF0XXXXXXXX → values 270,549,120-34,628,173,567 (~34.6B community)
+//! - Tier 5 (6 bytes): 0xF8XXXXXXXXXX → RESERVED for future (~4.4T)
+//! - Tier 6 (7 bytes): 0xFCXXXXXXXXXXXX → RESERVED for future (~562T)
+//! - Tier 7 (8 bytes): 0xFEXXXXXXXXXXXXXX → RESERVED for future (~72Q)
+//! - 0xFF: SENTINEL — reserved forever
 //!
 //! Encoding prefix bits:
 //! - 0xxxxxxx → 1 byte (7 bits)
@@ -128,7 +132,23 @@ pub fn decode_varint(bytes: &[u8]) -> Result<(u64, usize), KuError> {
             | ((bytes[3] as u64) << 8)
             | (bytes[4] as u64);
         Ok((adjusted as u64 + TIER3P_OFFSET, 5))
+    } else if first & 0xFC == 0xF8 {
+        // Tier 5: 111110xx → 6 bytes — RESERVED for future
+        Err(KuError::InvalidData(
+            "Varint Tier 5 (6-byte, prefix 111110xx) is reserved for future use".into()
+        ))
+    } else if first & 0xFE == 0xFC {
+        // Tier 6: 1111110x → 7 bytes — RESERVED for future
+        Err(KuError::InvalidData(
+            "Varint Tier 6 (7-byte, prefix 1111110x) is reserved for future use".into()
+        ))
+    } else if first == 0xFE {
+        // Tier 7: 11111110 → 8 bytes — RESERVED for future
+        Err(KuError::InvalidData(
+            "Varint Tier 7 (8-byte, prefix 11111110) is reserved for future use".into()
+        ))
     } else {
+        // 0xFF: SENTINEL — reserved forever as escape hatch
         Err(KuError::InvalidVarintPrefix(first))
     }
 }

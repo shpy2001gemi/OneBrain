@@ -184,16 +184,18 @@ fn create_from_text_query(input: &str) -> IResult<&str, CreateFromTextQuery> {
         // Parse hint string to KqlGeneType
         let gene = match hint_str.to_uppercase().as_str() {
             "FACT" => KqlGeneType::Fact,
-            "HYPOTHESIS" => KqlGeneType::Hypothesis,
-            "EXPERIENCE" => KqlGeneType::Experience,
             "PROCEDURE" => KqlGeneType::Procedure,
-            "RULE" => KqlGeneType::Rule,
-            "DEFINITION" => KqlGeneType::Definition,
-            "RELATION" => KqlGeneType::Relation,
-            "META" => KqlGeneType::Meta,
+            "EXPERIENCE" => KqlGeneType::Experience,
             "CREATIVE" => KqlGeneType::Creative,
-            "BELIEF" => KqlGeneType::Belief,
-            "FORMALPROOF" => KqlGeneType::FormalProof,
+            "MEDIAEXPERIENCE" => KqlGeneType::MediaExperience,
+            "TESTIMONY" => KqlGeneType::Testimony,
+            "FORMAL" => KqlGeneType::Formal,
+            "HYPOTHESIS" => KqlGeneType::Hypothesis,
+            "NARRATIVE" => KqlGeneType::Narrative,
+            "SENSORY" => KqlGeneType::Sensory,
+            "COMPOSITE" => KqlGeneType::Composite,
+            "NORMATIVE" => KqlGeneType::Normative,
+            "DEFINITION" => KqlGeneType::Definition,
             _ => return Err(nom::Err::Error(nom::error::Error::new(i, nom::error::ErrorKind::Tag))),
         };
         Ok((i, gene))
@@ -214,17 +216,19 @@ fn create_from_text_query(input: &str) -> IResult<&str, CreateFromTextQuery> {
 
 fn gene_type_keyword(input: &str) -> IResult<&str, KqlGeneType> {
     alt((
+        value(KqlGeneType::MediaExperience, tag_no_case("MEDIAEXPERIENCE")),
         value(KqlGeneType::Fact, tag_no_case("FACT")),
-        value(KqlGeneType::Hypothesis, tag_no_case("HYPOTHESIS")),
-        value(KqlGeneType::Experience, tag_no_case("EXPERIENCE")),
         value(KqlGeneType::Procedure, tag_no_case("PROCEDURE")),
-        value(KqlGeneType::Rule, tag_no_case("RULE")),
-        value(KqlGeneType::Definition, tag_no_case("DEFINITION")),
-        value(KqlGeneType::Relation, tag_no_case("RELATION")),
-        value(KqlGeneType::Meta, tag_no_case("META")),
+        value(KqlGeneType::Experience, tag_no_case("EXPERIENCE")),
         value(KqlGeneType::Creative, tag_no_case("CREATIVE")),
-        value(KqlGeneType::Belief, tag_no_case("BELIEF")),
-        value(KqlGeneType::FormalProof, tag_no_case("FORMALPROOF")),
+        value(KqlGeneType::Testimony, tag_no_case("TESTIMONY")),
+        value(KqlGeneType::Formal, tag_no_case("FORMAL")),
+        value(KqlGeneType::Hypothesis, tag_no_case("HYPOTHESIS")),
+        value(KqlGeneType::Narrative, tag_no_case("NARRATIVE")),
+        value(KqlGeneType::Sensory, tag_no_case("SENSORY")),
+        value(KqlGeneType::Composite, tag_no_case("COMPOSITE")),
+        value(KqlGeneType::Normative, tag_no_case("NORMATIVE")),
+        value(KqlGeneType::Definition, tag_no_case("DEFINITION")),
     ))(input)
 }
 
@@ -1604,16 +1608,18 @@ mod tests {
     fn test_parse_tier1_all_gene_types() {
         let types = vec![
             ("FACT", KqlGeneType::Fact),
-            ("HYPOTHESIS", KqlGeneType::Hypothesis),
-            ("EXPERIENCE", KqlGeneType::Experience),
             ("PROCEDURE", KqlGeneType::Procedure),
-            ("RULE", KqlGeneType::Rule),
-            ("DEFINITION", KqlGeneType::Definition),
-            ("RELATION", KqlGeneType::Relation),
-            ("META", KqlGeneType::Meta),
+            ("EXPERIENCE", KqlGeneType::Experience),
             ("CREATIVE", KqlGeneType::Creative),
-            ("BELIEF", KqlGeneType::Belief),
-            ("FORMALPROOF", KqlGeneType::FormalProof),
+            ("MEDIAEXPERIENCE", KqlGeneType::MediaExperience),
+            ("TESTIMONY", KqlGeneType::Testimony),
+            ("FORMAL", KqlGeneType::Formal),
+            ("HYPOTHESIS", KqlGeneType::Hypothesis),
+            ("NARRATIVE", KqlGeneType::Narrative),
+            ("SENSORY", KqlGeneType::Sensory),
+            ("COMPOSITE", KqlGeneType::Composite),
+            ("NORMATIVE", KqlGeneType::Normative),
+            ("DEFINITION", KqlGeneType::Definition),
         ];
         for (kw, expected) in types {
             let qs = format!(r#"CREATE (k:KU) {} {{ TRIPLE(a, b, c) }}"#, kw);

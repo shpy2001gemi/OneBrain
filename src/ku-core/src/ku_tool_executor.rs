@@ -262,16 +262,27 @@ impl KuToolExecutor {
         }
     }
 
-    fn get_concept_id(args: &serde_json::Value, key: &str) -> Result<ConceptId, ToolResult> {
-        args.get(key)
-            .and_then(|v| v.as_u64())
-            .ok_or_else(|| ToolResult::err(format!("Missing or invalid '{}' (expected integer ConceptId)", key)))
+    fn get_concept_id(&mut self, args: &serde_json::Value, key: &str) -> Result<ConceptId, ToolResult> {
+        match args.get(key) {
+            // If the model sends a string name, auto-resolve via lookup_or_create
+            Some(serde_json::Value::String(word)) => {
+                let id = self.dict.lookup_or_create(word);
+                eprintln!("  [AUTO-RESOLVE] {} '{}' → ConceptId {}", key, word, id);
+                Ok(id)
+            }
+            // If the model sends an integer ID, use it directly
+            Some(serde_json::Value::Number(n)) => {
+                n.as_u64()
+                    .ok_or_else(|| ToolResult::err(format!("Invalid '{}': expected positive integer or string concept name", key)))
+            }
+            _ => Err(ToolResult::err(format!("Missing '{}' (expected integer ConceptId or string concept name)", key))),
+        }
     }
 
     fn exec_add_triple(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match Self::get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
-        let p = match Self::get_concept_id(args, "predicate") { Ok(v) => v, Err(e) => return e };
-        let o = match Self::get_concept_id(args, "object") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
+        let p = match self.get_concept_id(args, "predicate") { Ok(v) => v, Err(e) => return e };
+        let o = match self.get_concept_id(args, "object") { Ok(v) => v, Err(e) => return e };
 
         match self.require_active_ku() {
             Ok(builder) => {
@@ -283,8 +294,8 @@ impl KuToolExecutor {
     }
 
     fn exec_add_part_of(&mut self, args: &serde_json::Value) -> ToolResult {
-        let part = match Self::get_concept_id(args, "part") { Ok(v) => v, Err(e) => return e };
-        let whole = match Self::get_concept_id(args, "whole") { Ok(v) => v, Err(e) => return e };
+        let part = match self.get_concept_id(args, "part") { Ok(v) => v, Err(e) => return e };
+        let whole = match self.get_concept_id(args, "whole") { Ok(v) => v, Err(e) => return e };
 
         match self.require_active_ku() {
             Ok(builder) => {
@@ -296,8 +307,8 @@ impl KuToolExecutor {
     }
 
     fn exec_add_quality(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match Self::get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
-        let q = match Self::get_concept_id(args, "quality") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
+        let q = match self.get_concept_id(args, "quality") { Ok(v) => v, Err(e) => return e };
 
         match self.require_active_ku() {
             Ok(builder) => {
@@ -309,7 +320,7 @@ impl KuToolExecutor {
     }
 
     fn exec_add_quantity(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match Self::get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
         let value = match args.get("value").and_then(|v| v.as_f64()) {
             Some(v) => v,
             None => return ToolResult::err("Missing 'value' (expected number)"),
@@ -331,7 +342,7 @@ impl KuToolExecutor {
     }
 
     fn exec_add_tolerance(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match Self::get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
         let value = match args.get("value").and_then(|v| v.as_f64()) {
             Some(v) => v,
             None => return ToolResult::err("Missing 'value' (expected number)"),
@@ -355,7 +366,7 @@ impl KuToolExecutor {
     }
 
     fn exec_add_enum_val(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match Self::get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
         let values: Vec<ConceptId> = match args.get("values").and_then(|v| v.as_array()) {
             Some(arr) => {
                 let mut ids = Vec::new();
@@ -381,8 +392,8 @@ impl KuToolExecutor {
     }
 
     fn exec_add_causal(&mut self, args: &serde_json::Value) -> ToolResult {
-        let cause = match Self::get_concept_id(args, "cause") { Ok(v) => v, Err(e) => return e };
-        let effect = match Self::get_concept_id(args, "effect") { Ok(v) => v, Err(e) => return e };
+        let cause = match self.get_concept_id(args, "cause") { Ok(v) => v, Err(e) => return e };
+        let effect = match self.get_concept_id(args, "effect") { Ok(v) => v, Err(e) => return e };
 
         match self.require_active_ku() {
             Ok(builder) => {
@@ -394,8 +405,8 @@ impl KuToolExecutor {
     }
 
     fn exec_add_located(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match Self::get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
-        let location = match Self::get_concept_id(args, "location") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
+        let location = match self.get_concept_id(args, "location") { Ok(v) => v, Err(e) => return e };
 
         match self.require_active_ku() {
             Ok(builder) => {
@@ -411,8 +422,8 @@ impl KuToolExecutor {
             Some(v) => v as u8,
             None => return ToolResult::err("Missing 'ord' (expected integer 0-255)"),
         };
-        let action = match Self::get_concept_id(args, "action") { Ok(v) => v, Err(e) => return e };
-        let target = match Self::get_concept_id(args, "target") { Ok(v) => v, Err(e) => return e };
+        let action = match self.get_concept_id(args, "action") { Ok(v) => v, Err(e) => return e };
+        let target = match self.get_concept_id(args, "target") { Ok(v) => v, Err(e) => return e };
 
         match self.require_active_ku() {
             Ok(builder) => {

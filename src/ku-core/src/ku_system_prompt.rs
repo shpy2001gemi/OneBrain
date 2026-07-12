@@ -117,89 +117,59 @@ const ENCODING_RULES: &str = r#"## Encoding Rules
    - ✅ "Earth is a planet" → 1 KU (classification)
    - ❌ "Earth is a planet with radius 6,371 km" → should be 2 KUs
 
-2. **Always lookup concepts first.** Before creating a KU, call
-   `lookup_concept("word")` for every key concept. Use the returned
-   ConceptId — never invent IDs.
+2. **Start a KU.** Call `new_ku(gene_type="fact")` before adding instructions.
 
-3. **Use `set_certainty(ku_id, level)` for epistemic status.**
-   Levels: `established_fact`, `strong_evidence`, `moderate_evidence`,
-   `preliminary`, `hypothesis`, `speculation`, `disputed`, `refuted`.
-   Default is `moderate_evidence` if uncertain.
+3. **Pass concept names as STRINGS** to all add_* tools.
+   Do NOT use numeric IDs. The system auto-resolves names.
+   - `add_triple(subject="water", predicate="is_a", object="liquid")`
+   - `add_quality(subject="water", quality="boiling")`
+   - `add_quantity(subject="water", value=100, unit="degree")`
 
-4. **Call `finalize(ku_id)` after each KU** to commit it to the store.
-   A KU is not saved until finalized.
+4. **Call `finalize()` after each KU** to commit it.
 
-5. **Encoding order matters:**
-   a. `lookup_concept` for all terms
-   b. `create_ku` with codons, bonds, and genes
-   c. `set_certainty` if not default
-   d. `finalize`
-
-6. **Relations (Bonds):** Use typed relations:
-   - `is_a` (classification), `has_part` (composition)
-   - `causes`, `requires`, `follows` (causal/temporal)
-   - `measured_as` (numeric properties)
-   - `related_to` (generic association — use sparingly)
-
-7. **Genes carry content:** Use the appropriate gene type:
-   - `Quantity` for numeric values with units
-   - `Text` for free-text annotations
-   - `Step` for procedural steps
-   - `Constraint` for value ranges
-   - `Formula` for mathematical expressions
+5. **Encoding order:**
+   a. `new_ku` to start
+   b. `add_*` instructions with concept name strings
+   c. `finalize` to commit
 
 "#;
+
 
 const FEW_SHOT_EXAMPLES: &str = r#"## Examples
 
-### Example 1: "Bơi ếch là kỹ thuật bơi cơ bản" (Breaststroke is a basic swimming technique)
+### Example 1: "Water boils at 100 degrees Celsius"
 
 ```
-→ lookup_concept("bơi ếch")      → 202
-→ lookup_concept("kỹ thuật")     → 203
-→ lookup_concept("bơi")          → 200
-→ create_ku({
-    codons: [
-      { concept: 202, role: "object" },
-      { concept: 203, role: "quality" },
-      { concept: 200, role: "agent" }
-    ],
-    bonds: [
-      { subject: 202, predicate: "is_a", object: 203 }
-    ],
-    genes: [
-      { type: "text", value: "Breaststroke is a basic swimming technique" }
-    ]
-  })                               → ku_001
-→ set_certainty(ku_001, "established_fact")
-→ finalize(ku_001)
+→ new_ku(gene_type="fact")
+→ add_quality(subject="water", quality="boiling")
+→ add_quantity(subject="water", value=100, unit="degree")
+→ finalize()
 ```
 
-### Example 2: "A rocket consists of body and shell" (Tên lửa gồm thân và vỏ)
+### Example 2: "Bơi ếch là kỹ thuật bơi cơ bản" (Breaststroke is a basic swimming technique)
 
 ```
-→ lookup_concept("rocket")       → 500
-→ lookup_concept("body")         → 213
-→ lookup_concept("shell")        → 501
-→ create_ku({
-    codons: [
-      { concept: 500, role: "agent" },
-      { concept: 213, role: "object" },
-      { concept: 501, role: "object" }
-    ],
-    bonds: [
-      { subject: 500, predicate: "has_part", object: 213 },
-      { subject: 500, predicate: "has_part", object: 501 }
-    ],
-    genes: [
-      { type: "text", value: "A rocket consists of body and shell" }
-    ]
-  })                               → ku_002
-→ set_certainty(ku_002, "established_fact")
-→ finalize(ku_002)
+→ new_ku(gene_type="fact")
+→ add_triple(subject="bơi ếch", predicate="is_a", object="kỹ thuật bơi")
+→ add_quality(subject="bơi ếch", quality="cơ bản")
+→ finalize()
 ```
+
+### Example 3: "The heart pumps blood to the lungs"
+
+```
+→ new_ku(gene_type="fact")
+→ add_triple(subject="heart", predicate="pumps", object="blood")
+→ add_located(subject="blood", location="lungs")
+→ finalize()
+```
+
+### IMPORTANT:
+- Pass concept names as **strings** (e.g. subject="water"), NOT numbers.
+- Include 2+ add_* instructions per KU for richer encoding.
 
 "#;
+
 
 const COMPACT_ROLE: &str = r#"# Knowledge Encoder
 
@@ -211,13 +181,14 @@ You are a Knowledge Encoder. Convert natural language → structured Knowledge U
 const COMPACT_RULES: &str = r#"## Rules
 
 1. **1 KU = 1 idea.** Never combine multiple facts.
-2. **Lookup first.** `lookup_concept("word")` before any `create_ku`.
-3. **Set certainty.** `set_certainty(id, level)` — levels: established_fact, strong_evidence, moderate_evidence, preliminary, hypothesis, speculation, disputed, refuted.
-4. **Finalize.** `finalize(id)` after every KU.
-5. **Bonds:** is_a, has_part, causes, requires, follows, measured_as, related_to.
-6. **Genes:** Quantity (numbers+units), Text, Step, Constraint, Formula.
+2. **Start KU.** Call `new_ku(gene_type="fact")` before adding instructions.
+3. **Pass concept names as STRINGS** to add_* tools. Do NOT use numbers.
+   Example: `add_quality(subject="water", quality="boiling")`
+4. **Include 2+ instructions** per KU for rich encoding.
+5. **Finalize.** Call `finalize()` after every KU.
 
 "#;
+
 
 // ============================================================================
 // Helpers

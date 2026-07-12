@@ -225,6 +225,16 @@ pub enum MessageType {
     ObtStorageChallenge   = 0xA5,
     /// ★ OBT: Fork warrant broadcast
     ObtForkWarrant        = 0xA6,
+
+    // ── ConceptRegistry Gossip (v7) ──
+    /// ★ v7: Push new concept entries to DHT neighbors
+    RegistryDeltaPush     = 0xC0,
+    /// ★ v7: Pull missing concept entries from a peer
+    RegistryDeltaPull     = 0xC1,
+    /// ★ v7: Response with requested concept entries
+    RegistryDeltaResponse = 0xC2,
+    /// ★ v7: Periodic checkpoint summary (bloom filter)
+    RegistryCheckpoint    = 0xC3,
 }
 
 impl MessageType {
@@ -313,6 +323,11 @@ impl MessageType {
             0xA4 => Some(Self::ObtMintBroadcast),
             0xA5 => Some(Self::ObtStorageChallenge),
             0xA6 => Some(Self::ObtForkWarrant),
+            // ConceptRegistry Gossip
+            0xC0 => Some(Self::RegistryDeltaPush),
+            0xC1 => Some(Self::RegistryDeltaPull),
+            0xC2 => Some(Self::RegistryDeltaResponse),
+            0xC3 => Some(Self::RegistryCheckpoint),
             _ => None,
         }
     }

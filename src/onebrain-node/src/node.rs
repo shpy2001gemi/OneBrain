@@ -707,6 +707,156 @@ impl OneBrainNode {
         let outgoing_bond_count = bonds.len();
         let incoming_bond_count = 0; // TODO: wire to GraphStorage for incoming
 
+        // Build reverse lookup: concept_id → name (using node's live dict which includes new concepts)
+        let reverse: std::collections::HashMap<u64, String> = self.dict.iter()
+            .map(|(name, &id)| (id, name.clone()))
+            .collect();
+        let cn = |id: u64| -> String {
+            reverse.get(&id).cloned().unwrap_or_else(|| format!("#{}", id))
+        };
+
+        // Decode instructions for human-readable view
+        let decoded_instructions: Vec<crate::types::InstructionView> = ku.dna.instructions.iter().map(|instr| {
+            use ku_core::core_dna::Instruction;
+            match instr {
+                Instruction::Triple { s, p, o } => crate::types::InstructionView {
+                    op: "Triple".into(),
+                    description: format!("{} —[{}]→ {}", cn(*s), cn(*p), cn(*o)),
+                    concept_ids: vec![*s, *p, *o],
+                },
+                Instruction::Quality { s, q } => crate::types::InstructionView {
+                    op: "Quality".into(),
+                    description: format!("{} has quality {}", cn(*s), cn(*q)),
+                    concept_ids: vec![*s, *q],
+                },
+                Instruction::Quantity { s, value, unit } => crate::types::InstructionView {
+                    op: "Quantity".into(),
+                    description: format!("{} = {} {}", cn(*s), value, cn(*unit)),
+                    concept_ids: vec![*s, *unit],
+                },
+                Instruction::Step { ord, action, target } => crate::types::InstructionView {
+                    op: "Step".into(),
+                    description: format!("Step #{}: {} → {}", ord, cn(*action), cn(*target)),
+                    concept_ids: vec![*action, *target],
+                },
+                Instruction::PartOf { part, whole } => crate::types::InstructionView {
+                    op: "PartOf".into(),
+                    description: format!("{} part-of {}", cn(*part), cn(*whole)),
+                    concept_ids: vec![*part, *whole],
+                },
+                Instruction::Causal { cause, effect } => crate::types::InstructionView {
+                    op: "Causal".into(),
+                    description: format!("{} causes {}", cn(*cause), cn(*effect)),
+                    concept_ids: vec![*cause, *effect],
+                },
+                Instruction::Located { s, location } => crate::types::InstructionView {
+                    op: "Located".into(),
+                    description: format!("{} located-at {}", cn(*s), cn(*location)),
+                    concept_ids: vec![*s, *location],
+                },
+                Instruction::Temporal { s, time } => crate::types::InstructionView {
+                    op: "Temporal".into(),
+                    description: format!("{} at-time {}", cn(*s), cn(*time)),
+                    concept_ids: vec![*s, *time],
+                },
+                Instruction::Simulates { s, model } => crate::types::InstructionView {
+                    op: "Simulates".into(),
+                    description: format!("{} simulates {}", cn(*s), cn(*model)),
+                    concept_ids: vec![*s, *model],
+                },
+                Instruction::Condition { cond, result } => crate::types::InstructionView {
+                    op: "Condition".into(),
+                    description: format!("if {} then {}", cn(*cond), cn(*result)),
+                    concept_ids: vec![*cond, *result],
+                },
+                Instruction::Agent { actor, action } => crate::types::InstructionView {
+                    op: "Agent".into(),
+                    description: format!("{} performs {}", cn(*actor), cn(*action)),
+                    concept_ids: vec![*actor, *action],
+                },
+                Instruction::Tool { action, instrument } => crate::types::InstructionView {
+                    op: "Tool".into(),
+                    description: format!("{} uses tool {}", cn(*action), cn(*instrument)),
+                    concept_ids: vec![*action, *instrument],
+                },
+                Instruction::Range { s, min, max } => crate::types::InstructionView {
+                    op: "Range".into(),
+                    description: format!("{} ∈ [{}, {}]", cn(*s), min, max),
+                    concept_ids: vec![*s],
+                },
+                Instruction::Tolerance { s, value, delta } => crate::types::InstructionView {
+                    op: "Tolerance".into(),
+                    description: format!("{} = {} ± {}", cn(*s), value, delta),
+                    concept_ids: vec![*s],
+                },
+                Instruction::Constraint { source, op, target } => crate::types::InstructionView {
+                    op: "Constraint".into(),
+                    description: format!("{} {:?} {}", cn(*source), op, cn(*target)),
+                    concept_ids: vec![*source, *target],
+                },
+                Instruction::Certainty { level } => crate::types::InstructionView {
+                    op: "Certainty".into(),
+                    description: format!("certainty = {:.1}%", *level as f64 / 100.0),
+                    concept_ids: vec![],
+                },
+                Instruction::Difficulty { level } => crate::types::InstructionView {
+                    op: "Difficulty".into(),
+                    description: format!("difficulty = {}/4", level),
+                    concept_ids: vec![],
+                },
+                Instruction::Sequence { items } => crate::types::InstructionView {
+                    op: "Sequence".into(),
+                    description: format!("sequence[{}]", items.iter().map(|i| cn(*i)).collect::<Vec<_>>().join(", ")),
+                    concept_ids: items.clone(),
+                },
+                Instruction::EnumVal { s, values } => crate::types::InstructionView {
+                    op: "EnumVal".into(),
+                    description: format!("{} ∈ {{{}}}", cn(*s), values.iter().map(|v| cn(*v)).collect::<Vec<_>>().join(", ")),
+                    concept_ids: std::iter::once(*s).chain(values.iter().cloned()).collect(),
+                },
+                Instruction::CidRef { cid } => crate::types::InstructionView {
+                    op: "CidRef".into(),
+                    description: format!("ref → {}", cid.iter().map(|b| format!("{:02x}", b)).collect::<String>()),
+                    concept_ids: vec![],
+                },
+                Instruction::Precond { concept } => crate::types::InstructionView {
+                    op: "Precond".into(),
+                    description: format!("precondition {}", cn(*concept)),
+                    concept_ids: vec![*concept],
+                },
+                Instruction::Effect { concept } => crate::types::InstructionView {
+                    op: "Effect".into(),
+                    description: format!("effect {}", cn(*concept)),
+                    concept_ids: vec![*concept],
+                },
+                Instruction::Affect { v, a, d } => crate::types::InstructionView {
+                    op: "Affect".into(),
+                    description: format!("VAD({}, {}, {})", v, a, d),
+                    concept_ids: vec![],
+                },
+                Instruction::Label { key, value } => crate::types::InstructionView {
+                    op: "Label".into(),
+                    description: format!("{} = {}", cn(*key), cn(*value)),
+                    concept_ids: vec![*key, *value],
+                },
+                Instruction::Witness { count, proximity } => crate::types::InstructionView {
+                    op: "Witness".into(),
+                    description: format!("{} witnesses, proximity={}", count, proximity),
+                    concept_ids: vec![],
+                },
+                Instruction::End => crate::types::InstructionView {
+                    op: "End".into(),
+                    description: "end of instructions".into(),
+                    concept_ids: vec![],
+                },
+                other => crate::types::InstructionView {
+                    op: format!("{:?}", other).split_whitespace().next().unwrap_or("Unknown").to_string(),
+                    description: format!("{:?}", other),
+                    concept_ids: vec![],
+                },
+            }
+        }).collect();
+
         Ok(KuDetail {
             cid_hex: hex_cid(&ku.cid),
             gene_type,
@@ -723,8 +873,8 @@ impl OneBrainNode {
                 centrality: ku.epi.trust.synaptic_centrality as f64 / 10000.0,
                 niche: ku.epi.trust.niche_fitness as f64 / 10000.0,
             },
-            epistemic: format!("{:?}", ku.epi.epistemic_status),
-            evidence: format!("{:?}", ku.epi.evidence_type),
+            epistemic: format!("{:?}", ku.epi.trust.epistemic_status),
+            evidence: format!("{:?}", ku.epi.trust.evidence_type),
             wire_size,
             instruction_count,
             confidence,
@@ -732,6 +882,7 @@ impl OneBrainNode {
             verification_status: format!("{:?}", ku.encoding_status),
             outgoing_bond_count,
             incoming_bond_count,
+            decoded_instructions,
         })
     }
 
