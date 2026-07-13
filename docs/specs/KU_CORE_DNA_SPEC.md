@@ -400,30 +400,107 @@ Offline concept lookup file shipped with every node. Binary format loaded at sta
 | File format | `.obr` (OneBrain Registry) |
 | Initial size | ~200 MB |
 | Capacity | ~8 million concepts |
-| Coverage target | 99.9% of human knowledge |
+| Coverage target | 99.9% of general-domain knowledge |
 | Lookup | O(1) hash table (String → CCID) |
 | Update cycle | Quarterly |
+| Output path | `onebrain_data/concepts.obr` (cùng thư mục `.redb` files) |
 
 ### §9.2 Concept Sources
 
-| Source | Coverage | Data |
-|--------|----------|------|
-| Wikidata | Entities, properties | `wd:Q{id}` canonical form |
-| GeoNames | Geographic features | `gn:{id}` |
-| NCBI Taxonomy | Species, organisms | `ncbi:{taxid}` |
-| ChEBI | Chemical compounds | `chebi:{id}` |
+4 nguồn dữ liệu chính, theo CCID canonical form priority (§3.7.2 trong paper):
 
-### §9.3 Resolution Algorithm
+| # | Source | Coverage | Canonical Form | Est. entries | Fetch method |
+|---|--------|----------|----------------|-------------|--------------|
+| 1 | **Wikidata** | Entities, properties, general concepts | `wd:Q{id}` | ~5M | SPARQL endpoint (batched 10K/query) |
+| 2 | **GeoNames** | Geographic features (cities, countries, regions) | `gn:{id}` | ~1.5M | Dump file `allCountries.zip` (~400MB) |
+| 3 | **NCBI Taxonomy** | Species, organisms | `ncbi:{taxid}` | ~1M | FTP dump `taxdump.tar.gz` (~70MB) |
+| 4 | **ChEBI** | Chemical compounds | `chebi:{id}` | ~500K | TSV/SDF dump from `ftp.ebi.ac.uk` |
+
+**Deduplication rule**: Nếu 1 concept tồn tại ở nhiều sources (vd: "water" = wd:Q283 + chebi:15377), chỉ giữ bản có canonical form priority cao nhất. Cross-reference qua Wikidata properties (P683→ChEBI, P846→NCBI, P1566→GeoNames). Labels từ tất cả sources được merge vào bản winner.
+
+### §9.3 Per-Source Fetch Strategy
+
+#### §9.3.1 Wikidata (~5M concepts)
+
+- **API**: `query.wikidata.org/sparql`
+- **Rate limit**: 1 request / 2 seconds (Wikidata policy)
+- **Fetch strategy**: Batched by P31 (instance_of) category:
+  - Entities (Q35120): ~2M
+  - Places (Q515 city, Q6256 country, Q82794 region): ~1M
+  - Persons (Q5 human): ~1.5M
+  - Properties (P-items): ~12K
+  - Top sitelinks (Wikipedia popularity): backfill
+- **Labels**: en, vi, fr, de, es, ja, zh, ko (8 languages)
+- **Fields**: QID, labels, descriptions, P31 category
+- **Output**: `raw/wikidata.jsonl`
+- **Estimated time**: 4–8 hours (rate-limited)
+- **Quarterly delta**: Filter `schema:dateModified > last_fetch_date`
+
+#### §9.3.2 GeoNames (~1.5M places)
+
+- **Source**: Dump file `download.geonames.org/export/dump/allCountries.zip` (~400MB)
+- **No API account needed** (dump is publicly available)
+- **Fields**: GeoNames ID, name, alternateNames (multilingual), feature class/code, coordinates, population, country code
+- **Filter**: population > 0 OR feature class in {A, P, T, H, L} (admin, populated, terrain, water, parks)
+- **Output**: `raw/geonames.jsonl`
+- **Estimated time**: ~30 minutes (download + parse)
+- **Quarterly delta**: Download `modifications-{date}.txt` daily diff files
+
+#### §9.3.3 NCBI Taxonomy (~1M species)
+
+- **Source**: FTP dump `ftp.ncbi.nih.gov/pub/taxonomy/taxdump.tar.gz` (~70MB)
+- **Parse files**: `names.dmp` (names + synonyms) + `nodes.dmp` (rank, division)
+- **Filter**: Keep species + genus ranks. Skip strains/subspecies trừ khi nổi tiếng.
+- **Fields**: Taxon ID, scientific name, common names (multilingual), rank, division
+- **Output**: `raw/ncbi_taxonomy.jsonl`
+- **Estimated time**: ~15 minutes
+- **Quarterly delta**: Compare new taxdump vs cached version (diff by taxid set)
+
+#### §9.3.4 ChEBI (~500K compounds)
+
+- **Source**: TSV/SDF dump from `ftp.ebi.ac.uk/pub/databases/chebi/`
+- **Backup**: REST API `www.ebi.ac.uk/webservices/chebi/2.0/`
+- **Fields**: ChEBI ID, name, synonyms, InChI, SMILES, CAS number
+- **Cross-ref**: Map CAS numbers (canonical form priority 5) into ChEBI entries
+- **Output**: `raw/chebi.jsonl`
+- **Estimated time**: ~20 minutes
+- **Quarterly delta**: REST query for new/modified entries since last fetch
+
+### §9.4 `.obr` Binary Format
 
 ```
-1. Exact match: "water" → Found(CCID)
-2. Case-insensitive: "Water" → Found(CCID)
-3. Fuzzy match (Vietnamese diacritics stripped): "ngua van" → Fuzzy("ngựa vằn", CCID)
-4. Ambiguous: "Mercury" → Ambiguous([planet, element, god])
-5. Not found → AI fallback (generate CCID from context)
+Header (32 bytes):
+  magic:       [u8; 4]  = "OBR1"
+  version:     u32      = 1
+  entry_count: u64
+  label_count: u64
+  reserved:    [u8; 8]  = 0
+
+Entry section (variable length, sequential):
+  For each concept:
+    ccid:               [u8; 16]   # 128-bit CCID (BLAKE3 truncated)
+    ext_id:             u32        # Wikidata QID / GeoNames ID / NCBI taxid / ChEBI ID
+    source:             u8         # 0=wd, 1=gn, 2=ncbi, 3=chebi
+    category:           u8         # ConceptCategory enum (Entity=0..Other=255)
+    canonical_name_len: u16
+    canonical_name:     [u8; canonical_name_len]
+    label_count:        u16
+    For each label:
+      label_len:        u16
+      label:            [u8; label_len]
 ```
 
-### §9.4 Novel Concept Protocol
+### §9.5 Resolution Algorithm
+
+```
+1. Exact match:      "water"    → Found(CCID)
+2. Case-insensitive: "Water"    → Found(CCID)
+3. Fuzzy match:      "ngua van" → Fuzzy("ngựa vằn", CCID)   # Vietnamese diacritics stripped
+4. Ambiguous:        "Mercury"  → Ambiguous([planet, element, god])
+5. Not found:                   → AI fallback (generate CCID from context)
+```
+
+### §9.6 Novel Concept Protocol
 
 When a node creates a genuinely novel concept:
 
@@ -431,6 +508,48 @@ When a node creates a genuinely novel concept:
 2. CCID = `blake3(encoded_definition_ku)[0..16]`
 3. The definition KU propagates via gossip protocol
 4. Quarterly update absorbs community-validated novel concepts into the global registry
+
+### §9.7 Data Pipeline Scripts
+
+Scripts nằm tại `scripts/concept_registry/`. Python 3.10+.
+
+#### §9.7.1 Initial Fetch (`initial_fetch.py`)
+
+Chạy 1 lần khi bootstrap hệ thống. Orchestrates 4 source fetchers tuần tự:
+
+```
+1. Wikidata  → raw/wikidata.jsonl         (~4-8h, SPARQL rate-limited)
+2. GeoNames  → raw/geonames.jsonl         (~30min, dump download)
+3. NCBI      → raw/ncbi_taxonomy.jsonl    (~15min, dump download)
+4. ChEBI     → raw/chebi.jsonl            (~20min, dump download)
+5. Dedup     → merged/concepts_deduped.jsonl  (~10min)
+6. Build     → onebrain_data/concepts.obr     (~5min)
+```
+
+Features:
+- Checkpoint/resume (mỗi source lưu progress riêng)
+- `--sources` flag: chọn sources cụ thể (vd: `--sources wd,gn`)
+- `--quick` flag: chỉ fetch 100K concepts Wikidata (dev/test, ~10 phút)
+
+#### §9.7.2 Quarterly Update (`quarterly_update.py`)
+
+Incremental delta update, chạy mỗi quý:
+
+```
+1. Load checkpoint (last_fetch_date per source)
+2. Fetch deltas from 4 sources
+3. Absorb community-validated novel concepts từ gossip log
+4. Merge deltas into existing concepts.obr
+5. Output: new concepts.obr + changelog.json
+```
+
+#### §9.7.3 Dependencies
+
+```
+requests          # HTTP client (Wikidata SPARQL, ChEBI REST)
+blake3            # CCID computation (match Rust impl)
+tqdm              # Progress bars
+```
 
 ---
 

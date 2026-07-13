@@ -665,12 +665,14 @@ The ConceptRegistry is a binary file in `.obr` (OneBrain Registry) format, shipp
 
 **Table 3.17.** ConceptRegistry data sources.
 
-| Source | Coverage | Canonical Form |
-|---|---|---|
-| Wikidata | Entities, properties | `wd:Q{id}` |
-| GeoNames | Geographic features | `gn:{id}` |
-| NCBI Taxonomy | Species, organisms | `ncbi:{taxid}` |
-| ChEBI | Chemical compounds | `chebi:{id}` |
+| Source | Coverage | Canonical Form | Est. entries | Fetch method |
+|---|---|---|---|---|
+| Wikidata | Entities, properties, general concepts | `wd:Q{id}` | ~5M | SPARQL endpoint (batched 10K/query, 1 req/2s) |
+| GeoNames | Geographic features (cities, countries, regions) | `gn:{id}` | ~1.5M | Dump file `allCountries.zip` (~400MB) |
+| NCBI Taxonomy | Species, organisms | `ncbi:{taxid}` | ~1M | FTP dump `taxdump.tar.gz` (~70MB) |
+| ChEBI | Chemical compounds | `chebi:{id}` | ~500K | TSV dump from `ftp.ebi.ac.uk` |
+
+**Deduplication.** When a concept appears in multiple sources (e.g., "water" = `wd:Q283` and `chebi:15377`), only the entry with the highest canonical form priority (Table 3.6) is retained. Cross-references are resolved via Wikidata properties: P683 → ChEBI ID, P846 → NCBI Taxonomy ID, P1566 → GeoNames ID. Labels from all sources are merged into the winning entry.
 
 ### 3.10.3 Resolution Algorithm
 
@@ -696,6 +698,16 @@ When a node encounters a genuinely novel concept—one absent from the registry�
 4. Quarterly registry updates absorb community-validated novel concepts into the global registry.
 
 This protocol ensures that novel concepts receive stable identities immediately upon creation, while the quarterly update cycle provides convergence across the decentralised network.
+
+### 3.10.5 Data Pipeline
+
+The registry is built and maintained by a Python-based data pipeline (`scripts/concept_registry/`). Two operational modes are provided:
+
+**Initial fetch** (`initial_fetch.py`): Executes once during system bootstrap. Fetches data from all four sources sequentially (Wikidata ~4–8h rate-limited, GeoNames ~30min, NCBI ~15min, ChEBI ~20min), performs cross-source deduplication, and builds the `concepts.obr` binary file. Supports checkpoint/resume for fault tolerance.
+
+**Quarterly update** (`quarterly_update.py`): Incremental delta-based update. Fetches only new or modified entries from each source since the last update, absorbs community-validated novel concepts from the gossip network, and merges them into the existing registry. Produces a changelog for auditability.
+
+The `.obr` binary format uses a 32-byte header (magic `OBR1`, version, entry/label counts) followed by sequential entries. Each entry contains the 16-byte CCID, external source ID, source code, category, canonical name, and multilingual labels. All integers are little-endian. The output file is stored at `onebrain_data/concepts.obr` alongside the node's `.redb` database files.
 
 ---
 
