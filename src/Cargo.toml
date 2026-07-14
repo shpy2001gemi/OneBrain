@@ -17,6 +17,7 @@ members = [
     # ── Interface Projects (Rust) ──
     "onebrain-cli",     # Interface: CLI REPL (Phase 0 ✅)
     "onebrain-api",     # Interface: Local REST + WebSocket API (Phase 1)
+    "onebrain-desktop", # Interface: Tauri 2.x Desktop App (Phase 2)
 
     # ── Server / Infrastructure ──
     "onebrain-seed",    # Seed node — cross-platform (Windows, Linux, Arduino...)
@@ -26,7 +27,6 @@ members = [
 
     # ── Non-Rust Interface Projects (NOT workspace members) ──
     # onebrain-web        → React + Vite + TypeScript (Phase 1)
-    # onebrain-desktop    → Tauri 2.x (Phase 2)
     # onebrain-mobile     → Flutter + flutter_rust_bridge (Phase 3)
     # onebrain-glasses    → Web App / visionOS (Phase 4)
     # onebrain-bot        → Node.js / Python (Phase 2, low priority)

@@ -1,0 +1,38 @@
+[package]
+name = "onebrain-desktop"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "OneBrain Desktop — native desktop application powered by Tauri 2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Core OneBrain crates
+onebrain-node = { path = "../onebrain-node" }
+onebrain-api = { path = "../onebrain-api" }
+
+# Tauri
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-store = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-log = "2"
+
+# Shared dependencies (explicit — workspace root has no [workspace.dependencies])
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+rand = "0.8"
+
+# Desktop-specific
+toml = "0.8"
+dirs = "6"
+reqwest = { version = "0.12", features = ["json"] }
+hostname = "0.4"
+open = "5"

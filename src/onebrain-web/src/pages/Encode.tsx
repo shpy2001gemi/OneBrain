@@ -1,13 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
-import { Zap, CheckCircle, AlertCircle, FileText, Copy, Loader, Clock } from 'lucide-react';
+import { Zap, CheckCircle, AlertCircle, FileText, Copy, Loader, Clock, Save, Paperclip, X as XIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
-import type { EncodeResult } from '../api/types';
+import type { EncodeResult, BlobMeta } from '../api/types';
 
 export function EncodePage() {
+  const { t } = useTranslation();
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
   const [result, setResult] = useState<EncodeResult | null>(null);
   const [error, setError] = useState('');
+  const [draftSaved, setDraftSaved] = useState(false);
+  const [attachments, setAttachments] = useState<BlobMeta[]>([]);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [history, setHistory] = useState<EncodeResult[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -37,6 +44,22 @@ export function EncodePage() {
       setError(err.message || 'Encoding failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    if (!text.trim() || savingDraft) return;
+    setSavingDraft(true);
+    setError('');
+    try {
+      const res = await api.encodeDraft(text);
+      setResult(res);
+      setDraftSaved(true);
+      setTimeout(() => setDraftSaved(false), 3000);
+    } catch (err: any) {
+      setError(err.message || 'Draft save failed');
+    } finally {
+      setSavingDraft(false);
     }
   };
 
@@ -89,10 +112,35 @@ export function EncodePage() {
     handleEncode();
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingFile(true);
+    try {
+      const meta = await api.uploadBlob(file);
+      setAttachments(prev => [...prev, meta]);
+    } catch (err: any) {
+      setError(err.message || 'File upload failed');
+    } finally {
+      setUploadingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const removeAttachment = (cid: string) => {
+    setAttachments(prev => prev.filter(a => a.blob_cid_hex !== cid));
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+    if (bytes > 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${bytes}B`;
+  };
+
   return (
     <div className="page">
       <div className="page-header">
-        <h1>Encode Knowledge</h1>
+        <h1>{t('encode.title')}</h1>
         <p>Transform text into Knowledge Units with biological encoding</p>
       </div>
 
@@ -107,19 +155,74 @@ export function EncodePage() {
             placeholder="Paste or type knowledge to encode...&#10;&#10;Example: Photosynthesis is the process by which plants convert light energy into chemical energy stored in glucose."
             value={text}
             onChange={e => setText(e.target.value)}
-            style={{ minHeight: 240, marginBottom: 'var(--ob-gap-md)' }}
+            style={{ minHeight: 200, marginBottom: 'var(--ob-gap-sm)' }}
           />
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.78rem', color: 'var(--ob-text-tertiary)' }}>
-              {text.length} characters
-            </span>
+
+          {/* Attachments */}
+          <div style={{ marginBottom: 'var(--ob-gap-md)' }}>
+            <input ref={fileInputRef} type="file" onChange={handleFileUpload} style={{ display: 'none' }} />
             <button
-              className="btn btn-primary btn-lg"
-              onClick={handleEncodeWithReset}
-              disabled={loading || !text.trim()}
+              className="btn btn-sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadingFile}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}
             >
-              {loading ? <span className="spinner" /> : <><Zap size={16} /> Encode</>}
+              {uploadingFile ? <span className="spinner" /> : <Paperclip size={14} />}
+              {t('encode.attachments.addFile')}
             </button>
+            {attachments.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {attachments.map(a => (
+                  <span key={a.blob_cid_hex} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '4px 10px', borderRadius: 8,
+                    background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)',
+                    color: '#6ee7b7', fontSize: '0.78rem',
+                  }}>
+                    <FileText size={12} />
+                    {a.original_name} ({formatFileSize(a.total_size)})
+                    <button onClick={() => removeAttachment(a.blob_cid_hex)} style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: 'var(--ob-text-muted)', padding: 0, display: 'flex',
+                    }}>
+                      <XIcon size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--ob-text-tertiary)' }}>
+              {t('encode.charCount', { count: text.length })}
+              {draftSaved && (
+                <span style={{ marginLeft: 8, color: 'var(--ob-success)', fontWeight: 600 }}>
+                  ✓ {t('encode.draft.savedDraft')}
+                </span>
+              )}
+            </span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className="btn"
+                onClick={handleSaveDraft}
+                disabled={savingDraft || !text.trim()}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'rgba(99, 102, 241, 0.15)',
+                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                  color: '#a5b4fc',
+                }}
+              >
+                {savingDraft ? <span className="spinner" /> : <><Save size={16} /> {t('encode.draft.saveDraft')}</>}
+              </button>
+              <button
+                className="btn btn-primary btn-lg"
+                onClick={handleEncodeWithReset}
+                disabled={loading || !text.trim()}
+              >
+                {loading ? <span className="spinner" /> : <><Zap size={16} /> {t('encode.submit')}</>}
+              </button>
+            </div>
           </div>
         </div>
 

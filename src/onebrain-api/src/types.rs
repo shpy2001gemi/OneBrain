@@ -208,3 +208,76 @@ pub struct WsEvent {
     pub timestamp: u64,
     pub data: serde_json::Value,
 }
+
+// ─── Phase 1: New Request Bodies ───────────────────────────────────────────
+
+/// Backup creation request.
+#[derive(Debug, Deserialize)]
+pub struct BackupRequest {
+    #[serde(default = "default_backup_password")]
+    pub password: String,
+}
+
+fn default_backup_password() -> String { String::new() }
+
+/// Blob reference request — link a blob to a KU.
+#[derive(Debug, Deserialize)]
+pub struct BlobRefRequest {
+    pub ku_cid: String,
+}
+
+/// Tag add/remove request.
+#[derive(Debug, Deserialize)]
+pub struct TagRequest {
+    pub tag: String,
+}
+
+/// Bulk delete request.
+#[derive(Debug, Deserialize)]
+pub struct BulkDeleteRequest {
+    pub gene_type: Option<String>,
+    pub before_timestamp: Option<u64>,
+}
+
+/// WATCH query creation request.
+#[derive(Debug, Deserialize)]
+pub struct WatchRequest {
+    pub query: String,
+}
+
+/// Draft creation request.
+#[derive(Debug, Deserialize)]
+pub struct DraftRequest {
+    pub text: String,
+}
+
+/// Restore backup request (password only — file comes via multipart).
+#[derive(Debug, Deserialize)]
+pub struct RestoreRequest {
+    #[serde(default)]
+    pub password: String,
+}
+
+// ─── Phase 1: New Query Parameters ─────────────────────────────────────────
+
+fn default_search_history_limit() -> usize { 50 }
+
+/// Query params for search history.
+#[derive(Debug, Deserialize)]
+pub struct SearchHistoryParams {
+    #[serde(default = "default_search_history_limit")]
+    pub limit: usize,
+}
+
+/// Generic limit query parameter.
+#[derive(Debug, Deserialize)]
+pub struct LimitQuery {
+    pub limit: Option<usize>,
+}
+
+/// Generic pagination query parameters.
+#[derive(Debug, Deserialize)]
+pub struct PaginationQuery {
+    pub page: Option<usize>,
+    pub limit: Option<usize>,
+}

@@ -1,14 +1,14 @@
-# 📟 OneBrain CLI — Đặc tả tính năng & Tài liệu tham khảo
+# 📟 OneBrain CLI — Feature Specification & Reference
 
-> Tài liệu mô tả đầy đủ tính năng, câu lệnh, output format của `onebrain-cli`.
+> Complete documentation of features, commands, and output formats for `onebrain-cli`.
 > Binary name: `onebrain` | Tech: Rust | Phase: 0 (Foundation)
 
 ---
 
-## 1. Tổng quan
+## 1. Overview
 
-OneBrain CLI là **interface đầu tiên** của hệ thống — chạy trực tiếp trên terminal.
-Nó là **Full Node**: chạy toàn bộ Rust stack, tự join P2P, tự chạy AI.
+OneBrain CLI is the **first interface** of the system — runs directly in the terminal.
+It is a **Full Node**: runs the entire Rust stack, self-joins P2P, and runs AI locally.
 
 ```
 ┌─────────────────────────────────────────┐
@@ -21,41 +21,41 @@ Nó là **Full Node**: chạy toàn bộ Rust stack, tự join P2P, tự chạy 
 └─────────────────────────────────────────┘
 ```
 
-### Đặc điểm
+### Characteristics
 
-| Đặc điểm | Giá trị |
-|-----------|---------|
-| **Loại** | Full Node (direct Rust call) |
-| **Giao tiếp** | Interactive REPL (stdin/stdout) |
-| **Không login** | Identity = Ed25519 keypair, BIP39 recovery |
+| Characteristic | Value |
+|----------------|-------|
+| **Type** | Full Node (direct Rust call) |
+| **Communication** | Interactive REPL (stdin/stdout) |
+| **No login** | Identity = Ed25519 keypair, BIP39 recovery |
 | **AI** | Local Ollama (localhost:11434) |
 | **P2P** | TCP/QUIC, port 4242 |
 | **Storage** | redb (embedded) |
 | **Blob Store** | redb (separate `.blob.redb`, 256KB chunks, dedup) |
-| **Offline** | Hoạt động một phần (browse, search keyword, graph, blob) |
+| **Offline** | Partially functional (browse, keyword search, graph, blob) |
 
 ---
 
-## 2. Khởi động
+## 2. Startup
 
-### 2.1 Lệnh khởi động
+### 2.1 Start Command
 
 ```bash
 onebrain start [OPTIONS]
 ```
 
-| Flag | Default | Mô tả |
-|------|---------|-------|
-| `--name NAME` | `"OneBrain"` | Tên hiển thị của node |
-| `--port PORT` | `4242` | Port P2P |
-| `--data-dir DIR` | `./onebrain_data` | Thư mục dữ liệu |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--name NAME` | `"OneBrain"` | Display name for the node |
+| `--port PORT` | `4242` | P2P port |
+| `--data-dir DIR` | `./onebrain_data` | Data directory |
 | `--ollama-url URL` | `http://localhost:11434` | Ollama API URL |
-| `--model MODEL` | `qwen3:8b` | AI model mặc định |
-| `--seeds ADDR,ADDR` | `[]` | Địa chỉ seed nodes |
+| `--model MODEL` | `qwen3:8b` | Default AI model |
+| `--seeds ADDR,ADDR` | `[]` | Seed node addresses |
 
-### 2.2 First-Run (Lần chạy đầu tiên)
+### 2.2 First-Run
 
-Khi `{data_dir}/identity.json` chưa tồn tại:
+When `{data_dir}/identity.json` does not yet exist:
 
 ```
 ╔══════════════════════════════════════╗
@@ -63,14 +63,14 @@ Khi `{data_dir}/identity.json` chưa tồn tại:
 ╚══════════════════════════════════════╝
 
   ── Step 1/5: Display Name ──
-  Enter your name (hoặc Enter để dùng mặc định):
-  > Phúc
+  Enter your name (or press Enter for default):
+  > Alice
 
   ── Step 2/5: Language ──
-  Choose language / Chọn ngôn ngữ:
+  Choose language:
     1. English
     2. Tiếng Việt
-  > 2
+  > 1
 
   ── Step 3/5: Identity Generation ──
   Generating Ed25519 keypair...
@@ -79,16 +79,16 @@ Khi `{data_dir}/identity.json` chưa tồn tại:
   Your NodeId: a1b2c3d4e5f6...
 
   ── Step 4/5: Recovery Phrase (BIP39) ──
-  ⚠ QUAN TRỌNG: Ghi lại 24 từ này. Đây là cách DUY NHẤT để khôi phục identity.
+  ⚠ IMPORTANT: Write down these 24 words. This is the ONLY way to recover your identity.
   
   1. abandon  2. ability  3. able    4. about
   5. above    6. absent   7. absorb  8. abstract
   ...
   
-  Confirm: Nhập từ #3 và #17 để xác nhận:
+  Confirm: Enter word #3 and #17 to verify:
   > able
   > ...
-  ✓ Recovery phrase đã được xác nhận.
+  ✓ Recovery phrase confirmed.
 
   ── Step 5/5: AI Setup ──
   Detecting hardware... GPU: NVIDIA RTX 3060 (12GB VRAM)
@@ -98,14 +98,14 @@ Khi `{data_dir}/identity.json` chưa tồn tại:
   ✓ Setup complete! Type 'help' to begin.
 ```
 
-### 2.3 Startup (Lần chạy tiếp theo)
+### 2.3 Startup (Subsequent Runs)
 
 ```
 ╔══════════════════════════════════════╗
 ║       OneBrain Node Starting...      ║
 ╚══════════════════════════════════════╝
 
-  Name:     Phúc
+  Name:     Alice
   Port:     4242
   NodeId:   a1b2c3d4...
   Tier:     Contributor (0.35)
@@ -122,65 +122,65 @@ Type 'help' for commands.
 
 ---
 
-## 3. Danh sách câu lệnh — Đầy đủ
+## 3. Command List — Complete
 
-### 3.1 Tổng quan commands
+### 3.1 Commands Overview
 
-| Nhóm | Command | Mô tả | Status |
-|-------|---------|-------|--------|
+| Group | Command | Description | Status |
+|-------|---------|-------------|--------|
 | **Knowledge** | `encode <text>` | Encode text → KU | ✅ Implemented |
-| | `remember <text>` | Alias cho encode | ✅ Implemented |
-| | `search <query>` | Tìm kiếm semantic | ✅ Implemented |
-| | `find <query>` | Alias cho search | ✅ Implemented |
+| | `remember <text>` | Alias for encode | ✅ Implemented |
+| | `search <query>` | Semantic search | ✅ Implemented |
+| | `find <query>` | Alias for search | ✅ Implemented |
 | | `list` | Browse KUs | ✅ Implemented |
-| | `detail <cid>` | Xem chi tiết KU | ✅ Implemented |
-| | `delete <cid>` | Xóa KU local | ✅ Implemented |
+| | `detail <cid>` | View KU details | ✅ Implemented |
+| | `delete <cid>` | Delete KU locally | ✅ Implemented |
 | | `kql <query>` | KQL query | ✅ Implemented |
-| | `graph <cid>` | Xem graph neighbors | ✅ Implemented |
-| **Network** | `connect <addr>` | Kết nối peer | ✅ Implemented |
-| | `status` | Trạng thái node | ✅ Implemented |
-| | `peers` | Danh sách peers | ✅ Implemented |
-| **Identity** | `identity` | Xem identity info | ✅ Implemented |
-| | `recover` | Khôi phục BIP39 | ✅ Implemented |
-| **Profile** | `profile` | Xem profile | ✅ Implemented |
-| | `profile set <field> <value>` | Sửa profile | ✅ Implemented |
-| **AI** | `model list` | Liệt kê models | ✅ Implemented |
-| | `model switch <name>` | Chuyển model | ✅ Implemented |
+| | `graph <cid>` | View graph neighbors | ✅ Implemented |
+| **Network** | `connect <addr>` | Connect to peer | ✅ Implemented |
+| | `status` | Node status | ✅ Implemented |
+| | `peers` | Peer list | ✅ Implemented |
+| **Identity** | `identity` | View identity info | ✅ Implemented |
+| | `recover` | BIP39 recovery | ✅ Implemented |
+| **Profile** | `profile` | View profile | ✅ Implemented |
+| | `profile set <field> <value>` | Edit profile | ✅ Implemented |
+| **AI** | `model list` | List models | ✅ Implemented |
+| | `model switch <name>` | Switch model | ✅ Implemented |
 | | `model test` | Test AI connection | ✅ Implemented |
-| **Wallet** | `wallet` | Xem balance OBT | ✅ Implemented |
-| | `wallet history` | Lịch sử giao dịch | ✅ Implemented |
-| **Blob** | `blob list` | Liệt kê blobs đã lưu | ✅ Implemented |
-| | `blob store <file>` | Lưu file thành blob | ✅ Implemented |
-| | `blob detail <cid>` | Xem chi tiết blob | ✅ Implemented |
-| | `blob export <cid> [output]` | Xuất blob ra file | ✅ Implemented |
-| | `blob delete <cid>` | Xóa blob | ✅ Implemented |
-| | `blob stats` | Thống kê dung lượng blob | ✅ Implemented |
+| **Wallet** | `wallet` | View OBT balance | ✅ Implemented |
+| | `wallet history` | Transaction history | ✅ Implemented |
+| **Blob** | `blob list` | List stored blobs | ✅ Implemented |
+| | `blob store <file>` | Store file as blob | ✅ Implemented |
+| | `blob detail <cid>` | View blob details | ✅ Implemented |
+| | `blob export <cid> [output]` | Export blob to file | ✅ Implemented |
+| | `blob delete <cid>` | Delete blob | ✅ Implemented |
+| | `blob stats` | Blob storage statistics | ✅ Implemented |
 | | `blob gc` | Garbage collect orphaned blobs | ✅ Implemented |
-| **Data** | `export` | Export KUs ra file | ✅ Implemented |
-| | `import <file>` | Import file vào | ✅ Implemented |
+| **Data** | `export` | Export KUs to file | ✅ Implemented |
+| | `import <file>` | Import file | ✅ Implemented |
 | | `backup` | Full backup | ✅ Implemented |
 | | `restore <file>` | Restore from backup | ✅ Implemented |
-| **Config** | `config` | Xem config hiện tại | ✅ Implemented |
-| | `config set <key> <value>` | Sửa config | ✅ Implemented |
-| **System** | `help [command]` | Trợ giúp (grouped + per-command) | ✅ Implemented |
-| | `quit` / `exit` | Thoát | ✅ Implemented |
-| | `<free text>` | Chat với AI | ✅ Implemented |
+| **Config** | `config` | View current config | ✅ Implemented |
+| | `config set <key> <value>` | Edit config | ✅ Implemented |
+| **System** | `help [command]` | Help (grouped + per-command) | ✅ Implemented |
+| | `quit` / `exit` | Exit | ✅ Implemented |
+| | `<free text>` | Chat with AI | ✅ Implemented |
 
-**Tổng: 33/33 commands ✅ — All implemented**
+**Total: 33/33 commands ✅ — All implemented**
 
 ---
 
-### 3.2 Chi tiết từng command
+### 3.2 Command Details
 
 ---
 
 #### `encode <text>` / `remember <text>`
 
-Encode text thành Knowledge Unit (KU) và publish lên mạng.
+Encode text into a Knowledge Unit (KU) and publish it to the network.
 
 ```
-OneBrain> encode Albert Einstein phát triển thuyết tương đối đặc biệt năm 1905, 
-  chứng minh rằng E=mc² — năng lượng bằng khối lượng nhân bình phương vận tốc ánh sáng.
+OneBrain> encode Albert Einstein developed the special theory of relativity in 1905, 
+  proving that E=mc² — energy equals mass times the speed of light squared.
 
   ✓ Encoded and stored successfully
   CID:          a1b2c3d4e5f6789...
@@ -188,13 +188,13 @@ OneBrain> encode Albert Einstein phát triển thuyết tương đối đặc bi
   Confidence:   92%
   Wire size:    1,234 bytes
   Instructions: 47
-  Codons:       [Vật lý] (Domain), [Einstein] (Agent), [E=mc²] (Content)
+  Codons:       [Physics] (Domain), [Einstein] (Agent), [E=mc²] (Content)
   Bonds:        2 outgoing
   📡 Broadcasting to 3 peer(s)...
   🔍 Verification requested from 3 peer(s)
 ```
 
-**Rate limit**: Leaf=1/h, Contributor=5/h, LocalSP+=10/h. Nếu vượt:
+**Rate limit**: Leaf=1/h, Contributor=5/h, LocalSP+=10/h. If exceeded:
 ```
   ✗ Rate limit exceeded. Tier: Leaf (max 1 KU/hour).
     Try again in 42 minutes.
@@ -211,15 +211,15 @@ OneBrain> encode Albert Einstein phát triển thuyết tương đối đặc bi
 
 #### `search <query>` / `find <query>`
 
-Tìm kiếm KUs bằng semantic search (AI) + keyword matching.
+Search KUs using semantic search (AI) + keyword matching.
 
 ```
-OneBrain> search thuyết tương đối
+OneBrain> search theory of relativity
 
   ── Search Results (3 found) ──
-  1. [Fact] Einstein phát triển thuyết tương đối...    Score: 0.95  CID: a1b2c3...
-  2. [Hypo] Hiệu ứng giãn nở thời gian...             Score: 0.82  CID: d4e5f6...
-  3. [Proc] Cách tính hệ số Lorentz...                 Score: 0.71  CID: 789abc...
+  1. [Fact] Einstein developed the theory of relativity... Score: 0.95  CID: a1b2c3...
+  2. [Hypo] Time dilation effects near light speed...      Score: 0.82  CID: d4e5f6...
+  3. [Proc] How to calculate the Lorentz factor...         Score: 0.71  CID: 789abc...
   
   Use 'detail <cid>' to view full KU.
 ```
@@ -228,23 +228,41 @@ OneBrain> search thuyết tương đối
 
 #### `list [OPTIONS]`
 
-Browse tất cả KUs trong storage local.
+Browse all KUs in local storage.
 
-| Flag | Default | Mô tả |
-|------|---------|-------|
-| `--page N` | 1 | Trang |
-| `--limit N` | 15 | Số KU/trang |
-| `--type TYPE` | all | Filter: fact, procedure, experience, creative, hypothesis... |
-| `--sort FIELD` | created | Sort: created, pomv, trust |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--page N` | 1 | Page number |
+| `--limit N` | 15 | KUs per page |
+| `--type TYPE` | all | Filter by gene type: `fact`, `procedure`, `experience`, `creative`, `media_experience`, `testimony`, `formal`, `hypothesis`, `narrative`, `sensory`, `composite`, `normative`, `definition` |
+| `--sort FIELD` | created | Sort by: created, pomv, trust |
+
+**All 13 KU v7 gene types:**
+
+| Gene Type | Abbreviation | Description |
+|-----------|-------------|-------------|
+| `Fact` | Fact | Verified factual knowledge |
+| `Procedure` | Proc | Step-by-step instructions or how-to knowledge |
+| `Experience` | Exp | First-person lived experiences |
+| `Creative` | Crea | Original creative works (text, ideas) |
+| `MediaExperience` | Media | Experiences tied to media (films, music, books) |
+| `Testimony` | Test | Witness accounts and reported observations |
+| `Formal` | Form | Formal/mathematical/logical statements |
+| `Hypothesis` | Hypo | Unverified theories or conjectures |
+| `Narrative` | Narr | Stories, chronicles, and sequential accounts |
+| `Sensory` | Sens | Sensory-grounded observations (taste, smell, sight) |
+| `Composite` | Comp | Multi-type knowledge units combining several gene types |
+| `Normative` | Norm | Value judgments, ethical principles, and standards |
+| `Definition` | Defn | Definitions, glossary entries, and term explanations |
 
 ```
 OneBrain> list
 
   ── Knowledge Units (42 total, page 1/3) ──
   #   Gene   PoMV  Trust  Created     CID         Preview
-  1.  Fact   0.85  0.92   07/07 14:30 a1b2c3...   Einstein phát triển thuyết tương...
-  2.  Proc   0.72  0.88   07/07 13:15 d4e5f6...   Cách nấu phở Hà Nội truyền thống...
-  3.  Exp    0.45  0.65   07/06 22:00 789abc...    Lần đầu tôi nhìn thấy dải ngân hà...
+  1.  Fact   0.85  0.92   07/07 14:30 a1b2c3...   Einstein developed the theory of...
+  2.  Proc   0.72  0.88   07/07 13:15 d4e5f6...   How to brew traditional Vietnamese pho...
+  3.  Exp    0.45  0.65   07/06 22:00 789abc...    The first time I saw the Milky Way...
   ...
   
   Page 1/3. Use 'list --page 2' for next page.
@@ -261,7 +279,7 @@ OneBrain> list --type hypothesis --sort pomv
 
 #### `detail <cid>`
 
-Xem chi tiết đầy đủ một KU.
+View full details of a KU.
 
 ```
 OneBrain> detail a1b2c3d4
@@ -290,32 +308,32 @@ OneBrain> detail a1b2c3d4
   Verification: FULL (3/3 verifiers agreed)
   
   ── Codons (Concepts) ──
-  [Vật lý] (Domain)  [Einstein] (Agent)  [E=mc²] (Content)
-  [1905] (Time)  [Thuyết tương đối] (Result)
+  [Physics] (Domain)  [Einstein] (Agent)  [E=mc²] (Content)
+  [1905] (Time)  [Theory of Relativity] (Result)
   
   ── Content ──
-  Albert Einstein phát triển thuyết tương đối đặc biệt năm 1905,
-  chứng minh rằng E=mc² — năng lượng bằng khối lượng nhân bình
-  phương vận tốc ánh sáng.
+  Albert Einstein developed the special theory of relativity in 1905,
+  proving that E=mc² — energy equals mass times the speed of light
+  squared.
   
   ── Bonds (3 outgoing, 1 incoming) ──
-  OUT → [Extends]    → Thuyết lượng tử      CID: x1y2z3...  w: 0.80
-  OUT → [Cites]      → Newton's Laws         CID: a4b5c6...  w: 0.65
-  OUT → [DerivedFrom]→ Maxwell equations     CID: m7n8o9...  w: 0.55
-  IN  ← [Refutes]    ← Ether theory          CID: d7e8f9...  w: 0.30
+  OUT → [Extends]    → Quantum Theory           CID: x1y2z3...  w: 0.80
+  OUT → [Cites]      → Newton's Laws            CID: a4b5c6...  w: 0.65
+  OUT → [DerivedFrom]→ Maxwell equations        CID: m7n8o9...  w: 0.55
+  IN  ← [Refutes]    ← Ether theory             CID: d7e8f9...  w: 0.30
 ```
 
 ---
 
 #### `delete <cid>`
 
-Xóa KU khỏi storage local (không ảnh hưởng copies trên mạng).
+Delete a KU from local storage (does not affect copies on the network).
 
 ```
 OneBrain> delete a1b2c3d4
 
   ⚠ This will delete KU [a1b2c3d4...] from LOCAL storage.
-    Gene: Fact | "Einstein phát triển thuyết tương đối..."
+    Gene: Fact | "Einstein developed the theory of relativity..."
     Other nodes may still have copies.
   
   Confirm delete? (y/N): y
@@ -326,7 +344,7 @@ OneBrain> delete a1b2c3d4
 
 #### `kql <query>`
 
-Thực thi KQL (Knowledge Query Language) query.
+Execute a KQL (Knowledge Query Language) query.
 
 ```
 OneBrain> kql FIND facts WHERE trust > 0.8 LIMIT 5
@@ -338,12 +356,30 @@ OneBrain> kql FIND facts WHERE trust > 0.8 LIMIT 5
 ```
 
 ```
-OneBrain> kql FIND procedures WHERE codons CONTAINS "nấu" ORDER BY pomv DESC
+OneBrain> kql FIND procedures WHERE codons CONTAINS "cooking" ORDER BY pomv DESC
 
   ── KQL Results (2 matches) ──
-  1. [Proc] Cách nấu phở Hà Nội        pomv: 0.72  CID: d4e5f6...
-  2. [Proc] Cách nấu cơm tấm Sài Gòn   pomv: 0.45  CID: abc123...
+  1. [Proc] How to brew traditional pho     pomv: 0.72  CID: d4e5f6...
+  2. [Proc] How to make broken rice         pomv: 0.45  CID: abc123...
 ```
+
+**KQL supports all 13 v7 gene type patterns:**
+
+| KQL Pattern | Gene Type |
+|-------------|-----------|
+| `facts` | Fact |
+| `procedures` | Procedure |
+| `experiences` | Experience |
+| `creatives` | Creative |
+| `media_experiences` | MediaExperience |
+| `testimonies` | Testimony |
+| `formals` | Formal |
+| `hypotheses` | Hypothesis |
+| `narratives` | Narrative |
+| `sensories` | Sensory |
+| `composites` | Composite |
+| `normatives` | Normative |
+| `definitions` | Definition |
 
 **Syntax error**:
 ```
@@ -352,7 +388,9 @@ OneBrain> kql FIND WHERE
   ✗ KQL syntax error at position 5:
     FIND WHERE
          ^^^^^
-    Expected: pattern (facts, procedures, experiences, ...)
+    Expected: pattern (facts, procedures, experiences, creatives,
+              media_experiences, testimonies, formals, hypotheses,
+              narratives, sensories, composites, normatives, definitions)
     Example: FIND facts WHERE trust > 0.5
 ```
 
@@ -360,11 +398,11 @@ OneBrain> kql FIND WHERE
 
 #### `graph <cid> [--depth N]`
 
-Hiển thị graph neighbors dạng tree (text-based, không visual).
+Display graph neighbors as a text-based tree (not visual).
 
-| Flag | Default | Mô tả |
-|------|---------|-------|
-| `--depth N` | 1 | Độ sâu traversal (max 3) |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--depth N` | 1 | Traversal depth (max 3) |
 
 ```
 OneBrain> graph a1b2c3 --depth 2
@@ -372,15 +410,15 @@ OneBrain> graph a1b2c3 --depth 2
   ── Knowledge Graph: a1b2c3... (depth=2) ──
   
   ● [a1b2c3] Einstein E=mc² (Fact, PoMV: 0.85)
-  ├── → [Extends]     → ● [x1y2z3] Thuyết lượng tử (Fact, PoMV: 0.78)
-  │   ├── → [PartOf]  → ○ [m1n2o3] Vật lý hiện đại
+  ├── → [Extends]     → ● [x1y2z3] Quantum Theory (Fact, PoMV: 0.78)
+  │   ├── → [PartOf]  → ○ [m1n2o3] Modern Physics
   │   └── → [Cites]   → ○ [p1q2r3] Planck constant
   ├── → [Cites]       → ● [a4b5c6] Newton's Laws (Fact, PoMV: 0.92)
   │   └── → [Extends] → ○ [w1x2y3] Kepler's Laws
-  ├── → [DerivedFrom] → ● [m7n8o9] Maxwell equations (Formal, PoMV: 0.81)
+  ├── → [DerivedFrom] → ● [m7n8o9] Maxwell equations (Form, PoMV: 0.81)
   └── ← [Refutes]     ← ● [d7e8f9] Ether theory (Hypo, PoMV: 0.12)
   
-  ● = có trong local storage  ○ = chỉ có CID (chưa sync)
+  ● = in local storage  ○ = CID only (not yet synced)
   Nodes: 8  |  Edges: 7  |  Max depth reached: 2
 ```
 
@@ -388,14 +426,14 @@ OneBrain> graph a1b2c3 --depth 2
 
 #### `identity`
 
-Hiện thông tin identity của node hiện tại.
+Display identity information for the current node.
 
 ```
 OneBrain> identity
 
   ── Identity ──
   NodeId:       a1b2c3d4e5f6789012345678901234567890abcdef...
-  Display name: Phúc
+  Display name: Alice
   Created:      2026-07-07 14:00:00
   Puzzle:       difficulty=16, solved in 2.3s
   
@@ -419,7 +457,7 @@ OneBrain> identity
 
 #### `recover`
 
-Khôi phục identity từ BIP39 recovery phrase (interactive).
+Recover identity from a BIP39 recovery phrase (interactive).
 
 ```
 OneBrain> recover
@@ -444,21 +482,21 @@ OneBrain> recover
 
 #### `profile` / `profile set`
 
-Xem và chỉnh sửa user profile.
+View and edit user profile.
 
 ```
 OneBrain> profile
 
   ── User Profile ──
-  Display name:     Phúc
-  Language:         vi (Tiếng Việt)
+  Display name:     Alice
+  Language:         en (English)
   Response style:   Balanced
   Proactive encode: On
   
   ── Expertise ──
-  1. Vật lý         (15 KUs, active 2h ago)
-  2. Lập trình      (12 KUs, active 1d ago)
-  3. Ẩm thực        (8 KUs, active 3d ago)
+  1. Physics        (15 KUs, active 2h ago)
+  2. Programming    (12 KUs, active 1d ago)
+  3. Cooking        (8 KUs, active 3d ago)
   
   ── Statistics ──
   Total KUs:     42
@@ -468,8 +506,8 @@ OneBrain> profile
 ```
 
 ```
-OneBrain> profile set name "Phúc Nguyễn"
-  ✓ Display name updated to "Phúc Nguyễn"
+OneBrain> profile set name "Alice Smith"
+  ✓ Display name updated to "Alice Smith"
 
 OneBrain> profile set language en
   ✓ Language updated to "en" (English)
@@ -483,7 +521,7 @@ OneBrain> profile set style detailed
 
 #### `model list` / `model switch` / `model test`
 
-Quản lý AI model (Ollama).
+Manage AI models (Ollama).
 
 ```
 OneBrain> model list
@@ -527,10 +565,10 @@ OneBrain> model test
 
 #### `wallet` / `wallet history`
 
-Xem OBT balance và lịch sử giao dịch.
+View OBT balance and transaction history.
 
-> **Kiến trúc OBT**: Nano-style block-lattice — mỗi node có chain riêng, KHÔNG có central ledger.
-> Balance đọc từ local `AccountState` (head block).
+> **OBT Architecture**: Nano-style block-lattice — each node has its own chain, NO central ledger.
+> Balance is read from local `AccountState` (head block).
 
 ```
 OneBrain> wallet
@@ -602,7 +640,7 @@ OneBrain> import knowledge_backup.json
 
 #### `backup` / `restore`
 
-Full backup/restore toàn bộ node data.
+Full backup/restore of all node data.
 
 ```
 OneBrain> backup
@@ -643,12 +681,12 @@ OneBrain> restore onebrain_backup_20260707.obk
 
 #### `blob list` / `blob store` / `blob detail` / `blob export` / `blob delete` / `blob stats` / `blob gc`
 
-Quản lý media/file attachment (Blob Store).
+Manage media/file attachments (Blob Store).
 
-> **Kiến trúc**: Blob lưu riêng trong `.blob.redb`, tách biệt khỏi KU. KU chỉ chứa 34-byte `MediaRef` CID tham chiếu.
-> File tự động chunk 256KB, dedup bằng BLAKE3, device-adaptive quota (min 10GB).
+> **Architecture**: Blobs are stored separately in `.blob.redb`, isolated from KUs. KUs only contain a 34-byte `MediaRef` CID reference.
+> Files are automatically chunked at 256KB, deduped via BLAKE3, with device-adaptive quota (min 10GB).
 
-**Lưu file:**
+**Store a file:**
 ```
 OneBrain> blob store photo.jpg
 
@@ -661,7 +699,7 @@ OneBrain> blob store photo.jpg
   MIME:   image/jpeg
 ```
 
-**Liệt kê blobs:**
+**List blobs:**
 ```
 OneBrain> blob list
 
@@ -674,7 +712,7 @@ OneBrain> blob list
   0100b2a3c4d5 data.bin             Raw        512.0 KB   0
 ```
 
-**Xem chi tiết:**
+**View details:**
 ```
 OneBrain> blob detail 0101a3b4c5d6e7f8...
 
@@ -692,23 +730,23 @@ OneBrain> blob detail 0101a3b4c5d6e7f8...
     → a1b2c3d4e5f67890
 ```
 
-**Xuất blob ra file:**
+**Export blob to file:**
 ```
 OneBrain> blob export 0101a3b4c5d6 output.jpg
   ✓ Exported 3.2 MB to output.jpg
 
 OneBrain> blob export 0101a3b4c5d6
-  ✓ Exported 3.2 MB to photo.jpg    (dùng tên gốc)
+  ✓ Exported 3.2 MB to photo.jpg    (uses original filename)
 ```
 
-**Xóa blob:**
+**Delete blob:**
 ```
 OneBrain> blob delete 0101a3b4c5d6
   Delete blob 0101a3b4c5d6...? (y/N): y
   ✓ Blob deleted.
 ```
 
-**Thống kê:**
+**Storage statistics:**
 ```
 OneBrain> blob stats
 
@@ -724,18 +762,18 @@ OneBrain> blob gc
   ✓ Deleted 1 orphaned blob(s), freed 512.0 KB
 ```
 
-**Deduplication tự động:**
+**Automatic deduplication:**
 ```
 OneBrain> blob store einstein.jpg
   ✓ Blob stored successfully (NEW)
   CID:    0101abc123...
 
-OneBrain> blob store einstein_copy.jpg    (nội dung giống hệt)
+OneBrain> blob store einstein_copy.jpg    (identical content)
   ✓ Blob stored successfully (DEDUP — already exists)
-  CID:    0101abc123...                    (cùng CID!)
+  CID:    0101abc123...                    (same CID!)
 ```
 
-**Lỗi:**
+**Errors:**
 ```
 OneBrain> blob store huge_video.mp4       (> 100MB)
   ✗ Blob too large: 209,715,200 bytes (max: 104,857,600 bytes)
@@ -748,13 +786,13 @@ OneBrain> blob detail invalid_cid
 
 #### `config` / `config set`
 
-Xem và sửa cấu hình node.
+View and edit node configuration.
 
 ```
 OneBrain> config
 
   ── Node Configuration ──
-  name:       Phúc
+  name:       Alice
   port:       4242
   data_dir:   ./onebrain_data
   ollama_url: http://localhost:11434
@@ -787,7 +825,7 @@ OneBrain> config set ollama_url http://192.168.1.100:11434
 OneBrain> status
 
   ── Node Status ──
-  Name:       Phúc
+  Name:       Alice
   NodeId:     a1b2c3d4... (Contributor, trust: 0.35)
   Uptime:     12h 34m
   
@@ -857,6 +895,15 @@ OneBrain> help
   ║  backup                  Full encrypted backup                ║
   ║  restore <file>          Restore from backup                  ║
   ║                                                               ║
+  ║  ── Blob ──                                                   ║
+  ║  blob list               List stored blobs                    ║
+  ║  blob store <file>       Store file as blob                   ║
+  ║  blob detail <cid>       View blob details                    ║
+  ║  blob export <cid>       Export blob to file                  ║
+  ║  blob delete <cid>       Delete blob                          ║
+  ║  blob stats              Blob storage statistics              ║
+  ║  blob gc                 Garbage collect orphaned blobs       ║
+  ║                                                               ║
   ║  ── Config ──                                                 ║
   ║  config                  Show configuration                   ║
   ║  config set <key> <val>  Update configuration                 ║
@@ -880,6 +927,11 @@ OneBrain> help encode
   Pipeline: Text → AI analysis → Gene extraction → Bond creation
             → CID calculation → Store → Broadcast → Verify
   
+  Gene types (KU v7, 13 types):
+    Fact, Procedure, Experience, Creative, MediaExperience,
+    Testimony, Formal, Hypothesis, Narrative, Sensory,
+    Composite, Normative, Definition
+  
   Rate limits:
     Leaf:        1 KU/hour
     Contributor: 5 KU/hour
@@ -892,7 +944,7 @@ OneBrain> help encode
   
   Examples:
     encode Einstein developed special relativity in 1905
-    encode Cách nấu phở: Bước 1: Ninh xương bò 8 tiếng...
+    encode How to make pho: Step 1: Simmer beef bones for 8 hours...
     remember The mitochondria is the powerhouse of the cell
 ```
 
@@ -900,7 +952,7 @@ OneBrain> help encode
 
 ## 4. Real-time Events (Background Notifications)
 
-Trong khi user nhập lệnh, CLI hiển thị events từ mạng:
+While the user is typing commands, the CLI displays events from the network:
 
 ```
   🔗 Peer connected: 'Alice' at 192.168.1.5:4242 (156 KUs)
@@ -914,7 +966,7 @@ Trong khi user nhập lệnh, CLI hiển thị events từ mạng:
 
 ## 5. Offline Mode
 
-Khi không có internet hoặc không có Ollama:
+When there is no internet connection or Ollama is unavailable:
 
 ```
   ⚠ OFFLINE MODE — Some features are limited.
@@ -933,71 +985,71 @@ Khi không có internet hoặc không có Ollama:
 
 ## 6. Error Messages
 
-Tất cả error đều theo format thống nhất:
+All errors follow a unified format:
 
 ```
   ✗ [ERROR_CODE] Message
     Detail / suggestion
 ```
 
-| Code | Khi nào | Message |
-|------|---------|---------|
-| `RATE_LIMIT` | Vượt giới hạn | "Tier X: max Y KU/hour. Try again in Z minutes" |
+| Code | Condition | Message |
+|------|-----------|---------|
+| `RATE_LIMIT` | Rate limit exceeded | "Tier X: max Y KU/hour. Try again in Z minutes" |
 | `KU_TOO_SHORT` | Text < 256 bytes | "Content too short (N bytes, min: 256)" |
-| `KU_LOW_QUALITY` | Thiếu genes | "Content needs more detail for encoding" |
-| `AI_UNAVAILABLE` | Ollama tắt | "AI not available. Check: ollama serve" |
-| `AI_MODEL_MISSING` | Model chưa pull | "Model X not found. Run: ollama pull X" |
-| `AI_TIMEOUT` | AI chậm | "AI processing... (slow hardware, please wait)" |
-| `KU_NOT_FOUND` | CID không có | "KU not found: CID..." |
-| `KQL_SYNTAX` | KQL sai | "KQL syntax error at position N: ..." |
-| `NO_PEERS` | Không có peer | "Not connected to network" |
-| `NETWORK_ERROR` | Mạng lỗi | "Connection failed: ..." |
-| `IDENTITY_EXISTS` | Đã có identity | "Identity already exists. Use 'recover' to replace" |
-| `INVALID_PHRASE` | BIP39 sai | "Invalid recovery phrase" |
-| `BACKUP_PASSWORD` | Sai password | "Incorrect backup password" |
+| `KU_LOW_QUALITY` | Insufficient genes | "Content needs more detail for encoding" |
+| `AI_UNAVAILABLE` | Ollama is down | "AI not available. Check: ollama serve" |
+| `AI_MODEL_MISSING` | Model not pulled | "Model X not found. Run: ollama pull X" |
+| `AI_TIMEOUT` | AI is slow | "AI processing... (slow hardware, please wait)" |
+| `KU_NOT_FOUND` | CID not found | "KU not found: CID..." |
+| `KQL_SYNTAX` | Invalid KQL | "KQL syntax error at position N: ..." |
+| `NO_PEERS` | No peers connected | "Not connected to network" |
+| `NETWORK_ERROR` | Network failure | "Connection failed: ..." |
+| `IDENTITY_EXISTS` | Identity already exists | "Identity already exists. Use 'recover' to replace" |
+| `INVALID_PHRASE` | Invalid BIP39 phrase | "Invalid recovery phrase" |
+| `BACKUP_PASSWORD` | Wrong password | "Incorrect backup password" |
 | `BLOB_TOO_LARGE` | File > 100MB | "Blob too large: N bytes (max: 104857600)" |
-| `BLOB_NOT_FOUND` | CID không có | "Blob not found" |
-| `BLOB_INVALID_CID` | CID format sai | "Invalid blob CID: ..." |
-| `BLOB_QUOTA` | Vượt quota | "Blob quota exceeded: used / quota bytes" |
+| `BLOB_NOT_FOUND` | CID not found | "Blob not found" |
+| `BLOB_INVALID_CID` | Invalid CID format | "Invalid blob CID: ..." |
+| `BLOB_QUOTA` | Quota exceeded | "Blob quota exceeded: used / quota bytes" |
 
 ---
 
-## 7. OBT Token — Kiến trúc phi tập trung
+## 7. OBT Token — Decentralized Architecture
 
-> **Quan trọng**: OBT sử dụng **Nano-style block-lattice** — KHÔNG có central ledger.
+> **Important**: OBT uses a **Nano-style block-lattice** — there is NO central ledger.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│              Mỗi Node có chain riêng            │
+│           Each Node has its own chain            │
 │                                                  │
 │  Node A chain:  [Open] → [Mint] → [Mint] → ... │
 │  Node B chain:  [Open] → [Mint] → [Send] → ... │
 │  Node C chain:  [Open] → [Receive] → [Mint]    │
 │                                                  │
 │  Balance = head_block.balance (local, instant)  │
-│  Không cần query mạng để biết balance mình      │
+│  No network query needed to check own balance   │
 └─────────────────────────────────────────────────┘
 ```
 
-| Hoạt động | Cách hoạt động |
-|-----------|---------------|
-| **Mint** | Deterministic từ verified work, K=3 witnesses attest, mọi node có thể re-verify |
-| **Transfer** | Sender tạo Send block → K=3 witnesses confirm → Receiver tạo Receive block |
-| **Balance** | Đọc local `AccountState.balance` (head block) — instant, không cần network |
-| **Fork detect** | Nếu 2 blocks cùng sequence → ForkWarrant → penalty |
+| Operation | How it works |
+|-----------|-------------|
+| **Mint** | Deterministic from verified work, K=3 witnesses attest, any node can re-verify |
+| **Transfer** | Sender creates Send block → K=3 witnesses confirm → Receiver creates Receive block |
+| **Balance** | Reads local `AccountState.balance` (head block) — instant, no network needed |
+| **Fork detect** | If 2 blocks share the same sequence → ForkWarrant → penalty |
 
-**5 loại block**:
-| Block | Balance | Mô tả |
-|-------|---------|-------|
-| `Open` | = 0 | Genesis block (1 lần duy nhất) |
-| `Mint` | += amount | Nhận OBT từ verified work |
-| `Send` | -= amount | Gửi OBT cho node khác |
-| `Receive` | += amount | Nhận OBT từ Send block |
-| `Refund` | += amount | Lấy lại OBT (Send expired 7 ngày) |
+**5 block types**:
+| Block | Balance | Description |
+|-------|---------|-------------|
+| `Open` | = 0 | Genesis block (created once) |
+| `Mint` | += amount | Receive OBT from verified work |
+| `Send` | -= amount | Send OBT to another node |
+| `Receive` | += amount | Receive OBT from a Send block |
+| `Refund` | += amount | Reclaim OBT (Send expired after 7 days) |
 
 ---
 
-## 8. Thứ tự Implementation (tối ưu để ít sửa lại)
+## 8. Implementation Order (optimized to minimize rework)
 
 ```mermaid
 graph TD
@@ -1027,8 +1079,8 @@ graph TD
     S3 --> S10
 ```
 
-| Step | Depends on | Methods vào `onebrain-node` | Commands vào CLI |
-|------|-----------|---------------------------|-----------------|
+| Step | Depends on | Methods in `onebrain-node` | CLI Commands |
+|------|-----------|---------------------------|-------------|
 | **1. Foundation** | — | Error types, helper structs | — |
 | **2. Identity** | Step 1 | `get_identity_info()`, `recover_identity()` | `identity`, `recover` |
 | **3. Knowledge** | Step 1 | `list_kus()`, `get_ku()`, `delete_ku()`, `execute_kql()`, `get_neighbors()` | `list`, `detail`, `delete`, `kql`, `graph` |

@@ -1,13 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Brain, Users, Coins, Clock, Zap, Search, MessageSquare, Cpu } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { api } from '../api/client';
 import type { StatusResponse, KuListItem, AiHealthInfo } from '../api/types';
+import { GENE_TYPE_COLORS, type GeneType } from '../api/types';
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [recentKus, setRecentKus] = useState<KuListItem[]>([]);
+  const [allKus, setAllKus] = useState<KuListItem[]>([]);
   const [aiHealth, setAiHealth] = useState<AiHealthInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -15,9 +20,33 @@ export function DashboardPage() {
     Promise.all([
       api.getStatus().then(setStatus),
       api.listKus(1, 5).then(r => setRecentKus(r.kus)),
+      api.listKus(1, 100).then(r => setAllKus(r.kus)).catch(() => {}),
       api.aiStatus().then(setAiHealth).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, []);
+
+  // Compute gene type distribution for pie chart
+  const geneDistribution = useMemo(() => {
+    const counts: Record<string, number> = {};
+    allKus.forEach(ku => {
+      counts[ku.gene_type] = (counts[ku.gene_type] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value, color: GENE_TYPE_COLORS[name as GeneType] || '#64748b' }))
+      .sort((a, b) => b.value - a.value);
+  }, [allKus]);
+
+  // Top PoMV scores for bar chart
+  const pomvData = useMemo(() => {
+    return [...allKus]
+      .sort((a, b) => b.pomv - a.pomv)
+      .slice(0, 8)
+      .map(ku => ({
+        name: ku.cid_hex.slice(0, 6),
+        pomv: Math.round(ku.pomv * 100),
+        type: ku.gene_type,
+      }));
+  }, [allKus]);
 
   const formatUptime = (s: number) => {
     const h = Math.floor(s / 3600);
@@ -58,6 +87,80 @@ export function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Charts Row */}
+      {allKus.length > 0 && (
+        <div className="grid-2" style={{ marginBottom: 'var(--ob-gap-lg)' }}>
+          {/* Gene Type Distribution */}
+          <div className="glass-card animate-in" style={{ animationDelay: '250ms' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-md)' }}>Gene Type Distribution</h3>
+            <div style={{ width: '100%', height: 220 }}>
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie
+                    data={geneDistribution}
+                    cx="50%" cy="50%"
+                    innerRadius={50} outerRadius={85}
+                    paddingAngle={3}
+                    dataKey="value"
+                    animationDuration={800}
+                  >
+                    {geneDistribution.map((entry, i) => (
+                      <Cell key={i} fill={entry.color} stroke="none" />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      background: 'rgba(17, 24, 39, 0.95)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 8, fontSize: '0.82rem',
+                      color: '#e5e7eb',
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+              {geneDistribution.slice(0, 6).map(d => (
+                <span key={d.name} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.72rem', color: 'var(--ob-text-secondary)' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: d.color }} />
+                  {d.name}: {d.value}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Top PoMV Scores */}
+          <div className="glass-card animate-in" style={{ animationDelay: '350ms' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-md)' }}>Top PoMV Scores</h3>
+            <div style={{ width: '100%', height: 250 }}>
+              <ResponsiveContainer>
+                <BarChart data={pomvData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                  <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                  <Tooltip
+                    contentStyle={{
+                      background: 'rgba(17, 24, 39, 0.95)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 8, fontSize: '0.82rem',
+                      color: '#e5e7eb',
+                    }}
+                    formatter={(value: number) => [`${value}%`, 'PoMV']}
+                  />
+                  <Bar dataKey="pomv" fill="url(#pomvGradient)" radius={[4, 4, 0, 0]} animationDuration={800} />
+                  <defs>
+                    <linearGradient id="pomvGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#06b6d4" />
+                      <stop offset="100%" stopColor="#8b5cf6" />
+                    </linearGradient>
+                  </defs>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Content Row */}
       <div className="grid-2" style={{ gridTemplateColumns: '2fr 1fr', marginBottom: 'var(--ob-gap-lg)' }}>

@@ -1,0 +1,371 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "explorer": "Explorer",
+    "encode": "Encode",
+    "chat": "Chat",
+    "graph": "Graph",
+    "pomv": "PoMV",
+    "network": "Network",
+    "wallet": "Wallet",
+    "social": "Social",
+    "devices": "Devices",
+    "dataTools": "Data Tools",
+    "settings": "Settings",
+    "discovery": "Discovery",
+    "collections": "Collections",
+    "analytics": "Analytics",
+    "help": "Help"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "search": "Search",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "submit": "Submit",
+    "reset": "Reset",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "noData": "No data available",
+    "retry": "Retry",
+    "actions": "Actions",
+    "status": "Status",
+    "created": "Created",
+    "updated": "Updated",
+    "name": "Name",
+    "type": "Type",
+    "size": "Size",
+    "count": "Count",
+    "total": "Total",
+    "preview": "Preview",
+    "download": "Download",
+    "upload": "Upload",
+    "import": "Import",
+    "export": "Export"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "kuCount": "Knowledge Units",
+    "peerCount": "Connected Peers",
+    "uptime": "Uptime",
+    "obtBalance": "OBT Balance",
+    "recentKus": "Recent Knowledge",
+    "quickEncode": "Quick Encode"
+  },
+  "explorer": {
+    "title": "Knowledge Explorer",
+    "searchPlaceholder": "Search knowledge...",
+    "filterByType": "Filter by type",
+    "allTypes": "All Types",
+    "sortBy": "Sort by",
+    "sortCreated": "Created",
+    "sortPomv": "PoMV Score",
+    "sortTrust": "Trust",
+    "noResults": "No knowledge units found",
+    "total": "{{count}} KUs total",
+    "tags": "Tags",
+    "addTag": "Add tag",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "pinned": "Pinned",
+    "deprecated": "Deprecated",
+    "deprecate": "Deprecate",
+    "bulkActions": "Bulk Actions",
+    "bulkDelete": "Bulk Delete",
+    "confirmBulkDelete": "Are you sure you want to delete {{count}} KUs?"
+  },
+  "encode": {
+    "title": "Encode Knowledge",
+    "placeholder": "Enter your knowledge here... (minimum 50 characters)",
+    "submit": "Encode & Store",
+    "encoding": "Encoding...",
+    "success": "Knowledge encoded successfully!",
+    "charCount": "{{count}} characters",
+    "minChars": "Minimum 50 characters required",
+    "result": {
+      "title": "Encode Result",
+      "cid": "CID",
+      "geneType": "Gene Type",
+      "wireSize": "Wire Size",
+      "instructions": "Instructions",
+      "confidence": "Confidence"
+    },
+    "draft": {
+      "title": "Draft Mode",
+      "saveDraft": "Save as Draft",
+      "savedDraft": "Draft saved",
+      "publishDraft": "Publish Draft",
+      "discardDraft": "Discard"
+    },
+    "attachments": {
+      "title": "Attachments",
+      "addFile": "Add File",
+      "maxSize": "Max file size: {{size}}MB",
+      "uploading": "Uploading..."
+    }
+  },
+  "chat": {
+    "title": "AI Chat",
+    "placeholder": "Ask me anything about your knowledge...",
+    "send": "Send",
+    "thinking": "Thinking...",
+    "suggestions": "Suggestions",
+    "kusEncoded": "{{count}} KUs encoded",
+    "kusRetrieved": "{{count}} KUs retrieved"
+  },
+  "graph": {
+    "title": "Knowledge Graph",
+    "depth": "Depth",
+    "enterCid": "Enter a KU CID to visualize",
+    "noGraph": "Select a KU to see its graph",
+    "neighbors": "Neighbors",
+    "relations": "Relations"
+  },
+  "network": {
+    "title": "Network",
+    "peers": "Connected Peers",
+    "connect": "Connect Peer",
+    "addressPlaceholder": "Enter peer address...",
+    "noPeers": "No peers connected",
+    "localNode": "Local Node"
+  },
+  "wallet": {
+    "title": "Wallet",
+    "balance": "Balance",
+    "tier": "Tier",
+    "multiplier": "Multiplier",
+    "totalEarned": "Total Earned",
+    "totalSpent": "Total Spent",
+    "history": "Transaction History",
+    "streams": {
+      "title": "Earnings Streams",
+      "owner": "Owner",
+      "encoder": "Encoder",
+      "verifier": "Verifier",
+      "storage": "Storage"
+    }
+  },
+  "social": {
+    "title": "Social & Discovery",
+    "tabs": {
+      "following": "Following",
+      "profiles": "Profiles",
+      "watches": "Watches"
+    },
+    "following": {
+      "title": "Following",
+      "followPlaceholder": "Enter Node ID to follow...",
+      "follow": "Follow",
+      "unfollow": "Unfollow",
+      "noFollowing": "Not following anyone yet",
+      "followSuccess": "Now following {{nodeId}}",
+      "unfollowSuccess": "Unfollowed {{nodeId}}"
+    },
+    "profiles": {
+      "title": "Peer Profiles",
+      "lookupPlaceholder": "Enter Node ID to look up...",
+      "lookup": "Look Up",
+      "notFound": "Node not found",
+      "trustScore": "Trust Score",
+      "kuCount": "KU Count",
+      "memberSince": "Member Since"
+    },
+    "watches": {
+      "title": "Watch Queries",
+      "createPlaceholder": "Enter KQL watch query...",
+      "create": "Create Watch",
+      "noWatches": "No active watches",
+      "deleteWatch": "Delete",
+      "matches": "{{count}} matches"
+    }
+  },
+  "devices": {
+    "title": "Devices & Sync",
+    "syncStatus": "Sync Status",
+    "pending": "Pending Items",
+    "lastSync": "Last Sync",
+    "totalDevices": "Total Devices",
+    "upToDate": "Up to date",
+    "syncing": "Syncing...",
+    "offline": "Offline",
+    "deviceTypes": {
+      "desktop": "Desktop",
+      "mobile": "Mobile",
+      "web": "Web",
+      "cli": "CLI"
+    }
+  },
+  "dataTools": {
+    "title": "Data Tools",
+    "export": {
+      "title": "Export KUs",
+      "format": "Format",
+      "download": "Download Export"
+    },
+    "import": {
+      "title": "Import KUs",
+      "selectFile": "Select file to import",
+      "importing": "Importing...",
+      "result": "Imported: {{imported}}, Skipped: {{skipped}}, Errors: {{errors}}"
+    },
+    "backup": {
+      "title": "Create Backup",
+      "password": "Encryption password (optional)",
+      "create": "Create Backup"
+    },
+    "restore": {
+      "title": "Restore Backup",
+      "selectFile": "Select backup file",
+      "password": "Backup password",
+      "restore": "Restore"
+    },
+    "blobUpload": {
+      "title": "Upload Blob",
+      "selectFile": "Select file to upload",
+      "uploading": "Uploading..."
+    },
+    "bulkDelete": {
+      "title": "Bulk Delete",
+      "geneType": "Gene Type Filter",
+      "allTypes": "All Types",
+      "confirm": "Confirm Delete",
+      "warning": "This action cannot be undone!",
+      "result": "Deleted: {{deleted}}, Skipped: {{skipped}}"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "nodeName": "Node Name",
+    "dataDir": "Data Directory",
+    "ai": "AI Configuration",
+    "ollamaUrl": "Ollama URL",
+    "model": "Model",
+    "seeds": "Seed Nodes",
+    "language": "Language",
+    "theme": "Theme"
+  },
+  "pomv": {
+    "title": "PoMV Scores",
+    "metabolic": "Metabolic",
+    "prediction": "Prediction",
+    "entropy": "Entropy",
+    "survival": "Survival",
+    "centrality": "Centrality",
+    "niche": "Niche"
+  },
+  "discovery": {
+    "title": "Discovery",
+    "trending": "Trending",
+    "trendingDesc": "Knowledge units gaining momentum",
+    "recommended": "Recommended",
+    "recommendedDesc": "Suggestions based on your interests",
+    "domains": "Domains",
+    "domainsDesc": "Browse knowledge by domain",
+    "noTrending": "No trending KUs yet. Start encoding!",
+    "noRecommendations": "No recommendations yet. Encode more KUs!",
+    "noDomains": "No domains found.",
+    "viewAll": "View All",
+    "trendScore": "Trend Score",
+    "relevance": "Relevance",
+    "reason": "Reason",
+    "highPomv": "High PoMV",
+    "recentlyEncoded": "Recently Encoded",
+    "steadyQuality": "Steady Quality",
+    "needsReview": "Needs Review",
+    "matchesInterest": "Matches Interest",
+    "discoverNewType": "Discover New Type",
+    "kusInDomain": "KUs in Domain"
+  },
+  "collections": {
+    "title": "Collections",
+    "create": "New Collection",
+    "name": "Collection Name",
+    "description": "Description",
+    "empty": "No collections yet",
+    "emptyDesc": "Create a collection to organize your KUs",
+    "items": "{{count}} items",
+    "addKu": "Add KU",
+    "removeKu": "Remove",
+    "confirmDelete": "Delete this collection?",
+    "created": "Created",
+    "updated": "Last Updated"
+  },
+  "analytics": {
+    "title": "Analytics",
+    "overview": "Overview",
+    "totalKus": "Total KUs",
+    "avgPomv": "Avg PoMV",
+    "avgTrust": "Avg Trust",
+    "totalSize": "Total Size",
+    "totalBonds": "Total Bonds",
+    "last24h": "Last 24h",
+    "last7d": "Last 7 Days",
+    "topType": "Top Gene Type",
+    "kusByType": "KUs by Type",
+    "activity": "Encoding Activity",
+    "noData": "No analytics data available"
+  },
+  "searchHistory": {
+    "title": "Search History",
+    "clear": "Clear History",
+    "empty": "No search history",
+    "savedSearches": "Saved Searches",
+    "saveThis": "Save Search",
+    "saveName": "Search Name",
+    "noSaved": "No saved searches"
+  },
+  "wallet": {
+    "title": "OBT Wallet",
+    "balance": "Balance",
+    "staked": "Staked",
+    "earned": "Earned",
+    "spent": "Spent",
+    "pending": "Pending",
+    "transactions": "Transactions",
+    "noTransactions": "No transactions yet",
+    "stake": "Stake OBT",
+    "unstake": "Unstake",
+    "stakeAmount": "Amount to stake",
+    "stakingInfo": "Staking OBT increases your trust score"
+  },
+  "help": {
+    "title": "Help & Feedback",
+    "guide": "Guide",
+    "keyboardShortcuts": "Keyboard Shortcuts",
+    "feedback": "Feedback",
+    "gettingStarted": "Getting Started",
+    "gettingStartedDesc": "Learn how to set up your OneBrain node and start encoding knowledge.",
+    "encodingKnowledge": "Encoding Knowledge",
+    "encodingDesc": "Transform your thoughts into structured Knowledge Units with codons and bonds.",
+    "exploringData": "Exploring Data",
+    "exploringDesc": "Browse, search, and filter your knowledge base using the Explorer and KQL.",
+    "graphVisualization": "Graph Visualization",
+    "graphDesc": "Visualize your knowledge graph with interactive 3D node-link diagrams.",
+    "socialFeatures": "Social Features",
+    "socialDesc": "Follow other nodes, discover trending knowledge, and build collections.",
+    "walletAndTokens": "Wallet & Tokens",
+    "walletDesc": "Manage your OBT balance, view earnings streams, and stake tokens.",
+    "sendFeedback": "Send Feedback",
+    "reportBug": "Report Bug",
+    "feedbackPlaceholder": "Tell us how we can improve OneBrain...",
+    "bugPlaceholder": "Describe the bug: what happened, what you expected, and steps to reproduce...",
+    "thankYou": "Thank you for your feedback!",
+    "storedLocally": "Feedback is stored locally"
+  },
+  "network": {
+    "localNode": "Local Node",
+    "connected": "Connected",
+    "connecting": "Connecting...",
+    "disconnected": "Disconnected from node",
+    "retry": "Retry",
+    "latency": "Latency"
+  }
+}

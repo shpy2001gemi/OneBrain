@@ -10,8 +10,8 @@ import time
 import os
 from pathlib import Path
 
-DUMP_URL = "https://dumps.wikimedia.org/wikidatawiki/entities/20260706/wikidata-20260706-all.json.bz2"
-DEST = Path(__file__).parent / "checkpoints" / "wikidata-20260706-all.json.bz2"
+DUMP_URL = "https://dumps.wikimedia.org/wikidatawiki/entities/20260706/wikidata-20260706-all.json.gz"
+DEST = Path(__file__).parent / "checkpoints" / "wikidata-20260706-all.json.gz"
 MAX_RETRIES = 100
 RETRY_WAIT = 30  # seconds
 

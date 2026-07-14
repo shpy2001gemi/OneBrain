@@ -1,0 +1,46 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegui/tauri-v2-schema/main/schema.json",
+  "productName": "OneBrain",
+  "version": "0.1.0",
+  "identifier": "live.onebrain.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev --prefix onebrain-web",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build --prefix onebrain-web",
+    "frontendDist": "../onebrain-web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "OneBrain",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true
+    },
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "wix": {}
+    }
+  }
+}

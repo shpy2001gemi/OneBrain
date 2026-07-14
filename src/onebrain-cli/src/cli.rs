@@ -56,22 +56,41 @@ pub async fn run_repl(node: &mut OneBrainNode) -> Result<(), NodeError> {
             "help" => cmd_help(args),
 
             // Knowledge
-            "encode" | "remember" => cmd_encode(node, args).await,
+            "encode" | "remember" => cmd_encode(node, args, &mut reader).await,
             "search" | "find" => cmd_search(node, args).await,
             "list" => cmd_list(node, args),
             "detail" => cmd_detail(node, args),
-            "delete" => cmd_delete(node, args, &mut reader).await,
+            "delete" => {
+                if args.contains("--gene") || args.contains("--before") || args.contains("--type") {
+                    cmd_bulk_delete(node, args, &mut reader).await;
+                } else {
+                    cmd_delete(node, args, &mut reader).await;
+                }
+            }
             "kql" => cmd_kql(node, args),
             "graph" => cmd_graph(node, args),
+            "deprecate" => cmd_deprecate(node, args),
+            "edit" => cmd_edit(node, args, &mut reader).await,
 
             // Network
             "connect" => cmd_connect(node, args).await,
             "status" => cmd_status(node).await,
             "peers" => cmd_peers(node),
 
+            // Social
+            "follow" => cmd_follow(node, args),
+            "unfollow" => cmd_unfollow(node, args),
+            "following" => cmd_following(node),
+            "peer-info" => cmd_peer_info(node, args),
+            "share" => cmd_share(node, args),
+
             // Identity
             "identity" => cmd_identity(node),
             "recover" => cmd_recover(node, &mut reader).await,
+
+            // Multi-Device
+            "devices" => cmd_devices(node),
+            "sync" => cmd_sync(node, args),
 
             // Profile & AI
             "profile" => cmd_profile(node, args),
@@ -82,6 +101,14 @@ pub async fn run_repl(node: &mut OneBrainNode) -> Result<(), NodeError> {
 
             // Blob storage
             "blob" => cmd_blob(node, args, &mut reader).await,
+
+            // Tags & Pin
+            "tag" => cmd_tag(node, args),
+            "pin" => cmd_pin(node, args),
+            "unpin" => cmd_unpin(node, args),
+
+            // Watch
+            "watch" => cmd_watch(node, args),
 
             // Data
             "export" => cmd_export(node, args),
@@ -146,22 +173,41 @@ pub async fn run_repl_shared(shared_node: Arc<Mutex<OneBrainNode>>) -> Result<()
                 // Lock for the duration of the command, then release
                 let mut node = shared_node.lock().await;
                 match cmd.as_str() {
-                    "encode" | "remember" => cmd_encode(&mut node, &args_str).await,
+                    "encode" | "remember" => cmd_encode(&mut node, &args_str, &mut reader).await,
                     "search" | "find" => cmd_search(&mut node, &args_str).await,
                     "list" => cmd_list(&node, &args_str),
                     "detail" => cmd_detail(&node, &args_str),
-                    "delete" => cmd_delete(&mut node, &args_str, &mut reader).await,
+                    "delete" => {
+                        if args_str.contains("--gene") || args_str.contains("--before") || args_str.contains("--type") {
+                            cmd_bulk_delete(&node, &args_str, &mut reader).await;
+                        } else {
+                            cmd_delete(&mut node, &args_str, &mut reader).await;
+                        }
+                    }
                     "kql" => cmd_kql(&node, &args_str),
                     "graph" => cmd_graph(&node, &args_str),
+                    "deprecate" => cmd_deprecate(&node, &args_str),
+                    "edit" => cmd_edit(&mut node, &args_str, &mut reader).await,
                     "connect" => cmd_connect(&mut node, &args_str).await,
                     "status" => cmd_status(&node).await,
                     "peers" => cmd_peers(&node),
+                    "follow" => cmd_follow(&node, &args_str),
+                    "unfollow" => cmd_unfollow(&node, &args_str),
+                    "following" => cmd_following(&node),
+                    "peer-info" => cmd_peer_info(&node, &args_str),
+                    "share" => cmd_share(&node, &args_str),
                     "identity" => cmd_identity(&node),
                     "recover" => cmd_recover(&mut node, &mut reader).await,
+                    "devices" => cmd_devices(&node),
+                    "sync" => cmd_sync(&node, &args_str),
                     "profile" => cmd_profile(&mut node, &args_str),
                     "model" => cmd_model(&mut node, &args_str).await,
                     "wallet" => cmd_wallet(&node, &args_str),
                     "blob" => cmd_blob(&mut node, &args_str, &mut reader).await,
+                    "tag" => cmd_tag(&node, &args_str),
+                    "pin" => cmd_pin(&node, &args_str),
+                    "unpin" => cmd_unpin(&node, &args_str),
+                    "watch" => cmd_watch(&node, &args_str),
                     "export" => cmd_export(&node, &args_str),
                     "import" => cmd_import(&mut node, &args_str).await,
                     "backup" => cmd_backup(&mut node, &args_str, &mut reader).await,
@@ -300,22 +346,45 @@ fn cmd_help(args: &str) {
         println!("  ║                                                               ║");
         println!("  ║  ── Knowledge ──                                              ║");
         println!("  ║  encode <text>           Encode knowledge into KU             ║");
+        println!("  ║  encode --draft <text>   Save as draft (no broadcast)         ║");
+        println!("  ║  encode --attach <f> ... Encode with file attachments         ║");
         println!("  ║  search <query>          Search your knowledge base           ║");
         println!("  ║  list [--type T]         Browse all KUs                       ║");
         println!("  ║  detail <cid>            View KU details                      ║");
         println!("  ║  delete <cid>            Delete KU from local storage         ║");
+        println!("  ║  delete --gene T         Bulk delete by gene type             ║");
+        println!("  ║  deprecate <cid>         Mark KU as obsolete                  ║");
+        println!("  ║  edit <cid>              Create new version of KU             ║");
         println!("  ║  kql <query>             Execute KQL query                    ║");
         println!("  ║  graph <cid>             View knowledge graph (text tree)     ║");
+        println!("  ║                                                               ║");
+        println!("  ║  ── Tags & Pins ──                                            ║");
+        println!("  ║  tag add <cid> <tag>     Add tag to KU                        ║");
+        println!("  ║  tag remove <cid> <tag>  Remove tag from KU                   ║");
+        println!("  ║  tag list                List all tags                         ║");
+        println!("  ║  pin [<cid>]             Pin KU / show pinned                 ║");
+        println!("  ║  unpin <cid>             Unpin KU                             ║");
         println!("  ║                                                               ║");
         println!("  ║  ── Network ──                                                ║");
         println!("  ║  connect <ip:port>       Connect to peer                      ║");
         println!("  ║  peers                   Show connected peers                 ║");
         println!("  ║  status                  Show node status                     ║");
         println!("  ║                                                               ║");
+        println!("  ║  ── Social ──                                                 ║");
+        println!("  ║  follow <node_id>        Follow a node                        ║");
+        println!("  ║  unfollow <node_id>      Unfollow a node                      ║");
+        println!("  ║  following               List followed nodes                  ║");
+        println!("  ║  peer-info <node_id>     View node profile                    ║");
+        println!("  ║  share <cid>             Share KU via link                    ║");
+        println!("  ║                                                               ║");
         println!("  ║  ── Identity & Profile ──                                     ║");
         println!("  ║  identity                Show identity info                   ║");
         println!("  ║  recover                 Recover from BIP39 phrase            ║");
         println!("  ║  profile                 View/edit profile                    ║");
+        println!("  ║                                                               ║");
+        println!("  ║  ── Multi-Device ──                                           ║");
+        println!("  ║  devices                 List devices in group                ║");
+        println!("  ║  sync status             Show sync status                     ║");
         println!("  ║                                                               ║");
         println!("  ║  ── AI ──                                                     ║");
         println!("  ║  model list              Show available AI models             ║");
@@ -338,8 +407,15 @@ fn cmd_help(args: &str) {
         println!("  ║  blob detail <cid>       View blob detail                     ║");
         println!("  ║  blob export <cid>       Export blob to file                  ║");
         println!("  ║  blob delete <cid>       Delete a blob                        ║");
+        println!("  ║  blob pin <cid>          Pin blob (prevent GC)                ║");
+        println!("  ║  blob unpin <cid>        Unpin blob                           ║");
         println!("  ║  blob stats              Storage stats                        ║");
         println!("  ║  blob gc                 Garbage collect                      ║");
+        println!("  ║                                                               ║");
+        println!("  ║  ── Watch ──                                                  ║");
+        println!("  ║  watch create <kql>      Create standing query                ║");
+        println!("  ║  watch list              List active watches                  ║");
+        println!("  ║  watch delete <id>       Delete a watch                       ║");
         println!("  ║                                                               ║");
         println!("  ║  ── Config ──                                                 ║");
         println!("  ║  config                  Show configuration                   ║");
@@ -611,6 +687,8 @@ fn cmd_help(args: &str) {
                 println!("  blob detail <cid>      View blob metadata");
                 println!("  blob export <cid> [out] Export blob to file");
                 println!("  blob delete <cid>      Delete a blob");
+                println!("  blob pin <cid>         Pin blob (prevent GC)");
+                println!("  blob unpin <cid>       Unpin blob (allow GC)");
                 println!("  blob stats             Storage statistics");
                 println!("  blob gc                Garbage collect orphaned blobs");
                 println!();
@@ -622,7 +700,112 @@ fn cmd_help(args: &str) {
                 println!("    blob store photo.jpg");
                 println!("    blob list");
                 println!("    blob export 0101a3b4c5d6 output.jpg");
+                println!("    blob pin 0101a3b4c5d6");
                 println!("    blob gc");
+                println!();
+            }
+            "deprecate" => {
+                println!();
+                println!("  deprecate <cid>");
+                println!();
+                println!("  Mark a KU as deprecated (obsolete) without deleting it.");
+                println!("  Unlike 'delete', the KU remains in storage but is marked");
+                println!("  as obsolete. Other nodes may still have copies.");
+                println!();
+                println!("  Example:");
+                println!("    deprecate a1b2c3d4");
+                println!();
+            }
+            "edit" => {
+                println!();
+                println!("  edit <cid>");
+                println!();
+                println!("  Create a new version of an existing KU.");
+                println!("  Shows the current content and prompts for new content.");
+                println!("  The new KU will have a prev_cid bond to the original.");
+                println!();
+                println!("  Example:");
+                println!("    edit a1b2c3d4");
+                println!();
+            }
+            "follow" | "unfollow" | "following" => {
+                println!();
+                println!("  follow <node_id>     Follow a node");
+                println!("  unfollow <node_id>   Unfollow a node");
+                println!("  following            List followed nodes");
+                println!();
+                println!("  Follow a node to receive its new KUs in your feed.");
+                println!();
+            }
+            "peer-info" => {
+                println!();
+                println!("  peer-info <node_id>");
+                println!();
+                println!("  View the public profile of another node, including");
+                println!("  trust score, tier, KU count, and expertise areas.");
+                println!("  The node must be in your connected peers.");
+                println!();
+            }
+            "share" => {
+                println!();
+                println!("  share <cid>");
+                println!();
+                println!("  Generate a shareable link for a KU.");
+                println!("  Creates an onebrain:// URI that others can use.");
+                println!();
+                println!("  Example:");
+                println!("    share a1b2c3d4");
+                println!();
+            }
+            "devices" => {
+                println!();
+                println!("  devices");
+                println!();
+                println!("  List all devices in your identity group.");
+                println!("  Shows device name, type, last seen, KU count, sync status.");
+                println!();
+            }
+            "sync" => {
+                println!();
+                println!("  sync status");
+                println!();
+                println!("  Show multi-device sync status including:");
+                println!("  - Overall sync state");
+                println!("  - Pending items count");
+                println!("  - Per-device sync status");
+                println!();
+            }
+            "tag" => {
+                println!();
+                println!("  tag add <cid> <tag>      Add tag to KU");
+                println!("  tag remove <cid> <tag>   Remove tag from KU");
+                println!("  tag list                 List all tags");
+                println!();
+                println!("  Examples:");
+                println!("    tag add a1b2c3d4 important");
+                println!("    tag remove a1b2c3d4 draft");
+                println!("    tag list");
+                println!();
+            }
+            "pin" | "unpin" => {
+                println!();
+                println!("  pin [<cid>]    Pin KU for quick access / Show pinned");
+                println!("  unpin <cid>    Unpin KU");
+                println!();
+                println!("  Pin important KUs for quick access.");
+                println!("  Run 'pin' without arguments to see all pinned KUs.");
+                println!();
+            }
+            "watch" => {
+                println!();
+                println!("  watch create <kql>   Create a standing query");
+                println!("  watch list           List active watches");
+                println!("  watch delete <id>    Delete a watch");
+                println!();
+                println!("  Standing queries notify you when new KUs match.");
+                println!();
+                println!("  Example:");
+                println!("    watch create FIND facts WHERE trust > 0.8");
                 println!();
             }
             _ => {
@@ -638,21 +821,68 @@ fn cmd_help(args: &str) {
 // cmd_encode — Encode text into a KU
 // ═══════════════════════════════════════════════════════════════════════════
 
-async fn cmd_encode(node: &mut OneBrainNode, args: &str) {
+async fn cmd_encode(node: &mut OneBrainNode, args: &str, _reader: &mut BufReader<tokio::io::Stdin>) {
     if args.is_empty() {
         eprintln!();
         eprintln!("  ✗ Usage: encode <text>");
+        eprintln!("    Options: --draft       Save locally without broadcasting");
+        eprintln!("             --attach <f>  Attach files (can repeat)");
         eprintln!("    Type 'help encode' for details.");
         eprintln!();
         return;
     }
 
-    match node.encode_and_store(args).await {
+    // Parse flags
+    let is_draft = args.contains("--draft");
+    let mut attachments: Vec<String> = Vec::new();
+    let mut text_parts: Vec<&str> = Vec::new();
+
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    let mut i = 0;
+    while i < parts.len() {
+        match parts[i] {
+            "--draft" => { i += 1; }
+            "--attach" => {
+                if i + 1 < parts.len() {
+                    attachments.push(parts[i + 1].to_string());
+                    i += 2;
+                } else {
+                    eprintln!("  ✗ --attach requires a filename");
+                    return;
+                }
+            }
+            other => {
+                text_parts.push(other);
+                i += 1;
+            }
+        }
+    }
+
+    let text = text_parts.join(" ");
+    if text.is_empty() {
+        eprintln!("  ✗ No text provided for encoding");
+        return;
+    }
+
+    // Choose encode path
+    let result = if is_draft {
+        node.encode_draft(&text).await
+    } else if !attachments.is_empty() {
+        node.encode_with_attachments(&text, &attachments).await
+    } else {
+        node.encode_and_store(&text).await
+    };
+
+    match result {
         Ok(result) => {
             let cid_hex: String = result.cid.iter().map(|b| format!("{:02x}", b)).collect();
             let peer_count = node.peer_count();
             println!();
-            println!("  ✓ Encoded and stored successfully");
+            if is_draft {
+                println!("  ✓ Draft saved (⚠ STUB: still broadcasts until DraftStore is implemented)");
+            } else {
+                println!("  ✓ Encoded and stored successfully");
+            }
             println!("  CID:          {}", cid_hex);
             if let Some(ref gt) = result.gene_type {
                 println!("  Gene type:    {}", gt);
@@ -660,7 +890,10 @@ async fn cmd_encode(node: &mut OneBrainNode, args: &str) {
             println!("  Confidence:   {:.0}%", result.confidence * 100.0);
             println!("  Wire size:    {} bytes", result.wire_size);
             println!("  Instructions: {}", result.instruction_count);
-            if peer_count > 0 {
+            if !attachments.is_empty() {
+                println!("  Attachments:  {} file(s)", attachments.len());
+            }
+            if !is_draft && peer_count > 0 {
                 println!("  📡 Broadcasting to {} peer(s)...", peer_count);
                 println!("  🔍 Verification requested from {} peer(s)", peer_count);
             }
@@ -2065,6 +2298,8 @@ async fn cmd_blob(
             println!("  blob detail <cid>      View blob metadata");
             println!("  blob export <cid> [out] Export blob to file");
             println!("  blob delete <cid>      Delete a blob");
+            println!("  blob pin <cid>         Pin blob (prevent GC)");
+            println!("  blob unpin <cid>       Unpin blob (allow GC)");
             println!("  blob stats             Storage statistics");
             println!("  blob gc                Garbage collect orphans");
             println!();
@@ -2267,6 +2502,53 @@ async fn cmd_blob(
             }
         }
 
+        "pin" => {
+            if rest.is_empty() {
+                eprintln!("  \u{2717} Usage: blob pin <cid>");
+                println!();
+                return;
+            }
+            match node.pin_blob(rest) {
+                Ok(true) => {
+                    println!();
+                    println!("  📌 Blob pinned: {}", rest);
+                    println!("  This blob will not be removed by garbage collection.");
+                    println!();
+                }
+                Ok(false) => {
+                    eprintln!("  \u{2717} Blob not found.");
+                    println!();
+                }
+                Err(e) => {
+                    eprintln!("  \u{2717} {}", e);
+                    println!();
+                }
+            }
+        }
+
+        "unpin" => {
+            if rest.is_empty() {
+                eprintln!("  \u{2717} Usage: blob unpin <cid>");
+                println!();
+                return;
+            }
+            match node.unpin_blob(rest) {
+                Ok(true) => {
+                    println!();
+                    println!("  ✓ Blob unpinned: {}", rest);
+                    println!();
+                }
+                Ok(false) => {
+                    eprintln!("  \u{2717} Blob not found.");
+                    println!();
+                }
+                Err(e) => {
+                    eprintln!("  \u{2717} {}", e);
+                    println!();
+                }
+            }
+        }
+
         _ => {
             eprintln!("  \u{2717} Unknown blob subcommand: {}", subcmd);
             eprintln!("    Type 'blob help' for available commands.");
@@ -2274,6 +2556,600 @@ async fn cmd_blob(
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cmd_deprecate — Mark KU as obsolete
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_deprecate(node: &OneBrainNode, args: &str) {
+    if args.is_empty() {
+        eprintln!();
+        eprintln!("  ✗ Usage: deprecate <cid>");
+        eprintln!("    Mark a KU as obsolete (keeps it in storage, unlike delete).");
+        eprintln!();
+        return;
+    }
+
+    match node.deprecate_ku(args.trim()) {
+        Ok(true) => {
+            println!();
+            println!("  ✓ KU marked as deprecated (obsolete)");
+            println!("  CID: {}", args.trim());
+            println!("  Note: KU is still in storage but marked as obsolete.");
+            println!("        Other nodes may still have copies.");
+            println!();
+        }
+        Ok(false) => {
+            eprintln!("  ✗ KU not found: {}", args.trim());
+            println!();
+        }
+        Err(e) => {
+            eprintln!("  ✗ {}", e);
+            println!();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cmd_edit — Create new version of existing KU
+// ═══════════════════════════════════════════════════════════════════════════
+
+async fn cmd_edit(node: &mut OneBrainNode, args: &str, reader: &mut BufReader<tokio::io::Stdin>) {
+    if args.is_empty() {
+        eprintln!();
+        eprintln!("  ✗ Usage: edit <cid>");
+        eprintln!("    Create a new version of an existing KU.");
+        eprintln!();
+        return;
+    }
+
+    let cid_hex = args.trim();
+
+    // Get existing KU content
+    let detail = match node.get_ku(cid_hex) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("  ✗ {}", e);
+            println!();
+            return;
+        }
+    };
+
+    println!();
+    println!("  ── Current KU Content ──");
+    println!("  Gene type: {}", detail.gene_type);
+    println!("  Content:");
+    println!("  {}", detail.content.replace('\n', "\n  "));
+    println!();
+    println!("  Enter new content (or press Enter to cancel):");
+    eprint!("  > ");
+
+    let mut new_content = String::new();
+    let bytes_read = reader.read_line(&mut new_content).await.unwrap_or(0);
+
+    if bytes_read == 0 || new_content.trim().is_empty() {
+        println!("  Cancelled.");
+        println!();
+        return;
+    }
+
+    let new_text = new_content.trim();
+
+    // Encode as new KU (TODO: set prev_cid to original)
+    match node.encode_and_store(new_text).await {
+        Ok(result) => {
+            let new_cid_hex: String = result.cid.iter().map(|b| format!("{:02x}", b)).collect();
+            println!();
+            println!("  ✓ New version created");
+            println!("  New CID:      {}", new_cid_hex);
+            println!("  Previous CID: {}", cid_hex);
+            if let Some(ref gt) = result.gene_type {
+                println!("  Gene type:    {}", gt);
+            }
+            println!("  Confidence:   {:.0}%", result.confidence * 100.0);
+            println!("  Note: prev_cid link is STUB — bond to original not yet created.");
+            println!();
+        }
+        Err(e) => {
+            eprintln!("  ✗ {}", e);
+            println!();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cmd_follow / cmd_unfollow / cmd_following — Social features
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_follow(node: &OneBrainNode, args: &str) {
+    if args.is_empty() {
+        eprintln!();
+        eprintln!("  ✗ Usage: follow <node_id>");
+        eprintln!("    Follow a node to receive its new KUs in your feed.");
+        eprintln!();
+        return;
+    }
+
+    match node.follow_node(args.trim()) {
+        Ok(()) => {
+            println!();
+            println!("  ✓ Now following node: {}", args.trim());
+            println!();
+        }
+        Err(e) => {
+            eprintln!("  ✗ {}", e);
+            println!();
+        }
+    }
+}
+
+fn cmd_unfollow(node: &OneBrainNode, args: &str) {
+    if args.is_empty() {
+        eprintln!();
+        eprintln!("  ✗ Usage: unfollow <node_id>");
+        eprintln!();
+        return;
+    }
+
+    match node.unfollow_node(args.trim()) {
+        Ok(()) => {
+            println!();
+            println!("  ✓ Unfollowed node: {}", args.trim());
+            println!();
+        }
+        Err(e) => {
+            eprintln!("  ✗ {}", e);
+            println!();
+        }
+    }
+}
+
+fn cmd_following(node: &OneBrainNode) {
+    let list = node.following_list();
+
+    println!();
+    if list.is_empty() {
+        println!("  No nodes followed yet.");
+        println!("  Use 'follow <node_id>' to follow a node.");
+    } else {
+        println!("  ── Following ({} nodes) ──", list.len());
+        println!("  {:<32}  {:<20}  {}", "Node ID", "Name", "Since");
+        println!("  {}", "─".repeat(70));
+        for f in &list {
+            let since = format_timestamp(f.followed_since);
+            let short_id = if f.node_id.len() >= 16 { &f.node_id[..16] } else { &f.node_id };
+            println!("  {:<32}  {:<20}  {}", short_id, f.name, since);
+        }
+    }
+    println!();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cmd_peer_info — View another node's profile
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_peer_info(node: &OneBrainNode, args: &str) {
+    if args.is_empty() {
+        eprintln!();
+        eprintln!("  ✗ Usage: peer-info <node_id>");
+        eprintln!("    View public profile of another node.");
+        eprintln!();
+        return;
+    }
+
+    match node.get_peer_profile(args.trim()) {
+        Some(profile) => {
+            println!();
+            println!("  ╔═══════════════════════════════════════╗");
+            println!("  ║         Node Profile                  ║");
+            println!("  ╚═══════════════════════════════════════╝");
+            println!("  Node ID:    {}", profile.node_id);
+            println!("  Name:       {}", profile.name);
+            println!("  Trust:      {:.2}", profile.trust_score);
+            println!("  Tier:       {}", profile.tier);
+            println!("  KUs:        {}", profile.ku_count);
+            if !profile.expertise.is_empty() {
+                println!("  Expertise:  {}", profile.expertise.join(", "));
+            }
+            if profile.member_since > 0 {
+                println!("  Member:     {}", format_timestamp(profile.member_since));
+            }
+            println!();
+        }
+        None => {
+            eprintln!();
+            eprintln!("  ✗ Node not found: {}", args.trim());
+            eprintln!("    The node must be in your connected peers.");
+            eprintln!();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cmd_share — Share KU via link
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_share(node: &OneBrainNode, args: &str) {
+    if args.is_empty() {
+        eprintln!();
+        eprintln!("  ✗ Usage: share <cid>");
+        eprintln!("    Generate a shareable link for a KU.");
+        eprintln!();
+        return;
+    }
+
+    let cid_hex = args.trim();
+
+    // Verify KU exists
+    match node.get_ku(cid_hex) {
+        Ok(detail) => {
+            println!();
+            println!("  ── Share KU ──");
+            println!("  CID:       {}", detail.cid_hex);
+            println!("  Gene type: {}", detail.gene_type);
+            println!("  Preview:   {}", truncate_str(&detail.content, 60));
+            println!();
+            println!("  📋 Shareable link:");
+            println!("  onebrain://ku/{}", detail.cid_hex);
+            println!();
+            println!("  Recipients can use: detail {}", &detail.cid_hex[..std::cmp::min(16, detail.cid_hex.len())]);
+            println!();
+        }
+        Err(e) => {
+            eprintln!("  ✗ {}", e);
+            println!();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cmd_devices — List devices in identity group
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_devices(node: &OneBrainNode) {
+    let devices = node.list_devices();
+
+    println!();
+    println!("  ── Devices ({}) ──", devices.len());
+    println!("  {:<16}  {:<20}  {:<8}  {:<12}  {:<6}  {}",
+        "Device ID", "Name", "Type", "Last Seen", "KUs", "Status");
+    println!("  {}", "─".repeat(80));
+
+    for dev in &devices {
+        let short_id = if dev.device_id.len() >= 12 { &dev.device_id[..12] } else { &dev.device_id };
+        let last_seen = format_timestamp(dev.last_seen);
+        let status_icon = match dev.sync_status.as_str() {
+            "up-to-date" => "🟢",
+            "syncing" | "behind" => "🟡",
+            _ => "🔴",
+        };
+        println!("  {:<16}  {:<20}  {:<8}  {:<12}  {:<6}  {} {}",
+            short_id, dev.name, dev.device_type, last_seen,
+            dev.ku_count, status_icon, dev.sync_status);
+    }
+    println!();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cmd_sync — Multi-device sync status
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_sync(node: &OneBrainNode, args: &str) {
+    let subcmd = args.split_whitespace().next().unwrap_or("status");
+
+    match subcmd {
+        "status" | "" => {
+            let info = node.sync_status();
+
+            let status_icon = match info.status.as_str() {
+                "up-to-date" => "🟢",
+                "syncing" => "🟡",
+                _ => "🔴",
+            };
+
+            println!();
+            println!("  ── Sync Status ──");
+            println!("  Status:      {} {}", status_icon, info.status);
+            println!("  Pending:     {} items", info.pending_count);
+            println!("  Last sync:   {}", format_timestamp(info.last_sync));
+            println!("  Devices:     {}", info.devices.len());
+            println!();
+        }
+        _ => {
+            eprintln!();
+            eprintln!("  ✗ Usage: sync status");
+            eprintln!("    Show multi-device sync status.");
+            eprintln!();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cmd_tag — Tag management
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_tag(node: &OneBrainNode, args: &str) {
+    let parts: Vec<&str> = args.splitn(3, ' ').collect();
+
+    match parts.first().map(|s| *s) {
+        Some("add") => {
+            if parts.len() < 3 {
+                eprintln!("  ✗ Usage: tag add <cid> <tag>");
+                println!();
+                return;
+            }
+            let cid = parts[1];
+            let tag = parts[2];
+            match node.add_tag(cid, tag) {
+                Ok(()) => {
+                    println!();
+                    println!("  ✓ Tag '{}' added to KU {}", tag, &cid[..std::cmp::min(16, cid.len())]);
+                    println!();
+                }
+                Err(e) => {
+                    eprintln!("  ✗ {}", e);
+                    println!();
+                }
+            }
+        }
+        Some("remove") | Some("rm") => {
+            if parts.len() < 3 {
+                eprintln!("  ✗ Usage: tag remove <cid> <tag>");
+                println!();
+                return;
+            }
+            let cid = parts[1];
+            let tag = parts[2];
+            match node.remove_tag(cid, tag) {
+                Ok(()) => {
+                    println!();
+                    println!("  ✓ Tag '{}' removed from KU {}", tag, &cid[..std::cmp::min(16, cid.len())]);
+                    println!();
+                }
+                Err(e) => {
+                    eprintln!("  ✗ {}", e);
+                    println!();
+                }
+            }
+        }
+        Some("list") | Some("ls") => {
+            let tags = node.list_all_tags();
+            println!();
+            if tags.is_empty() {
+                println!("  No tags found.");
+            } else {
+                println!("  ── Tags ({}) ──", tags.len());
+                for tag in &tags {
+                    println!("  • {}", tag);
+                }
+            }
+            println!();
+        }
+        _ => {
+            eprintln!();
+            eprintln!("  ✗ Usage:");
+            eprintln!("    tag add <cid> <tag>      Add tag to KU");
+            eprintln!("    tag remove <cid> <tag>   Remove tag from KU");
+            eprintln!("    tag list                 List all tags");
+            eprintln!();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cmd_pin / cmd_unpin — Pin/unpin KU for quick access
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_pin(node: &OneBrainNode, args: &str) {
+    if args.is_empty() {
+        // Show pinned KUs
+        let pinned = node.pinned_kus();
+        println!();
+        if pinned.is_empty() {
+            println!("  No pinned KUs.");
+            println!("  Use 'pin <cid>' to pin a KU for quick access.");
+        } else {
+            println!("  ── Pinned KUs ({}) ──", pinned.len());
+            for ku in &pinned {
+                let short_cid = &ku.cid_hex[..std::cmp::min(8, ku.cid_hex.len())];
+                println!("  📌 [{}] ({}) {}", short_cid, ku.gene_type, truncate_str(&ku.preview, 50));
+            }
+        }
+        println!();
+        return;
+    }
+
+    match node.pin_ku(args.trim()) {
+        Ok(true) => {
+            println!();
+            println!("  📌 KU pinned: {}", args.trim());
+            println!();
+        }
+        Ok(false) => {
+            eprintln!("  ✗ KU not found: {}", args.trim());
+            println!();
+        }
+        Err(e) => {
+            eprintln!("  ✗ {}", e);
+            println!();
+        }
+    }
+}
+
+fn cmd_unpin(node: &OneBrainNode, args: &str) {
+    if args.is_empty() {
+        eprintln!("  ✗ Usage: unpin <cid>");
+        println!();
+        return;
+    }
+
+    match node.unpin_ku(args.trim()) {
+        Ok(true) => {
+            println!();
+            println!("  ✓ KU unpinned: {}", args.trim());
+            println!();
+        }
+        Ok(false) => {
+            eprintln!("  ✗ KU not found: {}", args.trim());
+            println!();
+        }
+        Err(e) => {
+            eprintln!("  ✗ {}", e);
+            println!();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cmd_watch — Standing queries (WATCH)
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn cmd_watch(node: &OneBrainNode, args: &str) {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+
+    match parts.first().map(|s| *s) {
+        Some("create") | Some("add") => {
+            let kql = parts.get(1).copied().unwrap_or("").trim();
+            if kql.is_empty() {
+                eprintln!("  ✗ Usage: watch create <kql_query>");
+                eprintln!("    Example: watch create FIND facts WHERE trust > 0.8");
+                println!();
+                return;
+            }
+            match node.create_watch(kql) {
+                Ok(id) => {
+                    println!();
+                    println!("  ✓ Watch created: {}", id);
+                    println!("  Query: {}", kql);
+                    println!("  You will be notified when new matching KUs arrive.");
+                    println!();
+                }
+                Err(e) => {
+                    eprintln!("  ✗ {}", e);
+                    println!();
+                }
+            }
+        }
+        Some("list") | Some("ls") => {
+            let watches = node.list_watches();
+            println!();
+            if watches.is_empty() {
+                println!("  No active watches.");
+                println!("  Use 'watch create <kql>' to create a standing query.");
+            } else {
+                println!("  ── Active Watches ({}) ──", watches.len());
+                for w in &watches {
+                    println!("  [{}] {} (matches: {})", w.id, w.kql_query, w.match_count);
+                }
+            }
+            println!();
+        }
+        Some("delete") | Some("rm") => {
+            let id = parts.get(1).copied().unwrap_or("").trim();
+            if id.is_empty() {
+                eprintln!("  ✗ Usage: watch delete <watch_id>");
+                println!();
+                return;
+            }
+            match node.delete_watch(id) {
+                Ok(true) => {
+                    println!();
+                    println!("  ✓ Watch deleted: {}", id);
+                    println!();
+                }
+                Ok(false) => {
+                    eprintln!("  ✗ Watch not found: {}", id);
+                    println!();
+                }
+                Err(e) => {
+                    eprintln!("  ✗ {}", e);
+                    println!();
+                }
+            }
+        }
+        _ => {
+            eprintln!();
+            eprintln!("  ✗ Usage:");
+            eprintln!("    watch create <kql>   Create standing query");
+            eprintln!("    watch list           List active watches");
+            eprintln!("    watch delete <id>    Delete a watch");
+            eprintln!();
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// cmd_bulk_delete — Bulk delete KUs by filter
+// ═══════════════════════════════════════════════════════════════════════════
+
+async fn cmd_bulk_delete(
+    node: &OneBrainNode,
+    args: &str,
+    reader: &mut BufReader<tokio::io::Stdin>,
+) {
+    // Parse args: --gene TYPE --before TIMESTAMP
+    let mut gene_filter: Option<String> = None;
+    let mut before: Option<u64> = None;
+
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    let mut i = 0;
+    while i < parts.len() {
+        match parts[i] {
+            "--gene" | "--type" => {
+                if i + 1 < parts.len() {
+                    gene_filter = Some(parts[i + 1].to_string());
+                    i += 2;
+                } else { i += 1; }
+            }
+            "--before" => {
+                if i + 1 < parts.len() {
+                    before = parts[i + 1].parse().ok();
+                    i += 2;
+                } else { i += 1; }
+            }
+            _ => { i += 1; }
+        }
+    }
+
+    if gene_filter.is_none() && before.is_none() {
+        eprintln!();
+        eprintln!("  ✗ Usage: delete --gene <type> [--before <timestamp>]");
+        eprintln!("    Bulk delete KUs matching filter.");
+        eprintln!("    Example: delete --gene hypothesis --before 1720000000");
+        eprintln!();
+        return;
+    }
+
+    // Confirmation
+    println!();
+    println!("  ⚠ Bulk delete with filters:");
+    if let Some(ref g) = gene_filter { println!("    Gene type: {}", g); }
+    if let Some(b) = before { println!("    Before:    {}", format_timestamp(b)); }
+    eprint!("  Are you sure? [y/N] ");
+
+    let mut confirm = String::new();
+    let _ = reader.read_line(&mut confirm).await;
+    if confirm.trim().to_lowercase() != "y" {
+        println!("  Cancelled.");
+        println!();
+        return;
+    }
+
+    match node.bulk_delete(gene_filter.as_deref(), before) {
+        Ok(result) => {
+            println!();
+            println!("  ✓ Bulk delete complete");
+            println!("  Deleted: {}", result.deleted);
+            println!("  Skipped: {}", result.skipped);
+            println!();
+        }
+        Err(e) => {
+            eprintln!("  ✗ {}", e);
+            println!();
+        }
+    }
+}
+
 
 /// Format bytes as human-readable size.
 fn format_size(bytes: u64) -> String {

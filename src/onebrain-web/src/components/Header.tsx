@@ -59,7 +59,7 @@ export function Header() {
   };
 
   return (
-    <header style={{
+    <header role="banner" aria-label="App header" style={{
       height: 'var(--ob-header-height)',
       borderBottom: '1px solid var(--ob-glass-border)',
       display: 'flex',

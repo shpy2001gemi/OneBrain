@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Network, Search, Info, X } from 'lucide-react';
 import { api } from '../api/client';
 import type { NeighborInfo } from '../api/types';
+import { GENE_TYPE_COLORS } from '../api/types';
 
 interface GraphNode {
   id: string;
@@ -23,13 +24,7 @@ interface GraphLink {
   weight: number;
 }
 
-const GENE_COLORS: Record<string, string> = {
-  Fact: '#06b6d4',
-  Procedure: '#8b5cf6',
-  Experience: '#f59e0b',
-  Concept: '#10b981',
-  Meta: '#64748b',
-};
+const GENE_COLORS: Record<string, string> = GENE_TYPE_COLORS;
 
 export function GraphPage() {
   const [cidInput, setCidInput] = useState('');
@@ -60,7 +55,7 @@ export function GraphPage() {
       
       // Center node
       nodeMap.set(targetCid, {
-        id: targetCid, label: targetCid.slice(0, 8), geneType: 'Concept',
+        id: targetCid, label: targetCid.slice(0, 8), geneType: 'Fact',
         pomv: 1.0, preview: 'Center node', x: cx, y: cy, vx: 0, vy: 0, isCenter: true,
       });
       

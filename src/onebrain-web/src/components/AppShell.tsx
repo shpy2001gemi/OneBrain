@@ -1,19 +1,53 @@
+import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { DebugConsole } from './DebugConsole';
+import { NotificationPanel } from './NotificationPanel';
+import { ConnectionBar } from './ConnectionBar';
+import { ShortcutsModal } from './ShortcutsModal';
+import { useNotifications } from '../hooks/useNotifications';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { useConnectionStatus } from '../hooks/useConnectionStatus';
 
 export function AppShell() {
+  const { notifications, unreadCount, addNotification, markRead, markAllRead, dismiss, clearAll } = useNotifications();
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const { status: connStatus, lastPing, retryCount, retry } = useConnectionStatus();
+
+  useKeyboardShortcuts(() => setShortcutsOpen(true));
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Sidebar />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <Header />
-        <main style={{ flex: 1, overflow: 'auto' }}>
+        {/* Connection Status Bar (only visible when disconnected) */}
+        <ConnectionBar status={connStatus} lastPing={lastPing} retryCount={retryCount} onRetry={retry} />
+
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          <div style={{ flex: 1 }}>
+            <Header />
+          </div>
+          <div style={{ paddingRight: 16 }}>
+            <NotificationPanel
+              notifications={notifications}
+              unreadCount={unreadCount}
+              isOpen={notifOpen}
+              onToggle={() => setNotifOpen(!notifOpen)}
+              onMarkRead={markRead}
+              onMarkAllRead={markAllRead}
+              onDismiss={dismiss}
+              onClearAll={clearAll}
+            />
+          </div>
+        </div>
+        <main role="main" aria-label="Main content" style={{ flex: 1, overflow: 'auto' }}>
           <Outlet />
         </main>
       </div>
       <DebugConsole />
+      <ShortcutsModal isOpen={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   );
 }

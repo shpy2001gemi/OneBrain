@@ -337,3 +337,248 @@ pub struct BlobStatsView {
     /// Usage percentage.
     pub usage_pct: f64,
 }
+
+/// A followed node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowedNode {
+    /// Node ID (hex).
+    pub node_id: String,
+    /// Display name.
+    pub name: String,
+    /// When the follow was created (epoch seconds).
+    pub followed_since: u64,
+}
+
+/// Public profile of another node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerProfile {
+    /// Node ID (hex).
+    pub node_id: String,
+    /// Display name.
+    pub name: String,
+    /// Trust score (0.0-1.0).
+    pub trust_score: f64,
+    /// Trust tier name.
+    pub tier: String,
+    /// Number of KUs encoded.
+    pub ku_count: u64,
+    /// Top expertise areas.
+    pub expertise: Vec<String>,
+    /// Member since (epoch seconds).
+    pub member_since: u64,
+}
+
+/// Device info in identity group.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceInfo {
+    /// Device ID (hex).
+    pub device_id: String,
+    /// Friendly device name.
+    pub name: String,
+    /// Device type: "Desktop", "Mobile", "CLI".
+    pub device_type: String,
+    /// Last seen (epoch seconds).
+    pub last_seen: u64,
+    /// KU count on this device.
+    pub ku_count: u64,
+    /// Sync status: "up-to-date", "behind", "offline".
+    pub sync_status: String,
+}
+
+/// Multi-device sync status.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncStatusInfo {
+    /// Overall status: "up-to-date", "syncing", "offline".
+    pub status: String,
+    /// Number of items pending sync.
+    pub pending_count: usize,
+    /// Last sync timestamp (epoch seconds).
+    pub last_sync: u64,
+    /// Per-device statuses.
+    pub devices: Vec<DeviceInfo>,
+}
+
+/// Result of a bulk delete operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BulkDeleteResult {
+    /// Number of KUs deleted.
+    pub deleted: usize,
+    /// Number of KUs skipped (e.g., not matching filter).
+    pub skipped: usize,
+}
+
+/// Watch query info.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WatchInfo {
+    /// Watch ID.
+    pub id: String,
+    /// KQL query string.
+    pub kql_query: String,
+    /// Creation timestamp (epoch seconds).
+    pub created_at: u64,
+    /// Number of matches so far.
+    pub match_count: u64,
+}
+
+// ── Tier C — Search History ────────────────────────────────────────────
+
+/// A single entry in the search history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchHistoryEntry {
+    /// Unique ID.
+    pub id: String,
+    /// The query string.
+    pub query: String,
+    /// Number of results returned.
+    pub result_count: usize,
+    /// Timestamp (epoch seconds).
+    pub timestamp: u64,
+}
+
+// ── Tier C — Notification Preferences ──────────────────────────────────
+
+/// User notification preferences.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationPrefs {
+    /// Enable encode completion notifications.
+    pub encode_complete: bool,
+    /// Enable peer connection notifications.
+    pub peer_connected: bool,
+    /// Enable sync completion notifications.
+    pub sync_complete: bool,
+    /// Enable watch match notifications.
+    pub watch_match: bool,
+    /// Enable error notifications.
+    pub errors: bool,
+}
+
+impl Default for NotificationPrefs {
+    fn default() -> Self {
+        Self {
+            encode_complete: true,
+            peer_connected: true,
+            sync_complete: true,
+            watch_match: true,
+            errors: true,
+        }
+    }
+}
+
+// ── Tier C — Saved Searches ────────────────────────────────────────────
+
+/// A saved search query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedSearch {
+    /// Unique ID.
+    pub id: String,
+    /// User-facing name.
+    pub name: String,
+    /// The query string (text or KQL).
+    pub query: String,
+    /// Whether this is a KQL query.
+    pub is_kql: bool,
+    /// Creation timestamp.
+    pub created_at: u64,
+}
+
+// ── Tier C — Collections ───────────────────────────────────────────────
+
+/// A collection of KUs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Collection {
+    /// Unique ID.
+    pub id: String,
+    /// Collection name.
+    pub name: String,
+    /// Optional description.
+    pub description: String,
+    /// CID hex strings of KUs in this collection.
+    pub ku_cids: Vec<String>,
+    /// Creation timestamp.
+    pub created_at: u64,
+    /// Last updated timestamp.
+    pub updated_at: u64,
+}
+
+// ── Tier C — KU Version Chain ──────────────────────────────────────────
+
+/// An entry in a KU's version chain.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KuVersionEntry {
+    /// CID of this version.
+    pub cid_hex: String,
+    /// Gene type.
+    pub gene_type: String,
+    /// Preview text.
+    pub preview: String,
+    /// Version number (1 = original).
+    pub version: u32,
+    /// Timestamp.
+    pub created: u64,
+}
+
+// ── Tier C — Trending KUs ──────────────────────────────────────────────
+
+/// A trending KU.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrendingKu {
+    /// The KU summary.
+    pub ku: KuListItem,
+    /// Trending score (higher = more trending).
+    pub trend_score: f64,
+    /// Reason for trending (e.g., "high_pomv", "recent_access", "most_bonds").
+    pub reason: String,
+}
+
+// ── Tier C — Recommendations ───────────────────────────────────────────
+
+/// A recommended KU.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecommendedKu {
+    /// The KU summary.
+    pub ku: KuListItem,
+    /// Relevance score (0.0-1.0).
+    pub relevance: f64,
+    /// Reason for recommendation.
+    pub reason: String,
+}
+
+// ── Tier C — Analytics ─────────────────────────────────────────────────
+
+/// Analytics snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalyticsSnapshot {
+    /// Total KU count.
+    pub total_kus: usize,
+    /// KUs per gene type.
+    pub kus_by_type: Vec<(String, usize)>,
+    /// Average PoMV score.
+    pub avg_pomv: f64,
+    /// Average trust score.
+    pub avg_trust: f64,
+    /// Total wire size (bytes).
+    pub total_wire_size: u64,
+    /// Number of unique bonds.
+    pub total_bonds: usize,
+    /// KUs encoded in last 24h.
+    pub kus_last_24h: usize,
+    /// KUs encoded in last 7d.
+    pub kus_last_7d: usize,
+    /// Top gene type.
+    pub top_gene_type: String,
+}
+
+// ── Tier C — Domain Taxonomy ───────────────────────────────────────────
+
+/// A knowledge domain group.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DomainInfo {
+    /// Domain name (based on gene_type grouping).
+    pub name: String,
+    /// Number of KUs in this domain.
+    pub ku_count: usize,
+    /// Average PoMV in this domain.
+    pub avg_pomv: f64,
+    /// Example KU CIDs.
+    pub example_cids: Vec<String>,
+}

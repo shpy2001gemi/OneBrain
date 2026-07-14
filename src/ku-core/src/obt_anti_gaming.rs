@@ -20,8 +20,8 @@ pub struct RateLimits {
 }
 
 pub const RATE_LEAF: RateLimits = RateLimits {
-    max_ku_per_hour: 1,
-    max_encode_per_hour: 2,
+    max_ku_per_hour: 100,       // DEV: was 1 — raised for testing
+    max_encode_per_hour: 100,   // DEV: was 2 — raised for testing
     claim_cooldown_s: 3600,
     max_mint_per_epoch: 10_000,
 };

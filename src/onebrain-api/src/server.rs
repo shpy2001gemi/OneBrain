@@ -11,7 +11,7 @@ use axum::extract::Request;
 use axum::http::{header, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use tokio::sync::broadcast;
 use axum::Json;
 use axum::Router;
@@ -184,7 +184,71 @@ impl ApiServer {
             // AI
             .route("/api/ai/status", get(handlers::ai_status))
             .route("/api/ai/models", get(handlers::list_ai_models))
-            .route("/api/ai/model", post(handlers::switch_model));
+            .route("/api/ai/model", post(handlers::switch_model))
+            // Phase 1: Knowledge Management
+            .route("/api/kus/{cid}/deprecate", post(handlers::deprecate_ku))
+            .route("/api/drafts", post(handlers::encode_draft))
+            // Phase 1: Tags
+            .route("/api/kus/{cid}/tags", post(handlers::add_tag))
+            .route("/api/kus/{cid}/tags/{tag}", delete(handlers::remove_tag))
+            .route("/api/tags", get(handlers::list_tags))
+            // Phase 1: Pin/Favorite KUs
+            .route("/api/kus/{cid}/pin", post(handlers::pin_ku))
+            .route("/api/kus/{cid}/pin", delete(handlers::unpin_ku))
+            .route("/api/kus/pinned", get(handlers::list_pinned_kus))
+            // Phase 1: Social & Discovery
+            .route("/api/follow/{node_id}", post(handlers::follow_node))
+            .route("/api/follow/{node_id}", delete(handlers::unfollow_node))
+            .route("/api/following", get(handlers::list_following))
+            .route("/api/nodes/{node_id}/profile", get(handlers::get_peer_profile))
+            // Phase 1: Multi-Device
+            .route("/api/devices", get(handlers::list_devices))
+            .route("/api/sync/status", get(handlers::sync_status))
+            // Phase 1: Bulk Operations
+            .route("/api/kus/bulk-delete", post(handlers::bulk_delete_kus))
+            // Phase 1: Watch (Standing Queries)
+            .route("/api/watch", post(handlers::create_watch))
+            .route("/api/watch", get(handlers::list_watches))
+            .route("/api/watch/{watch_id}", delete(handlers::delete_watch))
+            // Phase 1: Blob Extensions
+            .route("/api/blobs/{cid}/refs", post(handlers::add_blob_ku_ref))
+            .route("/api/blobs/{cid}/pin", post(handlers::pin_blob))
+            .route("/api/blobs/{cid}/unpin", post(handlers::unpin_blob))
+            .route("/api/blobs/upload", post(handlers::upload_blob))
+            .route("/api/blobs/{cid}/download", get(handlers::download_blob))
+            // Phase 1: Data Portability
+            .route("/api/export", get(handlers::export_kus))
+            .route("/api/import", post(handlers::import_kus))
+            .route("/api/backup", post(handlers::create_backup))
+            .route("/api/restore", post(handlers::restore_backup))
+            // Phase 1 Tier C: Search History
+            .route("/api/search-history", get(handlers::list_search_history))
+            .route("/api/search-history", post(handlers::record_search))
+            .route("/api/search-history", delete(handlers::clear_search_history))
+            // Phase 1 Tier C: Notification Preferences
+            .route("/api/notification-prefs", get(handlers::get_notification_prefs))
+            .route("/api/notification-prefs", put(handlers::set_notification_prefs))
+            // Phase 1 Tier C: Saved Searches
+            .route("/api/saved-searches", get(handlers::list_saved_searches))
+            .route("/api/saved-searches", post(handlers::save_search))
+            .route("/api/saved-searches/{id}", delete(handlers::delete_saved_search))
+            // Phase 1 Tier C: Collections
+            .route("/api/collections", get(handlers::list_collections))
+            .route("/api/collections", post(handlers::create_collection))
+            .route("/api/collections/{id}", get(handlers::get_collection))
+            .route("/api/collections/{id}", delete(handlers::delete_collection))
+            .route("/api/collections/{id}/kus", post(handlers::add_to_collection))
+            .route("/api/collections/{id}/kus/{cid}", delete(handlers::remove_from_collection))
+            // Phase 1 Tier C: KU Version Chain
+            .route("/api/kus/{cid}/versions", get(handlers::get_version_chain))
+            // Phase 1 Tier C: Trending & Recommendations
+            .route("/api/trending", get(handlers::trending_kus))
+            .route("/api/recommendations", get(handlers::recommended_kus))
+            // Phase 1 Tier C: Analytics
+            .route("/api/analytics", get(handlers::get_analytics))
+            // Phase 1 Tier C: Domain Taxonomy
+            .route("/api/domains", get(handlers::list_domains))
+            .route("/api/domains/{domain}/kus", get(handlers::kus_by_domain));
 
         // WebSocket (no auth middleware)
         let ws_routes = Router::new()

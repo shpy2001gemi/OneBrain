@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegui/tauri-v2-schema/main/capabilities-schema.json",
+  "identifier": "default",
+  "description": "Default permissions for OneBrain Desktop",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-set-title",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "notification:default",
+    "shell:allow-open",
+    "store:default",
+    "window-state:default"
+  ]
+}

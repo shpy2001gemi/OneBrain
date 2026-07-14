@@ -8,6 +8,7 @@ pub mod config;
 pub mod node;
 pub mod error;
 pub mod types;
+pub mod display;
 pub mod anti_gaming_guard;
 pub mod network;
 pub mod peer_manager;

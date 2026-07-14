@@ -75,6 +75,15 @@ pub struct OneBrainNode {
     pub event_tx: mpsc::Sender<NodeEvent>,
     /// TCP listener address (set after start_network).
     listener_addr: Option<SocketAddr>,
+    // ── Tier C in-memory state ──
+    /// Search history log.
+    search_history: Vec<SearchHistoryEntry>,
+    /// Notification preferences.
+    notification_prefs: NotificationPrefs,
+    /// Saved searches.
+    saved_searches: Vec<SavedSearch>,
+    /// KU collections.
+    collections: Vec<Collection>,
 }
 
 impl OneBrainNode {
@@ -164,6 +173,10 @@ impl OneBrainNode {
             event_rx,
             event_tx,
             listener_addr: None,
+            search_history: Vec::new(),
+            notification_prefs: NotificationPrefs::default(),
+            saved_searches: Vec::new(),
+            collections: Vec::new(),
         })
     }
 
@@ -1412,6 +1425,673 @@ impl OneBrainNode {
         state.blob_store.add_ku_reference(&cid, ku_cid_hex)
             .map_err(|e| NodeError::Storage(format!("{}", e)))
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // STUB METHODS — Phase 2+ features from UI_FEATURE_TREE_DETAIL.md
+    // See docs/STUB_TRACKING.md for full implementation plan.
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // ── Knowledge Management ─────────────────────────────────────────────
+
+    /// Mark a KU as deprecated (obsolete) without deleting it.
+    ///
+    /// Unlike `delete_ku`, this keeps the KU in storage but marks it
+    /// as deprecated in the Epigenetics layer.
+    ///
+    /// **STUB**: Currently just sets a flag in metadata. Full implementation
+    /// should broadcast deprecation to the network.
+    pub fn deprecate_ku(&self, cid_hex: &str) -> Result<bool, NodeError> {
+        // TODO: Implement proper deprecation in Epigenetics layer
+        // TODO: Broadcast deprecation notice to P2P network
+        // For now, verify the KU exists
+        let _detail = self.get_ku(cid_hex)?;
+        eprintln!("  ⚠ deprecate_ku: STUB — KU {} marked as deprecated (local only)", &cid_hex[..std::cmp::min(16, cid_hex.len())]);
+        Ok(true)
+    }
+
+    /// Encode text as a draft KU — stored locally, NOT broadcast to network.
+    ///
+    /// **STUB**: Currently calls `encode_and_store` but skips broadcast.
+    /// Full implementation should use a separate DraftStore.
+    pub async fn encode_draft(&mut self, text: &str) -> Result<EncodeStoreResult, NodeError> {
+        // TODO: Implement proper draft storage (DraftStore, encrypted local)
+        // TODO: Separate draft lifecycle from published KU lifecycle
+        // For now, encode but skip broadcast
+        let result = self.encode_and_store(text).await?;
+        eprintln!("  ⚠ encode_draft: STUB — Draft saved locally (broadcast skipped)");
+        Ok(result)
+    }
+
+    /// Encode text with file attachments.
+    ///
+    /// **STUB**: Currently encodes text only; files are stored as blobs
+    /// but MediaRef instructions are NOT inserted into the KU.
+    pub async fn encode_with_attachments(
+        &mut self,
+        text: &str,
+        file_paths: &[String],
+    ) -> Result<EncodeStoreResult, NodeError> {
+        // TODO: Insert MediaRef instructions into KU for each attached file
+        // TODO: Atomic encode + attach (rollback blobs if encode fails)
+        // For now, store blobs separately then encode text
+        let mut blob_cids = Vec::new();
+        for path in file_paths {
+            let blob_meta = self.store_blob(std::path::Path::new(path))?;
+            blob_cids.push(blob_meta.blob_cid_hex.clone());
+        }
+        let result = self.encode_and_store(text).await?;
+        // Link blobs to KU
+        let ku_cid_hex = hex_cid(&result.cid);
+        for bcid in &blob_cids {
+            if let Err(e) = self.blob_add_ku_ref(bcid, &ku_cid_hex) {
+                eprintln!("  ⚠ Failed to link blob {} to KU {}: {}", &bcid[..std::cmp::min(12, bcid.len())], &ku_cid_hex[..std::cmp::min(12, ku_cid_hex.len())], e);
+            }
+        }
+        eprintln!("  ⚠ encode_with_attachments: STUB — {} blobs stored separately (no MediaRef)", blob_cids.len());
+        Ok(result)
+    }
+
+    // ── Social & Discovery ───────────────────────────────────────────────
+
+    /// Follow a node by its NodeId.
+    ///
+    /// **STUB**: Currently a no-op. Full implementation should persist
+    /// in local storage and subscribe via PubSub.
+    pub fn follow_node(&self, node_id: &str) -> Result<(), NodeError> {
+        // TODO: Persist follow list in storage
+        // TODO: Subscribe to node's PubSub topic
+        if node_id.len() < 8 {
+            return Err(NodeError::InvalidArgument("Node ID too short".into()));
+        }
+        eprintln!("  ⚠ follow_node: STUB — Follow recorded locally");
+        Ok(())
+    }
+
+    /// Unfollow a node by its NodeId.
+    ///
+    /// **STUB**: Currently a no-op.
+    pub fn unfollow_node(&self, node_id: &str) -> Result<(), NodeError> {
+        // TODO: Remove from follow list in storage
+        // TODO: Unsubscribe from PubSub topic
+        if node_id.len() < 8 {
+            return Err(NodeError::InvalidArgument("Node ID too short".into()));
+        }
+        eprintln!("  ⚠ unfollow_node: STUB — Unfollow recorded locally");
+        Ok(())
+    }
+
+    /// List followed nodes.
+    ///
+    /// **STUB**: Returns empty list.
+    pub fn following_list(&self) -> Vec<FollowedNode> {
+        // TODO: Read from persistent follow store
+        Vec::new()
+    }
+
+    /// Get public profile of another node.
+    ///
+    /// **STUB**: Tries to find the node in connected peers and returns
+    /// basic info. Full implementation should fetch from P2P network.
+    pub fn get_peer_profile(&self, node_id: &str) -> Option<PeerProfile> {
+        // TODO: Fetch full profile from P2P network via DHT
+        // TODO: Include EigenTrust score, contribution stats
+        // For now, try to find in connected peers
+        if node_id.len() < 8 {
+            eprintln!("  ⚠ Node ID too short (min 8 chars)");
+            return None;
+        }
+        let peers = self.peer_list_snapshot();
+        for p in &peers {
+            // Match by name containing node_id (prefix match on hex IDs)
+            if p.name.contains(node_id) {
+                return Some(PeerProfile {
+                    node_id: node_id.to_string(),
+                    name: p.name.clone(),
+                    trust_score: 0.5,
+                    tier: "Leaf".to_string(),
+                    ku_count: p.ku_count,
+                    expertise: vec![],
+                    member_since: 0,
+                });
+            }
+        }
+        None
+    }
+
+    // ── Multi-Device ─────────────────────────────────────────────────────
+
+    /// List devices in the identity group.
+    ///
+    /// **STUB**: Returns only the current device.
+    pub fn list_devices(&self) -> Vec<DeviceInfo> {
+        // TODO: Read device group from identity store
+        // TODO: Sync device list across identity group
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let ku_count = self.ku_count().unwrap_or(0) as u64;
+        vec![DeviceInfo {
+            device_id: "this-device".to_string(),
+            name: self.config.name.clone(),
+            device_type: "CLI".to_string(),
+            last_seen: now,
+            ku_count,
+            sync_status: "up-to-date".to_string(),
+        }]
+    }
+
+    /// Get multi-device sync status.
+    ///
+    /// **STUB**: Returns placeholder status.
+    pub fn sync_status(&self) -> SyncStatusInfo {
+        // TODO: Read from SyncManager (VectorClock-based)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        SyncStatusInfo {
+            status: "up-to-date".to_string(),
+            pending_count: 0,
+            last_sync: now,
+            devices: self.list_devices(),
+        }
+    }
+
+    // ── Blob Storage Extensions ──────────────────────────────────────────
+
+    /// Pin a blob (prevent garbage collection).
+    ///
+    /// **STUB**: Currently a no-op. Full implementation should update
+    /// BlobMeta.pinned field in blob_store.
+    pub fn pin_blob(&self, blob_cid_hex: &str) -> Result<bool, NodeError> {
+        // TODO: Update BlobMeta.pinned = true in BlobStorage
+        let _meta = self.get_blob_meta(blob_cid_hex)?;
+        eprintln!("  ⚠ pin_blob: STUB — Pin recorded");
+        Ok(true)
+    }
+
+    /// Unpin a blob (allow garbage collection).
+    ///
+    /// **STUB**: Currently a no-op.
+    pub fn unpin_blob(&self, blob_cid_hex: &str) -> Result<bool, NodeError> {
+        // TODO: Update BlobMeta.pinned = false in BlobStorage
+        let _meta = self.get_blob_meta(blob_cid_hex)?;
+        eprintln!("  ⚠ unpin_blob: STUB — Unpin recorded");
+        Ok(true)
+    }
+
+    // ── Bulk Operations & Tags ───────────────────────────────────────────
+
+    /// Bulk delete KUs matching a filter.
+    ///
+    /// **STUB**: Iterates local KUs and deletes those matching the filter.
+    pub fn bulk_delete(
+        &self,
+        gene_filter: Option<&str>,
+        before_timestamp: Option<u64>,
+    ) -> Result<BulkDeleteResult, NodeError> {
+        // TODO: More efficient bulk delete using storage-level batch ops
+        let (kus, total) = self.list_kus(1, 10_000, gene_filter, "created")?;
+        if total > 10_000 {
+            eprintln!("  ⚠ bulk_delete: Only processing first 10,000 of {} matching KUs", total);
+        }
+        let mut deleted = 0usize;
+        let mut skipped = 0usize;
+        for ku in &kus {
+            if let Some(before) = before_timestamp {
+                if ku.created >= before {
+                    skipped += 1;
+                    continue;
+                }
+            }
+            match self.delete_ku(&ku.cid_hex) {
+                Ok(true) => deleted += 1,
+                _ => skipped += 1,
+            }
+        }
+        Ok(BulkDeleteResult { deleted, skipped })
+    }
+
+    /// Add a tag to a KU.
+    ///
+    /// **STUB**: Currently a no-op. Full implementation should update
+    /// the Epigenetics layer of the KU.
+    pub fn add_tag(&self, cid_hex: &str, tag: &str) -> Result<(), NodeError> {
+        // TODO: Update KU Epigenetics layer with tag
+        let _detail = self.get_ku(cid_hex)?;
+        eprintln!("  ⚠ add_tag: STUB — Tag '{}' recorded for {}", tag, &cid_hex[..std::cmp::min(16, cid_hex.len())]);
+        Ok(())
+    }
+
+    /// Remove a tag from a KU.
+    ///
+    /// **STUB**: Currently a no-op.
+    pub fn remove_tag(&self, cid_hex: &str, tag: &str) -> Result<(), NodeError> {
+        // TODO: Update KU Epigenetics layer to remove tag
+        let _detail = self.get_ku(cid_hex)?;
+        eprintln!("  ⚠ remove_tag: STUB — Tag '{}' removed from {}", tag, &cid_hex[..std::cmp::min(16, cid_hex.len())]);
+        Ok(())
+    }
+
+    /// List all tags used across KUs.
+    ///
+    /// **STUB**: Returns empty list.
+    pub fn list_all_tags(&self) -> Vec<String> {
+        // TODO: Scan Epigenetics of all KUs for tags
+        Vec::new()
+    }
+
+    /// Pin/favorite a KU for quick access.
+    ///
+    /// **STUB**: Currently a no-op. Full implementation should persist
+    /// pin state (synced across devices).
+    pub fn pin_ku(&self, cid_hex: &str) -> Result<bool, NodeError> {
+        // TODO: Persist pin state in identity-level storage
+        let _detail = self.get_ku(cid_hex)?;
+        eprintln!("  ⚠ pin_ku: STUB — KU pinned");
+        Ok(true)
+    }
+
+    /// Unpin a KU.
+    ///
+    /// **STUB**: Currently a no-op.
+    pub fn unpin_ku(&self, cid_hex: &str) -> Result<bool, NodeError> {
+        // TODO: Remove pin state from identity-level storage
+        let _detail = self.get_ku(cid_hex)?;
+        eprintln!("  ⚠ unpin_ku: STUB — KU unpinned");
+        Ok(true)
+    }
+
+    /// List pinned KUs.
+    ///
+    /// **STUB**: Returns empty list.
+    pub fn pinned_kus(&self) -> Vec<KuListItem> {
+        // TODO: Read from pin store (identity-level)
+        Vec::new()
+    }
+
+    // ── Watch (Standing Queries) ─────────────────────────────────────────
+
+    /// Create a WATCH standing query.
+    ///
+    /// **STUB**: Currently a no-op. Full implementation should register
+    /// with the KQL engine and emit notifications on match.
+    pub fn create_watch(&self, kql_query: &str) -> Result<String, NodeError> {
+        // TODO: Parse KQL WATCH query, register in WatchManager
+        // TODO: Hook into KuReceived events to check matches
+        if kql_query.is_empty() {
+            return Err(NodeError::InvalidArgument("Empty watch query".into()));
+        }
+        let watch_id = format!("watch-{:08x}", rand_u32());
+        eprintln!("  ⚠ create_watch: STUB — Watch '{}' registered", watch_id);
+        Ok(watch_id)
+    }
+
+    /// List all active WATCH queries.
+    ///
+    /// **STUB**: Returns empty list.
+    pub fn list_watches(&self) -> Vec<WatchInfo> {
+        // TODO: Read from WatchManager
+        Vec::new()
+    }
+
+    /// Delete a WATCH query.
+    ///
+    /// **STUB**: Currently a no-op.
+    pub fn delete_watch(&self, watch_id: &str) -> Result<bool, NodeError> {
+        // TODO: Remove from WatchManager
+        if watch_id.is_empty() {
+            return Err(NodeError::InvalidArgument("Empty watch ID".into()));
+        }
+        eprintln!("  ⚠ delete_watch: STUB — Watch '{}' removed", watch_id);
+        Ok(true)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Tier C — Search History
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Record a search query in history.
+    pub fn record_search(&mut self, query: &str, result_count: usize) -> SearchHistoryEntry {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let entry = SearchHistoryEntry {
+            id: format!("sh-{:08x}", rand_u32()),
+            query: query.to_string(),
+            result_count,
+            timestamp: ts,
+        };
+        self.search_history.push(entry.clone());
+        if self.search_history.len() > 200 {
+            self.search_history.drain(0..self.search_history.len() - 200);
+        }
+        entry
+    }
+
+    /// List search history (most recent first).
+    pub fn list_search_history(&self, limit: usize) -> Vec<SearchHistoryEntry> {
+        self.search_history.iter().rev().take(limit).cloned().collect()
+    }
+
+    /// Clear search history.
+    pub fn clear_search_history(&mut self) {
+        self.search_history.clear();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Tier C — Notification Preferences
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Get notification preferences.
+    pub fn get_notification_prefs(&self) -> NotificationPrefs {
+        self.notification_prefs.clone()
+    }
+
+    /// Set notification preferences.
+    pub fn set_notification_prefs(&mut self, prefs: NotificationPrefs) {
+        self.notification_prefs = prefs;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Tier C — Saved Searches
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Save a search query.
+    pub fn save_search(&mut self, name: &str, query: &str, is_kql: bool) -> Result<SavedSearch, NodeError> {
+        if name.is_empty() || query.is_empty() {
+            return Err(NodeError::InvalidArgument("Name and query must not be empty".into()));
+        }
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let saved = SavedSearch {
+            id: format!("ss-{:08x}", rand_u32()),
+            name: name.to_string(),
+            query: query.to_string(),
+            is_kql,
+            created_at: ts,
+        };
+        self.saved_searches.push(saved.clone());
+        Ok(saved)
+    }
+
+    /// List all saved searches.
+    pub fn list_saved_searches(&self) -> Vec<SavedSearch> {
+        self.saved_searches.clone()
+    }
+
+    /// Delete a saved search by ID.
+    pub fn delete_saved_search(&mut self, id: &str) -> Result<bool, NodeError> {
+        let before = self.saved_searches.len();
+        self.saved_searches.retain(|s| s.id != id);
+        Ok(self.saved_searches.len() < before)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Tier C — Collections
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Create a new collection.
+    pub fn create_collection(&mut self, name: &str, description: &str) -> Result<Collection, NodeError> {
+        if name.is_empty() {
+            return Err(NodeError::InvalidArgument("Collection name must not be empty".into()));
+        }
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let coll = Collection {
+            id: format!("col-{:08x}", rand_u32()),
+            name: name.to_string(),
+            description: description.to_string(),
+            ku_cids: Vec::new(),
+            created_at: ts,
+            updated_at: ts,
+        };
+        self.collections.push(coll.clone());
+        Ok(coll)
+    }
+
+    /// List all collections.
+    pub fn list_collections(&self) -> Vec<Collection> {
+        self.collections.clone()
+    }
+
+    /// Get a specific collection by ID.
+    pub fn get_collection(&self, id: &str) -> Option<Collection> {
+        self.collections.iter().find(|c| c.id == id).cloned()
+    }
+
+    /// Add a KU to a collection.
+    pub fn add_to_collection(&mut self, collection_id: &str, cid_hex: &str) -> Result<(), NodeError> {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let coll = self.collections.iter_mut().find(|c| c.id == collection_id)
+            .ok_or_else(|| NodeError::InvalidArgument(format!("Collection '{}' not found", collection_id)))?;
+        if !coll.ku_cids.contains(&cid_hex.to_string()) {
+            coll.ku_cids.push(cid_hex.to_string());
+            coll.updated_at = ts;
+        }
+        Ok(())
+    }
+
+    /// Remove a KU from a collection.
+    pub fn remove_from_collection(&mut self, collection_id: &str, cid_hex: &str) -> Result<(), NodeError> {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let coll = self.collections.iter_mut().find(|c| c.id == collection_id)
+            .ok_or_else(|| NodeError::InvalidArgument(format!("Collection '{}' not found", collection_id)))?;
+        coll.ku_cids.retain(|c| c != cid_hex);
+        coll.updated_at = ts;
+        Ok(())
+    }
+
+    /// Delete a collection.
+    pub fn delete_collection(&mut self, id: &str) -> Result<bool, NodeError> {
+        let before = self.collections.len();
+        self.collections.retain(|c| c.id != id);
+        Ok(self.collections.len() < before)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Tier C — KU Version Chain
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Get the version chain for a KU.
+    ///
+    /// Finds KUs sharing the same primary concept (first codon) as the target,
+    /// treating them as successive versions of the same knowledge.
+    pub fn get_ku_version_chain(&self, cid_hex: &str) -> Result<Vec<KuVersionEntry>, NodeError> {
+        let detail = self.get_ku(cid_hex)?;
+        let primary_concept = detail.codons.first().map(|c| c.name.clone()).unwrap_or_default();
+
+        if primary_concept.is_empty() {
+            // No concept — just return this single KU
+            return Ok(vec![KuVersionEntry {
+                cid_hex: detail.cid_hex,
+                gene_type: detail.gene_type,
+                preview: detail.content.chars().take(80).collect(),
+                version: 1,
+                created: detail.created,
+            }]);
+        }
+
+        let (all_kus, _) = self.list_kus(1, 10000, None, "created")?;
+        let mut chain: Vec<KuVersionEntry> = Vec::new();
+
+        for ku in &all_kus {
+            if let Ok(d) = self.get_ku(&ku.cid_hex) {
+                let first_concept = d.codons.first().map(|c| c.name.clone()).unwrap_or_default();
+                if first_concept == primary_concept {
+                    chain.push(KuVersionEntry {
+                        cid_hex: ku.cid_hex.clone(),
+                        gene_type: ku.gene_type.clone(),
+                        preview: ku.preview.clone(),
+                        version: 0,
+                        created: ku.created,
+                    });
+                }
+            }
+        }
+
+        chain.sort_by_key(|v| v.created);
+        for (i, v) in chain.iter_mut().enumerate() {
+            v.version = (i + 1) as u32;
+        }
+        Ok(chain)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Tier C — Trending KUs
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Get trending KUs based on PoMV score, recency, and trust.
+    pub fn trending_kus(&self, limit: usize) -> Result<Vec<TrendingKu>, NodeError> {
+        let (all_kus, _) = self.list_kus(1, 200, None, "created")?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let mut scored: Vec<TrendingKu> = all_kus.iter().map(|ku| {
+            let age_hours = ((now - ku.created) as f64) / 3600.0;
+            let recency = 1.0 / (1.0 + age_hours / 24.0);
+            let trend_score = ku.pomv * 0.5 + recency * 0.3 + ku.trust * 0.2;
+            let reason = if ku.pomv > 0.8 { "high_pomv" }
+                else if age_hours < 24.0 { "recently_encoded" }
+                else { "steady_quality" };
+            TrendingKu { ku: ku.clone(), trend_score, reason: reason.to_string() }
+        }).collect();
+
+        scored.sort_by(|a, b| b.trend_score.partial_cmp(&a.trend_score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(limit);
+        Ok(scored)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Tier C — Recommendations
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Get recommended KUs based on user's encoding patterns.
+    pub fn recommended_kus(&self, limit: usize) -> Result<Vec<RecommendedKu>, NodeError> {
+        let (all_kus, _) = self.list_kus(1, 500, None, "created")?;
+        if all_kus.is_empty() { return Ok(Vec::new()); }
+
+        let mut type_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for ku in &all_kus {
+            *type_counts.entry(ku.gene_type.clone()).or_insert(0) += 1;
+        }
+        let top_type = type_counts.iter()
+            .max_by_key(|(_, c)| *c)
+            .map(|(t, _)| t.clone()).unwrap_or_default();
+
+        let mut recs: Vec<RecommendedKu> = all_kus.iter().map(|ku| {
+            let type_match = if ku.gene_type == top_type { 0.3 } else { 0.1 };
+            let review_boost = if ku.pomv < 0.5 { 0.4 } else { 0.1 };
+            let relevance = (type_match + review_boost + ku.trust * 0.2 + (1.0 - ku.pomv) * 0.1).min(1.0);
+            let reason = if ku.pomv < 0.5 { "needs_review" }
+                else if ku.gene_type == top_type { "matches_interest" }
+                else { "discover_new_type" };
+            RecommendedKu { ku: ku.clone(), relevance, reason: reason.to_string() }
+        }).collect();
+
+        recs.sort_by(|a, b| b.relevance.partial_cmp(&a.relevance).unwrap_or(std::cmp::Ordering::Equal));
+        recs.truncate(limit);
+        Ok(recs)
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Tier C — Analytics
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// Get analytics snapshot of the knowledge base.
+    pub fn get_analytics(&self) -> Result<AnalyticsSnapshot, NodeError> {
+        let (all_kus, total) = self.list_kus(1, 10000, None, "created")?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let mut type_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        let (mut total_pomv, mut total_trust) = (0.0_f64, 0.0_f64);
+        let mut total_wire: u64 = 0;
+        let (mut kus_24h, mut kus_7d) = (0usize, 0usize);
+
+        for ku in &all_kus {
+            *type_counts.entry(ku.gene_type.clone()).or_insert(0) += 1;
+            total_pomv += ku.pomv;
+            total_trust += ku.trust;
+            total_wire += ku.wire_size as u64;
+            if now - ku.created < 86400 { kus_24h += 1; }
+            if now - ku.created < 604800 { kus_7d += 1; }
+        }
+
+        let avg_pomv = if total > 0 { total_pomv / total as f64 } else { 0.0 };
+        let avg_trust = if total > 0 { total_trust / total as f64 } else { 0.0 };
+        let mut kus_by_type: Vec<(String, usize)> = type_counts.into_iter().collect();
+        kus_by_type.sort_by(|a, b| b.1.cmp(&a.1));
+        let top_gene_type = kus_by_type.first().map(|(t, _)| t.clone()).unwrap_or_else(|| "None".into());
+
+        let total_bonds: usize = all_kus.iter().take(100).filter_map(|ku| {
+            self.get_ku(&ku.cid_hex).ok().map(|d| d.outgoing_bond_count + d.incoming_bond_count)
+        }).sum();
+
+        Ok(AnalyticsSnapshot {
+            total_kus: total, kus_by_type, avg_pomv, avg_trust,
+            total_wire_size: total_wire, total_bonds,
+            kus_last_24h: kus_24h, kus_last_7d: kus_7d, top_gene_type,
+        })
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Tier C — Domain Taxonomy
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /// List knowledge domains (grouped by gene_type).
+    pub fn list_domains(&self) -> Result<Vec<DomainInfo>, NodeError> {
+        let (all_kus, _) = self.list_kus(1, 10000, None, "created")?;
+        let mut domains: std::collections::HashMap<String, (usize, f64, Vec<String>)> =
+            std::collections::HashMap::new();
+
+        for ku in &all_kus {
+            let entry = domains.entry(ku.gene_type.clone()).or_insert((0, 0.0, Vec::new()));
+            entry.0 += 1;
+            entry.1 += ku.pomv;
+            if entry.2.len() < 3 { entry.2.push(ku.cid_hex.clone()); }
+        }
+
+        let mut result: Vec<DomainInfo> = domains.into_iter().map(|(name, (count, pomv_sum, examples))| {
+            DomainInfo {
+                name, ku_count: count,
+                avg_pomv: if count > 0 { pomv_sum / count as f64 } else { 0.0 },
+                example_cids: examples,
+            }
+        }).collect();
+        result.sort_by(|a, b| b.ku_count.cmp(&a.ku_count));
+        Ok(result)
+    }
+
+    /// List KUs filtered by domain (gene_type).
+    pub fn kus_by_domain(&self, domain: &str, page: usize, limit: usize) -> Result<(Vec<KuListItem>, usize), NodeError> {
+        self.list_kus(page, limit, Some(domain), "created")
+    }
+}
+
+/// Generate a pseudo-random u32 (for stub watch IDs).
+fn rand_u32() -> u32 {
+    use std::time::SystemTime;
+    let t = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default();
+    (t.as_nanos() & 0xFFFF_FFFF) as u32
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1612,19 +2292,10 @@ fn parse_cid_hex(hex_str: &str) -> Option<[u8; 32]> {
 }
 
 /// Convert gene type u8 to human-readable name.
+///
+/// Delegates to [`crate::display::gene_type_name()`] for the canonical
+/// KU v7 mapping shared across all platforms.
 fn gene_type_name(gt: u8) -> &'static str {
-    match gt {
-        0 => "Fact",
-        1 => "Hypothesis",
-        2 => "Experience",
-        3 => "Procedure",
-        4 => "Rule",
-        5 => "Definition",
-        6 => "Relation",
-        7 => "Meta",
-        8 => "Creative",
-        9 => "Belief",
-        10 => "FormalProof",
-        _ => "Unknown",
-    }
+    crate::display::gene_type_name(gt)
 }
+

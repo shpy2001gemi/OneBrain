@@ -16,6 +16,40 @@ export interface ApiError {
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiError;
 
+// ─── Gene Types (KU v7) ─────────────────────────────────
+// Canonical list matching ku-core::types::GeneType enum order.
+// All web-based platforms (web, extension, desktop-web) should
+// import these constants instead of maintaining their own lists.
+
+export type GeneType =
+  | 'Fact' | 'Procedure' | 'Experience' | 'Creative'
+  | 'MediaExperience' | 'Testimony' | 'Formal' | 'Hypothesis'
+  | 'Narrative' | 'Sensory' | 'Composite'
+  | 'Normative' | 'Definition';
+
+export const ALL_GENE_TYPES: GeneType[] = [
+  'Fact', 'Procedure', 'Experience', 'Creative',
+  'MediaExperience', 'Testimony', 'Formal', 'Hypothesis',
+  'Narrative', 'Sensory', 'Composite', 'Normative', 'Definition',
+];
+
+/** Suggested UI colors for each gene type (dark-theme friendly). */
+export const GENE_TYPE_COLORS: Record<GeneType, string> = {
+  Fact: '#06b6d4',
+  Procedure: '#8b5cf6',
+  Experience: '#f59e0b',
+  Creative: '#10b981',
+  MediaExperience: '#ec4899',
+  Testimony: '#f97316',
+  Formal: '#6366f1',
+  Hypothesis: '#14b8a6',
+  Narrative: '#a855f7',
+  Sensory: '#eab308',
+  Composite: '#64748b',
+  Normative: '#ef4444',
+  Definition: '#0ea5e9',
+};
+
 // ─── Identity ────────────────────────────────────────────
 
 export interface IdentityInfo {
@@ -35,7 +69,7 @@ export interface IdentityInfo {
 
 export interface KuListItem {
   cid_hex: string;
-  gene_type: string;
+  gene_type: GeneType;
   preview: string;
   pomv: number;
   trust: number;
@@ -45,7 +79,7 @@ export interface KuListItem {
 
 export interface KuDetail {
   cid_hex: string;
-  gene_type: string;
+  gene_type: GeneType;
   content: string;
   codons: CodonView[];
   bonds: BondView[];
@@ -96,7 +130,7 @@ export interface EncodeResult {
   cid_hex: string;
   wire_size: number;
   instruction_count: number;
-  gene_type: string | null;
+  gene_type: GeneType | null;
   confidence: number;
   source_text: string;
 }
@@ -150,7 +184,7 @@ export interface NeighborInfo {
   direction: string;
   preview: string;
   weight: number;
-  gene_type: string;
+  gene_type: GeneType;
   pomv: number;
   is_local: boolean;
   children: NeighborInfo[];
@@ -233,4 +267,71 @@ export interface WsEvent {
   event_type: string;
   timestamp: number;
   data: Record<string, unknown>;
+}
+
+// ─── Phase 1: New Types ─────────────────────────────────
+
+export interface BlobMeta {
+  blob_cid_hex: string;
+  original_name: string;
+  mime_type: string;
+  total_size: number;
+  chunk_count: number;
+}
+
+export interface FollowedNode {
+  node_id: string;
+  name: string;
+  followed_at: number;
+}
+
+export interface PeerProfile {
+  node_id: string;
+  name: string;
+  trust_score: number;
+  tier: string;
+  ku_count: number;
+  expertise: string[];
+  member_since: number;
+}
+
+export interface DeviceInfo {
+  device_id: string;
+  name: string;
+  device_type: string;
+  last_seen: number;
+  ku_count: number;
+  sync_status: string;
+}
+
+export interface SyncStatus {
+  status: string;
+  pending_count: number;
+  last_sync: number;
+  devices: DeviceInfo[];
+}
+
+export interface WatchInfo {
+  watch_id: string;
+  query: string;
+  created: number;
+  match_count: number;
+}
+
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+  errors: number;
+}
+
+export interface BulkDeleteResult {
+  deleted: number;
+  skipped: number;
+}
+
+export interface BackupInfo {
+  path: string;
+  size: number;
+  ku_count: number;
+  timestamp: number;
 }

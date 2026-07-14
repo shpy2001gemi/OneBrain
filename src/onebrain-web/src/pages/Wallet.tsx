@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Coins, ArrowUpRight, ArrowDownRight, Shield, Clock } from 'lucide-react';
+import { Coins, ArrowUpRight, ArrowDownRight, Shield, Clock, Lock, Unlock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { WalletInfo, WalletTransaction } from '../api/types';
 
@@ -7,6 +8,8 @@ export function WalletPage() {
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [txns, setTxns] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [stakeAmount, setStakeAmount] = useState('');
+  const { t } = useTranslation();
 
   useEffect(() => {
     Promise.all([
@@ -108,6 +111,56 @@ export function WalletPage() {
                   width: wallet.rate_max > 0 ? `${(wallet.rate_used / wallet.rate_max) * 100}%` : '0%',
                 }} />
               </div>
+            </div>
+          </div>
+
+          {/* Staking Section */}
+          <div className="glass-card animate-in" style={{ animationDelay: '450ms', marginBottom: 'var(--ob-gap-lg)' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-md)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Lock size={18} style={{ color: '#f59e0b' }} />{t('wallet.stake')}
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--ob-text-secondary)', marginBottom: 16 }}>
+              {t('wallet.stakingInfo')}
+            </p>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+              <input
+                type="number"
+                value={stakeAmount}
+                onChange={e => setStakeAmount(e.target.value)}
+                placeholder={t('wallet.stakeAmount')}
+                style={{
+                  flex: 1, padding: '10px 14px', borderRadius: 8,
+                  background: 'var(--ob-bg-secondary)', border: '1px solid var(--ob-glass-border)',
+                  color: 'var(--ob-text-primary)', fontSize: '0.9rem',
+                }}
+              />
+              <button className="btn-primary" style={{ padding: '10px 24px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Lock size={14} />{t('wallet.stake')}
+              </button>
+              <button style={{
+                padding: '10px 24px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6,
+                background: 'transparent', border: '1px solid var(--ob-glass-border)', color: 'var(--ob-text-secondary)',
+                cursor: 'pointer', fontSize: '0.88rem',
+              }}>
+                <Unlock size={14} />{t('wallet.unstake')}
+              </button>
+            </div>
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12,
+            }}>
+              {[
+                { label: t('wallet.staked'), value: '0', color: '#f59e0b' },
+                { label: t('wallet.earned'), value: formatObt(wallet.total_earned), color: '#10b981' },
+                { label: t('wallet.pending'), value: '0', color: '#6366f1' },
+              ].map(({ label, value, color }) => (
+                <div key={label} style={{
+                  padding: '12px 16px', borderRadius: 8,
+                  background: 'var(--ob-bg-secondary)', textAlign: 'center',
+                }}>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--ob-text-tertiary)', marginBottom: 4 }}>{label}</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 600, color }}>{value} OBT</div>
+                </div>
+              ))}
             </div>
           </div>
 
