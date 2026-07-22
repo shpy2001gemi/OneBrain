@@ -8,8 +8,7 @@
 
 // ─── Re-exports from identity.rs (SPEC A §1) ──────────────────────────────
 pub use crate::identity::{
-    PUZZLE_C_SMALL, PUZZLE_C_MEDIUM, PUZZLE_C_LARGE,
-    DEVICE_GROUP_MAX, OBP_ALPN, OBP_PORT,
+    DEVICE_GROUP_MAX, OBP_ALPN, OBP_PORT, PUZZLE_C_LARGE, PUZZLE_C_MEDIUM, PUZZLE_C_SMALL,
 };
 
 // ─── Transport (SPEC A §3) ─────────────────────────────────────────────────
@@ -62,13 +61,13 @@ pub const W_REPUTATION: f64 = 0.10;
 
 /// Tier thresholds (min fitness score for each tier).
 pub const TIER_THRESHOLDS: [f64; 7] = [
-    0.0,   // T0 Leaf
-    0.30,  // T1 Contributor
-    0.50,  // T2 Local SP
-    0.65,  // T3 District SP
-    0.80,  // T4 Country SP
-    0.90,  // T5 Region SP
-    0.95,  // T6 Global Backbone
+    0.0,  // T0 Leaf
+    0.30, // T1 Contributor
+    0.50, // T2 Local SP
+    0.65, // T3 District SP
+    0.80, // T4 Country SP
+    0.90, // T5 Region SP
+    0.95, // T6 Global Backbone
 ];
 
 /// Demotion hysteresis margin (node must drop below threshold - margin to demote).

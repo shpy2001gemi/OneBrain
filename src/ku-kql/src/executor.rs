@@ -8,10 +8,10 @@
 //! - CREATE builds `CoreDna` directly
 //! - UPDATE/DEPRECATE modify Epigenetics layer only (Core DNA immutable)
 
-use ku_core::{KuRuntime, Epigenetics, ExtractedValue, EpistemicStatus};
-use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction, NumericValue};
-use ku_core::concept_dict::ConceptDict;
 use crate::ast::*;
+use ku_core::concept_dict::ConceptDict;
+use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction, NumericValue};
+use ku_core::{Epigenetics, EpistemicStatus, ExtractedValue, KuRuntime};
 
 // ============================================================================
 // Types
@@ -163,7 +163,8 @@ impl LocalExecutor {
 
     /// Check which registered watches match a given KU.
     pub fn check_watches(&self, ku: &KuRuntime) -> Vec<WatchId> {
-        self.watches.iter()
+        self.watches
+            .iter()
             .filter(|(_, watch)| {
                 if let Some(ref cond) = watch.find.where_clause {
                     evaluate_condition(ku, cond)
@@ -201,7 +202,9 @@ impl LocalExecutor {
             results_owned = self.exec_graph_find(find)?;
         } else {
             // Original: linear scan
-            results_owned = self.kus.iter()
+            results_owned = self
+                .kus
+                .iter()
                 .filter(|ku| {
                     if let Some(ref cond) = find.where_clause {
                         evaluate_condition(ku, cond)
@@ -238,7 +241,11 @@ impl LocalExecutor {
                     let va = a.extract_field(&field_name);
                     let vb = b.extract_field(&field_name);
                     let cmp = compare_extracted(&va, &vb);
-                    if expr.descending { cmp.reverse() } else { cmp }
+                    if expr.descending {
+                        cmp.reverse()
+                    } else {
+                        cmp
+                    }
                 });
             }
         }
@@ -288,8 +295,17 @@ impl LocalExecutor {
             self.kus.iter().map(|ku| (ku.cid, ku)).collect();
 
         // Step 1: Find all KUs matching the first node pattern
-        let start_kus: Vec<&KuRuntime> = self.kus.iter()
-            .filter(|ku| match_node_pattern(ku, &pattern.nodes[0], &query.where_clause, &self.concept_dict))
+        let start_kus: Vec<&KuRuntime> = self
+            .kus
+            .iter()
+            .filter(|ku| {
+                match_node_pattern(
+                    ku,
+                    &pattern.nodes[0],
+                    &query.where_clause,
+                    &self.concept_dict,
+                )
+            })
             .collect();
 
         if pattern.edges.is_empty() {
@@ -312,7 +328,8 @@ impl LocalExecutor {
                 // BFS for variable-length path traversal
                 // frontier[i] = CIDs reachable at depth i
                 let mut frontier = vec![vec![*cid]];
-                let mut visited: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::new();
+                let mut visited: std::collections::HashSet<[u8; 32]> =
+                    std::collections::HashSet::new();
                 visited.insert(*cid);
 
                 for _depth in 0..max_depth {
@@ -324,9 +341,14 @@ impl LocalExecutor {
                             match edge.direction {
                                 EdgeDirection::Outgoing | EdgeDirection::Undirected => {
                                     for bond in &ku.epi.bonds {
-                                        let type_matches = edge.edge_types.is_empty() ||
-                                            edge.edge_types.iter().any(|t| bond.relation.matches_name(t));
-                                        if !type_matches { continue; }
+                                        let type_matches = edge.edge_types.is_empty()
+                                            || edge
+                                                .edge_types
+                                                .iter()
+                                                .any(|t| bond.relation.matches_name(t));
+                                        if !type_matches {
+                                            continue;
+                                        }
                                         if bond.target_cid.len() >= 32 {
                                             let mut target = [0u8; 32];
                                             target.copy_from_slice(&bond.target_cid[..32]);
@@ -341,10 +363,13 @@ impl LocalExecutor {
                                         for other_bond in &other_ku.epi.bonds {
                                             if other_bond.target_cid.len() >= 32 {
                                                 let mut target = [0u8; 32];
-                                                target.copy_from_slice(&other_bond.target_cid[..32]);
+                                                target
+                                                    .copy_from_slice(&other_bond.target_cid[..32]);
                                                 if target == *hop_cid {
-                                                    let type_ok = edge.edge_types.is_empty() ||
-                                                        edge.edge_types.iter().any(|t| other_bond.relation.matches_name(t));
+                                                    let type_ok = edge.edge_types.is_empty()
+                                                        || edge.edge_types.iter().any(|t| {
+                                                            other_bond.relation.matches_name(t)
+                                                        });
                                                     if type_ok && visited.insert(other_ku.cid) {
                                                         next_level.push(other_ku.cid);
                                                     }
@@ -378,7 +403,8 @@ impl LocalExecutor {
         }
 
         // Collect KuRuntime objects for matching CIDs
-        let results: Vec<KuRuntime> = current_cids.iter()
+        let results: Vec<KuRuntime> = current_cids
+            .iter()
             .filter_map(|cid| ku_index.get(cid).map(|ku| (*ku).clone()))
             .collect();
 
@@ -387,17 +413,27 @@ impl LocalExecutor {
 
     // ─── HISTORY FIND (Phase 3) ───────────────────────────────────
 
-    /// Execute FIND HISTORY query — returns KUs with matching bond events.
-    /// Full event log integration will come when persistent EventStore is connected.
+    /// Execute FIND HISTORY query — returns KUs that have recorded bond events.
+    ///
+    /// Unlike regular FIND, this only returns KUs with event history in the
+    /// `EventAccumulator`. This enables temporal queries like "which KUs were
+    /// recently bonded/reinforced/weakened?"
     fn exec_history_find(&self, query: &FindQuery) -> Result<Vec<KuRuntime>, ExecError> {
         let mut results = Vec::new();
         for ku in &self.kus {
+            // Check WHERE clause first
             let matches = if let Some(ref cond) = query.where_clause {
                 evaluate_condition(ku, cond)
             } else {
                 true
             };
-            if matches {
+            if !matches {
+                continue;
+            }
+
+            // HISTORY filter: only include KUs that have bond events
+            let events = self.event_log.events_for_ku(&ku.cid);
+            if !events.is_empty() {
                 results.push(ku.clone());
             }
         }
@@ -450,10 +486,7 @@ impl LocalExecutor {
                 let local_id = self.resolve_concept(name);
                 if local_id >= 16512 && seen_ids.insert(local_id) {
                     let ccid = ku_core::ccid::ccid(name.as_bytes());
-                    concept_table.push(ku_core::core_dna::ConceptTableEntry {
-                        local_id,
-                        ccid,
-                    });
+                    concept_table.push(ku_core::core_dna::ConceptTableEntry { local_id, ccid });
                 }
             }
 
@@ -487,7 +520,9 @@ impl LocalExecutor {
         }
 
         // Legacy property-bag syntax
-        let gene_type_num = create.properties.iter()
+        let gene_type_num = create
+            .properties
+            .iter()
             .find(|p| p.key == "gene_type")
             .and_then(|p| match &p.value {
                 Value::Text(s) => match s.as_str() {
@@ -511,7 +546,9 @@ impl LocalExecutor {
             })
             .unwrap_or(0);
 
-        let certainty = create.properties.iter()
+        let certainty = create
+            .properties
+            .iter()
             .find(|p| p.key == "certainty")
             .and_then(|p| match &p.value {
                 Value::Integer(i) => Some(*i as u16),
@@ -519,7 +556,9 @@ impl LocalExecutor {
             })
             .unwrap_or(5000);
 
-        let concept_id = create.properties.iter()
+        let concept_id = create
+            .properties
+            .iter()
             .find(|p| p.key == "concept_id" || p.key == "primary_concept")
             .and_then(|p| match &p.value {
                 Value::Integer(i) => Some(*i as u64),
@@ -528,7 +567,11 @@ impl LocalExecutor {
             .unwrap_or(1);
 
         let instructions = vec![
-            Instruction::Triple { s: concept_id, p: 0, o: 0 },
+            Instruction::Triple {
+                s: concept_id,
+                p: 0,
+                o: 0,
+            },
             Instruction::Certainty { level: certainty },
         ];
 
@@ -593,7 +636,11 @@ impl LocalExecutor {
                 cause: self.resolve_concept(cause),
                 effect: self.resolve_concept(effect),
             }),
-            CreateClause::Step { ord, action, target } => Ok(Instruction::Step {
+            CreateClause::Step {
+                ord,
+                action,
+                target,
+            } => Ok(Instruction::Step {
                 ord: *ord,
                 action: self.resolve_concept(action),
                 target: self.resolve_concept(target),
@@ -662,28 +709,41 @@ impl LocalExecutor {
     fn collect_clause_concept_names(clause: &CreateClause, names: &mut Vec<String>) {
         match clause {
             CreateClause::Triple { s, p, o } => {
-                names.push(s.clone()); names.push(p.clone()); names.push(o.clone());
+                names.push(s.clone());
+                names.push(p.clone());
+                names.push(o.clone());
             }
             CreateClause::Quality { s, q } => {
-                names.push(s.clone()); names.push(q.clone());
+                names.push(s.clone());
+                names.push(q.clone());
             }
             CreateClause::Quantity { s, value: _, unit } => {
-                names.push(s.clone()); names.push(unit.clone());
+                names.push(s.clone());
+                names.push(unit.clone());
             }
             CreateClause::PartOf { part, whole } => {
-                names.push(part.clone()); names.push(whole.clone());
+                names.push(part.clone());
+                names.push(whole.clone());
             }
             CreateClause::Located { s, location } => {
-                names.push(s.clone()); names.push(location.clone());
+                names.push(s.clone());
+                names.push(location.clone());
             }
             CreateClause::Temporal { s, time } => {
-                names.push(s.clone()); names.push(time.clone());
+                names.push(s.clone());
+                names.push(time.clone());
             }
             CreateClause::Causal { cause, effect } => {
-                names.push(cause.clone()); names.push(effect.clone());
+                names.push(cause.clone());
+                names.push(effect.clone());
             }
-            CreateClause::Step { ord: _, action, target } => {
-                names.push(action.clone()); names.push(target.clone());
+            CreateClause::Step {
+                ord: _,
+                action,
+                target,
+            } => {
+                names.push(action.clone());
+                names.push(target.clone());
             }
             CreateClause::Precond { concept } | CreateClause::Effect { concept } => {
                 names.push(concept.clone());
@@ -692,33 +752,42 @@ impl LocalExecutor {
             CreateClause::Tolerance { s, .. } | CreateClause::Range { s, .. } => {
                 names.push(s.clone());
             }
-            CreateClause::Constraint { source, op: _, target } => {
-                names.push(source.clone()); names.push(target.clone());
+            CreateClause::Constraint {
+                source,
+                op: _,
+                target,
+            } => {
+                names.push(source.clone());
+                names.push(target.clone());
             }
         }
     }
 
     // ─── CREATE FROM TEXT (Tier 2 — AI-assisted) ─────────────────────
 
-    fn exec_create_from_text(&mut self, cft: &CreateFromTextQuery) -> Result<QueryResult, ExecError> {
+    fn exec_create_from_text(
+        &mut self,
+        cft: &CreateFromTextQuery,
+    ) -> Result<QueryResult, ExecError> {
         // text_parser has its own ConceptDict type; use default_dict()
         // TODO: Bridge v6 ConceptDict → text_parser ConceptDict when available
         let dict = ku_core::text_parser::default_dict();
-        let mut dna = ku_core::text_parser::parse_text_to_core_dna(
-            &cft.text,
-            &dict,
-        ).map_err(|e| ExecError::CoreDnaError(format!(
-            "CREATE FROM TEXT: failed to parse '{}': {}",
-            cft.text, e
-        )))?;
+        let mut dna =
+            ku_core::text_parser::parse_text_to_core_dna(&cft.text, &dict).map_err(|e| {
+                ExecError::CoreDnaError(format!(
+                    "CREATE FROM TEXT: failed to parse '{}': {}",
+                    cft.text, e
+                ))
+            })?;
 
         // Override gene_type if hint provided
         if let Some(ref hint) = cft.gene_hint {
             dna.header.gene_type = hint.to_u8();
         }
 
-        let ku = KuRuntime::from_dna(dna)
-            .map_err(|e| ExecError::CoreDnaError(format!("Failed to create KU from text: {}", e)))?;
+        let ku = KuRuntime::from_dna(dna).map_err(|e| {
+            ExecError::CoreDnaError(format!("Failed to create KU from text: {}", e))
+        })?;
 
         // ★ OBKG Fix M2: Return created KU in result rows
         let created = ku.clone();
@@ -831,7 +900,7 @@ impl LocalExecutor {
                     Scope::Auto => "auto_escalation",
                 };
                 (find.scope.clone(), strategy.to_string(), idx)
-            },
+            }
             _ => (Scope::Local, "local_scan".to_string(), Vec::new()),
         };
 
@@ -897,20 +966,14 @@ fn evaluate_condition(ku: &KuRuntime, cond: &Condition) -> bool {
                 Some(ev) => compare_values(&ev, op, value),
                 None => false,
             }
-        },
-        Condition::And(a, b) => {
-            evaluate_condition(ku, a) && evaluate_condition(ku, b)
-        },
-        Condition::Or(a, b) => {
-            evaluate_condition(ku, a) || evaluate_condition(ku, b)
-        },
-        Condition::Not(inner) => {
-            !evaluate_condition(ku, inner)
-        },
+        }
+        Condition::And(a, b) => evaluate_condition(ku, a) && evaluate_condition(ku, b),
+        Condition::Or(a, b) => evaluate_condition(ku, a) || evaluate_condition(ku, b),
+        Condition::Not(inner) => !evaluate_condition(ku, inner),
         Condition::Exists(field) => {
             let field_name = field_path_to_name(field);
             ku.extract_field(&field_name).is_some()
-        },
+        }
         Condition::Contains { field, value } => {
             let field_name = field_path_to_name(field);
             if field_name == "concept_ids" {
@@ -922,7 +985,7 @@ fn evaluate_condition(ku: &KuRuntime, cond: &Condition) -> bool {
             } else {
                 false
             }
-        },
+        }
     }
 }
 
@@ -935,32 +998,32 @@ fn apply_assignment(ku: &mut KuRuntime, assignment: &Assignment) {
             if let Value::Integer(v) = &assignment.value {
                 ku.epi.trust.trust_score = *v as u16;
             }
-        },
+        }
         "confidence" => {
             if let Value::Integer(v) = &assignment.value {
                 ku.epi.trust.confidence = *v as u16;
             }
-        },
+        }
         "verification_level" => {
             if let Value::Integer(v) = &assignment.value {
                 ku.epi.trust.verification_level = *v as u8;
             }
-        },
+        }
         "corroboration_count" => {
             if let Value::Integer(v) = &assignment.value {
                 ku.epi.trust.corroboration_count = *v as u16;
             }
-        },
+        }
         "challenge_count" => {
             if let Value::Integer(v) = &assignment.value {
                 ku.epi.trust.challenge_count = *v as u16;
             }
-        },
+        }
         "metabolic_rate" => {
             if let Value::Integer(v) = &assignment.value {
                 ku.epi.trust.metabolic_rate = *v as u16;
             }
-        },
+        }
         "epistemic_status" => {
             if let Value::Text(s) = &assignment.value {
                 let status = match s.as_str() {
@@ -978,7 +1041,7 @@ fn apply_assignment(ku: &mut KuRuntime, assignment: &Assignment) {
                 };
                 ku.epi.trust.epistemic_status = status;
             }
-        },
+        }
         "evidence_type" => {
             if let Value::Text(s) = &assignment.value {
                 let et = match s.as_str() {
@@ -994,11 +1057,14 @@ fn apply_assignment(ku: &mut KuRuntime, assignment: &Assignment) {
                 };
                 ku.epi.trust.evidence_type = et;
             }
-        },
+        }
         // ★ OBKG Fix L4: Log warning on unknown SET field in debug builds
         _other => {
             #[cfg(debug_assertions)]
-            eprintln!("[KQL] apply_assignment: unknown or immutable field '{}', ignoring", _other);
+            eprintln!(
+                "[KQL] apply_assignment: unknown or immutable field '{}', ignoring",
+                _other
+            );
         }
     }
 }
@@ -1006,25 +1072,21 @@ fn apply_assignment(ku: &mut KuRuntime, assignment: &Assignment) {
 /// Compare extracted value with target.
 fn compare_values(extracted: &ExtractedValue, op: &CompOp, target: &Value) -> bool {
     match (extracted, target) {
-        (ExtractedValue::Integer(a), Value::Integer(b)) => {
-            match op {
-                CompOp::Eq => a == b,
-                CompOp::NotEq => a != b,
-                CompOp::Gt => a > b,
-                CompOp::GtEq => a >= b,
-                CompOp::Lt => a < b,
-                CompOp::LtEq => a <= b,
-            }
+        (ExtractedValue::Integer(a), Value::Integer(b)) => match op {
+            CompOp::Eq => a == b,
+            CompOp::NotEq => a != b,
+            CompOp::Gt => a > b,
+            CompOp::GtEq => a >= b,
+            CompOp::Lt => a < b,
+            CompOp::LtEq => a <= b,
         },
-        (ExtractedValue::Float(a), Value::Float(b)) => {
-            match op {
-                CompOp::Eq => (a - b).abs() < f64::EPSILON,
-                CompOp::NotEq => (a - b).abs() >= f64::EPSILON,
-                CompOp::Gt => a > b,
-                CompOp::GtEq => a >= b,
-                CompOp::Lt => a < b,
-                CompOp::LtEq => a <= b,
-            }
+        (ExtractedValue::Float(a), Value::Float(b)) => match op {
+            CompOp::Eq => (a - b).abs() < f64::EPSILON,
+            CompOp::NotEq => (a - b).abs() >= f64::EPSILON,
+            CompOp::Gt => a > b,
+            CompOp::GtEq => a >= b,
+            CompOp::Lt => a < b,
+            CompOp::LtEq => a <= b,
         },
         (ExtractedValue::Integer(a), Value::Float(b)) => {
             let af = *a as f64;
@@ -1035,20 +1097,16 @@ fn compare_values(extracted: &ExtractedValue, op: &CompOp, target: &Value) -> bo
                 CompOp::LtEq => af <= *b,
                 _ => false,
             }
+        }
+        (ExtractedValue::Text(a), Value::Text(b)) => match op {
+            CompOp::Eq => a == b,
+            CompOp::NotEq => a != b,
+            _ => false,
         },
-        (ExtractedValue::Text(a), Value::Text(b)) => {
-            match op {
-                CompOp::Eq => a == b,
-                CompOp::NotEq => a != b,
-                _ => false,
-            }
-        },
-        (ExtractedValue::Bool(a), Value::Bool(b)) => {
-            match op {
-                CompOp::Eq => a == b,
-                CompOp::NotEq => a != b,
-                _ => false,
-            }
+        (ExtractedValue::Bool(a), Value::Bool(b)) => match op {
+            CompOp::Eq => a == b,
+            CompOp::NotEq => a != b,
+            _ => false,
         },
         _ => false,
     }
@@ -1058,8 +1116,9 @@ fn compare_values(extracted: &ExtractedValue, op: &CompOp, target: &Value) -> bo
 fn compare_extracted(a: &Option<ExtractedValue>, b: &Option<ExtractedValue>) -> std::cmp::Ordering {
     match (a, b) {
         (Some(ExtractedValue::Integer(va)), Some(ExtractedValue::Integer(vb))) => va.cmp(vb),
-        (Some(ExtractedValue::Float(va)), Some(ExtractedValue::Float(vb))) =>
-            va.partial_cmp(vb).unwrap_or(std::cmp::Ordering::Equal),
+        (Some(ExtractedValue::Float(va)), Some(ExtractedValue::Float(vb))) => {
+            va.partial_cmp(vb).unwrap_or(std::cmp::Ordering::Equal)
+        }
         (Some(ExtractedValue::Text(va)), Some(ExtractedValue::Text(vb))) => va.cmp(vb),
         _ => std::cmp::Ordering::Equal,
     }
@@ -1083,7 +1142,8 @@ fn compute_aggregates(kus: &[&KuRuntime], exprs: &[ReturnExpr]) -> Vec<Aggregate
                 format!("{}({})", func_name, field.segments.join("."))
             });
 
-            let values: Vec<ExtractedValue> = kus.iter()
+            let values: Vec<ExtractedValue> = kus
+                .iter()
                 .filter_map(|ku| ku.extract_field(&field_name))
                 .filter(|v| !matches!(v, ExtractedValue::Null))
                 .collect();
@@ -1093,7 +1153,7 @@ fn compute_aggregates(kus: &[&KuRuntime], exprs: &[ReturnExpr]) -> Vec<Aggregate
                 AggFunc::Sum => {
                     let sum: f64 = values.iter().map(extracted_to_f64).sum();
                     AggValue::Float(sum)
-                },
+                }
                 AggFunc::Avg => {
                     if values.is_empty() {
                         AggValue::Float(0.0)
@@ -1101,22 +1161,21 @@ fn compute_aggregates(kus: &[&KuRuntime], exprs: &[ReturnExpr]) -> Vec<Aggregate
                         let sum: f64 = values.iter().map(extracted_to_f64).sum();
                         AggValue::Float(sum / values.len() as f64)
                     }
-                },
+                }
                 AggFunc::Min => {
-                    let min = values.iter()
-                        .map(extracted_to_f64)
-                        .fold(f64::MAX, f64::min);
+                    let min = values.iter().map(extracted_to_f64).fold(f64::MAX, f64::min);
                     AggValue::Float(if min == f64::MAX { 0.0 } else { min })
-                },
+                }
                 AggFunc::Max => {
-                    let max = values.iter()
-                        .map(extracted_to_f64)
-                        .fold(f64::MIN, f64::max);
+                    let max = values.iter().map(extracted_to_f64).fold(f64::MIN, f64::max);
                     AggValue::Float(if max == f64::MIN { 0.0 } else { max })
-                },
+                }
             };
 
-            results.push(AggregateResult { name, value: agg_value });
+            results.push(AggregateResult {
+                name,
+                value: agg_value,
+            });
         }
     }
 
@@ -1139,7 +1198,7 @@ fn extracted_to_f64(v: &ExtractedValue) -> f64 {
 mod tests {
     use super::*;
     use crate::parser::parse_query;
-    use ku_core::types::{RelationType, Bond, Creator, EdgeState};
+    use ku_core::types::{Bond, Creator, EdgeState, RelationType};
 
     fn make_test_ku(concept: u64, certainty: u16, trust_score: u16) -> KuRuntime {
         let dna = CoreDna {
@@ -1150,11 +1209,16 @@ mod tests {
             },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Triple { s: concept, p: 500, o: 1042 },
+                Instruction::Triple {
+                    s: concept,
+                    p: 500,
+                    o: 1042,
+                },
                 Instruction::Certainty { level: certainty },
             ],
         };
-        KuRuntime::from_dna(dna).unwrap()
+        KuRuntime::from_dna(dna)
+            .unwrap()
             .with_epigenetics(Epigenetics::with_trust(trust_score, 5000))
     }
 
@@ -1285,9 +1349,7 @@ mod tests {
         let mut exec = LocalExecutor::new();
         exec.insert(make_test_ku(301, 9000, 7000));
 
-        let query = parse_query(
-            r#"DEPRECATE (k:KU) REASON "outdated" SIGNED BY "admin""#
-        ).unwrap();
+        let query = parse_query(r#"DEPRECATE (k:KU) REASON "outdated" SIGNED BY "admin""#).unwrap();
         let result = exec.execute(&query).unwrap();
         assert_eq!(result.affected_count, 1);
 
@@ -1300,7 +1362,9 @@ mod tests {
     #[test]
     fn test_watch() {
         let mut exec = LocalExecutor::new();
-        let query = parse_query("WATCH FIND (k:KU) WHERE k.trust_score > 7000 ON CREATE NOTIFY \"test\"").unwrap();
+        let query =
+            parse_query("WATCH FIND (k:KU) WHERE k.trust_score > 7000 ON CREATE NOTIFY \"test\"")
+                .unwrap();
         let result = exec.execute(&query).unwrap();
         assert!(result.watch_id.is_some());
         assert_eq!(exec.watch_count(), 1);
@@ -1311,7 +1375,8 @@ mod tests {
         let mut exec = LocalExecutor::new();
         exec.insert(make_test_ku(301, 9000, 7000));
 
-        let query = parse_query("EXPLAIN FIND (k:KU) WHERE k.trust_score > 5000 SCOPE CLUSTER").unwrap();
+        let query =
+            parse_query("EXPLAIN FIND (k:KU) WHERE k.trust_score > 5000 SCOPE CLUSTER").unwrap();
         let result = exec.execute(&query).unwrap();
         assert!(result.plan.is_some());
         let plan = result.plan.unwrap();
@@ -1343,7 +1408,8 @@ mod tests {
         exec.insert(make_test_ku(302, 9000, 3000));
         exec.insert(make_test_ku(303, 3000, 8000));
 
-        let query = parse_query("FIND (k:KU) WHERE k.certainty > 5000 AND k.trust_score > 5000").unwrap();
+        let query =
+            parse_query("FIND (k:KU) WHERE k.certainty > 5000 AND k.trust_score > 5000").unwrap();
         let result = exec.execute(&query).unwrap();
         assert_eq!(result.total_count, 1); // Only concept 301 matches both
     }
@@ -1354,15 +1420,16 @@ mod tests {
     fn test_tier1_create_simple_fact() {
         let mut exec = LocalExecutor::new();
         let query = parse_query(
-            r#"CREATE (k:KU) FACT certainty=9000 { TRIPLE(water, boils_at, 100_celsius) }"#
-        ).unwrap();
+            r#"CREATE (k:KU) FACT certainty=9000 { TRIPLE(water, boils_at, 100_celsius) }"#,
+        )
+        .unwrap();
         let result = exec.execute(&query).unwrap();
         assert_eq!(result.affected_count, 1);
         assert_eq!(result.rows.len(), 1);
 
         let ku = &result.rows[0];
         assert_eq!(ku.gene_type(), 0); // Fact
-        // Should have 2 instructions: Triple + Certainty
+                                       // Should have 2 instructions: Triple + Certainty
         assert!(ku.dna.instructions.len() >= 2);
     }
 
@@ -1376,14 +1443,15 @@ mod tests {
                 STEP(3, pull, arms)
                 PRECOND(know_swimming)
                 EFFECT(move_forward)
-            }"#
-        ).unwrap();
+            }"#,
+        )
+        .unwrap();
         let result = exec.execute(&query).unwrap();
         assert_eq!(result.affected_count, 1);
 
         let ku = &result.rows[0];
         assert_eq!(ku.gene_type(), 1); // Procedure (v7)
-        // 3 Steps + 1 Precond + 1 Effect + 1 Certainty = 6 instructions
+                                       // 3 Steps + 1 Precond + 1 Effect + 1 Certainty = 6 instructions
         assert_eq!(ku.dna.instructions.len(), 6);
     }
 
@@ -1395,8 +1463,9 @@ mod tests {
                 TRIPLE(water, boils_at, 100_celsius)
                 LOCATED(water, sea_level)
                 QUANTITY(boiling_point, 100.0, degrees_celsius)
-            }"#
-        ).unwrap();
+            }"#,
+        )
+        .unwrap();
         let result = exec.execute(&query).unwrap();
         let ku = &result.rows[0];
         // 3 instructions + 1 Certainty = 4
@@ -1407,14 +1476,15 @@ mod tests {
     fn test_tier1_create_with_concept_dict() {
         use ku_core::concept_dict::ConceptDict;
         let mut dict = ConceptDict::new();
-        dict.register("water");      // Gets auto-assigned ID
+        dict.register("water"); // Gets auto-assigned ID
         dict.register("boils_at");
         dict.register("100_celsius");
 
         let mut exec = LocalExecutor::with_dict(dict);
         let query = parse_query(
-            r#"CREATE (k:KU) FACT certainty=9000 { TRIPLE(water, boils_at, 100_celsius) }"#
-        ).unwrap();
+            r#"CREATE (k:KU) FACT certainty=9000 { TRIPLE(water, boils_at, 100_celsius) }"#,
+        )
+        .unwrap();
         let result = exec.execute(&query).unwrap();
         assert_eq!(result.affected_count, 1);
         // Verify concept IDs come from dict, not hash
@@ -1426,16 +1496,19 @@ mod tests {
     #[test]
     fn test_tier1_parse_structured_create() {
         let query = parse_query(
-            r#"CREATE (k:KU) FACT certainty=9000 { TRIPLE(water, boils_at, 100_celsius) }"#
-        ).unwrap();
+            r#"CREATE (k:KU) FACT certainty=9000 { TRIPLE(water, boils_at, 100_celsius) }"#,
+        )
+        .unwrap();
         match query {
             Query::Create(c) => {
                 assert_eq!(c.gene_type, Some(KqlGeneType::Fact));
                 assert_eq!(c.certainty, Some(9000));
                 assert_eq!(c.instructions.len(), 1);
-                assert!(matches!(&c.instructions[0], CreateClause::Triple { s, p, o }
-                    if s == "water" && p == "boils_at" && o == "100_celsius"));
-            },
+                assert!(
+                    matches!(&c.instructions[0], CreateClause::Triple { s, p, o }
+                    if s == "water" && p == "boils_at" && o == "100_celsius")
+                );
+            }
             _ => panic!("Expected Create query"),
         }
     }
@@ -1443,9 +1516,9 @@ mod tests {
     #[test]
     fn test_tier1_legacy_create_still_works() {
         let mut exec = LocalExecutor::new();
-        let query = parse_query(
-            r#"CREATE (k:KU { gene_type: "Fact", certainty: 9000, concept_id: 301 })"#
-        ).unwrap();
+        let query =
+            parse_query(r#"CREATE (k:KU { gene_type: "Fact", certainty: 9000, concept_id: 301 })"#)
+                .unwrap();
         let result = exec.execute(&query).unwrap();
         assert_eq!(result.affected_count, 1);
         assert_eq!(result.rows[0].gene_type(), 0);
@@ -1455,15 +1528,22 @@ mod tests {
     fn test_tier1_create_builds_concept_table() {
         let mut exec = LocalExecutor::new();
         let query = parse_query(
-            r#"CREATE (k:KU) FACT certainty=9000 { TRIPLE(water, boils_at, 100_celsius) }"#
-        ).unwrap();
+            r#"CREATE (k:KU) FACT certainty=9000 { TRIPLE(water, boils_at, 100_celsius) }"#,
+        )
+        .unwrap();
         let result = exec.execute(&query).unwrap();
         let ku = &result.rows[0];
 
         // Concept names are hashed to IDs > 128, which are >= 16512 for blake3 hashes
         // so ConceptTable should have entries
-        assert!(ku.dna.header.has_concept_table, "has_concept_table should be true");
-        assert!(!ku.dna.concept_table.is_empty(), "concept_table should not be empty");
+        assert!(
+            ku.dna.header.has_concept_table,
+            "has_concept_table should be true"
+        );
+        assert!(
+            !ku.dna.concept_table.is_empty(),
+            "concept_table should not be empty"
+        );
 
         // Should have 3 unique concepts: water, boils_at, 100_celsius
         assert_eq!(ku.dna.concept_table.len(), 3);
@@ -1493,9 +1573,24 @@ mod tests {
         use ku_core::encoding_consensus::EncodingStatus;
 
         let mut exec = LocalExecutor::new();
-        exec.insert(make_test_ku_with_status(301, 9000, 7000, EncodingStatus::Full));
-        exec.insert(make_test_ku_with_status(302, 8000, 5000, EncodingStatus::Part));
-        exec.insert(make_test_ku_with_status(303, 7000, 3000, EncodingStatus::Self_));
+        exec.insert(make_test_ku_with_status(
+            301,
+            9000,
+            7000,
+            EncodingStatus::Full,
+        ));
+        exec.insert(make_test_ku_with_status(
+            302,
+            8000,
+            5000,
+            EncodingStatus::Part,
+        ));
+        exec.insert(make_test_ku_with_status(
+            303,
+            7000,
+            3000,
+            EncodingStatus::Self_,
+        ));
 
         let query = parse_query(r#"FIND (k:KU) WHERE k.encoding_status = "Full""#).unwrap();
         let result = exec.execute(&query).unwrap();
@@ -1511,13 +1606,31 @@ mod tests {
         use ku_core::encoding_consensus::EncodingStatus;
 
         let mut exec = LocalExecutor::new();
-        exec.insert(make_test_ku_with_status(301, 9000, 7000, EncodingStatus::Raw));
-        exec.insert(make_test_ku_with_status(302, 8000, 5000, EncodingStatus::Self_));
-        exec.insert(make_test_ku_with_status(303, 7000, 9000, EncodingStatus::Full));
+        exec.insert(make_test_ku_with_status(
+            301,
+            9000,
+            7000,
+            EncodingStatus::Raw,
+        ));
+        exec.insert(make_test_ku_with_status(
+            302,
+            8000,
+            5000,
+            EncodingStatus::Self_,
+        ));
+        exec.insert(make_test_ku_with_status(
+            303,
+            7000,
+            9000,
+            EncodingStatus::Full,
+        ));
 
         let query = parse_query(r#"FIND (k:KU) WHERE k.encoding_status != "Raw""#).unwrap();
         let result = exec.execute(&query).unwrap();
-        assert_eq!(result.total_count, 2, "Self and Full should match, Raw excluded");
+        assert_eq!(
+            result.total_count, 2,
+            "Self and Full should match, Raw excluded"
+        );
     }
 
     #[test]
@@ -1534,17 +1647,37 @@ mod tests {
         use ku_core::encoding_consensus::EncodingStatus;
 
         let mut exec = LocalExecutor::new();
-        exec.insert(make_test_ku_with_status(301, 9000, 7000, EncodingStatus::Self_));
-        exec.insert(make_test_ku_with_status(302, 8000, 5000, EncodingStatus::Full));
-        exec.insert(make_test_ku_with_status(303, 7000, 3000, EncodingStatus::Raw));
+        exec.insert(make_test_ku_with_status(
+            301,
+            9000,
+            7000,
+            EncodingStatus::Self_,
+        ));
+        exec.insert(make_test_ku_with_status(
+            302,
+            8000,
+            5000,
+            EncodingStatus::Full,
+        ));
+        exec.insert(make_test_ku_with_status(
+            303,
+            7000,
+            3000,
+            EncodingStatus::Raw,
+        ));
 
         let query = parse_query("FIND (k:KU) ORDER BY k.encoding_status ASC").unwrap();
         let result = exec.execute(&query).unwrap();
         assert_eq!(result.rows.len(), 3);
         // Alphabetical: Full < Raw < Self
-        let statuses: Vec<String> = result.rows.iter()
+        let statuses: Vec<String> = result
+            .rows
+            .iter()
             .map(|r| r.extract_field("encoding_status").unwrap())
-            .map(|v| match v { ExtractedValue::Text(s) => s, _ => panic!("expected text") })
+            .map(|v| match v {
+                ExtractedValue::Text(s) => s,
+                _ => panic!("expected text"),
+            })
             .collect();
         assert_eq!(statuses, vec!["Full", "Raw", "Self"]);
     }
@@ -1563,11 +1696,16 @@ mod tests {
             },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Triple { s: concept, p: 500, o: 1042 },
+                Instruction::Triple {
+                    s: concept,
+                    p: 500,
+                    o: 1042,
+                },
                 Instruction::Certainty { level: 5000 },
             ],
         };
-        let mut ku = KuRuntime::from_dna(dna).unwrap()
+        let mut ku = KuRuntime::from_dna(dna)
+            .unwrap()
             .with_epigenetics(Epigenetics::with_trust(5000, 5000));
         // Override CID with deterministic seed
         ku.cid = [cid_seed; 32];
@@ -1608,8 +1746,16 @@ mod tests {
         let query = Query::Find(FindQuery {
             pattern: Pattern {
                 nodes: vec![
-                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
-                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern {
+                        alias: Some("a".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
+                    NodePattern {
+                        alias: Some("b".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
                 ],
                 edges: vec![EdgePattern {
                     alias: None,
@@ -1646,8 +1792,16 @@ mod tests {
         let query = Query::Find(FindQuery {
             pattern: Pattern {
                 nodes: vec![
-                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
-                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern {
+                        alias: Some("a".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
+                    NodePattern {
+                        alias: Some("b".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
                 ],
                 edges: vec![EdgePattern {
                     alias: None,
@@ -1684,8 +1838,16 @@ mod tests {
         let query = Query::Find(FindQuery {
             pattern: Pattern {
                 nodes: vec![
-                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
-                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern {
+                        alias: Some("b".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
+                    NodePattern {
+                        alias: Some("a".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
                 ],
                 edges: vec![EdgePattern {
                     alias: None,
@@ -1723,12 +1885,20 @@ mod tests {
         let query = Query::Find(FindQuery {
             pattern: Pattern {
                 nodes: vec![
-                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
-                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern {
+                        alias: Some("a".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
+                    NodePattern {
+                        alias: Some("b".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
                 ],
                 edges: vec![EdgePattern {
                     alias: None,
-                    edge_types: vec![],  // any type
+                    edge_types: vec![], // any type
                     direction: EdgeDirection::Outgoing,
                     from: 0,
                     to: 1,
@@ -1763,9 +1933,21 @@ mod tests {
         let query = Query::Find(FindQuery {
             pattern: Pattern {
                 nodes: vec![
-                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
-                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
-                    NodePattern { alias: Some("c".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern {
+                        alias: Some("a".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
+                    NodePattern {
+                        alias: Some("b".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
+                    NodePattern {
+                        alias: Some("c".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
                 ],
                 edges: vec![
                     EdgePattern {
@@ -1803,12 +1985,34 @@ mod tests {
     #[test]
     fn test_find_history_returns_all() {
         let mut exec = LocalExecutor::new();
-        exec.insert(make_test_ku(301, 9000, 7000));
-        exec.insert(make_test_ku(302, 8000, 5000));
+        let ku1 = make_test_ku(301, 9000, 7000);
+        let ku2 = make_test_ku(302, 8000, 5000);
+        let cid1 = ku1.cid;
+        let cid2 = ku2.cid;
+        exec.insert(ku1);
+        exec.insert(ku2);
 
-        // exec_history_find returns all matching KUs
+        // Record bond events for both KUs so history find returns them
+        exec.record_bond_event(ku_core::graph_types::BondEvent::Created {
+            source_cid: cid1,
+            target_cid: cid2,
+            relation: RelationType::Extends,
+            weight: 5000,
+            creator: Creator::Human,
+            evidence: vec![],
+            timestamp: 1000,
+        });
+
+        // exec_history_find returns only KUs with events
         let query = FindQuery {
-            pattern: Pattern { nodes: vec![NodePattern { alias: Some("k".into()), label: NodeLabel::KU, properties: vec![] }], edges: vec![] },
+            pattern: Pattern {
+                nodes: vec![NodePattern {
+                    alias: Some("k".into()),
+                    label: NodeLabel::KU,
+                    properties: vec![],
+                }],
+                edges: vec![],
+            },
             where_clause: None,
             scope: Scope::Local,
             return_clause: None,
@@ -1818,7 +2022,11 @@ mod tests {
             history: false,
         };
         let result = exec.exec_history_find(&query).unwrap();
-        assert_eq!(result.len(), 2, "History find should return all KUs");
+        assert_eq!(
+            result.len(),
+            2,
+            "History find should return KUs with events"
+        );
     }
 
     #[test]
@@ -1875,10 +2083,16 @@ mod tests {
 
         let snapshots = exec.event_log().replay_at_time(1500);
         assert_eq!(snapshots.len(), 1, "Should have one bond at t=1500");
-        assert_eq!(snapshots[0].weight, 5000, "Weight should be original before reinforce");
+        assert_eq!(
+            snapshots[0].weight, 5000,
+            "Weight should be original before reinforce"
+        );
 
         let snapshots2 = exec.event_log().replay_at_time(2000);
-        assert_eq!(snapshots2[0].weight, 8000, "Weight should reflect reinforcement");
+        assert_eq!(
+            snapshots2[0].weight, 8000,
+            "Weight should reflect reinforcement"
+        );
     }
 
     #[test]
@@ -1891,17 +2105,24 @@ mod tests {
 
         let query = parse_query("FIND (k:KU) WHERE k.trust_score > 4000").unwrap();
         let result = exec.execute(&query).unwrap();
-        assert_eq!(result.total_count, 2, "Simple FIND still works with Phase 3 changes");
+        assert_eq!(
+            result.total_count, 2,
+            "Simple FIND still works with Phase 3 changes"
+        );
     }
 
     #[test]
     fn test_find_graph_multiple_bonds_same_source() {
         let mut exec = LocalExecutor::new();
         // A -[Extends]-> B, A -[Extends]-> C
-        let ku_a = make_ku_with_bonds(1, 301, vec![
-            make_bond(2, RelationType::Extends),
-            make_bond(3, RelationType::Extends),
-        ]);
+        let ku_a = make_ku_with_bonds(
+            1,
+            301,
+            vec![
+                make_bond(2, RelationType::Extends),
+                make_bond(3, RelationType::Extends),
+            ],
+        );
         let ku_b = make_ku_with_bonds(2, 302, vec![]);
         let ku_c = make_ku_with_bonds(3, 303, vec![]);
         exec.insert(ku_a);
@@ -1911,8 +2132,16 @@ mod tests {
         let query = Query::Find(FindQuery {
             pattern: Pattern {
                 nodes: vec![
-                    NodePattern { alias: Some("a".into()), label: NodeLabel::KU, properties: vec![] },
-                    NodePattern { alias: Some("b".into()), label: NodeLabel::KU, properties: vec![] },
+                    NodePattern {
+                        alias: Some("a".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
+                    NodePattern {
+                        alias: Some("b".into()),
+                        label: NodeLabel::KU,
+                        properties: vec![],
+                    },
                 ],
                 edges: vec![EdgePattern {
                     alias: None,
@@ -1969,17 +2198,40 @@ mod tests {
     fn test_find_history_dispatched() {
         // Verify FIND HISTORY goes through execute() → exec_find() → exec_history_find()
         let mut exec = LocalExecutor::new();
-        exec.insert(make_test_ku(301, 9000, 7000));
-        exec.insert(make_test_ku(302, 8000, 5000));
+        let ku1 = make_test_ku(301, 9000, 7000);
+        let ku2 = make_test_ku(302, 8000, 5000);
+        let cid1 = ku1.cid;
+        let cid2 = ku2.cid;
+        exec.insert(ku1);
+        exec.insert(ku2);
+
+        // Record events for both KUs
+        exec.record_bond_event(ku_core::graph_types::BondEvent::Created {
+            source_cid: cid1,
+            target_cid: cid2,
+            relation: RelationType::Extends,
+            weight: 5000,
+            creator: Creator::Human,
+            evidence: vec![],
+            timestamp: 1000,
+        });
 
         let query = parse_query("FIND HISTORY (k:KU)").unwrap();
         let result = exec.execute(&query).unwrap();
-        assert_eq!(result.rows.len(), 2, "FIND HISTORY should return all KUs");
+        assert_eq!(
+            result.rows.len(),
+            2,
+            "FIND HISTORY should return KUs with events"
+        );
         assert_eq!(result.total_count, 2);
 
-        // With WHERE filter
+        // With WHERE filter — only ku1 has trust_score > 6000
         let query2 = parse_query("FIND HISTORY (k:KU) WHERE k.trust_score > 6000").unwrap();
         let result2 = exec.execute(&query2).unwrap();
-        assert_eq!(result2.rows.len(), 1, "FIND HISTORY with WHERE should filter");
+        assert_eq!(
+            result2.rows.len(),
+            1,
+            "FIND HISTORY with WHERE should filter"
+        );
     }
 }

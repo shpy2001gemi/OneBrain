@@ -23,15 +23,15 @@ use crate::error::KuError;
 // Tier boundary constants
 const TIER0_MAX: u64 = 127;
 const TIER1_OFFSET: u64 = 128;
-const TIER1_CAPACITY: u64 = 16_384;        // 2^14
+const TIER1_CAPACITY: u64 = 16_384; // 2^14
 const TIER1_MAX: u64 = TIER0_MAX + TIER1_CAPACITY; // 16,511
-const TIER2_OFFSET: u64 = TIER1_MAX + 1;   // 16,512
-const TIER2_CAPACITY: u64 = 2_097_152;     // 2^21
+const TIER2_OFFSET: u64 = TIER1_MAX + 1; // 16,512
+const TIER2_CAPACITY: u64 = 2_097_152; // 2^21
 const TIER2_MAX: u64 = TIER1_MAX + TIER2_CAPACITY; // 2,113,663
-const TIER3_OFFSET: u64 = TIER2_MAX + 1;   // 2,113,664
-const TIER3_CAPACITY: u64 = 268_435_456;   // 2^28
+const TIER3_OFFSET: u64 = TIER2_MAX + 1; // 2,113,664
+const TIER3_CAPACITY: u64 = 268_435_456; // 2^28
 const TIER3_MAX: u64 = TIER2_MAX + TIER3_CAPACITY; // 270,549,119
-const TIER3P_OFFSET: u64 = TIER3_MAX + 1;  // 270,549,120
+const TIER3P_OFFSET: u64 = TIER3_MAX + 1; // 270,549,120
 const TIER3P_CAPACITY: u64 = 34_359_738_368; // 2^35 = 8 * 2^32
 const TIER3P_MAX: u64 = TIER3_MAX + TIER3P_CAPACITY - 1; // 34,628,173,487 (note: spec says 34,628,173,567 but 2^35 - 1 + offset)
 
@@ -98,23 +98,31 @@ pub fn decode_varint(bytes: &[u8]) -> Result<(u64, usize), KuError> {
     } else if first & 0xC0 == 0x80 {
         // Tier 1: 10xxxxxx → 2 bytes
         if bytes.len() < 2 {
-            return Err(KuError::VarintTruncated { needed: 2, got: bytes.len() });
+            return Err(KuError::VarintTruncated {
+                needed: 2,
+                got: bytes.len(),
+            });
         }
         let adjusted = (((first & 0x3F) as u16) << 8) | (bytes[1] as u16);
         Ok((adjusted as u64 + TIER1_OFFSET, 2))
     } else if first & 0xE0 == 0xC0 {
         // Tier 2: 110xxxxx → 3 bytes
         if bytes.len() < 3 {
-            return Err(KuError::VarintTruncated { needed: 3, got: bytes.len() });
+            return Err(KuError::VarintTruncated {
+                needed: 3,
+                got: bytes.len(),
+            });
         }
-        let adjusted = (((first & 0x1F) as u32) << 16)
-            | ((bytes[1] as u32) << 8)
-            | (bytes[2] as u32);
+        let adjusted =
+            (((first & 0x1F) as u32) << 16) | ((bytes[1] as u32) << 8) | (bytes[2] as u32);
         Ok((adjusted as u64 + TIER2_OFFSET, 3))
     } else if first & 0xF0 == 0xE0 {
         // Tier 3: 1110xxxx → 4 bytes
         if bytes.len() < 4 {
-            return Err(KuError::VarintTruncated { needed: 4, got: bytes.len() });
+            return Err(KuError::VarintTruncated {
+                needed: 4,
+                got: bytes.len(),
+            });
         }
         let adjusted = (((first & 0x0F) as u32) << 24)
             | ((bytes[1] as u32) << 16)
@@ -124,7 +132,10 @@ pub fn decode_varint(bytes: &[u8]) -> Result<(u64, usize), KuError> {
     } else if first & 0xF8 == 0xF0 {
         // Tier 3+: 11110xxx → 5 bytes
         if bytes.len() < 5 {
-            return Err(KuError::VarintTruncated { needed: 5, got: bytes.len() });
+            return Err(KuError::VarintTruncated {
+                needed: 5,
+                got: bytes.len(),
+            });
         }
         let adjusted = (((first & 0x07) as u64) << 32)
             | ((bytes[1] as u64) << 24)
@@ -135,17 +146,17 @@ pub fn decode_varint(bytes: &[u8]) -> Result<(u64, usize), KuError> {
     } else if first & 0xFC == 0xF8 {
         // Tier 5: 111110xx → 6 bytes — RESERVED for future
         Err(KuError::InvalidData(
-            "Varint Tier 5 (6-byte, prefix 111110xx) is reserved for future use".into()
+            "Varint Tier 5 (6-byte, prefix 111110xx) is reserved for future use".into(),
         ))
     } else if first & 0xFE == 0xFC {
         // Tier 6: 1111110x → 7 bytes — RESERVED for future
         Err(KuError::InvalidData(
-            "Varint Tier 6 (7-byte, prefix 1111110x) is reserved for future use".into()
+            "Varint Tier 6 (7-byte, prefix 1111110x) is reserved for future use".into(),
         ))
     } else if first == 0xFE {
         // Tier 7: 11111110 → 8 bytes — RESERVED for future
         Err(KuError::InvalidData(
-            "Varint Tier 7 (8-byte, prefix 11111110) is reserved for future use".into()
+            "Varint Tier 7 (8-byte, prefix 11111110) is reserved for future use".into(),
         ))
     } else {
         // 0xFF: SENTINEL — reserved forever as escape hatch
@@ -248,11 +259,22 @@ mod varint_tests {
     #[test]
     fn test_roundtrip_all_tiers() {
         let test_values = [
-            0, 1, 63, 127,                        // Tier 0
-            128, 256, 1000, 16_511,                // Tier 1
-            16_512, 50_000, 2_113_663,             // Tier 2
-            2_113_664, 100_000_000, 270_549_119,   // Tier 3 (4 bytes)
-            270_549_120, 5_000_000_000,            // Tier 3+ (5 bytes)
+            0,
+            1,
+            63,
+            127, // Tier 0
+            128,
+            256,
+            1000,
+            16_511, // Tier 1
+            16_512,
+            50_000,
+            2_113_663, // Tier 2
+            2_113_664,
+            100_000_000,
+            270_549_119, // Tier 3 (4 bytes)
+            270_549_120,
+            5_000_000_000, // Tier 3+ (5 bytes)
         ];
 
         for &val in &test_values {

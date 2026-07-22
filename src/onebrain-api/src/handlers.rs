@@ -6,8 +6,8 @@
 use std::net::SocketAddr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::extract::ws::{Message, WebSocket};
+use axum::extract::{Path, Query, State, WebSocketUpgrade};
 use axum::response::IntoResponse;
 use axum::Json;
 use futures::SinkExt;
@@ -63,27 +63,30 @@ pub async fn encode_knowledge(
     let broadcast_tx = state.event_broadcast.clone();
 
     // Send initial progress via broadcast (no lock needed)
-    let _ = broadcast_tx.send(serde_json::to_string(&WsEvent {
-        event_type: "encode_progress".to_string(),
-        timestamp: now_epoch(),
-        data: json!({ "step": 0, "total_steps": 6, "message": "Starting encode pipeline..." }),
-    }).unwrap_or_default());
+    let _ = broadcast_tx.send(
+        serde_json::to_string(&WsEvent {
+            event_type: "encode_progress".to_string(),
+            timestamp: now_epoch(),
+            data: json!({ "step": 0, "total_steps": 6, "message": "Starting encode pipeline..." }),
+        })
+        .unwrap_or_default(),
+    );
 
     // Run encode in a spawned task with a 300s timeout.
     let encode_future = async move {
         let mut node = node_ref.lock().await;
-        node.encode_and_store_with_progress(&text, Some(&broadcast_tx)).await
+        node.encode_and_store_with_progress(&text, Some(&broadcast_tx))
+            .await
     };
 
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(300),
-        encode_future,
-    )
-    .await
-    .map_err(|_| ApiError(onebrain_node::NodeError::Timeout(
-        "Encode timed out after 300 seconds".to_string(),
-    )))?
-    .map_err(ApiError::from)?;
+    let result = tokio::time::timeout(std::time::Duration::from_secs(300), encode_future)
+        .await
+        .map_err(|_| {
+            ApiError(onebrain_node::NodeError::Timeout(
+                "Encode timed out after 300 seconds".to_string(),
+            ))
+        })?
+        .map_err(ApiError::from)?;
 
     // EncodeStoreResult is NOT Serialize, so manually build JSON
     let cid_hex = hex::encode(result.cid);
@@ -94,6 +97,7 @@ pub async fn encode_knowledge(
         "gene_type": result.gene_type,
         "confidence": result.confidence,
         "source_text": result.source_text,
+        "peers_reached": result.peers_reached,
     });
     Ok(ok(data))
 }
@@ -144,14 +148,11 @@ pub async fn search_knowledge(
     Json(body): Json<SearchRequest>,
 ) -> ApiResult<serde_json::Value> {
     let node = state.node.lock().await;
-    // execute_kql currently uses plain text matching internally,
-    // so pass the raw query directly (no KQL construct needed).
-    let results = node.execute_kql(&body.query).map_err(ApiError::from)?;
-    let limited: Vec<_> = results
-        .into_iter()
-        .take(body.limit.unwrap_or(10))
-        .collect();
-    Ok(ok(serde_json::to_value(limited).unwrap()))
+    let limit = body.limit.unwrap_or(10);
+    let results = node
+        .search_text(&body.query, limit)
+        .map_err(ApiError::from)?;
+    Ok(ok(serde_json::to_value(results).unwrap()))
 }
 
 pub async fn execute_kql(
@@ -163,6 +164,24 @@ pub async fn execute_kql(
     Ok(ok(serde_json::to_value(results).unwrap()))
 }
 
+#[derive(serde::Deserialize)]
+pub struct SuggestQuery {
+    pub q: String,
+    pub limit: Option<usize>,
+}
+
+pub async fn search_suggest(
+    State(state): State<AppState>,
+    Query(params): Query<SuggestQuery>,
+) -> ApiResult<serde_json::Value> {
+    let node = state.node.lock().await;
+    let limit = params.limit.unwrap_or(5);
+    let suggestions = node
+        .search_suggest(&params.q, limit)
+        .map_err(ApiError::from)?;
+    Ok(ok(serde_json::to_value(suggestions).unwrap()))
+}
+
 // â”€â”€â”€ Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub async fn chat(
@@ -170,7 +189,10 @@ pub async fn chat(
     Json(body): Json<ChatRequest>,
 ) -> ApiResult<ChatResponse> {
     let mut node = state.node.lock().await;
-    let text = node.process_input(&body.message).await.map_err(ApiError::from)?;
+    let text = node
+        .process_input(&body.message)
+        .await
+        .map_err(ApiError::from)?;
     Ok(ok(ChatResponse {
         text,
         intent: None,
@@ -188,6 +210,7 @@ pub async fn get_status(State(state): State<AppState>) -> ApiResult<StatusRespon
     let peer_count = node.peer_count();
     let uptime_s = state.start_time.elapsed().as_secs();
     let node_name = node.node_name().to_string();
+    let vnext = node.vnext_status();
 
     // Get balance for tier + obt
     let (tier, obt_balance) = match node.get_balance() {
@@ -203,7 +226,30 @@ pub async fn get_status(State(state): State<AppState>) -> ApiResult<StatusRespon
         tier,
         obt_balance,
         version: env!("CARGO_PKG_VERSION").to_string(),
+        model: node.config().model.clone(),
+        vnext,
     }))
+}
+
+/// Return the additive, read-only vNext workflow contract.
+///
+/// This endpoint describes boundaries and the next explicit action. It does not
+/// discover candidates, materialize a Mapping, adopt a Mapping, or assert a
+/// network-wide result.
+pub async fn get_vnext_workflow() -> ApiResult<Vec<onebrain_node::WorkflowStageView>> {
+    Ok(ok(onebrain_node::workflow_surface()))
+}
+
+/// Return one stage of the additive, read-only vNext workflow contract.
+pub async fn get_vnext_workflow_stage(
+    Path(stage): Path<String>,
+) -> ApiResult<onebrain_node::WorkflowStageView> {
+    let stage = onebrain_node::WorkflowStage::parse(&stage).ok_or_else(|| {
+        ApiError(onebrain_node::NodeError::InvalidArgument(format!(
+            "Unknown vNext workflow stage: {stage}. Expected assembly, receptor, discover, proposal, mapping, or resolution"
+        )))
+    })?;
+    Ok(ok(onebrain_node::workflow_stage_view(stage)))
 }
 
 pub async fn get_peers(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
@@ -229,9 +275,10 @@ pub async fn connect_peer(
     Json(body): Json<ConnectRequest>,
 ) -> ApiResult<serde_json::Value> {
     let addr: SocketAddr = body.address.parse().map_err(|_| {
-        ApiError(onebrain_node::NodeError::InvalidArgument(
-            format!("Invalid socket address: {}", body.address),
-        ))
+        ApiError(onebrain_node::NodeError::InvalidArgument(format!(
+            "Invalid socket address: {}",
+            body.address
+        )))
     })?;
     let node = state.node.lock().await;
     node.connect_to_seed(addr).await.map_err(ApiError::from)?;
@@ -301,10 +348,12 @@ pub async fn update_profile(
         node.update_profile("name", name).map_err(ApiError::from)?;
     }
     if let Some(lang) = &body.language {
-        node.update_profile("language", lang).map_err(ApiError::from)?;
+        node.update_profile("language", lang)
+            .map_err(ApiError::from)?;
     }
     if let Some(style) = &body.response_style {
-        node.update_profile("style", style).map_err(ApiError::from)?;
+        node.update_profile("style", style)
+            .map_err(ApiError::from)?;
     }
     let profile = node.get_profile().map_err(ApiError::from)?;
     Ok(ok(serde_json::to_value(profile).unwrap()))
@@ -325,7 +374,8 @@ pub async fn update_settings(
         node.update_config("name", name).map_err(ApiError::from)?;
     }
     if let Some(url) = &body.ollama_url {
-        node.update_config("ollama_url", url).map_err(ApiError::from)?;
+        node.update_config("ollama_url", url)
+            .map_err(ApiError::from)?;
     }
     if let Some(model) = &body.model {
         node.update_config("model", model).map_err(ApiError::from)?;
@@ -352,9 +402,54 @@ pub async fn switch_model(
     State(state): State<AppState>,
     Json(body): Json<SwitchModelRequest>,
 ) -> ApiResult<serde_json::Value> {
-    let mut node = state.node.lock().await;
-    node.switch_model(&body.model_name).map_err(ApiError::from)?;
-    Ok(ok(json!({ "model": body.model_name, "switched": true })))
+    let (old_model, ollama_url) = {
+        let mut node = state.node.lock().await;
+        let old = node.config().model.clone();
+        let url = node.config().ollama_url.clone();
+        node.switch_model(&body.model_name)
+            .map_err(ApiError::from)?;
+        (old, url)
+    };
+    // Node lock released here
+
+    // Unload old model from Ollama to free RAM (server-side, reliable)
+    let mut unloaded_models = Vec::new();
+    if old_model != body.model_name {
+        // First, get all currently loaded models from Ollama
+        let client = reqwest::Client::new();
+        if let Ok(resp) = client.get(format!("{}/api/ps", ollama_url)).send().await {
+            if let Ok(ps_json) = resp.json::<serde_json::Value>().await {
+                if let Some(models) = ps_json["models"].as_array() {
+                    for m in models {
+                        if let Some(name) = m["name"].as_str() {
+                            // Unload each loaded model
+                            let unload_body = json!({
+                                "model": name,
+                                "keep_alive": 0
+                            });
+                            if let Ok(res) = client
+                                .post(format!("{}/api/generate", ollama_url))
+                                .json(&unload_body)
+                                .send()
+                                .await
+                            {
+                                // Consume the streaming response body to ensure Ollama processes it
+                                let _ = res.text().await;
+                                unloaded_models.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(ok(json!({
+        "model": body.model_name,
+        "switched": true,
+        "old_model": old_model,
+        "unloaded": unloaded_models,
+    })))
 }
 
 // â”€â”€â”€ Blobs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -522,7 +617,11 @@ pub fn node_event_to_ws_pub(event: &onebrain_node::NodeEvent) -> WsEvent {
             timestamp: ts,
             data: json!({ "message": msg }),
         },
-        onebrain_node::NodeEvent::EncodeProgress { step, total_steps, message } => WsEvent {
+        onebrain_node::NodeEvent::EncodeProgress {
+            step,
+            total_steps,
+            message,
+        } => WsEvent {
             event_type: "encode_progress".to_string(),
             timestamp: ts,
             data: json!({
@@ -540,17 +639,67 @@ pub async fn deprecate_ku(
     State(state): State<AppState>,
     Path(cid): Path<String>,
 ) -> ApiResult<serde_json::Value> {
-    let node = state.node.lock().await;
+    let mut node = state.node.lock().await;
     let deprecated = node.deprecate_ku(&cid).map_err(ApiError::from)?;
     Ok(ok(json!({ "deprecated": deprecated, "cid_hex": cid })))
 }
 
-pub async fn encode_draft(
+pub async fn save_draft(
     State(state): State<AppState>,
     Json(body): Json<DraftRequest>,
 ) -> ApiResult<serde_json::Value> {
     let mut node = state.node.lock().await;
-    let result = node.encode_draft(&body.text).await.map_err(ApiError::from)?;
+    let draft = node
+        .save_draft(&body.text, body.title.as_deref())
+        .map_err(ApiError::from)?;
+    Ok(ok(serde_json::to_value(draft).unwrap()))
+}
+
+pub async fn list_drafts(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
+    let node = state.node.lock().await;
+    let drafts = node.list_drafts();
+    Ok(ok(json!({ "drafts": drafts, "total": drafts.len() })))
+}
+
+pub async fn get_draft(
+    State(state): State<AppState>,
+    Path(draft_id): Path<String>,
+) -> ApiResult<serde_json::Value> {
+    let node = state.node.lock().await;
+    let draft = node.get_draft(&draft_id).map_err(ApiError::from)?;
+    Ok(ok(serde_json::to_value(draft).unwrap()))
+}
+
+pub async fn update_draft(
+    State(state): State<AppState>,
+    Path(draft_id): Path<String>,
+    Json(body): Json<DraftRequest>,
+) -> ApiResult<serde_json::Value> {
+    let mut node = state.node.lock().await;
+    let draft = node
+        .update_draft(&draft_id, &body.text, body.title.as_deref())
+        .map_err(ApiError::from)?;
+    Ok(ok(serde_json::to_value(draft).unwrap()))
+}
+
+pub async fn delete_draft(
+    State(state): State<AppState>,
+    Path(draft_id): Path<String>,
+) -> ApiResult<serde_json::Value> {
+    let mut node = state.node.lock().await;
+    let deleted = node.delete_draft(&draft_id).map_err(ApiError::from)?;
+    Ok(ok(json!({ "deleted": deleted, "draft_id": draft_id })))
+}
+
+pub async fn publish_draft(
+    State(state): State<AppState>,
+    Path(draft_id): Path<String>,
+) -> ApiResult<serde_json::Value> {
+    let mut node = state.node.lock().await;
+    let result = node
+        .publish_draft(&draft_id)
+        .await
+        .map_err(ApiError::from)?;
     let cid_hex = hex::encode(result.cid);
     Ok(ok(json!({
         "cid_hex": cid_hex,
@@ -558,7 +707,7 @@ pub async fn encode_draft(
         "instruction_count": result.instruction_count,
         "gene_type": result.gene_type,
         "confidence": result.confidence,
-        "draft": true,
+        "peers_reached": result.peers_reached,
     })))
 }
 
@@ -569,16 +718,18 @@ pub async fn add_tag(
     Path(cid): Path<String>,
     Json(body): Json<TagRequest>,
 ) -> ApiResult<serde_json::Value> {
-    let node = state.node.lock().await;
+    let mut node = state.node.lock().await;
     node.add_tag(&cid, &body.tag).map_err(ApiError::from)?;
-    Ok(ok(json!({ "added": true, "cid_hex": cid, "tag": body.tag })))
+    Ok(ok(
+        json!({ "added": true, "cid_hex": cid, "tag": body.tag }),
+    ))
 }
 
 pub async fn remove_tag(
     State(state): State<AppState>,
     Path((cid, tag)): Path<(String, String)>,
 ) -> ApiResult<serde_json::Value> {
-    let node = state.node.lock().await;
+    let mut node = state.node.lock().await;
     node.remove_tag(&cid, &tag).map_err(ApiError::from)?;
     Ok(ok(json!({ "removed": true, "cid_hex": cid, "tag": tag })))
 }
@@ -589,13 +740,45 @@ pub async fn list_tags(State(state): State<AppState>) -> ApiResult<serde_json::V
     Ok(ok(json!({ "tags": tags, "count": tags.len() })))
 }
 
-// â”€â”€â”€ Phase 1: Pin/Favorite KUs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/// Get tags for a specific KU.
+pub async fn get_ku_tags(
+    State(state): State<AppState>,
+    Path(cid): Path<String>,
+) -> ApiResult<serde_json::Value> {
+    let node = state.node.lock().await;
+    let tags = node.get_ku_tags(&cid);
+    Ok(ok(json!({ "tags": tags, "cid_hex": cid })))
+}
+
+/// Stake OBT tokens.
+pub async fn stake(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> ApiResult<serde_json::Value> {
+    let amount = body["amount"].as_u64().unwrap_or(0);
+    let mut node = state.node.lock().await;
+    let info = node.stake(amount).map_err(ApiError::from)?;
+    Ok(ok(serde_json::to_value(info).unwrap()))
+}
+
+/// Unstake OBT tokens.
+pub async fn unstake(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> ApiResult<serde_json::Value> {
+    let amount = body["amount"].as_u64().unwrap_or(0);
+    let mut node = state.node.lock().await;
+    let info = node.unstake(amount).map_err(ApiError::from)?;
+    Ok(ok(serde_json::to_value(info).unwrap()))
+}
+
+// ─── Profile & Settings ────────────────────────────────────────────
 
 pub async fn pin_ku(
     State(state): State<AppState>,
     Path(cid): Path<String>,
 ) -> ApiResult<serde_json::Value> {
-    let node = state.node.lock().await;
+    let mut node = state.node.lock().await;
     let pinned = node.pin_ku(&cid).map_err(ApiError::from)?;
     Ok(ok(json!({ "pinned": pinned, "cid_hex": cid })))
 }
@@ -604,7 +787,7 @@ pub async fn unpin_ku(
     State(state): State<AppState>,
     Path(cid): Path<String>,
 ) -> ApiResult<serde_json::Value> {
-    let node = state.node.lock().await;
+    let mut node = state.node.lock().await;
     let unpinned = node.unpin_ku(&cid).map_err(ApiError::from)?;
     Ok(ok(json!({ "unpinned": unpinned, "cid_hex": cid })))
 }
@@ -621,7 +804,7 @@ pub async fn follow_node(
     State(state): State<AppState>,
     Path(node_id): Path<String>,
 ) -> ApiResult<serde_json::Value> {
-    let node = state.node.lock().await;
+    let mut node = state.node.lock().await;
     node.follow_node(&node_id).map_err(ApiError::from)?;
     Ok(ok(json!({ "followed": true, "node_id": node_id })))
 }
@@ -630,7 +813,7 @@ pub async fn unfollow_node(
     State(state): State<AppState>,
     Path(node_id): Path<String>,
 ) -> ApiResult<serde_json::Value> {
-    let node = state.node.lock().await;
+    let mut node = state.node.lock().await;
     node.unfollow_node(&node_id).map_err(ApiError::from)?;
     Ok(ok(json!({ "unfollowed": true, "node_id": node_id })))
 }
@@ -648,22 +831,23 @@ pub async fn get_peer_profile(
     let node = state.node.lock().await;
     match node.get_peer_profile(&node_id) {
         Some(profile) => Ok(ok(serde_json::to_value(&profile).unwrap())),
-        None => Err(ApiError(onebrain_node::NodeError::KuNotFound(
-            format!("Node not found: {}", node_id),
-        ))),
+        None => Err(ApiError(onebrain_node::NodeError::KuNotFound(format!(
+            "Node not found: {}",
+            node_id
+        )))),
     }
 }
 
 // â”€â”€â”€ Phase 1: Multi-Device â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub async fn list_devices(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
-    let node = state.node.lock().await;
+    let mut node = state.node.lock().await;
     let devices = node.list_devices();
     Ok(ok(serde_json::to_value(&devices).unwrap()))
 }
 
 pub async fn sync_status(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
-    let node = state.node.lock().await;
+    let mut node = state.node.lock().await;
     let status = node.sync_status();
     Ok(ok(serde_json::to_value(&status).unwrap()))
 }
@@ -675,10 +859,9 @@ pub async fn bulk_delete_kus(
     Json(body): Json<BulkDeleteRequest>,
 ) -> ApiResult<serde_json::Value> {
     let node = state.node.lock().await;
-    let result = node.bulk_delete(
-        body.gene_type.as_deref(),
-        body.before_timestamp,
-    ).map_err(ApiError::from)?;
+    let result = node
+        .bulk_delete(body.gene_type.as_deref(), body.before_timestamp)
+        .map_err(ApiError::from)?;
     Ok(ok(serde_json::to_value(&result).unwrap()))
 }
 
@@ -688,7 +871,7 @@ pub async fn create_watch(
     State(state): State<AppState>,
     Json(body): Json<WatchRequest>,
 ) -> ApiResult<serde_json::Value> {
-    let node = state.node.lock().await;
+    let mut node = state.node.lock().await;
     let watch_id = node.create_watch(&body.query).map_err(ApiError::from)?;
     Ok(ok(json!({ "watch_id": watch_id, "query": body.query })))
 }
@@ -703,7 +886,7 @@ pub async fn delete_watch(
     State(state): State<AppState>,
     Path(watch_id): Path<String>,
 ) -> ApiResult<serde_json::Value> {
-    let node = state.node.lock().await;
+    let mut node = state.node.lock().await;
     let deleted = node.delete_watch(&watch_id).map_err(ApiError::from)?;
     Ok(ok(json!({ "deleted": deleted, "watch_id": watch_id })))
 }
@@ -716,8 +899,11 @@ pub async fn add_blob_ku_ref(
     Json(body): Json<BlobRefRequest>,
 ) -> ApiResult<serde_json::Value> {
     let node = state.node.lock().await;
-    node.blob_add_ku_ref(&cid, &body.ku_cid).map_err(ApiError::from)?;
-    Ok(ok(json!({ "linked": true, "blob_cid": cid, "ku_cid": body.ku_cid })))
+    node.blob_add_ku_ref(&cid, &body.ku_cid)
+        .map_err(ApiError::from)?;
+    Ok(ok(
+        json!({ "linked": true, "blob_cid": cid, "ku_cid": body.ku_cid }),
+    ))
 }
 
 pub async fn pin_blob(
@@ -745,17 +931,19 @@ pub async fn export_kus(
     Query(params): Query<ExportParams>,
 ) -> Result<axum::response::Response, ApiError> {
     let node = state.node.lock().await;
-    let temp_dir = tempfile::tempdir()
-        .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
+    let temp_dir = tempfile::tempdir().map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
     let ext = match params.format.as_str() {
         "csv" => "csv",
         _ => "json",
     };
     let file_path = temp_dir.path().join(format!("export.{}", ext));
-    let count = node.export_kus(&params.format, &file_path).map_err(ApiError::from)?;
+    let count = node
+        .export_kus(&params.format, &file_path)
+        .map_err(ApiError::from)?;
     drop(node);
 
-    let data = tokio::fs::read(&file_path).await
+    let data = tokio::fs::read(&file_path)
+        .await
         .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
 
     let content_type = match params.format.as_str() {
@@ -767,7 +955,10 @@ pub async fn export_kus(
     Ok(axum::response::Response::builder()
         .status(200)
         .header("Content-Type", content_type)
-        .header("Content-Disposition", format!("attachment; filename=\"{}\"", filename))
+        .header(
+            "Content-Disposition",
+            format!("attachment; filename=\"{}\"", filename),
+        )
         .header("X-Export-Count", count.to_string())
         .body(axum::body::Body::from(data))
         .unwrap())
@@ -777,26 +968,35 @@ pub async fn import_kus(
     State(state): State<AppState>,
     mut multipart: axum::extract::Multipart,
 ) -> ApiResult<serde_json::Value> {
-    let temp_dir = tempfile::tempdir()
-        .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
+    let temp_dir = tempfile::tempdir().map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
     let mut file_path = None;
 
-    while let Some(field) = multipart.next_field().await
-        .map_err(|e| ApiError(onebrain_node::NodeError::InvalidArgument(format!("Multipart error: {}", e))))?
-    {
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        ApiError(onebrain_node::NodeError::InvalidArgument(format!(
+            "Multipart error: {}",
+            e
+        )))
+    })? {
         if field.name() == Some("file") {
             let filename = field.file_name().unwrap_or("import.txt").to_string();
             let path = temp_dir.path().join(&filename);
-            let data = field.bytes().await
-                .map_err(|e| ApiError(onebrain_node::NodeError::InvalidArgument(format!("Read error: {}", e))))?;
-            tokio::fs::write(&path, &data).await
+            let data = field.bytes().await.map_err(|e| {
+                ApiError(onebrain_node::NodeError::InvalidArgument(format!(
+                    "Read error: {}",
+                    e
+                )))
+            })?;
+            tokio::fs::write(&path, &data)
+                .await
                 .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
             file_path = Some(path);
         }
     }
 
     let path = file_path.ok_or_else(|| {
-        ApiError(onebrain_node::NodeError::InvalidArgument("No file field in multipart".into()))
+        ApiError(onebrain_node::NodeError::InvalidArgument(
+            "No file field in multipart".into(),
+        ))
     })?;
 
     let mut node = state.node.lock().await;
@@ -809,13 +1009,15 @@ pub async fn create_backup(
     Json(body): Json<BackupRequest>,
 ) -> Result<axum::response::Response, ApiError> {
     let node = state.node.lock().await;
-    let temp_dir = tempfile::tempdir()
-        .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
+    let temp_dir = tempfile::tempdir().map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
     let file_path = temp_dir.path().join("backup.onebrain");
-    let info = node.create_backup(&file_path, &body.password).map_err(ApiError::from)?;
+    let info = node
+        .create_backup(&file_path, &body.password)
+        .map_err(ApiError::from)?;
     drop(node);
 
-    let data = tokio::fs::read(&file_path).await
+    let data = tokio::fs::read(&file_path)
+        .await
         .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
 
     let filename = format!("onebrain_backup_{}.onebrain", info.timestamp);
@@ -823,7 +1025,10 @@ pub async fn create_backup(
     Ok(axum::response::Response::builder()
         .status(200)
         .header("Content-Type", "application/octet-stream")
-        .header("Content-Disposition", format!("attachment; filename=\"{}\"", filename))
+        .header(
+            "Content-Disposition",
+            format!("attachment; filename=\"{}\"", filename),
+        )
         .header("X-Backup-KU-Count", info.ku_count.to_string())
         .header("X-Backup-Size", info.size.to_string())
         .body(axum::body::Body::from(data))
@@ -834,37 +1039,51 @@ pub async fn restore_backup(
     State(state): State<AppState>,
     mut multipart: axum::extract::Multipart,
 ) -> ApiResult<serde_json::Value> {
-    let temp_dir = tempfile::tempdir()
-        .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
+    let temp_dir = tempfile::tempdir().map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
     let mut file_path = None;
     let mut password = String::new();
 
-    while let Some(field) = multipart.next_field().await
-        .map_err(|e| ApiError(onebrain_node::NodeError::InvalidArgument(format!("Multipart error: {}", e))))?
-    {
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        ApiError(onebrain_node::NodeError::InvalidArgument(format!(
+            "Multipart error: {}",
+            e
+        )))
+    })? {
         match field.name() {
             Some("file") => {
                 let path = temp_dir.path().join("restore.onebrain");
-                let data = field.bytes().await
-                    .map_err(|e| ApiError(onebrain_node::NodeError::InvalidArgument(format!("Read error: {}", e))))?;
-                tokio::fs::write(&path, &data).await
+                let data = field.bytes().await.map_err(|e| {
+                    ApiError(onebrain_node::NodeError::InvalidArgument(format!(
+                        "Read error: {}",
+                        e
+                    )))
+                })?;
+                tokio::fs::write(&path, &data)
+                    .await
                     .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
                 file_path = Some(path);
             }
             Some("password") => {
-                password = field.text().await
-                    .map_err(|e| ApiError(onebrain_node::NodeError::InvalidArgument(format!("Read error: {}", e))))?;
+                password = field.text().await.map_err(|e| {
+                    ApiError(onebrain_node::NodeError::InvalidArgument(format!(
+                        "Read error: {}",
+                        e
+                    )))
+                })?;
             }
             _ => {}
         }
     }
 
     let path = file_path.ok_or_else(|| {
-        ApiError(onebrain_node::NodeError::InvalidArgument("No file field in multipart".into()))
+        ApiError(onebrain_node::NodeError::InvalidArgument(
+            "No file field in multipart".into(),
+        ))
     })?;
 
     let mut node = state.node.lock().await;
-    node.restore_backup(&path, &password).map_err(ApiError::from)?;
+    node.restore_backup(&path, &password)
+        .map_err(ApiError::from)?;
     Ok(ok(json!({ "restored": true })))
 }
 
@@ -874,26 +1093,35 @@ pub async fn upload_blob(
     State(state): State<AppState>,
     mut multipart: axum::extract::Multipart,
 ) -> ApiResult<serde_json::Value> {
-    let temp_dir = tempfile::tempdir()
-        .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
+    let temp_dir = tempfile::tempdir().map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
     let mut file_path = None;
 
-    while let Some(field) = multipart.next_field().await
-        .map_err(|e| ApiError(onebrain_node::NodeError::InvalidArgument(format!("Multipart error: {}", e))))?
-    {
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        ApiError(onebrain_node::NodeError::InvalidArgument(format!(
+            "Multipart error: {}",
+            e
+        )))
+    })? {
         if field.name() == Some("file") {
             let filename = field.file_name().unwrap_or("upload").to_string();
             let path = temp_dir.path().join(&filename);
-            let data = field.bytes().await
-                .map_err(|e| ApiError(onebrain_node::NodeError::InvalidArgument(format!("Read error: {}", e))))?;
-            tokio::fs::write(&path, &data).await
+            let data = field.bytes().await.map_err(|e| {
+                ApiError(onebrain_node::NodeError::InvalidArgument(format!(
+                    "Read error: {}",
+                    e
+                )))
+            })?;
+            tokio::fs::write(&path, &data)
+                .await
                 .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
             file_path = Some(path);
         }
     }
 
     let path = file_path.ok_or_else(|| {
-        ApiError(onebrain_node::NodeError::InvalidArgument("No file field in multipart".into()))
+        ApiError(onebrain_node::NodeError::InvalidArgument(
+            "No file field in multipart".into(),
+        ))
     })?;
 
     let node = state.node.lock().await;
@@ -907,19 +1135,22 @@ pub async fn download_blob(
 ) -> Result<axum::response::Response, ApiError> {
     let node = state.node.lock().await;
     let meta = node.get_blob_meta(&cid).map_err(ApiError::from)?;
-    let temp_dir = tempfile::tempdir()
-        .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
+    let temp_dir = tempfile::tempdir().map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
     let file_path = temp_dir.path().join(&meta.original_name);
     node.export_blob(&cid, &file_path).map_err(ApiError::from)?;
     drop(node);
 
-    let data = tokio::fs::read(&file_path).await
+    let data = tokio::fs::read(&file_path)
+        .await
         .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
 
     Ok(axum::response::Response::builder()
         .status(200)
         .header("Content-Type", &meta.mime_type)
-        .header("Content-Disposition", format!("attachment; filename=\"{}\"", meta.original_name))
+        .header(
+            "Content-Disposition",
+            format!("attachment; filename=\"{}\"", meta.original_name),
+        )
         .body(axum::body::Body::from(data))
         .unwrap())
 }
@@ -949,9 +1180,7 @@ pub async fn list_search_history(
     Ok(ok(json!({ "history": history })))
 }
 
-pub async fn clear_search_history(
-    State(state): State<AppState>,
-) -> ApiResult<serde_json::Value> {
+pub async fn clear_search_history(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
     let mut node = state.node.lock().await;
     node.clear_search_history();
     Ok(ok(json!({ "cleared": true })))
@@ -961,9 +1190,7 @@ pub async fn clear_search_history(
 // Tier C — Notification Preferences
 // ═══════════════════════════════════════════════════════════════════════════
 
-pub async fn get_notification_prefs(
-    State(state): State<AppState>,
-) -> ApiResult<serde_json::Value> {
+pub async fn get_notification_prefs(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
     let node = state.node.lock().await;
     let prefs = node.get_notification_prefs();
     Ok(ok(serde_json::to_value(&prefs).unwrap()))
@@ -990,13 +1217,13 @@ pub async fn save_search(
     let query = body["query"].as_str().unwrap_or("");
     let is_kql = body["is_kql"].as_bool().unwrap_or(false);
     let mut node = state.node.lock().await;
-    let saved = node.save_search(name, query, is_kql).map_err(ApiError::from)?;
+    let saved = node
+        .save_search(name, query, is_kql)
+        .map_err(ApiError::from)?;
     Ok(ok(serde_json::to_value(&saved).unwrap()))
 }
 
-pub async fn list_saved_searches(
-    State(state): State<AppState>,
-) -> ApiResult<serde_json::Value> {
+pub async fn list_saved_searches(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
     let node = state.node.lock().await;
     let searches = node.list_saved_searches();
     Ok(ok(json!({ "saved_searches": searches })))
@@ -1022,13 +1249,13 @@ pub async fn create_collection(
     let name = body["name"].as_str().unwrap_or("");
     let description = body["description"].as_str().unwrap_or("");
     let mut node = state.node.lock().await;
-    let coll = node.create_collection(name, description).map_err(ApiError::from)?;
+    let coll = node
+        .create_collection(name, description)
+        .map_err(ApiError::from)?;
     Ok(ok(serde_json::to_value(&coll).unwrap()))
 }
 
-pub async fn list_collections(
-    State(state): State<AppState>,
-) -> ApiResult<serde_json::Value> {
+pub async fn list_collections(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
     let node = state.node.lock().await;
     let collections = node.list_collections();
     Ok(ok(json!({ "collections": collections })))
@@ -1039,8 +1266,12 @@ pub async fn get_collection(
     Path(id): Path<String>,
 ) -> ApiResult<serde_json::Value> {
     let node = state.node.lock().await;
-    let coll = node.get_collection(&id)
-        .ok_or_else(|| ApiError(onebrain_node::NodeError::InvalidArgument(format!("Collection '{}' not found", id))))?;
+    let coll = node.get_collection(&id).ok_or_else(|| {
+        ApiError(onebrain_node::NodeError::InvalidArgument(format!(
+            "Collection '{}' not found",
+            id
+        )))
+    })?;
     Ok(ok(serde_json::to_value(&coll).unwrap()))
 }
 
@@ -1051,7 +1282,8 @@ pub async fn add_to_collection(
 ) -> ApiResult<serde_json::Value> {
     let cid_hex = body["cid_hex"].as_str().unwrap_or("");
     let mut node = state.node.lock().await;
-    node.add_to_collection(&id, cid_hex).map_err(ApiError::from)?;
+    node.add_to_collection(&id, cid_hex)
+        .map_err(ApiError::from)?;
     Ok(ok(json!({ "added": true })))
 }
 
@@ -1060,7 +1292,8 @@ pub async fn remove_from_collection(
     Path((id, cid)): Path<(String, String)>,
 ) -> ApiResult<serde_json::Value> {
     let mut node = state.node.lock().await;
-    node.remove_from_collection(&id, &cid).map_err(ApiError::from)?;
+    node.remove_from_collection(&id, &cid)
+        .map_err(ApiError::from)?;
     Ok(ok(json!({ "removed": true })))
 }
 
@@ -1118,9 +1351,7 @@ pub async fn recommended_kus(
 // Tier C — Analytics
 // ═══════════════════════════════════════════════════════════════════════════
 
-pub async fn get_analytics(
-    State(state): State<AppState>,
-) -> ApiResult<serde_json::Value> {
+pub async fn get_analytics(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
     let node = state.node.lock().await;
     let analytics = node.get_analytics().map_err(ApiError::from)?;
     Ok(ok(serde_json::to_value(&analytics).unwrap()))
@@ -1130,9 +1361,7 @@ pub async fn get_analytics(
 // Tier C — Domain Taxonomy
 // ═══════════════════════════════════════════════════════════════════════════
 
-pub async fn list_domains(
-    State(state): State<AppState>,
-) -> ApiResult<serde_json::Value> {
+pub async fn list_domains(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
     let node = state.node.lock().await;
     let domains = node.list_domains().map_err(ApiError::from)?;
     Ok(ok(json!({ "domains": domains })))
@@ -1146,6 +1375,8 @@ pub async fn kus_by_domain(
     let node = state.node.lock().await;
     let page = params.page.unwrap_or(1);
     let limit = params.limit.unwrap_or(20);
-    let (kus, total) = node.kus_by_domain(&domain, page, limit).map_err(ApiError::from)?;
+    let (kus, total) = node
+        .kus_by_domain(&domain, page, limit)
+        .map_err(ApiError::from)?;
     Ok(ok(json!({ "kus": kus, "total": total, "page": page })))
 }

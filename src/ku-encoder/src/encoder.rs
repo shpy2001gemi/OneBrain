@@ -20,16 +20,23 @@
 //! let result = encoder.encode("Water boils at 100°C").await?;
 //! ```
 
-use ku_core::ku_tool_executor::{KuToolExecutor, EncodingStats};
-use ku_core::ku_tools::{ToolCall as CoreToolCall, ToolResult as CoreToolResult, tool_definitions};
-use ku_core::text_parser::ConceptDict;
 use ku_ai::traits::ModelBackend;
-use ku_ai::types::{
-    ChatOrToolResponse, InferenceOptions, ToolCallResponse, ToolDefinition,
-};
+use ku_ai::types::{ChatOrToolResponse, InferenceOptions, ToolCallResponse, ToolDefinition};
+use ku_core::ku_tool_executor::{EncodingStats, KuToolExecutor};
+use ku_core::ku_tools::{tool_definitions, ToolCall as CoreToolCall, ToolResult as CoreToolResult};
+use ku_core::text_parser::ConceptDict;
 
 use crate::error::EncoderError;
 use crate::prompt::PromptBuilder;
+
+/// Debug logging macro — only emits in debug builds.
+/// Silenced in release builds to avoid polluting stderr.
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        eprintln!($($arg)*)
+    };
+}
 
 /// Result of a successful AI encoding.
 #[derive(Debug, Clone)]
@@ -84,12 +91,12 @@ pub struct AiEncoder {
 
 impl AiEncoder {
     /// Create a new AI encoder with the given backend, dictionary, and config.
-    pub fn new(
-        backend: Box<dyn ModelBackend>,
-        dict: ConceptDict,
-        config: EncoderConfig,
-    ) -> Self {
-        Self { backend, dict, config }
+    pub fn new(backend: Box<dyn ModelBackend>, dict: ConceptDict, config: EncoderConfig) -> Self {
+        Self {
+            backend,
+            dict,
+            config,
+        }
     }
 
     /// Encode natural language text into CoreDna binary.
@@ -112,7 +119,10 @@ impl AiEncoder {
             temperature: self.config.temperature,
             ..Default::default()
         };
-        let response = self.backend.chat_with_tools(&messages, &tool_defs, &options).await?;
+        let response = self
+            .backend
+            .chat_with_tools(&messages, &tool_defs, &options)
+            .await?;
 
         // 4. Extract tool calls from response
         let tool_calls = match response {
@@ -128,9 +138,9 @@ impl AiEncoder {
         }
 
         // DEBUG: Log what tool calls the AI generated
-        eprintln!("[ENCODER DEBUG] Got {} tool calls:", tool_calls.len());
+        debug_log!("[ENCODER DEBUG] Got {} tool calls:", tool_calls.len());
         for (i, tc) in tool_calls.iter().enumerate() {
-            eprintln!("  [{}] {} => {}", i, tc.name, tc.arguments);
+            debug_log!("  [{}] {} => {}", i, tc.name, tc.arguments);
         }
 
         // 5. Auto-fix: inject missing new_ku at the start if model forgot it
@@ -141,13 +151,17 @@ impl AiEncoder {
         let mut results: Vec<CoreToolResult> = Vec::new();
 
         if !has_new_ku {
-            eprintln!("[ENCODER FIX] Auto-injecting new_ku(gene_type=fact)");
+            debug_log!("[ENCODER FIX] Auto-injecting new_ku(gene_type=fact)");
             let auto_new = CoreToolCall {
                 name: "new_ku".into(),
                 arguments: serde_json::json!({"gene_type": "fact"}),
             };
             let r = executor.execute(&auto_new);
-            eprintln!("  [EXEC] new_ku(auto) => success={}, msg={}", r.success, r.message);
+            debug_log!(
+                "  [EXEC] new_ku(auto) => success={}, msg={}",
+                r.success,
+                r.message
+            );
             results.push(r);
         }
 
@@ -158,25 +172,37 @@ impl AiEncoder {
                 arguments: tc.arguments.clone(),
             };
             let result = executor.execute(&core_call);
-            eprintln!("  [EXEC] {} => success={}, msg={}", tc.name, result.success, result.message);
+            debug_log!(
+                "  [EXEC] {} => success={}, msg={}",
+                tc.name,
+                result.success,
+                result.message
+            );
             results.push(result);
         }
 
         // Auto-fix: inject finalize if model forgot it
         if !has_finalize {
-            eprintln!("[ENCODER FIX] Auto-injecting finalize");
+            debug_log!("[ENCODER FIX] Auto-injecting finalize");
             let auto_fin = CoreToolCall {
                 name: "finalize".into(),
                 arguments: serde_json::json!({}),
             };
             let r = executor.execute(&auto_fin);
-            eprintln!("  [EXEC] finalize(auto) => success={}, msg={}", r.success, r.message);
+            debug_log!(
+                "  [EXEC] finalize(auto) => success={}, msg={}",
+                r.success,
+                r.message
+            );
             results.push(r);
         }
 
         // 6. Finalize and get wire bytes
         let wire_bytes = executor.finalize_all();
-        eprintln!("[ENCODER DEBUG] finalize_all => {} KUs produced", wire_bytes.len());
+        debug_log!(
+            "[ENCODER DEBUG] finalize_all => {} KUs produced",
+            wire_bytes.len()
+        );
 
         if wire_bytes.is_empty() {
             return Err(EncoderError::ToolExecution(
@@ -197,7 +223,8 @@ impl AiEncoder {
             .map(|s| s.to_string());
 
         // Extract concept names from lookup/lookup_or_create tool calls
-        let concepts_used: Vec<String> = tool_calls.iter()
+        let concepts_used: Vec<String> = tool_calls
+            .iter()
             .filter(|tc| tc.name == "lookup" || tc.name == "lookup_or_create")
             .filter_map(|tc| tc.arguments.get("word").and_then(|v| v.as_str()))
             .map(|s| s.to_string())
@@ -221,6 +248,274 @@ impl AiEncoder {
     /// Get a reference to the concept dictionary.
     pub fn dict(&self) -> &ConceptDict {
         &self.dict
+    }
+}
+
+/// Extract concept ID references from an instruction (for validation).
+fn instruction_concept_refs(instr: &ku_core::core_dna::Instruction) -> Vec<u64> {
+    use ku_core::core_dna::Instruction;
+    match instr {
+        Instruction::Triple { s, p, o } => vec![*s, *p, *o],
+        Instruction::Quality { s, q } => vec![*s, *q],
+        Instruction::Quantity { s, unit, .. } => vec![*s, *unit],
+        Instruction::PartOf { part, whole } => vec![*part, *whole],
+        Instruction::Located { s, location } => vec![*s, *location],
+        Instruction::Temporal { s, time } => vec![*s, *time],
+        Instruction::Causal { cause, effect } => vec![*cause, *effect],
+        Instruction::Simulates { s, model } => vec![*s, *model],
+        Instruction::Condition { cond, result } => vec![*cond, *result],
+        Instruction::Agent { actor, action } => vec![*actor, *action],
+        Instruction::Tool { action, instrument } => vec![*action, *instrument],
+        Instruction::Label { key, value } => vec![*key, *value],
+        Instruction::Step { action, target, .. } => vec![*action, *target],
+        Instruction::Precond { concept } => vec![*concept],
+        Instruction::Effect { concept } => vec![*concept],
+        Instruction::EnumVal { s, values } => {
+            let mut refs = vec![*s];
+            refs.extend(values.iter());
+            refs
+        }
+        Instruction::Constraint { source, target, .. } => vec![*source, *target],
+        Instruction::Range { s, .. } => vec![*s],
+        Instruction::Tolerance { s, .. } => vec![*s],
+        Instruction::Member { label, .. } => vec![*label],
+        // No concept refs:
+        Instruction::Certainty { .. }
+        | Instruction::Difficulty { .. }
+        | Instruction::CidRef { .. }
+        | Instruction::TextRef { .. }
+        | Instruction::Formula { .. }
+        | Instruction::MediaRef { .. }
+        | Instruction::Affect { .. }
+        | Instruction::Sequence { .. }
+        | Instruction::Witness { .. }
+        | Instruction::CompositeHdr { .. }
+        | Instruction::End => vec![],
+    }
+}
+
+impl AiEncoder {
+    // ========================================================================
+    // encode_v2 — new pipeline (JSON extraction, no tool-calling)
+    // ========================================================================
+
+    /// Encode text using the v2 pipeline.
+    ///
+    /// Pipeline: prescan → split → extract(JSON) → verify → analyze → resolve → build
+    ///
+    /// Unlike `encode()` (v1), this method:
+    /// - Does NOT use tool-calling — AI outputs JSON triples directly
+    /// - Uses deterministic code for analysis, resolution, and building
+    /// - Supports anchor protection for formulas and novel terms
+    ///
+    /// # Arguments
+    /// * `text` — natural language text to encode
+    /// * `registry` — the ConceptRegistry for name → CCID resolution
+    pub async fn encode_v2(
+        &self,
+        text: &str,
+        registry: &ku_core::concept_registry::ConceptRegistry,
+    ) -> Result<EncodingResult, EncoderError> {
+        use crate::analyzer;
+        use crate::builder::KuBuilder;
+        use crate::concept_resolver::ConceptResolver;
+        use crate::extractor::SpoExtractor;
+        use crate::prescan::prescan_anchors;
+        use crate::splitter::split_paragraphs;
+        use crate::types::SpoTriple;
+
+        debug_log!(
+            "[ENCODE_V2] Starting pipeline for text ({} bytes)",
+            text.len()
+        );
+
+        // STEP 0: Pre-scan anchors (detect formulas, numbers, math)
+        let anchors = prescan_anchors(text);
+        if !anchors.is_empty() {
+            debug_log!(
+                "[ENCODE_V2] Pre-scanned {} anchor(s): {:?}",
+                anchors.len(),
+                anchors.iter().map(|a| a.as_str()).collect::<Vec<_>>()
+            );
+        }
+
+        // STEP 1: Split into paragraphs
+        let paragraphs = split_paragraphs(text);
+        let total_paragraphs = paragraphs.len();
+        debug_log!("[ENCODE_V2] Split into {} paragraph(s)", total_paragraphs);
+
+        // STEP 2: Extract SPO triples per paragraph
+        let extractor = SpoExtractor::new(self.backend.as_ref())
+            .with_temperature(self.config.temperature)
+            .with_max_retries(self.config.max_retries);
+
+        let mut all_triples: Vec<SpoTriple> = Vec::new();
+        let mut dropped_paragraphs: Vec<String> = Vec::new();
+
+        for (i, paragraph) in paragraphs.iter().enumerate() {
+            debug_log!(
+                "[ENCODE_V2] Extracting paragraph {}/{}",
+                i + 1,
+                total_paragraphs
+            );
+            match extractor.extract(paragraph, &anchors).await {
+                Ok(triples) => {
+                    debug_log!("[ENCODE_V2]   → {} triples extracted", triples.len());
+                    all_triples.extend(triples);
+                }
+                Err(e) => {
+                    debug_log!("[ENCODE_V2]   → extraction failed: {}", e);
+                    dropped_paragraphs.push(paragraph.clone());
+                }
+            }
+        }
+
+        // If >50% paragraphs dropped, return error
+        if total_paragraphs > 0 && dropped_paragraphs.len() * 2 > total_paragraphs {
+            return Err(EncoderError::ToolExecution(format!(
+                "Too many paragraphs failed extraction: {}/{} dropped",
+                dropped_paragraphs.len(),
+                total_paragraphs
+            )));
+        }
+
+        if all_triples.is_empty() {
+            return Err(EncoderError::NoTriples);
+        }
+
+        debug_log!("[ENCODE_V2] Total: {} triples extracted", all_triples.len());
+
+        // STEP 3: Analyze (map role → Op, certainty → u16)
+        let analyzed = analyzer::analyze(all_triples.clone());
+
+        // STEP 4: Resolve concepts (name → CCID)
+        let mut resolver = ConceptResolver::new(registry);
+        let resolved = resolver.resolve_all(analyzed);
+        let _total_concepts = resolved.len();
+
+        // Log any resolution warnings (fuzzy/ambiguous matches)
+        let warnings = resolver.take_warnings();
+        if !warnings.is_empty() {
+            debug_log!("[ENCODE_V2] {} resolution warning(s):", warnings.len());
+            for w in &warnings {
+                debug_log!(
+                    "  {:?}: \"{}\" → \"{}\" ({} candidates)",
+                    w.warning_type,
+                    w.input_name,
+                    w.chosen_canonical,
+                    w.candidate_count
+                );
+            }
+        }
+
+        // STEP 5: Build CoreDna units (1 triple = 1 KU)
+        let built =
+            KuBuilder::build(resolved).map_err(|e| EncoderError::CoreDnaError(e.to_string()))?;
+
+        // STEP 6: Validate each KU (concept table consistency)
+        let mut valid_results: Vec<(ku_core::core_dna::CoreDna, Vec<u8>)> = Vec::new();
+        let mut validation_failures = 0usize;
+
+        for (dna, wire_bytes) in built {
+            // Quick structural validation: decode wire bytes and check concept table
+            match ku_core::core_dna::decode_core_dna(&wire_bytes) {
+                Ok(decoded) => {
+                    // Verify concept table consistency
+                    let mut valid = true;
+                    let local_ids: std::collections::HashSet<u64> =
+                        decoded.concept_table.iter().map(|e| e.local_id).collect();
+
+                    for instr in &decoded.instructions {
+                        let refs = instruction_concept_refs(instr);
+                        for r in refs {
+                            if r >= 16512 && !local_ids.contains(&r) {
+                                debug_log!("[ENCODE_V2] Validation fail: instruction refs concept {} not in table", r);
+                                valid = false;
+                                break;
+                            }
+                        }
+                        if !valid {
+                            break;
+                        }
+                    }
+
+                    if valid {
+                        valid_results.push((dna, wire_bytes));
+                    } else {
+                        validation_failures += 1;
+                    }
+                }
+                Err(e) => {
+                    debug_log!("[ENCODE_V2] Wire decode fail: {}", e);
+                    validation_failures += 1;
+                }
+            }
+        }
+
+        if validation_failures > 0 {
+            debug_log!(
+                "[ENCODE_V2] {} KU(s) failed validation, {} passed",
+                validation_failures,
+                valid_results.len()
+            );
+        }
+
+        let wire_bytes: Vec<Vec<u8>> = valid_results
+            .iter()
+            .map(|(_, bytes)| bytes.clone())
+            .collect();
+        let ku_count = wire_bytes.len();
+
+        debug_log!(
+            "[ENCODE_V2] Built {} KU(s), total {} bytes",
+            ku_count,
+            wire_bytes.iter().map(|b| b.len()).sum::<usize>()
+        );
+
+        // Determine gene type from majority of triples
+        let gene_type_str = match analyzer::determine_gene_type(&all_triples) {
+            analyzer::GENE_PROCEDURE => "procedure",
+            analyzer::GENE_EXPERIENCE => "experience",
+            _ => "fact",
+        };
+
+        // Extract concept names used
+        let concepts_used: Vec<String> = all_triples
+            .iter()
+            .flat_map(|t| vec![t.s_en.clone(), t.o_en.clone()])
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        // Calculate real confidence (not hardcoded)
+        let paragraph_success_rate = if total_paragraphs > 0 {
+            (total_paragraphs - dropped_paragraphs.len()) as f32 / total_paragraphs as f32
+        } else {
+            0.0
+        };
+        let validation_success_rate = if ku_count + validation_failures > 0 {
+            ku_count as f32 / (ku_count + validation_failures) as f32
+        } else {
+            0.0
+        };
+        let confidence = if ku_count > 0 {
+            (paragraph_success_rate * 0.5 + validation_success_rate * 0.5).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+
+        Ok(EncodingResult {
+            wire_bytes,
+            gene_type: Some(gene_type_str.to_string()),
+            concepts_used,
+            confidence,
+            stats: ku_core::ku_tool_executor::EncodingStats {
+                total_kus: ku_count,
+                total_instructions: all_triples.len(),
+                ..Default::default()
+            },
+            source_text: text.to_string(),
+        })
     }
 
     /// Convert ku-core tool definitions to ku-ai format.
@@ -254,11 +549,7 @@ impl AiEncoder {
     /// Factors:
     /// - **Success rate** (70% weight): proportion of tool calls that succeeded.
     /// - **Instruction count** (30% weight): whether multiple instructions were produced.
-    fn calculate_confidence(
-        &self,
-        stats: &EncodingStats,
-        _results: &[CoreToolResult],
-    ) -> f32 {
+    fn calculate_confidence(&self, stats: &EncodingStats, _results: &[CoreToolResult]) -> f32 {
         if stats.total_kus == 0 {
             return 0.0;
         }
@@ -325,11 +616,7 @@ mod tests {
     #[tokio::test]
     async fn test_encode_with_mock_backend() {
         let mock = MockBackend::new().with_tool_response(make_fact_tool_calls());
-        let encoder = AiEncoder::new(
-            Box::new(mock),
-            default_dict(),
-            EncoderConfig::default(),
-        );
+        let encoder = AiEncoder::new(Box::new(mock), default_dict(), EncoderConfig::default());
 
         let result = encoder.encode("Water boils at 100°C").await.unwrap();
         assert!(!result.wire_bytes.is_empty(), "Should produce wire bytes");
@@ -341,11 +628,7 @@ mod tests {
     #[tokio::test]
     async fn test_encode_no_tool_calls() {
         let mock = MockBackend::new().with_chat_response("I cannot encode this.");
-        let encoder = AiEncoder::new(
-            Box::new(mock),
-            default_dict(),
-            EncoderConfig::default(),
-        );
+        let encoder = AiEncoder::new(Box::new(mock), default_dict(), EncoderConfig::default());
 
         let result = encoder.encode("something").await;
         assert!(result.is_err());
@@ -355,15 +638,14 @@ mod tests {
     #[tokio::test]
     async fn test_encode_produces_valid_wire_bytes() {
         let mock = MockBackend::new().with_tool_response(make_fact_tool_calls());
-        let encoder = AiEncoder::new(
-            Box::new(mock),
-            default_dict(),
-            EncoderConfig::default(),
-        );
+        let encoder = AiEncoder::new(Box::new(mock), default_dict(), EncoderConfig::default());
 
         let result = encoder.encode("Water boils at 100°C").await.unwrap();
         for bytes in &result.wire_bytes {
-            assert!(bytes.len() >= 5, "Wire bytes should have at least header+CRC");
+            assert!(
+                bytes.len() >= 5,
+                "Wire bytes should have at least header+CRC"
+            );
             // Should be valid CoreDna (first byte is CORE_DNA_MAGIC = 0x4B)
             assert_eq!(bytes[0], 0x4B, "First byte should be CoreDna magic");
         }
@@ -372,11 +654,7 @@ mod tests {
     #[test]
     fn test_convert_tool_definitions() {
         let mock = MockBackend::new();
-        let encoder = AiEncoder::new(
-            Box::new(mock),
-            default_dict(),
-            EncoderConfig::default(),
-        );
+        let encoder = AiEncoder::new(Box::new(mock), default_dict(), EncoderConfig::default());
 
         let defs = encoder.convert_tool_definitions();
         assert_eq!(defs.len(), 15, "Should have 15 tool definitions");
@@ -394,11 +672,7 @@ mod tests {
     #[test]
     fn test_calculate_confidence_no_kus() {
         let mock = MockBackend::new();
-        let encoder = AiEncoder::new(
-            Box::new(mock),
-            default_dict(),
-            EncoderConfig::default(),
-        );
+        let encoder = AiEncoder::new(Box::new(mock), default_dict(), EncoderConfig::default());
 
         let stats = EncodingStats::default();
         let confidence = encoder.calculate_confidence(&stats, &[]);

@@ -28,13 +28,11 @@
 //!
 //! See `docs/specs/obt/08_PENALTY.md`
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // Import shared constants from the canonical registry
 use crate::obt_constants::{
-    TRUST_DECAY_LAMBDA,
-    TRUST_RECOVERY_MAX_PER_HOUR,
-    TRUST_GRACE_PERIOD_HOURS,
+    TRUST_DECAY_LAMBDA, TRUST_GRACE_PERIOD_HOURS, TRUST_RECOVERY_MAX_PER_HOUR,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -101,12 +99,12 @@ impl PenaltyTier {
     /// Human-readable name with icon.
     pub fn name(&self) -> &'static str {
         match self {
-            Self::NaturalDecay  => "🌿 Natural Decay",
-            Self::Warning       => "⚠️ Warning",
+            Self::NaturalDecay => "🌿 Natural Decay",
+            Self::Warning => "⚠️ Warning",
             Self::TrustReduction => "🟡 Trust Reduction",
-            Self::Jail          => "🔴 Jail",
-            Self::TrustZero     => "⛔ Trust Zero",
-            Self::Tombstone     => "☠️ Tombstone",
+            Self::Jail => "🔴 Jail",
+            Self::TrustZero => "⛔ Trust Zero",
+            Self::Tombstone => "☠️ Tombstone",
         }
     }
 }
@@ -150,16 +148,16 @@ impl FraudType {
     /// Base severity [0.0, 1.0] as defined in §8.4.
     pub fn base_severity(&self) -> f64 {
         match self {
-            Self::FakeKuSpam            => 0.3,
-            Self::FakePomvSignals       => 0.5,
-            Self::QuickIsolationAttack  => 0.8,
+            Self::FakeKuSpam => 0.3,
+            Self::FakePomvSignals => 0.5,
+            Self::QuickIsolationAttack => 0.8,
             Self::LongConIsolationAttack => 0.8,
-            Self::CollusionRingSmall    => 1.0,
-            Self::CollusionRingLarge    => 1.0,
-            Self::IdentityForgery       => 1.0,
-            Self::RateLimitViolation    => 0.2,
-            Self::StorageProofFailure   => 0.4,
-            Self::DoubleSpend           => 0.7,
+            Self::CollusionRingSmall => 1.0,
+            Self::CollusionRingLarge => 1.0,
+            Self::IdentityForgery => 1.0,
+            Self::RateLimitViolation => 0.2,
+            Self::StorageProofFailure => 0.4,
+            Self::DoubleSpend => 0.7,
         }
     }
 }
@@ -223,16 +221,16 @@ pub struct PenaltyRecord {
 /// Actual tier may escalate via correlation penalty or repeat offenses.
 pub fn determine_penalty_tier(fraud_type: FraudType) -> PenaltyTier {
     match fraud_type {
-        FraudType::RateLimitViolation    => PenaltyTier::Warning,
-        FraudType::FakeKuSpam            => PenaltyTier::TrustReduction,
-        FraudType::FakePomvSignals       => PenaltyTier::TrustReduction,
-        FraudType::StorageProofFailure   => PenaltyTier::TrustReduction,
-        FraudType::QuickIsolationAttack  => PenaltyTier::Jail,
+        FraudType::RateLimitViolation => PenaltyTier::Warning,
+        FraudType::FakeKuSpam => PenaltyTier::TrustReduction,
+        FraudType::FakePomvSignals => PenaltyTier::TrustReduction,
+        FraudType::StorageProofFailure => PenaltyTier::TrustReduction,
+        FraudType::QuickIsolationAttack => PenaltyTier::Jail,
         FraudType::LongConIsolationAttack => PenaltyTier::Jail,
-        FraudType::CollusionRingSmall    => PenaltyTier::Jail,
-        FraudType::DoubleSpend           => PenaltyTier::Jail,
-        FraudType::CollusionRingLarge    => PenaltyTier::TrustZero,
-        FraudType::IdentityForgery       => PenaltyTier::Tombstone,
+        FraudType::CollusionRingSmall => PenaltyTier::Jail,
+        FraudType::DoubleSpend => PenaltyTier::Jail,
+        FraudType::CollusionRingLarge => PenaltyTier::TrustZero,
+        FraudType::IdentityForgery => PenaltyTier::Tombstone,
     }
 }
 
@@ -326,7 +324,7 @@ pub fn compute_trust_recovery(interaction_rate: f64) -> f64 {
 /// Tombstone penalties (`expires == None`) never expire.
 pub fn is_penalty_expired(record: &PenaltyRecord, current_time: u64) -> bool {
     match record.expires {
-        None => false,              // Tombstone — permanent
+        None => false, // Tombstone — permanent
         Some(expiry) => current_time >= expiry,
     }
 }
@@ -365,12 +363,12 @@ pub fn compute_penalty_expiry(
     timestamp: u64,
 ) -> Option<u64> {
     match tier {
-        PenaltyTier::NaturalDecay  => Some(timestamp), // Instant — not a real penalty
-        PenaltyTier::Warning       => Some(timestamp + TIER1_EXPIRY_SECS),
+        PenaltyTier::NaturalDecay => Some(timestamp), // Instant — not a real penalty
+        PenaltyTier::Warning => Some(timestamp + TIER1_EXPIRY_SECS),
         PenaltyTier::TrustReduction => Some(timestamp + TIER1_EXPIRY_SECS), // Must re-earn, flag expires
-        PenaltyTier::Jail          => Some(timestamp + compute_jail_duration(fraud_type, correlation_mult)),
-        PenaltyTier::TrustZero     => Some(timestamp + TIER4_BAN_SECS),
-        PenaltyTier::Tombstone     => None, // PERMANENT
+        PenaltyTier::Jail => Some(timestamp + compute_jail_duration(fraud_type, correlation_mult)),
+        PenaltyTier::TrustZero => Some(timestamp + TIER4_BAN_SECS),
+        PenaltyTier::Tombstone => None, // PERMANENT
     }
 }
 
@@ -415,13 +413,11 @@ pub fn build_penalty_record(
 /// Returns `Ok(())` if the node can transfer, `Err(reason)` if blocked.
 pub fn check_transfer_eligibility(
     penalty_tier: PenaltyTier,
-    jail_until: Option<u64>,  // Unix timestamp when jail expires
+    jail_until: Option<u64>, // Unix timestamp when jail expires
     current_ts: u64,
 ) -> Result<(), String> {
     match penalty_tier {
-        PenaltyTier::Tombstone => {
-            Err("node is permanently banned (Tombstone)".to_string())
-        }
+        PenaltyTier::Tombstone => Err("node is permanently banned (Tombstone)".to_string()),
         PenaltyTier::TrustZero => {
             if let Some(until) = jail_until {
                 if current_ts < until {
@@ -519,7 +515,10 @@ mod tests {
     #[test]
     fn test_warning_does_not_change_trust() {
         let trust = compute_trust_after_penalty(
-            0.8, PenaltyTier::Warning, FraudType::RateLimitViolation, 1.0,
+            0.8,
+            PenaltyTier::Warning,
+            FraudType::RateLimitViolation,
+            1.0,
         );
         assert_eq!(trust, 0.8);
     }
@@ -529,16 +528,26 @@ mod tests {
         // FakeKuSpam: severity=0.3, corr=1.0
         // loss = 0.3 * 0.3 * 1.0 = 0.09 → trust = 0.8 * 0.91 = 0.728
         let trust = compute_trust_after_penalty(
-            0.8, PenaltyTier::TrustReduction, FraudType::FakeKuSpam, 1.0,
+            0.8,
+            PenaltyTier::TrustReduction,
+            FraudType::FakeKuSpam,
+            1.0,
         );
-        assert!((trust - 0.728).abs() < 1e-10, "Expected ~0.728, got {}", trust);
+        assert!(
+            (trust - 0.728).abs() < 1e-10,
+            "Expected ~0.728, got {}",
+            trust
+        );
     }
 
     #[test]
     fn test_jail_slash_80_percent() {
         // Jail: trust × 0.2, corr=1.0 → corr_loss = 0
         let trust = compute_trust_after_penalty(
-            1.0, PenaltyTier::Jail, FraudType::QuickIsolationAttack, 1.0,
+            1.0,
+            PenaltyTier::Jail,
+            FraudType::QuickIsolationAttack,
+            1.0,
         );
         assert!((trust - 0.2).abs() < 1e-10, "Expected 0.2, got {}", trust);
     }
@@ -546,7 +555,10 @@ mod tests {
     #[test]
     fn test_trust_zero_floor() {
         let trust = compute_trust_after_penalty(
-            0.9, PenaltyTier::TrustZero, FraudType::CollusionRingLarge, 1.0,
+            0.9,
+            PenaltyTier::TrustZero,
+            FraudType::CollusionRingLarge,
+            1.0,
         );
         assert_eq!(trust, TIER4_TRUST_FLOOR);
     }
@@ -554,7 +566,10 @@ mod tests {
     #[test]
     fn test_tombstone_trust_zero() {
         let trust = compute_trust_after_penalty(
-            0.9, PenaltyTier::Tombstone, FraudType::IdentityForgery, 1.0,
+            0.9,
+            PenaltyTier::Tombstone,
+            FraudType::IdentityForgery,
+            1.0,
         );
         assert_eq!(trust, TIER5_TRUST);
         assert_eq!(trust, 0.0);
@@ -567,7 +582,11 @@ mod tests {
         let initial = 1.0;
         // After 100 hours: 1.0 × e^(-0.01 × 100) = e^(-1) ≈ 0.3679
         let decayed = compute_trust_decay(initial, 100.0);
-        assert!((decayed - 0.3679).abs() < 0.001, "Expected ~0.368, got {}", decayed);
+        assert!(
+            (decayed - 0.3679).abs() < 0.001,
+            "Expected ~0.368, got {}",
+            decayed
+        );
 
         // After 0 hours: no change
         assert_eq!(compute_trust_decay(initial, 0.0), 1.0);
@@ -598,7 +617,11 @@ mod tests {
     fn test_appeal_restored_trust() {
         // 30% scar: 0.9 * 0.7 = 0.63
         let restored = compute_appeal_restored_trust(0.9);
-        assert!((restored - 0.63).abs() < 1e-10, "Expected 0.63, got {}", restored);
+        assert!(
+            (restored - 0.63).abs() < 1e-10,
+            "Expected 0.63, got {}",
+            restored
+        );
 
         // Very low trust → floor
         let restored_low = compute_appeal_restored_trust(0.001);
@@ -609,13 +632,8 @@ mod tests {
 
     #[test]
     fn test_tombstone_is_permanent() {
-        let record = build_penalty_record(
-            [0xAA; 32],
-            FraudType::IdentityForgery,
-            0.9,
-            1,
-            1_000_000,
-        );
+        let record =
+            build_penalty_record([0xAA; 32], FraudType::IdentityForgery, 0.9, 1, 1_000_000);
 
         assert_eq!(record.tier, PenaltyTier::Tombstone);
         assert_eq!(record.trust_after, 0.0);

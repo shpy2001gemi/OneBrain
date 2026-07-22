@@ -17,124 +17,121 @@
 //! - [`Expression`](epigenetics::Expression) — Layer 3 rendered text
 //! - [`ConceptDict`](concept_dict::ConceptDict) — Bidirectional concept name ↔ ID lookup
 
-pub mod error;
-pub mod types;
-pub mod varint;
-pub mod tier0_concepts; // ★ v7 NEW: 74 Tier 0 universal concept constants
-pub mod ccid;            // ★ v7 NEW: Content-Addressed Concept Identity (128-bit BLAKE3)
+pub mod blob_store;
+pub mod ccid; // ★ v7 NEW: Content-Addressed Concept Identity (128-bit BLAKE3)
+pub mod concept_dict; // ★ v6 NEW: ConceptDict for name ↔ ID lookup
 pub mod concept_registry; // ★ v7 NEW: Offline concept name → CCID lookup (200MB registry)
-pub mod encoder;
-pub mod decoder;
 pub mod core_dna;
-pub mod epigenetics;     // ★ v6 NEW: Layer 2 Epigenetics + Layer 3 Expression
-pub mod ku_runtime;      // ★ v6 NEW: Unified 3-layer runtime composite
-pub mod concept_dict;    // ★ v6 NEW: ConceptDict for name ↔ ID lookup
-#[cfg(feature = "persist")]
-pub mod persistent_concept_dict; // ★ v6 NEW: redb-backed ConceptDict persistence
-pub mod text_parser;
-pub mod encoding_consensus;  // ★ v6 NEW: Distributed Encoding Consensus (RAW→SELF→PART→FULL)
-pub mod encoding_verifier;   // ★ v6 NEW: 2-phase verification (decomposition + tool)
-pub mod encoding_reward;     // ★ v6 NEW: OBT token rewards for encoding participation
-pub mod ku_tools;
-pub mod ku_tool_executor;
-pub mod ku_system_prompt;
 pub mod crdt;
+pub mod decoder;
+pub mod ecosystem;
+pub mod eigentrust;
+pub mod encoder;
+pub mod encoding_consensus; // ★ v6 NEW: Distributed Encoding Consensus (RAW→SELF→PART→FULL)
+pub mod encoding_reward; // ★ v6 NEW: OBT token rewards for encoding participation
+pub mod encoding_verifier; // ★ v6 NEW: 2-phase verification (decomposition + tool)
+pub mod entropy;
+pub mod epigenetics; // ★ v6 NEW: Layer 2 Epigenetics + Layer 3 Expression
+pub mod epistemic_engine;
+pub mod error;
+pub mod foundation; // vNext: canonical codec, typed content IDs, and conformance contracts
+pub mod graph_bio; // ★ OBKG: Bio-inspired mechanisms (STDP, Consolidation, Spreading Activation)
+pub mod graph_decay; // ★ OBKG: Unified decay engine (Decayable impls, DecayRunner)
+pub mod graph_dream; // ★ OBKG: Dream Mode — offline graph restructuring (sleep consolidation)
+pub mod graph_embeddings; // ★ OBKG: RotatE int8 knowledge graph embeddings
+pub mod graph_events; // ★ OBKG: In-memory event accumulator for bond lifecycle
+pub mod graph_fedr; // ★ OBKG: Federated RotatE training protocol (FedR)
+pub mod graph_qualifiers; // ★ OBKG: Bond qualifiers (temporal, confidence, source, context)
+pub mod graph_types; // ★ OBKG: Graph domain types (BondMeta, BondEvent, Decayable)
+pub mod immune;
+pub mod ku_lifecycle; // ★ v6 NEW: KuRuntime ↔ PomvRuntime lifecycle orchestrator
+pub mod ku_runtime; // ★ v6 NEW: Unified 3-layer runtime composite
+pub mod ku_system_prompt;
+pub mod ku_tool_executor;
+pub mod ku_tools;
 pub mod metabolism;
 pub mod metabolism_store;
-pub mod epistemic_engine;
-pub mod entropy;
-pub mod prediction;
-pub mod synaptic;
-pub mod immune;
-pub mod ecosystem;
+pub mod obkg_bridge; // ★ OBKG: Read-only adapter (KuRuntime/Bond → OBKG types)
+pub mod obkg_orchestrator; // ★ OBKG: KuLifecycle wrapper + graph engines orchestrator
+pub mod obkg_rewards; // ★ OBKG↔OBT: Graph contribution scoring bridge
+pub mod obs_cache; // ★ OBS: Metabolism-Aware ARC Cache (M-ARC)
+pub mod obs_schema; // ★ OBS: Schema versioning & migration framework
+pub mod obt_anti_gaming; // ★ OBT: Anti-gaming rate limits, quality gates & pattern detection
+pub mod obt_constants; // ★ OBT: Token protocol constants
+pub mod obt_epoch; // ★ OBT: Epoch boundary settlement
+pub mod obt_fork_pipeline; // ★ OBT: Fork detection → penalty pipeline
+pub mod obt_gossip_security; // ★ OBT: Gossip gap detection, connectivity proofs & epoch settlement
+pub mod obt_governance; // ★ OBT: Runtime-configurable governance parameters
+pub mod obt_integration; // ★ OBT: KU↔OBT integration layer (builders, quality gates)
+pub mod obt_ledger; // ★ OBT: Account-Chain ledger (Nano-style)
+pub mod obt_minting; // ★ OBT: Minting model & MintProof
+pub mod obt_penalty; // ★ OBT: 5-tier graduated penalty system
+pub mod obt_storage_reward; // ★ OBT: Storage reward & PoS-KU challenge
+#[cfg(feature = "persist")]
+pub mod persistent_concept_dict; // ★ v6 NEW: redb-backed ConceptDict persistence
 pub mod pomv;
-pub mod eigentrust;
-pub mod spread_analysis;
 pub mod pomv_runtime;
-pub mod ku_lifecycle;     // ★ v6 NEW: KuRuntime ↔ PomvRuntime lifecycle orchestrator
-pub mod obt_constants;        // ★ OBT: Token protocol constants
-pub mod obt_ledger;           // ★ OBT: Account-Chain ledger (Nano-style)
-pub mod obt_minting;          // ★ OBT: Minting model & MintProof
-pub mod obt_storage_reward;   // ★ OBT: Storage reward & PoS-KU challenge
-pub mod obt_penalty;          // ★ OBT: 5-tier graduated penalty system
-pub mod obt_fork_pipeline;    // ★ OBT: Fork detection → penalty pipeline
-pub mod obt_epoch;            // ★ OBT: Epoch boundary settlement
-pub mod obt_anti_gaming;      // ★ OBT: Anti-gaming rate limits, quality gates & pattern detection
-pub mod obt_gossip_security;  // ★ OBT: Gossip gap detection, connectivity proofs & epoch settlement
-pub mod obt_integration;      // ★ OBT: KU↔OBT integration layer (builders, quality gates)
-pub mod obt_governance;       // ★ OBT: Runtime-configurable governance parameters
-pub mod graph_types;         // ★ OBKG: Graph domain types (BondMeta, BondEvent, Decayable)
-pub mod graph_events;         // ★ OBKG: In-memory event accumulator for bond lifecycle
-pub mod graph_decay;          // ★ OBKG: Unified decay engine (Decayable impls, DecayRunner)
-pub mod graph_embeddings;     // ★ OBKG: RotatE int8 knowledge graph embeddings
-pub mod graph_dream;          // ★ OBKG: Dream Mode — offline graph restructuring (sleep consolidation)
-pub mod graph_bio;            // ★ OBKG: Bio-inspired mechanisms (STDP, Consolidation, Spreading Activation)
-pub mod graph_fedr;           // ★ OBKG: Federated RotatE training protocol (FedR)
-pub mod graph_qualifiers;     // ★ OBKG: Bond qualifiers (temporal, confidence, source, context)
-pub mod obkg_orchestrator;    // ★ OBKG: KuLifecycle wrapper + graph engines orchestrator
-pub mod obkg_bridge;          // ★ OBKG: Read-only adapter (KuRuntime/Bond → OBKG types)
-pub mod obkg_rewards;         // ★ OBKG↔OBT: Graph contribution scoring bridge
-pub mod obs_schema;            // ★ OBS: Schema versioning & migration framework
-pub mod obs_cache;             // ★ OBS: Metabolism-Aware ARC Cache (M-ARC)
-pub mod blob_store;            // ★ OBS: Blob Store core types (BlobCid, BlobMeta, BlobType)
+pub mod prediction;
+pub mod spread_analysis;
+pub mod synaptic;
+pub mod text_parser;
+pub mod tier0_concepts; // ★ v7 NEW: 74 Tier 0 universal concept constants
+pub mod types;
+pub mod varint; // ★ OBS: Blob Store core types (BlobCid, BlobMeta, BlobType)
 
-#[cfg(test)]
-#[allow(unused)]
-mod tests;
 #[cfg(test)]
 #[allow(unused)]
 mod benchmark;
 #[cfg(test)]
 #[allow(unused)]
 mod demo;
+#[cfg(test)]
+#[allow(unused)]
+mod tests;
 
 // Re-export core types for convenience
-pub use types::*;
-pub use error::KuError;
-pub use varint::{encode_varint, decode_varint};
+pub use decoder::{decode_full_knowledge_unit, decode_knowledge_unit};
 pub use encoder::{
-    encode_codon, encode_bond, encode_gene, encode_codons,
-    encode_knowledge_unit, encode_trust, encode_epigenetic,
-    create_full_ku, size_breakdown_full,
+    create_full_ku, encode_bond, encode_codon, encode_codons, encode_epigenetic, encode_gene,
+    encode_knowledge_unit, encode_trust, size_breakdown_full,
 };
-pub use decoder::{decode_knowledge_unit, decode_full_knowledge_unit};
+pub use error::KuError;
+pub use types::*;
+pub use varint::{decode_varint, encode_varint};
 
 // ★ v6 NEW: Re-export 3-layer architecture types
-pub use ku_runtime::{KuRuntime, ExtractedValue};
-pub use epigenetics::{Epigenetics, Expression};
 pub use concept_dict::{ConceptDict, ConceptEntry};
+pub use epigenetics::{Epigenetics, Expression};
+pub use ku_runtime::{ConceptEdge, ExtractedValue, KuRuntime};
 
 // ★ v7: Re-export Core DNA encode/decode functions + ConceptTable
 pub use core_dna::{
-    encode_core_dna, decode_core_dna,
-    ku_to_core_dna, core_dna_to_ku, decode_any,
-    CoreDna, CoreDnaHeader, Instruction, ConceptTableEntry,
-    CORE_DNA_MAGIC, CORE_DNA_VERSION,
+    core_dna_to_ku, decode_any, decode_core_dna, encode_core_dna, ku_to_core_dna,
+    ConceptTableEntry, CoreDna, CoreDnaHeader, Instruction, CORE_DNA_MAGIC, CORE_DNA_VERSION,
 };
 
 // ★ v7 NEW: Re-export CCID and Concept Registry
-pub use ccid::{Ccid, ccid, ccid_from_wikidata};
+pub use ccid::{ccid, ccid_from_wikidata, Ccid};
 pub use concept_registry::{
-    ConceptRegistry, ResolveResult, ResolvedConcept,
-    ConceptCategory, AddResult, CollisionRecord,
+    AddResult, CollisionRecord, ConceptCategory, ConceptRegistry, ResolveResult, ResolvedConcept,
 };
 
 // ★ v6 NEW: Re-export Encoding Consensus types
-pub use encoding_consensus::{EncodingStatus, EncodingConsensus, ConsensusConfig};
+pub use encoding_consensus::{ConsensusConfig, EncodingConsensus, EncodingStatus};
+pub use encoding_reward::{calculate_reward, EncodingReward, VerifierRole};
 pub use encoding_verifier::{core_dna_agreement, tool_encoding_check, ToolVerifyResult};
-pub use encoding_reward::{VerifierRole, EncodingReward, calculate_reward};
 
 // ★ OBT: Re-export token types
-pub use obt_ledger::{TransferBlock, TransferOp, AccountState, MintSource, ForkWarrant};
-pub use obt_minting::{MintProof, MintActivity};
-pub use obt_penalty::{PenaltyTier, FraudType, PenaltyRecord};
+pub use obt_ledger::{AccountState, ForkWarrant, MintSource, TransferBlock, TransferOp};
+pub use obt_minting::{MintActivity, MintProof};
+pub use obt_penalty::{FraudType, PenaltyRecord, PenaltyTier};
 
 // ★ OBKG: Re-export graph types for convenience
-pub use graph_types::{BondMeta, BondEvent, WeakeningReason};
-pub use graph_events::EventAccumulator;
-pub use graph_decay::{DecayRunner, DecayReport};
+pub use graph_bio::{spreading_activation, ConsolidationEngine, StdpEngine};
+pub use graph_decay::{DecayReport, DecayRunner};
+pub use graph_dream::{DreamConfig, DreamEngine, DreamReport};
 pub use graph_embeddings::{EntityEmbedding, RelationEmbedding, RelationTable};
-pub use graph_bio::{StdpEngine, ConsolidationEngine, spreading_activation};
-pub use graph_dream::{DreamEngine, DreamConfig, DreamReport};
-pub use graph_fedr::{FedRProtocol, FedRConfig, RelationDelta};
-pub use graph_qualifiers::{QualifiedBond, BondQualifier, QualifierKey, BondQualifierValue};
+pub use graph_events::EventAccumulator;
+pub use graph_fedr::{FedRConfig, FedRProtocol, RelationDelta};
+pub use graph_qualifiers::{BondQualifier, BondQualifierValue, QualifiedBond, QualifierKey};
+pub use graph_types::{BondEvent, BondMeta, WeakeningReason};

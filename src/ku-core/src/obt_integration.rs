@@ -12,13 +12,13 @@
 //! ## Reference
 //! See `docs/specs/obt/03_MINTING.md` and `docs/specs/obt/04_STORAGE_REWARD.md`.
 
-use crate::ku_runtime::KuRuntime;
+use crate::crdt::VectorClock;
 use crate::encoding_consensus::EncodingConsensus;
-use crate::obt_minting::{FormulaInputs, StorageFactors, MintProof, MintActivity};
-use crate::obt_storage_reward::StoredKuInfo;
+use crate::ku_runtime::KuRuntime;
 use crate::obt_anti_gaming;
 use crate::obt_epoch::epoch_from_timestamp;
-use crate::crdt::VectorClock;
+use crate::obt_minting::{FormulaInputs, MintActivity, MintProof, StorageFactors};
+use crate::obt_storage_reward::StoredKuInfo;
 use std::collections::HashSet;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -105,17 +105,20 @@ pub fn compute_epoch_storage_rewards(
     median_metabolism: f64,
     _current_epoch: u64,
 ) -> u64 {
-    use crate::obt_storage_reward::{StoredKuInfo, compute_node_storage_reward};
+    use crate::obt_storage_reward::{compute_node_storage_reward, StoredKuInfo};
 
-    let stored_kus: Vec<StoredKuInfo> = replicas.iter().map(|r| {
-        StoredKuInfo {
-            ku_cid: r.ku_cid,
-            wire_bytes_len: r.wire_bytes,
-            actual_replicas: r.actual_replicas,
-            metabolism_rate: 1.0, // Default: at-median; real value from KUMetabolism in future
-            epochs_stored: r.epochs_stored,
-        }
-    }).collect();
+    let stored_kus: Vec<StoredKuInfo> = replicas
+        .iter()
+        .map(|r| {
+            StoredKuInfo {
+                ku_cid: r.ku_cid,
+                wire_bytes_len: r.wire_bytes,
+                actual_replicas: r.actual_replicas,
+                metabolism_rate: 1.0, // Default: at-median; real value from KUMetabolism in future
+                epochs_stored: r.epochs_stored,
+            }
+        })
+        .collect();
 
     // compute_node_storage_reward returns f64 OBT; convert to milliOBT (u64)
     let raw_reward = compute_node_storage_reward(&stored_kus, node_trust, median_metabolism);
@@ -138,17 +141,24 @@ pub struct QualityGateResult {
 impl QualityGateResult {
     /// Are all gates passed?
     pub fn all_passed(&self) -> bool {
-        self.gate_1_size && self.gate_2_consensus
-            && self.gate_3_pomv && self.gate_4_complexity
+        self.gate_1_size && self.gate_2_consensus && self.gate_3_pomv && self.gate_4_complexity
     }
 
     /// Which gates failed? Returns names of failed gates.
     pub fn failed_gates(&self) -> Vec<&'static str> {
         let mut failed = Vec::new();
-        if !self.gate_1_size { failed.push("Gate1:MinSize"); }
-        if !self.gate_2_consensus { failed.push("Gate2:EncodingConsensus"); }
-        if !self.gate_3_pomv { failed.push("Gate3:PoMV"); }
-        if !self.gate_4_complexity { failed.push("Gate4:Complexity"); }
+        if !self.gate_1_size {
+            failed.push("Gate1:MinSize");
+        }
+        if !self.gate_2_consensus {
+            failed.push("Gate2:EncodingConsensus");
+        }
+        if !self.gate_3_pomv {
+            failed.push("Gate3:PoMV");
+        }
+        if !self.gate_4_complexity {
+            failed.push("Gate4:Complexity");
+        }
         failed
     }
 }
@@ -170,10 +180,7 @@ pub fn run_quality_gates(
 ) -> QualityGateResult {
     // Gate 1: Minimum size & content richness
     // gene_count maps to instruction_count (each KU v6 = 1 Gene with N instructions)
-    let gate_1 = obt_anti_gaming::gate_1_min_size(
-        ku.wire_bytes.len(),
-        ku.instruction_count(),
-    );
+    let gate_1 = obt_anti_gaming::gate_1_min_size(ku.wire_bytes.len(), ku.instruction_count());
 
     // Gate 2: Encoding consensus (enough independent verifiers, not a duplicate)
     let gate_2 = obt_anti_gaming::gate_2_encoding_consensus(
@@ -184,16 +191,11 @@ pub fn run_quality_gates(
     // Gate 3: PoMV score (with grace period for new KUs)
     let creation_epoch = epoch_from_timestamp(consensus.created_at);
     let age_epochs = current_epoch.saturating_sub(creation_epoch);
-    let gate_3 = obt_anti_gaming::gate_3_pomv(
-        ku.epi.pomv_score() as f32,
-        age_epochs,
-    );
+    let gate_3 = obt_anti_gaming::gate_3_pomv(ku.epi.pomv_score() as f32, age_epochs);
 
     // Gate 4: Complexity (encoding time and bond richness)
-    let gate_4 = obt_anti_gaming::gate_4_complexity(
-        consensus.avg_encoding_time_ms(),
-        ku.epi.bonds.len(),
-    );
+    let gate_4 =
+        obt_anti_gaming::gate_4_complexity(consensus.avg_encoding_time_ms(), ku.epi.bonds.len());
 
     QualityGateResult {
         gate_1_size: gate_1,
@@ -303,9 +305,9 @@ pub fn build_storage_mint_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core_dna::{CoreDna, CoreDnaHeader, Instruction, encode_core_dna};
-    use crate::epigenetics::Epigenetics;
+    use crate::core_dna::{CoreDna, CoreDnaHeader, Instruction};
     use crate::encoding_consensus::EncodingStatus;
+    use crate::epigenetics::Epigenetics;
 
     fn test_dna() -> CoreDna {
         CoreDna {
@@ -471,7 +473,10 @@ mod tests {
             },
         ];
         let result = compute_epoch_storage_rewards(&replicas, 0.9, 1.0, 200);
-        assert!(result > 0, "Should earn non-zero storage reward, got {result}");
+        assert!(
+            result > 0,
+            "Should earn non-zero storage reward, got {result}"
+        );
     }
 
     #[test]

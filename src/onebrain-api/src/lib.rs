@@ -1,8 +1,8 @@
 //! OneBrain API — REST/WebSocket server interface.
 
-pub mod server;
-pub mod handlers;
-pub mod types;
 pub mod error;
+pub mod handlers;
+pub mod server;
+pub mod types;
 
 pub use server::ApiServer;

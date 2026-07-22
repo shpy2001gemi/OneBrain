@@ -30,7 +30,7 @@
 //! ```
 
 use crate::core_dna::{CoreDna, Instruction, NumericValue};
-use crate::ku_tools::{ToolCall, ToolResult, resolve_unit, resolve_gene_type};
+use crate::ku_tools::{resolve_gene_type, resolve_unit, ToolCall, ToolResult};
 use crate::text_parser::ConceptDict;
 use crate::types::ConceptId;
 
@@ -134,9 +134,10 @@ impl KuToolExecutor {
             let _ = self.exec_finalize();
         }
 
-        self.completed.iter().filter_map(|dna| {
-            dna.encode().ok()
-        }).collect()
+        self.completed
+            .iter()
+            .filter_map(|dna| dna.encode().ok())
+            .collect()
     }
 
     /// Get encoding statistics.
@@ -164,7 +165,8 @@ impl KuToolExecutor {
             let _ = self.exec_finalize();
         }
 
-        let gene_str = args.get("gene_type")
+        let gene_str = args
+            .get("gene_type")
             .and_then(|v| v.as_str())
             .unwrap_or("fact");
 
@@ -195,7 +197,10 @@ impl KuToolExecutor {
                         self.completed.push(dna);
 
                         ToolResult::ok_with_data(
-                            format!("KU #{} finalized: {} instructions → {} bytes.", self.stats.total_kus, n_instr, wire_len),
+                            format!(
+                                "KU #{} finalized: {} instructions → {} bytes.",
+                                self.stats.total_kus, n_instr, wire_len
+                            ),
                             serde_json::json!({
                                 "ku_index": self.stats.total_kus - 1,
                                 "instructions": n_instr,
@@ -221,7 +226,10 @@ impl KuToolExecutor {
 
         if id == crate::text_parser::UNKNOWN_CONCEPT {
             ToolResult::ok_with_data(
-                format!("'{}' not found in dictionary. Use lookup_or_create to register it.", word),
+                format!(
+                    "'{}' not found in dictionary. Use lookup_or_create to register it.",
+                    word
+                ),
                 serde_json::json!({ "concept_id": 0, "found": false }),
             )
         } else {
@@ -248,7 +256,12 @@ impl KuToolExecutor {
         self.stats.concepts_looked_up += 1;
 
         ToolResult::ok_with_data(
-            format!("'{}' = ConceptId {} {}", word, id, if is_new { "(NEW)" } else { "(existing)" }),
+            format!(
+                "'{}' = ConceptId {} {}",
+                word,
+                id,
+                if is_new { "(NEW)" } else { "(existing)" }
+            ),
             serde_json::json!({ "concept_id": id, "created": is_new }),
         )
     }
@@ -262,7 +275,11 @@ impl KuToolExecutor {
         }
     }
 
-    fn get_concept_id(&mut self, args: &serde_json::Value, key: &str) -> Result<ConceptId, ToolResult> {
+    fn get_concept_id(
+        &mut self,
+        args: &serde_json::Value,
+        key: &str,
+    ) -> Result<ConceptId, ToolResult> {
         match args.get(key) {
             // If the model sends a string name, auto-resolve via lookup_or_create
             Some(serde_json::Value::String(word)) => {
@@ -271,18 +288,32 @@ impl KuToolExecutor {
                 Ok(id)
             }
             // If the model sends an integer ID, use it directly
-            Some(serde_json::Value::Number(n)) => {
-                n.as_u64()
-                    .ok_or_else(|| ToolResult::err(format!("Invalid '{}': expected positive integer or string concept name", key)))
-            }
-            _ => Err(ToolResult::err(format!("Missing '{}' (expected integer ConceptId or string concept name)", key))),
+            Some(serde_json::Value::Number(n)) => n.as_u64().ok_or_else(|| {
+                ToolResult::err(format!(
+                    "Invalid '{}': expected positive integer or string concept name",
+                    key
+                ))
+            }),
+            _ => Err(ToolResult::err(format!(
+                "Missing '{}' (expected integer ConceptId or string concept name)",
+                key
+            ))),
         }
     }
 
     fn exec_add_triple(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
-        let p = match self.get_concept_id(args, "predicate") { Ok(v) => v, Err(e) => return e };
-        let o = match self.get_concept_id(args, "object") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        let p = match self.get_concept_id(args, "predicate") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        let o = match self.get_concept_id(args, "object") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
 
         match self.require_active_ku() {
             Ok(builder) => {
@@ -294,12 +325,20 @@ impl KuToolExecutor {
     }
 
     fn exec_add_part_of(&mut self, args: &serde_json::Value) -> ToolResult {
-        let part = match self.get_concept_id(args, "part") { Ok(v) => v, Err(e) => return e };
-        let whole = match self.get_concept_id(args, "whole") { Ok(v) => v, Err(e) => return e };
+        let part = match self.get_concept_id(args, "part") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        let whole = match self.get_concept_id(args, "whole") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
 
         match self.require_active_ku() {
             Ok(builder) => {
-                builder.instructions.push(Instruction::PartOf { part, whole });
+                builder
+                    .instructions
+                    .push(Instruction::PartOf { part, whole });
                 ToolResult::ok(format!("Added PartOf({} ⊂ {})", part, whole))
             }
             Err(e) => e,
@@ -307,8 +346,14 @@ impl KuToolExecutor {
     }
 
     fn exec_add_quality(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
-        let q = match self.get_concept_id(args, "quality") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        let q = match self.get_concept_id(args, "quality") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
 
         match self.require_active_ku() {
             Ok(builder) => {
@@ -320,12 +365,18 @@ impl KuToolExecutor {
     }
 
     fn exec_add_quantity(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
         let value = match args.get("value").and_then(|v| v.as_f64()) {
             Some(v) => v,
             None => return ToolResult::err("Missing 'value' (expected number)"),
         };
-        let unit_str = args.get("unit").and_then(|v| v.as_str()).unwrap_or("dimensionless");
+        let unit_str = args
+            .get("unit")
+            .and_then(|v| v.as_str())
+            .unwrap_or("dimensionless");
         let unit = resolve_unit(unit_str);
 
         match self.require_active_ku() {
@@ -342,7 +393,10 @@ impl KuToolExecutor {
     }
 
     fn exec_add_tolerance(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
         let value = match args.get("value").and_then(|v| v.as_f64()) {
             Some(v) => v,
             None => return ToolResult::err("Missing 'value' (expected number)"),
@@ -366,14 +420,21 @@ impl KuToolExecutor {
     }
 
     fn exec_add_enum_val(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
         let values: Vec<ConceptId> = match args.get("values").and_then(|v| v.as_array()) {
             Some(arr) => {
                 let mut ids = Vec::new();
                 for v in arr {
                     match v.as_u64() {
                         Some(id) => ids.push(id),
-                        None => return ToolResult::err("Each value in 'values' must be an integer ConceptId"),
+                        None => {
+                            return ToolResult::err(
+                                "Each value in 'values' must be an integer ConceptId",
+                            )
+                        }
                     }
                 }
                 ids
@@ -384,7 +445,9 @@ impl KuToolExecutor {
         match self.require_active_ku() {
             Ok(builder) => {
                 let n = values.len();
-                builder.instructions.push(Instruction::EnumVal { s, values });
+                builder
+                    .instructions
+                    .push(Instruction::EnumVal { s, values });
                 ToolResult::ok(format!("Added EnumVal({} → {} options)", s, n))
             }
             Err(e) => e,
@@ -392,12 +455,20 @@ impl KuToolExecutor {
     }
 
     fn exec_add_causal(&mut self, args: &serde_json::Value) -> ToolResult {
-        let cause = match self.get_concept_id(args, "cause") { Ok(v) => v, Err(e) => return e };
-        let effect = match self.get_concept_id(args, "effect") { Ok(v) => v, Err(e) => return e };
+        let cause = match self.get_concept_id(args, "cause") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        let effect = match self.get_concept_id(args, "effect") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
 
         match self.require_active_ku() {
             Ok(builder) => {
-                builder.instructions.push(Instruction::Causal { cause, effect });
+                builder
+                    .instructions
+                    .push(Instruction::Causal { cause, effect });
                 ToolResult::ok(format!("Added Causal({} → {})", cause, effect))
             }
             Err(e) => e,
@@ -405,12 +476,20 @@ impl KuToolExecutor {
     }
 
     fn exec_add_located(&mut self, args: &serde_json::Value) -> ToolResult {
-        let s = match self.get_concept_id(args, "subject") { Ok(v) => v, Err(e) => return e };
-        let location = match self.get_concept_id(args, "location") { Ok(v) => v, Err(e) => return e };
+        let s = match self.get_concept_id(args, "subject") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        let location = match self.get_concept_id(args, "location") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
 
         match self.require_active_ku() {
             Ok(builder) => {
-                builder.instructions.push(Instruction::Located { s, location });
+                builder
+                    .instructions
+                    .push(Instruction::Located { s, location });
                 ToolResult::ok(format!("Added Located({} @ {})", s, location))
             }
             Err(e) => e,
@@ -422,12 +501,22 @@ impl KuToolExecutor {
             Some(v) => v as u8,
             None => return ToolResult::err("Missing 'ord' (expected integer 0-255)"),
         };
-        let action = match self.get_concept_id(args, "action") { Ok(v) => v, Err(e) => return e };
-        let target = match self.get_concept_id(args, "target") { Ok(v) => v, Err(e) => return e };
+        let action = match self.get_concept_id(args, "action") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        let target = match self.get_concept_id(args, "target") {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
 
         match self.require_active_ku() {
             Ok(builder) => {
-                builder.instructions.push(Instruction::Step { ord, action, target });
+                builder.instructions.push(Instruction::Step {
+                    ord,
+                    action,
+                    target,
+                });
                 ToolResult::ok(format!("Added Step(#{}: {} → {})", ord, action, target))
             }
             Err(e) => e,
@@ -477,7 +566,10 @@ mod tests {
     use serde_json::json;
 
     fn make_call(name: &str, args: serde_json::Value) -> ToolCall {
-        ToolCall { name: name.into(), arguments: args }
+        ToolCall {
+            name: name.into(),
+            arguments: args,
+        }
     }
 
     #[test]
@@ -495,7 +587,10 @@ mod tests {
             make_call("lookup_or_create", json!({"word": "temperature"})),
             make_call("lookup_or_create", json!({"word": "boiling"})),
             make_call("add_quality", json!({"subject": 1000, "quality": 1002})),
-            make_call("add_quantity", json!({"subject": 1000, "value": 100.0, "unit": "degree"})),
+            make_call(
+                "add_quantity",
+                json!({"subject": 1000, "value": 100.0, "unit": "degree"}),
+            ),
             make_call("set_certainty", json!({"level": 10000})),
             make_call("finalize", json!({})),
         ]);
@@ -524,22 +619,23 @@ mod tests {
 
         // Phase 1: AI looks up concepts
         let calls = vec![
-            make_call("lookup_or_create", json!({"word": "tên lửa"})),     // 1000
-            make_call("lookup_or_create", json!({"word": "thân"})),         // 1001
-            make_call("lookup_or_create", json!({"word": "vỏ"})),           // 1002
+            make_call("lookup_or_create", json!({"word": "tên lửa"})), // 1000
+            make_call("lookup_or_create", json!({"word": "thân"})),    // 1001
+            make_call("lookup_or_create", json!({"word": "vỏ"})),      // 1002
             make_call("lookup_or_create", json!({"word": "hợp kim nhôm-liti"})), // 1003
-            make_call("lookup_or_create", json!({"word": "titan"})),        // 1004
+            make_call("lookup_or_create", json!({"word": "titan"})),   // 1004
             make_call("lookup_or_create", json!({"word": "carbon composite"})), // 1005
-            make_call("lookup_or_create", json!({"word": "nhẹ"})),          // 1006
-            make_call("lookup_or_create", json!({"word": "bền"})),          // 1007
-            make_call("lookup_or_create", json!({"word": "áp lực lớn"})),   // 1008
-            make_call("lookup_or_create", json!({"word": "vật liệu"})),     // 1009
+            make_call("lookup_or_create", json!({"word": "nhẹ"})),     // 1006
+            make_call("lookup_or_create", json!({"word": "bền"})),     // 1007
+            make_call("lookup_or_create", json!({"word": "áp lực lớn"})), // 1008
+            make_call("lookup_or_create", json!({"word": "vật liệu"})), // 1009
         ];
         let results = exec.execute_batch(&calls);
         assert!(results.iter().all(|r| r.success));
 
         // Extract concept IDs from results
-        let ids: Vec<u64> = results.iter()
+        let ids: Vec<u64> = results
+            .iter()
             .filter_map(|r| r.data.as_ref())
             .filter_map(|d| d.get("concept_id"))
             .filter_map(|v| v.as_u64())
@@ -563,9 +659,18 @@ mod tests {
             make_call("new_ku", json!({"gene_type": "fact"})),
             make_call("add_part_of", json!({"part": body, "whole": rocket})),
             make_call("add_part_of", json!({"part": shell, "whole": rocket})),
-            make_call("add_triple", json!({"subject": body, "predicate": material, "object": al_li})),
-            make_call("add_enum_val", json!({"subject": material, "values": [al_li, titan, carbon]})),
-            make_call("add_quality", json!({"subject": body, "quality": lightweight})),
+            make_call(
+                "add_triple",
+                json!({"subject": body, "predicate": material, "object": al_li}),
+            ),
+            make_call(
+                "add_enum_val",
+                json!({"subject": material, "values": [al_li, titan, carbon]}),
+            ),
+            make_call(
+                "add_quality",
+                json!({"subject": body, "quality": lightweight}),
+            ),
             make_call("add_quality", json!({"subject": body, "quality": strong})),
             make_call("add_causal", json!({"cause": high_press, "effect": strong})),
             make_call("set_certainty", json!({"level": 9500})),
@@ -595,13 +700,22 @@ mod tests {
 
         // KU 1: Fact
         exec.execute(&make_call("new_ku", json!({"gene_type": "fact"})));
-        exec.execute(&make_call("add_quality", json!({"subject": 100, "quality": 200})));
+        exec.execute(&make_call(
+            "add_quality",
+            json!({"subject": 100, "quality": 200}),
+        ));
         exec.execute(&make_call("set_certainty", json!({"level": 9000})));
 
         // KU 2: Procedure (auto-finalizes KU 1)
         exec.execute(&make_call("new_ku", json!({"gene_type": "procedure"})));
-        exec.execute(&make_call("add_step", json!({"ord": 0, "action": 300, "target": 400})));
-        exec.execute(&make_call("add_step", json!({"ord": 1, "action": 301, "target": 401})));
+        exec.execute(&make_call(
+            "add_step",
+            json!({"ord": 0, "action": 300, "target": 400}),
+        ));
+        exec.execute(&make_call(
+            "add_step",
+            json!({"ord": 1, "action": 301, "target": 401}),
+        ));
         exec.execute(&make_call("set_difficulty", json!({"level": 3})));
 
         // Finalize all (auto-finalizes KU 2)
@@ -625,7 +739,10 @@ mod tests {
         let mut exec = KuToolExecutor::with_default_dict();
 
         // Error: add instruction without new_ku
-        let r = exec.execute(&make_call("add_quality", json!({"subject": 1, "quality": 2})));
+        let r = exec.execute(&make_call(
+            "add_quality",
+            json!({"subject": 1, "quality": 2}),
+        ));
         assert!(!r.success);
         println!("  ✓ No active KU: {}", r.message);
 
@@ -664,13 +781,38 @@ mod tests {
 
         // Lookup all concepts first (AI would do this in first pass)
         let concepts = [
-            "tên lửa", "thân", "vỏ", "hợp kim nhôm-liti", "titan",
-            "carbon composite", "động cơ", "nhiên liệu", "hydro lỏng", "oxy lỏng",
-            "buồng đốt", "lực đẩy", "bơm", "nhiên liệu rắn", "đơn giản",
-            "tin cậy", "dẫn đường", "điều khiển", "imu", "con quay hồi chuyển",
-            "máy tính bay", "quỹ đạo", "thrust vectoring", "khoang tải trọng",
-            "vệ tinh", "đầu đạn", "thiết bị nghiên cứu", "nhẹ", "bền",
-            "áp lực lớn", "vật liệu", "đầu tên lửa"
+            "tên lửa",
+            "thân",
+            "vỏ",
+            "hợp kim nhôm-liti",
+            "titan",
+            "carbon composite",
+            "động cơ",
+            "nhiên liệu",
+            "hydro lỏng",
+            "oxy lỏng",
+            "buồng đốt",
+            "lực đẩy",
+            "bơm",
+            "nhiên liệu rắn",
+            "đơn giản",
+            "tin cậy",
+            "dẫn đường",
+            "điều khiển",
+            "imu",
+            "con quay hồi chuyển",
+            "máy tính bay",
+            "quỹ đạo",
+            "thrust vectoring",
+            "khoang tải trọng",
+            "vệ tinh",
+            "đầu đạn",
+            "thiết bị nghiên cứu",
+            "nhẹ",
+            "bền",
+            "áp lực lớn",
+            "vật liệu",
+            "đầu tên lửa",
         ];
 
         let mut ids = std::collections::HashMap::new();
@@ -699,11 +841,26 @@ mod tests {
         // KU 2: Liquid Fuel Engine
         exec.execute_batch(&[
             make_call("new_ku", json!({"gene_type": "procedure"})),
-            make_call("add_part_of", json!({"part": c("động cơ"), "whole": c("tên lửa")})),
-            make_call("add_step", json!({"ord": 0, "action": c("bơm"), "target": c("nhiên liệu")})),
-            make_call("add_step", json!({"ord": 1, "action": c("bơm"), "target": c("hydro lỏng")})),
-            make_call("add_step", json!({"ord": 2, "action": c("bơm"), "target": c("oxy lỏng")})),
-            make_call("add_step", json!({"ord": 3, "action": c("buồng đốt"), "target": c("lực đẩy")})),
+            make_call(
+                "add_part_of",
+                json!({"part": c("động cơ"), "whole": c("tên lửa")}),
+            ),
+            make_call(
+                "add_step",
+                json!({"ord": 0, "action": c("bơm"), "target": c("nhiên liệu")}),
+            ),
+            make_call(
+                "add_step",
+                json!({"ord": 1, "action": c("bơm"), "target": c("hydro lỏng")}),
+            ),
+            make_call(
+                "add_step",
+                json!({"ord": 2, "action": c("bơm"), "target": c("oxy lỏng")}),
+            ),
+            make_call(
+                "add_step",
+                json!({"ord": 3, "action": c("buồng đốt"), "target": c("lực đẩy")}),
+            ),
             make_call("set_difficulty", json!({"level": 4})),
             make_call("finalize", json!({})),
         ]);
@@ -757,7 +914,11 @@ mod tests {
         println!("  Concepts:   {} created", stats.concepts_created);
 
         assert_eq!(wires.len(), 5, "Should produce 5 KUs");
-        assert!(total < 1078, "Should be smaller than text ({} vs 1078)", total);
+        assert!(
+            total < 1078,
+            "Should be smaller than text ({} vs 1078)",
+            total
+        );
 
         println!("\n  🚀 Full rocket encoding: PASSED ✓");
     }

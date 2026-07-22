@@ -5,9 +5,9 @@
 //! the basis for encoding consensus in the OBP protocol.
 
 use ku_ai::OllamaBackend;
-use ku_core::KuRuntime;
 use ku_core::encoding_verifier::core_dna_agreement;
-use ku_core::text_parser::{ConceptDict, default_dict};
+use ku_core::text_parser::{default_dict, ConceptDict};
+use ku_core::KuRuntime;
 use ku_encoder::{AiEncoder, EncoderConfig};
 
 /// Result of a verification check.
@@ -64,11 +64,7 @@ pub async fn verify_ku(
     };
 
     let dict: ConceptDict = default_dict();
-    let encoder = AiEncoder::new(
-        Box::new(encoder_backend),
-        dict,
-        EncoderConfig::default(),
-    );
+    let encoder = AiEncoder::new(Box::new(encoder_backend), dict, EncoderConfig::default());
 
     // Re-encode the source text
     let our_result = match encoder.encode(source_text).await {

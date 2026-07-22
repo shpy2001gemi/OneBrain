@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react';
 import { Zap, CheckCircle, AlertCircle, FileText, Copy, Loader, Clock, Save, Paperclip, X as XIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
+import { ws } from '../api/ws';
 import type { EncodeResult, BlobMeta } from '../api/types';
+import { formatFileSize } from '../utils/format';
 
 export function EncodePage() {
   const { t } = useTranslation();
@@ -37,11 +39,18 @@ export function EncodePage() {
     setResult(null);
     try {
       const res = await api.encode(text);
+      // Link any uploaded blob attachments to the new KU
+      if (attachments.length > 0 && res.cid_hex) {
+        await Promise.allSettled(
+          attachments.map(blob => api.addBlobKuRef(blob.blob_cid_hex, res.cid_hex))
+        );
+      }
       setResult(res);
       setHistory(prev => [res, ...prev]);
       setText('');
-    } catch (err: any) {
-      setError(err.message || 'Encoding failed');
+      setAttachments([]);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Encoding failed');
     } finally {
       setLoading(false);
     }
@@ -52,12 +61,11 @@ export function EncodePage() {
     setSavingDraft(true);
     setError('');
     try {
-      const res = await api.encodeDraft(text);
-      setResult(res);
+      await api.saveDraft(text);
       setDraftSaved(true);
       setTimeout(() => setDraftSaved(false), 3000);
-    } catch (err: any) {
-      setError(err.message || 'Draft save failed');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Draft save failed');
     } finally {
       setSavingDraft(false);
     }
@@ -76,40 +84,26 @@ export function EncodePage() {
   // Real-time progress from WebSocket
   const [pipelineStep, setPipelineStep] = useState<{ step: number; total: number; message: string } | null>(null);
   const [stepLog, setStepLog] = useState<{ step: number; message: string; time: number }[]>([]);
-  const wsRef = useRef<WebSocket | null>(null);
-
-  // WebSocket connection for encode progress
+  // WebSocket connection for encode progress (using singleton)
   useEffect(() => {
     const token = localStorage.getItem('ob_api_token') || 'onebrain-dev-token';
-    const ws = new WebSocket(`ws://127.0.0.1:4280/ws/events?token=${token}`);
-    wsRef.current = ws;
-
-    ws.onmessage = (e) => {
-      try {
-        const event = JSON.parse(e.data);
-        if (event.event_type === 'encode_progress') {
-          const { step, total_steps, message } = event.data;
-          setPipelineStep({ step, total: total_steps, message });
-          setStepLog(prev => {
-            // avoid duplicate steps
-            if (prev.length > 0 && prev[prev.length - 1].step === step) return prev;
-            return [...prev, { step, message, time: Date.now() }];
-          });
-        }
-      } catch {}
-    };
-
-    ws.onerror = () => {};
-    ws.onclose = () => {};
-
-    return () => { ws.close(); };
+    ws.connect(token);
+    const unsub = ws.on('encode_progress', (event) => {
+      const { step, total_steps, message } = event.data as { step: number; total_steps: number; message: string };
+      setPipelineStep({ step, total: total_steps, message });
+      setStepLog(prev => {
+        if (prev.length > 0 && prev[prev.length - 1].step === step) return prev;
+        return [...prev, { step, message, time: Date.now() }];
+      });
+    });
+    return () => { unsub(); };
   }, []);
 
   // Reset step log when starting new encode
   const handleEncodeWithReset = async () => {
     setPipelineStep(null);
     setStepLog([]);
-    handleEncode();
+    await handleEncode();
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,8 +113,8 @@ export function EncodePage() {
     try {
       const meta = await api.uploadBlob(file);
       setAttachments(prev => [...prev, meta]);
-    } catch (err: any) {
-      setError(err.message || 'File upload failed');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'File upload failed');
     } finally {
       setUploadingFile(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -131,11 +125,7 @@ export function EncodePage() {
     setAttachments(prev => prev.filter(a => a.blob_cid_hex !== cid));
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
-    if (bytes > 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-    return `${bytes}B`;
-  };
+
 
   return (
     <div className="page">
@@ -314,6 +304,12 @@ export function EncodePage() {
                   <div className="stat-card">
                     <span className="stat-label">Instructions</span>
                     <span style={{ fontSize: '0.95rem', fontWeight: 600 }}>{result.instruction_count}</span>
+                  </div>
+                  <div className="stat-card" style={{ gridColumn: '1 / -1' }}>
+                    <span className="stat-label">📡 Published To</span>
+                    <span style={{ fontSize: '0.95rem', fontWeight: 600, color: (result.peers_reached ?? 0) > 0 ? 'var(--ob-success)' : 'var(--ob-text-muted)' }}>
+                      {(result.peers_reached ?? 0) > 0 ? `${result.peers_reached} peer(s)` : 'Local only (no peers connected)'}
+                    </span>
                   </div>
                 </div>
               </div>

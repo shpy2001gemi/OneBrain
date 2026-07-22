@@ -19,7 +19,7 @@
 //! ```
 
 use crate::concept_dict::ConceptDict;
-use crate::core_dna::{CoreDna, Instruction, decode_core_dna, encode_core_dna};
+use crate::core_dna::{decode_core_dna, encode_core_dna, CoreDna, Instruction};
 use crate::encoding_consensus::EncodingStatus;
 use crate::epigenetics::{Epigenetics, Expression};
 use crate::error::KuError;
@@ -72,6 +72,19 @@ pub struct KuRuntime {
     /// RAW → SELF → PART → FULL. See `encoding_consensus` module.
     /// Separate from `EpistemicStatus` (which tracks knowledge quality).
     pub encoding_status: EncodingStatus,
+}
+
+/// A concept-to-concept edge extracted from instructions + concept_table.
+///
+/// Uses 32-byte zero-padded CCIDs (16-byte CCID in bytes [0..16], zeros in [16..32]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConceptEdge {
+    /// Source concept as 32-byte padded CCID.
+    pub src: [u8; 32],
+    /// Target concept as 32-byte padded CCID.
+    pub tgt: [u8; 32],
+    /// The relationship type for this edge.
+    pub rel: crate::types::RelationType,
 }
 
 impl KuRuntime {
@@ -168,46 +181,60 @@ impl KuRuntime {
         for instr in &self.dna.instructions {
             match instr {
                 Instruction::Triple { s, p, o } => {
-                    ids.push(*s); ids.push(*p); ids.push(*o);
+                    ids.push(*s);
+                    ids.push(*p);
+                    ids.push(*o);
                 }
                 Instruction::Quality { s, q } => {
-                    ids.push(*s); ids.push(*q);
+                    ids.push(*s);
+                    ids.push(*q);
                 }
                 Instruction::Quantity { s, unit, .. } => {
-                    ids.push(*s); ids.push(*unit);
+                    ids.push(*s);
+                    ids.push(*unit);
                 }
                 Instruction::PartOf { part, whole } => {
-                    ids.push(*part); ids.push(*whole);
+                    ids.push(*part);
+                    ids.push(*whole);
                 }
                 Instruction::Located { s, location } => {
-                    ids.push(*s); ids.push(*location);
+                    ids.push(*s);
+                    ids.push(*location);
                 }
                 Instruction::Temporal { s, time } => {
-                    ids.push(*s); ids.push(*time);
+                    ids.push(*s);
+                    ids.push(*time);
                 }
                 Instruction::Causal { cause, effect } => {
-                    ids.push(*cause); ids.push(*effect);
+                    ids.push(*cause);
+                    ids.push(*effect);
                 }
                 Instruction::Simulates { s, model } => {
-                    ids.push(*s); ids.push(*model);
+                    ids.push(*s);
+                    ids.push(*model);
                 }
                 Instruction::Condition { cond, result } => {
-                    ids.push(*cond); ids.push(*result);
+                    ids.push(*cond);
+                    ids.push(*result);
                 }
                 Instruction::Agent { actor, action } => {
-                    ids.push(*actor); ids.push(*action);
+                    ids.push(*actor);
+                    ids.push(*action);
                 }
                 Instruction::Tool { action, instrument } => {
-                    ids.push(*action); ids.push(*instrument);
+                    ids.push(*action);
+                    ids.push(*instrument);
                 }
                 Instruction::Step { action, target, .. } => {
-                    ids.push(*action); ids.push(*target);
+                    ids.push(*action);
+                    ids.push(*target);
                 }
                 Instruction::Precond { concept } | Instruction::Effect { concept } => {
                     ids.push(*concept);
                 }
                 Instruction::Constraint { source, target, .. } => {
-                    ids.push(*source); ids.push(*target);
+                    ids.push(*source);
+                    ids.push(*target);
                 }
                 Instruction::Range { s, .. } | Instruction::Tolerance { s, .. } => {
                     ids.push(*s);
@@ -220,7 +247,8 @@ impl KuRuntime {
                     ids.extend(values);
                 }
                 Instruction::Label { key, value } => {
-                    ids.push(*key); ids.push(*value);
+                    ids.push(*key);
+                    ids.push(*value);
                 }
                 Instruction::Member { label, .. } => {
                     ids.push(*label);
@@ -231,6 +259,215 @@ impl KuRuntime {
         ids.sort_unstable();
         ids.dedup();
         ids
+    }
+
+    /// Extract concept-to-concept graph edges from instructions + concept_table.
+    ///
+    /// Maps instruction pairs (subject→object) to graph edges with appropriate
+    /// [`RelationType`], using the concept_table to resolve local ConceptIds
+    /// to global 32-byte CCIDs (zero-padded from 16-byte CCIDs).
+    ///
+    /// Returns empty if no concept_table exists or no resolvable edges found.
+    pub fn concept_graph_edges(&self) -> Vec<ConceptEdge> {
+        use crate::types::RelationType;
+
+        if self.dna.concept_table.is_empty() {
+            return Vec::new();
+        }
+
+        // Build local_id → ccid[16] lookup
+        let ccid_map: std::collections::HashMap<ConceptId, [u8; 16]> = self
+            .dna
+            .concept_table
+            .iter()
+            .map(|e| (e.local_id, e.ccid))
+            .collect();
+
+        // Zero-pad a 16-byte CCID to 32 bytes
+        let pad32 = |ccid: &[u8; 16]| -> [u8; 32] {
+            let mut out = [0u8; 32];
+            out[..16].copy_from_slice(ccid);
+            out
+        };
+
+        // Resolve a local concept ID to a 32-byte padded CCID
+        let resolve = |id: ConceptId| -> Option<[u8; 32]> { ccid_map.get(&id).map(|c| pad32(c)) };
+
+        let mut edges = Vec::new();
+        let mut last_step_action: Option<ConceptId> = None;
+
+        for instr in &self.dna.instructions {
+            // Track Step instructions for Precond/Effect context
+            if let Instruction::Step { action, .. } = instr {
+                last_step_action = Some(*action);
+            }
+
+            match instr {
+                // Triple(S, P, O) → S-[Extends]→O  (generic knowledge assertion)
+                Instruction::Triple { s, o, .. } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*s), resolve(*o)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::Extends,
+                        });
+                    }
+                }
+                // PartOf(part, whole) → part-[PartOf]→whole
+                Instruction::PartOf { part, whole } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*part), resolve(*whole)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::PartOf,
+                        });
+                    }
+                }
+                // Causal(cause, effect) → cause-[Causes]→effect
+                Instruction::Causal { cause, effect } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*cause), resolve(*effect)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::Causes,
+                        });
+                    }
+                }
+                // Located(S, location) → S-[PartOf]→location (spatial containment)
+                Instruction::Located { s, location } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*s), resolve(*location)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::PartOf,
+                        });
+                    }
+                }
+                // Agent(actor, action) → actor-[Enables]→action
+                Instruction::Agent { actor, action } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*actor), resolve(*action)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::Enables,
+                        });
+                    }
+                }
+                // Tool(action, instrument) → action-[DependsOn]→instrument
+                Instruction::Tool { action, instrument } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*action), resolve(*instrument)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::DependsOn,
+                        });
+                    }
+                }
+                // Quality(S, Q) → S-[Qualifies]→Q
+                Instruction::Quality { s, q } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*s), resolve(*q)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::Qualifies,
+                        });
+                    }
+                }
+                // Quantity(S, _, unit) → S-[DependsOn]→unit
+                Instruction::Quantity { s, unit, .. } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*s), resolve(*unit)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::DependsOn,
+                        });
+                    }
+                }
+                // Simulates(S, model) → S-[AnalogyOf]→model
+                Instruction::Simulates { s, model } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*s), resolve(*model)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::AnalogyOf,
+                        });
+                    }
+                }
+                // Condition(cond, result) → cond-[Enables]→result
+                Instruction::Condition { cond, result } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*cond), resolve(*result)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::Enables,
+                        });
+                    }
+                }
+                // Temporal(S, time) → S-[Precedes]→time
+                Instruction::Temporal { s, time } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*s), resolve(*time)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::Precedes,
+                        });
+                    }
+                }
+                // Constraint(source, _, target) → source-[DependsOn]→target
+                Instruction::Constraint { source, target, .. } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*source), resolve(*target)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::DependsOn,
+                        });
+                    }
+                }
+                // Label(key, value) → key-[Qualifies]→value
+                Instruction::Label { key, value } => {
+                    if let (Some(src), Some(tgt)) = (resolve(*key), resolve(*value)) {
+                        edges.push(ConceptEdge {
+                            src,
+                            tgt,
+                            rel: RelationType::Qualifies,
+                        });
+                    }
+                }
+                // Precond(concept) → concept-[Enables]→(next step action)
+                // Since Precond only has 1 field, link to previous Step's action if available
+                Instruction::Precond { concept } => {
+                    if let Some(src) = resolve(*concept) {
+                        // Find the most recent Step instruction's action as target
+                        if let Some(step_action) = last_step_action {
+                            if let Some(tgt) = resolve(step_action) {
+                                edges.push(ConceptEdge {
+                                    src,
+                                    tgt,
+                                    rel: RelationType::Enables,
+                                });
+                            }
+                        }
+                    }
+                }
+                // Effect(concept) → (previous step action)-[Causes]→concept
+                Instruction::Effect { concept } => {
+                    if let Some(tgt) = resolve(*concept) {
+                        if let Some(step_action) = last_step_action {
+                            if let Some(src) = resolve(step_action) {
+                                edges.push(ConceptEdge {
+                                    src,
+                                    tgt,
+                                    rel: RelationType::Causes,
+                                });
+                            }
+                        }
+                    }
+                }
+                _ => {} // Non-relational instructions (Certainty, Difficulty, etc.)
+            }
+        }
+
+        edges
     }
 
     /// Primary concept — the first subject ConceptID in the instruction stream.
@@ -272,19 +509,27 @@ impl KuRuntime {
 
     /// Number of instructions in Core DNA (excluding END).
     pub fn instruction_count(&self) -> usize {
-        self.dna.instructions.iter()
+        self.dna
+            .instructions
+            .iter()
             .filter(|i| !matches!(i, Instruction::End))
             .count()
     }
 
     /// Whether the instruction stream contains any Triple instructions.
     pub fn has_triple(&self) -> bool {
-        self.dna.instructions.iter().any(|i| matches!(i, Instruction::Triple { .. }))
+        self.dna
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::Triple { .. }))
     }
 
     /// Whether the instruction stream contains any Step instructions.
     pub fn has_step(&self) -> bool {
-        self.dna.instructions.iter().any(|i| matches!(i, Instruction::Step { .. }))
+        self.dna
+            .instructions
+            .iter()
+            .any(|i| matches!(i, Instruction::Step { .. }))
     }
 
     /// Wire size in bytes.
@@ -347,7 +592,11 @@ impl KuRuntime {
                     let un = cname(*unit);
                     format!("{} = {} {}", sn, value, un)
                 }
-                Instruction::Step { ord, action, target } => {
+                Instruction::Step {
+                    ord,
+                    action,
+                    target,
+                } => {
                     let an = cname(*action);
                     let tn = cname(*target);
                     format!("Step {}: {} {}", ord, an, tn)
@@ -514,23 +763,35 @@ impl KuRuntime {
                     _ => "Unknown",
                 };
                 Some(ExtractedValue::Text(name.to_string()))
-            },
-            "primary_concept" => self.primary_concept().map(|c| ExtractedValue::Integer(c as i64)),
+            }
+            "primary_concept" => self
+                .primary_concept()
+                .map(|c| ExtractedValue::Integer(c as i64)),
             "certainty" => self.certainty().map(|c| ExtractedValue::Integer(c as i64)),
             "difficulty" => self.difficulty().map(|d| ExtractedValue::Integer(d as i64)),
             "instruction_count" => Some(ExtractedValue::Integer(self.instruction_count() as i64)),
             "has_triple" => Some(ExtractedValue::Bool(self.has_triple())),
             "has_step" => Some(ExtractedValue::Bool(self.has_step())),
             "wire_size" => Some(ExtractedValue::Integer(self.wire_size() as i64)),
-            "concept_table_size" => Some(ExtractedValue::Integer(self.dna.concept_table.len() as i64)),
+            "concept_table_size" => {
+                Some(ExtractedValue::Integer(self.dna.concept_table.len() as i64))
+            }
 
             // Epigenetics fields (direct access)
             "trust_score" => Some(ExtractedValue::Integer(self.epi.trust.trust_score as i64)),
             "confidence" => Some(ExtractedValue::Integer(self.epi.trust.confidence as i64)),
-            "verification_level" => Some(ExtractedValue::Integer(self.epi.trust.verification_level as i64)),
-            "corroboration_count" => Some(ExtractedValue::Integer(self.epi.trust.corroboration_count as i64)),
-            "challenge_count" => Some(ExtractedValue::Integer(self.epi.trust.challenge_count as i64)),
-            "error_susceptibility" => Some(ExtractedValue::Integer(self.epi.trust.error_susceptibility as i64)),
+            "verification_level" => Some(ExtractedValue::Integer(
+                self.epi.trust.verification_level as i64,
+            )),
+            "corroboration_count" => Some(ExtractedValue::Integer(
+                self.epi.trust.corroboration_count as i64,
+            )),
+            "challenge_count" => Some(ExtractedValue::Integer(
+                self.epi.trust.challenge_count as i64,
+            )),
+            "error_susceptibility" => Some(ExtractedValue::Integer(
+                self.epi.trust.error_susceptibility as i64,
+            )),
             "bond_count" => Some(ExtractedValue::Integer(self.bond_count() as i64)),
             "epistemic_status" => {
                 let name = match self.epi.trust.epistemic_status as u8 {
@@ -548,31 +809,52 @@ impl KuRuntime {
                     _ => "Unknown",
                 };
                 Some(ExtractedValue::Text(name.to_string()))
-            },
-            "evidence_type" => Some(ExtractedValue::Integer(self.epi.trust.evidence_type as u8 as i64)),
+            }
+            "evidence_type" => Some(ExtractedValue::Integer(
+                self.epi.trust.evidence_type as u8 as i64,
+            )),
 
             // PoMV signals
-            "metabolic_rate" => Some(ExtractedValue::Integer(self.epi.trust.metabolic_rate as i64)),
-            "prediction_score" => Some(ExtractedValue::Integer(self.epi.trust.prediction_score as i64)),
-            "entropy_at_creation" => Some(ExtractedValue::Integer(self.epi.trust.entropy_at_creation as i64)),
-            "survival_score" => Some(ExtractedValue::Integer(self.epi.trust.survival_score as i64)),
-            "synaptic_centrality" => Some(ExtractedValue::Integer(self.epi.trust.synaptic_centrality as i64)),
+            "metabolic_rate" => Some(ExtractedValue::Integer(
+                self.epi.trust.metabolic_rate as i64,
+            )),
+            "prediction_score" => Some(ExtractedValue::Integer(
+                self.epi.trust.prediction_score as i64,
+            )),
+            "entropy_at_creation" => Some(ExtractedValue::Integer(
+                self.epi.trust.entropy_at_creation as i64,
+            )),
+            "survival_score" => Some(ExtractedValue::Integer(
+                self.epi.trust.survival_score as i64,
+            )),
+            "synaptic_centrality" => Some(ExtractedValue::Integer(
+                self.epi.trust.synaptic_centrality as i64,
+            )),
             "niche_fitness" => Some(ExtractedValue::Integer(self.epi.trust.niche_fitness as i64)),
 
             // Expression fields
-            "text" => self.expr.as_ref().map(|e| ExtractedValue::Text(e.text.clone())),
+            "text" => self
+                .expr
+                .as_ref()
+                .map(|e| ExtractedValue::Text(e.text.clone())),
 
             // Existence checks
             "epi" => Some(ExtractedValue::Bool(true)), // always present in v6
             "expression" => Some(ExtractedValue::Bool(self.expr.is_some())),
 
             // Encoding consensus status
-            "encoding_status" => Some(ExtractedValue::Text(self.encoding_status.name().to_string())),
+            "encoding_status" => Some(ExtractedValue::Text(
+                self.encoding_status.name().to_string(),
+            )),
 
-            "cid" => Some(ExtractedValue::Text(self.cid.iter().map(|b| format!("{:02x}", b)).collect::<String>())),
+            "cid" => Some(ExtractedValue::Text(
+                self.cid
+                    .iter()
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<String>(),
+            )),
 
             // Future: "encoding_time_ms" — requires EncodingConsensus data attachment
-
             _ => None,
         }
     }
@@ -615,8 +897,15 @@ mod tests {
             },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Triple { s: 301, p: 500, o: 1042 },
-                Instruction::Located { s: 301, location: 600 },
+                Instruction::Triple {
+                    s: 301,
+                    p: 500,
+                    o: 1042,
+                },
+                Instruction::Located {
+                    s: 301,
+                    location: 600,
+                },
                 Instruction::Certainty { level: 9000 },
             ],
         }
@@ -649,6 +938,86 @@ mod tests {
         assert!(ids.contains(&500));
         assert!(ids.contains(&1042));
         assert!(ids.contains(&600));
+    }
+
+    #[test]
+    fn test_concept_graph_edges_empty_table() {
+        // No concept_table → no edges
+        let dna = make_test_dna();
+        let runtime = KuRuntime::from_dna(dna).unwrap();
+        assert!(runtime.concept_graph_edges().is_empty());
+    }
+
+    #[test]
+    fn test_concept_graph_edges_with_table() {
+        use crate::core_dna::{ConceptTableEntry, CoreDna, CoreDnaHeader, Instruction};
+        use crate::types::RelationType;
+
+        // Create concept table: local_id → ccid[16]
+        let ccid_water = crate::ccid::ccid(b"wd:Q283");
+        let ccid_hydrogen = crate::ccid::ccid(b"wd:Q556");
+        let ccid_molecule = crate::ccid::ccid(b"wd:Q11369");
+
+        // Use Tier 2+ IDs (≥16512)
+        let water_id: u64 = 16512;
+        let hydrogen_id: u64 = 16513;
+        let molecule_id: u64 = 16514;
+
+        let dna = CoreDna {
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: true,
+            },
+            concept_table: vec![
+                ConceptTableEntry {
+                    local_id: water_id,
+                    ccid: ccid_water,
+                },
+                ConceptTableEntry {
+                    local_id: hydrogen_id,
+                    ccid: ccid_hydrogen,
+                },
+                ConceptTableEntry {
+                    local_id: molecule_id,
+                    ccid: ccid_molecule,
+                },
+            ],
+            instructions: vec![
+                // Water has-part Hydrogen → water-[PartOf reversed? no: part=hydrogen, whole=water]
+                Instruction::PartOf {
+                    part: hydrogen_id,
+                    whole: water_id,
+                },
+                // Water is-a Molecule → Triple(water, isa_predicate, molecule)
+                Instruction::Triple {
+                    s: water_id,
+                    p: 100,
+                    o: molecule_id,
+                },
+                // Certainty (non-relational, should be skipped)
+                Instruction::Certainty { level: 9000 },
+                Instruction::End,
+            ],
+        };
+
+        let wire_bytes = crate::core_dna::encode_core_dna(&dna).unwrap();
+        let runtime = KuRuntime::new(dna, wire_bytes);
+
+        let edges = runtime.concept_graph_edges();
+        assert_eq!(edges.len(), 2, "Expected 2 edges (PartOf + Triple)");
+
+        // Edge 1: hydrogen -[PartOf]→ water
+        assert_eq!(edges[0].rel, RelationType::PartOf);
+        assert_eq!(&edges[0].src[..16], &ccid_hydrogen);
+        assert_eq!(&edges[0].tgt[..16], &ccid_water);
+        // Padding bytes should be zero
+        assert_eq!(&edges[0].src[16..], &[0u8; 16]);
+
+        // Edge 2: water -[Extends]→ molecule (Triple maps to Extends)
+        assert_eq!(edges[1].rel, RelationType::Extends);
+        assert_eq!(&edges[1].src[..16], &ccid_water);
+        assert_eq!(&edges[1].tgt[..16], &ccid_molecule);
     }
 
     #[test]
@@ -692,11 +1061,26 @@ mod tests {
     fn test_extract_field_core_dna() {
         let dna = make_test_dna();
         let runtime = KuRuntime::from_dna(dna).unwrap();
-        assert_eq!(runtime.extract_field("gene_type"), Some(ExtractedValue::Text("Fact".to_string())));
-        assert_eq!(runtime.extract_field("certainty"), Some(ExtractedValue::Integer(9000)));
-        assert_eq!(runtime.extract_field("instruction_count"), Some(ExtractedValue::Integer(3)));
-        assert_eq!(runtime.extract_field("has_triple"), Some(ExtractedValue::Bool(true)));
-        assert_eq!(runtime.extract_field("primary_concept"), Some(ExtractedValue::Integer(301)));
+        assert_eq!(
+            runtime.extract_field("gene_type"),
+            Some(ExtractedValue::Text("Fact".to_string()))
+        );
+        assert_eq!(
+            runtime.extract_field("certainty"),
+            Some(ExtractedValue::Integer(9000))
+        );
+        assert_eq!(
+            runtime.extract_field("instruction_count"),
+            Some(ExtractedValue::Integer(3))
+        );
+        assert_eq!(
+            runtime.extract_field("has_triple"),
+            Some(ExtractedValue::Bool(true))
+        );
+        assert_eq!(
+            runtime.extract_field("primary_concept"),
+            Some(ExtractedValue::Integer(301))
+        );
     }
 
     #[test]
@@ -705,8 +1089,14 @@ mod tests {
         let mut runtime = KuRuntime::from_dna(dna).unwrap();
         runtime.epi.trust.trust_score = 7500;
         runtime.epi.trust.confidence = 8000;
-        assert_eq!(runtime.extract_field("trust_score"), Some(ExtractedValue::Integer(7500)));
-        assert_eq!(runtime.extract_field("confidence"), Some(ExtractedValue::Integer(8000)));
+        assert_eq!(
+            runtime.extract_field("trust_score"),
+            Some(ExtractedValue::Integer(7500))
+        );
+        assert_eq!(
+            runtime.extract_field("confidence"),
+            Some(ExtractedValue::Integer(8000))
+        );
     }
 
     #[test]
@@ -735,35 +1125,238 @@ mod tests {
     /// Build a ConceptDict with known entries for expression tests.
     fn make_test_dict() -> ConceptDict {
         ConceptDict::with_entries(vec![
-            ConceptEntry { id: 301, name: "water".into(), name_vi: Some("nước".into()), name_en: Some("water".into()), tier: 1, category: None },
-            ConceptEntry { id: 500, name: "boils_at".into(), name_vi: Some("sôi_ở".into()), name_en: Some("boils_at".into()), tier: 1, category: None },
-            ConceptEntry { id: 600, name: "laboratory".into(), name_vi: Some("phòng_thí_nghiệm".into()), name_en: Some("laboratory".into()), tier: 1, category: None },
-            ConceptEntry { id: 1042, name: "100_celsius".into(), name_vi: Some("100_độ_C".into()), name_en: Some("100_celsius".into()), tier: 1, category: None },
-            ConceptEntry { id: 200, name: "heat".into(), name_vi: Some("nhiệt".into()), name_en: Some("heat".into()), tier: 1, category: None },
-            ConceptEntry { id: 201, name: "ignite".into(), name_vi: Some("đốt".into()), name_en: Some("ignite".into()), tier: 1, category: None },
-            ConceptEntry { id: 202, name: "burner".into(), name_vi: Some("bếp".into()), name_en: Some("burner".into()), tier: 1, category: None },
-            ConceptEntry { id: 203, name: "boiling".into(), name_vi: Some("sôi".into()), name_en: Some("boiling".into()), tier: 1, category: None },
-            ConceptEntry { id: 204, name: "fuel".into(), name_vi: None, name_en: Some("fuel".into()), tier: 1, category: None },
-            ConceptEntry { id: 205, name: "celsius".into(), name_vi: None, name_en: Some("celsius".into()), tier: 1, category: None },
-            ConceptEntry { id: 206, name: "temperature".into(), name_vi: Some("nhiệt_độ".into()), name_en: Some("temperature".into()), tier: 1, category: None },
-            ConceptEntry { id: 207, name: "pressure".into(), name_vi: Some("áp_suất".into()), name_en: Some("pressure".into()), tier: 1, category: None },
-            ConceptEntry { id: 208, name: "max_temp".into(), name_vi: None, name_en: Some("max_temp".into()), tier: 1, category: None },
-            ConceptEntry { id: 209, name: "molecule".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 210, name: "atom".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 211, name: "red".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 212, name: "blue".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 213, name: "green".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 214, name: "color".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 215, name: "source".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 216, name: "domain".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 217, name: "model_x".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 218, name: "rain".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 219, name: "flood".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 220, name: "student".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 221, name: "study".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 222, name: "cut".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 223, name: "knife".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 300, name: "yesterday".into(), name_vi: Some("hôm_qua".into()), name_en: Some("yesterday".into()), tier: 1, category: None },
+            ConceptEntry {
+                id: 301,
+                name: "water".into(),
+                name_vi: Some("nước".into()),
+                name_en: Some("water".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 500,
+                name: "boils_at".into(),
+                name_vi: Some("sôi_ở".into()),
+                name_en: Some("boils_at".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 600,
+                name: "laboratory".into(),
+                name_vi: Some("phòng_thí_nghiệm".into()),
+                name_en: Some("laboratory".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 1042,
+                name: "100_celsius".into(),
+                name_vi: Some("100_độ_C".into()),
+                name_en: Some("100_celsius".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 200,
+                name: "heat".into(),
+                name_vi: Some("nhiệt".into()),
+                name_en: Some("heat".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 201,
+                name: "ignite".into(),
+                name_vi: Some("đốt".into()),
+                name_en: Some("ignite".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 202,
+                name: "burner".into(),
+                name_vi: Some("bếp".into()),
+                name_en: Some("burner".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 203,
+                name: "boiling".into(),
+                name_vi: Some("sôi".into()),
+                name_en: Some("boiling".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 204,
+                name: "fuel".into(),
+                name_vi: None,
+                name_en: Some("fuel".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 205,
+                name: "celsius".into(),
+                name_vi: None,
+                name_en: Some("celsius".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 206,
+                name: "temperature".into(),
+                name_vi: Some("nhiệt_độ".into()),
+                name_en: Some("temperature".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 207,
+                name: "pressure".into(),
+                name_vi: Some("áp_suất".into()),
+                name_en: Some("pressure".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 208,
+                name: "max_temp".into(),
+                name_vi: None,
+                name_en: Some("max_temp".into()),
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 209,
+                name: "molecule".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 210,
+                name: "atom".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 211,
+                name: "red".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 212,
+                name: "blue".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 213,
+                name: "green".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 214,
+                name: "color".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 215,
+                name: "source".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 216,
+                name: "domain".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 217,
+                name: "model_x".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 218,
+                name: "rain".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 219,
+                name: "flood".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 220,
+                name: "student".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 221,
+                name: "study".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 222,
+                name: "cut".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 223,
+                name: "knife".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 300,
+                name: "yesterday".into(),
+                name_vi: Some("hôm_qua".into()),
+                name_en: Some("yesterday".into()),
+                tier: 1,
+                category: None,
+            },
         ])
     }
 
@@ -836,22 +1429,34 @@ mod tests {
         let expr = runtime.expression("en", &dict);
         // Should contain all concept IDs from the instructions
         let ids: Vec<u64> = expr.concept_names.iter().map(|(id, _)| *id).collect();
-        assert!(ids.contains(&301));  // water
-        assert!(ids.contains(&500));  // boils_at
+        assert!(ids.contains(&301)); // water
+        assert!(ids.contains(&500)); // boils_at
         assert!(ids.contains(&1042)); // 100_celsius
-        assert!(ids.contains(&600));  // laboratory
+        assert!(ids.contains(&600)); // laboratory
     }
 
     #[test]
     fn test_expression_procedure_gene_type() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 3, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 3,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Precond { concept: 204 },       // fuel
-                Instruction::Step { ord: 1, action: 201, target: 202 }, // ignite burner
-                Instruction::Step { ord: 2, action: 200, target: 301 }, // heat water
-                Instruction::Effect { concept: 203 },        // boiling
+                Instruction::Precond { concept: 204 }, // fuel
+                Instruction::Step {
+                    ord: 1,
+                    action: 201,
+                    target: 202,
+                }, // ignite burner
+                Instruction::Step {
+                    ord: 2,
+                    action: 200,
+                    target: 301,
+                }, // heat water
+                Instruction::Effect { concept: 203 },  // boiling
             ],
         };
         let dict = make_test_dict();
@@ -867,15 +1472,17 @@ mod tests {
     #[test]
     fn test_expression_quantity_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
-            instructions: vec![
-                Instruction::Quantity {
-                    s: 206, // temperature
-                    value: NumericValue::U16(100),
-                    unit: 205, // celsius
-                },
-            ],
+            instructions: vec![Instruction::Quantity {
+                s: 206, // temperature
+                value: NumericValue::U16(100),
+                unit: 205, // celsius
+            }],
         };
         let dict = make_test_dict();
         let mut runtime = KuRuntime::from_dna(dna).unwrap();
@@ -886,15 +1493,17 @@ mod tests {
     #[test]
     fn test_expression_tolerance_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
-            instructions: vec![
-                Instruction::Tolerance {
-                    s: 206,
-                    value: NumericValue::F32(99.5),
-                    delta: NumericValue::F32(0.5),
-                },
-            ],
+            instructions: vec![Instruction::Tolerance {
+                s: 206,
+                value: NumericValue::F32(99.5),
+                delta: NumericValue::F32(0.5),
+            }],
         };
         let dict = make_test_dict();
         let mut runtime = KuRuntime::from_dna(dna).unwrap();
@@ -905,15 +1514,17 @@ mod tests {
     #[test]
     fn test_expression_range_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
-            instructions: vec![
-                Instruction::Range {
-                    s: 207, // pressure
-                    min: NumericValue::U16(0),
-                    max: NumericValue::U16(1000),
-                },
-            ],
+            instructions: vec![Instruction::Range {
+                s: 207, // pressure
+                min: NumericValue::U16(0),
+                max: NumericValue::U16(1000),
+            }],
         };
         let dict = make_test_dict();
         let mut runtime = KuRuntime::from_dna(dna).unwrap();
@@ -924,15 +1535,17 @@ mod tests {
     #[test]
     fn test_expression_constraint_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 4, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 4,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
-            instructions: vec![
-                Instruction::Constraint {
-                    source: 206, // temperature
-                    op: ConstraintOp::Le,
-                    target: 208, // max_temp
-                },
-            ],
+            instructions: vec![Instruction::Constraint {
+                source: 206, // temperature
+                op: ConstraintOp::Le,
+                target: 208, // max_temp
+            }],
         };
         let dict = make_test_dict();
         let mut runtime = KuRuntime::from_dna(dna).unwrap();
@@ -943,10 +1556,17 @@ mod tests {
     #[test]
     fn test_expression_partof_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 6, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 6,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::PartOf { part: 210, whole: 209 }, // atom ⊂ molecule
+                Instruction::PartOf {
+                    part: 210,
+                    whole: 209,
+                }, // atom ⊂ molecule
             ],
         };
         let dict = make_test_dict();
@@ -958,10 +1578,17 @@ mod tests {
     #[test]
     fn test_expression_causal_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Causal { cause: 200, effect: 203 }, // heat → boiling
+                Instruction::Causal {
+                    cause: 200,
+                    effect: 203,
+                }, // heat → boiling
             ],
         };
         let dict = make_test_dict();
@@ -973,7 +1600,11 @@ mod tests {
     #[test]
     fn test_expression_temporal_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 2, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 2,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Temporal { s: 203, time: 300 }, // boiling → yesterday
@@ -988,7 +1619,11 @@ mod tests {
     #[test]
     fn test_expression_quality_rendering() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 5, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 5,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Quality { s: 301, q: 211 }, // water: red
@@ -1003,19 +1638,47 @@ mod tests {
     #[test]
     fn test_expression_remaining_instruction_types() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
                 Instruction::Simulates { s: 301, model: 217 },
-                Instruction::Condition { cond: 218, result: 219 },
-                Instruction::Agent { actor: 220, action: 221 },
-                Instruction::Tool { action: 222, instrument: 223 },
-                Instruction::Sequence { items: vec![211, 212, 213] },
-                Instruction::EnumVal { s: 214, values: vec![211, 212, 213] },
-                Instruction::Label { key: 215, value: 216 },
+                Instruction::Condition {
+                    cond: 218,
+                    result: 219,
+                },
+                Instruction::Agent {
+                    actor: 220,
+                    action: 221,
+                },
+                Instruction::Tool {
+                    action: 222,
+                    instrument: 223,
+                },
+                Instruction::Sequence {
+                    items: vec![211, 212, 213],
+                },
+                Instruction::EnumVal {
+                    s: 214,
+                    values: vec![211, 212, 213],
+                },
+                Instruction::Label {
+                    key: 215,
+                    value: 216,
+                },
                 Instruction::Difficulty { level: 3 },
-                Instruction::Affect { v: 500, a: -200, d: 100 },
-                Instruction::Witness { count: 5, proximity: 2 },
+                Instruction::Affect {
+                    v: 500,
+                    a: -200,
+                    d: 100,
+                },
+                Instruction::Witness {
+                    count: 5,
+                    proximity: 2,
+                },
             ],
         };
         let dict = make_test_dict();
@@ -1028,21 +1691,39 @@ mod tests {
         assert!(text.contains("student → study"), "Agent: {}", text);
         assert!(text.contains("cut USING knife"), "Tool: {}", text);
         assert!(text.contains("[red, blue, green]"), "Sequence: {}", text);
-        assert!(text.contains("color ∈ {red, blue, green}"), "EnumVal: {}", text);
+        assert!(
+            text.contains("color ∈ {red, blue, green}"),
+            "EnumVal: {}",
+            text
+        );
         assert!(text.contains("source: domain"), "Label: {}", text);
         assert!(text.contains("Difficulty: 3"), "Difficulty: {}", text);
-        assert!(text.contains("Affect(V=500, A=-200, D=100)"), "Affect: {}", text);
-        assert!(text.contains("Witness(count=5, proximity=2)"), "Witness: {}", text);
+        assert!(
+            text.contains("Affect(V=500, A=-200, D=100)"),
+            "Affect: {}",
+            text
+        );
+        assert!(
+            text.contains("Witness(count=5, proximity=2)"),
+            "Witness: {}",
+            text
+        );
     }
 
     #[test]
     fn test_expression_unknown_concepts_show_question_mark() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
-            instructions: vec![
-                Instruction::Triple { s: 99999, p: 99998, o: 99997 },
-            ],
+            instructions: vec![Instruction::Triple {
+                s: 99999,
+                p: 99998,
+                o: 99997,
+            }],
         };
         let dict = make_test_dict(); // no entries for 99999/99998/99997
         let mut runtime = KuRuntime::from_dna(dna).unwrap();
@@ -1053,7 +1734,11 @@ mod tests {
     #[test]
     fn test_expression_empty_instructions() {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![],
         };
@@ -1134,7 +1819,7 @@ mod tests {
 
     #[test]
     fn test_cid_bytes_usable_as_pomv_key() {
-        use crate::pomv_runtime::{PomvRuntime, PomvConfig};
+        use crate::pomv_runtime::{PomvConfig, PomvRuntime};
 
         let dna = make_test_dna();
         let rt = KuRuntime::from_dna(dna).unwrap();

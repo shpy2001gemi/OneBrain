@@ -129,8 +129,14 @@ impl VacuumFilter {
         for i in 0..num_words {
             let offset = 8 + i * 8;
             let word = u64::from_be_bytes([
-                bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3],
-                bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7],
+                bytes[offset],
+                bytes[offset + 1],
+                bytes[offset + 2],
+                bytes[offset + 3],
+                bytes[offset + 4],
+                bytes[offset + 5],
+                bytes[offset + 6],
+                bytes[offset + 7],
             ]);
             bits.push(word);
         }
@@ -183,7 +189,10 @@ impl VacuumFilter {
         // Use different sections of the hash for each hash function
         let offset = (index * 4) % 28;
         let val = u32::from_be_bytes([
-            hash[offset], hash[offset + 1], hash[offset + 2], hash[offset + 3],
+            hash[offset],
+            hash[offset + 1],
+            hash[offset + 2],
+            hash[offset + 3],
         ]);
         (val as usize) % self.num_bits
     }

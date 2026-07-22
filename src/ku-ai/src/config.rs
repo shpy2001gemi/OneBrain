@@ -196,10 +196,8 @@ mod tests {
     #[test]
     fn test_toml_roundtrip() {
         let config = AiConfig::default();
-        let toml_str =
-            toml::to_string_pretty(&config).expect("serialization should succeed");
-        let back: AiConfig =
-            toml::from_str(&toml_str).expect("deserialization should succeed");
+        let toml_str = toml::to_string_pretty(&config).expect("serialization should succeed");
+        let back: AiConfig = toml::from_str(&toml_str).expect("deserialization should succeed");
         assert_eq!(back.backend, "ollama");
         assert_eq!(back.ollama.timeout_secs, 120);
         assert!((back.encoding.temperature - 0.1).abs() < f32::EPSILON);

@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
-use crate::identity::NodeId;
 use crate::constants::*;
+use crate::identity::NodeId;
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -71,7 +71,8 @@ impl PheromoneTable {
     ///
     /// Called when a query via `next_hop` for `topic` was successful.
     pub fn reinforce(&mut self, topic: &TopicId, via: &NodeId, success: bool) {
-        let entry = self.entries
+        let entry = self
+            .entries
             .entry(*topic)
             .or_insert_with(|| PheromoneEntry {
                 topic_id: *topic,
@@ -101,7 +102,9 @@ impl PheromoneTable {
         }
 
         // Sort by strength descending
-        entry.next_hops.sort_by(|a, b| b.strength.partial_cmp(&a.strength).unwrap());
+        entry
+            .next_hops
+            .sort_by(|a, b| b.strength.partial_cmp(&a.strength).unwrap());
 
         // Limit next_hops to top 10
         entry.next_hops.truncate(10);
@@ -136,7 +139,8 @@ impl PheromoneTable {
 
     /// Get the best next-hop for a topic.
     pub fn best_next_hop(&self, topic: &TopicId) -> Option<NodeId> {
-        self.entries.get(topic)
+        self.entries
+            .get(topic)
             .and_then(|e| e.next_hops.first())
             .map(|h| h.node_id)
     }
@@ -145,9 +149,11 @@ impl PheromoneTable {
     ///
     /// Used for query routing: exclude nodes that have already failed.
     pub fn route_query(&self, topic: &TopicId, exclude: &[NodeId]) -> Vec<NodeId> {
-        self.entries.get(topic)
+        self.entries
+            .get(topic)
             .map(|e| {
-                e.next_hops.iter()
+                e.next_hops
+                    .iter()
                     .filter(|h| !exclude.contains(&h.node_id))
                     .filter(|h| h.strength >= 0.05)
                     .map(|h| h.node_id)

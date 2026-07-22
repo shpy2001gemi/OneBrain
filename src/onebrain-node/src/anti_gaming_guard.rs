@@ -4,8 +4,7 @@
 //! rate-limiting KU creation and enforcing quality gates before storage.
 
 use ku_core::obt_anti_gaming::{
-    RateLimitTracker, gate_1_min_size,
-    MIN_KU_RAW_BYTES, MIN_GENE_COUNT,
+    gate_1_min_size, RateLimitTracker, MIN_GENE_COUNT, MIN_KU_RAW_BYTES,
 };
 use ku_core::obt_constants::NodeTier;
 

@@ -4,7 +4,7 @@
 //! of internal data for display purposes. All interfaces use these
 //! instead of accessing internal types directly.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Summary of a KU for list views.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -248,6 +248,10 @@ pub struct WalletInfo {
     pub total_earned: u64,
     /// Total spent (informational, from GCounter).
     pub total_spent: u64,
+    /// Amount currently staked (milliOBT).
+    pub staked: u64,
+    /// Amount pending unstake (milliOBT).
+    pub pending_unstake: u64,
     /// Earnings by stream.
     pub streams: EarningsStreams,
     /// Rate limit info.
@@ -323,7 +327,6 @@ pub struct ImportResult {
     /// Number of errors.
     pub errors: usize,
 }
-
 
 /// Blob storage stats.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -566,6 +569,14 @@ pub struct AnalyticsSnapshot {
     pub kus_last_7d: usize,
     /// Top gene type.
     pub top_gene_type: String,
+    /// Verification breakdown: SELF-verified only.
+    pub verified_self: usize,
+    /// Verification breakdown: PARTIAL (1-2 peers).
+    pub verified_partial: usize,
+    /// Verification breakdown: FULL consensus.
+    pub verified_full: usize,
+    /// Verification rate (% of KUs with FULL status).
+    pub verification_rate: f64,
 }
 
 // ── Tier C — Domain Taxonomy ───────────────────────────────────────────
@@ -581,4 +592,34 @@ pub struct DomainInfo {
     pub avg_pomv: f64,
     /// Example KU CIDs.
     pub example_cids: Vec<String>,
+}
+
+// ── Tier C — Search Suggest ────────────────────────────────────────────
+
+/// Search autocomplete suggestions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchSuggestions {
+    /// Matching tag names.
+    pub tags: Vec<String>,
+    /// Matching gene types.
+    pub gene_types: Vec<String>,
+    /// Matching KU previews.
+    pub kus: Vec<KuListItem>,
+}
+
+// ── Drafts ──────────────────────────────────────────────────────────────
+
+/// A draft knowledge entry (not yet encoded/broadcast).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Draft {
+    /// Unique draft ID.
+    pub id: String,
+    /// Draft title (optional, auto-generated from first line).
+    pub title: String,
+    /// Full draft text content.
+    pub text: String,
+    /// Created timestamp (epoch seconds).
+    pub created: u64,
+    /// Last updated timestamp (epoch seconds).
+    pub updated: u64,
 }

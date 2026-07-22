@@ -84,7 +84,8 @@ impl QueryCache {
     /// Compute cache key from a KQL string.
     fn cache_key(kql: &str) -> CacheKey {
         // Normalize: lowercase + collapse whitespace
-        let normalized: String = kql.to_lowercase()
+        let normalized: String = kql
+            .to_lowercase()
             .split_whitespace()
             .collect::<Vec<&str>>()
             .join(" ");
@@ -139,14 +140,17 @@ impl QueryCache {
         // Remove old entry if exists
         self.access_order.retain(|k| k != &key);
 
-        self.entries.insert(key, CachedResult {
-            kql,
-            results_payload,
-            result_count,
-            cached_at: Instant::now(),
-            ttl: self.default_ttl,
-            hit_count: 0,
-        });
+        self.entries.insert(
+            key,
+            CachedResult {
+                kql,
+                results_payload,
+                result_count,
+                cached_at: Instant::now(),
+                ttl: self.default_ttl,
+                hit_count: 0,
+            },
+        );
         self.access_order.push(key);
     }
 
@@ -168,14 +172,17 @@ impl QueryCache {
             }
         }
         self.access_order.retain(|k| k != &key);
-        self.entries.insert(key, CachedResult {
-            kql,
-            results_payload,
-            result_count,
-            cached_at: Instant::now(),
-            ttl,
-            hit_count: 0,
-        });
+        self.entries.insert(
+            key,
+            CachedResult {
+                kql,
+                results_payload,
+                result_count,
+                cached_at: Instant::now(),
+                ttl,
+                hit_count: 0,
+            },
+        );
         self.access_order.push(key);
     }
 
@@ -188,7 +195,9 @@ impl QueryCache {
 
     /// Remove all expired entries.
     pub fn cleanup_expired(&mut self) -> usize {
-        let expired_keys: Vec<CacheKey> = self.entries.iter()
+        let expired_keys: Vec<CacheKey> = self
+            .entries
+            .iter()
             .filter(|(_, v)| v.is_expired())
             .map(|(&k, _)| k)
             .collect();
@@ -219,13 +228,21 @@ impl QueryCache {
     /// Cache hit rate as a percentage [0.0, 100.0].
     pub fn hit_rate(&self) -> f64 {
         let total = self.total_hits + self.total_misses;
-        if total == 0 { 0.0 } else { (self.total_hits as f64 / total as f64) * 100.0 }
+        if total == 0 {
+            0.0
+        } else {
+            (self.total_hits as f64 / total as f64) * 100.0
+        }
     }
 
     /// Total hits.
-    pub fn total_hits(&self) -> u64 { self.total_hits }
+    pub fn total_hits(&self) -> u64 {
+        self.total_hits
+    }
     /// Total misses.
-    pub fn total_misses(&self) -> u64 { self.total_misses }
+    pub fn total_misses(&self) -> u64 {
+        self.total_misses
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -285,7 +302,10 @@ mod tests {
         // Wait for expiration
         std::thread::sleep(Duration::from_millis(10));
 
-        assert!(cache.get("test").is_none(), "Expired entry should return None");
+        assert!(
+            cache.get("test").is_none(),
+            "Expired entry should return None"
+        );
     }
 
     #[test]
@@ -309,7 +329,11 @@ mod tests {
         assert_eq!(cache.total_hits(), 2);
         assert_eq!(cache.total_misses(), 1);
         let rate = cache.hit_rate();
-        assert!((rate - 66.67).abs() < 1.0, "Hit rate should be ~66.7%, got {}", rate);
+        assert!(
+            (rate - 66.67).abs() < 1.0,
+            "Hit rate should be ~66.7%, got {}",
+            rate
+        );
     }
 
     #[test]

@@ -5,8 +5,8 @@
 //! Tier 3 (Episodic): Searchable conversation summaries
 //! Tier 4 (Archival): Full history (on-disk)
 
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use serde::{Serialize, Deserialize};
 
 /// Token budget allocation across context tiers.
 #[derive(Debug, Clone)]
@@ -26,8 +26,11 @@ pub struct ContextBudget {
 impl ContextBudget {
     /// Total tokens across all tiers.
     pub fn total(&self) -> usize {
-        self.system_prompt + self.core_memory + self.rag_results
-            + self.conversation + self.response_budget
+        self.system_prompt
+            + self.core_memory
+            + self.rag_results
+            + self.conversation
+            + self.response_budget
     }
 
     /// Default budget for 8K context window.
@@ -158,13 +161,17 @@ impl ContextManager {
 
     /// Get recent conversation as ChatMessage list.
     pub fn recent_messages(&self, max: usize) -> Vec<ku_ai::types::ChatMessage> {
-        self.history.iter().rev().take(max).rev().map(|m| {
-            match m.role {
+        self.history
+            .iter()
+            .rev()
+            .take(max)
+            .rev()
+            .map(|m| match m.role {
                 MessageRole::User => ku_ai::types::ChatMessage::user(&m.content),
                 MessageRole::Assistant => ku_ai::types::ChatMessage::assistant(&m.content),
                 MessageRole::System => ku_ai::types::ChatMessage::system(&m.content),
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     /// Get history length.

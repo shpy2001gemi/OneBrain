@@ -2,7 +2,7 @@
 //!
 //! Phase 2 will add embedding-based semantic similarity.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Result of deduplication check.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -10,9 +10,15 @@ pub enum DeduplicationResult {
     /// New knowledge, no duplicates found.
     New,
     /// Very similar to existing KU.
-    Duplicate { existing_cid: String, similarity: f32 },
+    Duplicate {
+        existing_cid: String,
+        similarity: f32,
+    },
     /// Partially overlapping with existing KU.
-    Overlap { existing_cid: String, similarity: f32 },
+    Overlap {
+        existing_cid: String,
+        similarity: f32,
+    },
 }
 
 /// Deduplicates knowledge using Jaccard word overlap.
@@ -52,10 +58,8 @@ impl KnowledgeDeduplicator {
         let mut best_cid = String::new();
 
         for (cid, known) in &self.known_texts {
-            let known_words: std::collections::HashSet<&str> = known
-                .split_whitespace()
-                .filter(|w| w.len() > 2)
-                .collect();
+            let known_words: std::collections::HashSet<&str> =
+                known.split_whitespace().filter(|w| w.len() > 2).collect();
 
             if known_words.is_empty() {
                 continue;
@@ -88,7 +92,9 @@ impl KnowledgeDeduplicator {
 }
 
 impl Default for KnowledgeDeduplicator {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -109,7 +115,10 @@ mod tests {
         dedup.register("cid1".into(), "Water boils at 100 degrees Celsius".into());
         // Almost identical text
         let result = dedup.check("Water boils at 100 degrees Celsius exactly");
-        assert!(matches!(result, DeduplicationResult::Duplicate { .. } | DeduplicationResult::Overlap { .. }));
+        assert!(matches!(
+            result,
+            DeduplicationResult::Duplicate { .. } | DeduplicationResult::Overlap { .. }
+        ));
     }
 
     #[test]
@@ -123,13 +132,19 @@ mod tests {
     #[test]
     fn test_partial_overlap() {
         let mut dedup = KnowledgeDeduplicator::new();
-        dedup.register("cid1".into(), "Water boils at 100 degrees Celsius on Earth".into());
+        dedup.register(
+            "cid1".into(),
+            "Water boils at 100 degrees Celsius on Earth".into(),
+        );
         // Shares some words but adds different context
         let result = dedup.check("Water freezes at zero degrees Celsius on Earth");
         // "Water", "degrees", "Celsius", "Earth" overlap out of the combined set
-        assert!(
-            matches!(result, DeduplicationResult::Overlap { .. } | DeduplicationResult::Duplicate { .. } | DeduplicationResult::New),
-        );
+        assert!(matches!(
+            result,
+            DeduplicationResult::Overlap { .. }
+                | DeduplicationResult::Duplicate { .. }
+                | DeduplicationResult::New
+        ),);
     }
 
     #[test]

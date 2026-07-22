@@ -3,8 +3,8 @@
 //! Tracks conversation mode, encoded KUs, and query counts
 //! across a single user interaction session.
 
-use serde::{Serialize, Deserialize};
 use crate::intent::UserIntent;
+use serde::{Deserialize, Serialize};
 
 /// Unique session identifier.
 pub type SessionId = String;
@@ -49,7 +49,9 @@ impl MediatorSession {
         self.mode = match intent {
             UserIntent::Encode { .. } => ConversationMode::Encoding,
             UserIntent::Retrieve { .. } => ConversationMode::Retrieval,
-            UserIntent::Connect { .. } | UserIntent::GraphQuery { .. } => ConversationMode::GraphExplore,
+            UserIntent::Connect { .. } | UserIntent::GraphQuery { .. } => {
+                ConversationMode::GraphExplore
+            }
             UserIntent::Synthesize { .. } => ConversationMode::Synthesis,
             UserIntent::FreeChat | UserIntent::Ambiguous => ConversationMode::FreeChat,
         };
@@ -73,7 +75,9 @@ impl MediatorSession {
 }
 
 impl Default for MediatorSession {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 fn generate_session_id() -> String {
@@ -120,21 +124,28 @@ mod tests {
     #[test]
     fn test_update_mode_retrieve() {
         let mut session = MediatorSession::new();
-        session.update_mode(&UserIntent::Retrieve { query: "test".into() });
+        session.update_mode(&UserIntent::Retrieve {
+            query: "test".into(),
+        });
         assert_eq!(session.mode, ConversationMode::Retrieval);
     }
 
     #[test]
     fn test_update_mode_graph() {
         let mut session = MediatorSession::new();
-        session.update_mode(&UserIntent::GraphQuery { nl_query: "test".into() });
+        session.update_mode(&UserIntent::GraphQuery {
+            nl_query: "test".into(),
+        });
         assert_eq!(session.mode, ConversationMode::GraphExplore);
     }
 
     #[test]
     fn test_update_mode_connect() {
         let mut session = MediatorSession::new();
-        session.update_mode(&UserIntent::Connect { source: "a".into(), target: Some("b".into()) });
+        session.update_mode(&UserIntent::Connect {
+            source: "a".into(),
+            target: Some("b".into()),
+        });
         assert_eq!(session.mode, ConversationMode::GraphExplore);
     }
 

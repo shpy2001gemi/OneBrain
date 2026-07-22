@@ -1,4 +1,4 @@
-import { Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { WifiOff, RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 type Props = {
@@ -8,7 +8,7 @@ type Props = {
   onRetry: () => void;
 };
 
-export function ConnectionBar({ status, lastPing, retryCount, onRetry }: Props) {
+export function ConnectionBar({ status, retryCount, onRetry }: Props) {
   const { t } = useTranslation();
 
   if (status === 'connected') return null;

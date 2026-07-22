@@ -85,7 +85,7 @@ fn tv06_network_address_ipv6() {
     let bytes = addr.encode();
     assert_eq!(bytes.len(), 19); // 1 type + 16 addr + 2 port
     assert_eq!(bytes[0], 0x06); // IPv6 type
-    // First 4 bytes of IPv6 addr: 2001:0db8
+                                // First 4 bytes of IPv6 addr: 2001:0db8
     assert_eq!(bytes[1..5], [0x20, 0x01, 0x0D, 0xB8]);
     // Last 2 bytes of IPv6 addr: 0003
     assert_eq!(bytes[15..17], [0x00, 0x03]);
@@ -132,14 +132,29 @@ fn tv08_node_id_verification() {
     let proof = generate_node_id(&pubkey, PUZZLE_C_SMALL);
 
     // Verify succeeds with correct params
-    assert!(verify_node_id(&pubkey, proof.nonce, &proof.node_id, PUZZLE_C_SMALL));
+    assert!(verify_node_id(
+        &pubkey,
+        proof.nonce,
+        &proof.node_id,
+        PUZZLE_C_SMALL
+    ));
 
     // Verify fails with wrong pubkey
     let wrong_pubkey = [0xCC; 32];
-    assert!(!verify_node_id(&wrong_pubkey, proof.nonce, &proof.node_id, PUZZLE_C_SMALL));
+    assert!(!verify_node_id(
+        &wrong_pubkey,
+        proof.nonce,
+        &proof.node_id,
+        PUZZLE_C_SMALL
+    ));
 
     // Verify fails with wrong nonce
-    assert!(!verify_node_id(&pubkey, proof.nonce + 1, &proof.node_id, PUZZLE_C_SMALL));
+    assert!(!verify_node_id(
+        &pubkey,
+        proof.nonce + 1,
+        &proof.node_id,
+        PUZZLE_C_SMALL
+    ));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -151,10 +166,18 @@ fn tv09_ku_wire_magic_version() {
     use ku_core::*;
 
     let ku = KnowledgeUnit {
-        codons: vec![Codon { concept_id: 1, role: RoleId::Agent, qualifiers: vec![] }],
+        codons: vec![Codon {
+            concept_id: 1,
+            role: RoleId::Agent,
+            qualifiers: vec![],
+        }],
         bonds: vec![],
         gene: Gene::Fact {
-            triples: vec![Triple { subject: 1, predicate: 2, object: 3 }],
+            triples: vec![Triple {
+                subject: 1,
+                predicate: 2,
+                object: 3,
+            }],
             certainty: 5000,
             evidence: vec![],
         },
@@ -173,15 +196,20 @@ fn tv09_ku_wire_magic_version() {
     // Version: 0x04
     assert_eq!(wire[2], 0x04, "Version = 4");
     // Flags byte present
-    assert!(wire.len() >= 7, "Min wire size: 2 magic + 1 ver + 1 flags + 2 len + 4 crc = 10");
+    assert!(
+        wire.len() >= 7,
+        "Min wire size: 2 magic + 1 ver + 1 flags + 2 len + 4 crc = 10"
+    );
 
     // Last 4 bytes are CRC-32
     let crc_start = wire.len() - 4;
     let payload_end = crc_start;
     let computed_crc = crc32fast::hash(&wire[..payload_end]);
     let stored_crc = u32::from_be_bytes([
-        wire[crc_start], wire[crc_start + 1],
-        wire[crc_start + 2], wire[crc_start + 3],
+        wire[crc_start],
+        wire[crc_start + 1],
+        wire[crc_start + 2],
+        wire[crc_start + 3],
     ]);
     assert_eq!(computed_crc, stored_crc, "CRC-32 must match");
 }
@@ -241,8 +269,16 @@ fn tv11_header_roundtrip_all_layers() {
         };
         let encoded = header.encode();
         let decoded = MessageHeader::decode(&encoded).unwrap();
-        assert_eq!(decoded.msg_type, msg_type, "Type mismatch for {:?}", msg_type);
-        assert_eq!(decoded.payload_length, payload_len, "Length mismatch for {:?}", msg_type);
+        assert_eq!(
+            decoded.msg_type, msg_type,
+            "Type mismatch for {:?}",
+            msg_type
+        );
+        assert_eq!(
+            decoded.payload_length, payload_len,
+            "Length mismatch for {:?}",
+            msg_type
+        );
     }
 }
 

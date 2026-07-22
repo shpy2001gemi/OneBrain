@@ -22,11 +22,7 @@ use crate::error::AiError;
 pub fn create_backend(config: &AiConfig) -> Result<Box<dyn crate::traits::ModelBackend>, AiError> {
     match config.backend.as_str() {
         "ollama" => {
-            let llm = config
-                .models
-                .active_llm
-                .as_deref()
-                .unwrap_or("qwen2.5:3b");
+            let llm = config.models.active_llm.as_deref().unwrap_or("qwen2.5:3b");
             let embed = config
                 .models
                 .active_embedding

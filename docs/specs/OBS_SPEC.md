@@ -1,6 +1,6 @@
 # OBS — OneBrain Storage Layer (Pillar 8)
 
-> Technical Specification v1.1 | Last updated: 2026-07-11
+> Technical Specification v1.2 | Last updated: 2026-07-19
 >
 > *v7 note: BlobStore (media attachments) added. ConceptDict → ConceptRegistry migration. ConceptRegistry distribution via OBP planned.*
 
@@ -16,6 +16,9 @@ OneBrain Storage (OBS) is the persistent, distributed, cache-optimized storage s
 |-----------------|-------|--------|
 | KU Core DNA wire bytes | `kus` table (redb) | Raw binary, 16–172 bytes |
 | KU Epigenetics | `epigenetics` table (redb) | JSON with `#[serde(default)]` |
+| ★ Trust score index | `index_trust` table (redb) | trust_score(2B BE) + CID(32B) → empty |
+| ★ Concept ID index | `index_concept` table (redb) | concept_id(8B BE) + CID(32B) → empty |
+| ★ CCID index | `index_ccid` table (redb) | CCID(16B) + CID(32B) → empty — **O(1) concept→KU lookup** |
 | Graph bonds & edge indexes | 6 tables in `.graph.redb` | Composite byte keys + 9-byte BondMeta |
 | Concept dictionary | 3 tables in concept `.redb` | JSON ConceptEntry | **Deprecated in v7** → ConceptRegistry |
 | ★ Blob content | filesystem (v7) | Raw binary media files |

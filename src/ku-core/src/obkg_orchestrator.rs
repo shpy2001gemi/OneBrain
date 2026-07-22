@@ -182,12 +182,16 @@ impl ObkgOrchestrator {
 
         // Read bonds from the KU's epigenetic layer
         let bonds: Vec<_> = if let Some(ku) = self.lifecycle.get(cid) {
-            ku.epi.bonds.iter().map(|b| {
-                let mut target = [0u8; 32];
-                let len = b.target_cid.len().min(32);
-                target[..len].copy_from_slice(&b.target_cid[..len]);
-                (target, b.relation, b.weight, b.creator)
-            }).collect()
+            ku.epi
+                .bonds
+                .iter()
+                .map(|b| {
+                    let mut target = [0u8; 32];
+                    let len = b.target_cid.len().min(32);
+                    target[..len].copy_from_slice(&b.target_cid[..len]);
+                    (target, b.relation, b.weight, b.creator)
+                })
+                .collect()
         } else {
             return events;
         };
@@ -229,18 +233,16 @@ impl ObkgOrchestrator {
     /// 3. Runs STDP on co-access patterns (placeholder: empty for now)
     /// 4. Conditionally runs a dream cycle
     /// 5. Logs all generated events
-    pub fn tick(
-        &mut self,
-        now: u64,
-        niche_stats: &HashMap<NicheId, NicheStats>,
-    ) -> ObkgTickResult {
+    pub fn tick(&mut self, now: u64, niche_stats: &HashMap<NicheId, NicheStats>) -> ObkgTickResult {
         self.tick_count += 1;
 
         // 1. Lifecycle tick — PoMV scores + epistemic transitions
         let pomv_scores = self.lifecycle.tick(now, niche_stats);
 
         // 2. Decay pass on bond snapshot
-        let decay_bonds: Vec<_> = self.bond_snapshot.iter()
+        let decay_bonds: Vec<_> = self
+            .bond_snapshot
+            .iter()
             .map(|((src, tgt, _rel), meta)| {
                 let bond = crate::types::Bond {
                     target_cid: tgt.to_vec(),
@@ -279,8 +281,8 @@ impl ObkgOrchestrator {
             && self.tick_count % self.config.dream_interval_ticks == 0
         {
             let report = self.dream_engine.run_dream_cycle(
-                &[],  // access log — callers provide via run_dream_with_data()
-                &[],  // entities
+                &[], // access log — callers provide via run_dream_with_data()
+                &[], // entities
                 &self.relation_table,
                 &mut self.bond_snapshot,
                 now,
@@ -308,8 +310,17 @@ impl ObkgOrchestrator {
     /// Apply a single decay event to the bond snapshot.
     fn apply_decay_event(&mut self, event: &BondEvent) {
         match event {
-            BondEvent::Weakened { source_cid, target_cid, relation, new_weight, .. } => {
-                if let Some(meta) = self.bond_snapshot.get_mut(&(*source_cid, *target_cid, *relation)) {
+            BondEvent::Weakened {
+                source_cid,
+                target_cid,
+                relation,
+                new_weight,
+                ..
+            } => {
+                if let Some(meta) =
+                    self.bond_snapshot
+                        .get_mut(&(*source_cid, *target_cid, *relation))
+                {
                     meta.weight = *new_weight;
                     if *new_weight == 0 {
                         meta.state = EdgeState::Deprecated;
@@ -318,8 +329,17 @@ impl ObkgOrchestrator {
                     }
                 }
             }
-            BondEvent::StateChanged { source_cid, target_cid, relation, new_state, .. } => {
-                if let Some(meta) = self.bond_snapshot.get_mut(&(*source_cid, *target_cid, *relation)) {
+            BondEvent::StateChanged {
+                source_cid,
+                target_cid,
+                relation,
+                new_state,
+                ..
+            } => {
+                if let Some(meta) =
+                    self.bond_snapshot
+                        .get_mut(&(*source_cid, *target_cid, *relation))
+                {
                     meta.state = *new_state;
                 }
             }
@@ -392,16 +412,13 @@ impl ObkgOrchestrator {
         // Find removed CIDs
         let cids_after: std::collections::HashSet<[u8; 32]> =
             self.lifecycle.kus.keys().copied().collect();
-        let removed_cids: Vec<[u8; 32]> = cids_before
-            .difference(&cids_after)
-            .copied()
-            .collect();
+        let removed_cids: Vec<[u8; 32]> = cids_before.difference(&cids_after).copied().collect();
 
         // Clean orphaned bonds
-        let orphaned_keys: Vec<_> = self.bond_snapshot.keys()
-            .filter(|(src, tgt, _)| {
-                !cids_after.contains(src) || !cids_after.contains(tgt)
-            })
+        let orphaned_keys: Vec<_> = self
+            .bond_snapshot
+            .keys()
+            .filter(|(src, tgt, _)| !cids_after.contains(src) || !cids_after.contains(tgt))
             .cloned()
             .collect();
         let orphaned_bonds_cleaned = orphaned_keys.len();
@@ -495,10 +512,18 @@ mod tests {
 
     fn make_ku(concept_id: u64, gene_type: u8) -> KuRuntime {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Triple { s: concept_id, p: 133, o: 132 },
+                Instruction::Triple {
+                    s: concept_id,
+                    p: 133,
+                    o: 132,
+                },
                 Instruction::Certainty { level: 9000 },
             ],
         };
@@ -509,12 +534,15 @@ mod tests {
 
     fn default_niche_stats() -> HashMap<NicheId, NicheStats> {
         let mut m = HashMap::new();
-        m.insert(1u64, NicheStats {
-            population: 10,
-            total_metabolic_rate: 5.0,
-            avg_metabolic_rate: 0.5,
-            source_diversity: 3,
-        });
+        m.insert(
+            1u64,
+            NicheStats {
+                population: 10,
+                total_metabolic_rate: 5.0,
+                avg_metabolic_rate: 0.5,
+                source_diversity: 3,
+            },
+        );
         m
     }
 
@@ -585,7 +613,11 @@ mod tests {
         let cid = orch.ingest(ku, vec![1], 0.5, 0.3, 1000);
 
         for i in 0..5 {
-            orch.record_event(&cid, MetabolismEvent::Retrieval { dwell_ms: 500 }, 1100 + i * 100);
+            orch.record_event(
+                &cid,
+                MetabolismEvent::Retrieval { dwell_ms: 500 },
+                1100 + i * 100,
+            );
         }
 
         let stats = default_niche_stats();

@@ -4,10 +4,10 @@
 //! These are extracted from the ku-demo binary into proper #[test] functions.
 
 use ku_core::*;
-use ku_net::identity::*;
-use ku_net::messages::*;
-use ku_net::membership::*;
 use ku_net::discovery::*;
+use ku_net::identity::*;
+use ku_net::membership::*;
+use ku_net::messages::*;
 use std::time::Instant;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -17,19 +17,38 @@ use std::time::Instant;
 fn create_test_ku() -> KnowledgeUnit {
     KnowledgeUnit {
         codons: vec![
-            Codon { concept_id: 128, role: RoleId::Agent, qualifiers: vec![] },
-            Codon { concept_id: 133, role: RoleId::Quality, qualifiers: vec![] },
             Codon {
-                concept_id: 132, role: RoleId::Quantity,
+                concept_id: 128,
+                role: RoleId::Agent,
+                qualifiers: vec![],
+            },
+            Codon {
+                concept_id: 133,
+                role: RoleId::Quality,
+                qualifiers: vec![],
+            },
+            Codon {
+                concept_id: 132,
+                role: RoleId::Quantity,
                 qualifiers: vec![
-                    Qualifier { key: "unit".into(), value: QualifierValue::Text("CELSIUS".into()) },
-                    Qualifier { key: "val".into(), value: QualifierValue::Text("100".into()) },
+                    Qualifier {
+                        key: "unit".into(),
+                        value: QualifierValue::Text("CELSIUS".into()),
+                    },
+                    Qualifier {
+                        key: "val".into(),
+                        value: QualifierValue::Text("100".into()),
+                    },
                 ],
             },
         ],
         bonds: vec![],
         gene: Gene::Fact {
-            triples: vec![Triple { subject: 128, predicate: 133, object: 132 }],
+            triples: vec![Triple {
+                subject: 128,
+                predicate: 133,
+                object: 132,
+            }],
             certainty: 9500,
             evidence: vec![],
         },
@@ -91,7 +110,9 @@ fn test_e2e_3_nodes_ku_transfer() {
     frame.extend_from_slice(&wire_bytes);
 
     // Step 3: Node B receives, decodes
-    let recv_header = MessageHeader::decode(&[frame[0], frame[1], frame[2], frame[3], frame[4], frame[5]]).unwrap();
+    let recv_header =
+        MessageHeader::decode(&[frame[0], frame[1], frame[2], frame[3], frame[4], frame[5]])
+            .unwrap();
     assert_eq!(recv_header.msg_type, MessageType::KuPush);
     assert_eq!(recv_header.payload_length, wire_bytes.len() as u32);
 
@@ -137,7 +158,10 @@ fn test_e2e_bootstrap_to_connected() {
 
     // Start: Social layer
     let _layer = bootstrap.start();
-    assert!(matches!(bootstrap.state, BootstrapState::Discovering { .. }));
+    assert!(matches!(
+        bootstrap.state,
+        BootstrapState::Discovering { .. }
+    ));
 
     // Fail through layers 1-5
     for _ in 0..5 {
@@ -145,14 +169,12 @@ fn test_e2e_bootstrap_to_connected() {
     }
 
     // Layer 6 (Hardcoded) discovers peers
-    bootstrap.report_discovered(vec![
-        DiscoveredPeer {
-            node_id: Some(proof_b.node_id),
-            address: addr_b,
-            source: BootstrapLayer::Hardcoded,
-            discovered_at: Instant::now(),
-        },
-    ]);
+    bootstrap.report_discovered(vec![DiscoveredPeer {
+        node_id: Some(proof_b.node_id),
+        address: addr_b,
+        source: BootstrapLayer::Hardcoded,
+        discovered_at: Instant::now(),
+    }]);
     bootstrap.mark_connected(BootstrapLayer::Hardcoded, 1);
 
     assert!(matches!(bootstrap.state, BootstrapState::Connected { .. }));
@@ -184,17 +206,26 @@ fn test_e2e_signed_frame_tamper_detection() {
     let signature = keypair_a.sign(&frame);
 
     // Verify: valid
-    assert!(keypair_a.verify(&frame, &signature), "Signature should be valid");
+    assert!(
+        keypair_a.verify(&frame, &signature),
+        "Signature should be valid"
+    );
 
     // Tamper: flip a byte in payload
     let mut tampered = frame.clone();
     tampered[10] ^= 0xFF;
-    assert!(!keypair_a.verify(&tampered, &signature), "Tampered frame should fail verification");
+    assert!(
+        !keypair_a.verify(&tampered, &signature),
+        "Tampered frame should fail verification"
+    );
 
     // Tamper: flip a byte in header
     let mut tampered_header = frame.clone();
     tampered_header[0] ^= 0x01;
-    assert!(!keypair_a.verify(&tampered_header, &signature), "Tampered header should fail");
+    assert!(
+        !keypair_a.verify(&tampered_header, &signature),
+        "Tampered header should fail"
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -219,12 +250,18 @@ fn test_e2e_cid_deterministic() {
 
     // Different content → different CID
     let ku2 = KnowledgeUnit {
-        codons: vec![
-            Codon { concept_id: 999, role: RoleId::Agent, qualifiers: vec![] },
-        ],
+        codons: vec![Codon {
+            concept_id: 999,
+            role: RoleId::Agent,
+            qualifiers: vec![],
+        }],
         bonds: vec![],
         gene: Gene::Fact {
-            triples: vec![Triple { subject: 999, predicate: 1, object: 2 }],
+            triples: vec![Triple {
+                subject: 999,
+                predicate: 1,
+                object: 2,
+            }],
             certainty: 1000,
             evidence: vec![],
         },
@@ -261,8 +298,10 @@ fn test_e2e_xor_routing_closest_node() {
     let dist_c = proof_c.node_id.xor_distance(&content_key);
 
     // At least one should be different (probabilistically guaranteed)
-    assert!(dist_a != dist_b || dist_b != dist_c,
-        "XOR distances should differ for different NodeIDs");
+    assert!(
+        dist_a != dist_b || dist_b != dist_c,
+        "XOR distances should differ for different NodeIDs"
+    );
 
     // Verify XOR distance properties
     let self_dist = proof_a.node_id.xor_distance(&proof_a.node_id);
@@ -281,25 +320,43 @@ fn test_e2e_membership_3_nodes_with_tiers() {
 
     // Node A: mobile contributor
     let fitness_a = FitnessComponents {
-        uptime: 0.6, battery: 0.8, bandwidth: 0.5,
-        storage: 0.4, cpu: 0.3, network_quality: 0.5, reputation: 0.5,
+        uptime: 0.6,
+        battery: 0.8,
+        bandwidth: 0.5,
+        storage: 0.4,
+        cpu: 0.3,
+        network_quality: 0.5,
+        reputation: 0.5,
     };
 
     // Node B: server-grade
     let fitness_b = FitnessComponents {
-        uptime: 0.95, battery: 1.0, bandwidth: 0.9,
-        storage: 0.8, cpu: 0.7, network_quality: 1.0, reputation: 0.7,
+        uptime: 0.95,
+        battery: 1.0,
+        bandwidth: 0.9,
+        storage: 0.8,
+        cpu: 0.7,
+        network_quality: 1.0,
+        reputation: 0.7,
     };
 
     // Node C: weak leaf
     let fitness_c = FitnessComponents {
-        uptime: 0.2, battery: 0.3, bandwidth: 0.1,
-        storage: 0.1, cpu: 0.1, network_quality: 0.2, reputation: 0.1,
+        uptime: 0.2,
+        battery: 0.3,
+        bandwidth: 0.1,
+        storage: 0.1,
+        cpu: 0.1,
+        network_quality: 0.2,
+        reputation: 0.1,
     };
 
     // Verify tier assignments
     assert_eq!(fitness_a.recommended_tier(), NodeTier::Contributor);
-    assert!(matches!(fitness_b.recommended_tier(), NodeTier::CountrySP | NodeTier::RegionalSP));
+    assert!(matches!(
+        fitness_b.recommended_tier(),
+        NodeTier::CountrySP | NodeTier::RegionalSP
+    ));
     assert_eq!(fitness_c.recommended_tier(), NodeTier::Leaf);
 
     // Setup membership states
@@ -308,15 +365,23 @@ fn test_e2e_membership_3_nodes_with_tiers() {
     let addr_c = NetworkAddress::new_v6([0x2001, 0x0db8, 0, 0, 0, 0, 0, 3], OBP_PORT);
 
     state_a.upsert_member(MemberEntry {
-        node_id: proof_b.node_id, address: addr_b, incarnation: 1,
-        status: MemberStatus::Alive, tier: NodeTier::CountrySP,
-        last_seen: Instant::now(), fitness_score: fitness_b.score(),
+        node_id: proof_b.node_id,
+        address: addr_b,
+        incarnation: 1,
+        status: MemberStatus::Alive,
+        tier: NodeTier::CountrySP,
+        last_seen: Instant::now(),
+        fitness_score: fitness_b.score(),
         topic_vector: [0x42; 16],
     });
     state_a.upsert_member(MemberEntry {
-        node_id: proof_c.node_id, address: addr_c, incarnation: 1,
-        status: MemberStatus::Alive, tier: NodeTier::Leaf,
-        last_seen: Instant::now(), fitness_score: fitness_c.score(),
+        node_id: proof_c.node_id,
+        address: addr_c,
+        incarnation: 1,
+        status: MemberStatus::Alive,
+        tier: NodeTier::Leaf,
+        last_seen: Instant::now(),
+        fitness_score: fitness_c.score(),
         topic_vector: [0x00; 16],
     });
 
@@ -324,8 +389,10 @@ fn test_e2e_membership_3_nodes_with_tiers() {
 
     // SWIM ping
     let updates = state_a.handle_ping(&proof_b.node_id);
-    assert!(!updates.is_empty() || state_a.member_count() == 2,
-        "Ping should work without errors");
+    assert!(
+        !updates.is_empty() || state_a.member_count() == 2,
+        "Ping should work without errors"
+    );
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -362,7 +429,12 @@ fn test_e2e_mixed_address_network() {
 fn test_e2e_full_pipeline() {
     // 1. Identity
     let (keypair, proof) = create_test_node();
-    assert!(verify_node_id(&keypair.pubkey_bytes(), proof.nonce, &proof.node_id, PUZZLE_C_SMALL));
+    assert!(verify_node_id(
+        &keypair.pubkey_bytes(),
+        proof.nonce,
+        &proof.node_id,
+        PUZZLE_C_SMALL
+    ));
 
     // 2. DID
     let did = pubkey_to_did(&keypair.pubkey_bytes());
@@ -402,5 +474,8 @@ fn test_e2e_full_pipeline() {
     // 9. Content address matches
     let decoded_wire = encode_knowledge_unit(&decoded_ku).unwrap();
     let decoded_cid = blake3::hash(&decoded_wire);
-    assert_eq!(cid, decoded_cid, "CID should survive encode-decode roundtrip");
+    assert_eq!(
+        cid, decoded_cid,
+        "CID should survive encode-decode roundtrip"
+    );
 }

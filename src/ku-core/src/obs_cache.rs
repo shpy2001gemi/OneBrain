@@ -382,9 +382,7 @@ impl ObsCache {
     /// Find the entry with the lowest metabolic rate in the given IndexMap.
     /// IndexMap iteration is in insertion order (oldest first = LRU).
     /// Among equal rates, the one appearing earliest (oldest/LRU) wins.
-    fn find_lowest_metabolism_victim(
-        data: &IndexMap<[u8; 32], CachedKu>,
-    ) -> Option<[u8; 32]> {
+    fn find_lowest_metabolism_victim(data: &IndexMap<[u8; 32], CachedKu>) -> Option<[u8; 32]> {
         let mut victim: Option<(usize, f64, [u8; 32])> = None;
         for (idx, (cid, entry)) in data.iter().enumerate() {
             let rate = entry.metabolic_rate;
@@ -523,7 +521,7 @@ mod tests {
         let mut cache = ObsCache::new(2);
         cache.put(cid(1), make_entry(0.1)); // T1
         cache.put(cid(2), make_entry(0.5)); // T1
-        // T1 is full (2). Insert 3rd → evicts lowest metabolism (cid(1)) to B1
+                                            // T1 is full (2). Insert 3rd → evicts lowest metabolism (cid(1)) to B1
         cache.put(cid(3), make_entry(0.5));
 
         let p_before = cache.p;
@@ -549,7 +547,10 @@ mod tests {
         // Now T2 has 2 entries. Insert new entry → should evict from T2 → B2
         cache.put(cid(3), make_entry(0.9));
         // cid(1) had lowest metabolism, should be evicted to B2
-        assert!(cache.b2.contains(&cid(1)), "cid(1) should be in B2 ghost list");
+        assert!(
+            cache.b2.contains(&cid(1)),
+            "cid(1) should be in B2 ghost list"
+        );
 
         let p_before = cache.p;
         // Re-insert cid(1) → should decrease p
@@ -645,7 +646,7 @@ mod tests {
     fn test_evict_dead() {
         let mut cache = ObsCache::new(10);
         cache.put(cid(1), make_entry(0.0001)); // dead
-        cache.put(cid(2), make_entry(0.5));     // alive
+        cache.put(cid(2), make_entry(0.5)); // alive
         cache.put(cid(3), make_entry(0.0005)); // dead
         let evicted = cache.evict_dead(METABOLISM_DEAD_THRESHOLD);
         assert_eq!(evicted, 2);
@@ -662,7 +663,10 @@ mod tests {
         cache.put(cid(3), make_entry(0.5));
         // Insert 4th → evicts cid(1) (lowest metabolism)
         cache.put(cid(4), make_entry(0.7));
-        assert!(!cache.contains(&cid(1)), "lowest metabolism entry should be evicted");
+        assert!(
+            !cache.contains(&cid(1)),
+            "lowest metabolism entry should be evicted"
+        );
         assert!(cache.contains(&cid(2)));
         assert!(cache.contains(&cid(3)));
         assert!(cache.contains(&cid(4)));
@@ -765,7 +769,7 @@ mod tests {
         let _ = cache.get(&cid(2)); // → T2
         cache.put(cid(3), make_entry(0.5));
         let _ = cache.get(&cid(3)); // → T2
-        // All in T2 now. Insert new → evicts from T2 (T1 is empty, so p comparison falls to T2)
+                                    // All in T2 now. Insert new → evicts from T2 (T1 is empty, so p comparison falls to T2)
         cache.put(cid(4), make_entry(0.5));
         // cid(1) was oldest in T2 with same metabolism → should be evicted
         assert!(

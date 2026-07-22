@@ -65,11 +65,15 @@ impl DhtPersistence {
         ku_core::obs_schema::redb_schema::ensure_schema(&db, &registry)?;
 
         // Create tables proactively so reads never hit TableDoesNotExist
-        let txn = db.begin_write().map_err(|e| format!("begin_write: {}", e))?;
+        let txn = db
+            .begin_write()
+            .map_err(|e| format!("begin_write: {}", e))?;
         {
-            let _ = txn.open_table(DHT_ENTRIES)
+            let _ = txn
+                .open_table(DHT_ENTRIES)
                 .map_err(|e| format!("init dht_entries: {}", e))?;
-            let _ = txn.open_table(REPLICA_META)
+            let _ = txn
+                .open_table(REPLICA_META)
                 .map_err(|e| format!("init replica_meta: {}", e))?;
         }
         txn.commit().map_err(|e| format!("commit: {}", e))?;
@@ -80,10 +84,12 @@ impl DhtPersistence {
     /// Store a single DHT entry.
     pub fn persist_entry(&self, key: &[u8; 32], record: &DhtEntryRecord) -> Result<(), String> {
         let mut buf = Vec::new();
-        ciborium::into_writer(record, &mut buf)
-            .map_err(|e| format!("CBOR encode: {}", e))?;
+        ciborium::into_writer(record, &mut buf).map_err(|e| format!("CBOR encode: {}", e))?;
 
-        let txn = self.db.begin_write().map_err(|e| format!("begin_write: {}", e))?;
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("begin_write: {}", e))?;
         {
             let mut table = txn
                 .open_table(DHT_ENTRIES)
@@ -97,11 +103,11 @@ impl DhtPersistence {
     }
 
     /// Store multiple entries in a single transaction (epoch flush).
-    pub fn persist_batch(
-        &self,
-        entries: &[([u8; 32], DhtEntryRecord)],
-    ) -> Result<(), String> {
-        let txn = self.db.begin_write().map_err(|e| format!("begin_write: {}", e))?;
+    pub fn persist_batch(&self, entries: &[([u8; 32], DhtEntryRecord)]) -> Result<(), String> {
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("begin_write: {}", e))?;
         {
             let mut table = txn
                 .open_table(DHT_ENTRIES)
@@ -121,7 +127,10 @@ impl DhtPersistence {
 
     /// Load all persisted DHT entries.
     pub fn load_entries(&self) -> Result<Vec<([u8; 32], DhtEntryRecord)>, String> {
-        let txn = self.db.begin_read().map_err(|e| format!("begin_read: {}", e))?;
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("begin_read: {}", e))?;
         let table = match txn.open_table(DHT_ENTRIES) {
             Ok(t) => t,
             Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
@@ -133,8 +142,8 @@ impl DhtPersistence {
         for entry in iter {
             let (k, v) = entry.map_err(|e| format!("read entry: {}", e))?;
             let key: [u8; 32] = *k.value();
-            let record: DhtEntryRecord = ciborium::from_reader(v.value())
-                .map_err(|e| format!("CBOR decode: {}", e))?;
+            let record: DhtEntryRecord =
+                ciborium::from_reader(v.value()).map_err(|e| format!("CBOR decode: {}", e))?;
             results.push((key, record));
         }
         Ok(results)
@@ -147,10 +156,12 @@ impl DhtPersistence {
         meta: &StoredKuMetaRecord,
     ) -> Result<(), String> {
         let mut buf = Vec::new();
-        ciborium::into_writer(meta, &mut buf)
-            .map_err(|e| format!("CBOR encode: {}", e))?;
+        ciborium::into_writer(meta, &mut buf).map_err(|e| format!("CBOR encode: {}", e))?;
 
-        let txn = self.db.begin_write().map_err(|e| format!("begin_write: {}", e))?;
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("begin_write: {}", e))?;
         {
             let mut table = txn
                 .open_table(REPLICA_META)
@@ -165,7 +176,10 @@ impl DhtPersistence {
 
     /// Load all replica metadata.
     pub fn load_replica_meta(&self) -> Result<Vec<([u8; 32], StoredKuMetaRecord)>, String> {
-        let txn = self.db.begin_read().map_err(|e| format!("begin_read: {}", e))?;
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("begin_read: {}", e))?;
         let table = match txn.open_table(REPLICA_META) {
             Ok(t) => t,
             Err(redb::TableError::TableDoesNotExist(_)) => return Ok(Vec::new()),
@@ -177,8 +191,8 @@ impl DhtPersistence {
         for entry in iter {
             let (k, v) = entry.map_err(|e| format!("read entry: {}", e))?;
             let key: [u8; 32] = *k.value();
-            let record: StoredKuMetaRecord = ciborium::from_reader(v.value())
-                .map_err(|e| format!("CBOR decode: {}", e))?;
+            let record: StoredKuMetaRecord =
+                ciborium::from_reader(v.value()).map_err(|e| format!("CBOR decode: {}", e))?;
             results.push((key, record));
         }
         Ok(results)
@@ -190,7 +204,10 @@ impl DhtPersistence {
     pub fn remove_expired(&self, now_secs: u64) -> Result<usize, String> {
         // First pass: read and find expired keys
         let expired_keys: Vec<[u8; 32]> = {
-            let txn = self.db.begin_read().map_err(|e| format!("begin_read: {}", e))?;
+            let txn = self
+                .db
+                .begin_read()
+                .map_err(|e| format!("begin_read: {}", e))?;
             let table = match txn.open_table(DHT_ENTRIES) {
                 Ok(t) => t,
                 Err(redb::TableError::TableDoesNotExist(_)) => return Ok(0),
@@ -201,8 +218,8 @@ impl DhtPersistence {
             let iter = table.iter().map_err(|e| format!("iter: {}", e))?;
             for entry in iter {
                 let (k, v) = entry.map_err(|e| format!("read entry: {}", e))?;
-                let record: DhtEntryRecord = ciborium::from_reader(v.value())
-                    .map_err(|e| format!("CBOR decode: {}", e))?;
+                let record: DhtEntryRecord =
+                    ciborium::from_reader(v.value()).map_err(|e| format!("CBOR decode: {}", e))?;
                 if let Some(ttl) = record.ttl_secs {
                     if record.stored_at + ttl <= now_secs {
                         keys.push(*k.value());
@@ -218,15 +235,16 @@ impl DhtPersistence {
 
         // Second pass: remove expired keys in a write transaction
         let count = expired_keys.len();
-        let txn = self.db.begin_write().map_err(|e| format!("begin_write: {}", e))?;
+        let txn = self
+            .db
+            .begin_write()
+            .map_err(|e| format!("begin_write: {}", e))?;
         {
             let mut table = txn
                 .open_table(DHT_ENTRIES)
                 .map_err(|e| format!("open dht_entries: {}", e))?;
             for key in &expired_keys {
-                table
-                    .remove(key)
-                    .map_err(|e| format!("remove: {}", e))?;
+                table.remove(key).map_err(|e| format!("remove: {}", e))?;
             }
         }
         txn.commit().map_err(|e| format!("commit: {}", e))?;
@@ -235,7 +253,10 @@ impl DhtPersistence {
 
     /// Count stored DHT entries.
     pub fn entry_count(&self) -> Result<usize, String> {
-        let txn = self.db.begin_read().map_err(|e| format!("begin_read: {}", e))?;
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("begin_read: {}", e))?;
         let table = match txn.open_table(DHT_ENTRIES) {
             Ok(t) => t,
             Err(redb::TableError::TableDoesNotExist(_)) => return Ok(0),
@@ -247,7 +268,10 @@ impl DhtPersistence {
 
     /// Count replica metadata entries.
     pub fn replica_count(&self) -> Result<usize, String> {
-        let txn = self.db.begin_read().map_err(|e| format!("begin_read: {}", e))?;
+        let txn = self
+            .db
+            .begin_read()
+            .map_err(|e| format!("begin_read: {}", e))?;
         let table = match txn.open_table(REPLICA_META) {
             Ok(t) => t,
             Err(redb::TableError::TableDoesNotExist(_)) => return Ok(0),

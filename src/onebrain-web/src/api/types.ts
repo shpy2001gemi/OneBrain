@@ -52,18 +52,6 @@ export const GENE_TYPE_COLORS: Record<GeneType, string> = {
 
 // ─── Identity ────────────────────────────────────────────
 
-export interface IdentityInfo {
-  node_id: string;
-  name: string;
-  created: number;
-  tier: string;
-  trust_score: number;
-  device_count: number;
-  max_devices: number;
-  kus_encoded: number;
-  kus_received: number;
-  total_queries: number;
-}
 
 // ─── Knowledge ───────────────────────────────────────────
 
@@ -133,6 +121,7 @@ export interface EncodeResult {
   gene_type: GeneType | null;
   confidence: number;
   source_text: string;
+  peers_reached?: number;
 }
 
 export interface KuListResponse {
@@ -156,6 +145,12 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  /** Number of KUs auto-encoded from this message */
+  kus_encoded?: number;
+  /** Number of KUs retrieved/referenced in this response */
+  kus_retrieved?: number;
+  /** AI intent classification */
+  intent?: string | null;
 }
 
 // ─── Network ─────────────────────────────────────────────
@@ -168,7 +163,53 @@ export interface StatusResponse {
   tier: string;
   obt_balance: number;
   version: string;
+  model: string;
+  vnext: VNextStatusSnapshot;
 }
+
+export interface VNextStatusSnapshot {
+  profile_major: number;
+  usability: 'USABLE_OFFLINE' | 'USABLE_WITH_OBSERVED_PEERS';
+  reachability: {
+    scope: 'LOCAL_NODE' | 'OBSERVED_PEER_SET';
+    observed_peer_count: number;
+    standalone: boolean;
+    claims_network_completion: false;
+  };
+  coverage: {
+    status: 'LOCAL_ONLY' | 'PARTIAL';
+    local_record_count: number;
+    assessed_frontier: number[] | null;
+    limitations: string[];
+  };
+  fidelity: {
+    status: 'UNASSESSED' | 'SELF_ATTESTED' | 'PARTIALLY_CORROBORATED' | 'CORROBORATED_RELATIVE_TO_FRONTIER';
+    assessed_frontier: number[] | null;
+    limitations: string[];
+    establishes_proposition_truth: false;
+  };
+  legacy: {
+    raw_v1_readable: boolean;
+    adapter_active: boolean;
+    normalized_claims_are_advisory: true;
+    warnings: string[];
+  };
+  consent: {
+    continuous_local_observation: ConsentView;
+    knowledge_publish: ConsentView;
+    public_need_disclosure: ConsentView;
+    remote_cognition: ConsentView;
+    consent_is_inferred: false;
+  };
+  features: Record<string, boolean>;
+}
+
+export type ConsentView =
+  | 'NOT_CONFIGURED'
+  | 'NOT_GRANTED'
+  | 'EXPLICIT_ACTION_REQUIRED'
+  | 'GRANTED_LOCAL_ONLY'
+  | 'GRANTED_FOR_NAMED_SCOPE';
 
 export interface PeerView {
   name: string;
@@ -199,6 +240,8 @@ export interface WalletInfo {
   multiplier: number;
   total_earned: number;
   total_spent: number;
+  staked: number;
+  pending_unstake: number;
   streams: EarningsStreams;
   rate_used: number;
   rate_max: number;
@@ -246,12 +289,6 @@ export interface ConfigView {
 
 // ─── AI ──────────────────────────────────────────────────
 
-export interface ModelInfo {
-  name: string;
-  params: string;
-  is_current: boolean;
-  is_installed: boolean;
-}
 
 export interface AiHealthInfo {
   connected: boolean;
@@ -329,9 +366,11 @@ export interface BulkDeleteResult {
   skipped: number;
 }
 
-export interface BackupInfo {
-  path: string;
-  size: number;
-  ku_count: number;
-  timestamp: number;
+
+export interface Draft {
+  id: string;
+  title: string;
+  text: string;
+  created: number;
+  updated: number;
 }

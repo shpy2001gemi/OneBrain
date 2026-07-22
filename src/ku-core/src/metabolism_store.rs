@@ -4,8 +4,8 @@
 //! Supports CRDT merge for incoming remote metabolism data,
 //! garbage collection of dead KUs, and delta sync generation.
 
-use std::collections::HashMap;
 use crate::metabolism::{KUMetabolism, MetabolismEvent, DEFAULT_HALF_LIFE_SECS};
+use std::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -61,13 +61,9 @@ impl MetabolismStore {
     /// Record a metabolism event for a KU.
     ///
     /// If the KU doesn't exist yet, creates a new entry.
-    pub fn record_event(
-        &mut self,
-        cid: [u8; 32],
-        event: MetabolismEvent,
-        timestamp: u64,
-    ) {
-        let entry = self.entries
+    pub fn record_event(&mut self, cid: [u8; 32], event: MetabolismEvent, timestamp: u64) {
+        let entry = self
+            .entries
             .entry(cid)
             .or_insert_with(|| KUMetabolism::new(timestamp));
         entry.record_event(self.my_node_id, event, timestamp);
@@ -75,7 +71,8 @@ impl MetabolismStore {
 
     /// Get the current metabolic rate for a KU.
     pub fn get_rate(&self, cid: &[u8; 32], now: u64) -> Option<f64> {
-        self.entries.get(cid)
+        self.entries
+            .get(cid)
             .map(|m| m.metabolic_rate(now, DEFAULT_HALF_LIFE_SECS))
     }
 
@@ -106,7 +103,8 @@ impl MetabolismStore {
     /// In production, this should be filtered by version/clock
     /// to send only changes since last sync.
     pub fn create_sync_deltas(&self) -> Vec<MetabolismDelta> {
-        self.entries.iter()
+        self.entries
+            .iter()
             .map(|(&cid, metabolism)| MetabolismDelta {
                 cid,
                 metabolism: metabolism.clone(),
@@ -129,9 +127,7 @@ impl MetabolismStore {
             let rate = m.metabolic_rate(now, DEFAULT_HALF_LIFE_SECS);
 
             // Keep if: alive OR young OR has any engagement
-            rate > GC_RATE_THRESHOLD
-                || age < GC_MIN_AGE_SECS
-                || m.total_engagement() > 0
+            rate > GC_RATE_THRESHOLD || age < GC_MIN_AGE_SECS || m.total_engagement() > 0
         });
         before - self.entries.len()
     }
@@ -148,7 +144,9 @@ impl MetabolismStore {
 
     /// Get top N most metabolically active KUs.
     pub fn top_active(&self, n: usize, now: u64) -> Vec<([u8; 32], f64)> {
-        let mut rated: Vec<_> = self.entries.iter()
+        let mut rated: Vec<_> = self
+            .entries
+            .iter()
             .map(|(&cid, m)| (cid, m.metabolic_rate(now, DEFAULT_HALF_LIFE_SECS)))
             .collect();
         rated.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -158,7 +156,8 @@ impl MetabolismStore {
 
     /// Total metabolic rate across all KUs (for reward distribution).
     pub fn total_metabolic_rate(&self, now: u64) -> f64 {
-        self.entries.values()
+        self.entries
+            .values()
             .map(|m| m.metabolic_rate(now, DEFAULT_HALF_LIFE_SECS))
             .sum()
     }

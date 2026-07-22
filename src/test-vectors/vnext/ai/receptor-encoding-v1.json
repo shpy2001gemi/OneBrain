@@ -1,0 +1,29 @@
+{
+  "profile": "ReceptorEncodingCorpus/1",
+  "cases": [
+    {
+      "name": "declared-private-by-default",
+      "origin": "declared",
+      "requested_disclosure": "default",
+      "expected_disclosure": "local-only"
+    },
+    {
+      "name": "declared-explicit-public",
+      "origin": "declared",
+      "requested_disclosure": "public",
+      "expected_disclosure": "public"
+    },
+    {
+      "name": "derived-public-request-remains-private",
+      "origin": "derived",
+      "requested_disclosure": "public",
+      "expected_disclosure": "local-only"
+    },
+    {
+      "name": "emergent-public-request-remains-private",
+      "origin": "emergent",
+      "requested_disclosure": "public",
+      "expected_disclosure": "local-only"
+    }
+  ]
+}

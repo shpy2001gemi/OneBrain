@@ -15,10 +15,12 @@
 //! - EpigeneticSection: Layer 4 metadata (v4 spec §6)
 //! - Codon, Bond, Gene, KnowledgeUnit structs
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Serde helper: skip serializing u16 fields when value is 0 (PoK v2 backward compat)
-fn is_zero_u16(v: &u16) -> bool { *v == 0 }
+fn is_zero_u16(v: &u16) -> bool {
+    *v == 0
+}
 
 // ============================================================================
 // Layer 1: Concept Codons
@@ -39,22 +41,22 @@ pub type ConceptId = u64;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum RoleId {
-    Agent       = 0x01,
-    Object      = 0x02,
-    Tool        = 0x03,
-    Location    = 0x04,
-    Time        = 0x05,
-    Cause       = 0x06,
-    Result      = 0x07,
-    Manner      = 0x08,
-    Condition   = 0x09,
-    Quantity    = 0x0A,
-    Quality     = 0x0B,
-    Purpose     = 0x0C,
+    Agent = 0x01,
+    Object = 0x02,
+    Tool = 0x03,
+    Location = 0x04,
+    Time = 0x05,
+    Cause = 0x06,
+    Result = 0x07,
+    Manner = 0x08,
+    Condition = 0x09,
+    Quantity = 0x0A,
+    Quality = 0x0B,
+    Purpose = 0x0C,
     /// ★ v4 NEW — head of a compound concept
     CompoundHead = 0x0D,
     /// ★ v4 NEW — modifier of a compound concept
-    CompoundMod  = 0x0E,
+    CompoundMod = 0x0E,
 }
 
 impl RoleId {
@@ -124,53 +126,53 @@ pub struct Codon {
 #[repr(u8)]
 pub enum RelationType {
     // Category A: Epistemic (0x01-0x06)
-    Extends         = 0x01,
-    Supplements     = 0x02,
-    Refutes         = 0x03,
-    Corroborates    = 0x04,
-    Supersedes      = 0x05,
-    Qualifies       = 0x06,
+    Extends = 0x01,
+    Supplements = 0x02,
+    Refutes = 0x03,
+    Corroborates = 0x04,
+    Supersedes = 0x05,
+    Qualifies = 0x06,
 
     // Category B: Structural (0x10-0x13)
-    PartOf          = 0x10,
-    InstanceOf      = 0x11,
-    Specializes     = 0x12,
-    Generalizes     = 0x13,
+    PartOf = 0x10,
+    InstanceOf = 0x11,
+    Specializes = 0x12,
+    Generalizes = 0x13,
 
     // Category C: Causal (0x20-0x23)
-    Causes          = 0x20,
-    Enables         = 0x21,
-    Prevents        = 0x22,
-    DependsOn       = 0x23,
+    Causes = 0x20,
+    Enables = 0x21,
+    Prevents = 0x22,
+    DependsOn = 0x23,
 
     // Category D: Derivation (0x30-0x33)
-    ExampleOf       = 0x30,
-    AnalogyOf       = 0x31,
-    AppliesTo       = 0x32,
-    DerivedFrom     = 0x33,
+    ExampleOf = 0x30,
+    AnalogyOf = 0x31,
+    AppliesTo = 0x32,
+    DerivedFrom = 0x33,
 
     // Category E: Similarity (0x40-0x43)
-    Duplicates      = 0x40,
-    Translates      = 0x41,
-    Paraphrases     = 0x42,
-    Inspires        = 0x43,
+    Duplicates = 0x40,
+    Translates = 0x41,
+    Paraphrases = 0x42,
+    Inspires = 0x43,
 
     // Category F: Temporal (0x50-0x51)
-    Precedes        = 0x50,
-    Cooccurs        = 0x51,
+    Precedes = 0x50,
+    Cooccurs = 0x51,
 
     // Category G: Provenance (0x60-0x62)
-    Cites           = 0x60,
-    AuthoredBy      = 0x61,
-    ReviewedBy      = 0x62,
+    Cites = 0x60,
+    AuthoredBy = 0x61,
+    ReviewedBy = 0x62,
 
     // Category H: Experiential — ★ v4 NEW (0x70-0x76)
-    ReactionTo              = 0x70,
-    TestimonyAbout          = 0x71,
-    FormallyProves          = 0x72,
-    EvolvesInto             = 0x73,
-    VariantOf               = 0x74,
-    SensoryEvidenceFor      = 0x75,
+    ReactionTo = 0x70,
+    TestimonyAbout = 0x71,
+    FormallyProves = 0x72,
+    EvolvesInto = 0x73,
+    VariantOf = 0x74,
+    SensoryEvidenceFor = 0x75,
     CulturallyContextualizes = 0x76,
 }
 
@@ -274,7 +276,9 @@ impl RelationType {
             "evolvesinto" | "evolves_into" => Some(Self::EvolvesInto),
             "variantof" | "variant_of" => Some(Self::VariantOf),
             "sensoryevidencefor" | "sensory_evidence_for" => Some(Self::SensoryEvidenceFor),
-            "culturallycontextualizes" | "culturally_contextualizes" => Some(Self::CulturallyContextualizes),
+            "culturallycontextualizes" | "culturally_contextualizes" => {
+                Some(Self::CulturallyContextualizes)
+            }
             _ => None,
         }
     }
@@ -286,42 +290,45 @@ impl std::fmt::Display for RelationType {
     }
 }
 
-
 /// Edge State — lifecycle of a bond.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum EdgeState {
-    Active     = 0,
-    Weakened   = 1,
+    Active = 0,
+    Weakened = 1,
     Deprecated = 2,
 }
 
 impl Default for EdgeState {
-    fn default() -> Self { Self::Active }
+    fn default() -> Self {
+        Self::Active
+    }
 }
 
 /// Decay rate classification for edge weight decay.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum DecayRate {
-    None = 0,  // Never decays
-    Slow = 1,  // Half-life 1 year
-    Med  = 2,  // Half-life 3 months
-    Fast = 3,  // Half-life 1 week
+    None = 0, // Never decays
+    Slow = 1, // Half-life 1 year
+    Med = 2,  // Half-life 3 months
+    Fast = 3, // Half-life 1 week
 }
 
 impl Default for DecayRate {
-    fn default() -> Self { Self::None }
+    fn default() -> Self {
+        Self::None
+    }
 }
 
 /// Creator enum — who created this edge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Creator {
-    Human   = 0,
-    Ai      = 1,
-    System  = 2,
-    Hybrid  = 3,
+    Human = 0,
+    Ai = 1,
+    System = 2,
+    Hybrid = 3,
 }
 
 /// Bond — a directed edge to another KU.
@@ -391,50 +398,50 @@ pub struct Bond {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum GeneType {
-    Fact            = 0,
-    Procedure       = 1,
-    Experience      = 2,
-    Creative        = 3,
-    MediaExperience = 4,  // ★ v4 NEW
-    Testimony       = 5,  // ★ v4 NEW
-    Formal          = 6,  // ★ v4 NEW
-    Hypothesis      = 7,  // ★ v4 NEW (EXTENDED 0x00)
-    Narrative       = 8,  // ★ v4 NEW (EXTENDED 0x01)
-    Sensory         = 9,  // ★ v4 NEW (EXTENDED 0x02)
-    Composite       = 10, // ★ v5 NEW (EXTENDED 0x03)
-    Normative       = 11, // ★ v7 NEW (EXTENDED 0x04)
-    Definition      = 12, // ★ v7 NEW (EXTENDED 0x05)
+    Fact = 0,
+    Procedure = 1,
+    Experience = 2,
+    Creative = 3,
+    MediaExperience = 4, // ★ v4 NEW
+    Testimony = 5,       // ★ v4 NEW
+    Formal = 6,          // ★ v4 NEW
+    Hypothesis = 7,      // ★ v4 NEW (EXTENDED 0x00)
+    Narrative = 8,       // ★ v4 NEW (EXTENDED 0x01)
+    Sensory = 9,         // ★ v4 NEW (EXTENDED 0x02)
+    Composite = 10,      // ★ v5 NEW (EXTENDED 0x03)
+    Normative = 11,      // ★ v7 NEW (EXTENDED 0x04)
+    Definition = 12,     // ★ v7 NEW (EXTENDED 0x05)
 }
 
 impl GeneType {
     /// Returns (base_type for FLAGS bits 5-7, optional ext byte).
     pub fn wire_encoding(&self) -> (u8, Option<u8>) {
         match self {
-            Self::Fact            => (0, None),
-            Self::Procedure       => (1, None),
-            Self::Experience      => (2, None),
-            Self::Creative        => (3, None),
+            Self::Fact => (0, None),
+            Self::Procedure => (1, None),
+            Self::Experience => (2, None),
+            Self::Creative => (3, None),
             Self::MediaExperience => (4, None),
-            Self::Testimony       => (5, None),
-            Self::Formal          => (6, None),
-            Self::Hypothesis      => (7, Some(0x00)),
-            Self::Narrative       => (7, Some(0x01)),
-            Self::Sensory         => (7, Some(0x02)),
-            Self::Composite       => (7, Some(0x03)),
-            Self::Normative       => (7, Some(0x04)),
-            Self::Definition      => (7, Some(0x05)),
+            Self::Testimony => (5, None),
+            Self::Formal => (6, None),
+            Self::Hypothesis => (7, Some(0x00)),
+            Self::Narrative => (7, Some(0x01)),
+            Self::Sensory => (7, Some(0x02)),
+            Self::Composite => (7, Some(0x03)),
+            Self::Normative => (7, Some(0x04)),
+            Self::Definition => (7, Some(0x05)),
         }
     }
 
     pub fn from_wire(base: u8, ext: Option<u8>) -> Option<Self> {
         match (base, ext) {
-            (0, _)          => Some(Self::Fact),
-            (1, _)          => Some(Self::Procedure),
-            (2, _)          => Some(Self::Experience),
-            (3, _)          => Some(Self::Creative),
-            (4, _)          => Some(Self::MediaExperience),
-            (5, _)          => Some(Self::Testimony),
-            (6, _)          => Some(Self::Formal),
+            (0, _) => Some(Self::Fact),
+            (1, _) => Some(Self::Procedure),
+            (2, _) => Some(Self::Experience),
+            (3, _) => Some(Self::Creative),
+            (4, _) => Some(Self::MediaExperience),
+            (5, _) => Some(Self::Testimony),
+            (6, _) => Some(Self::Formal),
             (7, Some(0x00)) => Some(Self::Hypothesis),
             (7, Some(0x01)) => Some(Self::Narrative),
             (7, Some(0x02)) => Some(Self::Sensory),
@@ -450,36 +457,38 @@ impl GeneType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum EpistemicStatus {
-    Rumor          = 0x00,
-    Hearsay        = 0x01,
-    Testimony      = 0x02,
-    Observation    = 0x03,
-    Hypothesis     = 0x04,
-    Evidence       = 0x05,
-    Corroborated   = 0x06,
-    PeerReviewed   = 0x07,
-    Consensus      = 0x08,
+    Rumor = 0x00,
+    Hearsay = 0x01,
+    Testimony = 0x02,
+    Observation = 0x03,
+    Hypothesis = 0x04,
+    Evidence = 0x05,
+    Corroborated = 0x06,
+    PeerReviewed = 0x07,
+    Consensus = 0x08,
     FormallyProven = 0x09,
-    Axiomatic      = 0x0A,
+    Axiomatic = 0x0A,
 }
 
 /// EvidenceType — 9 types aligned with Cochrane/GRADE pyramid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum EvidenceType {
-    None          = 0x00,
-    Anecdotal     = 0x01,
-    CaseStudy     = 0x02,
+    None = 0x00,
+    Anecdotal = 0x01,
+    CaseStudy = 0x02,
     Observational = 0x03,
     Correlational = 0x04,
-    Experimental  = 0x05,
-    MetaAnalysis  = 0x06,
-    FormalProof   = 0x07,
+    Experimental = 0x05,
+    MetaAnalysis = 0x06,
+    FormalProof = 0x07,
     Computational = 0x08,
 }
 
 impl Default for EpistemicStatus {
-    fn default() -> Self { Self::Rumor }
+    fn default() -> Self {
+        Self::Rumor
+    }
 }
 
 impl EpistemicStatus {
@@ -502,7 +511,9 @@ impl EpistemicStatus {
 }
 
 impl Default for EvidenceType {
-    fn default() -> Self { Self::None }
+    fn default() -> Self {
+        Self::None
+    }
 }
 
 impl EvidenceType {
@@ -583,7 +594,6 @@ pub struct TrustSection {
     pub challenges: Vec<Vec<u8>>,
 
     // === PoK v2: Proof-of-Metabolic-Value (PoMV) signals ===
-
     /// Current metabolic rate [0, 10000] — measures usage/activity
     #[serde(rename = "mr", default, skip_serializing_if = "is_zero_u16")]
     pub metabolic_rate: u16,
@@ -646,12 +656,22 @@ impl Default for TrustSection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EpigeneticSection {
     /// Semantic embedding (int8[512] stored as bytes)
-    #[serde(rename = "em", with = "serde_bytes", default, skip_serializing_if = "Vec::is_empty")]
-    pub embedding: Vec<u8>,  // 512 bytes
+    #[serde(
+        rename = "em",
+        with = "serde_bytes",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub embedding: Vec<u8>, // 512 bytes
 
     /// Binary embedding for fast screening (binary[1024] = 128 bytes)
-    #[serde(rename = "eb", with = "serde_bytes", default, skip_serializing_if = "Vec::is_empty")]
-    pub embedding_binary: Vec<u8>,  // 128 bytes
+    #[serde(
+        rename = "eb",
+        with = "serde_bytes",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub embedding_binary: Vec<u8>, // 128 bytes
 
     /// Embedding model version
     #[serde(rename = "ev", default, skip_serializing_if = "Option::is_none")]
@@ -708,12 +728,22 @@ pub struct EpigeneticSection {
     pub tags: Vec<ConceptId>,
 
     /// SimHash (128-bit) for approximate duplicate detection
-    #[serde(rename = "sh", with = "serde_bytes", default, skip_serializing_if = "Vec::is_empty")]
-    pub simhash: Vec<u8>,  // 16 bytes
+    #[serde(
+        rename = "sh",
+        with = "serde_bytes",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub simhash: Vec<u8>, // 16 bytes
 
     /// LSH bucket IDs for locality-sensitive hashing
-    #[serde(rename = "lb", with = "serde_bytes", default, skip_serializing_if = "Vec::is_empty")]
-    pub lsh_buckets: Vec<u8>,  // 16 bytes
+    #[serde(
+        rename = "lb",
+        with = "serde_bytes",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub lsh_buckets: Vec<u8>, // 16 bytes
 
     /// Schema version
     #[serde(rename = "sv", default, skip_serializing_if = "Option::is_none")]
@@ -837,21 +867,21 @@ pub struct Perspective {
 #[repr(u8)]
 pub enum StructuralRole {
     /// Top-level division (e.g., a chapter in a book)
-    Chapter     = 0,
+    Chapter = 0,
     /// Mid-level division (e.g., a section in a chapter)
-    Section     = 1,
+    Section = 1,
     /// Fine-grained division (e.g., a subsection)
-    Subsection  = 2,
+    Subsection = 2,
     /// Atomic knowledge unit (leaf node)
-    Detail      = 3,
+    Detail = 3,
     /// Supplementary material (e.g., appendix)
-    Appendix    = 4,
+    Appendix = 4,
     /// External reference or bibliography entry
-    Reference   = 5,
+    Reference = 5,
     /// Index or table of contents
-    Index       = 6,
+    Index = 6,
     /// Definitions and terminology
-    Glossary    = 7,
+    Glossary = 7,
 }
 
 impl StructuralRole {
@@ -871,21 +901,23 @@ impl StructuralRole {
 }
 
 impl Default for StructuralRole {
-    fn default() -> Self { Self::Detail }
+    fn default() -> Self {
+        Self::Detail
+    }
 }
 
 /// Composite type hint — categorizes the purpose of a Composite KU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum CompositeType {
-    Document      = 0,
-    Chapter       = 1,
-    Section       = 2,
-    Collection    = 3,
-    Dataset       = 4,
+    Document = 0,
+    Chapter = 1,
+    Section = 2,
+    Collection = 3,
+    Dataset = 4,
     Specification = 5,
-    Protocol      = 6,
-    Custom        = 7,
+    Protocol = 6,
+    Custom = 7,
 }
 
 impl CompositeType {
@@ -905,15 +937,17 @@ impl CompositeType {
 }
 
 impl Default for CompositeType {
-    fn default() -> Self { Self::Document }
+    fn default() -> Self {
+        Self::Document
+    }
 }
 
 /// Completeness status for a Composite KU.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Completeness {
-    Draft    = 0,
-    Partial  = 1,
+    Draft = 0,
+    Partial = 1,
     Complete = 2,
     Verified = 3,
     Certified = 4,
@@ -933,7 +967,9 @@ impl Completeness {
 }
 
 impl Default for Completeness {
-    fn default() -> Self { Self::Draft }
+    fn default() -> Self {
+        Self::Draft
+    }
 }
 
 /// A member entry within a Composite Gene.
@@ -1001,7 +1037,9 @@ pub struct CompositeConstraint {
 // Gene — 11 variants
 // ============================================================================
 
-fn default_max_depth() -> u8 { 255 }
+fn default_max_depth() -> u8 {
+    255
+}
 
 /// Gene — the content payload of a Knowledge Unit (Layer 3).
 ///
@@ -1193,17 +1231,17 @@ impl Gene {
     /// Returns the GeneType for this gene variant.
     pub fn gene_type(&self) -> GeneType {
         match self {
-            Gene::Fact { .. }            => GeneType::Fact,
-            Gene::Procedure { .. }       => GeneType::Procedure,
-            Gene::Experience { .. }      => GeneType::Experience,
-            Gene::Creative { .. }        => GeneType::Creative,
+            Gene::Fact { .. } => GeneType::Fact,
+            Gene::Procedure { .. } => GeneType::Procedure,
+            Gene::Experience { .. } => GeneType::Experience,
+            Gene::Creative { .. } => GeneType::Creative,
             Gene::MediaExperience { .. } => GeneType::MediaExperience,
-            Gene::Testimony { .. }       => GeneType::Testimony,
-            Gene::Formal { .. }          => GeneType::Formal,
-            Gene::Hypothesis { .. }      => GeneType::Hypothesis,
-            Gene::Narrative { .. }       => GeneType::Narrative,
-            Gene::Sensory { .. }         => GeneType::Sensory,
-            Gene::Composite { .. }       => GeneType::Composite,
+            Gene::Testimony { .. } => GeneType::Testimony,
+            Gene::Formal { .. } => GeneType::Formal,
+            Gene::Hypothesis { .. } => GeneType::Hypothesis,
+            Gene::Narrative { .. } => GeneType::Narrative,
+            Gene::Sensory { .. } => GeneType::Sensory,
+            Gene::Composite { .. } => GeneType::Composite,
         }
     }
 }
@@ -1227,11 +1265,21 @@ impl HeaderFlags {
     pub fn to_byte(&self, gene_type: GeneType) -> u8 {
         let (base, _) = gene_type.wire_encoding();
         let mut flags: u8 = 0;
-        if self.has_ecc      { flags |= 0x01; }
-        if self.has_bbs      { flags |= 0x02; }
-        if self.has_merkle   { flags |= 0x04; }
-        if self.has_media    { flags |= 0x08; }
-        if self.is_encrypted { flags |= 0x10; }
+        if self.has_ecc {
+            flags |= 0x01;
+        }
+        if self.has_bbs {
+            flags |= 0x02;
+        }
+        if self.has_merkle {
+            flags |= 0x04;
+        }
+        if self.has_media {
+            flags |= 0x08;
+        }
+        if self.is_encrypted {
+            flags |= 0x10;
+        }
         flags |= (base & 0x07) << 5;
         flags
     }
@@ -1239,10 +1287,10 @@ impl HeaderFlags {
     /// Unpack from a flags byte.
     pub fn from_byte(byte: u8) -> (Self, u8) {
         let flags = Self {
-            has_ecc:      byte & 0x01 != 0,
-            has_bbs:      byte & 0x02 != 0,
-            has_merkle:   byte & 0x04 != 0,
-            has_media:    byte & 0x08 != 0,
+            has_ecc: byte & 0x01 != 0,
+            has_bbs: byte & 0x02 != 0,
+            has_merkle: byte & 0x04 != 0,
+            has_media: byte & 0x08 != 0,
             is_encrypted: byte & 0x10 != 0,
         };
         let gene_base = (byte >> 5) & 0x07;

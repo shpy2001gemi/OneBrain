@@ -104,9 +104,7 @@ impl EigenTrustCalculator {
     ///
     /// Where c_ij = node j's trust in node i (based on local_trust).
     /// p(i) = pre-trusted value (uniform).
-    pub fn compute_global(
-        profiles: &HashMap<u64, NodeProfile>,
-    ) -> HashMap<u64, f64> {
+    pub fn compute_global(profiles: &HashMap<u64, NodeProfile>) -> HashMap<u64, f64> {
         let n = profiles.len();
         if n == 0 {
             return HashMap::new();
@@ -116,7 +114,8 @@ impl EigenTrustCalculator {
         let pre_trust_val = 1.0 / n as f64;
 
         // Initial: local trust normalized
-        let mut scores: HashMap<u64, f64> = profiles.iter()
+        let mut scores: HashMap<u64, f64> = profiles
+            .iter()
             .map(|(&node_id, profile)| (node_id, Self::local_trust(profile)))
             .collect();
 
@@ -129,7 +128,8 @@ impl EigenTrustCalculator {
 
             for (&node_i, _) in profiles {
                 let local = Self::local_trust(&profiles[&node_i]);
-                let weighted_sum: f64 = profiles.iter()
+                let weighted_sum: f64 = profiles
+                    .iter()
                     .map(|(&node_j, _)| {
                         let c_ij = local; // Simplified: use own local trust as weight
                         let t_j = scores.get(&node_j).copied().unwrap_or(pre_trust_val);
@@ -137,8 +137,8 @@ impl EigenTrustCalculator {
                     })
                     .sum();
 
-                let new_trust = EIGENTRUST_DAMPING * weighted_sum
-                    + (1.0 - EIGENTRUST_DAMPING) * pre_trust_val;
+                let new_trust =
+                    EIGENTRUST_DAMPING * weighted_sum + (1.0 - EIGENTRUST_DAMPING) * pre_trust_val;
 
                 new_scores.insert(node_i, new_trust.max(MIN_TRUST));
             }
@@ -185,7 +185,11 @@ mod tests {
     fn test_new_node_pre_trust() {
         let profile = NodeProfile::default();
         let trust = EigenTrustCalculator::local_trust(&profile);
-        assert!((trust - PRE_TRUST).abs() < 0.001, "New node = pre-trust: {}", trust);
+        assert!(
+            (trust - PRE_TRUST).abs() < 0.001,
+            "New node = pre-trust: {}",
+            trust
+        );
     }
 
     #[test]
@@ -231,8 +235,12 @@ mod tests {
         let clean_trust = EigenTrustCalculator::local_trust(&clean);
         let flagged_trust = EigenTrustCalculator::local_trust(&flagged);
 
-        assert!(clean_trust > flagged_trust,
-            "Clean ({}) > Flagged ({})", clean_trust, flagged_trust);
+        assert!(
+            clean_trust > flagged_trust,
+            "Clean ({}) > Flagged ({})",
+            clean_trust,
+            flagged_trust
+        );
     }
 
     #[test]
@@ -252,8 +260,12 @@ mod tests {
         let narrow_trust = EigenTrustCalculator::local_trust(&narrow);
         let diverse_trust = EigenTrustCalculator::local_trust(&diverse);
 
-        assert!(diverse_trust > narrow_trust,
-            "Diverse ({}) > Narrow ({})", diverse_trust, narrow_trust);
+        assert!(
+            diverse_trust > narrow_trust,
+            "Diverse ({}) > Narrow ({})",
+            diverse_trust,
+            narrow_trust
+        );
     }
 
     #[test]
@@ -267,13 +279,16 @@ mod tests {
     fn test_global_trust_uniform() {
         let mut profiles = HashMap::new();
         for i in 1..=5 {
-            profiles.insert(i, NodeProfile {
-                avg_pomv: 0.5,
-                ku_count: 10,
-                quarantined_count: 0,
-                niche_diversity: 3,
-                total_metabolic_rate: 5.0,
-            });
+            profiles.insert(
+                i,
+                NodeProfile {
+                    avg_pomv: 0.5,
+                    ku_count: 10,
+                    quarantined_count: 0,
+                    niche_diversity: 3,
+                    total_metabolic_rate: 5.0,
+                },
+            );
         }
 
         let scores = EigenTrustCalculator::compute_global(&profiles);
@@ -281,33 +296,48 @@ mod tests {
 
         // All equal profiles → approximately equal trust
         let values: Vec<f64> = scores.values().cloned().collect();
-        let max_diff = values.iter().cloned().fold(0.0_f64, |acc, v|
-            acc.max((v - values[0]).abs())
+        let max_diff = values
+            .iter()
+            .cloned()
+            .fold(0.0_f64, |acc, v| acc.max((v - values[0]).abs()));
+        assert!(
+            max_diff < 0.01,
+            "Equal profiles → equal trust, max_diff = {}",
+            max_diff
         );
-        assert!(max_diff < 0.01, "Equal profiles → equal trust, max_diff = {}", max_diff);
     }
 
     #[test]
     fn test_global_trust_sums_to_one() {
         let mut profiles = HashMap::new();
-        profiles.insert(1, NodeProfile {
-            avg_pomv: 0.9,
-            ku_count: 50,
-            quarantined_count: 0,
-            niche_diversity: 8,
-            total_metabolic_rate: 100.0,
-        });
-        profiles.insert(2, NodeProfile {
-            avg_pomv: 0.1,
-            ku_count: 5,
-            quarantined_count: 3,
-            niche_diversity: 1,
-            total_metabolic_rate: 0.5,
-        });
+        profiles.insert(
+            1,
+            NodeProfile {
+                avg_pomv: 0.9,
+                ku_count: 50,
+                quarantined_count: 0,
+                niche_diversity: 8,
+                total_metabolic_rate: 100.0,
+            },
+        );
+        profiles.insert(
+            2,
+            NodeProfile {
+                avg_pomv: 0.1,
+                ku_count: 5,
+                quarantined_count: 3,
+                niche_diversity: 1,
+                total_metabolic_rate: 0.5,
+            },
+        );
 
         let scores = EigenTrustCalculator::compute_global(&profiles);
         let sum: f64 = scores.values().sum();
-        assert!((sum - 1.0).abs() < 0.01, "Global trust sums to 1.0: {}", sum);
+        assert!(
+            (sum - 1.0).abs() < 0.01,
+            "Global trust sums to 1.0: {}",
+            sum
+        );
     }
 
     #[test]

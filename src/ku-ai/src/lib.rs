@@ -39,6 +39,10 @@ pub mod error;
 pub mod registry;
 pub mod traits;
 pub mod types;
+pub mod vnext_executor;
+pub mod vnext_fidelity;
+pub mod vnext_manifest;
+pub mod vnext_model_recall;
 
 // ─── Re-exports ─────────────────────────────────────────────────────────
 
@@ -65,6 +69,31 @@ pub use backend::{create_backend, MockBackend, OllamaBackend};
 
 // Registry
 pub use registry::{ModelCatalog, ModelEntry, ModelRegistry, ModelSelector, ModelType};
+pub use vnext_executor::{
+    cognitive_input_commitment, cognitive_output_commitment, cognitive_task_commitment,
+    CancellationToken, CognitiveExecutionError, CognitiveExecutionPolicy, CognitiveExecutionResult,
+    CognitiveStep, CognitiveStepBudget, CognitiveStepRequest, CognitiveTask,
+    CognitiveTaskReplayGuard, CognitiveTaskReplayOutcome, CognitiveTermination,
+    TypedCapabilityBackend, TypedCognitiveExecutor,
+};
+pub use vnext_fidelity::{
+    exact_fidelity_checks, AlternateArchiveOutcome, AlternateEncodingArchive,
+    BlindAttemptPortfolio, BlindEncodingCoordinator, BlindEncodingRequest, BlindFidelityError,
+    BlindSessionPhase, CandidateEncodingInspection, CompletedBlindAttestation,
+    EncodingAttemptArtifact, FidelityCheckPlan,
+};
+pub use vnext_manifest::{
+    output_commitment, CapabilityConformanceExecutor, CapabilityConformanceRunner,
+    CapabilityConformanceVector, ConformanceBudget, ConformanceExecution, ConformanceReport,
+    ConformanceStatus, ConformanceVectorResult, LocalManifestBuild, LocalManifestBuildInput,
+    LocalManifestBuilder, ManifestBuildError, PublicImplementationSketch,
+};
+pub use vnext_model_recall::{
+    CandidateRecallAdapter, ModelRecallError, ModelRecallEvidence, ModelRecallFirewall,
+    ModelRecallPage, ModelRecallRequest, ModelRecallResult, ModelScoredCandidate,
+    RecallCandidateSeed, RecallEvaluation, RecallOrigin, SymbolicCheck, SymbolicDisposition,
+    SymbolicMappingAssessment, SymbolicMappingValidator, SymbolicValidationRequest,
+};
 
 #[cfg(test)]
 mod tests {

@@ -16,10 +16,10 @@ mod runtime;
 mod testbed;
 
 use ku_core::*;
-use ku_net::identity::*;
-use ku_net::messages::*;
-use ku_net::membership::*;
 use ku_net::discovery::*;
+use ku_net::identity::*;
+use ku_net::membership::*;
+use ku_net::messages::*;
 
 fn main() {
     println!("╔══════════════════════════════════════════════════════════════╗");
@@ -40,17 +40,44 @@ fn main() {
     let proof_c = generate_node_id(&keypair_c.pubkey_bytes(), PUZZLE_C_SMALL);
 
     println!("  Node A (Scientist):  {}", proof_a.node_id);
-    println!("    Nonce: {:>8} | Leading zeros: {} bits", proof_a.nonce, proof_a.node_id.leading_zeros());
+    println!(
+        "    Nonce: {:>8} | Leading zeros: {} bits",
+        proof_a.nonce,
+        proof_a.node_id.leading_zeros()
+    );
     println!("    DID: {}", pubkey_to_did(&keypair_a.pubkey_bytes()));
     println!("  Node B (Reviewer):   {}", proof_b.node_id);
-    println!("    Nonce: {:>8} | Leading zeros: {} bits", proof_b.nonce, proof_b.node_id.leading_zeros());
+    println!(
+        "    Nonce: {:>8} | Leading zeros: {} bits",
+        proof_b.nonce,
+        proof_b.node_id.leading_zeros()
+    );
     println!("  Node C (Student):    {}", proof_c.node_id);
-    println!("    Nonce: {:>8} | Leading zeros: {} bits\n", proof_c.nonce, proof_c.node_id.leading_zeros());
+    println!(
+        "    Nonce: {:>8} | Leading zeros: {} bits\n",
+        proof_c.nonce,
+        proof_c.node_id.leading_zeros()
+    );
 
     // Verify all NodeIDs
-    assert!(verify_node_id(&keypair_a.pubkey_bytes(), proof_a.nonce, &proof_a.node_id, PUZZLE_C_SMALL));
-    assert!(verify_node_id(&keypair_b.pubkey_bytes(), proof_b.nonce, &proof_b.node_id, PUZZLE_C_SMALL));
-    assert!(verify_node_id(&keypair_c.pubkey_bytes(), proof_c.nonce, &proof_c.node_id, PUZZLE_C_SMALL));
+    assert!(verify_node_id(
+        &keypair_a.pubkey_bytes(),
+        proof_a.nonce,
+        &proof_a.node_id,
+        PUZZLE_C_SMALL
+    ));
+    assert!(verify_node_id(
+        &keypair_b.pubkey_bytes(),
+        proof_b.nonce,
+        &proof_b.node_id,
+        PUZZLE_C_SMALL
+    ));
+    assert!(verify_node_id(
+        &keypair_c.pubkey_bytes(),
+        proof_c.nonce,
+        &proof_c.node_id,
+        PUZZLE_C_SMALL
+    ));
     println!("  ✅ All 3 NodeIDs verified (BLAKE3 puzzle, difficulty=16)\n");
 
     // ══════════════════════════════════════════════════════════════════
@@ -60,27 +87,54 @@ fn main() {
 
     // Node A: T1 Contributor (mobile phone, good connection)
     let fitness_a = FitnessComponents {
-        uptime: 0.6, battery: 0.8, bandwidth: 0.5,
-        storage: 0.4, cpu: 0.3, network_quality: 0.5, reputation: 0.5,
+        uptime: 0.6,
+        battery: 0.8,
+        bandwidth: 0.5,
+        storage: 0.4,
+        cpu: 0.3,
+        network_quality: 0.5,
+        reputation: 0.5,
     };
     let mut state_a = MembershipState::new(proof_a.node_id, fitness_a.clone());
-    println!("  Node A fitness: {:.3} → Tier {:?}", fitness_a.score(), fitness_a.recommended_tier());
+    println!(
+        "  Node A fitness: {:.3} → Tier {:?}",
+        fitness_a.score(),
+        fitness_a.recommended_tier()
+    );
 
     // Node B: T2 Local SP (desktop, always-on, good bandwidth)
     let fitness_b = FitnessComponents {
-        uptime: 0.95, battery: 1.0, bandwidth: 0.9,
-        storage: 0.8, cpu: 0.7, network_quality: 1.0, reputation: 0.7,
+        uptime: 0.95,
+        battery: 1.0,
+        bandwidth: 0.9,
+        storage: 0.8,
+        cpu: 0.7,
+        network_quality: 1.0,
+        reputation: 0.7,
     };
     let mut state_b = MembershipState::new(proof_b.node_id, fitness_b.clone());
-    println!("  Node B fitness: {:.3} → Tier {:?}", fitness_b.score(), fitness_b.recommended_tier());
+    println!(
+        "  Node B fitness: {:.3} → Tier {:?}",
+        fitness_b.score(),
+        fitness_b.recommended_tier()
+    );
 
     // Node C: T0 Leaf (old phone, poor connection)
     let fitness_c = FitnessComponents {
-        uptime: 0.2, battery: 0.3, bandwidth: 0.1,
-        storage: 0.1, cpu: 0.1, network_quality: 0.2, reputation: 0.1,
+        uptime: 0.2,
+        battery: 0.3,
+        bandwidth: 0.1,
+        storage: 0.1,
+        cpu: 0.1,
+        network_quality: 0.2,
+        reputation: 0.1,
     };
     let mut state_c = MembershipState::new(proof_c.node_id, fitness_c.clone());
-    println!("  Node C fitness: {:.3} → Tier {:?}\n", fitness_c.score(), fitness_c.recommended_tier());
+    println!(
+        "  Node C fitness: {:.3} → Tier {:?}\n",
+        fitness_c.score(),
+        fitness_c.recommended_tier()
+    );
 
     // Add members to each other's lists
     let addr_a = NetworkAddress::new_v4(10, 0, 1, 1, OBP_PORT);
@@ -88,21 +142,33 @@ fn main() {
     let addr_c = NetworkAddress::new_v6([0x2001, 0x0db8, 0, 0, 0, 0, 0, 3], OBP_PORT);
 
     let entry_a = MemberEntry {
-        node_id: proof_a.node_id, address: addr_a, incarnation: 1,
-        status: MemberStatus::Alive, tier: NodeTier::Contributor,
-        last_seen: std::time::Instant::now(), fitness_score: fitness_a.score(),
+        node_id: proof_a.node_id,
+        address: addr_a,
+        incarnation: 1,
+        status: MemberStatus::Alive,
+        tier: NodeTier::Contributor,
+        last_seen: std::time::Instant::now(),
+        fitness_score: fitness_a.score(),
         topic_vector: [0x42; 16],
     };
     let entry_b = MemberEntry {
-        node_id: proof_b.node_id, address: addr_b, incarnation: 1,
-        status: MemberStatus::Alive, tier: NodeTier::LocalSP,
-        last_seen: std::time::Instant::now(), fitness_score: fitness_b.score(),
+        node_id: proof_b.node_id,
+        address: addr_b,
+        incarnation: 1,
+        status: MemberStatus::Alive,
+        tier: NodeTier::LocalSP,
+        last_seen: std::time::Instant::now(),
+        fitness_score: fitness_b.score(),
         topic_vector: [0x42; 16],
     };
     let entry_c = MemberEntry {
-        node_id: proof_c.node_id, address: addr_c, incarnation: 1,
-        status: MemberStatus::Alive, tier: NodeTier::Leaf,
-        last_seen: std::time::Instant::now(), fitness_score: fitness_c.score(),
+        node_id: proof_c.node_id,
+        address: addr_c,
+        incarnation: 1,
+        status: MemberStatus::Alive,
+        tier: NodeTier::Leaf,
+        last_seen: std::time::Instant::now(),
+        fitness_score: fitness_c.score(),
         topic_vector: [0x00; 16],
     };
 
@@ -113,8 +179,12 @@ fn main() {
     state_c.upsert_member(entry_a.clone());
     state_c.upsert_member(entry_b.clone());
 
-    println!("  Node A knows {} peers | Node B knows {} peers | Node C knows {} peers",
-        state_a.member_count(), state_b.member_count(), state_c.member_count());
+    println!(
+        "  Node A knows {} peers | Node B knows {} peers | Node C knows {} peers",
+        state_a.member_count(),
+        state_b.member_count(),
+        state_c.member_count()
+    );
 
     // SWIM PING: Node A pings Node B
     let _updates = state_b.handle_ping(&proof_a.node_id);
@@ -129,7 +199,10 @@ fn main() {
     bootstrap.hardcoded_seeds.push(addr_b); // Node B is hardcoded seed
 
     let _layer = bootstrap.start();
-    println!("  Layer 1: {} — no social contacts", BootstrapLayer::Social.name());
+    println!(
+        "  Layer 1: {} — no social contacts",
+        BootstrapLayer::Social.name()
+    );
     let next = bootstrap.layer_failed().unwrap();
     println!("  Layer 2: {} — no local peers", next.name());
     let next = bootstrap.layer_failed().unwrap();
@@ -162,7 +235,10 @@ fn main() {
         },
     ]);
     bootstrap.mark_connected(BootstrapLayer::Hardcoded, 3);
-    println!("  ✅ Bootstrap complete via layer: {:?}, peers: 3\n", BootstrapLayer::Hardcoded);
+    println!(
+        "  ✅ Bootstrap complete via layer: {:?}, peers: 3\n",
+        BootstrapLayer::Hardcoded
+    );
 
     // ══════════════════════════════════════════════════════════════════
     // STEP 4: Knowledge Unit — Node A creates a Fact KU
@@ -172,13 +248,28 @@ fn main() {
 
     let ku = KnowledgeUnit {
         codons: vec![
-            Codon { concept_id: 128, role: RoleId::Agent, qualifiers: vec![] },        // water
-            Codon { concept_id: 133, role: RoleId::Quality, qualifiers: vec![] },       // boiling_point
             Codon {
-                concept_id: 132, role: RoleId::Quantity,
+                concept_id: 128,
+                role: RoleId::Agent,
+                qualifiers: vec![],
+            }, // water
+            Codon {
+                concept_id: 133,
+                role: RoleId::Quality,
+                qualifiers: vec![],
+            }, // boiling_point
+            Codon {
+                concept_id: 132,
+                role: RoleId::Quantity,
                 qualifiers: vec![
-                    Qualifier { key: "unit".into(), value: QualifierValue::Text("CELSIUS".into()) },
-                    Qualifier { key: "val".into(), value: QualifierValue::Text("100".into()) },
+                    Qualifier {
+                        key: "unit".into(),
+                        value: QualifierValue::Text("CELSIUS".into()),
+                    },
+                    Qualifier {
+                        key: "val".into(),
+                        value: QualifierValue::Text("100".into()),
+                    },
                 ],
             }, // temperature
         ],
@@ -218,11 +309,14 @@ fn main() {
     println!("  Codons: water(128), boiling_point(133), temperature(132)");
     println!("  Trust: Evidence, confidence=9500, corroborations=42");
     println!("  Wire size: {} bytes", wire_bytes.len());
-    println!("  Wire hex (first 20B): {:02X?}", &wire_bytes[..20.min(wire_bytes.len())]);
+    println!(
+        "  Wire hex (first 20B): {:02X?}",
+        &wire_bytes[..20.min(wire_bytes.len())]
+    );
 
     // Verify magic + version
     assert_eq!(&wire_bytes[0..2], &[0x4B, 0x44]); // "KD"
-    assert_eq!(wire_bytes[2], 0x04);                // v4
+    assert_eq!(wire_bytes[2], 0x04); // v4
     println!("  ✅ Magic=KD, Version=4 confirmed\n");
 
     // ══════════════════════════════════════════════════════════════════
@@ -237,13 +331,25 @@ fn main() {
     };
     let header_bytes = header.encode();
 
-    println!("  Message Type: KU_PUSH (0x{:02x})", MessageType::KuPush as u8);
-    println!("  Header: [{:02X}, {:02X}, {:02X}, {:02X}, {:02X}, {:02X}]",
-        header_bytes[0], header_bytes[1], header_bytes[2], header_bytes[3],
-        header_bytes[4], header_bytes[5]);
+    println!(
+        "  Message Type: KU_PUSH (0x{:02x})",
+        MessageType::KuPush as u8
+    );
+    println!(
+        "  Header: [{:02X}, {:02X}, {:02X}, {:02X}, {:02X}, {:02X}]",
+        header_bytes[0],
+        header_bytes[1],
+        header_bytes[2],
+        header_bytes[3],
+        header_bytes[4],
+        header_bytes[5]
+    );
     println!("  Payload: {} bytes (KU wire format)", wire_bytes.len());
-    println!("  Total frame: {} bytes (6 header + {} payload)\n",
-        6 + wire_bytes.len(), wire_bytes.len());
+    println!(
+        "  Total frame: {} bytes (6 header + {} payload)\n",
+        6 + wire_bytes.len(),
+        wire_bytes.len()
+    );
 
     // Simulate: construct full frame
     let mut frame = Vec::with_capacity(6 + wire_bytes.len());
@@ -257,18 +363,32 @@ fn main() {
 
     // Node B receives the frame
     println!("  [A → B] Sending {} bytes to {:?}", frame.len(), addr_b);
-    let received_header = MessageHeader::decode(&[frame[0], frame[1], frame[2], frame[3], frame[4], frame[5]]).unwrap();
+    let received_header =
+        MessageHeader::decode(&[frame[0], frame[1], frame[2], frame[3], frame[4], frame[5]])
+            .unwrap();
     assert_eq!(received_header.msg_type, MessageType::KuPush);
-    println!("  [B] Received KU_PUSH, payload={} bytes", received_header.payload_length);
+    println!(
+        "  [B] Received KU_PUSH, payload={} bytes",
+        received_header.payload_length
+    );
 
     // Node B decodes the KU
     let payload = &frame[6..];
     let (decoded_info, decoded_ku) = decode_full_knowledge_unit(payload).unwrap();
     assert!(decoded_info.crc32_valid);
-    println!("  [B] Decoded KU: gene={:?}, CRC valid={}", decoded_info.gene_type, decoded_info.crc32_valid);
-    println!("  [B] Codons: {} | Trust score: {}",
+    println!(
+        "  [B] Decoded KU: gene={:?}, CRC valid={}",
+        decoded_info.gene_type, decoded_info.crc32_valid
+    );
+    println!(
+        "  [B] Codons: {} | Trust score: {}",
         decoded_ku.codons.len(),
-        decoded_ku.trust.as_ref().map(|t| t.trust_score).unwrap_or(0));
+        decoded_ku
+            .trust
+            .as_ref()
+            .map(|t| t.trust_score)
+            .unwrap_or(0)
+    );
 
     // Node B forwards to Node C (re-encodes same frame)
     let header_bc = MessageHeader {
@@ -280,12 +400,28 @@ fn main() {
     frame_bc.extend_from_slice(&header_bc.encode());
     frame_bc.extend_from_slice(payload);
 
-    println!("  [B → C] Forwarding {} bytes to {:?}", frame_bc.len(), addr_c);
-    let recv_c = MessageHeader::decode(&[frame_bc[0], frame_bc[1], frame_bc[2], frame_bc[3], frame_bc[4], frame_bc[5]]).unwrap();
+    println!(
+        "  [B → C] Forwarding {} bytes to {:?}",
+        frame_bc.len(),
+        addr_c
+    );
+    let recv_c = MessageHeader::decode(&[
+        frame_bc[0],
+        frame_bc[1],
+        frame_bc[2],
+        frame_bc[3],
+        frame_bc[4],
+        frame_bc[5],
+    ])
+    .unwrap();
     assert_eq!(recv_c.msg_type, MessageType::KuPush);
     let (info_c, ku_c) = decode_full_knowledge_unit(&frame_bc[6..]).unwrap();
     assert!(info_c.crc32_valid);
-    println!("  [C] Decoded KU: CRC valid={}, codons={}", info_c.crc32_valid, ku_c.codons.len());
+    println!(
+        "  [C] Decoded KU: CRC valid={}, codons={}",
+        info_c.crc32_valid,
+        ku_c.codons.len()
+    );
     println!("  ✅ KU survived A→B→C transfer, CRC valid at every hop\n");
 
     // ══════════════════════════════════════════════════════════════════
@@ -318,9 +454,13 @@ fn main() {
     println!("  XOR(B, CID) = {:02X}{:02X}...", dist_b[0], dist_b[1]);
     println!("  XOR(C, CID) = {:02X}{:02X}...", dist_c[0], dist_c[1]);
 
-    let closest = if dist_a < dist_b && dist_a < dist_c { "A" }
-                  else if dist_b < dist_c { "B" }
-                  else { "C" };
+    let closest = if dist_a < dist_b && dist_a < dist_c {
+        "A"
+    } else if dist_b < dist_c {
+        "B"
+    } else {
+        "C"
+    };
     println!("  → Closest node to CID: Node {}", closest);
     println!("  ✅ Kademlia routing determines storage responsibility\n");
 
@@ -331,8 +471,16 @@ fn main() {
 
     let v4_bytes = addr_a.encode();
     let v6_bytes = addr_c.encode();
-    println!("  Node A (IPv4): {:?} → {} bytes wire", addr_a, v4_bytes.len());
-    println!("  Node C (IPv6): {:?} → {} bytes wire", addr_c, v6_bytes.len());
+    println!(
+        "  Node A (IPv4): {:?} → {} bytes wire",
+        addr_a,
+        v4_bytes.len()
+    );
+    println!(
+        "  Node C (IPv6): {:?} → {} bytes wire",
+        addr_c,
+        v6_bytes.len()
+    );
 
     let (decoded_v4, _) = NetworkAddress::decode(&v4_bytes).unwrap();
     let (decoded_v6, _) = NetworkAddress::decode(&v6_bytes).unwrap();
@@ -370,12 +518,18 @@ fn main() {
     println!("╠══════════════════════════════════════════════════════════════╣");
     println!("║                                                              ║");
     println!("║  ku-core (KU Encoding):                                      ║");
-    println!("║    ✅ KnowledgeUnit → wire bytes ({:>3} B)                    ║", wire_bytes.len());
+    println!(
+        "║    ✅ KnowledgeUnit → wire bytes ({:>3} B)                    ║",
+        wire_bytes.len()
+    );
     println!("║    ✅ Wire bytes → KnowledgeUnit (roundtrip)                 ║");
     println!("║    ✅ CRC-32 integrity verification                          ║");
     println!("║                                                              ║");
     println!("║  ku-net (Network Protocol):                                  ║");
-    println!("║    ✅ BLAKE3 NodeID generation (difficulty={})               ║", PUZZLE_C_SMALL);
+    println!(
+        "║    ✅ BLAKE3 NodeID generation (difficulty={})               ║",
+        PUZZLE_C_SMALL
+    );
     println!("║    ✅ Ed25519 sign/verify (tamper detection)                  ║");
     println!("║    ✅ SWIM membership (3 nodes, Alive status)                 ║");
     println!("║    ✅ 6-layer bootstrap (cascade to Hardcoded)               ║");
@@ -389,8 +543,12 @@ fn main() {
     println!("║    ✅ XOR distance determines storage responsibility         ║");
     println!("║    ✅ Signed frames detect tampering                         ║");
     println!("║                                                              ║");
-    println!("║  Frame: [{:>3}B header] + [{:>3}B KU payload] = {:>3}B total    ║",
-        4, wire_bytes.len(), 4 + wire_bytes.len());
+    println!(
+        "║  Frame: [{:>3}B header] + [{:>3}B KU payload] = {:>3}B total    ║",
+        4,
+        wire_bytes.len(),
+        4 + wire_bytes.len()
+    );
     println!("║                                                              ║");
     println!("╚══════════════════════════════════════════════════════════════╝");
 

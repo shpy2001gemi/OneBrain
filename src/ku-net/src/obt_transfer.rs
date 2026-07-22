@@ -26,7 +26,7 @@
 //! ## Reference
 //! See `docs/specs/obt/06_TRANSFER.md`.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::constants::*;
 
@@ -288,7 +288,9 @@ pub fn validate_transfer_request_structure(req: &ObtTransferRequest) -> Result<(
 }
 
 /// Validate basic structure of a TransferConfirm.
-pub fn validate_transfer_confirm_structure(confirm: &ObtTransferConfirm) -> Result<(), &'static str> {
+pub fn validate_transfer_confirm_structure(
+    confirm: &ObtTransferConfirm,
+) -> Result<(), &'static str> {
     if confirm.witness_signature.len() != 64 {
         return Err("Witness signature must be 64 bytes");
     }
@@ -420,8 +422,14 @@ mod tests {
 
     #[test]
     fn test_confirmation_from_u8() {
-        assert_eq!(ConfirmationLevel::from_u8(0), Some(ConfirmationLevel::Pending));
-        assert_eq!(ConfirmationLevel::from_u8(3), Some(ConfirmationLevel::Settled));
+        assert_eq!(
+            ConfirmationLevel::from_u8(0),
+            Some(ConfirmationLevel::Pending)
+        );
+        assert_eq!(
+            ConfirmationLevel::from_u8(3),
+            Some(ConfirmationLevel::Settled)
+        );
         assert_eq!(ConfirmationLevel::from_u8(4), None);
     }
 
@@ -442,17 +450,26 @@ mod tests {
         // Zero amount
         let mut bad = valid.clone();
         bad.amount = 0;
-        assert_eq!(validate_transfer_request_structure(&bad), Err("Transfer amount must be > 0"));
+        assert_eq!(
+            validate_transfer_request_structure(&bad),
+            Err("Transfer amount must be > 0")
+        );
 
         // Self transfer
         let mut bad = valid.clone();
         bad.to = bad.from;
-        assert_eq!(validate_transfer_request_structure(&bad), Err("Cannot transfer to self"));
+        assert_eq!(
+            validate_transfer_request_structure(&bad),
+            Err("Cannot transfer to self")
+        );
 
         // Bad signature length
         let mut bad = valid.clone();
         bad.signature = vec![0u8; 32];
-        assert_eq!(validate_transfer_request_structure(&bad), Err("Signature must be 64 bytes (Ed25519)"));
+        assert_eq!(
+            validate_transfer_request_structure(&bad),
+            Err("Signature must be 64 bytes (Ed25519)")
+        );
     }
 
     #[test]
@@ -468,7 +485,10 @@ mod tests {
 
         let mut bad = valid.clone();
         bad.confirmation_level = 5;
-        assert_eq!(validate_transfer_confirm_structure(&bad), Err("Invalid confirmation level"));
+        assert_eq!(
+            validate_transfer_confirm_structure(&bad),
+            Err("Invalid confirmation level")
+        );
     }
 
     #[test]
@@ -489,18 +509,27 @@ mod tests {
         // Zero amount
         let mut bad = valid.clone();
         bad.amount = 0;
-        assert_eq!(validate_mint_broadcast_structure(&bad), Err("Mint amount must be > 0"));
+        assert_eq!(
+            validate_mint_broadcast_structure(&bad),
+            Err("Mint amount must be > 0")
+        );
 
         // Bad activity type
         let mut bad = valid.clone();
         bad.activity_type = 5;
-        assert_eq!(validate_mint_broadcast_structure(&bad), Err("Invalid activity type (must be 0-3)"));
+        assert_eq!(
+            validate_mint_broadcast_structure(&bad),
+            Err("Invalid activity type (must be 0-3)")
+        );
 
         // Too few witnesses
         let mut bad = valid.clone();
         bad.witness_count = 1;
         bad.witness_data = vec![0u8; 96];
-        assert_eq!(validate_mint_broadcast_structure(&bad), Err("Insufficient witness count"));
+        assert_eq!(
+            validate_mint_broadcast_structure(&bad),
+            Err("Insufficient witness count")
+        );
     }
 
     #[test]

@@ -18,8 +18,8 @@ mod impl_ {
     use std::path::Path;
 
     use ku_core::graph_types::{BondMeta, GraphStats};
-    use ku_core::types::{RelationType, EdgeState};
     use ku_core::obs_schema;
+    use ku_core::types::{EdgeState, RelationType};
 
     use crate::storage::StorageError;
 
@@ -116,6 +116,17 @@ mod impl_ {
         db: Database,
     }
 
+    /// A concept relation returned by concept query methods.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct ConceptRelation {
+        /// The related concept's 16-byte CCID.
+        pub ccid: [u8; 16],
+        /// The relationship type.
+        pub relation: RelationType,
+        /// Edge metadata (weight, state, etc.)
+        pub meta: BondMeta,
+    }
+
     impl GraphStorage {
         /// Open or create a graph storage database at the given path.
         ///
@@ -138,7 +149,9 @@ mod impl_ {
 
             // Initialize/validate graph schema version
             obs_schema::redb_schema::ensure_schema(&db, &obs_schema::graph_storage_registry())
-                .map_err(|e| StorageError::DatabaseError(format!("Graph schema init failed: {}", e)))?;
+                .map_err(|e| {
+                    StorageError::DatabaseError(format!("Graph schema init failed: {}", e))
+                })?;
 
             Ok(Self { db })
         }
@@ -177,20 +190,27 @@ mod impl_ {
                         let old_wk = make_weight_key(old_meta.weight, src, tgt, rel);
                         let old_tk = make_time_key(old_meta.timestamp, src, tgt, rel);
                         let old_sk = make_state_key(old_meta.state, src, rel, tgt);
-                        txn.open_table(TABLE_BOND_WEIGHT)?.remove(old_wk.as_slice())?;
+                        txn.open_table(TABLE_BOND_WEIGHT)?
+                            .remove(old_wk.as_slice())?;
                         txn.open_table(TABLE_EDGE_TIME)?.remove(old_tk.as_slice())?;
-                        txn.open_table(TABLE_INDEX_STATE)?.remove(old_sk.as_slice())?;
+                        txn.open_table(TABLE_INDEX_STATE)?
+                            .remove(old_sk.as_slice())?;
                         // Note: edges_in and edges_type will be overwritten, no need to remove
                     }
                 }
 
                 // Insert into all 6 tables
                 out_table.insert(out_key.as_slice(), meta_bytes.as_slice())?;
-                txn.open_table(TABLE_EDGES_IN)?.insert(in_key.as_slice(), &[] as &[u8])?;
-                txn.open_table(TABLE_EDGES_TYPE)?.insert(type_key.as_slice(), &[] as &[u8])?;
-                txn.open_table(TABLE_INDEX_STATE)?.insert(state_key.as_slice(), &[] as &[u8])?;
-                txn.open_table(TABLE_BOND_WEIGHT)?.insert(weight_key.as_slice(), &[] as &[u8])?;
-                txn.open_table(TABLE_EDGE_TIME)?.insert(time_key.as_slice(), &[] as &[u8])?;
+                txn.open_table(TABLE_EDGES_IN)?
+                    .insert(in_key.as_slice(), &[] as &[u8])?;
+                txn.open_table(TABLE_EDGES_TYPE)?
+                    .insert(type_key.as_slice(), &[] as &[u8])?;
+                txn.open_table(TABLE_INDEX_STATE)?
+                    .insert(state_key.as_slice(), &[] as &[u8])?;
+                txn.open_table(TABLE_BOND_WEIGHT)?
+                    .insert(weight_key.as_slice(), &[] as &[u8])?;
+                txn.open_table(TABLE_EDGE_TIME)?
+                    .insert(time_key.as_slice(), &[] as &[u8])?;
             }
             txn.commit()?;
 
@@ -287,9 +307,7 @@ mod impl_ {
                             buf.copy_from_slice(v);
                             BondMeta::from_bytes(&buf)
                         } else {
-                            return Err(StorageError::CodecError(
-                                "invalid BondMeta length".into(),
-                            ));
+                            return Err(StorageError::CodecError("invalid BondMeta length".into()));
                         }
                     }
                     None => return Err(StorageError::NotFound),
@@ -554,6 +572,131 @@ mod impl_ {
 
         // remove_secondary_indices() was removed — its logic is now inlined
         // into insert_bond() for atomic single-transaction execution.
+
+        // ─── Concept Graph Queries ────────────────────────────────────────
+
+        /// Zero-pad a 16-byte CCID to 32 bytes for use as a graph key.
+        fn pad_ccid(ccid: &[u8; 16]) -> [u8; 32] {
+            let mut out = [0u8; 32];
+            out[..16].copy_from_slice(ccid);
+            out
+        }
+
+        /// Extract a 16-byte CCID from a 32-byte padded key.
+        fn unpad_ccid(padded: &[u8; 32]) -> [u8; 16] {
+            let mut out = [0u8; 16];
+            out.copy_from_slice(&padded[..16]);
+            out
+        }
+
+        /// Find all concepts directly related to a given concept (outgoing edges).
+        ///
+        /// Takes a 16-byte CCID and returns all outgoing concept relations.
+        pub fn concept_outgoing(
+            &self,
+            ccid: &[u8; 16],
+        ) -> Result<Vec<ConceptRelation>, StorageError> {
+            let padded = Self::pad_ccid(ccid);
+            let bonds = self.outgoing_bonds(&padded)?;
+            Ok(bonds
+                .into_iter()
+                .map(|(rel, tgt, meta)| ConceptRelation {
+                    ccid: Self::unpad_ccid(&tgt),
+                    relation: rel,
+                    meta,
+                })
+                .collect())
+        }
+
+        /// Find all concepts that relate to a given concept (incoming edges).
+        ///
+        /// Takes a 16-byte CCID and returns all incoming concept relations.
+        pub fn concept_incoming(
+            &self,
+            ccid: &[u8; 16],
+        ) -> Result<Vec<ConceptRelation>, StorageError> {
+            let padded = Self::pad_ccid(ccid);
+            let bonds = self.incoming_bonds(&padded)?;
+            Ok(bonds
+                .into_iter()
+                .map(|(rel, src)| ConceptRelation {
+                    ccid: Self::unpad_ccid(&src),
+                    relation: rel,
+                    meta: BondMeta {
+                        weight: 0,
+                        creator: ku_core::types::Creator::System,
+                        state: EdgeState::Active,
+                        decay: ku_core::types::DecayRate::None,
+                        timestamp: 0,
+                    },
+                })
+                .collect())
+        }
+
+        /// Find all concepts related to a given concept by a specific relation type.
+        ///
+        /// Takes a 16-byte CCID and returns matching outgoing concept relations.
+        pub fn concept_outgoing_by_type(
+            &self,
+            ccid: &[u8; 16],
+            rel: RelationType,
+        ) -> Result<Vec<ConceptRelation>, StorageError> {
+            let padded = Self::pad_ccid(ccid);
+            let bonds = self.outgoing_by_type(&padded, rel)?;
+            Ok(bonds
+                .into_iter()
+                .map(|(tgt, meta)| ConceptRelation {
+                    ccid: Self::unpad_ccid(&tgt),
+                    relation: rel,
+                    meta,
+                })
+                .collect())
+        }
+
+        /// BFS traversal of concept neighbors up to `max_depth` hops.
+        ///
+        /// Returns all concepts reachable from `start_ccid` within the given
+        /// depth, optionally filtered by relation type. The start concept itself
+        /// is NOT included in the results.
+        pub fn concept_neighbors(
+            &self,
+            start_ccid: &[u8; 16],
+            max_depth: usize,
+            filter_rel: Option<RelationType>,
+        ) -> Result<Vec<(ConceptRelation, usize)>, StorageError> {
+            use std::collections::HashSet;
+
+            let mut results: Vec<(ConceptRelation, usize)> = Vec::new();
+            let mut visited: HashSet<[u8; 16]> = HashSet::new();
+            visited.insert(*start_ccid);
+
+            let mut frontier: Vec<[u8; 16]> = vec![*start_ccid];
+
+            for depth in 1..=max_depth {
+                let mut next_frontier: Vec<[u8; 16]> = Vec::new();
+
+                for ccid in &frontier {
+                    let outgoing = match filter_rel {
+                        Some(rel) => self.concept_outgoing_by_type(ccid, rel)?,
+                        None => self.concept_outgoing(ccid)?,
+                    };
+
+                    for cr in outgoing {
+                        if visited.insert(cr.ccid) {
+                            next_frontier.push(cr.ccid);
+                            results.push((cr, depth));
+                        }
+                    }
+                }
+
+                if next_frontier.is_empty() {
+                    break;
+                }
+                frontier = next_frontier;
+            }
+
+            Ok(results)
+        }
     }
 
     // ─── Tests ─────────────────────────────────────────────────────────────
@@ -669,9 +812,27 @@ mod impl_ {
             let tgt2 = make_cid(0x33);
             let tgt3 = make_cid(0x44);
 
-            gs.insert_bond(&src, &tgt1, RelationType::Extends, &make_meta(8000, EdgeState::Active, 100)).unwrap();
-            gs.insert_bond(&src, &tgt2, RelationType::PartOf, &make_meta(7000, EdgeState::Active, 200)).unwrap();
-            gs.insert_bond(&src, &tgt3, RelationType::Causes, &make_meta(6000, EdgeState::Active, 300)).unwrap();
+            gs.insert_bond(
+                &src,
+                &tgt1,
+                RelationType::Extends,
+                &make_meta(8000, EdgeState::Active, 100),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &tgt2,
+                RelationType::PartOf,
+                &make_meta(7000, EdgeState::Active, 200),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &tgt3,
+                RelationType::Causes,
+                &make_meta(6000, EdgeState::Active, 300),
+            )
+            .unwrap();
 
             let bonds = gs.outgoing_bonds(&src).unwrap();
             assert_eq!(bonds.len(), 3);
@@ -692,9 +853,27 @@ mod impl_ {
             let tgt2 = make_cid(0x33);
             let tgt3 = make_cid(0x44);
 
-            gs.insert_bond(&src, &tgt1, RelationType::Extends, &make_meta(8000, EdgeState::Active, 100)).unwrap();
-            gs.insert_bond(&src, &tgt2, RelationType::PartOf, &make_meta(7000, EdgeState::Active, 200)).unwrap();
-            gs.insert_bond(&src, &tgt3, RelationType::Extends, &make_meta(6000, EdgeState::Active, 300)).unwrap();
+            gs.insert_bond(
+                &src,
+                &tgt1,
+                RelationType::Extends,
+                &make_meta(8000, EdgeState::Active, 100),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &tgt2,
+                RelationType::PartOf,
+                &make_meta(7000, EdgeState::Active, 200),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &tgt3,
+                RelationType::Extends,
+                &make_meta(6000, EdgeState::Active, 300),
+            )
+            .unwrap();
 
             let extends = gs.outgoing_by_type(&src, RelationType::Extends).unwrap();
             assert_eq!(extends.len(), 2);
@@ -721,8 +900,20 @@ mod impl_ {
             let src = make_cid(0x11);
             assert_eq!(gs.outgoing_count(&src).unwrap(), 0);
 
-            gs.insert_bond(&src, &make_cid(0x22), RelationType::Extends, &make_meta(5000, EdgeState::Active, 100)).unwrap();
-            gs.insert_bond(&src, &make_cid(0x33), RelationType::PartOf, &make_meta(6000, EdgeState::Active, 200)).unwrap();
+            gs.insert_bond(
+                &src,
+                &make_cid(0x22),
+                RelationType::Extends,
+                &make_meta(5000, EdgeState::Active, 100),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &make_cid(0x33),
+                RelationType::PartOf,
+                &make_meta(6000, EdgeState::Active, 200),
+            )
+            .unwrap();
             assert_eq!(gs.outgoing_count(&src).unwrap(), 2);
 
             drop(gs);
@@ -739,9 +930,27 @@ mod impl_ {
             let tgt = make_cid(0xAA);
             assert_eq!(gs.incoming_count(&tgt).unwrap(), 0);
 
-            gs.insert_bond(&make_cid(0x11), &tgt, RelationType::Extends, &make_meta(5000, EdgeState::Active, 100)).unwrap();
-            gs.insert_bond(&make_cid(0x22), &tgt, RelationType::PartOf, &make_meta(6000, EdgeState::Active, 200)).unwrap();
-            gs.insert_bond(&make_cid(0x33), &tgt, RelationType::Causes, &make_meta(7000, EdgeState::Active, 300)).unwrap();
+            gs.insert_bond(
+                &make_cid(0x11),
+                &tgt,
+                RelationType::Extends,
+                &make_meta(5000, EdgeState::Active, 100),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &make_cid(0x22),
+                &tgt,
+                RelationType::PartOf,
+                &make_meta(6000, EdgeState::Active, 200),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &make_cid(0x33),
+                &tgt,
+                RelationType::Causes,
+                &make_meta(7000, EdgeState::Active, 300),
+            )
+            .unwrap();
 
             assert_eq!(gs.incoming_count(&tgt).unwrap(), 3);
 
@@ -801,7 +1010,8 @@ mod impl_ {
             assert_eq!(bonds[0].2.state, EdgeState::Active);
 
             // Update to Weakened
-            gs.update_bond_state(&src, &tgt, rel, EdgeState::Weakened).unwrap();
+            gs.update_bond_state(&src, &tgt, rel, EdgeState::Weakened)
+                .unwrap();
 
             // Verify updated state
             let bonds = gs.outgoing_bonds(&src).unwrap();
@@ -821,10 +1031,34 @@ mod impl_ {
             let gs = GraphStorage::open(&path).unwrap();
 
             let src = make_cid(0x11);
-            gs.insert_bond(&src, &make_cid(0x22), RelationType::Extends, &make_meta(5000, EdgeState::Active, 100)).unwrap();
-            gs.insert_bond(&src, &make_cid(0x33), RelationType::PartOf, &make_meta(6000, EdgeState::Active, 200)).unwrap();
-            gs.insert_bond(&src, &make_cid(0x44), RelationType::Causes, &make_meta(7000, EdgeState::Active, 300)).unwrap();
-            gs.insert_bond(&src, &make_cid(0x55), RelationType::Enables, &make_meta(8000, EdgeState::Active, 400)).unwrap();
+            gs.insert_bond(
+                &src,
+                &make_cid(0x22),
+                RelationType::Extends,
+                &make_meta(5000, EdgeState::Active, 100),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &make_cid(0x33),
+                RelationType::PartOf,
+                &make_meta(6000, EdgeState::Active, 200),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &make_cid(0x44),
+                RelationType::Causes,
+                &make_meta(7000, EdgeState::Active, 300),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &make_cid(0x55),
+                RelationType::Enables,
+                &make_meta(8000, EdgeState::Active, 400),
+            )
+            .unwrap();
 
             // Query range [150, 350]
             let bonds = gs.bonds_in_time_range(150, 350).unwrap();
@@ -845,10 +1079,34 @@ mod impl_ {
             let gs = GraphStorage::open(&path).unwrap();
 
             let src = make_cid(0x11);
-            gs.insert_bond(&src, &make_cid(0x22), RelationType::Extends, &make_meta(8000, EdgeState::Active, 100)).unwrap();
-            gs.insert_bond(&src, &make_cid(0x33), RelationType::PartOf, &make_meta(5000, EdgeState::Weakened, 200)).unwrap();
-            gs.insert_bond(&src, &make_cid(0x44), RelationType::Causes, &make_meta(3000, EdgeState::Deprecated, 300)).unwrap();
-            gs.insert_bond(&src, &make_cid(0x55), RelationType::Enables, &make_meta(9000, EdgeState::Active, 400)).unwrap();
+            gs.insert_bond(
+                &src,
+                &make_cid(0x22),
+                RelationType::Extends,
+                &make_meta(8000, EdgeState::Active, 100),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &make_cid(0x33),
+                RelationType::PartOf,
+                &make_meta(5000, EdgeState::Weakened, 200),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &make_cid(0x44),
+                RelationType::Causes,
+                &make_meta(3000, EdgeState::Deprecated, 300),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &make_cid(0x55),
+                RelationType::Enables,
+                &make_meta(9000, EdgeState::Active, 400),
+            )
+            .unwrap();
 
             let stats = gs.stats().unwrap();
             assert_eq!(stats.total_edges, 4);
@@ -870,7 +1128,12 @@ mod impl_ {
             let cid = make_cid(0xFF);
             assert_eq!(gs.outgoing_bonds(&cid).unwrap().len(), 0);
             assert_eq!(gs.incoming_bonds(&cid).unwrap().len(), 0);
-            assert_eq!(gs.outgoing_by_type(&cid, RelationType::Extends).unwrap().len(), 0);
+            assert_eq!(
+                gs.outgoing_by_type(&cid, RelationType::Extends)
+                    .unwrap()
+                    .len(),
+                0
+            );
             assert_eq!(gs.outgoing_count(&cid).unwrap(), 0);
             assert_eq!(gs.incoming_count(&cid).unwrap(), 0);
             assert_eq!(gs.bonds_in_time_range(0, u32::MAX).unwrap().len(), 0);
@@ -926,9 +1189,27 @@ mod impl_ {
             let src2 = make_cid(0x22);
             let src3 = make_cid(0x33);
 
-            gs.insert_bond(&src1, &tgt, RelationType::Extends, &make_meta(5000, EdgeState::Active, 100)).unwrap();
-            gs.insert_bond(&src2, &tgt, RelationType::PartOf, &make_meta(6000, EdgeState::Active, 200)).unwrap();
-            gs.insert_bond(&src3, &tgt, RelationType::Causes, &make_meta(7000, EdgeState::Active, 300)).unwrap();
+            gs.insert_bond(
+                &src1,
+                &tgt,
+                RelationType::Extends,
+                &make_meta(5000, EdgeState::Active, 100),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src2,
+                &tgt,
+                RelationType::PartOf,
+                &make_meta(6000, EdgeState::Active, 200),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src3,
+                &tgt,
+                RelationType::Causes,
+                &make_meta(7000, EdgeState::Active, 300),
+            )
+            .unwrap();
 
             let incoming = gs.incoming_bonds(&tgt).unwrap();
             assert_eq!(incoming.len(), 3);
@@ -994,8 +1275,10 @@ mod impl_ {
             let gs = GraphStorage::open(&path).unwrap();
 
             let result = gs.update_bond_state(
-                &make_cid(0xFF), &make_cid(0xEE),
-                RelationType::PartOf, EdgeState::Deprecated,
+                &make_cid(0xFF),
+                &make_cid(0xEE),
+                RelationType::PartOf,
+                EdgeState::Deprecated,
             );
             assert!(matches!(result, Err(StorageError::NotFound)));
 
@@ -1013,16 +1296,38 @@ mod impl_ {
             let src = make_cid(0x11);
             let tgt = make_cid(0x22);
 
-            gs.insert_bond(&src, &tgt, RelationType::Extends, &make_meta(5000, EdgeState::Active, 100)).unwrap();
-            gs.insert_bond(&src, &tgt, RelationType::PartOf, &make_meta(6000, EdgeState::Active, 200)).unwrap();
+            gs.insert_bond(
+                &src,
+                &tgt,
+                RelationType::Extends,
+                &make_meta(5000, EdgeState::Active, 100),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src,
+                &tgt,
+                RelationType::PartOf,
+                &make_meta(6000, EdgeState::Active, 200),
+            )
+            .unwrap();
 
             // Should have 2 distinct bonds
             let bonds = gs.outgoing_bonds(&src).unwrap();
             assert_eq!(bonds.len(), 2);
 
             // Each type should return 1
-            assert_eq!(gs.outgoing_by_type(&src, RelationType::Extends).unwrap().len(), 1);
-            assert_eq!(gs.outgoing_by_type(&src, RelationType::PartOf).unwrap().len(), 1);
+            assert_eq!(
+                gs.outgoing_by_type(&src, RelationType::Extends)
+                    .unwrap()
+                    .len(),
+                1
+            );
+            assert_eq!(
+                gs.outgoing_by_type(&src, RelationType::PartOf)
+                    .unwrap()
+                    .len(),
+                1
+            );
 
             drop(gs);
             cleanup(&path);
@@ -1035,7 +1340,13 @@ mod impl_ {
             let path = test_db_path("time_empty");
             let gs = GraphStorage::open(&path).unwrap();
 
-            gs.insert_bond(&make_cid(0x11), &make_cid(0x22), RelationType::Extends, &make_meta(5000, EdgeState::Active, 500)).unwrap();
+            gs.insert_bond(
+                &make_cid(0x11),
+                &make_cid(0x22),
+                RelationType::Extends,
+                &make_meta(5000, EdgeState::Active, 500),
+            )
+            .unwrap();
 
             // Query a range that excludes the bond
             let bonds = gs.bonds_in_time_range(600, 1000).unwrap();
@@ -1056,18 +1367,22 @@ mod impl_ {
             let tgt = make_cid(0x22);
             let rel = RelationType::Extends;
 
-            gs.insert_bond(&src, &tgt, rel, &make_meta(8000, EdgeState::Active, 100)).unwrap();
+            gs.insert_bond(&src, &tgt, rel, &make_meta(8000, EdgeState::Active, 100))
+                .unwrap();
 
             // Active → Weakened → Deprecated → Active
-            gs.update_bond_state(&src, &tgt, rel, EdgeState::Weakened).unwrap();
+            gs.update_bond_state(&src, &tgt, rel, EdgeState::Weakened)
+                .unwrap();
             let bonds = gs.outgoing_bonds(&src).unwrap();
             assert_eq!(bonds[0].2.state, EdgeState::Weakened);
 
-            gs.update_bond_state(&src, &tgt, rel, EdgeState::Deprecated).unwrap();
+            gs.update_bond_state(&src, &tgt, rel, EdgeState::Deprecated)
+                .unwrap();
             let bonds = gs.outgoing_bonds(&src).unwrap();
             assert_eq!(bonds[0].2.state, EdgeState::Deprecated);
 
-            gs.update_bond_state(&src, &tgt, rel, EdgeState::Active).unwrap();
+            gs.update_bond_state(&src, &tgt, rel, EdgeState::Active)
+                .unwrap();
             let bonds = gs.outgoing_bonds(&src).unwrap();
             assert_eq!(bonds[0].2.state, EdgeState::Active);
 
@@ -1086,8 +1401,20 @@ mod impl_ {
             let src2 = make_cid(0x22);
             let tgt = make_cid(0xAA);
 
-            gs.insert_bond(&src1, &tgt, RelationType::Extends, &make_meta(5000, EdgeState::Active, 100)).unwrap();
-            gs.insert_bond(&src2, &tgt, RelationType::PartOf, &make_meta(6000, EdgeState::Active, 200)).unwrap();
+            gs.insert_bond(
+                &src1,
+                &tgt,
+                RelationType::Extends,
+                &make_meta(5000, EdgeState::Active, 100),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &src2,
+                &tgt,
+                RelationType::PartOf,
+                &make_meta(6000, EdgeState::Active, 200),
+            )
+            .unwrap();
 
             let bonds1 = gs.outgoing_bonds(&src1).unwrap();
             assert_eq!(bonds1.len(), 1);
@@ -1112,7 +1439,8 @@ mod impl_ {
             let tgt = make_cid(0x22);
             let rel = RelationType::Extends;
 
-            gs.insert_bond(&src, &tgt, rel, &make_meta(5000, EdgeState::Active, 100)).unwrap();
+            gs.insert_bond(&src, &tgt, rel, &make_meta(5000, EdgeState::Active, 100))
+                .unwrap();
             assert_eq!(gs.stats().unwrap().total_edges, 1);
 
             gs.remove_bond(&src, &tgt, rel).unwrap();
@@ -1129,8 +1457,20 @@ mod impl_ {
             let path = test_db_path("time_boundary");
             let gs = GraphStorage::open(&path).unwrap();
 
-            gs.insert_bond(&make_cid(0x11), &make_cid(0x22), RelationType::Extends, &make_meta(5000, EdgeState::Active, 100)).unwrap();
-            gs.insert_bond(&make_cid(0x33), &make_cid(0x44), RelationType::PartOf, &make_meta(6000, EdgeState::Active, 200)).unwrap();
+            gs.insert_bond(
+                &make_cid(0x11),
+                &make_cid(0x22),
+                RelationType::Extends,
+                &make_meta(5000, EdgeState::Active, 100),
+            )
+            .unwrap();
+            gs.insert_bond(
+                &make_cid(0x33),
+                &make_cid(0x44),
+                RelationType::PartOf,
+                &make_meta(6000, EdgeState::Active, 200),
+            )
+            .unwrap();
 
             // Exact boundaries should be inclusive
             let bonds = gs.bonds_in_time_range(100, 200).unwrap();
@@ -1208,12 +1548,14 @@ mod impl_ {
             let tgt = make_cid(0x22);
             let rel = RelationType::Extends;
 
-            gs.insert_bond(&src, &tgt, rel, &make_meta(8000, EdgeState::Active, 100)).unwrap();
+            gs.insert_bond(&src, &tgt, rel, &make_meta(8000, EdgeState::Active, 100))
+                .unwrap();
             let stats = gs.stats().unwrap();
             assert_eq!(stats.active_edges, 1);
             assert_eq!(stats.weakened_edges, 0);
 
-            gs.update_bond_state(&src, &tgt, rel, EdgeState::Weakened).unwrap();
+            gs.update_bond_state(&src, &tgt, rel, EdgeState::Weakened)
+                .unwrap();
             let stats = gs.stats().unwrap();
             assert_eq!(stats.active_edges, 0);
             assert_eq!(stats.weakened_edges, 1);
@@ -1237,15 +1579,20 @@ mod impl_ {
                 tgt[0] = (i + 10) as u8;
                 tgt[1] = (i >> 8) as u8;
                 gs.insert_bond(
-                    &src, &tgt, RelationType::Extends,
+                    &src,
+                    &tgt,
+                    RelationType::Extends,
                     &make_meta(5000 + i as u16, EdgeState::Active, 1000 + i as u32),
-                ).unwrap();
+                )
+                .unwrap();
             }
 
             assert_eq!(gs.outgoing_count(&src).unwrap(), count);
             assert_eq!(gs.stats().unwrap().total_edges, count as u64);
 
-            let time_bonds = gs.bonds_in_time_range(1000, 1000 + count as u32 - 1).unwrap();
+            let time_bonds = gs
+                .bonds_in_time_range(1000, 1000 + count as u32 - 1)
+                .unwrap();
             assert_eq!(time_bonds.len(), count);
 
             drop(gs);
@@ -1265,18 +1612,221 @@ mod impl_ {
             let meta_b = make_meta(5000, EdgeState::Active, 1_700_000_000);
 
             // Insert two bonds between same nodes, different relations, same weight
-            gs.insert_bond(&src, &tgt, RelationType::Extends, &meta_a).unwrap();
-            gs.insert_bond(&src, &tgt, RelationType::Causes, &meta_b).unwrap();
+            gs.insert_bond(&src, &tgt, RelationType::Extends, &meta_a)
+                .unwrap();
+            gs.insert_bond(&src, &tgt, RelationType::Causes, &meta_b)
+                .unwrap();
 
             // Both should exist (no key collision)
             let bonds = gs.outgoing_bonds(&src).unwrap();
             assert_eq!(bonds.len(), 2);
 
             // Verify each relation is retrievable via read_bond_meta
-            let out_a = gs.read_bond_meta(&src, &tgt, RelationType::Extends).unwrap();
+            let out_a = gs
+                .read_bond_meta(&src, &tgt, RelationType::Extends)
+                .unwrap();
             let out_b = gs.read_bond_meta(&src, &tgt, RelationType::Causes).unwrap();
             assert!(out_a.is_some());
             assert!(out_b.is_some());
+
+            drop(gs);
+            cleanup(&path);
+        }
+
+        // ── Concept graph query tests ────────────────────────────────────
+
+        fn make_ccid(byte: u8) -> [u8; 16] {
+            [byte; 16]
+        }
+
+        fn pad(ccid: &[u8; 16]) -> [u8; 32] {
+            let mut out = [0u8; 32];
+            out[..16].copy_from_slice(ccid);
+            out
+        }
+
+        #[test]
+        fn concept_outgoing_and_incoming() {
+            let path = test_db_path("concept_out_in");
+            let gs = GraphStorage::open(&path).unwrap();
+
+            let water = make_ccid(0xAA);
+            let hydrogen = make_ccid(0xBB);
+            let meta = make_meta(500, EdgeState::Active, 0);
+
+            // hydrogen -[PartOf]→ water
+            gs.insert_bond(&pad(&hydrogen), &pad(&water), RelationType::PartOf, &meta)
+                .unwrap();
+
+            // Outgoing from hydrogen
+            let out = gs.concept_outgoing(&hydrogen).unwrap();
+            assert_eq!(out.len(), 1);
+            assert_eq!(out[0].ccid, water);
+            assert_eq!(out[0].relation, RelationType::PartOf);
+
+            // Incoming to water
+            let inc = gs.concept_incoming(&water).unwrap();
+            assert_eq!(inc.len(), 1);
+            assert_eq!(inc[0].ccid, hydrogen);
+            assert_eq!(inc[0].relation, RelationType::PartOf);
+
+            // Empty queries
+            assert!(gs.concept_outgoing(&water).unwrap().is_empty());
+            assert!(gs.concept_incoming(&hydrogen).unwrap().is_empty());
+
+            drop(gs);
+            cleanup(&path);
+        }
+
+        #[test]
+        fn concept_outgoing_by_type_filter() {
+            let path = test_db_path("concept_by_type");
+            let gs = GraphStorage::open(&path).unwrap();
+
+            let water = make_ccid(0xAA);
+            let molecule = make_ccid(0xBB);
+            let oxygen = make_ccid(0xCC);
+            let meta = make_meta(500, EdgeState::Active, 0);
+
+            // water -[Extends]→ molecule
+            gs.insert_bond(&pad(&water), &pad(&molecule), RelationType::Extends, &meta)
+                .unwrap();
+            // water -[PartOf]→ oxygen (water is part of the oxygen cycle, etc.)
+            gs.insert_bond(&pad(&water), &pad(&oxygen), RelationType::PartOf, &meta)
+                .unwrap();
+
+            // All outgoing
+            let all = gs.concept_outgoing(&water).unwrap();
+            assert_eq!(all.len(), 2);
+
+            // Filter by Extends
+            let extends = gs
+                .concept_outgoing_by_type(&water, RelationType::Extends)
+                .unwrap();
+            assert_eq!(extends.len(), 1);
+            assert_eq!(extends[0].ccid, molecule);
+
+            // Filter by PartOf
+            let partof = gs
+                .concept_outgoing_by_type(&water, RelationType::PartOf)
+                .unwrap();
+            assert_eq!(partof.len(), 1);
+            assert_eq!(partof[0].ccid, oxygen);
+
+            // Filter by Causes → empty
+            let causes = gs
+                .concept_outgoing_by_type(&water, RelationType::Causes)
+                .unwrap();
+            assert!(causes.is_empty());
+
+            drop(gs);
+            cleanup(&path);
+        }
+
+        #[test]
+        fn concept_neighbors_bfs() {
+            let path = test_db_path("concept_bfs");
+            let gs = GraphStorage::open(&path).unwrap();
+
+            // Build a chain: A → B → C → D
+            let a = make_ccid(0x01);
+            let b = make_ccid(0x02);
+            let c = make_ccid(0x03);
+            let d = make_ccid(0x04);
+            let meta = make_meta(500, EdgeState::Active, 0);
+
+            gs.insert_bond(&pad(&a), &pad(&b), RelationType::Extends, &meta)
+                .unwrap();
+            gs.insert_bond(&pad(&b), &pad(&c), RelationType::Extends, &meta)
+                .unwrap();
+            gs.insert_bond(&pad(&c), &pad(&d), RelationType::Extends, &meta)
+                .unwrap();
+
+            // Depth 1 from A → only B
+            let n1 = gs.concept_neighbors(&a, 1, None).unwrap();
+            assert_eq!(n1.len(), 1);
+            assert_eq!(n1[0].0.ccid, b);
+            assert_eq!(n1[0].1, 1); // depth = 1
+
+            // Depth 2 from A → B (depth 1) + C (depth 2)
+            let n2 = gs.concept_neighbors(&a, 2, None).unwrap();
+            assert_eq!(n2.len(), 2);
+            assert_eq!(n2[0].0.ccid, b);
+            assert_eq!(n2[0].1, 1);
+            assert_eq!(n2[1].0.ccid, c);
+            assert_eq!(n2[1].1, 2);
+
+            // Depth 3 from A → B + C + D
+            let n3 = gs.concept_neighbors(&a, 3, None).unwrap();
+            assert_eq!(n3.len(), 3);
+            assert_eq!(n3[2].0.ccid, d);
+            assert_eq!(n3[2].1, 3);
+
+            // Depth 10 from A → still only B + C + D (chain ends)
+            let n10 = gs.concept_neighbors(&a, 10, None).unwrap();
+            assert_eq!(n10.len(), 3);
+
+            drop(gs);
+            cleanup(&path);
+        }
+
+        #[test]
+        fn concept_neighbors_with_filter() {
+            let path = test_db_path("concept_filter_bfs");
+            let gs = GraphStorage::open(&path).unwrap();
+
+            let a = make_ccid(0x10);
+            let b = make_ccid(0x20);
+            let c = make_ccid(0x30);
+            let meta = make_meta(500, EdgeState::Active, 0);
+
+            // A -[Extends]→ B, A -[Causes]→ C
+            gs.insert_bond(&pad(&a), &pad(&b), RelationType::Extends, &meta)
+                .unwrap();
+            gs.insert_bond(&pad(&a), &pad(&c), RelationType::Causes, &meta)
+                .unwrap();
+
+            // Filter Extends → only B
+            let ext = gs
+                .concept_neighbors(&a, 1, Some(RelationType::Extends))
+                .unwrap();
+            assert_eq!(ext.len(), 1);
+            assert_eq!(ext[0].0.ccid, b);
+
+            // Filter Causes → only C
+            let cau = gs
+                .concept_neighbors(&a, 1, Some(RelationType::Causes))
+                .unwrap();
+            assert_eq!(cau.len(), 1);
+            assert_eq!(cau[0].0.ccid, c);
+
+            // No filter → both
+            let all = gs.concept_neighbors(&a, 1, None).unwrap();
+            assert_eq!(all.len(), 2);
+
+            drop(gs);
+            cleanup(&path);
+        }
+
+        #[test]
+        fn concept_neighbors_handles_cycles() {
+            let path = test_db_path("concept_cycle");
+            let gs = GraphStorage::open(&path).unwrap();
+
+            let a = make_ccid(0x41);
+            let b = make_ccid(0x42);
+            let meta = make_meta(500, EdgeState::Active, 0);
+
+            // A → B → A (cycle)
+            gs.insert_bond(&pad(&a), &pad(&b), RelationType::Extends, &meta)
+                .unwrap();
+            gs.insert_bond(&pad(&b), &pad(&a), RelationType::Extends, &meta)
+                .unwrap();
+
+            // Should not infinite loop — visited set prevents revisits
+            let neighbors = gs.concept_neighbors(&a, 10, None).unwrap();
+            assert_eq!(neighbors.len(), 1); // only B (A is start, excluded)
+            assert_eq!(neighbors[0].0.ccid, b);
 
             drop(gs);
             cleanup(&path);

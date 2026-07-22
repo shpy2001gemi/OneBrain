@@ -16,11 +16,7 @@ pub async fn get_api_config(state: State<'_, AppState>) -> Result<serde_json::Va
         .get()
         .copied()
         .unwrap_or(state.config.api_port);
-    let token = state
-        .api_token
-        .get()
-        .cloned()
-        .unwrap_or_default();
+    let token = state.api_token.get().cloned().unwrap_or_default();
 
     Ok(json!({
         "baseUrl": format!("http://127.0.0.1:{}", port),
@@ -117,8 +113,7 @@ pub async fn wizard_complete(
     ollama_url: String,
     model: String,
 ) -> Result<(), String> {
-    let mut config = crate::config::DesktopConfig::load()
-        .unwrap_or_default();
+    let mut config = crate::config::DesktopConfig::load().unwrap_or_default();
 
     config.node_name = node_name;
     config.data_dir = PathBuf::from(data_dir);

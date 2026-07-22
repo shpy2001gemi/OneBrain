@@ -235,7 +235,10 @@ pub mod redb_schema {
                 .open_table(SCHEMA_META)
                 .map_err(|e| format!("open _schema_meta: {}", e))?;
             table
-                .insert(VERSION_KEY, registry.current_version.as_u32().to_string().as_str())
+                .insert(
+                    VERSION_KEY,
+                    registry.current_version.as_u32().to_string().as_str(),
+                )
                 .map_err(|e| format!("insert version: {}", e))?;
             table
                 .insert(NAME_KEY, registry.schema_name)
@@ -321,14 +324,18 @@ pub mod redb_schema {
 
 /// Schema registry for KuStorage (ku-kql/storage.rs).
 pub fn ku_storage_registry() -> MigrationRegistry {
-    MigrationRegistry::new("ku_storage", 1)
-        .with_migration(Migration::new(0, "Initial: kus, epigenetics, index_trust, index_concept tables"))
+    MigrationRegistry::new("ku_storage", 1).with_migration(Migration::new(
+        0,
+        "Initial: kus, epigenetics, index_trust, index_concept tables",
+    ))
 }
 
 /// Schema registry for GraphStorage (ku-kql/graph_storage.rs).
 pub fn graph_storage_registry() -> MigrationRegistry {
-    MigrationRegistry::new("graph_storage", 1)
-        .with_migration(Migration::new(0, "Initial: 6 edge index tables (out, in, type, state, weight, time)"))
+    MigrationRegistry::new("graph_storage", 1).with_migration(Migration::new(
+        0,
+        "Initial: 6 edge index tables (out, in, type, state, weight, time)",
+    ))
 }
 
 /// Schema registry for PersistentConceptDict (ku-core/persistent_concept_dict.rs).
@@ -339,8 +346,10 @@ pub fn concept_dict_registry() -> MigrationRegistry {
 
 /// Schema registry for DhtPersistence (ku-net/dht_store.rs — Phase 3).
 pub fn dht_store_registry() -> MigrationRegistry {
-    MigrationRegistry::new("dht_store", 1)
-        .with_migration(Migration::new(0, "Initial: dht_entries, replica_meta tables"))
+    MigrationRegistry::new("dht_store", 1).with_migration(Migration::new(
+        0,
+        "Initial: dht_entries, replica_meta tables",
+    ))
 }
 
 /// Schema registry for blob storage.
@@ -452,7 +461,7 @@ mod tests {
             let reg = ku_storage_registry();
             redb_schema::ensure_schema(&db, &reg).unwrap();
             redb_schema::ensure_schema(&db, &reg).unwrap(); // Second call should be no-op
-            
+
             let version = redb_schema::read_version(&db);
             assert_eq!(version, SchemaVersion(1));
 
@@ -500,8 +509,8 @@ mod tests {
             let db = redb::Database::create(&tmp).unwrap();
 
             // Set up at v1 first
-            let reg_v1 = MigrationRegistry::new("test_mig", 1)
-                .with_migration(Migration::new(0, "Initial"));
+            let reg_v1 =
+                MigrationRegistry::new("test_mig", 1).with_migration(Migration::new(0, "Initial"));
             redb_schema::ensure_schema(&db, &reg_v1).unwrap();
             assert_eq!(redb_schema::read_version(&db), SchemaVersion(1));
 
@@ -525,9 +534,11 @@ mod tests {
                 Ok(())
             }
 
-            let redb_migs = [
-                redb_schema::RedbMigration::new(1, "Add marker", Some(write_marker)),
-            ];
+            let redb_migs = [redb_schema::RedbMigration::new(
+                1,
+                "Add marker",
+                Some(write_marker),
+            )];
 
             redb_schema::ensure_schema_with_redb_migrations(&db, &reg_v2, &redb_migs).unwrap();
             assert_eq!(redb_schema::read_version(&db), SchemaVersion(2));

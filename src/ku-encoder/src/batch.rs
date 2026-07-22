@@ -109,11 +109,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_encode_all_succeed() {
         let mock = MockBackend::new().with_tool_response(make_fact_tool_calls());
-        let encoder = AiEncoder::new(
-            Box::new(mock),
-            default_dict(),
-            EncoderConfig::default(),
-        );
+        let encoder = AiEncoder::new(Box::new(mock), default_dict(), EncoderConfig::default());
 
         let batch = BatchEncoder::new(&encoder);
         let result = batch.encode_all(&["text one", "text two"]).await;
@@ -130,11 +126,7 @@ mod tests {
         let mock = MockBackend::new()
             .with_tool_response(make_fact_tool_calls())
             .with_chat_response("I cannot encode this");
-        let encoder = AiEncoder::new(
-            Box::new(mock),
-            default_dict(),
-            EncoderConfig::default(),
-        );
+        let encoder = AiEncoder::new(Box::new(mock), default_dict(), EncoderConfig::default());
 
         let batch = BatchEncoder::new(&encoder);
         let result = batch.encode_all(&["good text", "bad text"]).await;
@@ -149,11 +141,7 @@ mod tests {
     #[tokio::test]
     async fn test_batch_encode_empty() {
         let mock = MockBackend::new();
-        let encoder = AiEncoder::new(
-            Box::new(mock),
-            default_dict(),
-            EncoderConfig::default(),
-        );
+        let encoder = AiEncoder::new(Box::new(mock), default_dict(), EncoderConfig::default());
 
         let batch = BatchEncoder::new(&encoder);
         let result = batch.encode_all(&[]).await;

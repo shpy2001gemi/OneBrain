@@ -14,8 +14,8 @@
 //! - Expression = protein synthesis (generated on-demand from DNA)
 
 use crate::error::KuError;
-use crate::varint::{encode_varint, decode_varint};
 use crate::types::ConceptId;
+use crate::varint::{decode_varint, encode_varint};
 use std::fmt;
 
 // ============================================================================
@@ -32,7 +32,7 @@ pub const CORE_DNA_VERSION: u8 = 2;
 // Numeric literal prefixes (0xFA-0xFF, outside varint range)
 // ============================================================================
 
-const NUM_U8:  u8 = 0xFA;
+const NUM_U8: u8 = 0xFA;
 const NUM_U16: u8 = 0xFB;
 const NUM_I16: u8 = 0xFC;
 const NUM_U32: u8 = 0xFD;
@@ -50,69 +50,69 @@ const NUM_F64: u8 = 0xF9;
 #[repr(u8)]
 pub enum Op {
     /// `TRIPLE(S, P, O)` — basic S-P-O fact.
-    Triple      = 0x00,
+    Triple = 0x00,
     /// `QUALITY(S, Q)` — subject has quality.
-    Quality     = 0x01,
+    Quality = 0x01,
     /// `QUANTITY(S, value, unit)` — numeric measurement.
-    Quantity    = 0x02,
+    Quantity = 0x02,
     /// `SEQUENCE(N, items...)` — ordered list of concepts.
-    Sequence    = 0x03,
+    Sequence = 0x03,
     /// `PART_OF(part, whole)` — hierarchical containment.
-    PartOf      = 0x04,
+    PartOf = 0x04,
     /// `LOCATED(S, location)` — spatial relation.
-    Located     = 0x05,
+    Located = 0x05,
     /// `TEMPORAL(S, time)` — time relation.
-    Temporal    = 0x06,
+    Temporal = 0x06,
     /// `CAUSAL(cause, effect)` — causation.
-    Causal      = 0x07,
+    Causal = 0x07,
     /// `SIMULATES(S, model)` — analogy/simulation.
-    Simulates   = 0x08,
+    Simulates = 0x08,
     /// `CONDITION(if, then)` — conditional.
-    Condition   = 0x09,
+    Condition = 0x09,
     /// `AGENT(actor, action)` — who performs.
-    Agent       = 0x0A,
+    Agent = 0x0A,
     /// `TOOL(action, instrument)` — using what.
-    Tool        = 0x0B,
+    Tool = 0x0B,
     /// `RANGE(S, min, max)` — value range.
-    Range       = 0x0C,
+    Range = 0x0C,
     /// `TOLERANCE(S, value, ±delta)` — precision with error margin.
-    Tolerance   = 0x0D,
+    Tolerance = 0x0D,
     /// `CONSTRAINT(source, op_code, target)` — numeric constraint (≤, ≥, =, ≠).
-    Constraint  = 0x0E,
+    Constraint = 0x0E,
     /// `ENUM_VAL(S, N, values...)` — one of a set.
-    EnumVal     = 0x0F,
+    EnumVal = 0x0F,
     /// `CERTAINTY(level_u16)` — confidence 0-10000.
-    Certainty   = 0x10,
+    Certainty = 0x10,
     /// `DIFFICULTY(level_u8)` — 0-4 difficulty.
-    Difficulty  = 0x11,
+    Difficulty = 0x11,
     /// `CID_REF(32 bytes)` — BLAKE3 content reference.
-    CidRef      = 0x12,
+    CidRef = 0x12,
     /// `STEP(ord, action, target)` — procedure step.
-    Step        = 0x13,
+    Step = 0x13,
     /// `PRECOND(concept)` — step precondition.
-    Precond     = 0x14,
+    Precond = 0x14,
     /// `EFFECT(concept)` — step effect/result.
-    Effect      = 0x15,
+    Effect = 0x15,
     /// `AFFECT(V_i16, A_i16, D_i16)` — VAD emotion model.
-    Affect      = 0x16,
+    Affect = 0x16,
     /// `LABEL(key, value)` — generic key-value metadata.
-    Label       = 0x17,
+    Label = 0x17,
     /// `TEXT_REF(lang, len, bytes)` — compressed canonical text.
-    TextRef     = 0x18,
+    TextRef = 0x18,
     /// `FORMULA(format, len, bytes)` — LaTeX/MathML notation.
-    Formula     = 0x19,
+    Formula = 0x19,
     /// `WITNESS(count, proximity)` — testimony data.
-    Witness     = 0x1A,
+    Witness = 0x1A,
     /// `MEDIA_REF(system, len, id_bytes)` — external media reference.
-    MediaRef    = 0x1B,
+    MediaRef = 0x1B,
     /// `COMPOSITE_HDR(type, completeness, version)` — composite header.
     CompositeHdr = 0x1C,
     /// `MEMBER(order, role, required, label, cid)` — composite member entry.
-    Member      = 0x1D,
+    Member = 0x1D,
     /// `END` — terminates instruction stream.
-    End         = 0x1E,
+    End = 0x1E,
     /// `EXTENDED(ext_byte, ...)` — future extension.
-    Extended    = 0x1F,
+    Extended = 0x1F,
 }
 
 impl Op {
@@ -175,67 +175,131 @@ impl NumericValue {
     /// Encode to bytes with type prefix.
     pub fn encode(&self) -> Vec<u8> {
         match self {
-            Self::U8(v)  => vec![NUM_U8, *v],
-            Self::U16(v) => { let mut out = vec![NUM_U16]; out.extend_from_slice(&v.to_be_bytes()); out },
-            Self::I16(v) => { let mut out = vec![NUM_I16]; out.extend_from_slice(&v.to_be_bytes()); out },
-            Self::U32(v) => { let mut out = vec![NUM_U32]; out.extend_from_slice(&v.to_be_bytes()); out },
-            Self::I32(v) => { let mut out = vec![NUM_I32]; out.extend_from_slice(&v.to_be_bytes()); out },
-            Self::F32(v) => { let mut out = vec![NUM_F32]; out.extend_from_slice(&v.to_be_bytes()); out },
-            Self::F64(v) => { let mut out = vec![NUM_F64]; out.extend_from_slice(&v.to_be_bytes()); out },
+            Self::U8(v) => vec![NUM_U8, *v],
+            Self::U16(v) => {
+                let mut out = vec![NUM_U16];
+                out.extend_from_slice(&v.to_be_bytes());
+                out
+            }
+            Self::I16(v) => {
+                let mut out = vec![NUM_I16];
+                out.extend_from_slice(&v.to_be_bytes());
+                out
+            }
+            Self::U32(v) => {
+                let mut out = vec![NUM_U32];
+                out.extend_from_slice(&v.to_be_bytes());
+                out
+            }
+            Self::I32(v) => {
+                let mut out = vec![NUM_I32];
+                out.extend_from_slice(&v.to_be_bytes());
+                out
+            }
+            Self::F32(v) => {
+                let mut out = vec![NUM_F32];
+                out.extend_from_slice(&v.to_be_bytes());
+                out
+            }
+            Self::F64(v) => {
+                let mut out = vec![NUM_F64];
+                out.extend_from_slice(&v.to_be_bytes());
+                out
+            }
         }
     }
 
     /// Decode from bytes at cursor position. Returns (value, bytes_consumed).
     pub fn decode(data: &[u8], pos: usize) -> Result<(Self, usize), KuError> {
         if pos >= data.len() {
-            return Err(KuError::InvalidData("Unexpected end reading numeric prefix".into()));
+            return Err(KuError::InvalidData(
+                "Unexpected end reading numeric prefix".into(),
+            ));
         }
         match data[pos] {
             NUM_U8 => {
-                if pos + 1 >= data.len() { return Err(KuError::InvalidData("Truncated u8".into())); }
+                if pos + 1 >= data.len() {
+                    return Err(KuError::InvalidData("Truncated u8".into()));
+                }
                 Ok((Self::U8(data[pos + 1]), 2))
             }
             NUM_U16 => {
-                if pos + 2 >= data.len() { return Err(KuError::InvalidData("Truncated u16".into())); }
+                if pos + 2 >= data.len() {
+                    return Err(KuError::InvalidData("Truncated u16".into()));
+                }
                 let v = u16::from_be_bytes([data[pos + 1], data[pos + 2]]);
                 Ok((Self::U16(v), 3))
             }
             NUM_I16 => {
-                if pos + 2 >= data.len() { return Err(KuError::InvalidData("Truncated i16".into())); }
+                if pos + 2 >= data.len() {
+                    return Err(KuError::InvalidData("Truncated i16".into()));
+                }
                 let v = i16::from_be_bytes([data[pos + 1], data[pos + 2]]);
                 Ok((Self::I16(v), 3))
             }
             NUM_U32 => {
-                if pos + 4 >= data.len() { return Err(KuError::InvalidData("Truncated u32".into())); }
-                let v = u32::from_be_bytes([data[pos + 1], data[pos + 2], data[pos + 3], data[pos + 4]]);
+                if pos + 4 >= data.len() {
+                    return Err(KuError::InvalidData("Truncated u32".into()));
+                }
+                let v = u32::from_be_bytes([
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                ]);
                 Ok((Self::U32(v), 5))
             }
             NUM_I32 => {
-                if pos + 4 >= data.len() { return Err(KuError::InvalidData("Truncated i32".into())); }
-                let v = i32::from_be_bytes([data[pos + 1], data[pos + 2], data[pos + 3], data[pos + 4]]);
+                if pos + 4 >= data.len() {
+                    return Err(KuError::InvalidData("Truncated i32".into()));
+                }
+                let v = i32::from_be_bytes([
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                ]);
                 Ok((Self::I32(v), 5))
             }
             NUM_F32 => {
-                if pos + 4 >= data.len() { return Err(KuError::InvalidData("Truncated f32".into())); }
-                let v = f32::from_be_bytes([data[pos + 1], data[pos + 2], data[pos + 3], data[pos + 4]]);
+                if pos + 4 >= data.len() {
+                    return Err(KuError::InvalidData("Truncated f32".into()));
+                }
+                let v = f32::from_be_bytes([
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                ]);
                 Ok((Self::F32(v), 5))
             }
             NUM_F64 => {
-                if pos + 8 >= data.len() { return Err(KuError::InvalidData("Truncated f64".into())); }
+                if pos + 8 >= data.len() {
+                    return Err(KuError::InvalidData("Truncated f64".into()));
+                }
                 let v = f64::from_be_bytes([
-                    data[pos + 1], data[pos + 2], data[pos + 3], data[pos + 4],
-                    data[pos + 5], data[pos + 6], data[pos + 7], data[pos + 8],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
+                    data[pos + 8],
                 ]);
                 Ok((Self::F64(v), 9))
             }
-            other => Err(KuError::InvalidData(format!("Invalid numeric prefix: 0x{:02X}", other))),
+            other => Err(KuError::InvalidData(format!(
+                "Invalid numeric prefix: 0x{:02X}",
+                other
+            ))),
         }
     }
 
     /// Get the f64 representation for comparison/display.
     pub fn as_f64(&self) -> f64 {
         match self {
-            Self::U8(v)  => *v as f64,
+            Self::U8(v) => *v as f64,
             Self::U16(v) => *v as f64,
             Self::I16(v) => *v as f64,
             Self::U32(v) => *v as f64,
@@ -249,7 +313,7 @@ impl NumericValue {
 impl fmt::Display for NumericValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::U8(v)  => write!(f, "{}", v),
+            Self::U8(v) => write!(f, "{}", v),
             Self::U16(v) => write!(f, "{}", v),
             Self::I16(v) => write!(f, "{}", v),
             Self::U32(v) => write!(f, "{}", v),
@@ -281,12 +345,12 @@ impl fmt::Display for NumericValue {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ConstraintOp {
-    Eq     = 0, // ==
-    Ne     = 1, // !=
-    Lt     = 2, // <
-    Le     = 3, // <=
-    Gt     = 4, // >
-    Ge     = 5, // >=
+    Eq = 0, // ==
+    Ne = 1, // !=
+    Lt = 2, // <
+    Le = 3, // <=
+    Gt = 4, // >
+    Ge = 5, // >=
 }
 
 impl ConstraintOp {
@@ -325,11 +389,19 @@ impl fmt::Display for ConstraintOp {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
     /// `(S, P, O)` — subject-predicate-object triple.
-    Triple { s: ConceptId, p: ConceptId, o: ConceptId },
+    Triple {
+        s: ConceptId,
+        p: ConceptId,
+        o: ConceptId,
+    },
     /// `(S, Q)` — subject has quality Q.
     Quality { s: ConceptId, q: ConceptId },
     /// `(S, value, unit)` — subject has numeric value with unit.
-    Quantity { s: ConceptId, value: NumericValue, unit: ConceptId },
+    Quantity {
+        s: ConceptId,
+        value: NumericValue,
+        unit: ConceptId,
+    },
     /// Ordered sequence of concept IDs.
     Sequence { items: Vec<ConceptId> },
     /// `(part, whole)` — part belongs to whole.
@@ -347,15 +419,33 @@ pub enum Instruction {
     /// `(actor, action)` — agent performs action.
     Agent { actor: ConceptId, action: ConceptId },
     /// `(action, instrument)` — action uses tool.
-    Tool { action: ConceptId, instrument: ConceptId },
+    Tool {
+        action: ConceptId,
+        instrument: ConceptId,
+    },
     /// `(S, min, max)` — value range.
-    Range { s: ConceptId, min: NumericValue, max: NumericValue },
+    Range {
+        s: ConceptId,
+        min: NumericValue,
+        max: NumericValue,
+    },
     /// `(S, value, delta)` — value ± tolerance.
-    Tolerance { s: ConceptId, value: NumericValue, delta: NumericValue },
+    Tolerance {
+        s: ConceptId,
+        value: NumericValue,
+        delta: NumericValue,
+    },
     /// `(source, op, target)` — numeric constraint.
-    Constraint { source: ConceptId, op: ConstraintOp, target: ConceptId },
+    Constraint {
+        source: ConceptId,
+        op: ConstraintOp,
+        target: ConceptId,
+    },
     /// `(S, values...)` — one of set.
-    EnumVal { s: ConceptId, values: Vec<ConceptId> },
+    EnumVal {
+        s: ConceptId,
+        values: Vec<ConceptId>,
+    },
     /// Certainty level 0-10000.
     Certainty { level: u16 },
     /// Difficulty 0-4.
@@ -363,7 +453,11 @@ pub enum Instruction {
     /// 32-byte BLAKE3 content ID reference.
     CidRef { cid: [u8; 32] },
     /// Procedure step: `(order, action_concept, target_concept)`.
-    Step { ord: u8, action: ConceptId, target: ConceptId },
+    Step {
+        ord: u8,
+        action: ConceptId,
+        target: ConceptId,
+    },
     /// Step precondition concept.
     Precond { concept: ConceptId },
     /// Step effect/result concept.
@@ -381,9 +475,19 @@ pub enum Instruction {
     /// External media reference.
     MediaRef { system: u8, id: Vec<u8> },
     /// Composite header metadata.
-    CompositeHdr { composite_type: u8, completeness: u8, version: u32 },
+    CompositeHdr {
+        composite_type: u8,
+        completeness: u8,
+        version: u32,
+    },
     /// Composite member entry.
-    Member { order: u16, role: u8, required: bool, label: ConceptId, cid: [u8; 32] },
+    Member {
+        order: u16,
+        role: u8,
+        required: bool,
+        label: ConceptId,
+        cid: [u8; 32],
+    },
     /// End of instruction stream.
     End,
 }
@@ -462,10 +566,9 @@ pub fn encode_core_dna(dna: &CoreDna) -> Result<Vec<u8>, KuError> {
     // Header: MAGIC (1B) + VER_META (1B)
     buf.push(CORE_DNA_MAGIC);
 
-    let ver_meta: u8 =
-        ((dna.header.version & 0x07) << 5) |
-        ((dna.header.gene_type & 0x0F) << 1) |
-        (dna.header.has_concept_table as u8);
+    let ver_meta: u8 = ((dna.header.version & 0x07) << 5)
+        | ((dna.header.gene_type & 0x0F) << 1)
+        | (dna.header.has_concept_table as u8);
     buf.push(ver_meta);
 
     // v7: Concept table (if present)
@@ -608,7 +711,11 @@ fn encode_instruction(buf: &mut Vec<u8>, instr: &Instruction) -> Result<(), KuEr
             encode_opcode_byte(buf, Op::CidRef, 0);
             buf.extend_from_slice(cid);
         }
-        Instruction::Step { ord, action, target } => {
+        Instruction::Step {
+            ord,
+            action,
+            target,
+        } => {
             encode_opcode_byte(buf, Op::Step, 0);
             buf.push(*ord);
             buf.extend(encode_varint(*action)?);
@@ -658,13 +765,23 @@ fn encode_instruction(buf: &mut Vec<u8>, instr: &Instruction) -> Result<(), KuEr
             buf.push(id.len() as u8);
             buf.extend_from_slice(id);
         }
-        Instruction::CompositeHdr { composite_type, completeness, version } => {
+        Instruction::CompositeHdr {
+            composite_type,
+            completeness,
+            version,
+        } => {
             encode_opcode_byte(buf, Op::CompositeHdr, 0);
             buf.push(*composite_type);
             buf.push(*completeness);
             buf.extend_from_slice(&version.to_be_bytes());
         }
-        Instruction::Member { order, role, required, label, cid } => {
+        Instruction::Member {
+            order,
+            role,
+            required,
+            label,
+            cid,
+        } => {
             encode_opcode_byte(buf, Op::Member, 0);
             buf.extend_from_slice(&order.to_be_bytes());
             buf.push(*role);
@@ -743,7 +860,11 @@ pub fn decode_core_dna(data: &[u8]) -> Result<CoreDna, KuError> {
         pos += 1;
 
         let op = Op::from_u8(op_val).ok_or_else(|| {
-            KuError::InvalidData(format!("Unknown opcode: 0x{:02X} at pos {}", op_val, pos - 1))
+            KuError::InvalidData(format!(
+                "Unknown opcode: 0x{:02X} at pos {}",
+                op_val,
+                pos - 1
+            ))
         })?;
 
         if op == Op::End {
@@ -756,7 +877,11 @@ pub fn decode_core_dna(data: &[u8]) -> Result<CoreDna, KuError> {
     }
 
     Ok(CoreDna {
-        header: CoreDnaHeader { version, gene_type, has_concept_table },
+        header: CoreDnaHeader {
+            version,
+            gene_type,
+            has_concept_table,
+        },
         concept_table,
         instructions,
     })
@@ -773,7 +898,9 @@ fn read_varint(data: &[u8], pos: usize) -> Result<(ConceptId, usize), KuError> {
 /// Otherwise reads a varint ConceptId.
 fn read_numeric_or_varint(data: &[u8], pos: usize) -> Result<(NumericValue, usize), KuError> {
     if pos >= data.len() {
-        return Err(KuError::InvalidData("Unexpected end reading operand".into()));
+        return Err(KuError::InvalidData(
+            "Unexpected end reading operand".into(),
+        ));
     }
     if data[pos] >= NUM_F64 {
         let (val, consumed) = NumericValue::decode(data, pos)?;
@@ -790,44 +917,75 @@ fn read_numeric_or_varint(data: &[u8], pos: usize) -> Result<(NumericValue, usiz
 }
 
 /// Decode a single instruction from data at position. Returns (instruction, new_pos).
-fn decode_instruction(op: Op, data: &[u8], pos: usize, end: usize) -> Result<(Instruction, usize), KuError> {
+fn decode_instruction(
+    op: Op,
+    data: &[u8],
+    pos: usize,
+    end: usize,
+) -> Result<(Instruction, usize), KuError> {
     let mut p = pos;
 
     macro_rules! read_v {
-        () => {{ let (v, np) = read_varint(data, p)?; p = np; v }};
+        () => {{
+            let (v, np) = read_varint(data, p)?;
+            p = np;
+            v
+        }};
     }
     macro_rules! read_num {
-        () => {{ let (v, np) = read_numeric_or_varint(data, p)?; p = np; v }};
+        () => {{
+            let (v, np) = read_numeric_or_varint(data, p)?;
+            p = np;
+            v
+        }};
     }
     macro_rules! read_u8 {
         () => {{
-            if p >= end { return Err(KuError::InvalidData("Truncated u8".into())); }
-            let v = data[p]; p += 1; v
+            if p >= end {
+                return Err(KuError::InvalidData("Truncated u8".into()));
+            }
+            let v = data[p];
+            p += 1;
+            v
         }};
     }
     macro_rules! read_u16 {
         () => {{
-            if p + 1 >= end { return Err(KuError::InvalidData("Truncated u16".into())); }
-            let v = u16::from_be_bytes([data[p], data[p+1]]); p += 2; v
+            if p + 1 >= end {
+                return Err(KuError::InvalidData("Truncated u16".into()));
+            }
+            let v = u16::from_be_bytes([data[p], data[p + 1]]);
+            p += 2;
+            v
         }};
     }
     macro_rules! read_i16 {
         () => {{
-            if p + 1 >= end { return Err(KuError::InvalidData("Truncated i16".into())); }
-            let v = i16::from_be_bytes([data[p], data[p+1]]); p += 2; v
+            if p + 1 >= end {
+                return Err(KuError::InvalidData("Truncated i16".into()));
+            }
+            let v = i16::from_be_bytes([data[p], data[p + 1]]);
+            p += 2;
+            v
         }};
     }
     macro_rules! read_u32 {
         () => {{
-            if p + 3 >= end { return Err(KuError::InvalidData("Truncated u32".into())); }
-            let v = u32::from_be_bytes([data[p], data[p+1], data[p+2], data[p+3]]); p += 4; v
+            if p + 3 >= end {
+                return Err(KuError::InvalidData("Truncated u32".into()));
+            }
+            let v = u32::from_be_bytes([data[p], data[p + 1], data[p + 2], data[p + 3]]);
+            p += 4;
+            v
         }};
     }
     macro_rules! read_cid {
         () => {{
-            if p + 31 >= end { return Err(KuError::InvalidData("Truncated CID".into())); }
+            if p + 31 >= end {
+                return Err(KuError::InvalidData("Truncated CID".into()));
+            }
             let mut cid = [0u8; 32];
-            cid.copy_from_slice(&data[p..p+32]);
+            cid.copy_from_slice(&data[p..p + 32]);
             p += 32;
             cid
         }};
@@ -835,11 +993,14 @@ fn decode_instruction(op: Op, data: &[u8], pos: usize, end: usize) -> Result<(In
 
     let instr = match op {
         Op::Triple => {
-            let s = read_v!(); let pr = read_v!(); let o = read_v!();
+            let s = read_v!();
+            let pr = read_v!();
+            let o = read_v!();
             Instruction::Triple { s, p: pr, o }
         }
         Op::Quality => {
-            let s = read_v!(); let q = read_v!();
+            let s = read_v!();
+            let q = read_v!();
             Instruction::Quality { s, q }
         }
         Op::Quantity => {
@@ -851,17 +1012,60 @@ fn decode_instruction(op: Op, data: &[u8], pos: usize, end: usize) -> Result<(In
         Op::Sequence => {
             let n = read_u8!() as usize;
             let mut items = Vec::with_capacity(n);
-            for _ in 0..n { items.push(read_v!()); }
+            for _ in 0..n {
+                items.push(read_v!());
+            }
             Instruction::Sequence { items }
         }
-        Op::PartOf     => { let part = read_v!(); let whole = read_v!(); Instruction::PartOf { part, whole } }
-        Op::Located    => { let s = read_v!(); let loc = read_v!(); Instruction::Located { s, location: loc } }
-        Op::Temporal   => { let s = read_v!(); let t = read_v!(); Instruction::Temporal { s, time: t } }
-        Op::Causal     => { let c = read_v!(); let e = read_v!(); Instruction::Causal { cause: c, effect: e } }
-        Op::Simulates  => { let s = read_v!(); let m = read_v!(); Instruction::Simulates { s, model: m } }
-        Op::Condition  => { let c = read_v!(); let r = read_v!(); Instruction::Condition { cond: c, result: r } }
-        Op::Agent      => { let a = read_v!(); let act = read_v!(); Instruction::Agent { actor: a, action: act } }
-        Op::Tool       => { let a = read_v!(); let i = read_v!(); Instruction::Tool { action: a, instrument: i } }
+        Op::PartOf => {
+            let part = read_v!();
+            let whole = read_v!();
+            Instruction::PartOf { part, whole }
+        }
+        Op::Located => {
+            let s = read_v!();
+            let loc = read_v!();
+            Instruction::Located { s, location: loc }
+        }
+        Op::Temporal => {
+            let s = read_v!();
+            let t = read_v!();
+            Instruction::Temporal { s, time: t }
+        }
+        Op::Causal => {
+            let c = read_v!();
+            let e = read_v!();
+            Instruction::Causal {
+                cause: c,
+                effect: e,
+            }
+        }
+        Op::Simulates => {
+            let s = read_v!();
+            let m = read_v!();
+            Instruction::Simulates { s, model: m }
+        }
+        Op::Condition => {
+            let c = read_v!();
+            let r = read_v!();
+            Instruction::Condition { cond: c, result: r }
+        }
+        Op::Agent => {
+            let a = read_v!();
+            let act = read_v!();
+            Instruction::Agent {
+                actor: a,
+                action: act,
+            }
+        }
+        Op::Tool => {
+            let a = read_v!();
+            let i = read_v!();
+            Instruction::Tool {
+                action: a,
+                instrument: i,
+            }
+        }
         Op::Range => {
             let s = read_v!();
             let min = read_num!();
@@ -881,59 +1085,112 @@ fn decode_instruction(op: Op, data: &[u8], pos: usize, end: usize) -> Result<(In
                 KuError::InvalidData(format!("Unknown constraint op: {}", op_byte))
             })?;
             let tgt = read_v!();
-            Instruction::Constraint { source: src, op: cop, target: tgt }
+            Instruction::Constraint {
+                source: src,
+                op: cop,
+                target: tgt,
+            }
         }
         Op::EnumVal => {
             let s = read_v!();
             let n = read_u8!() as usize;
             let mut values = Vec::with_capacity(n);
-            for _ in 0..n { values.push(read_v!()); }
+            for _ in 0..n {
+                values.push(read_v!());
+            }
             Instruction::EnumVal { s, values }
         }
-        Op::Certainty  => { let lvl = read_u16!(); Instruction::Certainty { level: lvl } }
-        Op::Difficulty => { let lvl = read_u8!(); Instruction::Difficulty { level: lvl } }
-        Op::CidRef     => { let cid = read_cid!(); Instruction::CidRef { cid } }
+        Op::Certainty => {
+            let lvl = read_u16!();
+            Instruction::Certainty { level: lvl }
+        }
+        Op::Difficulty => {
+            let lvl = read_u8!();
+            Instruction::Difficulty { level: lvl }
+        }
+        Op::CidRef => {
+            let cid = read_cid!();
+            Instruction::CidRef { cid }
+        }
         Op::Step => {
             let ord = read_u8!();
             let action = read_v!();
             let target = read_v!();
-            Instruction::Step { ord, action, target }
+            Instruction::Step {
+                ord,
+                action,
+                target,
+            }
         }
-        Op::Precond => { let c = read_v!(); Instruction::Precond { concept: c } }
-        Op::Effect  => { let c = read_v!(); Instruction::Effect { concept: c } }
-        Op::Affect  => {
-            let v = read_i16!(); let a = read_i16!(); let d = read_i16!();
+        Op::Precond => {
+            let c = read_v!();
+            Instruction::Precond { concept: c }
+        }
+        Op::Effect => {
+            let c = read_v!();
+            Instruction::Effect { concept: c }
+        }
+        Op::Affect => {
+            let v = read_i16!();
+            let a = read_i16!();
+            let d = read_i16!();
             Instruction::Affect { v, a, d }
         }
-        Op::Label      => { let k = read_v!(); let val = read_v!(); Instruction::Label { key: k, value: val } }
+        Op::Label => {
+            let k = read_v!();
+            let val = read_v!();
+            Instruction::Label { key: k, value: val }
+        }
         Op::TextRef => {
             let lang = read_u8!();
             let len = read_u16!() as usize;
-            if p + len > end { return Err(KuError::InvalidData("Truncated text".into())); }
-            let d = data[p..p+len].to_vec(); p += len;
+            if p + len > end {
+                return Err(KuError::InvalidData("Truncated text".into()));
+            }
+            let d = data[p..p + len].to_vec();
+            p += len;
             Instruction::TextRef { lang, data: d }
         }
         Op::Formula => {
             let fmt = read_u8!();
             let len = read_u16!() as usize;
-            if p + len > end { return Err(KuError::InvalidData("Truncated formula".into())); }
-            let d = data[p..p+len].to_vec(); p += len;
-            Instruction::Formula { format: fmt, data: d }
+            if p + len > end {
+                return Err(KuError::InvalidData("Truncated formula".into()));
+            }
+            let d = data[p..p + len].to_vec();
+            p += len;
+            Instruction::Formula {
+                format: fmt,
+                data: d,
+            }
         }
         Op::Witness => {
-            let count = read_u16!(); let prox = read_u8!();
-            Instruction::Witness { count, proximity: prox }
+            let count = read_u16!();
+            let prox = read_u8!();
+            Instruction::Witness {
+                count,
+                proximity: prox,
+            }
         }
         Op::MediaRef => {
             let sys = read_u8!();
             let len = read_u8!() as usize;
-            if p + len > end { return Err(KuError::InvalidData("Truncated media ref".into())); }
-            let id = data[p..p+len].to_vec(); p += len;
+            if p + len > end {
+                return Err(KuError::InvalidData("Truncated media ref".into()));
+            }
+            let id = data[p..p + len].to_vec();
+            p += len;
             Instruction::MediaRef { system: sys, id }
         }
         Op::CompositeHdr => {
-            let ct = read_u8!(); let comp = read_u8!(); let ver = read_u32!();
-            Instruction::CompositeHdr { composite_type: ct, completeness: comp, version: ver }
+            let ct = read_u8!();
+            let comp = read_u8!();
+            let ver = read_u32!();
+            Instruction::CompositeHdr {
+                composite_type: ct,
+                completeness: comp,
+                version: ver,
+            }
         }
         Op::Member => {
             let order = read_u16!();
@@ -941,11 +1198,19 @@ fn decode_instruction(op: Op, data: &[u8], pos: usize, end: usize) -> Result<(In
             let required = read_u8!() != 0;
             let label = read_v!();
             let cid = read_cid!();
-            Instruction::Member { order, role, required, label, cid }
+            Instruction::Member {
+                order,
+                role,
+                required,
+                label,
+                cid,
+            }
         }
         Op::End => Instruction::End,
         Op::Extended => {
-            return Err(KuError::InvalidData("Extended opcode not yet supported".into()));
+            return Err(KuError::InvalidData(
+                "Extended opcode not yet supported".into(),
+            ));
         }
     };
 
@@ -996,9 +1261,8 @@ impl CoreDna {
 // ============================================================================
 
 use crate::types::{
-    KnowledgeUnit, Gene, GeneType, Codon, RoleId, Triple, ProcedureStep,
-    HeaderFlags,
-    CompositeEntry, CompositeType, Completeness, StructuralRole,
+    Codon, Completeness, CompositeEntry, CompositeType, Gene, GeneType, HeaderFlags, KnowledgeUnit,
+    ProcedureStep, RoleId, StructuralRole, Triple,
 };
 
 /// Convert a rich KnowledgeUnit into a compact CoreDna.
@@ -1010,7 +1274,9 @@ pub fn ku_to_core_dna(ku: &KnowledgeUnit) -> Result<CoreDna, KuError> {
     let mut instructions = Vec::new();
 
     // Find primary subject from codons (first Object-role codon)
-    let primary = ku.codons.iter()
+    let primary = ku
+        .codons
+        .iter()
         .find(|c| c.role == RoleId::Object)
         .map(|c| c.concept_id)
         .unwrap_or(0);
@@ -1020,34 +1286,60 @@ pub fn ku_to_core_dna(ku: &KnowledgeUnit) -> Result<CoreDna, KuError> {
         match codon.role {
             RoleId::Object => {} // primary subject, used implicitly
             RoleId::Quality => {
-                instructions.push(Instruction::Quality { s: primary, q: codon.concept_id });
+                instructions.push(Instruction::Quality {
+                    s: primary,
+                    q: codon.concept_id,
+                });
             }
             RoleId::Agent => {
-                instructions.push(Instruction::Agent { actor: codon.concept_id, action: primary });
+                instructions.push(Instruction::Agent {
+                    actor: codon.concept_id,
+                    action: primary,
+                });
             }
             RoleId::Location => {
-                instructions.push(Instruction::Located { s: primary, location: codon.concept_id });
+                instructions.push(Instruction::Located {
+                    s: primary,
+                    location: codon.concept_id,
+                });
             }
-            RoleId::Manner | RoleId::Purpose | RoleId::Condition |
-            RoleId::Cause | RoleId::Result | RoleId::Time |
-            RoleId::Quantity | RoleId::Tool |
-            RoleId::CompoundHead | RoleId::CompoundMod => {
-                instructions.push(Instruction::Label { key: codon.role as u64, value: codon.concept_id });
+            RoleId::Manner
+            | RoleId::Purpose
+            | RoleId::Condition
+            | RoleId::Cause
+            | RoleId::Result
+            | RoleId::Time
+            | RoleId::Quantity
+            | RoleId::Tool
+            | RoleId::CompoundHead
+            | RoleId::CompoundMod => {
+                instructions.push(Instruction::Label {
+                    key: codon.role as u64,
+                    value: codon.concept_id,
+                });
             }
         }
     }
 
     // Encode gene-specific data
     match &ku.gene {
-        Gene::Fact { triples, certainty, .. } => {
+        Gene::Fact {
+            triples, certainty, ..
+        } => {
             for t in triples {
-                instructions.push(Instruction::Triple { s: t.subject, p: t.predicate, o: t.object });
+                instructions.push(Instruction::Triple {
+                    s: t.subject,
+                    p: t.predicate,
+                    o: t.object,
+                });
             }
             if *certainty > 0 {
                 instructions.push(Instruction::Certainty { level: *certainty });
             }
         }
-        Gene::Procedure { steps, difficulty, .. } => {
+        Gene::Procedure {
+            steps, difficulty, ..
+        } => {
             for step in steps {
                 instructions.push(Instruction::Step {
                     ord: step.ord as u8,
@@ -1055,28 +1347,54 @@ pub fn ku_to_core_dna(ku: &KnowledgeUnit) -> Result<CoreDna, KuError> {
                     target: step.tgt,
                 });
                 for pre in &step.pre {
-                    instructions.push(Instruction::Precond { concept: pre.concept_id });
+                    instructions.push(Instruction::Precond {
+                        concept: pre.concept_id,
+                    });
                 }
                 for eff in &step.eff {
-                    instructions.push(Instruction::Effect { concept: eff.concept_id });
+                    instructions.push(Instruction::Effect {
+                        concept: eff.concept_id,
+                    });
                 }
             }
             instructions.push(Instruction::Difficulty { level: *difficulty });
         }
         Gene::Experience { scene, affect, .. } => {
             for codon in scene {
-                instructions.push(Instruction::Label { key: codon.role as u64, value: codon.concept_id });
+                instructions.push(Instruction::Label {
+                    key: codon.role as u64,
+                    value: codon.concept_id,
+                });
             }
-            instructions.push(Instruction::Affect { v: affect.v, a: affect.a, d: affect.d });
+            instructions.push(Instruction::Affect {
+                v: affect.v,
+                a: affect.a,
+                d: affect.d,
+            });
         }
-        Gene::Hypothesis { body_codons, confidence, maturity_level, .. } => {
+        Gene::Hypothesis {
+            body_codons,
+            confidence,
+            maturity_level,
+            ..
+        } => {
             for codon in body_codons {
-                instructions.push(Instruction::Label { key: codon.role as u64, value: codon.concept_id });
+                instructions.push(Instruction::Label {
+                    key: codon.role as u64,
+                    value: codon.concept_id,
+                });
             }
             instructions.push(Instruction::Certainty { level: *confidence });
-            instructions.push(Instruction::Difficulty { level: *maturity_level });
+            instructions.push(Instruction::Difficulty {
+                level: *maturity_level,
+            });
         }
-        Gene::Formal { notation_source, notation_format, domain, .. } => {
+        Gene::Formal {
+            notation_source,
+            notation_format,
+            domain,
+            ..
+        } => {
             instructions.push(Instruction::Label {
                 key: 0xF000, // DOMAIN marker
                 value: *domain as u64,
@@ -1086,13 +1404,33 @@ pub fn ku_to_core_dna(ku: &KnowledgeUnit) -> Result<CoreDna, KuError> {
                 data: notation_source.clone(),
             });
         }
-        Gene::Testimony { triples, witness_count, proximity, .. } => {
+        Gene::Testimony {
+            triples,
+            witness_count,
+            proximity,
+            ..
+        } => {
             for t in triples {
-                instructions.push(Instruction::Triple { s: t.subject, p: t.predicate, o: t.object });
+                instructions.push(Instruction::Triple {
+                    s: t.subject,
+                    p: t.predicate,
+                    o: t.object,
+                });
             }
-            instructions.push(Instruction::Witness { count: *witness_count, proximity: *proximity });
+            instructions.push(Instruction::Witness {
+                count: *witness_count,
+                proximity: *proximity,
+            });
         }
-        Gene::Composite { members, constraints: _, cluster_version, composite_type, completeness, summary_codons, .. } => {
+        Gene::Composite {
+            members,
+            constraints: _,
+            cluster_version,
+            composite_type,
+            completeness,
+            summary_codons,
+            ..
+        } => {
             instructions.push(Instruction::CompositeHdr {
                 composite_type: *composite_type as u8,
                 completeness: *completeness as u8,
@@ -1111,13 +1449,19 @@ pub fn ku_to_core_dna(ku: &KnowledgeUnit) -> Result<CoreDna, KuError> {
                 });
             }
             for sc in summary_codons {
-                instructions.push(Instruction::Label { key: 0xF001, value: sc.concept_id }); // SUMMARY marker
+                instructions.push(Instruction::Label {
+                    key: 0xF001,
+                    value: sc.concept_id,
+                }); // SUMMARY marker
             }
         }
         // Creative, Narrative, MediaExperience, Sensory — encode as labels
         _ => {
             // Fallback: encode primary subject as a quality
-            instructions.push(Instruction::Label { key: 0xFFFF, value: primary });
+            instructions.push(Instruction::Label {
+                key: 0xFFFF,
+                value: primary,
+            });
         }
     }
 
@@ -1136,16 +1480,16 @@ pub fn core_dna_to_ku(dna: &CoreDna) -> Result<KnowledgeUnit, KuError> {
     // In Core DNA, gene_type is stored directly as 0-10 (4 bits).
     // This differs from v4/v5 wire where types 7+ use extended encoding.
     let gene_type = match dna.header.gene_type {
-        0  => GeneType::Fact,
-        1  => GeneType::Procedure,
-        2  => GeneType::Experience,
-        3  => GeneType::Creative,
-        4  => GeneType::MediaExperience,
-        5  => GeneType::Testimony,
-        6  => GeneType::Formal,
-        7  => GeneType::Hypothesis,
-        8  => GeneType::Narrative,
-        9  => GeneType::Sensory,
+        0 => GeneType::Fact,
+        1 => GeneType::Procedure,
+        2 => GeneType::Experience,
+        3 => GeneType::Creative,
+        4 => GeneType::MediaExperience,
+        5 => GeneType::Testimony,
+        6 => GeneType::Formal,
+        7 => GeneType::Hypothesis,
+        8 => GeneType::Narrative,
+        9 => GeneType::Sensory,
         10 => GeneType::Composite,
         other => return Err(KuError::UnknownGeneType(other)),
     };
@@ -1171,40 +1515,81 @@ pub fn core_dna_to_ku(dna: &CoreDna) -> Result<KnowledgeUnit, KuError> {
     // First pass: find primary subject from Triple or Quality instructions
     for instr in &dna.instructions {
         match instr {
-            Instruction::Triple { s, .. } => { primary_subject = *s; break; }
-            Instruction::Quality { s, .. } => { primary_subject = *s; break; }
-            Instruction::Quantity { s, .. } => { primary_subject = *s; break; }
+            Instruction::Triple { s, .. } => {
+                primary_subject = *s;
+                break;
+            }
+            Instruction::Quality { s, .. } => {
+                primary_subject = *s;
+                break;
+            }
+            Instruction::Quantity { s, .. } => {
+                primary_subject = *s;
+                break;
+            }
             _ => {}
         }
     }
 
     // Add primary subject as Object codon
     if primary_subject > 0 {
-        codons.push(Codon { concept_id: primary_subject, role: RoleId::Object, qualifiers: vec![] });
+        codons.push(Codon {
+            concept_id: primary_subject,
+            role: RoleId::Object,
+            qualifiers: vec![],
+        });
     }
 
     // Second pass: collect all instructions
     for instr in &dna.instructions {
         match instr {
             Instruction::Triple { s, p, o } => {
-                triples.push(Triple { subject: *s, predicate: *p, object: *o });
+                triples.push(Triple {
+                    subject: *s,
+                    predicate: *p,
+                    object: *o,
+                });
             }
             Instruction::Quality { q, .. } => {
-                codons.push(Codon { concept_id: *q, role: RoleId::Quality, qualifiers: vec![] });
+                codons.push(Codon {
+                    concept_id: *q,
+                    role: RoleId::Quality,
+                    qualifiers: vec![],
+                });
             }
             Instruction::Quantity { s, value, unit } => {
-                triples.push(Triple { subject: *s, predicate: *unit, object: value.as_f64() as u64 });
+                triples.push(Triple {
+                    subject: *s,
+                    predicate: *unit,
+                    object: value.as_f64() as u64,
+                });
             }
             Instruction::Located { location, .. } => {
-                codons.push(Codon { concept_id: *location, role: RoleId::Location, qualifiers: vec![] });
+                codons.push(Codon {
+                    concept_id: *location,
+                    role: RoleId::Location,
+                    qualifiers: vec![],
+                });
             }
             Instruction::Agent { actor, .. } => {
-                codons.push(Codon { concept_id: *actor, role: RoleId::Agent, qualifiers: vec![] });
+                codons.push(Codon {
+                    concept_id: *actor,
+                    role: RoleId::Agent,
+                    qualifiers: vec![],
+                });
             }
             Instruction::Simulates { s, model } => {
-                triples.push(Triple { subject: *s, predicate: 0xF008, object: *model }); // SIMULATES predicate
+                triples.push(Triple {
+                    subject: *s,
+                    predicate: 0xF008,
+                    object: *model,
+                }); // SIMULATES predicate
             }
-            Instruction::Step { ord, action, target } => {
+            Instruction::Step {
+                ord,
+                action,
+                target,
+            } => {
                 steps.push(ProcedureStep {
                     ord: *ord as u16,
                     act: *action,
@@ -1217,24 +1602,54 @@ pub fn core_dna_to_ku(dna: &CoreDna) -> Result<KnowledgeUnit, KuError> {
             }
             Instruction::Precond { concept } => {
                 if let Some(last) = steps.last_mut() {
-                    last.pre.push(Codon { concept_id: *concept, role: RoleId::Condition, qualifiers: vec![] });
+                    last.pre.push(Codon {
+                        concept_id: *concept,
+                        role: RoleId::Condition,
+                        qualifiers: vec![],
+                    });
                 }
             }
             Instruction::Effect { concept } => {
                 if let Some(last) = steps.last_mut() {
-                    last.eff.push(Codon { concept_id: *concept, role: RoleId::Result, qualifiers: vec![] });
+                    last.eff.push(Codon {
+                        concept_id: *concept,
+                        role: RoleId::Result,
+                        qualifiers: vec![],
+                    });
                 }
             }
-            Instruction::Certainty { level } => { certainty = *level; }
-            Instruction::Difficulty { level } => { difficulty = *level; }
-            Instruction::Affect { v, a, d } => { affect_val = Some((*v, *a, *d)); }
-            Instruction::Witness { count, proximity: prox } => {
-                witness_count = *count; proximity = *prox;
+            Instruction::Certainty { level } => {
+                certainty = *level;
             }
-            Instruction::CompositeHdr { composite_type: ct, completeness: comp, version } => {
-                composite_type = *ct; completeness = *comp; cluster_version = *version;
+            Instruction::Difficulty { level } => {
+                difficulty = *level;
             }
-            Instruction::Member { order, role, required, label, cid } => {
+            Instruction::Affect { v, a, d } => {
+                affect_val = Some((*v, *a, *d));
+            }
+            Instruction::Witness {
+                count,
+                proximity: prox,
+            } => {
+                witness_count = *count;
+                proximity = *prox;
+            }
+            Instruction::CompositeHdr {
+                composite_type: ct,
+                completeness: comp,
+                version,
+            } => {
+                composite_type = *ct;
+                completeness = *comp;
+                cluster_version = *version;
+            }
+            Instruction::Member {
+                order,
+                role,
+                required,
+                label,
+                cid,
+            } => {
                 members.push(CompositeEntry {
                     cid: cid.to_vec(),
                     order: *order,
@@ -1245,12 +1660,18 @@ pub fn core_dna_to_ku(dna: &CoreDna) -> Result<KnowledgeUnit, KuError> {
                 });
             }
             Instruction::Formula { format, data } => {
-                formula_fmt = *format; formula_data = data.clone();
+                formula_fmt = *format;
+                formula_data = data.clone();
             }
             Instruction::Label { key, value } => {
-                if *key == 0xF000 { domain = *value as u8; }
-                else if *key == 0xF001 {
-                    summary_codons.push(Codon { concept_id: *value, role: RoleId::Object, qualifiers: vec![] });
+                if *key == 0xF000 {
+                    domain = *value as u8;
+                } else if *key == 0xF001 {
+                    summary_codons.push(Codon {
+                        concept_id: *value,
+                        role: RoleId::Object,
+                        qualifiers: vec![],
+                    });
                 }
             }
             _ => {} // Skip instructions not relevant to current gene type
@@ -1259,7 +1680,11 @@ pub fn core_dna_to_ku(dna: &CoreDna) -> Result<KnowledgeUnit, KuError> {
 
     // Build Gene variant based on gene_type
     let gene = match gene_type {
-        GeneType::Fact => Gene::Fact { triples, certainty, evidence: vec![] },
+        GeneType::Fact => Gene::Fact {
+            triples,
+            certainty,
+            evidence: vec![],
+        },
         GeneType::Procedure => Gene::Procedure {
             steps,
             total_time: None,
@@ -1267,7 +1692,11 @@ pub fn core_dna_to_ku(dna: &CoreDna) -> Result<KnowledgeUnit, KuError> {
             tools_req: vec![],
         },
         GeneType::Experience => Gene::Experience {
-            scene: codons.iter().filter(|c| c.role != RoleId::Object).cloned().collect(),
+            scene: codons
+                .iter()
+                .filter(|c| c.role != RoleId::Object)
+                .cloned()
+                .collect(),
             affect: crate::types::Affect {
                 v: affect_val.map(|a| a.0).unwrap_or(0),
                 a: affect_val.map(|a| a.1).unwrap_or(0),
@@ -1278,7 +1707,11 @@ pub fn core_dna_to_ku(dna: &CoreDna) -> Result<KnowledgeUnit, KuError> {
         },
         GeneType::Hypothesis => Gene::Hypothesis {
             base_type: 0,
-            body_codons: codons.iter().filter(|c| c.role != RoleId::Object).cloned().collect(),
+            body_codons: codons
+                .iter()
+                .filter(|c| c.role != RoleId::Object)
+                .cloned()
+                .collect(),
             maturity_level: difficulty,
             confidence: certainty,
             completeness: 5000,
@@ -1310,7 +1743,11 @@ pub fn core_dna_to_ku(dna: &CoreDna) -> Result<KnowledgeUnit, KuError> {
             summary_codons,
         },
         // Fallback for unsupported gene types
-        _ => Gene::Fact { triples, certainty, evidence: vec![] },
+        _ => Gene::Fact {
+            triples,
+            certainty,
+            evidence: vec![],
+        },
     };
 
     Ok(KnowledgeUnit {
@@ -1321,7 +1758,7 @@ pub fn core_dna_to_ku(dna: &CoreDna) -> Result<KnowledgeUnit, KuError> {
         epistemic_status: None,
         evidence_type: None,
         trust: None,      // Trust lives in epigenetic layer
-        epigenetic: None,  // Epigenetic lives in runtime only
+        epigenetic: None, // Epigenetic lives in runtime only
     })
 }
 
@@ -1374,9 +1811,9 @@ pub fn decode_any(data: &[u8]) -> Result<KnowledgeUnit, KuError> {
             let dna = decode_core_dna(data)?;
             core_dna_to_ku(&dna)
         }
-        WireFormat::Unknown => {
-            Err(KuError::InvalidData("Unknown wire format: first bytes don't match any known magic".into()))
-        }
+        WireFormat::Unknown => Err(KuError::InvalidData(
+            "Unknown wire format: first bytes don't match any known magic".into(),
+        )),
     }
 }
 
@@ -1421,21 +1858,31 @@ mod tests {
         println!("══════════════════════════════════════════════════");
 
         // "Water boils at 100°C"
-        let dna = CoreDna::new(0, vec![ // gene_type=0 (Fact)
-            Instruction::Quantity {
-                s: 100,                              // WATER
-                value: NumericValue::F32(100.0),     // 100
-                unit: 101,                           // CELSIUS
-            },
-            Instruction::Certainty { level: 9999 },
-        ]);
+        let dna = CoreDna::new(
+            0,
+            vec![
+                // gene_type=0 (Fact)
+                Instruction::Quantity {
+                    s: 100,                          // WATER
+                    value: NumericValue::F32(100.0), // 100
+                    unit: 101,                       // CELSIUS
+                },
+                Instruction::Certainty { level: 9999 },
+            ],
+        );
 
         let wire = dna.encode().unwrap();
         println!("  Wire size:    {} bytes", wire.len());
-        println!("  vs text:      {} bytes (\"Water boils at 100°C\")", "Water boils at 100°C".len());
-        assert!(wire.len() < "Water boils at 100°C".len(),
+        println!(
+            "  vs text:      {} bytes (\"Water boils at 100°C\")",
+            "Water boils at 100°C".len()
+        );
+        assert!(
+            wire.len() < "Water boils at 100°C".len(),
             "Core DNA should be smaller than text: {} vs {}",
-            wire.len(), "Water boils at 100°C".len());
+            wire.len(),
+            "Water boils at 100°C".len()
+        );
 
         // Verify header
         assert_eq!(wire[0], CORE_DNA_MAGIC);
@@ -1448,7 +1895,10 @@ mod tests {
         assert_eq!(decoded.instructions, dna.instructions);
 
         println!("  Roundtrip:    PASSED ✓");
-        println!("  Compression:  {:.1}x smaller than text", "Water boils at 100°C".len() as f64 / wire.len() as f64);
+        println!(
+            "  Compression:  {:.1}x smaller than text",
+            "Water boils at 100°C".len() as f64 / wire.len() as f64
+        );
     }
 
     #[test]
@@ -1473,12 +1923,25 @@ mod tests {
         const C_ENERGY_EFF: ConceptId = 514;
 
         // KU#1: Fact — Definition
-        let dna1 = CoreDna::new(0, vec![
-            Instruction::Triple { s: C_BREASTSTROKE, p: C_SWIMMING_STYLE, o: C_BASIC },
-            Instruction::Simulates { s: C_BREASTSTROKE, model: C_FROG },
-            Instruction::Located { s: C_BREASTSTROKE, location: C_WATER },
-            Instruction::Certainty { level: 9900 },
-        ]);
+        let dna1 = CoreDna::new(
+            0,
+            vec![
+                Instruction::Triple {
+                    s: C_BREASTSTROKE,
+                    p: C_SWIMMING_STYLE,
+                    o: C_BASIC,
+                },
+                Instruction::Simulates {
+                    s: C_BREASTSTROKE,
+                    model: C_FROG,
+                },
+                Instruction::Located {
+                    s: C_BREASTSTROKE,
+                    location: C_WATER,
+                },
+                Instruction::Certainty { level: 9900 },
+            ],
+        );
 
         let wire1 = dna1.encode().unwrap();
         println!("\n  KU#1 [Fact: Definition]");
@@ -1486,17 +1949,39 @@ mod tests {
         println!("    Wire:         {} bytes", wire1.len());
 
         // KU#2: Procedure — Swimming cycle
-        let dna2 = CoreDna::new(1, vec![
-            Instruction::Agent { actor: C_SWIMMER, action: C_BREASTSTROKE },
-            Instruction::Precond { concept: C_PRONE },
-            Instruction::Step { ord: 0, action: C_ARM_SWEEP, target: C_WATER },
-            Instruction::Step { ord: 1, action: C_LEG_KICK, target: C_WATER },
-            Instruction::Effect { concept: C_FORWARD },
-            Instruction::Step { ord: 2, action: C_BREATHING, target: C_SWIMMER },
-            Instruction::Step { ord: 3, action: C_GLIDE, target: C_FORWARD },
-            Instruction::Effect { concept: C_FORWARD },
-            Instruction::Difficulty { level: 1 },
-        ]);
+        let dna2 = CoreDna::new(
+            1,
+            vec![
+                Instruction::Agent {
+                    actor: C_SWIMMER,
+                    action: C_BREASTSTROKE,
+                },
+                Instruction::Precond { concept: C_PRONE },
+                Instruction::Step {
+                    ord: 0,
+                    action: C_ARM_SWEEP,
+                    target: C_WATER,
+                },
+                Instruction::Step {
+                    ord: 1,
+                    action: C_LEG_KICK,
+                    target: C_WATER,
+                },
+                Instruction::Effect { concept: C_FORWARD },
+                Instruction::Step {
+                    ord: 2,
+                    action: C_BREATHING,
+                    target: C_SWIMMER,
+                },
+                Instruction::Step {
+                    ord: 3,
+                    action: C_GLIDE,
+                    target: C_FORWARD,
+                },
+                Instruction::Effect { concept: C_FORWARD },
+                Instruction::Difficulty { level: 1 },
+            ],
+        );
 
         let wire2 = dna2.encode().unwrap();
         println!("\n  KU#2 [Procedure: Swimming Cycle]");
@@ -1504,11 +1989,20 @@ mod tests {
         println!("    Wire:         {} bytes", wire2.len());
 
         // KU#3: Fact — Properties
-        let dna3 = CoreDna::new(0, vec![
-            Instruction::Quality { s: C_BREASTSTROKE, q: C_RHYTHMIC },
-            Instruction::Quality { s: C_BREASTSTROKE, q: C_ENERGY_EFF },
-            Instruction::Certainty { level: 8500 },
-        ]);
+        let dna3 = CoreDna::new(
+            0,
+            vec![
+                Instruction::Quality {
+                    s: C_BREASTSTROKE,
+                    q: C_RHYTHMIC,
+                },
+                Instruction::Quality {
+                    s: C_BREASTSTROKE,
+                    q: C_ENERGY_EFF,
+                },
+                Instruction::Certainty { level: 8500 },
+            ],
+        );
 
         let wire3 = dna3.encode().unwrap();
         println!("\n  KU#3 [Fact: Properties]");
@@ -1533,13 +2027,20 @@ mod tests {
         println!("  Core DNA KU#1:         {} bytes", wire1.len());
         println!("  Core DNA KU#2:         {} bytes", wire2.len());
         println!("  Core DNA KU#3:         {} bytes", wire3.len());
-        println!("  Core DNA total:        {} bytes ({:.1}x smaller than text)",
-            total, text_bytes as f64 / total as f64);
+        println!(
+            "  Core DNA total:        {} bytes ({:.1}x smaller than text)",
+            total,
+            text_bytes as f64 / total as f64
+        );
         println!("  CBOR v5 total:         1053 bytes (3.3x LARGER than text)");
         println!("  ═══════════════════════════════════════════════════");
 
-        assert!(total < text_bytes,
-            "Core DNA ({}) must be smaller than text ({})", total, text_bytes);
+        assert!(
+            total < text_bytes,
+            "Core DNA ({}) must be smaller than text ({})",
+            total,
+            text_bytes
+        );
 
         println!("\n  test_boi_ech_core_dna: PASSED ✓ 🧬");
     }
@@ -1568,33 +2069,69 @@ mod tests {
         const C_METER: ConceptId = 3004;
         const C_AIRPLANE: ConceptId = 4000;
 
-        let dna = CoreDna::new(0, vec![
-            // Hierarchy
-            Instruction::PartOf { part: C_WING, whole: C_AIRPLANE },
-            // Precise measurements
-            Instruction::Tolerance { s: C_SWEEP_ANGLE,
-                value: NumericValue::F32(35.2), delta: NumericValue::F32(0.1) },
-            Instruction::Quantity { s: C_WING_AREA,
-                value: NumericValue::F32(122.4), unit: C_SQ_METER },
-            Instruction::Quantity { s: C_MAX_SPEED,
-                value: NumericValue::F32(0.82), unit: C_MACH },
-            Instruction::Quantity { s: C_ASPECT_RATIO,
-                value: NumericValue::F32(9.5), unit: C_RATIO },
-            Instruction::Quantity { s: C_TAPER_RATIO,
-                value: NumericValue::F32(0.3), unit: C_RATIO },
-            Instruction::Tolerance { s: C_DIHEDRAL,
-                value: NumericValue::F32(5.0), delta: NumericValue::F32(0.5) },
-            Instruction::Range { s: C_THICKNESS_RATIO,
-                min: NumericValue::F32(0.10), max: NumericValue::F32(0.14) },
-            Instruction::Quantity { s: C_SPAN,
-                value: NumericValue::F32(34.1), unit: C_METER },
-            Instruction::Quantity { s: C_MAC,
-                value: NumericValue::F32(4.19), unit: C_METER },
-            // Constraints
-            Instruction::Constraint { source: C_SWEEP_ANGLE,
-                op: ConstraintOp::Le, target: C_DIHEDRAL },
-            Instruction::Certainty { level: 9800 },
-        ]);
+        let dna = CoreDna::new(
+            0,
+            vec![
+                // Hierarchy
+                Instruction::PartOf {
+                    part: C_WING,
+                    whole: C_AIRPLANE,
+                },
+                // Precise measurements
+                Instruction::Tolerance {
+                    s: C_SWEEP_ANGLE,
+                    value: NumericValue::F32(35.2),
+                    delta: NumericValue::F32(0.1),
+                },
+                Instruction::Quantity {
+                    s: C_WING_AREA,
+                    value: NumericValue::F32(122.4),
+                    unit: C_SQ_METER,
+                },
+                Instruction::Quantity {
+                    s: C_MAX_SPEED,
+                    value: NumericValue::F32(0.82),
+                    unit: C_MACH,
+                },
+                Instruction::Quantity {
+                    s: C_ASPECT_RATIO,
+                    value: NumericValue::F32(9.5),
+                    unit: C_RATIO,
+                },
+                Instruction::Quantity {
+                    s: C_TAPER_RATIO,
+                    value: NumericValue::F32(0.3),
+                    unit: C_RATIO,
+                },
+                Instruction::Tolerance {
+                    s: C_DIHEDRAL,
+                    value: NumericValue::F32(5.0),
+                    delta: NumericValue::F32(0.5),
+                },
+                Instruction::Range {
+                    s: C_THICKNESS_RATIO,
+                    min: NumericValue::F32(0.10),
+                    max: NumericValue::F32(0.14),
+                },
+                Instruction::Quantity {
+                    s: C_SPAN,
+                    value: NumericValue::F32(34.1),
+                    unit: C_METER,
+                },
+                Instruction::Quantity {
+                    s: C_MAC,
+                    value: NumericValue::F32(4.19),
+                    unit: C_METER,
+                },
+                // Constraints
+                Instruction::Constraint {
+                    source: C_SWEEP_ANGLE,
+                    op: ConstraintOp::Le,
+                    target: C_DIHEDRAL,
+                },
+                Instruction::Certainty { level: 9800 },
+            ],
+        );
 
         let wire = dna.encode().unwrap();
         let text = "Wing: sweep=35.2°±0.1°, area=122.4m², Mach=0.82, AR=9.5, taper=0.3, dihedral=5.0°±0.5°, t/c=0.10-0.14, span=34.1m, MAC=4.19m";
@@ -1604,7 +2141,10 @@ mod tests {
         println!("  Constraints:  1 (sweep ≤ dihedral)");
         println!("  Wire:         {} bytes", wire.len());
         println!("  Text:         {} bytes", text_bytes);
-        println!("  Ratio:        {:.1}x smaller than text", text_bytes as f64 / wire.len() as f64);
+        println!(
+            "  Ratio:        {:.1}x smaller than text",
+            text_bytes as f64 / wire.len() as f64
+        );
 
         // Roundtrip — verify precision is preserved
         let decoded = CoreDna::decode(&wire).unwrap();
@@ -1627,8 +2167,12 @@ mod tests {
             panic!("Expected Range instruction");
         }
 
-        assert!(wire.len() < text_bytes,
-            "Core DNA ({}) must be smaller than text ({})", wire.len(), text_bytes);
+        assert!(
+            wire.len() < text_bytes,
+            "Core DNA ({}) must be smaller than text ({})",
+            wire.len(),
+            text_bytes
+        );
 
         println!("\n  test_airplane_wing_precision: PASSED ✓ ✈️");
     }
@@ -1642,48 +2186,134 @@ mod tests {
         let test_cid = [0xABu8; 32];
 
         let instructions = vec![
-            Instruction::Triple { s: 100, p: 200, o: 300 },
+            Instruction::Triple {
+                s: 100,
+                p: 200,
+                o: 300,
+            },
             Instruction::Quality { s: 100, q: 400 },
-            Instruction::Quantity { s: 100, value: NumericValue::F32(3.14), unit: 500 },
-            Instruction::Sequence { items: vec![10, 20, 30, 40] },
-            Instruction::PartOf { part: 100, whole: 200 },
-            Instruction::Located { s: 100, location: 600 },
+            Instruction::Quantity {
+                s: 100,
+                value: NumericValue::F32(3.14),
+                unit: 500,
+            },
+            Instruction::Sequence {
+                items: vec![10, 20, 30, 40],
+            },
+            Instruction::PartOf {
+                part: 100,
+                whole: 200,
+            },
+            Instruction::Located {
+                s: 100,
+                location: 600,
+            },
             Instruction::Temporal { s: 100, time: 700 },
-            Instruction::Causal { cause: 100, effect: 200 },
+            Instruction::Causal {
+                cause: 100,
+                effect: 200,
+            },
             Instruction::Simulates { s: 100, model: 300 },
-            Instruction::Condition { cond: 100, result: 200 },
-            Instruction::Agent { actor: 100, action: 200 },
-            Instruction::Tool { action: 100, instrument: 200 },
-            Instruction::Range { s: 100, min: NumericValue::F32(1.0), max: NumericValue::F32(10.0) },
-            Instruction::Tolerance { s: 100, value: NumericValue::F32(5.0), delta: NumericValue::F32(0.5) },
-            Instruction::Constraint { source: 100, op: ConstraintOp::Le, target: 200 },
-            Instruction::EnumVal { s: 100, values: vec![1, 2, 3] },
+            Instruction::Condition {
+                cond: 100,
+                result: 200,
+            },
+            Instruction::Agent {
+                actor: 100,
+                action: 200,
+            },
+            Instruction::Tool {
+                action: 100,
+                instrument: 200,
+            },
+            Instruction::Range {
+                s: 100,
+                min: NumericValue::F32(1.0),
+                max: NumericValue::F32(10.0),
+            },
+            Instruction::Tolerance {
+                s: 100,
+                value: NumericValue::F32(5.0),
+                delta: NumericValue::F32(0.5),
+            },
+            Instruction::Constraint {
+                source: 100,
+                op: ConstraintOp::Le,
+                target: 200,
+            },
+            Instruction::EnumVal {
+                s: 100,
+                values: vec![1, 2, 3],
+            },
             Instruction::Certainty { level: 9500 },
             Instruction::Difficulty { level: 3 },
             Instruction::CidRef { cid: test_cid },
-            Instruction::Step { ord: 0, action: 100, target: 200 },
+            Instruction::Step {
+                ord: 0,
+                action: 100,
+                target: 200,
+            },
             Instruction::Precond { concept: 100 },
             Instruction::Effect { concept: 200 },
-            Instruction::Affect { v: -5000, a: 7000, d: 3000 },
-            Instruction::Label { key: 100, value: 200 },
-            Instruction::TextRef { lang: 1, data: b"hello".to_vec() },
-            Instruction::Formula { format: 0, data: b"E=mc^2".to_vec() },
-            Instruction::Witness { count: 5, proximity: 1 },
-            Instruction::MediaRef { system: 1, id: b"tt1234567".to_vec() },
-            Instruction::CompositeHdr { composite_type: 3, completeness: 1, version: 42 },
-            Instruction::Member { order: 0, role: 2, required: true, label: 999, cid: test_cid },
+            Instruction::Affect {
+                v: -5000,
+                a: 7000,
+                d: 3000,
+            },
+            Instruction::Label {
+                key: 100,
+                value: 200,
+            },
+            Instruction::TextRef {
+                lang: 1,
+                data: b"hello".to_vec(),
+            },
+            Instruction::Formula {
+                format: 0,
+                data: b"E=mc^2".to_vec(),
+            },
+            Instruction::Witness {
+                count: 5,
+                proximity: 1,
+            },
+            Instruction::MediaRef {
+                system: 1,
+                id: b"tt1234567".to_vec(),
+            },
+            Instruction::CompositeHdr {
+                composite_type: 3,
+                completeness: 1,
+                version: 42,
+            },
+            Instruction::Member {
+                order: 0,
+                role: 2,
+                required: true,
+                label: 999,
+                cid: test_cid,
+            },
         ];
 
         let dna = CoreDna::new(0, instructions.clone());
         let wire = dna.encode().unwrap();
         let decoded = CoreDna::decode(&wire).unwrap();
 
-        assert_eq!(decoded.instructions.len(), instructions.len(),
-            "Instruction count mismatch");
+        assert_eq!(
+            decoded.instructions.len(),
+            instructions.len(),
+            "Instruction count mismatch"
+        );
 
-        for (i, (original, decoded_i)) in instructions.iter().zip(decoded.instructions.iter()).enumerate() {
-            assert_eq!(original, decoded_i,
-                "Instruction {} mismatch:\n  expected: {:?}\n  got:      {:?}", i, original, decoded_i);
+        for (i, (original, decoded_i)) in instructions
+            .iter()
+            .zip(decoded.instructions.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                original, decoded_i,
+                "Instruction {} mismatch:\n  expected: {:?}\n  got:      {:?}",
+                i, original, decoded_i
+            );
         }
 
         println!("  Instructions:  {} types roundtripped", instructions.len());
@@ -1693,9 +2323,7 @@ mod tests {
 
     #[test]
     fn test_crc_corruption_detected() {
-        let dna = CoreDna::new(0, vec![
-            Instruction::Triple { s: 1, p: 2, o: 3 },
-        ]);
+        let dna = CoreDna::new(0, vec![Instruction::Triple { s: 1, p: 2, o: 3 }]);
         let mut wire = dna.encode().unwrap();
 
         // Corrupt one byte in the instruction stream
@@ -1731,15 +2359,29 @@ mod tests {
 
         let ku = KnowledgeUnit {
             codons: vec![
-                Codon { concept_id: 500, role: RoleId::Object, qualifiers: vec![] },
-                Codon { concept_id: 513, role: RoleId::Quality, qualifiers: vec![] },
-                Codon { concept_id: 505, role: RoleId::Location, qualifiers: vec![] },
+                Codon {
+                    concept_id: 500,
+                    role: RoleId::Object,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: 513,
+                    role: RoleId::Quality,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: 505,
+                    role: RoleId::Location,
+                    qualifiers: vec![],
+                },
             ],
             bonds: vec![],
             gene: Gene::Fact {
-                triples: vec![
-                    Triple { subject: 500, predicate: 501, object: 502 },
-                ],
+                triples: vec![Triple {
+                    subject: 500,
+                    predicate: 501,
+                    object: 502,
+                }],
                 certainty: 9900,
                 evidence: vec![],
             },
@@ -1762,10 +2404,17 @@ mod tests {
         // Compare with CBOR encoding
         let cbor_wire = crate::encoder::encode_knowledge_unit(&ku).unwrap();
         println!("  CBOR size: {} bytes", cbor_wire.len());
-        println!("  Reduction: {:.1}x smaller", cbor_wire.len() as f64 / wire.len() as f64);
+        println!(
+            "  Reduction: {:.1}x smaller",
+            cbor_wire.len() as f64 / wire.len() as f64
+        );
 
-        assert!(wire.len() < cbor_wire.len(),
-            "Core DNA ({}) should be smaller than CBOR ({})", wire.len(), cbor_wire.len());
+        assert!(
+            wire.len() < cbor_wire.len(),
+            "Core DNA ({}) should be smaller than CBOR ({})",
+            wire.len(),
+            cbor_wire.len()
+        );
 
         // Wire → CoreDna → KU roundtrip
         let decoded_dna = CoreDna::decode(&wire).unwrap();
@@ -1775,7 +2424,10 @@ mod tests {
         assert_eq!(decoded_ku.gene.gene_type(), GeneType::Fact);
 
         // Verify triples preserved
-        if let Gene::Fact { triples, certainty, .. } = &decoded_ku.gene {
+        if let Gene::Fact {
+            triples, certainty, ..
+        } = &decoded_ku.gene
+        {
             assert_eq!(triples.len(), 1);
             assert_eq!(triples[0].subject, 500);
             assert_eq!(triples[0].predicate, 501);
@@ -1786,9 +2438,18 @@ mod tests {
         }
 
         // Verify codons restored
-        assert!(decoded_ku.codons.iter().any(|c| c.concept_id == 500 && c.role == RoleId::Object));
-        assert!(decoded_ku.codons.iter().any(|c| c.concept_id == 513 && c.role == RoleId::Quality));
-        assert!(decoded_ku.codons.iter().any(|c| c.concept_id == 505 && c.role == RoleId::Location));
+        assert!(decoded_ku
+            .codons
+            .iter()
+            .any(|c| c.concept_id == 500 && c.role == RoleId::Object));
+        assert!(decoded_ku
+            .codons
+            .iter()
+            .any(|c| c.concept_id == 513 && c.role == RoleId::Quality));
+        assert!(decoded_ku
+            .codons
+            .iter()
+            .any(|c| c.concept_id == 505 && c.role == RoleId::Location));
 
         // Verify epigenetic data dropped (by design)
         assert!(decoded_ku.trust.is_none());
@@ -1806,21 +2467,38 @@ mod tests {
         println!("══════════════════════════════════════════════════");
 
         let ku = KnowledgeUnit {
-            codons: vec![
-                Codon { concept_id: 500, role: RoleId::Object, qualifiers: vec![] },
-            ],
+            codons: vec![Codon {
+                concept_id: 500,
+                role: RoleId::Object,
+                qualifiers: vec![],
+            }],
             bonds: vec![],
             gene: Gene::Procedure {
                 steps: vec![
                     ProcedureStep {
-                        ord: 0, act: 508, tgt: 505,
-                        pre: vec![Codon { concept_id: 507, role: RoleId::Condition, qualifiers: vec![] }],
-                        tools: vec![], eff: vec![], warn: vec![],
+                        ord: 0,
+                        act: 508,
+                        tgt: 505,
+                        pre: vec![Codon {
+                            concept_id: 507,
+                            role: RoleId::Condition,
+                            qualifiers: vec![],
+                        }],
+                        tools: vec![],
+                        eff: vec![],
+                        warn: vec![],
                     },
                     ProcedureStep {
-                        ord: 1, act: 509, tgt: 505,
-                        pre: vec![], tools: vec![],
-                        eff: vec![Codon { concept_id: 512, role: RoleId::Result, qualifiers: vec![] }],
+                        ord: 1,
+                        act: 509,
+                        tgt: 505,
+                        pre: vec![],
+                        tools: vec![],
+                        eff: vec![Codon {
+                            concept_id: 512,
+                            role: RoleId::Result,
+                            qualifiers: vec![],
+                        }],
                         warn: vec![],
                     },
                 ],
@@ -1843,12 +2521,18 @@ mod tests {
 
         println!("  Core DNA: {} bytes", wire.len());
         println!("  CBOR:     {} bytes", cbor_wire.len());
-        println!("  Reduction: {:.1}x", cbor_wire.len() as f64 / wire.len() as f64);
+        println!(
+            "  Reduction: {:.1}x",
+            cbor_wire.len() as f64 / wire.len() as f64
+        );
 
         let decoded_dna = CoreDna::decode(&wire).unwrap();
         let decoded_ku = core_dna_to_ku(&decoded_dna).unwrap();
 
-        if let Gene::Procedure { steps, difficulty, .. } = &decoded_ku.gene {
+        if let Gene::Procedure {
+            steps, difficulty, ..
+        } = &decoded_ku.gene
+        {
             assert_eq!(steps.len(), 2);
             assert_eq!(steps[0].act, 508);
             assert_eq!(steps[0].tgt, 505);
@@ -1869,9 +2553,7 @@ mod tests {
         println!("══════════════════════════════════════════════════");
 
         // Core DNA v7 wire
-        let dna = CoreDna::new(0, vec![
-            Instruction::Triple { s: 1, p: 2, o: 3 },
-        ]);
+        let dna = CoreDna::new(0, vec![Instruction::Triple { s: 1, p: 2, o: 3 }]);
         let core_wire = dna.encode().unwrap();
         assert_eq!(detect_wire_format(&core_wire), WireFormat::CoreDnaV7);
         println!("  Core DNA v7 detected: ✓");
@@ -1902,12 +2584,18 @@ mod tests {
 
         // Create a KU using the old CBOR encoder
         let ku = KnowledgeUnit {
-            codons: vec![
-                Codon { concept_id: 100, role: RoleId::Object, qualifiers: vec![] },
-            ],
+            codons: vec![Codon {
+                concept_id: 100,
+                role: RoleId::Object,
+                qualifiers: vec![],
+            }],
             bonds: vec![],
             gene: Gene::Fact {
-                triples: vec![Triple { subject: 100, predicate: 200, object: 300 }],
+                triples: vec![Triple {
+                    subject: 100,
+                    predicate: 200,
+                    object: 300,
+                }],
                 certainty: 9000,
                 evidence: vec![],
             },
@@ -2006,98 +2694,191 @@ hoặc đầu đạn tùy theo mục đích sử dụng";
         println!("  ╚══════════════════════════════════════════════╝");
 
         // Concept IDs for rocket domain
-        const C_ROCKET: ConceptId       = 600;
-        const C_BODY: ConceptId         = 601;
-        const C_SHELL: ConceptId        = 602;
-        const C_AL_LI_ALLOY: ConceptId  = 603;
-        const C_TITANIUM: ConceptId     = 605;
-        const C_CARBON_COMP: ConceptId  = 607;
-        const C_ENGINE_SYS: ConceptId   = 610;
-        const C_FUEL: ConceptId         = 611;
+        const C_ROCKET: ConceptId = 600;
+        const C_BODY: ConceptId = 601;
+        const C_SHELL: ConceptId = 602;
+        const C_AL_LI_ALLOY: ConceptId = 603;
+        const C_TITANIUM: ConceptId = 605;
+        const C_CARBON_COMP: ConceptId = 607;
+        const C_ENGINE_SYS: ConceptId = 610;
+        const C_FUEL: ConceptId = 611;
         const C_LIQ_HYDROGEN: ConceptId = 612;
-        const C_LIQ_OXYGEN: ConceptId   = 613;
-        const C_COMBUSTION: ConceptId   = 614;
-        const C_THRUST: ConceptId       = 615;
-        const C_PUMP: ConceptId         = 616;
-        const C_SOLID_FUEL: ConceptId   = 617;
-        const C_SIMPLE: ConceptId       = 618;
-        const C_RELIABLE: ConceptId     = 619;
-        const C_GUIDANCE: ConceptId     = 620;
-        const C_CONTROL: ConceptId      = 621;
-        const C_IMU: ConceptId          = 623;
-        const C_GYROSCOPE: ConceptId    = 624;
-        const C_FLIGHT_COMP: ConceptId  = 625;
-        const C_TRAJECTORY: ConceptId   = 626;
-        const C_THRUST_VEC: ConceptId   = 627;
-        const C_PAYLOAD: ConceptId      = 630;
-        const C_SATELLITE: ConceptId    = 631;
-        const C_WARHEAD: ConceptId      = 632;
-        const C_RESEARCH_EQ: ConceptId  = 633;
-        const C_LIGHTWEIGHT: ConceptId  = 640;
-        const C_STRONG: ConceptId       = 641;
-        const C_HIGH_PRESS: ConceptId   = 642;
-        const C_MATERIAL: ConceptId     = 643;
-        const C_NOSE: ConceptId         = 644;
+        const C_LIQ_OXYGEN: ConceptId = 613;
+        const C_COMBUSTION: ConceptId = 614;
+        const C_THRUST: ConceptId = 615;
+        const C_PUMP: ConceptId = 616;
+        const C_SOLID_FUEL: ConceptId = 617;
+        const C_SIMPLE: ConceptId = 618;
+        const C_RELIABLE: ConceptId = 619;
+        const C_GUIDANCE: ConceptId = 620;
+        const C_CONTROL: ConceptId = 621;
+        const C_IMU: ConceptId = 623;
+        const C_GYROSCOPE: ConceptId = 624;
+        const C_FLIGHT_COMP: ConceptId = 625;
+        const C_TRAJECTORY: ConceptId = 626;
+        const C_THRUST_VEC: ConceptId = 627;
+        const C_PAYLOAD: ConceptId = 630;
+        const C_SATELLITE: ConceptId = 631;
+        const C_WARHEAD: ConceptId = 632;
+        const C_RESEARCH_EQ: ConceptId = 633;
+        const C_LIGHTWEIGHT: ConceptId = 640;
+        const C_STRONG: ConceptId = 641;
+        const C_HIGH_PRESS: ConceptId = 642;
+        const C_MATERIAL: ConceptId = 643;
+        const C_NOSE: ConceptId = 644;
 
         // KU#1: Body & Shell (Fact)
-        let dna1 = CoreDna::new(0, vec![
-            // Thân và vỏ là part of tên lửa
-            Instruction::PartOf { part: C_BODY, whole: C_ROCKET },
-            Instruction::PartOf { part: C_SHELL, whole: C_ROCKET },
-            // Vật liệu: hợp kim nhôm-liti HOẶC titan HOẶC composite carbon
-            Instruction::Triple { s: C_BODY, p: C_MATERIAL, o: C_AL_LI_ALLOY },
-            Instruction::EnumVal { s: C_MATERIAL, values: vec![C_AL_LI_ALLOY, C_TITANIUM, C_CARBON_COMP] },
-            // Tính chất: tối ưu trọng lượng + độ bền cơ học
-            Instruction::Quality { s: C_BODY, q: C_LIGHTWEIGHT },
-            Instruction::Quality { s: C_BODY, q: C_STRONG },
-            // Chịu áp lực lớn
-            Instruction::Causal { cause: C_HIGH_PRESS, effect: C_STRONG },
-            Instruction::Certainty { level: 9500 },
-        ]);
+        let dna1 = CoreDna::new(
+            0,
+            vec![
+                // Thân và vỏ là part of tên lửa
+                Instruction::PartOf {
+                    part: C_BODY,
+                    whole: C_ROCKET,
+                },
+                Instruction::PartOf {
+                    part: C_SHELL,
+                    whole: C_ROCKET,
+                },
+                // Vật liệu: hợp kim nhôm-liti HOẶC titan HOẶC composite carbon
+                Instruction::Triple {
+                    s: C_BODY,
+                    p: C_MATERIAL,
+                    o: C_AL_LI_ALLOY,
+                },
+                Instruction::EnumVal {
+                    s: C_MATERIAL,
+                    values: vec![C_AL_LI_ALLOY, C_TITANIUM, C_CARBON_COMP],
+                },
+                // Tính chất: tối ưu trọng lượng + độ bền cơ học
+                Instruction::Quality {
+                    s: C_BODY,
+                    q: C_LIGHTWEIGHT,
+                },
+                Instruction::Quality {
+                    s: C_BODY,
+                    q: C_STRONG,
+                },
+                // Chịu áp lực lớn
+                Instruction::Causal {
+                    cause: C_HIGH_PRESS,
+                    effect: C_STRONG,
+                },
+                Instruction::Certainty { level: 9500 },
+            ],
+        );
         let wire1 = dna1.encode().unwrap();
 
         // KU#2: Liquid Fuel Engine (Procedure)
-        let dna2 = CoreDna::new(1, vec![
-            Instruction::PartOf { part: C_ENGINE_SYS, whole: C_ROCKET },
-            Instruction::Step { ord: 0, action: C_PUMP, target: C_FUEL },
-            Instruction::Step { ord: 1, action: C_PUMP, target: C_LIQ_HYDROGEN },
-            Instruction::Step { ord: 2, action: C_PUMP, target: C_LIQ_OXYGEN },
-            Instruction::Step { ord: 3, action: C_COMBUSTION, target: C_THRUST },
-            Instruction::Effect { concept: C_THRUST },
-            Instruction::Quality { s: C_ENGINE_SYS, q: C_THRUST },
-            Instruction::Difficulty { level: 4 }, // phức tạp
-        ]);
+        let dna2 = CoreDna::new(
+            1,
+            vec![
+                Instruction::PartOf {
+                    part: C_ENGINE_SYS,
+                    whole: C_ROCKET,
+                },
+                Instruction::Step {
+                    ord: 0,
+                    action: C_PUMP,
+                    target: C_FUEL,
+                },
+                Instruction::Step {
+                    ord: 1,
+                    action: C_PUMP,
+                    target: C_LIQ_HYDROGEN,
+                },
+                Instruction::Step {
+                    ord: 2,
+                    action: C_PUMP,
+                    target: C_LIQ_OXYGEN,
+                },
+                Instruction::Step {
+                    ord: 3,
+                    action: C_COMBUSTION,
+                    target: C_THRUST,
+                },
+                Instruction::Effect { concept: C_THRUST },
+                Instruction::Quality {
+                    s: C_ENGINE_SYS,
+                    q: C_THRUST,
+                },
+                Instruction::Difficulty { level: 4 }, // phức tạp
+            ],
+        );
         let wire2 = dna2.encode().unwrap();
 
         // KU#3: Solid Fuel (Fact)
-        let dna3 = CoreDna::new(0, vec![
-            Instruction::Triple { s: C_SOLID_FUEL, p: C_MATERIAL, o: C_FUEL },
-            Instruction::Quality { s: C_SOLID_FUEL, q: C_SIMPLE },
-            Instruction::Quality { s: C_SOLID_FUEL, q: C_RELIABLE },
-            Instruction::Certainty { level: 9000 },
-        ]);
+        let dna3 = CoreDna::new(
+            0,
+            vec![
+                Instruction::Triple {
+                    s: C_SOLID_FUEL,
+                    p: C_MATERIAL,
+                    o: C_FUEL,
+                },
+                Instruction::Quality {
+                    s: C_SOLID_FUEL,
+                    q: C_SIMPLE,
+                },
+                Instruction::Quality {
+                    s: C_SOLID_FUEL,
+                    q: C_RELIABLE,
+                },
+                Instruction::Certainty { level: 9000 },
+            ],
+        );
         let wire3 = dna3.encode().unwrap();
 
         // KU#4: Guidance & Control (Fact)
-        let dna4 = CoreDna::new(0, vec![
-            Instruction::PartOf { part: C_GUIDANCE, whole: C_ROCKET },
-            Instruction::PartOf { part: C_CONTROL, whole: C_ROCKET },
-            // Thành phần: IMU, con quay hồi chuyển, máy tính bay
-            Instruction::EnumVal { s: C_GUIDANCE, values: vec![C_IMU, C_GYROSCOPE, C_FLIGHT_COMP] },
-            // Chức năng: điều chỉnh hướng phụt → bay đúng quỹ đạo
-            Instruction::Tool { action: C_CONTROL, instrument: C_THRUST_VEC },
-            Instruction::Causal { cause: C_THRUST_VEC, effect: C_TRAJECTORY },
-            Instruction::Certainty { level: 9500 },
-        ]);
+        let dna4 = CoreDna::new(
+            0,
+            vec![
+                Instruction::PartOf {
+                    part: C_GUIDANCE,
+                    whole: C_ROCKET,
+                },
+                Instruction::PartOf {
+                    part: C_CONTROL,
+                    whole: C_ROCKET,
+                },
+                // Thành phần: IMU, con quay hồi chuyển, máy tính bay
+                Instruction::EnumVal {
+                    s: C_GUIDANCE,
+                    values: vec![C_IMU, C_GYROSCOPE, C_FLIGHT_COMP],
+                },
+                // Chức năng: điều chỉnh hướng phụt → bay đúng quỹ đạo
+                Instruction::Tool {
+                    action: C_CONTROL,
+                    instrument: C_THRUST_VEC,
+                },
+                Instruction::Causal {
+                    cause: C_THRUST_VEC,
+                    effect: C_TRAJECTORY,
+                },
+                Instruction::Certainty { level: 9500 },
+            ],
+        );
         let wire4 = dna4.encode().unwrap();
 
         // KU#5: Payload Bay (Fact)
-        let dna5 = CoreDna::new(0, vec![
-            Instruction::PartOf { part: C_PAYLOAD, whole: C_ROCKET },
-            Instruction::Located { s: C_PAYLOAD, location: C_NOSE },
-            Instruction::EnumVal { s: C_PAYLOAD, values: vec![C_SATELLITE, C_RESEARCH_EQ, C_WARHEAD] },
-            Instruction::Certainty { level: 9000 },
-        ]);
+        let dna5 = CoreDna::new(
+            0,
+            vec![
+                Instruction::PartOf {
+                    part: C_PAYLOAD,
+                    whole: C_ROCKET,
+                },
+                Instruction::Located {
+                    s: C_PAYLOAD,
+                    location: C_NOSE,
+                },
+                Instruction::EnumVal {
+                    s: C_PAYLOAD,
+                    values: vec![C_SATELLITE, C_RESEARCH_EQ, C_WARHEAD],
+                },
+                Instruction::Certainty { level: 9000 },
+            ],
+        );
         let wire5 = dna5.encode().unwrap();
 
         // Print each KU
@@ -2129,18 +2910,26 @@ hoặc đầu đạn tùy theo mục đích sử dụng";
         println!("  ═══════════════════════════════════════════════════════════");
         println!("  Input text (UTF-8):        {} bytes", text_bytes);
         println!("  ─────────────────────────────────────────────────────────");
-        println!("  Tier 1 Parser (auto):      {} bytes ({:.1}x vs text)",
+        println!(
+            "  Tier 1 Parser (auto):      {} bytes ({:.1}x vs text)",
             auto_wire.len(),
-            if auto_wire.len() < text_bytes { text_bytes as f64 / auto_wire.len() as f64 }
-            else { -(auto_wire.len() as f64 / text_bytes as f64) });
+            if auto_wire.len() < text_bytes {
+                text_bytes as f64 / auto_wire.len() as f64
+            } else {
+                -(auto_wire.len() as f64 / text_bytes as f64)
+            }
+        );
         println!("  ─────────────────────────────────────────────────────────");
         println!("  Manual Precision (5 KUs):");
         for (name, _, wire) in &kus {
             println!("    {:24} {} bytes", format!("{}:", name), wire.len());
         }
         println!("  ─────────────────────────────────────────────────────────");
-        println!("  Total manual:              {} bytes ({:.1}x smaller than text)",
-            total_manual, text_bytes as f64 / total_manual as f64);
+        println!(
+            "  Total manual:              {} bytes ({:.1}x smaller than text)",
+            total_manual,
+            text_bytes as f64 / total_manual as f64
+        );
         println!("  ═══════════════════════════════════════════════════════════");
         println!("  ✅ Language-agnostic:   ConceptIds only, no Vietnamese");
         println!("  ✅ Machine-queryable:   \"What contains IMU?\" → GUIDANCE");
@@ -2149,9 +2938,12 @@ hoặc đầu đạn tùy theo mục đích sử dụng";
         println!("  ═══════════════════════════════════════════════════════════");
 
         // Verify manual encoding is smaller than text
-        assert!(total_manual < text_bytes,
+        assert!(
+            total_manual < text_bytes,
             "Manual Core DNA ({}) should be smaller than text ({})",
-            total_manual, text_bytes);
+            total_manual,
+            text_bytes
+        );
 
         println!("\n  test_rocket_systems_encoding: PASSED ✓ 🚀");
     }

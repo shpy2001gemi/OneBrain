@@ -1,0 +1,173 @@
+schema: onebrain.vnext.negative-assertions
+version: 1
+status: normative-seed
+source:
+  task: FND-002
+  document: NORMATIVE_VOCABULARY_V1.md
+
+canonical_forbidden_tokens:
+  - GLOBAL
+  - FULL
+  - CLOSED
+  - FINAL
+  - INDEPENDENT
+
+rules:
+  - id: NEG-KU-001
+    area: knowledge
+    assertion: "CID match must not be described as truth verification."
+    future_gate: V0
+  - id: NEG-KU-002
+    area: knowledge
+    assertion: "Lack of UseEvent must not delete, reject, or label a KU as wrong."
+    future_gate: V1
+  - id: NEG-KU-003
+    area: knowledge
+    assertion: "Popularity, trust, route distance, and OBT balance must not be KQL eligibility gates."
+    future_gate: V1
+  - id: NEG-KU-004
+    area: knowledge
+    assertion: "Opposing or refuted branches must not be removed merely because another branch is preferred."
+    future_gate: V1
+
+  - id: NEG-REC-001
+    area: receptor
+    assertion: "ReceptorDefinition must not contain current resolution, budget, rank, or candidate list."
+    future_gate: V0
+  - id: NEG-REC-002
+    area: receptor
+    assertion: "Resolution must target exact assembly lineage, revision, and placement rather than only ReceptorDefinitionCID."
+    future_gate: V1
+
+  - id: NEG-MAP-001
+    area: mapping
+    assertion: "Retrieval, ranking, and delivery must not materialize a Mapping."
+    future_gate: V1
+  - id: NEG-MAP-002
+    area: mapping
+    assertion: "Materialization and publish must not adopt a Mapping into an Assembly."
+    future_gate: V1
+  - id: NEG-MAP-003
+    area: mapping
+    assertion: "ADOPT_BINDING must not force SATISFIED_RELATIVE when acceptance is partial or concurrent."
+    future_gate: V1
+  - id: NEG-MAP-004
+    area: mapping
+    assertion: "A BindingProposal must not create an active OBKG edge or a tool/profile side effect."
+    future_gate: V4
+
+  - id: NEG-KQL-001
+    area: kql-privacy
+    assertion: "Full private KnowledgeNeedIR must not be an OBP payload."
+    future_gate: V4
+  - id: NEG-KQL-002
+    area: kql
+    assertion: "Zero results must not be expressed as global absence."
+    future_gate: V1
+  - id: NEG-KQL-003
+    area: kql-legacy
+    assertion: "GLOBAL must not be a canonical vNext query scope."
+    future_gate: V5
+  - id: NEG-KQL-004
+    area: kql-privacy
+    assertion: "Private ClaimEnvelope and StandingNeed must not enter outbound public inventory."
+    future_gate: V4
+  - id: NEG-KQL-005
+    area: kql-privacy
+    assertion: "RouteNeedSketch must not carry stable Receptor, Assembly, Need, User, or Node identity, or raw KQL."
+    future_gate: V4
+
+  - id: NEG-NET-001
+    area: identity
+    assertion: "NodeID must not be truncated to u64 for identity, clock, ACK, watch, or evidence deduplication."
+    future_gate: V0
+  - id: NEG-NET-002
+    area: authority
+    assertion: "Seed, bridge, relay, and provider must not gain content or author authority by forwarding data."
+    future_gate: V4
+  - id: NEG-NET-003
+    area: reachability
+    assertion: "There must be no canonical IslandID, IslandEpoch, island leader, or global component authority."
+    future_gate: V0
+  - id: NEG-NET-004
+    area: reconciliation
+    assertion: "Bloom, XOR, and RIBLT output must not establish completion without exact root verification or fallback."
+    future_gate: V2
+  - id: NEG-NET-005
+    area: privacy
+    assertion: "Transport handshake must not link every namespace-scoped feed by default."
+    future_gate: V4
+  - id: NEG-NET-006
+    area: storage-integrity
+    assertion: "Same CID with different bytes must not overwrite accepted local bytes."
+    future_gate: V0
+
+  - id: NEG-FID-001
+    area: fidelity
+    assertion: "Different NodeID, IP, or model label must not be counted as attester independence."
+    future_gate: V4
+  - id: NEG-FID-002
+    area: fidelity
+    assertion: "Encoding fidelity must not be described as proposition truth."
+    future_gate: V1
+  - id: NEG-FID-003
+    area: fidelity-legacy
+    assertion: "FULL must not be a canonical vNext fidelity state."
+    future_gate: V5
+
+  - id: NEG-CAP-001
+    area: capability-authority
+    assertion: "CapabilityOffer and conformance must not grant authority."
+    future_gate: V4
+  - id: NEG-CAP-002
+    area: capability-execution
+    assertion: "Remote result verification must not automatically materialize, publish, adopt, or execute it."
+    future_gate: V4
+  - id: NEG-CAP-003
+    area: capability-delegation
+    assertion: "A child delegation must not expand parent effects, purpose, budget, lifetime, or onward-delegation rights."
+    future_gate: V1
+
+  - id: NEG-PRO-001
+    area: provider-lease
+    assertion: "Replaying the same lease CID must not reset local lease age."
+    future_gate: V2
+  - id: NEG-PRO-002
+    area: provider-coverage
+    assertion: "A sampled or evicted DHT response must not claim a complete provider set."
+    future_gate: V1
+  - id: NEG-PRO-003
+    area: provider-authority
+    assertion: "Provider availability must not imply custody, correctness, or authority."
+    future_gate: V4
+
+  - id: NEG-GC-001
+    area: checkpoint
+    assertion: "A checkpoint must not suppress an event without required proof."
+    future_gate: V3
+  - id: NEG-GC-002
+    area: checkpoint
+    assertion: "Missing proof or head must remain unresolved rather than becoming add-wins, remove-wins, or covered."
+    future_gate: V3
+  - id: NEG-GC-003
+    area: retention
+    assertion: "Local payload eviction must not be represented as global semantic deletion."
+    future_gate: V1
+
+  - id: NEG-POMV-001
+    area: pomv
+    assertion: "QueryHit, retrieval, and exposure must not count as Use."
+    future_gate: V1
+  - id: NEG-POMV-002
+    area: pomv-benefit
+    assertion: "UseEvent alone must not be described as proven benefit."
+    future_gate: V1
+  - id: NEG-POMV-003
+    area: pomv-truth
+    assertion: "PoMV and Benefit assessment must not vote on proposition truth."
+    future_gate: V1
+  - id: NEG-OBT-001
+    area: obt-firewall
+    assertion: "OBT failure, balance, and reward policy must not block KU publish, preservation, KQL, reconciliation, Mapping adoption, or fidelity evidence."
+    future_gate: V5
+

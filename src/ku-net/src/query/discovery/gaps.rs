@@ -59,11 +59,17 @@ pub struct GapDetector {
 
 impl GapDetector {
     pub fn new() -> Self {
-        Self { trust_threshold: 3000, max_gaps: 50 }
+        Self {
+            trust_threshold: 3000,
+            max_gaps: 50,
+        }
     }
 
     pub fn with_params(trust_threshold: u16, max_gaps: usize) -> Self {
-        Self { trust_threshold, max_gaps }
+        Self {
+            trust_threshold,
+            max_gaps,
+        }
     }
 
     /// Run gap detection on a collection of KUs.
@@ -76,8 +82,11 @@ impl GapDetector {
         gaps.extend(self.find_missing_evidence(kus));
         gaps.extend(self.find_untested_hypotheses(kus));
 
-        gaps.sort_by(|a, b| b.severity.partial_cmp(&a.severity)
-            .unwrap_or(std::cmp::Ordering::Equal));
+        gaps.sort_by(|a, b| {
+            b.severity
+                .partial_cmp(&a.severity)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         gaps.truncate(self.max_gaps);
 
         GapReport {
@@ -88,10 +97,7 @@ impl GapDetector {
     }
 
     /// Build maps of defined (in codons) and referenced (in bond contexts) concepts.
-    fn build_concept_maps(
-        &self,
-        kus: &[KuRuntime],
-    ) -> (HashMap<u64, usize>, HashMap<u64, usize>) {
+    fn build_concept_maps(&self, kus: &[KuRuntime]) -> (HashMap<u64, usize>, HashMap<u64, usize>) {
         let mut defined: HashMap<u64, usize> = HashMap::new();
         let mut referenced: HashMap<u64, usize> = HashMap::new();
 
@@ -114,22 +120,21 @@ impl GapDetector {
         defined: &HashMap<u64, usize>,
         referenced: &HashMap<u64, usize>,
     ) -> Vec<KnowledgeGap> {
-        referenced.iter()
+        referenced
+            .iter()
             .filter(|(cid, _)| !defined.contains_key(cid))
-            .map(|(&concept_id, &ref_count)| {
-                KnowledgeGap {
-                    gap_type: GapType::OrphanConcept,
-                    severity: (ref_count as f64 / 10.0).min(1.0),
-                    concept_ids: vec![concept_id],
-                    suggested_query: format!(
-                        "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} SCOPE DHT",
-                        concept_id
-                    ),
-                    description: format!(
-                        "Concept {} referenced {} times but has no defining KU",
-                        concept_id, ref_count
-                    ),
-                }
+            .map(|(&concept_id, &ref_count)| KnowledgeGap {
+                gap_type: GapType::OrphanConcept,
+                severity: (ref_count as f64 / 10.0).min(1.0),
+                concept_ids: vec![concept_id],
+                suggested_query: format!(
+                    "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} SCOPE DHT",
+                    concept_id
+                ),
+                description: format!(
+                    "Concept {} referenced {} times but has no defining KU",
+                    concept_id, ref_count
+                ),
             })
             .collect()
     }
@@ -193,9 +198,7 @@ impl GapDetector {
     fn find_untested_hypotheses(&self, kus: &[KuRuntime]) -> Vec<KnowledgeGap> {
         kus.iter()
             .filter(|ku| ku.gene_type() == 1) // Hypothesis gene type
-            .filter(|ku| {
-                ku.epi.trust.corroboration_count == 0 && ku.epi.trust.challenge_count == 0
-            })
+            .filter(|ku| ku.epi.trust.corroboration_count == 0 && ku.epi.trust.challenge_count == 0)
             .filter_map(|ku| {
                 ku.primary_concept().map(|primary| KnowledgeGap {
                     gap_type: GapType::UntestedHypothesis,
@@ -205,9 +208,7 @@ impl GapDetector {
                         "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} SCOPE DHT",
                         primary
                     ),
-                    description: format!(
-                        "Hypothesis about concept {} untested", primary
-                    ),
+                    description: format!("Hypothesis about concept {} untested", primary),
                 })
             })
             .collect()
@@ -215,7 +216,9 @@ impl GapDetector {
 }
 
 impl Default for GapDetector {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -225,15 +228,23 @@ impl Default for GapDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ku_core::{KuRuntime, Epigenetics, RelationType};
     use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction};
+    use ku_core::{Epigenetics, KuRuntime, RelationType};
 
     fn make_ku(concept_id: u64, trust_score: u16) -> KuRuntime {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Triple { s: concept_id, p: 133, o: 132 },
+                Instruction::Triple {
+                    s: concept_id,
+                    p: 133,
+                    o: 132,
+                },
                 Instruction::Certainty { level: 9500 },
             ],
         };
@@ -266,7 +277,9 @@ mod tests {
             make_ku_with_ctx(8000, 2, &[99]),
         ];
         let report = detector.analyze(&kus);
-        let orphans: Vec<_> = report.gaps.iter()
+        let orphans: Vec<_> = report
+            .gaps
+            .iter()
             .filter(|g| g.gap_type == GapType::OrphanConcept)
             .collect();
         assert!(!orphans.is_empty(), "Should detect orphan concept 99");
@@ -277,7 +290,9 @@ mod tests {
         let detector = GapDetector::new();
         let kus = vec![make_low_trust_ku(42), make_low_trust_ku(42)];
         let report = detector.analyze(&kus);
-        let low: Vec<_> = report.gaps.iter()
+        let low: Vec<_> = report
+            .gaps
+            .iter()
             .filter(|g| g.gap_type == GapType::LowConfidenceRegion)
             .collect();
         assert!(!low.is_empty());
@@ -289,7 +304,9 @@ mod tests {
         let mut ku = make_ku_with_ctx(7000, 42, &[]);
         ku.epi.trust.corroboration_count = 0;
         let report = detector.analyze(&[ku]);
-        let missing: Vec<_> = report.gaps.iter()
+        let missing: Vec<_> = report
+            .gaps
+            .iter()
             .filter(|g| g.gap_type == GapType::MissingEvidence)
             .collect();
         assert!(!missing.is_empty());
@@ -300,10 +317,18 @@ mod tests {
         let detector = GapDetector::new();
         // gene_type: 1 = Hypothesis
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 1, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 1,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Triple { s: 42, p: 133, o: 132 },
+                Instruction::Triple {
+                    s: 42,
+                    p: 133,
+                    o: 132,
+                },
                 Instruction::Certainty { level: 5000 },
             ],
         };
@@ -312,7 +337,10 @@ mod tests {
         ku.epi.trust.corroboration_count = 0;
         ku.epi.trust.challenge_count = 0;
         let report = detector.analyze(&[ku]);
-        assert!(report.gaps.iter().any(|g| g.gap_type == GapType::UntestedHypothesis));
+        assert!(report
+            .gaps
+            .iter()
+            .any(|g| g.gap_type == GapType::UntestedHypothesis));
     }
 
     #[test]
@@ -327,11 +355,12 @@ mod tests {
         let kus = vec![
             make_ku_with_ctx(9000, 1, &[999]),
             make_ku_with_ctx(8000, 2, &[999]),
-            make_low_trust_ku(42), make_low_trust_ku(42),
+            make_low_trust_ku(42),
+            make_low_trust_ku(42),
         ];
         let report = detector.analyze(&kus);
         for i in 1..report.gaps.len() {
-            assert!(report.gaps[i-1].severity >= report.gaps[i].severity);
+            assert!(report.gaps[i - 1].severity >= report.gaps[i].severity);
         }
     }
 }

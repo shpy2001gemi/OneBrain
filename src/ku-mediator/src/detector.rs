@@ -4,7 +4,7 @@
 //! using pattern matching for explicit commands, definitions,
 //! and procedural statements.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// A detected knowledge signal from conversation text.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,16 +44,30 @@ impl KnowledgeDetector {
     pub fn new() -> Self {
         Self {
             explicit_patterns: vec![
-                "remember", "save this", "note that", "encode",
-                "nhớ", "lưu lại", "ghi nhớ",
+                "remember",
+                "save this",
+                "note that",
+                "encode",
+                "nhớ",
+                "lưu lại",
+                "ghi nhớ",
             ],
             definition_patterns: vec![
-                " is ", " are ", " means ", " refers to ", " defines ",
-                " là ", " nghĩa là ",
+                " is ",
+                " are ",
+                " means ",
+                " refers to ",
+                " defines ",
+                " là ",
+                " nghĩa là ",
             ],
             procedure_patterns: vec![
-                "step 1", "first,", "to do this", "how to",
-                "bước 1", "đầu tiên",
+                "step 1",
+                "first,",
+                "to do this",
+                "how to",
+                "bước 1",
+                "đầu tiên",
             ],
             min_length: 20,
         }
@@ -104,7 +118,9 @@ impl KnowledgeDetector {
 }
 
 impl Default for KnowledgeDetector {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

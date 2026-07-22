@@ -9,9 +9,9 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use crate::constants::*;
 use crate::identity::NodeId;
 use crate::messages::NetworkAddress;
-use crate::constants::*;
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -101,7 +101,8 @@ impl KBucket {
 
         // Bucket full → add to replacement cache
         // Remove from replacement cache if already there
-        self.replacement_cache.retain(|e| e.node_id != entry.node_id);
+        self.replacement_cache
+            .retain(|e| e.node_id != entry.node_id);
         if self.replacement_cache.len() >= K_BUCKET_SIZE {
             self.replacement_cache.remove(0); // Drop oldest replacement
         }
@@ -271,7 +272,8 @@ impl RoutingTable {
 
     /// Get all non-empty bucket indices and their sizes.
     pub fn bucket_stats(&self) -> Vec<(usize, usize)> {
-        self.buckets.iter()
+        self.buckets
+            .iter()
             .enumerate()
             .filter(|(_, b)| !b.is_empty())
             .map(|(i, b)| (i, b.len()))
@@ -295,12 +297,20 @@ pub struct DhtEntry {
 impl DhtEntry {
     /// Create a permanent entry (no TTL).
     pub fn permanent(value: Vec<u8>, now: u64) -> Self {
-        Self { value, stored_at: now, expires_at: None }
+        Self {
+            value,
+            stored_at: now,
+            expires_at: None,
+        }
     }
 
     /// Create an entry with TTL.
     pub fn with_ttl(value: Vec<u8>, now: u64, ttl_s: u64) -> Self {
-        Self { value, stored_at: now, expires_at: Some(now + ttl_s) }
+        Self {
+            value,
+            stored_at: now,
+            expires_at: Some(now + ttl_s),
+        }
     }
 
     /// Whether this entry has expired.
@@ -355,7 +365,8 @@ impl DhtNode {
                 capacity: self.max_storage,
             });
         }
-        self.storage.insert(key, DhtEntry::with_ttl(value, now, ttl_s));
+        self.storage
+            .insert(key, DhtEntry::with_ttl(value, now, ttl_s));
         Ok(())
     }
 
@@ -400,9 +411,7 @@ impl DhtNode {
             FindValueResult::Found(entry.value.clone())
         } else {
             let closest = self.find_closest_nodes(key);
-            FindValueResult::ClosestNodes(
-                closest.iter().map(|e| (e.node_id, e.address)).collect()
-            )
+            FindValueResult::ClosestNodes(closest.iter().map(|e| (e.node_id, e.address)).collect())
         }
     }
 
@@ -457,12 +466,9 @@ pub enum DhtError {
 impl std::fmt::Display for DhtError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::StorageFull { capacity } =>
-                write!(f, "DHT storage full: {} items", capacity),
-            Self::NodeNotFound =>
-                write!(f, "Node not found in routing table"),
-            Self::LookupTimeout =>
-                write!(f, "DHT lookup timed out"),
+            Self::StorageFull { capacity } => write!(f, "DHT storage full: {} items", capacity),
+            Self::NodeNotFound => write!(f, "Node not found in routing table"),
+            Self::LookupTimeout => write!(f, "DHT lookup timed out"),
         }
     }
 }
@@ -482,9 +488,16 @@ pub struct StoredKuMeta {
 
 impl StoredKuMeta {
     pub fn new(current_epoch: u64) -> Self {
-        Self { actual_replicas: 1, first_stored_epoch: current_epoch, epochs_stored: 1, last_updated_epoch: current_epoch }
+        Self {
+            actual_replicas: 1,
+            first_stored_epoch: current_epoch,
+            epochs_stored: 1,
+            last_updated_epoch: current_epoch,
+        }
     }
-    pub fn update_replicas(&mut self, count: u32) { self.actual_replicas = count; }
+    pub fn update_replicas(&mut self, count: u32) {
+        self.actual_replicas = count;
+    }
     pub fn advance_epoch(&mut self, current_epoch: u64) {
         if current_epoch > self.last_updated_epoch {
             self.epochs_stored += current_epoch - self.last_updated_epoch;
@@ -500,20 +513,36 @@ pub struct ReplicaTracker {
 }
 
 impl ReplicaTracker {
-    pub fn new() -> Self { Self::default() }
-    pub fn record_store(&mut self, ku_cid: [u8; 32], current_epoch: u64) {
-        self.entries.entry(ku_cid).or_insert_with(|| StoredKuMeta::new(current_epoch));
+    pub fn new() -> Self {
+        Self::default()
     }
-    pub fn record_eviction(&mut self, ku_cid: &[u8; 32]) { self.entries.remove(ku_cid); }
+    pub fn record_store(&mut self, ku_cid: [u8; 32], current_epoch: u64) {
+        self.entries
+            .entry(ku_cid)
+            .or_insert_with(|| StoredKuMeta::new(current_epoch));
+    }
+    pub fn record_eviction(&mut self, ku_cid: &[u8; 32]) {
+        self.entries.remove(ku_cid);
+    }
     pub fn update_replicas(&mut self, ku_cid: &[u8; 32], count: u32) {
-        if let Some(meta) = self.entries.get_mut(ku_cid) { meta.update_replicas(count); }
+        if let Some(meta) = self.entries.get_mut(ku_cid) {
+            meta.update_replicas(count);
+        }
     }
     pub fn advance_epoch(&mut self, current_epoch: u64) {
-        for meta in self.entries.values_mut() { meta.advance_epoch(current_epoch); }
+        for meta in self.entries.values_mut() {
+            meta.advance_epoch(current_epoch);
+        }
     }
-    pub fn get(&self, ku_cid: &[u8; 32]) -> Option<&StoredKuMeta> { self.entries.get(ku_cid) }
-    pub fn all_stored(&self) -> &std::collections::HashMap<[u8; 32], StoredKuMeta> { &self.entries }
-    pub fn count(&self) -> usize { self.entries.len() }
+    pub fn get(&self, ku_cid: &[u8; 32]) -> Option<&StoredKuMeta> {
+        self.entries.get(ku_cid)
+    }
+    pub fn all_stored(&self) -> &std::collections::HashMap<[u8; 32], StoredKuMeta> {
+        &self.entries
+    }
+    pub fn count(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
@@ -672,7 +701,10 @@ mod tests {
         for i in 1..closest.len() {
             let dist_prev = closest[i - 1].node_id.xor_distance(&target);
             let dist_curr = closest[i].node_id.xor_distance(&target);
-            assert!(dist_prev <= dist_curr, "Results should be sorted by distance");
+            assert!(
+                dist_prev <= dist_curr,
+                "Results should be sorted by distance"
+            );
         }
     }
 

@@ -17,7 +17,7 @@
 //! ## Reference
 //! See `docs/specs/obt/09_CONSTANTS.md` for rationale and source sections.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // §9.1 — Epoch & Timing
@@ -73,10 +73,10 @@ pub const ACTIVITY_MULTIPLIER_MAX: f64 = 10.0;
 /// - R3 (Verifier):    15%
 /// - R4 (Storage):     20%
 pub const STREAM_WEIGHTS: [f64; 4] = [
-    0.40,  // R1: Owner (PoMV-based)
-    0.25,  // R2: Encoder
-    0.15,  // R3: Verifier
-    0.20,  // R4: Storage
+    0.40, // R1: Owner (PoMV-based)
+    0.25, // R2: Encoder
+    0.15, // R3: Verifier
+    0.20, // R4: Storage
 ];
 
 // ─── Encoding Rewards (R2/R3) ───
@@ -585,21 +585,27 @@ pub const DURATION_FACTOR_MAX: f64 = STORAGE_DURATION_FACTOR_MAX;
 // Tests
 // ═══════════════════════════════════════════════════════════════════════════
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_epoch_derived_constants() {
-        assert_eq!(OBT_EPOCH_DURATION_S * EPOCHS_PER_DAY, 86_400, "1 day in seconds");
+        assert_eq!(
+            OBT_EPOCH_DURATION_S * EPOCHS_PER_DAY,
+            86_400,
+            "1 day in seconds"
+        );
         assert_eq!(EPOCHS_PER_WEEK, EPOCHS_PER_DAY * 7);
     }
 
     #[test]
     fn test_stream_weights_sum_to_one() {
         let sum: f64 = STREAM_WEIGHTS.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-10, "Stream weights must sum to 1.0, got {sum}");
+        assert!(
+            (sum - 1.0).abs() < 1e-10,
+            "Stream weights must sum to 1.0, got {sum}"
+        );
     }
 
     #[test]
@@ -648,10 +654,10 @@ mod tests {
 
     #[test]
     fn test_cooldown_for_tier() {
-        assert_eq!(cooldown_for_tier(0), 3_600);  // 60 minutes
-        assert_eq!(cooldown_for_tier(1), 720);     // 12 minutes
-        assert_eq!(cooldown_for_tier(2), 360);     // 6 minutes
-        assert_eq!(cooldown_for_tier(3), 360);     // T3+ uses T2 cooldown
+        assert_eq!(cooldown_for_tier(0), 3_600); // 60 minutes
+        assert_eq!(cooldown_for_tier(1), 720); // 12 minutes
+        assert_eq!(cooldown_for_tier(2), 360); // 6 minutes
+        assert_eq!(cooldown_for_tier(3), 360); // T3+ uses T2 cooldown
     }
 
     #[test]
@@ -696,7 +702,10 @@ mod tests {
         assert!(MIN_KU_RAW_SIZE > 0);
         assert!(MIN_GENE_COUNT > 0);
         assert!(MIN_POMV_7D > 0.0);
-        assert!(MIN_POMV_30D > MIN_POMV_7D, "30-day threshold should exceed 7-day");
+        assert!(
+            MIN_POMV_30D > MIN_POMV_7D,
+            "30-day threshold should exceed 7-day"
+        );
     }
 
     #[test]
@@ -710,7 +719,10 @@ mod tests {
             assert!(
                 TRUST_MULTIPLIER[i] >= TRUST_MULTIPLIER[i - 1],
                 "Tier multipliers must be non-decreasing: tier {} ({}) < tier {} ({})",
-                i, TRUST_MULTIPLIER[i], i - 1, TRUST_MULTIPLIER[i - 1],
+                i,
+                TRUST_MULTIPLIER[i],
+                i - 1,
+                TRUST_MULTIPLIER[i - 1],
             );
         }
     }

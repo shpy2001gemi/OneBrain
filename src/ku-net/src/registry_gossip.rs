@@ -29,8 +29,7 @@
 //! - CCID = content hash → identical content always produces same entry
 //! - No conflict resolution needed (content-addressed = no conflicts)
 
-use serde::{Serialize, Deserialize};
-
+use serde::{Deserialize, Serialize};
 
 use ku_core::concept_registry::{ConceptCategory, ResolvedConcept};
 
@@ -393,9 +392,7 @@ impl RegistryGossipManager {
         peer_checkpoint: &RegistryCheckpointSummary,
         _local_ccids: &[[u8; 16]],
     ) -> Option<RegistryDeltaPull> {
-        let _peer_filter = RegistryBloomFilter::from_bytes(
-            peer_checkpoint.bloom_filter.clone(),
-        );
+        let _peer_filter = RegistryBloomFilter::from_bytes(peer_checkpoint.bloom_filter.clone());
 
         // Find CCIDs that the peer probably has but we DON'T have
         // We actually need to find what WE are missing.
@@ -439,10 +436,7 @@ impl RegistryGossipManager {
     ///
     /// Returns the new entries that should be added to local ConceptRegistry.
     /// Performs dedup by tracking peer sequence numbers.
-    pub fn handle_delta_push(
-        &mut self,
-        push: &RegistryDeltaPush,
-    ) -> Vec<WireConceptEntry> {
+    pub fn handle_delta_push(&mut self, push: &RegistryDeltaPush) -> Vec<WireConceptEntry> {
         // Dedup: skip if we've already seen this or a later seq from this peer
         let last_seq = self.seen_seqs.get(&push.peer_id).copied().unwrap_or(0);
         if push.seq <= last_seq {
@@ -451,7 +445,9 @@ impl RegistryGossipManager {
         self.seen_seqs.insert(push.peer_id, push.seq);
 
         // Filter out entries we already have (by checking our bloom filter)
-        let new_entries: Vec<_> = push.entries.iter()
+        let new_entries: Vec<_> = push
+            .entries
+            .iter()
             .filter(|e| !self.checkpoint_filter.probably_contains(&e.ccid))
             .cloned()
             .collect();
@@ -484,7 +480,8 @@ impl RegistryGossipManager {
 
         if pull.wanted_ccids.is_empty() {
             // Peer wants our latest entries (up to max)
-            let entries: Vec<_> = local_entries.iter()
+            let entries: Vec<_> = local_entries
+                .iter()
                 .rev() // most recent first
                 .take(max)
                 .map(|(c, labels)| WireConceptEntry::from_resolved(c, labels.clone()))
@@ -502,8 +499,8 @@ impl RegistryGossipManager {
             let mut not_found = Vec::new();
 
             for wanted in &pull.wanted_ccids {
-                if let Some((concept, labels)) = local_entries.iter()
-                    .find(|(c, _)| c.ccid == *wanted)
+                if let Some((concept, labels)) =
+                    local_entries.iter().find(|(c, _)| c.ccid == *wanted)
                 {
                     entries.push(WireConceptEntry::from_resolved(concept, labels.clone()));
                 } else {
@@ -532,12 +529,11 @@ impl RegistryGossipManager {
         checkpoint: &RegistryCheckpointSummary,
         local_ccids: &[[u8; 16]],
     ) -> Vec<[u8; 16]> {
-        let peer_filter = RegistryBloomFilter::from_bytes(
-            checkpoint.bloom_filter.clone(),
-        );
+        let peer_filter = RegistryBloomFilter::from_bytes(checkpoint.bloom_filter.clone());
 
         // Find our CCIDs that the peer probably doesn't have
-        local_ccids.iter()
+        local_ccids
+            .iter()
             .filter(|ccid| !peer_filter.probably_contains(ccid))
             .copied()
             .collect()
@@ -736,18 +732,24 @@ mod tests {
         let ccid3 = ku_core::ccid::ccid(b"wd:Q999");
 
         let local_entries = vec![
-            (ResolvedConcept {
-                ccid: ccid1,
-                qid: 283,
-                category: ConceptCategory::Entity,
-                canonical_name: "water".into(),
-            }, vec!["water".into(), "nước".into()]),
-            (ResolvedConcept {
-                ccid: ccid2,
-                qid: 42,
-                category: ConceptCategory::Entity,
-                canonical_name: "answer".into(),
-            }, vec!["answer".into()]),
+            (
+                ResolvedConcept {
+                    ccid: ccid1,
+                    qid: 283,
+                    category: ConceptCategory::Entity,
+                    canonical_name: "water".into(),
+                },
+                vec!["water".into(), "nước".into()],
+            ),
+            (
+                ResolvedConcept {
+                    ccid: ccid2,
+                    qid: 42,
+                    category: ConceptCategory::Entity,
+                    canonical_name: "answer".into(),
+                },
+                vec!["answer".into()],
+            ),
         ];
 
         let pull = RegistryDeltaPull {

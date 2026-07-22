@@ -3,7 +3,7 @@
 //! Tracks user preferences, expertise areas, concept frequency,
 //! and interaction statistics. All data stays local.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// User profile for personalization.
@@ -74,8 +74,11 @@ impl UserProfile {
     pub fn to_context_block(&self) -> String {
         format!(
             "User: {}\nLanguage: {}\nStyle: {:?}\nKUs encoded: {}\nQueries: {}",
-            self.display_name, self.preferred_language,
-            self.response_style, self.total_kus_encoded, self.total_queries
+            self.display_name,
+            self.preferred_language,
+            self.response_style,
+            self.total_kus_encoded,
+            self.total_queries
         )
     }
 
@@ -97,13 +100,14 @@ impl UserProfile {
     /// Load profile from JSON file.
     pub fn load(path: &std::path::Path) -> Result<Self, std::io::Error> {
         let json = std::fs::read_to_string(path)?;
-        serde_json::from_str(&json)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        serde_json::from_str(&json).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
     }
 }
 
 impl Default for UserProfile {
-    fn default() -> Self { Self::new("User") }
+    fn default() -> Self {
+        Self::new("User")
+    }
 }
 
 fn current_timestamp_ms() -> u64 {
@@ -162,9 +166,21 @@ mod tests {
     fn test_top_expertise() {
         let mut profile = UserProfile::new("Eve");
         profile.expertise_areas = vec![
-            ExpertiseArea { domain: "physics".into(), ku_count: 50, last_active: 0 },
-            ExpertiseArea { domain: "biology".into(), ku_count: 30, last_active: 0 },
-            ExpertiseArea { domain: "chemistry".into(), ku_count: 80, last_active: 0 },
+            ExpertiseArea {
+                domain: "physics".into(),
+                ku_count: 50,
+                last_active: 0,
+            },
+            ExpertiseArea {
+                domain: "biology".into(),
+                ku_count: 30,
+                last_active: 0,
+            },
+            ExpertiseArea {
+                domain: "chemistry".into(),
+                ku_count: 80,
+                last_active: 0,
+            },
         ];
         let top = profile.top_expertise(2);
         assert_eq!(top.len(), 2);

@@ -48,6 +48,19 @@ pub enum EncoderError {
     /// A file system I/O error occurred (e.g., saving/loading logs).
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
+
+    // --- v2 pipeline errors ---
+    /// The AI extraction produced no triples.
+    #[error("AI extraction produced no triples")]
+    NoTriples,
+
+    /// The AI response could not be parsed as JSON SPO triples.
+    #[error("JSON parse failed: {0}")]
+    JsonParseFailed(String),
+
+    /// Pre-scanned anchors were modified by the AI model.
+    #[error("Anchor verification failed: {0}")]
+    AnchorVerificationFailed(String),
 }
 
 #[cfg(test)]

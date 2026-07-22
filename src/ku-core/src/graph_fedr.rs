@@ -17,9 +17,9 @@
 //! - Peer weight based on triple count (more data = more influence)
 //! - Staleness detection via epoch counter
 
-use crate::graph_embeddings::{EntityEmbedding, RelationTable, train_step};
+use crate::graph_embeddings::{train_step, EntityEmbedding, RelationTable};
 use crate::types::RelationType;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -165,10 +165,8 @@ impl FedRProtocol {
                         let grad_im = 2.0 * (hr_im - t_im);
 
                         // Update relation: r -= lr * ∂L/∂r
-                        let new_r_re = (r_re - lr * grad_re * h_re / 127.0)
-                            .clamp(-128.0, 127.0);
-                        let new_r_im = (r_im - lr * grad_im * h_im / 127.0)
-                            .clamp(-128.0, 127.0);
+                        let new_r_re = (r_re - lr * grad_re * h_re / 127.0).clamp(-128.0, 127.0);
+                        let new_r_im = (r_im - lr * grad_im * h_im / 127.0).clamp(-128.0, 127.0);
                         rel_emb.real[i] = new_r_re as i8;
                         rel_emb.imag[i] = new_r_im as i8;
                     }
@@ -289,7 +287,10 @@ pub enum FedRError {
 impl std::fmt::Display for FedRError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FedRError::StaleDelta { delta_epoch, current_epoch } => {
+            FedRError::StaleDelta {
+                delta_epoch,
+                current_epoch,
+            } => {
                 write!(
                     f,
                     "stale delta: delta epoch {delta_epoch}, current epoch {current_epoch}"
@@ -477,7 +478,10 @@ mod tests {
         let delta = proto.compute_delta(&old_table, &new_table, [1u8; 32], 3);
         let size = delta.size_bytes();
         // Should be well under 4 KB
-        assert!(size < 4096, "delta size should be compact, got {size} bytes");
+        assert!(
+            size < 4096,
+            "delta size should be compact, got {size} bytes"
+        );
         // Should be > 0 since we have changes
         assert!(size > 44, "delta with changes should be > header size");
     }
@@ -681,7 +685,11 @@ mod tests {
         let result = aggregate_deltas(&[d1, d2]).unwrap();
         let (real, _imag) = result.deltas.get(&RelationType::Extends).unwrap();
         // Expected: 100 * 0.75 + 0 * 0.25 = 75
-        assert_eq!(real[0], 75, "weighted average should be 75, got {}", real[0]);
+        assert_eq!(
+            real[0], 75,
+            "weighted average should be 75, got {}",
+            real[0]
+        );
         assert_eq!(result.epoch, 2, "epoch should be max of inputs");
     }
 
@@ -704,7 +712,12 @@ mod tests {
         assert!(updates > 0);
 
         // Node A computes delta
-        let delta = proto_a.compute_delta(&original_table, &table_a, [0xAA; 32], triples_a.len() as u32);
+        let delta = proto_a.compute_delta(
+            &original_table,
+            &table_a,
+            [0xAA; 32],
+            triples_a.len() as u32,
+        );
         assert!(!delta.deltas.is_empty());
 
         // Node B applies the delta

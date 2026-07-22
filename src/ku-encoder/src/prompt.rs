@@ -13,10 +13,10 @@
 //! assert_eq!(messages.len(), 2); // system + user
 //! ```
 
-use ku_core::text_parser::ConceptDict;
+use ku_ai::types::ChatMessage;
 use ku_core::ku_system_prompt::generate_system_prompt;
 use ku_core::ku_tools::tool_definitions_json;
-use ku_ai::types::ChatMessage;
+use ku_core::text_parser::ConceptDict;
 
 /// Builds prompts for AI-assisted KU encoding.
 ///

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, Bot, User, Sparkles } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Database, BookOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { ChatMessage } from '../api/types';
@@ -21,12 +21,13 @@ export function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return;
+  const sendMessage = async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
+    if (!text || loading) return;
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
-      content: input.trim(),
+      content: text,
       timestamp: Date.now(),
     };
     setMessages(prev => [...prev, userMsg]);
@@ -34,23 +35,25 @@ export function ChatPage() {
     setLoading(true);
 
     try {
-      const res = await api.chat(input.trim());
+      const res = await api.chat(text);
       const assistantMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: res.text,
         timestamp: Date.now(),
+        kus_encoded: res.kus_encoded || 0,
+        kus_retrieved: res.kus_retrieved || 0,
+        intent: res.intent,
       };
       setMessages(prev => [...prev, assistantMsg]);
-      // Update suggestions from response
       if (res.suggestions && res.suggestions.length > 0) {
         setSuggestions(res.suggestions);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         role: 'assistant',
-        content: `⚠️ Error: ${err.message || 'Failed to get response'}`,
+        content: `⚠️ Error: ${err instanceof Error ? err.message : 'Failed to get response'}`,
         timestamp: Date.now(),
       }]);
     } finally {
@@ -59,35 +62,27 @@ export function ChatPage() {
   };
 
   const handleSuggestion = (suggestion: string) => {
-    setInput(suggestion);
-    // Auto-send after tiny delay so UI updates
-    setTimeout(() => {
-      setInput('');
-      const userMsg: ChatMessage = {
+    if (loading) return;
+    sendMessage(suggestion);
+  };
+
+  const encodeFromChat = async (text: string) => {
+    try {
+      await api.encode(text);
+      setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
-        role: 'user',
-        content: suggestion,
+        role: 'assistant',
+        content: '✅ Knowledge encoded as KU successfully!',
         timestamp: Date.now(),
-      };
-      setMessages(prev => [...prev, userMsg]);
-      setLoading(true);
-      api.chat(suggestion).then(res => {
-        setMessages(prev => [...prev, {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: res.text,
-          timestamp: Date.now(),
-        }]);
-        if (res.suggestions?.length) setSuggestions(res.suggestions);
-      }).catch(err => {
-        setMessages(prev => [...prev, {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: `⚠️ Error: ${err.message || 'Failed'}`,
-          timestamp: Date.now(),
-        }]);
-      }).finally(() => setLoading(false));
-    }, 50);
+      }]);
+    } catch {
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: '⚠️ Failed to encode knowledge.',
+        timestamp: Date.now(),
+      }]);
+    }
   };
 
   return (
@@ -148,6 +143,51 @@ export function ChatPage() {
                 {msg.role === 'user' ? 'You' : 'OneBrain'}
               </div>
               <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>
+              {/* Knowledge Signal Chips */}
+              {msg.role === 'assistant' && (msg.kus_encoded || msg.kus_retrieved || msg.intent === 'encode_suggestion') && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {(msg.kus_encoded ?? 0) > 0 && (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      padding: '4px 10px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 600,
+                      background: 'rgba(16, 185, 129, 0.15)', color: '#34d399',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                    }}>
+                      <Database size={12} /> {msg.kus_encoded} KU(s) auto-encoded
+                    </span>
+                  )}
+                  {(msg.kus_retrieved ?? 0) > 0 && (
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      padding: '4px 10px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 500,
+                      background: 'rgba(99, 102, 241, 0.12)', color: '#a5b4fc',
+                    }}>
+                      <BookOpen size={12} /> Referenced {msg.kus_retrieved} KU(s)
+                    </span>
+                  )}
+                  {msg.intent === 'encode_suggestion' && (msg.kus_encoded ?? 0) === 0 && (
+                    <button
+                      onClick={() => {
+                        // Find the user message before this assistant message
+                        const idx = messages.findIndex(m => m.id === msg.id);
+                        const userMsg = idx > 0 ? messages[idx - 1] : null;
+                        if (userMsg && userMsg.role === 'user') encodeFromChat(userMsg.content);
+                      }}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        padding: '4px 12px', borderRadius: 12, fontSize: '0.75rem', fontWeight: 600,
+                        background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                        cursor: 'pointer', transition: 'all 0.2s',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.3)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245, 158, 11, 0.15)'; }}
+                    >
+                      💡 Encode as KU?
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -206,7 +246,7 @@ export function ChatPage() {
           />
           <button
             className="btn btn-primary"
-            onClick={sendMessage}
+            onClick={() => sendMessage()}
             disabled={loading || !input.trim()}
           >
             <Send size={16} />

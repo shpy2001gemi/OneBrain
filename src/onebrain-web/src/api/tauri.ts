@@ -64,13 +64,13 @@ export async function getApiConfig(): Promise<ApiConfig> {
  * Returns cleanup function.
  */
 export async function setupTauriEvents(
-  onEvent: (event: { event_type: string; data: any; timestamp: number }) => void,
+  onEvent: (event: { event_type: string; data: Record<string, unknown>; timestamp: number }) => void,
 ): Promise<(() => void) | null> {
   if (!isTauri()) return null;
 
   try {
     const { listen } = await import('@tauri-apps/api/event');
-    const unlisten = await listen<any>('node-event', (e) => {
+    const unlisten = await listen<{ event_type: string; data: Record<string, unknown>; timestamp: number }>('node-event', (e) => {
       onEvent(e.payload);
     });
     return unlisten;

@@ -23,9 +23,9 @@
 //! ## Reference
 //! See `docs/specs/ENCODING_CONSENSUS_SPEC.md` for full design.
 
-use crate::core_dna::{CoreDna, encode_core_dna, decode_core_dna};
+use crate::core_dna::{decode_core_dna, encode_core_dna, CoreDna};
 use crate::error::KuError;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -192,9 +192,9 @@ impl Default for ConsensusConfig {
 /// from encoding incorrectly. 3 independent AIs is sufficient cross-verification.
 pub fn compute_needed_verifiers(network_size: usize) -> usize {
     match network_size {
-        0..=5 => 1,    // Very small network: 1 verifier is enough
-        6..=20 => 2,   // Small network: 2 verifiers
-        _ => 3,        // Medium/large: capped at 3
+        0..=5 => 1,  // Very small network: 1 verifier is enough
+        6..=20 => 2, // Small network: 2 verifiers
+        _ => 3,      // Medium/large: capped at 3
     }
 }
 
@@ -260,16 +260,17 @@ impl EncodingConsensus {
     }
 
     /// Create with an initial SELF encoding from the owner's AI.
-    pub fn new_self(
-        raw_text: String,
-        contributor_id: u64,
-        initial_dna: CoreDna,
-        now: u64,
-    ) -> Self {
+    pub fn new_self(raw_text: String, contributor_id: u64, initial_dna: CoreDna, now: u64) -> Self {
         let raw_hash = blake3::hash(raw_text.as_bytes()).into();
         let submission = EncodingSubmission::from_core_dna(
-            &initial_dna, contributor_id, raw_hash, now, true, 500,
-        ).expect("initial encoding should be valid");
+            &initial_dna,
+            contributor_id,
+            raw_hash,
+            now,
+            true,
+            500,
+        )
+        .expect("initial encoding should be valid");
         Self {
             raw_text,
             raw_hash,
@@ -297,14 +298,10 @@ impl EncodingConsensus {
         // Compute pairwise similarities with existing submissions
         for existing in &self.submissions {
             let sim = similarity_fn(&existing.core_dna_bytes, &submission.core_dna_bytes);
-            self.agreement_matrix.insert(
-                (existing.encoder_node_id, new_node),
-                sim,
-            );
-            self.agreement_matrix.insert(
-                (new_node, existing.encoder_node_id),
-                sim,
-            );
+            self.agreement_matrix
+                .insert((existing.encoder_node_id, new_node), sim);
+            self.agreement_matrix
+                .insert((new_node, existing.encoder_node_id), sim);
         }
 
         self.submissions.push(submission);
@@ -370,16 +367,21 @@ impl EncodingConsensus {
         let agreement = self.count_agreements(idx) as f32 / n.max(1) as f32;
 
         // Factor 2: Detail — more bytes = more detailed encoding
-        let max_bytes = self.submissions.iter()
+        let max_bytes = self
+            .submissions
+            .iter()
             .map(|s| s.core_dna_bytes.len())
             .max()
             .unwrap_or(1);
-        let detail = submission.core_dna_bytes.len() as f32
-            / max_bytes.max(1) as f32;
+        let detail = submission.core_dna_bytes.len() as f32 / max_bytes.max(1) as f32;
 
         // Factor 3: Reputation — placeholder, defaults to 0.5
         // TODO: integrate with node reputation system
-        let reputation = if submission.is_first_encoder { 0.6 } else { 0.5 };
+        let reputation = if submission.is_first_encoder {
+            0.6
+        } else {
+            0.5
+        };
 
         W_AGREEMENT * agreement + W_DETAIL * detail + W_REPUTATION * reputation
     }
@@ -390,7 +392,9 @@ impl EncodingConsensus {
         let mut count = 1; // Agrees with itself
 
         for (i, other) in self.submissions.iter().enumerate() {
-            if i == idx { continue; }
+            if i == idx {
+                continue;
+            }
             let key = (node, other.encoder_node_id);
             if let Some(&sim) = self.agreement_matrix.get(&key) {
                 if sim >= self.config.agreement_threshold {
@@ -417,7 +421,9 @@ impl EncodingConsensus {
                 best_idx = i;
             }
         }
-        self.submissions.get(best_idx).map(|s| s.core_dna_bytes.as_slice())
+        self.submissions
+            .get(best_idx)
+            .map(|s| s.core_dna_bytes.as_slice())
     }
 
     /// Get the best encoding's CoreDna (after finalization, decoded).
@@ -456,9 +462,7 @@ impl EncodingConsensus {
         if self.submissions.is_empty() {
             return 0;
         }
-        let total: u64 = self.submissions.iter()
-            .map(|s| s.encoding_time_ms)
-            .sum();
+        let total: u64 = self.submissions.iter().map(|s| s.encoding_time_ms).sum();
         total / self.submissions.len() as u64
     }
 
@@ -472,7 +476,9 @@ impl EncodingConsensus {
 
     /// Number of additional verifiers needed to potentially reach FULL.
     pub fn verifiers_needed(&self) -> usize {
-        self.config.min_verifiers.saturating_sub(self.submissions.len())
+        self.config
+            .min_verifiers
+            .saturating_sub(self.submissions.len())
     }
 }
 
@@ -498,20 +504,26 @@ mod tests {
     }
 
     fn simple_fact_dna() -> CoreDna {
-        make_dna(0, vec![
-            Instruction::Triple { s: 1, p: 2, o: 3 },
-            Instruction::Certainty { level: 9000 },
-            Instruction::End,
-        ])
+        make_dna(
+            0,
+            vec![
+                Instruction::Triple { s: 1, p: 2, o: 3 },
+                Instruction::Certainty { level: 9000 },
+                Instruction::End,
+            ],
+        )
     }
 
     fn similar_fact_dna() -> CoreDna {
-        make_dna(0, vec![
-            Instruction::Triple { s: 1, p: 2, o: 3 },
-            Instruction::Quality { s: 1, q: 4 },
-            Instruction::Certainty { level: 8500 },
-            Instruction::End,
-        ])
+        make_dna(
+            0,
+            vec![
+                Instruction::Triple { s: 1, p: 2, o: 3 },
+                Instruction::Quality { s: 1, q: 4 },
+                Instruction::Certainty { level: 8500 },
+                Instruction::End,
+            ],
+        )
     }
 
     /// Bytes-based similarity: decode both and compare gene_type
@@ -520,8 +532,12 @@ mod tests {
         let dna_b = decode_core_dna(b);
         match (dna_a, dna_b) {
             (Ok(a), Ok(b)) => {
-                if a.header.gene_type == b.header.gene_type { 0.9 } else { 0.0 }
-            },
+                if a.header.gene_type == b.header.gene_type {
+                    0.9
+                } else {
+                    0.0
+                }
+            }
             _ => 0.0,
         }
     }
@@ -572,9 +588,9 @@ mod tests {
         assert_eq!(c.status, EncodingStatus::Self_);
 
         // Second submission → PART
-        let sub2 = EncodingSubmission::from_core_dna(
-            &similar_fact_dna(), 2, c.raw_hash, 1100, false, 500,
-        ).unwrap();
+        let sub2 =
+            EncodingSubmission::from_core_dna(&similar_fact_dna(), 2, c.raw_hash, 1100, false, 500)
+                .unwrap();
         let status = c.submit_verification(sub2, test_similarity);
         assert_eq!(status, EncodingStatus::Part);
         assert_eq!(c.verifier_count(), 2);
@@ -589,9 +605,14 @@ mod tests {
         // Add 2 more verifiers
         for node_id in 2..=3 {
             let sub = EncodingSubmission::from_core_dna(
-                &simple_fact_dna(), node_id, c.raw_hash,
-                1000 + node_id * 100, false, 500,
-            ).unwrap();
+                &simple_fact_dna(),
+                node_id,
+                c.raw_hash,
+                1000 + node_id * 100,
+                false,
+                500,
+            )
+            .unwrap();
             c.submit_verification(sub, test_similarity);
         }
 
@@ -640,12 +661,11 @@ mod tests {
     fn test_verifier_count() {
         let mut ec = EncodingConsensus::new_raw("test knowledge".to_string(), 1, 1000);
         assert_eq!(ec.verifier_count(), 0);
-        
+
         // Create a test CoreDna and submit
         let dna = simple_fact_dna();
-        let sub = EncodingSubmission::from_core_dna(
-            &dna, 100, ec.raw_hash, 1001, true, 500,
-        ).unwrap();
+        let sub =
+            EncodingSubmission::from_core_dna(&dna, 100, ec.raw_hash, 1001, true, 500).unwrap();
         ec.submissions.push(sub);
         assert_eq!(ec.verifier_count(), 1);
     }
@@ -654,14 +674,12 @@ mod tests {
     fn test_avg_encoding_time() {
         let mut ec = EncodingConsensus::new_raw("test knowledge".to_string(), 1, 1000);
         assert_eq!(ec.avg_encoding_time_ms(), 0);
-        
+
         let dna = simple_fact_dna();
-        let sub1 = EncodingSubmission::from_core_dna(
-            &dna, 100, ec.raw_hash, 1001, true, 200,
-        ).unwrap();
-        let sub2 = EncodingSubmission::from_core_dna(
-            &dna, 101, ec.raw_hash, 1002, false, 400,
-        ).unwrap();
+        let sub1 =
+            EncodingSubmission::from_core_dna(&dna, 100, ec.raw_hash, 1001, true, 200).unwrap();
+        let sub2 =
+            EncodingSubmission::from_core_dna(&dna, 101, ec.raw_hash, 1002, false, 400).unwrap();
         ec.submissions.push(sub1);
         ec.submissions.push(sub2);
         assert_eq!(ec.avg_encoding_time_ms(), 300); // (200+400)/2
@@ -672,9 +690,8 @@ mod tests {
         let ec = EncodingConsensus::new_raw("test knowledge".to_string(), 1, 1000);
         let mut known = std::collections::HashSet::new();
         assert!(!ec.is_duplicate(&known));
-        
+
         known.insert(ec.raw_hash);
         assert!(ec.is_duplicate(&known));
     }
 }
-

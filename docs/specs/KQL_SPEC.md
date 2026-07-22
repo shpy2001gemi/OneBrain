@@ -1,8 +1,8 @@
 # KQL — Knowledge Query Language Specification
 
-> **Version**: 4.0 — KU v7 Core DNA  
+> **Version**: 4.1 — KU v7 Core DNA  
 > **Crate**: `ku-kql` v0.2.0  
-> **Cập nhật**: 2026-07-11  
+> **Cập nhật**: 2026-07-19  
 > **Depends on**: `ku-core` (KuRuntime, CoreDna, ConceptRegistry, ConceptTable, text\_parser)
 
 ---
@@ -60,13 +60,17 @@ KQL hoạt động trên **KuRuntime** — cấu trúc composite 3 lớp của k
 
 ```
 ku-kql/src/
-├── lib.rs          // Module declarations
-├── ast.rs          // Query AST types (§3)
-├── parser.rs       // nom-based parser
-├── executor.rs     // LocalExecutor (§4)
-├── storage.rs      // redb storage (behind 'storage' feature)
-└── graph_storage.rs // redb-backed graph edge persistence, adjacency queries
+├── lib.rs           // Module declarations
+├── ast.rs           // Query AST types (§3)
+├── parser.rs        // nom-based parser
+├── executor.rs      // LocalExecutor (§4) — wired to OneBrainNode
+├── storage.rs       // redb storage: kus, epigenetics, index_trust, index_concept, index_ccid
+├── graph_storage.rs // redb-backed graph edge persistence (6 tables), adjacency queries
+└── blob_storage.rs  // Blob media storage (OB-CID based)
 ```
+
+> [!NOTE]
+> **v7.1 updates**: `index_ccid` table added for O(1) CCID→KU lookup. `FIND HISTORY` wired to `EventAccumulator`. `LocalExecutor` wired to `OneBrainNode::execute_kql()`. 86 tests, all passing.
 
 ---
 

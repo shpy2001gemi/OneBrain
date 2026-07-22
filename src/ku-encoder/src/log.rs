@@ -123,7 +123,6 @@ pub struct LogSummary {
 mod tests {
     use super::*;
 
-
     fn sample_entry(success: bool, confidence: f32) -> LogEntry {
         LogEntry {
             timestamp_ms: 1700000000000,
@@ -135,7 +134,11 @@ mod tests {
             decision: if success { "accept" } else { "reject" }.into(),
             attempt: 1,
             success,
-            error: if success { None } else { Some("test error".into()) },
+            error: if success {
+                None
+            } else {
+                Some("test error".into())
+            },
         }
     }
 

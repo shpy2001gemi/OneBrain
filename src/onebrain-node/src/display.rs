@@ -128,14 +128,20 @@ pub const GENE_TYPE_SHORT: [&str; GENE_TYPE_COUNT] = [
 /// assert_eq!(display::gene_type_name(99), "Unknown");
 /// ```
 pub fn gene_type_name(gt: u8) -> &'static str {
-    GENE_TYPE_NAMES.get(gt as usize).copied().unwrap_or("Unknown")
+    GENE_TYPE_NAMES
+        .get(gt as usize)
+        .copied()
+        .unwrap_or("Unknown")
 }
 
 /// Get suggested UI color (hex) for a gene type.
 ///
 /// Returns a default slate color (`#64748b`) for unknown types.
 pub fn gene_type_color(gt: u8) -> &'static str {
-    GENE_TYPE_COLORS.get(gt as usize).copied().unwrap_or("#64748b")
+    GENE_TYPE_COLORS
+        .get(gt as usize)
+        .copied()
+        .unwrap_or("#64748b")
 }
 
 /// Get short abbreviation for a gene type.
@@ -174,7 +180,11 @@ pub const POMV_SIGNAL_NAMES: [&str; 6] = [
 /// assert_eq!(display::short_cid("abc"), "abc");
 /// ```
 pub fn short_cid(cid_hex: &str) -> &str {
-    if cid_hex.len() > 8 { &cid_hex[..8] } else { cid_hex }
+    if cid_hex.len() > 8 {
+        &cid_hex[..8]
+    } else {
+        cid_hex
+    }
 }
 
 /// Format bytes as human-readable size (B, KB, MB, GB).

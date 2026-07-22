@@ -14,11 +14,11 @@
 //! The router decides which layers to query and in what order.
 //! For SCOPE AUTO, it starts local and escalates outward.
 
-use crate::identity::NodeId;
-use crate::dht::DhtNode;
-use crate::stigmergy::PheromoneTable;
 use super::index::ConceptIndex;
-use super::messages::{QueryScope, QueryForwardMsg, QueryId};
+use super::messages::{QueryForwardMsg, QueryId, QueryScope};
+use crate::dht::DhtNode;
+use crate::identity::NodeId;
+use crate::stigmergy::PheromoneTable;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Query Router
@@ -182,7 +182,9 @@ impl QueryRouter {
     }
 
     fn route_neighbors(&self, query: &QueryForwardMsg) -> RoutingDecision {
-        let targets: Vec<RoutingTarget> = self.neighbors.iter()
+        let targets: Vec<RoutingTarget> = self
+            .neighbors
+            .iter()
             .filter(|n| !query.has_visited(n))
             .take(self.max_fanout)
             .map(|n| RoutingTarget {
@@ -202,7 +204,9 @@ impl QueryRouter {
     fn route_cluster(&self, query: &QueryForwardMsg) -> RoutingDecision {
         // Cluster routing: use super-peers (highest-tier neighbors)
         // For now, just pick more neighbors with SuperPeer source
-        let targets: Vec<RoutingTarget> = self.neighbors.iter()
+        let targets: Vec<RoutingTarget> = self
+            .neighbors
+            .iter()
             .filter(|n| !query.has_visited(n))
             .take(self.max_fanout)
             .map(|n| RoutingTarget {
@@ -306,7 +310,9 @@ impl QueryRouter {
 
     fn route_global(&self, query: &QueryForwardMsg) -> RoutingDecision {
         // Global: random walk — pick random unvisited neighbors
-        let targets: Vec<RoutingTarget> = self.neighbors.iter()
+        let targets: Vec<RoutingTarget> = self
+            .neighbors
+            .iter()
             .filter(|n| !query.has_visited(n))
             .take(self.max_fanout)
             .map(|n| RoutingTarget {
@@ -356,12 +362,7 @@ mod tests {
         let dht = DhtNode::new(my_id);
         let pheromone = PheromoneTable::new();
 
-        let msg = QueryForwardMsg::new(
-            "FIND (k:KU)".to_string(),
-            my_id,
-            QueryScope::Local,
-            10,
-        );
+        let msg = QueryForwardMsg::new("FIND (k:KU)".to_string(), my_id, QueryScope::Local, 10);
 
         let decision = router.route(&msg, &concept_index, &dht, &pheromone);
         assert_eq!(decision.scope, QueryScope::Local);
@@ -377,12 +378,7 @@ mod tests {
         let dht = DhtNode::new(my_id);
         let pheromone = PheromoneTable::new();
 
-        let msg = QueryForwardMsg::new(
-            "FIND (k:KU)".to_string(),
-            my_id,
-            QueryScope::Neighbors,
-            10,
-        );
+        let msg = QueryForwardMsg::new("FIND (k:KU)".to_string(), my_id, QueryScope::Neighbors, 10);
 
         let decision = router.route(&msg, &concept_index, &dht, &pheromone);
         assert_eq!(decision.scope, QueryScope::Neighbors);
@@ -396,11 +392,26 @@ mod tests {
 
     #[test]
     fn test_scope_escalation() {
-        assert_eq!(QueryRouter::next_scope(QueryScope::Local), Some(QueryScope::Neighbors));
-        assert_eq!(QueryRouter::next_scope(QueryScope::Neighbors), Some(QueryScope::Cluster));
-        assert_eq!(QueryRouter::next_scope(QueryScope::Cluster), Some(QueryScope::Dht));
-        assert_eq!(QueryRouter::next_scope(QueryScope::Dht), Some(QueryScope::Semantic));
-        assert_eq!(QueryRouter::next_scope(QueryScope::Semantic), Some(QueryScope::Global));
+        assert_eq!(
+            QueryRouter::next_scope(QueryScope::Local),
+            Some(QueryScope::Neighbors)
+        );
+        assert_eq!(
+            QueryRouter::next_scope(QueryScope::Neighbors),
+            Some(QueryScope::Cluster)
+        );
+        assert_eq!(
+            QueryRouter::next_scope(QueryScope::Cluster),
+            Some(QueryScope::Dht)
+        );
+        assert_eq!(
+            QueryRouter::next_scope(QueryScope::Dht),
+            Some(QueryScope::Semantic)
+        );
+        assert_eq!(
+            QueryRouter::next_scope(QueryScope::Semantic),
+            Some(QueryScope::Global)
+        );
         assert_eq!(QueryRouter::next_scope(QueryScope::Global), None);
     }
 
@@ -411,12 +422,7 @@ mod tests {
         let dht = DhtNode::new(my_id);
         let pheromone = PheromoneTable::new();
 
-        let msg = QueryForwardMsg::new(
-            "FIND (k:KU)".to_string(),
-            my_id,
-            QueryScope::Neighbors,
-            10,
-        );
+        let msg = QueryForwardMsg::new("FIND (k:KU)".to_string(), my_id, QueryScope::Neighbors, 10);
 
         // First route — should produce targets
         let d1 = router.route(&msg, &concept_index, &dht, &pheromone);
@@ -459,12 +465,8 @@ mod tests {
         let dht = DhtNode::new(my_id);
         let pheromone = PheromoneTable::new();
 
-        let mut msg = QueryForwardMsg::new(
-            "FIND (k:KU)".to_string(),
-            my_id,
-            QueryScope::Neighbors,
-            10,
-        );
+        let mut msg =
+            QueryForwardMsg::new("FIND (k:KU)".to_string(), my_id, QueryScope::Neighbors, 10);
 
         // Mark all neighbors as visited
         for n in &router.neighbors.clone() {

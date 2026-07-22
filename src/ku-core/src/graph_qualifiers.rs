@@ -15,7 +15,7 @@
 //! - Custom keys use u16 for extensibility
 //! - Values are typed (temporal, numeric, CID reference, string)
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // 1. QualifierKey — Well-known qualifier keys
@@ -85,7 +85,11 @@ pub struct BondQualifier {
 impl BondQualifier {
     /// Create a standard qualifier.
     pub fn new(key: QualifierKey, value: BondQualifierValue) -> Self {
-        Self { key, custom_key_id: None, value }
+        Self {
+            key,
+            custom_key_id: None,
+            value,
+        }
     }
 
     /// Create a custom qualifier with a domain-specific key.
@@ -99,17 +103,26 @@ impl BondQualifier {
 
     /// Create a temporal ValidFrom qualifier.
     pub fn valid_from(timestamp: u64) -> Self {
-        Self::new(QualifierKey::ValidFrom, BondQualifierValue::Timestamp(timestamp))
+        Self::new(
+            QualifierKey::ValidFrom,
+            BondQualifierValue::Timestamp(timestamp),
+        )
     }
 
     /// Create a temporal ValidUntil qualifier.
     pub fn valid_until(timestamp: u64) -> Self {
-        Self::new(QualifierKey::ValidUntil, BondQualifierValue::Timestamp(timestamp))
+        Self::new(
+            QualifierKey::ValidUntil,
+            BondQualifierValue::Timestamp(timestamp),
+        )
     }
 
     /// Create a confidence qualifier (clamped to [0.0, 1.0]).
     pub fn confidence(value: f64) -> Self {
-        Self::new(QualifierKey::Confidence, BondQualifierValue::Float(value.clamp(0.0, 1.0)))
+        Self::new(
+            QualifierKey::Confidence,
+            BondQualifierValue::Float(value.clamp(0.0, 1.0)),
+        )
     }
 
     /// Create a source qualifier (reference to evidence KU).
@@ -119,7 +132,10 @@ impl BondQualifier {
 
     /// Create a context qualifier.
     pub fn context(name: &str) -> Self {
-        Self::new(QualifierKey::Context, BondQualifierValue::Text(name.to_string()))
+        Self::new(
+            QualifierKey::Context,
+            BondQualifierValue::Text(name.to_string()),
+        )
     }
 
     /// Create a rank qualifier.
@@ -179,14 +195,16 @@ impl QualifiedBond {
 
     /// Check if bond is temporally valid at a given time.
     pub fn is_valid_at(&self, timestamp: u64) -> bool {
-        let valid_from = self.get_qualifier(QualifierKey::ValidFrom)
+        let valid_from = self
+            .get_qualifier(QualifierKey::ValidFrom)
             .and_then(|q| match &q.value {
                 BondQualifierValue::Timestamp(t) => Some(*t),
                 _ => None,
             })
             .unwrap_or(0); // No ValidFrom = always valid from start
 
-        let valid_until = self.get_qualifier(QualifierKey::ValidUntil)
+        let valid_until = self
+            .get_qualifier(QualifierKey::ValidUntil)
             .and_then(|q| match &q.value {
                 BondQualifierValue::Timestamp(t) => Some(*t),
                 _ => None,
@@ -223,18 +241,25 @@ impl QualifiedBond {
     /// Estimated serialized size in bytes.
     pub fn estimated_size(&self) -> usize {
         // source(32) + target(32) + relation(1) + weight(2) = 67 base
-        32 + 32 + 1 + 2 +
-        self.qualifiers.iter().map(|q| {
-            // key(1) + custom_key_id(2) + value
-            1 + 2 + match &q.value {
-                BondQualifierValue::Timestamp(_) => 8,
-                BondQualifierValue::Float(_) => 8,
-                BondQualifierValue::Integer(_) => 8,
-                BondQualifierValue::Cid(_) => 32,
-                BondQualifierValue::Text(s) => 2 + s.len(),
-                BondQualifierValue::Bool(_) => 1,
-            }
-        }).sum::<usize>()
+        32 + 32
+            + 1
+            + 2
+            + self
+                .qualifiers
+                .iter()
+                .map(|q| {
+                    // key(1) + custom_key_id(2) + value
+                    1 + 2
+                        + match &q.value {
+                            BondQualifierValue::Timestamp(_) => 8,
+                            BondQualifierValue::Float(_) => 8,
+                            BondQualifierValue::Integer(_) => 8,
+                            BondQualifierValue::Cid(_) => 32,
+                            BondQualifierValue::Text(s) => 2 + s.len(),
+                            BondQualifierValue::Bool(_) => 1,
+                        }
+                })
+                .sum::<usize>()
     }
 }
 
@@ -310,10 +335,7 @@ mod tests {
 
     #[test]
     fn qualified_bond_new() {
-        let bond = QualifiedBond::new(
-            dummy_cid(0x01), dummy_cid(0x02),
-            RelationType::Causes, 500,
-        );
+        let bond = QualifiedBond::new(dummy_cid(0x01), dummy_cid(0x02), RelationType::Causes, 500);
         assert_eq!(bond.source_cid, dummy_cid(0x01));
         assert_eq!(bond.target_cid, dummy_cid(0x02));
         assert_eq!(bond.weight, 500);
@@ -322,12 +344,9 @@ mod tests {
 
     #[test]
     fn qualified_bond_with_qualifier() {
-        let bond = QualifiedBond::new(
-            dummy_cid(0x01), dummy_cid(0x02),
-            RelationType::Causes, 500,
-        )
-        .with_qualifier(BondQualifier::confidence(0.9))
-        .with_qualifier(BondQualifier::context("medicine"));
+        let bond = QualifiedBond::new(dummy_cid(0x01), dummy_cid(0x02), RelationType::Causes, 500)
+            .with_qualifier(BondQualifier::confidence(0.9))
+            .with_qualifier(BondQualifier::context("medicine"));
 
         assert_eq!(bond.qualifier_count(), 2);
     }
@@ -335,22 +354,16 @@ mod tests {
     #[test]
     fn qualified_bond_is_valid_at_no_temporal() {
         // No temporal qualifiers → always valid
-        let bond = QualifiedBond::new(
-            dummy_cid(0x01), dummy_cid(0x02),
-            RelationType::Causes, 500,
-        );
+        let bond = QualifiedBond::new(dummy_cid(0x01), dummy_cid(0x02), RelationType::Causes, 500);
         assert!(bond.is_valid_at(0));
         assert!(bond.is_valid_at(u64::MAX));
     }
 
     #[test]
     fn qualified_bond_is_valid_at_with_range() {
-        let bond = QualifiedBond::new(
-            dummy_cid(0x01), dummy_cid(0x02),
-            RelationType::Causes, 500,
-        )
-        .with_qualifier(BondQualifier::valid_from(100))
-        .with_qualifier(BondQualifier::valid_until(200));
+        let bond = QualifiedBond::new(dummy_cid(0x01), dummy_cid(0x02), RelationType::Causes, 500)
+            .with_qualifier(BondQualifier::valid_from(100))
+            .with_qualifier(BondQualifier::valid_until(200));
 
         assert!(bond.is_valid_at(100));
         assert!(bond.is_valid_at(150));
@@ -359,11 +372,8 @@ mod tests {
 
     #[test]
     fn qualified_bond_is_valid_at_before_start() {
-        let bond = QualifiedBond::new(
-            dummy_cid(0x01), dummy_cid(0x02),
-            RelationType::Causes, 500,
-        )
-        .with_qualifier(BondQualifier::valid_from(100));
+        let bond = QualifiedBond::new(dummy_cid(0x01), dummy_cid(0x02), RelationType::Causes, 500)
+            .with_qualifier(BondQualifier::valid_from(100));
 
         assert!(!bond.is_valid_at(50));
         assert!(bond.is_valid_at(100));
@@ -372,11 +382,8 @@ mod tests {
 
     #[test]
     fn qualified_bond_is_valid_at_after_end() {
-        let bond = QualifiedBond::new(
-            dummy_cid(0x01), dummy_cid(0x02),
-            RelationType::Causes, 500,
-        )
-        .with_qualifier(BondQualifier::valid_until(200));
+        let bond = QualifiedBond::new(dummy_cid(0x01), dummy_cid(0x02), RelationType::Causes, 500)
+            .with_qualifier(BondQualifier::valid_until(200));
 
         assert!(bond.is_valid_at(0));
         assert!(bond.is_valid_at(200));
@@ -385,44 +392,32 @@ mod tests {
 
     #[test]
     fn qualified_bond_confidence_default() {
-        let bond = QualifiedBond::new(
-            dummy_cid(0x01), dummy_cid(0x02),
-            RelationType::Causes, 500,
-        );
+        let bond = QualifiedBond::new(dummy_cid(0x01), dummy_cid(0x02), RelationType::Causes, 500);
         assert!((bond.confidence() - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn qualified_bond_confidence_custom() {
-        let bond = QualifiedBond::new(
-            dummy_cid(0x01), dummy_cid(0x02),
-            RelationType::Causes, 500,
-        )
-        .with_qualifier(BondQualifier::confidence(0.42));
+        let bond = QualifiedBond::new(dummy_cid(0x01), dummy_cid(0x02), RelationType::Causes, 500)
+            .with_qualifier(BondQualifier::confidence(0.42));
 
         assert!((bond.confidence() - 0.42).abs() < f64::EPSILON);
     }
 
     #[test]
     fn qualified_bond_context() {
-        let bond = QualifiedBond::new(
-            dummy_cid(0x01), dummy_cid(0x02),
-            RelationType::Causes, 500,
-        )
-        .with_qualifier(BondQualifier::context("biology"));
+        let bond = QualifiedBond::new(dummy_cid(0x01), dummy_cid(0x02), RelationType::Causes, 500)
+            .with_qualifier(BondQualifier::context("biology"));
 
         assert_eq!(bond.context(), Some("biology"));
     }
 
     #[test]
     fn qualified_bond_get_qualifiers() {
-        let bond = QualifiedBond::new(
-            dummy_cid(0x01), dummy_cid(0x02),
-            RelationType::Causes, 500,
-        )
-        .with_qualifier(BondQualifier::context("physics"))
-        .with_qualifier(BondQualifier::confidence(0.8))
-        .with_qualifier(BondQualifier::context("chemistry"));
+        let bond = QualifiedBond::new(dummy_cid(0x01), dummy_cid(0x02), RelationType::Causes, 500)
+            .with_qualifier(BondQualifier::context("physics"))
+            .with_qualifier(BondQualifier::confidence(0.8))
+            .with_qualifier(BondQualifier::context("chemistry"));
 
         let contexts = bond.get_qualifiers(QualifierKey::Context);
         assert_eq!(contexts.len(), 2);
@@ -430,12 +425,9 @@ mod tests {
 
     #[test]
     fn qualified_bond_estimated_size() {
-        let bond = QualifiedBond::new(
-            dummy_cid(0x01), dummy_cid(0x02),
-            RelationType::Causes, 500,
-        )
-        .with_qualifier(BondQualifier::confidence(0.9))
-        .with_qualifier(BondQualifier::context("test"));
+        let bond = QualifiedBond::new(dummy_cid(0x01), dummy_cid(0x02), RelationType::Causes, 500)
+            .with_qualifier(BondQualifier::confidence(0.9))
+            .with_qualifier(BondQualifier::context("test"));
 
         let size = bond.estimated_size();
         // Base: 32+32+1+2 = 67

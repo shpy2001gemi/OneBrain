@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { BarChart3, TrendingUp, Database, Zap, Link2, Clock } from 'lucide-react';
+import { BarChart3, TrendingUp, Database, Zap, Link2, Clock, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
-import { GENE_TYPE_COLORS } from '../api/types';
+import { GENE_TYPE_COLORS, type GeneType } from '../api/types';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 type Analytics = {
@@ -11,6 +11,8 @@ type Analytics = {
   total_wire_size: number; total_bonds: number;
   kus_last_24h: number; kus_last_7d: number;
   top_gene_type: string;
+  verified_self: number; verified_partial: number; verified_full: number;
+  verification_rate: number;
 };
 
 const PIE_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6'];
@@ -49,7 +51,7 @@ export function AnalyticsPage() {
   const pieData = data.kus_by_type.map(([name, value]) => ({ name, value }));
   const barData = data.kus_by_type.map(([name, value]) => ({
     name, value,
-    fill: GENE_TYPE_COLORS[name] || '#6366f1',
+    fill: GENE_TYPE_COLORS[name as GeneType] || '#6366f1',
   }));
 
   const stats = [
@@ -100,7 +102,7 @@ export function AnalyticsPage() {
           <div style={{ fontSize: '0.8rem', color: 'var(--ob-text-secondary)', marginBottom: 4 }}>{t('analytics.topType')}</div>
           <div style={{
             fontSize: '1.3rem', fontWeight: 600,
-            color: GENE_TYPE_COLORS[data.top_gene_type] || 'var(--ob-text-primary)',
+            color: GENE_TYPE_COLORS[data.top_gene_type as GeneType] || 'var(--ob-text-primary)',
           }}>{data.top_gene_type}</div>
         </div>
       </div>
@@ -113,10 +115,10 @@ export function AnalyticsPage() {
           <ResponsiveContainer width="100%" height={280}>
             <PieChart>
               <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={100}
-                paddingAngle={2} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                paddingAngle={2} dataKey="value" label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
                 labelLine={false} fontSize={11}>
                 {pieData.map((entry, i) => (
-                  <Cell key={entry.name} fill={GENE_TYPE_COLORS[entry.name] || PIE_COLORS[i % PIE_COLORS.length]} />
+                  <Cell key={entry.name} fill={GENE_TYPE_COLORS[entry.name as GeneType] || PIE_COLORS[i % PIE_COLORS.length]} />
                 ))}
               </Pie>
               <Tooltip contentStyle={{ background: 'var(--ob-bg-secondary)', border: '1px solid var(--ob-glass-border)', borderRadius: 8, fontSize: '0.85rem' }} />
@@ -141,6 +143,58 @@ export function AnalyticsPage() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      {/* ── Verification Stats ─── */}
+      <div style={{ marginTop: 28 }}>
+        <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ShieldCheck size={18} style={{ color: '#10b981' }} />
+          Verification Status
+        </h3>
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 14,
+        }}>
+          {[
+            { label: 'Verification Rate', value: `${(data.verification_rate * 100).toFixed(1)}%`, color: '#10b981' },
+            { label: '🟡 SELF', value: data.verified_self.toLocaleString(), color: '#f59e0b' },
+            { label: '🟠 PARTIAL', value: data.verified_partial.toLocaleString(), color: '#f97316' },
+            { label: '🟢 FULL', value: data.verified_full.toLocaleString(), color: '#10b981' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="glass-card" style={{
+              padding: '16px 20px', borderRadius: 12,
+              background: 'var(--ob-bg-tertiary)',
+              borderLeft: `3px solid ${color}`,
+            }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--ob-text-secondary)', marginBottom: 4 }}>{label}</div>
+              <div style={{ fontSize: '1.3rem', fontWeight: 700, color }}>{value}</div>
+            </div>
+          ))}
+        </div>
+        {/* Verification Donut */}
+        {(data.verified_self + data.verified_partial + data.verified_full) > 0 && (
+          <div className="glass-card" style={{ padding: 20, borderRadius: 12, background: 'var(--ob-bg-tertiary)', marginTop: 14, maxWidth: 400 }}>
+            <ResponsiveContainer width="100%" height={200}>
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: 'SELF', value: data.verified_self },
+                    { name: 'PARTIAL', value: data.verified_partial },
+                    { name: 'FULL', value: data.verified_full },
+                  ].filter(d => d.value > 0)}
+                  cx="50%" cy="50%" innerRadius={50} outerRadius={80}
+                  paddingAngle={3} dataKey="value"
+                  label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                  labelLine={false} fontSize={11}
+                >
+                  <Cell fill="#f59e0b" />
+                  <Cell fill="#f97316" />
+                  <Cell fill="#10b981" />
+                </Pie>
+                <Tooltip contentStyle={{ background: 'var(--ob-bg-secondary)', border: '1px solid var(--ob-glass-border)', borderRadius: 8, fontSize: '0.85rem' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
     </div>
   );

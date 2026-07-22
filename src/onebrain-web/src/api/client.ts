@@ -1,16 +1,23 @@
 import type {
-  ApiResponse, StatusResponse, IdentityInfo, KuListResponse,
+  ApiResponse, StatusResponse, KuListResponse,
   KuDetail, KuListItem, EncodeResult, ChatResponse, WalletInfo,
-  WalletTransaction, UserProfile, ConfigView, ModelInfo,
+  WalletTransaction, UserProfile, ConfigView,
   AiHealthInfo, PeerView, BlobMeta, FollowedNode, PeerProfile,
   DeviceInfo, SyncStatus, WatchInfo, ImportResult, BulkDeleteResult,
+  Draft, NeighborInfo,
 } from './types';
 import { logDebug } from '../components/DebugConsole';
 import { isTauri, getApiConfig } from './tauri';
 
-let API_BASE = 'http://127.0.0.1:4280';
+let API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:4280';
 let TOKEN = localStorage.getItem('ob_api_token') || '';
 let configReady: Promise<void> | null = null;
+
+/** Get the current API base URL (e.g. http://127.0.0.1:4280). */
+export function getApiBase() { return API_BASE; }
+
+/** Get the WebSocket base URL (e.g. ws://127.0.0.1:4280). */
+export function getWsBase() { return API_BASE.replace(/^http/, 'ws'); }
 
 async function initConfig() {
   if (isTauri()) {
@@ -75,12 +82,13 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
       body: JSON.stringify(json.data, null, 2).slice(0, 2000),
     });
     return json.data;
-  } catch (err: any) {
+  } catch (err: unknown) {
     const duration = Math.round(performance.now() - start);
-    if (err.message && !err.message.includes('AUTH_')) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg && !errMsg.includes('AUTH_')) {
       logDebug({
         type: 'error', method, path, duration,
-        message: err.message,
+        message: errMsg,
       });
     }
     throw err;
@@ -89,11 +97,6 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
 
 // ─── Identity ────────────────────
 export const api = {
-  getIdentity: () => request<IdentityInfo>('/api/identity'),
-  recoverIdentity: (phrase: string[], password: string) =>
-    request<IdentityInfo>('/api/identity/recover', {
-      method: 'POST', body: JSON.stringify({ recovery_phrase: phrase, new_password: password }),
-    }),
 
   // ─── Knowledge ──────────────────
   encode: (text: string) =>
@@ -108,13 +111,15 @@ export const api = {
   getKu: (cid: string) => request<KuDetail>(`/api/kus/${cid}`),
   deleteKu: (cid: string) => request<{ deleted: boolean }>(`/api/kus/${cid}`, { method: 'DELETE' }),
   search: (query: string, limit = 10) =>
-    request<unknown>('/api/search', {
+    request<{ results: KuListItem[]; total: number }>('/api/search', {
       method: 'POST', body: JSON.stringify({ query, limit }),
     }),
   kql: (query: string) =>
     request<{ results: unknown[] }>('/api/kql', {
       method: 'POST', body: JSON.stringify({ query }),
     }),
+  searchSuggest: (q: string, limit = 5) =>
+    request<{ tags: string[]; gene_types: string[]; kus: KuListItem[] }>(`/api/search/suggest?q=${encodeURIComponent(q)}&limit=${limit}`),
 
   // ─── Chat ───────────────────────
   chat: (message: string) =>
@@ -132,14 +137,17 @@ export const api = {
 
   // ─── Graph ──────────────────────
   getGraph: (cid: string, depth = 2) =>
-    request<unknown>(`/api/graph/${cid}?depth=${depth}`),
-  getNeighbors: (cid: string) =>
-    request<unknown>(`/api/graph/${cid}/neighbors`),
+    request<{ cid_hex: string; neighbors: NeighborInfo[] }>(`/api/graph/${cid}?depth=${depth}`),
+
 
   // ─── Wallet ─────────────────────
   getWallet: () => request<WalletInfo>('/api/wallet'),
   getWalletHistory: (limit = 50) =>
     request<WalletTransaction[]>(`/api/wallet/history?limit=${limit}`),
+  stake: (amount: number) =>
+    request<WalletInfo>('/api/wallet/stake', { method: 'POST', body: JSON.stringify({ amount }) }),
+  unstake: (amount: number) =>
+    request<WalletInfo>('/api/wallet/unstake', { method: 'POST', body: JSON.stringify({ amount }) }),
 
   // ─── Profile & Settings ─────────
   getProfile: () => request<UserProfile>('/api/profile'),
@@ -155,19 +163,31 @@ export const api = {
 
   // ─── AI ─────────────────────────
   aiStatus: () => request<AiHealthInfo>('/api/ai/status'),
-  listModels: () => request<ModelInfo[]>('/api/ai/models'),
   switchModel: (modelName: string) =>
-    request<{ ok: boolean }>('/api/ai/model', {
+    request<{ model: string; switched: boolean }>('/api/ai/model', {
       method: 'POST', body: JSON.stringify({ model_name: modelName }),
     }),
+
 
   // ─── Phase 1: Knowledge Management ─────
   deprecateKu: (cid: string) =>
     request<{ deprecated: boolean; cid_hex: string }>(`/api/kus/${cid}/deprecate`, { method: 'POST' }),
-  encodeDraft: (text: string) =>
-    request<EncodeResult & { draft: boolean }>('/api/drafts', {
-      method: 'POST', body: JSON.stringify({ text }),
+  // ─── Drafts ─────────────────────────────
+  saveDraft: (text: string, title?: string) =>
+    request<Draft>('/api/drafts', {
+      method: 'POST', body: JSON.stringify({ text, title }),
     }),
+  listDrafts: () =>
+    request<{ drafts: Draft[]; total: number }>('/api/drafts'),
+
+  updateDraft: (draftId: string, text: string, title?: string) =>
+    request<Draft>(`/api/drafts/${draftId}`, {
+      method: 'PUT', body: JSON.stringify({ text, title }),
+    }),
+  deleteDraft: (draftId: string) =>
+    request<{ deleted: boolean }>(`/api/drafts/${draftId}`, { method: 'DELETE' }),
+  publishDraft: (draftId: string) =>
+    request<EncodeResult>(`/api/drafts/${draftId}/publish`, { method: 'POST' }),
 
   // ─── Tags ──────────────────────────────
   addTag: (cid: string, tag: string) =>
@@ -178,6 +198,8 @@ export const api = {
     request<{ removed: boolean }>(`/api/kus/${cid}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' }),
   listTags: () =>
     request<{ tags: string[]; count: number }>('/api/tags'),
+  getKuTags: (cid: string) =>
+    request<{ tags: string[]; cid_hex: string }>(`/api/kus/${cid}/tags`),
 
   // ─── Pin/Favorite KUs ─────────────────
   pinKu: (cid: string) =>
@@ -220,6 +242,11 @@ export const api = {
   deleteWatch: (watchId: string) =>
     request<{ deleted: boolean }>(`/api/watch/${watchId}`, { method: 'DELETE' }),
 
+  // ─── Blob Operations ───────────────────
+  listBlobs: () =>
+    request<{ blobs: BlobMeta[] }>('/api/blobs'),
+
+
   // ─── Blob Extensions ──────────────────
   addBlobKuRef: (blobCid: string, kuCid: string) =>
     request<{ linked: boolean }>(`/api/blobs/${blobCid}/refs`, {
@@ -231,11 +258,14 @@ export const api = {
     request<{ unpinned: boolean }>(`/api/blobs/${cid}/unpin`, { method: 'POST' }),
 
   // ─── Data Portability ─────────────────
-  exportKus: (format: 'json' | 'csv' = 'json') =>
-    fetch(`${API_BASE}/api/export?format=${format}`, {
+  exportKus: async (format: 'json' | 'csv' = 'json') => {
+    await ensureConfig();
+    return fetch(`${API_BASE}/api/export?format=${format}`, {
       headers: { 'Authorization': `Bearer ${getToken()}` },
-    }).then(r => r.blob()),
-  importKus: (file: File) => {
+    }).then(r => r.blob());
+  },
+  importKus: async (file: File) => {
+    await ensureConfig();
     const fd = new FormData();
     fd.append('file', file);
     return fetch(`${API_BASE}/api/import`, {
@@ -244,16 +274,19 @@ export const api = {
       body: fd,
     }).then(r => r.json()).then(j => j.data as ImportResult);
   },
-  createBackup: (password = '') =>
-    fetch(`${API_BASE}/api/backup`, {
+  createBackup: async (password = '') => {
+    await ensureConfig();
+    return fetch(`${API_BASE}/api/backup`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${getToken()}`,
       },
       body: JSON.stringify({ password }),
-    }).then(r => r.blob()),
-  restoreBackup: (file: File, password = '') => {
+    }).then(r => r.blob());
+  },
+  restoreBackup: async (file: File, password = '') => {
+    await ensureConfig();
     const fd = new FormData();
     fd.append('file', file);
     fd.append('password', password);
@@ -265,7 +298,8 @@ export const api = {
   },
 
   // ─── Blob Upload & Download ───────────
-  uploadBlob: (file: File) => {
+  uploadBlob: async (file: File) => {
+    await ensureConfig();
     const fd = new FormData();
     fd.append('file', file);
     return fetch(`${API_BASE}/api/blobs/upload`, {
@@ -274,20 +308,18 @@ export const api = {
       body: fd,
     }).then(r => r.json()).then(j => j.data as BlobMeta);
   },
-  downloadBlob: (cid: string) =>
-    fetch(`${API_BASE}/api/blobs/${cid}/download`, {
-      headers: { 'Authorization': `Bearer ${getToken()}` },
-    }).then(r => r.blob()),
+
+  deleteBlob: (cid: string) =>
+    request<{ deleted: boolean }>(`/api/blobs/${cid}`, { method: 'DELETE' }),
 
   // ─── Tier C: Search History ────────────
   recordSearch: (query: string, resultCount: number) =>
-    request<any>('/api/search-history', {
+    request<{ recorded: boolean }>('/api/search-history', {
       method: 'POST', body: JSON.stringify({ query, result_count: resultCount }),
     }),
   listSearchHistory: (limit = 50) =>
     request<{ history: Array<{ id: string; query: string; result_count: number; timestamp: number }> }>(`/api/search-history?limit=${limit}`),
-  clearSearchHistory: () =>
-    request<{ cleared: boolean }>('/api/search-history', { method: 'DELETE' }),
+
 
   // ─── Tier C: Notification Preferences ──
   getNotificationPrefs: () =>
@@ -302,8 +334,7 @@ export const api = {
     }),
   listSavedSearches: () =>
     request<{ saved_searches: Array<{ id: string; name: string; query: string; is_kql: boolean; created_at: number }> }>('/api/saved-searches'),
-  deleteSavedSearch: (id: string) =>
-    request<{ deleted: boolean }>(`/api/saved-searches/${id}`, { method: 'DELETE' }),
+
 
   // ─── Tier C: Collections ───────────────
   createCollection: (name: string, description = '') =>
@@ -312,14 +343,10 @@ export const api = {
     }),
   listCollections: () =>
     request<{ collections: Array<{ id: string; name: string; description: string; ku_cids: string[]; created_at: number; updated_at: number }> }>('/api/collections'),
-  getCollection: (id: string) =>
-    request<{ id: string; name: string; description: string; ku_cids: string[]; created_at: number; updated_at: number }>(`/api/collections/${id}`),
+
   deleteCollection: (id: string) =>
     request<{ deleted: boolean }>(`/api/collections/${id}`, { method: 'DELETE' }),
-  addToCollection: (collectionId: string, cidHex: string) =>
-    request<{ added: boolean }>(`/api/collections/${collectionId}/kus`, {
-      method: 'POST', body: JSON.stringify({ cid_hex: cidHex }),
-    }),
+
   removeFromCollection: (collectionId: string, cidHex: string) =>
     request<{ removed: boolean }>(`/api/collections/${collectionId}/kus/${cidHex}`, { method: 'DELETE' }),
 
@@ -335,7 +362,7 @@ export const api = {
 
   // ─── Tier C: Analytics ─────────────────
   getAnalytics: () =>
-    request<{ total_kus: number; kus_by_type: [string, number][]; avg_pomv: number; avg_trust: number; total_wire_size: number; total_bonds: number; kus_last_24h: number; kus_last_7d: number; top_gene_type: string }>('/api/analytics'),
+    request<{ total_kus: number; kus_by_type: [string, number][]; avg_pomv: number; avg_trust: number; total_wire_size: number; total_bonds: number; kus_last_24h: number; kus_last_7d: number; top_gene_type: string; verified_self: number; verified_partial: number; verified_full: number; verification_rate: number }>('/api/analytics'),
 
   // ─── Tier C: Domain Taxonomy ───────────
   listDomains: () =>

@@ -15,12 +15,12 @@
 //! let updates = store.tick(now, &niche_stats);
 //! ```
 
+use crate::ecosystem::{NicheId, NicheStats};
 use crate::encoding_consensus::EncodingStatus;
 use crate::ku_runtime::KuRuntime;
-use crate::pomv_runtime::{PomvRuntime, PomvConfig};
-use crate::pomv::PomvScore;
-use crate::ecosystem::{NicheId, NicheStats};
 use crate::metabolism::MetabolismEvent;
+use crate::pomv::PomvScore;
+use crate::pomv_runtime::{PomvConfig, PomvRuntime};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -99,7 +99,9 @@ impl KuLifecycle {
         let removed = self.pomv.gc(now);
 
         // Remove KUs whose metabolism is dead
-        let dead_cids: Vec<[u8; 32]> = self.kus.keys()
+        let dead_cids: Vec<[u8; 32]> = self
+            .kus
+            .keys()
             .filter(|cid| !self.pomv.ku_states.contains_key(*cid))
             .copied()
             .collect();
@@ -141,11 +143,7 @@ impl KuLifecycle {
     /// FULL is immutable — cannot be changed.
     ///
     /// Returns `true` if the status was advanced, `false` if rejected.
-    pub fn advance_encoding_status(
-        &mut self,
-        cid: &[u8; 32],
-        new_status: EncodingStatus,
-    ) -> bool {
+    pub fn advance_encoding_status(&mut self, cid: &[u8; 32], new_status: EncodingStatus) -> bool {
         if let Some(ku) = self.kus.get_mut(cid) {
             let current = ku.encoding_status as u8;
             let target = new_status as u8;
@@ -161,7 +159,8 @@ impl KuLifecycle {
 
     /// Get all KUs that still need encoding verification.
     pub fn pending_encodings(&self) -> Vec<[u8; 32]> {
-        self.kus.iter()
+        self.kus
+            .iter()
             .filter(|(_, ku)| ku.encoding_status.needs_verification())
             .map(|(cid, _)| *cid)
             .collect()
@@ -181,10 +180,18 @@ mod tests {
 
     fn make_ku(concept_id: u64, gene_type: u8) -> KuRuntime {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Triple { s: concept_id, p: 133, o: 132 },
+                Instruction::Triple {
+                    s: concept_id,
+                    p: 133,
+                    o: 132,
+                },
                 Instruction::Certainty { level: 9000 },
             ],
         };
@@ -227,18 +234,25 @@ mod tests {
 
         // Generate activity
         for i in 0..5 {
-            store.record_event(&cid, MetabolismEvent::Retrieval { dwell_ms: 500 }, 1100 + i * 100);
+            store.record_event(
+                &cid,
+                MetabolismEvent::Retrieval { dwell_ms: 500 },
+                1100 + i * 100,
+            );
         }
         store.record_event(&cid, MetabolismEvent::Citation, 2000);
 
         // Tick
         let mut niche_stats = HashMap::new();
-        niche_stats.insert(1u64, NicheStats {
-            population: 10,
-            total_metabolic_rate: 5.0,
-            avg_metabolic_rate: 0.5,
-            source_diversity: 3,
-        });
+        niche_stats.insert(
+            1u64,
+            NicheStats {
+                population: 10,
+                total_metabolic_rate: 5.0,
+                avg_metabolic_rate: 0.5,
+                source_diversity: 3,
+            },
+        );
         let results = store.tick(3000, &niche_stats);
 
         // Should have results
@@ -247,7 +261,10 @@ mod tests {
         // KuRuntime should have updated trust section
         let ku = store.get(&cid).unwrap();
         // After tick, metabolic_rate should be > 0
-        assert!(ku.epi.trust.metabolic_rate > 0, "metabolic_rate should be updated by tick");
+        assert!(
+            ku.epi.trust.metabolic_rate > 0,
+            "metabolic_rate should be updated by tick"
+        );
     }
 
     #[test]
@@ -257,23 +274,33 @@ mod tests {
         let cid = store.ingest(ku, vec![1], 0.5, 0.3, 1000);
 
         // Initially should be Rumor
-        assert_eq!(store.get(&cid).unwrap().epi.trust.epistemic_status, EpistemicStatus::Rumor);
+        assert_eq!(
+            store.get(&cid).unwrap().epi.trust.epistemic_status,
+            EpistemicStatus::Rumor
+        );
 
         // Generate enough activity for RUMOR → HEARSAY (metabolic activity)
         store.record_event(&cid, MetabolismEvent::Retrieval { dwell_ms: 500 }, 1100);
 
         let mut niche_stats = HashMap::new();
-        niche_stats.insert(1u64, NicheStats {
-            population: 10,
-            total_metabolic_rate: 5.0,
-            avg_metabolic_rate: 0.5,
-            source_diversity: 3,
-        });
+        niche_stats.insert(
+            1u64,
+            NicheStats {
+                population: 10,
+                total_metabolic_rate: 5.0,
+                avg_metabolic_rate: 0.5,
+                source_diversity: 3,
+            },
+        );
         store.tick(2000, &niche_stats);
 
         // Epistemic status should have advanced (at least HEARSAY = 1)
         let status = store.get(&cid).unwrap().epi.trust.epistemic_status;
-        assert!(status != EpistemicStatus::Rumor, "Expected at least HEARSAY, got {:?}", status);
+        assert!(
+            status != EpistemicStatus::Rumor,
+            "Expected at least HEARSAY, got {:?}",
+            status
+        );
     }
 
     #[test]

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import type { FollowedNode, PeerProfile, WatchInfo, KuListItem } from '../api/types';
 import { GENE_TYPE_COLORS } from '../api/types';
+import { formatDateShort } from '../utils/format';
 
 // ─── Inline Styles ──────────────────────────────────────────
 const styles = {
@@ -271,10 +272,7 @@ const styles = {
 
 // ─── Helpers ────────────────────────────────────────────────
 function formatDate(ts: number): string {
-  if (!ts) return '—';
-  return new Date(ts * 1000).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
-  });
+  return formatDateShort(ts);
 }
 
 function truncateId(id: string, len = 12): string {
@@ -295,8 +293,8 @@ function FollowingTab() {
     try {
       const data = await api.listFollowing();
       setNodes(data);
-    } catch (e: any) {
-      setMessage({ type: 'error', text: e.message });
+    } catch (e: unknown) {
+      setMessage({ type: 'error', text: e instanceof Error ? e.message : String(e) });
     } finally {
       setLoading(false);
     }
@@ -314,8 +312,8 @@ function FollowingTab() {
       setNewNodeId('');
       setMessage({ type: 'success', text: `Now following node ${truncateId(id)}` });
       await load();
-    } catch (e: any) {
-      setMessage({ type: 'error', text: e.message });
+    } catch (e: unknown) {
+      setMessage({ type: 'error', text: e instanceof Error ? e.message : String(e) });
     } finally {
       setFollowing(false);
     }
@@ -327,8 +325,8 @@ function FollowingTab() {
       await api.unfollowNode(nodeId);
       setMessage({ type: 'success', text: `Unfollowed ${truncateId(nodeId)}` });
       await load();
-    } catch (e: any) {
-      setMessage({ type: 'error', text: e.message });
+    } catch (e: unknown) {
+      setMessage({ type: 'error', text: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -403,8 +401,8 @@ function ProfilesTab() {
     try {
       const data = await api.getPeerProfile(id);
       setProfile(data);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
@@ -514,8 +512,8 @@ function WatchesTab() {
     try {
       const data = await api.listWatches();
       setWatches(data);
-    } catch (e: any) {
-      setMessage({ type: 'error', text: e.message });
+    } catch (e: unknown) {
+      setMessage({ type: 'error', text: e instanceof Error ? e.message : String(e) });
     } finally {
       setLoading(false);
     }
@@ -533,21 +531,22 @@ function WatchesTab() {
       setNewQuery('');
       setMessage({ type: 'success', text: `Watch created: ${result.watch_id.slice(0, 8)}…` });
       await load();
-    } catch (e: any) {
-      setMessage({ type: 'error', text: e.message });
+    } catch (e: unknown) {
+      setMessage({ type: 'error', text: e instanceof Error ? e.message : String(e) });
     } finally {
       setCreating(false);
     }
   };
 
   const handleDelete = async (watchId: string) => {
+    if (!confirm('Unsubscribe from this watch?')) return;
     setMessage(null);
     try {
       await api.deleteWatch(watchId);
       setMessage({ type: 'success', text: `Watch deleted` });
       await load();
-    } catch (e: any) {
-      setMessage({ type: 'error', text: e.message });
+    } catch (e: unknown) {
+      setMessage({ type: 'error', text: e instanceof Error ? e.message : String(e) });
     }
   };
 
@@ -684,15 +683,159 @@ function FeedTab() {
   );
 }
 
+// ─── Reputation Tab (MOCK DATA) ─────────────────────────────
+// ⚠️ MOCK DATA NOTICE: The reputation system currently uses hardcoded
+// mock data. This is intentional — real reputation scoring requires
+// integration with the P2P verification consensus protocol (PoMV)
+// and cross-node validation. Replace with real API calls when:
+// 1. PoMV consensus finalization is implemented (backend)
+// 2. Reputation aggregation endpoint is added to handlers.rs
+// 3. Cross-node reputation sync is operational
+// See: DEFERRED.md → Reputation System
+
+const MOCK_REPUTATION = {
+  score: 87,
+  level: 'Expert',
+  badges: [
+    { name: 'Early Adopter', icon: '🌱', earned: '2024-01-15' },
+    { name: 'Knowledge Sharer', icon: '📚', earned: '2024-03-22' },
+    { name: 'Verified Contributor', icon: '✅', earned: '2024-06-01' },
+    { name: 'Network Builder', icon: '🌐', earned: '2024-08-10' },
+  ],
+  stats: {
+    kus_published: 142,
+    kus_verified: 98,
+    peers_helped: 23,
+    avg_pomv: 0.73,
+    trust_score: 0.89,
+    uptime_days: 187,
+  },
+  history: [
+    { date: '2024-12', score: 87 },
+    { date: '2024-11', score: 82 },
+    { date: '2024-10', score: 78 },
+    { date: '2024-09', score: 71 },
+    { date: '2024-08', score: 65 },
+    { date: '2024-07', score: 58 },
+  ],
+};
+
+function ReputationTab() {
+  const rep = MOCK_REPUTATION;
+  const scoreColor = rep.score >= 80 ? 'var(--ob-success)' : rep.score >= 50 ? 'var(--ob-warning)' : 'var(--ob-error)';
+
+  return (
+    <div>
+      {/* Mock Data Notice */}
+      <div style={{
+        padding: '10px 14px', borderRadius: 8, marginBottom: 16,
+        background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.3)',
+        fontSize: '0.78rem', color: 'rgb(234, 179, 8)',
+      }}>
+        ⚠️ <strong>Mock Data:</strong> Reputation scores are simulated. Real scoring requires PoMV consensus integration.
+      </div>
+
+      {/* Score Overview */}
+      <div style={{ display: 'flex', gap: 20, marginBottom: 20, flexWrap: 'wrap' }}>
+        <div style={{
+          flex: '0 0 140px', textAlign: 'center', padding: 20,
+          borderRadius: 12, background: 'var(--ob-surface)',
+          border: '1px solid var(--ob-glass-border)',
+        }}>
+          <div style={{ fontSize: '2.8rem', fontWeight: 800, color: scoreColor, lineHeight: 1 }}>
+            {rep.score}
+          </div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--ob-text-muted)', marginTop: 4 }}>
+            Reputation Score
+          </div>
+          <div style={{
+            display: 'inline-block', padding: '3px 10px', borderRadius: 20, marginTop: 8,
+            background: `${scoreColor}22`, color: scoreColor, fontSize: '0.75rem', fontWeight: 600,
+          }}>
+            {rep.level}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
+            {[
+              { label: 'KUs Published', value: rep.stats.kus_published },
+              { label: 'KUs Verified', value: rep.stats.kus_verified },
+              { label: 'Peers Helped', value: rep.stats.peers_helped },
+              { label: 'Avg PoMV', value: rep.stats.avg_pomv.toFixed(2) },
+              { label: 'Trust Score', value: `${(rep.stats.trust_score * 100).toFixed(0)}%` },
+              { label: 'Uptime', value: `${rep.stats.uptime_days}d` },
+            ].map(s => (
+              <div key={s.label} style={{
+                padding: '10px 12px', borderRadius: 8,
+                background: 'var(--ob-surface)', border: '1px solid var(--ob-glass-border)',
+              }}>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--ob-text-primary)' }}>{s.value}</div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--ob-text-muted)' }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Badges */}
+      <div style={{ marginBottom: 20 }}>
+        <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: 10 }}>🏅 Badges</h3>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {rep.badges.map(b => (
+            <div key={b.name} style={{
+              padding: '10px 14px', borderRadius: 10,
+              background: 'var(--ob-surface)', border: '1px solid var(--ob-glass-border)',
+              display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ fontSize: '1.4rem' }}>{b.icon}</span>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '0.82rem' }}>{b.name}</div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--ob-text-muted)' }}>Earned: {b.earned}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Score History */}
+      <div>
+        <h3 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: 10 }}>📈 Score History</h3>
+        <div style={{
+          display: 'flex', gap: 4, alignItems: 'flex-end', height: 100,
+          padding: '0 8px',
+        }}>
+          {rep.history.slice().reverse().map(h => {
+            const height = Math.max(10, h.score);
+            return (
+              <div key={h.date} style={{ flex: 1, textAlign: 'center' }}>
+                <div style={{
+                  height, borderRadius: '4px 4px 0 0',
+                  background: `linear-gradient(180deg, var(--ob-accent), var(--ob-violet))`,
+                  opacity: 0.8,
+                  transition: 'height 0.3s',
+                }} />
+                <div style={{ fontSize: '0.6rem', color: 'var(--ob-text-muted)', marginTop: 4 }}>{h.date}</div>
+                <div style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--ob-text-secondary)' }}>{h.score}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ──────────────────────────────────────────────
 
-type TabKey = 'feed' | 'following' | 'profiles' | 'watches';
+type TabKey = 'feed' | 'following' | 'profiles' | 'watches' | 'reputation';
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'feed',      label: 'Feed',      icon: '🔥' },
   { key: 'following', label: 'Following', icon: '👥' },
   { key: 'profiles',  label: 'Profiles',  icon: '🔍' },
   { key: 'watches',   label: 'Watches',   icon: '👁️' },
+  { key: 'reputation', label: 'Reputation', icon: '⭐' },
 ];
 
 export function SocialPage() {
@@ -723,6 +866,7 @@ export function SocialPage() {
         {tab === 'following' && <FollowingTab />}
         {tab === 'profiles'  && <ProfilesTab />}
         {tab === 'watches'   && <WatchesTab />}
+        {tab === 'reputation' && <ReputationTab />}
       </div>
     </div>
   );

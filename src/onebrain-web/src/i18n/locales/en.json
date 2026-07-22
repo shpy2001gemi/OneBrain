@@ -15,6 +15,8 @@
     "discovery": "Discovery",
     "collections": "Collections",
     "analytics": "Analytics",
+    "drafts": "Drafts",
+    "files": "Files",
     "help": "Help"
   },
   "common": {
@@ -137,13 +139,23 @@
     "localNode": "Local Node"
   },
   "wallet": {
-    "title": "Wallet",
+    "title": "OBT Wallet",
     "balance": "Balance",
     "tier": "Tier",
     "multiplier": "Multiplier",
     "totalEarned": "Total Earned",
     "totalSpent": "Total Spent",
+    "staked": "Staked",
+    "earned": "Earned",
+    "spent": "Spent",
+    "pending": "Pending",
+    "transactions": "Transactions",
+    "noTransactions": "No transactions yet",
     "history": "Transaction History",
+    "stake": "Stake OBT",
+    "unstake": "Unstake",
+    "stakeAmount": "Amount to stake",
+    "stakingInfo": "Staking OBT increases your trust score",
     "streams": {
       "title": "Earnings Streams",
       "owner": "Owner",
@@ -321,20 +333,6 @@
     "saveThis": "Save Search",
     "saveName": "Search Name",
     "noSaved": "No saved searches"
-  },
-  "wallet": {
-    "title": "OBT Wallet",
-    "balance": "Balance",
-    "staked": "Staked",
-    "earned": "Earned",
-    "spent": "Spent",
-    "pending": "Pending",
-    "transactions": "Transactions",
-    "noTransactions": "No transactions yet",
-    "stake": "Stake OBT",
-    "unstake": "Unstake",
-    "stakeAmount": "Amount to stake",
-    "stakingInfo": "Staking OBT increases your trust score"
   },
   "help": {
     "title": "Help & Feedback",

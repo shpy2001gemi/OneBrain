@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { ws } from '../api/ws';
 
 export interface Notification {
   id: string;
@@ -37,49 +38,45 @@ function saveToStorage(ns: Notification[]) {
 
 export function useNotifications(): UseNotificationsReturn {
   const [notifications, setNotifications] = useState<Notification[]>(loadFromStorage);
-  const wsRef = useRef<WebSocket | null>(null);
+  const connectedRef = useRef(false);
 
   // Persist to localStorage
   useEffect(() => {
     saveToStorage(notifications);
   }, [notifications]);
 
-  // Listen for WebSocket events
+  // Connect singleton WS and listen for events
   useEffect(() => {
-    const token = localStorage.getItem('ob_api_token') || 'onebrain-dev-token';
-    const ws = new WebSocket(`ws://127.0.0.1:4280/ws/events?token=${token}`);
-    wsRef.current = ws;
+    if (!connectedRef.current) {
+      const token = localStorage.getItem('ob_api_token') || 'onebrain-dev-token';
+      ws.connect(token);
+      connectedRef.current = true;
+    }
 
-    ws.onmessage = (e) => {
-      try {
-        const event = JSON.parse(e.data);
-        if (event.event_type === 'encode_complete') {
-          addNotificationInternal({
-            type: 'success',
-            title: 'Knowledge Encoded',
-            message: `CID: ${event.data?.cid_hex?.slice(0, 12) || 'unknown'}`,
-            autoDismiss: true,
-          });
-        } else if (event.event_type === 'sync_complete') {
-          addNotificationInternal({
-            type: 'info',
-            title: 'Sync Complete',
-            message: event.data?.message || 'All devices synchronized',
-          });
-        } else if (event.event_type === 'error') {
-          addNotificationInternal({
-            type: 'error',
-            title: 'Error',
-            message: event.data?.message || 'An error occurred',
-          });
-        }
-      } catch { /* ignore */ }
-    };
+    const unsub = ws.on('*', (event) => {
+      if (event.event_type === 'encode_complete') {
+        addNotificationInternal({
+          type: 'success',
+          title: 'Knowledge Encoded',
+          message: `CID: ${String(event.data?.cid_hex || 'unknown').slice(0, 12)}`,
+          autoDismiss: true,
+        });
+      } else if (event.event_type === 'sync_complete') {
+        addNotificationInternal({
+          type: 'info',
+          title: 'Sync Complete',
+          message: String(event.data?.message || 'All devices synchronized'),
+        });
+      } else if (event.event_type === 'error') {
+        addNotificationInternal({
+          type: 'error',
+          title: 'Error',
+          message: String(event.data?.message || 'An error occurred'),
+        });
+      }
+    });
 
-    ws.onerror = () => {};
-    ws.onclose = () => {};
-
-    return () => { ws.close(); };
+    return unsub;
   }, []);
 
   const addNotificationInternal = useCallback((n: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {

@@ -12,8 +12,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use ku_core::KuRuntime;
 use crate::identity::NodeId;
+use ku_core::KuRuntime;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -25,10 +25,10 @@ pub type WatchId = u64;
 /// What event triggers a watch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WatchEvent {
-    Create    = 0,
-    Update    = 1,
+    Create = 0,
+    Update = 1,
     Deprecate = 2,
-    Any       = 3,
+    Any = 3,
 }
 
 impl WatchEvent {
@@ -60,18 +60,12 @@ impl WatchCondition {
     /// Evaluate this condition against a KU.
     pub fn matches(&self, ku: &KuRuntime) -> bool {
         match self {
-            WatchCondition::TrustAbove(threshold) => {
-                ku.trust_score() >= *threshold
-            },
-            WatchCondition::TrustBelow(threshold) => {
-                ku.trust_score() < *threshold
-            },
-            WatchCondition::HasConcept(concept_id) => {
-                ku.contains_concept(*concept_id)
-            },
+            WatchCondition::TrustAbove(threshold) => ku.trust_score() >= *threshold,
+            WatchCondition::TrustBelow(threshold) => ku.trust_score() < *threshold,
+            WatchCondition::HasConcept(concept_id) => ku.contains_concept(*concept_id),
             WatchCondition::HasDomain(domain_code) => {
                 ku.epi.trust.domain_codes.contains(domain_code)
-            },
+            }
             WatchCondition::Any => true,
             WatchCondition::And(a, b) => a.matches(ku) && b.matches(ku),
         }
@@ -161,16 +155,19 @@ impl WatchEngine {
         let id = self.next_id;
         self.next_id += 1;
 
-        self.watches.insert(id, WatchRegistration {
+        self.watches.insert(
             id,
-            origin,
-            event,
-            condition,
-            notify_endpoint,
-            registered_at: Instant::now(),
-            ttl,
-            fire_count: 0,
-        });
+            WatchRegistration {
+                id,
+                origin,
+                event,
+                condition,
+                notify_endpoint,
+                registered_at: Instant::now(),
+                ttl,
+                fire_count: 0,
+            },
+        );
 
         Some(id)
     }
@@ -183,11 +180,7 @@ impl WatchEngine {
     /// Evaluate a KU event against all registered watches.
     ///
     /// Returns notifications for watches that matched.
-    pub fn on_ku_event(
-        &mut self,
-        ku: &KuRuntime,
-        event: WatchEvent,
-    ) -> Vec<WatchNotification> {
+    pub fn on_ku_event(&mut self, ku: &KuRuntime, event: WatchEvent) -> Vec<WatchNotification> {
         let mut notifications = Vec::new();
 
         for watch in self.watches.values_mut() {
@@ -219,9 +212,7 @@ impl WatchEngine {
     ///
     /// Returns registrations with TTL > 0 (network-propagated watches).
     pub fn propagatable_watches(&self) -> Vec<&WatchRegistration> {
-        self.watches.values()
-            .filter(|w| w.ttl > 0)
-            .collect()
+        self.watches.values().filter(|w| w.ttl > 0).collect()
     }
 
     /// Number of active watches.
@@ -242,9 +233,8 @@ impl WatchEngine {
     /// Clean up watches that haven't fired in a long time.
     pub fn cleanup_stale(&mut self, max_age: std::time::Duration) {
         let now = Instant::now();
-        self.watches.retain(|_, w| {
-            now.duration_since(w.registered_at) < max_age
-        });
+        self.watches
+            .retain(|_, w| now.duration_since(w.registered_at) < max_age);
     }
 }
 
@@ -255,9 +245,9 @@ impl WatchEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ku_core::{KuRuntime, Epigenetics};
-    use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction};
     use crate::identity::{generate_node_id, KeyPair, PUZZLE_C_SMALL};
+    use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction};
+    use ku_core::{Epigenetics, KuRuntime};
 
     fn make_node_id() -> NodeId {
         let kp = KeyPair::generate();
@@ -267,10 +257,18 @@ mod tests {
 
     fn make_ku(trust_score: u16, concept_id: u64) -> KuRuntime {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Triple { s: concept_id, p: 133, o: 132 },
+                Instruction::Triple {
+                    s: concept_id,
+                    p: 133,
+                    o: 132,
+                },
                 Instruction::Certainty { level: 9500 },
             ],
         };
@@ -285,13 +283,15 @@ mod tests {
         let origin = make_node_id();
         let mut engine = WatchEngine::new(my_id);
 
-        let wid = engine.register(
-            origin,
-            WatchEvent::Create,
-            WatchCondition::TrustAbove(5000),
-            "callback://test".to_string(),
-            0,
-        ).unwrap();
+        let wid = engine
+            .register(
+                origin,
+                WatchEvent::Create,
+                WatchCondition::TrustAbove(5000),
+                "callback://test".to_string(),
+                0,
+            )
+            .unwrap();
 
         assert_eq!(engine.count(), 1);
 
@@ -362,9 +362,19 @@ mod tests {
         );
 
         // Below threshold → no match
-        assert_eq!(engine.on_ku_event(&make_ku(3000, 1), WatchEvent::Create).len(), 0);
+        assert_eq!(
+            engine
+                .on_ku_event(&make_ku(3000, 1), WatchEvent::Create)
+                .len(),
+            0
+        );
         // Above threshold → match
-        assert_eq!(engine.on_ku_event(&make_ku(9000, 1), WatchEvent::Create).len(), 1);
+        assert_eq!(
+            engine
+                .on_ku_event(&make_ku(9000, 1), WatchEvent::Create)
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -381,9 +391,19 @@ mod tests {
         );
 
         // Wrong concept → no match
-        assert_eq!(engine.on_ku_event(&make_ku(5000, 99), WatchEvent::Create).len(), 0);
+        assert_eq!(
+            engine
+                .on_ku_event(&make_ku(5000, 99), WatchEvent::Create)
+                .len(),
+            0
+        );
         // Right concept → match
-        assert_eq!(engine.on_ku_event(&make_ku(5000, 42), WatchEvent::Create).len(), 1);
+        assert_eq!(
+            engine
+                .on_ku_event(&make_ku(5000, 42), WatchEvent::Create)
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -403,11 +423,26 @@ mod tests {
         );
 
         // High trust, wrong concept → no match
-        assert_eq!(engine.on_ku_event(&make_ku(9000, 99), WatchEvent::Create).len(), 0);
+        assert_eq!(
+            engine
+                .on_ku_event(&make_ku(9000, 99), WatchEvent::Create)
+                .len(),
+            0
+        );
         // Low trust, right concept → no match
-        assert_eq!(engine.on_ku_event(&make_ku(1000, 42), WatchEvent::Create).len(), 0);
+        assert_eq!(
+            engine
+                .on_ku_event(&make_ku(1000, 42), WatchEvent::Create)
+                .len(),
+            0
+        );
         // High trust, right concept → match!
-        assert_eq!(engine.on_ku_event(&make_ku(9000, 42), WatchEvent::Create).len(), 1);
+        assert_eq!(
+            engine
+                .on_ku_event(&make_ku(9000, 42), WatchEvent::Create)
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -415,9 +450,15 @@ mod tests {
         let my_id = make_node_id();
         let mut engine = WatchEngine::new(my_id);
 
-        let wid = engine.register(
-            make_node_id(), WatchEvent::Any, WatchCondition::Any, "".to_string(), 0,
-        ).unwrap();
+        let wid = engine
+            .register(
+                make_node_id(),
+                WatchEvent::Any,
+                WatchCondition::Any,
+                "".to_string(),
+                0,
+            )
+            .unwrap();
 
         assert_eq!(engine.count(), 1);
         assert!(engine.unregister(wid));
@@ -431,8 +472,20 @@ mod tests {
         let mut engine = WatchEngine::new(my_id);
 
         // Two watches, both should match
-        engine.register(make_node_id(), WatchEvent::Any, WatchCondition::Any, "a".to_string(), 0);
-        engine.register(make_node_id(), WatchEvent::Any, WatchCondition::Any, "b".to_string(), 0);
+        engine.register(
+            make_node_id(),
+            WatchEvent::Any,
+            WatchCondition::Any,
+            "a".to_string(),
+            0,
+        );
+        engine.register(
+            make_node_id(),
+            WatchEvent::Any,
+            WatchCondition::Any,
+            "b".to_string(),
+            0,
+        );
 
         let ku = make_ku(5000, 1);
         let notifs = engine.on_ku_event(&ku, WatchEvent::Create);
@@ -445,9 +498,21 @@ mod tests {
         let mut engine = WatchEngine::new(my_id);
 
         // Local-only watch (TTL=0)
-        engine.register(make_node_id(), WatchEvent::Any, WatchCondition::Any, "".to_string(), 0);
+        engine.register(
+            make_node_id(),
+            WatchEvent::Any,
+            WatchCondition::Any,
+            "".to_string(),
+            0,
+        );
         // Network watch (TTL=3)
-        engine.register(make_node_id(), WatchEvent::Any, WatchCondition::Any, "".to_string(), 3);
+        engine.register(
+            make_node_id(),
+            WatchEvent::Any,
+            WatchCondition::Any,
+            "".to_string(),
+            3,
+        );
 
         let propagatable = engine.propagatable_watches();
         assert_eq!(propagatable.len(), 1);

@@ -3,6 +3,7 @@ import { Coins, ArrowUpRight, ArrowDownRight, Shield, Clock, Lock, Unlock } from
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { WalletInfo, WalletTransaction } from '../api/types';
+import { formatObtSigned, formatDateFull } from '../utils/format';
 
 export function WalletPage() {
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
@@ -10,6 +11,7 @@ export function WalletPage() {
   const [loading, setLoading] = useState(true);
   const [stakeAmount, setStakeAmount] = useState('');
   const { t } = useTranslation();
+  const [stakeError, setStakeError] = useState('');
 
   useEffect(() => {
     Promise.all([
@@ -18,14 +20,35 @@ export function WalletPage() {
     ]).finally(() => setLoading(false));
   }, []);
 
-  const formatObt = (milli: number) => {
-    const sign = milli < 0 ? '-' : '';
-    const obt = Math.abs(milli) / 1000;
-    const formatted = obt >= 1000 ? `${(obt / 1000).toFixed(2)}K` : obt.toFixed(1);
-    return `${sign}${formatted}`;
+  const handleStake = async () => {
+    const amount = Math.floor(parseFloat(stakeAmount) * 1000); // OBT to milliOBT
+    if (!amount || amount <= 0) return;
+    setStakeError('');
+    try {
+      const info = await api.stake(amount);
+      setWallet(info);
+      setStakeAmount('');
+    } catch (err: unknown) {
+      setStakeError(err instanceof Error ? err.message : 'Stake failed');
+    }
   };
 
-  const formatDate = (ts: number) => new Date(ts * 1000).toLocaleString();
+  const handleUnstake = async () => {
+    const amount = Math.floor(parseFloat(stakeAmount) * 1000);
+    if (!amount || amount <= 0) return;
+    setStakeError('');
+    try {
+      const info = await api.unstake(amount);
+      setWallet(info);
+      setStakeAmount('');
+    } catch (err: unknown) {
+      setStakeError(err instanceof Error ? err.message : 'Unstake failed');
+    }
+  };
+
+  const formatObt = formatObtSigned;
+
+  const formatDate = formatDateFull;
 
   if (loading) {
     return <div className="page" style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
@@ -134,10 +157,10 @@ export function WalletPage() {
                   color: 'var(--ob-text-primary)', fontSize: '0.9rem',
                 }}
               />
-              <button className="btn-primary" style={{ padding: '10px 24px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button className="btn-primary" onClick={handleStake} style={{ padding: '10px 24px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <Lock size={14} />{t('wallet.stake')}
               </button>
-              <button style={{
+              <button onClick={handleUnstake} style={{
                 padding: '10px 24px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6,
                 background: 'transparent', border: '1px solid var(--ob-glass-border)', color: 'var(--ob-text-secondary)',
                 cursor: 'pointer', fontSize: '0.88rem',
@@ -145,13 +168,16 @@ export function WalletPage() {
                 <Unlock size={14} />{t('wallet.unstake')}
               </button>
             </div>
+            {stakeError && (
+              <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 12 }}>{stakeError}</div>
+            )}
             <div style={{
               display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12,
             }}>
               {[
-                { label: t('wallet.staked'), value: '0', color: '#f59e0b' },
+                { label: t('wallet.staked'), value: formatObt(wallet.staked), color: '#f59e0b' },
                 { label: t('wallet.earned'), value: formatObt(wallet.total_earned), color: '#10b981' },
-                { label: t('wallet.pending'), value: '0', color: '#6366f1' },
+                { label: t('wallet.pending'), value: formatObt(wallet.pending_unstake), color: '#6366f1' },
               ].map(({ label, value, color }) => (
                 <div key={label} style={{
                   padding: '12px 16px', borderRadius: 8,

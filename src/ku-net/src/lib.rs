@@ -22,31 +22,42 @@
 //! - SPEC B: Overlay & Routing (`02b_spec_overlay_routing.md`)
 //! - SPEC D: Message Catalog (`02d_message_catalog.md`)
 
-pub mod error;
 pub mod constants;
-pub mod identity;
-pub mod messages;
-pub mod membership;
-pub mod discovery;
-#[cfg(feature = "quic")]
-pub mod transport;
 pub mod dht;
-pub mod stigmergy;
-pub mod vacuum;
+#[cfg(feature = "persist")]
+pub mod dht_store; // ★ Phase 3: DHT persistence (redb-backed)
+pub mod discovery;
+pub mod encoding_gossip; // ★ v6 NEW: Encoding consensus network protocol
+pub mod encoding_job; // ★ v6 NEW: DHT-based encoding job board
+pub mod encoding_stigmergy; // ★ v6 NEW: Pheromone-based job load balancing
+pub mod error;
+pub mod graph_gossip; // ★ OBKG: Graph gossip (FedR deltas, graph stats, dream reports)
+pub mod identity;
+pub mod membership;
+pub mod messages;
+pub mod metabolism_gossip;
+pub mod obt_gossip; // ★ OBT: Gossip protocol (fork warrants, mint relay, epoch summary)
+pub mod obt_transfer; // ★ OBT: Token transfer protocol messages
 pub mod pubsub;
 pub mod query;
+pub mod registry_gossip;
+pub mod replication; // ★ Phase 4: R=7 tier-aware replication manager
+pub mod stigmergy;
 pub mod sync;
-pub mod metabolism_gossip;
-pub mod encoding_job;        // ★ v6 NEW: DHT-based encoding job board
-pub mod encoding_gossip;     // ★ v6 NEW: Encoding consensus network protocol
-pub mod encoding_stigmergy;  // ★ v6 NEW: Pheromone-based job load balancing
-pub mod obt_transfer;        // ★ OBT: Token transfer protocol messages
-pub mod obt_gossip;          // ★ OBT: Gossip protocol (fork warrants, mint relay, epoch summary)
-pub mod graph_gossip;        // ★ OBKG: Graph gossip (FedR deltas, graph stats, dream reports)
-#[cfg(feature = "persist")]
-pub mod dht_store;           // ★ Phase 3: DHT persistence (redb-backed)
-pub mod replication;         // ★ Phase 4: R=7 tier-aware replication manager
-pub mod registry_gossip;     // ★ v7 NEW: ConceptRegistry delta gossip + bloom anti-entropy
+#[cfg(feature = "quic")]
+pub mod transport;
+pub mod vacuum; // ★ v7 NEW: ConceptRegistry delta gossip + bloom anti-entropy
+
+pub mod vnext_bridge_merge;
+pub mod vnext_carrier;
+pub mod vnext_carrier_adapter;
+pub mod vnext_inventory_forest;
+pub mod vnext_provider_view;
+pub mod vnext_reachability;
+pub mod vnext_reconciliation;
+pub mod vnext_reconciliation_journal;
+pub mod vnext_resource_gate;
+pub mod vnext_session;
 
 #[cfg(test)]
 mod tests;

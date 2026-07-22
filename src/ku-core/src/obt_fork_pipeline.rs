@@ -183,9 +183,7 @@ impl ForkPipeline {
         let prior = self
             .processed
             .iter()
-            .filter(|r| {
-                r.offender == *offender && r.status == WarrantStatus::PenaltyApplied
-            })
+            .filter(|r| r.offender == *offender && r.status == WarrantStatus::PenaltyApplied)
             .count();
         match prior {
             0 => 2,
@@ -242,10 +240,7 @@ impl ForkPipeline {
     /// File an appeal against a warrant that has been penalised.
     ///
     /// Transitions `PenaltyApplied → Disputed`.
-    pub fn file_appeal(
-        &mut self,
-        warrant_hash: [u8; 32],
-    ) -> Result<(), PipelineError> {
+    pub fn file_appeal(&mut self, warrant_hash: [u8; 32]) -> Result<(), PipelineError> {
         let record = self
             .processed
             .iter_mut()
@@ -302,7 +297,9 @@ mod tests {
 
     fn verify_warrant(pipe: &mut ForkPipeline, hash: [u8; 32]) {
         add_n_witnesses(pipe, hash, MIN_WARRANT_WITNESSES as u8);
-        assert!(pipe.check_verification(hash, MIN_WARRANT_WITNESSES).unwrap());
+        assert!(pipe
+            .check_verification(hash, MIN_WARRANT_WITNESSES)
+            .unwrap());
     }
 
     // Tests ─────────────────────────────────────────────────────────────
@@ -340,12 +337,11 @@ mod tests {
         let hash = submit_default(&mut pipe);
 
         add_n_witnesses(&mut pipe, hash, MIN_WARRANT_WITNESSES as u8);
-        let verified = pipe.check_verification(hash, MIN_WARRANT_WITNESSES).unwrap();
+        let verified = pipe
+            .check_verification(hash, MIN_WARRANT_WITNESSES)
+            .unwrap();
         assert!(verified);
-        assert_eq!(
-            pipe.warrants_for(&id(1))[0].status,
-            WarrantStatus::Verified
-        );
+        assert_eq!(pipe.warrants_for(&id(1))[0].status, WarrantStatus::Verified);
     }
 
     #[test]
@@ -355,12 +351,11 @@ mod tests {
 
         // Only 1 witness (need 3)
         pipe.add_witness(hash, id(50)).unwrap();
-        let verified = pipe.check_verification(hash, MIN_WARRANT_WITNESSES).unwrap();
+        let verified = pipe
+            .check_verification(hash, MIN_WARRANT_WITNESSES)
+            .unwrap();
         assert!(!verified);
-        assert_eq!(
-            pipe.warrants_for(&id(1))[0].status,
-            WarrantStatus::Detected
-        );
+        assert_eq!(pipe.warrants_for(&id(1))[0].status, WarrantStatus::Detected);
     }
 
     #[test]
@@ -400,7 +395,14 @@ mod tests {
 
         // First + second offense
         for seq in 42..=43 {
-            let h = pipe.submit_warrant(id(1), id(10 + seq as u8), id(11 + seq as u8), seq, id(99), seq * 1_000);
+            let h = pipe.submit_warrant(
+                id(1),
+                id(10 + seq as u8),
+                id(11 + seq as u8),
+                seq,
+                id(99),
+                seq * 1_000,
+            );
             verify_warrant(&mut pipe, h);
             pipe.apply_penalty(h).unwrap();
         }
@@ -498,9 +500,6 @@ mod tests {
         // 2 still pending, 3 processed
         assert_eq!(pipe.warrants_for(&id(0)).len(), 1);
         assert_eq!(pipe.warrants_for(&id(3)).len(), 1);
-        assert_eq!(
-            pipe.warrants_for(&id(3))[0].status,
-            WarrantStatus::Detected
-        );
+        assert_eq!(pipe.warrants_for(&id(3))[0].status, WarrantStatus::Detected);
     }
 }

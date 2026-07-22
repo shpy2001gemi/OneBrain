@@ -46,7 +46,11 @@ pub struct BridgeFinder {
 
 impl BridgeFinder {
     pub fn new() -> Self {
-        Self { min_domain_size: 2, max_bridges: 20, min_strength: 0.1 }
+        Self {
+            min_domain_size: 2,
+            max_bridges: 20,
+            min_strength: 0.1,
+        }
     }
 
     pub fn analyze(&self, kus: &[KuRuntime]) -> BridgeReport {
@@ -111,14 +115,19 @@ impl BridgeFinder {
         for (concept, domains) in bridge_concepts {
             let list: Vec<u64> = domains.iter().copied().collect();
             for i in 0..list.len() {
-                for j in (i+1)..list.len() {
-                    let pair = if list[i] < list[j] { (list[i], list[j]) } else { (list[j], list[i]) };
+                for j in (i + 1)..list.len() {
+                    let pair = if list[i] < list[j] {
+                        (list[i], list[j])
+                    } else {
+                        (list[j], list[i])
+                    };
                     pair_bridges.entry(pair).or_default().push(*concept);
                 }
             }
         }
 
-        let mut bridges: Vec<KnowledgeBridge> = pair_bridges.into_iter()
+        let mut bridges: Vec<KnowledgeBridge> = pair_bridges
+            .into_iter()
             .filter_map(|((d1, d2), concepts)| {
                 let s1 = *domain_strength.get(&d1).unwrap_or(&0);
                 let s2 = *domain_strength.get(&d2).unwrap_or(&0);
@@ -129,10 +138,14 @@ impl BridgeFinder {
                 let asymmetry = if s1 != s2 {
                     let (strong, weak) = if s1 > s2 { (s1, s2) } else { (s2, s1) };
                     (strong as f64 / weak.max(1) as f64).min(5.0) / 5.0
-                } else { 0.5 };
+                } else {
+                    0.5
+                };
 
                 let strength = (concepts.len() as f64 / 10.0).min(1.0) * asymmetry;
-                if strength < self.min_strength { return None; }
+                if strength < self.min_strength {
+                    return None;
+                }
 
                 let (source, target) = if s1 >= s2 { (d1, d2) } else { (d2, d1) };
                 Some(KnowledgeBridge {
@@ -141,22 +154,32 @@ impl BridgeFinder {
                     bridge_concepts: concepts,
                     strength,
                     suggested_query: format!(
-                        "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} SCOPE DHT", target
+                        "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} SCOPE DHT",
+                        target
                     ),
                     description: format!(
-                        "Domain {} connects to domain {} via bridge concepts", source, target
+                        "Domain {} connects to domain {} via bridge concepts",
+                        source, target
                     ),
                 })
             })
             .collect();
 
-        bridges.sort_by(|a, b| b.strength.partial_cmp(&a.strength).unwrap_or(std::cmp::Ordering::Equal));
+        bridges.sort_by(|a, b| {
+            b.strength
+                .partial_cmp(&a.strength)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         bridges.truncate(self.max_bridges);
         bridges
     }
 }
 
-impl Default for BridgeFinder { fn default() -> Self { Self::new() } }
+impl Default for BridgeFinder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Tests
@@ -165,15 +188,23 @@ impl Default for BridgeFinder { fn default() -> Self { Self::new() } }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ku_core::{KuRuntime, Epigenetics, RelationType};
     use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction};
+    use ku_core::{Epigenetics, KuRuntime, RelationType};
 
     fn make_ku(concept_id: u64, ctx_concepts: &[u64]) -> KuRuntime {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Triple { s: concept_id, p: 133, o: 132 },
+                Instruction::Triple {
+                    s: concept_id,
+                    p: 133,
+                    o: 132,
+                },
                 Instruction::Certainty { level: 9500 },
             ],
         };
@@ -192,15 +223,18 @@ mod tests {
     fn test_bridge_detection() {
         let mut finder = BridgeFinder::new();
         finder.min_strength = 0.01; // Lower threshold for test
-        // Domain A (concept 100) and Domain C (concept 200)
-        // share bridge concepts 50, 51 in bond contexts
+                                    // Domain A (concept 100) and Domain C (concept 200)
+                                    // share bridge concepts 50, 51 in bond contexts
         let kus = vec![
-            make_ku(100, &[50, 51]),  // A → bridges B1, B2
-            make_ku(100, &[50]),      // A → B1 (strong domain)
-            make_ku(200, &[50, 51]),  // C → bridges B1, B2
+            make_ku(100, &[50, 51]), // A → bridges B1, B2
+            make_ku(100, &[50]),     // A → B1 (strong domain)
+            make_ku(200, &[50, 51]), // C → bridges B1, B2
         ];
         let report = finder.analyze(&kus);
-        assert!(!report.bridges.is_empty(), "Should find bridge between domains 100 and 200");
+        assert!(
+            !report.bridges.is_empty(),
+            "Should find bridge between domains 100 and 200"
+        );
     }
 
     #[test]
@@ -220,7 +254,7 @@ mod tests {
         ];
         let report = finder.analyze(&kus);
         for i in 1..report.bridges.len() {
-            assert!(report.bridges[i-1].strength >= report.bridges[i].strength);
+            assert!(report.bridges[i - 1].strength >= report.bridges[i].strength);
         }
     }
 }

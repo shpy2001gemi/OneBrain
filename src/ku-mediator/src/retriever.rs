@@ -7,9 +7,9 @@
 //!
 //! Supports file-based persistence via [`KuRetriever::save`] and [`KuRetriever::load`].
 
+use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::Path;
-use serde::{Serialize, Deserialize};
 
 /// A retrieved knowledge unit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,7 +43,10 @@ pub struct RetrieverConfig {
 
 impl Default for RetrieverConfig {
     fn default() -> Self {
-        Self { top_k: 5, min_score: 0.3 }
+        Self {
+            top_k: 5,
+            min_score: 0.3,
+        }
     }
 }
 
@@ -59,7 +62,10 @@ pub struct KuRetriever {
 
 impl KuRetriever {
     pub fn new(config: RetrieverConfig) -> Self {
-        Self { config, known_expressions: Vec::new() }
+        Self {
+            config,
+            known_expressions: Vec::new(),
+        }
     }
 
     /// Add a known KU expression to the local index.
@@ -67,15 +73,26 @@ impl KuRetriever {
         self.known_expressions.push((cid, expression));
     }
 
+    /// Look up the source text for a given CID.
+    pub fn get_expression(&self, cid: &str) -> Option<String> {
+        self.known_expressions
+            .iter()
+            .find(|(c, _)| c == cid)
+            .map(|(_, expr)| expr.clone())
+    }
+
     /// Retrieve relevant KUs for a query using keyword matching.
     pub fn retrieve(&self, query: &str) -> Vec<RetrievedKU> {
         let query_lower = query.to_lowercase();
         let query_words: Vec<&str> = query_lower.split_whitespace().collect();
 
-        let mut results: Vec<RetrievedKU> = self.known_expressions.iter()
+        let mut results: Vec<RetrievedKU> = self
+            .known_expressions
+            .iter()
             .filter_map(|(cid, expr)| {
                 let expr_lower = expr.to_lowercase();
-                let matching_words = query_words.iter()
+                let matching_words = query_words
+                    .iter()
                     .filter(|w| w.len() > 2 && expr_lower.contains(*w))
                     .count();
 
@@ -98,7 +115,11 @@ impl KuRetriever {
             .collect();
 
         // Sort by score descending
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(self.config.top_k);
         results
     }
@@ -145,12 +166,17 @@ impl KuRetriever {
         let data = std::fs::read_to_string(path)?;
         let known_expressions: Vec<(String, String)> = serde_json::from_str(&data)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        Ok(Self { config, known_expressions })
+        Ok(Self {
+            config,
+            known_expressions,
+        })
     }
 }
 
 impl Default for KuRetriever {
-    fn default() -> Self { Self::new(RetrieverConfig::default()) }
+    fn default() -> Self {
+        Self::new(RetrieverConfig::default())
+    }
 }
 
 #[cfg(test)]
@@ -160,9 +186,15 @@ mod tests {
     fn populated_retriever() -> KuRetriever {
         let mut r = KuRetriever::default();
         r.index_ku("cid1".into(), "Water boils at 100 degrees Celsius".into());
-        r.index_ku("cid2".into(), "The sky is blue due to Rayleigh scattering".into());
+        r.index_ku(
+            "cid2".into(),
+            "The sky is blue due to Rayleigh scattering".into(),
+        );
         r.index_ku("cid3".into(), "Water freezes at zero degrees".into());
-        r.index_ku("cid4".into(), "Rust is a systems programming language".into());
+        r.index_ku(
+            "cid4".into(),
+            "Rust is a systems programming language".into(),
+        );
         r
     }
 
@@ -195,7 +227,10 @@ mod tests {
 
     #[test]
     fn test_top_k_limit() {
-        let config = RetrieverConfig { top_k: 1, min_score: 0.0 };
+        let config = RetrieverConfig {
+            top_k: 1,
+            min_score: 0.0,
+        };
         let mut r = KuRetriever::new(config);
         r.index_ku("a".into(), "water is important".into());
         r.index_ku("b".into(), "water is life".into());
@@ -205,7 +240,10 @@ mod tests {
 
     #[test]
     fn test_min_score_filter() {
-        let config = RetrieverConfig { top_k: 10, min_score: 0.9 };
+        let config = RetrieverConfig {
+            top_k: 10,
+            min_score: 0.9,
+        };
         let mut r = KuRetriever::new(config);
         r.index_ku("a".into(), "water boils".into());
         let results = r.retrieve("water and other things and more stuff");

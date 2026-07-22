@@ -25,8 +25,8 @@ export function PomvPage() {
     try {
       const detail = await api.getKu(cidInput.trim());
       setKu(detail);
-    } catch (e: any) {
-      setError(e.message || 'KU not found');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'KU not found');
     } finally {
       setLoading(false);
     }
@@ -106,7 +106,7 @@ export function PomvPage() {
             <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-lg)' }}>PoMV Dimensions</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ob-gap-md)' }}>
               {POMV_DIMS.map(({ key, label, color, desc }) => {
-                const val = (breakdown as any)[key] as number;
+                const val = breakdown[key] as number;
                 const pct = val * 100;
                 return (
                   <div key={key}>

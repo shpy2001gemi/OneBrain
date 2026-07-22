@@ -27,7 +27,7 @@
 //! sai lệch khổng lồ và tự cho phe họ (bot) vote."
 //! → We detect PATTERN, not CONTENT.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -147,11 +147,7 @@ impl ImmuneEngine {
     /// Analyze a KU's spread pattern for manipulation signals.
     ///
     /// Returns detected antibodies (empty = healthy spread).
-    pub fn analyze(
-        obs: &SpreadObservation,
-        pattern_hash: [u8; 32],
-        now: u64,
-    ) -> Vec<Antibody> {
+    pub fn analyze(obs: &SpreadObservation, pattern_hash: [u8; 32], now: u64) -> Vec<Antibody> {
         let mut antibodies = Vec::new();
 
         // Signal 1: Temporal burst
@@ -275,10 +271,7 @@ impl ImmuneEngine {
     /// - Each confirmed antibody that was later resolved (false alarm)
     ///   adds a survival bonus
     /// - KU must still be metabolically alive after the attack
-    pub fn survival_score(
-        attacks_survived: u32,
-        is_still_alive: bool,
-    ) -> f32 {
+    pub fn survival_score(attacks_survived: u32, is_still_alive: bool) -> f32 {
         if !is_still_alive {
             return 0.0; // Dead KU gets no survival bonus
         }
@@ -296,9 +289,8 @@ impl ImmuneEngine {
     /// Single signals can be false positives.
     pub fn should_quarantine(antibodies: &[Antibody]) -> bool {
         // Need at least 2 different antibody types
-        let unique_types: std::collections::HashSet<_> = antibodies.iter()
-            .map(|a| a.antibody_type)
-            .collect();
+        let unique_types: std::collections::HashSet<_> =
+            antibodies.iter().map(|a| a.antibody_type).collect();
 
         // AND average confidence > 0.7
         let avg_confidence = if antibodies.is_empty() {
@@ -464,7 +456,9 @@ mod tests {
             ..healthy_spread()
         };
         let abs = ImmuneEngine::analyze(&obs, test_hash(1), T0);
-        assert!(abs.iter().any(|a| a.antibody_type == AntibodyType::TemporalBurst));
+        assert!(abs
+            .iter()
+            .any(|a| a.antibody_type == AntibodyType::TemporalBurst));
     }
 
     #[test]
@@ -475,7 +469,9 @@ mod tests {
             ..healthy_spread()
         };
         let abs = ImmuneEngine::analyze(&obs, test_hash(1), T0);
-        assert!(abs.iter().any(|a| a.antibody_type == AntibodyType::SourceConcentration));
+        assert!(abs
+            .iter()
+            .any(|a| a.antibody_type == AntibodyType::SourceConcentration));
     }
 
     #[test]
@@ -486,7 +482,9 @@ mod tests {
             ..healthy_spread()
         };
         let abs = ImmuneEngine::analyze(&obs, test_hash(1), T0);
-        assert!(abs.iter().any(|a| a.antibody_type == AntibodyType::LowEngagement));
+        assert!(abs
+            .iter()
+            .any(|a| a.antibody_type == AntibodyType::LowEngagement));
     }
 
     #[test]
@@ -497,27 +495,34 @@ mod tests {
             ..healthy_spread()
         };
         let abs = ImmuneEngine::analyze(&obs, test_hash(1), T0);
-        assert!(abs.iter().any(|a| a.antibody_type == AntibodyType::DiversityDeficit));
+        assert!(abs
+            .iter()
+            .any(|a| a.antibody_type == AntibodyType::DiversityDeficit));
     }
 
     #[test]
     fn test_bot_spread_multiple_signals() {
         let abs = ImmuneEngine::analyze(&bot_spread(), test_hash(1), T0);
-        assert!(abs.len() >= 3, "Bot spread triggers multiple signals: {}", abs.len());
+        assert!(
+            abs.len() >= 3,
+            "Bot spread triggers multiple signals: {}",
+            abs.len()
+        );
     }
 
     #[test]
     fn test_quarantine_requires_multiple_types() {
-        let abs = vec![
-            Antibody {
-                pattern_hash: test_hash(1),
-                antibody_type: AntibodyType::TemporalBurst,
-                confidence: 0.9,
-                detected_at: T0,
-                confirmation_count: 1,
-            },
-        ];
-        assert!(!ImmuneEngine::should_quarantine(&abs), "Single type = no quarantine");
+        let abs = vec![Antibody {
+            pattern_hash: test_hash(1),
+            antibody_type: AntibodyType::TemporalBurst,
+            confidence: 0.9,
+            detected_at: T0,
+            confirmation_count: 1,
+        }];
+        assert!(
+            !ImmuneEngine::should_quarantine(&abs),
+            "Single type = no quarantine"
+        );
 
         let abs2 = vec![
             Antibody {
@@ -535,7 +540,10 @@ mod tests {
                 confirmation_count: 1,
             },
         ];
-        assert!(ImmuneEngine::should_quarantine(&abs2), "Two types + high confidence = quarantine");
+        assert!(
+            ImmuneEngine::should_quarantine(&abs2),
+            "Two types + high confidence = quarantine"
+        );
     }
 
     #[test]
@@ -548,8 +556,11 @@ mod tests {
 
     #[test]
     fn test_dead_ku_no_survival_bonus() {
-        assert_eq!(ImmuneEngine::survival_score(10, false), 0.0,
-            "Dead KU = no survival bonus");
+        assert_eq!(
+            ImmuneEngine::survival_score(10, false),
+            0.0,
+            "Dead KU = no survival bonus"
+        );
     }
 
     #[test]
@@ -571,8 +582,12 @@ mod tests {
         };
         let abs = ImmuneEngine::analyze(&obs, test_hash(1), T0);
         // Should NOT flag diversity/engagement with too few replications
-        assert!(!abs.iter().any(|a| a.antibody_type == AntibodyType::LowEngagement));
-        assert!(!abs.iter().any(|a| a.antibody_type == AntibodyType::DiversityDeficit));
+        assert!(!abs
+            .iter()
+            .any(|a| a.antibody_type == AntibodyType::LowEngagement));
+        assert!(!abs
+            .iter()
+            .any(|a| a.antibody_type == AntibodyType::DiversityDeficit));
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -597,7 +612,10 @@ mod tests {
     #[test]
     fn test_detect_cluster_outlier() {
         let ab = ImmuneEngine::check_cluster_outlier(0.95, test_hash(12), T0);
-        assert!(ab.is_some(), "distance 0.95 > threshold 0.90 → should detect");
+        assert!(
+            ab.is_some(),
+            "distance 0.95 > threshold 0.90 → should detect"
+        );
         let ab = ab.unwrap();
         assert_eq!(ab.antibody_type, AntibodyType::ClusterOutlier);
         assert!((ab.confidence - 0.95).abs() < 0.001);
@@ -646,7 +664,10 @@ mod tests {
     fn test_detect_inverse_violation_reversed_order() {
         // Reversed: 0x22 (Prevents) + 0x20 (Causes) → still violation
         let ab = ImmuneEngine::check_inverse_violation(0x22, 0x20, test_hash(18), T0);
-        assert!(ab.is_some(), "Prevents + Causes (reversed) → should violate");
+        assert!(
+            ab.is_some(),
+            "Prevents + Causes (reversed) → should violate"
+        );
     }
 
     #[test]

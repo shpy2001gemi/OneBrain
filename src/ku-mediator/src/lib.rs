@@ -51,35 +51,35 @@
 //! # }
 //! ```
 
-pub mod error;
-pub mod intent;
 pub mod context;
-pub mod session;
-pub mod retriever;
 pub mod deduplicator;
 pub mod detector;
+pub mod error;
 pub mod graph_agent;
-pub mod synthesizer;
-pub mod profile;
 pub mod input;
-pub mod output;
+pub mod intent;
 pub mod mediator;
+pub mod output;
+pub mod profile;
+pub mod retriever;
+pub mod session;
+pub mod synthesizer;
 
 // ─── Re-exports ─────────────────────────────────────────────────────────
 
-pub use error::MediatorError;
-pub use intent::{UserIntent, EncodeSource, EncodeTrigger, IntentClassifier};
-pub use context::{ContextManager, ContextBudget, MessageRole};
-pub use session::{MediatorSession, ConversationMode, SessionId};
-pub use retriever::{KuRetriever, RetrievedKU, RetrievalSource, RetrieverConfig};
-pub use deduplicator::{KnowledgeDeduplicator, DeduplicationResult};
+pub use context::{ContextBudget, ContextManager, MessageRole};
+pub use deduplicator::{DeduplicationResult, KnowledgeDeduplicator};
 pub use detector::{KnowledgeDetector, KnowledgeSignal, SignalType};
+pub use error::MediatorError;
 pub use graph_agent::{GraphAgent, KqlResult, KqlSource};
-pub use synthesizer::Synthesizer;
-pub use profile::{UserProfile, ResponseStyle, ExpertiseArea};
 pub use input::UserInput;
-pub use output::MediatorResponse;
+pub use intent::{EncodeSource, EncodeTrigger, IntentClassifier, UserIntent};
 pub use mediator::{Mediator, MediatorConfig};
+pub use output::MediatorResponse;
+pub use profile::{ExpertiseArea, ResponseStyle, UserProfile};
+pub use retriever::{KuRetriever, RetrievalSource, RetrievedKU, RetrieverConfig};
+pub use session::{ConversationMode, MediatorSession, SessionId};
+pub use synthesizer::Synthesizer;
 
 #[cfg(test)]
 mod tests {

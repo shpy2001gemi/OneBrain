@@ -5,7 +5,7 @@
 //!
 //! OB-CID format: [version:u8][type:u8][blake3:32B] = 34 bytes
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 /// Chunk size: 256KB (IPFS-compatible)
 pub const BLOB_CHUNK_SIZE: usize = 256 * 1024;
@@ -44,10 +44,13 @@ impl BlobType {
     /// Detect blob type from file extension.
     pub fn from_extension(ext: &str) -> Self {
         match ext.to_lowercase().as_str() {
-            "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "svg" | "ico" | "tiff" => BlobType::Image,
+            "jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp" | "svg" | "ico" | "tiff" => {
+                BlobType::Image
+            }
             "mp4" | "webm" | "mkv" | "avi" | "mov" | "wmv" | "flv" => BlobType::Video,
             "mp3" | "ogg" | "flac" | "wav" | "m4a" | "aac" | "wma" => BlobType::Audio,
-            "pdf" | "docx" | "xlsx" | "pptx" | "txt" | "md" | "csv" | "json" | "xml" | "html" | "rtf" => BlobType::Document,
+            "pdf" | "docx" | "xlsx" | "pptx" | "txt" | "md" | "csv" | "json" | "xml" | "html"
+            | "rtf" => BlobType::Document,
             _ => BlobType::Raw,
         }
     }
@@ -58,24 +61,42 @@ impl BlobType {
             return BlobType::Raw;
         }
         // Image
-        if bytes.starts_with(&[0xFF, 0xD8]) { return BlobType::Image; } // JPEG
-        if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) { return BlobType::Image; } // PNG
-        if bytes.starts_with(b"GIF8") { return BlobType::Image; } // GIF
+        if bytes.starts_with(&[0xFF, 0xD8]) {
+            return BlobType::Image;
+        } // JPEG
+        if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) {
+            return BlobType::Image;
+        } // PNG
+        if bytes.starts_with(b"GIF8") {
+            return BlobType::Image;
+        } // GIF
         if bytes.starts_with(b"RIFF") && bytes.len() >= 12 && &bytes[8..12] == b"WEBP" {
             return BlobType::Image; // WebP
         }
         // Video (MP4/MOV: ftyp box)
-        if bytes.len() >= 8 && &bytes[4..8] == b"ftyp" { return BlobType::Video; }
+        if bytes.len() >= 8 && &bytes[4..8] == b"ftyp" {
+            return BlobType::Video;
+        }
         // Audio
-        if bytes.starts_with(&[0x49, 0x44, 0x33]) { return BlobType::Audio; } // MP3 ID3
-        if bytes.starts_with(b"OggS") { return BlobType::Audio; } // OGG
-        if bytes.starts_with(b"fLaC") { return BlobType::Audio; } // FLAC
+        if bytes.starts_with(&[0x49, 0x44, 0x33]) {
+            return BlobType::Audio;
+        } // MP3 ID3
+        if bytes.starts_with(b"OggS") {
+            return BlobType::Audio;
+        } // OGG
+        if bytes.starts_with(b"fLaC") {
+            return BlobType::Audio;
+        } // FLAC
         if bytes.starts_with(b"RIFF") && bytes.len() >= 12 && &bytes[8..12] == b"WAVE" {
             return BlobType::Audio; // WAV
         }
         // Document
-        if bytes.starts_with(&[0x25, 0x50, 0x44, 0x46]) { return BlobType::Document; } // PDF
-        if bytes.starts_with(&[0x50, 0x4B, 0x03, 0x04]) { return BlobType::Document; } // ZIP/DOCX/XLSX
+        if bytes.starts_with(&[0x25, 0x50, 0x44, 0x46]) {
+            return BlobType::Document;
+        } // PDF
+        if bytes.starts_with(&[0x50, 0x4B, 0x03, 0x04]) {
+            return BlobType::Document;
+        } // ZIP/DOCX/XLSX
 
         BlobType::Raw
     }
@@ -148,10 +169,14 @@ impl BlobCid {
     }
 
     /// Get the version byte.
-    pub fn version(&self) -> u8 { self.0[0] }
+    pub fn version(&self) -> u8 {
+        self.0[0]
+    }
 
     /// Get the blob type byte.
-    pub fn blob_type(&self) -> BlobType { BlobType::from_u8(self.0[1]) }
+    pub fn blob_type(&self) -> BlobType {
+        BlobType::from_u8(self.0[1])
+    }
 
     /// Get the 32-byte BLAKE3 hash.
     pub fn blake3_hash(&self) -> &[u8; 32] {
@@ -165,9 +190,11 @@ impl BlobCid {
 
     /// Parse from hex string (68 hex chars = 34 bytes).
     pub fn from_hex(hex: &str) -> Option<Self> {
-        if hex.len() < 68 { return None; }
+        if hex.len() < 68 {
+            return None;
+        }
         let bytes: Result<Vec<u8>, _> = (0..34)
-            .map(|i| u8::from_str_radix(&hex[i*2..i*2+2], 16))
+            .map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16))
             .collect();
         bytes.ok().and_then(|b| {
             let arr: [u8; 34] = b.try_into().ok()?;
@@ -294,15 +321,15 @@ const GB: u64 = 1024 * 1024 * 1024;
 /// Minimum: 10 GB (except IoT).
 pub fn default_blob_quota_bytes(available_disk_bytes: u64) -> u64 {
     let quota = if available_disk_bytes > 500 * GB {
-        200 * GB  // Server
+        200 * GB // Server
     } else if available_disk_bytes > 200 * GB {
-        50 * GB   // Desktop
+        50 * GB // Desktop
     } else if available_disk_bytes > 50 * GB {
-        20 * GB   // Laptop
+        20 * GB // Laptop
     } else if available_disk_bytes > 15 * GB {
-        10 * GB   // Mobile (min)
+        10 * GB // Mobile (min)
     } else {
-        2 * GB    // IoT
+        2 * GB // IoT
     };
     // Minimum 10GB except for IoT tier
     if available_disk_bytes > 15 * GB {
@@ -353,8 +380,14 @@ mod tests {
     #[test]
     fn blob_type_from_magic() {
         assert_eq!(BlobType::from_magic(&[0xFF, 0xD8, 0xFF]), BlobType::Image); // JPEG
-        assert_eq!(BlobType::from_magic(&[0x89, 0x50, 0x4E, 0x47]), BlobType::Image); // PNG
-        assert_eq!(BlobType::from_magic(&[0x25, 0x50, 0x44, 0x46]), BlobType::Document); // PDF
+        assert_eq!(
+            BlobType::from_magic(&[0x89, 0x50, 0x4E, 0x47]),
+            BlobType::Image
+        ); // PNG
+        assert_eq!(
+            BlobType::from_magic(&[0x25, 0x50, 0x44, 0x46]),
+            BlobType::Document
+        ); // PDF
         assert_eq!(BlobType::from_magic(&[0x00]), BlobType::Raw);
     }
 
@@ -368,10 +401,10 @@ mod tests {
     #[test]
     fn default_quota_tiers() {
         assert_eq!(default_blob_quota_bytes(1000 * GB), 200 * GB); // Server
-        assert_eq!(default_blob_quota_bytes(300 * GB), 50 * GB);   // Desktop
-        assert_eq!(default_blob_quota_bytes(100 * GB), 20 * GB);   // Laptop
-        assert_eq!(default_blob_quota_bytes(20 * GB), 10 * GB);    // Mobile
-        assert_eq!(default_blob_quota_bytes(5 * GB), 2 * GB);      // IoT
+        assert_eq!(default_blob_quota_bytes(300 * GB), 50 * GB); // Desktop
+        assert_eq!(default_blob_quota_bytes(100 * GB), 20 * GB); // Laptop
+        assert_eq!(default_blob_quota_bytes(20 * GB), 10 * GB); // Mobile
+        assert_eq!(default_blob_quota_bytes(5 * GB), 2 * GB); // IoT
     }
 
     #[test]
@@ -392,7 +425,10 @@ mod tests {
         };
         assert!(meta.is_orphaned());
 
-        let pinned_meta = BlobMeta { pinned: true, ..meta.clone() };
+        let pinned_meta = BlobMeta {
+            pinned: true,
+            ..meta.clone()
+        };
         assert!(!pinned_meta.is_orphaned());
     }
 

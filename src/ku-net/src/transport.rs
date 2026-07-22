@@ -14,13 +14,13 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use quinn::{Endpoint, Connection as QuinnConnection, ServerConfig, ClientConfig};
+use quinn::{ClientConfig, Connection as QuinnConnection, Endpoint, ServerConfig};
 use rcgen::generate_simple_self_signed;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio::sync::Mutex;
 
-use crate::error::TransportError;
 use crate::constants::*;
+use crate::error::TransportError;
 
 // ─── Configuration ─────────────────────────────────────────────────────────
 
@@ -60,7 +60,8 @@ impl Default for TransportConfig {
 ///
 /// The certificate subject is `obp.node` — identity is verified via
 /// Ed25519 crypto puzzle, not PKI trust chain.
-fn generate_self_signed_cert() -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>), TransportError> {
+fn generate_self_signed_cert(
+) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>), TransportError> {
     let cert = generate_simple_self_signed(vec!["obp.node".into()])
         .map_err(|e| TransportError::TlsError(format!("Certificate generation failed: {}", e)))?;
 
@@ -89,8 +90,10 @@ fn build_server_config(config: &TransportConfig) -> Result<ServerConfig, Transpo
 
     let transport = Arc::get_mut(&mut server_config.transport).unwrap();
     transport.max_idle_timeout(Some(
-        config.idle_timeout.try_into()
-            .map_err(|_| TransportError::BindFailed("Invalid idle timeout".into()))?
+        config
+            .idle_timeout
+            .try_into()
+            .map_err(|_| TransportError::BindFailed("Invalid idle timeout".into()))?,
     ));
     transport.keep_alive_interval(Some(config.keep_alive));
     transport.max_concurrent_bidi_streams(config.max_bi_streams.into());
@@ -117,8 +120,10 @@ fn build_client_config(config: &TransportConfig) -> Result<ClientConfig, Transpo
 
     let mut transport = quinn::TransportConfig::default();
     transport.max_idle_timeout(Some(
-        config.idle_timeout.try_into()
-            .map_err(|_| TransportError::ConnectionFailed("Invalid idle timeout".into()))?
+        config
+            .idle_timeout
+            .try_into()
+            .map_err(|_| TransportError::ConnectionFailed("Invalid idle timeout".into()))?,
     ));
     transport.keep_alive_interval(Some(config.keep_alive));
     client_config.transport_config(Arc::new(transport));
@@ -196,33 +201,35 @@ impl QuicTransport {
 
     /// Connect to a remote peer.
     pub async fn connect(&self, addr: SocketAddr) -> Result<OBPConnection, TransportError> {
-        let conn = self.endpoint
+        let conn = self
+            .endpoint
             .connect_with(self.client_config.clone(), addr, "obp.node")
             .map_err(|e| TransportError::ConnectionFailed(format!("{}", e)))?
             .await
             .map_err(|e| TransportError::ConnectionFailed(format!("{}", e)))?;
 
-        Ok(OBPConnection {
-            inner: conn,
-        })
+        Ok(OBPConnection { inner: conn })
     }
 
     /// Accept an incoming connection.
     pub async fn accept(&self) -> Result<OBPConnection, TransportError> {
-        let incoming = self.endpoint.accept().await
+        let incoming = self
+            .endpoint
+            .accept()
+            .await
             .ok_or(TransportError::RecvFailed("Endpoint closed".into()))?;
 
-        let conn = incoming.await
+        let conn = incoming
+            .await
             .map_err(|e| TransportError::ConnectionFailed(format!("{}", e)))?;
 
-        Ok(OBPConnection {
-            inner: conn,
-        })
+        Ok(OBPConnection { inner: conn })
     }
 
     /// Get the local address this transport is bound to.
     pub fn local_addr(&self) -> Result<SocketAddr, TransportError> {
-        self.endpoint.local_addr()
+        self.endpoint
+            .local_addr()
             .map_err(|e| TransportError::BindFailed(format!("{}", e)))
     }
 
@@ -244,13 +251,19 @@ impl OBPConnection {
     ///
     /// Use for push-style messages: KU_PUSH, GOSSIP, TRUST_GOSSIP.
     pub async fn send_uni(&self, data: &[u8]) -> Result<(), TransportError> {
-        let mut stream = self.inner.open_uni().await
+        let mut stream = self
+            .inner
+            .open_uni()
+            .await
             .map_err(|e| TransportError::SendFailed(format!("Open uni stream: {}", e)))?;
 
-        stream.write_all(data).await
+        stream
+            .write_all(data)
+            .await
             .map_err(|e| TransportError::SendFailed(format!("Write: {}", e)))?;
 
-        stream.finish()
+        stream
+            .finish()
             .map_err(|e| TransportError::SendFailed(format!("Finish: {}", e)))?;
 
         Ok(())
@@ -260,17 +273,22 @@ impl OBPConnection {
     ///
     /// Use for req/resp messages: FIND_NODE, FIND_VALUE, QUERY_FORWARD.
     pub async fn request(&self, data: &[u8]) -> Result<Vec<u8>, TransportError> {
-        let (mut send, mut recv) = self.inner.open_bi().await
+        let (mut send, mut recv) = self
+            .inner
+            .open_bi()
+            .await
             .map_err(|e| TransportError::SendFailed(format!("Open bi stream: {}", e)))?;
 
         // Send request
-        send.write_all(data).await
+        send.write_all(data)
+            .await
             .map_err(|e| TransportError::SendFailed(format!("Write: {}", e)))?;
         send.finish()
             .map_err(|e| TransportError::SendFailed(format!("Finish: {}", e)))?;
 
         // Read response (max 64KB)
-        let response = recv.read_to_end(MAX_PAYLOAD_SIZE)
+        let response = recv
+            .read_to_end(MAX_PAYLOAD_SIZE)
             .await
             .map_err(|e| TransportError::RecvFailed(format!("Read: {}", e)))?;
 
@@ -279,10 +297,14 @@ impl OBPConnection {
 
     /// Accept an incoming uni-directional stream and read its contents.
     pub async fn recv_uni(&self) -> Result<Vec<u8>, TransportError> {
-        let mut stream = self.inner.accept_uni().await
+        let mut stream = self
+            .inner
+            .accept_uni()
+            .await
             .map_err(|e| TransportError::RecvFailed(format!("Accept uni: {}", e)))?;
 
-        let data = stream.read_to_end(MAX_PAYLOAD_SIZE)
+        let data = stream
+            .read_to_end(MAX_PAYLOAD_SIZE)
             .await
             .map_err(|e| TransportError::RecvFailed(format!("Read: {}", e)))?;
 
@@ -291,14 +313,23 @@ impl OBPConnection {
 
     /// Accept an incoming bi-directional stream (for handling requests).
     pub async fn accept_bi(&self) -> Result<(Vec<u8>, BiResponder), TransportError> {
-        let (send, mut recv) = self.inner.accept_bi().await
+        let (send, mut recv) = self
+            .inner
+            .accept_bi()
+            .await
             .map_err(|e| TransportError::RecvFailed(format!("Accept bi: {}", e)))?;
 
-        let request = recv.read_to_end(MAX_PAYLOAD_SIZE)
+        let request = recv
+            .read_to_end(MAX_PAYLOAD_SIZE)
             .await
             .map_err(|e| TransportError::RecvFailed(format!("Read: {}", e)))?;
 
-        Ok((request, BiResponder { send: Mutex::new(Some(send)) }))
+        Ok((
+            request,
+            BiResponder {
+                send: Mutex::new(Some(send)),
+            },
+        ))
     }
 
     /// Get the remote peer's address.
@@ -328,12 +359,16 @@ impl BiResponder {
     /// Send the response back to the requester.
     pub async fn respond(&self, data: &[u8]) -> Result<(), TransportError> {
         let mut guard = self.send.lock().await;
-        let mut stream = guard.take()
+        let mut stream = guard
+            .take()
             .ok_or(TransportError::SendFailed("Already responded".into()))?;
 
-        stream.write_all(data).await
+        stream
+            .write_all(data)
+            .await
             .map_err(|e| TransportError::SendFailed(format!("Write response: {}", e)))?;
-        stream.finish()
+        stream
+            .finish()
             .map_err(|e| TransportError::SendFailed(format!("Finish response: {}", e)))?;
 
         Ok(())
@@ -423,14 +458,18 @@ mod tests {
         let server = QuicTransport::bind(TransportConfig {
             bind_addr: ([127, 0, 0, 1], 0).into(),
             ..Default::default()
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
         let server_addr = server.local_addr().unwrap();
 
         // Client
         let client = QuicTransport::bind(TransportConfig {
             bind_addr: ([127, 0, 0, 1], 0).into(),
             ..Default::default()
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
         let request_msg = b"FIND_NODE request";
         let response_msg = b"FIND_NODE response: 3 nodes";

@@ -1,10 +1,12 @@
 # KU v7 Architecture — Core DNA 3-Layer Knowledge Unit
 
 > **Pillar**: P1 — Knowledge Representation Engine
-> **Crate**: `ku-core` v0.3.0
+> **Crate**: `ku-core` v0.7.0
 > **Source**: [`src/ku-core/`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core)
-> **Last Updated**: 2026-07-11
+> **Last Updated**: 2026-07-19
 > **Previous version**: [KU v6 Architecture](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KU_V6_PILLAR_IMPACT.md) (archived)
+>
+> *v7.1 update: encode_v2 pipeline fully implemented and wired to OneBrainNode. CCID index added to KuStorage. See [KU_ENCODING_PIPELINE.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KU_ENCODING_PIPELINE.md).*
 
 ---
 

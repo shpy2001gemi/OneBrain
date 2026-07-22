@@ -16,8 +16,8 @@
 //! - PheromoneTable pattern from stigmergy.rs (reinforce/evaporate)
 //! - Bond types from types.rs (RelationType)
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -93,7 +93,9 @@ pub struct SynapticMap {
 
 impl SynapticMap {
     pub fn new() -> Self {
-        Self { bonds: HashMap::new() }
+        Self {
+            bonds: HashMap::new(),
+        }
     }
 
     /// Reinforce or create a bond.
@@ -113,13 +115,16 @@ impl SynapticMap {
                     BondReason::CoCitation => INITIAL_CO_CITATION_STRENGTH,
                     BondReason::ExplicitRelation => 0.5, // Explicit = strong start
                 };
-                self.bonds.insert(target_cid, SynapticBond {
+                self.bonds.insert(
                     target_cid,
-                    strength: initial_strength,
-                    reinforcement_count: 1,
-                    reason,
-                    last_reinforced: timestamp,
-                });
+                    SynapticBond {
+                        target_cid,
+                        strength: initial_strength,
+                        reinforcement_count: 1,
+                        reason,
+                        last_reinforced: timestamp,
+                    },
+                );
             }
         }
     }
@@ -134,9 +139,11 @@ impl SynapticMap {
 
     /// Evict weakest bond to make room.
     fn evict_weakest(&mut self) {
-        if let Some((&weakest_cid, _)) = self.bonds.iter()
-            .min_by(|a, b| a.1.strength.partial_cmp(&b.1.strength).unwrap_or(std::cmp::Ordering::Equal))
-        {
+        if let Some((&weakest_cid, _)) = self.bonds.iter().min_by(|a, b| {
+            a.1.strength
+                .partial_cmp(&b.1.strength)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        }) {
             self.bonds.remove(&weakest_cid);
         }
     }
@@ -144,7 +151,11 @@ impl SynapticMap {
     /// Get all bonds sorted by strength (strongest first).
     pub fn sorted_bonds(&self) -> Vec<&SynapticBond> {
         let mut bonds: Vec<_> = self.bonds.values().collect();
-        bonds.sort_by(|a, b| b.strength.partial_cmp(&a.strength).unwrap_or(std::cmp::Ordering::Equal));
+        bonds.sort_by(|a, b| {
+            b.strength
+                .partial_cmp(&a.strength)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         bonds
     }
 
@@ -172,10 +183,11 @@ impl SynapticMap {
                     if remote_bond.strength > local_bond.strength {
                         local_bond.strength = remote_bond.strength;
                     }
-                    local_bond.reinforcement_count = local_bond.reinforcement_count
+                    local_bond.reinforcement_count = local_bond
+                        .reinforcement_count
                         .max(remote_bond.reinforcement_count);
-                    local_bond.last_reinforced = local_bond.last_reinforced
-                        .max(remote_bond.last_reinforced);
+                    local_bond.last_reinforced =
+                        local_bond.last_reinforced.max(remote_bond.last_reinforced);
                 }
                 None => {
                     if self.bonds.len() < MAX_BONDS_PER_KU {
@@ -214,13 +226,13 @@ impl CentralityCalculator {
 
         // Initialize uniform scores
         let initial_score = 1.0 / n as f32;
-        let mut scores: HashMap<[u8; 32], f32> = maps.keys()
-            .map(|&cid| (cid, initial_score))
-            .collect();
+        let mut scores: HashMap<[u8; 32], f32> =
+            maps.keys().map(|&cid| (cid, initial_score)).collect();
 
         // Power iteration
         for _ in 0..CENTRALITY_ITERATIONS {
-            let mut new_scores: HashMap<[u8; 32], f32> = maps.keys()
+            let mut new_scores: HashMap<[u8; 32], f32> = maps
+                .keys()
                 .map(|&cid| (cid, (1.0 - CENTRALITY_DAMPING) / n as f32))
                 .collect();
 
@@ -233,8 +245,8 @@ impl CentralityCalculator {
 
                 for bond in map.bonds.values() {
                     if let Some(target_score) = new_scores.get_mut(&bond.target_cid) {
-                        let contribution = CENTRALITY_DAMPING * source_score
-                            * (bond.strength / total_str);
+                        let contribution =
+                            CENTRALITY_DAMPING * source_score * (bond.strength / total_str);
                         *target_score += contribution;
                     }
                 }
@@ -314,7 +326,11 @@ mod tests {
         }
 
         let bond = map.get_bond(&test_cid(2)).unwrap();
-        assert!(bond.strength <= MAX_BOND_STRENGTH, "Strength capped: {}", bond.strength);
+        assert!(
+            bond.strength <= MAX_BOND_STRENGTH,
+            "Strength capped: {}",
+            bond.strength
+        );
     }
 
     #[test]
@@ -323,8 +339,10 @@ mod tests {
         map.reinforce(test_cid(2), BondReason::CoCitation, T0);
 
         let bond = map.get_bond(&test_cid(2)).unwrap();
-        assert!(bond.strength > INITIAL_CO_RETRIEVAL_STRENGTH,
-            "Co-citation starts stronger than co-retrieval");
+        assert!(
+            bond.strength > INITIAL_CO_RETRIEVAL_STRENGTH,
+            "Co-citation starts stronger than co-retrieval"
+        );
     }
 
     #[test]
@@ -350,7 +368,11 @@ mod tests {
             map.evaporate();
         }
 
-        assert_eq!(map.bond_count(), 0, "Dead bonds removed after many evaporations");
+        assert_eq!(
+            map.bond_count(),
+            0,
+            "Dead bonds removed after many evaporations"
+        );
     }
 
     #[test]
@@ -406,8 +428,10 @@ mod tests {
         map1.merge(&map2);
 
         let merged_strength = map1.get_bond(&test_cid(2)).unwrap().strength;
-        assert!((merged_strength - remote_strength).abs() < 0.001,
-            "Max strength wins in merge");
+        assert!(
+            (merged_strength - remote_strength).abs() < 0.001,
+            "Max strength wins in merge"
+        );
     }
 
     #[test]
@@ -441,8 +465,13 @@ mod tests {
         // Center should have highest centrality
         for i in 2..=5 {
             let leaf_score = scores.get(&test_cid(i)).copied().unwrap_or(0.0);
-            assert!(center_score >= leaf_score,
-                "Center ({}) ≥ Leaf {} ({})", center_score, i, leaf_score);
+            assert!(
+                center_score >= leaf_score,
+                "Center ({}) ≥ Leaf {} ({})",
+                center_score,
+                i,
+                leaf_score
+            );
         }
     }
 

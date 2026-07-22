@@ -1,6 +1,6 @@
 # KU Core DNA Specification
 
-> Specification version: 7.0 | Last updated: 2026-07-10
+> Specification version: 7.1 | Last updated: 2026-07-19
 
 ## §1 Philosophy
 
@@ -403,11 +403,11 @@ Offline concept lookup file shipped with every node. Binary format loaded at sta
 | Coverage target | 99.9% of general-domain knowledge |
 | Lookup | O(1) hash table (String → CCID) |
 | Update cycle | Quarterly |
-| Output path | `onebrain_data/concepts.obr` (cùng thư mục `.redb` files) |
+| Output path | `onebrain_data/concepts.obr` (same directory as `.redb` files) |
 
 ### §9.2 Concept Sources
 
-4 nguồn dữ liệu chính, theo CCID canonical form priority (§3.7.2 trong paper):
+4 primary data sources, following CCID canonical form priority (§6.1):
 
 | # | Source | Coverage | Canonical Form | Est. entries | Fetch method |
 |---|--------|----------|----------------|-------------|--------------|
@@ -416,7 +416,7 @@ Offline concept lookup file shipped with every node. Binary format loaded at sta
 | 3 | **NCBI Taxonomy** | Species, organisms | `ncbi:{taxid}` | ~1M | FTP dump `taxdump.tar.gz` (~70MB) |
 | 4 | **ChEBI** | Chemical compounds | `chebi:{id}` | ~500K | TSV/SDF dump from `ftp.ebi.ac.uk` |
 
-**Deduplication rule**: Nếu 1 concept tồn tại ở nhiều sources (vd: "water" = wd:Q283 + chebi:15377), chỉ giữ bản có canonical form priority cao nhất. Cross-reference qua Wikidata properties (P683→ChEBI, P846→NCBI, P1566→GeoNames). Labels từ tất cả sources được merge vào bản winner.
+**Deduplication rule**: If a concept exists in multiple sources (e.g., "water" = wd:Q283 + chebi:15377), only the entry with the highest canonical form priority is kept. Cross-referencing is done via Wikidata properties (P683→ChEBI, P846→NCBI, P1566→GeoNames). Labels from all sources are merged into the winning entry.
 
 ### §9.3 Per-Source Fetch Strategy
 
@@ -450,7 +450,7 @@ Offline concept lookup file shipped with every node. Binary format loaded at sta
 
 - **Source**: FTP dump `ftp.ncbi.nih.gov/pub/taxonomy/taxdump.tar.gz` (~70MB)
 - **Parse files**: `names.dmp` (names + synonyms) + `nodes.dmp` (rank, division)
-- **Filter**: Keep species + genus ranks. Skip strains/subspecies trừ khi nổi tiếng.
+- **Filter**: Keep species + genus ranks. Skip strains/subspecies unless widely known.
 - **Fields**: Taxon ID, scientific name, common names (multilingual), rank, division
 - **Output**: `raw/ncbi_taxonomy.jsonl`
 - **Estimated time**: ~15 minutes
@@ -511,11 +511,11 @@ When a node creates a genuinely novel concept:
 
 ### §9.7 Data Pipeline Scripts
 
-Scripts nằm tại `scripts/concept_registry/`. Python 3.10+.
+Scripts located at `scripts/concept_registry/`. Python 3.10+.
 
 #### §9.7.1 Initial Fetch (`initial_fetch.py`)
 
-Chạy 1 lần khi bootstrap hệ thống. Orchestrates 4 source fetchers tuần tự:
+Run once during system bootstrap. Orchestrates 4 source fetchers sequentially:
 
 ```
 1. Wikidata  → raw/wikidata.jsonl         (~4-8h, SPARQL rate-limited)
@@ -527,18 +527,18 @@ Chạy 1 lần khi bootstrap hệ thống. Orchestrates 4 source fetchers tuần
 ```
 
 Features:
-- Checkpoint/resume (mỗi source lưu progress riêng)
-- `--sources` flag: chọn sources cụ thể (vd: `--sources wd,gn`)
-- `--quick` flag: chỉ fetch 100K concepts Wikidata (dev/test, ~10 phút)
+- Checkpoint/resume (each source saves progress independently)
+- `--sources` flag: select specific sources (e.g., `--sources wd,gn`)
+- `--quick` flag: fetch only 100K Wikidata concepts (dev/test, ~10 minutes)
 
 #### §9.7.2 Quarterly Update (`quarterly_update.py`)
 
-Incremental delta update, chạy mỗi quý:
+Incremental delta update, run quarterly:
 
 ```
 1. Load checkpoint (last_fetch_date per source)
 2. Fetch deltas from 4 sources
-3. Absorb community-validated novel concepts từ gossip log
+3. Absorb community-validated novel concepts from gossip log
 4. Merge deltas into existing concepts.obr
 5. Output: new concepts.obr + changelog.json
 ```

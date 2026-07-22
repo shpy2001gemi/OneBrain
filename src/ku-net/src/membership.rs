@@ -42,12 +42,12 @@ pub const LHA_MAX: u32 = 8;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 pub enum NodeTier {
-    Leaf           = 0,
-    Contributor    = 1,
-    LocalSP        = 2,
-    RegionalSP     = 3,
-    CountrySP      = 4,
-    ContinentalSP  = 5,
+    Leaf = 0,
+    Contributor = 1,
+    LocalSP = 2,
+    RegionalSP = 3,
+    CountrySP = 4,
+    ContinentalSP = 5,
     GlobalBackbone = 6,
 }
 
@@ -68,12 +68,12 @@ impl NodeTier {
     /// Minimum fitness score to enter this tier (SPEC B §2.5).
     pub fn promotion_threshold(&self) -> f32 {
         match self {
-            Self::Leaf           => 0.0,
-            Self::Contributor    => 0.3,
-            Self::LocalSP        => 0.6,
-            Self::RegionalSP     => 0.75,
-            Self::CountrySP      => 0.85,
-            Self::ContinentalSP  => 0.92,
+            Self::Leaf => 0.0,
+            Self::Contributor => 0.3,
+            Self::LocalSP => 0.6,
+            Self::RegionalSP => 0.75,
+            Self::CountrySP => 0.85,
+            Self::ContinentalSP => 0.92,
             Self::GlobalBackbone => 0.97,
         }
     }
@@ -81,12 +81,12 @@ impl NodeTier {
     /// Demotion threshold (with hysteresis — SPEC B §2.5).
     pub fn demotion_threshold(&self) -> f32 {
         match self {
-            Self::Leaf           => 0.0,  // Can't demote below Leaf
-            Self::Contributor    => 0.2,
-            Self::LocalSP        => 0.5,
-            Self::RegionalSP     => 0.65,
-            Self::CountrySP      => 0.78,
-            Self::ContinentalSP  => 0.87,
+            Self::Leaf => 0.0, // Can't demote below Leaf
+            Self::Contributor => 0.2,
+            Self::LocalSP => 0.5,
+            Self::RegionalSP => 0.65,
+            Self::CountrySP => 0.78,
+            Self::ContinentalSP => 0.87,
             Self::GlobalBackbone => 0.93,
         }
     }
@@ -139,10 +139,10 @@ impl MemberStatus {
     /// Encode to wire format byte.
     pub fn to_wire(&self) -> u8 {
         match self {
-            Self::Alive      => 0,
+            Self::Alive => 0,
             Self::Suspect { .. } => 1,
-            Self::Dead { .. }    => 2,
-            Self::Left           => 3,
+            Self::Dead { .. } => 2,
+            Self::Left => 3,
         }
     }
 
@@ -150,10 +150,16 @@ impl MemberStatus {
     pub fn from_wire(val: u8) -> Self {
         match val {
             0 => Self::Alive,
-            1 => Self::Suspect { since: Instant::now() },
-            2 => Self::Dead { since: Instant::now() },
+            1 => Self::Suspect {
+                since: Instant::now(),
+            },
+            2 => Self::Dead {
+                since: Instant::now(),
+            },
             3 => Self::Left,
-            _ => Self::Dead { since: Instant::now() },
+            _ => Self::Dead {
+                since: Instant::now(),
+            },
         }
     }
 }
@@ -209,12 +215,12 @@ impl FitnessComponents {
     /// Calculate weighted fitness score (SPEC B §2.3).
     pub fn score(&self) -> f32 {
         let s = 0.20 * self.uptime
-              + 0.15 * self.battery
-              + 0.15 * self.bandwidth
-              + 0.10 * self.storage
-              + 0.10 * self.cpu
-              + 0.15 * self.network_quality
-              + 0.15 * self.reputation;
+            + 0.15 * self.battery
+            + 0.15 * self.bandwidth
+            + 0.10 * self.storage
+            + 0.10 * self.cpu
+            + 0.15 * self.network_quality
+            + 0.15 * self.reputation;
         s.clamp(0.0, 1.0)
     }
 
@@ -317,7 +323,9 @@ impl MembershipState {
         // Enforce MAX_MEMBERS cap
         if self.members.len() >= MAX_MEMBERS && !self.members.contains_key(&entry.node_id) {
             // Evict oldest Dead member
-            let oldest_dead = self.members.iter()
+            let oldest_dead = self
+                .members
+                .iter()
                 .filter(|(_, e)| matches!(e.status, MemberStatus::Dead { .. }))
                 .min_by_key(|(_, e)| e.last_seen)
                 .map(|(id, _)| *id);
@@ -337,7 +345,8 @@ impl MembershipState {
 
     /// Get all alive members.
     pub fn alive_members(&self) -> Vec<&MemberEntry> {
-        self.members.values()
+        self.members
+            .values()
             .filter(|e| matches!(e.status, MemberStatus::Alive))
             .collect()
     }
@@ -359,7 +368,9 @@ impl MembershipState {
     pub fn mark_suspect(&mut self, node_id: &NodeId) {
         if let Some(entry) = self.members.get_mut(node_id) {
             if matches!(entry.status, MemberStatus::Alive) {
-                entry.status = MemberStatus::Suspect { since: Instant::now() };
+                entry.status = MemberStatus::Suspect {
+                    since: Instant::now(),
+                };
             }
         }
     }
@@ -367,7 +378,9 @@ impl MembershipState {
     /// Mark a node as dead (SPEC B §1.4 State Machine).
     pub fn mark_dead(&mut self, node_id: &NodeId) {
         if let Some(entry) = self.members.get_mut(node_id) {
-            entry.status = MemberStatus::Dead { since: Instant::now() };
+            entry.status = MemberStatus::Dead {
+                since: Instant::now(),
+            };
         }
     }
 
@@ -388,13 +401,14 @@ impl MembershipState {
     /// Suspicion timer: `T_SUSPECT_BASE × log(N) × (1 + LHA)`
     pub fn check_suspect_timeouts(&mut self) {
         let n = self.members.len().max(1) as f64;
-        let timeout_ms = T_SUSPECT_BASE_MS as f64
-            * n.ln().max(1.0)
-            * (1.0 + self.lha_multiplier as f64);
+        let timeout_ms =
+            T_SUSPECT_BASE_MS as f64 * n.ln().max(1.0) * (1.0 + self.lha_multiplier as f64);
         let timeout = Duration::from_millis(timeout_ms as u64);
         let now = Instant::now();
 
-        let suspects: Vec<NodeId> = self.members.iter()
+        let suspects: Vec<NodeId> = self
+            .members
+            .iter()
             .filter_map(|(id, e)| {
                 if let MemberStatus::Suspect { since } = e.status {
                     if now.duration_since(since) > timeout {
@@ -440,7 +454,8 @@ impl MembershipState {
                     MemberStatus::Alive => 3,
                 }
             };
-            priority(a).cmp(&priority(b))
+            priority(a)
+                .cmp(&priority(b))
                 .then(b.last_seen.cmp(&a.last_seen))
         });
         updates.into_iter().take(max).cloned().collect()
@@ -475,8 +490,13 @@ mod tests {
     #[test]
     fn test_fitness_score_basic() {
         let f = FitnessComponents {
-            uptime: 1.0, battery: 1.0, bandwidth: 1.0,
-            storage: 1.0, cpu: 1.0, network_quality: 1.0, reputation: 1.0,
+            uptime: 1.0,
+            battery: 1.0,
+            bandwidth: 1.0,
+            storage: 1.0,
+            cpu: 1.0,
+            network_quality: 1.0,
+            reputation: 1.0,
         };
         assert!((f.score() - 1.0).abs() < f32::EPSILON);
     }

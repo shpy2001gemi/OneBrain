@@ -38,22 +38,38 @@ pub struct ChatMessage {
 impl ChatMessage {
     /// Create a system instruction message.
     pub fn system(content: impl Into<String>) -> Self {
-        Self { role: Role::System, content: content.into(), tool_call_id: None }
+        Self {
+            role: Role::System,
+            content: content.into(),
+            tool_call_id: None,
+        }
     }
 
     /// Create a user input message.
     pub fn user(content: impl Into<String>) -> Self {
-        Self { role: Role::User, content: content.into(), tool_call_id: None }
+        Self {
+            role: Role::User,
+            content: content.into(),
+            tool_call_id: None,
+        }
     }
 
     /// Create an assistant response message.
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self { role: Role::Assistant, content: content.into(), tool_call_id: None }
+        Self {
+            role: Role::Assistant,
+            content: content.into(),
+            tool_call_id: None,
+        }
     }
 
     /// Create a tool result message with the given call ID.
     pub fn tool(call_id: impl Into<String>, content: impl Into<String>) -> Self {
-        Self { role: Role::Tool, content: content.into(), tool_call_id: Some(call_id.into()) }
+        Self {
+            role: Role::Tool,
+            content: content.into(),
+            tool_call_id: Some(call_id.into()),
+        }
     }
 }
 
@@ -306,6 +322,9 @@ mod tests {
             completion_tokens: 50,
             total_tokens: 150,
         };
-        assert_eq!(usage.total_tokens, usage.prompt_tokens + usage.completion_tokens);
+        assert_eq!(
+            usage.total_tokens,
+            usage.prompt_tokens + usage.completion_tokens
+        );
     }
 }

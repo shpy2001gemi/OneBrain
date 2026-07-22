@@ -4,7 +4,7 @@
 //! and core message struct definitions.
 
 use crate::identity::NodeId;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 // ─── Message Header (SPEC D §1) ───────────────────────────────────────────
@@ -50,11 +50,15 @@ impl MessageHeader {
 
     /// Decode header from 6 bytes.
     pub fn decode(bytes: &[u8; 6]) -> Result<Self, MessageError> {
-        let msg_type = MessageType::from_u8(bytes[0])
-            .ok_or(MessageError::UnknownMessageType(bytes[0]))?;
+        let msg_type =
+            MessageType::from_u8(bytes[0]).ok_or(MessageError::UnknownMessageType(bytes[0]))?;
         let flags = MessageFlags(bytes[1]);
         let payload_length = u32::from_be_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]);
-        Ok(MessageHeader { msg_type, flags, payload_length })
+        Ok(MessageHeader {
+            msg_type,
+            flags,
+            payload_length,
+        })
     }
 }
 
@@ -112,129 +116,129 @@ pub enum Compression {
 #[repr(u8)]
 pub enum MessageType {
     // ── Layer 0/1: Core Transport ──
-    KuPush          = 0x01,
-    KuPull          = 0x02,
-    Gossip          = 0x03,
-    TrustUpdate     = 0x04,
-    DhtRequest      = 0x05,
-    Ping            = 0x06,
-    Pong            = 0x07,
-    Bundle          = 0x08,
-    BloomFilter     = 0x09,
-    PeerExchange    = 0x0A,
-    RelayRequest    = 0x0B,
-    RelayData       = 0x0C,
-    RelayClose      = 0x0D,
-    Capability      = 0x0F,
+    KuPush = 0x01,
+    KuPull = 0x02,
+    Gossip = 0x03,
+    TrustUpdate = 0x04,
+    DhtRequest = 0x05,
+    Ping = 0x06,
+    Pong = 0x07,
+    Bundle = 0x08,
+    BloomFilter = 0x09,
+    PeerExchange = 0x0A,
+    RelayRequest = 0x0B,
+    RelayData = 0x0C,
+    RelayClose = 0x0D,
+    Capability = 0x0F,
 
     // ── Layer 2: Membership (SWIM) ──
-    SwimPing        = 0x10,
-    SwimAck         = 0x11,
-    SwimPingReq     = 0x12,
-    SwimNack        = 0x13,
-    SpFitness       = 0x14,
-    SpHandoff       = 0x15,
-    SpRedirect      = 0x16,
-    SpRegister      = 0x17,
-    SpOverloaded    = 0x18,
-    Goodbye         = 0x19,
-    HealthReport    = 0x1A,
-    DepartingSoon   = 0x1B,
+    SwimPing = 0x10,
+    SwimAck = 0x11,
+    SwimPingReq = 0x12,
+    SwimNack = 0x13,
+    SpFitness = 0x14,
+    SpHandoff = 0x15,
+    SpRedirect = 0x16,
+    SpRegister = 0x17,
+    SpOverloaded = 0x18,
+    Goodbye = 0x19,
+    HealthReport = 0x1A,
+    DepartingSoon = 0x1B,
     ClusterAggregate = 0x1C,
 
     // ── Layer 3: DHT (Kademlia) ──
-    FindNodeReq     = 0x20,
-    FindNodeResp    = 0x21,
-    FindValueReq    = 0x22,
-    FindValueResp   = 0x23,
-    StoreReq        = 0x24,
-    StoreAck        = 0x25,
-    HierLookup      = 0x26,
+    FindNodeReq = 0x20,
+    FindNodeResp = 0x21,
+    FindValueReq = 0x22,
+    FindValueResp = 0x23,
+    StoreReq = 0x24,
+    StoreAck = 0x25,
+    HierLookup = 0x26,
 
     // ── Layer 4: Content Routing ──
-    VacuumFilter    = 0x30,
-    VacuumExchange  = 0x31,
+    VacuumFilter = 0x30,
+    VacuumExchange = 0x31,
     PheromoneUpdate = 0x32,
-    TopicSubscribe  = 0x33,
-    TopicUnsubscribe= 0x34,
-    TopicPublish    = 0x35,
-    TopicDeliver    = 0x36,
-    NdnInterest     = 0x37,
-    NdnData         = 0x38,
+    TopicSubscribe = 0x33,
+    TopicUnsubscribe = 0x34,
+    TopicPublish = 0x35,
+    TopicDeliver = 0x36,
+    NdnInterest = 0x37,
+    NdnData = 0x38,
 
     // ── Layer 5: Query, Trust, WATCH ──
-    WatchNotify     = 0x40,
-    WatchRegister   = 0x41,
+    WatchNotify = 0x40,
+    WatchRegister = 0x41,
     WatchUnregister = 0x42,
-    TrustGossip     = 0x48,
-    TrustVaccine    = 0x49,
-    KuPropagation   = 0x4A,
-    QueryForward    = 0x50,
-    QueryResponse   = 0x51,
-    QueryCancel     = 0x52,
+    TrustGossip = 0x48,
+    TrustVaccine = 0x49,
+    KuPropagation = 0x4A,
+    QueryForward = 0x50,
+    QueryResponse = 0x51,
+    QueryCancel = 0x52,
 
     // ── Cross-layer: Sync ──
-    CrdtSyncInit    = 0x60,
-    CrdtSyncDelta   = 0x61,
-    CrdtSyncAck     = 0x62,
-    CrdtSyncComplete= 0x63,
-    MeshDelta       = 0x64,
+    CrdtSyncInit = 0x60,
+    CrdtSyncDelta = 0x61,
+    CrdtSyncAck = 0x62,
+    CrdtSyncComplete = 0x63,
+    MeshDelta = 0x64,
     CacheInvalidate = 0x68,
 
     // ── Security ──
-    PowChallenge    = 0x80,
-    PowResponse     = 0x81,
-    Backpressure    = 0x82,
-    ProofOfStorage  = 0x83,
-    ProofOfBandwidth= 0x84,
-    SpDemotion      = 0x85,
+    PowChallenge = 0x80,
+    PowResponse = 0x81,
+    Backpressure = 0x82,
+    ProofOfStorage = 0x83,
+    ProofOfBandwidth = 0x84,
+    SpDemotion = 0x85,
     /// ★ PoK v2: Gossip metabolism CRDT delta
     MetabolismUpdate = 0x86,
     /// ★ PoK v2: Request metabolism data for a CID
-    MetabolismQuery  = 0x87,
+    MetabolismQuery = 0x87,
     BlacklistUpdate = 0x88,
     /// ★ PoK v2: Response with metabolism data
     MetabolismResponse = 0x89,
 
     // ── Encoding Consensus ──
     /// ★ v6: Announce a new encoding job on DHT
-    EncodingJobAnnounce   = 0x90,
+    EncodingJobAnnounce = 0x90,
     /// ★ v6: Request to claim a verification slot
-    EncodingClaimReq      = 0x91,
+    EncodingClaimReq = 0x91,
     /// ★ v6: Response to a claim request
-    EncodingClaimResp     = 0x92,
+    EncodingClaimResp = 0x92,
     /// ★ v6: Submit verification encoding result
-    EncodingSubmission    = 0x93,
+    EncodingSubmission = 0x93,
     /// ★ v6: Announce consensus reached (FULL status)
     EncodingConsensusResult = 0x94,
     /// ★ v6: Job update (claimed_count, status change)
-    EncodingJobUpdate     = 0x95,
+    EncodingJobUpdate = 0x95,
 
     // ── OBT Token Protocol ──
     /// ★ OBT: Transfer request (sender → DHT neighbors)
-    ObtTransferRequest    = 0xA0,
+    ObtTransferRequest = 0xA0,
     /// ★ OBT: Transfer confirmation (witness → sender + receiver)
-    ObtTransferConfirm    = 0xA1,
+    ObtTransferConfirm = 0xA1,
     /// ★ OBT: Balance query
-    ObtBalanceQuery       = 0xA2,
+    ObtBalanceQuery = 0xA2,
     /// ★ OBT: Balance response
-    ObtBalanceResponse    = 0xA3,
+    ObtBalanceResponse = 0xA3,
     /// ★ OBT: Mint proof broadcast
-    ObtMintBroadcast      = 0xA4,
+    ObtMintBroadcast = 0xA4,
     /// ★ OBT: Storage challenge (PoS-KU)
-    ObtStorageChallenge   = 0xA5,
+    ObtStorageChallenge = 0xA5,
     /// ★ OBT: Fork warrant broadcast
-    ObtForkWarrant        = 0xA6,
+    ObtForkWarrant = 0xA6,
 
     // ── ConceptRegistry Gossip (v7) ──
     /// ★ v7: Push new concept entries to DHT neighbors
-    RegistryDeltaPush     = 0xC0,
+    RegistryDeltaPush = 0xC0,
     /// ★ v7: Pull missing concept entries from a peer
-    RegistryDeltaPull     = 0xC1,
+    RegistryDeltaPull = 0xC1,
     /// ★ v7: Response with requested concept entries
     RegistryDeltaResponse = 0xC2,
     /// ★ v7: Periodic checkpoint summary (bloom filter)
-    RegistryCheckpoint    = 0xC3,
+    RegistryCheckpoint = 0xC3,
 }
 
 impl MessageType {
@@ -334,7 +338,8 @@ impl MessageType {
 
     /// Whether this message type is safe for 0-RTT (SPEC D §7.5).
     pub fn is_zero_rtt_safe(&self) -> bool {
-        matches!(self,
+        matches!(
+            self,
             Self::Ping | Self::Pong |
             Self::SwimPing | Self::SwimAck |
             Self::FindNodeReq | Self::FindNodeResp |
@@ -372,8 +377,7 @@ impl NetworkAddress {
     pub fn new_v6(addr: [u16; 8], port: u16) -> Self {
         NetworkAddress {
             ip: IpAddr::V6(Ipv6Addr::new(
-                addr[0], addr[1], addr[2], addr[3],
-                addr[4], addr[5], addr[6], addr[7],
+                addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7],
             )),
             port,
         }
@@ -403,13 +407,17 @@ impl NetworkAddress {
         }
         match bytes[0] {
             0x04 => {
-                if bytes.len() < 7 { return Err(MessageError::BufferTooShort); }
+                if bytes.len() < 7 {
+                    return Err(MessageError::BufferTooShort);
+                }
                 let ip = IpAddr::V4(Ipv4Addr::new(bytes[1], bytes[2], bytes[3], bytes[4]));
                 let port = u16::from_be_bytes([bytes[5], bytes[6]]);
                 Ok((NetworkAddress { ip, port }, 7))
             }
             0x06 => {
-                if bytes.len() < 19 { return Err(MessageError::BufferTooShort); }
+                if bytes.len() < 19 {
+                    return Err(MessageError::BufferTooShort);
+                }
                 let mut octets = [0u8; 16];
                 octets.copy_from_slice(&bytes[1..17]);
                 let ip = IpAddr::V6(Ipv6Addr::from(octets));
@@ -445,7 +453,7 @@ pub struct SwimPingMessage {
 pub struct PiggybackUpdate {
     pub node_id: NodeId,
     pub incarnation: u32,
-    pub status: u8,   // 0=Alive, 1=Suspect, 2=Dead, 3=Left
+    pub status: u8, // 0=Alive, 1=Suspect, 2=Dead, 3=Left
     pub address: NetworkAddress,
     pub timestamp: u64, // 7-byte HLC (stored as u64, top byte unused)
 }

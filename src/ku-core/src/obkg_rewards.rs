@@ -11,9 +11,9 @@
 //! | FedR participation | 0.20   | `RelationDelta`        |
 //! | Graph health       | 0.20   | `BondMeta` active ratio|
 
-use crate::graph_types::BondMeta;
 use crate::graph_dream::DreamReport;
 use crate::graph_fedr::RelationDelta;
+use crate::graph_types::BondMeta;
 use crate::types::{EdgeState, RelationType};
 use std::collections::HashMap;
 
@@ -80,9 +80,7 @@ fn clamp01(v: f64) -> f64 {
 /// - Total weight sum of active bonds (normalized to `WEIGHT_SUM_CAP`)
 ///
 /// Final score = 0.5 × count_ratio + 0.5 × weight_ratio, clamped to [0, 1].
-pub fn bond_richness_score(
-    bonds: &HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>,
-) -> f64 {
+pub fn bond_richness_score(bonds: &HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>) -> f64 {
     if bonds.is_empty() {
         return 0.0;
     }
@@ -109,8 +107,7 @@ pub fn bond_richness_score(
 ///
 /// Score = total_actions / `DREAM_ACTIONS_CAP`, clamped to [0, 1].
 pub fn dream_contribution_score(report: &DreamReport) -> f64 {
-    let total_actions =
-        report.bonds_reinforced as f64
+    let total_actions = report.bonds_reinforced as f64
         + report.associations_created as f64
         + report.bonds_pruned as f64;
     clamp01(total_actions / DREAM_ACTIONS_CAP)
@@ -133,14 +130,15 @@ pub fn fedr_participation_score(delta: &RelationDelta) -> f64 {
 ///
 /// Ratio of active bonds to total bonds.
 /// Returns 1.0 for an empty graph (no degradation).
-pub fn graph_health_score(
-    bonds: &HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>,
-) -> f64 {
+pub fn graph_health_score(bonds: &HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>) -> f64 {
     if bonds.is_empty() {
         return 1.0;
     }
     let total = bonds.len() as f64;
-    let active = bonds.values().filter(|m| m.state == EdgeState::Active).count() as f64;
+    let active = bonds
+        .values()
+        .filter(|m| m.state == EdgeState::Active)
+        .count() as f64;
     clamp01(active / total)
 }
 
@@ -187,7 +185,9 @@ mod tests {
     type BondKey = ([u8; 32], [u8; 32], RelationType);
     type BondMap = HashMap<BondKey, BondMeta>;
 
-    fn cid(b: u8) -> [u8; 32] { [b; 32] }
+    fn cid(b: u8) -> [u8; 32] {
+        [b; 32]
+    }
 
     fn meta(weight: u16, state: EdgeState) -> BondMeta {
         BondMeta {
@@ -314,7 +314,10 @@ mod tests {
         };
         let score = fedr_participation_score(&delta);
         let expected = 0.5 * (2.0 / 33.0) + 0.5 * 0.5;
-        assert!((score - expected).abs() < 1e-9, "score={score}, expected={expected}");
+        assert!(
+            (score - expected).abs() < 1e-9,
+            "score={score}, expected={expected}"
+        );
     }
 
     // ── 9. Health score: all active = 1.0 ───────────────────────────────
@@ -336,11 +339,26 @@ mod tests {
     #[test]
     fn health_mixed() {
         let mut bonds: BondMap = HashMap::new();
-        bonds.insert((cid(1), cid(2), RelationType::Extends), meta(5000, EdgeState::Active));
-        bonds.insert((cid(3), cid(4), RelationType::Causes), meta(5000, EdgeState::Active));
-        bonds.insert((cid(5), cid(6), RelationType::PartOf), meta(5000, EdgeState::Active));
-        bonds.insert((cid(7), cid(8), RelationType::Enables), meta(3000, EdgeState::Weakened));
-        bonds.insert((cid(9), cid(10), RelationType::Cites), meta(1000, EdgeState::Deprecated));
+        bonds.insert(
+            (cid(1), cid(2), RelationType::Extends),
+            meta(5000, EdgeState::Active),
+        );
+        bonds.insert(
+            (cid(3), cid(4), RelationType::Causes),
+            meta(5000, EdgeState::Active),
+        );
+        bonds.insert(
+            (cid(5), cid(6), RelationType::PartOf),
+            meta(5000, EdgeState::Active),
+        );
+        bonds.insert(
+            (cid(7), cid(8), RelationType::Enables),
+            meta(3000, EdgeState::Weakened),
+        );
+        bonds.insert(
+            (cid(9), cid(10), RelationType::Cites),
+            meta(1000, EdgeState::Deprecated),
+        );
         assert!((graph_health_score(&bonds) - 0.6).abs() < 1e-9);
     }
 
@@ -396,7 +414,11 @@ mod tests {
         };
 
         let score = compute_graph_contribution(&bonds, &dream, &fedr);
-        assert!(score.total > 0.0 && score.total <= 1.0, "total={}", score.total);
+        assert!(
+            score.total > 0.0 && score.total <= 1.0,
+            "total={}",
+            score.total
+        );
         assert!(score.bond_richness > 0.0);
         assert!(score.dream_contribution > 0.0);
         assert!(score.fedr_participation > 0.0);

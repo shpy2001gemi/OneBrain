@@ -42,15 +42,15 @@ pub const BOOTSTRAP_LAYER_TIMEOUT_S: u64 = 30;
 #[repr(u8)]
 pub enum BootstrapLayer {
     /// QR code scan, NFC tap, or BLE proximity exchange.
-    Social    = 0,
+    Social = 0,
     /// mDNS `_obp._udp.local` broadcast on LAN.
-    Local     = 1,
+    Local = 1,
     /// HTTP GET `/.well-known/obp-peers` from seed URLs.
-    Http      = 2,
+    Http = 2,
     /// DHT bootstrap from known node addresses.
-    Dht       = 3,
+    Dht = 3,
     /// DNS TXT record lookup at known domains.
-    Dns       = 4,
+    Dns = 4,
     /// Hardcoded fallback peers compiled into binary.
     Hardcoded = 5,
 }
@@ -67,11 +67,11 @@ impl BootstrapLayer {
     /// Display name for logging.
     pub fn name(&self) -> &'static str {
         match self {
-            Self::Social    => "Social (QR/NFC/BLE)",
-            Self::Local     => "Local (mDNS/BLE)",
-            Self::Http      => "HTTP (well-known)",
-            Self::Dht       => "DHT (bootstrap nodes)",
-            Self::Dns       => "DNS (TXT records)",
+            Self::Social => "Social (QR/NFC/BLE)",
+            Self::Local => "Local (mDNS/BLE)",
+            Self::Http => "HTTP (well-known)",
+            Self::Dht => "DHT (bootstrap nodes)",
+            Self::Dns => "DNS (TXT records)",
             Self::Hardcoded => "Hardcoded (fallback)",
         }
     }
@@ -106,9 +106,7 @@ pub enum BootstrapState {
         peer_count: usize,
     },
     /// All layers exhausted, bootstrap failed.
-    Failed {
-        attempts: Vec<BootstrapLayer>,
-    },
+    Failed { attempts: Vec<BootstrapLayer> },
 }
 
 /// A peer discovered during bootstrap.
@@ -209,7 +207,10 @@ impl BootstrapEngine {
 
     /// Mark bootstrap as successful.
     pub fn mark_connected(&mut self, via_layer: BootstrapLayer, peer_count: usize) {
-        self.state = BootstrapState::Connected { via_layer, peer_count };
+        self.state = BootstrapState::Connected {
+            via_layer,
+            peer_count,
+        };
     }
 
     /// Get the next untried layer (in priority order).
@@ -222,7 +223,8 @@ impl BootstrapEngine {
             BootstrapLayer::Dns,
             BootstrapLayer::Hardcoded,
         ];
-        all_layers.into_iter()
+        all_layers
+            .into_iter()
             .find(|l| !self.attempted_layers.contains(l))
     }
 
@@ -238,11 +240,11 @@ impl BootstrapEngine {
     /// Get seeds for a specific layer.
     pub fn seeds_for_layer(&self, layer: BootstrapLayer) -> Vec<NetworkAddress> {
         match layer {
-            BootstrapLayer::Social    => self.social_seeds.clone(),
-            BootstrapLayer::Local     => Vec::new(), // mDNS — no pre-configured seeds
-            BootstrapLayer::Http      => Vec::new(), // URLs, not addresses
-            BootstrapLayer::Dht       => self.dht_seeds.clone(),
-            BootstrapLayer::Dns       => Vec::new(), // Domain names, not addresses
+            BootstrapLayer::Social => self.social_seeds.clone(),
+            BootstrapLayer::Local => Vec::new(), // mDNS — no pre-configured seeds
+            BootstrapLayer::Http => Vec::new(),  // URLs, not addresses
+            BootstrapLayer::Dht => self.dht_seeds.clone(),
+            BootstrapLayer::Dns => Vec::new(), // Domain names, not addresses
             BootstrapLayer::Hardcoded => self.hardcoded_seeds.clone(),
         }
     }
@@ -295,8 +297,11 @@ impl PexState {
 
     /// Add or update peer from received PEX data.
     pub fn receive_peer(&mut self, peer: PexPeerInfo) {
-        if let Some(existing) = self.known_peers.iter_mut()
-            .find(|p| p.node_id == peer.node_id) {
+        if let Some(existing) = self
+            .known_peers
+            .iter_mut()
+            .find(|p| p.node_id == peer.node_id)
+        {
             // Update if newer
             if peer.last_verified > existing.last_verified {
                 *existing = peer;

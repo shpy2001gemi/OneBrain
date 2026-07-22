@@ -6,10 +6,11 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis
 import { api } from '../api/client';
 import type { StatusResponse, KuListItem, AiHealthInfo } from '../api/types';
 import { GENE_TYPE_COLORS, type GeneType } from '../api/types';
+import { formatObt, formatDuration } from '../utils/format';
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  useTranslation(); // TODO: replace hardcoded English strings with t() calls
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [recentKus, setRecentKus] = useState<KuListItem[]>([]);
   const [allKus, setAllKus] = useState<KuListItem[]>([]);
@@ -48,13 +49,6 @@ export function DashboardPage() {
       }));
   }, [allKus]);
 
-  const formatUptime = (s: number) => {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
-  };
-
-  const formatObt = (milli: number) => (milli / 1000).toFixed(1);
 
   if (loading) {
     return <div className="page" style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
@@ -75,7 +69,7 @@ export function DashboardPage() {
           { icon: Brain, label: 'Knowledge Units', value: status?.ku_count ?? 0, sub: 'encoded', color: 'var(--ob-accent)' },
           { icon: Users, label: 'Connected Peers', value: status?.peer_count ?? 0, sub: 'active', color: 'var(--ob-violet)' },
           { icon: Coins, label: 'OBT Balance', value: formatObt(status?.obt_balance ?? 0), sub: status?.tier ?? '', color: 'var(--ob-warning)' },
-          { icon: Clock, label: 'Uptime', value: formatUptime(status?.uptime_s ?? 0), sub: `v${status?.version ?? '?'}`, color: 'var(--ob-success)' },
+          { icon: Clock, label: 'Uptime', value: formatDuration(status?.uptime_s ?? 0), sub: `v${status?.version ?? '?'}`, color: 'var(--ob-success)' },
         ].map((s, i) => (
           <div key={i} className="glass-card stat-card animate-in" style={{ animationDelay: `${i * 80}ms` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -87,6 +81,32 @@ export function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Quick Computed Stats */}
+      {allKus.length > 0 && (
+        <div className="grid-4" style={{ marginBottom: 'var(--ob-gap-lg)' }}>
+          {(() => {
+            const avgPomv = allKus.reduce((s, k) => s + k.pomv, 0) / allKus.length;
+            const totalSize = allKus.reduce((s, k) => s + k.wire_size, 0);
+            const avgTrust = allKus.reduce((s, k) => s + k.trust, 0) / allKus.length;
+            const uniqueGenes = new Set(allKus.map(k => k.gene_type)).size;
+            return [
+              { label: 'Avg PoMV', value: `${(avgPomv * 100).toFixed(0)}%`, color: avgPomv >= 0.6 ? 'var(--ob-success)' : 'var(--ob-warning)' },
+              { label: 'Total Data', value: totalSize >= 1048576 ? `${(totalSize / 1048576).toFixed(1)} MB` : `${(totalSize / 1024).toFixed(0)} KB`, color: 'var(--ob-accent)' },
+              { label: 'Avg Trust', value: `${(avgTrust * 100).toFixed(0)}%`, color: avgTrust >= 0.7 ? 'var(--ob-success)' : 'var(--ob-warning)' },
+              { label: 'Gene Types', value: uniqueGenes, color: 'var(--ob-violet)' },
+            ].map((s, i) => (
+              <div key={i} className="glass-card animate-in" style={{
+                animationDelay: `${(i + 4) * 80}ms`,
+                padding: '12px 16px', textAlign: 'center',
+              }}>
+                <div style={{ fontSize: '1.4rem', fontWeight: 800, color: s.color }}>{s.value}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--ob-text-muted)', marginTop: 2 }}>{s.label}</div>
+              </div>
+            ));
+          })()}
+        </div>
+      )}
 
       {/* Charts Row */}
       {allKus.length > 0 && (
@@ -146,7 +166,7 @@ export function DashboardPage() {
                       borderRadius: 8, fontSize: '0.82rem',
                       color: '#e5e7eb',
                     }}
-                    formatter={(value: number) => [`${value}%`, 'PoMV']}
+                    formatter={(value) => [`${value}%`, 'PoMV']}
                   />
                   <Bar dataKey="pomv" fill="url(#pomvGradient)" radius={[4, 4, 0, 0]} animationDuration={800} />
                   <defs>

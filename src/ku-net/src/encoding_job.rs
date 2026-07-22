@@ -14,7 +14,7 @@
 //! key = BLAKE3("encoding-job:" || raw_hash)
 //! ```
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Encoding Job (posted on DHT)

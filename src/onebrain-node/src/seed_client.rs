@@ -5,11 +5,11 @@
 //! address, queries the peer list, and can relay messages to other
 //! peers via the seed when direct connections are not possible.
 
+use onebrain_protocol::*;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::net::TcpStream;
-use onebrain_protocol::*;
+use tokio::sync::Mutex;
 
 /// Client that connects to a seed node for discovery and relay.
 pub struct SeedClient {
@@ -77,7 +77,10 @@ impl SeedClient {
 
                         // Wait for Registered response
                         match recv_message::<SeedMessage>(&mut stream).await {
-                            Ok(SeedMessage::Registered { your_external_addr, seed_name }) => {
+                            Ok(SeedMessage::Registered {
+                                your_external_addr,
+                                seed_name,
+                            }) => {
                                 println!("  ✓ Connected to seed: {} ({})", seed_name, domain);
                                 println!("  ✓ External address: {}", your_external_addr);
                                 self.external_addr = Some(your_external_addr);
@@ -115,7 +118,8 @@ impl SeedClient {
         let stream = self.stream.as_ref().ok_or("Not connected to seed")?;
         let mut guard = stream.lock().await;
 
-        send_message(&mut *guard, &SeedMessage::GetPeers).await
+        send_message(&mut *guard, &SeedMessage::GetPeers)
+            .await
             .map_err(|e| format!("Send failed: {}", e))?;
 
         match recv_message::<SeedMessage>(&mut *guard).await {
@@ -128,8 +132,7 @@ impl SeedClient {
     /// Relay a PeerMessage to another peer via the seed.
     pub async fn relay_to(&self, to_peer_id: &str, msg: &PeerMessage) -> Result<(), String> {
         let stream = self.stream.as_ref().ok_or("Not connected to seed")?;
-        let payload = serde_json::to_vec(msg)
-            .map_err(|e| format!("Serialize failed: {}", e))?;
+        let payload = serde_json::to_vec(msg).map_err(|e| format!("Serialize failed: {}", e))?;
 
         let relay_msg = SeedMessage::RelayToPeer {
             to_peer_id: to_peer_id.to_string(),
@@ -137,7 +140,8 @@ impl SeedClient {
         };
 
         let mut guard = stream.lock().await;
-        send_message(&mut *guard, &relay_msg).await
+        send_message(&mut *guard, &relay_msg)
+            .await
             .map_err(|e| format!("Relay failed: {}", e))
     }
 
@@ -155,9 +159,8 @@ impl SeedClient {
 
         // Heartbeat task
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(
-                std::time::Duration::from_secs(HEARTBEAT_INTERVAL_SECS)
-            );
+            let mut interval =
+                tokio::time::interval(std::time::Duration::from_secs(HEARTBEAT_INTERVAL_SECS));
             loop {
                 interval.tick().await;
                 let msg = SeedMessage::Heartbeat {
@@ -171,7 +174,11 @@ impl SeedClient {
                 // Read HeartbeatAck
                 match recv_message::<SeedMessage>(&mut *guard).await {
                     Ok(SeedMessage::HeartbeatAck) => {}
-                    Ok(SeedMessage::RelayedMessage { from_peer_id: _, from_name: _, payload: _ }) => {
+                    Ok(SeedMessage::RelayedMessage {
+                        from_peer_id: _,
+                        from_name: _,
+                        payload: _,
+                    }) => {
                         // TODO: dispatch relayed message to event_tx
                     }
                     _ => {

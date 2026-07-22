@@ -14,9 +14,9 @@
 //! ## Reference
 //! See `docs/specs/obt/02_LEDGER.md` for full specification.
 
-use serde::{Serialize, Deserialize};
 use crate::crdt::{GCounter, VectorClock};
 use crate::obt_constants::GENESIS_BLOCK_PREVIOUS;
+use serde::{Deserialize, Serialize};
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // TransferOp â€” Operation Types
@@ -29,10 +29,7 @@ pub enum TransferOp {
     Open,
 
     /// Credit OBT from a verified reward source.
-    Mint {
-        source: MintSource,
-        amount: u64,
-    },
+    Mint { source: MintSource, amount: u64 },
 
     /// Debit OBT â€” creates a pending credit for `receiver`.
     Send {
@@ -77,12 +74,18 @@ impl TransferOp {
                 buf.extend_from_slice(receiver);
                 buf.extend_from_slice(&amount.to_le_bytes());
             }
-            TransferOp::Receive { send_block_hash, amount } => {
+            TransferOp::Receive {
+                send_block_hash,
+                amount,
+            } => {
                 buf.push(0x03);
                 buf.extend_from_slice(send_block_hash);
                 buf.extend_from_slice(&amount.to_le_bytes());
             }
-            TransferOp::Refund { send_block_hash, amount } => {
+            TransferOp::Refund {
+                send_block_hash,
+                amount,
+            } => {
                 buf.push(0x04);
                 buf.extend_from_slice(send_block_hash);
                 buf.extend_from_slice(&amount.to_le_bytes());
@@ -153,7 +156,10 @@ impl MintSource {
                 buf.extend_from_slice(ku_cid);
                 buf.extend_from_slice(&epoch.to_le_bytes());
             }
-            MintSource::StorageReward { epoch, challenge_hash } => {
+            MintSource::StorageReward {
+                epoch,
+                challenge_hash,
+            } => {
                 buf.push(0x03);
                 buf.extend_from_slice(&epoch.to_le_bytes());
                 buf.extend_from_slice(challenge_hash);
@@ -242,7 +248,7 @@ impl TransferBlock {
     /// - `InvalidSignatureLength` if signature is not 64 bytes
     /// - `InvalidSignature` if the public key is invalid or signature doesn't verify
     pub fn validate_signature(&self, pubkey: &[u8; 32]) -> Result<(), LedgerError> {
-        use ed25519_dalek::{Signature, VerifyingKey, Verifier};
+        use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 
         if self.signature.len() != 64 {
             return Err(LedgerError::InvalidSignatureLength {
@@ -251,8 +257,8 @@ impl TransferBlock {
             });
         }
 
-        let verifying_key = VerifyingKey::from_bytes(pubkey)
-            .map_err(|_| LedgerError::InvalidSignature)?;
+        let verifying_key =
+            VerifyingKey::from_bytes(pubkey).map_err(|_| LedgerError::InvalidSignature)?;
 
         let sig_bytes: [u8; 64] = self.signature[..64]
             .try_into()
@@ -260,7 +266,8 @@ impl TransferBlock {
         let signature = Signature::from_bytes(&sig_bytes);
 
         let payload = self.signing_payload();
-        verifying_key.verify(&payload, &signature)
+        verifying_key
+            .verify(&payload, &signature)
             .map_err(|_| LedgerError::InvalidSignature)
     }
 
@@ -325,7 +332,9 @@ impl TransferBlock {
         // V-BAL: balance consistency check
         match &self.operation {
             TransferOp::Mint { amount, .. } => {
-                let expected = prev.balance.checked_add(*amount)
+                let expected = prev
+                    .balance
+                    .checked_add(*amount)
                     .ok_or(LedgerError::BalanceOverflow)?;
                 if self.balance != expected {
                     return Err(LedgerError::BalanceMismatch {
@@ -338,11 +347,13 @@ impl TransferBlock {
                 if *amount == 0 {
                     return Err(LedgerError::ZeroAmount);
                 }
-                let expected = prev.balance.checked_sub(*amount)
-                    .ok_or(LedgerError::InsufficientBalance {
-                        available: prev.balance,
-                        required: *amount,
-                    })?;
+                let expected =
+                    prev.balance
+                        .checked_sub(*amount)
+                        .ok_or(LedgerError::InsufficientBalance {
+                            available: prev.balance,
+                            required: *amount,
+                        })?;
                 if self.balance != expected {
                     return Err(LedgerError::BalanceMismatch {
                         expected,
@@ -351,7 +362,9 @@ impl TransferBlock {
                 }
             }
             TransferOp::Receive { amount, .. } => {
-                let expected = prev.balance.checked_add(*amount)
+                let expected = prev
+                    .balance
+                    .checked_add(*amount)
                     .ok_or(LedgerError::BalanceOverflow)?;
                 if self.balance != expected {
                     return Err(LedgerError::BalanceMismatch {
@@ -362,7 +375,9 @@ impl TransferBlock {
             }
             TransferOp::Refund { amount, .. } => {
                 // Refund is a self-receive: balance increases
-                let expected = prev.balance.checked_add(*amount)
+                let expected = prev
+                    .balance
+                    .checked_add(*amount)
                     .ok_or(LedgerError::BalanceOverflow)?;
                 if self.balance != expected {
                     return Err(LedgerError::BalanceMismatch {
@@ -485,21 +500,33 @@ impl AccountState {
                 // No counter updates for Open
             }
             TransferOp::Mint { amount, .. } => {
-                self.total_earned.increment_by(node_id, *amount)
-                    .map_err(|e| LedgerError::IntegrityViolation { reason: format!("GCounter overflow: {}", e) })?;
+                self.total_earned
+                    .increment_by(node_id, *amount)
+                    .map_err(|e| LedgerError::IntegrityViolation {
+                        reason: format!("GCounter overflow: {}", e),
+                    })?;
             }
             TransferOp::Receive { amount, .. } => {
-                self.total_earned.increment_by(node_id, *amount)
-                    .map_err(|e| LedgerError::IntegrityViolation { reason: format!("GCounter overflow: {}", e) })?;
+                self.total_earned
+                    .increment_by(node_id, *amount)
+                    .map_err(|e| LedgerError::IntegrityViolation {
+                        reason: format!("GCounter overflow: {}", e),
+                    })?;
             }
             TransferOp::Send { amount, .. } => {
-                self.total_spent.increment_by(node_id, *amount)
-                    .map_err(|e| LedgerError::IntegrityViolation { reason: format!("GCounter overflow: {}", e) })?;
+                self.total_spent
+                    .increment_by(node_id, *amount)
+                    .map_err(|e| LedgerError::IntegrityViolation {
+                        reason: format!("GCounter overflow: {}", e),
+                    })?;
             }
             TransferOp::Refund { amount, .. } => {
                 // Refund reverses a Send — credit back to earned
-                self.total_earned.increment_by(node_id, *amount)
-                    .map_err(|e| LedgerError::IntegrityViolation { reason: format!("GCounter overflow: {}", e) })?;
+                self.total_earned
+                    .increment_by(node_id, *amount)
+                    .map_err(|e| LedgerError::IntegrityViolation {
+                        reason: format!("GCounter overflow: {}", e),
+                    })?;
             }
         }
 
@@ -525,10 +552,7 @@ impl AccountState {
         // earned must be >= spent (can't spend more than earned)
         if spent > earned {
             return Err(LedgerError::IntegrityViolation {
-                reason: format!(
-                    "total_spent ({}) exceeds total_earned ({})",
-                    spent, earned
-                ),
+                reason: format!("total_spent ({}) exceeds total_earned ({})", spent, earned),
             });
         }
 
@@ -723,32 +747,31 @@ pub enum LedgerError {
 impl std::fmt::Display for LedgerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::SequenceMismatch { expected, actual } =>
-                write!(f, "sequence mismatch: expected {expected}, got {actual}"),
-            Self::PreviousHashMismatch =>
-                write!(f, "previous hash does not match predecessor's block_hash"),
-            Self::HashMismatch =>
-                write!(f, "block_hash does not match computed hash"),
-            Self::BalanceMismatch { expected, actual } =>
-                write!(f, "balance mismatch: expected {expected}, got {actual}"),
-            Self::InsufficientBalance { available, required } =>
-                write!(f, "insufficient balance: have {available}, need {required}"),
-            Self::BalanceOverflow =>
-                write!(f, "balance overflow (exceeds u64::MAX)"),
-            Self::ZeroAmount =>
-                write!(f, "zero-amount transfer not allowed"),
-            Self::DuplicateOpen =>
-                write!(f, "duplicate Open block for this account"),
-            Self::AccountMismatch =>
-                write!(f, "block account does not match AccountState pubkey"),
-            Self::IntegrityViolation { reason } =>
-                write!(f, "integrity violation: {reason}"),
-            Self::InvalidFork { reason } =>
-                write!(f, "invalid fork warrant: {reason}"),
-            Self::InvalidSignature =>
-                write!(f, "Ed25519 signature verification failed"),
-            Self::InvalidSignatureLength { expected, actual } =>
-                write!(f, "signature length mismatch: expected {expected} bytes, got {actual}"),
+            Self::SequenceMismatch { expected, actual } => {
+                write!(f, "sequence mismatch: expected {expected}, got {actual}")
+            }
+            Self::PreviousHashMismatch => {
+                write!(f, "previous hash does not match predecessor's block_hash")
+            }
+            Self::HashMismatch => write!(f, "block_hash does not match computed hash"),
+            Self::BalanceMismatch { expected, actual } => {
+                write!(f, "balance mismatch: expected {expected}, got {actual}")
+            }
+            Self::InsufficientBalance {
+                available,
+                required,
+            } => write!(f, "insufficient balance: have {available}, need {required}"),
+            Self::BalanceOverflow => write!(f, "balance overflow (exceeds u64::MAX)"),
+            Self::ZeroAmount => write!(f, "zero-amount transfer not allowed"),
+            Self::DuplicateOpen => write!(f, "duplicate Open block for this account"),
+            Self::AccountMismatch => write!(f, "block account does not match AccountState pubkey"),
+            Self::IntegrityViolation { reason } => write!(f, "integrity violation: {reason}"),
+            Self::InvalidFork { reason } => write!(f, "invalid fork warrant: {reason}"),
+            Self::InvalidSignature => write!(f, "Ed25519 signature verification failed"),
+            Self::InvalidSignatureLength { expected, actual } => write!(
+                f,
+                "signature length mismatch: expected {expected} bytes, got {actual}"
+            ),
         }
     }
 }
@@ -758,7 +781,6 @@ impl std::error::Error for LedgerError {}
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Helpers
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
 
 /// Produce a deterministic byte representation of a VectorClock for hashing.
 ///
@@ -813,7 +835,7 @@ pub fn create_open_block(account: [u8; 32], timestamp: u64, node_id: u64) -> Tra
         clock,
         timestamp,
         signature: vec![0u8; 64], // Stub: populated by signing layer
-        block_hash: [0u8; 32], // Will be computed below
+        block_hash: [0u8; 32],    // Will be computed below
     };
     block.block_hash = block.compute_hash();
     block
@@ -827,7 +849,9 @@ pub fn create_mint_block(
     timestamp: u64,
     node_id: u64,
 ) -> Result<TransferBlock, LedgerError> {
-    let new_balance = prev.balance.checked_add(amount)
+    let new_balance = prev
+        .balance
+        .checked_add(amount)
         .ok_or(LedgerError::BalanceOverflow)?;
 
     let mut clock = prev.clock.clone();
@@ -859,7 +883,9 @@ pub fn create_send_block(
     if amount == 0 {
         return Err(LedgerError::ZeroAmount);
     }
-    let new_balance = prev.balance.checked_sub(amount)
+    let new_balance = prev
+        .balance
+        .checked_sub(amount)
         .ok_or(LedgerError::InsufficientBalance {
             available: prev.balance,
             required: amount,
@@ -891,7 +917,9 @@ pub fn create_receive_block(
     timestamp: u64,
     node_id: u64,
 ) -> Result<TransferBlock, LedgerError> {
-    let new_balance = prev.balance.checked_add(amount)
+    let new_balance = prev
+        .balance
+        .checked_add(amount)
         .ok_or(LedgerError::BalanceOverflow)?;
 
     let mut clock = prev.clock.clone();
@@ -902,7 +930,10 @@ pub fn create_receive_block(
         account: prev.account,
         sequence: prev.sequence + 1,
         balance: new_balance,
-        operation: TransferOp::Receive { send_block_hash, amount },
+        operation: TransferOp::Receive {
+            send_block_hash,
+            amount,
+        },
         clock,
         timestamp,
         signature: vec![0u8; 64],
@@ -1045,13 +1076,8 @@ mod tests {
 
         // Bob: Open â†’ Receive 300
         let bob_open = create_open_block(bob_pubkey(), 1000, 1);
-        let bob_receive = create_receive_block(
-            &bob_open,
-            alice_send.block_hash,
-            300,
-            4000,
-            2,
-        ).unwrap();
+        let bob_receive =
+            create_receive_block(&bob_open, alice_send.block_hash, 300, 4000, 2).unwrap();
 
         assert_eq!(bob_receive.balance, 300);
         assert!(bob_receive.validate_against_previous(&bob_open).is_ok());
@@ -1071,7 +1097,10 @@ mod tests {
         // Send 1 more â†’ should fail (insufficient balance)
         let result = create_send_block(&send, bob_pubkey(), 1, 4000, 1);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), LedgerError::InsufficientBalance { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            LedgerError::InsufficientBalance { .. }
+        ));
     }
 
     // â”€â”€â”€ Test 5: Sequence must increment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1088,7 +1117,10 @@ mod tests {
 
         let result = bad_block.validate_against_previous(&open);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), LedgerError::SequenceMismatch { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            LedgerError::SequenceMismatch { .. }
+        ));
     }
 
     // â”€â”€â”€ Test 6: Fork detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1132,14 +1164,12 @@ mod tests {
         let mint = create_mint_block(&open, test_mint_source(), 1000, 2000, 1).unwrap();
 
         // Same block twice = not a fork
-        let result = ForkWarrant::new(
-            mint.clone(),
-            mint.clone(),
-            [0xDD; 32],
-            5000,
-        );
+        let result = ForkWarrant::new(mint.clone(), mint.clone(), [0xDD; 32], 5000);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), LedgerError::InvalidFork { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            LedgerError::InvalidFork { .. }
+        ));
     }
 
     // â”€â”€â”€ Test 8: AccountState updates â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1207,7 +1237,10 @@ mod tests {
 
         // Send from zero-balance account
         let result = create_send_block(&open, bob_pubkey(), 1, 2000, 1);
-        assert!(matches!(result.unwrap_err(), LedgerError::InsufficientBalance { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            LedgerError::InsufficientBalance { .. }
+        ));
     }
 
     // â”€â”€â”€ Test 11: Block hash changes with any field â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1239,7 +1272,10 @@ mod tests {
         mint.block_hash = mint.compute_hash();
 
         let result = mint.validate_against_previous(&open);
-        assert!(matches!(result.unwrap_err(), LedgerError::BalanceMismatch { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            LedgerError::BalanceMismatch { .. }
+        ));
     }
 
     // â”€â”€â”€ Test 13: Duplicate Open rejected â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1282,10 +1318,22 @@ mod tests {
 
     #[test]
     fn test_mint_source_canonical_bytes_distinct() {
-        let enc = MintSource::EncodingReward { ku_cid: [0x42; 32], role: 0 };
-        let ver = MintSource::VerificationReward { ku_cid: [0x42; 32], role: 0 };
-        let pomv = MintSource::PomvReward { ku_cid: [0x42; 32], epoch: 1 };
-        let stor = MintSource::StorageReward { epoch: 1, challenge_hash: [0x42; 32] };
+        let enc = MintSource::EncodingReward {
+            ku_cid: [0x42; 32],
+            role: 0,
+        };
+        let ver = MintSource::VerificationReward {
+            ku_cid: [0x42; 32],
+            role: 0,
+        };
+        let pomv = MintSource::PomvReward {
+            ku_cid: [0x42; 32],
+            epoch: 1,
+        };
+        let stor = MintSource::StorageReward {
+            epoch: 1,
+            challenge_hash: [0x42; 32],
+        };
 
         let bytes: Vec<Vec<u8>> = vec![
             enc.canonical_bytes(),
@@ -1297,7 +1345,10 @@ mod tests {
         // All should be different
         for i in 0..bytes.len() {
             for j in (i + 1)..bytes.len() {
-                assert_ne!(bytes[i], bytes[j], "MintSource variants must produce different bytes");
+                assert_ne!(
+                    bytes[i], bytes[j],
+                    "MintSource variants must produce different bytes"
+                );
             }
         }
     }
@@ -1307,9 +1358,18 @@ mod tests {
     #[test]
     fn test_transfer_op_canonical_bytes_distinct() {
         let open = TransferOp::Open;
-        let mint = TransferOp::Mint { source: test_mint_source(), amount: 100 };
-        let send = TransferOp::Send { receiver: bob_pubkey(), amount: 100 };
-        let recv = TransferOp::Receive { send_block_hash: [0x11; 32], amount: 100 };
+        let mint = TransferOp::Mint {
+            source: test_mint_source(),
+            amount: 100,
+        };
+        let send = TransferOp::Send {
+            receiver: bob_pubkey(),
+            amount: 100,
+        };
+        let recv = TransferOp::Receive {
+            send_block_hash: [0x11; 32],
+            amount: 100,
+        };
 
         let bytes: Vec<Vec<u8>> = vec![
             open.canonical_bytes(),
@@ -1320,7 +1380,10 @@ mod tests {
 
         for i in 0..bytes.len() {
             for j in (i + 1)..bytes.len() {
-                assert_ne!(bytes[i], bytes[j], "TransferOp variants must produce different bytes");
+                assert_ne!(
+                    bytes[i], bytes[j],
+                    "TransferOp variants must produce different bytes"
+                );
             }
         }
     }
@@ -1402,4 +1465,3 @@ mod tests {
         assert_eq!(block.signature.len(), 64);
     }
 }
-

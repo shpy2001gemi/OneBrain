@@ -13,7 +13,7 @@
 //!     └─ otherwise                    → FallbackTier1 (rule-based)
 //! ```
 
-use crate::encoder::{EncodingResult, EncoderConfig};
+use crate::encoder::{EncoderConfig, EncodingResult};
 use crate::error::EncoderError;
 use ku_core::ku_tool_executor::EncodingStats;
 use ku_core::text_parser::{parse_text_to_core_dna, ConceptDict};
@@ -157,7 +157,10 @@ mod tests {
 
         let decision = chain.decide(&result, 0);
         match decision {
-            EncodingDecision::Retry { temperature, attempt } => {
+            EncodingDecision::Retry {
+                temperature,
+                attempt,
+            } => {
                 assert_eq!(attempt, 1);
                 assert!(temperature > 0.1, "Retry should use higher temperature");
             }

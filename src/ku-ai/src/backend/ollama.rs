@@ -106,9 +106,7 @@ impl OllamaBackend {
     }
 
     /// Parse Ollama tool calls from the response.
-    fn parse_tool_calls(
-        tool_calls: Option<Vec<OllamaToolCall>>,
-    ) -> Vec<ToolCallResponse> {
+    fn parse_tool_calls(tool_calls: Option<Vec<OllamaToolCall>>) -> Vec<ToolCallResponse> {
         tool_calls
             .unwrap_or_default()
             .into_iter()
@@ -266,7 +264,10 @@ impl ModelBackend for OllamaBackend {
                 if e.is_timeout() {
                     AiError::Timeout(self.timeout.as_secs())
                 } else if e.is_connect() {
-                    AiError::BackendUnavailable(format!("cannot connect to Ollama at {}: {}", self.base_url, e))
+                    AiError::BackendUnavailable(format!(
+                        "cannot connect to Ollama at {}: {}",
+                        self.base_url, e
+                    ))
                 } else {
                     AiError::HttpError(e)
                 }
@@ -327,7 +328,10 @@ impl ModelBackend for OllamaBackend {
                 if e.is_timeout() {
                     AiError::Timeout(self.timeout.as_secs())
                 } else if e.is_connect() {
-                    AiError::BackendUnavailable(format!("cannot connect to Ollama at {}: {}", self.base_url, e))
+                    AiError::BackendUnavailable(format!(
+                        "cannot connect to Ollama at {}: {}",
+                        self.base_url, e
+                    ))
                 } else {
                     AiError::HttpError(e)
                 }
@@ -343,10 +347,7 @@ impl ModelBackend for OllamaBackend {
         }
 
         let ollama_resp: OllamaChatResponse = resp.json().await.map_err(AiError::HttpError)?;
-        let content = ollama_resp
-            .message
-            .map(|m| m.content)
-            .unwrap_or_default();
+        let content = ollama_resp.message.map(|m| m.content).unwrap_or_default();
 
         serde_json::from_str(&content).map_err(|e| {
             AiError::InferenceError(format!(
@@ -387,7 +388,10 @@ impl ModelBackend for OllamaBackend {
                 if e.is_timeout() {
                     AiError::Timeout(self.timeout.as_secs())
                 } else if e.is_connect() {
-                    AiError::BackendUnavailable(format!("cannot connect to Ollama at {}: {}", self.base_url, e))
+                    AiError::BackendUnavailable(format!(
+                        "cannot connect to Ollama at {}: {}",
+                        self.base_url, e
+                    ))
                 } else {
                     AiError::HttpError(e)
                 }
@@ -417,26 +421,20 @@ impl ModelBackend for OllamaBackend {
     }
 
     async fn health_check(&self) -> Result<BackendStatus, AiError> {
-        let resp = self
-            .client
-            .get(self.url("/api/tags"))
-            .send()
-            .await;
+        let resp = self.client.get(self.url("/api/tags")).send().await;
 
         match resp {
             Ok(r) if r.status().is_success() => {
-                let tags: OllamaTagsResponse = r.json().await.unwrap_or(OllamaTagsResponse {
-                    models: None,
+                let tags: OllamaTagsResponse = r
+                    .json()
+                    .await
+                    .unwrap_or(OllamaTagsResponse { models: None });
+                let model_loaded = tags.models.as_ref().and_then(|models| {
+                    models
+                        .iter()
+                        .find(|m| m.name.starts_with(&self.llm_model))
+                        .map(|m| m.name.clone())
                 });
-                let model_loaded = tags
-                    .models
-                    .as_ref()
-                    .and_then(|models| {
-                        models
-                            .iter()
-                            .find(|m| m.name.starts_with(&self.llm_model))
-                            .map(|m| m.name.clone())
-                    });
                 Ok(BackendStatus {
                     available: true,
                     model_loaded,
@@ -639,13 +637,7 @@ mod tests {
 
     #[test]
     fn test_url_construction() {
-        let backend = OllamaBackend::new(
-            "http://localhost:11434",
-            "test",
-            "test",
-            60,
-        )
-        .unwrap();
+        let backend = OllamaBackend::new("http://localhost:11434", "test", "test", 60).unwrap();
         assert_eq!(backend.url("/api/chat"), "http://localhost:11434/api/chat");
     }
 }

@@ -3,8 +3,8 @@
 //! Simple in-memory list of known peers. In production, this would
 //! integrate with ku-net's SWIM membership and Kademlia DHT.
 
-use std::net::SocketAddr;
 use crate::network::PeerInfo;
+use std::net::SocketAddr;
 
 /// Manages the list of connected peers.
 #[derive(Debug, Default)]

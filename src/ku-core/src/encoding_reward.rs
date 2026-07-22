@@ -13,7 +13,7 @@
 //! ## Reference
 //! See `docs/specs/ENCODING_CONSENSUS_SPEC.md` §9 for full reward model.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -109,11 +109,7 @@ pub struct EncodingReward {
 /// * `raw_size_bytes` — Size of the raw text in bytes
 /// * `role` — The participant's role
 /// * `encoding_selected` — Whether this node's encoding was chosen as final
-pub fn calculate_reward(
-    raw_size_bytes: u32,
-    role: VerifierRole,
-    encoding_selected: bool,
-) -> u64 {
+pub fn calculate_reward(raw_size_bytes: u32, role: VerifierRole, encoding_selected: bool) -> u64 {
     // Base: 1 OBT per KB (minimum 1 OBT)
     let base = ((raw_size_bytes as u64) / 1024).max(1) * BASE_OBT_PER_KB;
 
@@ -124,22 +120,22 @@ pub fn calculate_reward(
             let bonus = FIRST_ENCODER_BONUS;
             let selection = if encoding_selected { base } else { 0 };
             base * 2 + bonus + selection
-        },
+        }
 
         VerifierRole::Verifier => {
             let selection = if encoding_selected { base / 2 } else { 0 };
             base + selection
-        },
+        }
 
         VerifierRole::Corrector => {
             // Correctors get higher reward — they found and fixed errors
             base * CORRECTOR_MULTIPLIER
-        },
+        }
 
         VerifierRole::ProBono => {
             // Pro-bono encoders help people without AI — community service bonus
             base * 2 + PRO_BONO_BONUS
-        },
+        }
     }
 }
 
@@ -151,20 +147,23 @@ pub fn calculate_all_rewards(
     participants: &[(u64, VerifierRole)],
     selected_node_id: Option<u64>,
 ) -> Vec<EncodingReward> {
-    participants.iter().map(|&(node_id, role)| {
-        let selected = selected_node_id == Some(node_id);
-        let obt_amount = calculate_reward(raw_size_bytes, role, selected);
-        let base = ((raw_size_bytes as u64) / 1024).max(1) * BASE_OBT_PER_KB;
+    participants
+        .iter()
+        .map(|&(node_id, role)| {
+            let selected = selected_node_id == Some(node_id);
+            let obt_amount = calculate_reward(raw_size_bytes, role, selected);
+            let base = ((raw_size_bytes as u64) / 1024).max(1) * BASE_OBT_PER_KB;
 
-        EncodingReward {
-            node_id,
-            role,
-            obt_amount,
-            base_reward: base,
-            role_bonus: obt_amount.saturating_sub(base),
-            encoding_selected: selected,
-        }
-    }).collect()
+            EncodingReward {
+                node_id,
+                role,
+                obt_amount,
+                base_reward: base,
+                role_bonus: obt_amount.saturating_sub(base),
+                encoding_selected: selected,
+            }
+        })
+        .collect()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

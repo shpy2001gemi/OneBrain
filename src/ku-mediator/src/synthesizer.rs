@@ -3,9 +3,9 @@
 //! Uses the AI backend to synthesize retrieved knowledge into natural language,
 //! or provides a simple formatted listing when no LLM is available.
 
+use crate::retriever::RetrievedKU;
 use ku_ai::traits::ModelBackend;
 use ku_ai::types::{ChatMessage, InferenceOptions};
-use crate::retriever::RetrievedKU;
 
 /// Synthesizes answers from retrieved KUs.
 pub struct Synthesizer;
@@ -24,8 +24,12 @@ impl Synthesizer {
         // Build context from retrieved KUs
         let mut context = String::from("Based on the following knowledge units:\n\n");
         for (i, ku) in retrieved_kus.iter().enumerate() {
-            context.push_str(&format!("{}. {} (relevance: {:.0}%)\n",
-                i + 1, ku.expression, ku.score * 100.0));
+            context.push_str(&format!(
+                "{}. {} (relevance: {:.0}%)\n",
+                i + 1,
+                ku.expression,
+                ku.score * 100.0
+            ));
         }
 
         let messages = vec![
@@ -34,13 +38,18 @@ impl Synthesizer {
                  Given retrieved knowledge units, answer the user's question \
                  by combining the relevant information. \
                  Cite the KU numbers in your answer. \
-                 If the knowledge is insufficient, say so."
+                 If the knowledge is insufficient, say so.",
             ),
             ChatMessage::user(format!("{}\n\nQuestion: {}", context, query)),
         ];
 
-        let options = InferenceOptions { temperature: 0.3, ..Default::default() };
-        let response = backend.chat(&messages, &options).await
+        let options = InferenceOptions {
+            temperature: 0.3,
+            ..Default::default()
+        };
+        let response = backend
+            .chat(&messages, &options)
+            .await
             .map_err(|e| crate::error::MediatorError::RetrievalError(e.to_string()))?;
 
         Ok(response.content)
@@ -52,10 +61,17 @@ impl Synthesizer {
             return format!("No knowledge found for: {}", query);
         }
 
-        let mut response = format!("Found {} relevant knowledge unit(s):\n\n", retrieved_kus.len());
+        let mut response = format!(
+            "Found {} relevant knowledge unit(s):\n\n",
+            retrieved_kus.len()
+        );
         for (i, ku) in retrieved_kus.iter().enumerate() {
-            response.push_str(&format!("{}. {} (score: {:.0}%)\n",
-                i + 1, ku.expression, ku.score * 100.0));
+            response.push_str(&format!(
+                "{}. {} (score: {:.0}%)\n",
+                i + 1,
+                ku.expression,
+                ku.score * 100.0
+            ));
         }
         response
     }
@@ -110,9 +126,12 @@ mod tests {
     #[tokio::test]
     async fn test_synthesize_with_kus() {
         let kus = sample_kus();
-        let mock = ku_ai::MockBackend::new()
-            .with_chat_response("Water has various temperature states. It boils at 100°C (1) and freezes at 0°C (2).");
-        let result = Synthesizer::synthesize("water temperature", &kus, &mock).await.unwrap();
+        let mock = ku_ai::MockBackend::new().with_chat_response(
+            "Water has various temperature states. It boils at 100°C (1) and freezes at 0°C (2).",
+        );
+        let result = Synthesizer::synthesize("water temperature", &kus, &mock)
+            .await
+            .unwrap();
         assert!(result.contains("Water"));
     }
 }

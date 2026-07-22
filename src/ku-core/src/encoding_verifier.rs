@@ -15,7 +15,7 @@
 //! - CRC integrity
 //! - CID computation consistency
 
-use crate::core_dna::{CoreDna, Instruction, encode_core_dna, decode_core_dna};
+use crate::core_dna::{decode_core_dna, encode_core_dna, CoreDna, Instruction};
 use crate::types::ConceptId;
 use std::collections::HashSet;
 
@@ -67,10 +67,14 @@ pub fn decomposition_agreement(a: &DecompositionResult, b: &DecompositionResult)
     }
 
     // Factor 2: Opcode type overlap (0.3)
-    let opcodes_a: HashSet<u8> = a.instructions.iter()
+    let opcodes_a: HashSet<u8> = a
+        .instructions
+        .iter()
         .map(|i| instruction_opcode(i))
         .collect();
-    let opcodes_b: HashSet<u8> = b.instructions.iter()
+    let opcodes_b: HashSet<u8> = b
+        .instructions
+        .iter()
         .map(|i| instruction_opcode(i))
         .collect();
     let opcode_sim = jaccard_similarity(&opcodes_a, &opcodes_b);
@@ -137,7 +141,8 @@ pub fn tool_encoding_check(dna: &CoreDna) -> ToolVerifyResult {
     if decoded.instructions.len() != dna.instructions.len() {
         return ToolVerifyResult::Fail(format!(
             "Instruction count mismatch: {} vs {}",
-            decoded.instructions.len(), dna.instructions.len()
+            decoded.instructions.len(),
+            dna.instructions.len()
         ));
     }
 
@@ -157,27 +162,79 @@ fn extract_concept_ids(instructions: &[Instruction]) -> Vec<ConceptId> {
     let mut ids = Vec::new();
     for inst in instructions {
         match inst {
-            Instruction::Triple { s, p, o } => { ids.push(*s); ids.push(*p); ids.push(*o); },
-            Instruction::Quality { s, q } => { ids.push(*s); ids.push(*q); },
-            Instruction::Quantity { s, unit, .. } => { ids.push(*s); ids.push(*unit); },
+            Instruction::Triple { s, p, o } => {
+                ids.push(*s);
+                ids.push(*p);
+                ids.push(*o);
+            }
+            Instruction::Quality { s, q } => {
+                ids.push(*s);
+                ids.push(*q);
+            }
+            Instruction::Quantity { s, unit, .. } => {
+                ids.push(*s);
+                ids.push(*unit);
+            }
             Instruction::Sequence { items } => ids.extend(items),
-            Instruction::PartOf { part, whole } => { ids.push(*part); ids.push(*whole); },
-            Instruction::Located { s, location } => { ids.push(*s); ids.push(*location); },
-            Instruction::Temporal { s, time } => { ids.push(*s); ids.push(*time); },
-            Instruction::Causal { cause, effect } => { ids.push(*cause); ids.push(*effect); },
-            Instruction::Simulates { s, model } => { ids.push(*s); ids.push(*model); },
-            Instruction::Condition { cond, result } => { ids.push(*cond); ids.push(*result); },
-            Instruction::Agent { actor, action } => { ids.push(*actor); ids.push(*action); },
-            Instruction::Tool { action, instrument } => { ids.push(*action); ids.push(*instrument); },
-            Instruction::Range { s, .. } => { ids.push(*s); },
-            Instruction::Tolerance { s, .. } => { ids.push(*s); },
-            Instruction::Constraint { source, target, .. } => { ids.push(*source); ids.push(*target); },
-            Instruction::EnumVal { s, values } => { ids.push(*s); ids.extend(values); },
-            Instruction::Step { action, target, .. } => { ids.push(*action); ids.push(*target); },
+            Instruction::PartOf { part, whole } => {
+                ids.push(*part);
+                ids.push(*whole);
+            }
+            Instruction::Located { s, location } => {
+                ids.push(*s);
+                ids.push(*location);
+            }
+            Instruction::Temporal { s, time } => {
+                ids.push(*s);
+                ids.push(*time);
+            }
+            Instruction::Causal { cause, effect } => {
+                ids.push(*cause);
+                ids.push(*effect);
+            }
+            Instruction::Simulates { s, model } => {
+                ids.push(*s);
+                ids.push(*model);
+            }
+            Instruction::Condition { cond, result } => {
+                ids.push(*cond);
+                ids.push(*result);
+            }
+            Instruction::Agent { actor, action } => {
+                ids.push(*actor);
+                ids.push(*action);
+            }
+            Instruction::Tool { action, instrument } => {
+                ids.push(*action);
+                ids.push(*instrument);
+            }
+            Instruction::Range { s, .. } => {
+                ids.push(*s);
+            }
+            Instruction::Tolerance { s, .. } => {
+                ids.push(*s);
+            }
+            Instruction::Constraint { source, target, .. } => {
+                ids.push(*source);
+                ids.push(*target);
+            }
+            Instruction::EnumVal { s, values } => {
+                ids.push(*s);
+                ids.extend(values);
+            }
+            Instruction::Step { action, target, .. } => {
+                ids.push(*action);
+                ids.push(*target);
+            }
             Instruction::Precond { concept } => ids.push(*concept),
             Instruction::Effect { concept } => ids.push(*concept),
-            Instruction::Label { key, value } => { ids.push(*key); ids.push(*value); },
-            Instruction::Member { label, .. } => { ids.push(*label); },
+            Instruction::Label { key, value } => {
+                ids.push(*key);
+                ids.push(*value);
+            }
+            Instruction::Member { label, .. } => {
+                ids.push(*label);
+            }
             // Non-concept instructions
             Instruction::Certainty { .. }
             | Instruction::Difficulty { .. }
@@ -188,7 +245,7 @@ fn extract_concept_ids(instructions: &[Instruction]) -> Vec<ConceptId> {
             | Instruction::Witness { .. }
             | Instruction::MediaRef { .. }
             | Instruction::CompositeHdr { .. }
-            | Instruction::End => {},
+            | Instruction::End => {}
         }
     }
     ids.sort_unstable();
@@ -240,7 +297,11 @@ fn jaccard_similarity(a: &HashSet<u8>, b: &HashSet<u8>) -> f32 {
     }
     let intersection = a.intersection(b).count();
     let union = a.union(b).count();
-    if union == 0 { 1.0 } else { intersection as f32 / union as f32 }
+    if union == 0 {
+        1.0
+    } else {
+        intersection as f32 / union as f32
+    }
 }
 
 /// Jaccard similarity between two sets of u64 (ConceptId).
@@ -250,7 +311,11 @@ fn jaccard_u64_similarity(a: &HashSet<u64>, b: &HashSet<u64>) -> f32 {
     }
     let intersection = a.intersection(b).count();
     let union = a.union(b).count();
-    if union == 0 { 1.0 } else { intersection as f32 / union as f32 }
+    if union == 0 {
+        1.0
+    } else {
+        intersection as f32 / union as f32
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -264,7 +329,11 @@ mod tests {
 
     fn make_fact(instructions: Vec<Instruction>) -> CoreDna {
         CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions,
         }
@@ -279,17 +348,28 @@ mod tests {
         let a = DecompositionResult::from_core_dna(&dna);
         let b = DecompositionResult::from_core_dna(&dna);
         let score = decomposition_agreement(&a, &b);
-        assert!(score > 0.95, "Identical decompositions should score ~1.0, got {}", score);
+        assert!(
+            score > 0.95,
+            "Identical decompositions should score ~1.0, got {}",
+            score
+        );
     }
 
     #[test]
     fn test_decomposition_different_gene_type() {
-        let dna_a = make_fact(vec![Instruction::Triple { s: 1, p: 2, o: 3 }, Instruction::End]);
+        let dna_a = make_fact(vec![
+            Instruction::Triple { s: 1, p: 2, o: 3 },
+            Instruction::End,
+        ]);
         let mut dna_b = dna_a.clone();
         dna_b.header.gene_type = 1; // Hypothesis instead of Fact
 
         let score = core_dna_agreement(&dna_a, &dna_b);
-        assert!(score < 0.8, "Different gene types should reduce score, got {}", score);
+        assert!(
+            score < 0.8,
+            "Different gene types should reduce score, got {}",
+            score
+        );
     }
 
     #[test]
@@ -307,13 +387,21 @@ mod tests {
 
         let score = core_dna_agreement(&dna_a, &dna_b);
         // Same gene_type (0.3) + partial opcode overlap + partial concept overlap
-        assert!(score > 0.3 && score < 1.0, "Partial overlap should be intermediate, got {}", score);
+        assert!(
+            score > 0.3 && score < 1.0,
+            "Partial overlap should be intermediate, got {}",
+            score
+        );
     }
 
     #[test]
     fn test_tool_encoding_check_pass() {
         let dna = make_fact(vec![
-            Instruction::Triple { s: 42, p: 187, o: 91 },
+            Instruction::Triple {
+                s: 42,
+                p: 187,
+                o: 91,
+            },
             Instruction::Certainty { level: 9000 },
         ]);
         assert_eq!(tool_encoding_check(&dna), ToolVerifyResult::Pass);

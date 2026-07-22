@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { TrendingUp, Lightbulb, Layers, ChevronRight, Flame, Star, Sparkles } from 'lucide-react';
+import { Lightbulb, Layers, ChevronRight, Flame, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { KuListItem } from '../api/types';
-import { GENE_TYPE_COLORS } from '../api/types';
+import { GENE_TYPE_COLORS, type GeneType } from '../api/types';
 
 type TrendingItem = { ku: KuListItem; trend_score: number; reason: string };
 type RecommendedItem = { ku: KuListItem; relevance: number; reason: string };
@@ -156,7 +156,7 @@ export function DiscoveryPage() {
                       <div>
                         <div style={{
                           fontSize: '1rem', fontWeight: 600,
-                          color: GENE_TYPE_COLORS[domain.name] || 'var(--ob-text-primary)',
+                          color: GENE_TYPE_COLORS[domain.name as GeneType] || 'var(--ob-text-primary)',
                           marginBottom: 4,
                         }}>{domain.name}</div>
                         <div style={{ fontSize: '0.85rem', color: 'var(--ob-text-secondary)' }}>
@@ -169,7 +169,7 @@ export function DiscoveryPage() {
                     <div style={{ marginTop: 12, height: 4, borderRadius: 2, background: 'var(--ob-glass-border)', overflow: 'hidden' }}>
                       <div style={{
                         width: `${Math.min(domain.avg_pomv * 100, 100)}%`, height: '100%',
-                        background: GENE_TYPE_COLORS[domain.name] || 'var(--ob-accent)',
+                        background: GENE_TYPE_COLORS[domain.name as GeneType] || 'var(--ob-accent)',
                         borderRadius: 2, transition: 'width 0.5s ease',
                       }} />
                     </div>

@@ -73,10 +73,7 @@ impl std::fmt::Display for DeviceProfile {
             self.os_name,
             self.cpu_cores,
             ram_gb,
-            self.gpu
-                .as_ref()
-                .map(|g| g.name.as_str())
-                .unwrap_or("none"),
+            self.gpu.as_ref().map(|g| g.name.as_str()).unwrap_or("none"),
             self.tier,
         )
     }

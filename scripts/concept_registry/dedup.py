@@ -19,6 +19,7 @@ from config import (
     CATEGORY_SUBSTANCE,
     CATEGORY_TAXON,
     SOURCE_CHEBI,
+    SOURCE_ENGLISH_DICT,
     SOURCE_GEONAMES,
     SOURCE_NCBI,
     SOURCE_WIKIDATA,
@@ -34,20 +35,32 @@ logger = logging.getLogger(__name__)
 # wd(0) > gn(1) > ncbi(2) > chebi(3)
 
 
-def _load_wikidata(path: Path) -> list[dict[str, Any]]:
+def _load_wikidata(raw_dir: Path) -> list[dict[str, Any]]:
     """Load Wikidata JSONL records.
 
+    Prefers wikidata_ranked.jsonl (quality-ranked top 10M) if available,
+    otherwise falls back to wikidata.jsonl.
+
     Args:
-        path: Path to wikidata.jsonl.
+        raw_dir: Directory containing wikidata JSONL files.
 
     Returns:
         List of normalised records.
     """
-    records: list[dict[str, Any]] = []
-    if not path.exists():
-        logger.warning("Wikidata file not found: %s", path)
-        return records
+    ranked_path = raw_dir / "wikidata_ranked.jsonl"
+    plain_path = raw_dir / "wikidata.jsonl"
 
+    if ranked_path.exists():
+        path = ranked_path
+        logger.info("Using RANKED wikidata: %s", path)
+    elif plain_path.exists():
+        path = plain_path
+        logger.info("Using plain wikidata: %s", path)
+    else:
+        logger.warning("No wikidata file found in %s", raw_dir)
+        return []
+
+    records: list[dict[str, Any]] = []
     with open(path, "r", encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
@@ -210,20 +223,39 @@ def deduplicate(raw_dir: Path, output_path: Path) -> dict[str, Any]:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Load all sources
-    logger.info("Loading raw records …")
-    wd_records = _load_wikidata(raw_dir / "wikidata.jsonl")
+    logger.info("Loading raw records ...")
+    wd_records = _load_wikidata(raw_dir)
     gn_records = _load_geonames(raw_dir / "geonames.jsonl")
     ncbi_records = _load_ncbi(raw_dir / "ncbi_taxonomy.jsonl")
     chebi_records = _load_chebi(raw_dir / "chebi.jsonl")
 
-    total_input = len(wd_records) + len(gn_records) + len(ncbi_records) + len(chebi_records)
+    # Load English dictionary for merge
+    en_dict_path = raw_dir / "english_dict.jsonl"
+    en_dict_records: list[dict[str, Any]] = []
+    if en_dict_path.exists():
+        logger.info("Loading English dictionary for merge ...")
+        with open(en_dict_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                en_dict_records.append(obj)
+        logger.info("Loaded %d English dictionary entries", len(en_dict_records))
+
+    total_input = (len(wd_records) + len(gn_records) + len(ncbi_records)
+                   + len(chebi_records) + len(en_dict_records))
     logger.info(
-        "Loaded %d records total (wd=%d, gn=%d, ncbi=%d, chebi=%d)",
+        "Loaded %d records total (wd=%d, gn=%d, ncbi=%d, chebi=%d, en=%d)",
         total_input,
         len(wd_records),
         len(gn_records),
         len(ncbi_records),
         len(chebi_records),
+        len(en_dict_records),
     )
 
     # -----------------------------------------------------------------------
@@ -303,9 +335,56 @@ def deduplicate(raw_dir: Path, output_path: Path) -> dict[str, Any]:
             deduped_chebi.append(rec)
 
     # -----------------------------------------------------------------------
+    # Merge English Dictionary (Strategy B)
+    # Matching labels -> enrich Wikidata record; non-matching -> new entries
+    # -----------------------------------------------------------------------
+    en_merged = 0
+    en_new: list[dict[str, Any]] = []
+
+    if en_dict_records:
+        logger.info("Merging English dictionary (Strategy B) ...")
+        # Build label -> wd_record index for fast lookup
+        wd_label_index: dict[str, int] = {}
+        for i, rec in enumerate(wd_records):
+            en_label = rec.get("labels", {}).get("en", "").lower()
+            if en_label:
+                wd_label_index[en_label] = i
+
+        for en_rec in tqdm(en_dict_records, desc="Merge EN dict", unit=" rec"):
+            en_label = en_rec.get("labels", {}).get("en", "").lower()
+            if en_label in wd_label_index:
+                # Enrich existing Wikidata record
+                wd_idx = wd_label_index[en_label]
+                wd_rec = wd_records[wd_idx]
+                # Add POS, synonyms, hypernyms from dictionary
+                if "pos" not in wd_rec:
+                    wd_rec["pos"] = en_rec.get("pos", [])
+                if "synonyms" not in wd_rec:
+                    wd_rec["synonyms"] = en_rec.get("synonyms", [])
+                if "hypernyms" not in wd_rec:
+                    wd_rec["hypernyms"] = en_rec.get("hypernyms", [])
+                en_merged += 1
+            else:
+                # New entry from dictionary
+                en_new.append({
+                    "ext_id": en_rec["id"],
+                    "source": SOURCE_ENGLISH_DICT,
+                    "canonical_form": en_rec["id"],
+                    "name": en_rec.get("labels", {}).get("en", ""),
+                    "labels": en_rec.get("labels", {}),
+                    "category": 0,  # ENTITY
+                    "pos": en_rec.get("pos", []),
+                    "synonyms": en_rec.get("synonyms", []),
+                    "hypernyms": en_rec.get("hypernyms", []),
+                })
+
+        logger.info("EN dict: %d merged into WD, %d new entries",
+                    en_merged, len(en_new))
+
+    # -----------------------------------------------------------------------
     # Write unified output
     # -----------------------------------------------------------------------
-    all_records = wd_records + deduped_gn + deduped_ncbi + deduped_chebi
+    all_records = wd_records + deduped_gn + deduped_ncbi + deduped_chebi + en_new
     final_count = len(all_records)
 
     logger.info("Writing %d deduplicated records to %s", final_count, output_path)
@@ -332,6 +411,8 @@ def deduplicate(raw_dir: Path, output_path: Path) -> dict[str, Any]:
             "geonames": len(deduped_gn),
             "ncbi": len(deduped_ncbi),
             "chebi": len(deduped_chebi),
+            "english_dict_merged": en_merged,
+            "english_dict_new": len(en_new),
         },
     }
 

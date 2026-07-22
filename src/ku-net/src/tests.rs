@@ -2,11 +2,11 @@
 //!
 //! Tests for identity, messages, membership, and discovery modules.
 
-use crate::identity::*;
-use crate::error::*;
-use crate::messages::*;
-use crate::membership::*;
 use crate::discovery::*;
+use crate::error::*;
+use crate::identity::*;
+use crate::membership::*;
+use crate::messages::*;
 use std::time::Instant;
 
 // ════════════════════════════════════════════════════════════════════════
@@ -21,11 +21,18 @@ fn test_node_id_generation_difficulty_16() {
     let proof = generate_node_id(&pubkey, PUZZLE_C_SMALL); // difficulty=16
 
     // Must have at least 16 leading zero bits
-    assert!(proof.node_id.leading_zeros() >= 16,
-        "NodeId has {} leading zeros, expected >= 16", proof.node_id.leading_zeros());
+    assert!(
+        proof.node_id.leading_zeros() >= 16,
+        "NodeId has {} leading zeros, expected >= 16",
+        proof.node_id.leading_zeros()
+    );
     assert_eq!(proof.difficulty, 16);
     println!("NodeId generated: {}", proof.node_id);
-    println!("Nonce: {}, Leading zeros: {}", proof.nonce, proof.node_id.leading_zeros());
+    println!(
+        "Nonce: {}, Leading zeros: {}",
+        proof.nonce,
+        proof.node_id.leading_zeros()
+    );
 }
 
 #[test]
@@ -36,7 +43,12 @@ fn test_node_id_verification_valid() {
     let proof = generate_node_id(&pubkey, PUZZLE_C_SMALL);
 
     // Verify: correct pubkey + nonce → valid
-    assert!(verify_node_id(&pubkey, proof.nonce, &proof.node_id, PUZZLE_C_SMALL));
+    assert!(verify_node_id(
+        &pubkey,
+        proof.nonce,
+        &proof.node_id,
+        PUZZLE_C_SMALL
+    ));
 }
 
 #[test]
@@ -47,7 +59,12 @@ fn test_node_id_verification_invalid_nonce() {
     let proof = generate_node_id(&pubkey, PUZZLE_C_SMALL);
 
     // Wrong nonce → invalid
-    assert!(!verify_node_id(&pubkey, proof.nonce + 1, &proof.node_id, PUZZLE_C_SMALL));
+    assert!(!verify_node_id(
+        &pubkey,
+        proof.nonce + 1,
+        &proof.node_id,
+        PUZZLE_C_SMALL
+    ));
 }
 
 #[test]
@@ -60,7 +77,12 @@ fn test_node_id_verification_invalid_pubkey() {
     let proof = generate_node_id(&pubkey1, PUZZLE_C_SMALL);
 
     // Wrong pubkey → invalid
-    assert!(!verify_node_id(&pubkey2, proof.nonce, &proof.node_id, PUZZLE_C_SMALL));
+    assert!(!verify_node_id(
+        &pubkey2,
+        proof.nonce,
+        &proof.node_id,
+        PUZZLE_C_SMALL
+    ));
 }
 
 #[test]
@@ -171,38 +193,78 @@ fn test_message_header_roundtrip() {
 fn test_message_header_all_types() {
     // Verify every MessageType has a unique u8 and roundtrips
     let types = [
-        MessageType::KuPush, MessageType::KuPull, MessageType::Gossip,
-        MessageType::TrustUpdate, MessageType::DhtRequest, MessageType::Ping,
-        MessageType::Pong, MessageType::Bundle, MessageType::BloomFilter,
-        MessageType::PeerExchange, MessageType::RelayRequest, MessageType::RelayData,
-        MessageType::RelayClose, MessageType::Capability,
-        MessageType::SwimPing, MessageType::SwimAck, MessageType::SwimPingReq,
-        MessageType::SwimNack, MessageType::SpFitness, MessageType::SpHandoff,
-        MessageType::SpRedirect, MessageType::SpRegister, MessageType::SpOverloaded,
-        MessageType::Goodbye, MessageType::HealthReport, MessageType::DepartingSoon,
+        MessageType::KuPush,
+        MessageType::KuPull,
+        MessageType::Gossip,
+        MessageType::TrustUpdate,
+        MessageType::DhtRequest,
+        MessageType::Ping,
+        MessageType::Pong,
+        MessageType::Bundle,
+        MessageType::BloomFilter,
+        MessageType::PeerExchange,
+        MessageType::RelayRequest,
+        MessageType::RelayData,
+        MessageType::RelayClose,
+        MessageType::Capability,
+        MessageType::SwimPing,
+        MessageType::SwimAck,
+        MessageType::SwimPingReq,
+        MessageType::SwimNack,
+        MessageType::SpFitness,
+        MessageType::SpHandoff,
+        MessageType::SpRedirect,
+        MessageType::SpRegister,
+        MessageType::SpOverloaded,
+        MessageType::Goodbye,
+        MessageType::HealthReport,
+        MessageType::DepartingSoon,
         MessageType::ClusterAggregate,
-        MessageType::FindNodeReq, MessageType::FindNodeResp,
-        MessageType::FindValueReq, MessageType::FindValueResp,
-        MessageType::StoreReq, MessageType::StoreAck, MessageType::HierLookup,
-        MessageType::VacuumFilter, MessageType::VacuumExchange,
-        MessageType::PheromoneUpdate, MessageType::TopicSubscribe,
-        MessageType::TopicUnsubscribe, MessageType::TopicPublish,
-        MessageType::TopicDeliver, MessageType::NdnInterest, MessageType::NdnData,
-        MessageType::WatchNotify, MessageType::WatchRegister,
-        MessageType::WatchUnregister, MessageType::TrustGossip,
-        MessageType::TrustVaccine, MessageType::KuPropagation,
-        MessageType::QueryForward, MessageType::QueryResponse, MessageType::QueryCancel,
-        MessageType::CrdtSyncInit, MessageType::CrdtSyncDelta,
-        MessageType::CrdtSyncAck, MessageType::CrdtSyncComplete,
-        MessageType::MeshDelta, MessageType::CacheInvalidate,
-        MessageType::PowChallenge, MessageType::PowResponse,
-        MessageType::Backpressure, MessageType::ProofOfStorage,
-        MessageType::ProofOfBandwidth, MessageType::SpDemotion,
+        MessageType::FindNodeReq,
+        MessageType::FindNodeResp,
+        MessageType::FindValueReq,
+        MessageType::FindValueResp,
+        MessageType::StoreReq,
+        MessageType::StoreAck,
+        MessageType::HierLookup,
+        MessageType::VacuumFilter,
+        MessageType::VacuumExchange,
+        MessageType::PheromoneUpdate,
+        MessageType::TopicSubscribe,
+        MessageType::TopicUnsubscribe,
+        MessageType::TopicPublish,
+        MessageType::TopicDeliver,
+        MessageType::NdnInterest,
+        MessageType::NdnData,
+        MessageType::WatchNotify,
+        MessageType::WatchRegister,
+        MessageType::WatchUnregister,
+        MessageType::TrustGossip,
+        MessageType::TrustVaccine,
+        MessageType::KuPropagation,
+        MessageType::QueryForward,
+        MessageType::QueryResponse,
+        MessageType::QueryCancel,
+        MessageType::CrdtSyncInit,
+        MessageType::CrdtSyncDelta,
+        MessageType::CrdtSyncAck,
+        MessageType::CrdtSyncComplete,
+        MessageType::MeshDelta,
+        MessageType::CacheInvalidate,
+        MessageType::PowChallenge,
+        MessageType::PowResponse,
+        MessageType::Backpressure,
+        MessageType::ProofOfStorage,
+        MessageType::ProofOfBandwidth,
+        MessageType::SpDemotion,
         MessageType::BlacklistUpdate,
         // Encoding Consensus (0x90–0x95)
-        MessageType::EncodingJobAnnounce, MessageType::EncodingClaimReq,
-        MessageType::EncodingClaimResp, MessageType::EncodingSubmission,
-        MessageType::EncodingConsensusResult, MessageType::EncodingJobUpdate,
+        MessageType::EncodingJobAnnounce,
+        MessageType::EncodingClaimReq,
+        MessageType::EncodingClaimResp,
+        MessageType::EncodingSubmission,
+        MessageType::EncodingConsensusResult,
+        MessageType::EncodingJobUpdate,
     ];
 
     // Verify uniqueness
@@ -215,7 +277,10 @@ fn test_message_header_all_types() {
         let decoded = MessageType::from_u8(val).unwrap();
         assert_eq!(*mt, decoded);
     }
-    println!("All {} message types have unique IDs and roundtrip correctly", types.len());
+    println!(
+        "All {} message types have unique IDs and roundtrip correctly",
+        types.len()
+    );
 }
 
 #[test]
@@ -302,35 +367,60 @@ fn make_test_fitness(score_target: f32) -> FitnessComponents {
 #[test]
 fn test_fitness_score_calculation() {
     let fitness = FitnessComponents {
-        uptime: 0.9,        // 0.20 × 0.9 = 0.18
-        battery: 1.0,       // 0.15 × 1.0 = 0.15
-        bandwidth: 0.8,     // 0.15 × 0.8 = 0.12
-        storage: 0.7,       // 0.10 × 0.7 = 0.07
-        cpu: 0.6,           // 0.10 × 0.6 = 0.06
-        network_quality: 1.0,// 0.15 × 1.0 = 0.15
-        reputation: 0.8,    // 0.15 × 0.8 = 0.12
+        uptime: 0.9,          // 0.20 × 0.9 = 0.18
+        battery: 1.0,         // 0.15 × 1.0 = 0.15
+        bandwidth: 0.8,       // 0.15 × 0.8 = 0.12
+        storage: 0.7,         // 0.10 × 0.7 = 0.07
+        cpu: 0.6,             // 0.10 × 0.6 = 0.06
+        network_quality: 1.0, // 0.15 × 1.0 = 0.15
+        reputation: 0.8,      // 0.15 × 0.8 = 0.12
     };
     let score = fitness.score();
     let expected = 0.18 + 0.15 + 0.12 + 0.07 + 0.06 + 0.15 + 0.12;
-    assert!((score - expected).abs() < 0.001, "score={}, expected={}", score, expected);
+    assert!(
+        (score - expected).abs() < 0.001,
+        "score={}, expected={}",
+        score,
+        expected
+    );
 }
 
 #[test]
 fn test_tier_promotion_thresholds() {
     assert_eq!(make_test_fitness(0.1).recommended_tier(), NodeTier::Leaf);
-    assert_eq!(make_test_fitness(0.35).recommended_tier(), NodeTier::Contributor);
-    assert_eq!(make_test_fitness(0.65).recommended_tier(), NodeTier::LocalSP);
-    assert_eq!(make_test_fitness(0.80).recommended_tier(), NodeTier::RegionalSP);
-    assert_eq!(make_test_fitness(0.90).recommended_tier(), NodeTier::CountrySP);
-    assert_eq!(make_test_fitness(0.95).recommended_tier(), NodeTier::ContinentalSP);
-    assert_eq!(make_test_fitness(0.99).recommended_tier(), NodeTier::GlobalBackbone);
+    assert_eq!(
+        make_test_fitness(0.35).recommended_tier(),
+        NodeTier::Contributor
+    );
+    assert_eq!(
+        make_test_fitness(0.65).recommended_tier(),
+        NodeTier::LocalSP
+    );
+    assert_eq!(
+        make_test_fitness(0.80).recommended_tier(),
+        NodeTier::RegionalSP
+    );
+    assert_eq!(
+        make_test_fitness(0.90).recommended_tier(),
+        NodeTier::CountrySP
+    );
+    assert_eq!(
+        make_test_fitness(0.95).recommended_tier(),
+        NodeTier::ContinentalSP
+    );
+    assert_eq!(
+        make_test_fitness(0.99).recommended_tier(),
+        NodeTier::GlobalBackbone
+    );
 }
 
 #[test]
 fn test_tier_demotion_hysteresis() {
     // Contributor promotion at 0.3, demotion at 0.2
     // This hysteresis prevents flapping
-    assert!(NodeTier::Contributor.promotion_threshold() > NodeTier::Contributor.demotion_threshold());
+    assert!(
+        NodeTier::Contributor.promotion_threshold() > NodeTier::Contributor.demotion_threshold()
+    );
     assert_eq!(NodeTier::Contributor.promotion_threshold(), 0.3);
     assert_eq!(NodeTier::Contributor.demotion_threshold(), 0.2);
 }
@@ -398,7 +488,9 @@ fn test_membership_handle_ping() {
         node_id: peer_id,
         address: NetworkAddress::new_v4(10, 0, 0, 1, 4242),
         incarnation: 1,
-        status: MemberStatus::Suspect { since: Instant::now() },
+        status: MemberStatus::Suspect {
+            since: Instant::now(),
+        },
         tier: NodeTier::Leaf,
         last_seen: Instant::now(),
         fitness_score: 0.3,
@@ -437,8 +529,20 @@ fn test_membership_graceful_departure() {
 #[test]
 fn test_member_status_wire_format() {
     assert_eq!(MemberStatus::Alive.to_wire(), 0);
-    assert_eq!(MemberStatus::Suspect { since: Instant::now() }.to_wire(), 1);
-    assert_eq!(MemberStatus::Dead { since: Instant::now() }.to_wire(), 2);
+    assert_eq!(
+        MemberStatus::Suspect {
+            since: Instant::now()
+        }
+        .to_wire(),
+        1
+    );
+    assert_eq!(
+        MemberStatus::Dead {
+            since: Instant::now()
+        }
+        .to_wire(),
+        2
+    );
     assert_eq!(MemberStatus::Left.to_wire(), 3);
 
     // Roundtrip
@@ -460,7 +564,13 @@ fn test_bootstrap_state_machine() {
     // Start → Discovering(Social)
     let layer = engine.start();
     assert_eq!(layer, BootstrapLayer::Social);
-    assert!(matches!(engine.state, BootstrapState::Discovering { layer: BootstrapLayer::Social, .. }));
+    assert!(matches!(
+        engine.state,
+        BootstrapState::Discovering {
+            layer: BootstrapLayer::Social,
+            ..
+        }
+    ));
 
     // Social fails → try Local
     let next = engine.layer_failed();
@@ -496,7 +606,13 @@ fn test_bootstrap_state_machine() {
     // Mark connected
     engine.mark_connected(BootstrapLayer::Http, 3);
     assert!(engine.is_connected());
-    assert!(matches!(engine.state, BootstrapState::Connected { via_layer: BootstrapLayer::Http, peer_count: 3 }));
+    assert!(matches!(
+        engine.state,
+        BootstrapState::Connected {
+            via_layer: BootstrapLayer::Http,
+            peer_count: 3
+        }
+    ));
 }
 
 #[test]

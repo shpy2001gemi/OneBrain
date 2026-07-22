@@ -10,8 +10,8 @@
 //! - [`CompactionReport`]: Stats from an event log compaction pass
 //! - [`GraphStats`]: Aggregate edge statistics
 
-use serde::{Serialize, Deserialize};
 use crate::types::{Bond, Creator, DecayRate, EdgeState, RelationType};
+use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // 1. BondMeta — Compact 9-byte index entry
@@ -65,7 +65,13 @@ impl BondMeta {
             _ => DecayRate::Fast,
         };
         let timestamp = u32::from_be_bytes([bytes[5], bytes[6], bytes[7], bytes[8]]);
-        Self { weight, creator, state, decay, timestamp }
+        Self {
+            weight,
+            creator,
+            state,
+            decay,
+            timestamp,
+        }
     }
 
     /// Extract a `BondMeta` from an existing [`Bond`].
@@ -250,8 +256,7 @@ pub fn decay_lambda(relation: RelationType) -> f64 {
         | RelationType::CulturallyContextualizes => 0.0077,
 
         // λ = 0.099 — fast decay (~7 day half-life)
-        RelationType::ReactionTo
-        | RelationType::SensoryEvidenceFor => 0.099,
+        RelationType::ReactionTo | RelationType::SensoryEvidenceFor => 0.099,
     }
 }
 
@@ -361,10 +366,18 @@ mod tests {
     }
 
     impl Decayable for TestDecayable {
-        fn decay_rate(&self) -> f64 { self.lambda }
-        fn last_reinforced_secs(&self) -> u64 { self.last }
-        fn grace_period_secs(&self) -> f64 { self.grace }
-        fn floor(&self) -> f64 { self.fl }
+        fn decay_rate(&self) -> f64 {
+            self.lambda
+        }
+        fn last_reinforced_secs(&self) -> u64 {
+            self.last
+        }
+        fn grace_period_secs(&self) -> f64 {
+            self.grace
+        }
+        fn floor(&self) -> f64 {
+            self.fl
+        }
     }
 
     // ── BondMeta tests ───────────────────────────────────────────────────
@@ -494,7 +507,12 @@ mod tests {
         let cbor = event.to_cbor();
         let restored = BondEvent::from_cbor(&cbor).unwrap();
         assert_eq!(event.timestamp(), restored.timestamp());
-        if let BondEvent::Reinforced { old_weight, new_weight, .. } = restored {
+        if let BondEvent::Reinforced {
+            old_weight,
+            new_weight,
+            ..
+        } = restored
+        {
             assert_eq!(old_weight, 5000);
             assert_eq!(new_weight, 7500);
         } else {
@@ -517,7 +535,13 @@ mod tests {
         let cbor = event.to_cbor();
         let restored = BondEvent::from_cbor(&cbor).unwrap();
         assert_eq!(event.timestamp(), restored.timestamp());
-        if let BondEvent::Weakened { reason, old_weight, new_weight, .. } = restored {
+        if let BondEvent::Weakened {
+            reason,
+            old_weight,
+            new_weight,
+            ..
+        } = restored
+        {
             assert_eq!(reason, WeakeningReason::Decay);
             assert_eq!(old_weight, 6000);
             assert_eq!(new_weight, 3000);
@@ -539,7 +563,12 @@ mod tests {
         };
         let cbor = event.to_cbor();
         let restored = BondEvent::from_cbor(&cbor).unwrap();
-        if let BondEvent::StateChanged { old_state, new_state, .. } = restored {
+        if let BondEvent::StateChanged {
+            old_state,
+            new_state,
+            ..
+        } = restored
+        {
             assert_eq!(old_state, EdgeState::Active);
             assert_eq!(new_state, EdgeState::Deprecated);
         } else {
@@ -597,12 +626,18 @@ mod tests {
     fn decay_lambda_never() {
         // Structural, temporal, provenance, formal — λ = 0.0
         let never_decay = [
-            RelationType::PartOf, RelationType::InstanceOf,
-            RelationType::Specializes, RelationType::Generalizes,
-            RelationType::Precedes, RelationType::Cooccurs,
-            RelationType::Cites, RelationType::AuthoredBy,
-            RelationType::ReviewedBy, RelationType::Duplicates,
-            RelationType::Supersedes, RelationType::FormallyProves,
+            RelationType::PartOf,
+            RelationType::InstanceOf,
+            RelationType::Specializes,
+            RelationType::Generalizes,
+            RelationType::Precedes,
+            RelationType::Cooccurs,
+            RelationType::Cites,
+            RelationType::AuthoredBy,
+            RelationType::ReviewedBy,
+            RelationType::Duplicates,
+            RelationType::Supersedes,
+            RelationType::FormallyProves,
         ];
         for rel in &never_decay {
             assert_eq!(decay_lambda(*rel), 0.0, "expected λ=0.0 for {:?}", rel);
@@ -613,16 +648,25 @@ mod tests {
     fn decay_lambda_slow() {
         // Epistemic / causal — λ = 0.0019
         let slow = [
-            RelationType::Extends, RelationType::Corroborates,
-            RelationType::Causes, RelationType::Enables,
-            RelationType::Prevents, RelationType::DependsOn,
-            RelationType::AppliesTo, RelationType::DerivedFrom,
-            RelationType::Translates, RelationType::Paraphrases,
-            RelationType::EvolvesInto, RelationType::VariantOf,
+            RelationType::Extends,
+            RelationType::Corroborates,
+            RelationType::Causes,
+            RelationType::Enables,
+            RelationType::Prevents,
+            RelationType::DependsOn,
+            RelationType::AppliesTo,
+            RelationType::DerivedFrom,
+            RelationType::Translates,
+            RelationType::Paraphrases,
+            RelationType::EvolvesInto,
+            RelationType::VariantOf,
         ];
         for rel in &slow {
-            assert!((decay_lambda(*rel) - 0.0019).abs() < 1e-10,
-                "expected λ≈0.0019 for {:?}", rel);
+            assert!(
+                (decay_lambda(*rel) - 0.0019).abs() < 1e-10,
+                "expected λ≈0.0019 for {:?}",
+                rel
+            );
         }
     }
 
@@ -630,26 +674,34 @@ mod tests {
     fn decay_lambda_medium() {
         // Derivation / supplementary — λ = 0.0077
         let med = [
-            RelationType::Supplements, RelationType::Refutes,
-            RelationType::Qualifies, RelationType::ExampleOf,
-            RelationType::AnalogyOf, RelationType::Inspires,
-            RelationType::TestimonyAbout, RelationType::CulturallyContextualizes,
+            RelationType::Supplements,
+            RelationType::Refutes,
+            RelationType::Qualifies,
+            RelationType::ExampleOf,
+            RelationType::AnalogyOf,
+            RelationType::Inspires,
+            RelationType::TestimonyAbout,
+            RelationType::CulturallyContextualizes,
         ];
         for rel in &med {
-            assert!((decay_lambda(*rel) - 0.0077).abs() < 1e-10,
-                "expected λ≈0.0077 for {:?}", rel);
+            assert!(
+                (decay_lambda(*rel) - 0.0077).abs() < 1e-10,
+                "expected λ≈0.0077 for {:?}",
+                rel
+            );
         }
     }
 
     #[test]
     fn decay_lambda_fast() {
         // Experiential — λ = 0.099
-        let fast = [
-            RelationType::ReactionTo, RelationType::SensoryEvidenceFor,
-        ];
+        let fast = [RelationType::ReactionTo, RelationType::SensoryEvidenceFor];
         for rel in &fast {
-            assert!((decay_lambda(*rel) - 0.099).abs() < 1e-10,
-                "expected λ≈0.099 for {:?}", rel);
+            assert!(
+                (decay_lambda(*rel) - 0.099).abs() < 1e-10,
+                "expected λ≈0.099 for {:?}",
+                rel
+            );
         }
     }
 
@@ -657,7 +709,12 @@ mod tests {
 
     #[test]
     fn decayable_no_decay() {
-        let d = TestDecayable { lambda: 0.0, last: 0, grace: 0.0, fl: 0.0 };
+        let d = TestDecayable {
+            lambda: 0.0,
+            last: 0,
+            grace: 0.0,
+            fl: 0.0,
+        };
         // With λ=0, weight should remain unchanged regardless of time
         let w = d.effective_weight(10000.0, 86400 * 365);
         assert_eq!(w, 10000.0);
@@ -666,7 +723,12 @@ mod tests {
     #[test]
     fn decayable_slow_decay() {
         let now = 86400 * 365; // 1 year in seconds
-        let d = TestDecayable { lambda: 0.0019, last: 0, grace: 0.0, fl: 0.0 };
+        let d = TestDecayable {
+            lambda: 0.0019,
+            last: 0,
+            grace: 0.0,
+            fl: 0.0,
+        };
         let w = d.effective_weight(10000.0, now);
         // exp(-0.0019 * 365) ≈ 0.5, so weight ≈ 5000
         assert!(w > 4900.0 && w < 5100.0, "slow decay 1yr: got {w}");
@@ -675,7 +737,12 @@ mod tests {
     #[test]
     fn decayable_fast_decay() {
         let one_week = 86400 * 7;
-        let d = TestDecayable { lambda: 0.099, last: 0, grace: 0.0, fl: 0.0 };
+        let d = TestDecayable {
+            lambda: 0.099,
+            last: 0,
+            grace: 0.0,
+            fl: 0.0,
+        };
         let w = d.effective_weight(10000.0, one_week);
         // exp(-0.099 * 7) ≈ 0.5, so weight ≈ 5000
         assert!(w > 4900.0 && w < 5100.0, "fast decay 1wk: got {w}");
@@ -683,7 +750,12 @@ mod tests {
 
     #[test]
     fn decayable_grace_period() {
-        let d = TestDecayable { lambda: 0.099, last: 0, grace: 100_000.0, fl: 0.0 };
+        let d = TestDecayable {
+            lambda: 0.099,
+            last: 0,
+            grace: 100_000.0,
+            fl: 0.0,
+        };
         // Within grace period — weight should not decay
         let w = d.effective_weight(10000.0, 50_000);
         assert_eq!(w, 10000.0);
@@ -695,7 +767,12 @@ mod tests {
     #[test]
     fn decayable_floor() {
         let huge_time = 86400 * 365 * 100; // 100 years
-        let d = TestDecayable { lambda: 0.099, last: 0, grace: 0.0, fl: 500.0 };
+        let d = TestDecayable {
+            lambda: 0.099,
+            last: 0,
+            grace: 0.0,
+            fl: 500.0,
+        };
         let w = d.effective_weight(10000.0, huge_time);
         assert_eq!(w, 500.0, "decayed weight should clamp to floor");
     }

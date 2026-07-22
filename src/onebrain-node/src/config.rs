@@ -3,9 +3,11 @@
 //! Defines the runtime configuration for an OneBrain node instance,
 //! including network port, data paths, Ollama settings, and seed peers.
 
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use serde::{Serialize, Deserialize};
+use std::path::PathBuf;
+
+use crate::vnext_config::VNextFeatureConfig;
 
 /// Configuration for an OneBrain node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,6 +24,9 @@ pub struct NodeConfig {
     pub model: String,
     /// Seed peer addresses for initial discovery.
     pub seeds: Vec<SocketAddr>,
+    /// vNext features and independent emergency kill switches.
+    #[serde(default)]
+    pub vnext: VNextFeatureConfig,
 }
 
 impl NodeConfig {
@@ -55,6 +60,13 @@ impl NodeConfig {
         self.data_dir.join("ku.blob.redb")
     }
 
+    /// Path to the ConceptRegistry OBR file.
+    ///
+    /// Used by encode_v2 for concept name → CCID resolution.
+    pub fn obr_path(&self) -> PathBuf {
+        self.data_dir.join("concepts.obr")
+    }
+
     /// Default seed node domains for peer discovery.
     pub fn default_seed_domains() -> Vec<String> {
         vec![
@@ -73,6 +85,7 @@ impl Default for NodeConfig {
             ollama_url: "http://localhost:11434".to_string(),
             model: "qwen3:8b".to_string(),
             seeds: Vec::new(),
+            vnext: VNextFeatureConfig::default(),
         }
     }
 }

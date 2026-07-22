@@ -23,10 +23,10 @@
 //! ## Reference
 //! See `docs/specs/obt/03_MINTING.md`.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::obt_constants::*;
 use crate::crdt::VectorClock;
+use crate::obt_constants::*;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -167,8 +167,7 @@ pub type CausalClock = VectorClock;
 /// | 10,000      | 0.90     | 90,000    |
 /// | 50,000      | 0.95     | 95,000    |
 pub fn compute_epoch_emission(active_nodes: u32, avg_pomv_score: f64) -> u64 {
-    let a = (active_nodes as f64 / ACTIVITY_MULTIPLIER_TARGET as f64)
-        .min(ACTIVITY_MULTIPLIER_MAX);
+    let a = (active_nodes as f64 / ACTIVITY_MULTIPLIER_TARGET as f64).min(ACTIVITY_MULTIPLIER_MAX);
     let q = avg_pomv_score.clamp(0.0, 1.0);
 
     (BASE_EMISSION_PER_EPOCH as f64 * a * q) as u64
@@ -236,11 +235,11 @@ pub fn compute_encoding_reward(raw_size_kb: f64, role: u8) -> u64 {
     let base = (raw_size_kb as u64).max(1) * BASE_OBT_PER_KB;
 
     match role {
-        0 => 0, // Contributor — paid through PoMV
+        0 => 0,                              // Contributor — paid through PoMV
         1 => base * 2 + FIRST_ENCODER_BONUS, // FirstEncoder
-        2 => base,                            // Verifier
-        3 => base * CORRECTOR_MULTIPLIER,     // Corrector
-        4 => base * 2 + PRO_BONO_BONUS,       // ProBono
+        2 => base,                           // Verifier
+        3 => base * CORRECTOR_MULTIPLIER,    // Corrector
+        4 => base * 2 + PRO_BONO_BONUS,      // ProBono
         _ => 0,
     }
 }
@@ -297,25 +296,21 @@ pub fn compute_stream_budget(epoch_emission: u64, stream_idx: usize) -> u64 {
 pub fn verify_mint_proof(proof: &MintProof) -> bool {
     // 1. Re-compute reward from formula inputs
     let recomputed = match proof.activity {
-        MintActivity::Encoding => {
-            compute_encoding_reward(
-                proof.formula_inputs.raw_size_kb,
-                proof.formula_inputs.role_multiplier as u8,
-            )
-        },
-        MintActivity::Verification => {
-            compute_verification_reward(
-                proof.formula_inputs.raw_size_kb,
-                proof.formula_inputs.role_multiplier as u8,
-            )
-        },
+        MintActivity::Encoding => compute_encoding_reward(
+            proof.formula_inputs.raw_size_kb,
+            proof.formula_inputs.role_multiplier as u8,
+        ),
+        MintActivity::Verification => compute_verification_reward(
+            proof.formula_inputs.raw_size_kb,
+            proof.formula_inputs.role_multiplier as u8,
+        ),
         MintActivity::PomvReward => {
             // For PoMV: pomv_score × (role_multiplier serves as max_reward_per_epoch)
             compute_owner_reward(
                 proof.formula_inputs.pomv_score,
                 proof.formula_inputs.role_multiplier,
             )
-        },
+        }
         MintActivity::StorageReward => {
             // Storage rewards are verified via the storage module;
             // here we only check that storage_factors are present
@@ -330,7 +325,7 @@ pub fn verify_mint_proof(proof: &MintProof) -> bool {
                 * sf.duration_factor
                 * sf.trust_factor;
             reward as u64
-        },
+        }
     };
 
     // 2. Amount must match

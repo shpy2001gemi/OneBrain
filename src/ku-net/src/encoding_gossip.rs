@@ -10,10 +10,9 @@
 //! to the transport layer (QUIC/UDP).
 
 use crate::encoding_job::{
-    EncodingJob, ClaimRequest, ClaimResponse, ClaimRejectReason,
-    VerificationSubmission,
+    ClaimRejectReason, ClaimRequest, ClaimResponse, EncodingJob, VerificationSubmission,
 };
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Encoding Protocol Messages
@@ -49,9 +48,7 @@ pub enum EncodingMessage {
     },
 
     /// Owner cleans up — job is done, remove from DHT.
-    JobComplete {
-        raw_hash: [u8; 32],
-    },
+    JobComplete { raw_hash: [u8; 32] },
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -111,13 +108,16 @@ impl OwnerJobManager {
     pub fn handle_claim(&mut self, request: &ClaimRequest) -> ClaimResponse {
         let state = match self.jobs.get_mut(&request.raw_hash) {
             Some(s) => s,
-            None => return ClaimResponse::Rejected {
-                reason: ClaimRejectReason::NotFound,
-            },
+            None => {
+                return ClaimResponse::Rejected {
+                    reason: ClaimRejectReason::NotFound,
+                }
+            }
         };
 
         // Check if already finalized
-        if state.job.status == 0x03 { // Full
+        if state.job.status == 0x03 {
+            // Full
             return ClaimResponse::Rejected {
                 reason: ClaimRejectReason::AlreadyFull,
             };
@@ -157,9 +157,11 @@ impl OwnerJobManager {
 
     /// Remove a completed job.
     pub fn complete_job(&mut self, raw_hash: &[u8; 32]) -> Option<EncodingMessage> {
-        self.jobs.remove(raw_hash).map(|_| {
-            EncodingMessage::JobComplete { raw_hash: *raw_hash }
-        })
+        self.jobs
+            .remove(raw_hash)
+            .map(|_| EncodingMessage::JobComplete {
+                raw_hash: *raw_hash,
+            })
     }
 
     /// Number of active jobs.
@@ -212,12 +214,15 @@ mod tests {
         };
 
         match mgr.handle_claim(&claim) {
-            ClaimResponse::Accepted { raw_text_compressed, .. } => {
+            ClaimResponse::Accepted {
+                raw_text_compressed,
+                ..
+            } => {
                 assert_eq!(raw_text_compressed, vec![1, 2, 3]);
-            },
+            }
             ClaimResponse::Rejected { reason } => {
                 panic!("Expected accepted, got rejected: {:?}", reason);
-            },
+            }
         }
     }
 
@@ -239,7 +244,7 @@ mod tests {
         match result {
             ClaimResponse::Rejected { reason } => {
                 assert_eq!(reason, ClaimRejectReason::AlreadyClaimed);
-            },
+            }
             _ => panic!("Expected rejection for duplicate claim"),
         }
     }
@@ -270,7 +275,7 @@ mod tests {
         match mgr.handle_claim(&claim2) {
             ClaimResponse::Rejected { reason } => {
                 assert_eq!(reason, ClaimRejectReason::SlotsFull);
-            },
+            }
             _ => panic!("Expected slots full rejection"),
         }
     }

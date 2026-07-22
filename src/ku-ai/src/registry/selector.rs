@@ -43,7 +43,7 @@ impl ModelSelector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::registry::schema::{ModelFeatures, ModelEntry};
+    use crate::registry::schema::{ModelEntry, ModelFeatures};
 
     fn make_entry(
         id: &str,
@@ -77,8 +77,18 @@ mod tests {
                 make_entry("small-llm", "small:3b", DeviceTier::T2, ModelType::Llm),
                 make_entry("medium-llm", "medium:7b", DeviceTier::T3, ModelType::Llm),
                 make_entry("large-llm", "large:14b", DeviceTier::T4, ModelType::Llm),
-                make_entry("embed-small", "embed:small", DeviceTier::T0, ModelType::Embedding),
-                make_entry("embed-large", "embed:large", DeviceTier::T3, ModelType::Embedding),
+                make_entry(
+                    "embed-small",
+                    "embed:small",
+                    DeviceTier::T0,
+                    ModelType::Embedding,
+                ),
+                make_entry(
+                    "embed-large",
+                    "embed:large",
+                    DeviceTier::T3,
+                    ModelType::Embedding,
+                ),
             ],
         }
     }

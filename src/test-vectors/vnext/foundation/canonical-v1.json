@@ -1,0 +1,78 @@
+{
+  "format": "onebrain/foundation-vectors/1",
+  "canonical_profile": "onebrain/canonical/1",
+  "valid_cbor": [
+    { "id": "empty-map", "profile": "control/1", "canonical_hex": "a0" },
+    { "id": "uint-23", "profile": "control/1", "canonical_hex": "17" },
+    { "id": "uint-24", "profile": "control/1", "canonical_hex": "1818" },
+    { "id": "uint-255", "profile": "control/1", "canonical_hex": "18ff" },
+    { "id": "uint-256", "profile": "control/1", "canonical_hex": "190100" },
+    { "id": "uint-65535", "profile": "control/1", "canonical_hex": "19ffff" },
+    { "id": "uint-65536", "profile": "control/1", "canonical_hex": "1a00010000" },
+    { "id": "root-envelope-minimal", "profile": "object/1", "canonical_hex": "a400070101020003a0" },
+    { "id": "ordered-array", "profile": "manifest/1", "canonical_hex": "820102" }
+  ],
+  "invalid_cbor": [
+    { "id": "non-minimal-uint", "profile": "control/1", "wire_hex": "1800", "error": "CANONICAL_NON_MINIMAL" },
+    { "id": "non-minimal-length", "profile": "control/1", "wire_hex": "5800", "error": "CANONICAL_NON_MINIMAL" },
+    { "id": "wrong-map-order", "profile": "control/1", "wire_hex": "a201020001", "error": "CANONICAL_MAP_ORDER" },
+    { "id": "duplicate-map-key", "profile": "control/1", "wire_hex": "a200010002", "error": "CANONICAL_DUPLICATE_KEY" },
+    { "id": "text-map-key", "profile": "control/1", "wire_hex": "a1616101", "error": "CANONICAL_MAP_KEY_TYPE" },
+    { "id": "indefinite-array", "profile": "control/1", "wire_hex": "9f01ff", "error": "CANONICAL_FORBIDDEN_TYPE" },
+    { "id": "indefinite-map", "profile": "control/1", "wire_hex": "bf0001ff", "error": "CANONICAL_FORBIDDEN_TYPE" },
+    { "id": "indefinite-bytes", "profile": "control/1", "wire_hex": "5f4101ff", "error": "CANONICAL_FORBIDDEN_TYPE" },
+    { "id": "indefinite-text", "profile": "control/1", "wire_hex": "7f6161ff", "error": "CANONICAL_FORBIDDEN_TYPE" },
+    { "id": "float", "profile": "control/1", "wire_hex": "f93c00", "error": "CANONICAL_FORBIDDEN_TYPE" },
+    { "id": "tag", "profile": "control/1", "wire_hex": "c000", "error": "CANONICAL_FORBIDDEN_TYPE" },
+    { "id": "undefined", "profile": "control/1", "wire_hex": "f7", "error": "CANONICAL_FORBIDDEN_TYPE" },
+    { "id": "invalid-utf8", "profile": "control/1", "wire_hex": "61ff", "error": "CANONICAL_TEXT" },
+    { "id": "truncated-uint32", "profile": "control/1", "wire_hex": "1a0000", "error": "CANONICAL_TRUNCATED" },
+    { "id": "trailing-item", "profile": "control/1", "wire_hex": "0000", "error": "CANONICAL_REENCODE_MISMATCH" }
+  ],
+  "normalized_text": [
+    { "id": "nfc-precomposed", "text": "Café", "valid_nfc": true },
+    { "id": "nfc-decomposed-rejected", "text": "Café", "valid_nfc": false },
+    { "id": "nfc-ascii", "text": "OneBrain", "valid_nfc": true }
+  ],
+  "domain_digests": [
+    { "id": "domain-object", "domain": "object", "canonical_hex": "a0", "digest_hex": "8bb5fe870bc17ae5a1aec54f98f3e3f2bbd01631bef1f1f1d5ab0c9c11e2ea86" },
+    { "id": "domain-event", "domain": "event", "canonical_hex": "a0", "digest_hex": "81155b1ed6dfa0d3ef010c2510dc11c071e5b86d079d7e2b32e138666c3003ab" },
+    { "id": "domain-feed-inception", "domain": "feed-inception", "canonical_hex": "a0", "digest_hex": "3139ae9f68fa6d8218ebc16bf6379a11ea82d1b4c6e93a8ed052f98394887d8c" },
+    { "id": "domain-feed-head", "domain": "feed-head", "canonical_hex": "a0", "digest_hex": "ea4a881aa8a3ac5cb07c485133ce05a284fe359353948f834e37db662a4ea036" },
+    { "id": "domain-receptor-definition", "domain": "receptor-definition", "canonical_hex": "a0", "digest_hex": "67557052dae5cd204fc582dc94c81aab668f00541e2f04d2d1d4cc31129fbe50" },
+    { "id": "domain-assembly-manifest", "domain": "assembly-manifest", "canonical_hex": "a0", "digest_hex": "7dd334ba2957b83b00660c25354bbaa01da4e373fff4b072153c65c83f937328" },
+    { "id": "domain-knowledge-affordance", "domain": "knowledge-affordance", "canonical_hex": "a0", "digest_hex": "fba04ab14021267ddbd6fa5542c11c70e676f347690d007c77b9b173cc6809fa" },
+    { "id": "domain-mapping-kernel", "domain": "mapping-kernel", "canonical_hex": "a0", "digest_hex": "fcef8eea759cc7b7b11bc82340b47c91fb85d6633a6bc0d55890fc0db602bad4" },
+    { "id": "domain-mapping-envelope", "domain": "mapping-envelope", "canonical_hex": "a0", "digest_hex": "75d9550cdd35ffa639040a5ba35892759393a958973bcd28c6e95e35bf25862c" },
+    { "id": "domain-query-definition", "domain": "query-definition", "canonical_hex": "a0", "digest_hex": "4a7270212acb2556ddc50b8a838401196f06e91017a2215b354a5ffe89e1e44a" },
+    { "id": "domain-capability-definition", "domain": "capability-definition", "canonical_hex": "a0", "digest_hex": "b688ecd27fb792bcb151bbc45b06d5d43486fffb6e5840958d9d90b48cfa989b" },
+    { "id": "domain-implementation-manifest", "domain": "implementation-manifest", "canonical_hex": "a0", "digest_hex": "17ef899346074b185fb094701f86c1645428aca2fb86155d87b4bf16c1d24ff4" },
+    { "id": "domain-selector", "domain": "selector", "canonical_hex": "a0", "digest_hex": "9eca79a960ed64c9152561b2270e99abdc104db04db61bc770c03de5e0da3090" },
+    { "id": "domain-permit", "domain": "permit", "canonical_hex": "a0", "digest_hex": "0fc938d06aa08e6b8d47c16ec8b56f400b8b567e644f17164db383c22dac6ddb" },
+    { "id": "domain-provider-lease", "domain": "provider-lease", "canonical_hex": "a0", "digest_hex": "368bda64fbd890aa16aa9e29c11102e13aeac38c02d41542fe20ac18787ad2de" },
+    { "id": "domain-provider-retire", "domain": "provider-retire", "canonical_hex": "a0", "digest_hex": "2c2d16658b5d3d52c5d33c5efb65e768d17dd3825cf53825da6ad59b8b0de77c" },
+    { "id": "domain-checkpoint", "domain": "checkpoint", "canonical_hex": "a0", "digest_hex": "2f8dec5e8a00902dbf9897c063cf1728d8e59f81153cc2c81864f912bc6eca31" },
+    { "id": "domain-manifest", "domain": "manifest", "canonical_hex": "a0", "digest_hex": "0ee0b1474de8693f1a7c7ebca13ef4fbfa982fccecc045802c40e73767d9114d" },
+    { "id": "domain-test-vector", "domain": "test-vector", "canonical_hex": "a0", "digest_hex": "59b4e63b34e0556de9ca1025e56cadbb54197db91fa5aa3940c1af1d3e90e25b" },
+    { "id": "domain-signature", "domain": "signature", "canonical_hex": "a0", "digest_hex": "869d6a104f64433a5c173003022bdc40c294ceabc13ba031e6d091293a840650" }
+  ],
+  "envelopes": [
+    { "id": "envelope-base", "canonical_hex": "a400070101020003a0", "schema_id": 7, "schema_major": 1, "known_body_fields": [0, 1], "known_critical_extensions": [42] },
+    { "id": "envelope-higher-minor", "canonical_hex": "a400070101020903a0", "schema_id": 7, "schema_major": 1, "known_body_fields": [0, 1], "known_critical_extensions": [42] },
+    { "id": "envelope-unknown-non-critical", "canonical_hex": "a500070101020003a004a11863f6", "schema_id": 7, "schema_major": 1, "known_body_fields": [0, 1], "known_critical_extensions": [42] },
+    { "id": "envelope-unknown-body", "canonical_hex": "a400070101020003a109f6", "schema_id": 7, "schema_major": 1, "known_body_fields": [0, 1], "known_critical_extensions": [42], "error": "CANONICAL_UNKNOWN_FIELD" },
+    { "id": "envelope-unknown-critical", "canonical_hex": "a500070101020003a005a11863f6", "schema_id": 7, "schema_major": 1, "known_body_fields": [0, 1], "known_critical_extensions": [42], "error": "CANONICAL_UNKNOWN_FIELD" },
+    { "id": "envelope-unknown-major", "canonical_hex": "a400070102020003a0", "schema_id": 7, "schema_major": 1, "known_body_fields": [0, 1], "known_critical_extensions": [42], "error": "CANONICAL_SCHEMA_MAJOR" }
+  ],
+  "signatures": [
+    {
+      "id": "event-signature-domain-binding",
+      "record_domain": "event",
+      "substitution_domain": "permit",
+      "unsigned_hex": "a0",
+      "message_hex": "6f6e65627261696e3a766e6578743a7369676e61747572653a31006f6e65627261696e3a766e6578743a6576656e743a3100a0",
+      "public_key_hex": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "signature_hex": "8abf9bd31faafb744d343cfd676e66da6148b70c1e1c3f9c94f251fb775eb6d9c9c598cde129b7897695ceca92b3c0260ee1faceb3ac4ec241c40c8c66386607"
+    }
+  ]
+}

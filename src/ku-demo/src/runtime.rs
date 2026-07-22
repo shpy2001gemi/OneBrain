@@ -9,17 +9,17 @@
 //! - CRDT sync manager
 //! - KQL executor for local queries
 
-use ku_core::*;
 use ku_core::crdt::*;
+use ku_core::*;
+use ku_kql::executor::LocalExecutor;
+use ku_kql::parser::parse_query;
+use ku_net::dht::{DhtNode, InsertResult, KBucketEntry};
 use ku_net::identity::*;
 use ku_net::messages::NetworkAddress;
-use ku_net::dht::{DhtNode, KBucketEntry, InsertResult};
-use ku_net::stigmergy::PheromoneTable;
-use ku_net::vacuum::VacuumFilter;
 use ku_net::pubsub::PubSubManager;
+use ku_net::stigmergy::PheromoneTable;
 use ku_net::sync::SyncManager;
-use ku_kql::parser::parse_query;
-use ku_kql::executor::LocalExecutor;
+use ku_net::vacuum::VacuumFilter;
 
 use std::time::Instant;
 

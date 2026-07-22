@@ -13,7 +13,7 @@
 //! - Everything works LOCAL — each node tracks its own view
 
 use crate::crdt::{GCounter, LWWRegister};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -177,7 +177,11 @@ impl KUMetabolism {
     ///   α₅ × downstream_cascade
     pub fn metabolic_rate(&self, now: u64, half_life_secs: u64) -> f64 {
         let age_secs = now.saturating_sub(self.created_at);
-        let half_life = if half_life_secs == 0 { DEFAULT_HALF_LIFE_SECS } else { half_life_secs };
+        let half_life = if half_life_secs == 0 {
+            DEFAULT_HALF_LIFE_SECS
+        } else {
+            half_life_secs
+        };
 
         // Exponential decay: e^(-ln2 × age / half_life)
         let decay = (-LN2 * age_secs as f64 / half_life as f64).exp();
@@ -185,8 +189,7 @@ impl KUMetabolism {
         // Raw signal components (normalized by node diversity)
         let diversity = (self.unique_nodes.value() as f64).max(1.0);
         let query_vel = self.query_hits.value() as f64 / diversity.sqrt();
-        let retrieval_depth = self.retrieval_count.value() as f64
-            * self.avg_dwell_seconds();
+        let retrieval_depth = self.retrieval_count.value() as f64 * self.avg_dwell_seconds();
         let citation_fresh = self.citation_count.value() as f64;
         let derivative_nov = self.derivative_count.value() as f64;
         let downstream = self.downstream_usage.value() as f64;
@@ -292,7 +295,11 @@ mod tests {
     #[test]
     fn test_retrieval_with_dwell_time() {
         let mut m = KUMetabolism::new(T0);
-        m.record_event(NODE_A, MetabolismEvent::Retrieval { dwell_ms: 5000 }, T0 + 1);
+        m.record_event(
+            NODE_A,
+            MetabolismEvent::Retrieval { dwell_ms: 5000 },
+            T0 + 1,
+        );
 
         assert_eq!(m.retrieval_count.value(), 1);
         assert_eq!(m.dwell_time_ms.value(), 5000);
@@ -308,7 +315,11 @@ mod tests {
 
         assert_eq!(m.citation_count.value(), 3);
         let rate = m.metabolic_rate(T0 + 3, DEFAULT_HALF_LIFE_SECS);
-        assert!(rate > 0.5, "3 citations should give significant rate: {}", rate);
+        assert!(
+            rate > 0.5,
+            "3 citations should give significant rate: {}",
+            rate
+        );
     }
 
     #[test]
@@ -329,7 +340,8 @@ mod tests {
         }
 
         let rate_fresh = m.metabolic_rate(T0 + 10, DEFAULT_HALF_LIFE_SECS);
-        let rate_after_half_life = m.metabolic_rate(T0 + DEFAULT_HALF_LIFE_SECS, DEFAULT_HALF_LIFE_SECS);
+        let rate_after_half_life =
+            m.metabolic_rate(T0 + DEFAULT_HALF_LIFE_SECS, DEFAULT_HALF_LIFE_SECS);
 
         // After one half-life, rate should be approximately halved
         let ratio = rate_after_half_life / rate_fresh;
@@ -360,7 +372,11 @@ mod tests {
 
         let mut m2 = KUMetabolism::new(T0);
         m2.record_event(NODE_B, MetabolismEvent::QueryHit, T0 + 3);
-        m2.record_event(NODE_B, MetabolismEvent::Retrieval { dwell_ms: 3000 }, T0 + 4);
+        m2.record_event(
+            NODE_B,
+            MetabolismEvent::Retrieval { dwell_ms: 3000 },
+            T0 + 4,
+        );
 
         m1.merge(&m2);
 
@@ -385,14 +401,20 @@ mod tests {
     #[test]
     fn test_is_alive_with_no_activity() {
         let m = KUMetabolism::new(T0);
-        assert!(!m.is_alive(T0 + 1, DEFAULT_HALF_LIFE_SECS), "No activity = not alive");
+        assert!(
+            !m.is_alive(T0 + 1, DEFAULT_HALF_LIFE_SECS),
+            "No activity = not alive"
+        );
     }
 
     #[test]
     fn test_is_alive_with_activity() {
         let mut m = KUMetabolism::new(T0);
         m.record_event(NODE_A, MetabolismEvent::QueryHit, T0 + 1);
-        assert!(m.is_alive(T0 + 1, DEFAULT_HALF_LIFE_SECS), "Activity = alive");
+        assert!(
+            m.is_alive(T0 + 1, DEFAULT_HALF_LIFE_SECS),
+            "Activity = alive"
+        );
     }
 
     #[test]

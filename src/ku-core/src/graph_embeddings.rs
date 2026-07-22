@@ -14,8 +14,8 @@
 //! - All 34 relations: 34 × 64 = 2,176 bytes
 //! - 10,000 entities: ~700 KB total
 
-use serde::{Serialize, Deserialize};
 use crate::types::RelationType;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -23,14 +23,18 @@ use std::collections::HashMap;
 // ─────────────────────────────────────────────────────────────────────
 
 mod serde_i8_64 {
-    use serde::{self, Serializer, Deserializer, Serialize, Deserialize};
+    use serde::{self, Deserialize, Deserializer, Serialize, Serializer};
     pub fn serialize<S>(arr: &[i8; 64], serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         let v: Vec<i8> = arr.to_vec();
         v.serialize(serializer)
     }
     pub fn deserialize<'de, D>(deserializer: D) -> Result<[i8; 64], D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let v: Vec<i8> = Vec::deserialize(deserializer)?;
         v.try_into().map_err(|v: Vec<i8>| {
             serde::de::Error::custom(format!("expected 64 elements, got {}", v.len()))
@@ -39,14 +43,18 @@ mod serde_i8_64 {
 }
 
 mod serde_i8_32 {
-    use serde::{self, Serializer, Deserializer, Serialize, Deserialize};
+    use serde::{self, Deserialize, Deserializer, Serialize, Serializer};
     pub fn serialize<S>(arr: &[i8; 32], serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         let v: Vec<i8> = arr.to_vec();
         v.serialize(serializer)
     }
     pub fn deserialize<'de, D>(deserializer: D) -> Result<[i8; 32], D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let v: Vec<i8> = Vec::deserialize(deserializer)?;
         v.try_into().map_err(|v: Vec<i8>| {
             serde::de::Error::custom(format!("expected 32 elements, got {}", v.len()))
@@ -193,8 +201,7 @@ impl RelationEmbedding {
         let mut real = [0i8; 32];
         let mut imag = [0i8; 32];
         for i in 0..32 {
-            let angle =
-                ((seed as f64 * 7.0 + i as f64 * 13.0) % 360.0).to_radians();
+            let angle = ((seed as f64 * 7.0 + i as f64 * 13.0) % 360.0).to_radians();
             real[i] = (angle.cos() * 127.0).round().clamp(-128.0, 127.0) as i8;
             imag[i] = (angle.sin() * 127.0).round().clamp(-128.0, 127.0) as i8;
         }
@@ -406,10 +413,8 @@ pub fn train_step(
 
         // Update head (move h∘r closer to t)
         // Gradient w.r.t. h is more complex due to rotation
-        let new_h_re =
-            (h_re - learning_rate * grad_re * r_re / 127.0).clamp(-128.0, 127.0);
-        let new_h_im =
-            (h_im - learning_rate * grad_im * r_im / 127.0).clamp(-128.0, 127.0);
+        let new_h_re = (h_re - learning_rate * grad_re * r_re / 127.0).clamp(-128.0, 127.0);
+        let new_h_im = (h_im - learning_rate * grad_im * r_im / 127.0).clamp(-128.0, 127.0);
         head.values[i * 2] = new_h_re as i8;
         head.values[i * 2 + 1] = new_h_im as i8;
     }
@@ -465,7 +470,10 @@ mod tests {
     fn entity_embedding_cosine_self() {
         let e = EntityEmbedding::from_seed(&[7u8; 32]);
         let sim = e.cosine_similarity(&e);
-        assert!((sim - 1.0).abs() < 1e-9, "cosine(x,x) should be 1.0, got {sim}");
+        assert!(
+            (sim - 1.0).abs() < 1e-9,
+            "cosine(x,x) should be 1.0, got {sim}"
+        );
     }
 
     #[test]
@@ -493,7 +501,10 @@ mod tests {
     fn relation_embedding_from_relation() {
         let a = RelationEmbedding::from_relation(RelationType::Extends);
         let b = RelationEmbedding::from_relation(RelationType::Refutes);
-        assert_ne!(a.real, b.real, "different relations should have different real parts");
+        assert_ne!(
+            a.real, b.real,
+            "different relations should have different real parts"
+        );
         // Also verify determinism
         let a2 = RelationEmbedding::from_relation(RelationType::Extends);
         assert_eq!(a, a2, "same relation should produce same embedding");
@@ -514,7 +525,11 @@ mod tests {
     #[test]
     fn relation_table_size_bytes() {
         let table = RelationTable::new();
-        assert_eq!(table.size_bytes(), NUM_RELATIONS * 64, "34 × 64 = 2176 bytes");
+        assert_eq!(
+            table.size_bytes(),
+            NUM_RELATIONS * 64,
+            "34 × 64 = 2176 bytes"
+        );
     }
 
     // ── Scoring ──────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { FolderOpen, Plus, Trash2, ChevronRight, X, Package } from 'lucide-react';
+import { FolderOpen, Plus, Trash2, X, Package } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { KuListItem } from '../api/types';
@@ -38,26 +38,33 @@ export function CollectionsPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!confirm('Delete this collection? KUs inside will not be deleted.')) return;
     await api.deleteCollection(id);
     if (selected?.id === id) { setSelected(null); setCollKus([]); }
     load();
   };
 
+  const [, setLoadingKus] = useState(false);
+
   const openCollection = async (coll: CollectionView) => {
     setSelected(coll);
-    // Load KU details for each CID
-    const kus: KuListItem[] = [];
-    for (const cid of coll.ku_cids.slice(0, 50)) {
-      try {
-        const detail = await api.getKu(cid);
-        kus.push({
-          cid_hex: detail.cid_hex, gene_type: detail.gene_type,
-          preview: detail.content.slice(0, 80), pomv: detail.pomv,
-          trust: detail.trust, created: detail.created, wire_size: detail.wire_size,
-        });
-      } catch { /* skip missing */ }
+    setLoadingKus(true);
+    try {
+      // Parallel fetch — eliminates N+1 sequential requests
+      const results = await Promise.allSettled(
+        coll.ku_cids.slice(0, 50).map(cid => api.getKu(cid))
+      );
+      const kus: KuListItem[] = results
+        .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+        .map(r => ({
+          cid_hex: r.value.cid_hex, gene_type: r.value.gene_type,
+          preview: r.value.content.slice(0, 80), pomv: r.value.pomv,
+          trust: r.value.trust, created: r.value.created, wire_size: r.value.wire_size,
+        }));
+      setCollKus(kus);
+    } finally {
+      setLoadingKus(false);
     }
-    setCollKus(kus);
   };
 
   const handleRemoveKu = async (cid: string) => {

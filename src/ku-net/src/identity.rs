@@ -3,11 +3,11 @@
 //! NodeID generation with adaptive crypto puzzle (BLAKE3),
 //! Ed25519 keypair management, and DID format.
 
+use crate::error::IdentityError;
 use blake3;
-use ed25519_dalek::{SigningKey, VerifyingKey, Signer, Verifier, Signature};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use std::fmt;
-use crate::error::IdentityError;
 
 // ─── Constants (SPEC A §1.2) ───────────────────────────────────────────────
 

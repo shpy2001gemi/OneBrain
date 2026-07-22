@@ -45,17 +45,51 @@
 //! assert!(verification.passed);
 //! ```
 
-pub mod error;
-pub mod prompt;
-pub mod encoder;
-pub mod verifier;
-pub mod fallback;
 pub mod batch;
+pub mod encoder;
+pub mod error;
+pub mod fallback;
 pub mod log;
+pub mod prompt;
+pub mod verifier;
 
-pub use error::EncoderError;
-pub use encoder::{AiEncoder, EncodingResult, EncoderConfig};
-pub use verifier::{EncodingVerifier, VerificationResult};
-pub use fallback::{FallbackChain, EncodingDecision};
+// v2 pipeline modules
+pub mod analyzer;
+pub mod builder;
+pub mod concept_resolver;
+pub mod extractor;
+pub mod prescan;
+pub mod splitter;
+pub mod types;
+pub mod vnext_affordance_extractor;
+pub mod vnext_observation_intake;
+pub mod vnext_receptor_encoder;
+
 pub use batch::{BatchEncoder, BatchResult};
+pub use encoder::{AiEncoder, EncoderConfig, EncodingResult};
+pub use error::EncoderError;
+pub use fallback::{EncodingDecision, FallbackChain};
 pub use log::{EncodingLog, LogEntry};
+pub use verifier::{EncodingVerifier, VerificationResult};
+
+// v2 pipeline re-exports
+pub use builder::KuBuilder;
+pub use concept_resolver::{ConceptResolver, ResolutionWarning, ResolutionWarningType};
+pub use extractor::SpoExtractor;
+pub use types::{AnalyzedTriple, Anchor, NotationType, ResolvedTriple, SpoTriple};
+pub use vnext_affordance_extractor::{
+    AffordanceEvidenceKind, AffordanceEvidenceSnapshot, AffordanceExtractionDraft,
+    AffordanceExtractionError, AffordanceExtractionTrace, ExplicitAffordanceDraft,
+    ExtractedAffordance, RuleBasedAffordanceExtractor, RULE_BASED_AFFORDANCE_EXTRACTOR_PROFILE,
+};
+pub use vnext_observation_intake::{
+    LocalObservationAdapter, LocalObservationIntake, ObservationAuthorization,
+    ObservationAuthorizationState, ObservationCapture, ObservationEncodingProposal,
+    ObservationExtraction, ObservationIntakeError, ObservationIntakeOutcome,
+    ObservationReceptorDraft, ObservationSourceRange, StoredSourceArtifactView,
+};
+pub use vnext_receptor_encoder::{
+    ConstraintCoverage, EncodedReceptor, EncodingLimitation, IncompleteReceptorEncoding,
+    ReceptorEncoder, ReceptorEncodingDraft, ReceptorEncodingError, ReceptorEncodingOutcome,
+    ReceptorEncodingTrace, ReceptorOriginDraft, ReceptorOriginKind,
+};

@@ -67,8 +67,11 @@ impl RouteStats {
 
     /// Success rate [0.0, 1.0].
     pub fn success_rate(&self) -> f64 {
-        if self.total_queries == 0 { 0.0 }
-        else { self.successes as f64 / self.total_queries as f64 }
+        if self.total_queries == 0 {
+            0.0
+        } else {
+            self.successes as f64 / self.total_queries as f64
+        }
     }
 }
 
@@ -143,8 +146,7 @@ impl PheromoneLearner {
             -self.learning_rate * (1.0 - outcome.quality) * 0.5
         };
 
-        stats.pheromone = (stats.pheromone + delta)
-            .clamp(self.min_pheromone, self.max_pheromone);
+        stats.pheromone = (stats.pheromone + delta).clamp(self.min_pheromone, self.max_pheromone);
     }
 
     /// Get the recommended scope for a concept based on learned routes.
@@ -158,15 +160,18 @@ impl PheromoneLearner {
             QueryScope::Dht,
             QueryScope::Semantic,
             QueryScope::Global,
-        ].iter()
-            .map(|&scope| {
-                let key = (concept_id, scope as u8);
-                let pheromone = self.route_stats.get(&key)
-                    .map(|s| s.pheromone)
-                    .unwrap_or(0.5); // Default neutral
-                (scope, pheromone)
-            })
-            .collect();
+        ]
+        .iter()
+        .map(|&scope| {
+            let key = (concept_id, scope as u8);
+            let pheromone = self
+                .route_stats
+                .get(&key)
+                .map(|s| s.pheromone)
+                .unwrap_or(0.5); // Default neutral
+            (scope, pheromone)
+        })
+        .collect();
 
         scopes.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         scopes
@@ -180,8 +185,8 @@ impl PheromoneLearner {
         for stats in self.route_stats.values_mut() {
             // Decay toward neutral (0.5)
             let decay = (stats.pheromone - 0.5) * self.evaporation_rate;
-            stats.pheromone = (stats.pheromone - decay)
-                .clamp(self.min_pheromone, self.max_pheromone);
+            stats.pheromone =
+                (stats.pheromone - decay).clamp(self.min_pheromone, self.max_pheromone);
         }
     }
 
@@ -199,12 +204,18 @@ impl PheromoneLearner {
     pub fn global_success_rate(&self) -> f64 {
         let total: u64 = self.route_stats.values().map(|s| s.total_queries).sum();
         let successes: u64 = self.route_stats.values().map(|s| s.successes).sum();
-        if total == 0 { 0.0 } else { successes as f64 / total as f64 }
+        if total == 0 {
+            0.0
+        } else {
+            successes as f64 / total as f64
+        }
     }
 }
 
 impl Default for PheromoneLearner {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -245,7 +256,10 @@ mod tests {
         learner.record_outcome(&success_outcome(42, QueryScope::Dht));
 
         let stats = learner.get_stats(42, QueryScope::Dht).unwrap();
-        assert!(stats.pheromone > initial, "Success should increase pheromone");
+        assert!(
+            stats.pheromone > initial,
+            "Success should increase pheromone"
+        );
         assert_eq!(stats.successes, 1);
         assert_eq!(stats.total_queries, 1);
     }
@@ -296,7 +310,10 @@ mod tests {
         }
 
         let after = learner.get_stats(42, QueryScope::Dht).unwrap().pheromone;
-        assert!(after < before, "Evaporation should decay pheromone toward neutral");
+        assert!(
+            after < before,
+            "Evaporation should decay pheromone toward neutral"
+        );
     }
 
     #[test]
@@ -341,8 +358,14 @@ mod tests {
         });
 
         let stats = learner.get_stats(1, QueryScope::Local).unwrap();
-        assert!((stats.avg_quality - 0.7).abs() < 0.01, "Avg quality should be ~0.7");
-        assert!((stats.avg_latency_ms - 150.0).abs() < 1.0, "Avg latency should be ~150ms");
+        assert!(
+            (stats.avg_quality - 0.7).abs() < 0.01,
+            "Avg quality should be ~0.7"
+        );
+        assert!(
+            (stats.avg_latency_ms - 150.0).abs() < 1.0,
+            "Avg latency should be ~150ms"
+        );
     }
 
     #[test]

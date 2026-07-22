@@ -1,10 +1,14 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Search, ChevronLeft, ChevronRight, X, Star, Tag, Plus, Code, ArrowUpDown, Trash2, AlertTriangle, CheckSquare, History, Bookmark, BookmarkPlus } from 'lucide-react';
+import { VersionTimeline } from '../components/VersionTimeline';
+import { FilePreview } from '../components/FilePreview';
+import { ConsensusRing } from '../components/ConsensusRing';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
-import type { KuListItem, KuDetail } from '../api/types';
+import type { KuListItem, KuDetail, BlobMeta } from '../api/types';
 import { ALL_GENE_TYPES } from '../api/types';
 import { KqlEditor } from '../components/KqlEditor';
+import { formatDate, formatSize } from '../utils/format';
 
 const GENE_TYPES = ['All', ...ALL_GENE_TYPES];
 
@@ -23,7 +27,7 @@ export function ExplorerPage() {
   const [newTag, setNewTag] = useState('');
   const [kqlMode, setKqlMode] = useState(false);
   const [kqlQuery, setKqlQuery] = useState('');
-  const [kqlResults, setKqlResults] = useState<unknown[] | null>(null);
+  const [, setKqlResults] = useState<unknown[] | null>(null);
   const [sortBy, setSortBy] = useState<'created' | 'pomv' | 'trust' | 'wire_size'>('created');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedCids, setSelectedCids] = useState<Set<string>>(new Set());
@@ -33,14 +37,19 @@ export function ExplorerPage() {
   const [savedSearches, setSavedSearches] = useState<Array<{ id: string; name: string; query: string; is_kql: boolean }>>([]);
   const [saveName, setSaveName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
+  const [versions, setVersions] = useState<Array<{ cid_hex: string; gene_type: string; preview: string; version: number; created: number }>>([]);
+  const [attachments, setAttachments] = useState<BlobMeta[]>([]);
+  const [suggestions, setSuggestions] = useState<{ tags: string[]; gene_types: string[]; kus: KuListItem[] } | null>(null);
+  const [showSuggest, setShowSuggest] = useState(false);
   const limit = 15;
 
-  const loadKus = () => {
+  const loadKus = useCallback(() => {
     setLoading(true);
     const geneType = filter === 'All' ? undefined : filter;
     if (search.trim()) {
-      api.search(search, limit).then((data: any) => {
-        const results = Array.isArray(data) ? data : [];
+      api.search(search, limit).then((data) => {
+        const typed = data as { results?: KuListItem[] };
+        const results = Array.isArray(typed.results) ? typed.results : Array.isArray(data) ? (data as KuListItem[]) : [];
         setKus(results);
         setTotal(results.length);
       }).catch(() => { setKus([]); setTotal(0); }).finally(() => setLoading(false));
@@ -50,9 +59,9 @@ export function ExplorerPage() {
         .catch(() => { setKus([]); setTotal(0); })
         .finally(() => setLoading(false));
     }
-  };
+  }, [page, filter, search]);
 
-  useEffect(() => { loadKus(); }, [page, filter]);
+  useEffect(() => { loadKus(); }, [loadKus]);
 
   // Load pinned KUs on mount
   useEffect(() => {
@@ -72,7 +81,7 @@ export function ExplorerPage() {
         await api.pinKu(cid);
         setPinnedCids(prev => new Set(prev).add(cid));
       }
-    } catch { /* ignore */ }
+    } catch (e) { console.error('Pin toggle failed:', e); }
   }, [pinnedCids]);
 
   const addTag = async () => {
@@ -81,7 +90,7 @@ export function ExplorerPage() {
       await api.addTag(selectedKu.cid_hex, newTag.trim());
       setKuTags(prev => [...prev, newTag.trim()]);
       setNewTag('');
-    } catch { /* ignore */ }
+    } catch (e) { console.error('Add tag failed:', e); }
   };
 
   const removeTag = async (tag: string) => {
@@ -89,7 +98,7 @@ export function ExplorerPage() {
     try {
       await api.removeTag(selectedKu.cid_hex, tag);
       setKuTags(prev => prev.filter(t => t !== tag));
-    } catch { /* ignore */ }
+    } catch (e) { console.error('Remove tag failed:', e); }
   };
 
   const handleSearch = () => {
@@ -105,6 +114,18 @@ export function ExplorerPage() {
     api.listSearchHistory(20).then(d => setSearchHistory(d.history || [])).catch(() => {});
     api.listSavedSearches().then(d => setSavedSearches(d.saved_searches || [])).catch(() => {});
   };
+
+  // Debounced search suggest
+  useEffect(() => {
+    if (search.trim().length < 2) { setSuggestions(null); return; }
+    const timer = setTimeout(() => {
+      api.searchSuggest(search.trim(), 5).then(s => {
+        setSuggestions(s);
+        setShowSuggest(true);
+      }).catch(() => setSuggestions(null));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const handleSaveSearch = async () => {
     if (!saveName.trim() || !search.trim()) return;
@@ -139,28 +160,37 @@ export function ExplorerPage() {
     try {
       const detail = await api.getKu(cid);
       setSelectedKu(detail);
-      // Load tags for this KU
-      api.listTags().then(r => {
-        // Filter tags that belong to this KU (API returns all tags, we show them)
+      // Load tags for this specific KU
+      api.getKuTags(cid).then(r => {
         setKuTags(r.tags || []);
       }).catch(() => setKuTags([]));
+      // Load version chain
+      api.getVersionChain(cid).then(r => {
+        setVersions(r.versions || []);
+      }).catch(() => setVersions([]));
+      // Load attachments — show blobs referenced in KU's media_refs
+      const mediaRefs = (detail as KuDetail & { media_refs?: { cid_hex: string }[] }).media_refs;
+      if (mediaRefs && mediaRefs.length > 0) {
+        api.listBlobs().then(r => {
+          const mediaCids = new Set(mediaRefs.map((m: { cid_hex: string }) => m.cid_hex));
+          setAttachments((r.blobs || []).filter((b: BlobMeta) => mediaCids.has(b.blob_cid_hex)));
+        }).catch(() => setAttachments([]));
+      } else {
+        setAttachments([]);
+      }
     } catch { /* ignore */ }
   };
 
   const totalPages = Math.max(1, Math.ceil(total / limit));
-  const formatDate = (ts: number) => ts ? new Date(ts * 1000).toLocaleDateString() : '—';
-  const formatSize = (b: number) => b > 1024 ? `${(b / 1024).toFixed(1)}KB` : `${b}B`;
-
-  const displayKus = (() => {
+  const displayKus = useMemo(() => {
     let filtered = showPinnedOnly ? kus.filter(k => pinnedCids.has(k.cid_hex)) : kus;
-    // Sort
     filtered = [...filtered].sort((a, b) => {
       const av = a[sortBy];
       const bv = b[sortBy];
       return sortDir === 'asc' ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
     });
     return filtered;
-  })();
+  }, [kus, showPinnedOnly, pinnedCids, sortBy, sortDir]);
 
   const toggleSelectAll = () => {
     if (selectedCids.size === displayKus.length) {
@@ -184,7 +214,7 @@ export function ExplorerPage() {
     if (!confirm(t('explorer.confirmBulkDelete', { count: selectedCids.size }))) return;
     setBulkDeleting(true);
     try {
-      await api.bulkDelete(Array.from(selectedCids));
+      await Promise.allSettled(Array.from(selectedCids).map(cid => api.deleteKu(cid)));
       setSelectedCids(new Set());
       loadKus();
     } catch { /* ignore */ }
@@ -226,7 +256,7 @@ export function ExplorerPage() {
                 onChange={e => setSearch(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
                 onFocus={() => { loadHistory(); setShowHistory(true); }}
-                onBlur={() => setTimeout(() => setShowHistory(false), 200)}
+                onBlur={() => setTimeout(() => { setShowHistory(false); setShowSuggest(false); }, 200)}
                 style={{ paddingLeft: 36, paddingRight: 60 }}
               />
               {/* Save search button */}
@@ -300,6 +330,61 @@ export function ExplorerPage() {
                     {t('common.save')}
                   </button>
                 </div>
+              )}
+              {/* Search Suggestions Dropdown */}
+              {showSuggest && suggestions && !showHistory && (
+                (suggestions.tags.length > 0 || suggestions.gene_types.length > 0 || suggestions.kus.length > 0) && (
+                  <div style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
+                    background: 'var(--ob-bg-secondary)', border: '1px solid var(--ob-glass-border)',
+                    borderRadius: 10, padding: 8, zIndex: 52, maxHeight: 280, overflowY: 'auto',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                  }}>
+                    {suggestions.tags.length > 0 && (
+                      <>
+                        <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--ob-text-muted)', padding: '4px 8px' }}>
+                          🏷️ Tags
+                        </div>
+                        {suggestions.tags.map(tag => (
+                          <button key={tag}
+                            onMouseDown={() => { setSearch(`tag:${tag}`); setShowSuggest(false); }}
+                            style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ob-accent)', fontSize: '0.85rem', textAlign: 'left' }}>
+                            #{tag}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                    {suggestions.gene_types.length > 0 && (
+                      <>
+                        <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--ob-text-muted)', padding: '4px 8px', marginTop: 4 }}>
+                          🧬 Gene Types
+                        </div>
+                        {suggestions.gene_types.map(gt => (
+                          <button key={gt}
+                            onMouseDown={() => { setFilter(gt); setShowSuggest(false); }}
+                            style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ob-violet)', fontSize: '0.85rem', textAlign: 'left' }}>
+                            {gt}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                    {suggestions.kus.length > 0 && (
+                      <>
+                        <div style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--ob-text-muted)', padding: '4px 8px', marginTop: 4 }}>
+                          📄 Knowledge Units
+                        </div>
+                        {suggestions.kus.map(ku => (
+                          <button key={ku.cid_hex}
+                            onMouseDown={() => { openDetail(ku.cid_hex); setShowSuggest(false); }}
+                            style={{ display: 'block', width: '100%', padding: '6px 8px', borderRadius: 6, background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--ob-text-primary)', fontSize: '0.82rem', textAlign: 'left' }}>
+                            <span style={{ color: 'var(--ob-text-muted)', fontFamily: 'var(--ob-font-mono)', fontSize: '0.72rem' }}>{ku.cid_hex.slice(0, 8)}…</span>{' '}
+                            {ku.preview}
+                          </button>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )
               )}
             </div>
             <button className="btn btn-primary" onClick={handleSearch}><Search size={16} /> {t('common.search')}</button>
@@ -439,8 +524,7 @@ export function ExplorerPage() {
                   <td style={{ maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ku.preview}</td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div className="progress-bar" style={{ width: 50 }}><div className="fill" style={{ width: `${ku.pomv * 100}%` }} /></div>
-                      <span style={{ fontSize: '0.78rem' }}>{(ku.pomv * 100).toFixed(0)}%</span>
+                      <ConsensusRing pomv={ku.pomv} size={32} showLabel={true} />
                     </div>
                   </td>
                   <td style={{ fontSize: '0.82rem' }}>{(ku.trust * 100).toFixed(0)}%</td>
@@ -617,6 +701,25 @@ export function ExplorerPage() {
                 </div>
               </div>
             )}
+            {/* Attachments */}
+            {attachments.length > 0 && (
+              <div>
+                <span className="stat-label" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  📎 Attachments ({attachments.length})
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {attachments.map(blob => (
+                    <FilePreview key={blob.blob_cid_hex} blob={blob} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Version History */}
+            <VersionTimeline
+              versions={versions}
+              currentCid={selectedKu.cid_hex}
+              onNavigate={(cid) => openDetail(cid)}
+            />
           </div>
         </div>
       )}

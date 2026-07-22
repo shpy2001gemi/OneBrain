@@ -78,4 +78,8 @@ pub enum NodeError {
     /// Operation timed out.
     #[error("Timeout: {0}")]
     Timeout(String),
+
+    /// Resource not found (drafts, etc.).
+    #[error("Not found: {0}")]
+    NotFound(String),
 }

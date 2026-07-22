@@ -18,8 +18,8 @@
 //! and therefore does NOT affect the CID (content identity).
 
 use crate::types::{
-    Bond, ConceptId, Creator, DecayRate, EdgeState, EpigeneticSection,
-    EpistemicStatus, EvidenceType, RelationType, TrustSection,
+    Bond, ConceptId, Creator, DecayRate, EdgeState, EpigeneticSection, EpistemicStatus,
+    RelationType, TrustSection,
 };
 use serde::{Deserialize, Serialize};
 
@@ -86,18 +86,16 @@ impl Epigenetics {
     }
 
     /// Add a bond to another KU.
-    pub fn add_bond(
-        &mut self,
-        target_cid: Vec<u8>,
-        relation: RelationType,
-        weight: u16,
-    ) {
+    pub fn add_bond(&mut self, target_cid: Vec<u8>, relation: RelationType, weight: u16) {
         self.bonds.push(Bond {
             target_cid,
             relation,
             weight,
             creator: Creator::System,
-            created_at: 0, // TODO: use real timestamp
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as u32,
             evidence: Vec::new(),
             state: EdgeState::Active,
             initial_weight: Some(weight),
@@ -169,6 +167,7 @@ impl Expression {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::EvidenceType;
 
     #[test]
     fn test_epigenetics_default() {
@@ -233,7 +232,8 @@ mod tests {
     #[test]
     fn test_epigenetics_forward_compatible_deserialization() {
         // Simulate older JSON missing some fields — serde(default) should handle it
-        let minimal_json = r#"{"tr":{"es":"Rumor","et":"None","vl":0,"cc":0,"ch":0,"er":0,"ts":5000,"cf":6000}}"#;
+        let minimal_json =
+            r#"{"tr":{"es":"Rumor","et":"None","vl":0,"cc":0,"ch":0,"er":0,"ts":5000,"cf":6000}}"#;
         let decoded: Epigenetics = serde_json::from_str(minimal_json).unwrap();
         assert_eq!(decoded.trust.trust_score, 5000);
         assert!(decoded.bonds.is_empty());

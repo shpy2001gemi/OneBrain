@@ -5,15 +5,15 @@
 use ku_core::*;
 use ku_net::identity::*;
 use ku_net::query::cache::QueryCache;
-use ku_net::query::discovery::gaps::GapDetector;
 use ku_net::query::discovery::bridges::BridgeFinder;
+use ku_net::query::discovery::gaps::GapDetector;
 use ku_net::query::discovery::serendipity::SerendipityEngine;
 use ku_net::query::index::ConceptIndex;
 use ku_net::query::learning::{PheromoneLearner, QueryOutcome};
 use ku_net::query::merger::ResultMerger;
 use ku_net::query::messages::{QueryForwardMsg, QueryScope};
 use ku_net::query::router::QueryRouter;
-use ku_net::query::watch::{WatchEngine, WatchEvent, WatchCondition};
+use ku_net::query::watch::{WatchCondition, WatchEngine, WatchEvent};
 use std::time::Duration;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -28,13 +28,20 @@ fn make_node_id() -> NodeId {
 
 fn make_ku(concept_id: u64, trust_score: u16) -> KnowledgeUnit {
     KnowledgeUnit {
-        codons: vec![
-            Codon { concept_id, role: RoleId::Agent, qualifiers: vec![] },
-        ],
+        codons: vec![Codon {
+            concept_id,
+            role: RoleId::Agent,
+            qualifiers: vec![],
+        }],
         bonds: vec![],
         gene: Gene::Fact {
-            triples: vec![Triple { subject: 1, predicate: 2, object: 3 }],
-            certainty: 8000, evidence: vec![],
+            triples: vec![Triple {
+                subject: 1,
+                predicate: 2,
+                object: 3,
+            }],
+            certainty: 8000,
+            evidence: vec![],
         },
         flags: HeaderFlags::default(),
         epistemic_status: Some(EpistemicStatus::Evidence),
@@ -42,9 +49,15 @@ fn make_ku(concept_id: u64, trust_score: u16) -> KnowledgeUnit {
         trust: Some(TrustSection {
             epistemic_status: EpistemicStatus::Evidence,
             evidence_type: EvidenceType::Experimental,
-            verification_level: 3, corroboration_count: 5, challenge_count: 0,
-            error_susceptibility: 0, trust_score, confidence: 8000,
-            domain_codes: vec![], verifications: vec![], challenges: vec![],
+            verification_level: 3,
+            corroboration_count: 5,
+            challenge_count: 0,
+            error_susceptibility: 0,
+            trust_score,
+            confidence: 8000,
+            domain_codes: vec![],
+            verifications: vec![],
+            challenges: vec![],
             ..Default::default()
         }),
         epigenetic: None,
@@ -53,19 +66,24 @@ fn make_ku(concept_id: u64, trust_score: u16) -> KnowledgeUnit {
 
 fn make_ku_with_ctx(concept_id: u64, trust_score: u16, ctx: &[u64]) -> KnowledgeUnit {
     let mut ku = make_ku(concept_id, trust_score);
-    ku.bonds = ctx.iter().map(|&c| Bond {
-        target_cid: vec![0x42; 36],
-        relation: RelationType::Extends,
-        weight: 8000,
-        creator: Creator::Human,
-        created_at: 0,
-        evidence: vec![],
-        state: EdgeState::default(),
-        initial_weight: None, decay: None,
-        last_reinforced: None, reinforce_count: None,
-        bidirectional: None,
-        context: vec![c],
-    }).collect();
+    ku.bonds = ctx
+        .iter()
+        .map(|&c| Bond {
+            target_cid: vec![0x42; 36],
+            relation: RelationType::Extends,
+            weight: 8000,
+            creator: Creator::Human,
+            created_at: 0,
+            evidence: vec![],
+            state: EdgeState::default(),
+            initial_weight: None,
+            decay: None,
+            last_reinforced: None,
+            reinforce_count: None,
+            bidirectional: None,
+            context: vec![c],
+        })
+        .collect();
     ku
 }
 
@@ -93,23 +111,23 @@ fn test_e2e_full_query_pipeline() {
 
     // 3. Check concept in index
     assert!(index.has_concept(42), "Concept 42 should be indexed");
-    assert!(index.might_have_concept(42), "VacuumFilter should contain 42");
+    assert!(
+        index.might_have_concept(42),
+        "VacuumFilter should contain 42"
+    );
 
     // 4. Merge results from multiple "remote" nodes
     let mut merger = ResultMerger::new(query.query_id, 10);
-    merger.add_results(
-        vec![make_ku(42, 9000), make_ku(43, 7000)],
-        QueryScope::Dht,
-    );
-    merger.add_results(
-        vec![make_ku(44, 8000)],
-        QueryScope::Neighbors,
-    );
+    merger.add_results(vec![make_ku(42, 9000), make_ku(43, 7000)], QueryScope::Dht);
+    merger.add_results(vec![make_ku(44, 8000)], QueryScope::Neighbors);
 
     // 5. Finalize and verify
     let results = merger.finalize();
     assert_eq!(results.len(), 3, "Should have 3 unique results");
-    assert!(results[0].score >= results[1].score, "Results should be ranked");
+    assert!(
+        results[0].score >= results[1].score,
+        "Results should be ranked"
+    );
 }
 
 /// Watch + Discovery pipeline
@@ -119,21 +137,38 @@ fn test_e2e_watch_fires_on_new_ku() {
     let mut engine = WatchEngine::new(my_id);
 
     // Register watch for high-trust concept 42
-    let wid = engine.register(
-        make_node_id(),
-        WatchEvent::Create,
-        WatchCondition::And(
-            Box::new(WatchCondition::TrustAbove(7000)),
-            Box::new(WatchCondition::HasConcept(42)),
-        ),
-        "callback://discovery".to_string(),
-        3,
-    ).unwrap();
+    let wid = engine
+        .register(
+            make_node_id(),
+            WatchEvent::Create,
+            WatchCondition::And(
+                Box::new(WatchCondition::TrustAbove(7000)),
+                Box::new(WatchCondition::HasConcept(42)),
+            ),
+            "callback://discovery".to_string(),
+            3,
+        )
+        .unwrap();
 
     // Simulate events
-    assert_eq!(engine.on_ku_event(&make_ku(42, 9000), WatchEvent::Create).len(), 1);
-    assert_eq!(engine.on_ku_event(&make_ku(42, 3000), WatchEvent::Create).len(), 0);
-    assert_eq!(engine.on_ku_event(&make_ku(99, 9000), WatchEvent::Create).len(), 0);
+    assert_eq!(
+        engine
+            .on_ku_event(&make_ku(42, 9000), WatchEvent::Create)
+            .len(),
+        1
+    );
+    assert_eq!(
+        engine
+            .on_ku_event(&make_ku(42, 3000), WatchEvent::Create)
+            .len(),
+        0
+    );
+    assert_eq!(
+        engine
+            .on_ku_event(&make_ku(99, 9000), WatchEvent::Create)
+            .len(),
+        0
+    );
 
     assert_eq!(engine.get(wid).unwrap().fire_count, 1);
 }
@@ -158,9 +193,11 @@ fn test_e2e_gap_to_watch_pipeline() {
     for gap in &report.gaps {
         for &concept_id in &gap.concept_ids {
             watch_engine.register(
-                make_node_id(), WatchEvent::Create,
+                make_node_id(),
+                WatchEvent::Create,
                 WatchCondition::HasConcept(concept_id),
-                format!("gap://fill/{}", concept_id), 2,
+                format!("gap://fill/{}", concept_id),
+                2,
             );
         }
     }
@@ -171,8 +208,12 @@ fn test_e2e_gap_to_watch_pipeline() {
 #[test]
 fn test_e2e_serendipity_pipeline() {
     let mut user_kus = Vec::new();
-    for _ in 0..5 { user_kus.push(make_ku(100, 8000)); }
-    for _ in 0..3 { user_kus.push(make_ku(200, 7000)); }
+    for _ in 0..5 {
+        user_kus.push(make_ku(100, 8000));
+    }
+    for _ in 0..3 {
+        user_kus.push(make_ku(200, 7000));
+    }
     user_kus.push(make_ku(300, 6000));
 
     let mut engine = SerendipityEngine::new();
@@ -257,7 +298,9 @@ fn test_e2e_cache_hit_miss() {
     assert_eq!(cache.hit_rate(), 50.0);
 
     // Normalized query also hits
-    assert!(cache.get("find  (k:ku)  where  k.trust_score > 5000").is_some());
+    assert!(cache
+        .get("find  (k:ku)  where  k.trust_score > 5000")
+        .is_some());
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -275,7 +318,9 @@ fn test_stress_concept_index_10k() {
 
     let mut found = 0;
     for id in 0..10_000u64 {
-        if index.has_concept(id) { found += 1; }
+        if index.has_concept(id) {
+            found += 1;
+        }
     }
     assert_eq!(found, 10_000);
 }
@@ -298,7 +343,7 @@ fn test_stress_merger_100_responses() {
     assert_eq!(results.len(), 50);
 
     for i in 1..results.len() {
-        assert!(results[i-1].score >= results[i].score);
+        assert!(results[i - 1].score >= results[i].score);
     }
 }
 
@@ -311,9 +356,11 @@ fn test_stress_1000_watches() {
     for i in 0..1000u64 {
         let threshold = (i % 10) as u16 * 1000;
         engine.register(
-            make_node_id(), WatchEvent::Any,
+            make_node_id(),
+            WatchEvent::Any,
             WatchCondition::TrustAbove(threshold),
-            format!("watch://{}", i), 0,
+            format!("watch://{}", i),
+            0,
         );
     }
     assert_eq!(engine.count(), 1000);
@@ -354,8 +401,11 @@ fn test_stress_learner_1000_outcomes() {
             };
             let quality = if concept % 3 == 0 { 0.9 } else { 0.2 };
             learner.record_outcome(&QueryOutcome {
-                concept_id: concept, resolved_at: scope,
-                provider: None, quality, latency_ms: 50,
+                concept_id: concept,
+                resolved_at: scope,
+                provider: None,
+                quality,
+                latency_ms: 50,
                 result_count: if quality > 0.5 { 5 } else { 0 },
             });
         }
@@ -380,8 +430,12 @@ fn test_stress_gap_detector_500_kus() {
     for i in 0..100u64 {
         let mut ku = make_ku(300 + i % 30, 3000);
         ku.gene = Gene::Hypothesis {
-            base_type: 0, body_codons: vec![], maturity_level: 1,
-            confidence: 5000, completeness: 3000, falsifiable: true,
+            base_type: 0,
+            body_codons: vec![],
+            maturity_level: 1,
+            confidence: 5000,
+            completeness: 3000,
+            falsifiable: true,
         };
         if let Some(ref mut t) = ku.trust {
             t.corroboration_count = 0;
@@ -398,6 +452,6 @@ fn test_stress_gap_detector_500_kus() {
     assert_eq!(report.kus_analyzed, 500);
     assert!(!report.gaps.is_empty());
     for i in 1..report.gaps.len() {
-        assert!(report.gaps[i-1].severity >= report.gaps[i].severity);
+        assert!(report.gaps[i - 1].severity >= report.gaps[i].severity);
     }
 }

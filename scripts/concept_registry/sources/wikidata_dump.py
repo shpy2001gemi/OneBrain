@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import time
+import zlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from multiprocessing import cpu_count
 from pathlib import Path
@@ -42,8 +43,8 @@ _EXCLUDE_P31_BYTE_PATTERNS: list[bytes] = []
 # Dated dump URL (updated weekly)
 DUMP_URL = "https://dumps.wikimedia.org/wikidatawiki/entities/20260706/wikidata-20260706-all.json.gz"
 
-# Languages to extract labels for
-LABEL_LANGUAGES = ["en", "vi", "fr", "de", "es", "ja", "zh", "ko"]
+# Languages to extract labels for (English-only — KU has no language)
+LABEL_LANGUAGES = ["en"]
 
 # Cross-reference properties to extract
 CROSS_REF_PROPS = {
@@ -117,8 +118,8 @@ EXCLUDE_P31: set[int] = {
     4167410,    # Q4167410: Wikimedia disambiguation page
 }
 
-# Minimum sitelinks to consider an item "notable"
-MIN_SITELINKS = 2
+# Minimum sitelinks to consider an item (0 = accept all with EN label)
+MIN_SITELINKS = 0
 
 # Progress checkpoint interval
 CHECKPOINT_INTERVAL = 100_000
@@ -481,7 +482,11 @@ def fetch_all(
     # Auto-detect local dump if not provided
     if dump_path is None:
         # Look for any .bz2 or .gz dump in checkpoint_dir
-        for pattern in ["wikidata-*-all.json.bz2", "wikidata-*-all.json.gz"]:
+        for pattern in [
+            "latest-all.json.gz",           # manual browser download
+            "wikidata-*-all.json.gz",        # dated gz dump
+            "wikidata-*-all.json.bz2",       # dated bz2 dump
+        ]:
             candidates = sorted(checkpoint_dir.glob(pattern), reverse=True)
             if candidates:
                 dump_path = candidates[0]
@@ -592,25 +597,41 @@ def fetch_all(
                 candidate_batch: list[bytes] = []
                 pending_futures = []
 
+                # Diagnostic counters
+                diag_batches_submitted = 0
+                diag_batches_drained = 0
+                diag_worker_records = 0
+                diag_worker_errors = 0
+                diag_drain_dedup = 0
+                diag_drain_written = 0
+                diag_candidates_total = 0
+
                 pool = ThreadPoolExecutor(max_workers=num_workers)
 
                 def _drain_completed():
                     """Non-blocking: collect results from done futures."""
                     nonlocal items_written
+                    nonlocal diag_batches_drained, diag_worker_records
+                    nonlocal diag_worker_errors, diag_drain_dedup, diag_drain_written
                     still_pending = []
                     for fut in pending_futures:
                         if fut.done():
+                            diag_batches_drained += 1
                             try:
                                 records = fut.result()
                             except Exception as e:
+                                diag_worker_errors += 1
                                 logger.warning("Worker batch error: %s", e)
                                 continue
+                            diag_worker_records += len(records)
                             for record in records:
                                 if record["qid"] in seen_qids:
+                                    diag_drain_dedup += 1
                                     continue
                                 out_fh.write(_fast_json_dumps(record))
                                 seen_qids.add(record["qid"])
                                 items_written += 1
+                                diag_drain_written += 1
                                 stats["kept"] = items_written
                                 pbar_items.update(1)
                         else:
@@ -622,79 +643,104 @@ def fetch_all(
                   last_checkpoint_time = time.time()
                   CHECKPOINT_SECS = 300  # 5 minutes
 
-                  for raw_line_bytes in local_fh:
-                    line_len = len(raw_line_bytes)
-                    bytes_since_update += line_len
+                  try:
+                    for raw_line_bytes in local_fh:
+                      line_len = len(raw_line_bytes)
+                      bytes_since_update += line_len
 
-                    if bytes_since_update > 10 * 1024 * 1024:
-                        # Use actual compressed position from reader (bz2 only)
-                        if hasattr(local_fh, 'raw_position'):
-                            new_pos = local_fh.raw_position
-                        else:
-                            # gzip: estimate from decompressed bytes
-                            new_pos = file_byte_pos + bytes_since_update // 3
-                        delta = new_pos - file_byte_pos
-                        if delta > 0:
-                            pbar_bytes.update(delta)
-                            file_byte_pos = new_pos
-                        total_bytes_this_attempt = new_pos
-                        bytes_since_update = 0
+                      if bytes_since_update > 10 * 1024 * 1024:
+                          # Get actual compressed byte position
+                          if hasattr(local_fh, 'raw_position'):
+                              # RobustBZ2LineReader
+                              new_pos = local_fh.raw_position
+                          elif hasattr(local_fh, 'myfileobj'):
+                              # gzip.GzipFile — get underlying file position
+                              new_pos = local_fh.myfileobj.tell()
+                          else:
+                              # Fallback: estimate (very rough)
+                              new_pos = min(file_byte_pos + bytes_since_update // 5, source_size)
+                          delta = new_pos - file_byte_pos
+                          if delta > 0:
+                              pbar_bytes.update(delta)
+                              file_byte_pos = new_pos
+                          total_bytes_this_attempt = new_pos
+                          bytes_since_update = 0
 
-                    # --- PRE-FILTER 1: skip trivially short/bracket lines ---
-                    if line_len < 50:
-                        continue
+                      # --- PRE-FILTER 1: skip trivially short/bracket lines ---
+                      if line_len < 50:
+                          continue
 
-                    # --- PRE-FILTER 2: extract QID with regex (NO json parse) ---
-                    id_match = _FAST_ID_RE.search(raw_line_bytes[:200])
-                    if not id_match:
-                        stats["non_q"] += 1
-                        continue
+                      # --- PRE-FILTER 2: extract QID with regex (NO json parse) ---
+                      id_match = _FAST_ID_RE.search(raw_line_bytes[:200])
+                      if not id_match:
+                          stats["non_q"] += 1
+                          continue
 
-                    qid = int(id_match.group(1))
-                    if qid in seen_qids:
-                        skipped_seen += 1
-                        continue
+                      qid = int(id_match.group(1))
+                      if qid in seen_qids:
+                          skipped_seen += 1
+                          continue
 
-                    # Add to batch for parallel processing
-                    candidate_batch.append(raw_line_bytes)
+                      # Add to batch for parallel processing
+                      diag_candidates_total += 1
+                      candidate_batch.append(raw_line_bytes)
 
-                    if len(candidate_batch) >= BATCH_SIZE:
-                        fut = pool.submit(_parse_batch_worker, candidate_batch)
-                        pending_futures.append(fut)
-                        candidate_batch = []
+                      if len(candidate_batch) >= BATCH_SIZE:
+                          fut = pool.submit(_parse_batch_worker, candidate_batch)
+                          pending_futures.append(fut)
+                          diag_batches_submitted += 1
+                          candidate_batch = []
 
-                        # Drain completed futures every batch submit
-                        _drain_completed()
+                          # Drain completed futures every batch submit
+                          _drain_completed()
 
-                        elapsed = time.time() - t0
-                        pbar_items.set_postfix(
-                            rate=f"{items_written / max(1, elapsed):.0f}/s",
-                            w=num_workers, q=len(pending_futures),
-                        )
+                          elapsed = time.time() - t0
+                          pbar_items.set_postfix(
+                              rate=f"{items_written / max(1, elapsed):.0f}/s",
+                              w=num_workers, q=len(pending_futures),
+                          )
 
-                    # Time-based checkpoint (every 5 min)
-                    now = time.time()
-                    if now - last_checkpoint_time > CHECKPOINT_SECS:
-                        _drain_completed()
-                        out_fh.flush()
-                        with open(checkpoint_path, "w") as cp:
-                            json.dump({
-                                "items_written": items_written,
-                                "bytes_consumed": total_bytes_this_attempt,
-                                "local_byte_pos": file_byte_pos,
-                                "retries": retry_count,
-                            }, cp)
-                        elapsed = now - t0
-                        logger.info(
-                            "Checkpoint: %d concepts / ~%.1f GB (%.0f min, "
-                            "skipped_seen=%dk, workers=%d)",
-                            items_written, file_byte_pos / 1e9, elapsed / 60,
-                            skipped_seen // 1000, num_workers,
-                        )
-                        last_checkpoint_time = now
+                      # Time-based checkpoint (every 5 min)
+                      now = time.time()
+                      if now - last_checkpoint_time > CHECKPOINT_SECS:
+                          _drain_completed()
+                          out_fh.flush()
+                          with open(checkpoint_path, "w") as cp:
+                              json.dump({
+                                  "items_written": items_written,
+                                  "bytes_consumed": total_bytes_this_attempt,
+                                  "local_byte_pos": file_byte_pos,
+                                  "retries": retry_count,
+                              }, cp)
+                          elapsed = now - t0
+                          logger.info(
+                              "Checkpoint: %d concepts / ~%.1f GB (%.0f min, "
+                              "skipped_seen=%dk, workers=%d) | "
+                              "DIAG: cand=%dk, batches=%d/%d, w_rec=%d, "
+                              "w_err=%d, dup=%d, wrote=%d",
+                              items_written, file_byte_pos / 1e9, elapsed / 60,
+                              skipped_seen // 1000, num_workers,
+                              diag_candidates_total // 1000,
+                              diag_batches_submitted, diag_batches_drained,
+                              diag_worker_records, diag_worker_errors,
+                              diag_drain_dedup, diag_drain_written,
+                          )
+                          last_checkpoint_time = now
 
-                    if items_written >= target_count:
-                        break
+                      if items_written >= target_count:
+                          break
+
+                  except (OSError, EOFError, zlib.error) as gz_err:
+                      # Graceful recovery from gzip/bz2 corruption
+                      logger.warning(
+                          "=== DECOMPRESSION ERROR at ~%.1f GB: %s ===",
+                          file_byte_pos / 1e9, gz_err,
+                      )
+                      logger.warning(
+                          "Continuing with %d concepts already collected. "
+                          "Remaining data after corruption point is lost.",
+                          items_written,
+                      )
 
                   # Flush remaining batch
                   if candidate_batch:

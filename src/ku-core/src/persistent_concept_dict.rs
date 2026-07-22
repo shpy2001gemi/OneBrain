@@ -10,11 +10,11 @@
 //! | `ids`       | id (u64)   | name (str)           |
 //! | `meta`      | "next_id"  | u64                  |
 
-use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
+use crate::concept_dict::ConceptEntry;
+use crate::error::KuError;
 use crate::obs_schema;
 use crate::types::ConceptId;
-use crate::error::KuError;
-use crate::concept_dict::ConceptEntry;
+use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 use std::path::Path;
 
 // Table definitions
@@ -48,20 +48,28 @@ impl PersistentConceptDict {
 
     /// Initialize tables if they don't exist.
     fn init_tables(&self) -> Result<(), KuError> {
-        let txn = self.db.begin_write()
+        let txn = self
+            .db
+            .begin_write()
             .map_err(|e| KuError::InvalidData(format!("Txn error: {}", e)))?;
         {
             let _ = txn.open_table(CONCEPTS);
             let _ = txn.open_table(IDS);
-            let mut meta = txn.open_table(META)
+            let mut meta = txn
+                .open_table(META)
                 .map_err(|e| KuError::InvalidData(format!("Meta table error: {}", e)))?;
             // Set next_id if not present
-            if meta.get("next_id").map_err(|e| KuError::InvalidData(format!("{}", e)))?.is_none() {
+            if meta
+                .get("next_id")
+                .map_err(|e| KuError::InvalidData(format!("{}", e)))?
+                .is_none()
+            {
                 meta.insert("next_id", 128u64)
                     .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
             }
         }
-        txn.commit().map_err(|e| KuError::InvalidData(format!("Commit error: {}", e)))?;
+        txn.commit()
+            .map_err(|e| KuError::InvalidData(format!("Commit error: {}", e)))?;
         Ok(())
     }
 
@@ -123,15 +131,19 @@ impl PersistentConceptDict {
             return Ok(id);
         }
 
-        let txn = self.db.begin_write()
+        let txn = self
+            .db
+            .begin_write()
             .map_err(|e| KuError::InvalidData(format!("Txn error: {}", e)))?;
 
         let id;
         {
             // Get and increment next_id
-            let mut meta = txn.open_table(META)
+            let mut meta = txn
+                .open_table(META)
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
-            id = meta.get("next_id")
+            id = meta
+                .get("next_id")
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?
                 .map(|g| g.value())
                 .unwrap_or(128);
@@ -149,18 +161,22 @@ impl PersistentConceptDict {
             let json = serde_json::to_string(&entry)
                 .map_err(|e| KuError::InvalidData(format!("JSON error: {}", e)))?;
 
-            let mut concepts = txn.open_table(CONCEPTS)
+            let mut concepts = txn
+                .open_table(CONCEPTS)
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
-            concepts.insert(name.to_lowercase().as_str(), json.as_str())
+            concepts
+                .insert(name.to_lowercase().as_str(), json.as_str())
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
 
-            let mut ids = txn.open_table(IDS)
+            let mut ids = txn
+                .open_table(IDS)
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
             ids.insert(id, name)
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
         }
 
-        txn.commit().map_err(|e| KuError::InvalidData(format!("{}", e)))?;
+        txn.commit()
+            .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
         Ok(id)
     }
 
@@ -175,14 +191,18 @@ impl PersistentConceptDict {
             return Ok(id);
         }
 
-        let txn = self.db.begin_write()
+        let txn = self
+            .db
+            .begin_write()
             .map_err(|e| KuError::InvalidData(format!("Txn error: {}", e)))?;
 
         let id;
         {
-            let mut meta = txn.open_table(META)
+            let mut meta = txn
+                .open_table(META)
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
-            id = meta.get("next_id")
+            id = meta
+                .get("next_id")
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?
                 .map(|g| g.value())
                 .unwrap_or(128);
@@ -200,27 +220,33 @@ impl PersistentConceptDict {
             let json = serde_json::to_string(&entry)
                 .map_err(|e| KuError::InvalidData(format!("JSON error: {}", e)))?;
 
-            let mut concepts = txn.open_table(CONCEPTS)
+            let mut concepts = txn
+                .open_table(CONCEPTS)
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
             // Index by all name variants
-            concepts.insert(name.to_lowercase().as_str(), json.as_str())
+            concepts
+                .insert(name.to_lowercase().as_str(), json.as_str())
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
             if let Some(vi) = name_vi {
-                concepts.insert(vi.to_lowercase().as_str(), json.as_str())
+                concepts
+                    .insert(vi.to_lowercase().as_str(), json.as_str())
                     .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
             }
             if let Some(en) = name_en {
-                concepts.insert(en.to_lowercase().as_str(), json.as_str())
+                concepts
+                    .insert(en.to_lowercase().as_str(), json.as_str())
                     .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
             }
 
-            let mut ids = txn.open_table(IDS)
+            let mut ids = txn
+                .open_table(IDS)
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
             ids.insert(id, name)
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
         }
 
-        txn.commit().map_err(|e| KuError::InvalidData(format!("{}", e)))?;
+        txn.commit()
+            .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
         Ok(id)
     }
 
@@ -238,16 +264,21 @@ impl PersistentConceptDict {
 
     /// Bulk insert entries (for seed data loading).
     pub fn bulk_insert(&self, entries: &[ConceptEntry]) -> Result<usize, KuError> {
-        let txn = self.db.begin_write()
+        let txn = self
+            .db
+            .begin_write()
             .map_err(|e| KuError::InvalidData(format!("Txn error: {}", e)))?;
 
         let count;
         {
-            let mut concepts = txn.open_table(CONCEPTS)
+            let mut concepts = txn
+                .open_table(CONCEPTS)
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
-            let mut ids = txn.open_table(IDS)
+            let mut ids = txn
+                .open_table(IDS)
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
-            let mut meta = txn.open_table(META)
+            let mut meta = txn
+                .open_table(META)
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
 
             let mut max_id = 127u64;
@@ -256,7 +287,8 @@ impl PersistentConceptDict {
             for entry in entries {
                 let json = serde_json::to_string(entry)
                     .map_err(|e| KuError::InvalidData(format!("JSON error: {}", e)))?;
-                concepts.insert(entry.name.to_lowercase().as_str(), json.as_str())
+                concepts
+                    .insert(entry.name.to_lowercase().as_str(), json.as_str())
                     .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
                 ids.insert(entry.id, entry.name.as_str())
                     .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
@@ -270,17 +302,22 @@ impl PersistentConceptDict {
                 .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
         }
 
-        txn.commit().map_err(|e| KuError::InvalidData(format!("{}", e)))?;
+        txn.commit()
+            .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
         Ok(count)
     }
 
     /// Number of concepts (by ID count).
     pub fn len(&self) -> Result<usize, KuError> {
-        let txn = self.db.begin_read()
+        let txn = self
+            .db
+            .begin_read()
             .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
-        let ids = txn.open_table(IDS)
+        let ids = txn
+            .open_table(IDS)
             .map_err(|e| KuError::InvalidData(format!("{}", e)))?;
-        ids.len().map(|n| n as usize)
+        ids.len()
+            .map(|n| n as usize)
             .map_err(|e| KuError::InvalidData(format!("{}", e)))
     }
 
@@ -349,7 +386,9 @@ mod tests {
         let path = temp_db_path();
         let dict = PersistentConceptDict::open(&path).unwrap();
 
-        let id = dict.register_multilingual("water", Some("nước"), Some("water")).unwrap();
+        let id = dict
+            .register_multilingual("water", Some("nước"), Some("water"))
+            .unwrap();
 
         // Resolve by Vietnamese
         assert_eq!(dict.try_resolve("nước"), Some(id));
@@ -381,8 +420,22 @@ mod tests {
         let dict = PersistentConceptDict::open(&path).unwrap();
 
         let entries = vec![
-            ConceptEntry { id: 200, name: "alpha".into(), name_vi: None, name_en: None, tier: 1, category: None },
-            ConceptEntry { id: 201, name: "beta".into(), name_vi: None, name_en: None, tier: 1, category: None },
+            ConceptEntry {
+                id: 200,
+                name: "alpha".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
+            ConceptEntry {
+                id: 201,
+                name: "beta".into(),
+                name_vi: None,
+                name_en: None,
+                tier: 1,
+                category: None,
+            },
         ];
 
         dict.bulk_insert(&entries).unwrap();

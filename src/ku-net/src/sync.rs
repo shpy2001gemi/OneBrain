@@ -7,8 +7,8 @@
 
 use std::collections::HashMap;
 
-use ku_core::crdt::VectorClock;
 use crate::identity::NodeId;
+use ku_core::crdt::VectorClock;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Sync Messages
@@ -170,14 +170,18 @@ impl SyncManager {
 
         for delta in &response.deltas {
             // Check if this is newer than what we have
-            let dominated = self.versions.get(&delta.cid)
+            let dominated = self
+                .versions
+                .get(&delta.cid)
                 .map(|our_ver| our_ver.dominates(&delta.version))
                 .unwrap_or(false);
 
             if !dominated {
                 self.local_store.insert(delta.cid, delta.data.clone());
                 // Merge version clocks
-                let entry = self.versions.entry(delta.cid)
+                let entry = self
+                    .versions
+                    .entry(delta.cid)
                     .or_insert_with(VectorClock::new);
                 entry.merge(&delta.version);
                 applied.push(delta.cid);
@@ -185,7 +189,9 @@ impl SyncManager {
         }
 
         // Update peer state
-        let peer_state = self.peers.entry(response.sender)
+        let peer_state = self
+            .peers
+            .entry(response.sender)
             .or_insert_with(PeerSyncState::new);
         peer_state.last_clock.merge(&response.clock);
         peer_state.sync_count += 1;

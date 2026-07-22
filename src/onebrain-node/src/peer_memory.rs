@@ -4,7 +4,7 @@
 //! to reconnect to previously-seen peers on startup. Keeps at most
 //! 100 peers, sorted by most recently seen.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::time::SystemTime;
@@ -66,7 +66,8 @@ impl PeerMemory {
         }
         // Keep max 100 peers, most recently seen first
         if self.known_peers.len() > 100 {
-            self.known_peers.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+            self.known_peers
+                .sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
             self.known_peers.truncate(100);
         }
     }

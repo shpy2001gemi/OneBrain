@@ -3,8 +3,8 @@
 //! Wire format for distributed KQL queries.
 //! Uses existing MessageType 0x50-0x52 (QueryForward, QueryResponse, QueryCancel).
 
-use serde::{Serialize, Deserialize};
 use crate::identity::NodeId;
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Query Wire Messages
@@ -17,12 +17,12 @@ pub type QueryId = [u8; 16];
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum QueryScope {
-    Local      = 0,
-    Neighbors  = 1,
-    Cluster    = 2,
-    Dht        = 3,
-    Semantic   = 4,
-    Global     = 5,
+    Local = 0,
+    Neighbors = 1,
+    Cluster = 2,
+    Dht = 3,
+    Semantic = 4,
+    Global = 5,
 }
 
 /// A query forwarded to another node (MessageType 0x50 QueryForward).
@@ -184,12 +184,8 @@ mod tests {
     #[test]
     fn test_query_forward_ttl_decrement() {
         let origin = make_node_id();
-        let mut msg = QueryForwardMsg::new(
-            "FIND (k:KU)".to_string(),
-            origin,
-            QueryScope::Neighbors,
-            5,
-        );
+        let mut msg =
+            QueryForwardMsg::new("FIND (k:KU)".to_string(), origin, QueryScope::Neighbors, 5);
 
         assert_eq!(msg.ttl, 1);
         let hop = make_node_id();
@@ -211,12 +207,7 @@ mod tests {
     #[test]
     fn test_dht_scope_ttl() {
         let origin = make_node_id();
-        let msg = QueryForwardMsg::new(
-            "FIND (k:KU)".to_string(),
-            origin,
-            QueryScope::Dht,
-            10,
-        );
+        let msg = QueryForwardMsg::new("FIND (k:KU)".to_string(), origin, QueryScope::Dht, 10);
         assert_eq!(msg.ttl, 8);
     }
 

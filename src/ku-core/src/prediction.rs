@@ -24,7 +24,7 @@
 //! - Normative (11): `TemporalConsistency` — rules can be amended/revoked
 //! - Definition (12): `TemporalConsistency` — definitions evolve with science
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -69,13 +69,13 @@ pub enum ResolutionMethod {
 /// | Definition      | 12 | TemporalConsistency |
 pub fn default_resolution_method(gene_type: u8) -> ResolutionMethod {
     match gene_type {
-        0  => ResolutionMethod::TemporalConsistency,  // Fact
-        1  => ResolutionMethod::UsageOutcome,          // Procedure
-        6  => ResolutionMethod::CrossReference,        // Formal
-        7  => ResolutionMethod::CrossReference,        // Hypothesis
-        11 => ResolutionMethod::TemporalConsistency,   // Normative
-        12 => ResolutionMethod::TemporalConsistency,   // Definition
-        _  => ResolutionMethod::NoResolution,          // Experience, Creative, Media, Testimony, Narrative, Sensory, Composite, unknown
+        0 => ResolutionMethod::TemporalConsistency,  // Fact
+        1 => ResolutionMethod::UsageOutcome,         // Procedure
+        6 => ResolutionMethod::CrossReference,       // Formal
+        7 => ResolutionMethod::CrossReference,       // Hypothesis
+        11 => ResolutionMethod::TemporalConsistency, // Normative
+        12 => ResolutionMethod::TemporalConsistency, // Definition
+        _ => ResolutionMethod::NoResolution, // Experience, Creative, Media, Testimony, Narrative, Sensory, Composite, unknown
     }
 }
 
@@ -146,7 +146,11 @@ impl PredictionRegistry {
     /// Register a new prediction.
     pub fn register_prediction(&mut self, prediction: Prediction) {
         // Don't register duplicates
-        if !self.predictions.iter().any(|p| p.predicate_hash == prediction.predicate_hash) {
+        if !self
+            .predictions
+            .iter()
+            .any(|p| p.predicate_hash == prediction.predicate_hash)
+        {
             self.predictions.push(prediction);
         }
     }
@@ -154,12 +158,16 @@ impl PredictionRegistry {
     /// Submit a resolution for a prediction.
     pub fn resolve(&mut self, resolution: Resolution) {
         // Only resolve if prediction exists
-        if self.predictions.iter().any(|p| p.predicate_hash == resolution.predicate_hash) {
+        if self
+            .predictions
+            .iter()
+            .any(|p| p.predicate_hash == resolution.predicate_hash)
+        {
             // Don't add duplicate resolutions from same node
-            if !self.resolutions.iter().any(|r|
+            if !self.resolutions.iter().any(|r| {
                 r.predicate_hash == resolution.predicate_hash
-                && r.resolver_node == resolution.resolver_node
-            ) {
+                    && r.resolver_node == resolution.resolver_node
+            }) {
                 self.resolutions.push(resolution);
             }
         }
@@ -177,7 +185,9 @@ impl PredictionRegistry {
     ///
     /// Returns [0.0, 1.0], or 0.5 (neutral) if no resolvable predictions.
     pub fn prediction_score(&self) -> f64 {
-        let resolvable: Vec<_> = self.predictions.iter()
+        let resolvable: Vec<_> = self
+            .predictions
+            .iter()
             .filter(|p| p.resolution_method != ResolutionMethod::NoResolution)
             .collect();
 
@@ -190,7 +200,9 @@ impl PredictionRegistry {
 
         for pred in &resolvable {
             // Find all resolutions for this prediction
-            let pred_resolutions: Vec<_> = self.resolutions.iter()
+            let pred_resolutions: Vec<_> = self
+                .resolutions
+                .iter()
                 .filter(|r| r.predicate_hash == pred.predicate_hash)
                 .collect();
 
@@ -257,7 +269,8 @@ impl PredictionRegistry {
 
     /// Number of resolvable predictions (excluding NoResolution).
     pub fn resolvable_count(&self) -> usize {
-        self.predictions.iter()
+        self.predictions
+            .iter()
             .filter(|p| p.resolution_method != ResolutionMethod::NoResolution)
             .count()
     }
@@ -272,15 +285,18 @@ impl PredictionRegistry {
     /// Simple union — dedup by predicate_hash + resolver_node.
     pub fn merge(&mut self, other: &PredictionRegistry) {
         for pred in &other.predictions {
-            if !self.predictions.iter().any(|p| p.predicate_hash == pred.predicate_hash) {
+            if !self
+                .predictions
+                .iter()
+                .any(|p| p.predicate_hash == pred.predicate_hash)
+            {
                 self.predictions.push(pred.clone());
             }
         }
         for res in &other.resolutions {
-            if !self.resolutions.iter().any(|r|
-                r.predicate_hash == res.predicate_hash
-                && r.resolver_node == res.resolver_node
-            ) {
+            if !self.resolutions.iter().any(|r| {
+                r.predicate_hash == res.predicate_hash && r.resolver_node == res.resolver_node
+            }) {
                 self.resolutions.push(res.clone());
             }
         }
@@ -359,7 +375,11 @@ mod tests {
         reg.resolve(make_resolution(1, PredictionOutcome::Confirmed, NODE_A));
 
         let score = reg.prediction_score();
-        assert!((score - 1.0).abs() < 0.01, "Confirmed = score 1.0: {}", score);
+        assert!(
+            (score - 1.0).abs() < 0.01,
+            "Confirmed = score 1.0: {}",
+            score
+        );
     }
 
     #[test]
@@ -376,10 +396,18 @@ mod tests {
     fn test_resolve_partial() {
         let mut reg = PredictionRegistry::new();
         reg.register_prediction(make_prediction(1, ResolutionMethod::CrossReference));
-        reg.resolve(make_resolution(1, PredictionOutcome::Partial { confidence: 7000 }, NODE_A));
+        reg.resolve(make_resolution(
+            1,
+            PredictionOutcome::Partial { confidence: 7000 },
+            NODE_A,
+        ));
 
         let score = reg.prediction_score();
-        assert!((score - 0.7).abs() < 0.01, "70% partial = score 0.7: {}", score);
+        assert!(
+            (score - 0.7).abs() < 0.01,
+            "70% partial = score 0.7: {}",
+            score
+        );
     }
 
     #[test]
@@ -413,7 +441,11 @@ mod tests {
         reg.resolve(make_resolution(2, PredictionOutcome::Refuted, NODE_A));
 
         let score = reg.prediction_score();
-        assert!((score - 0.5).abs() < 0.1, "1 confirmed + 1 refuted ≈ 0.5: {}", score);
+        assert!(
+            (score - 0.5).abs() < 0.1,
+            "1 confirmed + 1 refuted ≈ 0.5: {}",
+            score
+        );
     }
 
     #[test]
@@ -450,28 +482,52 @@ mod tests {
     #[test]
     fn test_default_resolution_method_v7() {
         // TemporalConsistency: Fact, Normative, Definition
-        assert_eq!(default_resolution_method(0), ResolutionMethod::TemporalConsistency);  // Fact
-        assert_eq!(default_resolution_method(11), ResolutionMethod::TemporalConsistency); // Normative
-        assert_eq!(default_resolution_method(12), ResolutionMethod::TemporalConsistency); // Definition
+        assert_eq!(
+            default_resolution_method(0),
+            ResolutionMethod::TemporalConsistency
+        ); // Fact
+        assert_eq!(
+            default_resolution_method(11),
+            ResolutionMethod::TemporalConsistency
+        ); // Normative
+        assert_eq!(
+            default_resolution_method(12),
+            ResolutionMethod::TemporalConsistency
+        ); // Definition
 
         // UsageOutcome: Procedure
         assert_eq!(default_resolution_method(1), ResolutionMethod::UsageOutcome); // Procedure
 
         // CrossReference: Formal, Hypothesis
-        assert_eq!(default_resolution_method(6), ResolutionMethod::CrossReference); // Formal
-        assert_eq!(default_resolution_method(7), ResolutionMethod::CrossReference); // Hypothesis
+        assert_eq!(
+            default_resolution_method(6),
+            ResolutionMethod::CrossReference
+        ); // Formal
+        assert_eq!(
+            default_resolution_method(7),
+            ResolutionMethod::CrossReference
+        ); // Hypothesis
 
         // NoResolution: Experience, Creative, MediaExperience, Testimony, Narrative, Sensory, Composite
-        assert_eq!(default_resolution_method(2), ResolutionMethod::NoResolution);  // Experience
-        assert_eq!(default_resolution_method(3), ResolutionMethod::NoResolution);  // Creative
-        assert_eq!(default_resolution_method(4), ResolutionMethod::NoResolution);  // MediaExperience
-        assert_eq!(default_resolution_method(5), ResolutionMethod::NoResolution);  // Testimony
-        assert_eq!(default_resolution_method(8), ResolutionMethod::NoResolution);  // Narrative
-        assert_eq!(default_resolution_method(9), ResolutionMethod::NoResolution);  // Sensory
-        assert_eq!(default_resolution_method(10), ResolutionMethod::NoResolution); // Composite
+        assert_eq!(default_resolution_method(2), ResolutionMethod::NoResolution); // Experience
+        assert_eq!(default_resolution_method(3), ResolutionMethod::NoResolution); // Creative
+        assert_eq!(default_resolution_method(4), ResolutionMethod::NoResolution); // MediaExperience
+        assert_eq!(default_resolution_method(5), ResolutionMethod::NoResolution); // Testimony
+        assert_eq!(default_resolution_method(8), ResolutionMethod::NoResolution); // Narrative
+        assert_eq!(default_resolution_method(9), ResolutionMethod::NoResolution); // Sensory
+        assert_eq!(
+            default_resolution_method(10),
+            ResolutionMethod::NoResolution
+        ); // Composite
 
         // Unknown gene types → NoResolution
-        assert_eq!(default_resolution_method(13), ResolutionMethod::NoResolution);
-        assert_eq!(default_resolution_method(255), ResolutionMethod::NoResolution);
+        assert_eq!(
+            default_resolution_method(13),
+            ResolutionMethod::NoResolution
+        );
+        assert_eq!(
+            default_resolution_method(255),
+            ResolutionMethod::NoResolution
+        );
     }
 }

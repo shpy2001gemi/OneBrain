@@ -14,9 +14,9 @@
 //! ## CRDT Safety:
 //! All merges use GCounter.merge() — idempotent, commutative, monotonic.
 
-use ku_core::metabolism::KUMetabolism;
 use crate::messages::MessageType;
-use serde::{Serialize, Deserialize};
+use ku_core::metabolism::KUMetabolism;
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Wire Types
@@ -152,7 +152,8 @@ impl MetabolismGossipHandler {
     ) -> MetabolismUpdateMsg {
         let top = store.top_active(max_deltas.min(MAX_DELTAS_PER_MESSAGE), now);
 
-        let updates: Vec<MetabolismDelta> = top.iter()
+        let updates: Vec<MetabolismDelta> = top
+            .iter()
             .filter_map(|(cid, _rate)| {
                 store.get(cid).map(|m| MetabolismDelta {
                     cid: *cid,
@@ -182,9 +183,15 @@ impl MetabolismGossipHandler {
     }
 
     /// Get the message type for each handler.
-    pub fn message_type_update() -> MessageType { MessageType::MetabolismUpdate }
-    pub fn message_type_query() -> MessageType { MessageType::MetabolismQuery }
-    pub fn message_type_response() -> MessageType { MessageType::MetabolismResponse }
+    pub fn message_type_update() -> MessageType {
+        MessageType::MetabolismUpdate
+    }
+    pub fn message_type_query() -> MessageType {
+        MessageType::MetabolismQuery
+    }
+    pub fn message_type_response() -> MessageType {
+        MessageType::MetabolismResponse
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -231,7 +238,11 @@ mod tests {
 
         // Local should now have merged data
         let m = store.get(&test_cid(1)).unwrap();
-        assert!(m.total_engagement() >= 3, "Should have local + remote: {}", m.total_engagement());
+        assert!(
+            m.total_engagement() >= 3,
+            "Should have local + remote: {}",
+            m.total_engagement()
+        );
     }
 
     #[test]
@@ -242,11 +253,8 @@ mod tests {
         store_a.record_event(test_cid(2), MetabolismEvent::QueryHit, T0 + 200);
 
         // Node B queries for CID 1 and CID 3 (doesn't exist)
-        let query = MetabolismGossipHandler::prepare_query(
-            NODE_B,
-            vec![test_cid(1), test_cid(3)],
-            42,
-        );
+        let query =
+            MetabolismGossipHandler::prepare_query(NODE_B, vec![test_cid(1), test_cid(3)], 42);
 
         // Node A handles query
         let response = MetabolismGossipHandler::handle_query(&store_a, &query);
@@ -317,8 +325,11 @@ mod tests {
         }
 
         let msg = MetabolismGossipHandler::prepare_update(&store, NODE_A, T0 + 1000, 100);
-        assert!(msg.updates.len() <= MAX_DELTAS_PER_MESSAGE,
-            "Capped at {}: got {}", MAX_DELTAS_PER_MESSAGE, msg.updates.len());
+        assert!(
+            msg.updates.len() <= MAX_DELTAS_PER_MESSAGE,
+            "Capped at {}: got {}",
+            MAX_DELTAS_PER_MESSAGE,
+            msg.updates.len()
+        );
     }
 }
-

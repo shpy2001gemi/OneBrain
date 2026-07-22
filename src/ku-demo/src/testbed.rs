@@ -3,8 +3,8 @@
 //! In-process simulation of an OBP network with multiple nodes.
 //! Tests end-to-end flows: creation, sync, query, trust propagation.
 
-use ku_core::*;
 use crate::runtime::OBPNode;
+use ku_core::*;
 
 /// Run the multi-node testbed and return results.
 pub fn run_testbed() -> TestbedReport {
@@ -16,7 +16,7 @@ pub fn run_testbed() -> TestbedReport {
     println!("▸ Phase 1: Creating 3 nodes...");
 
     let mut alice = OBPNode::new("Alice", [10, 0, 0, 1], 4242);
-    let mut bob   = OBPNode::new("Bob",   [10, 0, 0, 2], 4242);
+    let mut bob = OBPNode::new("Bob", [10, 0, 0, 2], 4242);
     let mut carol = OBPNode::new("Carol", [10, 0, 0, 3], 4242);
 
     // Register peers
@@ -27,9 +27,18 @@ pub fn run_testbed() -> TestbedReport {
     carol.add_peer(&alice);
     carol.add_peer(&bob);
 
-    println!("  {} — NodeId: {:02x}{:02x}...", alice.name, alice.node_id.0[0], alice.node_id.0[1]);
-    println!("  {} — NodeId: {:02x}{:02x}...", bob.name, bob.node_id.0[0], bob.node_id.0[1]);
-    println!("  {} — NodeId: {:02x}{:02x}...\n", carol.name, carol.node_id.0[0], carol.node_id.0[1]);
+    println!(
+        "  {} — NodeId: {:02x}{:02x}...",
+        alice.name, alice.node_id.0[0], alice.node_id.0[1]
+    );
+    println!(
+        "  {} — NodeId: {:02x}{:02x}...",
+        bob.name, bob.node_id.0[0], bob.node_id.0[1]
+    );
+    println!(
+        "  {} — NodeId: {:02x}{:02x}...\n",
+        carol.name, carol.node_id.0[0], carol.node_id.0[1]
+    );
 
     // ─── Phase 2: Create KUs ───────────────────────────────────────────
     println!("▸ Phase 2: Creating Knowledge Units...");
@@ -37,13 +46,29 @@ pub fn run_testbed() -> TestbedReport {
     // Alice creates a Fact KU: "Water boils at 100°C"
     let ku_water = KnowledgeUnit {
         codons: vec![
-            Codon { concept_id: 128, role: RoleId::Agent, qualifiers: vec![] },
-            Codon { concept_id: 132, role: RoleId::Quality, qualifiers: vec![] },
-            Codon { concept_id: 133, role: RoleId::Quantity, qualifiers: vec![] },
+            Codon {
+                concept_id: 128,
+                role: RoleId::Agent,
+                qualifiers: vec![],
+            },
+            Codon {
+                concept_id: 132,
+                role: RoleId::Quality,
+                qualifiers: vec![],
+            },
+            Codon {
+                concept_id: 133,
+                role: RoleId::Quantity,
+                qualifiers: vec![],
+            },
         ],
         bonds: vec![],
         gene: Gene::Fact {
-            triples: vec![Triple { subject: 128, predicate: 132, object: 133 }],
+            triples: vec![Triple {
+                subject: 128,
+                predicate: 132,
+                object: 133,
+            }],
             certainty: 9500,
             evidence: vec![],
         },
@@ -70,12 +95,24 @@ pub fn run_testbed() -> TestbedReport {
     // Bob creates a Fact KU: "Gravity = 9.8 m/s²"
     let ku_gravity = KnowledgeUnit {
         codons: vec![
-            Codon { concept_id: 200, role: RoleId::Agent, qualifiers: vec![] },
-            Codon { concept_id: 201, role: RoleId::Object, qualifiers: vec![] },
+            Codon {
+                concept_id: 200,
+                role: RoleId::Agent,
+                qualifiers: vec![],
+            },
+            Codon {
+                concept_id: 201,
+                role: RoleId::Object,
+                qualifiers: vec![],
+            },
         ],
         bonds: vec![],
         gene: Gene::Fact {
-            triples: vec![Triple { subject: 200, predicate: 201, object: 202 }],
+            triples: vec![Triple {
+                subject: 200,
+                predicate: 201,
+                object: 202,
+            }],
             certainty: 9800,
             evidence: vec![],
         },
@@ -101,22 +138,22 @@ pub fn run_testbed() -> TestbedReport {
 
     // Carol creates a Procedure KU: "Recipe"
     let ku_recipe = KnowledgeUnit {
-        codons: vec![
-            Codon { concept_id: 300, role: RoleId::Agent, qualifiers: vec![] },
-        ],
+        codons: vec![Codon {
+            concept_id: 300,
+            role: RoleId::Agent,
+            qualifiers: vec![],
+        }],
         bonds: vec![],
         gene: Gene::Procedure {
-            steps: vec![
-                ProcedureStep {
-                    ord: 1,
-                    act: 301,
-                    pre: vec![],
-                    tgt: 302,
-                    tools: vec![],
-                    eff: vec![],
-                    warn: vec![],
-                },
-            ],
+            steps: vec![ProcedureStep {
+                ord: 1,
+                act: 301,
+                pre: vec![],
+                tgt: 302,
+                tools: vec![],
+                eff: vec![],
+                warn: vec![],
+            }],
             total_time: Some(1800),
             difficulty: 2,
             tools_req: vec![],
@@ -143,40 +180,54 @@ pub fn run_testbed() -> TestbedReport {
 
     // Alice creates the water KU
     let cid_water = alice.create_ku(ku_water);
-    println!("  Alice created KU 'water' — CID: {:02x}{:02x}{:02x}{:02x}...",
-        cid_water[0], cid_water[1], cid_water[2], cid_water[3]);
+    println!(
+        "  Alice created KU 'water' — CID: {:02x}{:02x}{:02x}{:02x}...",
+        cid_water[0], cid_water[1], cid_water[2], cid_water[3]
+    );
 
     // Bob creates the gravity KU
     let cid_gravity = bob.create_ku(ku_gravity);
-    println!("  Bob created KU 'gravity' — CID: {:02x}{:02x}{:02x}{:02x}...",
-        cid_gravity[0], cid_gravity[1], cid_gravity[2], cid_gravity[3]);
+    println!(
+        "  Bob created KU 'gravity' — CID: {:02x}{:02x}{:02x}{:02x}...",
+        cid_gravity[0], cid_gravity[1], cid_gravity[2], cid_gravity[3]
+    );
 
     // Carol creates the recipe KU
     let cid_recipe = carol.create_ku(ku_recipe);
-    println!("  Carol created KU 'recipe' — CID: {:02x}{:02x}{:02x}{:02x}...\n",
-        cid_recipe[0], cid_recipe[1], cid_recipe[2], cid_recipe[3]);
+    println!(
+        "  Carol created KU 'recipe' — CID: {:02x}{:02x}{:02x}{:02x}...\n",
+        cid_recipe[0], cid_recipe[1], cid_recipe[2], cid_recipe[3]
+    );
 
     // ─── Phase 3: CRDT Sync ───────────────────────────────────────────
     println!("▸ Phase 3: CRDT Sync (delta-state exchange)...");
 
     let sync_ab = alice.sync_with(&mut bob);
-    println!("  Alice ↔ Bob: {} deltas→us, {} deltas→peer",
-        sync_ab.deltas_to_us, sync_ab.deltas_to_peer);
+    println!(
+        "  Alice ↔ Bob: {} deltas→us, {} deltas→peer",
+        sync_ab.deltas_to_us, sync_ab.deltas_to_peer
+    );
 
     let sync_ac = alice.sync_with(&mut carol);
-    println!("  Alice ↔ Carol: {} deltas→us, {} deltas→peer",
-        sync_ac.deltas_to_us, sync_ac.deltas_to_peer);
+    println!(
+        "  Alice ↔ Carol: {} deltas→us, {} deltas→peer",
+        sync_ac.deltas_to_us, sync_ac.deltas_to_peer
+    );
 
     let sync_bc = bob.sync_with(&mut carol);
-    println!("  Bob ↔ Carol: {} deltas→us, {} deltas→peer\n",
-        sync_bc.deltas_to_us, sync_bc.deltas_to_peer);
+    println!(
+        "  Bob ↔ Carol: {} deltas→us, {} deltas→peer\n",
+        sync_bc.deltas_to_us, sync_bc.deltas_to_peer
+    );
 
     // Verify convergence
     let a_count = alice.sync.local_count();
     let b_count = bob.sync.local_count();
     let c_count = carol.sync.local_count();
-    println!("  Convergence: Alice={}, Bob={}, Carol={} KUs",
-        a_count, b_count, c_count);
+    println!(
+        "  Convergence: Alice={}, Bob={}, Carol={} KUs",
+        a_count, b_count, c_count
+    );
     let converged = a_count == 3 && b_count == 3 && c_count == 3;
     println!("  All converged: {}\n", if converged { "✅" } else { "❌" });
 
@@ -192,7 +243,10 @@ pub fn run_testbed() -> TestbedReport {
     carol.challenge(&cid_recipe);
 
     println!("  Water trust (Alice): {}", alice.trust_score(&cid_water));
-    println!("  Recipe trust (Carol): {}\n", carol.trust_score(&cid_recipe));
+    println!(
+        "  Recipe trust (Carol): {}\n",
+        carol.trust_score(&cid_recipe)
+    );
 
     // ─── Phase 5: KQL Queries ──────────────────────────────────────────
     println!("▸ Phase 5: KQL queries...");
@@ -250,10 +304,18 @@ mod tests {
 
     fn make_simple_ku(trust_score: u16) -> KnowledgeUnit {
         KnowledgeUnit {
-            codons: vec![Codon { concept_id: 1, role: RoleId::Agent, qualifiers: vec![] }],
+            codons: vec![Codon {
+                concept_id: 1,
+                role: RoleId::Agent,
+                qualifiers: vec![],
+            }],
             bonds: vec![],
             gene: Gene::Fact {
-                triples: vec![Triple { subject: 1, predicate: 2, object: 3 }],
+                triples: vec![Triple {
+                    subject: 1,
+                    predicate: 2,
+                    object: 3,
+                }],
                 certainty: 9500,
                 evidence: vec![],
             },
@@ -290,7 +352,9 @@ mod tests {
     fn test_node_create_and_query() {
         let mut node = OBPNode::new("Test", [127, 0, 0, 1], 4242);
         node.create_ku(make_simple_ku(9000));
-        let results = node.query("FIND (k:KU) WHERE k.trust_score > 5000").unwrap();
+        let results = node
+            .query("FIND (k:KU) WHERE k.trust_score > 5000")
+            .unwrap();
         assert_eq!(results.len(), 1);
     }
 

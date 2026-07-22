@@ -68,12 +68,14 @@ SOURCE_WIKIDATA: int = 0
 SOURCE_GEONAMES: int = 1
 SOURCE_NCBI: int = 2
 SOURCE_CHEBI: int = 3
+SOURCE_ENGLISH_DICT: int = 4
 
 SOURCE_NAMES: dict[int, str] = {
     SOURCE_WIKIDATA: "wikidata",
     SOURCE_GEONAMES: "geonames",
     SOURCE_NCBI: "ncbi",
     SOURCE_CHEBI: "chebi",
+    SOURCE_ENGLISH_DICT: "english_dict",
 }
 
 # ---------------------------------------------------------------------------

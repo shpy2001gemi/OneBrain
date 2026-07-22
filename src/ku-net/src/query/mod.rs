@@ -6,11 +6,11 @@
 //! - **ResultMerger**: Deduplicates, ranks, and merges results from distributed queries.
 //! - **QueryMessage**: Wire format for query forwarding/responses.
 
+pub mod cache;
+pub mod discovery;
 pub mod index;
-pub mod router;
+pub mod learning;
 pub mod merger;
 pub mod messages;
+pub mod router;
 pub mod watch;
-pub mod discovery;
-pub mod cache;
-pub mod learning;

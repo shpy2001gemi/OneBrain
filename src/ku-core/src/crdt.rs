@@ -6,8 +6,8 @@
 //! - **LWWRegister**: Last-Writer-Wins register (epistemic_status)
 //! - **ORSet**: Observed-Remove set (domain_codes, verifications)
 
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-use serde::{Serialize, Deserialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // G-Counter (Grow-only Counter)
@@ -25,7 +25,9 @@ pub struct GCounter {
 
 impl GCounter {
     pub fn new() -> Self {
-        Self { counts: BTreeMap::new() }
+        Self {
+            counts: BTreeMap::new(),
+        }
     }
 
     /// Increment by 1 for the given node. Returns Err on overflow.
@@ -44,7 +46,10 @@ impl GCounter {
 
     /// Total value across all nodes. Uses saturating arithmetic to prevent overflow.
     pub fn value(&self) -> u64 {
-        self.counts.values().copied().fold(0u64, |acc, v| acc.saturating_add(v))
+        self.counts
+            .values()
+            .copied()
+            .fold(0u64, |acc, v| acc.saturating_add(v))
     }
 
     /// Merge with another G-Counter (per-node max).
@@ -67,7 +72,9 @@ impl GCounter {
 }
 
 impl Default for GCounter {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -115,7 +122,9 @@ impl PNCounter {
 }
 
 impl Default for PNCounter {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -136,7 +145,11 @@ pub struct LWWRegister<T: Clone + Eq> {
 impl<T: Clone + Eq> LWWRegister<T> {
     /// Create a new register with initial value.
     pub fn new(value: T, timestamp: u64, node_id: u64) -> Self {
-        Self { value, timestamp, node_id }
+        Self {
+            value,
+            timestamp,
+            node_id,
+        }
     }
 
     /// Get the current value.
@@ -151,9 +164,7 @@ impl<T: Clone + Eq> LWWRegister<T> {
 
     /// Update the value (only if timestamp is newer).
     pub fn set(&mut self, value: T, timestamp: u64, node_id: u64) -> bool {
-        if timestamp > self.timestamp
-            || (timestamp == self.timestamp && node_id > self.node_id)
-        {
+        if timestamp > self.timestamp || (timestamp == self.timestamp && node_id > self.node_id) {
             self.value = value;
             self.timestamp = timestamp;
             self.node_id = node_id;
@@ -220,7 +231,8 @@ impl<T: Clone + Eq + Ord> ORSet<T> {
 
     /// Check if a value is in the set.
     pub fn contains(&self, value: &T) -> bool {
-        self.elements.get(value)
+        self.elements
+            .get(value)
             .map(|tags| !tags.is_empty())
             .unwrap_or(false)
     }
@@ -279,7 +291,9 @@ pub struct VectorClock {
 
 impl VectorClock {
     pub fn new() -> Self {
-        Self { clocks: BTreeMap::new() }
+        Self {
+            clocks: BTreeMap::new(),
+        }
     }
 
     /// Increment our clock.
@@ -396,8 +410,14 @@ mod tests {
     fn test_gcounter_overflow_protection() {
         let mut gc = GCounter::new();
         gc.increment_by(1, u64::MAX).unwrap();
-        assert!(gc.increment(1).is_err(), "increment should fail on overflow");
-        assert!(gc.increment_by(1, 1).is_err(), "increment_by should fail on overflow");
+        assert!(
+            gc.increment(1).is_err(),
+            "increment should fail on overflow"
+        );
+        assert!(
+            gc.increment_by(1, 1).is_err(),
+            "increment_by should fail on overflow"
+        );
     }
 
     // ─── PNCounter ─────────────────────────────────────────────────────

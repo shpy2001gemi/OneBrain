@@ -15,8 +15,8 @@
 //!    retrieval and serendipitous discovery.
 
 use crate::types::RelationType;
-use std::collections::{HashMap, HashSet};
 use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 
 // ============================================================================
 // 1. STDP Engine — Spike-Timing-Dependent Plasticity
@@ -52,7 +52,11 @@ impl Default for StdpEngine {
 
 impl StdpEngine {
     pub fn new(a_plus: f64, a_minus: f64, tau: f64) -> Self {
-        Self { a_plus, a_minus, tau }
+        Self {
+            a_plus,
+            a_minus,
+            tau,
+        }
     }
 
     /// Compute weight change for a bond given time difference.
@@ -77,10 +81,7 @@ impl StdpEngine {
 
     /// Process a batch of co-access events.
     /// Returns list of STDP updates for weight changes.
-    pub fn process_co_accesses(
-        &self,
-        accesses: &[CoAccess],
-    ) -> Vec<StdpUpdate> {
+    pub fn process_co_accesses(&self, accesses: &[CoAccess]) -> Vec<StdpUpdate> {
         let mut updates = Vec::new();
         for access in accesses {
             let new_weight = self.update_weight(access.current_weight, access.delta_t);
@@ -176,8 +177,8 @@ impl ConsolidationEngine {
         let retrieval_factor = (retrieval_count as f64 / 100.0).min(1.0); // saturates at 100 retrievals
         let pomv_factor = pomv_score.clamp(0.0, 1.0);
         let bond_factor = (bond_count as f64 / 20.0).min(1.0); // saturates at 20 bonds
-        let age_factor = ((age_hours - self.min_age_hours) / (168.0 - self.min_age_hours))
-            .clamp(0.0, 1.0); // matures over a week
+        let age_factor =
+            ((age_hours - self.min_age_hours) / (168.0 - self.min_age_hours)).clamp(0.0, 1.0); // matures over a week
 
         self.w_retrieval * retrieval_factor
             + self.w_pomv * pomv_factor
@@ -381,7 +382,7 @@ mod tests {
         let engine = StdpEngine::default();
         // delta_t very large → exp(-|dt|/tau) ≈ 0 → minimal change
         let new_w = engine.update_weight(5000, 100_000.0); // ~28 hours >> tau=1hr
-        // Change should be very small: exp(-100000/3600) ≈ 0
+                                                           // Change should be very small: exp(-100000/3600) ≈ 0
         let diff = (new_w as i32 - 5000).abs();
         assert!(
             diff <= 1,
@@ -394,7 +395,10 @@ mod tests {
         let engine = StdpEngine::new(0.1, -0.99, 3600.0);
         // Very aggressive LTD but weight should not go below 0
         let new_w = engine.update_weight(100, -1.0);
-        assert!(new_w == 0 || new_w < 100, "weight should be reduced or zero");
+        assert!(
+            new_w == 0 || new_w < 100,
+            "weight should be reduced or zero"
+        );
         // Explicitly test with higher base and immediate timing
         let engine2 = StdpEngine::new(0.1, -2.0, 3600.0);
         let new_w2 = engine2.update_weight(5000, -1.0);
@@ -610,10 +614,7 @@ mod tests {
         let a2 = results.iter().find(|(c, _)| *c == cid(2)).unwrap().1;
         let a3 = results.iter().find(|(c, _)| *c == cid(3)).unwrap().1;
         assert!((a2 - 0.8).abs() < 1e-6, "cid(2) should be ~0.8: got {a2}");
-        assert!(
-            (a3 - 0.64).abs() < 1e-6,
-            "cid(3) should be ~0.64: got {a3}"
-        );
+        assert!((a3 - 0.64).abs() < 1e-6, "cid(3) should be ~0.64: got {a3}");
     }
 
     #[test]

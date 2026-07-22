@@ -32,17 +32,15 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     setSaving(true);
     setError('');
     try {
-      await api.updateConfig({
-        node_name: config.nodeName || undefined,
-        data_dir: config.dataDir || undefined,
+      await api.updateSettings({
+        name: config.nodeName || undefined,
         ollama_url: config.ollamaUrl || undefined,
         model: config.model || undefined,
-        seeds: config.seeds ? config.seeds.split(',').map(s => s.trim()) : undefined,
       });
       localStorage.setItem('ob_setup_complete', 'true');
       onComplete();
-    } catch (err: any) {
-      setError(err.message || 'Failed to save configuration');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to save configuration');
       setSaving(false);
     }
   };
@@ -60,7 +58,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     }}>
       {/* Progress */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 40 }}>
-        {steps.map((s, i) => (
+        {steps.map((_s, i) => (
           <div key={i} style={{
             width: 40, height: 4, borderRadius: 2,
             background: i <= step ? 'var(--ob-accent)' : 'var(--ob-glass-border)',

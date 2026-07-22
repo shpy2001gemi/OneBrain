@@ -53,12 +53,18 @@ mod tests {
     #[test]
     fn test_mediator_error_display() {
         let err = MediatorError::IntentError("ambiguous input".to_string());
-        assert_eq!(err.to_string(), "Intent classification failed: ambiguous input");
+        assert_eq!(
+            err.to_string(),
+            "Intent classification failed: ambiguous input"
+        );
     }
 
     #[test]
     fn test_context_overflow_display() {
-        let err = MediatorError::ContextOverflow { used: 10000, budget: 8000 };
+        let err = MediatorError::ContextOverflow {
+            used: 10000,
+            budget: 8000,
+        };
         assert!(err.to_string().contains("10000"));
         assert!(err.to_string().contains("8000"));
     }
@@ -75,7 +81,10 @@ mod tests {
     fn test_all_variants_have_display() {
         let variants: Vec<MediatorError> = vec![
             MediatorError::IntentError("test".into()),
-            MediatorError::ContextOverflow { used: 100, budget: 50 },
+            MediatorError::ContextOverflow {
+                used: 100,
+                budget: 50,
+            },
             MediatorError::SessionError("test".into()),
             MediatorError::ProfileError("test".into()),
             MediatorError::RetrievalError("test".into()),

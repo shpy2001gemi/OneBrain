@@ -17,9 +17,9 @@
 //! let report = engine.run_dream_cycle(&access_log, &embeddings, &bonds, now);
 //! ```
 
-use crate::graph_types::{BondMeta, BondEvent, WeakeningReason};
-use crate::graph_embeddings::{EntityEmbedding, RelationTable, rotate_score};
-use crate::types::{RelationType, Creator, EdgeState, DecayRate};
+use crate::graph_embeddings::{rotate_score, EntityEmbedding, RelationTable};
+use crate::graph_types::{BondEvent, BondMeta, WeakeningReason};
+use crate::types::{Creator, DecayRate, EdgeState, RelationType};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -199,7 +199,10 @@ impl DreamEngine {
         relation_table: &RelationTable,
         existing_bonds: &HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>,
         now_secs: u64,
-    ) -> (Vec<([u8; 32], [u8; 32], RelationType, BondMeta)>, Vec<BondEvent>) {
+    ) -> (
+        Vec<([u8; 32], [u8; 32], RelationType, BondMeta)>,
+        Vec<BondEvent>,
+    ) {
         let mut new_bonds = Vec::new();
         let mut events = Vec::new();
 
@@ -334,8 +337,7 @@ impl DreamEngine {
         now_secs: u64,
     ) -> DreamReport {
         // Phase 1: Replay — reinforce frequently-accessed bonds
-        let (reinforced, weight_added, mut all_events) =
-            self.replay_phase(access_log, bonds);
+        let (reinforced, weight_added, mut all_events) = self.replay_phase(access_log, bonds);
 
         // Phase 2: Associate — discover new cross-domain connections
         let (new_bonds, assoc_events) =
@@ -347,8 +349,7 @@ impl DreamEngine {
         all_events.extend(assoc_events);
 
         // Phase 3: Prune — remove stale dream bonds
-        let (pruned, prune_events) =
-            self.pruning_phase(bonds, access_log, now_secs);
+        let (pruned, prune_events) = self.pruning_phase(bonds, access_log, now_secs);
         all_events.extend(prune_events);
 
         DreamReport {
@@ -369,7 +370,7 @@ impl DreamEngine {
 mod tests {
     use super::*;
     use crate::graph_embeddings::EntityEmbedding;
-    use crate::types::{Creator, EdgeState, DecayRate, RelationType};
+    use crate::types::{Creator, DecayRate, EdgeState, RelationType};
 
     // ── Test Helpers ─────────────────────────────────────────────────────
 
@@ -427,12 +428,8 @@ mod tests {
     #[test]
     fn replay_reinforces_frequent() {
         let engine = DreamEngine::default();
-        let mut bonds = make_bonds_map(vec![
-            (1, 2, RelationType::Extends, 5000, 1000),
-        ]);
-        let log = vec![
-            make_access(1, 2, RelationType::Extends, 5, 2000),
-        ];
+        let mut bonds = make_bonds_map(vec![(1, 2, RelationType::Extends, 5000, 1000)]);
+        let log = vec![make_access(1, 2, RelationType::Extends, 5, 2000)];
 
         let (reinforced, added, _) = engine.replay_phase(&log, &mut bonds);
         assert_eq!(reinforced, 1);
@@ -447,9 +444,7 @@ mod tests {
     #[test]
     fn replay_skips_infrequent() {
         let engine = DreamEngine::default();
-        let mut bonds = make_bonds_map(vec![
-            (1, 2, RelationType::Extends, 5000, 1000),
-        ]);
+        let mut bonds = make_bonds_map(vec![(1, 2, RelationType::Extends, 5000, 1000)]);
         let log = vec![
             make_access(1, 2, RelationType::Extends, 2, 2000), // below threshold of 3
         ];
@@ -468,12 +463,8 @@ mod tests {
     #[test]
     fn replay_caps_at_max() {
         let engine = DreamEngine::default();
-        let mut bonds = make_bonds_map(vec![
-            (1, 2, RelationType::Extends, 9800, 1000),
-        ]);
-        let log = vec![
-            make_access(1, 2, RelationType::Extends, 10, 2000),
-        ];
+        let mut bonds = make_bonds_map(vec![(1, 2, RelationType::Extends, 9800, 1000)]);
+        let log = vec![make_access(1, 2, RelationType::Extends, 10, 2000)];
 
         let (reinforced, added, _) = engine.replay_phase(&log, &mut bonds);
         assert_eq!(reinforced, 1);
@@ -502,7 +493,11 @@ mod tests {
         assert_eq!(events.len(), 2);
         for event in &events {
             match event {
-                BondEvent::Reinforced { old_weight, new_weight, .. } => {
+                BondEvent::Reinforced {
+                    old_weight,
+                    new_weight,
+                    ..
+                } => {
                     assert!(new_weight > old_weight);
                 }
                 _ => panic!("expected Reinforced event, got {:?}", event),
@@ -515,9 +510,7 @@ mod tests {
     #[test]
     fn replay_empty_log() {
         let engine = DreamEngine::default();
-        let mut bonds = make_bonds_map(vec![
-            (1, 2, RelationType::Extends, 5000, 1000),
-        ]);
+        let mut bonds = make_bonds_map(vec![(1, 2, RelationType::Extends, 5000, 1000)]);
         let log: Vec<AccessRecord> = vec![];
 
         let (reinforced, added, events) = engine.replay_phase(&log, &mut bonds);
@@ -539,18 +532,17 @@ mod tests {
         // Two entities with identical embeddings should score well
         let seed = [42u8; 32];
         let emb = EntityEmbedding::from_seed(&seed);
-        let entities = vec![
-            (make_cid(1), emb.clone()),
-            (make_cid(2), emb.clone()),
-        ];
+        let entities = vec![(make_cid(1), emb.clone()), (make_cid(2), emb.clone())];
         let relation_table = RelationTable::new();
         let existing: HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> = HashMap::new();
         let now = 100_000u64;
 
-        let (new_bonds, events) = engine.association_phase(
-            &entities, &relation_table, &existing, now,
+        let (new_bonds, events) =
+            engine.association_phase(&entities, &relation_table, &existing, now);
+        assert!(
+            !new_bonds.is_empty(),
+            "should create at least one association"
         );
-        assert!(!new_bonds.is_empty(), "should create at least one association");
         assert_eq!(new_bonds.len(), events.len());
     }
 
@@ -564,17 +556,13 @@ mod tests {
 
         let seed = [42u8; 32];
         let emb = EntityEmbedding::from_seed(&seed);
-        let entities = vec![
-            (make_cid(1), emb.clone()),
-            (make_cid(2), emb.clone()),
-        ];
+        let entities = vec![(make_cid(1), emb.clone()), (make_cid(2), emb.clone())];
         let relation_table = RelationTable::new();
 
         // First run: discover the best relation
         let existing: HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> = HashMap::new();
-        let (first_bonds, _) = engine.association_phase(
-            &entities, &relation_table, &existing, 100_000,
-        );
+        let (first_bonds, _) =
+            engine.association_phase(&entities, &relation_table, &existing, 100_000);
         assert!(!first_bonds.is_empty());
         let best_rel = first_bonds[0].2;
 
@@ -585,9 +573,8 @@ mod tests {
             make_bond_meta(5000, 1000),
         );
 
-        let (new_bonds, _) = engine.association_phase(
-            &entities, &relation_table, &existing2, 100_000,
-        );
+        let (new_bonds, _) =
+            engine.association_phase(&entities, &relation_table, &existing2, 100_000);
         // Should not create the same bond again
         for (src, tgt, rel, _) in &new_bonds {
             assert!(
@@ -617,9 +604,8 @@ mod tests {
         let relation_table = RelationTable::new();
         let existing: HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> = HashMap::new();
 
-        let (new_bonds, _) = engine.association_phase(
-            &entities, &relation_table, &existing, 100_000,
-        );
+        let (new_bonds, _) =
+            engine.association_phase(&entities, &relation_table, &existing, 100_000);
         assert!(
             new_bonds.len() <= 2,
             "should respect max_associations_per_cycle=2, got {}",
@@ -637,20 +623,17 @@ mod tests {
 
         let seed = [42u8; 32];
         let emb = EntityEmbedding::from_seed(&seed);
-        let entities = vec![
-            (make_cid(1), emb.clone()),
-            (make_cid(2), emb.clone()),
-        ];
+        let entities = vec![(make_cid(1), emb.clone()), (make_cid(2), emb.clone())];
         let relation_table = RelationTable::new();
         let existing: HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> = HashMap::new();
 
-        let (_, events) = engine.association_phase(
-            &entities, &relation_table, &existing, 100_000,
-        );
+        let (_, events) = engine.association_phase(&entities, &relation_table, &existing, 100_000);
         assert!(!events.is_empty());
         for event in &events {
             match event {
-                BondEvent::Created { weight, creator, .. } => {
+                BondEvent::Created {
+                    weight, creator, ..
+                } => {
                     assert_eq!(*weight, 1000);
                     assert_eq!(*creator, Creator::System);
                 }
@@ -683,13 +666,9 @@ mod tests {
     fn pruning_keeps_accessed() {
         let engine = DreamEngine::default();
         let now = 100 + 8 * 86400;
-        let mut bonds = make_bonds_map(vec![
-            (1, 2, RelationType::Extends, 1000, 100),
-        ]);
+        let mut bonds = make_bonds_map(vec![(1, 2, RelationType::Extends, 1000, 100)]);
         // Bond IS in the access log → should be kept
-        let log = vec![
-            make_access(1, 2, RelationType::Extends, 1, now),
-        ];
+        let log = vec![make_access(1, 2, RelationType::Extends, 1, now)];
 
         let (pruned, events) = engine.pruning_phase(&mut bonds, &log, now);
         assert_eq!(pruned, 0);
@@ -704,9 +683,7 @@ mod tests {
         let engine = DreamEngine::default();
         let now = 100 + 8 * 86400;
         // Weight is above dream_bond_initial_weight (1000) → has been reinforced
-        let mut bonds = make_bonds_map(vec![
-            (1, 2, RelationType::Extends, 2000, 100),
-        ]);
+        let mut bonds = make_bonds_map(vec![(1, 2, RelationType::Extends, 2000, 100)]);
         let log: Vec<AccessRecord> = vec![];
 
         let (pruned, _) = engine.pruning_phase(&mut bonds, &log, now);
@@ -731,7 +708,9 @@ mod tests {
         assert_eq!(events.len(), 2);
         for event in &events {
             match event {
-                BondEvent::Weakened { new_weight, reason, .. } => {
+                BondEvent::Weakened {
+                    new_weight, reason, ..
+                } => {
                     assert_eq!(*new_weight, 0);
                     assert_eq!(*reason, WeakeningReason::Decay);
                 }
@@ -746,9 +725,7 @@ mod tests {
     fn pruning_keeps_recent() {
         let engine = DreamEngine::default();
         let now = 100 + 3 * 86400; // only 3 days, less than prune_after_days=7
-        let mut bonds = make_bonds_map(vec![
-            (1, 2, RelationType::Extends, 1000, 100),
-        ]);
+        let mut bonds = make_bonds_map(vec![(1, 2, RelationType::Extends, 1000, 100)]);
         let log: Vec<AccessRecord> = vec![];
 
         let (pruned, _) = engine.pruning_phase(&mut bonds, &log, now);
@@ -772,22 +749,16 @@ mod tests {
             (5, 6, RelationType::Causes, 1000, 100),
         ]);
 
-        let access_log = vec![
-            make_access(1, 2, RelationType::Extends, 10, now),
-        ];
+        let access_log = vec![make_access(1, 2, RelationType::Extends, 10, now)];
 
         // Entities for association phase
         let seed = [42u8; 32];
         let emb = EntityEmbedding::from_seed(&seed);
-        let entities = vec![
-            (make_cid(10), emb.clone()),
-            (make_cid(11), emb.clone()),
-        ];
+        let entities = vec![(make_cid(10), emb.clone()), (make_cid(11), emb.clone())];
         let relation_table = RelationTable::new();
 
-        let report = engine.run_dream_cycle(
-            &access_log, &entities, &relation_table, &mut bonds, now,
-        );
+        let report =
+            engine.run_dream_cycle(&access_log, &entities, &relation_table, &mut bonds, now);
 
         // Phase 1: replay reinforced 1 bond
         assert_eq!(report.bonds_reinforced, 1);
@@ -813,9 +784,8 @@ mod tests {
         let entities: Vec<([u8; 32], EntityEmbedding)> = vec![];
         let relation_table = RelationTable::new();
 
-        let report = engine.run_dream_cycle(
-            &access_log, &entities, &relation_table, &mut bonds, 100_000,
-        );
+        let report =
+            engine.run_dream_cycle(&access_log, &entities, &relation_table, &mut bonds, 100_000);
 
         assert_eq!(report.bonds_reinforced, 0);
         assert_eq!(report.total_weight_added, 0);
@@ -831,9 +801,7 @@ mod tests {
         let engine = DreamEngine::default();
         let mut bonds: HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> = HashMap::new();
         // Access log references a bond that doesn't exist in the map
-        let log = vec![
-            make_access(99, 100, RelationType::PartOf, 10, 2000),
-        ];
+        let log = vec![make_access(99, 100, RelationType::PartOf, 10, 2000)];
 
         let (reinforced, added, events) = engine.replay_phase(&log, &mut bonds);
         assert_eq!(reinforced, 0);
@@ -857,12 +825,8 @@ mod tests {
         let engine = DreamEngine::new(config);
 
         // With min_accesses=1, even 1 access should trigger reinforcement
-        let mut bonds = make_bonds_map(vec![
-            (1, 2, RelationType::Extends, 2000, 1000),
-        ]);
-        let log = vec![
-            make_access(1, 2, RelationType::Extends, 1, 2000),
-        ];
+        let mut bonds = make_bonds_map(vec![(1, 2, RelationType::Extends, 2000, 1000)]);
+        let log = vec![make_access(1, 2, RelationType::Extends, 1, 2000)];
 
         let (reinforced, added, _) = engine.replay_phase(&log, &mut bonds);
         assert_eq!(reinforced, 1);
@@ -874,12 +838,8 @@ mod tests {
     #[test]
     fn replay_already_at_max() {
         let engine = DreamEngine::default();
-        let mut bonds = make_bonds_map(vec![
-            (1, 2, RelationType::Extends, 10000, 1000),
-        ]);
-        let log = vec![
-            make_access(1, 2, RelationType::Extends, 5, 2000),
-        ];
+        let mut bonds = make_bonds_map(vec![(1, 2, RelationType::Extends, 10000, 1000)]);
+        let log = vec![make_access(1, 2, RelationType::Extends, 5, 2000)];
 
         let (reinforced, added, events) = engine.replay_phase(&log, &mut bonds);
         // Weight is already at max, no increase possible

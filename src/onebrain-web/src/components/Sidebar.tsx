@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { LayoutDashboard, Search, Zap, MessageSquare, Menu, X, Network, Activity, Globe2, Coins, Users, Monitor, Database, Settings, Compass, FolderOpen, BarChart3, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, Search, Zap, MessageSquare, Menu, X, Network, Activity, Globe2, Coins, Users, Monitor, Database, Settings, Compass, FolderOpen, BarChart3, HelpCircle, FileEdit, HardDrive } from 'lucide-react';
 
 const navItemsA = [
   { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard' },
   { to: '/explorer', icon: Search, labelKey: 'nav.explorer' },
   { to: '/encode', icon: Zap, labelKey: 'nav.encode' },
+  { to: '/drafts', icon: FileEdit, labelKey: 'nav.drafts' },
   { to: '/chat', icon: MessageSquare, labelKey: 'nav.chat' },
 ];
 
@@ -26,14 +27,27 @@ const navItemsAdvanced = [
 const navItemsC = [
   { to: '/social', icon: Users, labelKey: 'nav.social' },
   { to: '/devices', icon: Monitor, labelKey: 'nav.devices' },
+  { to: '/files', icon: HardDrive, labelKey: 'nav.files' },
   { to: '/data-tools', icon: Database, labelKey: 'nav.dataTools' },
   { to: '/settings', icon: Settings, labelKey: 'nav.settings' },
   { to: '/help', icon: HelpCircle, labelKey: 'nav.help' },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  connected?: boolean;
+}
+
+export function Sidebar({ connected = true }: SidebarProps) {
   const { t } = useTranslation();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('ob_sidebar_collapsed') === 'true');
+
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('ob_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
   const width = collapsed ? 'var(--ob-sidebar-collapsed)' : 'var(--ob-sidebar-width)';
 
   return (
@@ -71,7 +85,7 @@ export function Sidebar() {
           }}>OneBrain</span>
         )}
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={toggleCollapsed}
           style={{
             marginLeft: 'auto',
             background: 'none',
@@ -87,7 +101,7 @@ export function Sidebar() {
       </div>
 
       {/* Nav */}
-      <nav aria-label="Main navigation" style={{ flex: 1, padding: '8px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+      <nav aria-label="Main navigation" style={{ flex: 1, padding: '8px', display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto', overflowX: 'hidden' }}>
         {navItemsA.map(({ to, icon: Icon, labelKey }) => (
           <NavLink
             key={to}
@@ -227,8 +241,8 @@ export function Sidebar() {
           width: 8,
           height: 8,
           borderRadius: '50%',
-          background: 'var(--ob-success)',
-          boxShadow: '0 0 6px rgba(16, 185, 129, 0.5)',
+          background: connected ? 'var(--ob-success)' : '#ef4444',
+          boxShadow: `0 0 6px ${connected ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 68, 68, 0.5)'}`,
         }} />
         {!collapsed && t('network.localNode')}
       </div>

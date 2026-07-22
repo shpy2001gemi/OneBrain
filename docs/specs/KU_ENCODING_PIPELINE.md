@@ -1,6 +1,10 @@
 # KU Encoding Pipeline — 3-Tier Knowledge Encoding
 
-> Specification version: 7.0 | Last updated: 2026-07-11
+> Specification version: 7.1 | Last updated: 2026-07-19
+>
+> *v7.1 update: Tier 2 (v2 pipeline) fully implemented. encode_v2 wired to OneBrainNode. CCID index added.*
+
+---
 
 ## §1 Overview
 
@@ -8,27 +12,44 @@ The encoding pipeline converts natural language text into compact binary CoreDna
 
 ```mermaid
 graph LR
-    TEXT["Natural Language Text"] --> T1["Tier 1: Rule-Based Parser"]
-    T1 --> DNA["CoreDna (binary)<br/>+ ConceptTable (v7)<br/>EncodingStatus: RAW"]
-    TEXT --> T2["Tier 2: AI Local Model<br/>+ ConceptRegistry lookup"]
+    TEXT["Natural Language Text"] --> T1["Tier 1: Rule-Based Parser\n(text_parser.rs)"]
+    TEXT --> T2["Tier 2: AI v2 Pipeline\n(ku-encoder, 7 modules)"]
+    T1 --> DNA["CoreDna (binary)\n+ ConceptTable (v7)\nEncodingStatus: RAW"]
     T2 --> DNA
-    DNA --> SELF["Self-Verify<br/>EncodingStatus: SELF"]
-    SELF --> NET["Tier 3: P2P Consensus<br/>DHT Job Board + 2-Phase Verification"]
-    NET --> PART["Partial Consensus<br/>EncodingStatus: PART"]
-    PART --> DNA2["Refined CoreDna<br/>EncodingStatus: FULL (immutable)"]
+    DNA --> SELF["Self-Verify\nEncodingStatus: SELF"]
+    SELF --> NET["Tier 3: P2P Consensus\nDHT Job Board + 2-Phase Verify"]
+    NET --> FULL["Refined CoreDna\nEncodingStatus: FULL (immutable)"]
 ```
 
-| Tier | Method | Accuracy Target | Status |
-|------|--------|----------------|--------|
-| T1 | Rule-based pattern matching | ~60-70% | ✅ Implemented |
-| T2 | Local AI model (Gemma, Qwen, etc.) | ~85-90% | 🔧 Stub (awaiting model integration) |
-| T3 | Distributed Encoding Consensus — DHT job board + 2-phase verification + weighted scoring | ~95%+ | 🔧 Designed |
+| Tier | Method | Accuracy | Status |
+|------|--------|----------|--------|
+| T1 | Rule-based pattern matching (`text_parser.rs`) | ~60-70% | ✅ Implemented |
+| T2 | AI JSON extraction + deterministic build (`ku-encoder` v2) | ~85-90% | ✅ **Fully Implemented** |
+| T3 | Distributed Encoding Consensus (DHT + 2-phase verify) | ~95%+ | 🔧 Designed (see [ENCODING_CONSENSUS_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/ENCODING_CONSENSUS_SPEC.md)) |
+
+### Node Integration (✅ Implemented)
+
+`OneBrainNode` tự động chọn pipeline phù hợp:
+
+```rust
+// node.rs — encode_text()
+if let Some(ref registry) = self.registry {
+    // ConceptRegistry loaded → use v2 pipeline
+    encoder.encode_v2(text, registry).await
+} else {
+    // Fallback to v1 (tool-calling)
+    encoder.encode(text).await
+}
+```
+
+- `ConceptRegistry` loaded from `concepts.obr` (~200MB, ~8M concepts) at startup
+- Graceful fallback: if `concepts.obr` missing → v1 pipeline
 
 ---
 
 ## §2 Tier 1 — Rule-Based Parser
 
-**Source**: `text_parser.rs`
+**Source**: [`text_parser.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/text_parser.rs)
 
 ### 2.1 ConceptDict (Text Parser Version)
 
@@ -37,46 +58,15 @@ Simple word → ConceptId mapping for fast lookups:
 ```rust
 pub struct ConceptDict {
     map: HashMap<String, ConceptId>,
-    next_id: ConceptId,
+    next_id: ConceptId,  // starts at 1000
 }
 ```
 
-Methods: `insert()`, `lookup()`, `lookup_or_create()`, `len()`, `is_empty()`, `iter()`
+### 2.2 Tier 0 Constants
 
-### 2.2 Well-Known ConceptIds (Tier 0 — v7)
+80 universal concepts (IDs 0–79) in [`tier0_concepts.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/tier0_concepts.rs). Encode as 1-byte varint.
 
-v7 defines 80 universal Tier 0 concepts (IDs 0–79) in [tier0_concepts.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/tier0_concepts.rs). These replace the ad-hoc well-known IDs from v6:
-
-| ID | Constant | Meaning |
-|----|----------|---------|
-| 0 | SELF_REF | Self-reference (identity) |
-| 1 | IS_A | "is a" / "là" relationship |
-| 2 | HAS_PART | "has part" / "gồm" relationship |
-| 3 | RELATED_TO | Generic relation (fallback) |
-| 16 | CAUSES | Causation |
-| 18 | ENABLES | Enablement |
-| 28 | AT | Location |
-| 44 | UNIT_METER | m (meter) |
-| 45 | UNIT_KILOGRAM | kg (kilogram) |
-| 46 | UNIT_SECOND | s (second) |
-| 48 | UNIT_KELVIN | K (kelvin) |
-| 59 | UNIT_PERCENT | % (percent) |
-| 63 | UNIT_DIMENSIONLESS | Dimensionless quantity |
-| 127 | UNKNOWN_CONCEPT | Unknown/fallback (sentinel) |
-
-> [!NOTE]
-> Full list: 80 constants across 8 categories (Structural, Causal, Spatial, Logical, SI Units, Derived Units, Epistemological, Agentive Roles). See [tier0_concepts.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/tier0_concepts.rs).
-
-### 2.3 Default Dictionary
-
-`default_dict()` returns ~100 common concepts covering:
-- Structural/meta predicates (is_a, has_part, related_to)
-- Vietnamese terms (là, gồm, ở, tại)
-- English terms (is, has, at, in)
-- Scientific units and common nouns
-- Sports, science, everyday vocabulary
-
-### 2.4 Supported Patterns
+### 2.3 Supported Patterns
 
 | Pattern (VI) | Pattern (EN) | Instruction |
 |-------------|-------------|-------------|
@@ -85,9 +75,8 @@ v7 defines 80 universal Tier 0 concepts (IDs 0–79) in [tier0_concepts.rs](file
 | "Bước N: action target" | "Step N: action target" | Step(N, act, tgt) |
 | "= 35.2°" | "= 35.2°" | Quantity(F32) |
 | "± 0.1" | "± 0.1" | Tolerance |
-| bare numbers | bare numbers | Quantity |
 
-### 2.5 Core Function
+### 2.4 Core Function
 
 ```rust
 pub fn parse_text_to_core_dna(
@@ -96,269 +85,441 @@ pub fn parse_text_to_core_dna(
 ) -> Result<CoreDna, KuError>
 ```
 
-Output: `CoreDna` with auto-detected `gene_type` based on text patterns (v7: 13 gene types, values 0–12).
-
 ---
 
-## §3 Tier 2 — AI Local Model (via KQL)
+## §3 Tier 2 — AI v2 Pipeline (✅ Fully Implemented)
 
-### 3.1 KQL Syntax
+**Source**: [`ku-encoder/src/`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-encoder/src)
 
+### 3.1 Design Philosophy
+
+> "Phần nào cần AI thì hãy dùng AI, còn phần nào không cần thì dùng code bình thường."
+
+- **AI chỉ dùng cho extraction** (bước 3). Tất cả bước khác là deterministic code.
+- **1 triple = 1 KU**: mỗi `ResolvedTriple` tạo 1 `CoreDna` riêng biệt
+- **ConceptRegistry** (CCID-based) thay thế ConceptDict (deprecated)
+- **Anchor protection**: formula/number anchors được bảo vệ khỏi AI hallucination
+
+### 3.2 Pipeline Diagram
+
+```mermaid
+graph TD
+    TEXT["Input Text"] --> PRESCAN["① Prescan\n(prescan.rs)\nDetect anchors"]
+    PRESCAN --> SPLIT["② Split\n(splitter.rs)\nParagraph splitting"]
+    SPLIT --> EXTRACT["③ Extract ★AI★\n(extractor.rs)\nSPO triple extraction"]
+    EXTRACT --> ANALYZE["④ Analyze\n(analyzer.rs)\nRole→Opcode mapping"]
+    ANALYZE --> RESOLVE["⑤ Resolve\n(concept_resolver.rs)\nName→CCID lookup"]
+    RESOLVE --> BUILD["⑥ Build\n(builder.rs)\n1 triple = 1 CoreDna"]
+    BUILD --> VALIDATE["⑦ Validate\n(encoder.rs)\nConcept table consistency"]
+    VALIDATE --> RESULT["EncodingResult\nVec<wire_bytes>\nconfidence score"]
+
+    style EXTRACT fill:#ff9800,color:#000
+    style PRESCAN fill:#4caf50,color:#fff
+    style SPLIT fill:#4caf50,color:#fff
+    style ANALYZE fill:#4caf50,color:#fff
+    style RESOLVE fill:#4caf50,color:#fff
+    style BUILD fill:#4caf50,color:#fff
+    style VALIDATE fill:#4caf50,color:#fff
 ```
-CREATE FROM TEXT "Nước sôi ở 100 độ C" WITH AI model="gemma4"
-CREATE FROM TEXT "Water boils at 100°C" WITH AI model="qwen" gene_hint="fact"
-```
 
-### 3.2 AST
+> 🟠 = AI required | 🟢 = Deterministic code
+
+### 3.3 Step-by-Step Detail
+
+#### Step 1: Prescan Anchors
+
+**Module**: [`prescan.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-encoder/src/prescan.rs)
+
+Phát hiện các "anchor" — thuật ngữ cần bảo vệ khỏi AI:
+
+| Anchor Type | Ví dụ | Detection Method |
+|-------------|-------|------------------|
+| Chemical formula | H₂O, NaCl, C₆H₁₂O₆ | Regex: uppercase + subscript digits |
+| Math expression | E=mc², ΔG = −RT ln K | Unicode math symbols |
+| Number + unit | 100°C, 3.14 rad | Regex: digits + unit suffix |
+| Novel term | CRISPR-Cas9 | Heuristic: mixed case, hyphenated |
+
+**Abbreviation filter**: 80+ common abbreviations (WHO, NASA, CPU, DNA, etc.) + heuristic (all-caps, no digits, ≤5 chars) → excluded from chemical formula detection.
 
 ```rust
-pub struct CreateFromTextQuery {
-    pub text: String,
-    pub model: String,
-    pub gene_hint: Option<KqlGeneType>,
-    pub signed_by: String,
+pub fn prescan_anchors(text: &str) -> Vec<Anchor>
+pub fn verify_anchors(anchors: &[Anchor], ai_output: &str) -> Vec<VerifyResult>
+pub fn override_corrected(triples: &mut [SpoTriple], verified: &[VerifyResult])
+```
+
+#### Step 2: Split Paragraphs
+
+**Module**: [`splitter.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-encoder/src/splitter.rs)
+
+```rust
+pub fn split_paragraphs(text: &str) -> Vec<String>
+```
+
+Unicode-aware, handles CRLF/LF, filters empty paragraphs.
+
+#### Step 3: Extract SPO Triples (★ AI Step)
+
+**Module**: [`extractor.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-encoder/src/extractor.rs)
+
+Gọi AI qua `ModelBackend::chat()` (plain text JSON output, KHÔNG dùng tool-calling):
+
+```rust
+pub struct SpoExtractor<'a> { /* ... */ }
+
+impl<'a> SpoExtractor<'a> {
+    pub fn new(backend: &'a dyn ModelBackend) -> Self;
+    pub fn with_temperature(self, t: f32) -> Self;
+    pub fn with_max_retries(self, n: usize) -> Self;
+    pub async fn extract(&self, paragraph: &str, anchors: &[Anchor])
+        -> Result<Vec<SpoTriple>, EncoderError>;
 }
 ```
 
-### 3.3 Executor Flow
+**3-strategy JSON parser**: Xử lý output AI không chuẩn:
+1. Code fence extraction (```` ```json ... ``` ````)
+2. Bare array detection (`[{...}]`)
+3. Full text parse (fallback)
 
-1. Parse natural language text via `text_parser::parse_text_to_core_dna()`
-2. Override `gene_type` if `gene_hint` is provided
-3. Create `KuRuntime::from_dna(dna)`
-4. Insert into executor's KU store
+**Output**: `Vec<SpoTriple>`
 
-**TODO**: When local AI models are integrated, the executor will call the model via `ku_tools.rs` / `ku_tool_executor.rs` for higher-accuracy decomposition. v7 adds `ConceptRegistry::resolve()` for CCID-based concept lookup instead of ConceptDict.
+```rust
+pub struct SpoTriple {
+    pub subject: String,
+    pub predicate: String,
+    pub object: String,
+    pub role: String,           // "subject", "causes", "part_of", "step", etc.
+    pub certainty: String,      // "high", "medium", "low"
+    pub context: Option<String>,
+}
+```
+
+#### Step 4: Analyze
+
+**Module**: [`analyzer.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-encoder/src/analyzer.rs)
+
+Deterministic mapping — không dùng AI:
+
+| Role (from AI) | → Opcode | Instruction |
+|----------------|----------|-------------|
+| `subject` | Triple | SPO fact |
+| `causes` | Causal | cause → effect |
+| `enables` | Causal | enables |
+| `part_of` | PartOf | part → whole |
+| `located_at` | Located | S → location |
+| `step` | Step | Procedure step |
+| `has_quality` | Quality | S has Q |
+| `measured_as` | Quantity | S = value unit |
+| `similar_to` | Simulates | analogy |
+| `condition` | Condition | if → then |
+| `agent` | Agent | actor → action |
+| `tool` | Tool | action → instrument |
+
+**Certainty mapping**:
+
+| AI Output | → u16 Value |
+|-----------|------------|
+| "certain", "high" | 9500 |
+| "likely", "medium" | 7000 |
+| "possible", "low" | 4000 |
+| "uncertain" | 2000 |
+| "speculative" | 1000 |
+
+**Gene type detection**: `determine_gene_type(&[AnalyzedTriple]) -> u8`
+
+```rust
+pub fn analyze(triples: Vec<SpoTriple>) -> Vec<AnalyzedTriple>
+```
+
+#### Step 5: Resolve Concepts
+
+**Module**: [`concept_resolver.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-encoder/src/concept_resolver.rs)
+
+Map concept names → CCIDs using `ConceptRegistry` (~8M concepts):
+
+```rust
+pub struct ConceptResolver<'a> {
+    registry: &'a ConceptRegistry,
+    local_map: HashMap<String, ConceptId>,
+    next_local_id: ConceptId,  // starts at 16512 (Tier 2)
+    warnings: Vec<ResolutionWarning>,
+}
+```
+
+**Unicode normalization**: `lowercase + whitespace collapse` cho deterministic matching.
+
+**Resolution strategies**:
+
+| Result | Action |
+|--------|--------|
+| `Found` | Use CCID directly |
+| `Fuzzy` | Use best match + emit `ResolutionWarning::Fuzzy` |
+| `Ambiguous` | Pick first + emit `ResolutionWarning::Ambiguous` |
+| `NotFound` | Create fallback CCID from BLAKE3(normalized_name) + emit `ResolutionWarning::Fallback` |
+
+**Structured warnings** (replaces eprintln! logging):
+
+```rust
+pub struct ResolutionWarning {
+    pub warning_type: ResolutionWarningType,
+    pub original: String,
+    pub resolved_to: String,
+    pub candidate_count: usize,
+}
+
+pub enum ResolutionWarningType {
+    Fuzzy,
+    Ambiguous,
+    Fallback,
+}
+```
+
+#### Step 6: Build CoreDna
+
+**Module**: [`builder.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-encoder/src/builder.rs)
+
+> **Quy tắc quan trọng: 1 ResolvedTriple = 1 CoreDna KU**
+
+Mỗi triple được build thành CoreDna riêng biệt, self-contained:
+
+```rust
+pub struct KuBuilder;
+
+impl KuBuilder {
+    pub fn build(resolved: Vec<ResolvedTriple>)
+        -> Result<Vec<(CoreDna, Vec<u8>)>, BuildError>;
+}
+```
+
+Flow: ResolvedTriple → CoreDnaHeader (gene_type, has_concept_table=true) → ConceptTable (Tier 2+ entries only) → Instructions (Triple/Causal/PartOf/... + Certainty) → encode → wire bytes.
+
+#### Step 7: Validate
+
+**Inline trong [`encoder.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-encoder/src/encoder.rs)**
+
+Kiểm tra tính toàn vẹn sau khi build:
+
+1. **Concept table consistency**: Mọi concept ref (Tier 2+) trong instruction stream phải có entry trong concept table
+2. **Wire roundtrip**: `encode → decode → verify` không lỗi
+3. **Drop tracking**: Nếu >50% paragraphs bị drop → return error
+
+**Confidence formula**:
+
+```
+confidence = 0.5 × paragraph_success_rate + 0.5 × validation_success_rate
+
+where:
+  paragraph_success_rate = (total - dropped) / total
+  validation_success_rate = valid_kus / (valid_kus + failed)
+```
+
+### 3.4 Data Types
+
+**Module**: [`types.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-encoder/src/types.rs)
+
+```
+SpoTriple (AI output) → AnalyzedTriple (opcoded) → ResolvedTriple (CCID'd) → CoreDna (binary)
+```
+
+| Type | Fields | Source |
+|------|--------|--------|
+| `Anchor` | text, anchor_type, notation, byte_range | prescan |
+| `SpoTriple` | subject, predicate, object, role, certainty, context | extractor |
+| `AnalyzedTriple` | subject, predicate, object, opcode, certainty_u16, gene_type | analyzer |
+| `ResolvedTriple` | s_id, p_id, o_id, opcode, certainty_u16, gene_type, concept_entries | resolver |
+
+### 3.5 Error Handling
+
+**Module**: [`error.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-encoder/src/error.rs)
+
+```rust
+pub enum EncoderError {
+    NoToolCalls,        // AI produced no output
+    NoTriples,          // Extraction found 0 triples  
+    ToolExecution(String),
+    AiError(AiError),
+    CoreDnaError(String),
+    ParseError(String),
+}
+```
+
+### 3.6 Debug Logging
+
+All debug output uses `debug_log!` macro — silenced in release builds:
+
+```rust
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        eprintln!($($arg)*)
+    };
+}
+```
+
+### 3.7 Module Map
+
+| Module | LOC | Tests | Purpose |
+|--------|-----|-------|--------|
+| `encoder.rs` | ~660 | 6 | v1 (tool-calling) + v2 (JSON) pipeline |
+| `types.rs` | ~120 | — | SpoTriple, AnalyzedTriple, ResolvedTriple, Anchor |
+| `splitter.rs` | ~60 | 8 | Paragraph splitting |
+| `prescan.rs` | ~250 | 13 | Anchor detection + abbreviation filter |
+| `extractor.rs` | ~340 | 10 | AI extraction + 3-strategy JSON parser |
+| `analyzer.rs` | ~200 | 10 | Role→Opcode, certainty→u16 mapping |
+| `concept_resolver.rs` | ~250 | 7 | ConceptRegistry→CCID resolution |
+| `builder.rs` | ~180 | 6 | CoreDna build (1 triple = 1 KU) |
+| `verifier.rs` | ~244 | 5 | Structural verification |
+| `prompt.rs` | ~126 | 4 | Prompt construction |
+| `fallback.rs` | ~252 | 5 | Accept/Retry/Tier1 decision |
+| `batch.rs` | ~167 | 3 | Sequential multi-text encoding |
+| `log.rs` | ~198 | 4 | Encoding audit log |
+| `error.rs` | ~70 | — | Error types |
+| **Total** | **~3100** | **118** | |
+
+### 3.8 Public API (lib.rs)
+
+```rust
+// v1 pipeline
+pub use encoder::{AiEncoder, EncodingResult, EncoderConfig};
+pub use verifier::{EncodingVerifier, VerificationResult};
+pub use fallback::{FallbackChain, EncodingDecision};
+pub use batch::{BatchEncoder, BatchResult};
+pub use log::{EncodingLog, LogEntry};
+pub use error::EncoderError;
+
+// v2 pipeline
+pub use types::{SpoTriple, AnalyzedTriple, ResolvedTriple, Anchor, NotationType};
+pub use concept_resolver::{ConceptResolver, ResolutionWarning, ResolutionWarningType};
+pub use builder::KuBuilder;
+pub use extractor::SpoExtractor;
+```
 
 ---
 
-## §4 Tier 3 — Distributed Encoding Consensus (Designed)
+## §4 Tier 1 — AI v1 Pipeline (Tool-Calling)
 
-> Reference: [ENCODING_CONSENSUS_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/ENCODING_CONSENSUS_SPEC.md) for full specification.
+**Source**: [`encoder.rs`](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-encoder/src/encoder.rs) — `AiEncoder::encode()`
 
-### 4.1 EncodingStatus State Machine
+Pipeline cũ, vẫn hoạt động như fallback khi ConceptRegistry không available:
 
-Mỗi KU có một `EncodingStatus` theo dõi trạng thái encoding verification lifecycle:
+```
+Text → PromptBuilder → LLM (chat_with_tools) → ToolCallResponse[]
+     → KuToolExecutor.execute() → finalize_all() → Vec<Vec<u8>>
+     → EncodingVerifier → FallbackChain → EncodingResult
+```
+
+- AI generates tool calls: `new_ku()`, `add_triple()`, `add_quantity()`, `finalize()`
+- Auto-fix: inject missing `new_ku` and `finalize` if model forgets
+- FallbackChain: confidence ≥ 0.60 → Accept, else retry (max 2), else T1 fallback
+
+---
+
+## §5 Tier 3 — Distributed Encoding Consensus (Designed)
+
+> Xem chi tiết: [ENCODING_CONSENSUS_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/ENCODING_CONSENSUS_SPEC.md)
+
+### 5.1 EncodingStatus State Machine
 
 ```mermaid
 stateDiagram-v2
     [*] --> RAW : KU created (T1/T2)
     RAW --> SELF : Owner self-verify passes
-    SELF --> PART : ≥1 verifier agrees (partial consensus)
-    PART --> FULL : Threshold reached (≤3 verifiers, weighted score ≥ 0.7)
-    FULL --> [*] : Immutable — new raw = new KU
+    SELF --> PART : ≥1 verifier agrees
+    PART --> FULL : Threshold reached (≤3 verifiers, score ≥ 0.7)
+    FULL --> [*] : Immutable
 ```
 
-| Status | Mô tả |
-|--------|-------|
-| `RAW` | Vừa tạo bởi T1 hoặc T2, chưa qua verification nào |
-| `SELF` | Owner đã tự verify encoding round-trip thành công |
-| `PART` | ≥1 verifier đồng ý, nhưng chưa đạt consensus threshold |
-| `FULL` | Đạt consensus — encoding bất biến. Muốn sửa → tạo KU mới với raw mới |
+### 5.2 Two-Phase Verification
 
-### 4.2 EncodingJob — DHT Job Board
-
-Khi KU đạt trạng thái `SELF`, owner đăng một **EncodingJob** lên DHT:
-
-```rust
-pub struct EncodingJob {
-    pub ku_cid: [u8; 32],         // CID of the KU to verify
-    pub raw_text: String,          // Original natural language text
-    pub proposed_dna: Vec<u8>,     // Owner's proposed CoreDna wire bytes
-    pub gene_hint: Option<u8>,     // Expected gene_type
-    pub reward_obt: u64,           // OBT reward pool (proportional to raw size)
-    pub max_verifiers: u8,         // Capped at 3
-    pub posted_at: u64,            // Timestamp
-    pub status: EncodingJobStatus, // Open / Claimed / Completed / Expired
-}
-```
-
-Verifiers duyệt DHT job board, chọn job phù hợp với chuyên môn của mình.
-
-### 4.3 ClaimToken — Anti-Stampede Mechanism
-
-Để tránh nhiều verifiers cùng claim một job (stampede), sử dụng **ClaimToken**:
-
-1. Verifier gửi `EncodingClaimReq` cho job
-2. DHT cấp `ClaimToken` với TTL (time-to-live)
-3. Chỉ verifier giữ token hợp lệ mới được submit kết quả
-4. Token hết hạn → job trở lại trạng thái Open
-5. Tối đa 3 ClaimTokens active cùng lúc per job (capped at 3 verifiers)
-
-### 4.4 Two-Phase Verification
-
-#### Phase A: AI Decomposition Agreement
-
-Verifier chạy AI model độc lập trên `raw_text`, so sánh kết quả với `proposed_dna`:
-
-| Metric | Phương pháp | Weight |
-|--------|------------|--------|
-| `gene_type` match | Exact match (binary 0/1) | Required — mismatch = reject |
-| Opcode Jaccard | `\|opcodes_A ∩ opcodes_B\| / \|opcodes_A ∪ opcodes_B\|` | Similarity threshold ≥ 0.6 |
-| Concept Jaccard | `\|concepts_A ∩ concepts_B\| / \|concepts_A ∪ concepts_B\|` | Similarity threshold ≥ 0.5 |
-
-#### Phase B: Tool Encoding Round-Trip
-
-Verifier kiểm tra tính toàn vẹn kỹ thuật:
-
-1. Decode `proposed_dna` → `CoreDna` struct
-2. Re-encode `CoreDna` → `wire_bytes_2`
-3. So sánh: `BLAKE3(wire_bytes_2) == BLAKE3(proposed_dna)` ?
-4. Validate: CRC-16 correct, all opcodes valid, varint well-formed
-
-Cả hai phase phải PASS để verifier đồng ý.
-
-### 4.5 Consensus Selection — Weighted Scoring
-
-Khi đủ verifiers submit kết quả, consensus được tính bằng **weighted scoring**:
-
-| Factor | Weight | Mô tả |
-|--------|--------|-------|
-| Agreement | 50% | Tỷ lệ verifiers đồng ý (agree / total) |
-| Detail | 30% | Trung bình Jaccard scores (opcode + concept) |
-| Reputation | 20% | Trung bình EigenTrust score của verifiers |
-
-```
-consensus_score = 0.50 × agreement_ratio
-                + 0.30 × avg_detail_score
-                + 0.20 × avg_reputation_score
-```
-
-Threshold: `consensus_score ≥ 0.7` → FULL. Nếu không đạt → giữ PART, có thể mở thêm verification round.
-
-### 4.6 Immutability Rule
-
-> **FULL = immutable**. Khi EncodingStatus đạt FULL, CoreDna bất biến hoàn toàn. Nếu cần sửa encoding, phải tạo KU mới với raw text mới → CID mới → vòng đời encoding mới.
-
-Điều này đảm bảo content-addressable integrity: CID luôn đại diện chính xác nội dung đã được consensus verify.
-
-### 4.7 OBT Token Rewards
-
-Verifiers nhận **OBT tokens** khi tham gia encoding consensus:
-
-- Reward tỷ lệ thuận với `raw_text.len()` (raw size)
-- Chia đều giữa các verifiers đã submit kết quả hợp lệ
-- Bonus cho verifier đồng ý với kết quả consensus cuối cùng
-- Penalty nhẹ cho reject sai (verifier reject nhưng consensus = agree)
-
-### 4.8 Stigmergy — Load Balancing
-
-Sử dụng **pheromone-based load balancing** (stigmergy) để phân phối jobs hiệu quả:
-
-- Mỗi domain/niche có "pheromone level" phản ánh workload hiện tại
-- Verifiers ưu tiên jobs ở niches có pheromone thấp (ít người verify)
-- Pheromone evaporate theo thời gian → tự cân bằng
-- Tránh bottleneck ở domains phổ biến
-
-### 4.9 Code Modules
-
-| Crate | Module | Mô tả |
+| Phase | Method | Check |
 |-------|--------|-------|
-| `ku-core` | `encoding_consensus.rs` | EncodingStatus state machine, EncodingSubmission, EncodingConsensus logic |
-| `ku-core` | `encoding_verifier.rs` | 2-phase verification: AI decomposition agreement + tool encoding round-trip |
-| `ku-core` | `encoding_reward.rs` | OBT token reward calculation and distribution |
-| `ku-net` | `encoding_job.rs` | EncodingJob DHT job board, posting and browsing |
-| `ku-net` | `encoding_gossip.rs` | Gossip protocol for encoding job announcements |
-| `ku-net` | `encoding_stigmergy.rs` | Pheromone-based load balancing for verifier selection |
+| A: AI Decomposition | Run AI independently on raw text | gene_type match + Jaccard similarity ≥ 0.6 |
+| B: Tool Encoding | Decode → re-encode wire bytes | BLAKE3 match + CRC-16 valid |
+
+### 5.3 OBT Token Rewards
+
+- Reward proportional to `raw_text.len()`
+- Split equally among valid verifiers
+- Bonus for consensus agreement
 
 ---
 
-## §5 Concept System Architecture (v7)
+## §6 Storage Integration (✅ Implemented)
 
-### 5.1 ConceptRegistry (v7 — primary)
+### 6.1 KuStorage Tables (redb)
 
-Offline concept name → CCID lookup from `concepts.obr` file (~200MB, ~8M concepts). See [concept_registry.rs](file:///c:/Users/shpy2/Documents/OneBrain/src/ku-core/src/concept_registry.rs).
+| Table | Key | Value | Purpose |
+|-------|-----|-------|--------|
+| `kus` | CID (32B) | wire bytes | Core DNA (immutable) |
+| `epigenetics` | CID (32B) | JSON | Layer 2 metadata |
+| `index_trust` | trust_score(2B) + CID(32B) | empty | Range query index |
+| `index_concept` | concept_id(8B) + CID(32B) | empty | Concept lookup |
+| `index_ccid` | CCID(16B) + CID(32B) | empty | ★ NEW: O(1) concept→KU lookup |
+
+### 6.2 GraphStorage (6 tables)
+
+Bond edge indexes for O(1) graph traversal. See [OBS_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/OBS_SPEC.md).
+
+### 6.3 KQL Integration
+
+`OneBrainNode::execute_kql()` uses real `LocalExecutor`:
 
 ```rust
-pub struct ConceptRegistry {
-    label_index: HashMap<String, Vec<usize>>,
-    fuzzy_index: HashMap<String, String>,
-    entries: Vec<ResolvedConcept>,
+let query = ku_kql::parser::parse_query(query_str)?;
+let mut executor = ku_kql::executor::LocalExecutor::new();
+for ku in storage.get_all()? {
+    executor.insert(ku);
 }
+let result = executor.execute(&query)?;
+```
 
+`FIND HISTORY` wired to `EventAccumulator` — returns only KUs with recorded bond events.
+
+---
+
+## §7 Concept System Architecture (v7)
+
+### 7.1 ConceptRegistry (Primary)
+
+Offline lookup from concept name → CCID, loaded from `concepts.obr`:
+
+```rust
 pub enum ResolveResult {
-    Found(ResolvedConcept),
-    Ambiguous(Vec<ResolvedConcept>),
-    Fuzzy(ResolvedConcept),
-    NotFound,  // → AI creates Definition KU, BLAKE3 → CCID
+    Found(ResolvedConcept),     // Exact match
+    Ambiguous(Vec<ResolvedConcept>), // Multiple candidates
+    Fuzzy(ResolvedConcept),     // Close match
+    NotFound,                   // → fallback CCID from BLAKE3(name)
 }
 ```
 
-Encoding flow: AI extracts concept → `registry.resolve(name)` → CCID → local_id + ConceptTable entry.
+### 7.2 text_parser::ConceptDict (T1 only)
 
-### 5.2 text_parser::ConceptDict (Tier 1 — legacy)
+Simple `HashMap<String, ConceptId>` — still used by Tier 1 parser.
 
-Simple `HashMap<String, ConceptId>` for fast word → ID lookups during rule-based parsing. Still used by Tier 1 parser.
-
-### 5.3 concept_dict::ConceptDict (deprecated)
+### 7.3 concept_dict::ConceptDict (Deprecated)
 
 > [!WARNING]
-> **Deprecated in v7** — use `ConceptRegistry` for new code. Legacy code will be migrated.
-
-Rich bilingual dictionary with `ConceptEntry`:
-
-```rust
-pub struct ConceptEntry {
-    pub id: ConceptId,
-    pub name: String,
-    pub name_vi: Option<String>,
-    pub name_en: Option<String>,
-    pub tier: u8,
-    pub category: Option<String>,
-}
-```
-
-Still used by `KuRuntime::expression()` for multilingual rendering until migration complete.
-
-### 5.4 PersistentConceptDict (deprecated)
-
-redb-backed persistence. **Deprecated in v7** — will be replaced by ConceptRegistry persistence.
+> **Deprecated in v7** — use ConceptRegistry for new code.
 
 ---
 
-## §6 Varint Encoding for ConceptIds
+## §8 Test Coverage
 
-| Range | Bytes | Tier | Use |
-|-------|-------|------|-----|
-| 0 – 127 | 1 | 0 | Universal primitives (IS_A, units) |
-| 128 – 16,383 | 2 | 1 | Common concepts (~15K) |
-| 16,384 – 2,097,151 | 3 | 2 | Domain-specific (~2M) |
-| 2,097,152+ | 4-10 | 3+ | Rare/auto-generated |
-
-Lower-tier concepts use fewer bytes → more compact encoding for common knowledge.
+| Package | Tests | Status |
+|---------|-------|--------|
+| ku-encoder | 118 | ✅ All pass |
+| ku-kql | 86 | ✅ All pass |
+| ku-core | 834/840 | ✅ (6 pre-existing unrelated) |
+| onebrain-node | — | ✅ Compiles clean |
 
 ---
 
-## §7 Binary Wire Format
+## §9 Related Specifications
 
-```
-MAGIC(0x4B) | VER_META(1B) | [CONCEPT_TABLE] | INSTRUCTION_STREAM | END(0x1E) | CRC-16(2B)
-```
-
-v7: VER_META bit[0] = `has_concept_table`. If set, ConceptTable follows header before instructions.
-
-### Concept Table (v7)
-
-```
-varint(entry_count) | { varint(local_id) + CCID(16 bytes) } × entry_count
-```
-
-Only Tier 2+ concepts (ID ≥ 16512) need entries. Tier 0 (0–127) and Tier 1 (128–16511) are universal.
-
-### Instruction Encoding
-
-Each instruction: `OPCODE_BYTE | operands...`
-
-OPCODE_BYTE layout:
-- bits[7:3] = opcode (0x00-0x1F)
-- bits[2:0] = modifier bits (instruction-specific)
-
-Operands use varint encoding for ConceptIds and type-prefixed encoding for numeric values (0xFA-0xFF prefix bytes).
-
-### CID Computation
-
-```rust
-let encoded = encode_core_dna(&dna)?;
-let cid: [u8; 32] = blake3::hash(&encoded).into();
-```
-
-BLAKE3 produces a 32-byte content identifier. This CID is the KU's permanent identity.
+| Spec | Topic |
+|------|-------|
+| [KU_ARCHITECTURE.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KU_ARCHITECTURE.md) | KU v7 3-layer architecture |
+| [KU_CORE_DNA_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KU_CORE_DNA_SPEC.md) | Wire format, opcodes, concept table |
+| [ENCODING_CONSENSUS_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/ENCODING_CONSENSUS_SPEC.md) | Distributed T3 consensus |
+| [PILLAR6_AI_TECHNICAL_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/PILLAR6_AI_TECHNICAL_SPEC.md) | AI layer crate architecture |
+| [KQL_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KQL_SPEC.md) | Query language |
+| [OBS_SPEC.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/OBS_SPEC.md) | Storage layer |

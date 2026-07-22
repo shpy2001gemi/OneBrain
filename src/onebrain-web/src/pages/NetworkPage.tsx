@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import { Wifi, WifiOff, Plus, RefreshCw, Globe } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { Wifi, WifiOff, Plus, RefreshCw, Globe, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { api } from '../api/client';
 import type { PeerView, StatusResponse } from '../api/types';
+import { formatDuration } from '../utils/format';
 
 export function NetworkPage() {
   const [status, setStatus] = useState<StatusResponse | null>(null);
@@ -11,20 +12,20 @@ export function NetworkPage() {
   const [connectResult, setConnectResult] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [s, p] = await Promise.all([api.getStatus(), api.getPeers()]);
       setStatus(s);
       setPeers(p.peers);
-    } catch { /* ignore */ }
+    } catch { setStatus(null); }
     setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
     const interval = setInterval(loadData, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadData]);
 
   const handleConnect = async () => {
     if (!connectAddr.trim() || connecting) return;
@@ -35,18 +36,14 @@ export function NetworkPage() {
       setConnectResult('Connected successfully!');
       setConnectAddr('');
       loadData();
-    } catch (e: any) {
-      setConnectResult(`Error: ${e.message}`);
+    } catch (e: unknown) {
+      setConnectResult(`Error: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setConnecting(false);
     }
   };
 
-  const formatUptime = (s: number) => {
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    return h > 0 ? `${h}h ${m}m` : `${m}m`;
-  };
+  const formatUptime = formatDuration;
 
   if (loading) {
     return <div className="page" style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
@@ -78,6 +75,42 @@ export function NetworkPage() {
           </div>
         ))}
       </div>
+
+      {/* Scope-aware vNext status */}
+      {status?.vnext && (
+        <div className="glass-card animate-in" style={{ marginBottom: 'var(--ob-gap-lg)', animationDelay: '240ms' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', marginBottom: 'var(--ob-gap-md)' }}>
+            <div>
+              <h3 style={{ fontSize: '1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ShieldCheck size={18} style={{ color: 'var(--ob-accent)' }} /> vNext scoped status
+              </h3>
+              <p style={{ color: 'var(--ob-text-secondary)', fontSize: '0.82rem', marginTop: 4 }}>
+                Local usability and observed reachability are shown separately from network-wide claims.
+              </p>
+            </div>
+            <span className="badge badge-green">
+              {status.vnext.usability === 'USABLE_OFFLINE' ? 'Usable offline' : 'Usable with observed peers'}
+            </span>
+          </div>
+          <div className="grid-4" style={{ marginBottom: 'var(--ob-gap-md)' }}>
+            <div><span className="stat-label">Reachability</span><div className="mono" style={{ marginTop: 6 }}>{status.vnext.reachability.scope}</div></div>
+            <div><span className="stat-label">Coverage</span><div className="mono" style={{ marginTop: 6 }}>{status.vnext.coverage.status}</div></div>
+            <div><span className="stat-label">Frontier</span><div style={{ marginTop: 6 }}>{status.vnext.coverage.assessed_frontier ? 'Assessed' : 'Not available'}</div></div>
+            <div><span className="stat-label">Fidelity</span><div className="mono" style={{ marginTop: 6 }}>{status.vnext.fidelity.status}</div></div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {status.vnext.coverage.limitations.map(limit => <span key={limit} className="badge">{limit}</span>)}
+            {status.vnext.legacy.warnings.map(warning => (
+              <span key={warning} className="badge" style={{ color: 'var(--ob-warning)' }}>
+                <AlertTriangle size={12} /> {warning}
+              </span>
+            ))}
+          </div>
+          <p style={{ color: 'var(--ob-text-secondary)', fontSize: '0.78rem', marginTop: 'var(--ob-gap-md)' }}>
+            Consent: publish {status.vnext.consent.knowledge_publish}; public need disclosure {status.vnext.consent.public_need_disclosure}; remote cognition {status.vnext.consent.remote_cognition}. Consent is never inferred.
+          </p>
+        </div>
+      )}
 
       <div className="grid-3" style={{ gridTemplateColumns: '2fr 1fr' }}>
         {/* Peer List */}

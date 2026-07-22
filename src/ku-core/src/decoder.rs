@@ -55,7 +55,10 @@ pub struct DecodedKu {
 pub fn decode_knowledge_unit(wire: &[u8]) -> Result<DecodedKu, KuError> {
     // 1. Validate minimum size (smallest header is v4 = 6 + 4 CRC = 10)
     if wire.len() < 10 {
-        return Err(KuError::PayloadTruncated { expected: 10, got: wire.len() });
+        return Err(KuError::PayloadTruncated {
+            expected: 10,
+            got: wire.len(),
+        });
     }
 
     // 2. Check MAGIC bytes
@@ -69,7 +72,10 @@ pub fn decode_knowledge_unit(wire: &[u8]) -> Result<DecodedKu, KuError> {
         // ─── v4 path: 6-byte header, u16 PAYLOAD_LEN ───
         VERSION_V4 => {
             if wire.len() < 10 {
-                return Err(KuError::PayloadTruncated { expected: 10, got: wire.len() });
+                return Err(KuError::PayloadTruncated {
+                    expected: 10,
+                    got: wire.len(),
+                });
             }
             let flags = wire[3];
             let plen = ((wire[4] as u16) << 8) | (wire[5] as u16);
@@ -78,7 +84,10 @@ pub fn decode_knowledge_unit(wire: &[u8]) -> Result<DecodedKu, KuError> {
         // ─── v5 path: 8-byte header, u32 PAYLOAD_LEN ───
         VERSION => {
             if wire.len() < 12 {
-                return Err(KuError::PayloadTruncated { expected: 12, got: wire.len() });
+                return Err(KuError::PayloadTruncated {
+                    expected: 12,
+                    got: wire.len(),
+                });
             }
             let flags = wire[3];
             let plen = u32::from_be_bytes([wire[4], wire[5], wire[6], wire[7]]);
@@ -93,7 +102,10 @@ pub fn decode_knowledge_unit(wire: &[u8]) -> Result<DecodedKu, KuError> {
     // 5. Verify total size >= header + payload + CRC
     let expected_total = header_size + payload_len as usize + 4;
     if wire.len() < expected_total {
-        return Err(KuError::PayloadTruncated { expected: expected_total, got: wire.len() });
+        return Err(KuError::PayloadTruncated {
+            expected: expected_total,
+            got: wire.len(),
+        });
     }
 
     // 6. Compute CRC-32 over header + payload, compare with stored CRC
@@ -107,7 +119,10 @@ pub fn decode_knowledge_unit(wire: &[u8]) -> Result<DecodedKu, KuError> {
     let computed_crc = crc32fast::hash(&wire[..crc_offset]);
 
     if stored_crc != computed_crc {
-        return Err(KuError::CrcMismatch { stored: stored_crc, computed: computed_crc });
+        return Err(KuError::CrcMismatch {
+            stored: stored_crc,
+            computed: computed_crc,
+        });
     }
 
     // 7. If gene_type == EXTENDED (7), read ext byte from payload start
@@ -119,13 +134,12 @@ pub fn decode_knowledge_unit(wire: &[u8]) -> Result<DecodedKu, KuError> {
             ));
         }
         let ext_byte = raw_payload[0];
-        let gt = GeneType::from_wire(7, Some(ext_byte))
-            .ok_or(KuError::UnknownGeneType(ext_byte))?;
+        let gt =
+            GeneType::from_wire(7, Some(ext_byte)).ok_or(KuError::UnknownGeneType(ext_byte))?;
         // Strip the ext byte — remaining bytes are pure CBOR
         (gt, &raw_payload[1..])
     } else {
-        let gt = GeneType::from_wire(gene_base, None)
-            .ok_or(KuError::UnknownGeneType(gene_base))?;
+        let gt = GeneType::from_wire(gene_base, None).ok_or(KuError::UnknownGeneType(gene_base))?;
         (gt, raw_payload)
     };
 

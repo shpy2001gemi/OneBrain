@@ -7,12 +7,12 @@
 //!
 //! ## Lookup Flow
 //! 1. AI extracts concept name from text
-//! 2. AI calls `resolve("ngựa vằn")` 
+//! 2. AI calls `resolve("ngựa vằn")`
 //! 3. Registry does hash lookup → returns CCID
 //! 4. If not found → AI creates CCID via fallback
 
-use std::collections::HashMap;
 use crate::ccid::Ccid;
+use std::collections::HashMap;
 
 // ============================================================================
 // ResolveResult — outcome of concept lookup
@@ -131,6 +131,7 @@ impl CollisionRecord {
 /// Although 128-bit CCID collision probability is ~3.67×10⁻¹⁸ (for 50B concepts),
 /// the registry maintains a `ccid_index` for O(1) duplicate detection and
 /// logs any collision events for forensic analysis.
+#[derive(Debug)]
 pub struct ConceptRegistry {
     /// Primary index: lowercase name → list of matches.
     label_index: HashMap<String, Vec<usize>>,
@@ -204,9 +205,7 @@ impl ConceptRegistry {
         if let Some(&existing_idx) = self.ccid_index.get(&concept.ccid) {
             let existing = &self.entries[existing_idx];
 
-            if existing.canonical_name == concept.canonical_name
-                && existing.qid == concept.qid
-            {
+            if existing.canonical_name == concept.canonical_name && existing.qid == concept.qid {
                 // Same concept, same name → harmless dedup
                 // Still add labels (might be new language labels)
                 for label in labels {
@@ -310,6 +309,202 @@ impl ConceptRegistry {
     pub fn get_by_ccid(&self, ccid: &Ccid) -> Option<&ResolvedConcept> {
         self.ccid_index.get(ccid).map(|&idx| &self.entries[idx])
     }
+
+    // ════════════════════════════════════════════════════════════════════
+    // OBR1 Loader — load from concepts.obr binary file
+    // ════════════════════════════════════════════════════════════════════
+
+    /// OBR1 file magic bytes.
+    const OBR_MAGIC: &'static [u8; 4] = b"OBR1";
+    /// OBR header size in bytes.
+    const OBR_HEADER_SIZE: usize = 32;
+
+    /// Load a ConceptRegistry from an OBR1 binary file.
+    ///
+    /// ## OBR1 Format
+    /// ```text
+    /// Header (32 bytes):
+    ///   [0..4]   magic "OBR1"
+    ///   [4..8]   version (u32 LE, must be 1)
+    ///   [8..16]  entry_count (u64 LE)
+    ///   [16..24] label_count (u64 LE)
+    ///   [24..32] reserved
+    ///
+    /// Per entry:
+    ///   [16 bytes]  CCID (blake3 truncated)
+    ///   [4 bytes]   ext_id (u32 LE — Wikidata QID or source-specific ID)
+    ///   [1 byte]    source (u8 — 0=Wikidata, 1=GeoNames, etc.)
+    ///   [1 byte]    category (ConceptCategory as u8)
+    ///   [2 bytes]   name_len (u16 LE)
+    ///   [name_len]  name UTF-8 string (canonical name)
+    ///   [2 bytes]   num_labels (u16 LE)
+    ///   For each label:
+    ///     [2 bytes]   len (u16 LE)
+    ///     [len bytes] UTF-8 string
+    /// ```
+    pub fn load_obr(path: &std::path::Path) -> Result<Self, ObrLoadError> {
+        use std::io::Read;
+
+        let mut file = std::fs::File::open(path).map_err(|e| ObrLoadError::Io(e))?;
+
+        // Read header
+        let mut header = [0u8; Self::OBR_HEADER_SIZE];
+        file.read_exact(&mut header)
+            .map_err(|e| ObrLoadError::Io(e))?;
+
+        // Validate magic
+        if &header[0..4] != Self::OBR_MAGIC {
+            return Err(ObrLoadError::InvalidMagic);
+        }
+
+        // Validate version
+        let version = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
+        if version != 1 {
+            return Err(ObrLoadError::UnsupportedVersion(version));
+        }
+
+        let entry_count = u64::from_le_bytes(header[8..16].try_into().unwrap()) as usize;
+        let _label_count = u64::from_le_bytes(header[16..24].try_into().unwrap());
+
+        // Read entire file into memory for fast parsing (avoids syscall per entry)
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)
+            .map_err(|e| ObrLoadError::Io(e))?;
+
+        #[cfg(test)]
+        eprintln!(
+            "  [OBR] data_len={}, entry_count={}",
+            data.len(),
+            entry_count
+        );
+
+        // Pre-allocate
+        let mut registry = Self::with_capacity(entry_count);
+
+        let mut pos: usize = 0;
+        let mut loaded: usize = 0;
+
+        for _entry_idx in 0..entry_count {
+            // Minimum entry: CCID(16) + ext_id(4) + source(1) + cat(1) + name_len(2) + num_labels(2) = 26
+            if pos + 26 > data.len() {
+                break;
+            }
+
+            // CCID (16 bytes)
+            let mut ccid = [0u8; 16];
+            ccid.copy_from_slice(&data[pos..pos + 16]);
+            pos += 16;
+
+            // ext_id (u32 LE) — Wikidata QID or source-specific ID
+            let qid = u32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+            pos += 4;
+
+            // source (u8) — 0=Wikidata, 1=GeoNames, etc.
+            let _source = data[pos];
+            pos += 1;
+
+            // category (u8)
+            let category = ConceptCategory::from_u8(data[pos]);
+            pos += 1;
+
+            // name_len (u16 LE) + name_bytes — canonical name
+            if pos + 2 > data.len() {
+                break;
+            }
+            let name_len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
+            pos += 2;
+            if pos + name_len > data.len() {
+                break;
+            }
+
+            let canonical_name = match std::str::from_utf8(&data[pos..pos + name_len]) {
+                Ok(s) => s.to_string(),
+                Err(_) => String::new(),
+            };
+            pos += name_len;
+
+            // num_labels (u16 LE)
+            if pos + 2 > data.len() {
+                break;
+            }
+            let n_labels = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
+            pos += 2;
+
+            // Parse labels: [label_len(u16) + label_bytes]*
+            let mut labels = Vec::with_capacity(n_labels + 1);
+            if !canonical_name.is_empty() {
+                labels.push(canonical_name.clone());
+            }
+
+            for _i in 0..n_labels {
+                if pos + 2 > data.len() {
+                    break;
+                }
+                let len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
+                pos += 2;
+                if pos + len > data.len() {
+                    break;
+                }
+
+                if let Ok(s) = std::str::from_utf8(&data[pos..pos + len]) {
+                    labels.push(s.to_string());
+                }
+                pos += len;
+            }
+
+            if !canonical_name.is_empty() {
+                let concept = ResolvedConcept {
+                    ccid,
+                    qid,
+                    category,
+                    canonical_name,
+                };
+
+                let label_refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+                registry.add(concept, &label_refs);
+                loaded += 1;
+            }
+        }
+
+        if loaded == 0 && entry_count > 0 {
+            return Err(ObrLoadError::NoEntriesLoaded);
+        }
+
+        Ok(registry)
+    }
+}
+
+/// Errors that can occur when loading an OBR file.
+#[derive(Debug)]
+pub enum ObrLoadError {
+    /// I/O error reading the file.
+    Io(std::io::Error),
+    /// File doesn't start with "OBR1" magic bytes.
+    InvalidMagic,
+    /// OBR version is not supported (only version 1 is supported).
+    UnsupportedVersion(u32),
+    /// File parsed but no valid entries were loaded.
+    NoEntriesLoaded,
+}
+
+impl std::fmt::Display for ObrLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObrLoadError::Io(e) => write!(f, "OBR I/O error: {}", e),
+            ObrLoadError::InvalidMagic => write!(f, "Invalid OBR magic (expected OBR1)"),
+            ObrLoadError::UnsupportedVersion(v) => write!(f, "Unsupported OBR version: {}", v),
+            ObrLoadError::NoEntriesLoaded => write!(f, "OBR file parsed but no entries loaded"),
+        }
+    }
+}
+
+impl std::error::Error for ObrLoadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ObrLoadError::Io(e) => Some(e),
+            _ => None,
+        }
+    }
 }
 
 impl Default for ConceptRegistry {
@@ -328,23 +523,31 @@ impl Default for ConceptRegistry {
 fn strip_vietnamese_diacritics(s: &str) -> String {
     s.chars()
         .map(|c| match c {
-            'á' | 'à' | 'ả' | 'ã' | 'ạ' | 'ă' | 'ắ' | 'ằ' | 'ẳ' | 'ẵ' | 'ặ'
-            | 'â' | 'ấ' | 'ầ' | 'ẩ' | 'ẫ' | 'ậ' => 'a',
-            'é' | 'è' | 'ẻ' | 'ẽ' | 'ẹ' | 'ê' | 'ế' | 'ề' | 'ể' | 'ễ' | 'ệ' => 'e',
+            'á' | 'à' | 'ả' | 'ã' | 'ạ' | 'ă' | 'ắ' | 'ằ' | 'ẳ' | 'ẵ' | 'ặ' | 'â' | 'ấ' | 'ầ'
+            | 'ẩ' | 'ẫ' | 'ậ' => 'a',
+            'é' | 'è' | 'ẻ' | 'ẽ' | 'ẹ' | 'ê' | 'ế' | 'ề' | 'ể' | 'ễ' | 'ệ' => {
+                'e'
+            }
             'í' | 'ì' | 'ỉ' | 'ĩ' | 'ị' => 'i',
-            'ó' | 'ò' | 'ỏ' | 'õ' | 'ọ' | 'ô' | 'ố' | 'ồ' | 'ổ' | 'ỗ' | 'ộ'
-            | 'ơ' | 'ớ' | 'ờ' | 'ở' | 'ỡ' | 'ợ' => 'o',
-            'ú' | 'ù' | 'ủ' | 'ũ' | 'ụ' | 'ư' | 'ứ' | 'ừ' | 'ử' | 'ữ' | 'ự' => 'u',
+            'ó' | 'ò' | 'ỏ' | 'õ' | 'ọ' | 'ô' | 'ố' | 'ồ' | 'ổ' | 'ỗ' | 'ộ' | 'ơ' | 'ớ' | 'ờ'
+            | 'ở' | 'ỡ' | 'ợ' => 'o',
+            'ú' | 'ù' | 'ủ' | 'ũ' | 'ụ' | 'ư' | 'ứ' | 'ừ' | 'ử' | 'ữ' | 'ự' => {
+                'u'
+            }
             'ý' | 'ỳ' | 'ỷ' | 'ỹ' | 'ỵ' => 'y',
             'đ' => 'd',
             // Uppercase
-            'Á' | 'À' | 'Ả' | 'Ã' | 'Ạ' | 'Ă' | 'Ắ' | 'Ằ' | 'Ẳ' | 'Ẵ' | 'Ặ'
-            | 'Â' | 'Ấ' | 'Ầ' | 'Ẩ' | 'Ẫ' | 'Ậ' => 'a',
-            'É' | 'È' | 'Ẻ' | 'Ẽ' | 'Ẹ' | 'Ê' | 'Ế' | 'Ề' | 'Ể' | 'Ễ' | 'Ệ' => 'e',
+            'Á' | 'À' | 'Ả' | 'Ã' | 'Ạ' | 'Ă' | 'Ắ' | 'Ằ' | 'Ẳ' | 'Ẵ' | 'Ặ' | 'Â' | 'Ấ' | 'Ầ'
+            | 'Ẩ' | 'Ẫ' | 'Ậ' => 'a',
+            'É' | 'È' | 'Ẻ' | 'Ẽ' | 'Ẹ' | 'Ê' | 'Ế' | 'Ề' | 'Ể' | 'Ễ' | 'Ệ' => {
+                'e'
+            }
             'Í' | 'Ì' | 'Ỉ' | 'Ĩ' | 'Ị' => 'i',
-            'Ó' | 'Ò' | 'Ỏ' | 'Õ' | 'Ọ' | 'Ô' | 'Ố' | 'Ồ' | 'Ổ' | 'Ỗ' | 'Ộ'
-            | 'Ơ' | 'Ớ' | 'Ờ' | 'Ở' | 'Ỡ' | 'Ợ' => 'o',
-            'Ú' | 'Ù' | 'Ủ' | 'Ũ' | 'Ụ' | 'Ư' | 'Ứ' | 'Ừ' | 'Ử' | 'Ữ' | 'Ự' => 'u',
+            'Ó' | 'Ò' | 'Ỏ' | 'Õ' | 'Ọ' | 'Ô' | 'Ố' | 'Ồ' | 'Ổ' | 'Ỗ' | 'Ộ' | 'Ơ' | 'Ớ' | 'Ờ'
+            | 'Ở' | 'Ỡ' | 'Ợ' => 'o',
+            'Ú' | 'Ù' | 'Ủ' | 'Ũ' | 'Ụ' | 'Ư' | 'Ứ' | 'Ừ' | 'Ử' | 'Ữ' | 'Ự' => {
+                'u'
+            }
             'Ý' | 'Ỳ' | 'Ỷ' | 'Ỹ' | 'Ỵ' => 'y',
             'Đ' => 'd',
             other => other,
@@ -558,23 +761,222 @@ mod tests {
 
         // Add original
         reg.add_checked(
-            ResolvedConcept { ccid, qid: 283, category: ConceptCategory::Entity, canonical_name: "water".into() },
+            ResolvedConcept {
+                ccid,
+                qid: 283,
+                category: ConceptCategory::Entity,
+                canonical_name: "water".into(),
+            },
             &["water"],
         );
 
         // Collision #1
         reg.add_checked(
-            ResolvedConcept { ccid, qid: 100, category: ConceptCategory::Entity, canonical_name: "fake1".into() },
+            ResolvedConcept {
+                ccid,
+                qid: 100,
+                category: ConceptCategory::Entity,
+                canonical_name: "fake1".into(),
+            },
             &["fake1"],
         );
         // Collision #2
         reg.add_checked(
-            ResolvedConcept { ccid, qid: 200, category: ConceptCategory::Entity, canonical_name: "fake2".into() },
+            ResolvedConcept {
+                ccid,
+                qid: 200,
+                category: ConceptCategory::Entity,
+                canonical_name: "fake2".into(),
+            },
             &["fake2"],
         );
 
         assert_eq!(reg.collision_count(), 2);
         assert_eq!(reg.collision_log()[0].incoming_name, "fake1");
         assert_eq!(reg.collision_log()[1].incoming_name, "fake2");
+    }
+
+    // ── OBR Loader tests ─────────────────────────────────────────────
+
+    /// Build a minimal OBR1 binary in memory for testing.
+    /// Format: ccid(16) + ext_id(u32) + source(u8) + category(u8) +
+    ///         name_len(u16) + name + num_labels(u16) + [label_len(u16) + label]*
+    fn build_test_obr(entries: &[(&[u8; 16], u32, u8, u8, &str, &[&str])]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // Header
+        buf.extend_from_slice(b"OBR1"); // magic
+        buf.extend_from_slice(&1u32.to_le_bytes()); // version
+        buf.extend_from_slice(&(entries.len() as u64).to_le_bytes()); // entry_count
+        let label_count: u64 = entries.iter().map(|e| e.5.len() as u64).sum();
+        buf.extend_from_slice(&label_count.to_le_bytes()); // label_count
+        buf.extend_from_slice(&[0u8; 8]); // reserved
+
+        for (ccid, ext_id, source, cat, name, labels) in entries {
+            buf.extend_from_slice(*ccid); // CCID (16)
+            buf.extend_from_slice(&ext_id.to_le_bytes()); // ext_id (u32 LE)
+            buf.push(*source); // source (u8)
+            buf.push(*cat); // category (u8)
+            let name_bytes = name.as_bytes();
+            buf.extend_from_slice(&(name_bytes.len() as u16).to_le_bytes()); // name_len
+            buf.extend_from_slice(name_bytes); // name
+            buf.extend_from_slice(&(labels.len() as u16).to_le_bytes()); // num_labels
+            for label in *labels {
+                let bytes = label.as_bytes();
+                buf.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
+                buf.extend_from_slice(bytes);
+            }
+        }
+
+        buf
+    }
+
+    #[test]
+    fn test_load_obr_synthetic() {
+        let ccid1 = crate::ccid::ccid(b"wd:Q283");
+        let ccid2 = crate::ccid::ccid(b"wd:Q5");
+
+        let data = build_test_obr(&[
+            // (ccid, ext_id, source, cat, name, labels)
+            (&ccid1, 283, 0, 7, "water", &["nước", "eau"]),
+            (&ccid2, 5, 0, 5, "human", &["con người"]),
+        ]);
+
+        // Write to temp file
+        let dir = std::env::temp_dir().join("obr_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("test_concepts.obr");
+        std::fs::write(&path, &data).unwrap();
+
+        let reg = ConceptRegistry::load_obr(&path).unwrap();
+        assert_eq!(reg.len(), 2);
+
+        // Check "water" resolves
+        match reg.resolve("water") {
+            ResolveResult::Found(c) => {
+                assert_eq!(c.qid, 283);
+                assert_eq!(c.canonical_name, "water");
+            }
+            other => panic!("Expected Found, got {:?}", other),
+        }
+
+        // Check Vietnamese label
+        match reg.resolve("nước") {
+            ResolveResult::Found(c) => assert_eq!(c.qid, 283),
+            other => panic!("Expected Found, got {:?}", other),
+        }
+
+        // Check "human"
+        match reg.resolve("human") {
+            ResolveResult::Found(c) => assert_eq!(c.qid, 5),
+            other => panic!("Expected Found, got {:?}", other),
+        }
+
+        // Cleanup
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_load_obr_invalid_magic() {
+        let dir = std::env::temp_dir().join("obr_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("bad_magic.obr");
+        std::fs::write(&path, b"NOPE000000000000000000000000000000").unwrap();
+
+        let result = ConceptRegistry::load_obr(&path);
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ObrLoadError::InvalidMagic),
+            "Expected InvalidMagic, got: {}",
+            err
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_load_obr_file_not_found() {
+        let result = ConceptRegistry::load_obr(std::path::Path::new("/nonexistent/path.obr"));
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ObrLoadError::Io(_)),
+            "Expected Io, got: {}",
+            err
+        );
+    }
+
+    /// Integration test: load real concepts.obr if available.
+    /// This test is skipped when the file doesn't exist (CI environments).
+    #[test]
+    fn test_load_obr_real_file() {
+        // Build path relative to CARGO_MANIFEST_DIR (ku-core crate root)
+        // ku-core is at src/ku-core, so concepts.obr is at ../../onebrain_data/concepts.obr
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let candidates = [
+            manifest_dir.join("../../onebrain_data/concepts.obr"),
+            manifest_dir.join("../onebrain_data/concepts.obr"),
+        ];
+        let path = match candidates.iter().find(|p| p.exists()) {
+            Some(p) => p,
+            None => {
+                eprintln!(
+                    "  [SKIP] concepts.obr not found (tried from {:?})",
+                    manifest_dir
+                );
+                return;
+            }
+        };
+
+        let reg = ConceptRegistry::load_obr(path).expect("Failed to load concepts.obr");
+
+        eprintln!(
+            "  Path: {:?}",
+            path.canonicalize().unwrap_or_else(|_| path.clone())
+        );
+        eprintln!(
+            "  File size: {} bytes",
+            std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)
+        );
+
+        // Should have millions of entries
+        eprintln!(
+            "  Loaded {} concepts, {} labels",
+            reg.len(),
+            reg.label_count()
+        );
+        assert!(
+            reg.len() > 1_000_000,
+            "Expected >1M concepts, got {}",
+            reg.len()
+        );
+
+        // First entry should be "happiness" (from our header analysis)
+        match reg.resolve("happiness") {
+            ResolveResult::Found(c) => {
+                eprintln!("  happiness → Q{} ({})", c.qid, c.canonical_name);
+                assert!(!c.canonical_name.is_empty());
+            }
+            ResolveResult::Ambiguous(matches) => {
+                eprintln!("  happiness → {} ambiguous matches", matches.len());
+            }
+            other => panic!("Expected Found/Ambiguous for 'happiness', got {:?}", other),
+        }
+
+        // "water" may be ambiguous (multiple Wikidata concepts with "water" label)
+        match reg.resolve("water") {
+            ResolveResult::Found(c) => {
+                eprintln!("  water → Q{} ({})", c.qid, c.canonical_name);
+            }
+            ResolveResult::Ambiguous(matches) => {
+                eprintln!("  water → {} ambiguous matches", matches.len());
+                assert!(!matches.is_empty());
+            }
+            ResolveResult::Fuzzy(c) => {
+                eprintln!("  water → Q{} (fuzzy)", c.qid);
+            }
+            ResolveResult::NotFound => {
+                // water might genuinely not be a standalone Wikidata label
+                eprintln!("  water → NotFound (may not be a primary Wikidata label)");
+            }
+        }
     }
 }

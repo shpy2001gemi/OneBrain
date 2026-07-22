@@ -4,8 +4,8 @@
 //! Results arriving from multiple nodes are combined into a single
 //! ordered result set.
 
-use std::collections::HashMap;
 use ku_core::KuRuntime;
+use std::collections::HashMap;
 
 use super::messages::{QueryId, QueryScope};
 
@@ -79,13 +79,16 @@ impl ResultMerger {
                 }
             } else if self.results.len() < self.max_results * 2 {
                 // New unique result
-                self.results.insert(hash, RankedResult {
-                    ku,
-                    content_hash: hash,
-                    score,
-                    found_at: scope,
-                    source_count: 1,
-                });
+                self.results.insert(
+                    hash,
+                    RankedResult {
+                        ku,
+                        content_hash: hash,
+                        score,
+                        found_at: scope,
+                        source_count: 1,
+                    },
+                );
             }
         }
     }
@@ -100,7 +103,8 @@ impl ResultMerger {
 
         // Sort by: score DESC, source_count DESC, scope ASC (closer = better)
         ranked.sort_by(|a, b| {
-            b.score.partial_cmp(&a.score)
+            b.score
+                .partial_cmp(&a.score)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then(b.source_count.cmp(&a.source_count))
                 .then((a.found_at as u8).cmp(&(b.found_at as u8)))
@@ -173,15 +177,23 @@ fn compute_score(ku: &KuRuntime, scope: &QueryScope) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ku_core::{KuRuntime, Epigenetics};
     use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction};
+    use ku_core::{Epigenetics, KuRuntime};
 
     fn make_ku(trust_score: u16, concept_id: u64) -> KuRuntime {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Triple { s: concept_id, p: 133, o: 132 },
+                Instruction::Triple {
+                    s: concept_id,
+                    p: 133,
+                    o: 132,
+                },
                 Instruction::Certainty { level: 9500 },
             ],
         };
@@ -195,10 +207,7 @@ mod tests {
         let query_id = [0x42; 16];
         let mut merger = ResultMerger::new(query_id, 10);
 
-        merger.add_results(
-            vec![make_ku(9000, 1), make_ku(5000, 2)],
-            QueryScope::Local,
-        );
+        merger.add_results(vec![make_ku(9000, 1), make_ku(5000, 2)], QueryScope::Local);
 
         assert_eq!(merger.result_count(), 2);
         assert_eq!(merger.responses_received(), 1);
@@ -249,10 +258,7 @@ mod tests {
         let query_id = [0x42; 16];
         let mut merger = ResultMerger::new(query_id, 2);
 
-        merger.add_results(
-            vec![make_ku(9000, 1), make_ku(5000, 2)],
-            QueryScope::Local,
-        );
+        merger.add_results(vec![make_ku(9000, 1), make_ku(5000, 2)], QueryScope::Local);
 
         assert!(merger.has_enough());
     }
@@ -281,7 +287,10 @@ mod tests {
         let ku = make_ku(9000, 1);
         let local_score = compute_score(&ku, &QueryScope::Local);
         let global_score = compute_score(&ku, &QueryScope::Global);
-        assert!(local_score > global_score, "Local results should score higher");
+        assert!(
+            local_score > global_score,
+            "Local results should score higher"
+        );
     }
 
     #[test]

@@ -63,9 +63,9 @@ impl MockBackend {
     fn deterministic_embedding(&self, text: &str) -> Vec<f32> {
         let mut vec = vec![0.0f32; self.embedding_dims];
         // Use a simple hash-based approach for deterministic but varied vectors
-        let hash = text.bytes().fold(0u64, |acc, b| {
-            acc.wrapping_mul(31).wrapping_add(b as u64)
-        });
+        let hash = text
+            .bytes()
+            .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
         for (i, v) in vec.iter_mut().enumerate() {
             let seed = hash.wrapping_add(i as u64);
             // Map to [-1, 1] range
@@ -132,9 +132,7 @@ impl ModelBackend for MockBackend {
                     AiError::InferenceError("mock response is not valid JSON".to_string())
                 })
             }
-            ChatOrToolResponse::ToolCalls(_) => {
-                Ok(serde_json::json!({"mock": true}))
-            }
+            ChatOrToolResponse::ToolCalls(_) => Ok(serde_json::json!({"mock": true})),
         }
     }
 
@@ -201,7 +199,10 @@ mod tests {
     async fn test_mock_backend_default_response() {
         let mock = MockBackend::new();
         let msgs = vec![ChatMessage::user("test")];
-        let resp = mock.chat(&msgs, &InferenceOptions::default()).await.unwrap();
+        let resp = mock
+            .chat(&msgs, &InferenceOptions::default())
+            .await
+            .unwrap();
         assert_eq!(resp.content, "mock response");
     }
 
@@ -212,14 +213,23 @@ mod tests {
             .with_chat_response("second");
 
         let msgs = vec![ChatMessage::user("test")];
-        let r1 = mock.chat(&msgs, &InferenceOptions::default()).await.unwrap();
+        let r1 = mock
+            .chat(&msgs, &InferenceOptions::default())
+            .await
+            .unwrap();
         assert_eq!(r1.content, "first");
 
-        let r2 = mock.chat(&msgs, &InferenceOptions::default()).await.unwrap();
+        let r2 = mock
+            .chat(&msgs, &InferenceOptions::default())
+            .await
+            .unwrap();
         assert_eq!(r2.content, "second");
 
         // Should wrap around
-        let r3 = mock.chat(&msgs, &InferenceOptions::default()).await.unwrap();
+        let r3 = mock
+            .chat(&msgs, &InferenceOptions::default())
+            .await
+            .unwrap();
         assert_eq!(r3.content, "first");
     }
 
@@ -233,7 +243,11 @@ mod tests {
 
         let mock = MockBackend::new().with_tool_response(tool_calls);
         let msgs = vec![ChatMessage::user("use tools")];
-        let tools = vec![ToolDefinition::new("test_tool", "A test tool", serde_json::json!({}))];
+        let tools = vec![ToolDefinition::new(
+            "test_tool",
+            "A test tool",
+            serde_json::json!({}),
+        )];
 
         let resp = mock
             .chat_with_tools(&msgs, &tools, &InferenceOptions::default())

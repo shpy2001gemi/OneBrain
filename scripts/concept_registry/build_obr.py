@@ -19,6 +19,7 @@ from config import (
     OBR_MAGIC,
     OBR_VERSION,
     SOURCE_CHEBI,
+    SOURCE_ENGLISH_DICT,
     SOURCE_GEONAMES,
     SOURCE_NAMES,
     SOURCE_NCBI,
@@ -33,6 +34,7 @@ _SOURCE_PREFIX: dict[int, str] = {
     SOURCE_GEONAMES: "gn:",
     SOURCE_NCBI: "ncbi:",
     SOURCE_CHEBI: "chebi:",
+    SOURCE_ENGLISH_DICT: "en:",
 }
 
 # Header: magic(4) + version(u32) + entry_count(u64) + label_count(u64) + reserved(8)
@@ -40,14 +42,14 @@ HEADER_SIZE = 32
 HEADER_FORMAT = "<4sIQQ8s"
 
 
-def _compute_ccid(source: int, ext_id: int) -> bytes:
+def _compute_ccid(source: int, ext_id: int | str) -> bytes:
     """Compute a 16-byte CCID using blake3.
 
     The CCID is the first 16 bytes of ``blake3(prefix + str(ext_id))``.
 
     Args:
         source: Source code (``SOURCE_WIKIDATA``, etc.).
-        ext_id: External numeric ID.
+        ext_id: External numeric ID or string ID.
 
     Returns:
         16-byte CCID digest.
@@ -147,7 +149,16 @@ def build(input_path: Path, output_path: Path) -> dict[str, Any]:
             # Write entry
             # ccid(16B) + ext_id(u32) + source(u8) + category(u8) + name_len(u16)
             fh.write(ccid)
-            fh.write(struct.pack("<I", ext_id))
+            # ext_id: convert string IDs to hash u32
+            if isinstance(ext_id, int):
+                fh.write(struct.pack("<I", ext_id))
+            else:
+                # Hash string ID to u32 for binary compatibility
+                ext_id_hash = int.from_bytes(
+                    blake3.blake3(str(ext_id).encode("utf-8")).digest(length=4),
+                    "little",
+                )
+                fh.write(struct.pack("<I", ext_id_hash))
             fh.write(struct.pack("<B", source))
             fh.write(struct.pack("<B", category))
             fh.write(struct.pack("<H", name_len))

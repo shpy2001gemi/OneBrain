@@ -26,7 +26,9 @@ serde_json = "1"
 
 # Crypto (for CID computation)
 blake3 = "1"
+chacha20poly1305 = "0.11"
+zeroize = "1"
 
 [dev-dependencies]
 tempfile = "3"
-
+ed25519-dalek = "2"

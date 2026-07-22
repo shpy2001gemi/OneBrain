@@ -1,0 +1,24 @@
+{
+  "schema": "onebrain-vnext-selector-vector/1",
+  "fixture": "PublicKnowledgeExchangeFixture/1",
+  "canonical_profile": "control/1",
+  "selector_domain": "selector/1",
+  "canonical_hex": "aa000101000200035820111111111111111111111111111111111111111111111111111111111111111104830001020585020304050606810007815820222222222222222222222222222222222222222222222222222222222222222208a400190400011a01000000021a000186a003182009a50001011a00010000021a0100000003f504f4",
+  "selector_cid": "618c0dbb8ca68766afc0490bb424429914ff0ea197276ce69909d53ac56e2e87",
+  "scope": {
+    "namespace_commitment_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+    "record_kinds": ["object", "event", "mapping-kernel"],
+    "object_kind_ids": [2, 3, 4, 5, 6],
+    "disclosure_classes": ["public"],
+    "frontier_event_cids_hex": [
+      "2222222222222222222222222222222222222222222222222222222222222222"
+    ]
+  },
+  "negative_invariants": [
+    "no-local-concept-id",
+    "no-private-need-ir",
+    "no-local-only-storage",
+    "no-negotiated-encrypted-storage",
+    "no-global-completeness"
+  ]
+}

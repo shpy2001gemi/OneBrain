@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import type { DeviceInfo, SyncStatus } from '../api/types';
 
@@ -51,7 +51,7 @@ export function DevicesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [sync, devs] = await Promise.all([
         api.syncStatus(),
@@ -60,17 +60,17 @@ export function DevicesPage() {
       setSyncStatus(sync);
       setDevices(devs);
       setError(null);
-    } catch (e: any) {
-      setError(e.message || 'Failed to load device data');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load device data');
     }
     setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
     const interval = setInterval(loadData, 15_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadData]);
 
   const overallBadge = SYNC_BADGE[syncStatus?.status ?? 'offline'] ?? SYNC_BADGE.offline;
 

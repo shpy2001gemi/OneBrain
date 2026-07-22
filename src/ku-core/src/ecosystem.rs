@@ -106,10 +106,7 @@ impl EcosystemAnalyzer {
     ///
     /// Sparse niche = high score (there's room for this KU).
     /// Dense niche = low score (niche is saturated).
-    fn density_score(
-        profile: &KUNicheProfile,
-        niche_stats: &HashMap<NicheId, NicheStats>,
-    ) -> f32 {
+    fn density_score(profile: &KUNicheProfile, niche_stats: &HashMap<NicheId, NicheStats>) -> f32 {
         let mut total_population = 0usize;
         let mut niche_count = 0;
 
@@ -224,7 +221,11 @@ mod tests {
         };
         let stats = HashMap::new();
         let fitness = EcosystemAnalyzer::niche_fitness(&profile, &stats);
-        assert!((fitness - 0.5).abs() < 0.01, "No niche = neutral: {}", fitness);
+        assert!(
+            (fitness - 0.5).abs() < 0.01,
+            "No niche = neutral: {}",
+            fitness
+        );
     }
 
     #[test]
@@ -237,7 +238,11 @@ mod tests {
         };
         let stats = HashMap::new(); // No existing KUs in niche
         let fitness = EcosystemAnalyzer::niche_fitness(&profile, &stats);
-        assert!(fitness > 0.7, "New niche + novel = high fitness: {}", fitness);
+        assert!(
+            fitness > 0.7,
+            "New niche + novel = high fitness: {}",
+            fitness
+        );
     }
 
     #[test]
@@ -249,15 +254,22 @@ mod tests {
             cross_niche_count: 0,
         };
         let mut stats = HashMap::new();
-        stats.insert(42, NicheStats {
-            population: 1000,
-            total_metabolic_rate: 500.0,
-            avg_metabolic_rate: 0.5,
-            source_diversity: 100,
-        });
+        stats.insert(
+            42,
+            NicheStats {
+                population: 1000,
+                total_metabolic_rate: 500.0,
+                avg_metabolic_rate: 0.5,
+                source_diversity: 100,
+            },
+        );
 
         let fitness = EcosystemAnalyzer::niche_fitness(&profile, &stats);
-        assert!(fitness < 0.3, "Crowded + not novel = low fitness: {}", fitness);
+        assert!(
+            fitness < 0.3,
+            "Crowded + not novel = low fitness: {}",
+            fitness
+        );
     }
 
     #[test]
@@ -279,8 +291,12 @@ mod tests {
         let bridge_fit = EcosystemAnalyzer::niche_fitness(&bridge_profile, &stats);
         let single_fit = EcosystemAnalyzer::niche_fitness(&single_profile, &stats);
 
-        assert!(bridge_fit > single_fit,
-            "Bridge KU ({}) > single niche ({})", bridge_fit, single_fit);
+        assert!(
+            bridge_fit > single_fit,
+            "Bridge KU ({}) > single niche ({})",
+            bridge_fit,
+            single_fit
+        );
     }
 
     #[test]
@@ -292,25 +308,27 @@ mod tests {
             cross_niche_count: 0,
         };
         let mut stats = HashMap::new();
-        stats.insert(42, NicheStats {
-            population: 10,
-            total_metabolic_rate: 10.0,
-            avg_metabolic_rate: 1.0,
-            source_diversity: 5,
-        });
+        stats.insert(
+            42,
+            NicheStats {
+                population: 10,
+                total_metabolic_rate: 10.0,
+                avg_metabolic_rate: 1.0,
+                source_diversity: 5,
+            },
+        );
 
         let fitness = EcosystemAnalyzer::niche_fitness(&profile, &stats);
-        assert!(fitness > 0.4, "Metabolic leader has good fitness: {}", fitness);
+        assert!(
+            fitness > 0.4,
+            "Metabolic leader has good fitness: {}",
+            fitness
+        );
     }
 
     #[test]
     fn test_compute_niche_stats() {
-        let profiles = vec![
-            (1, 1.0),
-            (1, 2.0),
-            (1, 3.0),
-            (2, 5.0),
-        ];
+        let profiles = vec![(1, 1.0), (1, 2.0), (1, 3.0), (2, 5.0)];
         let stats = EcosystemAnalyzer::compute_niche_stats(&profiles);
 
         assert_eq!(stats[&1].population, 3);

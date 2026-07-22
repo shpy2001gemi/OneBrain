@@ -7,12 +7,12 @@
 //! > "Pillar sau build bridges, đừng break foundations."
 //! OBKG (P7) adapts to P1-P5, not the other way around.
 
-use crate::types::{Bond, RelationType};
-use crate::ku_runtime::KuRuntime;
-use crate::graph_types::{BondMeta, BondEvent};
-use crate::graph_embeddings::EntityEmbedding;
-use crate::graph_dream::AccessRecord;
 use crate::graph_bio::{CoAccess, ConsolidationCandidate};
+use crate::graph_dream::AccessRecord;
+use crate::graph_embeddings::EntityEmbedding;
+use crate::graph_types::{BondEvent, BondMeta};
+use crate::ku_runtime::KuRuntime;
+use crate::types::{Bond, RelationType};
 use std::collections::HashMap;
 
 // ============================================================================
@@ -21,11 +21,7 @@ use std::collections::HashMap;
 
 /// Convert a Bond creation into a BondEvent.
 /// Used by ObkgOrchestrator when it detects new bonds.
-pub fn bond_to_created_event(
-    source_cid: &[u8; 32],
-    bond: &Bond,
-    timestamp: u64,
-) -> BondEvent {
+pub fn bond_to_created_event(source_cid: &[u8; 32], bond: &Bond, timestamp: u64) -> BondEvent {
     BondEvent::Created {
         source_cid: *source_cid,
         target_cid: cid_from_bond_target(&bond.target_cid),
@@ -50,9 +46,18 @@ pub fn cid_from_bond_target(target: &[u8]) -> [u8; 32] {
 
 /// Collect all bonds from a KuRuntime as (source, target, relation, BondMeta) tuples.
 pub fn collect_bond_metas(ku: &KuRuntime) -> Vec<([u8; 32], [u8; 32], RelationType, BondMeta)> {
-    ku.epi.bonds.iter().map(|bond| {
-        (ku.cid, cid_from_bond_target(&bond.target_cid), bond.relation, BondMeta::from_bond(bond))
-    }).collect()
+    ku.epi
+        .bonds
+        .iter()
+        .map(|bond| {
+            (
+                ku.cid,
+                cid_from_bond_target(&bond.target_cid),
+                bond.relation,
+                BondMeta::from_bond(bond),
+            )
+        })
+        .collect()
 }
 
 /// Collect bonds from multiple KUs into a HashMap suitable for DreamEngine/DecayRunner.
@@ -62,7 +67,11 @@ pub fn collect_all_bonds(
     let mut map = HashMap::new();
     for ku in kus.values() {
         for bond in &ku.epi.bonds {
-            let key = (ku.cid, cid_from_bond_target(&bond.target_cid), bond.relation);
+            let key = (
+                ku.cid,
+                cid_from_bond_target(&bond.target_cid),
+                bond.relation,
+            );
             map.insert(key, BondMeta::from_bond(bond));
         }
     }
@@ -76,7 +85,10 @@ pub fn collect_bonds_for_decay(
     let mut result = Vec::new();
     for ku in kus.values() {
         for bond in &ku.epi.bonds {
-            result.push(((ku.cid, cid_from_bond_target(&bond.target_cid)), bond.clone()));
+            result.push((
+                (ku.cid, cid_from_bond_target(&bond.target_cid)),
+                bond.clone(),
+            ));
         }
     }
     result
@@ -105,10 +117,7 @@ pub fn collect_entity_embeddings(
 
 /// Build AccessRecords from KU bond data for DreamEngine.
 /// Uses bond weights as access indicators (higher weight = more accessed).
-pub fn build_access_log(
-    kus: &HashMap<[u8; 32], KuRuntime>,
-    min_weight: u16,
-) -> Vec<AccessRecord> {
+pub fn build_access_log(kus: &HashMap<[u8; 32], KuRuntime>, min_weight: u16) -> Vec<AccessRecord> {
     let mut records = Vec::new();
     for ku in kus.values() {
         for bond in &ku.epi.bonds {
@@ -132,9 +141,7 @@ pub fn build_access_log(
 
 /// Build CoAccess records for STDP from recent bond pairs.
 /// delta_t is estimated from bond creation timestamps.
-pub fn build_co_accesses(
-    kus: &HashMap<[u8; 32], KuRuntime>,
-) -> Vec<CoAccess> {
+pub fn build_co_accesses(kus: &HashMap<[u8; 32], KuRuntime>) -> Vec<CoAccess> {
     let mut accesses = Vec::new();
     for ku in kus.values() {
         // For each pair of bonds from the same KU, create a CoAccess
@@ -144,7 +151,8 @@ pub fn build_co_accesses(
                 let t_i = bonds[i].created_at as f64;
                 let t_j = bonds[j].created_at as f64;
                 let delta_t = t_j - t_i; // positive = j after i
-                if delta_t.abs() < 86400.0 { // within 24h
+                if delta_t.abs() < 86400.0 {
+                    // within 24h
                     accesses.push(CoAccess {
                         source_cid: ku.cid,
                         target_cid: cid_from_bond_target(&bonds[j].target_cid),
@@ -171,21 +179,20 @@ pub fn build_consolidation_candidates(
     kus: &HashMap<[u8; 32], KuRuntime>,
     now_secs: u64,
 ) -> Vec<ConsolidationCandidate> {
-    kus.values().map(|ku| {
-        // Use earliest bond created_at as proxy for KU age (0 if no bonds)
-        let earliest = ku.epi.bonds.iter()
-            .map(|b| b.created_at)
-            .min()
-            .unwrap_or(0);
-        let age_hours = (now_secs.saturating_sub(earliest as u64)) as f64 / 3600.0;
-        ConsolidationCandidate {
-            cid: ku.cid,
-            retrieval_count: 0, // would come from metabolism, reads only
-            pomv_score: ku.epi.pomv_score(),
-            bond_count: ku.epi.bonds.len(),
-            age_hours,
-        }
-    }).collect()
+    kus.values()
+        .map(|ku| {
+            // Use earliest bond created_at as proxy for KU age (0 if no bonds)
+            let earliest = ku.epi.bonds.iter().map(|b| b.created_at).min().unwrap_or(0);
+            let age_hours = (now_secs.saturating_sub(earliest as u64)) as f64 / 3600.0;
+            ConsolidationCandidate {
+                cid: ku.cid,
+                retrieval_count: 0, // would come from metabolism, reads only
+                pomv_score: ku.epi.pomv_score(),
+                bond_count: ku.epi.bonds.len(),
+                age_hours,
+            }
+        })
+        .collect()
 }
 
 // ============================================================================
@@ -198,7 +205,8 @@ pub fn diff_bonds(
     previous: &HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>,
     current: &HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>,
 ) -> Vec<([u8; 32], [u8; 32], RelationType, BondMeta)> {
-    current.iter()
+    current
+        .iter()
         .filter(|(key, _)| !previous.contains_key(key))
         .map(|(key, meta)| (key.0, key.1, key.2, *meta))
         .collect()
@@ -209,7 +217,8 @@ pub fn removed_bonds(
     previous: &HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>,
     current: &HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>,
 ) -> Vec<([u8; 32], [u8; 32], RelationType)> {
-    previous.keys()
+    previous
+        .keys()
         .filter(|key| !current.contains_key(key))
         .copied()
         .collect()
@@ -223,7 +232,7 @@ pub fn removed_bonds(
 mod tests {
     use super::*;
     use crate::core_dna::{CoreDna, CoreDnaHeader, Instruction};
-    use crate::types::{Creator, EdgeState, DecayRate};
+    use crate::types::{Creator, DecayRate, EdgeState};
 
     // ── Test helpers ─────────────────────────────────────────────────────
 
@@ -235,9 +244,11 @@ mod tests {
                 has_concept_table: false,
             },
             concept_table: Vec::new(),
-            instructions: vec![
-                Instruction::Triple { s: 301, p: 500, o: 1042 },
-            ],
+            instructions: vec![Instruction::Triple {
+                s: 301,
+                p: 500,
+                o: 1042,
+            }],
         };
         KuRuntime::from_dna(dna).unwrap()
     }
@@ -277,7 +288,15 @@ mod tests {
         let event = bond_to_created_event(&source, &bond, 1_700_000_000);
 
         match event {
-            BondEvent::Created { source_cid, target_cid, relation, weight, creator, timestamp, .. } => {
+            BondEvent::Created {
+                source_cid,
+                target_cid,
+                relation,
+                weight,
+                creator,
+                timestamp,
+                ..
+            } => {
                 assert_eq!(source_cid, source);
                 assert_eq!(target_cid, [0xBBu8; 32]);
                 assert_eq!(relation, RelationType::Extends);
@@ -329,15 +348,21 @@ mod tests {
 
     #[test]
     fn collect_all_bonds_multiple_kus() {
-        let ku1 = make_ku_with_bonds(vec![
-            make_bond(0x01, RelationType::PartOf, 5000, 1000),
-        ]);
+        let ku1 = make_ku_with_bonds(vec![make_bond(0x01, RelationType::PartOf, 5000, 1000)]);
         let ku2 = {
             // Create a different KU with different CID
             let dna = CoreDna {
-                header: CoreDnaHeader { version: 2, gene_type: 1, has_concept_table: false },
+                header: CoreDnaHeader {
+                    version: 2,
+                    gene_type: 1,
+                    has_concept_table: false,
+                },
                 concept_table: Vec::new(),
-                instructions: vec![Instruction::Triple { s: 100, p: 200, o: 300 }],
+                instructions: vec![Instruction::Triple {
+                    s: 100,
+                    p: 200,
+                    o: 300,
+                }],
             };
             let mut ku = KuRuntime::from_dna(dna).unwrap();
             ku.epi.bonds = vec![make_bond(0x02, RelationType::Causes, 7000, 2000)];
@@ -367,7 +392,7 @@ mod tests {
     #[test]
     fn build_access_log_filters_by_weight() {
         let ku = make_ku_with_bonds(vec![
-            make_bond(0x01, RelationType::PartOf, 500, 1000),  // below threshold
+            make_bond(0x01, RelationType::PartOf, 500, 1000), // below threshold
             make_bond(0x02, RelationType::Extends, 3000, 2000), // above threshold
         ]);
         let mut kus = HashMap::new();
@@ -444,17 +469,15 @@ mod tests {
 
     #[test]
     fn collect_bonds_for_decay_format() {
-        let ku = make_ku_with_bonds(vec![
-            make_bond(0x01, RelationType::PartOf, 5000, 1000),
-        ]);
+        let ku = make_ku_with_bonds(vec![make_bond(0x01, RelationType::PartOf, 5000, 1000)]);
         let mut kus = HashMap::new();
         let cid = ku.cid;
         kus.insert(cid, ku);
 
         let bonds = collect_bonds_for_decay(&kus);
         assert_eq!(bonds.len(), 1);
-        assert_eq!(bonds[0].0.0, cid); // source
-        assert_eq!(bonds[0].0.1, [0x01u8; 32]); // target
+        assert_eq!(bonds[0].0 .0, cid); // source
+        assert_eq!(bonds[0].0 .1, [0x01u8; 32]); // target
         assert_eq!(bonds[0].1.weight, 5000);
     }
 
@@ -483,9 +506,17 @@ mod tests {
         let ku1 = make_test_ku();
         let ku2 = {
             let dna = CoreDna {
-                header: CoreDnaHeader { version: 2, gene_type: 1, has_concept_table: false },
+                header: CoreDnaHeader {
+                    version: 2,
+                    gene_type: 1,
+                    has_concept_table: false,
+                },
                 concept_table: Vec::new(),
-                instructions: vec![Instruction::Triple { s: 100, p: 200, o: 300 }],
+                instructions: vec![Instruction::Triple {
+                    s: 100,
+                    p: 200,
+                    o: 300,
+                }],
             };
             KuRuntime::from_dna(dna).unwrap()
         };

@@ -19,6 +19,9 @@ crc32fast = "1.4"
 blake3 = "1"         # ★ v6: BLAKE3 hash for CID computation
 indexmap = "2"          # Insertion-ordered map for O(1) LRU cache
 ed25519-dalek = { version = "2", features = ["rand_core"] }  # Ed25519 signature verification
+unicode-normalization = "0.1" # vNext canonical NormalizedText validation (reject, never rewrite)
+chacha20poly1305 = "0.11" # vNext Private Vault XChaCha20-Poly1305 AEAD
+zeroize = "1"            # erase caller-supplied vault key material on drop
 
 # Persistent storage (pure Rust, ACID) — behind 'persist' feature
 redb = { version = "2", optional = true }

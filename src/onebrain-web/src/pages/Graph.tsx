@@ -39,6 +39,8 @@ export function GraphPage() {
   const nodesRef = useRef<GraphNode[]>([]);
   const dragging = useRef<string | null>(null);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const linksRef = useRef<GraphLink[]>([]);
+  const [simVersion, setSimVersion] = useState(0);
 
   const loadGraph = async (cid?: string) => {
     const targetCid = cid || cidInput.trim();
@@ -46,7 +48,7 @@ export function GraphPage() {
     setLoading(true);
     setError('');
     try {
-      const data: any = await api.getGraph(targetCid, depth);
+      const data = await api.getGraph(targetCid, depth);
       const neighborList: NeighborInfo[] = data.neighbors || [];
       
       const nodeMap = new Map<string, GraphNode>();
@@ -74,7 +76,7 @@ export function GraphPage() {
         
         // Add children (depth 2+)
         n.children?.forEach((c, j) => {
-          const childAngle = angle + (j - n.children.length / 2) * 0.3;
+          const childAngle = angle + (j - (n.children?.length ?? 0) / 2) * 0.3;
           const cr = r + 100 + Math.random() * 40;
           if (!nodeMap.has(c.cid_hex)) {
             nodeMap.set(c.cid_hex, {
@@ -91,18 +93,20 @@ export function GraphPage() {
       setNodes(nodeArr);
       setLinks(linkList);
       nodesRef.current = nodeArr;
-    } catch (e: any) {
-      setError(e.message || 'Failed to load graph');
+      linksRef.current = linkList;
+      setSimVersion(v => v + 1);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to load graph');
     } finally {
       setLoading(false);
     }
   };
 
-  // Force simulation
+  // Force simulation — triggered by simVersion (set after graph data loads)
   useEffect(() => {
-    if (nodes.length === 0) return;
-    nodesRef.current = [...nodes];
+    if (nodesRef.current.length === 0) return;
     let running = true;
+    let frameCount = 0;
     
     const tick = () => {
       if (!running) return;
@@ -111,6 +115,10 @@ export function GraphPage() {
       const rep = 5000; // repulsion
       const damp = 0.9;
       const cx = 400, cy = 300;
+
+      // Build lookup map for O(1) access
+      const nodeMap = new Map<string, GraphNode>();
+      ns.forEach(n => nodeMap.set(n.id, n));
       
       // Reset forces
       ns.forEach(n => { n.vx *= damp; n.vy *= damp; });
@@ -129,14 +137,14 @@ export function GraphPage() {
         }
       }
       
-      // Attraction (links)
-      links.forEach(l => {
-        const src = ns.find(n => n.id === l.source);
-        const tgt = ns.find(n => n.id === l.target);
+      // Attraction (links) — O(1) lookup via Map
+      linksRef.current.forEach(l => {
+        const src = nodeMap.get(l.source);
+        const tgt = nodeMap.get(l.target);
         if (!src || !tgt) return;
         const dx = tgt.x - src.x;
         const dy = tgt.y - src.y;
-        const d = Math.sqrt(dx * dx + dy * dy);
+        const d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
         const f = k * (d - 150);
         src.vx += f * dx / d;
         src.vy += f * dy / d;
@@ -153,13 +161,18 @@ export function GraphPage() {
         n.y += n.vy;
       });
       
-      setNodes([...ns]);
+      // Throttle React re-renders to every 3rd frame
+      frameCount++;
+      if (frameCount % 3 === 0) {
+        setNodes([...ns]);
+      }
       animRef.current = requestAnimationFrame(tick);
     };
     
     animRef.current = requestAnimationFrame(tick);
     return () => { running = false; cancelAnimationFrame(animRef.current); };
-  }, [nodes.length, links]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [simVersion]);
 
   const handleMouseDown = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -172,16 +185,10 @@ export function GraphPage() {
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragging.current) return;
-    const node = nodesRef.current.find(n => n.id === dragging.current);
-    if (node) {
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (rect) {
-        node.x = e.clientX - rect.left;
-        node.y = e.clientY - rect.top;
-        node.vx = 0;
-        node.vy = 0;
-      }
-    }
+    const idx = nodesRef.current.findIndex(n => n.id === dragging.current);
+    if (idx === -1) return;
+    nodesRef.current[idx].x = e.clientX - dragOffset.current.x;
+    nodesRef.current[idx].y = e.clientY - dragOffset.current.y;
   }, []);
 
   const handleMouseUp = useCallback(() => {

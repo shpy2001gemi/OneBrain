@@ -102,7 +102,8 @@ impl PubSubManager {
 
     /// Find subscribers for a given topic (for message routing).
     pub fn subscribers_for(&self, topic: DomainCode) -> Vec<&Subscription> {
-        self.subscriptions.get(&topic)
+        self.subscriptions
+            .get(&topic)
             .map(|subs| subs.iter().collect())
             .unwrap_or_default()
     }
@@ -235,12 +236,22 @@ mod tests {
         let node_a = make_node_id();
         let node_b = make_node_id();
 
-        ps.add_subscriber(100, Subscription {
-            node_id: node_a, subscribed_at: Instant::now(), ttl: 3,
-        });
-        ps.add_subscriber(100, Subscription {
-            node_id: node_b, subscribed_at: Instant::now(), ttl: 2,
-        });
+        ps.add_subscriber(
+            100,
+            Subscription {
+                node_id: node_a,
+                subscribed_at: Instant::now(),
+                ttl: 3,
+            },
+        );
+        ps.add_subscriber(
+            100,
+            Subscription {
+                node_id: node_b,
+                subscribed_at: Instant::now(),
+                ttl: 2,
+            },
+        );
 
         let subs = ps.subscribers_for(100);
         assert_eq!(subs.len(), 2);
@@ -252,12 +263,22 @@ mod tests {
         let mut ps = PubSubManager::new();
         let node = make_node_id();
 
-        ps.add_subscriber(100, Subscription {
-            node_id: node, subscribed_at: Instant::now(), ttl: 3,
-        });
-        ps.add_subscriber(200, Subscription {
-            node_id: node, subscribed_at: Instant::now(), ttl: 3,
-        });
+        ps.add_subscriber(
+            100,
+            Subscription {
+                node_id: node,
+                subscribed_at: Instant::now(),
+                ttl: 3,
+            },
+        );
+        ps.add_subscriber(
+            200,
+            Subscription {
+                node_id: node,
+                subscribed_at: Instant::now(),
+                ttl: 3,
+            },
+        );
 
         assert_eq!(ps.total_subscriptions(), 2);
 
@@ -270,12 +291,22 @@ mod tests {
         let mut ps = PubSubManager::new();
         let node = make_node_id();
 
-        ps.add_subscriber(100, Subscription {
-            node_id: node, subscribed_at: Instant::now(), ttl: 3,
-        });
-        ps.add_subscriber(100, Subscription {
-            node_id: node, subscribed_at: Instant::now(), ttl: 5,
-        });
+        ps.add_subscriber(
+            100,
+            Subscription {
+                node_id: node,
+                subscribed_at: Instant::now(),
+                ttl: 3,
+            },
+        );
+        ps.add_subscriber(
+            100,
+            Subscription {
+                node_id: node,
+                subscribed_at: Instant::now(),
+                ttl: 5,
+            },
+        );
 
         assert_eq!(ps.subscribers_for(100).len(), 1, "No duplicates");
     }

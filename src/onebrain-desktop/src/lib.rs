@@ -90,7 +90,10 @@ pub fn run() {
                         println!("[onebrain-desktop] Network started on {}", addr);
                     }
                     Err(e) => {
-                        eprintln!("[onebrain-desktop] Network start failed (continuing): {}", e);
+                        eprintln!(
+                            "[onebrain-desktop] Network start failed (continuing): {}",
+                            e
+                        );
                     }
                 }
 
@@ -114,9 +117,8 @@ pub fn run() {
                 let api_node = shared.clone();
                 let api_token = token.clone();
                 tokio::spawn(async move {
-                    let server = onebrain_api::ApiServer::with_shared_node(
-                        api_node, api_token, api_port,
-                    );
+                    let server =
+                        onebrain_api::ApiServer::with_shared_node(api_node, api_token, api_port);
                     if let Err(e) = server.start().await {
                         eprintln!("[onebrain-desktop] API server error: {}", e);
                     }

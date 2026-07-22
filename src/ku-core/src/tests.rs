@@ -3,11 +3,11 @@
 #[cfg(test)]
 #[allow(unused)]
 mod integration {
-    use crate::types::*;
-    use crate::varint::{encode_varint, decode_varint};
-    use crate::encoder::*;
     use crate::decoder::*;
+    use crate::encoder::*;
     use crate::error::KuError;
+    use crate::types::*;
+    use crate::varint::{decode_varint, encode_varint};
 
     // ========================================================================
     // Helper: Create example concept IDs
@@ -71,33 +71,29 @@ mod integration {
                     }],
                 },
             ],
-            bonds: vec![
-                Bond {
-                    target_cid: vec![0u8; 36], // placeholder CID
-                    relation: RelationType::Qualifies,
-                    weight: 9500, // 0.95
-                    creator: Creator::Human,
-                    created_at: 1719072000, // 2024-06-22
-                    evidence: vec![],
-                    state: EdgeState::Active,
-                    initial_weight: Some(9500),
-                    decay: Some(DecayRate::None),
-                    last_reinforced: None,
-                    reinforce_count: None,
-                    bidirectional: None,
-                    context: vec![],
-                    order: None,
-                    required: None,
-                },
-            ],
+            bonds: vec![Bond {
+                target_cid: vec![0u8; 36], // placeholder CID
+                relation: RelationType::Qualifies,
+                weight: 9500, // 0.95
+                creator: Creator::Human,
+                created_at: 1719072000, // 2024-06-22
+                evidence: vec![],
+                state: EdgeState::Active,
+                initial_weight: Some(9500),
+                decay: Some(DecayRate::None),
+                last_reinforced: None,
+                reinforce_count: None,
+                bidirectional: None,
+                context: vec![],
+                order: None,
+                required: None,
+            }],
             gene: Gene::Fact {
-                triples: vec![
-                    Triple {
-                        subject: C_WATER,
-                        predicate: C_BOILING_POINT,
-                        object: C_CELSIUS,
-                    },
-                ],
+                triples: vec![Triple {
+                    subject: C_WATER,
+                    predicate: C_BOILING_POINT,
+                    object: C_CELSIUS,
+                }],
                 certainty: 9900, // 0.99 — established scientific fact
                 evidence: vec![],
             },
@@ -205,16 +201,16 @@ mod integration {
                     },
                 ],
                 affect: Affect {
-                    v: 8500,   // Valence: +0.85 (very positive)
-                    a: 3000,   // Arousal: 0.30 (calm)
-                    d: 6000,   // Dominance: 0.60 (moderate)
+                    v: 8500, // Valence: +0.85 (very positive)
+                    a: 3000, // Arousal: 0.30 (calm)
+                    d: 6000, // Dominance: 0.60 (moderate)
                 },
                 canonical: Some(CanonicalText {
                     lang: 1, // English
                     text: b"The sunset was beautiful".to_vec(),
                 }),
                 perspective: Some(Perspective {
-                    expertise: 0, // novice
+                    expertise: 0,        // novice
                     perspective_type: 1, // SUBJECTIVE
                 }),
             },
@@ -293,22 +289,46 @@ mod integration {
         println!("\n══════════════════════════════════════════════════");
         println!("  TEST: Varint Round-Trip — All Tiers");
         println!("══════════════════════════════════════════════════");
-        println!("  {:>15}  {:>5}  {:>10}  {}", "Value", "Bytes", "Hex", "Label");
+        println!(
+            "  {:>15}  {:>5}  {:>10}  {}",
+            "Value", "Bytes", "Hex", "Label"
+        );
         println!("  {:─>15}  {:─>5}  {:─>10}  {:─>30}", "", "", "", "");
 
         for (value, expected_len, label) in &test_cases {
             let encoded = encode_varint(*value).unwrap();
-            let hex: String = encoded.iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ");
+            let hex: String = encoded
+                .iter()
+                .map(|b| format!("{:02X}", b))
+                .collect::<Vec<_>>()
+                .join(" ");
             let (decoded, consumed) = decode_varint(&encoded).unwrap();
 
-            println!("  {:>15}  {:>5}  {:>10}  {}", value, encoded.len(), hex, label);
+            println!(
+                "  {:>15}  {:>5}  {:>10}  {}",
+                value,
+                encoded.len(),
+                hex,
+                label
+            );
 
-            assert_eq!(encoded.len(), *expected_len,
-                "Wrong size for {} ({})", value, label);
-            assert_eq!(decoded, *value,
-                "Roundtrip failed for {} ({})", value, label);
-            assert_eq!(consumed, *expected_len,
-                "Consumed wrong byte count for {} ({})", value, label);
+            assert_eq!(
+                encoded.len(),
+                *expected_len,
+                "Wrong size for {} ({})",
+                value,
+                label
+            );
+            assert_eq!(
+                decoded, *value,
+                "Roundtrip failed for {} ({})",
+                value, label
+            );
+            assert_eq!(
+                consumed, *expected_len,
+                "Consumed wrong byte count for {} ({})",
+                value, label
+            );
         }
     }
 
@@ -329,7 +349,10 @@ mod integration {
             qualifiers: vec![],
         };
         let simple_bytes = encode_codon(&simple).unwrap();
-        println!("  Simple codon (Tier 0, no quals): {} bytes", simple_bytes.len());
+        println!(
+            "  Simple codon (Tier 0, no quals): {} bytes",
+            simple_bytes.len()
+        );
 
         // Tier 1 codon with qualifier
         let with_qual = Codon {
@@ -341,7 +364,10 @@ mod integration {
             }],
         };
         let qual_bytes = encode_codon(&with_qual).unwrap();
-        println!("  Tier 1 codon + qualifier:        {} bytes", qual_bytes.len());
+        println!(
+            "  Tier 1 codon + qualifier:        {} bytes",
+            qual_bytes.len()
+        );
 
         // Tier 2 codon
         let tier2 = Codon {
@@ -350,7 +376,10 @@ mod integration {
             qualifiers: vec![],
         };
         let tier2_bytes = encode_codon(&tier2).unwrap();
-        println!("  Tier 2 codon (no quals):         {} bytes", tier2_bytes.len());
+        println!(
+            "  Tier 2 codon (no quals):         {} bytes",
+            tier2_bytes.len()
+        );
 
         // All should be reasonable
         assert!(simple_bytes.len() < 20, "Simple codon too large");
@@ -385,7 +414,10 @@ mod integration {
             required: None,
         };
         let minimal_bytes = encode_bond(&minimal_bond).unwrap();
-        println!("  Minimal bond:                 {} bytes", minimal_bytes.len());
+        println!(
+            "  Minimal bond:                 {} bytes",
+            minimal_bytes.len()
+        );
         println!("  v4 spec estimate:             55-110 bytes");
 
         let full_bond = Bond {
@@ -408,8 +440,16 @@ mod integration {
         let full_bytes = encode_bond(&full_bond).unwrap();
         println!("  Full bond (all fields):       {} bytes", full_bytes.len());
 
-        assert!(minimal_bytes.len() < 150, "Minimal bond too large: {}", minimal_bytes.len());
-        assert!(full_bytes.len() < 250, "Full bond too large: {}", full_bytes.len());
+        assert!(
+            minimal_bytes.len() < 150,
+            "Minimal bond too large: {}",
+            minimal_bytes.len()
+        );
+        assert!(
+            full_bytes.len() < 250,
+            "Full bond too large: {}",
+            full_bytes.len()
+        );
     }
 
     // ========================================================================
@@ -423,81 +463,134 @@ mod integration {
         println!("══════════════════════════════════════════════════");
 
         let genes: Vec<(&str, Gene)> = vec![
-            ("FactGene", Gene::Fact {
-                triples: vec![Triple { subject: 1, predicate: 2, object: 3 }],
-                certainty: 9000,
-                evidence: vec![],
-            }),
-            ("ProcedureGene", Gene::Procedure {
-                steps: vec![ProcedureStep {
-                    ord: 1, act: C_DO, pre: vec![], tgt: C_WATER,
-                    tools: vec![], eff: vec![], warn: vec![],
-                }],
-                total_time: Some(300),
-                difficulty: 2,
-                tools_req: vec![],
-            }),
-            ("ExperienceGene", Gene::Experience {
-                scene: vec![],
-                affect: Affect { v: 5000, a: 5000, d: 5000 },
-                canonical: None,
-                perspective: None,
-            }),
-            ("CreativeGene", Gene::Creative {
-                steps: vec![],
-                cultural_context: vec![],
-                origin_story: None,
-            }),
-            ("MediaExperienceGene", Gene::MediaExperience {
-                id_sys: 1, // IMDB
-                ext_id: b"tt1234567".to_vec(),
-                media_type: 0, // FILM
-                rating: 85,
-                affect: Affect { v: 7000, a: 6000, d: 5000 },
-                spoiler_level: 0,
-            }),
-            ("TestimonyGene", Gene::Testimony {
-                triples: vec![Triple { subject: 100, predicate: 200, object: 300 }],
-                claim_type: 1, // EVENT
-                extraordinary: 0, // MUNDANE
-                witness_count: 1,
-                proximity: 0, // FIRSTHAND
-                verification_status: 0, // UNVERIFIED
-            }),
-            ("FormalGene", Gene::Formal {
-                domain: 0, // MATH
-                notation_format: 0, // LATEX
-                notation_source: b"E = mc^2".to_vec(),
-                statement_type: 5, // EQUATION
-                verification_status: 2, // COMPUTATIONALLY
-            }),
-            ("HypothesisGene", Gene::Hypothesis {
-                base_type: 0, // → FACT when mature
-                body_codons: vec![Codon {
-                    concept_id: 42, role: RoleId::Agent, qualifiers: vec![],
-                }],
-                maturity_level: 2, // HYPOTHESIS
-                confidence: 5000,
-                completeness: 3000,
-                falsifiable: true,
-            }),
-            ("NarrativeGene", Gene::Narrative {
-                narrative_type: 0, // FOLKTALE
-                origin_culture: vec![5000],
-                era: 6, // TIMELESS
-                function: 1, // MORAL_TEACHING
-                sacred: false,
-                moral: vec![],
-                canonical: None,
-            }),
-            ("SensoryGene", Gene::Sensory {
-                modality: 0, // VISUAL
-                property: 1000,
-                feature: 2000,
-                result_codons: vec![],
-                sensor_type: 0, // HUMAN_EYE
-                quality: 0, // RAW
-            }),
+            (
+                "FactGene",
+                Gene::Fact {
+                    triples: vec![Triple {
+                        subject: 1,
+                        predicate: 2,
+                        object: 3,
+                    }],
+                    certainty: 9000,
+                    evidence: vec![],
+                },
+            ),
+            (
+                "ProcedureGene",
+                Gene::Procedure {
+                    steps: vec![ProcedureStep {
+                        ord: 1,
+                        act: C_DO,
+                        pre: vec![],
+                        tgt: C_WATER,
+                        tools: vec![],
+                        eff: vec![],
+                        warn: vec![],
+                    }],
+                    total_time: Some(300),
+                    difficulty: 2,
+                    tools_req: vec![],
+                },
+            ),
+            (
+                "ExperienceGene",
+                Gene::Experience {
+                    scene: vec![],
+                    affect: Affect {
+                        v: 5000,
+                        a: 5000,
+                        d: 5000,
+                    },
+                    canonical: None,
+                    perspective: None,
+                },
+            ),
+            (
+                "CreativeGene",
+                Gene::Creative {
+                    steps: vec![],
+                    cultural_context: vec![],
+                    origin_story: None,
+                },
+            ),
+            (
+                "MediaExperienceGene",
+                Gene::MediaExperience {
+                    id_sys: 1, // IMDB
+                    ext_id: b"tt1234567".to_vec(),
+                    media_type: 0, // FILM
+                    rating: 85,
+                    affect: Affect {
+                        v: 7000,
+                        a: 6000,
+                        d: 5000,
+                    },
+                    spoiler_level: 0,
+                },
+            ),
+            (
+                "TestimonyGene",
+                Gene::Testimony {
+                    triples: vec![Triple {
+                        subject: 100,
+                        predicate: 200,
+                        object: 300,
+                    }],
+                    claim_type: 1,    // EVENT
+                    extraordinary: 0, // MUNDANE
+                    witness_count: 1,
+                    proximity: 0,           // FIRSTHAND
+                    verification_status: 0, // UNVERIFIED
+                },
+            ),
+            (
+                "FormalGene",
+                Gene::Formal {
+                    domain: 0,          // MATH
+                    notation_format: 0, // LATEX
+                    notation_source: b"E = mc^2".to_vec(),
+                    statement_type: 5,      // EQUATION
+                    verification_status: 2, // COMPUTATIONALLY
+                },
+            ),
+            (
+                "HypothesisGene",
+                Gene::Hypothesis {
+                    base_type: 0, // → FACT when mature
+                    body_codons: vec![Codon {
+                        concept_id: 42,
+                        role: RoleId::Agent,
+                        qualifiers: vec![],
+                    }],
+                    maturity_level: 2, // HYPOTHESIS
+                    confidence: 5000,
+                    completeness: 3000,
+                    falsifiable: true,
+                },
+            ),
+            (
+                "NarrativeGene",
+                Gene::Narrative {
+                    narrative_type: 0, // FOLKTALE
+                    origin_culture: vec![5000],
+                    era: 6,      // TIMELESS
+                    function: 1, // MORAL_TEACHING
+                    sacred: false,
+                    moral: vec![],
+                    canonical: None,
+                },
+            ),
+            (
+                "SensoryGene",
+                Gene::Sensory {
+                    modality: 0, // VISUAL
+                    property: 1000,
+                    feature: 2000,
+                    result_codons: vec![],
+                    sensor_type: 0, // HUMAN_EYE
+                    quality: 0,     // RAW
+                },
+            ),
         ];
 
         for (name, gene) in &genes {
@@ -506,7 +599,10 @@ mod integration {
             let (base, ext) = gt.wire_encoding();
             println!(
                 "  {:25} → {:>4} bytes  (wire: base={}, ext={:?})",
-                name, bytes.len(), base, ext
+                name,
+                bytes.len(),
+                base,
+                ext
             );
         }
     }
@@ -530,11 +626,21 @@ mod integration {
         for (name, ku) in &test_kus {
             let wire = encode_knowledge_unit(ku).unwrap();
             let result = decode_knowledge_unit(&wire);
-            assert!(result.is_ok(), "Failed to decode {} KU: {:?}", name, result.err());
+            assert!(
+                result.is_ok(),
+                "Failed to decode {} KU: {:?}",
+                name,
+                result.err()
+            );
 
             let decoded = result.unwrap();
-            println!("  {} KU: {} bytes, gene={:?}, payload={} bytes",
-                name, wire.len(), decoded.gene_type, decoded.payload.len());
+            println!(
+                "  {} KU: {} bytes, gene={:?}, payload={} bytes",
+                name,
+                wire.len(),
+                decoded.gene_type,
+                decoded.payload.len()
+            );
             assert_eq!(decoded.gene_type, ku.gene.gene_type());
         }
     }
@@ -573,7 +679,9 @@ mod integration {
         // HypothesisGene → base=7, ext=0x00
         let hypothesis_ku = KnowledgeUnit {
             codons: vec![Codon {
-                concept_id: 42, role: RoleId::Agent, qualifiers: vec![],
+                concept_id: 42,
+                role: RoleId::Agent,
+                qualifiers: vec![],
             }],
             bonds: vec![],
             gene: Gene::Hypothesis {
@@ -596,14 +704,20 @@ mod integration {
         assert_eq!(gene_base, 7, "Hypothesis should use EXTENDED (base=7)");
 
         // Payload first byte should be 0x00 (Hypothesis ext)
-        assert_eq!(wire[6], 0x00, "First payload byte should be ext=0x00 for Hypothesis");
+        assert_eq!(
+            wire[6], 0x00,
+            "First payload byte should be ext=0x00 for Hypothesis"
+        );
 
         let result = decode_knowledge_unit(&wire);
         assert!(result.is_ok());
         let decoded = result.unwrap();
         assert_eq!(decoded.gene_type, GeneType::Hypothesis);
 
-        println!("  HypothesisGene: {} bytes, FLAGS base=7, ext=0x00 ✓", wire.len());
+        println!(
+            "  HypothesisGene: {} bytes, FLAGS base=7, ext=0x00 ✓",
+            wire.len()
+        );
 
         // NarrativeGene → base=7, ext=0x01
         let narrative_ku = KnowledgeUnit {
@@ -626,14 +740,20 @@ mod integration {
         };
 
         let wire = encode_knowledge_unit(&narrative_ku).unwrap();
-        assert_eq!(wire[8], 0x01, "First payload byte should be ext=0x01 for Narrative");
+        assert_eq!(
+            wire[8], 0x01,
+            "First payload byte should be ext=0x01 for Narrative"
+        );
 
         let result = decode_knowledge_unit(&wire);
         assert!(result.is_ok());
         let decoded = result.unwrap();
         assert_eq!(decoded.gene_type, GeneType::Narrative);
 
-        println!("  NarrativeGene:  {} bytes, FLAGS base=7, ext=0x01 ✓", wire.len());
+        println!(
+            "  NarrativeGene:  {} bytes, FLAGS base=7, ext=0x01 ✓",
+            wire.len()
+        );
     }
 
     // ========================================================================
@@ -729,8 +849,11 @@ mod integration {
         // For non-EXTENDED types, payload = raw CBOR (no ext byte stripped)
         assert_eq!(decoded.payload_len as usize, decoded.payload.len());
 
-        println!("\n  test_decode_roundtrip_fact: PASSED (gene={:?}, payload={} bytes)",
-            decoded.gene_type, decoded.payload.len());
+        println!(
+            "\n  test_decode_roundtrip_fact: PASSED (gene={:?}, payload={} bytes)",
+            decoded.gene_type,
+            decoded.payload.len()
+        );
     }
 
     // ========================================================================
@@ -752,8 +875,11 @@ mod integration {
         // Experience is base=2, not EXTENDED, so payload = raw CBOR
         assert_eq!(decoded.payload_len as usize, decoded.payload.len());
 
-        println!("\n  test_decode_roundtrip_experience: PASSED (gene={:?}, payload={} bytes)",
-            decoded.gene_type, decoded.payload.len());
+        println!(
+            "\n  test_decode_roundtrip_experience: PASSED (gene={:?}, payload={} bytes)",
+            decoded.gene_type,
+            decoded.payload.len()
+        );
     }
 
     // ========================================================================
@@ -769,7 +895,7 @@ mod integration {
         let result = decode_knowledge_unit(&wire[..5]);
         assert!(result.is_err());
         match result.unwrap_err() {
-            KuError::PayloadTruncated { .. } => { /* expected */ },
+            KuError::PayloadTruncated { .. } => { /* expected */ }
             other => panic!("Expected PayloadTruncated, got: {:?}", other),
         }
 
@@ -800,7 +926,7 @@ mod integration {
         match result.unwrap_err() {
             KuError::InvalidMagic(m) => {
                 assert_eq!(m, [0xFF, 0xFE]);
-            },
+            }
             other => panic!("Expected InvalidMagic, got: {:?}", other),
         }
 
@@ -826,7 +952,7 @@ mod integration {
             match result.unwrap_err() {
                 KuError::CrcMismatch { stored, computed } => {
                     assert_ne!(stored, computed, "CRC values should differ");
-                },
+                }
                 other => panic!("Expected CrcMismatch, got: {:?}", other),
             }
         }
@@ -865,8 +991,16 @@ mod integration {
 
         let ku = KnowledgeUnit {
             codons: vec![
-                Codon { concept_id: C_WATER, role: RoleId::Agent, qualifiers: vec![] },
-                Codon { concept_id: C_BOIL, role: RoleId::Result, qualifiers: vec![] },
+                Codon {
+                    concept_id: C_WATER,
+                    role: RoleId::Agent,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: C_BOIL,
+                    role: RoleId::Result,
+                    qualifiers: vec![],
+                },
             ],
             bonds: vec![],
             gene: Gene::Fact {
@@ -903,7 +1037,10 @@ mod integration {
 
         // Full decode to verify trust section is present
         let (_, ku_decoded) = decode_full_knowledge_unit(&wire).unwrap();
-        assert!(ku_decoded.trust.is_some(), "Trust section should be present after decode");
+        assert!(
+            ku_decoded.trust.is_some(),
+            "Trust section should be present after decode"
+        );
         let trust_decoded = ku_decoded.trust.unwrap();
         assert_eq!(trust_decoded.epistemic_status, EpistemicStatus::Evidence);
         assert_eq!(trust_decoded.evidence_type, EvidenceType::Experimental);
@@ -926,7 +1063,11 @@ mod integration {
 
     fn make_epigenetic_section(with_embedding: bool) -> EpigeneticSection {
         EpigeneticSection {
-            embedding: if with_embedding { vec![0u8; 512] } else { vec![] },
+            embedding: if with_embedding {
+                vec![0u8; 512]
+            } else {
+                vec![]
+            },
             embedding_binary: vec![],
             embed_version: None,
             valid_from: Some(1719072000),
@@ -959,12 +1100,18 @@ mod integration {
         let epigenetic = make_epigenetic_section(true); // with 512-byte embedding
 
         let ku = KnowledgeUnit {
-            codons: vec![
-                Codon { concept_id: C_WATER, role: RoleId::Agent, qualifiers: vec![] },
-            ],
+            codons: vec![Codon {
+                concept_id: C_WATER,
+                role: RoleId::Agent,
+                qualifiers: vec![],
+            }],
             bonds: vec![],
             gene: Gene::Fact {
-                triples: vec![Triple { subject: C_WATER, predicate: C_BOILING_POINT, object: C_CELSIUS }],
+                triples: vec![Triple {
+                    subject: C_WATER,
+                    predicate: C_BOILING_POINT,
+                    object: C_CELSIUS,
+                }],
                 certainty: 9900,
                 evidence: vec![],
             },
@@ -984,7 +1131,10 @@ mod integration {
 
         // Full decode to verify epigenetic section
         let (_, ku_decoded) = decode_full_knowledge_unit(&wire).unwrap();
-        assert!(ku_decoded.epigenetic.is_some(), "Epigenetic section should be present");
+        assert!(
+            ku_decoded.epigenetic.is_some(),
+            "Epigenetic section should be present"
+        );
         let epi = ku_decoded.epigenetic.unwrap();
         assert_eq!(epi.embedding.len(), 512, "Embedding should be 512 bytes");
         assert_eq!(epi.valid_from, Some(1719072000));
@@ -993,10 +1143,17 @@ mod integration {
         assert_eq!(epi.language, Some(1));
 
         // Measure epigenetic section size
-        let epi_size = encode_epigenetic(&make_epigenetic_section(true)).unwrap().len();
-        let epi_no_embed_size = encode_epigenetic(&make_epigenetic_section(false)).unwrap().len();
+        let epi_size = encode_epigenetic(&make_epigenetic_section(true))
+            .unwrap()
+            .len();
+        let epi_no_embed_size = encode_epigenetic(&make_epigenetic_section(false))
+            .unwrap()
+            .len();
         println!("  EpigeneticSection (with embed):    {} bytes", epi_size);
-        println!("  EpigeneticSection (without embed):  {} bytes", epi_no_embed_size);
+        println!(
+            "  EpigeneticSection (without embed):  {} bytes",
+            epi_no_embed_size
+        );
         println!("  test_encode_with_epigenetic: PASSED ✓");
     }
 
@@ -1016,8 +1173,16 @@ mod integration {
         let original_ku = KnowledgeUnit {
             // Layer 1: Codons
             codons: vec![
-                Codon { concept_id: C_WATER, role: RoleId::Agent, qualifiers: vec![] },
-                Codon { concept_id: C_BOIL, role: RoleId::Result, qualifiers: vec![] },
+                Codon {
+                    concept_id: C_WATER,
+                    role: RoleId::Agent,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: C_BOIL,
+                    role: RoleId::Result,
+                    qualifiers: vec![],
+                },
                 Codon {
                     concept_id: 100,
                     role: RoleId::Quantity,
@@ -1028,25 +1193,23 @@ mod integration {
                 },
             ],
             // Layer 2: Bonds
-            bonds: vec![
-                Bond {
-                    target_cid: vec![0xABu8; 36],
-                    relation: RelationType::Corroborates,
-                    weight: 9000,
-                    creator: Creator::Human,
-                    created_at: 1719072000,
-                    evidence: vec![],
-                    state: EdgeState::Active,
-                    initial_weight: Some(9000),
-                    decay: Some(DecayRate::None),
-                    last_reinforced: None,
-                    reinforce_count: None,
-                    bidirectional: None,
-                    context: vec![],
-                    order: None,
-                    required: None,
-                },
-            ],
+            bonds: vec![Bond {
+                target_cid: vec![0xABu8; 36],
+                relation: RelationType::Corroborates,
+                weight: 9000,
+                creator: Creator::Human,
+                created_at: 1719072000,
+                evidence: vec![],
+                state: EdgeState::Active,
+                initial_weight: Some(9000),
+                decay: Some(DecayRate::None),
+                last_reinforced: None,
+                reinforce_count: None,
+                bidirectional: None,
+                context: vec![],
+                order: None,
+                required: None,
+            }],
             // Layer 3: Gene
             gene: Gene::Fact {
                 triples: vec![Triple {
@@ -1092,11 +1255,13 @@ mod integration {
 
         // Verify Layer 3: Gene
         match &decoded_ku.gene {
-            Gene::Fact { triples, certainty, .. } => {
+            Gene::Fact {
+                triples, certainty, ..
+            } => {
                 assert_eq!(triples.len(), 1);
                 assert_eq!(triples[0].subject, C_WATER);
                 assert_eq!(*certainty, 9900);
-            },
+            }
             other => panic!("Expected Fact gene, got: {:?}", other),
         }
 
@@ -1112,7 +1277,10 @@ mod integration {
         assert_eq!(t.confidence, 9000);
 
         // Verify Layer 4: Epigenetic
-        assert!(decoded_ku.epigenetic.is_some(), "Epigenetic should be present");
+        assert!(
+            decoded_ku.epigenetic.is_some(),
+            "Epigenetic should be present"
+        );
         let e = decoded_ku.epigenetic.as_ref().unwrap();
         assert_eq!(e.embedding.len(), 512);
         assert_eq!(e.valid_from, Some(1719072000));
@@ -1124,7 +1292,9 @@ mod integration {
         assert_eq!(decoded_ku.epistemic_status, Some(EpistemicStatus::Evidence));
         assert_eq!(decoded_ku.evidence_type, Some(EvidenceType::Experimental));
 
-        println!("  All layers verified: L1(codons) ✓ L2(bonds) ✓ L3(gene) ✓ L4(trust+epi) ✓ L5(CRC) ✓");
+        println!(
+            "  All layers verified: L1(codons) ✓ L2(bonds) ✓ L3(gene) ✓ L4(trust+epi) ✓ L5(CRC) ✓"
+        );
         println!("  test_full_roundtrip_all_layers: PASSED ✓");
     }
 
@@ -1171,18 +1341,37 @@ mod integration {
         let epi_overhead_full = wire_l15_full.len() - wire_l15_no_embed.len();
 
         println!("  L1-3 only:           {} bytes", wire_l13.len());
-        println!("  L1-5 (trust only):   {} bytes (+{} trust overhead)", wire_l15_trust.len(), trust_overhead);
-        println!("  L1-5 (no embedding): {} bytes (+{} epi overhead)", wire_l15_no_embed.len(), epi_overhead_no_embed);
-        println!("  L1-5 (512B embed):   {} bytes (+{} embedding overhead)", wire_l15_full.len(), epi_overhead_full);
+        println!(
+            "  L1-5 (trust only):   {} bytes (+{} trust overhead)",
+            wire_l15_trust.len(),
+            trust_overhead
+        );
+        println!(
+            "  L1-5 (no embedding): {} bytes (+{} epi overhead)",
+            wire_l15_no_embed.len(),
+            epi_overhead_no_embed
+        );
+        println!(
+            "  L1-5 (512B embed):   {} bytes (+{} embedding overhead)",
+            wire_l15_full.len(),
+            epi_overhead_full
+        );
         println!("  ────────────────────────────");
         println!("  Trust overhead:      ~{} bytes", trust_overhead);
         println!("  Epi (no embed):      ~{} bytes", epi_overhead_no_embed);
         println!("  Embedding (512B):    ~{} bytes", epi_overhead_full);
 
         // Size assertions
-        assert!(wire_l13.len() < 500, "L1-3 should be <500B, got {}", wire_l13.len());
+        assert!(
+            wire_l13.len() < 500,
+            "L1-3 should be <500B, got {}",
+            wire_l13.len()
+        );
         assert!(trust_overhead > 0, "Trust should add overhead");
-        assert!(wire_l15_full.len() > wire_l13.len(), "L1-5 should be larger than L1-3");
+        assert!(
+            wire_l15_full.len() > wire_l13.len(),
+            "L1-5 should be larger than L1-3"
+        );
 
         println!("  test_size_comparison: PASSED ✓");
     }
@@ -1199,12 +1388,18 @@ mod integration {
 
         // KU with trust=None and epigenetic=None (original format)
         let ku_none = KnowledgeUnit {
-            codons: vec![
-                Codon { concept_id: C_WATER, role: RoleId::Agent, qualifiers: vec![] },
-            ],
+            codons: vec![Codon {
+                concept_id: C_WATER,
+                role: RoleId::Agent,
+                qualifiers: vec![],
+            }],
             bonds: vec![],
             gene: Gene::Fact {
-                triples: vec![Triple { subject: C_WATER, predicate: C_BOILING_POINT, object: C_CELSIUS }],
+                triples: vec![Triple {
+                    subject: C_WATER,
+                    predicate: C_BOILING_POINT,
+                    object: C_CELSIUS,
+                }],
                 certainty: 9900,
                 evidence: vec![],
             },
@@ -1220,7 +1415,11 @@ mod integration {
 
         // Should decode cleanly
         let decoded = decode_knowledge_unit(&wire);
-        assert!(decoded.is_ok(), "Should decode without trust/epi: {:?}", decoded.err());
+        assert!(
+            decoded.is_ok(),
+            "Should decode without trust/epi: {:?}",
+            decoded.err()
+        );
 
         // Full decode should work with None fields
         let (_, ku_decoded) = decode_full_knowledge_unit(&wire).unwrap();
@@ -1255,8 +1454,16 @@ mod integration {
 
         // --- Component sizes ---
         let codons = vec![
-            Codon { concept_id: C_WATER, role: RoleId::Agent, qualifiers: vec![] },
-            Codon { concept_id: C_BOIL, role: RoleId::Result, qualifiers: vec![] },
+            Codon {
+                concept_id: C_WATER,
+                role: RoleId::Agent,
+                qualifiers: vec![],
+            },
+            Codon {
+                concept_id: C_BOIL,
+                role: RoleId::Result,
+                qualifiers: vec![],
+            },
             Codon {
                 concept_id: 100,
                 role: RoleId::Quantity,
@@ -1348,8 +1555,14 @@ mod integration {
         println!("Layer 2 (Bonds):      {}B  (1 bond)", bond_size);
         println!("Layer 3 (Gene):       {}B  (FactGene)", gene_size);
         println!("Layer 4 (Trust):      {}B", trust_size);
-        println!("Layer 4 (Epigenetic): {}B (without embedding)", epi_no_embed_size);
-        println!("Layer 4 (Epigenetic): {}B (with 512B embedding)", epi_with_embed_size);
+        println!(
+            "Layer 4 (Epigenetic): {}B (without embedding)",
+            epi_no_embed_size
+        );
+        println!(
+            "Layer 4 (Epigenetic): {}B (with 512B embedding)",
+            epi_with_embed_size
+        );
         println!("Layer 5 (CRC):        4B");
         println!("---");
         println!("Total (L1-3 only):    {}B", wire_l13.len());
@@ -1375,8 +1588,7 @@ mod integration {
         println!("══════════════════════════════════════════════════");
 
         use crate::types::{
-            CompositeEntry, CompositeConstraint, CompositeType, Completeness,
-            StructuralRole,
+            Completeness, CompositeConstraint, CompositeEntry, CompositeType, StructuralRole,
         };
 
         // Build a Composite Gene with 3 members (simulating a wing design doc)
@@ -1391,7 +1603,7 @@ mod integration {
                     order: 0,
                     role: StructuralRole::Section,
                     required: true,
-                    label: 1001, // WING_SWEEP concept
+                    label: 1001,                 // WING_SWEEP concept
                     expected_gene_type: Some(0), // Fact
                 },
                 CompositeEntry {
@@ -1399,7 +1611,7 @@ mod integration {
                     order: 1,
                     role: StructuralRole::Section,
                     required: true,
-                    label: 1002, // WING_AREA concept
+                    label: 1002,                 // WING_AREA concept
                     expected_gene_type: Some(0), // Fact
                 },
                 CompositeEntry {
@@ -1407,27 +1619,27 @@ mod integration {
                     order: 2,
                     role: StructuralRole::Appendix,
                     required: false,
-                    label: 1003, // DRAG_POLAR concept
+                    label: 1003,                 // DRAG_POLAR concept
                     expected_gene_type: Some(6), // Formal
                 },
             ],
-            constraints: vec![
-                CompositeConstraint {
-                    name: "sweep_requires_supercritical".into(),
-                    source_cid: member1_cid.clone(),
-                    target_cid: member2_cid.clone(),
-                    condition: vec![0xA1, 0x61, 0x73, 0x01], // example KQL-Lite bytecode
-                    severity: 2, // ERROR
-                },
-            ],
+            constraints: vec![CompositeConstraint {
+                name: "sweep_requires_supercritical".into(),
+                source_cid: member1_cid.clone(),
+                target_cid: member2_cid.clone(),
+                condition: vec![0xA1, 0x61, 0x73, 0x01], // example KQL-Lite bytecode
+                severity: 2,                             // ERROR
+            }],
             cluster_version: 1,
             max_depth: 255,
             composite_type: CompositeType::Specification,
             schema: Some(9999), // AEROSPACE_DESIGN_DOC
             completeness: Completeness::Partial,
-            summary_codons: vec![
-                Codon { concept_id: 1001, role: RoleId::Object, qualifiers: vec![] },
-            ],
+            summary_codons: vec![Codon {
+                concept_id: 1001,
+                role: RoleId::Object,
+                qualifiers: vec![],
+            }],
         };
 
         // Verify gene type
@@ -1438,9 +1650,11 @@ mod integration {
 
         // Build KU
         let ku = KnowledgeUnit {
-            codons: vec![
-                Codon { concept_id: 1001, role: RoleId::Object, qualifiers: vec![] },
-            ],
+            codons: vec![Codon {
+                concept_id: 1001,
+                role: RoleId::Object,
+                qualifiers: vec![],
+            }],
             bonds: vec![],
             gene: composite_gene,
             flags: HeaderFlags::default(),
@@ -1475,9 +1689,16 @@ mod integration {
 
         // Verify Composite gene content survived roundtrip
         if let Gene::Composite {
-            members, constraints, cluster_version, max_depth,
-            composite_type, schema, completeness, summary_codons,
-        } = &ku_back.gene {
+            members,
+            constraints,
+            cluster_version,
+            max_depth,
+            composite_type,
+            schema,
+            completeness,
+            summary_codons,
+        } = &ku_back.gene
+        {
             assert_eq!(members.len(), 3, "Should have 3 members");
             assert_eq!(members[0].cid, vec![0x01u8; 32]);
             assert_eq!(members[0].order, 0);
@@ -1508,7 +1729,10 @@ mod integration {
             println!("  Max depth:           {}", max_depth);
             println!("  Schema:              {:?}", schema);
         } else {
-            panic!("Expected Gene::Composite, got {:?}", ku_back.gene.gene_type());
+            panic!(
+                "Expected Gene::Composite, got {:?}",
+                ku_back.gene.gene_type()
+            );
         }
 
         println!("\n  test_composite_gene_roundtrip: PASSED ✓");
@@ -1539,8 +1763,8 @@ mod integration {
             reinforce_count: None,
             bidirectional: None,
             context: vec![],
-            order: Some(3),         // ★ v5: position 3
-            required: Some(true),   // ★ v5: required bond
+            order: Some(3),       // ★ v5: position 3
+            required: Some(true), // ★ v5: required bond
         };
 
         let encoded = encode_bond(&bond_with_order).unwrap();
@@ -1575,8 +1799,12 @@ mod integration {
         println!("  Bond without order:       {} bytes", encoded2.len());
 
         // v5 bond should be slightly larger due to extra fields
-        assert!(encoded.len() > encoded2.len(),
-            "Bond with order should be larger: {} vs {}", encoded.len(), encoded2.len());
+        assert!(
+            encoded.len() > encoded2.len(),
+            "Bond with order should be larger: {} vs {}",
+            encoded.len(),
+            encoded2.len()
+        );
 
         let decoded2: Bond = ciborium::from_reader(&encoded2[..]).unwrap();
         assert_eq!(decoded2.order, None);
@@ -1595,48 +1823,50 @@ mod integration {
         println!("  TEST: ★ v5 Composite Gene — Full L1-5 roundtrip");
         println!("══════════════════════════════════════════════════");
 
-        use crate::types::{
-            CompositeEntry, CompositeType, Completeness, StructuralRole,
-        };
+        use crate::types::{Completeness, CompositeEntry, CompositeType, StructuralRole};
 
         let trust = make_trust_section();
         let epi = make_epigenetic_section(false);
 
         let ku = KnowledgeUnit {
             codons: vec![
-                Codon { concept_id: 5001, role: RoleId::Object, qualifiers: vec![] },
-                Codon { concept_id: 5002, role: RoleId::Quality, qualifiers: vec![] },
-            ],
-            bonds: vec![
-                Bond {
-                    target_cid: vec![0xFFu8; 36],
-                    relation: RelationType::PartOf,
-                    weight: 9500,
-                    creator: Creator::Human,
-                    created_at: 1719072000,
-                    evidence: vec![],
-                    state: EdgeState::Active,
-                    initial_weight: Some(9500),
-                    decay: Some(DecayRate::None),
-                    last_reinforced: None,
-                    reinforce_count: None,
-                    bidirectional: None,
-                    context: vec![],
-                    order: Some(0),
-                    required: Some(true),
+                Codon {
+                    concept_id: 5001,
+                    role: RoleId::Object,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: 5002,
+                    role: RoleId::Quality,
+                    qualifiers: vec![],
                 },
             ],
+            bonds: vec![Bond {
+                target_cid: vec![0xFFu8; 36],
+                relation: RelationType::PartOf,
+                weight: 9500,
+                creator: Creator::Human,
+                created_at: 1719072000,
+                evidence: vec![],
+                state: EdgeState::Active,
+                initial_weight: Some(9500),
+                decay: Some(DecayRate::None),
+                last_reinforced: None,
+                reinforce_count: None,
+                bidirectional: None,
+                context: vec![],
+                order: Some(0),
+                required: Some(true),
+            }],
             gene: Gene::Composite {
-                members: vec![
-                    CompositeEntry {
-                        cid: vec![0xDE; 32],
-                        order: 0,
-                        role: StructuralRole::Chapter,
-                        required: true,
-                        label: 6001,
-                        expected_gene_type: None,
-                    },
-                ],
+                members: vec![CompositeEntry {
+                    cid: vec![0xDE; 32],
+                    order: 0,
+                    role: StructuralRole::Chapter,
+                    required: true,
+                    label: 6001,
+                    expected_gene_type: None,
+                }],
                 constraints: vec![],
                 cluster_version: 42,
                 max_depth: 8,
@@ -1668,7 +1898,12 @@ mod integration {
         assert_eq!(ku_back.bonds[0].required, Some(true));
 
         // Verify composite gene survived
-        if let Gene::Composite { cluster_version, max_depth, .. } = &ku_back.gene {
+        if let Gene::Composite {
+            cluster_version,
+            max_depth,
+            ..
+        } = &ku_back.gene
+        {
             assert_eq!(*cluster_version, 42);
             assert_eq!(*max_depth, 8);
         } else {
@@ -1693,33 +1928,35 @@ mod integration {
         println!("  \"Bơi ếch là kiểu bơi cơ bản mô phỏng chuyển động con ếch\"");
         println!("══════════════════════════════════════════════════════════════");
 
-        use crate::types::{
-            CompositeEntry, CompositeType, Completeness, StructuralRole,
-        };
+        use crate::types::{Completeness, CompositeEntry, CompositeType, StructuralRole};
 
         // ── Concept Registry (language-agnostic IDs) ──────────────────────
-        const C_BREASTSTROKE: ConceptId    = 500;
-        const C_SWIMMING_STYLE: ConceptId  = 501;
-        const C_BASIC_LEVEL: ConceptId     = 502;
-        const C_FROG: ConceptId            = 503;
-        const C_MOVEMENT_SIM: ConceptId    = 504;
-        const C_WATER_ENV: ConceptId       = 505;
-        const C_SWIMMER: ConceptId         = 506;
-        const C_PRONE_POS: ConceptId       = 507;
-        const C_ARM_SWEEP: ConceptId       = 508;
-        const C_LEG_KICK: ConceptId        = 509;
-        const C_BREATHING: ConceptId       = 510;
-        const C_GLIDE: ConceptId           = 511;
-        const C_FORWARD: ConceptId         = 512;
-        const C_RHYTHMIC: ConceptId        = 513;
-        const C_ENERGY_EFF: ConceptId      = 514;
-        const C_CYCLIC: ConceptId          = 515;
+        const C_BREASTSTROKE: ConceptId = 500;
+        const C_SWIMMING_STYLE: ConceptId = 501;
+        const C_BASIC_LEVEL: ConceptId = 502;
+        const C_FROG: ConceptId = 503;
+        const C_MOVEMENT_SIM: ConceptId = 504;
+        const C_WATER_ENV: ConceptId = 505;
+        const C_SWIMMER: ConceptId = 506;
+        const C_PRONE_POS: ConceptId = 507;
+        const C_ARM_SWEEP: ConceptId = 508;
+        const C_LEG_KICK: ConceptId = 509;
+        const C_BREATHING: ConceptId = 510;
+        const C_GLIDE: ConceptId = 511;
+        const C_FORWARD: ConceptId = 512;
+        const C_RHYTHMIC: ConceptId = 513;
+        const C_ENERGY_EFF: ConceptId = 514;
+        const C_CYCLIC: ConceptId = 515;
 
         // ── KU #1: Fact — Definition ──────────────────────────────────────
         // "Bơi ếch là kiểu bơi cơ bản mô phỏng chuyển động con ếch"
         let ku1 = KnowledgeUnit {
             codons: vec![
-                Codon { concept_id: C_BREASTSTROKE, role: RoleId::Object, qualifiers: vec![] },
+                Codon {
+                    concept_id: C_BREASTSTROKE,
+                    role: RoleId::Object,
+                    qualifiers: vec![],
+                },
                 Codon {
                     concept_id: C_SWIMMING_STYLE,
                     role: RoleId::Quality,
@@ -1728,15 +1965,35 @@ mod integration {
                         value: QualifierValue::Concept(C_BASIC_LEVEL),
                     }],
                 },
-                Codon { concept_id: C_MOVEMENT_SIM, role: RoleId::Manner, qualifiers: vec![] },
-                Codon { concept_id: C_FROG, role: RoleId::Agent, qualifiers: vec![] },
-                Codon { concept_id: C_WATER_ENV, role: RoleId::Location, qualifiers: vec![] },
+                Codon {
+                    concept_id: C_MOVEMENT_SIM,
+                    role: RoleId::Manner,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: C_FROG,
+                    role: RoleId::Agent,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: C_WATER_ENV,
+                    role: RoleId::Location,
+                    qualifiers: vec![],
+                },
             ],
             bonds: vec![],
             gene: Gene::Fact {
                 triples: vec![
-                    Triple { subject: C_BREASTSTROKE, predicate: C_SWIMMING_STYLE, object: C_BASIC_LEVEL },
-                    Triple { subject: C_BREASTSTROKE, predicate: C_MOVEMENT_SIM, object: C_FROG },
+                    Triple {
+                        subject: C_BREASTSTROKE,
+                        predicate: C_SWIMMING_STYLE,
+                        object: C_BASIC_LEVEL,
+                    },
+                    Triple {
+                        subject: C_BREASTSTROKE,
+                        predicate: C_MOVEMENT_SIM,
+                        object: C_FROG,
+                    },
                 ],
                 certainty: 9900, // 99% — established sports science
                 evidence: vec![],
@@ -1750,7 +2007,10 @@ mod integration {
 
         let wire1 = encode_knowledge_unit(&ku1).unwrap();
         println!("\n  KU#1 [Fact: Definition]");
-        println!("    Codons:    {} (BREASTSTROKE, STYLE, SIMULATION, FROG, WATER)", ku1.codons.len());
+        println!(
+            "    Codons:    {} (BREASTSTROKE, STYLE, SIMULATION, FROG, WATER)",
+            ku1.codons.len()
+        );
         println!("    Triples:   2 (IS_A + SIMULATES)");
         println!("    Certainty: 99%");
         println!("    Wire:      {} bytes", wire1.len());
@@ -1760,7 +2020,10 @@ mod integration {
         let (d1, k1) = decode_full_knowledge_unit(&wire1).unwrap();
         assert_eq!(d1.gene_type, GeneType::Fact);
         assert_eq!(k1.codons.len(), 5);
-        if let Gene::Fact { certainty, triples, .. } = &k1.gene {
+        if let Gene::Fact {
+            certainty, triples, ..
+        } = &k1.gene
+        {
             assert_eq!(*certainty, 9900);
             assert_eq!(triples.len(), 2);
         }
@@ -1769,35 +2032,59 @@ mod integration {
         // quạt tay → đạp chân → lấy hơi → lướt (cyclic)
         let ku2 = KnowledgeUnit {
             codons: vec![
-                Codon { concept_id: C_SWIMMER, role: RoleId::Agent, qualifiers: vec![] },
-                Codon { concept_id: C_PRONE_POS, role: RoleId::Condition, qualifiers: vec![] },
-                Codon { concept_id: C_CYCLIC, role: RoleId::Manner, qualifiers: vec![] },
-                Codon { concept_id: C_FORWARD, role: RoleId::Purpose, qualifiers: vec![] },
+                Codon {
+                    concept_id: C_SWIMMER,
+                    role: RoleId::Agent,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: C_PRONE_POS,
+                    role: RoleId::Condition,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: C_CYCLIC,
+                    role: RoleId::Manner,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: C_FORWARD,
+                    role: RoleId::Purpose,
+                    qualifiers: vec![],
+                },
             ],
             bonds: vec![],
             gene: Gene::Procedure {
                 steps: vec![
                     ProcedureStep {
                         ord: 0,
-                        act: C_ARM_SWEEP,   // quạt tay
+                        act: C_ARM_SWEEP, // quạt tay
                         tgt: C_WATER_ENV,
-                        pre: vec![Codon { concept_id: C_PRONE_POS, role: RoleId::Condition, qualifiers: vec![] }],
+                        pre: vec![Codon {
+                            concept_id: C_PRONE_POS,
+                            role: RoleId::Condition,
+                            qualifiers: vec![],
+                        }],
                         tools: vec![],
                         eff: vec![],
                         warn: vec![],
                     },
                     ProcedureStep {
                         ord: 1,
-                        act: C_LEG_KICK,    // thu và đạp chân
+                        act: C_LEG_KICK, // thu và đạp chân
                         tgt: C_WATER_ENV,
                         pre: vec![],
                         tools: vec![],
-                        eff: vec![Codon { concept_id: C_FORWARD, role: RoleId::Result, qualifiers: vec![] }],
+                        eff: vec![Codon {
+                            concept_id: C_FORWARD,
+                            role: RoleId::Result,
+                            qualifiers: vec![],
+                        }],
                         warn: vec![],
                     },
                     ProcedureStep {
                         ord: 2,
-                        act: C_BREATHING,   // lấy hơi
+                        act: C_BREATHING, // lấy hơi
                         tgt: C_SWIMMER,
                         pre: vec![],
                         tools: vec![],
@@ -1806,11 +2093,15 @@ mod integration {
                     },
                     ProcedureStep {
                         ord: 3,
-                        act: C_GLIDE,       // lướt nước
+                        act: C_GLIDE, // lướt nước
                         tgt: C_FORWARD,
                         pre: vec![],
                         tools: vec![],
-                        eff: vec![Codon { concept_id: C_FORWARD, role: RoleId::Result, qualifiers: vec![] }],
+                        eff: vec![Codon {
+                            concept_id: C_FORWARD,
+                            role: RoleId::Result,
+                            qualifiers: vec![],
+                        }],
                         warn: vec![],
                     },
                 ],
@@ -1835,7 +2126,10 @@ mod integration {
         // Verify
         let (d2, k2) = decode_full_knowledge_unit(&wire2).unwrap();
         assert_eq!(d2.gene_type, GeneType::Procedure);
-        if let Gene::Procedure { steps, difficulty, .. } = &k2.gene {
+        if let Gene::Procedure {
+            steps, difficulty, ..
+        } = &k2.gene
+        {
             assert_eq!(steps.len(), 4);
             assert_eq!(steps[0].act, C_ARM_SWEEP);
             assert_eq!(steps[1].act, C_LEG_KICK);
@@ -1848,15 +2142,35 @@ mod integration {
         // "nhịp nhàng, ít tốn sức"
         let ku3 = KnowledgeUnit {
             codons: vec![
-                Codon { concept_id: C_BREASTSTROKE, role: RoleId::Object, qualifiers: vec![] },
-                Codon { concept_id: C_RHYTHMIC, role: RoleId::Quality, qualifiers: vec![] },
-                Codon { concept_id: C_ENERGY_EFF, role: RoleId::Quality, qualifiers: vec![] },
+                Codon {
+                    concept_id: C_BREASTSTROKE,
+                    role: RoleId::Object,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: C_RHYTHMIC,
+                    role: RoleId::Quality,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: C_ENERGY_EFF,
+                    role: RoleId::Quality,
+                    qualifiers: vec![],
+                },
             ],
             bonds: vec![],
             gene: Gene::Fact {
                 triples: vec![
-                    Triple { subject: C_BREASTSTROKE, predicate: C_RHYTHMIC, object: C_RHYTHMIC },
-                    Triple { subject: C_BREASTSTROKE, predicate: C_ENERGY_EFF, object: C_ENERGY_EFF },
+                    Triple {
+                        subject: C_BREASTSTROKE,
+                        predicate: C_RHYTHMIC,
+                        object: C_RHYTHMIC,
+                    },
+                    Triple {
+                        subject: C_BREASTSTROKE,
+                        predicate: C_ENERGY_EFF,
+                        object: C_ENERGY_EFF,
+                    },
                 ],
                 certainty: 8500, // 85% — subjective but widely agreed
                 evidence: vec![],
@@ -1881,8 +2195,16 @@ mod integration {
         // Groups KU#1-3 into a structured cluster
         let ku4 = KnowledgeUnit {
             codons: vec![
-                Codon { concept_id: C_BREASTSTROKE, role: RoleId::Object, qualifiers: vec![] },
-                Codon { concept_id: C_SWIMMING_STYLE, role: RoleId::Quality, qualifiers: vec![] },
+                Codon {
+                    concept_id: C_BREASTSTROKE,
+                    role: RoleId::Object,
+                    qualifiers: vec![],
+                },
+                Codon {
+                    concept_id: C_SWIMMING_STYLE,
+                    role: RoleId::Quality,
+                    qualifiers: vec![],
+                },
             ],
             bonds: vec![],
             gene: Gene::Composite {
@@ -1892,7 +2214,7 @@ mod integration {
                         order: 0,
                         role: StructuralRole::Chapter,
                         required: true,
-                        label: C_BREASTSTROKE,  // "Definition"
+                        label: C_BREASTSTROKE,       // "Definition"
                         expected_gene_type: Some(0), // Fact
                     },
                     CompositeEntry {
@@ -1900,7 +2222,7 @@ mod integration {
                         order: 1,
                         role: StructuralRole::Chapter,
                         required: true,
-                        label: C_CYCLIC,  // "Technique"
+                        label: C_CYCLIC,             // "Technique"
                         expected_gene_type: Some(1), // Procedure
                     },
                     CompositeEntry {
@@ -1908,7 +2230,7 @@ mod integration {
                         order: 2,
                         role: StructuralRole::Section,
                         required: false,
-                        label: C_RHYTHMIC,  // "Properties"
+                        label: C_RHYTHMIC,           // "Properties"
                         expected_gene_type: Some(0), // Fact
                     },
                 ],
@@ -1918,9 +2240,11 @@ mod integration {
                 composite_type: CompositeType::Document,
                 schema: None,
                 completeness: Completeness::Complete,
-                summary_codons: vec![
-                    Codon { concept_id: C_BREASTSTROKE, role: RoleId::Object, qualifiers: vec![] },
-                ],
+                summary_codons: vec![Codon {
+                    concept_id: C_BREASTSTROKE,
+                    role: RoleId::Object,
+                    qualifiers: vec![],
+                }],
             },
             flags: HeaderFlags::default(),
             epistemic_status: None,
@@ -1939,7 +2263,13 @@ mod integration {
 
         let (d4, k4) = decode_full_knowledge_unit(&wire4).unwrap();
         assert_eq!(d4.gene_type, GeneType::Composite);
-        if let Gene::Composite { members, composite_type, completeness, .. } = &k4.gene {
+        if let Gene::Composite {
+            members,
+            composite_type,
+            completeness,
+            ..
+        } = &k4.gene
+        {
             assert_eq!(members.len(), 3);
             assert_eq!(*composite_type, CompositeType::Document);
             assert_eq!(*completeness, Completeness::Complete);
@@ -1962,7 +2292,11 @@ mod integration {
         println!("  KU#3 Fact (properties): {} bytes", wire3.len());
         println!("  KU#4 Composite (doc):   {} bytes", wire4.len());
         println!("  ───────────────────────────────────────────────────");
-        println!("  Total KU DNA:           {} bytes ({:.1}x text)", total, total as f64 / text_bytes as f64);
+        println!(
+            "  Total KU DNA:           {} bytes ({:.1}x text)",
+            total,
+            total as f64 / text_bytes as f64
+        );
         println!("  ═══════════════════════════════════════════════════");
         println!("  ✅ Language-agnostic:   ConceptIds, no Vietnamese stored");
         println!("  ✅ Machine-queryable:   \"Step 3?\" → BREATHING");
@@ -1985,4 +2319,3 @@ mod integration {
         cid
     }
 }
-

@@ -3,8 +3,8 @@
 //! Implements rate limiting (§5.2), KU quality gates (§5.4), and
 //! gaming-pattern detection (§5.5) for the OBT token system.
 
-use serde::{Deserialize, Serialize};
 use crate::obt_constants::NodeTier;
+use serde::{Deserialize, Serialize};
 
 // ─────────────────────────────────────────────────────────────────────
 // §5.2  Rate Limiter
@@ -20,8 +20,8 @@ pub struct RateLimits {
 }
 
 pub const RATE_LEAF: RateLimits = RateLimits {
-    max_ku_per_hour: 100,       // DEV: was 1 — raised for testing
-    max_encode_per_hour: 100,   // DEV: was 2 — raised for testing
+    max_ku_per_hour: 100,     // DEV: was 1 — raised for testing
+    max_encode_per_hour: 100, // DEV: was 2 — raised for testing
     claim_cooldown_s: 3600,
     max_mint_per_epoch: 10_000,
 };
@@ -133,7 +133,7 @@ impl RateLimitTracker {
 // §5.4  KU Quality Gates
 // ─────────────────────────────────────────────────────────────────────
 
-pub const MIN_KU_RAW_BYTES: usize = 8; // TODO: restore to 256 for production
+pub const MIN_KU_RAW_BYTES: usize = 256;
 pub const MIN_GENE_COUNT: usize = 1;
 pub const MIN_ENCODING_TIME_MS: u64 = 100;
 pub const MIN_BOND_COUNT: usize = 1;
@@ -455,10 +455,10 @@ mod tests {
     #[test]
     fn test_gate_3_pomv_30d_threshold() {
         // Mature KU (>720 epochs) must meet higher 30D threshold (0.05)
-        assert!(!gate_3_pomv(0.03, 800));  // 0.03 < 0.05 threshold
-        assert!(gate_3_pomv(0.06, 800));   // 0.06 >= 0.05 threshold
-        // Young KU (168-720 epochs) only needs 7D threshold (0.01)
-        assert!(gate_3_pomv(0.03, 500));   // 0.03 >= 0.01 threshold
+        assert!(!gate_3_pomv(0.03, 800)); // 0.03 < 0.05 threshold
+        assert!(gate_3_pomv(0.06, 800)); // 0.06 >= 0.05 threshold
+                                         // Young KU (168-720 epochs) only needs 7D threshold (0.01)
+        assert!(gate_3_pomv(0.03, 500)); // 0.03 >= 0.01 threshold
     }
 
     #[test]

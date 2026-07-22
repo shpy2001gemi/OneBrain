@@ -53,17 +53,16 @@ impl EntropyCalculator {
     /// - 0.0 = exact duplicate
     ///
     /// Uses average cosine distance across neighbors.
-    pub fn novelty_score(
-        new_embedding: &[u8],
-        neighbors: &[&[u8]],
-    ) -> f32 {
+    pub fn novelty_score(new_embedding: &[u8], neighbors: &[&[u8]]) -> f32 {
         if new_embedding.len() < MIN_EMBEDDING_LEN || neighbors.is_empty() {
             return 1.0; // No neighbors = maximum novelty
         }
 
-        let avg_distance: f32 = neighbors.iter()
+        let avg_distance: f32 = neighbors
+            .iter()
             .map(|n| Self::cosine_distance(new_embedding, n))
-            .sum::<f32>() / neighbors.len() as f32;
+            .sum::<f32>()
+            / neighbors.len() as f32;
 
         // Clamp to [0, 1]
         avg_distance.clamp(0.0, 1.0)
@@ -109,10 +108,7 @@ impl EntropyCalculator {
     /// Returns [0.0, 1.0]:
     /// - 1.0 = unique LSH bucket (bridges two clusters)
     /// - 0.0 = common bucket (inside existing cluster)
-    pub fn bridge_score(
-        new_lsh: &[u8],
-        existing_lsh_counts: &HashMap<Vec<u8>, usize>,
-    ) -> f32 {
+    pub fn bridge_score(new_lsh: &[u8], existing_lsh_counts: &HashMap<Vec<u8>, usize>) -> f32 {
         if new_lsh.is_empty() || existing_lsh_counts.is_empty() {
             return 1.0; // First KU = maximum bridge potential
         }
@@ -157,11 +153,7 @@ impl EntropyCalculator {
     /// After 7 days, entropy ≈ 0.5 (half)
     /// After 14 days, entropy ≈ 0.25
     /// After 21 days, entropy ≈ 0.125 (negligible)
-    pub fn entropy_value(
-        novelty: f32,
-        bridge: f32,
-        age_secs: u64,
-    ) -> f32 {
+    pub fn entropy_value(novelty: f32, bridge: f32, age_secs: u64) -> f32 {
         let raw = WEIGHT_NOVELTY * novelty + WEIGHT_BRIDGE * bridge;
 
         // Exponential decay over 7 days
@@ -219,7 +211,11 @@ mod tests {
             b[256 + i] = 100u8; // positive in second half
         }
         let dist = EntropyCalculator::cosine_distance(&a, &b);
-        assert!((dist - 0.5).abs() < 0.1, "Orthogonal: distance ≈ 0.5, got {}", dist);
+        assert!(
+            (dist - 0.5).abs() < 0.1,
+            "Orthogonal: distance ≈ 0.5, got {}",
+            dist
+        );
     }
 
     #[test]
@@ -260,7 +256,11 @@ mod tests {
         let mut existing = HashMap::new();
         existing.insert(make_lsh(1), 100);
         let score = EntropyCalculator::bridge_score(&lsh, &existing);
-        assert!(score < 0.02, "100 KUs in same bucket = low bridge: {}", score);
+        assert!(
+            score < 0.02,
+            "100 KUs in same bucket = low bridge: {}",
+            score
+        );
     }
 
     #[test]
@@ -269,7 +269,11 @@ mod tests {
         let mut existing = HashMap::new();
         existing.insert(make_lsh(5), 1);
         let score = EntropyCalculator::bridge_score(&lsh, &existing);
-        assert!((score - 0.5).abs() < 0.01, "1 existing = bridge 0.5: {}", score);
+        assert!(
+            (score - 0.5).abs() < 0.01,
+            "1 existing = bridge 0.5: {}",
+            score
+        );
     }
 
     #[test]
@@ -292,10 +296,16 @@ mod tests {
         let a = vec![0xABu8; 16];
         let mut b = a.clone();
         b[0] ^= 0x01; // Flip 1 bit
-        assert!(EntropyCalculator::is_near_duplicate(&a, &b), "1 bit flip = near duplicate");
+        assert!(
+            EntropyCalculator::is_near_duplicate(&a, &b),
+            "1 bit flip = near duplicate"
+        );
 
         let c = vec![0x00u8; 16]; // Very different
-        assert!(!EntropyCalculator::is_near_duplicate(&a, &c), "All different ≠ duplicate");
+        assert!(
+            !EntropyCalculator::is_near_duplicate(&a, &c),
+            "All different ≠ duplicate"
+        );
     }
 
     #[test]

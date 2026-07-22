@@ -1,128 +1,41 @@
-//! OneBrain P2P Protocol — shared between node and seed
+//! OneBrain protocol contracts shared by carriers and runtimes.
+//!
+//! `types` and `codec` own vNext logical/wire identity. The TCP/JSON demo is
+//! isolated under `legacy` and retained only for backward compatibility.
 
-use serde::{Serialize, Deserialize};
-use std::net::SocketAddr;
-use tokio::net::TcpStream;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+pub mod codec;
+pub mod legacy;
+pub mod legacy_adapter;
+pub mod reconciliation_codec;
+pub mod session_codec;
+pub mod types;
 
-/// Messages between client nodes (peer-to-peer)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum PeerMessage {
-    PeerHello {
-        peer_id: String,
-        name: String,
-        port: u16,
-        ku_count: u64,
-    },
-    KuPush {
-        cid_hex: String,
-        wire_bytes: Vec<u8>,
-        source_text: String,
-    },
-    VerifyRequest {
-        cid_hex: String,
-        source_text: String,
-    },
-    VerifyResponse {
-        cid_hex: String,
-        agreement_score: f64,
-        verified: bool,
-    },
-}
+pub use codec::{decode_message, encode_message, VNextCodecError};
+pub use legacy::{recv_message, send_message, PeerMessage, PeerSummary, SeedMessage};
+pub use legacy_adapter::{
+    LegacyAdapter, LegacyAdapterError, LegacyAdapterOffer, LegacyNormalizationProvenance,
+    NormalizedLegacyEncoding, NormalizedLegacyQuery, LEGACY_ADAPTER_MAJOR, LEGACY_ENCODING_FULL,
+    LEGACY_ENCODING_PART, LEGACY_SCOPE_GLOBAL,
+};
+pub use reconciliation_codec::{
+    bind_reconciliation_message, decode_reconciliation_message, encode_reconciliation_message,
+    make_resume_token, reconciliation_binding_digest, reconciliation_capability,
+    reconciliation_profile, validate_reconciliation_context, ReconciliationCodecError,
+};
+pub use session_codec::{
+    decode_session_message, encode_session_message, session_signing_bytes, SessionCodecError,
+};
+pub use types::{
+    wire_id, InventoryDiffRange, InventoryLane, InventorySummaryNode, ReconcileManifestEntry,
+    ReconcileManifestKind, ReconcileReceiptEntry, ReconcileReceiptStatus, ReconciliationAbortCode,
+    ReconciliationBody, ReconciliationBudget, ReconciliationContext, ReconciliationMessage,
+    ReconciliationPhase, ReconciliationResumeMode, ReconciliationResumeToken,
+    ReconciliationSummaryMethod, SelectiveFeedProof, SessionCapability, SessionFinish,
+    SessionHandshakeMessage, SessionHello, SessionProfile, SessionWelcome, VNextMessage,
+};
 
-/// Messages between client and seed node
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum SeedMessage {
-    // Client → Seed
-    Register {
-        peer_id: String,
-        name: String,
-        listen_port: u16,
-        internal_addr: Option<SocketAddr>,
-        upnp_addr: Option<SocketAddr>,
-        ku_count: u64,
-    },
-    Heartbeat {
-        peer_id: String,
-        ku_count: u64,
-    },
-    GetPeers,
-    RelayToPeer {
-        to_peer_id: String,
-        payload: Vec<u8>, // serialized PeerMessage
-    },
-    Disconnect {
-        peer_id: String,
-    },
-
-    // Seed → Client
-    Registered {
-        your_external_addr: SocketAddr,
-        seed_name: String,
-    },
-    PeerList {
-        peers: Vec<PeerSummary>,
-    },
-    RelayedMessage {
-        from_peer_id: String,
-        from_name: String,
-        payload: Vec<u8>, // serialized PeerMessage
-    },
-    HeartbeatAck,
-    SeedError {
-        message: String,
-    },
-}
-
-/// Summary info about a peer (sent in PeerList)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PeerSummary {
-    pub peer_id: String,
-    pub name: String,
-    pub external_addr: SocketAddr,
-    pub upnp_addr: Option<SocketAddr>,
-    pub ku_count: u64,
-}
-
-/// Send a length-prefixed JSON message over TCP.
-pub async fn send_message<T: Serialize>(stream: &mut TcpStream, msg: &T) -> Result<(), std::io::Error> {
-    let data = serde_json::to_vec(msg)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    let len = (data.len() as u32).to_be_bytes();
-    stream.write_all(&len).await?;
-    stream.write_all(&data).await?;
-    stream.flush().await?;
-    Ok(())
-}
-
-/// Receive a length-prefixed JSON message from TCP.
-pub async fn recv_message<T: for<'de> Deserialize<'de>>(stream: &mut TcpStream) -> Result<T, std::io::Error> {
-    let mut len_buf = [0u8; 4];
-    stream.read_exact(&mut len_buf).await?;
-    let len = u32::from_be_bytes(len_buf) as usize;
-    if len > 16 * 1024 * 1024 {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "Message too large"));
-    }
-    let mut data = vec![0u8; len];
-    stream.read_exact(&mut data).await?;
-    serde_json::from_slice(&data)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-}
-
-/// Default seed node addresses (hardcoded)
-pub const SEED_DOMAINS: &[&str] = &[
-    "n1.onebrain.live",
-    "n2.onebrain.live",
-];
-
-/// Default seed port
+pub const SEED_DOMAINS: &[&str] = &["n1.onebrain.live", "n2.onebrain.live"];
 pub const SEED_PORT: u16 = 4242;
-
-/// Default node port
 pub const DEFAULT_NODE_PORT: u16 = 4242;
-
-/// Heartbeat interval in seconds
 pub const HEARTBEAT_INTERVAL_SECS: u64 = 60;
-
-/// Peer timeout in seconds (remove after no heartbeat)
 pub const PEER_TIMEOUT_SECS: u64 = 300;

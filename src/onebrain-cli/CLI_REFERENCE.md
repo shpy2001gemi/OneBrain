@@ -52,6 +52,11 @@ onebrain start [OPTIONS]
 | `--ollama-url URL` | `http://localhost:11434` | Ollama API URL |
 | `--model MODEL` | `qwen3:8b` | Default AI model |
 | `--seeds ADDR,ADDR` | `[]` | Seed node addresses |
+| `--api` | `false` | Enable REST/WebSocket API for Web Dashboard |
+| `--api-port PORT` | `4280` | API server port |
+| `--api-token TOKEN` | `onebrain-dev-token` | API Bearer token for authentication |
+| `--web-dir DIR` | auto-detect | Path to built web dashboard assets |
+| `--version` | — | Display version and exit |
 
 ### 2.2 First-Run
 
@@ -130,18 +135,38 @@ Type 'help' for commands.
 |-------|---------|-------------|--------|
 | **Knowledge** | `encode <text>` | Encode text → KU | ✅ Implemented |
 | | `remember <text>` | Alias for encode | ✅ Implemented |
+| | `encode --draft` | Save as draft instead of encoding | ✅ Implemented |
+| | `encode --attach <file>` | Encode with file attachment | ✅ Implemented |
 | | `search <query>` | Semantic search | ✅ Implemented |
 | | `find <query>` | Alias for search | ✅ Implemented |
 | | `list` | Browse KUs | ✅ Implemented |
 | | `detail <cid>` | View KU details | ✅ Implemented |
 | | `delete <cid>` | Delete KU locally | ✅ Implemented |
+| | `delete --gene <type>` | Bulk delete by gene type | ✅ Implemented |
+| | `deprecate <cid>` | Mark KU as obsolete | ✅ Implemented |
+| | `edit <cid>` | Create new version of KU | ✅ Implemented |
 | | `kql <query>` | KQL query | ✅ Implemented |
 | | `graph <cid>` | View graph neighbors | ✅ Implemented |
+| **Tags & Pins** | `tag add <cid> <tag>` | Add tag to KU | ✅ Implemented |
+| | `tag remove <cid> <tag>` | Remove tag from KU | ✅ Implemented |
+| | `tag list` | List all tags | ✅ Implemented |
+| | `pin [cid]` | Pin KU / list pinned | ✅ Implemented |
+| | `unpin <cid>` | Unpin KU | ✅ Implemented |
+| **Watch** | `watch create <kql>` | Create standing query | ✅ Implemented |
+| | `watch list` | List active watches | ✅ Implemented |
+| | `watch delete <id>` | Delete a watch | ✅ Implemented |
 | **Network** | `connect <addr>` | Connect to peer | ✅ Implemented |
 | | `status` | Node status | ✅ Implemented |
 | | `peers` | Peer list | ✅ Implemented |
+| **Social** | `follow <node_id>` | Follow a node | ✅ Implemented |
+| | `unfollow <node_id>` | Unfollow a node | ✅ Implemented |
+| | `following` | List followed nodes | ✅ Implemented |
+| | `peer-info <node_id>` | View peer profile | ✅ Implemented |
+| | `share <cid>` | Generate shareable link | ✅ Implemented |
 | **Identity** | `identity` | View identity info | ✅ Implemented |
 | | `recover` | BIP39 recovery | ✅ Implemented |
+| | `devices` | List linked devices | ✅ Implemented |
+| | `sync [status]` | Multi-device sync status | ✅ Implemented |
 | **Profile** | `profile` | View profile | ✅ Implemented |
 | | `profile set <field> <value>` | Edit profile | ✅ Implemented |
 | **AI** | `model list` | List models | ✅ Implemented |
@@ -156,6 +181,8 @@ Type 'help' for commands.
 | | `blob delete <cid>` | Delete blob | ✅ Implemented |
 | | `blob stats` | Blob storage statistics | ✅ Implemented |
 | | `blob gc` | Garbage collect orphaned blobs | ✅ Implemented |
+| | `blob pin <cid>` | Pin blob (prevent GC) | ✅ Implemented |
+| | `blob unpin <cid>` | Unpin blob (allow GC) | ✅ Implemented |
 | **Data** | `export` | Export KUs to file | ✅ Implemented |
 | | `import <file>` | Import file | ✅ Implemented |
 | | `backup` | Full backup | ✅ Implemented |
@@ -166,7 +193,7 @@ Type 'help' for commands.
 | | `quit` / `exit` | Exit | ✅ Implemented |
 | | `<free text>` | Chat with AI | ✅ Implemented |
 
-**Total: 33/33 commands ✅ — All implemented**
+**Total: 51/51 commands ✅ — All implemented**
 
 ---
 
@@ -946,6 +973,242 @@ OneBrain> help encode
     encode Einstein developed special relativity in 1905
     encode How to make pho: Step 1: Simmer beef bones for 8 hours...
     remember The mitochondria is the powerhouse of the cell
+```
+
+---
+
+#### `deprecate <cid>` — Mark KU as Obsolete
+
+Marks a Knowledge Unit as deprecated (obsolete) without deleting it from storage.
+
+```
+  onebrain〉deprecate a1b2c3d4
+
+  ✓ KU marked as deprecated (obsolete)
+  CID: a1b2c3d4e5f6...
+  Note: KU is still in storage but marked as obsolete.
+        Other nodes may still have copies.
+```
+
+---
+
+#### `edit <cid>` — Create New Version of KU
+
+Displays the current content and prompts for new content. Creates a new KU version linked to the original.
+
+```
+  onebrain〉edit a1b2c3d4
+
+  ── Current KU Content ──
+  Gene type: Fact
+  Content:
+  Einstein developed special relativity in 1905.
+
+  Enter new content (or press Enter to cancel):
+  > Einstein published special relativity in 1905, revolutionizing physics.
+
+  ✓ New version created
+  New CID:      e5f6a7b8...
+  Previous CID: a1b2c3d4...
+  Gene type:    Fact
+  Confidence:   93%
+```
+
+---
+
+#### `delete --gene <type>` — Bulk Delete by Gene Type
+
+Bulk-delete KUs filtered by gene type, with optional date filters.
+
+```
+  onebrain〉delete --gene Draft
+
+  ⚠ Found 15 KUs matching filter:
+    Gene type: Draft
+  Confirm bulk delete? (y/N): y
+
+  ✓ Deleted 15 KUs.
+```
+
+---
+
+#### `tag add/remove/list` — Tag Management
+
+Manage tags on Knowledge Units for organization and quick retrieval.
+
+```
+  onebrain〉tag add a1b2c3d4 important
+
+  ✓ Tag 'important' added to KU a1b2c3d4e5f6...
+
+  onebrain〉tag remove a1b2c3d4 important
+
+  ✓ Tag 'important' removed from KU a1b2c3d4e5f6...
+
+  onebrain〉tag list
+
+  ── Tags (3) ──
+  • important
+  • physics
+  • todo
+```
+
+---
+
+#### `pin [cid]` / `unpin <cid>` — Pin/Unpin KUs
+
+Pin KUs for quick access. Running `pin` without arguments lists all pinned KUs.
+
+```
+  onebrain〉pin a1b2c3d4
+
+  📌 KU pinned: a1b2c3d4
+
+  onebrain〉pin
+
+  ── Pinned KUs (2) ──
+  📌 [a1b2c3d4] (Fact) Einstein developed special relativity...
+  📌 [e5f6a7b8] (Method) How to make pho: Step 1...
+
+  onebrain〉unpin a1b2c3d4
+
+  ✓ KU unpinned: a1b2c3d4
+```
+
+---
+
+#### `watch create/list/delete` — Standing Queries
+
+Create persistent KQL queries that notify you when new matching KUs arrive.
+
+```
+  onebrain〉watch create FIND facts WHERE trust > 0.8
+
+  ✓ Watch created: w_abc123
+  Query: FIND facts WHERE trust > 0.8
+  You will be notified when new matching KUs arrive.
+
+  onebrain〉watch list
+
+  ── Active Watches (1) ──
+  [w_abc123] FIND facts WHERE trust > 0.8 (matches: 12)
+
+  onebrain〉watch delete w_abc123
+
+  ✓ Watch deleted: w_abc123
+```
+
+---
+
+#### `follow/unfollow/following` — Social Commands
+
+Follow other nodes to receive their new KUs in your feed.
+
+```
+  onebrain〉follow 3a4b5c6d7e8f
+
+  ✓ Now following node: 3a4b5c6d7e8f
+
+  onebrain〉following
+
+  ── Following (2 nodes) ──
+  Node ID                           Name                  Since
+  ──────────────────────────────────────────────────────────────────────
+  3a4b5c6d7e8f9a0b  Alice                 2h ago
+  1234567890abcdef  Bob                   3d ago
+
+  onebrain〉unfollow 3a4b5c6d7e8f
+
+  ✓ Unfollowed node: 3a4b5c6d7e8f
+```
+
+---
+
+#### `peer-info <node_id>` — View Peer Profile
+
+View the public profile of a connected peer.
+
+```
+  onebrain〉peer-info 3a4b5c6d7e8f
+
+  ╔═══════════════════════════════════════╗
+  ║         Node Profile                  ║
+  ╚═══════════════════════════════════════╝
+  Node ID:    3a4b5c6d7e8f9a0b...
+  Name:       Alice
+  Trust:      0.85
+  Tier:       Verified
+  KUs:        1,234
+  Expertise:  physics, mathematics
+```
+
+---
+
+#### `share <cid>` — Generate Shareable Link
+
+Generate a shareable link for a Knowledge Unit.
+
+```
+  onebrain〉share a1b2c3d4
+
+  ── Share KU ──
+  CID:       a1b2c3d4e5f6...
+  Gene type: Fact
+  Preview:   Einstein developed special relativity in 1905.
+
+  📋 Shareable link:
+  onebrain://ku/a1b2c3d4e5f6...
+
+  Recipients can use: detail a1b2c3d4e5f6
+```
+
+---
+
+#### `devices` — List Linked Devices
+
+Show all devices linked to your identity, including sync status.
+
+```
+  onebrain〉devices
+
+  ── Devices (2) ──
+  Device ID         Name                  Type      Last Seen     KUs     Status
+  ────────────────────────────────────────────────────────────────────────────────
+  a1b2c3d4e5f6  Desktop-Home          desktop   5m ago        1,234   🟢 up-to-date
+  f6e5d4c3b2a1  Laptop-Work           laptop    2h ago        1,230   🟡 behind
+```
+
+---
+
+#### `sync [status]` — Multi-Device Sync
+
+View the sync status across linked devices.
+
+```
+  onebrain〉sync status
+
+  ── Sync Status ──
+  Status:      🟢 up-to-date
+  Pending:     0 items
+  Last sync:   5m ago
+  Devices:     2
+```
+
+---
+
+#### `blob pin/unpin` — Pin/Unpin Blobs
+
+Pin blobs to prevent garbage collection. Pinned blobs are retained even if no KU references them.
+
+```
+  onebrain〉blob pin a1b2c3d4
+
+  📌 Blob pinned: a1b2c3d4
+  This blob will not be removed by garbage collection.
+
+  onebrain〉blob unpin a1b2c3d4
+
+  ✓ Blob unpinned: a1b2c3d4
 ```
 
 ---

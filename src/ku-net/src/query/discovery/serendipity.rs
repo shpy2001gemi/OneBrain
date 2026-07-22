@@ -96,11 +96,15 @@ impl SerendipityEngine {
 
         let max_concept = concept_counts.values().max().copied().unwrap_or(1) as f64;
         for (&concept, &count) in &concept_counts {
-            self.profile.concept_weights.insert(concept, count as f64 / max_concept);
+            self.profile
+                .concept_weights
+                .insert(concept, count as f64 / max_concept);
         }
         let max_domain = domain_counts.values().max().copied().unwrap_or(1) as f64;
         for (&domain, &count) in &domain_counts {
-            self.profile.domain_weights.insert(domain, count as f64 / max_domain);
+            self.profile
+                .domain_weights
+                .insert(domain, count as f64 / max_domain);
         }
         self.profile.kus_analyzed = kus.len();
     }
@@ -125,22 +129,32 @@ impl SerendipityEngine {
                     novelty,
                     serendipity_score,
                     suggested_query: format!(
-                        "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} SCOPE DHT", primary
+                        "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} SCOPE DHT",
+                        primary
                     ),
-                    description: format!("Serendipitous concept {} (score: {:.2})", primary, serendipity_score),
+                    description: format!(
+                        "Serendipitous concept {} (score: {:.2})",
+                        primary, serendipity_score
+                    ),
                 });
             }
         }
 
-        discoveries.sort_by(|a, b| b.serendipity_score.partial_cmp(&a.serendipity_score)
-            .unwrap_or(std::cmp::Ordering::Equal));
+        discoveries.sort_by(|a, b| {
+            b.serendipity_score
+                .partial_cmp(&a.serendipity_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         discoveries.truncate(self.max_discoveries);
         discoveries
     }
 
     /// Generate exploratory queries for adjacent topics.
     pub fn generate_exploration_queries(&self) -> Vec<String> {
-        let mut exploration: Vec<(u64, f64)> = self.profile.concept_weights.iter()
+        let mut exploration: Vec<(u64, f64)> = self
+            .profile
+            .concept_weights
+            .iter()
             .filter(|(_, &weight)| weight > 0.2 && weight < 0.8)
             .map(|(&concept, &weight)| (concept, weight))
             .collect();
@@ -153,7 +167,9 @@ impl SerendipityEngine {
             .collect()
     }
 
-    pub fn profile(&self) -> &InterestProfile { &self.profile }
+    pub fn profile(&self) -> &InterestProfile {
+        &self.profile
+    }
 
     /// Compute relevance: how related is this KU to user's interests?
     fn compute_relevance(&self, ku: &KuRuntime) -> f64 {
@@ -184,15 +200,21 @@ impl SerendipityEngine {
         }
         let concept_ids = ku.concept_ids();
         let total = concept_ids.len() + ku.epi.bonds.iter().map(|b| b.context.len()).sum::<usize>();
-        if total == 0 { return 0.5; }
+        if total == 0 {
+            return 0.5;
+        }
 
         let mut known = 0;
         for concept_id in &concept_ids {
-            if self.profile.known_concepts.contains(concept_id) { known += 1; }
+            if self.profile.known_concepts.contains(concept_id) {
+                known += 1;
+            }
         }
         for bond in &ku.epi.bonds {
             for &ctx_id in &bond.context {
-                if self.profile.known_concepts.contains(&ctx_id) { known += 1; }
+                if self.profile.known_concepts.contains(&ctx_id) {
+                    known += 1;
+                }
             }
         }
 
@@ -204,11 +226,16 @@ impl SerendipityEngine {
             novelty * 1.2
         } else {
             novelty * 0.5
-        }.min(1.0)
+        }
+        .min(1.0)
     }
 }
 
-impl Default for SerendipityEngine { fn default() -> Self { Self::new() } }
+impl Default for SerendipityEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Tests
@@ -217,15 +244,23 @@ impl Default for SerendipityEngine { fn default() -> Self { Self::new() } }
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ku_core::{KuRuntime, Epigenetics, RelationType};
     use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction};
+    use ku_core::{Epigenetics, KuRuntime, RelationType};
 
     fn make_ku(concept_id: u64, ctx: &[u64]) -> KuRuntime {
         let dna = CoreDna {
-            header: CoreDnaHeader { version: 2, gene_type: 0, has_concept_table: false },
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: false,
+            },
             concept_table: Vec::new(),
             instructions: vec![
-                Instruction::Triple { s: concept_id, p: 133, o: 132 },
+                Instruction::Triple {
+                    s: concept_id,
+                    p: 133,
+                    o: 132,
+                },
                 Instruction::Certainty { level: 9500 },
             ],
         };
@@ -257,7 +292,11 @@ mod tests {
     #[test]
     fn test_known_vs_novel() {
         let mut engine = SerendipityEngine::new();
-        engine.build_profile(&vec![make_simple_ku(1), make_simple_ku(2), make_simple_ku(3)]);
+        engine.build_profile(&vec![
+            make_simple_ku(1),
+            make_simple_ku(2),
+            make_simple_ku(3),
+        ]);
 
         let known_ku = make_ku(1, &[2, 3]);
         assert!(engine.compute_novelty(&known_ku) < 0.5);
@@ -278,8 +317,12 @@ mod tests {
     fn test_exploration_queries() {
         let mut engine = SerendipityEngine::new();
         let mut kus = Vec::new();
-        for _ in 0..5 { kus.push(make_simple_ku(1)); }
-        for _ in 0..3 { kus.push(make_simple_ku(2)); }
+        for _ in 0..5 {
+            kus.push(make_simple_ku(1));
+        }
+        for _ in 0..3 {
+            kus.push(make_simple_ku(2));
+        }
         kus.push(make_simple_ku(3));
         engine.build_profile(&kus);
         let queries = engine.generate_exploration_queries();
@@ -303,7 +346,7 @@ mod tests {
         let candidates = vec![make_ku(50, &[10]), make_ku(99, &[88])];
         let discoveries = engine.evaluate_candidates(&candidates);
         for i in 1..discoveries.len() {
-            assert!(discoveries[i-1].serendipity_score >= discoveries[i].serendipity_score);
+            assert!(discoveries[i - 1].serendipity_score >= discoveries[i].serendipity_score);
         }
     }
 }

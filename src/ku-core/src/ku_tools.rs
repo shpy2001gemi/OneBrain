@@ -8,7 +8,7 @@
 //! Any local model (Gemma 4, Qwen 2.5, Phi-3, Llama 3.1) can use these tools
 //! as long as it supports function calling or structured output.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ============================================================================
 // Tool Definition Types
@@ -48,15 +48,27 @@ pub struct ToolResult {
 
 impl ToolResult {
     pub fn ok(message: impl Into<String>) -> Self {
-        Self { success: true, message: message.into(), data: None }
+        Self {
+            success: true,
+            message: message.into(),
+            data: None,
+        }
     }
 
     pub fn ok_with_data(message: impl Into<String>, data: serde_json::Value) -> Self {
-        Self { success: true, message: message.into(), data: Some(data) }
+        Self {
+            success: true,
+            message: message.into(),
+            data: Some(data),
+        }
     }
 
     pub fn err(message: impl Into<String>) -> Self {
-        Self { success: false, message: message.into(), data: None }
+        Self {
+            success: false,
+            message: message.into(),
+            data: None,
+        }
     }
 }
 
@@ -294,16 +306,19 @@ pub fn tool_definitions_json() -> String {
 /// Returns tool definitions in OpenAI-compatible function calling format.
 pub fn tool_definitions_openai_format() -> serde_json::Value {
     let defs = tool_definitions();
-    let tools: Vec<serde_json::Value> = defs.iter().map(|d| {
-        serde_json::json!({
-            "type": "function",
-            "function": {
-                "name": d.name,
-                "description": d.description,
-                "parameters": d.parameters,
-            }
+    let tools: Vec<serde_json::Value> = defs
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": d.name,
+                    "description": d.description,
+                    "parameters": d.parameters,
+                }
+            })
         })
-    }).collect();
+        .collect();
     serde_json::json!(tools)
 }
 
@@ -406,7 +421,10 @@ mod tests {
         assert_eq!(resolve_unit("degree"), crate::text_parser::UNIT_DEGREE);
         assert_eq!(resolve_unit("m"), crate::text_parser::UNIT_METER);
         assert_eq!(resolve_unit("kg"), crate::text_parser::UNIT_KILOGRAM);
-        assert_eq!(resolve_unit("unknown"), crate::text_parser::UNIT_DIMENSIONLESS);
+        assert_eq!(
+            resolve_unit("unknown"),
+            crate::text_parser::UNIT_DIMENSIONLESS
+        );
         println!("  ✓ Unit resolution correct");
     }
 

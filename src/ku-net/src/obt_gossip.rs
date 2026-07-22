@@ -8,7 +8,7 @@
 //! ## Reference
 //! See `docs/specs/obt/07_GOSSIP_SECURITY.md`.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // §7.1 — Fork Warrant Validation
@@ -39,10 +39,19 @@ impl std::fmt::Display for ForkWarrantError {
         match self {
             Self::IdenticalBlocks => write!(f, "Fork warrant has identical block hashes"),
             Self::InvalidWarrantHash => write!(f, "Warrant hash verification failed"),
-            Self::InvalidSignatureLength { expected, actual } =>
-                write!(f, "Invalid signature length: expected {}, got {}", expected, actual),
-            Self::FutureTimestamp { detected_at, current_ts } =>
-                write!(f, "Warrant timestamp {} is in the future (current: {})", detected_at, current_ts),
+            Self::InvalidSignatureLength { expected, actual } => write!(
+                f,
+                "Invalid signature length: expected {}, got {}",
+                expected, actual
+            ),
+            Self::FutureTimestamp {
+                detected_at,
+                current_ts,
+            } => write!(
+                f,
+                "Warrant timestamp {} is in the future (current: {})",
+                detected_at, current_ts
+            ),
         }
     }
 }
@@ -73,10 +82,16 @@ pub fn validate_fork_warrant(
         return Err(ForkWarrantError::InvalidWarrantHash);
     }
     if signature.len() != 64 {
-        return Err(ForkWarrantError::InvalidSignatureLength { expected: 64, actual: signature.len() });
+        return Err(ForkWarrantError::InvalidSignatureLength {
+            expected: 64,
+            actual: signature.len(),
+        });
     }
     if detected_at > current_ts + 60 {
-        return Err(ForkWarrantError::FutureTimestamp { detected_at, current_ts });
+        return Err(ForkWarrantError::FutureTimestamp {
+            detected_at,
+            current_ts,
+        });
     }
     Ok(())
 }
@@ -92,12 +107,20 @@ pub fn validate_mint_broadcast_relay(
     witness_sig_lengths: &[usize],
     ku_cid: &[u8; 32],
 ) -> Result<(), &'static str> {
-    if obt_amount == 0 { return Err("Mint amount must be > 0"); }
-    if witness_count < 3 { return Err("Insufficient witnesses (need >= 3)"); }
-    for &len in witness_sig_lengths {
-        if len != 64 { return Err("Witness signature must be 64 bytes"); }
+    if obt_amount == 0 {
+        return Err("Mint amount must be > 0");
     }
-    if ku_cid == &[0u8; 32] { return Err("KU CID cannot be all zeros"); }
+    if witness_count < 3 {
+        return Err("Insufficient witnesses (need >= 3)");
+    }
+    for &len in witness_sig_lengths {
+        if len != 64 {
+            return Err("Witness signature must be 64 bytes");
+        }
+    }
+    if ku_cid == &[0u8; 32] {
+        return Err("KU CID cannot be all zeros");
+    }
     Ok(())
 }
 
@@ -118,10 +141,21 @@ pub struct EpochSummaryGossip {
 
 impl EpochSummaryGossip {
     pub fn new(epoch: u64, node_id: [u8; 32]) -> Self {
-        Self { epoch, node_id, stored_ku_count: 0, witnessed_mints: 0, avg_pomv_score: 0.0, alert_level: 0 }
+        Self {
+            epoch,
+            node_id,
+            stored_ku_count: 0,
+            witnessed_mints: 0,
+            avg_pomv_score: 0.0,
+            alert_level: 0,
+        }
     }
-    pub fn is_current(&self, current_epoch: u64) -> bool { self.epoch == current_epoch }
-    pub fn is_stale(&self, current_epoch: u64) -> bool { current_epoch > self.epoch + 1 }
+    pub fn is_current(&self, current_epoch: u64) -> bool {
+        self.epoch == current_epoch
+    }
+    pub fn is_stale(&self, current_epoch: u64) -> bool {
+        current_epoch > self.epoch + 1
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -144,19 +178,50 @@ mod tests {
         input.extend_from_slice(&block_b);
         input.extend_from_slice(&seq.to_le_bytes());
         let wh: [u8; 32] = blake3::hash(&input).into();
-        assert!(validate_fork_warrant(&offender, &block_a, &block_b, seq, &wh, &vec![0u8; 64], 1000, 1000).is_ok());
+        assert!(validate_fork_warrant(
+            &offender,
+            &block_a,
+            &block_b,
+            seq,
+            &wh,
+            &vec![0u8; 64],
+            1000,
+            1000
+        )
+        .is_ok());
     }
 
     #[test]
     fn test_fork_warrant_identical_blocks() {
         let b = [2u8; 32];
-        assert_eq!(validate_fork_warrant(&[1u8; 32], &b, &b, 42, &[0u8; 32], &vec![0u8; 64], 1000, 1000), Err(ForkWarrantError::IdenticalBlocks));
+        assert_eq!(
+            validate_fork_warrant(
+                &[1u8; 32],
+                &b,
+                &b,
+                42,
+                &[0u8; 32],
+                &vec![0u8; 64],
+                1000,
+                1000
+            ),
+            Err(ForkWarrantError::IdenticalBlocks)
+        );
     }
 
     #[test]
     fn test_fork_warrant_bad_hash() {
         assert_eq!(
-            validate_fork_warrant(&[1u8; 32], &[2u8; 32], &[3u8; 32], 42, &[0u8; 32], &vec![0u8; 64], 1000, 1000),
+            validate_fork_warrant(
+                &[1u8; 32],
+                &[2u8; 32],
+                &[3u8; 32],
+                42,
+                &[0u8; 32],
+                &vec![0u8; 64],
+                1000,
+                1000
+            ),
             Err(ForkWarrantError::InvalidWarrantHash)
         );
     }
@@ -174,8 +239,20 @@ mod tests {
         input.extend_from_slice(&seq.to_le_bytes());
         let wh: [u8; 32] = blake3::hash(&input).into();
         assert_eq!(
-            validate_fork_warrant(&offender, &block_a, &block_b, seq, &wh, &vec![0u8; 32], 1000, 1000),
-            Err(ForkWarrantError::InvalidSignatureLength { expected: 64, actual: 32 })
+            validate_fork_warrant(
+                &offender,
+                &block_a,
+                &block_b,
+                seq,
+                &wh,
+                &vec![0u8; 32],
+                1000,
+                1000
+            ),
+            Err(ForkWarrantError::InvalidSignatureLength {
+                expected: 64,
+                actual: 32
+            })
         );
     }
 
@@ -192,8 +269,20 @@ mod tests {
         input.extend_from_slice(&seq.to_le_bytes());
         let wh: [u8; 32] = blake3::hash(&input).into();
         assert_eq!(
-            validate_fork_warrant(&offender, &block_a, &block_b, seq, &wh, &vec![0u8; 64], 2000, 1000),
-            Err(ForkWarrantError::FutureTimestamp { detected_at: 2000, current_ts: 1000 })
+            validate_fork_warrant(
+                &offender,
+                &block_a,
+                &block_b,
+                seq,
+                &wh,
+                &vec![0u8; 64],
+                2000,
+                1000
+            ),
+            Err(ForkWarrantError::FutureTimestamp {
+                detected_at: 2000,
+                current_ts: 1000
+            })
         );
     }
 

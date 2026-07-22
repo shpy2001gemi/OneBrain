@@ -133,11 +133,7 @@ impl ReplicationManager {
     /// 4. From remaining, find first node with tier >= 3 → `tier_anchored[1]`
     /// 5. From remaining, pick first available → `diversity[0]`
     /// 6. If any category is empty, fill from XOR overflow
-    pub fn select_targets(
-        &self,
-        cid: &[u8; 32],
-        candidates: &[(u64, u8)],
-    ) -> ReplicationTargets {
+    pub fn select_targets(&self, cid: &[u8; 32], candidates: &[(u64, u8)]) -> ReplicationTargets {
         if candidates.is_empty() {
             return ReplicationTargets {
                 xor_closest: Vec::new(),
@@ -301,9 +297,8 @@ impl ReplicationManager {
 
     /// Clean up completed pending stores (all targets ACKed).
     pub fn cleanup_completed(&mut self) {
-        self.pending_stores.retain(|_, pending| {
-            pending.acked_nodes.len() < pending.target_nodes.len()
-        });
+        self.pending_stores
+            .retain(|_, pending| pending.acked_nodes.len() < pending.target_nodes.len());
     }
 }
 
@@ -317,11 +312,11 @@ mod tests {
         (1..=count as u64)
             .map(|id| {
                 let tier = match id {
-                    1..=3 => 0,   // Leaf nodes
-                    4..=6 => 1,   // Contributors
-                    7..=8 => 2,   // Local SP
-                    9 => 3,       // District SP
-                    10 => 4,      // Country SP
+                    1..=3 => 0, // Leaf nodes
+                    4..=6 => 1, // Contributors
+                    7..=8 => 2, // Local SP
+                    9 => 3,     // District SP
+                    10 => 4,    // Country SP
                     _ => 0,
                 };
                 (id, tier)
@@ -615,7 +610,14 @@ mod tests {
         let rm = ReplicationManager::new(1);
         // Duplicate node IDs in candidates
         let candidates: Vec<(u64, u8)> = vec![
-            (1, 0), (1, 0), (2, 1), (3, 2), (4, 3), (5, 0), (6, 1), (7, 2),
+            (1, 0),
+            (1, 0),
+            (2, 1),
+            (3, 2),
+            (4, 3),
+            (5, 0),
+            (6, 1),
+            (7, 2),
         ];
         let cid = make_cid(0x42);
 
@@ -632,9 +634,18 @@ mod tests {
     #[test]
     fn test_replication_status_eq() {
         assert_eq!(ReplicationStatus::Healthy, ReplicationStatus::Healthy);
-        assert_eq!(ReplicationStatus::Degraded(5), ReplicationStatus::Degraded(5));
-        assert_ne!(ReplicationStatus::Degraded(5), ReplicationStatus::Degraded(4));
-        assert_eq!(ReplicationStatus::Critical(1), ReplicationStatus::Critical(1));
+        assert_eq!(
+            ReplicationStatus::Degraded(5),
+            ReplicationStatus::Degraded(5)
+        );
+        assert_ne!(
+            ReplicationStatus::Degraded(5),
+            ReplicationStatus::Degraded(4)
+        );
+        assert_eq!(
+            ReplicationStatus::Critical(1),
+            ReplicationStatus::Critical(1)
+        );
         assert_eq!(ReplicationStatus::Unknown, ReplicationStatus::Unknown);
         assert_ne!(ReplicationStatus::Healthy, ReplicationStatus::Degraded(7));
     }

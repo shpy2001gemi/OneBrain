@@ -4,13 +4,13 @@
 //! Supports FIND, CREATE, UPDATE, DEPRECATE, WATCH, and EXPLAIN queries.
 
 use nom::{
-    IResult,
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_while, take_while1},
     character::complete::{char, digit1, multispace0, multispace1},
     combinator::{map, map_res, opt, value},
     multi::separated_list1,
     sequence::{delimited, preceded, terminated, tuple},
+    IResult,
 };
 
 use crate::ast::*;
@@ -23,11 +23,10 @@ use crate::ast::*;
 pub fn parse_query(input: &str) -> Result<Query, ParseError> {
     let input = input.trim();
 
-    let (remaining, query) = query(input)
-        .map_err(|e| ParseError {
-            message: format!("Parse error: {:?}", e),
-            position: 0,
-        })?;
+    let (remaining, query) = query(input).map_err(|e| ParseError {
+        message: format!("Parse error: {:?}", e),
+        position: 0,
+    })?;
 
     let remaining = remaining.trim();
     if !remaining.is_empty() {
@@ -49,7 +48,11 @@ pub struct ParseError {
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "KQL parse error at position {}: {}", self.position, self.message)
+        write!(
+            f,
+            "KQL parse error at position {}: {}",
+            self.position, self.message
+        )
     }
 }
 
@@ -76,10 +79,7 @@ fn find_query(input: &str) -> IResult<&str, FindQuery> {
     let (input, _) = multispace1(input)?;
 
     // Check for HISTORY keyword
-    let (input, history) = opt(preceded(
-        tag_no_case("HISTORY"),
-        value(true, multispace1),
-    ))(input)?;
+    let (input, history) = opt(preceded(tag_no_case("HISTORY"), value(true, multispace1)))(input)?;
     let history = history.unwrap_or(false);
 
     let (input, pattern) = pattern(input)?;
@@ -96,16 +96,19 @@ fn find_query(input: &str) -> IResult<&str, FindQuery> {
     let (input, _) = multispace0(input)?;
     let (input, temporal) = opt(parse_temporal_clause)(input)?;
 
-    Ok((input, FindQuery {
-        pattern,
-        where_clause,
-        scope: scope.unwrap_or(Scope::Auto),
-        return_clause,
-        limit,
-        order_by,
-        temporal,
-        history,
-    }))
+    Ok((
+        input,
+        FindQuery {
+            pattern,
+            where_clause,
+            scope: scope.unwrap_or(Scope::Auto),
+            return_clause,
+            limit,
+            order_by,
+            temporal,
+            history,
+        },
+    ))
 }
 
 // ─── CREATE ────────────────────────────────────────────────────────────────
@@ -125,29 +128,37 @@ fn create_query(input: &str) -> IResult<&str, CreateQuery> {
         let (rest, _) = multispace0(rest)?;
         let (rest, signed) = opt(signed_clause)(rest)?;
 
-        return Ok((rest, CreateQuery {
-            properties: Vec::new(),
-            pattern,
-            gene_type: Some(gene_type),
-            certainty,
-            instructions,
-            signed_by: signed.unwrap_or_default(),
-        }));
+        return Ok((
+            rest,
+            CreateQuery {
+                properties: Vec::new(),
+                pattern,
+                gene_type: Some(gene_type),
+                certainty,
+                instructions,
+                signed_by: signed.unwrap_or_default(),
+            },
+        ));
     }
 
     // Legacy property-bag syntax: CREATE (k:KU { gene_type: "Fact", ... })
     let (input, signed) = opt(signed_clause)(input)?;
 
-    Ok((input, CreateQuery {
-        properties: pattern.nodes.first()
-            .map(|n| n.properties.clone())
-            .unwrap_or_default(),
-        pattern,
-        gene_type: None,
-        certainty: None,
-        instructions: Vec::new(),
-        signed_by: signed.unwrap_or_default(),
-    }))
+    Ok((
+        input,
+        CreateQuery {
+            properties: pattern
+                .nodes
+                .first()
+                .map(|n| n.properties.clone())
+                .unwrap_or_default(),
+            pattern,
+            gene_type: None,
+            certainty: None,
+            instructions: Vec::new(),
+            signed_by: signed.unwrap_or_default(),
+        },
+    ))
 }
 
 // ─── Tier 2 CREATE FROM TEXT ───────────────────────────────────────────────
@@ -196,7 +207,12 @@ fn create_from_text_query(input: &str) -> IResult<&str, CreateFromTextQuery> {
             "COMPOSITE" => KqlGeneType::Composite,
             "NORMATIVE" => KqlGeneType::Normative,
             "DEFINITION" => KqlGeneType::Definition,
-            _ => return Err(nom::Err::Error(nom::error::Error::new(i, nom::error::ErrorKind::Tag))),
+            _ => {
+                return Err(nom::Err::Error(nom::error::Error::new(
+                    i,
+                    nom::error::ErrorKind::Tag,
+                )))
+            }
         };
         Ok((i, gene))
     })(input)?;
@@ -204,12 +220,15 @@ fn create_from_text_query(input: &str) -> IResult<&str, CreateFromTextQuery> {
     let (input, _) = multispace0(input)?;
     let (input, signed) = opt(signed_clause)(input)?;
 
-    Ok((input, CreateFromTextQuery {
-        text: text.to_string(),
-        model: model.to_string(),
-        gene_hint,
-        signed_by: signed.unwrap_or_default(),
-    }))
+    Ok((
+        input,
+        CreateFromTextQuery {
+            text: text.to_string(),
+            model: model.to_string(),
+            gene_hint,
+            signed_by: signed.unwrap_or_default(),
+        },
+    ))
 }
 
 // ─── Tier 1 CREATE helpers ─────────────────────────────────────────────────
@@ -242,9 +261,8 @@ fn certainty_attr(input: &str) -> IResult<&str, u16> {
 fn instruction_block(input: &str) -> IResult<&str, Vec<CreateClause>> {
     let (input, _) = tag("{")(input)?;
     let (input, _) = multispace0(input)?;
-    let (input, clauses) = nom::multi::many0(
-        delimited(multispace0, create_clause, multispace0)
-    )(input)?;
+    let (input, clauses) =
+        nom::multi::many0(delimited(multispace0, create_clause, multispace0))(input)?;
     let (input, _) = tag("}")(input)?;
     Ok((input, clauses))
 }
@@ -275,7 +293,7 @@ fn concept_name(input: &str) -> IResult<&str, String> {
         quoted_string,
         map(
             nom::bytes::complete::take_while1(|c: char| c.is_alphanumeric() || c == '_'),
-            |s: &str| s.to_string()
+            |s: &str| s.to_string(),
         ),
     ))(input)
 }
@@ -394,7 +412,14 @@ fn step_clause(input: &str) -> IResult<&str, CreateClause> {
     let (input, target) = concept_name(input)?;
     let (input, _) = multispace0(input)?;
     let (input, _) = tag(")")(input)?;
-    Ok((input, CreateClause::Step { ord, action, target }))
+    Ok((
+        input,
+        CreateClause::Step {
+            ord,
+            action,
+            target,
+        },
+    ))
 }
 
 fn precond_clause(input: &str) -> IResult<&str, CreateClause> {
@@ -480,11 +505,14 @@ fn watch_query(input: &str) -> IResult<&str, WatchQuery> {
     let (input, _) = multispace0(input)?;
     let (input, notify) = opt(notify_clause)(input)?;
 
-    Ok((input, WatchQuery {
-        find,
-        event: event.unwrap_or(WatchEvent::Any),
-        notify: notify.unwrap_or_default(),
-    }))
+    Ok((
+        input,
+        WatchQuery {
+            find,
+            event: event.unwrap_or(WatchEvent::Any),
+            notify: notify.unwrap_or_default(),
+        },
+    ))
 }
 
 fn on_clause(input: &str) -> IResult<&str, WatchEvent> {
@@ -517,21 +545,22 @@ fn update_query(input: &str) -> IResult<&str, UpdateQuery> {
     let (input, _) = multispace1(input)?;
     let (input, _) = tag_no_case("SET")(input)?;
     let (input, _) = multispace1(input)?;
-    let (input, assignments) = separated_list1(
-        delimited(multispace0, char(','), multispace0),
-        assignment,
-    )(input)?;
+    let (input, assignments) =
+        separated_list1(delimited(multispace0, char(','), multispace0), assignment)(input)?;
     let (input, _) = multispace0(input)?;
     let (input, where_clause) = opt(where_clause)(input)?;
     let (input, _) = multispace0(input)?;
     let (input, signed) = signed_clause(input)?;
 
-    Ok((input, UpdateQuery {
-        pattern: pat,
-        set_clause: assignments,
-        where_clause,
-        signed_by: signed,
-    }))
+    Ok((
+        input,
+        UpdateQuery {
+            pattern: pat,
+            set_clause: assignments,
+            where_clause,
+            signed_by: signed,
+        },
+    ))
 }
 
 fn assignment(input: &str) -> IResult<&str, Assignment> {
@@ -556,12 +585,15 @@ fn deprecate_query(input: &str) -> IResult<&str, DeprecateQuery> {
     let (input, _) = multispace0(input)?;
     let (input, signed) = signed_clause(input)?;
 
-    Ok((input, DeprecateQuery {
-        pattern: pat,
-        where_clause,
-        reason,
-        signed_by: signed,
-    }))
+    Ok((
+        input,
+        DeprecateQuery {
+            pattern: pat,
+            where_clause,
+            reason,
+            signed_by: signed,
+        },
+    ))
 }
 
 fn reason_clause(input: &str) -> IResult<&str, String> {
@@ -623,11 +655,14 @@ fn pattern(input: &str) -> IResult<&str, Pattern> {
 fn edge_pattern(input: &str, from_idx: usize) -> IResult<&str, EdgePattern> {
     // Detect direction prefix
     let (input, direction) = if input.starts_with("<-[") {
-        (&input[2..], EdgeDirection::Incoming)  // skip "<-", keep "["
+        (&input[2..], EdgeDirection::Incoming) // skip "<-", keep "["
     } else if input.starts_with("-[") {
-        (&input[1..], EdgeDirection::Outgoing)  // skip "-", keep "["
+        (&input[1..], EdgeDirection::Outgoing) // skip "-", keep "["
     } else {
-        return Err(nom::Err::Error(nom::error::Error::new(input, nom::error::ErrorKind::Tag)));
+        return Err(nom::Err::Error(nom::error::Error::new(
+            input,
+            nom::error::ErrorKind::Tag,
+        )));
     };
 
     // Parse [...] content
@@ -653,14 +688,17 @@ fn edge_pattern(input: &str, from_idx: usize) -> IResult<&str, EdgePattern> {
         input
     };
 
-    Ok((input, EdgePattern {
-        alias,
-        edge_types,
-        direction,
-        from: from_idx,
-        to: 0, // will be set by pattern()
-        path_depth,
-    }))
+    Ok((
+        input,
+        EdgePattern {
+            alias,
+            edge_types,
+            direction,
+            from: from_idx,
+            to: 0, // will be set by pattern()
+            path_depth,
+        },
+    ))
 }
 
 /// Parse `*min..max` path depth (e.g., `*1..3`, `*2..5`)
@@ -669,7 +707,13 @@ fn parse_path_depth(input: &str) -> IResult<&str, PathDepth> {
     let (input, min) = nom::character::complete::u32(input)?;
     let (input, _) = tag("..")(input)?;
     let (input, max) = nom::character::complete::u32(input)?;
-    Ok((input, PathDepth { min: min as usize, max: max as usize }))
+    Ok((
+        input,
+        PathDepth {
+            min: min as usize,
+            max: max as usize,
+        },
+    ))
 }
 
 /// Parse an edge alias: identifier followed by `:`
@@ -711,16 +755,14 @@ fn parse_edge_types(input: &str) -> IResult<&str, Vec<String>> {
     let mut types = vec![first.to_string()];
     let mut remaining = input;
     loop {
-        match tag::<&str, &str, nom::error::Error<&str>>("|") (remaining) {
-            Ok((rest, _)) => {
-                match identifier(rest) {
-                    Ok((rest2, next)) => {
-                        types.push(next.to_string());
-                        remaining = rest2;
-                    }
-                    Err(_) => break,
+        match tag::<&str, &str, nom::error::Error<&str>>("|")(remaining) {
+            Ok((rest, _)) => match identifier(rest) {
+                Ok((rest2, next)) => {
+                    types.push(next.to_string());
+                    remaining = rest2;
                 }
-            }
+                Err(_) => break,
+            },
             Err(_) => break,
         }
     }
@@ -758,11 +800,14 @@ fn node_pattern(input: &str) -> IResult<&str, NodePattern> {
     let (input, _) = multispace0(input)?;
     let (input, _) = char(')')(input)?;
 
-    Ok((input, NodePattern {
-        alias: alias.map(|s| s.to_string()),
-        label,
-        properties: props.unwrap_or_default(),
-    }))
+    Ok((
+        input,
+        NodePattern {
+            alias: alias.map(|s| s.to_string()),
+            label,
+            properties: props.unwrap_or_default(),
+        },
+    ))
 }
 
 fn node_label(input: &str) -> IResult<&str, NodeLabel> {
@@ -775,10 +820,7 @@ fn node_label(input: &str) -> IResult<&str, NodeLabel> {
 fn property_map(input: &str) -> IResult<&str, Vec<Property>> {
     delimited(
         char('{'),
-        separated_list1(
-            delimited(multispace0, char(','), multispace0),
-            property,
-        ),
+        separated_list1(delimited(multispace0, char(','), multispace0), property),
         preceded(multispace0, char('}')),
     )(input)
 }
@@ -791,10 +833,13 @@ fn property(input: &str) -> IResult<&str, Property> {
     let (input, _) = multispace0(input)?;
     let (input, val) = parse_value(input)?;
 
-    Ok((input, Property {
-        key: key.to_string(),
-        value: val,
-    }))
+    Ok((
+        input,
+        Property {
+            key: key.to_string(),
+            value: val,
+        },
+    ))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -867,7 +912,14 @@ fn comparison_condition(input: &str) -> IResult<&str, Condition> {
     let (input, _) = multispace0(input)?;
     let (input, val) = parse_value(input)?;
 
-    Ok((input, Condition::Comparison { field, op, value: val }))
+    Ok((
+        input,
+        Condition::Comparison {
+            field,
+            op,
+            value: val,
+        },
+    ))
 }
 
 fn comp_op(input: &str) -> IResult<&str, CompOp> {
@@ -902,10 +954,7 @@ fn scope_clause(input: &str) -> IResult<&str, Scope> {
 fn return_clause(input: &str) -> IResult<&str, Vec<ReturnExpr>> {
     let (input, _) = tag_no_case("RETURN")(input)?;
     let (input, _) = multispace1(input)?;
-    separated_list1(
-        delimited(multispace0, char(','), multispace0),
-        return_expr,
-    )(input)
+    separated_list1(delimited(multispace0, char(','), multispace0), return_expr)(input)
 }
 
 fn return_expr(input: &str) -> IResult<&str, ReturnExpr> {
@@ -926,11 +975,14 @@ fn aggregate_expr(input: &str) -> IResult<&str, ReturnExpr> {
         identifier,
     ))(input)?;
 
-    Ok((input, ReturnExpr::Aggregate {
-        func,
-        field,
-        alias: alias.map(|s| s.to_string()),
-    }))
+    Ok((
+        input,
+        ReturnExpr::Aggregate {
+            func,
+            field,
+            alias: alias.map(|s| s.to_string()),
+        },
+    ))
 }
 
 fn agg_func(input: &str) -> IResult<&str, AggFunc> {
@@ -948,10 +1000,7 @@ fn order_clause(input: &str) -> IResult<&str, Vec<OrderExpr>> {
     let (input, _) = multispace1(input)?;
     let (input, _) = tag_no_case("BY")(input)?;
     let (input, _) = multispace1(input)?;
-    separated_list1(
-        delimited(multispace0, char(','), multispace0),
-        order_expr,
-    )(input)
+    separated_list1(delimited(multispace0, char(','), multispace0), order_expr)(input)
 }
 
 fn order_expr(input: &str) -> IResult<&str, OrderExpr> {
@@ -962,10 +1011,13 @@ fn order_expr(input: &str) -> IResult<&str, OrderExpr> {
         value(false, tag_no_case("ASC")),
     )))(input)?;
 
-    Ok((input, OrderExpr {
-        field,
-        descending: desc.unwrap_or(false),
-    }))
+    Ok((
+        input,
+        OrderExpr {
+            field,
+            descending: desc.unwrap_or(false),
+        },
+    ))
 }
 
 fn limit_clause(input: &str) -> IResult<&str, u32> {
@@ -979,10 +1031,7 @@ fn signed_clause(input: &str) -> IResult<&str, String> {
     let (input, _) = multispace1(input)?;
     let (input, _) = tag_no_case("BY")(input)?;
     let (input, _) = multispace1(input)?;
-    let (input, signer) = alt((
-        quoted_string,
-        map(identifier, |s| s.to_string()),
-    ))(input)?;
+    let (input, signer) = alt((quoted_string, map(identifier, |s| s.to_string())))(input)?;
     Ok((input, signer))
 }
 
@@ -996,7 +1045,10 @@ fn identifier(input: &str) -> IResult<&str, &str> {
 
 fn field_path(input: &str) -> IResult<&str, FieldPath> {
     let (input, segments) = separated_list1(char('.'), identifier)(input)?;
-    Ok((input, FieldPath::new(segments.into_iter().map(String::from).collect())))
+    Ok((
+        input,
+        FieldPath::new(segments.into_iter().map(String::from).collect()),
+    ))
 }
 
 fn parse_value(input: &str) -> IResult<&str, Value> {
@@ -1015,7 +1067,12 @@ fn parse_number(input: &str) -> IResult<&str, Value> {
     // Check for float
     if let Ok((input, _)) = char::<&str, nom::error::Error<&str>>('.')(input) {
         let (input, frac) = digit1(input)?;
-        let s = format!("{}{}.{}", if neg.is_some() { "-" } else { "" }, digits, frac);
+        let s = format!(
+            "{}{}.{}",
+            if neg.is_some() { "-" } else { "" },
+            digits,
+            frac
+        );
         let f: f64 = s.parse().unwrap_or(0.0);
         return Ok((input, Value::Float(f)));
     }
@@ -1049,7 +1106,7 @@ mod tests {
                 assert_eq!(f.pattern.nodes[0].alias, Some("k".to_string()));
                 assert_eq!(f.pattern.nodes[0].label, NodeLabel::KU);
                 assert_eq!(f.scope, Scope::Auto);
-            },
+            }
             _ => panic!("Expected Find query"),
         }
     }
@@ -1065,10 +1122,10 @@ mod tests {
                         assert_eq!(field.segments, vec!["k", "trust_score"]);
                         assert_eq!(op, CompOp::Gt);
                         assert_eq!(value, Value::Integer(8000));
-                    },
+                    }
                     _ => panic!("Expected comparison"),
                 }
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1080,25 +1137,22 @@ mod tests {
             Query::Find(f) => {
                 assert_eq!(f.scope, Scope::Local);
                 assert_eq!(f.limit, Some(10));
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
 
     #[test]
     fn test_parse_find_with_and_condition() {
-        let q = parse_query(
-            "FIND (k:KU) WHERE k.trust_score > 5000 AND k.certainty >= 9000"
-        ).unwrap();
+        let q =
+            parse_query("FIND (k:KU) WHERE k.trust_score > 5000 AND k.certainty >= 9000").unwrap();
         match q {
-            Query::Find(f) => {
-                match f.where_clause.unwrap() {
-                    Condition::And(left, right) => {
-                        assert!(matches!(*left, Condition::Comparison { .. }));
-                        assert!(matches!(*right, Condition::Comparison { .. }));
-                    },
-                    _ => panic!("Expected AND"),
+            Query::Find(f) => match f.where_clause.unwrap() {
+                Condition::And(left, right) => {
+                    assert!(matches!(*left, Condition::Comparison { .. }));
+                    assert!(matches!(*right, Condition::Comparison { .. }));
                 }
+                _ => panic!("Expected AND"),
             },
             _ => panic!("Expected Find"),
         }
@@ -1106,39 +1160,33 @@ mod tests {
 
     #[test]
     fn test_parse_find_with_return() {
-        let q = parse_query(
-            "FIND (k:KU) RETURN k.trust_score, k.certainty"
-        ).unwrap();
+        let q = parse_query("FIND (k:KU) RETURN k.trust_score, k.certainty").unwrap();
         match q {
             Query::Find(f) => {
                 let ret = f.return_clause.unwrap();
                 assert_eq!(ret.len(), 2);
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
 
     #[test]
     fn test_parse_find_with_order() {
-        let q = parse_query(
-            "FIND (k:KU) ORDER BY k.trust_score DESC LIMIT 5"
-        ).unwrap();
+        let q = parse_query("FIND (k:KU) ORDER BY k.trust_score DESC LIMIT 5").unwrap();
         match q {
             Query::Find(f) => {
                 let order = f.order_by.unwrap();
                 assert_eq!(order.len(), 1);
                 assert!(order[0].descending);
                 assert_eq!(f.limit, Some(5));
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
 
     #[test]
     fn test_parse_find_with_properties() {
-        let q = parse_query(
-            r#"FIND (k:KU {gene_type: "Fact", certainty: 9500})"#
-        ).unwrap();
+        let q = parse_query(r#"FIND (k:KU {gene_type: "Fact", certainty: 9500})"#).unwrap();
         match q {
             Query::Find(f) => {
                 let props = &f.pattern.nodes[0].properties;
@@ -1147,22 +1195,21 @@ mod tests {
                 assert_eq!(props[0].value, Value::Text("Fact".to_string()));
                 assert_eq!(props[1].key, "certainty");
                 assert_eq!(props[1].value, Value::Integer(9500));
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
 
     #[test]
     fn test_parse_create() {
-        let q = parse_query(
-            r#"CREATE (k:KU {gene_type: "Fact"}) SIGNED BY "did:key:z6Mk...""#
-        ).unwrap();
+        let q = parse_query(r#"CREATE (k:KU {gene_type: "Fact"}) SIGNED BY "did:key:z6Mk...""#)
+            .unwrap();
         match q {
             Query::Create(c) => {
                 assert_eq!(c.pattern.nodes[0].label, NodeLabel::KU);
                 assert!(!c.properties.is_empty());
                 assert!(c.signed_by.starts_with("did:key"));
-            },
+            }
             _ => panic!("Expected Create"),
         }
     }
@@ -1171,11 +1218,9 @@ mod tests {
     fn test_parse_explain() {
         let q = parse_query("EXPLAIN FIND (k:KU) SCOPE DHT").unwrap();
         match q {
-            Query::Explain(inner) => {
-                match *inner {
-                    Query::Find(f) => assert_eq!(f.scope, Scope::Dht),
-                    _ => panic!("Expected Find inside Explain"),
-                }
+            Query::Explain(inner) => match *inner {
+                Query::Find(f) => assert_eq!(f.scope, Scope::Dht),
+                _ => panic!("Expected Find inside Explain"),
             },
             _ => panic!("Expected Explain"),
         }
@@ -1183,9 +1228,7 @@ mod tests {
 
     #[test]
     fn test_parse_aggregate() {
-        let q = parse_query(
-            "FIND (k:KU) RETURN COUNT(k.id) AS total"
-        ).unwrap();
+        let q = parse_query("FIND (k:KU) RETURN COUNT(k.id) AS total").unwrap();
         match q {
             Query::Find(f) => {
                 let ret = f.return_clause.unwrap();
@@ -1194,10 +1237,10 @@ mod tests {
                     ReturnExpr::Aggregate { func, alias, .. } => {
                         assert_eq!(*func, AggFunc::Count);
                         assert_eq!(alias.as_deref(), Some("total"));
-                    },
+                    }
                     _ => panic!("Expected Aggregate"),
                 }
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1214,7 +1257,7 @@ mod tests {
         match q {
             Query::Find(f) => {
                 assert_eq!(f.pattern.nodes[0].label, NodeLabel::Concept);
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1223,13 +1266,11 @@ mod tests {
     fn test_parse_exists_condition() {
         let q = parse_query("FIND (k:KU) WHERE EXISTS k.trust").unwrap();
         match q {
-            Query::Find(f) => {
-                match f.where_clause.unwrap() {
-                    Condition::Exists(field) => {
-                        assert_eq!(field.segments, vec!["k", "trust"]);
-                    },
-                    _ => panic!("Expected Exists"),
+            Query::Find(f) => match f.where_clause.unwrap() {
+                Condition::Exists(field) => {
+                    assert_eq!(field.segments, vec!["k", "trust"]);
                 }
+                _ => panic!("Expected Exists"),
             },
             _ => panic!("Expected Find"),
         }
@@ -1239,13 +1280,11 @@ mod tests {
     fn test_parse_negative_number() {
         let q = parse_query("FIND (k:KU) WHERE k.score > -100").unwrap();
         match q {
-            Query::Find(f) => {
-                match f.where_clause.unwrap() {
-                    Condition::Comparison { value, .. } => {
-                        assert_eq!(value, Value::Integer(-100));
-                    },
-                    _ => panic!("Expected comparison"),
+            Query::Find(f) => match f.where_clause.unwrap() {
+                Condition::Comparison { value, .. } => {
+                    assert_eq!(value, Value::Integer(-100));
                 }
+                _ => panic!("Expected comparison"),
             },
             _ => panic!("Expected Find"),
         }
@@ -1255,13 +1294,11 @@ mod tests {
     fn test_parse_float_value() {
         let q = parse_query("FIND (k:KU) WHERE k.confidence > 0.95").unwrap();
         match q {
-            Query::Find(f) => {
-                match f.where_clause.unwrap() {
-                    Condition::Comparison { value, .. } => {
-                        assert_eq!(value, Value::Float(0.95));
-                    },
-                    _ => panic!("Expected comparison"),
+            Query::Find(f) => match f.where_clause.unwrap() {
+                Condition::Comparison { value, .. } => {
+                    assert_eq!(value, Value::Float(0.95));
                 }
+                _ => panic!("Expected comparison"),
             },
             _ => panic!("Expected Find"),
         }
@@ -1296,7 +1333,7 @@ mod tests {
                 assert_eq!(w.find.pattern.nodes[0].label, NodeLabel::KU);
                 assert_eq!(w.event, WatchEvent::Any);
                 assert_eq!(w.notify, "");
-            },
+            }
             _ => panic!("Expected Watch query"),
         }
     }
@@ -1311,7 +1348,7 @@ mod tests {
                 assert!(w.find.where_clause.is_some());
                 assert_eq!(w.event, WatchEvent::Create);
                 assert_eq!(w.notify, "https://hook.example.com");
-            },
+            }
             _ => panic!("Expected Watch query"),
         }
     }
@@ -1323,21 +1360,20 @@ mod tests {
             Query::Watch(w) => {
                 assert_eq!(w.event, WatchEvent::Update);
                 assert_eq!(w.notify, "");
-            },
+            }
             _ => panic!("Expected Watch query"),
         }
     }
 
     #[test]
     fn test_parse_watch_on_deprecate() {
-        let q = parse_query(
-            r#"WATCH FIND (k:KU) ON DEPRECATE NOTIFY "grpc://alerts:50051""#
-        ).unwrap();
+        let q =
+            parse_query(r#"WATCH FIND (k:KU) ON DEPRECATE NOTIFY "grpc://alerts:50051""#).unwrap();
         match q {
             Query::Watch(w) => {
                 assert_eq!(w.event, WatchEvent::Deprecate);
                 assert_eq!(w.notify, "grpc://alerts:50051");
-            },
+            }
             _ => panic!("Expected Watch query"),
         }
     }
@@ -1346,9 +1382,9 @@ mod tests {
 
     #[test]
     fn test_parse_update_single_set() {
-        let q = parse_query(
-            r#"UPDATE (k:KU) SET k.trust_score = 9000 SIGNED BY "did:key:z6Mk...""#
-        ).unwrap();
+        let q =
+            parse_query(r#"UPDATE (k:KU) SET k.trust_score = 9000 SIGNED BY "did:key:z6Mk...""#)
+                .unwrap();
         match q {
             Query::Update(u) => {
                 assert_eq!(u.set_clause.len(), 1);
@@ -1356,7 +1392,7 @@ mod tests {
                 assert_eq!(u.set_clause[0].value, Value::Integer(9000));
                 assert!(u.where_clause.is_none());
                 assert!(u.signed_by.starts_with("did:key"));
-            },
+            }
             _ => panic!("Expected Update query"),
         }
     }
@@ -1374,20 +1410,18 @@ mod tests {
                 assert_eq!(u.set_clause[1].value, Value::Integer(9800));
                 assert!(u.where_clause.is_some());
                 assert_eq!(u.signed_by, "alice");
-            },
+            }
             _ => panic!("Expected Update query"),
         }
     }
 
     #[test]
     fn test_parse_update_string_value() {
-        let q = parse_query(
-            r#"UPDATE (k:KU) SET k.title = "new title" SIGNED BY "bob""#
-        ).unwrap();
+        let q = parse_query(r#"UPDATE (k:KU) SET k.title = "new title" SIGNED BY "bob""#).unwrap();
         match q {
             Query::Update(u) => {
                 assert_eq!(u.set_clause[0].value, Value::Text("new title".to_string()));
-            },
+            }
             _ => panic!("Expected Update query"),
         }
     }
@@ -1396,16 +1430,15 @@ mod tests {
 
     #[test]
     fn test_parse_deprecate_simple() {
-        let q = parse_query(
-            r#"DEPRECATE (k:KU) REASON "outdated information" SIGNED BY "admin""#
-        ).unwrap();
+        let q = parse_query(r#"DEPRECATE (k:KU) REASON "outdated information" SIGNED BY "admin""#)
+            .unwrap();
         match q {
             Query::Deprecate(d) => {
                 assert_eq!(d.pattern.nodes[0].label, NodeLabel::KU);
                 assert!(d.where_clause.is_none());
                 assert_eq!(d.reason, "outdated information");
                 assert_eq!(d.signed_by, "admin");
-            },
+            }
             _ => panic!("Expected Deprecate query"),
         }
     }
@@ -1423,12 +1456,12 @@ mod tests {
                         assert_eq!(field.segments, vec!["k", "trust_score"]);
                         assert_eq!(op, CompOp::Lt);
                         assert_eq!(value, Value::Integer(1000));
-                    },
+                    }
                     _ => panic!("Expected comparison"),
                 }
                 assert_eq!(d.reason, "low trust");
                 assert!(d.signed_by.starts_with("did:key"));
-            },
+            }
             _ => panic!("Expected Deprecate query"),
         }
     }
@@ -1439,13 +1472,11 @@ mod tests {
     fn test_parse_explain_watch() {
         let q = parse_query("EXPLAIN WATCH FIND (k:KU) ON ANY").unwrap();
         match q {
-            Query::Explain(inner) => {
-                match *inner {
-                    Query::Watch(w) => {
-                        assert_eq!(w.event, WatchEvent::Any);
-                    },
-                    _ => panic!("Expected Watch inside Explain"),
+            Query::Explain(inner) => match *inner {
+                Query::Watch(w) => {
+                    assert_eq!(w.event, WatchEvent::Any);
                 }
+                _ => panic!("Expected Watch inside Explain"),
             },
             _ => panic!("Expected Explain"),
         }
@@ -1453,17 +1484,14 @@ mod tests {
 
     #[test]
     fn test_parse_explain_update() {
-        let q = parse_query(
-            r#"EXPLAIN UPDATE (k:KU) SET k.score = 100 SIGNED BY "alice""#
-        ).unwrap();
+        let q =
+            parse_query(r#"EXPLAIN UPDATE (k:KU) SET k.score = 100 SIGNED BY "alice""#).unwrap();
         match q {
-            Query::Explain(inner) => {
-                match *inner {
-                    Query::Update(u) => {
-                        assert_eq!(u.set_clause.len(), 1);
-                    },
-                    _ => panic!("Expected Update inside Explain"),
+            Query::Explain(inner) => match *inner {
+                Query::Update(u) => {
+                    assert_eq!(u.set_clause.len(), 1);
                 }
+                _ => panic!("Expected Update inside Explain"),
             },
             _ => panic!("Expected Explain"),
         }
@@ -1471,17 +1499,13 @@ mod tests {
 
     #[test]
     fn test_parse_explain_deprecate() {
-        let q = parse_query(
-            r#"EXPLAIN DEPRECATE (k:KU) REASON "test" SIGNED BY "bob""#
-        ).unwrap();
+        let q = parse_query(r#"EXPLAIN DEPRECATE (k:KU) REASON "test" SIGNED BY "bob""#).unwrap();
         match q {
-            Query::Explain(inner) => {
-                match *inner {
-                    Query::Deprecate(d) => {
-                        assert_eq!(d.reason, "test");
-                    },
-                    _ => panic!("Expected Deprecate inside Explain"),
+            Query::Explain(inner) => match *inner {
+                Query::Deprecate(d) => {
+                    assert_eq!(d.reason, "test");
                 }
+                _ => panic!("Expected Deprecate inside Explain"),
             },
             _ => panic!("Expected Explain"),
         }
@@ -1492,8 +1516,9 @@ mod tests {
     #[test]
     fn test_parse_tier1_create_fact() {
         let q = parse_query(
-            r#"CREATE (k:KU) FACT certainty=9000 { TRIPLE(water, boils_at, 100_celsius) }"#
-        ).unwrap();
+            r#"CREATE (k:KU) FACT certainty=9000 { TRIPLE(water, boils_at, 100_celsius) }"#,
+        )
+        .unwrap();
         match q {
             Query::Create(c) => {
                 assert_eq!(c.gene_type, Some(KqlGeneType::Fact));
@@ -1504,10 +1529,10 @@ mod tests {
                         assert_eq!(s, "water");
                         assert_eq!(p, "boils_at");
                         assert_eq!(o, "100_celsius");
-                    },
+                    }
                     _ => panic!("Expected Triple"),
                 }
-            },
+            }
             _ => panic!("Expected Create"),
         }
     }
@@ -1520,17 +1545,21 @@ mod tests {
                 STEP(2, kick, legs)
                 PRECOND(know_swimming)
                 EFFECT(move_forward)
-            }"#
-        ).unwrap();
+            }"#,
+        )
+        .unwrap();
         match q {
             Query::Create(c) => {
                 assert_eq!(c.gene_type, Some(KqlGeneType::Procedure));
                 assert_eq!(c.certainty, Some(7000));
                 assert_eq!(c.instructions.len(), 4);
-                assert!(matches!(&c.instructions[0], CreateClause::Step { ord: 1, .. }));
+                assert!(matches!(
+                    &c.instructions[0],
+                    CreateClause::Step { ord: 1, .. }
+                ));
                 assert!(matches!(&c.instructions[2], CreateClause::Precond { .. }));
                 assert!(matches!(&c.instructions[3], CreateClause::Effect { .. }));
-            },
+            }
             _ => panic!("Expected Create"),
         }
     }
@@ -1549,8 +1578,9 @@ mod tests {
                 TOLERANCE(temp, 100.0, 0.5)
                 RANGE(ph, 6.5, 7.5)
                 CONSTRAINT(age, gt, min_age)
-            }"#
-        ).unwrap();
+            }"#,
+        )
+        .unwrap();
         match q {
             Query::Create(c) => {
                 assert_eq!(c.instructions.len(), 10);
@@ -1563,23 +1593,25 @@ mod tests {
                 assert!(matches!(&c.instructions[6], CreateClause::Causal { .. }));
                 assert!(matches!(&c.instructions[7], CreateClause::Tolerance { .. }));
                 assert!(matches!(&c.instructions[8], CreateClause::Range { .. }));
-                assert!(matches!(&c.instructions[9], CreateClause::Constraint { .. }));
-            },
+                assert!(matches!(
+                    &c.instructions[9],
+                    CreateClause::Constraint { .. }
+                ));
+            }
             _ => panic!("Expected Create"),
         }
     }
 
     #[test]
     fn test_parse_tier1_no_certainty() {
-        let q = parse_query(
-            r#"CREATE (k:KU) HYPOTHESIS { TRIPLE(idea, might_cause, result) }"#
-        ).unwrap();
+        let q = parse_query(r#"CREATE (k:KU) HYPOTHESIS { TRIPLE(idea, might_cause, result) }"#)
+            .unwrap();
         match q {
             Query::Create(c) => {
                 assert_eq!(c.gene_type, Some(KqlGeneType::Hypothesis));
                 assert_eq!(c.certainty, None);
                 assert_eq!(c.instructions.len(), 1);
-            },
+            }
             _ => panic!("Expected Create"),
         }
     }
@@ -1587,18 +1619,17 @@ mod tests {
     #[test]
     fn test_parse_tier1_quoted_concept_names() {
         let q = parse_query(
-            r#"CREATE (k:KU) FACT { TRIPLE("water molecule", "boils at", "100 celsius") }"#
-        ).unwrap();
+            r#"CREATE (k:KU) FACT { TRIPLE("water molecule", "boils at", "100 celsius") }"#,
+        )
+        .unwrap();
         match q {
-            Query::Create(c) => {
-                match &c.instructions[0] {
-                    CreateClause::Triple { s, p, o } => {
-                        assert_eq!(s, "water molecule");
-                        assert_eq!(p, "boils at");
-                        assert_eq!(o, "100 celsius");
-                    },
-                    _ => panic!("Expected Triple"),
+            Query::Create(c) => match &c.instructions[0] {
+                CreateClause::Triple { s, p, o } => {
+                    assert_eq!(s, "water molecule");
+                    assert_eq!(p, "boils at");
+                    assert_eq!(o, "100 celsius");
                 }
+                _ => panic!("Expected Triple"),
             },
             _ => panic!("Expected Create"),
         }
@@ -1645,7 +1676,7 @@ mod tests {
                 assert_eq!(f.pattern.edges[0].from, 0);
                 assert_eq!(f.pattern.edges[0].to, 1);
                 assert!(f.pattern.edges[0].alias.is_none());
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1659,7 +1690,7 @@ mod tests {
                 assert_eq!(f.pattern.edges.len(), 1);
                 assert_eq!(f.pattern.edges[0].direction, EdgeDirection::Incoming);
                 assert_eq!(f.pattern.edges[0].edge_types, vec!["Causes"]);
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1671,7 +1702,7 @@ mod tests {
             Query::Find(f) => {
                 assert_eq!(f.pattern.edges[0].alias, Some("r".to_string()));
                 assert_eq!(f.pattern.edges[0].edge_types, vec!["Extends"]);
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1681,8 +1712,11 @@ mod tests {
         let q = parse_query("FIND (k:KU)-[:Extends|Supplements]->(m:KU)").unwrap();
         match q {
             Query::Find(f) => {
-                assert_eq!(f.pattern.edges[0].edge_types, vec!["Extends", "Supplements"]);
-            },
+                assert_eq!(
+                    f.pattern.edges[0].edge_types,
+                    vec!["Extends", "Supplements"]
+                );
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1696,7 +1730,7 @@ mod tests {
                 assert_eq!(depth.min, 1);
                 assert_eq!(depth.max, 3);
                 assert_eq!(f.pattern.edges[0].edge_types, vec!["Extends"]);
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1714,7 +1748,7 @@ mod tests {
                 assert_eq!(f.pattern.edges[1].from, 1);
                 assert_eq!(f.pattern.edges[1].to, 2);
                 assert_eq!(f.pattern.edges[1].edge_types, vec!["Causes"]);
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1726,7 +1760,7 @@ mod tests {
             Query::Find(f) => {
                 assert_eq!(f.pattern.edges[0].edge_types.len(), 0);
                 assert!(f.pattern.edges[0].alias.is_none());
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1740,7 +1774,7 @@ mod tests {
             Query::Find(f) => {
                 assert_eq!(f.temporal, Some(TemporalClause::AtTime(1719900000)));
                 assert!(!f.history);
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1750,8 +1784,14 @@ mod tests {
         let q = parse_query("FIND (k:KU) DURING 1719800000 1719900000").unwrap();
         match q {
             Query::Find(f) => {
-                assert_eq!(f.temporal, Some(TemporalClause::During { from: 1719800000, to: 1719900000 }));
-            },
+                assert_eq!(
+                    f.temporal,
+                    Some(TemporalClause::During {
+                        from: 1719800000,
+                        to: 1719900000
+                    })
+                );
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1763,7 +1803,7 @@ mod tests {
             Query::Find(f) => {
                 assert!(f.history);
                 assert_eq!(f.pattern.nodes[0].alias, Some("k".to_string()));
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1775,7 +1815,7 @@ mod tests {
             Query::Find(f) => {
                 assert!(f.history);
                 assert!(f.where_clause.is_some());
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1789,7 +1829,7 @@ mod tests {
             Query::Find(f) => {
                 assert_eq!(f.pattern.edges.len(), 1);
                 assert_eq!(f.temporal, Some(TemporalClause::AtTime(1719900000)));
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1803,8 +1843,14 @@ mod tests {
             Query::Find(f) => {
                 assert_eq!(f.pattern.edges.len(), 1);
                 assert!(f.where_clause.is_some());
-                assert_eq!(f.temporal, Some(TemporalClause::During { from: 1719800000, to: 1719900000 }));
-            },
+                assert_eq!(
+                    f.temporal,
+                    Some(TemporalClause::During {
+                        from: 1719800000,
+                        to: 1719900000
+                    })
+                );
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1822,7 +1868,7 @@ mod tests {
                 assert_eq!(f.limit, Some(10));
                 assert_eq!(f.temporal, None);
                 assert!(!f.history);
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }
@@ -1842,7 +1888,7 @@ mod tests {
                 assert_eq!(f.scope, Scope::Local);
                 assert_eq!(f.limit, Some(5));
                 assert_eq!(f.temporal, Some(TemporalClause::AtTime(1719900000)));
-            },
+            }
             _ => panic!("Expected Find"),
         }
     }

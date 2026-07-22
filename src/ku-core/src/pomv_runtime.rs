@@ -9,16 +9,16 @@
 //!
 //! This is the "tick" function that each node runs locally.
 
+use crate::ecosystem::{EcosystemAnalyzer, KUNicheProfile, NicheId, NicheStats};
+use crate::entropy::EntropyCalculator;
+use crate::epistemic_engine;
+use crate::immune::ImmuneEngine;
 use crate::metabolism::{KUMetabolism, MetabolismEvent, DEFAULT_HALF_LIFE_SECS};
 use crate::metabolism_store::MetabolismStore;
-use crate::epistemic_engine;
-use crate::entropy::EntropyCalculator;
+use crate::pomv::{PomvCalculator, PomvScore, PomvSignals, PomvWeights, DEFAULT_WEIGHTS};
 use crate::prediction::PredictionRegistry;
-use crate::synaptic::{SynapticMap, CentralityCalculator};
-use crate::immune::ImmuneEngine;
-use crate::ecosystem::{EcosystemAnalyzer, KUNicheProfile, NicheId, NicheStats};
-use crate::pomv::{PomvCalculator, PomvSignals, PomvScore, PomvWeights, DEFAULT_WEIGHTS};
-use crate::types::{TrustSection, EpistemicStatus};
+use crate::synaptic::{CentralityCalculator, SynapticMap};
+use crate::types::{EpistemicStatus, TrustSection};
 
 use std::collections::HashMap;
 
@@ -141,21 +141,12 @@ impl PomvRuntime {
     }
 
     /// Record a metabolism event for a KU.
-    pub fn record_event(
-        &mut self,
-        cid: [u8; 32],
-        event: MetabolismEvent,
-        timestamp: u64,
-    ) {
+    pub fn record_event(&mut self, cid: [u8; 32], event: MetabolismEvent, timestamp: u64) {
         self.metabolism_store.record_event(cid, event, timestamp);
     }
 
     /// Merge remote metabolism data (from gossip).
-    pub fn merge_remote_metabolism(
-        &mut self,
-        cid: [u8; 32],
-        remote: &KUMetabolism,
-    ) {
+    pub fn merge_remote_metabolism(&mut self, cid: [u8; 32], remote: &KUMetabolism) {
         self.metabolism_store.merge_remote(cid, remote);
     }
 
@@ -190,8 +181,8 @@ impl PomvRuntime {
         let survival = ImmuneEngine::survival_score(state.attacks_survived, is_alive);
 
         // Signal 5: Synaptic centrality — simplified (local only)
-        let synaptic = state.synaptic.total_strength()
-            / (state.synaptic.bond_count() as f32 + 1.0).sqrt();
+        let synaptic =
+            state.synaptic.total_strength() / (state.synaptic.bond_count() as f32 + 1.0).sqrt();
         let synaptic_normalized = synaptic.clamp(0.0, 1.0);
 
         // Signal 6: Niche fitness
@@ -252,19 +243,19 @@ impl PomvRuntime {
                             state.entropy_at_creation,
                             state.bridge_at_creation,
                             now.saturating_sub(state.created_at),
-                        )
+                        ),
                     ),
-                    survival_score: ImmuneEngine::survival_to_u16(
-                        ImmuneEngine::survival_score(
-                            state.attacks_survived,
-                            metabolism.is_alive(now, self.config.half_life_secs),
-                        )
-                    ),
+                    survival_score: ImmuneEngine::survival_to_u16(ImmuneEngine::survival_score(
+                        state.attacks_survived,
+                        metabolism.is_alive(now, self.config.half_life_secs),
+                    )),
                     synaptic_centrality: CentralityCalculator::centrality_to_u16(
                         state.synaptic.total_strength()
-                            / (state.synaptic.bond_count() as f32 + 1.0).sqrt()
+                            / (state.synaptic.bond_count() as f32 + 1.0).sqrt(),
                     ),
-                    niche_fitness: EcosystemAnalyzer::fitness_to_u16(score.contributions.niche_fitness),
+                    niche_fitness: EcosystemAnalyzer::fitness_to_u16(
+                        score.contributions.niche_fitness,
+                    ),
                     pomv_total: score.total,
                 };
 
@@ -280,7 +271,11 @@ impl PomvRuntime {
         }
 
         // Sort by PoMV score descending (for reward distribution)
-        results.sort_by(|a, b| b.1.total.partial_cmp(&a.1.total).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.1.total
+                .partial_cmp(&a.1.total)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results
     }
 
@@ -289,7 +284,8 @@ impl PomvRuntime {
         // gc_dead returns count, not CID list. We gc states separately.
         let removed_count = self.metabolism_store.gc_dead(now);
         // Also remove state entries for KUs no longer in metabolism store
-        self.ku_states.retain(|cid, _| self.metabolism_store.get(cid).is_some());
+        self.ku_states
+            .retain(|cid, _| self.metabolism_store.get(cid).is_some());
         removed_count
     }
 
@@ -346,7 +342,10 @@ mod tests {
     }
 
     fn test_config() -> PomvConfig {
-        PomvConfig { node_id: NODE_A, ..PomvConfig::default() }
+        PomvConfig {
+            node_id: NODE_A,
+            ..PomvConfig::default()
+        }
     }
 
     #[test]
@@ -386,7 +385,11 @@ mod tests {
 
         assert!(result.is_some());
         let (score, _status) = result.unwrap();
-        assert!(score.total > 0.0, "Score should be positive: {}", score.total);
+        assert!(
+            score.total > 0.0,
+            "Score should be positive: {}",
+            score.total
+        );
     }
 
     #[test]
@@ -447,8 +450,11 @@ mod tests {
         rt.register_ku(cid, T0, vec![], 0.5, 0.5);
 
         // Add a bond
-        rt.ku_states.get_mut(&cid).unwrap()
-            .synaptic.reinforce(test_cid(2), crate::synaptic::BondReason::CoRetrieval, T0);
+        rt.ku_states.get_mut(&cid).unwrap().synaptic.reinforce(
+            test_cid(2),
+            crate::synaptic::BondReason::CoRetrieval,
+            T0,
+        );
 
         let before = rt.ku_states[&cid].synaptic.total_strength();
         rt.evaporate_bonds();
@@ -474,7 +480,11 @@ mod tests {
 
         let merged = rt.metabolism_store.get(&cid).unwrap();
         let total = merged.total_engagement();
-        assert!(total >= 3, "Merged should have local + remote events: {}", total);
+        assert!(
+            total >= 3,
+            "Merged should have local + remote events: {}",
+            total
+        );
     }
 
     #[test]
@@ -507,7 +517,11 @@ mod tests {
         let result = rt.compute_ku(&cid, T0 + 10000, &niche_stats).unwrap();
 
         // Should have a meaningful score
-        assert!(result.0.total > 0.1, "Active KU should have score > 0.1: {}", result.0.total);
+        assert!(
+            result.0.total > 0.1,
+            "Active KU should have score > 0.1: {}",
+            result.0.total
+        );
 
         // 4. Apply to TrustSection
         let mut trust = TrustSection::default();
@@ -531,7 +545,11 @@ mod tests {
             rt.record_event(cid, MetabolismEvent::QueryHit, T0 + i * 10);
         }
         for i in 0..5 {
-            rt.record_event(cid, MetabolismEvent::Retrieval { dwell_ms: 10000 }, T0 + 1000 + i * 100);
+            rt.record_event(
+                cid,
+                MetabolismEvent::Retrieval { dwell_ms: 10000 },
+                T0 + 1000 + i * 100,
+            );
         }
         for _ in 0..3 {
             rt.record_event(cid, MetabolismEvent::Citation, T0 + 2000);
@@ -543,7 +561,10 @@ mod tests {
         assert!(!results.is_empty());
         let new_status = results[0].2.epistemic_status;
         // Should have advanced beyond Rumor
-        assert!(new_status as u8 > EpistemicStatus::Rumor as u8,
-            "Status should advance: {:?}", new_status);
+        assert!(
+            new_status as u8 > EpistemicStatus::Rumor as u8,
+            "Status should advance: {:?}",
+            new_status
+        );
     }
 }

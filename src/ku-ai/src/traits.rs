@@ -3,9 +3,9 @@
 //! Async trait interfaces for model backends and embedding providers.
 //! These traits decouple the AI layer from any specific backend implementation.
 
-use async_trait::async_trait;
 use crate::error::AiError;
 use crate::types::*;
+use async_trait::async_trait;
 
 /// Trait for a model backend that supports chat, structured output, and tool calling.
 ///

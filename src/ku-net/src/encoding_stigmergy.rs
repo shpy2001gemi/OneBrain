@@ -15,14 +15,13 @@
 //!                  (1 + activity_level)
 //! ```
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // Import centralized constants from constants.rs
 use crate::constants::{
-    ENCODING_PHEROMONE_ALPHA_WAIT as ALPHA_WAIT,
-    ENCODING_PHEROMONE_BETA_SLOTS as BETA_SLOTS,
-    ENCODING_PHEROMONE_GAMMA_REWARD as GAMMA_REWARD,
+    ENCODING_PHEROMONE_ALPHA_WAIT as ALPHA_WAIT, ENCODING_PHEROMONE_BETA_SLOTS as BETA_SLOTS,
     ENCODING_PHEROMONE_EVAPORATION as EVAPORATION_RATE,
+    ENCODING_PHEROMONE_GAMMA_REWARD as GAMMA_REWARD,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -104,8 +103,7 @@ impl JobPheromone {
         let slots = self.remaining_slots as f32;
         let reward_normalized = (self.reward as f32).min(100.0) / 100.0;
 
-        let numerator =
-            ALPHA_WAIT * wait_hours.min(168.0) / 168.0  // Normalize to 1 week max
+        let numerator = ALPHA_WAIT * wait_hours.min(168.0) / 168.0  // Normalize to 1 week max
             + BETA_SLOTS * slots / 3.0                   // Normalize to max 3 slots
             + GAMMA_REWARD * reward_normalized;
 
@@ -122,11 +120,7 @@ impl JobPheromone {
 /// * `pheromone` — The job's pheromone signal
 /// * `verifier_load` — How many jobs this verifier is currently working on
 /// * `max_concurrent` — Maximum concurrent jobs a verifier should take
-pub fn should_claim(
-    pheromone: &JobPheromone,
-    verifier_load: usize,
-    max_concurrent: usize,
-) -> f32 {
+pub fn should_claim(pheromone: &JobPheromone, verifier_load: usize, max_concurrent: usize) -> f32 {
     if verifier_load >= max_concurrent {
         return 0.0; // Verifier is fully loaded
     }
@@ -174,8 +168,8 @@ mod tests {
 
     #[test]
     fn test_attractiveness_increases_with_wait() {
-        let short_wait = make_pheromone(3600, 3, 5);      // 1 hour
-        let long_wait = make_pheromone(24 * 3600, 3, 5);   // 24 hours
+        let short_wait = make_pheromone(3600, 3, 5); // 1 hour
+        let long_wait = make_pheromone(24 * 3600, 3, 5); // 24 hours
 
         assert!(
             long_wait.attractiveness() > short_wait.attractiveness(),
@@ -227,7 +221,7 @@ mod tests {
     #[test]
     fn test_rank_jobs() {
         let mut jobs = vec![
-            make_pheromone(3600, 1, 5),      // Low attractiveness
+            make_pheromone(3600, 1, 5),       // Low attractiveness
             make_pheromone(24 * 3600, 3, 50), // High attractiveness
             make_pheromone(7200, 2, 10),      // Medium
         ];

@@ -24,7 +24,7 @@
 
 use std::collections::HashMap;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::constants::*;
 
@@ -131,8 +131,7 @@ impl FedRDeltaPush {
 
     /// Deserialize from CBOR bytes.
     pub fn from_cbor(data: &[u8]) -> Result<Self, String> {
-        ciborium::from_reader(data)
-            .map_err(|e| format!("FedRDeltaPush CBOR decode error: {e}"))
+        ciborium::from_reader(data).map_err(|e| format!("FedRDeltaPush CBOR decode error: {e}"))
     }
 }
 
@@ -147,8 +146,7 @@ impl FedRDeltaPull {
 
     /// Deserialize from CBOR bytes.
     pub fn from_cbor(data: &[u8]) -> Result<Self, String> {
-        ciborium::from_reader(data)
-            .map_err(|e| format!("FedRDeltaPull CBOR decode error: {e}"))
+        ciborium::from_reader(data).map_err(|e| format!("FedRDeltaPull CBOR decode error: {e}"))
     }
 }
 
@@ -163,8 +161,7 @@ impl GraphStatsMessage {
 
     /// Deserialize from CBOR bytes.
     pub fn from_cbor(data: &[u8]) -> Result<Self, String> {
-        ciborium::from_reader(data)
-            .map_err(|e| format!("GraphStatsMessage CBOR decode error: {e}"))
+        ciborium::from_reader(data).map_err(|e| format!("GraphStatsMessage CBOR decode error: {e}"))
     }
 }
 
@@ -223,7 +220,9 @@ pub fn dispatch_graph_message(msg_type: u8, payload: &[u8]) -> Result<GraphGossi
             let msg = DreamReportMessage::from_cbor(payload)?;
             Ok(GraphGossipMessage::Dream(msg))
         }
-        _ => Err(format!("Unknown graph gossip message type: 0x{msg_type:02X}")),
+        _ => Err(format!(
+            "Unknown graph gossip message type: 0x{msg_type:02X}"
+        )),
     }
 }
 
@@ -232,8 +231,8 @@ pub fn graph_gossip_message_name(code: u8) -> Option<&'static str> {
     match code {
         MSG_FEDR_DELTA_PUSH => Some("FedRDeltaPush"),
         MSG_FEDR_DELTA_PULL => Some("FedRDeltaPull"),
-        MSG_GRAPH_STATS     => Some("GraphStatsMessage"),
-        MSG_DREAM_REPORT    => Some("DreamReportMessage"),
+        MSG_GRAPH_STATS => Some("GraphStatsMessage"),
+        MSG_DREAM_REPORT => Some("DreamReportMessage"),
         _ => None,
     }
 }
@@ -349,7 +348,10 @@ mod tests {
         let decoded = DreamReportMessage::from_cbor(&bytes).unwrap();
         assert_eq!(decoded.peer_id, original.peer_id);
         assert_eq!(decoded.bonds_reinforced, 500);
-        assert_eq!((decoded.total_weight_added - 12.75).abs() < f64::EPSILON, true);
+        assert_eq!(
+            (decoded.total_weight_added - 12.75).abs() < f64::EPSILON,
+            true
+        );
         assert_eq!(decoded.associations_created, 30);
         assert_eq!(decoded.bonds_pruned, 120);
     }
@@ -404,7 +406,9 @@ mod tests {
     fn test_dispatch_unknown_type() {
         let result = dispatch_graph_message(0xFF, &[]);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Unknown graph gossip message type"));
+        assert!(result
+            .unwrap_err()
+            .contains("Unknown graph gossip message type"));
     }
 
     #[test]

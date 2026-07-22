@@ -171,28 +171,115 @@ pub fn default_dict() -> ConceptDict {
     let mut id: ConceptId = 200;
     let sports_words = [
         // Vietnamese
-        "bơi", "ếch", "bơi ếch", "kỹ thuật", "tay", "chân", "đạp", "quạt",
-        "hít", "thở", "thở ra", "nước", "mặt nước", "đầu", "cơ thể",
-        "nhịp", "phối hợp", "lực", "tốc độ", "khoảng cách", "góc",
-        "vai", "hông", "khuỷu tay", "lòng bàn tay", "ngón chân",
-        "bước", "giai đoạn", "chuẩn bị", "thực hiện", "hoàn thành",
-        "bắt đầu", "kết thúc", "lặp lại", "duỗi", "co", "gập",
-        "xoay", "đẩy", "kéo", "trượt", "nổi",
+        "bơi",
+        "ếch",
+        "bơi ếch",
+        "kỹ thuật",
+        "tay",
+        "chân",
+        "đạp",
+        "quạt",
+        "hít",
+        "thở",
+        "thở ra",
+        "nước",
+        "mặt nước",
+        "đầu",
+        "cơ thể",
+        "nhịp",
+        "phối hợp",
+        "lực",
+        "tốc độ",
+        "khoảng cách",
+        "góc",
+        "vai",
+        "hông",
+        "khuỷu tay",
+        "lòng bàn tay",
+        "ngón chân",
+        "bước",
+        "giai đoạn",
+        "chuẩn bị",
+        "thực hiện",
+        "hoàn thành",
+        "bắt đầu",
+        "kết thúc",
+        "lặp lại",
+        "duỗi",
+        "co",
+        "gập",
+        "xoay",
+        "đẩy",
+        "kéo",
+        "trượt",
+        "nổi",
         // English
-        "swimming", "breaststroke", "technique", "arm", "leg", "kick",
-        "stroke", "breathe", "inhale", "exhale", "water", "surface",
-        "head", "body", "rhythm", "coordination", "force", "speed",
-        "distance", "angle", "shoulder", "hip", "elbow", "palm",
-        "toe", "step", "phase", "preparation", "execution", "completion",
-        "start", "end", "repeat", "extend", "contract", "bend",
-        "rotate", "push", "pull", "glide", "float",
+        "swimming",
+        "breaststroke",
+        "technique",
+        "arm",
+        "leg",
+        "kick",
+        "stroke",
+        "breathe",
+        "inhale",
+        "exhale",
+        "water",
+        "surface",
+        "head",
+        "body",
+        "rhythm",
+        "coordination",
+        "force",
+        "speed",
+        "distance",
+        "angle",
+        "shoulder",
+        "hip",
+        "elbow",
+        "palm",
+        "toe",
+        "step",
+        "phase",
+        "preparation",
+        "execution",
+        "completion",
+        "start",
+        "end",
+        "repeat",
+        "extend",
+        "contract",
+        "bend",
+        "rotate",
+        "push",
+        "pull",
+        "glide",
+        "float",
         // General knowledge
-        "temperature", "nhiệt độ", "pressure", "áp suất",
-        "weight", "trọng lượng", "height", "chiều cao",
-        "width", "chiều rộng", "length", "chiều dài",
-        "time", "thời gian", "frequency", "tần số",
-        "energy", "năng lượng", "power", "công suất",
-        "velocity", "vận tốc", "acceleration", "gia tốc",
+        "temperature",
+        "nhiệt độ",
+        "pressure",
+        "áp suất",
+        "weight",
+        "trọng lượng",
+        "height",
+        "chiều cao",
+        "width",
+        "chiều rộng",
+        "length",
+        "chiều dài",
+        "time",
+        "thời gian",
+        "frequency",
+        "tần số",
+        "energy",
+        "năng lượng",
+        "power",
+        "công suất",
+        "velocity",
+        "vận tốc",
+        "acceleration",
+        "gia tốc",
     ];
     for w in &sports_words {
         d.insert(w, id);
@@ -229,7 +316,11 @@ fn detect_unit(token: &str) -> Option<(&str, ConceptId)> {
         if lower.ends_with(suffix) {
             let num_part = &token[..token.len() - suffix.len()];
             // Check there's actually a number before the suffix
-            if !num_part.is_empty() && num_part.bytes().all(|b| b.is_ascii_digit() || b == b'.' || b == b'-') {
+            if !num_part.is_empty()
+                && num_part
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || b == b'.' || b == b'-')
+            {
                 return Some((num_part, unit_id));
             }
         }
@@ -384,8 +475,8 @@ fn try_parse_step(line: &str, dict: &mut ConceptDict) -> Option<Instruction> {
     let ord: u8 = num_str.parse().unwrap_or(1);
 
     // The rest is "action target"
-    let after_num = after_num
-        .trim_start_matches(|c: char| c == ':' || c == '.' || c == ')' || c == ' ');
+    let after_num =
+        after_num.trim_start_matches(|c: char| c == ':' || c == '.' || c == ')' || c == ' ');
 
     let words: Vec<&str> = after_num.split_whitespace().collect();
     let (action_text, target_text) = if words.len() >= 2 {
@@ -697,30 +788,6 @@ fn split_first_token(s: &str) -> (&str, &str) {
 
 // ============================================================================
 // Post-processing: link Tolerance to preceding Quantity
-// ============================================================================
-
-/// After parsing, link orphan Tolerance instructions back to the most recent
-/// Quantity by copying its value and subject.
-// TODO: Wire this function into the parsing pipeline or remove once confirmed unnecessary.
-#[allow(dead_code)]
-fn link_tolerances(instructions: &mut [Instruction]) {
-    let mut last_quantity: Option<(ConceptId, NumericValue)> = None;
-
-    for instr in instructions.iter_mut() {
-        match instr {
-            Instruction::Quantity { s, value, .. } => {
-                last_quantity = Some((*s, *value));
-            }
-            Instruction::Tolerance { s, value, .. } if *s == UNKNOWN_CONCEPT => {
-                if let Some((qs, qv)) = last_quantity {
-                    *s = qs;
-                    *value = qv;
-                }
-            }
-            _ => {}
-        }
-    }
-}
 
 // ============================================================================
 // Tests
@@ -732,7 +799,9 @@ mod tests {
     use crate::core_dna::Instruction;
 
     fn has_triple(instrs: &[Instruction], pred: ConceptId) -> bool {
-        instrs.iter().any(|i| matches!(i, Instruction::Triple { p, .. } if *p == pred))
+        instrs
+            .iter()
+            .any(|i| matches!(i, Instruction::Triple { p, .. } if *p == pred))
     }
 
     fn has_step(instrs: &[Instruction]) -> bool {
@@ -740,15 +809,21 @@ mod tests {
     }
 
     fn has_part_of(instrs: &[Instruction]) -> bool {
-        instrs.iter().any(|i| matches!(i, Instruction::PartOf { .. }))
+        instrs
+            .iter()
+            .any(|i| matches!(i, Instruction::PartOf { .. }))
     }
 
     fn has_quantity(instrs: &[Instruction]) -> bool {
-        instrs.iter().any(|i| matches!(i, Instruction::Quantity { .. }))
+        instrs
+            .iter()
+            .any(|i| matches!(i, Instruction::Quantity { .. }))
     }
 
     fn has_tolerance(instrs: &[Instruction]) -> bool {
-        instrs.iter().any(|i| matches!(i, Instruction::Tolerance { .. }))
+        instrs
+            .iter()
+            .any(|i| matches!(i, Instruction::Tolerance { .. }))
     }
 
     fn count_of<F>(instrs: &[Instruction], pred: F) -> usize
@@ -781,7 +856,11 @@ mod tests {
             matches!(i, Instruction::PartOf { .. })
         });
         println!("  PartOf count: {}", part_count);
-        assert!(part_count >= 3, "Expected at least 3 PartOf, got {}", part_count);
+        assert!(
+            part_count >= 3,
+            "Expected at least 3 PartOf, got {}",
+            part_count
+        );
     }
 
     #[test]
@@ -791,14 +870,20 @@ mod tests {
         let dna = parse_text_to_core_dna(text, &dict).unwrap();
         println!("Vietnamese STEP: {:?}", dna.instructions);
         assert!(has_step(&dna.instructions));
-        let step_count = count_of(&dna.instructions, |i| {
-            matches!(i, Instruction::Step { .. })
-        });
+        let step_count = count_of(&dna.instructions, |i| matches!(i, Instruction::Step { .. }));
         assert_eq!(step_count, 3);
         // Verify step ordering
-        let steps: Vec<u8> = dna.instructions.iter().filter_map(|i| {
-            if let Instruction::Step { ord, .. } = i { Some(*ord) } else { None }
-        }).collect();
+        let steps: Vec<u8> = dna
+            .instructions
+            .iter()
+            .filter_map(|i| {
+                if let Instruction::Step { ord, .. } = i {
+                    Some(*ord)
+                } else {
+                    None
+                }
+            })
+            .collect();
         assert_eq!(steps, vec![1, 2, 3]);
     }
 
@@ -823,7 +908,11 @@ mod tests {
         let part_count = count_of(&dna.instructions, |i| {
             matches!(i, Instruction::PartOf { .. })
         });
-        assert!(part_count >= 3, "Expected at least 3 PartOf, got {}", part_count);
+        assert!(
+            part_count >= 3,
+            "Expected at least 3 PartOf, got {}",
+            part_count
+        );
     }
 
     #[test]
@@ -833,9 +922,7 @@ mod tests {
         let dna = parse_text_to_core_dna(text, &dict).unwrap();
         println!("English STEP: {:?}", dna.instructions);
         assert!(has_step(&dna.instructions));
-        let step_count = count_of(&dna.instructions, |i| {
-            matches!(i, Instruction::Step { .. })
-        });
+        let step_count = count_of(&dna.instructions, |i| matches!(i, Instruction::Step { .. }));
         assert_eq!(step_count, 3);
     }
 
@@ -849,7 +936,10 @@ mod tests {
         println!("Quantity with unit: {:?}", dna.instructions);
         assert!(has_quantity(&dna.instructions));
         // Check the value is F32(35.2)
-        let qty = dna.instructions.iter().find(|i| matches!(i, Instruction::Quantity { .. }));
+        let qty = dna
+            .instructions
+            .iter()
+            .find(|i| matches!(i, Instruction::Quantity { .. }));
         if let Some(Instruction::Quantity { value, unit, .. }) = qty {
             assert_eq!(*unit, UNIT_DEGREE);
             let v = value.as_f64();
@@ -919,7 +1009,11 @@ mod tests {
     fn test_default_dict_size() {
         let dict = default_dict();
         println!("Default dict size: {} entries", dict.len());
-        assert!(dict.len() >= 80, "Expected at least 80 entries, got {}", dict.len());
+        assert!(
+            dict.len() >= 80,
+            "Expected at least 80 entries, got {}",
+            dict.len()
+        );
     }
 
     #[test]
@@ -947,8 +1041,10 @@ Góc gập khuỷu tay khoảng 90°"#;
 
         let dna = parse_text_to_core_dna(text, &dict).unwrap();
         println!("\n=== Bơi Ếch Full Parse ===");
-        println!("Header: version={}, gene_type={}, has_concept_table={}",
-            dna.header.version, dna.header.gene_type, dna.header.has_concept_table);
+        println!(
+            "Header: version={}, gene_type={}, has_concept_table={}",
+            dna.header.version, dna.header.gene_type, dna.header.has_concept_table
+        );
         for (i, instr) in dna.instructions.iter().enumerate() {
             println!("  [{}] {:?}", i, instr);
         }
@@ -971,8 +1067,11 @@ Góc gập khuỷu tay khoảng 90°"#;
         assert!(has_quantity(&dna.instructions), "Missing Quantity");
 
         // At least 8 total instructions
-        assert!(dna.instructions.len() >= 8,
-            "Expected at least 8 instructions, got {}", dna.instructions.len());
+        assert!(
+            dna.instructions.len() >= 8,
+            "Expected at least 8 instructions, got {}",
+            dna.instructions.len()
+        );
     }
 
     // ---- English integration test ----
@@ -1070,8 +1169,14 @@ Ideal water temperature = 28°"#;
         let text = "Khoảng cách 50m tốc độ 2.5km";
         let dna = parse_text_to_core_dna(text, &dict).unwrap();
         println!("Multiple numbers: {:?}", dna.instructions);
-        let qty_count = count_of(&dna.instructions, |i| matches!(i, Instruction::Quantity { .. }));
-        assert!(qty_count >= 2, "Expected at least 2 quantities, got {}", qty_count);
+        let qty_count = count_of(&dna.instructions, |i| {
+            matches!(i, Instruction::Quantity { .. })
+        });
+        assert!(
+            qty_count >= 2,
+            "Expected at least 2 quantities, got {}",
+            qty_count
+        );
     }
 
     #[test]
@@ -1081,28 +1186,5 @@ Ideal water temperature = 28°"#;
         let dna = parse_text_to_core_dna(text, &dict).unwrap();
         println!("Includes: {:?}", dna.instructions);
         assert!(has_part_of(&dna.instructions));
-    }
-
-    #[test]
-    fn test_link_tolerances_postprocess() {
-        let mut instrs = vec![
-            Instruction::Quantity {
-                s: 100,
-                value: NumericValue::F32(45.0),
-                unit: UNIT_DEGREE,
-            },
-            Instruction::Tolerance {
-                s: UNKNOWN_CONCEPT,
-                value: NumericValue::F32(0.0),
-                delta: NumericValue::F32(5.0),
-            },
-        ];
-        link_tolerances(&mut instrs);
-        if let Instruction::Tolerance { s, value, .. } = &instrs[1] {
-            assert_eq!(*s, 100);
-            assert_eq!(value.as_f64(), 45.0);
-        } else {
-            panic!("Expected Tolerance");
-        }
     }
 }

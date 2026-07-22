@@ -1,5 +1,6 @@
 import type { WsEvent } from './types';
 import { isTauri, setupTauriEvents } from './tauri';
+import { getWsBase } from './client';
 
 type EventHandler = (event: WsEvent) => void;
 
@@ -27,7 +28,7 @@ export class OneBrainWs {
     // Browser mode: WebSocket
     if (this.ws?.readyState === WebSocket.OPEN) return;
     try {
-      this.ws = new WebSocket(`ws://127.0.0.1:4280/ws/events?token=${encodeURIComponent(token)}`);
+      this.ws = new WebSocket(`${getWsBase()}/ws/events?token=${encodeURIComponent(token)}`);
       this.ws.onmessage = (e) => {
         try {
           const event: WsEvent = JSON.parse(e.data);

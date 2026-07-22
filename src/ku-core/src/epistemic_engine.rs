@@ -15,8 +15,8 @@
 //! - Each node evaluates locally (decentralized)
 //! - Status can only advance, never regress (monotonic)
 
-use crate::types::EpistemicStatus;
 use crate::metabolism::KUMetabolism;
+use crate::types::EpistemicStatus;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Transition Thresholds
@@ -213,7 +213,11 @@ mod tests {
     fn make_metabolism_with_queries(n: usize) -> KUMetabolism {
         let mut m = KUMetabolism::new(T0);
         for i in 0..n {
-            m.record_event(NODE_A + (i as u64 % 10), MetabolismEvent::QueryHit, T0 + i as u64);
+            m.record_event(
+                NODE_A + (i as u64 % 10),
+                MetabolismEvent::QueryHit,
+                T0 + i as u64,
+            );
         }
         m
     }
@@ -241,9 +245,21 @@ mod tests {
     #[test]
     fn test_hearsay_to_testimony() {
         let mut m = KUMetabolism::new(T0);
-        m.record_event(NODE_A, MetabolismEvent::Retrieval { dwell_ms: 1000 }, T0 + 1);
-        m.record_event(NODE_B, MetabolismEvent::Retrieval { dwell_ms: 2000 }, T0 + 2);
-        m.record_event(NODE_C, MetabolismEvent::Retrieval { dwell_ms: 3000 }, T0 + 3);
+        m.record_event(
+            NODE_A,
+            MetabolismEvent::Retrieval { dwell_ms: 1000 },
+            T0 + 1,
+        );
+        m.record_event(
+            NODE_B,
+            MetabolismEvent::Retrieval { dwell_ms: 2000 },
+            T0 + 2,
+        );
+        m.record_event(
+            NODE_C,
+            MetabolismEvent::Retrieval { dwell_ms: 3000 },
+            T0 + 3,
+        );
 
         assert_eq!(
             evaluate_transition(EpistemicStatus::Hearsay, &m, T0 + 3, HL),
@@ -316,7 +332,11 @@ mod tests {
         // Give it enough activity to jump multiple levels
         for i in 0..10u64 {
             m.record_event(NODE_A + (i % 5), MetabolismEvent::QueryHit, T0 + i);
-            m.record_event(NODE_A + (i % 5), MetabolismEvent::Retrieval { dwell_ms: 1000 }, T0 + i);
+            m.record_event(
+                NODE_A + (i % 5),
+                MetabolismEvent::Retrieval { dwell_ms: 1000 },
+                T0 + i,
+            );
             m.record_event(NODE_A + (i % 5), MetabolismEvent::Citation, T0 + i);
         }
 

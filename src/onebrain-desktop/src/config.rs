@@ -68,11 +68,7 @@ impl DesktopConfig {
 
     /// Convert to the [`NodeConfig`] used by `onebrain-node`.
     pub fn to_node_config(&self) -> NodeConfig {
-        let seeds: Vec<SocketAddr> = self
-            .seeds
-            .iter()
-            .filter_map(|s| s.parse().ok())
-            .collect();
+        let seeds: Vec<SocketAddr> = self.seeds.iter().filter_map(|s| s.parse().ok()).collect();
 
         NodeConfig {
             name: self.node_name.clone(),
@@ -81,6 +77,7 @@ impl DesktopConfig {
             ollama_url: self.ollama_url.clone(),
             model: self.model.clone(),
             seeds,
+            vnext: Default::default(),
         }
     }
 }

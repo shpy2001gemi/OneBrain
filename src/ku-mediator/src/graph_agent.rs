@@ -42,11 +42,18 @@ impl GraphAgent {
 
         // Pattern 1: "What do I know about X?" / "What is X?"
         if lower.starts_with("what do i know about") || lower.starts_with("what is") {
-            let topic = nl_query.split_whitespace().skip(5).collect::<Vec<_>>().join(" ");
+            let topic = nl_query
+                .split_whitespace()
+                .skip(5)
+                .collect::<Vec<_>>()
+                .join(" ");
             if !topic.is_empty() {
                 let topic_clean = topic.trim_end_matches('?').trim();
                 return Some(KqlResult {
-                    kql: format!("FIND (k:KU) WHERE k.title CONTAINS \"{}\" LIMIT 20", topic_clean),
+                    kql: format!(
+                        "FIND (k:KU) WHERE k.title CONTAINS \"{}\" LIMIT 20",
+                        topic_clean
+                    ),
                     source: KqlSource::Pattern,
                 });
             }
@@ -56,8 +63,11 @@ impl GraphAgent {
         if lower.contains("relate to") || lower.contains("connected to") {
             let parts: Vec<&str> = nl_query.splitn(2, "relate to").collect();
             if parts.len() == 2 {
-                let a = parts[0].trim().trim_start_matches("how does ")
-                    .trim_start_matches("How does ").trim();
+                let a = parts[0]
+                    .trim()
+                    .trim_start_matches("how does ")
+                    .trim_start_matches("How does ")
+                    .trim();
                 let b = parts[1].trim().trim_end_matches('?').trim();
                 return Some(KqlResult {
                     kql: format!(
@@ -96,13 +106,18 @@ impl GraphAgent {
                  <alias>.<field> CONTAINS \"value\" for substring search. \
                  Relationship queries: FIND (a:KU)-[r]->(b:KU) WHERE <conditions>. \
                  Available fields: title, gene_type, created_at. \
-                 Respond with ONLY the KQL query, nothing else."
+                 Respond with ONLY the KQL query, nothing else.",
             ),
             ChatMessage::user(nl_query),
         ];
 
-        let options = InferenceOptions { temperature: 0.0, ..Default::default() };
-        let response = backend.chat(&messages, &options).await
+        let options = InferenceOptions {
+            temperature: 0.0,
+            ..Default::default()
+        };
+        let response = backend
+            .chat(&messages, &options)
+            .await
             .map_err(|e| crate::error::MediatorError::GraphQueryError(e.to_string()))?;
 
         Ok(KqlResult {
@@ -118,7 +133,9 @@ impl GraphAgent {
 }
 
 impl Default for GraphAgent {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -132,7 +149,9 @@ mod tests {
     #[test]
     fn test_what_do_i_know_about() {
         let a = agent();
-        let result = a.translate_to_kql("What do I know about quantum physics?").unwrap();
+        let result = a
+            .translate_to_kql("What do I know about quantum physics?")
+            .unwrap();
         assert!(result.kql.contains("CONTAINS"));
         assert!(result.kql.contains("quantum physics"));
         assert_eq!(result.source, KqlSource::Pattern);
@@ -148,7 +167,9 @@ mod tests {
     #[test]
     fn test_relate_to() {
         let a = agent();
-        let result = a.translate_to_kql("How does photosynthesis relate to respiration?").unwrap();
+        let result = a
+            .translate_to_kql("How does photosynthesis relate to respiration?")
+            .unwrap();
         assert!(result.kql.contains("photosynthesis"));
         assert!(result.kql.contains("respiration"));
         assert_eq!(result.source, KqlSource::Pattern);
@@ -174,7 +195,10 @@ mod tests {
         let a = agent();
         let mock = ku_ai::MockBackend::new()
             .with_chat_response("FIND (k:KU) WHERE k.topic = \"AI\" LIMIT 10");
-        let result = a.translate_with_llm("Show me everything about AI", &mock).await.unwrap();
+        let result = a
+            .translate_with_llm("Show me everything about AI", &mock)
+            .await
+            .unwrap();
         assert!(result.kql.contains("FIND"));
         assert_eq!(result.source, KqlSource::Llm);
     }

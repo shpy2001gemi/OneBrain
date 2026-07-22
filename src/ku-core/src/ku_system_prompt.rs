@@ -134,7 +134,6 @@ const ENCODING_RULES: &str = r#"## Encoding Rules
 
 "#;
 
-
 const FEW_SHOT_EXAMPLES: &str = r#"## Examples
 
 ### Example 1: "Water boils at 100 degrees Celsius"
@@ -170,7 +169,6 @@ const FEW_SHOT_EXAMPLES: &str = r#"## Examples
 
 "#;
 
-
 const COMPACT_ROLE: &str = r#"# Knowledge Encoder
 
 You are a Knowledge Encoder. Convert natural language → structured Knowledge Units (KUs).
@@ -189,6 +187,61 @@ const COMPACT_RULES: &str = r#"## Rules
 
 "#;
 
+// ============================================================================
+// V2 Extraction Prompt — compact JSON output (no tool-calling)
+// ============================================================================
+
+/// Generate a compact extraction prompt for the v2 pipeline.
+///
+/// Unlike the v1 prompt which uses tool-calling, this prompt asks the AI
+/// to output a JSON array of SPO triples directly. Much simpler, smaller
+/// (~300 tokens), and works well even with small models.
+///
+/// # Arguments
+/// * `anchor_instruction` — optional string like "DO NOT modify: H8O, 100°C"
+///
+/// # Returns
+/// A `(system_prompt, user_template)` tuple. The caller fills the user
+/// template with the actual paragraph text.
+pub fn generate_extraction_prompt(anchor_instruction: Option<&str>) -> (String, String) {
+    let mut system = String::with_capacity(2048);
+
+    system.push_str(EXTRACTION_SYSTEM);
+
+    if let Some(anchor) = anchor_instruction {
+        system.push('\n');
+        system.push_str(anchor);
+        system.push('\n');
+    }
+
+    let user_template = "Extract knowledge from this text:\n\n{TEXT}".to_string();
+
+    (system, user_template)
+}
+
+const EXTRACTION_SYSTEM: &str = r#"You are a knowledge extractor. Given text in any language, extract structured triples.
+
+Output a JSON array. Each element:
+{"s":"subject","s_en":"english subject","p":"predicate","o":"object","o_en":"english object","qty":number_or_null,"role":"semantic_role","notation":"type_or_null","c":"certainty"}
+
+## Fields
+- s, o: original language
+- s_en, o_en: English canonical name (translate if needed)
+- p: predicate in original language
+- qty: number extracted from text (e.g., "4 legs" → 4), null if none
+- role: one of part, material, purpose, location, cause, property, category, formula, relation
+- notation: only when role=formula. One of: chemical, latex, smiles, code
+- c: one of always, usually, sometimes, rarely
+
+## Rules
+1. Split lists into separate triples: "wood, metal or plastic" → 3 triples
+2. Extract numbers from text: "four legs" → qty=4
+3. Detect certainty from words: "usually/thường" → usually, "may/có thể" → sometimes
+4. Chemical formulas (H2O, NaCl): role=formula, notation=chemical
+5. Math expressions (E=mc²): role=formula, notation=latex
+6. DO NOT correct, modify, or "fix" any terms from the input. Extract exactly as written.
+7. Output ONLY the JSON array, nothing else.
+"#;
 
 // ============================================================================
 // Helpers
@@ -255,24 +308,33 @@ mod tests {
     fn test_full_prompt_contains_role() {
         let dict = default_dict();
         let prompt = generate_system_prompt(&dict, SAMPLE_TOOLS);
-        assert!(prompt.contains("Knowledge Encoder"),
-            "Full prompt must contain role name");
-        assert!(prompt.contains("Bộ mã hóa Tri thức"),
-            "Full prompt must contain Vietnamese role name");
+        assert!(
+            prompt.contains("Knowledge Encoder"),
+            "Full prompt must contain role name"
+        );
+        assert!(
+            prompt.contains("Bộ mã hóa Tri thức"),
+            "Full prompt must contain Vietnamese role name"
+        );
     }
 
     #[test]
     fn test_full_prompt_contains_rules() {
         let dict = default_dict();
         let prompt = generate_system_prompt(&dict, SAMPLE_TOOLS);
-        assert!(prompt.contains("1 KU = 1 idea"),
-            "Must contain the 1-KU-1-idea rule");
-        assert!(prompt.contains("lookup_concept"),
-            "Must mention lookup_concept");
-        assert!(prompt.contains("set_certainty"),
-            "Must mention set_certainty");
-        assert!(prompt.contains("finalize"),
-            "Must mention finalize");
+        assert!(
+            prompt.contains("1 KU = 1 idea"),
+            "Must contain the 1-KU-1-idea rule"
+        );
+        assert!(
+            prompt.contains("lookup_concept"),
+            "Must mention lookup_concept"
+        );
+        assert!(
+            prompt.contains("set_certainty"),
+            "Must mention set_certainty"
+        );
+        assert!(prompt.contains("finalize"), "Must mention finalize");
     }
 
     #[test]
@@ -280,40 +342,51 @@ mod tests {
         let dict = default_dict();
         let prompt = generate_system_prompt(&dict, SAMPLE_TOOLS);
         // Example 1: bơi ếch / breaststroke
-        assert!(prompt.contains("bơi ếch"),
-            "Must contain the breaststroke example (Vietnamese)");
-        assert!(prompt.contains("Breaststroke"),
-            "Must contain the breaststroke example (English)");
+        assert!(
+            prompt.contains("bơi ếch"),
+            "Must contain the breaststroke example (Vietnamese)"
+        );
+        assert!(
+            prompt.contains("Breaststroke"),
+            "Must contain the breaststroke example (English)"
+        );
         // Example 2: rocket body & shell
-        assert!(prompt.contains("rocket"),
-            "Must contain the rocket example");
-        assert!(prompt.contains("body"),
-            "Must contain body in rocket example");
-        assert!(prompt.contains("shell"),
-            "Must contain shell in rocket example");
+        assert!(prompt.contains("rocket"), "Must contain the rocket example");
+        assert!(
+            prompt.contains("body"),
+            "Must contain body in rocket example"
+        );
+        assert!(
+            prompt.contains("shell"),
+            "Must contain shell in rocket example"
+        );
     }
 
     #[test]
     fn test_full_prompt_contains_tool_defs() {
         let dict = default_dict();
         let prompt = generate_system_prompt(&dict, SAMPLE_TOOLS);
-        assert!(prompt.contains("lookup_concept"),
-            "Must inject tool definitions");
-        assert!(prompt.contains("create_ku"),
-            "Must inject create_ku tool");
-        assert!(prompt.contains("```json"),
-            "Tool defs should be in a JSON code block");
+        assert!(
+            prompt.contains("lookup_concept"),
+            "Must inject tool definitions"
+        );
+        assert!(prompt.contains("create_ku"), "Must inject create_ku tool");
+        assert!(
+            prompt.contains("```json"),
+            "Tool defs should be in a JSON code block"
+        );
     }
 
     #[test]
     fn test_full_prompt_contains_dict_snapshot() {
         let dict = default_dict();
         let prompt = generate_system_prompt(&dict, SAMPLE_TOOLS);
-        assert!(prompt.contains("| Word | ConceptId |"),
-            "Must contain dict snapshot table header");
+        assert!(
+            prompt.contains("| Word | ConceptId |"),
+            "Must contain dict snapshot table header"
+        );
         // default_dict has ~100 entries; we show first 50
-        assert!(prompt.contains("…and"),
-            "Must indicate more entries exist");
+        assert!(prompt.contains("…and"), "Must indicate more entries exist");
     }
 
     #[test]
@@ -323,8 +396,10 @@ mod tests {
         // Should still work — just no table rows
         assert!(prompt.contains("Knowledge Encoder"));
         assert!(prompt.contains("| Word | ConceptId |"));
-        assert!(!prompt.contains("…and"),
-            "Empty dict should not show 'more entries' message");
+        assert!(
+            !prompt.contains("…and"),
+            "Empty dict should not show 'more entries' message"
+        );
     }
 
     #[test]
@@ -335,8 +410,10 @@ mod tests {
         let prompt = generate_system_prompt(&dict, SAMPLE_TOOLS);
         assert!(prompt.contains("| water | 10 |"));
         assert!(prompt.contains("| fire | 11 |"));
-        assert!(!prompt.contains("…and"),
-            "Small dict (<50) should not show 'more entries'");
+        assert!(
+            !prompt.contains("…and"),
+            "Small dict (<50) should not show 'more entries'"
+        );
     }
 
     #[test]
@@ -347,8 +424,10 @@ mod tests {
         }
         let prompt = generate_system_prompt(&dict, SAMPLE_TOOLS);
         // Should only show 50 entries
-        assert!(prompt.contains("…and 50 more entries"),
-            "Should indicate 50 remaining entries");
+        assert!(
+            prompt.contains("…and 50 more entries"),
+            "Should indicate 50 remaining entries"
+        );
     }
 
     // ─── generate_compact_prompt ────────────────────────────────────
@@ -358,9 +437,12 @@ mod tests {
         let dict = default_dict();
         let full = generate_system_prompt(&dict, SAMPLE_TOOLS);
         let compact = generate_compact_prompt(&dict, SAMPLE_TOOLS);
-        assert!(compact.len() < full.len(),
+        assert!(
+            compact.len() < full.len(),
             "Compact prompt ({} bytes) must be shorter than full ({} bytes)",
-            compact.len(), full.len());
+            compact.len(),
+            full.len()
+        );
     }
 
     #[test]
@@ -369,36 +451,54 @@ mod tests {
         let compact = generate_compact_prompt(&dict, SAMPLE_TOOLS);
         // Rough estimate: 1 token ≈ 4 chars for English text
         let estimated_tokens = compact.len() / 4;
-        println!("Compact prompt: {} chars, ~{} estimated tokens",
-            compact.len(), estimated_tokens);
-        assert!(estimated_tokens < 2500,
+        println!(
+            "Compact prompt: {} chars, ~{} estimated tokens",
+            compact.len(),
+            estimated_tokens
+        );
+        assert!(
+            estimated_tokens < 2500,
             "Compact prompt should be roughly under 2000 tokens \
              (estimated {} tokens from {} chars)",
-            estimated_tokens, compact.len());
+            estimated_tokens,
+            compact.len()
+        );
     }
 
     #[test]
     fn test_compact_prompt_contains_essentials() {
         let dict = default_dict();
         let compact = generate_compact_prompt(&dict, SAMPLE_TOOLS);
-        assert!(compact.contains("Knowledge Encoder"),
-            "Compact must still state the role");
-        assert!(compact.contains("1 KU = 1 idea"),
-            "Compact must contain the core rule");
-        assert!(compact.contains("lookup_concept"),
-            "Compact must mention lookup_concept");
-        assert!(compact.contains("finalize"),
-            "Compact must mention finalize");
+        assert!(
+            compact.contains("Knowledge Encoder"),
+            "Compact must still state the role"
+        );
+        assert!(
+            compact.contains("1 KU = 1 idea"),
+            "Compact must contain the core rule"
+        );
+        assert!(
+            compact.contains("lookup_concept"),
+            "Compact must mention lookup_concept"
+        );
+        assert!(
+            compact.contains("finalize"),
+            "Compact must mention finalize"
+        );
     }
 
     #[test]
     fn test_compact_prompt_no_examples() {
         let dict = default_dict();
         let compact = generate_compact_prompt(&dict, SAMPLE_TOOLS);
-        assert!(!compact.contains("Example 1"),
-            "Compact prompt should NOT include few-shot examples");
-        assert!(!compact.contains("Example 2"),
-            "Compact prompt should NOT include few-shot examples");
+        assert!(
+            !compact.contains("Example 1"),
+            "Compact prompt should NOT include few-shot examples"
+        );
+        assert!(
+            !compact.contains("Example 2"),
+            "Compact prompt should NOT include few-shot examples"
+        );
     }
 
     #[test]
@@ -408,16 +508,20 @@ mod tests {
             dict.insert(&format!("concept_{}", i), i);
         }
         let compact = generate_compact_prompt(&dict, SAMPLE_TOOLS);
-        assert!(compact.contains("…and 80 more entries"),
-            "Compact prompt shows 20 entries → 80 remaining");
+        assert!(
+            compact.contains("…and 80 more entries"),
+            "Compact prompt shows 20 entries → 80 remaining"
+        );
     }
 
     #[test]
     fn test_compact_prompt_contains_tools() {
         let dict = ConceptDict::new();
         let compact = generate_compact_prompt(&dict, SAMPLE_TOOLS);
-        assert!(compact.contains("create_ku"),
-            "Compact must inject tool definitions");
+        assert!(
+            compact.contains("create_ku"),
+            "Compact must inject tool definitions"
+        );
     }
 
     // ─── format_dict_snapshot ───────────────────────────────────────
@@ -433,20 +537,31 @@ mod tests {
         let alpha_pos = snapshot.find("| alpha |").unwrap();
         let mid_pos = snapshot.find("| mid |").unwrap();
         let zebra_pos = snapshot.find("| zebra |").unwrap();
-        assert!(alpha_pos < mid_pos, "alpha (id=1) must come before mid (id=500)");
-        assert!(mid_pos < zebra_pos, "mid (id=500) must come before zebra (id=999)");
+        assert!(
+            alpha_pos < mid_pos,
+            "alpha (id=1) must come before mid (id=500)"
+        );
+        assert!(
+            mid_pos < zebra_pos,
+            "mid (id=500) must come before zebra (id=999)"
+        );
     }
 
     #[test]
     fn test_dict_snapshot_empty() {
         let dict = ConceptDict::new();
         let snapshot = format_dict_snapshot(&dict, 50);
-        assert!(snapshot.contains("| Word | ConceptId |"),
-            "Even empty dict should have table header");
+        assert!(
+            snapshot.contains("| Word | ConceptId |"),
+            "Even empty dict should have table header"
+        );
         // Should NOT have any data rows (just header + separator)
         let lines: Vec<&str> = snapshot.lines().collect();
-        assert_eq!(lines.len(), 2,
-            "Empty dict snapshot should only have header (2 lines)");
+        assert_eq!(
+            lines.len(),
+            2,
+            "Empty dict snapshot should only have header (2 lines)"
+        );
     }
 
     #[test]
@@ -456,8 +571,10 @@ mod tests {
             dict.insert(&format!("w{}", i), i);
         }
         let snapshot = format_dict_snapshot(&dict, 50);
-        assert!(!snapshot.contains("…and"),
-            "Exactly 50 entries with max=50 should not show overflow");
+        assert!(
+            !snapshot.contains("…and"),
+            "Exactly 50 entries with max=50 should not show overflow"
+        );
     }
 
     // ─── Integration: prompt is valid UTF-8 and non-empty ──────────

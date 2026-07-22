@@ -154,7 +154,11 @@ pub enum CreateClause {
     /// `CAUSAL(cause, effect)` — 2 concept names
     Causal { cause: String, effect: String },
     /// `STEP(order, action, target)` — ordinal + 2 concepts
-    Step { ord: u8, action: String, target: String },
+    Step {
+        ord: u8,
+        action: String,
+        target: String,
+    },
     /// `PRECOND(concept)` — 1 concept name
     Precond { concept: String },
     /// `EFFECT(concept)` — 1 concept name
@@ -166,7 +170,11 @@ pub enum CreateClause {
     /// `RANGE(subject, min, max)` — concept + 2 numbers
     Range { s: String, min: f64, max: f64 },
     /// `CONSTRAINT(source, op, target)` — concept, operator string, concept
-    Constraint { source: String, op: String, target: String },
+    Constraint {
+        source: String,
+        op: String,
+        target: String,
+    },
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -278,8 +286,8 @@ impl Default for PathDepth {
 /// Edge direction in pattern matching.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EdgeDirection {
-    Outgoing,   // -[r:TYPE]->
-    Incoming,   // <-[r:TYPE]-
+    Outgoing, // -[r:TYPE]->
+    Incoming, // <-[r:TYPE]-
     /// Programmatic only — no KQL text syntax currently parses this direction.
     Undirected, // -[r:TYPE]-
 }
@@ -306,21 +314,18 @@ pub enum Condition {
     /// Field existence check.
     Exists(FieldPath),
     /// Membership: `value IN field`
-    Contains {
-        field: FieldPath,
-        value: Value,
-    },
+    Contains { field: FieldPath, value: Value },
 }
 
 /// Comparison operators.
 #[derive(Debug, Clone, PartialEq)]
 pub enum CompOp {
-    Eq,       // =
-    NotEq,    // !=
-    Gt,       // >
-    GtEq,     // >=
-    Lt,       // <
-    LtEq,     // <=
+    Eq,    // =
+    NotEq, // !=
+    Gt,    // >
+    GtEq,  // >=
+    Lt,    // <
+    LtEq,  // <=
 }
 
 /// A dotted field path: `k.trust.trust_score`

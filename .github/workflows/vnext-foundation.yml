@@ -1,0 +1,384 @@
+name: vNext foundation contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/vnext-foundation.yml"
+      - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
+      - "docs/specs/vnext/**"
+      - "formal/tla/**"
+      - "scripts/ci/validate_vnext_contracts.py"
+      - "src/ku-core/**"
+      - "src/ku-ai/**"
+      - "src/ku-encoder/**"
+      - "src/ku-kql/**"
+      - "src/ku-net/**"
+      - "src/onebrain-node/**"
+      - "src/onebrain-api/**"
+      - "src/onebrain-cli/**"
+      - "src/onebrain-protocol/**"
+      - "src/test-vectors/vnext/**"
+      - "src/Cargo.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/vnext-foundation.yml"
+      - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
+      - "docs/specs/vnext/**"
+      - "formal/tla/**"
+      - "scripts/ci/validate_vnext_contracts.py"
+      - "src/ku-core/**"
+      - "src/ku-ai/**"
+      - "src/ku-encoder/**"
+      - "src/ku-kql/**"
+      - "src/ku-net/**"
+      - "src/onebrain-node/**"
+      - "src/onebrain-api/**"
+      - "src/onebrain-cli/**"
+      - "src/onebrain-protocol/**"
+      - "src/test-vectors/vnext/**"
+      - "src/Cargo.lock"
+
+permissions:
+  contents: read
+
+jobs:
+  foundation-contract:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+
+      - name: Validate task graph, traceability, vectors, and links
+        working-directory: .
+        run: python scripts/ci/validate_vnext_contracts.py
+
+      - name: Check formatting of vNext-owned Rust files
+        run: >-
+          rustfmt --edition 2021 --check
+          ku-core/src/foundation/affordance.rs
+          ku-core/src/foundation/assembly.rs
+          ku-core/src/foundation/authority.rs
+          ku-core/src/foundation/mod.rs
+          ku-core/src/foundation/canonical.rs
+          ku-core/src/foundation/capability.rs
+          ku-core/src/foundation/capability_offer.rs
+          ku-core/src/foundation/capability_permit.rs
+          ku-core/src/foundation/checkpoint.rs
+          ku-core/src/foundation/checkpoint_compaction.rs
+          ku-core/src/foundation/content_id.rs
+          ku-core/src/foundation/envelope.rs
+          ku-core/src/foundation/conformance.rs
+          ku-core/src/foundation/event.rs
+          ku-core/src/foundation/feed.rs
+          ku-core/src/foundation/feed_store.rs
+          ku-core/src/foundation/fidelity.rs
+          ku-core/src/foundation/fidelity_assessment.rs
+          ku-core/src/foundation/identity.rs
+          ku-core/src/foundation/inventory.rs
+          ku-core/src/foundation/key_state.rs
+          ku-core/src/foundation/mapping.rs
+          ku-core/src/foundation/materialization.rs
+          ku-core/src/foundation/metabolic_view.rs
+          ku-core/src/foundation/object.rs
+          ku-core/src/foundation/observation.rs
+          ku-core/src/foundation/outcome_evidence.rs
+          ku-core/src/foundation/provider.rs
+          ku-core/src/foundation/receptor.rs
+          ku-core/src/foundation/resolution.rs
+          ku-core/src/foundation/revocation.rs
+          ku-core/src/foundation/schema_registry.rs
+          ku-core/src/foundation/semantic.rs
+          ku-core/src/foundation/storage.rs
+          ku-core/src/foundation/use_evidence.rs
+          ku-core/src/foundation/vault.rs
+          ku-core/examples/foundation_vector_digests.rs
+          ku-ai/src/vnext_manifest.rs
+          ku-ai/src/vnext_executor.rs
+          ku-ai/src/vnext_fidelity.rs
+          ku-ai/src/vnext_model_recall.rs
+          ku-encoder/src/vnext_affordance_extractor.rs
+          ku-encoder/src/vnext_observation_intake.rs
+          ku-encoder/src/vnext_receptor_encoder.rs
+          ku-net/tests/foundation_conformance.rs
+          ku-net/src/lib.rs
+          ku-net/src/vnext_inventory_forest.rs
+          ku-net/src/vnext_bridge_merge.rs
+          ku-net/src/vnext_carrier.rs
+          ku-net/src/vnext_carrier_adapter.rs
+          ku-net/src/vnext_reachability.rs
+          ku-net/src/vnext_reconciliation.rs
+          ku-net/src/vnext_reconciliation_journal.rs
+          ku-net/src/vnext_resource_gate.rs
+          ku-net/src/vnext_provider_view.rs
+          ku-net/src/vnext_session.rs
+          ku-kql/src/vnext_proposal.rs
+          ku-kql/src/vnext_planner.rs
+          ku-kql/src/vnext_matcher.rs
+          ku-kql/src/vnext_query.rs
+          ku-kql/src/vnext_query_view.rs
+          ku-kql/src/vnext_multipath.rs
+          ku-kql/src/vnext_obkg_projection.rs
+          ku-kql/src/vnext_assembly_search.rs
+          ku-kql/src/vnext_relational_alignment.rs
+          ku-kql/src/vnext_reunion.rs
+          ku-kql/src/vnext_disclosure.rs
+          ku-kql/src/vnext_disclosure_capsule.rs
+          ku-kql/src/vnext_exploration.rs
+          ku-kql/src/vnext_route_packet.rs
+          ku-kql/src/vnext_semantic_index.rs
+          ku-kql/src/vnext_standing_need.rs
+          ku-kql/src/vnext_structural_signature.rs
+          onebrain-node/src/vnext_config.rs
+          onebrain-node/src/lib.rs
+          onebrain-node/src/vnext_companion.rs
+          onebrain-node/src/vnext_local_runtime.rs
+          onebrain-node/src/vnext_legacy_migration.rs
+          onebrain-node/src/vnext_m5_benchmark.rs
+          onebrain-node/src/vnext_m6_model.rs
+          onebrain-node/src/vnext_mixed_conformance.rs
+          onebrain-node/src/vnext_performance_budgets.rs
+          onebrain-node/src/vnext_reunion_canary.rs
+          onebrain-node/src/vnext_reward_firewall.rs
+          onebrain-node/src/vnext_scale_simulation.rs
+          onebrain-node/src/vnext_security_suite.rs
+          onebrain-node/src/vnext_status.rs
+          onebrain-node/src/vnext_workflow_surface.rs
+          onebrain-node/examples/qa007_scale_report.rs
+          onebrain-node/examples/qa008_performance_report.rs
+          onebrain-node/tests/anti_gravity_reunion.rs
+          onebrain-api/src/handlers.rs
+          onebrain-api/src/server.rs
+          onebrain-cli/src/cli/help.rs
+          onebrain-cli/src/cli/mod.rs
+          onebrain-cli/src/cli/workflow.rs
+          onebrain-protocol/src/codec.rs
+          onebrain-protocol/src/legacy.rs
+          onebrain-protocol/src/legacy_adapter.rs
+          onebrain-protocol/src/lib.rs
+          onebrain-protocol/src/reconciliation_codec.rs
+          onebrain-protocol/src/session_codec.rs
+          onebrain-protocol/src/types.rs
+          onebrain-protocol/tests/foundation_conformance.rs
+
+      - name: Check foundation crates
+        run: >-
+          cargo check --locked
+          -p ku-core -p ku-ai -p ku-encoder -p ku-kql -p onebrain-protocol -p ku-net -p onebrain-node
+          -p onebrain-api -p onebrain-cli
+
+      - name: Lint foundation crates
+        run: >-
+          cargo clippy --locked
+          -p ku-core -p ku-ai -p ku-encoder -p ku-kql -p onebrain-protocol -p onebrain-node
+          --lib --tests --examples
+          -- --cap-lints warn
+
+      - name: Lint vNext network library
+        run: cargo clippy --locked -p ku-net --lib -- --cap-lints warn
+
+      - name: Test canonical foundation
+        run: cargo test --locked -p ku-core foundation
+
+      - name: Test canonical capability layer boundaries
+        run: cargo test --locked -p ku-core foundation::capability
+
+      - name: Test signed capability offer reducer
+        run: cargo test --locked -p ku-core foundation::capability_offer
+
+      - name: Test attenuated capability permit validator
+        run: cargo test --locked -p ku-core foundation::capability_permit
+
+      - name: Test action-scoped revocation freshness policy
+        run: cargo test --locked -p ku-core foundation::revocation
+
+      - name: Test signed multi-provider lease and retirement reducer
+        run: cargo test --locked -p ku-core foundation::provider
+
+      - name: Test proof-gated per-feed checkpoints
+        run: cargo test --locked -p ku-core foundation::checkpoint
+
+      - name: Test shadow compaction restore and local GC gates
+        run: cargo test --locked -p ku-core foundation::checkpoint_compaction
+
+      - name: Test bounded sampled provider discovery view
+        run: cargo test --locked -p ku-net --lib vnext_provider_view
+
+      - name: Test encoding fidelity evidence boundaries
+        run: cargo test --locked -p ku-core foundation::fidelity
+
+      - name: Test frontier-relative fidelity assessment reducer
+        run: cargo test --locked -p ku-core foundation::fidelity_assessment
+
+      - name: Test local manifest builder and conformance runner
+        run: cargo test --locked -p ku-ai vnext_manifest
+
+      - name: Test typed permit-gated cognitive executor
+        run: cargo test --locked -p ku-ai vnext_executor
+
+      - name: Test model recall symbolic validity firewall
+        run: cargo test --locked -p ku-ai vnext_model_recall
+
+      - name: Test blind encoding fidelity workflow
+        run: cargo test --locked -p ku-ai vnext_fidelity
+
+      - name: Test private-default disclosure sanitizer
+        run: cargo test --locked -p ku-kql vnext_disclosure
+
+      - name: Test padded replay-protected route packets
+        run: cargo test --locked -p ku-kql vnext_route_packet
+
+      - name: Test permit-bound progressive disclosure capsules
+        run: cargo test --locked -p ku-kql vnext_disclosure_capsule
+
+      - name: Test crash-safe validated persistence
+        run: cargo test --locked -p ku-core --features persist foundation::storage
+
+      - name: Test encrypted private vault
+        run: cargo test --locked -p ku-core foundation::vault
+
+      - name: Test signed Use and Derivation evidence path
+        run: cargo test --locked -p ku-core foundation::use_evidence
+
+      - name: Test revisioned metabolic evidence view and exposure firewall
+        run: cargo test --locked -p ku-core foundation::metabolic_view
+
+      - name: Test signed outcome and benefit evidence branches
+        run: cargo test --locked -p ku-core foundation::outcome_evidence
+
+      - name: Test non-authoritative KQL binding proposals
+        run: cargo test --locked -p ku-kql vnext_proposal
+
+      - name: Test local provenance-preserving Receptor encoder
+        run: cargo test --locked -p ku-encoder vnext_receptor_encoder
+
+      - name: Test consent-gated private local observation intake
+        run: cargo test --locked -p ku-encoder vnext_observation_intake
+
+      - name: Test offline evidence-bounded Affordance extractor
+        run: cargo test --locked -p ku-encoder vnext_affordance_extractor
+
+      - name: Test persistent local StandingNeeds
+        run: cargo test --locked -p ku-kql --features storage vnext_standing_need
+
+      - name: Test deterministic vocabulary-neutral structural signatures
+        run: cargo test --locked -p ku-kql vnext_structural_signature
+
+      - name: Test bounded explainable typed relational alignment
+        run: cargo test --locked -p ku-kql vnext_relational_alignment
+
+      - name: Test bounded Pareto Assembly search
+        run: cargo test --locked -p ku-kql vnext_assembly_search
+
+      - name: Test private debt-backed exploration scheduler
+        run: cargo test --locked -p ku-kql vnext_exploration
+
+      - name: Test late-safe QueryView and propensity-aware learning
+        run: cargo test --locked -p ku-kql vnext_query_view
+
+      - name: Test private multipath union and encrypted StandingNeed mailbox
+        run: cargo test --locked -p ku-kql vnext_multipath
+
+      - name: Test disposable version-bound OBKG projections
+        run: cargo test --locked -p ku-kql vnext_obkg_projection
+
+      - name: Test frontier-delta reunion joins
+        run: cargo test --locked -p ku-kql vnext_reunion
+
+      - name: Test protocol conformance runner
+        run: cargo test --locked -p onebrain-protocol --test foundation_conformance
+
+      - name: Test canonical protocol codec and legacy isolation
+        run: cargo test --locked -p onebrain-protocol --lib
+
+      - name: Test negotiated legacy alias downgrade firewall
+        run: cargo test --locked -p onebrain-protocol legacy_adapter
+
+      - name: Test bound OBP reconciliation schema
+        run: cargo test --locked -p onebrain-protocol --lib reconciliation_codec
+
+      - name: Test network conformance runner
+        run: cargo test --locked -p ku-net --test foundation_conformance
+
+      - name: Test selector-scoped Hybrid Inventory Forest
+        run: cargo test --locked -p ku-net --lib vnext_inventory_forest
+
+      - name: Test authenticated transcript-bound sessions
+        run: cargo test --locked -p ku-net --lib vnext_session
+
+      - name: Test local derived ReachabilityView
+        run: cargo test --locked -p ku-net --lib vnext_reachability
+
+      - name: Test deterministic reconciliation state machine
+        run: cargo test --locked -p ku-net --lib vnext_reconciliation
+
+      - name: Test crash-resumable reconciliation journal
+        run: cargo test --locked -p ku-net --features persist --lib vnext_reconciliation_journal
+
+      - name: Test multi-bridge deterministic dedup
+        run: cargo test --locked -p ku-net --lib vnext_bridge_merge
+
+      - name: Test memory and file-bundle carriers
+        run: cargo test --locked -p ku-net --lib vnext_carrier
+
+      - name: Test cross-carrier reconciliation outcome
+        run: cargo test --locked -p ku-net --lib vnext_carrier_adapter
+
+      - name: Test safe feature and kill-switch configuration
+        run: cargo test --locked -p onebrain-node vnext_config
+
+      - name: Test one-way knowledge-plane reward firewall
+        run: cargo test --locked -p onebrain-node vnext_reward_firewall
+
+      - name: Test offline local vertical slice across restart
+        run: cargo test --locked -p onebrain-node vnext_local_runtime
+
+      - name: Test offline policy-gated Local Knowledge Companion
+        run: cargo test --locked -p onebrain-node vnext_companion
+
+      - name: Test reproducible M5 multi-objective benchmark and ablation
+        run: cargo test --locked -p onebrain-node vnext_m5_benchmark
+
+      - name: Test five executable M6 bounded-state models
+        run: cargo test --locked -p onebrain-node vnext_m6_model
+
+      - name: Test Anti-Gravity partition and reunion canary
+        run: cargo test --locked -p onebrain-node --test anti_gravity_reunion
+
+      - name: Test additive legacy migration and backfill
+        run: cargo test --locked -p onebrain-node vnext_legacy_migration
+
+      - name: Test honest scoped runtime status
+        run: cargo test --locked -p onebrain-node vnext_status
+
+      - name: Test additive KU workflow API and CLI contract
+        run: >-
+          cargo test --locked -p onebrain-node run002_ --lib
+          && cargo test --locked -p onebrain-cli run002_
+
+      - name: Test mixed-version and cross-carrier matrix
+        run: cargo test --locked -p onebrain-node vnext_mixed_conformance
+
+      - name: Test adversarial security suite and runtime allocation guard
+        run: >-
+          cargo test --locked -p onebrain-node vnext_security_suite --lib
+          && cargo test --locked -p ku-net vnext_resource_gate --lib
+
+      - name: Test algebraic and trace properties
+        run: >-
+          cargo test --locked -p ku-core qa006_ --lib
+          && cargo test --locked -p ku-net qa006_ --lib
+
+      - name: Test logical-node scale and analytical bounds
+        run: cargo test --locked -p onebrain-node qa007_ --lib
+
+      - name: Test correctness-coupled performance budgets
+        run: cargo test --locked -p onebrain-node qa008_ --lib

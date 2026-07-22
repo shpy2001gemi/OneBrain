@@ -50,14 +50,14 @@ pub enum IdentityError {
 impl fmt::Display for IdentityError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PuzzleTimeout { max_iterations } =>
-                write!(f, "Crypto puzzle timed out after {} iterations", max_iterations),
-            Self::InvalidDifficulty(d) =>
-                write!(f, "Invalid puzzle difficulty: {} (max 32)", d),
-            Self::InvalidPublicKey =>
-                write!(f, "Invalid Ed25519 public key"),
-            Self::SignatureInvalid =>
-                write!(f, "Ed25519 signature verification failed"),
+            Self::PuzzleTimeout { max_iterations } => write!(
+                f,
+                "Crypto puzzle timed out after {} iterations",
+                max_iterations
+            ),
+            Self::InvalidDifficulty(d) => write!(f, "Invalid puzzle difficulty: {} (max 32)", d),
+            Self::InvalidPublicKey => write!(f, "Invalid Ed25519 public key"),
+            Self::SignatureInvalid => write!(f, "Ed25519 signature verification failed"),
         }
     }
 }
@@ -80,12 +80,15 @@ pub enum MembershipError {
 impl fmt::Display for MembershipError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::CapacityExceeded { capacity } =>
-                write!(f, "Membership list at capacity: {}", capacity),
-            Self::StaleIncarnation { current, received } =>
-                write!(f, "Stale incarnation: current={}, received={}", current, received),
-            Self::UnknownNode =>
-                write!(f, "Unknown node ID"),
+            Self::CapacityExceeded { capacity } => {
+                write!(f, "Membership list at capacity: {}", capacity)
+            }
+            Self::StaleIncarnation { current, received } => write!(
+                f,
+                "Stale incarnation: current={}, received={}",
+                current, received
+            ),
+            Self::UnknownNode => write!(f, "Unknown node ID"),
         }
     }
 }
@@ -110,14 +113,12 @@ pub enum BootstrapError {
 impl fmt::Display for BootstrapError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::AlreadyRunning =>
-                write!(f, "Bootstrap already in progress"),
-            Self::AllLayersFailed =>
-                write!(f, "All 6 bootstrap layers failed"),
-            Self::LayerTimeout { layer } =>
-                write!(f, "Bootstrap layer timed out: {}", layer),
-            Self::InsufficientPeers { found, required } =>
-                write!(f, "Insufficient peers: found {}, need {}", found, required),
+            Self::AlreadyRunning => write!(f, "Bootstrap already in progress"),
+            Self::AllLayersFailed => write!(f, "All 6 bootstrap layers failed"),
+            Self::LayerTimeout { layer } => write!(f, "Bootstrap layer timed out: {}", layer),
+            Self::InsufficientPeers { found, required } => {
+                write!(f, "Insufficient peers: found {}, need {}", found, required)
+            }
         }
     }
 }
@@ -180,18 +181,12 @@ pub enum EncodingError {
 impl fmt::Display for EncodingError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::JobNotFound =>
-                write!(f, "Encoding job not found on DHT"),
-            Self::ClaimRejected(reason) =>
-                write!(f, "Claim rejected: {}", reason),
-            Self::ConsensusTimeout =>
-                write!(f, "Consensus timed out (not enough verifiers)"),
-            Self::InvalidClaimToken =>
-                write!(f, "Invalid or expired claim token"),
-            Self::VerificationFailed(reason) =>
-                write!(f, "Verification failed: {}", reason),
-            Self::JobExpired =>
-                write!(f, "Job expired (TTL exceeded)"),
+            Self::JobNotFound => write!(f, "Encoding job not found on DHT"),
+            Self::ClaimRejected(reason) => write!(f, "Claim rejected: {}", reason),
+            Self::ConsensusTimeout => write!(f, "Consensus timed out (not enough verifiers)"),
+            Self::InvalidClaimToken => write!(f, "Invalid or expired claim token"),
+            Self::VerificationFailed(reason) => write!(f, "Verification failed: {}", reason),
+            Self::JobExpired => write!(f, "Job expired (TTL exceeded)"),
         }
     }
 }
@@ -220,18 +215,23 @@ pub enum ObtError {
 impl fmt::Display for ObtError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::TransferFailed(reason) =>
-                write!(f, "Transfer failed: {}", reason),
-            Self::InsufficientBalance { required, available } =>
-                write!(f, "Insufficient balance: required {} milliOBT, available {}", required, available),
-            Self::ForkDetected { offender } =>
-                write!(f, "Fork detected for {:02x}{:02x}...", offender[0], offender[1]),
-            Self::PenaltyActive(reason) =>
-                write!(f, "Penalty active: {}", reason),
-            Self::StorageChallengeTimeout =>
-                write!(f, "Storage challenge response timed out"),
-            Self::MintValidationFailed(reason) =>
-                write!(f, "Mint validation failed: {}", reason),
+            Self::TransferFailed(reason) => write!(f, "Transfer failed: {}", reason),
+            Self::InsufficientBalance {
+                required,
+                available,
+            } => write!(
+                f,
+                "Insufficient balance: required {} milliOBT, available {}",
+                required, available
+            ),
+            Self::ForkDetected { offender } => write!(
+                f,
+                "Fork detected for {:02x}{:02x}...",
+                offender[0], offender[1]
+            ),
+            Self::PenaltyActive(reason) => write!(f, "Penalty active: {}", reason),
+            Self::StorageChallengeTimeout => write!(f, "Storage challenge response timed out"),
+            Self::MintValidationFailed(reason) => write!(f, "Mint validation failed: {}", reason),
         }
     }
 }
@@ -247,25 +247,37 @@ impl From<ObtError> for NetError {
 // ─── Conversions ──────────────────────────────────────────────────────────
 
 impl From<IdentityError> for NetError {
-    fn from(e: IdentityError) -> Self { NetError::Identity(e) }
+    fn from(e: IdentityError) -> Self {
+        NetError::Identity(e)
+    }
 }
 
 impl From<crate::messages::MessageError> for NetError {
-    fn from(e: crate::messages::MessageError) -> Self { NetError::Message(e) }
+    fn from(e: crate::messages::MessageError) -> Self {
+        NetError::Message(e)
+    }
 }
 
 impl From<MembershipError> for NetError {
-    fn from(e: MembershipError) -> Self { NetError::Membership(e) }
+    fn from(e: MembershipError) -> Self {
+        NetError::Membership(e)
+    }
 }
 
 impl From<BootstrapError> for NetError {
-    fn from(e: BootstrapError) -> Self { NetError::Bootstrap(e) }
+    fn from(e: BootstrapError) -> Self {
+        NetError::Bootstrap(e)
+    }
 }
 
 impl From<TransportError> for NetError {
-    fn from(e: TransportError) -> Self { NetError::Transport(e) }
+    fn from(e: TransportError) -> Self {
+        NetError::Transport(e)
+    }
 }
 
 impl From<EncodingError> for NetError {
-    fn from(e: EncodingError) -> Self { NetError::Encoding(e) }
+    fn from(e: EncodingError) -> Self {
+        NetError::Encoding(e)
+    }
 }

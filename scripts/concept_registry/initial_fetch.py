@@ -36,15 +36,22 @@ def main() -> None:
     parser.add_argument(
         "--sources",
         type=str,
-        default="wd,gn,ncbi,chebi",
+        default="wd,gn,ncbi,chebi,en",
         help="Comma-separated list of sources to fetch. "
-             "Options: wd, gn, ncbi, chebi (default: all).",
+             "Options: wd, gn, ncbi, chebi, en (default: all).",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default=None,
         help="Override the OBR output directory.",
+    )
+    parser.add_argument(
+        "--wd-top-n",
+        type=int,
+        default=10_000_000,
+        help="Number of top Wikidata concepts to keep after quality ranking "
+             "(default: 10,000,000).",
     )
     args = parser.parse_args()
 
@@ -81,7 +88,7 @@ def main() -> None:
         count = wd_fetch(
             RAW_DIR / "wikidata.jsonl",
             CHECKPOINT_DIR,
-            target_count=10_000_000,
+            target_count=50_000_000,  # Collect ALL, rank later
         )
         elapsed = time.time() - t0
         timings["wikidata"] = elapsed
@@ -127,6 +134,38 @@ def main() -> None:
         counts["chebi"] = count
         logger.info("ChEBI: %d concepts in %.1fs", count, elapsed)
 
+    if "en" in sources:
+        logger.info("=" * 60)
+        logger.info("STAGE: English Dictionary (WordNet)")
+        logger.info("=" * 60)
+        t0 = time.time()
+        from sources.english_dict import fetch_all as en_fetch
+
+        count = en_fetch(RAW_DIR / "english_dict.jsonl", CHECKPOINT_DIR)
+        elapsed = time.time() - t0
+        timings["english_dict"] = elapsed
+        counts["english_dict"] = count
+        logger.info("English Dict: %d entries in %.1fs", count, elapsed)
+
+    # ------------------------------------------------------------------
+    # Wikidata ranking (if wikidata was fetched)
+    # ------------------------------------------------------------------
+    wd_raw = RAW_DIR / "wikidata.jsonl"
+    wd_ranked = RAW_DIR / "wikidata_ranked.jsonl"
+    if wd_raw.exists() and "wd" in sources:
+        logger.info("=" * 60)
+        logger.info("STAGE: Rank Wikidata (top %s by quality)", f"{args.wd_top_n:,}")
+        logger.info("=" * 60)
+        t0 = time.time()
+        from rank_wikidata import rank_and_select
+
+        rank_count = rank_and_select(wd_raw, wd_ranked, top_n=args.wd_top_n)
+        elapsed = time.time() - t0
+        timings["rank_wd"] = elapsed
+        counts["rank_wd"] = rank_count
+        logger.info("Ranked: %d -> %d in %.1fs",
+                     counts.get("wikidata", 0), rank_count, elapsed)
+
     # ------------------------------------------------------------------
     # Deduplication
     # ------------------------------------------------------------------
@@ -139,7 +178,7 @@ def main() -> None:
     dedup_stats = deduplicate(RAW_DIR, MERGED_DIR / "concepts_deduped.jsonl")
     elapsed = time.time() - t0
     timings["dedup"] = elapsed
-    logger.info("Dedup: %d → %d in %.1fs",
+    logger.info("Dedup: %d -> %d in %.1fs",
                 dedup_stats["total_input"],
                 dedup_stats["final_count"],
                 elapsed)

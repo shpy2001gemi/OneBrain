@@ -24,8 +24,8 @@
 //! - Parameter change cooldown periods
 //! - Multi-sig approval for critical parameters
 
-use serde::{Serialize, Deserialize};
 use crate::obt_constants::*;
+use serde::{Deserialize, Serialize};
 
 /// Runtime-configurable governance parameters.
 ///
@@ -35,14 +35,12 @@ use crate::obt_constants::*;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GovernanceConfig {
     // === Epoch & Timing ===
-
     /// Duration of one OBT epoch in seconds (default: 3,600 = 1 hour).
     ///
     /// Maps to [`OBT_EPOCH_DURATION_S`].
     pub epoch_duration_s: u64,
 
     // === Emission Parameters ===
-
     /// Base emission per epoch in milliOBT (default: 10,000,000 = 10,000 OBT).
     ///
     /// Maps to [`BASE_EMISSION_PER_EPOCH`].
@@ -59,7 +57,6 @@ pub struct GovernanceConfig {
     pub activity_multiplier_max: f64,
 
     // === Stream Weights (R1–R4 allocation) ===
-
     /// R1 Owner/PoMV weight (default: 0.40).
     pub weight_r1_owner: f64,
 
@@ -73,7 +70,6 @@ pub struct GovernanceConfig {
     pub weight_r4_storage: f64,
 
     // === Storage Parameters ===
-
     /// Base storage reward per KU per epoch in OBT (default: 0.001).
     ///
     /// Maps to [`STORAGE_BASE_RATE`].
@@ -90,7 +86,6 @@ pub struct GovernanceConfig {
     pub challenge_rate: f64,
 
     // === Trust & Decay Parameters ===
-
     /// Exponential trust decay rate per hour (default: 0.01).
     /// Half-life ≈ 69.3h ≈ 3 days.
     ///
@@ -98,14 +93,12 @@ pub struct GovernanceConfig {
     pub trust_decay_lambda: f64,
 
     // === Penalty Parameters ===
-
     /// Dispute window in hours (default: 48).
     ///
     /// Maps to [`DISPUTE_WINDOW_HOURS`].
     pub dispute_window_hours: u32,
 
     // === Quality Gate Parameters ===
-
     /// Minimum KU raw size in bytes for quality gate (default: 256 ≈ 50 words).
     ///
     /// Maps to [`MIN_KU_RAW_SIZE`].
@@ -291,7 +284,10 @@ mod tests {
         let config = GovernanceConfig::default();
         assert_eq!(config.base_emission_per_epoch, BASE_EMISSION_PER_EPOCH);
         assert_eq!(config.epoch_duration_s, OBT_EPOCH_DURATION_S);
-        assert_eq!(config.activity_multiplier_target, ACTIVITY_MULTIPLIER_TARGET);
+        assert_eq!(
+            config.activity_multiplier_target,
+            ACTIVITY_MULTIPLIER_TARGET
+        );
         assert!((config.activity_multiplier_max - ACTIVITY_MULTIPLIER_MAX).abs() < f64::EPSILON);
         assert!((config.weight_r1_owner - STREAM_WEIGHTS[0]).abs() < f64::EPSILON);
         assert!((config.weight_r2_encoding - STREAM_WEIGHTS[1]).abs() < f64::EPSILON);
@@ -399,10 +395,16 @@ mod tests {
         let config = GovernanceConfig::default();
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: GovernanceConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(config.base_emission_per_epoch, deserialized.base_emission_per_epoch);
+        assert_eq!(
+            config.base_emission_per_epoch,
+            deserialized.base_emission_per_epoch
+        );
         assert_eq!(config.epoch_duration_s, deserialized.epoch_duration_s);
         assert_eq!(config.storage_k_target, deserialized.storage_k_target);
-        assert_eq!(config.dispute_window_hours, deserialized.dispute_window_hours);
+        assert_eq!(
+            config.dispute_window_hours,
+            deserialized.dispute_window_hours
+        );
         assert_eq!(config.min_ku_raw_size, deserialized.min_ku_raw_size);
         assert!((config.min_pomv_30d - deserialized.min_pomv_30d).abs() < f32::EPSILON);
     }
@@ -411,7 +413,10 @@ mod tests {
     fn test_new_equals_default() {
         let from_new = GovernanceConfig::new();
         let from_default = GovernanceConfig::default();
-        assert_eq!(from_new.base_emission_per_epoch, from_default.base_emission_per_epoch);
+        assert_eq!(
+            from_new.base_emission_per_epoch,
+            from_default.base_emission_per_epoch
+        );
         assert_eq!(from_new.epoch_duration_s, from_default.epoch_duration_s);
     }
 

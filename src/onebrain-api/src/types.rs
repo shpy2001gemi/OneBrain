@@ -120,13 +120,27 @@ pub struct RecoverRequest {
 
 // ─── Query Parameters ──────────────────────────────────────────────────────
 
-fn default_page() -> usize { 1 }
-fn default_ku_limit() -> usize { 20 }
-fn default_sort() -> String { "created".to_string() }
-fn default_history_limit() -> usize { 50 }
-fn default_export_format() -> String { "json".to_string() }
-fn default_graph_depth() -> u32 { 2 }
-fn default_graph_limit() -> usize { 100 }
+fn default_page() -> usize {
+    1
+}
+fn default_ku_limit() -> usize {
+    20
+}
+fn default_sort() -> String {
+    "created".to_string()
+}
+fn default_history_limit() -> usize {
+    50
+}
+fn default_export_format() -> String {
+    "json".to_string()
+}
+fn default_graph_depth() -> u32 {
+    2
+}
+fn default_graph_limit() -> usize {
+    100
+}
 
 /// Query params for listing KUs.
 #[derive(Debug, Deserialize)]
@@ -180,6 +194,9 @@ pub struct StatusResponse {
     pub tier: String,
     pub obt_balance: u64,
     pub version: String,
+    pub model: String,
+    /// Scope-aware vNext status. This projection is display-only.
+    pub vnext: onebrain_node::vnext_status::VNextStatusSnapshot,
 }
 
 /// Paginated KU list response.
@@ -218,7 +235,9 @@ pub struct BackupRequest {
     pub password: String,
 }
 
-fn default_backup_password() -> String { String::new() }
+fn default_backup_password() -> String {
+    String::new()
+}
 
 /// Blob reference request — link a blob to a KU.
 #[derive(Debug, Deserialize)]
@@ -249,6 +268,7 @@ pub struct WatchRequest {
 #[derive(Debug, Deserialize)]
 pub struct DraftRequest {
     pub text: String,
+    pub title: Option<String>,
 }
 
 /// Restore backup request (password only — file comes via multipart).
@@ -260,7 +280,9 @@ pub struct RestoreRequest {
 
 // ─── Phase 1: New Query Parameters ─────────────────────────────────────────
 
-fn default_search_history_limit() -> usize { 50 }
+fn default_search_history_limit() -> usize {
+    50
+}
 
 /// Query params for search history.
 #[derive(Debug, Deserialize)]

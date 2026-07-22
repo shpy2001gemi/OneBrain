@@ -5,6 +5,6 @@
 //! - **BridgeFinder**: Discovers cross-domain connections (Swanson ABC model).
 //! - **SerendipityEngine**: Surfaces unexpected but useful knowledge.
 
-pub mod gaps;
 pub mod bridges;
+pub mod gaps;
 pub mod serendipity;

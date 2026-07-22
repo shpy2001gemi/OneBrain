@@ -4,18 +4,24 @@
 //! Tier 2: Embedding similarity (~10ms) [placeholder for now]
 //! Tier 3: LLM-based classification (~500ms-2s)
 
-use serde::{Serialize, Deserialize};
 use ku_ai::types::{ChatMessage, InferenceOptions};
+use serde::{Deserialize, Serialize};
 
 /// User intent categories.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum UserIntent {
     /// User wants to store knowledge.
-    Encode { source: EncodeSource, trigger: EncodeTrigger },
+    Encode {
+        source: EncodeSource,
+        trigger: EncodeTrigger,
+    },
     /// User wants to find/retrieve knowledge.
     Retrieve { query: String },
     /// User wants to explore connections between concepts.
-    Connect { source: String, target: Option<String> },
+    Connect {
+        source: String,
+        target: Option<String>,
+    },
     /// User wants AI to synthesize/explain knowledge.
     Synthesize { topic: String },
     /// User wants to query the knowledge graph.
@@ -56,21 +62,47 @@ impl IntentClassifier {
     pub fn new() -> Self {
         Self {
             encode_keywords: vec![
-                "remember", "save", "store", "encode", "note", "record",
-                "nhớ", "lưu", "ghi", "ghi nhớ", // Vietnamese
+                "remember",
+                "save",
+                "store",
+                "encode",
+                "note",
+                "record",
+                "nhớ",
+                "lưu",
+                "ghi",
+                "ghi nhớ", // Vietnamese
             ],
             retrieve_keywords: vec![
-                "what do i know", "find", "search", "look up", "retrieve",
-                "what is", "tell me about", "explain",
-                "tìm", "tra cứu", "cho biết", // Vietnamese
+                "what do i know",
+                "find",
+                "search",
+                "look up",
+                "retrieve",
+                "what is",
+                "tell me about",
+                "explain",
+                "tìm",
+                "tra cứu",
+                "cho biết", // Vietnamese
             ],
             connect_keywords: vec![
-                "connect", "relate", "link", "how does", "relationship",
-                "kết nối", "liên quan", // Vietnamese
+                "connect",
+                "relate",
+                "link",
+                "how does",
+                "relationship",
+                "kết nối",
+                "liên quan", // Vietnamese
             ],
             graph_keywords: vec![
-                "graph", "network", "traverse", "path", "bonds",
-                "đồ thị", "mạng lưới", // Vietnamese
+                "graph",
+                "network",
+                "traverse",
+                "path",
+                "bonds",
+                "đồ thị",
+                "mạng lưới", // Vietnamese
             ],
         }
     }
@@ -91,7 +123,9 @@ impl IntentClassifier {
 
         // Check retrieve patterns
         if self.retrieve_keywords.iter().any(|k| lower.contains(k)) {
-            return UserIntent::Retrieve { query: input.to_string() };
+            return UserIntent::Retrieve {
+                query: input.to_string(),
+            };
         }
 
         // Check connect patterns
@@ -104,7 +138,9 @@ impl IntentClassifier {
 
         // Check graph patterns
         if self.graph_keywords.iter().any(|k| lower.contains(k)) {
-            return UserIntent::GraphQuery { nl_query: input.to_string() };
+            return UserIntent::GraphQuery {
+                nl_query: input.to_string(),
+            };
         }
 
         // Tier 2: Embedding similarity (placeholder)
@@ -135,8 +171,13 @@ impl IntentClassifier {
             ChatMessage::user(input),
         ];
 
-        let options = InferenceOptions { temperature: 0.0, ..Default::default() };
-        let response = backend.chat(&messages, &options).await
+        let options = InferenceOptions {
+            temperature: 0.0,
+            ..Default::default()
+        };
+        let response = backend
+            .chat(&messages, &options)
+            .await
             .map_err(crate::error::MediatorError::Ai)?;
 
         // Parse response
@@ -146,17 +187,28 @@ impl IntentClassifier {
                 source: EncodeSource::TextInput,
                 trigger: EncodeTrigger::Proactive,
             },
-            s if s.contains("RETRIEVE") => UserIntent::Retrieve { query: input.to_string() },
-            s if s.contains("CONNECT") => UserIntent::Connect { source: input.to_string(), target: None },
-            s if s.contains("SYNTHESIZE") => UserIntent::Synthesize { topic: input.to_string() },
-            s if s.contains("GRAPH") => UserIntent::GraphQuery { nl_query: input.to_string() },
+            s if s.contains("RETRIEVE") => UserIntent::Retrieve {
+                query: input.to_string(),
+            },
+            s if s.contains("CONNECT") => UserIntent::Connect {
+                source: input.to_string(),
+                target: None,
+            },
+            s if s.contains("SYNTHESIZE") => UserIntent::Synthesize {
+                topic: input.to_string(),
+            },
+            s if s.contains("GRAPH") => UserIntent::GraphQuery {
+                nl_query: input.to_string(),
+            },
             _ => UserIntent::FreeChat,
         })
     }
 }
 
 impl Default for IntentClassifier {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -171,7 +223,13 @@ mod tests {
     fn test_encode_intent_english() {
         let c = classifier();
         let intent = c.classify("Remember that water boils at 100°C");
-        assert!(matches!(intent, UserIntent::Encode { trigger: EncodeTrigger::Explicit, .. }));
+        assert!(matches!(
+            intent,
+            UserIntent::Encode {
+                trigger: EncodeTrigger::Explicit,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -219,7 +277,8 @@ mod tests {
     #[test]
     fn test_ambiguous_long() {
         let c = classifier();
-        let intent = c.classify("I was thinking about the interesting dynamics of complex systems in nature");
+        let intent = c
+            .classify("I was thinking about the interesting dynamics of complex systems in nature");
         assert!(matches!(intent, UserIntent::Ambiguous));
     }
 

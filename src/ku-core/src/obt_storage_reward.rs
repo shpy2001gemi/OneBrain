@@ -24,7 +24,7 @@
 //! ## Reference
 //! See `docs/specs/obt/04_STORAGE_REWARD.md`.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::obt_constants::*;
 
@@ -60,9 +60,7 @@ pub struct StoredKuInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StorageChallenge {
     /// Type 1: Node must return BLAKE3 hash of entire KU wire bytes.
-    FullHash {
-        ku_cid: [u8; 32],
-    },
+    FullHash { ku_cid: [u8; 32] },
 
     /// Type 2: Node must return a specific byte range from the KU.
     ByteRange {
@@ -74,9 +72,7 @@ pub enum StorageChallenge {
     },
 
     /// Type 3: Node must extract a specific field and provide Merkle proof.
-    FieldExtract {
-        ku_cid: [u8; 32],
-    },
+    FieldExtract { ku_cid: [u8; 32] },
 }
 
 impl StorageChallenge {
@@ -208,16 +204,19 @@ pub fn compute_node_storage_reward(
     node_trust: f64,
     median_metabolism: f64,
 ) -> f64 {
-    stored_kus.iter().map(|ku| {
-        compute_ku_storage_reward(
-            ku.wire_bytes_len,
-            ku.actual_replicas,
-            ku.metabolism_rate,
-            median_metabolism,
-            ku.epochs_stored,
-            node_trust,
-        )
-    }).sum()
+    stored_kus
+        .iter()
+        .map(|ku| {
+            compute_ku_storage_reward(
+                ku.wire_bytes_len,
+                ku.actual_replicas,
+                ku.metabolism_rate,
+                median_metabolism,
+                ku.epochs_stored,
+                node_trust,
+            )
+        })
+        .sum()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -297,7 +296,7 @@ fn select_challenge_type(seed: &[u8; 32], ku_cid: &[u8; 32]) -> StorageChallenge
         0..=50 => {
             // FullHash (~20%)
             StorageChallenge::FullHash { ku_cid: *ku_cid }
-        },
+        }
         51..=178 => {
             // ByteRange (~50%) — derive offset/length from hash
             let offset = u32::from_le_bytes(hash.as_bytes()[1..5].try_into().unwrap());
@@ -309,11 +308,11 @@ fn select_challenge_type(seed: &[u8; 32], ku_cid: &[u8; 32]) -> StorageChallenge
                 offset,
                 length,
             }
-        },
+        }
         179..=255 => {
             // FieldExtract (~30%)
             StorageChallenge::FieldExtract { ku_cid: *ku_cid }
-        },
+        }
     }
 }
 
@@ -456,12 +455,12 @@ mod tests {
     fn test_compute_ku_storage_reward_basic() {
         // 1KB, K_TARGET replicas, at median metabolism, 50 epochs, trust=0.5
         let reward = compute_ku_storage_reward(
-            1024,  // 1KB → size_w = 1.0
+            1024,     // 1KB → size_w = 1.0
             K_TARGET, // K_TARGET replicas → rarity_w = 1.0
-            1.0,   // at median → demand_w = 1.0
-            1.0,   // median_metabolism
-            50,    // 50 epochs → duration_f = 0.5
-            0.5,   // trust_f = 0.5
+            1.0,      // at median → demand_w = 1.0
+            1.0,      // median_metabolism
+            50,       // 50 epochs → duration_f = 0.5
+            0.5,      // trust_f = 0.5
         );
         let expected = STORAGE_BASE_RATE * 1.0 * 1.0 * 1.0 * 0.5 * 0.5;
         assert!((reward - expected).abs() < 1e-12);
@@ -471,12 +470,12 @@ mod tests {
     fn test_compute_ku_storage_reward_rare_hot() {
         // 5KB, 2 replicas, 4× median, 100 epochs, trust=0.5
         let reward = compute_ku_storage_reward(
-            5 * 1024,  // 5KB → size_w = 5.0
-            2,         // 2 replicas → rarity_w = 3.0 (clamped from 4.0)
-            4.0,       // 4× median → demand_w = 4.0
-            1.0,       // median
-            100,       // 100 epochs → duration_f = 1.0
-            0.5,       // trust_f = 0.5
+            5 * 1024, // 5KB → size_w = 5.0
+            2,        // 2 replicas → rarity_w = 3.0 (clamped from 4.0)
+            4.0,      // 4× median → demand_w = 4.0
+            1.0,      // median
+            100,      // 100 epochs → duration_f = 1.0
+            0.5,      // trust_f = 0.5
         );
         let expected = STORAGE_BASE_RATE * 5.0 * 3.0 * 4.0 * 1.0 * 0.5;
         assert!((reward - expected).abs() < 1e-10);
@@ -486,10 +485,11 @@ mod tests {
     #[test]
     fn test_compute_ku_storage_reward_sybil() {
         // Sybil node: trust ≈ MIN_TRUST → reward ≈ 0
-        let reward = compute_ku_storage_reward(
-            5 * 1024, 4, 2.0, 1.0, 100, 0.001,
+        let reward = compute_ku_storage_reward(5 * 1024, 4, 2.0, 1.0, 100, 0.001);
+        assert!(
+            reward < 0.0001,
+            "Sybil node should earn nearly nothing: {reward}"
         );
-        assert!(reward < 0.0001, "Sybil node should earn nearly nothing: {reward}");
     }
 
     // ── Per-Node Aggregate Reward ────────────────────────────────────
@@ -536,11 +536,13 @@ mod tests {
     #[test]
     fn test_generate_challenges_deterministic() {
         let node_id = [1u8; 32];
-        let cids: Vec<[u8; 32]> = (0..100u8).map(|i| {
-            let mut c = [0u8; 32];
-            c[0] = i;
-            c
-        }).collect();
+        let cids: Vec<[u8; 32]> = (0..100u8)
+            .map(|i| {
+                let mut c = [0u8; 32];
+                c[0] = i;
+                c
+            })
+            .collect();
 
         let c1 = generate_storage_challenges(10, &node_id, &cids, 50);
         let c2 = generate_storage_challenges(10, &node_id, &cids, 50);
@@ -556,11 +558,13 @@ mod tests {
     #[test]
     fn test_generate_challenges_different_epochs() {
         let node_id = [1u8; 32];
-        let cids: Vec<[u8; 32]> = (0..100u8).map(|i| {
-            let mut c = [0u8; 32];
-            c[0] = i;
-            c
-        }).collect();
+        let cids: Vec<[u8; 32]> = (0..100u8)
+            .map(|i| {
+                let mut c = [0u8; 32];
+                c[0] = i;
+                c
+            })
+            .collect();
 
         let c_epoch_1 = generate_storage_challenges(1, &node_id, &cids, 50);
         let c_epoch_2 = generate_storage_challenges(2, &node_id, &cids, 50);
@@ -579,11 +583,13 @@ mod tests {
     fn test_generate_challenges_max_cap() {
         let node_id = [1u8; 32];
         // Generate 1000 CIDs to ensure many would be selected
-        let cids: Vec<[u8; 32]> = (0..1000u16).map(|i| {
-            let mut c = [0u8; 32];
-            c[0..2].copy_from_slice(&i.to_le_bytes());
-            c
-        }).collect();
+        let cids: Vec<[u8; 32]> = (0..1000u16)
+            .map(|i| {
+                let mut c = [0u8; 32];
+                c[0..2].copy_from_slice(&i.to_le_bytes());
+                c
+            })
+            .collect();
 
         let challenges = generate_storage_challenges(42, &node_id, &cids, 5);
         assert!(challenges.len() <= 5, "Should be capped at max_challenges");
@@ -593,21 +599,26 @@ mod tests {
     fn test_challenge_type_distribution() {
         // Generate many challenges and verify rough distribution
         let node_id = [42u8; 32];
-        let cids: Vec<[u8; 32]> = (0..10000u16).map(|i| {
-            let mut c = [0u8; 32];
-            c[0..2].copy_from_slice(&i.to_le_bytes());
-            c
-        }).collect();
+        let cids: Vec<[u8; 32]> = (0..10000u16)
+            .map(|i| {
+                let mut c = [0u8; 32];
+                c[0..2].copy_from_slice(&i.to_le_bytes());
+                c
+            })
+            .collect();
 
         let challenges = generate_storage_challenges(99, &node_id, &cids, 5000);
 
-        let full_hash = challenges.iter()
+        let full_hash = challenges
+            .iter()
             .filter(|c| matches!(c, StorageChallenge::FullHash { .. }))
             .count();
-        let byte_range = challenges.iter()
+        let byte_range = challenges
+            .iter()
             .filter(|c| matches!(c, StorageChallenge::ByteRange { .. }))
             .count();
-        let field_extract = challenges.iter()
+        let field_extract = challenges
+            .iter()
             .filter(|c| matches!(c, StorageChallenge::FieldExtract { .. }))
             .count();
 
@@ -619,12 +630,21 @@ mod tests {
             let br_pct = byte_range as f64 / total as f64;
             let fe_pct = field_extract as f64 / total as f64;
 
-            assert!(fh_pct > 0.05 && fh_pct < 0.40,
-                "FullHash should be ~20%, got {:.1}%", fh_pct * 100.0);
-            assert!(br_pct > 0.30 && br_pct < 0.70,
-                "ByteRange should be ~50%, got {:.1}%", br_pct * 100.0);
-            assert!(fe_pct > 0.10 && fe_pct < 0.50,
-                "FieldExtract should be ~30%, got {:.1}%", fe_pct * 100.0);
+            assert!(
+                fh_pct > 0.05 && fh_pct < 0.40,
+                "FullHash should be ~20%, got {:.1}%",
+                fh_pct * 100.0
+            );
+            assert!(
+                br_pct > 0.30 && br_pct < 0.70,
+                "ByteRange should be ~50%, got {:.1}%",
+                br_pct * 100.0
+            );
+            assert!(
+                fe_pct > 0.10 && fe_pct < 0.50,
+                "FieldExtract should be ~30%, got {:.1}%",
+                fe_pct * 100.0
+            );
         }
     }
 

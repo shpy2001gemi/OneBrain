@@ -25,8 +25,8 @@
 //! | 3    | 2M–268M       | 4     | Specialized terms  |
 //! | 4    | 268M+         | 5+    | Rare/unique        |
 
-use crate::types::ConceptId;
 use crate::error::KuError;
+use crate::types::ConceptId;
 use std::collections::HashMap;
 
 // ============================================================================
@@ -317,14 +317,20 @@ mod tests {
     fn test_with_entries() {
         let entries = vec![
             ConceptEntry {
-                id: 10, name: "is".to_string(),
-                name_vi: Some("là".to_string()), name_en: None,
-                tier: 0, category: None,
+                id: 10,
+                name: "is".to_string(),
+                name_vi: Some("là".to_string()),
+                name_en: None,
+                tier: 0,
+                category: None,
             },
             ConceptEntry {
-                id: 301, name: "water".to_string(),
-                name_vi: Some("nước".to_string()), name_en: Some("water".to_string()),
-                tier: 1, category: Some("chemistry".to_string()),
+                id: 301,
+                name: "water".to_string(),
+                name_vi: Some("nước".to_string()),
+                name_en: Some("water".to_string()),
+                tier: 1,
+                category: Some("chemistry".to_string()),
             },
         ];
         let dict = ConceptDict::with_entries(entries);

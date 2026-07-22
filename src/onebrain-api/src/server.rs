@@ -12,9 +12,9 @@ use axum::http::{header, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
-use tokio::sync::broadcast;
 use axum::Json;
 use axum::Router;
+use tokio::sync::broadcast;
 use tokio::sync::Mutex;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
@@ -63,11 +63,7 @@ impl ApiServer {
     }
 
     /// Create from an already-shared node reference.
-    pub fn with_shared_node(
-        node: Arc<Mutex<OneBrainNode>>,
-        api_token: String,
-        port: u16,
-    ) -> Self {
+    pub fn with_shared_node(node: Arc<Mutex<OneBrainNode>>, api_token: String, port: u16) -> Self {
         let (event_broadcast, _) = broadcast::channel(256);
         Self {
             state: AppState {
@@ -135,15 +131,12 @@ impl ApiServer {
             .allow_methods([
                 Method::GET,
                 Method::POST,
+                Method::PUT,
                 Method::PATCH,
                 Method::DELETE,
                 Method::OPTIONS,
             ])
-            .allow_headers([
-                header::CONTENT_TYPE,
-                header::AUTHORIZATION,
-                header::ACCEPT,
-            ])
+            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
             .allow_credentials(true);
 
         // Build route tree
@@ -158,10 +151,16 @@ impl ApiServer {
             .route("/api/kus/{cid}", delete(handlers::delete_ku))
             .route("/api/search", post(handlers::search_knowledge))
             .route("/api/kql", post(handlers::execute_kql))
+            .route("/api/search/suggest", get(handlers::search_suggest))
             // Chat
             .route("/api/chat", post(handlers::chat))
             // Network
             .route("/api/status", get(handlers::get_status))
+            .route("/api/vnext/workflow", get(handlers::get_vnext_workflow))
+            .route(
+                "/api/vnext/workflow/{stage}",
+                get(handlers::get_vnext_workflow_stage),
+            )
             .route("/api/peers", get(handlers::get_peers))
             .route("/api/peers/connect", post(handlers::connect_peer))
             // Graph
@@ -170,6 +169,8 @@ impl ApiServer {
             // Wallet
             .route("/api/wallet", get(handlers::get_wallet))
             .route("/api/wallet/history", get(handlers::get_wallet_history))
+            .route("/api/wallet/stake", post(handlers::stake))
+            .route("/api/wallet/unstake", post(handlers::unstake))
             // Profile & Settings
             .route("/api/profile", get(handlers::get_profile))
             .route("/api/profile", patch(handlers::update_profile))
@@ -187,9 +188,25 @@ impl ApiServer {
             .route("/api/ai/model", post(handlers::switch_model))
             // Phase 1: Knowledge Management
             .route("/api/kus/{cid}/deprecate", post(handlers::deprecate_ku))
-            .route("/api/drafts", post(handlers::encode_draft))
+            .route(
+                "/api/drafts",
+                post(handlers::save_draft).get(handlers::list_drafts),
+            )
+            .route(
+                "/api/drafts/{draft_id}",
+                get(handlers::get_draft)
+                    .put(handlers::update_draft)
+                    .delete(handlers::delete_draft),
+            )
+            .route(
+                "/api/drafts/{draft_id}/publish",
+                post(handlers::publish_draft),
+            )
             // Phase 1: Tags
-            .route("/api/kus/{cid}/tags", post(handlers::add_tag))
+            .route(
+                "/api/kus/{cid}/tags",
+                post(handlers::add_tag).get(handlers::get_ku_tags),
+            )
             .route("/api/kus/{cid}/tags/{tag}", delete(handlers::remove_tag))
             .route("/api/tags", get(handlers::list_tags))
             // Phase 1: Pin/Favorite KUs
@@ -200,7 +217,10 @@ impl ApiServer {
             .route("/api/follow/{node_id}", post(handlers::follow_node))
             .route("/api/follow/{node_id}", delete(handlers::unfollow_node))
             .route("/api/following", get(handlers::list_following))
-            .route("/api/nodes/{node_id}/profile", get(handlers::get_peer_profile))
+            .route(
+                "/api/nodes/{node_id}/profile",
+                get(handlers::get_peer_profile),
+            )
             // Phase 1: Multi-Device
             .route("/api/devices", get(handlers::list_devices))
             .route("/api/sync/status", get(handlers::sync_status))
@@ -224,21 +244,39 @@ impl ApiServer {
             // Phase 1 Tier C: Search History
             .route("/api/search-history", get(handlers::list_search_history))
             .route("/api/search-history", post(handlers::record_search))
-            .route("/api/search-history", delete(handlers::clear_search_history))
+            .route(
+                "/api/search-history",
+                delete(handlers::clear_search_history),
+            )
             // Phase 1 Tier C: Notification Preferences
-            .route("/api/notification-prefs", get(handlers::get_notification_prefs))
-            .route("/api/notification-prefs", put(handlers::set_notification_prefs))
+            .route(
+                "/api/notification-prefs",
+                get(handlers::get_notification_prefs),
+            )
+            .route(
+                "/api/notification-prefs",
+                put(handlers::set_notification_prefs),
+            )
             // Phase 1 Tier C: Saved Searches
             .route("/api/saved-searches", get(handlers::list_saved_searches))
             .route("/api/saved-searches", post(handlers::save_search))
-            .route("/api/saved-searches/{id}", delete(handlers::delete_saved_search))
+            .route(
+                "/api/saved-searches/{id}",
+                delete(handlers::delete_saved_search),
+            )
             // Phase 1 Tier C: Collections
             .route("/api/collections", get(handlers::list_collections))
             .route("/api/collections", post(handlers::create_collection))
             .route("/api/collections/{id}", get(handlers::get_collection))
             .route("/api/collections/{id}", delete(handlers::delete_collection))
-            .route("/api/collections/{id}/kus", post(handlers::add_to_collection))
-            .route("/api/collections/{id}/kus/{cid}", delete(handlers::remove_from_collection))
+            .route(
+                "/api/collections/{id}/kus",
+                post(handlers::add_to_collection),
+            )
+            .route(
+                "/api/collections/{id}/kus/{cid}",
+                delete(handlers::remove_from_collection),
+            )
             // Phase 1 Tier C: KU Version Chain
             .route("/api/kus/{cid}/versions", get(handlers::get_version_chain))
             // Phase 1 Tier C: Trending & Recommendations
@@ -251,8 +289,7 @@ impl ApiServer {
             .route("/api/domains/{domain}/kus", get(handlers::kus_by_domain));
 
         // WebSocket (no auth middleware)
-        let ws_routes = Router::new()
-            .route("/ws/events", get(handlers::ws_events));
+        let ws_routes = Router::new().route("/ws/events", get(handlers::ws_events));
 
         let mut router = Router::new()
             .merge(api_routes)
@@ -340,10 +377,8 @@ async fn auth_middleware(
             }
         }
         _ => {
-            let body = ApiErrorResponse::new(
-                "AUTH_REQUIRED",
-                "Missing or malformed Authorization header",
-            );
+            let body =
+                ApiErrorResponse::new("AUTH_REQUIRED", "Missing or malformed Authorization header");
             (StatusCode::UNAUTHORIZED, Json(body)).into_response()
         }
     }
@@ -378,14 +413,25 @@ async fn serve_index(web_dir: &std::path::Path) -> Response {
 
 /// Simple MIME type lookup from file extension.
 fn mime_from_path(path: &str) -> &'static str {
-    if path.ends_with(".html") { "text/html; charset=utf-8" }
-    else if path.ends_with(".js") { "application/javascript" }
-    else if path.ends_with(".css") { "text/css" }
-    else if path.ends_with(".svg") { "image/svg+xml" }
-    else if path.ends_with(".png") { "image/png" }
-    else if path.ends_with(".ico") { "image/x-icon" }
-    else if path.ends_with(".json") { "application/json" }
-    else if path.ends_with(".woff2") { "font/woff2" }
-    else if path.ends_with(".woff") { "font/woff" }
-    else { "application/octet-stream" }
+    if path.ends_with(".html") {
+        "text/html; charset=utf-8"
+    } else if path.ends_with(".js") {
+        "application/javascript"
+    } else if path.ends_with(".css") {
+        "text/css"
+    } else if path.ends_with(".svg") {
+        "image/svg+xml"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".ico") {
+        "image/x-icon"
+    } else if path.ends_with(".json") {
+        "application/json"
+    } else if path.ends_with(".woff2") {
+        "font/woff2"
+    } else if path.ends_with(".woff") {
+        "font/woff"
+    } else {
+        "application/octet-stream"
+    }
 }

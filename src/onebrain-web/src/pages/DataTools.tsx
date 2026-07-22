@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { api } from '../api/client';
 import type { ImportResult, BlobMeta, BulkDeleteResult } from '../api/types';
 import { ALL_GENE_TYPES } from '../api/types';
+import { formatSize } from '../utils/format';
 
 // ─── Shared inline styles ────────────────────────────────
 const styles = {
@@ -153,8 +154,8 @@ export function DataToolsPage() {
       a.click();
       URL.revokeObjectURL(url);
       showMessage('success', `Exported KUs as ${exportFormat.toUpperCase()} successfully`);
-    } catch (err: any) {
-      showMessage('error', err.message || 'Export failed');
+    } catch (err: unknown) {
+      showMessage('error', err instanceof Error ? err.message : String(err));
     } finally {
       setExporting(false);
     }
@@ -169,8 +170,8 @@ export function DataToolsPage() {
       const result = await api.importKus(file);
       setImportResult(result);
       showMessage('success', `Imported ${result.imported} KUs`);
-    } catch (err: any) {
-      showMessage('error', err.message || 'Import failed');
+    } catch (err: unknown) {
+      showMessage('error', err instanceof Error ? err.message : String(err));
     } finally {
       setImporting(false);
     }
@@ -188,8 +189,8 @@ export function DataToolsPage() {
       URL.revokeObjectURL(url);
       setBackupPassword('');
       showMessage('success', 'Backup created and downloaded');
-    } catch (err: any) {
-      showMessage('error', err.message || 'Backup failed');
+    } catch (err: unknown) {
+      showMessage('error', err instanceof Error ? err.message : String(err));
     } finally {
       setCreatingBackup(false);
     }
@@ -203,8 +204,8 @@ export function DataToolsPage() {
       await api.restoreBackup(file, restorePassword);
       setRestorePassword('');
       showMessage('success', 'Backup restored successfully');
-    } catch (err: any) {
-      showMessage('error', err.message || 'Restore failed');
+    } catch (err: unknown) {
+      showMessage('error', err instanceof Error ? err.message : String(err));
     } finally {
       setRestoring(false);
     }
@@ -219,8 +220,8 @@ export function DataToolsPage() {
       const meta = await api.uploadBlob(file);
       setUploadResult(meta);
       showMessage('success', `Blob uploaded: ${meta.original_name}`);
-    } catch (err: any) {
-      showMessage('error', err.message || 'Upload failed');
+    } catch (err: unknown) {
+      showMessage('error', err instanceof Error ? err.message : String(err));
     } finally {
       setUploading(false);
     }
@@ -239,18 +240,14 @@ export function DataToolsPage() {
       const result = await api.bulkDeleteKus(bulkGeneType || undefined, beforeTs);
       setBulkDeleteResult(result);
       showMessage('success', `Deleted ${result.deleted} KUs`);
-    } catch (err: any) {
-      showMessage('error', err.message || 'Bulk delete failed');
+    } catch (err: unknown) {
+      showMessage('error', err instanceof Error ? err.message : String(err));
     } finally {
       setBulkDeleting(false);
     }
   };
 
-  const formatBytes = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  };
+  const formatBytes = formatSize;
 
   // ─── Render ────────────────────────────────────────────
   return (

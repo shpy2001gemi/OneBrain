@@ -8,8 +8,8 @@
 //! Knowledge that stagnates naturally weakens — but never dies.
 //! Structural bonds (PartOf, InstanceOf) are immune to decay.
 
-use crate::graph_types::{decay_lambda, BondMeta, BondEvent, WeakeningReason, Decayable};
-use crate::types::{Bond, EdgeState, DecayRate, RelationType};
+use crate::graph_types::{decay_lambda, BondEvent, BondMeta, Decayable, WeakeningReason};
+use crate::types::{Bond, DecayRate, EdgeState, RelationType};
 
 // ============================================================================
 // Decayable implementations
@@ -54,8 +54,8 @@ pub struct DecayReport {
 }
 
 /// Thresholds for decay state transitions
-pub const WEAKEN_THRESHOLD: f64 = 0.3;      // below 30% of original → Weakened
-pub const DEPRECATE_THRESHOLD: f64 = 0.05;  // below 5% of original → Deprecated
+pub const WEAKEN_THRESHOLD: f64 = 0.3; // below 30% of original → Weakened
+pub const DEPRECATE_THRESHOLD: f64 = 0.05; // below 5% of original → Deprecated
 
 /// Batch decay runner.
 pub struct DecayRunner;
@@ -66,7 +66,7 @@ impl DecayRunner {
     /// Returns a DecayReport with state transitions and events.
     /// Does NOT modify the bonds — caller uses the report to update storage.
     pub fn run_decay(
-        bonds: &[(([u8; 32], [u8; 32]), Bond)],  // ((source, target), bond)
+        bonds: &[(([u8; 32], [u8; 32]), Bond)], // ((source, target), bond)
         now_secs: u64,
     ) -> DecayReport {
         let mut report = DecayReport::default();
@@ -170,7 +170,7 @@ pub fn decay_rate_to_lambda(rate: DecayRate) -> f64 {
     match rate {
         DecayRate::None => 0.0,
         DecayRate::Slow => 0.0019,
-        DecayRate::Med  => 0.0077,
+        DecayRate::Med => 0.0077,
         DecayRate::Fast => 0.099,
     }
 }
@@ -178,10 +178,15 @@ pub fn decay_rate_to_lambda(rate: DecayRate) -> f64 {
 /// Suggest the appropriate [`DecayRate`] for a [`RelationType`].
 pub fn suggested_decay_rate(relation: RelationType) -> DecayRate {
     let lambda = decay_lambda(relation);
-    if lambda == 0.0 { DecayRate::None }
-    else if lambda < 0.005 { DecayRate::Slow }
-    else if lambda < 0.05 { DecayRate::Med }
-    else { DecayRate::Fast }
+    if lambda == 0.0 {
+        DecayRate::None
+    } else if lambda < 0.005 {
+        DecayRate::Slow
+    } else if lambda < 0.05 {
+        DecayRate::Med
+    } else {
+        DecayRate::Fast
+    }
 }
 
 // ============================================================================
@@ -269,8 +274,8 @@ mod tests {
     fn decay_rate_to_lambda_all() {
         assert_eq!(decay_rate_to_lambda(DecayRate::None), 0.0);
         assert!((decay_rate_to_lambda(DecayRate::Slow) - 0.0019).abs() < 1e-10);
-        assert!((decay_rate_to_lambda(DecayRate::Med)  - 0.0077).abs() < 1e-10);
-        assert!((decay_rate_to_lambda(DecayRate::Fast) - 0.099).abs()  < 1e-10);
+        assert!((decay_rate_to_lambda(DecayRate::Med) - 0.0077).abs() < 1e-10);
+        assert!((decay_rate_to_lambda(DecayRate::Fast) - 0.099).abs() < 1e-10);
     }
 
     // ── 5. suggested_decay_rate: structural ─────────────────────────────
@@ -278,7 +283,10 @@ mod tests {
     #[test]
     fn suggested_decay_rate_structural() {
         assert_eq!(suggested_decay_rate(RelationType::PartOf), DecayRate::None);
-        assert_eq!(suggested_decay_rate(RelationType::InstanceOf), DecayRate::None);
+        assert_eq!(
+            suggested_decay_rate(RelationType::InstanceOf),
+            DecayRate::None
+        );
         assert_eq!(suggested_decay_rate(RelationType::Cites), DecayRate::None);
     }
 
@@ -286,8 +294,14 @@ mod tests {
 
     #[test]
     fn suggested_decay_rate_experiential() {
-        assert_eq!(suggested_decay_rate(RelationType::ReactionTo), DecayRate::Fast);
-        assert_eq!(suggested_decay_rate(RelationType::SensoryEvidenceFor), DecayRate::Fast);
+        assert_eq!(
+            suggested_decay_rate(RelationType::ReactionTo),
+            DecayRate::Fast
+        );
+        assert_eq!(
+            suggested_decay_rate(RelationType::SensoryEvidenceFor),
+            DecayRate::Fast
+        );
     }
 
     // ── 7. run_decay: empty list ────────────────────────────────────────
@@ -331,7 +345,9 @@ mod tests {
         assert_eq!(report.bonds_deprecated, 0);
         assert_eq!(report.events.len(), 1);
         match &report.events[0] {
-            BondEvent::Weakened { old_weight, reason, .. } => {
+            BondEvent::Weakened {
+                old_weight, reason, ..
+            } => {
                 assert_eq!(*old_weight, 10000);
                 assert_eq!(*reason, WeakeningReason::Decay);
             }
@@ -353,7 +369,11 @@ mod tests {
         assert_eq!(report.bonds_weakened, 0);
         assert_eq!(report.events.len(), 1);
         match &report.events[0] {
-            BondEvent::StateChanged { old_state, new_state, .. } => {
+            BondEvent::StateChanged {
+                old_state,
+                new_state,
+                ..
+            } => {
                 assert_eq!(*old_state, EdgeState::Active);
                 assert_eq!(*new_state, EdgeState::Deprecated);
             }
@@ -373,7 +393,11 @@ mod tests {
         assert_eq!(report.bonds_deprecated, 1);
         assert_eq!(report.events.len(), 1);
         match &report.events[0] {
-            BondEvent::StateChanged { old_state, new_state, .. } => {
+            BondEvent::StateChanged {
+                old_state,
+                new_state,
+                ..
+            } => {
                 assert_eq!(*old_state, EdgeState::Weakened);
                 assert_eq!(*new_state, EdgeState::Deprecated);
             }
@@ -436,7 +460,11 @@ mod tests {
         let bond = make_bond(RelationType::Extends, 5000, 0, None);
         let event = DecayRunner::reinforce(cid(1), cid(2), &bond, 2000, 1_000_000);
         match event {
-            BondEvent::Reinforced { old_weight, new_weight, .. } => {
+            BondEvent::Reinforced {
+                old_weight,
+                new_weight,
+                ..
+            } => {
                 assert_eq!(old_weight, 5000);
                 assert_eq!(new_weight, 7000);
             }

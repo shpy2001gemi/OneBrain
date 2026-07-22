@@ -193,11 +193,8 @@ impl EpochAccumulator {
         let total_emission = compute_epoch_emission(active_nodes, avg_pomv_score);
 
         let storage_challenges_issued = self.challenge_results.len() as u32;
-        let storage_challenges_passed = self
-            .challenge_results
-            .iter()
-            .filter(|c| c.passed)
-            .count() as u32;
+        let storage_challenges_passed =
+            self.challenge_results.iter().filter(|c| c.passed).count() as u32;
 
         let (start_ts, end_ts) = compute_epoch_boundaries(self.epoch);
 
@@ -260,9 +257,9 @@ mod tests {
     #[test]
     fn test_is_in_epoch_boundary() {
         // Start is inclusive, end is exclusive
-        assert!(is_in_epoch(0, 0));       // start of epoch 0
-        assert!(!is_in_epoch(3_600, 0));  // end of epoch 0 (exclusive)
-        assert!(is_in_epoch(3_600, 1));   // start of epoch 1
+        assert!(is_in_epoch(0, 0)); // start of epoch 0
+        assert!(!is_in_epoch(3_600, 0)); // end of epoch 0 (exclusive)
+        assert!(is_in_epoch(3_600, 1)); // start of epoch 1
     }
 
     // ── EpochSummary ──────────────────────────────────────────────────
@@ -375,9 +372,21 @@ mod tests {
             timestamp: 7_400,
         });
 
-        acc.record_challenge(ChallengeResult { node_id: 1, passed: true, timestamp: 7_500 });
-        acc.record_challenge(ChallengeResult { node_id: 2, passed: false, timestamp: 7_600 });
-        acc.record_challenge(ChallengeResult { node_id: 3, passed: true, timestamp: 7_700 });
+        acc.record_challenge(ChallengeResult {
+            node_id: 1,
+            passed: true,
+            timestamp: 7_500,
+        });
+        acc.record_challenge(ChallengeResult {
+            node_id: 2,
+            passed: false,
+            timestamp: 7_600,
+        });
+        acc.record_challenge(ChallengeResult {
+            node_id: 3,
+            passed: true,
+            timestamp: 7_700,
+        });
 
         acc.record_fork();
         acc.record_fork();

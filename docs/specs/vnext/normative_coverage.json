@@ -1,0 +1,176 @@
+{
+  "format": "onebrain/normative-coverage/1",
+  "scope": "Every Markdown line containing RFC-style MUST or SHOULD in docs/specs/vnext",
+  "files": [
+    {
+      "path": "docs/specs/vnext/ADDITIVE_MIGRATION_STORAGE_PROFILE_V1.md",
+      "expected_statement_lines": 3,
+      "evidence": [
+        {
+          "path": "src/ku-core/src/foundation/migration.rs",
+          "needle": "killed_batch_restarts_idempotently_and_preserves_raw"
+        },
+        {
+          "path": "src/ku-core/src/foundation/migration.rs",
+          "needle": "legacy_u64_never_claims_full_width_identity"
+        }
+      ],
+      "rationale": "Atomic copy-or-quarantine, immutable exact replay and the no-full-identity firewall are executable storage invariants; destructive v1 removal remains outside the profile."
+    },
+    {
+      "path": "docs/specs/vnext/CANONICAL_PROFILE_V1.md",
+      "expected_statement_lines": 22,
+      "evidence": [
+        {
+          "path": "src/ku-core/src/foundation/canonical.rs",
+          "needle": "property_smoke_map_permutations_keep_identical_bytes_and_cid_input"
+        },
+        {
+          "path": "src/ku-core/src/foundation/conformance.rs",
+          "needle": "frozen_identity_object_vectors_pass"
+        },
+        {
+          "path": "src/test-vectors/vnext/foundation/canonical-v1.json",
+          "needle": "onebrain/foundation-vectors/1"
+        }
+      ],
+      "rationale": "Canonical encoding, normalization, limits, domains, typed IDs, opaque handling and byte-for-byte re-encoding are covered by frozen valid/invalid vectors and the cross-crate conformance runner; advisory naming guidance has no runtime side effect."
+    },
+    {
+      "path": "docs/specs/vnext/CAPABILITY_LAYER_PROFILE_V1.md",
+      "expected_statement_lines": 4,
+      "evidence": [
+        {
+          "path": "src/ku-core/src/foundation/capability.rs",
+          "needle": "implementation_changes_identity_without_rewriting_definition"
+        },
+        {
+          "path": "src/ku-core/src/foundation/capability_permit.rs",
+          "needle": "every_child_authority_dimension_fails_closed_on_expansion"
+        }
+      ],
+      "rationale": "Separate layer identities and permit attenuation are type and reducer boundaries; routing hints remain non-authoritative by construction."
+    },
+    {
+      "path": "docs/specs/vnext/FIELD_OWNERSHIP_MATRIX_V1.md",
+      "expected_statement_lines": 19,
+      "evidence": [
+        {
+          "path": "docs/specs/vnext/negative_assertions.yaml",
+          "needle": "NEG-MAP-001"
+        },
+        {
+          "path": "src/ku-core/src/foundation/materialization.rs",
+          "needle": "qa006_materialization_does_not_adopt_or_change_resolution"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_reward_firewall.rs",
+          "needle": "disabled_reward_path_is_the_safe_default_and_never_gates_operations"
+        }
+      ],
+      "rationale": "Ownership prohibitions are cross-cutting architectural safety properties. They are registered as negative assertions and exercised at the materialization, reward, storage, provider, checkpoint and migration boundaries rather than centralized in one reducer."
+    },
+    {
+      "path": "docs/specs/vnext/IDENTITY_OBJECT_PROFILE_V1.md",
+      "expected_statement_lines": 4,
+      "evidence": [
+        {
+          "path": "src/ku-core/src/foundation/identity.rs",
+          "needle": "clocks_merge_by_full_identity_and_are_deterministic"
+        },
+        {
+          "path": "src/ku-core/src/foundation/object.rs",
+          "needle": "known_object_round_trips_with_stable_cid"
+        },
+        {
+          "path": "src/ku-core/src/foundation/conformance.rs",
+          "needle": "frozen_identity_object_vectors_pass"
+        }
+      ],
+      "rationale": "Full-width identity, opaque-object non-execution and test-kind isolation are enforced by typed wrappers, schema validation and frozen collision/opaque vectors."
+    },
+    {
+      "path": "docs/specs/vnext/LOCAL_MANIFEST_CONFORMANCE_PROFILE_V1.md",
+      "expected_statement_lines": 1,
+      "evidence": [
+        {
+          "path": "src/ku-ai/src/vnext_manifest.rs",
+          "needle": "public_sketch_contains_no_exact_model_or_device_descriptor"
+        }
+      ],
+      "rationale": "The minimized public sketch is a routing projection; exact implementation disclosure requires a separate authenticated policy and is therefore intentionally absent from this schema."
+    },
+    {
+      "path": "docs/specs/vnext/NORMATIVE_VOCABULARY_V1.md",
+      "expected_statement_lines": 44,
+      "evidence": [
+        {
+          "path": "docs/specs/vnext/negative_assertions.yaml",
+          "needle": "NEG-KU-001"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_negative_assertions"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_status.rs",
+          "needle": "wire_values_do_not_emit_legacy_finality_aliases"
+        }
+      ],
+      "rationale": "Vocabulary requirements define semantic non-equivalences. All named negative assertions are machine-checked for registry presence; pillar-specific suites exercise their runtime boundaries. Terminology guidance is a review rationale where no executable transition exists."
+    },
+    {
+      "path": "docs/specs/vnext/OBP_RECONCILIATION_PROTOCOL_PROFILE_V1.md",
+      "expected_statement_lines": 5,
+      "evidence": [
+        {
+          "path": "src/onebrain-protocol/src/reconciliation_codec.rs",
+          "needle": "every_context_field_is_bound_and_expected_context_rejects_recomputed_tamper"
+        },
+        {
+          "path": "src/onebrain-protocol/src/reconciliation_codec.rs",
+          "needle": "caps_prefix_order_and_local_only_firewall_are_enforced"
+        },
+        {
+          "path": "src/ku-net/src/vnext_reconciliation.rs",
+          "needle": "payload_cannot_reach_sink_before_manifest_or_cid_validation"
+        }
+      ],
+      "rationale": "Profile negotiation, context binding, exact prefixes, canonical re-encoding, resource caps and private-state exclusion are wire-boundary tests. Delayed absence remains unknown by the carrier conformance suite."
+    },
+    {
+      "path": "docs/specs/vnext/REUNION_DELTA_JOIN_PROFILE_V1.md",
+      "expected_statement_lines": 2,
+      "evidence": [
+        {
+          "path": "src/ku-kql/src/vnext_reunion.rs",
+          "needle": "delta_only_processing_defers_whole_object_when_pair_budget_is_insufficient"
+        },
+        {
+          "path": "src/ku-kql/src/vnext_reunion.rs",
+          "needle": "private_or_wrong_kind_remote_object_cannot_enter_inverse_join"
+        }
+      ],
+      "rationale": "Validated-public admission and whole-object budget deferral preserve exact frontier semantics and prevent partial consumption."
+    },
+    {
+      "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
+      "expected_statement_lines": 7,
+      "evidence": [
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_traceability"
+        },
+        {
+          "path": "src/ku-core/src/foundation/provider.rs",
+          "needle": "qa006_retirement_and_lease_trace_permutations_have_one_final_view"
+        },
+        {
+          "path": "src/ku-core/src/foundation/checkpoint_compaction.rs",
+          "needle": "qa006_high_water_merge_is_commutative_associative_idempotent_and_monotonic"
+        }
+      ],
+      "rationale": "Source-of-record direction is enforced by the traced ADR/task graph plus boundary-specific property tests; the matrix itself is the architectural rationale against reverse dependencies."
+    }
+  ]
+}

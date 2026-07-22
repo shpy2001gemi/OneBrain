@@ -12,7 +12,7 @@
 //! ## Public name: Proof-of-Knowledge (PoK)
 //! ## Internal name: Proof-of-Metabolic-Value (PoMV)
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Signal Weights (tunable)
@@ -42,14 +42,20 @@ pub struct PomvWeights {
 impl PomvWeights {
     /// Validate that weights sum to approximately 1.0
     pub fn is_valid(&self) -> bool {
-        let sum = self.metabolism + self.prediction + self.entropy
-            + self.survival + self.synaptic + self.niche_fitness;
+        let sum = self.metabolism
+            + self.prediction
+            + self.entropy
+            + self.survival
+            + self.synaptic
+            + self.niche_fitness;
         (sum - 1.0).abs() < 0.01
     }
 }
 
 impl Default for PomvWeights {
-    fn default() -> Self { DEFAULT_WEIGHTS }
+    fn default() -> Self {
+        DEFAULT_WEIGHTS
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -167,7 +173,11 @@ impl PomvCalculator {
 
     /// Rank a set of KUs by PoMV score (highest first).
     pub fn rank(scores: &mut [(usize, PomvScore)]) {
-        scores.sort_by(|a, b| b.1.total.partial_cmp(&a.1.total).unwrap_or(std::cmp::Ordering::Equal));
+        scores.sort_by(|a, b| {
+            b.1.total
+                .partial_cmp(&a.1.total)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
 }
 
@@ -181,7 +191,10 @@ mod tests {
 
     #[test]
     fn test_default_weights_valid() {
-        assert!(DEFAULT_WEIGHTS.is_valid(), "Default weights must sum to 1.0");
+        assert!(
+            DEFAULT_WEIGHTS.is_valid(),
+            "Default weights must sum to 1.0"
+        );
     }
 
     #[test]
@@ -202,7 +215,11 @@ mod tests {
             niche_fitness: 1.0,
         };
         let score = PomvCalculator::compute_default(&signals);
-        assert!((score.total - 1.0).abs() < 0.01, "All max = score 1.0: {}", score.total);
+        assert!(
+            (score.total - 1.0).abs() < 0.01,
+            "All max = score 1.0: {}",
+            score.total
+        );
     }
 
     #[test]
@@ -256,9 +273,18 @@ mod tests {
 
     #[test]
     fn test_rank_descending() {
-        let s1 = PomvCalculator::compute_default(&PomvSignals { metabolism: 0.1, ..Default::default() });
-        let s2 = PomvCalculator::compute_default(&PomvSignals { metabolism: 0.9, ..Default::default() });
-        let s3 = PomvCalculator::compute_default(&PomvSignals { metabolism: 0.5, ..Default::default() });
+        let s1 = PomvCalculator::compute_default(&PomvSignals {
+            metabolism: 0.1,
+            ..Default::default()
+        });
+        let s2 = PomvCalculator::compute_default(&PomvSignals {
+            metabolism: 0.9,
+            ..Default::default()
+        });
+        let s3 = PomvCalculator::compute_default(&PomvSignals {
+            metabolism: 0.5,
+            ..Default::default()
+        });
 
         let mut ranked = vec![(0, s1), (1, s2), (2, s3)];
         PomvCalculator::rank(&mut ranked);

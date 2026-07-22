@@ -13,7 +13,7 @@
 //! ## This module provides POSITIVE signal: how organic is the spread?
 //! (Immune system provides NEGATIVE signal: how bot-like is the spread?)
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
@@ -117,9 +117,7 @@ impl SpreadAnalyzer {
         // Compute inter-event intervals
         let mut sorted = timestamps.clone();
         sorted.sort();
-        let intervals: Vec<f64> = sorted.windows(2)
-            .map(|w| (w[1] - w[0]) as f64)
-            .collect();
+        let intervals: Vec<f64> = sorted.windows(2).map(|w| (w[1] - w[0]) as f64).collect();
 
         if intervals.is_empty() {
             return 0.5;
@@ -130,9 +128,8 @@ impl SpreadAnalyzer {
             return 0.0; // All same timestamp = bot-like
         }
 
-        let variance = intervals.iter()
-            .map(|&x| (x - mean).powi(2))
-            .sum::<f64>() / intervals.len() as f64;
+        let variance =
+            intervals.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / intervals.len() as f64;
         let cv = variance.sqrt() / mean;
 
         // CV < 0.3 = very regular (bot-like) → low score
@@ -172,8 +169,8 @@ impl SpreadAnalyzer {
         }
 
         // More communities = more organic
-        let community_ratio = metrics.communities_reached as f32
-            / metrics.total_replications as f32;
+        let community_ratio =
+            metrics.communities_reached as f32 / metrics.total_replications as f32;
 
         // Also factor in hop distance (organic spreads further)
         let hop_factor = (metrics.avg_hop_distance / 5.0).min(1.0);
@@ -251,23 +248,33 @@ mod tests {
     #[test]
     fn test_organic_high_score() {
         let analysis = SpreadAnalyzer::analyze(&organic_metrics());
-        assert!(analysis.organicity > 0.5,
-            "Organic spread should score > 0.5: {}", analysis.organicity);
+        assert!(
+            analysis.organicity > 0.5,
+            "Organic spread should score > 0.5: {}",
+            analysis.organicity
+        );
     }
 
     #[test]
     fn test_bot_low_score() {
         let analysis = SpreadAnalyzer::analyze(&bot_metrics());
-        assert!(analysis.organicity < 0.4,
-            "Bot spread should score < 0.4: {}", analysis.organicity);
+        assert!(
+            analysis.organicity < 0.4,
+            "Bot spread should score < 0.4: {}",
+            analysis.organicity
+        );
     }
 
     #[test]
     fn test_organic_beats_bot() {
         let organic = SpreadAnalyzer::analyze(&organic_metrics());
         let bot = SpreadAnalyzer::analyze(&bot_metrics());
-        assert!(organic.organicity > bot.organicity,
-            "Organic ({}) > Bot ({})", organic.organicity, bot.organicity);
+        assert!(
+            organic.organicity > bot.organicity,
+            "Organic ({}) > Bot ({})",
+            organic.organicity,
+            bot.organicity
+        );
     }
 
     #[test]
@@ -346,7 +353,10 @@ mod tests {
     fn test_empty_metrics_neutral() {
         let metrics = SpreadMetrics::default();
         let analysis = SpreadAnalyzer::analyze(&metrics);
-        assert!((analysis.organicity - 0.5).abs() < 0.2,
-            "Empty = roughly neutral: {}", analysis.organicity);
+        assert!(
+            (analysis.organicity - 0.5).abs() < 0.2,
+            "Empty = roughly neutral: {}",
+            analysis.organicity
+        );
     }
 }

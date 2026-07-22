@@ -4,15 +4,15 @@ import { api } from '../api/client';
 import { isTauri } from '../api/tauri';
 
 export function AuthGate({ children }: { children: ReactNode }) {
-  // Desktop mode: skip auth (managed by Tauri backend)
-  if (isTauri()) {
-    return <>{children}</>;
-  }
-
   const [hasToken, setHasToken] = useState(() => !!localStorage.getItem('ob_api_token'));
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Desktop mode: skip auth (managed by Tauri backend)
+  if (isTauri()) {
+    return <>{children}</>;
+  }
 
   const handleSubmit = async () => {
     if (!input.trim()) return;

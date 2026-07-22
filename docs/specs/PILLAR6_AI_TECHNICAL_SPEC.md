@@ -4,14 +4,14 @@
 
 Pillar 6 introduces a **local-first AI layer** to OneBrain through three new Rust crates that provide pluggable LLM inference, AI-assisted knowledge encoding, and a personal AI mediator interface. The implementation prioritizes offline capability, device adaptability, and seamless integration with the existing 7-pillar architecture.
 
-> *Updated for KU v7 (2026-07-11). ConceptDict → ConceptRegistry migration. CCID-based concept resolution.*
+> *Updated for KU v7.1 (2026-07-19). v2 encoding pipeline fully implemented. ConceptDict → ConceptRegistry migration. CCID-based concept resolution.*
 
 | Metric | Value |
 |:-------|:------|
 | New crates | 3 (`ku-ai`, `ku-encoder`, `ku-mediator`) |
 | Source files | 37 `.rs` + 1 `.json` + 3 `Cargo.toml` |
 | Estimated LOC | ~6,600 (code + tests) |
-| Unit tests | 120+ across all modules |
+| Unit tests | 118 (ku-encoder) + ku-ai + ku-mediator |
 | Build status | ✅ Zero warnings from new crates |
 | Existing crate changes | None — purely additive |
 
@@ -213,6 +213,46 @@ else:
 | fallback.rs | 252 | 5 | Accept/Retry/Tier1 decision chain |
 | batch.rs | 167 | 3 | Sequential multi-text encoding |
 | log.rs | 198 | 4 | JSON-persistable encoding audit log |
+| types.rs | ~120 | — | v2: SpoTriple, Anchor, AnalyzedTriple, ResolvedTriple |
+| splitter.rs | ~60 | 8 | v2: Paragraph splitting (Unicode/CRLF) |
+| prescan.rs | ~250 | 13 | v2: Anchor detection + abbreviation filter |
+| extractor.rs | ~340 | 10 | v2: AI JSON extraction + 3-strategy parser |
+| analyzer.rs | ~200 | 10 | v2: Role→Opcode, certainty→u16 mapping |
+| concept_resolver.rs | ~250 | 7 | v2: ConceptRegistry→CCID + ResolutionWarning |
+| builder.rs | ~180 | 6 | v2: CoreDna build (1 triple = 1 KU) |
+
+#### 3.2.5 v2 Pipeline — AI JSON Extraction (✅ Fully Implemented)
+
+The v2 pipeline replaces tool-calling with direct JSON extraction + deterministic build:
+
+```
+Text → Prescan (anchors) → Split (paragraphs) → Extract (★AI, JSON)
+     → Analyze (deterministic) → Resolve (CCID) → Build (1 triple = 1 KU)
+     → Validate (concept table consistency)
+```
+
+**7 new modules** added to `ku-encoder`:
+
+| Module | Purpose | AI? |
+|--------|---------|-----|
+| `types.rs` | SpoTriple, AnalyzedTriple, ResolvedTriple, Anchor | No |
+| `splitter.rs` | Unicode-aware paragraph splitting | No |
+| `prescan.rs` | Anchor detection (formulas, numbers) + 80+ abbreviation filter | No |
+| `extractor.rs` | AI SPO triple extraction via `chat()` (JSON output, not tool-calling) | ★ Yes |
+| `analyzer.rs` | Role→Opcode mapping, certainty→u16, gene_type detection | No |
+| `concept_resolver.rs` | ConceptRegistry→CCID resolution + ResolutionWarning | No |
+| `builder.rs` | 1 ResolvedTriple = 1 CoreDna KU | No |
+
+**Key design**: AI chỉ dùng cho extraction (1/7 steps). Tất cả bước khác là deterministic code.
+
+**New public types** (re-exported from `lib.rs`):
+- `SpoTriple`, `AnalyzedTriple`, `ResolvedTriple`, `Anchor`, `NotationType`
+- `ConceptResolver`, `ResolutionWarning`, `ResolutionWarningType`
+- `KuBuilder`, `SpoExtractor`
+
+**Debug logging**: All `eprintln!` converted to `debug_log!` macro (`#[cfg(debug_assertions)]`) — silent in release builds.
+
+> See [KU_ENCODING_PIPELINE.md](file:///c:/Users/shpy2/Documents/OneBrain/docs/specs/KU_ENCODING_PIPELINE.md) for complete v2 pipeline specification.
 
 ---
 
@@ -292,7 +332,7 @@ similarity = |intersection(A, B)| / |union(A, B)|   (words > 2 chars)
 | Metric | Score | Notes |
 |:-------|:------|:------|
 | Compilation | ✅ | Zero warnings from all 3 crates |
-| Test coverage | ⭐⭐⭐⭐⭐ | 120+ unit tests |
+| Test coverage | ⭐⭐⭐⭐⭐ | 118 (ku-encoder) + ku-ai + ku-mediator |
 | Documentation | ⭐⭐⭐⭐⭐ | Every public item has doc comments |
 | Error handling | ⭐⭐⭐⭐⭐ | Clean thiserror chain: AiError → EncoderError → MediatorError |
 | Idiomatic Rust | ⭐⭐⭐⭐⭐ | Builder patterns, From impls, proper lifetimes |
@@ -318,6 +358,7 @@ similarity = |intersection(A, B)| / |union(A, B)|   (words > 2 chars)
 4. No model download manager — user must install Ollama and pull models manually
 5. Retriever uses keyword matching — embedding-based semantic search planned for Phase 2
 6. NL→KQL translation covers common patterns only — complex queries require LLM fallback
+7. Two different ConceptDict types exist (text_parser::ConceptDict vs concept_dict::ConceptDict) — unification planned
 
 ### Strengths
 

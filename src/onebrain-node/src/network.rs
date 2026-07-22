@@ -5,10 +5,10 @@
 //!
 //! Wire format: `[4-byte length BE][JSON payload]`
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use tokio::net::TcpStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 // ─── Network Messages ──────────────────────────────────────────────────────
 
@@ -39,9 +39,7 @@ pub enum NetMessage {
         verified: bool,
     },
     /// Exchange list of known peer addresses.
-    PeerList {
-        peers: Vec<SocketAddr>,
-    },
+    PeerList { peers: Vec<SocketAddr> },
 }
 
 // ─── Wire Protocol ─────────────────────────────────────────────────────────
@@ -51,8 +49,8 @@ const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
 
 /// Send a message over a TCP stream (length-prefixed JSON).
 pub async fn send_message(stream: &mut TcpStream, msg: &NetMessage) -> Result<(), std::io::Error> {
-    let data = serde_json::to_vec(msg)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let data =
+        serde_json::to_vec(msg).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     let len = (data.len() as u32).to_be_bytes();
     stream.write_all(&len).await?;
     stream.write_all(&data).await?;

@@ -27,6 +27,7 @@ thiserror = "1"
 
 # Core types (for CRDT sync)
 ku-core = { path = "../ku-core" }
+onebrain-protocol = { path = "../onebrain-protocol" }
 
 # Persistent storage (pure Rust, ACID) — behind 'persist' feature
 redb = { version = "2", optional = true }
@@ -41,3 +42,4 @@ rcgen = { version = "0.13", default-features = false, features = ["aws_lc_rs"], 
 ku-core = { path = "../ku-core" }
 blake3 = "1"
 crc32fast = "1"
+tempfile = "3"

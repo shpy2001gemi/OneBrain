@@ -5,7 +5,7 @@
 //! time-travel replay to reconstruct bond states at any point in time.
 
 use crate::graph_types::{BondEvent, BondSnapshot, CompactionReport};
-use crate::types::{RelationType, EdgeState};
+use crate::types::{EdgeState, RelationType};
 use std::collections::HashMap;
 
 /// In-memory event accumulator for bond lifecycle tracking.
@@ -21,13 +21,18 @@ pub struct EventAccumulator {
 }
 
 impl Default for EventAccumulator {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EventAccumulator {
     /// Create a new empty event accumulator.
     pub fn new() -> Self {
-        Self { events: Vec::new(), next_seq: 0 }
+        Self {
+            events: Vec::new(),
+            next_seq: 0,
+        }
     }
 
     /// Append an event, returns its assigned sequence number.
@@ -39,7 +44,9 @@ impl EventAccumulator {
     }
 
     /// Get a slice of all recorded events.
-    pub fn events(&self) -> &[BondEvent] { &self.events }
+    pub fn events(&self) -> &[BondEvent] {
+        &self.events
+    }
 
     /// Get events in the sequence range `[from_seq, to_seq)`.
     ///
@@ -48,20 +55,24 @@ impl EventAccumulator {
     pub fn events_range(&self, from_seq: u64, to_seq: u64) -> &[BondEvent] {
         let start = from_seq as usize;
         let end = (to_seq as usize).min(self.events.len());
-        if start >= self.events.len() { return &[]; }
+        if start >= self.events.len() {
+            return &[];
+        }
         &self.events[start..end]
     }
 
     /// Get all events involving a specific KU (as source or target).
     pub fn events_for_ku(&self, cid: &[u8; 32]) -> Vec<&BondEvent> {
-        self.events.iter()
+        self.events
+            .iter()
             .filter(|e| e.source_cid() == cid || e.target_cid() == cid)
             .collect()
     }
 
     /// Get all events within the inclusive time range `[from_ts, to_ts]`.
     pub fn events_in_time_range(&self, from_ts: u64, to_ts: u64) -> Vec<&BondEvent> {
-        self.events.iter()
+        self.events
+            .iter()
             .filter(|e| {
                 let t = e.timestamp();
                 t >= from_ts && t <= to_ts
@@ -71,14 +82,22 @@ impl EventAccumulator {
 
     /// Latest sequence number. Returns 0 if empty.
     pub fn latest_seq(&self) -> u64 {
-        if self.next_seq == 0 { 0 } else { self.next_seq - 1 }
+        if self.next_seq == 0 {
+            0
+        } else {
+            self.next_seq - 1
+        }
     }
 
     /// Number of events currently stored.
-    pub fn len(&self) -> usize { self.events.len() }
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
 
     /// Whether the accumulator contains no events.
-    pub fn is_empty(&self) -> bool { self.events.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
 
     /// Replay all events up to `target_time` to reconstruct bond states.
     ///
@@ -91,41 +110,71 @@ impl EventAccumulator {
 
         for event in &self.events {
             // ★ OBKG Fix L1: Use continue (not break) to handle out-of-order events
-            if event.timestamp() > target_time { continue; }
+            if event.timestamp() > target_time {
+                continue;
+            }
             match event {
-                BondEvent::Created { source_cid, target_cid, relation, weight, .. } => {
+                BondEvent::Created {
+                    source_cid,
+                    target_cid,
+                    relation,
+                    weight,
+                    ..
+                } => {
                     bonds.insert(
                         (*source_cid, *target_cid, *relation as u8),
                         (*weight, EdgeState::Active),
                     );
                 }
-                BondEvent::Reinforced { source_cid, target_cid, relation, new_weight, .. } => {
-                    if let Some(entry) = bonds.get_mut(&(*source_cid, *target_cid, *relation as u8)) {
+                BondEvent::Reinforced {
+                    source_cid,
+                    target_cid,
+                    relation,
+                    new_weight,
+                    ..
+                } => {
+                    if let Some(entry) = bonds.get_mut(&(*source_cid, *target_cid, *relation as u8))
+                    {
                         entry.0 = *new_weight;
                     }
                 }
-                BondEvent::Weakened { source_cid, target_cid, relation, new_weight, .. } => {
-                    if let Some(entry) = bonds.get_mut(&(*source_cid, *target_cid, *relation as u8)) {
+                BondEvent::Weakened {
+                    source_cid,
+                    target_cid,
+                    relation,
+                    new_weight,
+                    ..
+                } => {
+                    if let Some(entry) = bonds.get_mut(&(*source_cid, *target_cid, *relation as u8))
+                    {
                         entry.0 = *new_weight;
                     }
                 }
-                BondEvent::StateChanged { source_cid, target_cid, relation, new_state, .. } => {
-                    if let Some(entry) = bonds.get_mut(&(*source_cid, *target_cid, *relation as u8)) {
+                BondEvent::StateChanged {
+                    source_cid,
+                    target_cid,
+                    relation,
+                    new_state,
+                    ..
+                } => {
+                    if let Some(entry) = bonds.get_mut(&(*source_cid, *target_cid, *relation as u8))
+                    {
                         entry.1 = *new_state;
                     }
                 }
             }
         }
 
-        bonds.into_iter().map(|((src, tgt, rel_byte), (weight, state))| {
-            BondSnapshot {
+        bonds
+            .into_iter()
+            .map(|((src, tgt, rel_byte), (weight, state))| BondSnapshot {
                 source_cid: src,
                 target_cid: tgt,
                 relation: RelationType::from_u8(rel_byte).unwrap_or(RelationType::Extends),
                 weight,
                 state,
-            }
-        }).collect()
+            })
+            .collect()
     }
 
     /// Compact the event log by removing events with timestamps ≤ `cutoff_timestamp`.
@@ -134,7 +183,9 @@ impl EventAccumulator {
     pub fn compact(&mut self, cutoff_timestamp: u64) -> CompactionReport {
         let total_before = self.events.len() as u64;
         // Find the first event *after* the cutoff
-        let split_idx = self.events.iter()
+        let split_idx = self
+            .events
+            .iter()
             .position(|e| e.timestamp() > cutoff_timestamp)
             .unwrap_or(self.events.len());
         let events_removed = split_idx as u64;
@@ -152,10 +203,12 @@ impl EventAccumulator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::*;
     use crate::graph_types::*;
+    use crate::types::*;
 
-    fn make_cid(seed: u8) -> [u8; 32] { [seed; 32] }
+    fn make_cid(seed: u8) -> [u8; 32] {
+        [seed; 32]
+    }
 
     fn create_event(src: u8, tgt: u8, rel: RelationType, weight: u16, ts: u64) -> BondEvent {
         BondEvent::Created {
@@ -192,7 +245,13 @@ mod tests {
         }
     }
 
-    fn state_change_event(src: u8, tgt: u8, rel: RelationType, new_state: EdgeState, ts: u64) -> BondEvent {
+    fn state_change_event(
+        src: u8,
+        tgt: u8,
+        rel: RelationType,
+        new_state: EdgeState,
+        ts: u64,
+    ) -> BondEvent {
         BondEvent::StateChanged {
             source_cid: make_cid(src),
             target_cid: make_cid(tgt),
@@ -240,7 +299,13 @@ mod tests {
     fn events_range_correct_slice() {
         let mut acc = EventAccumulator::new();
         for i in 0..5 {
-            acc.append(create_event(i, i + 10, RelationType::Extends, 100, i as u64 * 100));
+            acc.append(create_event(
+                i,
+                i + 10,
+                RelationType::Extends,
+                100,
+                i as u64 * 100,
+            ));
         }
         let range = acc.events_range(1, 4);
         assert_eq!(range.len(), 3);
@@ -363,7 +428,13 @@ mod tests {
     fn replay_state_change() {
         let mut acc = EventAccumulator::new();
         acc.append(create_event(1, 2, RelationType::Extends, 500, 1000));
-        acc.append(state_change_event(1, 2, RelationType::Extends, EdgeState::Deprecated, 2000));
+        acc.append(state_change_event(
+            1,
+            2,
+            RelationType::Extends,
+            EdgeState::Deprecated,
+            2000,
+        ));
         let snapshots = acc.replay_at_time(2000);
         assert_eq!(snapshots.len(), 1);
         assert_eq!(snapshots[0].state, EdgeState::Deprecated);

@@ -6,28 +6,31 @@ import { DebugConsole } from './DebugConsole';
 import { NotificationPanel } from './NotificationPanel';
 import { ConnectionBar } from './ConnectionBar';
 import { ShortcutsModal } from './ShortcutsModal';
+import { SkipNav } from './SkipNav';
 import { useNotifications } from '../hooks/useNotifications';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
-import { useConnectionStatus } from '../hooks/useConnectionStatus';
+import { useNodeStatus } from '../hooks/useNodeStatus';
 
 export function AppShell() {
-  const { notifications, unreadCount, addNotification, markRead, markAllRead, dismiss, clearAll } = useNotifications();
+  const { notifications, unreadCount, markRead, markAllRead, dismiss, clearAll } = useNotifications();
   const [notifOpen, setNotifOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const { status: connStatus, lastPing, retryCount, retry } = useConnectionStatus();
+  const { connected, nodeInfo, retry } = useNodeStatus();
+  const connStatus = connected ? 'connected' as const : 'disconnected' as const;
 
   useKeyboardShortcuts(() => setShortcutsOpen(true));
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Sidebar />
+      <SkipNav />
+      <Sidebar connected={connected} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Connection Status Bar (only visible when disconnected) */}
-        <ConnectionBar status={connStatus} lastPing={lastPing} retryCount={retryCount} onRetry={retry} />
+        <ConnectionBar status={connStatus} lastPing={0} retryCount={0} onRetry={retry} />
 
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{ flex: 1 }}>
-            <Header />
+            <Header nodeInfo={nodeInfo} />
           </div>
           <div style={{ paddingRight: 16 }}>
             <NotificationPanel
@@ -42,7 +45,7 @@ export function AppShell() {
             />
           </div>
         </div>
-        <main role="main" aria-label="Main content" style={{ flex: 1, overflow: 'auto' }}>
+        <main id="main-content" role="main" aria-label="Main content" style={{ flex: 1, overflow: 'auto' }}>
           <Outlet />
         </main>
       </div>

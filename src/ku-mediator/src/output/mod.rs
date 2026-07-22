@@ -63,8 +63,7 @@ mod tests {
 
     #[test]
     fn test_with_suggestion() {
-        let r = MediatorResponse::chat("result")
-            .with_suggestion("Try asking about connections");
+        let r = MediatorResponse::chat("result").with_suggestion("Try asking about connections");
         assert_eq!(r.suggestions.len(), 1);
     }
 }

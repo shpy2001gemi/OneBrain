@@ -1,0 +1,393 @@
+schema: onebrain.vnext.discovery-corpus
+version: 1
+corpus_id: anti-gravity-reunion-v1
+scientific_status: fictional-thought-experiment
+oracle: typed-symbolic-expectations
+embedding_required: false
+
+public_selector_fixture:
+  selector_name: PublicKnowledgeExchangeFixture/1
+  independent_of_private_need: true
+  storage_classes:
+    include:
+      - PUBLIC_CANONICAL
+    exclude:
+      - PRIVATE_LOCAL
+      - QUARANTINED
+  object_kinds:
+    - KNOWLEDGE_OBJECT
+    - KNOWLEDGE_AFFORDANCE
+  max_objects: 32
+  max_bytes: 1048576
+  forbidden_fields:
+    - private_need_ir
+    - receptor_id
+    - assembly_id
+    - user_id
+    - goal_cid
+    - goal_commitment
+    - commitment_opening
+    - commitment_nonce
+
+terms:
+  - id: fixture:role/orientation-stabilizer
+    kind: role
+  - id: fixture:role/load-bearing-material
+    kind: role
+  - id: fixture:role/advertising-copy
+    kind: role
+  - id: fixture:system/suspended-platform
+    kind: system
+  - id: fixture:system/rotating-wheel
+    kind: system
+  - id: fixture:property/resists-axis-change
+    kind: property
+  - id: fixture:property/high-specific-stiffness
+    kind: property
+  - id: fixture:property/cyclic-load-tolerance
+    kind: property
+  - id: fixture:condition/vacuum
+    kind: condition
+  - id: fixture:condition/high-temperature
+    kind: condition
+  - id: fixture:dimension/torque
+    kind: dimension
+  - id: fixture:dimension/force
+    kind: dimension
+  - id: fixture:dimension/temperature
+    kind: dimension
+  - id: fixture:relation/stabilizes
+    kind: relation
+  - id: fixture:relation/supports-load
+    kind: relation
+  - id: fixture:relation/opposes
+    kind: relation
+
+cases:
+  - id: AG-STRUCT-001
+    title: Wheel observation matches orientation-stabilizer structure
+    visibility:
+      receptor: PRIVATE_LOCAL
+      candidate: PUBLIC_CANONICAL
+    channels:
+      required:
+        - typed-structural
+      optional:
+        - lexical
+      forbidden_as_oracle:
+        - embedding
+        - popularity
+    receptor:
+      role: fixture:role/orientation-stabilizer
+      input_system: fixture:system/suspended-platform
+      desired_relation: fixture:relation/stabilizes
+      constraints:
+        - dimension: fixture:dimension/torque
+          state: required
+    candidate:
+      ku_ref: fixture:ku/mechanic-wheel-observation
+      vocabulary:
+        - wheel-wobble
+        - axle-kickback
+      affordance:
+        source_system: fixture:system/rotating-wheel
+        offered_property: fixture:property/resists-axis-change
+        produced_relation: fixture:relation/stabilizes
+        output_dimension: fixture:dimension/torque
+    expected:
+      proposal: true
+      correspondences:
+        - from: fixture:system/rotating-wheel
+          to: fixture:system/suspended-platform
+          role: dynamic-system-analogy
+        - from: fixture:property/resists-axis-change
+          to: fixture:role/orientation-stabilizer
+          role: offered-function
+      hard_violations: []
+      unknown_constraints:
+        - scale-transfer
+        - vacuum-applicability
+      resolution: PARTIALLY_SATISFIED
+      explanation_required: true
+
+  - id: AG-STRUCT-002
+    title: Vocabulary swap preserves the same relational mapping
+    visibility:
+      receptor: PRIVATE_LOCAL
+      candidate: PUBLIC_CANONICAL
+    channels:
+      required:
+        - typed-structural
+      disabled:
+        - embedding
+        - kge
+    receptor:
+      vocabulary:
+        - attitude-control
+        - angular-disturbance
+      role: fixture:role/orientation-stabilizer
+      desired_relation: fixture:relation/stabilizes
+    candidate:
+      ku_ref: fixture:ku/old-spinning-mass-note
+      vocabulary:
+        - precession
+        - spin-axis-memory
+      affordance:
+        offered_property: fixture:property/resists-axis-change
+        produced_relation: fixture:relation/stabilizes
+        output_dimension: fixture:dimension/torque
+    expected:
+      proposal: true
+      required_relation_alignment:
+        - fixture:property/resists-axis-change
+        - fixture:relation/stabilizes
+      hard_violations: []
+      resolution: PARTIALLY_SATISFIED
+      embedding_independent: true
+
+  - id: AG-PARTIAL-001
+    title: Orientation solution does not satisfy material placement
+    visibility:
+      receptor: PRIVATE_LOCAL
+      candidate: PUBLIC_CANONICAL
+    receptor:
+      role: fixture:role/load-bearing-material
+      required_properties:
+        - fixture:property/high-specific-stiffness
+        - fixture:property/cyclic-load-tolerance
+    candidate:
+      ku_ref: fixture:ku/mechanic-wheel-observation
+      affordance:
+        offered_property: fixture:property/resists-axis-change
+        produced_relation: fixture:relation/stabilizes
+    expected:
+      proposal: false
+      hard_violations:
+        - role-mismatch
+      resolution: OPEN
+      must_not_cross_adopt: true
+
+  - id: AG-PARTIAL-002
+    title: Material candidate satisfies stiffness but cyclic tolerance is unknown
+    visibility:
+      receptor: PRIVATE_LOCAL
+      candidate: PUBLIC_CANONICAL
+    receptor:
+      role: fixture:role/load-bearing-material
+      required_properties:
+        - fixture:property/high-specific-stiffness
+        - fixture:property/cyclic-load-tolerance
+    candidate:
+      ku_ref: fixture:ku/archived-laminate-note
+      affordance:
+        offered_properties:
+          - fixture:property/high-specific-stiffness
+        operating_conditions:
+          temperature_max_celsius: 120
+    expected:
+      proposal: true
+      satisfied_constraints:
+        - fixture:property/high-specific-stiffness
+      unknown_constraints:
+        - fixture:property/cyclic-load-tolerance
+      hard_violations: []
+      resolution: PARTIALLY_SATISFIED
+
+  - id: AG-ASSEMBLY-001
+    title: Two independent candidates satisfy two different placements
+    visibility:
+      receptors: PRIVATE_LOCAL
+      candidates: PUBLIC_CANONICAL
+    assembly:
+      lineage: fixture:assembly/experimental-platform
+      revision: 1
+      placements:
+        - id: orientation-slot
+          role: fixture:role/orientation-stabilizer
+        - id: material-slot
+          role: fixture:role/load-bearing-material
+    candidates:
+      - ku_ref: fixture:ku/controlled-momentum-module
+        affordance:
+          offered_role: fixture:role/orientation-stabilizer
+          produced_relation: fixture:relation/stabilizes
+          output_dimension: fixture:dimension/torque
+      - ku_ref: fixture:ku/tested-laminate-dataset
+        affordance:
+          offered_role: fixture:role/load-bearing-material
+          offered_properties:
+            - fixture:property/high-specific-stiffness
+            - fixture:property/cyclic-load-tolerance
+          operating_conditions:
+            temperature_max_celsius: 250
+    expected:
+      proposals: 2
+      adopted_mapping_targets:
+        - orientation-slot
+        - material-slot
+      placement_resolution:
+        orientation-slot: SATISFIED_RELATIVE
+        material-slot: SATISFIED_RELATIVE
+      assembly_resolution: SATISFIED_RELATIVE
+      policy_ref: fixture:policy/assembly-acceptance-1
+      frontier_ref: fixture:frontier/reunion-1
+
+  - id: AG-HARD-UNIT-001
+    title: Force output cannot fill a torque requirement without a transform
+    visibility:
+      receptor: PRIVATE_LOCAL
+      candidate: PUBLIC_CANONICAL
+    receptor:
+      role: fixture:role/orientation-stabilizer
+      required_dimension: fixture:dimension/torque
+    candidate:
+      ku_ref: fixture:ku/linear-actuator-note
+      affordance:
+        output_dimension: fixture:dimension/force
+        unit: newton
+    expected:
+      proposal: true
+      hard_violations:
+        - incompatible-dimension-without-lever-arm-transform
+      actionable: false
+      resolution: OPEN
+
+  - id: AG-HARD-DIRECTION-001
+    title: Relation direction is opposite to requested stabilization
+    visibility:
+      receptor: PRIVATE_LOCAL
+      candidate: PUBLIC_CANONICAL
+    receptor:
+      desired_relation:
+        subject: fixture:role/orientation-stabilizer
+        relation: fixture:relation/stabilizes
+        object: fixture:system/suspended-platform
+    candidate:
+      ku_ref: fixture:ku/instability-amplifier
+      affordance:
+        relation:
+          subject: fixture:system/suspended-platform
+          relation: fixture:relation/opposes
+          object: fixture:role/orientation-stabilizer
+    expected:
+      proposal: true
+      hard_violations:
+        - inverse-or-opposing-relation
+      actionable: false
+      resolution: OPEN
+
+  - id: AG-HARD-NEGATION-001
+    title: Candidate explicitly denies operation in the required condition
+    visibility:
+      receptor: PRIVATE_LOCAL
+      candidate: PUBLIC_CANONICAL
+    receptor:
+      role: fixture:role/orientation-stabilizer
+      required_condition: fixture:condition/vacuum
+    candidate:
+      ku_ref: fixture:ku/air-bearing-stabilizer
+      affordance:
+        offered_role: fixture:role/orientation-stabilizer
+        negated_conditions:
+          - fixture:condition/vacuum
+    expected:
+      proposal: true
+      hard_violations:
+        - negated-required-condition
+      actionable: false
+      resolution: OPEN
+
+  - id: AG-UNKNOWN-001
+    title: Missing high-temperature evidence remains unknown
+    visibility:
+      receptor: PRIVATE_LOCAL
+      candidate: PUBLIC_CANONICAL
+    receptor:
+      role: fixture:role/load-bearing-material
+      required_condition: fixture:condition/high-temperature
+      required_temperature_celsius: 220
+    candidate:
+      ku_ref: fixture:ku/laminate-room-temperature-test
+      affordance:
+        offered_role: fixture:role/load-bearing-material
+        temperature_evidence: null
+    expected:
+      proposal: true
+      hard_violations: []
+      unknown_constraints:
+        - temperature-range
+      actionable: false
+      resolution: PARTIALLY_SATISFIED
+
+  - id: AG-OPPOSE-001
+    title: Conflicting vacuum observations are both preserved
+    visibility:
+      receptor: PRIVATE_LOCAL
+      candidates: PUBLIC_CANONICAL
+    receptor:
+      role: fixture:role/orientation-stabilizer
+      required_condition: fixture:condition/vacuum
+    candidates:
+      - ku_ref: fixture:ku/vacuum-test-positive
+        claim: effect-observed
+        condition: fixture:condition/vacuum
+      - ku_ref: fixture:ku/vacuum-test-null
+        claim: no-effect-observed
+        condition: fixture:condition/vacuum
+    expected:
+      proposals: 2
+      preserved_candidate_count: 2
+      opposition_relation: true
+      truth_winner: null
+      proposals_may_coexist: true
+      epistemic_use_allowed: true
+      resolution: CONCURRENT
+
+  - id: AG-DISTRACTOR-001
+    title: Keyword overlap without structural fit is rejected
+    visibility:
+      receptor: PRIVATE_LOCAL
+      candidate: PUBLIC_CANONICAL
+    receptor:
+      keywords:
+        - gravity
+        - material
+        - motor
+      role: fixture:role/load-bearing-material
+    candidate:
+      ku_ref: fixture:ku/gravity-themed-motor-marketing
+      text_keywords:
+        - gravity
+        - material
+        - motor
+      affordance:
+        offered_role: fixture:role/advertising-copy
+        structural_relations: []
+    expected:
+      proposal: false
+      keyword_overlap: high
+      structural_match: false
+      resolution: OPEN
+
+  - id: AG-PRIVACY-001
+    title: Bounded public reconciliation does not reveal private Receptor
+    visibility:
+      receptor: PRIVATE_LOCAL
+      candidate: PUBLIC_CANONICAL
+    partition:
+      component_a_private:
+        - fixture:receptor/private-material-gap
+        - fixture:need/private-assembly-context
+      component_b_public:
+        - fixture:ku/tested-laminate-dataset
+        - fixture:affordance/tested-laminate
+      reconnect_selector: PublicKnowledgeExchangeFixture/1
+    expected:
+      proposal: true
+      delivered_public_objects: 2
+      local_delta_join: true
+      outbound_private_objects: 0
+      transcript_forbidden_field_hits: 0
+      selector_derived_from_private_need: false
+      resolution: SATISFIED_RELATIVE
+      resolution_requires_authorized_adopt: true

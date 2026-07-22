@@ -40,6 +40,7 @@ impl IntoResponse for ApiError {
             NodeError::Pipeline(_) => (StatusCode::INTERNAL_SERVER_ERROR, "PIPELINE_ERROR"),
             NodeError::Ai(_) => (StatusCode::INTERNAL_SERVER_ERROR, "AI_ERROR"),
             NodeError::Timeout(_) => (StatusCode::REQUEST_TIMEOUT, "TIMEOUT"),
+            NodeError::NotFound(_) => (StatusCode::NOT_FOUND, "NOT_FOUND"),
         };
 
         let body = ApiErrorResponse::new(code, self.0.to_string());
