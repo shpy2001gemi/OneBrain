@@ -1,10 +1,10 @@
 # OneBrain vNext Product Integration Profile v1
 
-> **Work package:** `DR-P1.1`  
-> **Status:** Frozen  
-> **Profile ID:** `VNEXT_PRODUCT_INTEGRATION_PROFILE_V1`  
-> **Version:** 1  
-> **Freeze date:** 2026-07-26  
+> **Work package:** `DR-P1.1`
+> **Status:** Frozen
+> **Profile ID:** `VNEXT_PRODUCT_INTEGRATION_PROFILE_V1`
+> **Version:** 1
+> **Freeze date:** 2026-07-26
 > **Machine contract:** [`product-integration-profile-v1.json`](../../../src/test-vectors/vnext/product-integration-profile-v1.json)
 
 ## 1. Scope and compatibility boundary

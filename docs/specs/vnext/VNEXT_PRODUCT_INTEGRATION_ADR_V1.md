@@ -1,8 +1,8 @@
 # ADR — vNext Product Integration Contract v1
 
-> **Status:** Accepted  
-> **Work package:** `DR-P1.1`  
-> **Date:** 2026-07-26  
+> **Status:** Accepted
+> **Work package:** `DR-P1.1`
+> **Date:** 2026-07-26
 > **Decision owner:** Product/API boundary with security review
 
 ## Context
