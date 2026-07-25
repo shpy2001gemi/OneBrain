@@ -5,9 +5,11 @@ on:
     paths:
       - ".github/workflows/vnext-foundation.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
+      - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/specs/vnext/**"
       - "formal/tla/**"
       - "scripts/ci/validate_vnext_contracts.py"
+      - "scripts/concept_registry/**"
       - "src/ku-core/**"
       - "src/ku-ai/**"
       - "src/ku-encoder/**"
@@ -16,6 +18,8 @@ on:
       - "src/onebrain-node/**"
       - "src/onebrain-api/**"
       - "src/onebrain-cli/**"
+      - "src/onebrain-desktop/**"
+      - "src/onebrain-web/**"
       - "src/onebrain-protocol/**"
       - "src/test-vectors/vnext/**"
       - "src/Cargo.lock"
@@ -24,9 +28,11 @@ on:
     paths:
       - ".github/workflows/vnext-foundation.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
+      - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/specs/vnext/**"
       - "formal/tla/**"
       - "scripts/ci/validate_vnext_contracts.py"
+      - "scripts/concept_registry/**"
       - "src/ku-core/**"
       - "src/ku-ai/**"
       - "src/ku-encoder/**"
@@ -35,6 +41,8 @@ on:
       - "src/onebrain-node/**"
       - "src/onebrain-api/**"
       - "src/onebrain-cli/**"
+      - "src/onebrain-desktop/**"
+      - "src/onebrain-web/**"
       - "src/onebrain-protocol/**"
       - "src/test-vectors/vnext/**"
       - "src/Cargo.lock"
@@ -45,11 +53,15 @@ permissions:
 jobs:
   foundation-contract:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: src
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -60,6 +72,12 @@ jobs:
       - name: Validate task graph, traceability, vectors, and links
         working-directory: .
         run: python scripts/ci/validate_vnext_contracts.py
+
+      - name: Build and verify a small Concept Registry fixture
+        working-directory: .
+        run: |
+          python -m pip install --requirement scripts/concept_registry/requirements.txt
+          python -m unittest scripts/concept_registry/test_build_obr.py
 
       - name: Check formatting of vNext-owned Rust files
         run: >-
@@ -168,6 +186,9 @@ jobs:
           onebrain-protocol/src/session_codec.rs
           onebrain-protocol/src/types.rs
           onebrain-protocol/tests/foundation_conformance.rs
+
+      - name: Check formatting of every live workspace Rust target
+        run: cargo fmt --all -- --check
 
       - name: Check foundation crates
         run: >-
@@ -382,3 +403,104 @@ jobs:
 
       - name: Test correctness-coupled performance budgets
         run: cargo test --locked -p onebrain-node qa008_ --lib
+
+  workspace-default:
+    name: Default-feature workspace baseline (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - name: Test the full workspace with default features
+        run: cargo test --workspace --locked -- --test-threads=2
+
+      - name: Enforce capability truth for legacy wallet surfaces
+        run: cargo test --locked -p onebrain-node --test p0_capability_truth
+
+  vnext-network-runtime:
+    name: Feature-enabled real-QUIC acceptance (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - name: Compile product entrypoints with the runtime feature
+        run: >-
+          cargo check --locked
+          -p onebrain-node -p onebrain-api -p onebrain-cli
+          --features onebrain-node/vnext-network-runtime
+      - name: Lint every feature-enabled node target
+        run: >-
+          cargo clippy --locked -p onebrain-node
+          --features vnext-network-runtime --all-targets
+          -- --cap-lints warn
+      - name: M2 authenticated OBP-RP over real QUIC
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_network_runtime
+      - name: M3 one-hop distributed KQL over real peers
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_distributed_kql
+      - name: M4 Public UseEvidence and metabolic view over real peers
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_distributed_pomv
+      - name: Node-owned real QUIC lifecycle
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --test vnext_node_runtime
+
+  windows-smoke:
+    name: Default and vNext smoke (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - name: Compile default product entrypoints
+        run: cargo check --locked -p onebrain-node -p onebrain-api -p onebrain-cli
+      - name: Compile the native desktop entrypoint
+        run: cargo check --locked -p onebrain-desktop
+      - name: Compile feature-enabled product entrypoints
+        run: >-
+          cargo check --locked
+          -p onebrain-node -p onebrain-api -p onebrain-cli
+          --features onebrain-node/vnext-network-runtime
+      - name: Compile the native desktop entrypoint with the runtime feature
+        run: >-
+          cargo check --locked -p onebrain-desktop
+          --features vnext-network-runtime
+      - name: Smoke UTF-8 and production anti-gaming contracts
+        run: |
+          cargo test --locked -p ku-core ku_system_prompt
+          cargo test --locked -p ku-core obt_anti_gaming
+      - name: Smoke node-owned feature lifecycle
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --test vnext_node_runtime

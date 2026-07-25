@@ -60,6 +60,8 @@ export interface KuListItem {
   gene_type: GeneType;
   preview: string;
   pomv: number;
+  pomv_profile: 'legacy_local_pomv_scalar_v1';
+  pomv_is_economic: false;
   trust: number;
   created: number;
   wire_size: number;
@@ -73,6 +75,8 @@ export interface KuDetail {
   bonds: BondView[];
   trust: number;
   pomv: number;
+  pomv_profile: 'legacy_local_pomv_scalar_v1';
+  pomv_is_economic: false;
   pomv_breakdown: PomvBreakdown;
   epistemic: string;
   evidence: string;
@@ -162,6 +166,7 @@ export interface StatusResponse {
   node_name: string;
   tier: string;
   obt_balance: number;
+  obt_economic_status: 'simulated_non_economic';
   version: string;
   model: string;
   concept_registry: ConceptRegistryStatus;
@@ -274,6 +279,8 @@ export interface NeighborInfo {
 // ─── Wallet ──────────────────────────────────────────────
 
 export interface WalletInfo {
+  economic_status: 'simulated_non_economic';
+  limitations: string[];
   balance: number;
   chain_length: number;
   tier: string;
@@ -295,6 +302,7 @@ export interface EarningsStreams {
 }
 
 export interface WalletTransaction {
+  economic_status: 'simulated_non_economic';
   block_type: string;
   amount: number;
   detail: string;

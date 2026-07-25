@@ -214,9 +214,13 @@ pub async fn get_status(State(state): State<AppState>) -> ApiResult<StatusRespon
     let vnext = node.vnext_status();
 
     // Get balance for tier + obt
-    let (tier, obt_balance) = match node.get_balance() {
-        Ok(w) => (w.tier, w.balance),
-        Err(_) => ("Unknown".to_string(), 0),
+    let (tier, obt_balance, obt_economic_status) = match node.get_balance() {
+        Ok(w) => (w.tier, w.balance, w.economic_status),
+        Err(_) => (
+            "Unknown".to_string(),
+            0,
+            onebrain_node::types::WalletEconomicStatus::SimulatedNonEconomic,
+        ),
     };
 
     Ok(ok(StatusResponse {
@@ -226,6 +230,7 @@ pub async fn get_status(State(state): State<AppState>) -> ApiResult<StatusRespon
         node_name,
         tier,
         obt_balance,
+        obt_economic_status,
         version: env!("CARGO_PKG_VERSION").to_string(),
         model: node.config().model.clone(),
         concept_registry,

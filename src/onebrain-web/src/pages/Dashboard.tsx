@@ -68,7 +68,7 @@ export function DashboardPage() {
         {[
           { icon: Brain, label: 'Knowledge Units', value: status?.ku_count ?? 0, sub: 'encoded', color: 'var(--ob-accent)' },
           { icon: Users, label: 'Connected Peers', value: status?.peer_count ?? 0, sub: 'active', color: 'var(--ob-violet)' },
-          { icon: Coins, label: 'OBT Balance', value: formatObt(status?.obt_balance ?? 0), sub: status?.tier ?? '', color: 'var(--ob-warning)' },
+          { icon: Coins, label: 'OBT Simulation', value: formatObt(status?.obt_balance ?? 0), sub: 'non-economic placeholder', color: 'var(--ob-warning)' },
           { icon: Clock, label: 'Uptime', value: formatDuration(status?.uptime_s ?? 0), sub: `v${status?.version ?? '?'}`, color: 'var(--ob-success)' },
         ].map((s, i) => (
           <div key={i} className="glass-card stat-card animate-in" style={{ animationDelay: `${i * 80}ms` }}>
@@ -91,7 +91,7 @@ export function DashboardPage() {
             const avgTrust = allKus.reduce((s, k) => s + k.trust, 0) / allKus.length;
             const uniqueGenes = new Set(allKus.map(k => k.gene_type)).size;
             return [
-              { label: 'Avg PoMV', value: `${(avgPomv * 100).toFixed(0)}%`, color: avgPomv >= 0.6 ? 'var(--ob-success)' : 'var(--ob-warning)' },
+              { label: 'Avg legacy PoMV', value: `${(avgPomv * 100).toFixed(0)}%`, color: avgPomv >= 0.6 ? 'var(--ob-success)' : 'var(--ob-warning)' },
               { label: 'Total Data', value: totalSize >= 1048576 ? `${(totalSize / 1048576).toFixed(1)} MB` : `${(totalSize / 1024).toFixed(0)} KB`, color: 'var(--ob-accent)' },
               { label: 'Avg Trust', value: `${(avgTrust * 100).toFixed(0)}%`, color: avgTrust >= 0.7 ? 'var(--ob-success)' : 'var(--ob-warning)' },
               { label: 'Gene Types', value: uniqueGenes, color: 'var(--ob-violet)' },
@@ -150,9 +150,9 @@ export function DashboardPage() {
             </div>
           </div>
 
-          {/* Top PoMV Scores */}
+          {/* Top legacy local PoMV scalar scores */}
           <div className="glass-card animate-in" style={{ animationDelay: '350ms' }}>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-md)' }}>Top PoMV Scores</h3>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-md)' }}>Top legacy local PoMV scalars (non-economic)</h3>
             <div style={{ width: '100%', height: 250 }}>
               <ResponsiveContainer>
                 <BarChart data={pomvData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
@@ -166,7 +166,7 @@ export function DashboardPage() {
                       borderRadius: 8, fontSize: '0.82rem',
                       color: '#e5e7eb',
                     }}
-                    formatter={(value) => [`${value}%`, 'PoMV']}
+                    formatter={(value) => [`${value}%`, 'Legacy PoMV']}
                   />
                   <Bar dataKey="pomv" fill="url(#pomvGradient)" radius={[4, 4, 0, 0]} animationDuration={800} />
                   <defs>
@@ -195,7 +195,7 @@ export function DashboardPage() {
             </div>
           ) : (
             <table className="data-table">
-              <thead><tr><th>CID</th><th>Type</th><th>Preview</th><th>PoMV</th></tr></thead>
+              <thead><tr><th>CID</th><th>Type</th><th>Preview</th><th>Legacy PoMV</th></tr></thead>
               <tbody>
                 {recentKus.map(ku => (
                   <tr key={ku.cid_hex} style={{ cursor: 'pointer' }} onClick={() => navigate(`/explorer?cid=${ku.cid_hex}`)}>

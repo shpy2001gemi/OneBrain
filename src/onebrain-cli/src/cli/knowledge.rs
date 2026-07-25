@@ -249,11 +249,13 @@ pub(crate) fn cmd_detail(node: &OneBrainNode, args: &str) {
             println!("  Instructions: {}", detail.instruction_count);
             println!("  Confidence:   {:.0}%", detail.confidence * 100.0);
             println!();
-            println!("  ── Trust & PoMV ──");
+            println!("  ── Trust & Legacy Local PoMV ──");
             println!("  Epistemic:    {}", detail.epistemic);
             println!("  Evidence:     {}", detail.evidence);
             println!("  Trust score:  {:.2}", detail.trust);
-            println!("  PoMV rate:    {:.2}", detail.pomv);
+            println!("  PoMV scalar:  {:.2}", detail.pomv);
+            println!("  Profile:      {}", detail.pomv_profile);
+            println!("  Economic:     no (not vNext evidence, Outcome, Benefit, or reward)");
             let bd = &detail.pomv_breakdown;
             println!("    ├─ Metabolic:     {:.2}", bd.metabolic);
             println!("    ├─ Prediction:    {:.2}", bd.prediction);

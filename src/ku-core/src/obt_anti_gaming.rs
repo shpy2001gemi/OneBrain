@@ -3,7 +3,7 @@
 //! Implements rate limiting (§5.2), KU quality gates (§5.4), and
 //! gaming-pattern detection (§5.5) for the OBT token system.
 
-use crate::obt_constants::NodeTier;
+use crate::obt_constants::{self, NodeTier};
 use serde::{Deserialize, Serialize};
 
 // ─────────────────────────────────────────────────────────────────────
@@ -19,26 +19,76 @@ pub struct RateLimits {
     pub max_mint_per_epoch: u64, // milliOBT
 }
 
+/// Consensus and reward rate limits from the frozen OBT specification.
+///
+/// Development admission settings must never replace these values: peers use
+/// this profile when validating economic behavior.
 pub const RATE_LEAF: RateLimits = RateLimits {
-    max_ku_per_hour: 100,     // DEV: was 1 — raised for testing
-    max_encode_per_hour: 100, // DEV: was 2 — raised for testing
-    claim_cooldown_s: 3600,
+    max_ku_per_hour: obt_constants::MAX_KU_PER_HOUR_LEAF,
+    max_encode_per_hour: obt_constants::MAX_ENCODINGS_PER_HOUR_LEAF,
+    claim_cooldown_s: obt_constants::COOLDOWN_LEAF_S,
     max_mint_per_epoch: 10_000,
 };
 
 pub const RATE_CONTRIBUTOR: RateLimits = RateLimits {
-    max_ku_per_hour: 5,
-    max_encode_per_hour: 5,
-    claim_cooldown_s: 720,
+    max_ku_per_hour: obt_constants::MAX_KU_PER_HOUR_CONTRIBUTOR,
+    max_encode_per_hour: obt_constants::MAX_ENCODINGS_PER_HOUR_CONTRIBUTOR,
+    claim_cooldown_s: obt_constants::COOLDOWN_CONTRIBUTOR_S,
     max_mint_per_epoch: 50_000,
 };
 
 pub const RATE_LOCAL_SP_PLUS: RateLimits = RateLimits {
-    max_ku_per_hour: 10,
-    max_encode_per_hour: 10,
-    claim_cooldown_s: 360,
+    max_ku_per_hour: obt_constants::MAX_KU_PER_HOUR_LOCALSP,
+    max_encode_per_hour: obt_constants::MAX_ENCODINGS_PER_HOUR_LOCALSP,
+    claim_cooldown_s: obt_constants::COOLDOWN_LOCALSP_S,
     max_mint_per_epoch: 100_000,
 };
+
+/// Non-economic local admission limits used only by explicit development
+/// tooling. The type deliberately contains no cooldown or mint fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalAdmissionLimits {
+    pub max_ku_per_hour: u32,
+    pub max_encode_per_hour: u32,
+}
+
+const DEV_RATE_LEAF: LocalAdmissionLimits = LocalAdmissionLimits {
+    max_ku_per_hour: 100,
+    max_encode_per_hour: 100,
+};
+
+/// Selects local admission behavior without changing consensus or rewards.
+///
+/// `Development` is intentionally not serializable as node configuration.
+/// Callers must opt into it in development-only composition code. Economic
+/// checks continue to use [`rate_limits_for_tier`] for every variant.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AntiGamingPolicy {
+    #[default]
+    Production,
+    Development,
+}
+
+impl AntiGamingPolicy {
+    /// Local, non-economic admission limits for this policy.
+    pub fn local_admission_limits(self, tier: NodeTier) -> LocalAdmissionLimits {
+        if self == Self::Development && tier == NodeTier::Leaf {
+            return DEV_RATE_LEAF;
+        }
+
+        let production = rate_limits_for_tier(tier);
+        LocalAdmissionLimits {
+            max_ku_per_hour: production.max_ku_per_hour,
+            max_encode_per_hour: production.max_encode_per_hour,
+        }
+    }
+
+    /// Consensus/reward limits are immutable across local admission policies.
+    pub fn economic_limits(self, tier: NodeTier) -> &'static RateLimits {
+        let _ = self;
+        rate_limits_for_tier(tier)
+    }
+}
 
 /// Return the static rate-limit profile for a trust tier.
 pub fn rate_limits_for_tier(tier: NodeTier) -> &'static RateLimits {
@@ -74,7 +124,19 @@ impl RateLimitTracker {
 
     /// Returns `true` when a new KU submission is allowed.
     pub fn check_ku_rate(&self, now: u64, tier: NodeTier) -> bool {
-        let limits = rate_limits_for_tier(tier);
+        self.check_ku_rate_with_policy(now, tier, AntiGamingPolicy::Production)
+    }
+
+    /// Returns `true` when local admission allows a new KU submission.
+    ///
+    /// This method is not a consensus or reward check.
+    pub fn check_ku_rate_with_policy(
+        &self,
+        now: u64,
+        tier: NodeTier,
+        policy: AntiGamingPolicy,
+    ) -> bool {
+        let limits = policy.local_admission_limits(tier);
         let cutoff = now.saturating_sub(RATE_WINDOW_S);
         let count = self.ku_timestamps.iter().filter(|&&ts| ts > cutoff).count() as u32;
         count < limits.max_ku_per_hour
@@ -82,7 +144,19 @@ impl RateLimitTracker {
 
     /// Returns `true` when a new encoding action is allowed.
     pub fn check_encode_rate(&self, now: u64, tier: NodeTier) -> bool {
-        let limits = rate_limits_for_tier(tier);
+        self.check_encode_rate_with_policy(now, tier, AntiGamingPolicy::Production)
+    }
+
+    /// Returns `true` when local admission allows a new encoding action.
+    ///
+    /// This method is not a consensus or reward check.
+    pub fn check_encode_rate_with_policy(
+        &self,
+        now: u64,
+        tier: NodeTier,
+        policy: AntiGamingPolicy,
+    ) -> bool {
+        let limits = policy.local_admission_limits(tier);
         let cutoff = now.saturating_sub(RATE_WINDOW_S);
         let count = self
             .encode_timestamps
@@ -133,14 +207,14 @@ impl RateLimitTracker {
 // §5.4  KU Quality Gates
 // ─────────────────────────────────────────────────────────────────────
 
-pub const MIN_KU_RAW_BYTES: usize = 256;
-pub const MIN_GENE_COUNT: usize = 1;
-pub const MIN_ENCODING_TIME_MS: u64 = 100;
-pub const MIN_BOND_COUNT: usize = 1;
-pub const POMV_GATE_7D_THRESHOLD: f32 = 0.01;
-pub const POMV_GATE_30D_THRESHOLD: f32 = 0.05;
+pub const MIN_KU_RAW_BYTES: usize = obt_constants::MIN_KU_RAW_SIZE;
+pub const MIN_GENE_COUNT: usize = obt_constants::MIN_GENE_COUNT as usize;
+pub const MIN_ENCODING_TIME_MS: u64 = obt_constants::MIN_ENCODING_TIME_MS;
+pub const MIN_BOND_COUNT: usize = obt_constants::MIN_BOND_COUNT as usize;
+pub const POMV_GATE_7D_THRESHOLD: f32 = obt_constants::MIN_POMV_7D;
+pub const POMV_GATE_30D_THRESHOLD: f32 = obt_constants::MIN_POMV_30D;
 pub const POMV_GRACE_PERIOD_EPOCHS: u64 = 168;
-pub const ENCODING_CONSENSUS_MIN_VERIFIERS: u32 = 3;
+pub const ENCODING_CONSENSUS_MIN_VERIFIERS: u32 = obt_constants::MIN_ENCODING_VERIFY_COUNT;
 
 /// Gate 1 – minimum payload size and gene count.
 pub fn gate_1_min_size(raw_size: usize, gene_count: usize) -> bool {
@@ -341,6 +415,31 @@ mod tests {
     }
 
     #[test]
+    fn development_policy_only_relaxes_local_leaf_admission() {
+        let local = AntiGamingPolicy::Development.local_admission_limits(NodeTier::Leaf);
+        assert_eq!(local.max_ku_per_hour, 100);
+        assert_eq!(local.max_encode_per_hour, 100);
+
+        let production = AntiGamingPolicy::Development.economic_limits(NodeTier::Leaf);
+        assert_eq!(production.max_ku_per_hour, 1);
+        assert_eq!(production.max_encode_per_hour, 2);
+        assert_eq!(production.claim_cooldown_s, 3_600);
+        assert_eq!(production.max_mint_per_epoch, 10_000);
+    }
+
+    #[test]
+    fn anti_gaming_policy_defaults_to_production() {
+        assert_eq!(AntiGamingPolicy::default(), AntiGamingPolicy::Production);
+        assert_eq!(
+            AntiGamingPolicy::default().local_admission_limits(NodeTier::Leaf),
+            LocalAdmissionLimits {
+                max_ku_per_hour: 1,
+                max_encode_per_hour: 2,
+            }
+        );
+    }
+
+    #[test]
     fn test_tracker_ku_rate_allowed() {
         let t = RateLimitTracker::new(1);
         assert!(t.check_ku_rate(1000, NodeTier::Leaf)); // leaf: 1/hr, none recorded
@@ -351,6 +450,7 @@ mod tests {
         let mut t = RateLimitTracker::new(1);
         t.record_ku(1000);
         assert!(!t.check_ku_rate(1001, NodeTier::Leaf)); // leaf: already 1 within window
+        assert!(t.check_ku_rate_with_policy(1001, NodeTier::Leaf, AntiGamingPolicy::Development));
     }
 
     #[test]

@@ -9,9 +9,9 @@ const pageTitles: Record<string, string> = {
   '/encode': 'Encode Knowledge',
   '/chat': 'Chat',
   '/graph': 'Knowledge Graph',
-  '/pomv': 'PoMV Monitor',
+  '/pomv': 'Legacy Local PoMV',
   '/network': 'Network',
-  '/wallet': 'OBT Wallet',
+  '/wallet': 'OBT Simulation',
   '/settings': 'Settings',
   '/data-tools': 'Data Tools',
   '/social': 'Social & Discovery',
@@ -56,7 +56,7 @@ export function Header({ nodeInfo }: HeaderProps) {
               color: 'var(--ob-warning)', fontSize: '0.85rem', fontWeight: 600,
             }}>
               <Coins size={16} />
-              {formatObt(nodeInfo.obt_balance)} OBT
+              {formatObt(nodeInfo.obt_balance)} simulated
             </div>
           </>
         )}

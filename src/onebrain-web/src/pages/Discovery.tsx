@@ -160,7 +160,7 @@ export function DiscoveryPage() {
                           marginBottom: 4,
                         }}>{domain.name}</div>
                         <div style={{ fontSize: '0.85rem', color: 'var(--ob-text-secondary)' }}>
-                          {domain.ku_count} KUs · Avg PoMV {(domain.avg_pomv * 100).toFixed(0)}%
+                          {domain.ku_count} KUs · Avg legacy PoMV {(domain.avg_pomv * 100).toFixed(0)}%
                         </div>
                       </div>
                       <ChevronRight size={20} style={{ color: 'var(--ob-text-tertiary)' }} />
@@ -232,7 +232,7 @@ function KuCard({ ku, rank, badge, reason }: {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
         {badge}
         <div style={{ fontSize: '0.75rem', color: 'var(--ob-text-tertiary)' }}>
-          PoMV {(ku.pomv * 100).toFixed(0)}% · Trust {(ku.trust * 100).toFixed(0)}%
+          Legacy PoMV {(ku.pomv * 100).toFixed(0)}% · Trust {(ku.trust * 100).toFixed(0)}%
         </div>
       </div>
     </div>

@@ -12,9 +12,13 @@ pub(crate) fn cmd_wallet(node: &OneBrainNode, args: &str) {
         match node.get_balance() {
             Ok(wallet) => {
                 println!();
-                println!("  ── OBT Wallet ──");
-                println!("  Balance:     {}", format_obt_short(wallet.balance));
-                println!("  Chain:       {} blocks", wallet.chain_length);
+                println!("  ── OBT Wallet Simulation (NON-ECONOMIC) ──");
+                println!("  ⚠ No AccountChain, settlement, or spendable OBT is connected.");
+                println!("  Simulated balance: {}", format_obt_short(wallet.balance));
+                println!("  Simulated chain:   {} records", wallet.chain_length);
+                for limitation in &wallet.limitations {
+                    println!("  ⚠ {}", limitation);
+                }
                 println!();
                 println!("  ── Tier ──");
                 println!(
@@ -22,9 +26,12 @@ pub(crate) fn cmd_wallet(node: &OneBrainNode, args: &str) {
                     wallet.tier, wallet.multiplier
                 );
                 println!();
-                println!("  ── Earnings Summary ──");
-                println!("  Total earned: {}", format_obt_short(wallet.total_earned));
-                println!("  Total spent:  {}", format_obt_short(wallet.total_spent));
+                println!("  ── Simulated Activity Projection ──");
+                println!(
+                    "  Derived credit: {}",
+                    format_obt_short(wallet.total_earned)
+                );
+                println!("  Derived debit:  {}", format_obt_short(wallet.total_spent));
                 println!();
 
                 let max_stream = [
@@ -90,11 +97,11 @@ pub(crate) fn cmd_wallet(node: &OneBrainNode, args: &str) {
             Ok(transactions) => {
                 println!();
                 if transactions.is_empty() {
-                    println!("  ── Transaction History ──");
+                    println!("  ── Simulated History (NON-ECONOMIC) ──");
                     println!("  No transactions yet.");
                 } else {
                     println!(
-                        "  ── Transaction History (latest {}) ──",
+                        "  ── Simulated History (latest {}, NON-ECONOMIC) ──",
                         transactions.len()
                     );
                     println!(

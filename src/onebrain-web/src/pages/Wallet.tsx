@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Coins, ArrowUpRight, ArrowDownRight, Shield, Clock, Lock, Unlock } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+import { Coins, ArrowUpRight, ArrowDownRight, Shield, Clock } from 'lucide-react';
 import { api } from '../api/client';
 import type { WalletInfo, WalletTransaction } from '../api/types';
 import { formatObtSigned, formatDateFull } from '../utils/format';
@@ -9,9 +8,6 @@ export function WalletPage() {
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [txns, setTxns] = useState<WalletTransaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [stakeAmount, setStakeAmount] = useState('');
-  const { t } = useTranslation();
-  const [stakeError, setStakeError] = useState('');
 
   useEffect(() => {
     Promise.all([
@@ -19,32 +15,6 @@ export function WalletPage() {
       api.getWalletHistory(20).then(setTxns),
     ]).finally(() => setLoading(false));
   }, []);
-
-  const handleStake = async () => {
-    const amount = Math.floor(parseFloat(stakeAmount) * 1000); // OBT to milliOBT
-    if (!amount || amount <= 0) return;
-    setStakeError('');
-    try {
-      const info = await api.stake(amount);
-      setWallet(info);
-      setStakeAmount('');
-    } catch (err: unknown) {
-      setStakeError(err instanceof Error ? err.message : 'Stake failed');
-    }
-  };
-
-  const handleUnstake = async () => {
-    const amount = Math.floor(parseFloat(stakeAmount) * 1000);
-    if (!amount || amount <= 0) return;
-    setStakeError('');
-    try {
-      const info = await api.unstake(amount);
-      setWallet(info);
-      setStakeAmount('');
-    } catch (err: unknown) {
-      setStakeError(err instanceof Error ? err.message : 'Unstake failed');
-    }
-  };
 
   const formatObt = formatObtSigned;
 
@@ -59,21 +29,26 @@ export function WalletPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1>OBT Wallet</h1>
-        <p>OneBrain Token balance and transaction history</p>
+        <h1>OBT Wallet Simulation</h1>
+        <p>Non-economic compatibility projection; no AccountChain or settlement is connected</p>
       </div>
 
       {wallet && (
         <>
+          <div className="glass-card" style={{ borderColor: 'rgba(245,158,11,0.45)', color: 'var(--ob-warning)', marginBottom: 'var(--ob-gap-lg)' }}>
+            <strong>SIMULATED / NON-ECONOMIC.</strong> These values are derived from local KU count and are not spendable, transferable, settled, or reward-authoritative.
+            {wallet.limitations.map(limit => <div key={limit} style={{ marginTop: 4 }}>• {limit}</div>)}
+          </div>
+
           {/* Balance + Tier */}
           <div className="grid-4" style={{ marginBottom: 'var(--ob-gap-lg)' }}>
             <div className="glass-card accent-glow stat-card animate-in">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <span className="stat-label">Balance</span>
+                <span className="stat-label">Simulated balance</span>
                 <Coins size={18} style={{ color: 'var(--ob-warning)', opacity: 0.7 }} />
               </div>
               <span className="stat-value">{formatObt(wallet.balance)}</span>
-              <span className="stat-sub">OBT (milliOBT: {wallet.balance})</span>
+              <span className="stat-sub">non-economic units ({wallet.balance} milli-units)</span>
             </div>
             <div className="glass-card stat-card animate-in" style={{ animationDelay: '80ms' }}>
               <span className="stat-label">Tier</span>
@@ -81,12 +56,12 @@ export function WalletPage() {
               <span className="stat-sub">{wallet.multiplier}x multiplier</span>
             </div>
             <div className="glass-card stat-card animate-in" style={{ animationDelay: '160ms' }}>
-              <span className="stat-label">Total Earned</span>
+              <span className="stat-label">Derived credit</span>
               <span className="stat-value">{formatObt(wallet.total_earned)}</span>
               <span className="stat-sub">lifetime</span>
             </div>
             <div className="glass-card stat-card animate-in" style={{ animationDelay: '240ms' }}>
-              <span className="stat-label">Chain Length</span>
+              <span className="stat-label">Simulated records</span>
               <span className="stat-value">{wallet.chain_length}</span>
               <span className="stat-sub">blocks</span>
             </div>
@@ -96,7 +71,7 @@ export function WalletPage() {
           <div className="grid-3" style={{ gridTemplateColumns: '2fr 1fr', marginBottom: 'var(--ob-gap-lg)' }}>
             <div className="glass-card animate-in" style={{ animationDelay: '300ms' }}>
               <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-md)' }}>
-                Earnings Streams (4-Revenue Model)
+                Simulated stream projection (no rewards)
               </h3>
               {[
                 { label: 'R1: Owner (PoMV)', value: wallet.streams.owner, pct: 40, color: '#06b6d4' },
@@ -137,63 +112,18 @@ export function WalletPage() {
             </div>
           </div>
 
-          {/* Staking Section */}
+          {/* Economic actions are fenced while the wallet is simulated. */}
           <div className="glass-card animate-in" style={{ animationDelay: '450ms', marginBottom: 'var(--ob-gap-lg)' }}>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-md)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Lock size={18} style={{ color: '#f59e0b' }} />{t('wallet.stake')}
-            </h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--ob-text-secondary)', marginBottom: 16 }}>
-              {t('wallet.stakingInfo')}
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-md)' }}>Economic actions disabled</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--ob-text-secondary)' }}>
+              Stake and unstake are fenced until a production ledger, validation, and finality path passes the M7 exit gate.
             </p>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
-              <input
-                type="number"
-                value={stakeAmount}
-                onChange={e => setStakeAmount(e.target.value)}
-                placeholder={t('wallet.stakeAmount')}
-                style={{
-                  flex: 1, padding: '10px 14px', borderRadius: 8,
-                  background: 'var(--ob-bg-secondary)', border: '1px solid var(--ob-glass-border)',
-                  color: 'var(--ob-text-primary)', fontSize: '0.9rem',
-                }}
-              />
-              <button className="btn-primary" onClick={handleStake} style={{ padding: '10px 24px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Lock size={14} />{t('wallet.stake')}
-              </button>
-              <button onClick={handleUnstake} style={{
-                padding: '10px 24px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 6,
-                background: 'transparent', border: '1px solid var(--ob-glass-border)', color: 'var(--ob-text-secondary)',
-                cursor: 'pointer', fontSize: '0.88rem',
-              }}>
-                <Unlock size={14} />{t('wallet.unstake')}
-              </button>
-            </div>
-            {stakeError && (
-              <div style={{ color: '#ef4444', fontSize: '0.85rem', marginBottom: 12 }}>{stakeError}</div>
-            )}
-            <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12,
-            }}>
-              {[
-                { label: t('wallet.staked'), value: formatObt(wallet.staked), color: '#f59e0b' },
-                { label: t('wallet.earned'), value: formatObt(wallet.total_earned), color: '#10b981' },
-                { label: t('wallet.pending'), value: formatObt(wallet.pending_unstake), color: '#6366f1' },
-              ].map(({ label, value, color }) => (
-                <div key={label} style={{
-                  padding: '12px 16px', borderRadius: 8,
-                  background: 'var(--ob-bg-secondary)', textAlign: 'center',
-                }}>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--ob-text-tertiary)', marginBottom: 4 }}>{label}</div>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 600, color }}>{value} OBT</div>
-                </div>
-              ))}
-            </div>
           </div>
 
           {/* Transaction History */}
           <div className="glass-card animate-in" style={{ animationDelay: '500ms' }}>
             <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-md)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Clock size={18} style={{ color: 'var(--ob-violet)' }} /> Transaction History
+              <Clock size={18} style={{ color: 'var(--ob-violet)' }} /> Simulated Activity History
             </h3>
             {txns.length === 0 ? (
               <div className="empty-state"><Coins size={40} /><p>No transactions yet</p></div>
@@ -206,7 +136,7 @@ export function WalletPage() {
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           {tx.amount >= 0 ? <ArrowDownRight size={14} style={{ color: 'var(--ob-success)' }} /> : <ArrowUpRight size={14} style={{ color: 'var(--ob-error)' }} />}
-                          <span className={`badge ${tx.block_type === 'Mint' ? 'badge-green' : tx.block_type === 'Send' ? 'badge-amber' : 'badge-cyan'}`}>
+                          <span className={`badge ${tx.block_type === 'SimulatedMint' ? 'badge-amber' : tx.block_type === 'Send' ? 'badge-amber' : 'badge-cyan'}`}>
                             {tx.block_type}
                           </span>
                         </div>

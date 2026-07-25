@@ -976,6 +976,8 @@ impl OneBrainNode {
                     gene_type,
                     preview,
                     pomv,
+                    pomv_profile: "legacy_local_pomv_scalar_v1".to_string(),
+                    pomv_is_economic: false,
                     trust,
                     created,
                     wire_size,
@@ -1279,6 +1281,8 @@ impl OneBrainNode {
             bonds,
             trust,
             pomv,
+            pomv_profile: "legacy_local_pomv_scalar_v1".to_string(),
+            pomv_is_economic: false,
             pomv_breakdown: PomvBreakdown {
                 metabolic: ku.epi.trust.metabolic_rate as f64 / 10000.0,
                 prediction: ku.epi.trust.prediction_score as f64 / 10000.0,
@@ -1377,6 +1381,8 @@ impl OneBrainNode {
                     gene_type,
                     preview,
                     pomv,
+                    pomv_profile: "legacy_local_pomv_scalar_v1".to_string(),
+                    pomv_is_economic: false,
                     trust,
                     created,
                     wire_size,
@@ -1447,6 +1453,8 @@ impl OneBrainNode {
                     gene_type,
                     preview,
                     pomv,
+                    pomv_profile: "legacy_local_pomv_scalar_v1".to_string(),
+                    pomv_is_economic: false,
                     trust,
                     created,
                     wire_size,
@@ -1736,15 +1744,19 @@ impl OneBrainNode {
     // Step 6: OBT Wallet
     // ═══════════════════════════════════════════════════════
 
-    /// Get OBT wallet info (from local AccountState).
-    /// OBT uses Nano-style block-lattice — no central ledger.
-    /// Balance = head_block.balance (authoritative, local).
+    /// Get the legacy wallet compatibility projection.
+    ///
+    /// This is a non-economic simulation derived from local KU count. It is not
+    /// backed by AccountChain, consensus, finality, or spendable OBT.
     pub fn get_balance(&self) -> Result<WalletInfo, NodeError> {
-        // TODO: Wire to obt_ledger::AccountChain when identity is connected
-        // For now, return placeholder based on local activity
         let ku_count = self.ku_count().unwrap_or(0) as u64;
         let total_earned = ku_count * 25_000;
         Ok(WalletInfo {
+            economic_status: WalletEconomicStatus::SimulatedNonEconomic,
+            limitations: vec![
+                "Derived from local KU count; no AccountChain is connected.".to_string(),
+                "Not spendable, settled, transferable, or reward-authoritative.".to_string(),
+            ],
             balance: total_earned.saturating_sub(self.staked_amount),
             chain_length: ku_count + 1, // Open block + 1 Mint per KU
             tier: "Contributor".to_string(),
@@ -1765,34 +1777,19 @@ impl OneBrainNode {
     }
 
     /// Stake OBT tokens.
-    pub fn stake(&mut self, amount: u64) -> Result<WalletInfo, NodeError> {
-        let balance = self.get_balance()?;
-        if amount == 0 {
-            return Err(NodeError::InvalidArgument(
-                "Stake amount must be > 0".into(),
-            ));
-        }
-        if amount > balance.balance {
-            return Err(NodeError::InvalidArgument("Insufficient balance".into()));
-        }
-        self.staked_amount += amount;
-        self.get_balance()
+    pub fn stake(&mut self, _amount: u64) -> Result<WalletInfo, NodeError> {
+        Err(NodeError::InvalidArgument(
+            "OBT staking is disabled: the current wallet is a simulated, non-economic projection"
+                .into(),
+        ))
     }
 
     /// Unstake OBT tokens.
-    pub fn unstake(&mut self, amount: u64) -> Result<WalletInfo, NodeError> {
-        if amount == 0 {
-            return Err(NodeError::InvalidArgument(
-                "Unstake amount must be > 0".into(),
-            ));
-        }
-        if amount > self.staked_amount {
-            return Err(NodeError::InvalidArgument(
-                "Cannot unstake more than staked".into(),
-            ));
-        }
-        self.staked_amount -= amount;
-        self.get_balance()
+    pub fn unstake(&mut self, _amount: u64) -> Result<WalletInfo, NodeError> {
+        Err(NodeError::InvalidArgument(
+            "OBT unstaking is disabled: the current wallet is a simulated, non-economic projection"
+                .into(),
+        ))
     }
 
     /// Get wallet transaction history.
@@ -1810,11 +1807,12 @@ impl OneBrainNode {
         // Generate placeholder transactions from KU count
         for i in 0..std::cmp::min(ku_count, limit) {
             transactions.push(WalletTransaction {
-                block_type: "Mint".to_string(),
+                economic_status: WalletEconomicStatus::SimulatedNonEconomic,
+                block_type: "SimulatedMint".to_string(),
                 amount: 25_000, // 25 OBT in milliOBT
-                detail: format!("R1:Owner — KU #{}", ku_count - i),
+                detail: format!("Non-economic placeholder derived from KU #{}", ku_count - i),
                 timestamp: now - (i as u64 * 3600),
-                confirmation: "Settled".to_string(),
+                confirmation: "Simulated".to_string(),
             });
         }
 
@@ -2710,6 +2708,8 @@ impl OneBrainNode {
                     gene_type: detail.gene_type,
                     preview: detail.content.chars().take(80).collect(),
                     pomv: detail.pomv,
+                    pomv_profile: detail.pomv_profile,
+                    pomv_is_economic: detail.pomv_is_economic,
                     trust: detail.trust,
                     created: detail.created,
                     wire_size: detail.wire_size,
@@ -3304,6 +3304,8 @@ impl OneBrainNode {
             total_kus: total,
             kus_by_type,
             avg_pomv,
+            pomv_profile: "legacy_local_pomv_scalar_v1".to_string(),
+            pomv_is_economic: false,
             avg_trust,
             total_wire_size: total_wire,
             total_bonds,
@@ -3348,6 +3350,8 @@ impl OneBrainNode {
                 } else {
                     0.0
                 },
+                pomv_profile: "legacy_local_pomv_scalar_v1".to_string(),
+                pomv_is_economic: false,
                 example_cids: examples,
             })
             .collect();

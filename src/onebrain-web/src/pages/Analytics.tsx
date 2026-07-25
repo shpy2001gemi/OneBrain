@@ -56,7 +56,7 @@ export function AnalyticsPage() {
 
   const stats = [
     { icon: Database, label: t('analytics.totalKus'), value: data.total_kus.toLocaleString(), color: '#6366f1' },
-    { icon: TrendingUp, label: t('analytics.avgPomv'), value: `${(data.avg_pomv * 100).toFixed(1)}%`, color: '#10b981' },
+    { icon: TrendingUp, label: 'Avg legacy PoMV (non-economic)', value: `${(data.avg_pomv * 100).toFixed(1)}%`, color: '#10b981' },
     { icon: Zap, label: t('analytics.avgTrust'), value: `${(data.avg_trust * 100).toFixed(1)}%`, color: '#f59e0b' },
     { icon: Link2, label: t('analytics.totalBonds'), value: data.total_bonds.toLocaleString(), color: '#ec4899' },
     { icon: Clock, label: t('analytics.last24h'), value: data.kus_last_24h.toLocaleString(), color: '#3b82f6' },

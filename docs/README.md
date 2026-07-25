@@ -108,6 +108,8 @@ cargo build --features persist
 | [Research Baseline — KU v7.1](research/ONEBRAIN_RESEARCH_BASELINE_V7_1.md) | Baseline 1.5 cho nghiên cứu KU-centric và partition autonomy; §46.3/§56.1 chốt Receptor, Mapping, discovery, OBP-RP, reconciliation, identity, GC và migration; OBT ngoài critical path |
 | [Foundation Implementation Plan — KU v7.1](research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md) | Kế hoạch thực thi chi tiết: dependency graph, 8 milestone (M0–M7), 99 task có acceptance criteria, Anti-Gravity Reunion MVP, verification/migration/rollout gates và topological work-package queue |
 | [vNext Foundation Contracts](specs/vnext/README.md) | Contract đang triển khai cho WP-001/WP-002: field ownership, normative vocabulary, negative assertions và canonical codec/domain profile |
+| [Legacy/vNext Product Boundary ADR](specs/vnext/LEGACY_VNEXT_PRODUCT_BOUNDARY_ADR_V1.md) | Chốt ranh giới additive: KQL/DHT/PoMV/OBT legacy không được ngầm đổi nghĩa thành vNext; wallet hiện là simulated/non-economic |
+| [Distributed Runtime Transaction Inventory](specs/vnext/DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md) | Danh mục boundary và failpoint ID cho crash harness DR-M5, kèm durable owner và restart oracle |
 | [Feature Tree](features/FEATURE_TREE.md) | Cây tính năng v6 — tất cả §1-§8 |
 | [Feature Details](features/FEATURE_DETAILS.md) | Chi tiết kỹ thuật từng feature với code references |
 | [KU vs AI Model](references/KU_vs_AI_Model_vi.md) | So sánh triết học giữa Knowledge Unit và AI Model (Tiếng Việt) |
@@ -225,7 +227,7 @@ cargo build --features persist
 | `obt_minting` | [obt_minting.rs](../src/ku-core/src/obt_minting.rs) | [§3 Minting](specs/obt/03_MINTING.md) | Emission formula, MintProof |
 | `obt_storage_reward` | [obt_storage_reward.rs](../src/ku-core/src/obt_storage_reward.rs) | [§4 Storage](specs/obt/04_STORAGE_REWARD.md) | 5-factor storage reward |
 | `obt_penalty` | [obt_penalty.rs](../src/ku-core/src/obt_penalty.rs) | [§8 Penalty](specs/obt/08_PENALTY.md) | Graduated penalties |
-| `obt_anti_gaming` | [obt_anti_gaming.rs](../src/ku-core/src/obt_anti_gaming.rs) | [§5 Anti-Gaming](specs/obt/05_ANTI_GAMING.md) | Rate limiter, quality gates |
+| `obt_anti_gaming` | [obt_anti_gaming.rs](../src/ku-core/src/obt_anti_gaming.rs) | [§5 Anti-Gaming](specs/obt/05_ANTI_GAMING.md) | Production rate/reward limits, local-only explicit development admission policy, quality gates |
 | `obt_gossip_security` | [obt_gossip_security.rs](../src/ku-core/src/obt_gossip_security.rs) | [§7 Gossip](specs/obt/07_GOSSIP_SECURITY.md) | Gossip gap, connectivity |
 | `obt_fork_pipeline` | [obt_fork_pipeline.rs](../src/ku-core/src/obt_fork_pipeline.rs) | [§8 Penalty](specs/obt/08_PENALTY.md) | Fork → penalty pipeline |
 | `obt_epoch` | [obt_epoch.rs](../src/ku-core/src/obt_epoch.rs) | [§9 Constants](specs/obt/09_CONSTANTS.md) | Epoch boundary settlement |

@@ -57,8 +57,8 @@ pub(crate) fn cmd_help(args: &str) {
         println!("  ║  model test              Test AI connection                   ║");
         println!("  ║                                                               ║");
         println!("  ║  ── Wallet ──                                                 ║");
-        println!("  ║  wallet                  Show OBT balance                     ║");
-        println!("  ║  wallet history          Transaction history                  ║");
+        println!("  ║  wallet                  Show non-economic OBT simulation     ║");
+        println!("  ║  wallet history          Show simulated activity history      ║");
         println!("  ║                                                               ║");
         println!("  ║  ── Data ──                                                   ║");
         println!("  ║  export [--format json]  Export KUs to file                   ║");
@@ -296,11 +296,11 @@ pub(crate) fn cmd_help(args: &str) {
             }
             "wallet" => {
                 println!();
-                println!("  wallet                   Show OBT balance & earnings");
-                println!("  wallet history [--limit N] Show transaction history");
+                println!("  wallet                   Show non-economic OBT simulation");
+                println!("  wallet history [--limit N] Show simulated activity history");
                 println!();
                 println!("  OBT uses Nano-style block-lattice — each node has its own chain.");
-                println!("  Balance is read from local AccountState (instant, no network).");
+                println!("  No AccountChain is connected; values are non-economic placeholders.");
                 println!();
             }
             "export" => {

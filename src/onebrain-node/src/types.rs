@@ -15,8 +15,12 @@ pub struct KuListItem {
     pub gene_type: String,
     /// First ~80 chars of content.
     pub preview: String,
-    /// PoMV score (0.0-1.0).
+    /// Legacy local PoMV scalar (0.0-1.0), not vNext metabolic evidence.
     pub pomv: f64,
+    /// Frozen profile name that defines the scalar's legacy semantics.
+    pub pomv_profile: String,
+    /// Always false for the legacy scalar; it cannot authorize rewards.
+    pub pomv_is_economic: bool,
     /// Trust score (0.0-1.0).
     pub trust: f64,
     /// Creation timestamp (epoch seconds).
@@ -40,8 +44,12 @@ pub struct KuDetail {
     pub bonds: Vec<BondView>,
     /// Trust score.
     pub trust: f64,
-    /// PoMV composite score.
+    /// Legacy local PoMV composite score.
     pub pomv: f64,
+    /// Frozen profile name that defines the scalar's legacy semantics.
+    pub pomv_profile: String,
+    /// Always false for the legacy scalar; it is not Outcome, Benefit, or reward.
+    pub pomv_is_economic: bool,
     /// PoMV breakdown.
     pub pomv_breakdown: PomvBreakdown,
     /// Epistemic status.
@@ -231,14 +239,27 @@ pub struct AiHealthInfo {
     pub status_message: String,
 }
 
-/// OBT wallet info (from local AccountState).
-/// OBT uses Nano-style block-lattice — each node has its own chain.
-/// Balance = head_block.balance (authoritative, local, instant).
+/// Economic status of a wallet projection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WalletEconomicStatus {
+    /// Placeholder derived from local KU count; no ledger or settlement exists.
+    SimulatedNonEconomic,
+}
+
+/// OBT wallet compatibility projection.
+///
+/// The current node does not connect this DTO to an AccountChain. Values are a
+/// non-economic simulation and must never be presented as spendable OBT.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletInfo {
-    /// Current spendable balance (milliOBT).
+    /// Explicit capability truth for every consumer of this DTO.
+    pub economic_status: WalletEconomicStatus,
+    /// Human-readable limits that surfaces must display.
+    pub limitations: Vec<String>,
+    /// Simulated balance (milliOBT); not spendable or settled.
     pub balance: u64,
-    /// Number of blocks in local chain.
+    /// Simulated chain length; no authoritative local AccountChain is connected.
     pub chain_length: u64,
     /// Current trust tier.
     pub tier: String,
@@ -276,6 +297,8 @@ pub struct EarningsStreams {
 /// A single wallet transaction.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletTransaction {
+    /// Explicit capability truth for every history entry.
+    pub economic_status: WalletEconomicStatus,
     /// Block type: "Mint", "Send", "Receive", "Refund", "Open".
     pub block_type: String,
     /// Amount (milliOBT). Positive for credit, negative for debit.
@@ -555,8 +578,12 @@ pub struct AnalyticsSnapshot {
     pub total_kus: usize,
     /// KUs per gene type.
     pub kus_by_type: Vec<(String, usize)>,
-    /// Average PoMV score.
+    /// Average legacy local PoMV scalar.
     pub avg_pomv: f64,
+    /// Frozen profile name for `avg_pomv`.
+    pub pomv_profile: String,
+    /// Always false; the aggregate is not economic evidence.
+    pub pomv_is_economic: bool,
     /// Average trust score.
     pub avg_trust: f64,
     /// Total wire size (bytes).
@@ -588,8 +615,12 @@ pub struct DomainInfo {
     pub name: String,
     /// Number of KUs in this domain.
     pub ku_count: usize,
-    /// Average PoMV in this domain.
+    /// Average legacy local PoMV scalar in this domain.
     pub avg_pomv: f64,
+    /// Frozen profile name for `avg_pomv`.
+    pub pomv_profile: String,
+    /// Always false; the aggregate is not economic evidence.
+    pub pomv_is_economic: bool,
     /// Example KU CIDs.
     pub example_cids: Vec<String>,
 }

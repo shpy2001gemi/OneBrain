@@ -59,6 +59,7 @@ export function CollectionsPage() {
         .map(r => ({
           cid_hex: r.value.cid_hex, gene_type: r.value.gene_type,
           preview: r.value.content.slice(0, 80), pomv: r.value.pomv,
+          pomv_profile: r.value.pomv_profile, pomv_is_economic: r.value.pomv_is_economic,
           trust: r.value.trust, created: r.value.created, wire_size: r.value.wire_size,
         }));
       setCollKus(kus);

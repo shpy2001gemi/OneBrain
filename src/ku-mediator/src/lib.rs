@@ -40,8 +40,10 @@
 //!
 //! # async fn example() {
 //! let backend = MockBackend::new().with_chat_response("Hello!");
+//! let encoder_backend = MockBackend::new();
 //! let mut mediator = Mediator::new(
 //!     Box::new(backend),
+//!     Box::new(encoder_backend),
 //!     default_dict(),
 //!     MediatorConfig::default(),
 //! );

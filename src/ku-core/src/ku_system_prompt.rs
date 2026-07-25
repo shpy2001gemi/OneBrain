@@ -341,7 +341,10 @@ mod tests {
     fn test_full_prompt_contains_examples() {
         let dict = default_dict();
         let prompt = generate_system_prompt(&dict, SAMPLE_TOOLS);
-        // Example 1: bơi ếch / breaststroke
+        assert!(
+            prompt.contains("Water boils at 100 degrees Celsius"),
+            "Must contain the water boiling example"
+        );
         assert!(
             prompt.contains("bơi ếch"),
             "Must contain the breaststroke example (Vietnamese)"
@@ -350,15 +353,25 @@ mod tests {
             prompt.contains("Breaststroke"),
             "Must contain the breaststroke example (English)"
         );
-        // Example 2: rocket body & shell
-        assert!(prompt.contains("rocket"), "Must contain the rocket example");
         assert!(
-            prompt.contains("body"),
-            "Must contain body in rocket example"
+            prompt.contains("The heart pumps blood to the lungs"),
+            "Must contain the heart example"
+        );
+    }
+
+    #[test]
+    fn test_full_prompt_preserves_utf8_without_mojibake() {
+        let dict = default_dict();
+        let prompt = generate_system_prompt(&dict, SAMPLE_TOOLS);
+        assert!(
+            prompt.contains("Bộ mã hóa Tri thức")
+                && prompt.contains("Nhiệm vụ của bạn")
+                && prompt.contains("kỹ thuật bơi cơ bản"),
+            "Vietnamese prompt fragments must remain valid UTF-8"
         );
         assert!(
-            prompt.contains("shell"),
-            "Must contain shell in rocket example"
+            !prompt.contains('�') && !prompt.contains("Bá»") && !prompt.contains("Nhiá»"),
+            "Prompt must not contain replacement characters or common UTF-8 mojibake"
         );
     }
 

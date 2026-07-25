@@ -496,7 +496,7 @@ export function ExplorerPage() {
                     style={{ cursor: 'pointer', accentColor: 'var(--ob-accent)' }}
                   />
                 </td>
-                <th></th><th>CID</th><th>Type</th><th>Preview</th><th>PoMV</th><th>Trust</th><th>Size</th><th>Date</th><th></th>
+                <th></th><th>CID</th><th>Type</th><th>Preview</th><th>Legacy PoMV</th><th>Trust</th><th>Size</th><th>Date</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -637,7 +637,7 @@ export function ExplorerPage() {
               <p style={{ fontSize: '0.88rem', lineHeight: 1.6, marginTop: 4 }}>{selectedKu.content}</p>
             </div>
             <div className="grid-2">
-              <div><span className="stat-label">PoMV</span><p style={{ fontSize: '1.1rem', fontWeight: 600 }}>{(selectedKu.pomv * 100).toFixed(1)}%</p></div>
+              <div><span className="stat-label">Legacy PoMV (non-economic)</span><p style={{ fontSize: '1.1rem', fontWeight: 600 }}>{(selectedKu.pomv * 100).toFixed(1)}%</p></div>
               <div><span className="stat-label">Trust</span><p style={{ fontSize: '1.1rem', fontWeight: 600 }}>{(selectedKu.trust * 100).toFixed(1)}%</p></div>
               <div><span className="stat-label">Confidence</span><p style={{ fontSize: '1.1rem', fontWeight: 600 }}>{(selectedKu.confidence * 100).toFixed(1)}%</p></div>
               <div><span className="stat-label">Wire Size</span><p style={{ fontSize: '1.1rem', fontWeight: 600 }}>{selectedKu.wire_size}B</p></div>

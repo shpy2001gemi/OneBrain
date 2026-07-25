@@ -38,8 +38,12 @@ export function PomvPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1>PoMV Monitor</h1>
-        <p>Proof of Metabolic Value — knowledge lifecycle analysis</p>
+        <h1>Legacy Local PoMV Scalar</h1>
+        <p>Local compatibility metric — non-economic and separate from vNext Metabolic Evidence View</p>
+      </div>
+
+      <div className="glass-card" style={{ borderColor: 'rgba(245,158,11,0.45)', color: 'var(--ob-warning)', marginBottom: 'var(--ob-gap-lg)' }}>
+        This scalar is not UseEvidence, Outcome, Benefit, authority, reward, or a network-wide truth claim.
       </div>
 
       {/* CID Input */}
@@ -62,7 +66,7 @@ export function PomvPage() {
         <div className="glass-card empty-state" style={{ minHeight: 400 }}>
           <Activity size={48} />
           <h3 style={{ color: 'var(--ob-text-secondary)' }}>Select a Knowledge Unit</h3>
-          <p style={{ fontSize: '0.85rem' }}>Enter a CID to view its metabolic lifecycle and PoMV breakdown</p>
+          <p style={{ fontSize: '0.85rem' }}>Enter a CID to inspect the legacy local scalar and its compatibility breakdown</p>
         </div>
       )}
 
@@ -72,7 +76,7 @@ export function PomvPage() {
           <div className="grid-3" style={{ gridTemplateColumns: '1fr 2fr' }}>
             {/* Score */}
             <div className="glass-card accent-glow animate-in" style={{ textAlign: 'center' }}>
-              <span className="stat-label">Overall PoMV</span>
+              <span className="stat-label">Legacy local scalar</span>
               <div style={{
                 fontSize: '3.5rem', fontWeight: 800, margin: '16px 0',
                 background: `linear-gradient(135deg, ${pomvScore > 60 ? '#10b981' : pomvScore > 30 ? '#f59e0b' : '#ef4444'}, var(--ob-accent-light))`,
@@ -103,7 +107,7 @@ export function PomvPage() {
 
           {/* PoMV Dimensions */}
           <div className="glass-card animate-in" style={{ animationDelay: '200ms' }}>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-lg)' }}>PoMV Dimensions</h3>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: 'var(--ob-gap-lg)' }}>Legacy scalar dimensions (non-economic)</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ob-gap-md)' }}>
               {POMV_DIMS.map(({ key, label, color, desc }) => {
                 const val = breakdown[key] as number;

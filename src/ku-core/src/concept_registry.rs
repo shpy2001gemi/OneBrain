@@ -1045,8 +1045,12 @@ mod tests {
     }
 
     /// Integration test: load real concepts.obr if available.
-    /// This test is skipped when the file doesn't exist (CI environments).
+    ///
+    /// The current production artifact is about 1.3 GB and the legacy loader
+    /// materializes it in memory. Keep this outside the default workspace gate;
+    /// P0 uses the small build/verify fixture plus indexed on-demand tests.
     #[test]
+    #[ignore = "explicit full-registry drill; legacy materialization can require more than 8 GiB"]
     fn test_load_obr_real_file() {
         // Build path relative to CARGO_MANIFEST_DIR (ku-core crate root)
         // ku-core is at src/ku-core, so concepts.obr is at ../../onebrain_data/concepts.obr

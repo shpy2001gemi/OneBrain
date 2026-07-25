@@ -286,7 +286,7 @@ export function GraphPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ob-gap-sm)' }}>
               <div><span className="stat-label">CID</span><p className="mono" style={{ fontSize: '0.72rem', wordBreak: 'break-all' }}>{selected.id}</p></div>
               <div><span className="stat-label">Gene Type</span><span className="badge badge-cyan">{selected.geneType}</span></div>
-              <div><span className="stat-label">PoMV</span><p>{(selected.pomv * 100).toFixed(1)}%</p></div>
+              <div><span className="stat-label">Legacy PoMV (non-economic)</span><p>{(selected.pomv * 100).toFixed(1)}%</p></div>
               <div><span className="stat-label">Preview</span><p style={{ fontSize: '0.82rem', color: 'var(--ob-text-secondary)' }}>{selected.preview}</p></div>
               <button className="btn btn-primary btn-sm" onClick={() => loadGraph(selected.id)}>Explore from here</button>
             </div>

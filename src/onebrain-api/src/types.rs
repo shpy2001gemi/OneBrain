@@ -193,6 +193,8 @@ pub struct StatusResponse {
     pub node_name: String,
     pub tier: String,
     pub obt_balance: u64,
+    /// Explicitly distinguishes the placeholder from economic OBT.
+    pub obt_economic_status: onebrain_node::types::WalletEconomicStatus,
     pub version: String,
     pub model: String,
     /// Effective external Concept Registry policy and startup result.

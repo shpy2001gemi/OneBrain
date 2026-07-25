@@ -5,6 +5,20 @@ edition = "2021"
 license = "MIT"
 description = "OneBrain Desktop — native desktop application powered by Tauri 2"
 
+[lib]
+name = "onebrain_desktop"
+path = "src/lib.rs"
+# This crate has no Rust unit tests. On Windows GNU, an empty Tauri test
+# harness cannot load its native WebView entrypoint. Product compilation is
+# enforced separately by the Windows default/feature CI matrix.
+test = false
+doctest = false
+
+[[bin]]
+name = "onebrain-desktop"
+path = "src/main.rs"
+test = false
+
 [features]
 default = []
 vnext-network-runtime = [

@@ -581,6 +581,13 @@ impl RewardDistributor {
 
 ## §3 PoMV v2 — Proof of Metabolic Value
 
+> **Capability boundary (P0, 2026-07-25):** các trường `pomv`,
+> `pomv_breakdown` và aggregate `avg_pomv` hiện là
+> `legacy_local_pomv_scalar_v1`. Chúng là metric compatibility cục bộ,
+> non-economic; không phải vNext Metabolic Evidence View, UseEvidence,
+> Outcome, Benefit, authority, reward hoặc tuyên bố toàn mạng. Query/retrieval
+> counters bên dưới không tự tạo Public UseEvidence.
+
 ### §3.1 Signal 1: Metabolism
 
 #### Description

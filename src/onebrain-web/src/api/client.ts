@@ -362,11 +362,11 @@ export const api = {
 
   // ─── Tier C: Analytics ─────────────────
   getAnalytics: () =>
-    request<{ total_kus: number; kus_by_type: [string, number][]; avg_pomv: number; avg_trust: number; total_wire_size: number; total_bonds: number; kus_last_24h: number; kus_last_7d: number; top_gene_type: string; verified_self: number; verified_partial: number; verified_full: number; verification_rate: number }>('/api/analytics'),
+    request<{ total_kus: number; kus_by_type: [string, number][]; avg_pomv: number; pomv_profile: 'legacy_local_pomv_scalar_v1'; pomv_is_economic: false; avg_trust: number; total_wire_size: number; total_bonds: number; kus_last_24h: number; kus_last_7d: number; top_gene_type: string; verified_self: number; verified_partial: number; verified_full: number; verification_rate: number }>('/api/analytics'),
 
   // ─── Tier C: Domain Taxonomy ───────────
   listDomains: () =>
-    request<{ domains: Array<{ name: string; ku_count: number; avg_pomv: number; example_cids: string[] }> }>('/api/domains'),
+    request<{ domains: Array<{ name: string; ku_count: number; avg_pomv: number; pomv_profile: 'legacy_local_pomv_scalar_v1'; pomv_is_economic: false; example_cids: string[] }> }>('/api/domains'),
   kusByDomain: (domain: string, page = 1, limit = 20) =>
     request<{ kus: KuListItem[]; total: number; page: number }>(`/api/domains/${encodeURIComponent(domain)}/kus?page=${page}&limit=${limit}`),
 };

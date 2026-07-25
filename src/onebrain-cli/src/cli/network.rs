@@ -165,8 +165,11 @@ pub(crate) async fn cmd_status(node: &OneBrainNode) {
     // Wallet info (if available)
     if let Ok(wallet) = node.get_balance() {
         println!();
-        println!("  ── Wallet ──");
-        println!("  Balance:    {}", format_obt_short(wallet.balance));
+        println!("  ── Wallet Simulation (NON-ECONOMIC) ──");
+        println!(
+            "  Projection: {} (not spendable OBT)",
+            format_obt_short(wallet.balance)
+        );
         println!(
             "  Rate:       {}/{} KU used this hour",
             wallet.rate_used, wallet.rate_max
