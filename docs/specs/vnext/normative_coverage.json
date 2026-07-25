@@ -173,6 +173,29 @@
       "rationale": "The fixture freezes additive routes, DTO fields, CID/continuation encodings and fail-closed semantics; the validator and mutation tests reject namespace escape, client authority injection, legacy drift and economic/truth amplification."
     },
     {
+      "path": "docs/specs/vnext/FEED_SIGNER_CUSTODY_PROFILE_V1.md",
+      "expected_statement_lines": 5,
+      "evidence": [
+        {
+          "path": "src/ku-core/src/foundation/feed_signer.rs",
+          "needle": "pub trait FeedEventSigner"
+        },
+        {
+          "path": "src/ku-core/src/foundation/event.rs",
+          "needle": "sign_with_proven_signer"
+        },
+        {
+          "path": "src/ku-encoder/src/vnext_observation_intake.rs",
+          "needle": "signer_mismatch_fails_before_private_vault_side_effects"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+          "needle": "signer_mismatch_fails_before_publication_side_effects"
+        }
+      ],
+      "rationale": "The typed signer boundary excludes private-key export and fallback; proof-of-possession plus pre-encode binding and durable-state tests prove fail-closed custody behavior before Vault and publication side effects."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [

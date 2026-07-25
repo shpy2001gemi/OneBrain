@@ -1041,3 +1041,31 @@ foundation contract, Linux default workspace, Linux feature-enabled real QUIC
 và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation và 0 warning.
 P1.1 đã hoàn tất ở cấp repository; work package kế tiếp là P1.2–P1.5 security
 blockers, bắt đầu bằng P1.2 Feed signer custody.
+
+### 2026-07-26 — P1.2 Feed signer custody
+
+Đã triển khai cục bộ trên nhánh `codex/p1-feed-signer-custody`:
+
+1. `FeedEventSigner` là boundary độc lập với `SessionIdentitySigner`, chỉ expose
+   public key và sign operation; private key không có đường export.
+2. `ProvenFeedEventSigner` bind exact `FeedInception.feed_public_key`, kiểm tra
+   Ed25519 proof-of-possession có domain separation và verify lại mỗi event
+   signature.
+3. `KnowledgeEventEnvelope` kiểm tra FeedID/public-key binding trước unsigned
+   canonical encode; wrong signer không được gọi sign operation.
+4. Remote/HSM signer unavailable, wrong proof hoặc wrong returned signature đều
+   fail closed bằng stable error; không có alternate/file-key fallback.
+5. Private observation intake chứng minh signer trước adapter và mọi Vault
+   write. Wrong signer để Vault trống; retry đúng signer nhận `Stored`.
+6. Public UseEvidence publisher chứng minh signer trước write transaction,
+   sequence allocation và publication insert. Wrong signer giữ publication
+   count bằng 0; retry đúng signer bắt đầu ở sequence 0.
+7. NodeID, ActorID và FeedID tiếp tục là ba identity domain/signing boundary
+   riêng; chữ ký feed không cấp transport, Actor, capability, truth hoặc reward
+   authority.
+
+Focused gate xanh: 3 feed-signer test, 7 event test, 5 observation-intake test
+và 5 distributed-PoMV test có feature thật. Contract validator, product-profile
+mutation test, `cargo fmt`, default workspace all-target compile, feature-enabled
+product compile và Clippy đều xanh; chỉ còn chờ remote CI trên HEAD trước khi
+merge.
