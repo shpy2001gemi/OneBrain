@@ -17,6 +17,7 @@ After every injected crash and restart, the harness compares:
 - reconciliation journal and pending outbox state;
 - feed/authority branches and decisions;
 - distributed KQL durable match set;
+- prepared Public Use intent, receipt commitment, and consumed state;
 - Public Use publication state;
 - metabolic view root, revision, lineage, and conflict branches.
 
@@ -27,7 +28,8 @@ balance as correctness evidence.
 
 | ID | Commit boundary | Durable owner/tables | Next side effect | Required restart invariant | Coverage at freeze |
 |---|---|---|---|---|---|
-| `TX-PUSE-001` | Canonical Public Use publication plus feed head | `PublicUseEvidencePublisher`; `vnext_public_use_publications_v1`, `vnext_public_use_feed_heads_v1` | Export logical publication intents | Same publication/feed sequence for the same idempotency key; no duplicate EventCID | In-process restart/idempotency test exists; child-process kill pending |
+| `TX-PUSE-000` | Canonical Public Use preparation and operation index | `PublicUseEvidencePublisher`; `vnext_prepared_public_use_v1`, `vnext_prepared_public_use_by_operation_v1` | Await explicit local confirmation | Same intent/exact preview after restart; only receipt commitment persists; re-prepare rotates the unconsumed receipt | In-process restart, forged/swap/expiry and receipt-rotation tests exist; child-process kill pending |
+| `TX-PUSE-001` | Prepared-consent consume, canonical Public Use publication, and feed head | `PublicUseEvidencePublisher`; prepared-intent, `vnext_public_use_publications_v1`, `vnext_public_use_feed_heads_v1` | Export logical publication intents | Consumed intent, publication and Feed sequence commit together; exact retry creates no duplicate EventCID | In-process restart/idempotency/single-transition test exists; child-process kill pending |
 | `TX-PUSE-002` | Logical publication state to network outbox handoff | Publication store plus `DurableOutbox`; `vnext_outbound_intents` | Authenticated QUIC delivery | A committed publication is either pending or already represented by the same outbox intent; never lost or duplicated | Restart replay test exists; cross-store kill window pending |
 | `TX-OUT-001` | Outbox enqueue/attempt state | `DurableOutbox`; `vnext_outbound_intents` | Send bounded authenticated batch | Same intent ID, target NodeID, payload CID, attempt state, and retry class after restart | Durable retry tests exist; process-kill matrix pending |
 | `TX-OUT-002` | Receipt application to outbox terminal/pending state | `DurableOutbox`; `vnext_outbound_intents` | Scheduler advances fair cursor/retention | Validated receipt cannot regress; retryable receipt cannot become silent success | Restart test exists; kill-before/after receipt commit pending |

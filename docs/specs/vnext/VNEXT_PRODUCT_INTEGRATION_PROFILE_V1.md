@@ -103,6 +103,10 @@ security ownership:
 | `MetabolicEvidenceViewV1` | Target, policy, assessed frontier, revision, evidence root, conflicts, coverage, and limitations remain visible with all truth/benefit/reward/global flags false. |
 | `RuntimeStatusV1` | Compiled, requested, active, kill-switch, signer readiness, lifecycle, coverage, and limitations are separate fields. |
 
+The runtime semantics behind `PreparedPublicUseV1` and
+`PublicUseConfirmRequestV1` are frozen by the
+[Strong Public Use Consent Profile v1](PUBLIC_USE_CONSENT_PROFILE_V1.md).
+
 Responses MUST NOT expose raw queries, private targets, signer private keys, or
 single-use receipts. Authenticated local-private Need responses may expose
 `standing_need_id` and `query_definition_cid` to the requesting local client,

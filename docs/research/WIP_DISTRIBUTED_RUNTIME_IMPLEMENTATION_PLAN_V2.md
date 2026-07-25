@@ -1076,3 +1076,34 @@ real QUIC và Windows default/vNext/Desktop smoke đều xanh, với 0 annotatio
 
 P1.2 đã hoàn tất ở cấp repository; work package kế tiếp là P1.3 Strong Public
 Use consent.
+
+### 2026-07-26 — P1.3 Strong Public Use consent
+
+Đã triển khai cục bộ trên nhánh `codex/p1-strong-public-use-consent`:
+
+1. Xóa boundary `ExplicitUseConfirmation` chấp nhận tùy ý 32 byte khác zero;
+   thay bằng typed `PreparePublicUseEvidenceRequest → PreparedPublicUseIntent
+   → ConfirmPublicUseEvidenceRequest`.
+2. Prepare tạo canonical Public `UseEvidence` preview và intent CID bind exact
+   FeedID, target, recipient NodeID, selector, namespace, disclosure,
+   idempotency key và expiry.
+3. Receipt dùng OS CSPRNG, không có public constructor/getter/serialization,
+   bị redacted khỏi `Debug`; Redb chỉ lưu domain-separated commitment.
+4. Expiry dùng trusted clock, bắt buộc còn hiệu lực và tối đa 900 giây;
+   confirm sau restart vẫn kiểm tra lại và fail closed khi hết hạn.
+5. Exact re-prepare rotate receipt, receipt cũ bị từ chối; idempotency key bind
+   nội dung khác bị conflict và intent đã consume không thể prepare lại.
+6. Confirm kiểm tra intent/author/receipt/canonical object/target/signer trước
+   side effect; một transaction atomically commit publication, Feed head và
+   `consumed = true`.
+7. Exact confirm retry trả lại cùng publication, không tăng sequence hoặc tạo
+   EventCID mới. Route address chỉ là availability hint; exact recipient NodeID
+   vẫn nằm trong consent và outbound authentication.
+8. Contract P1.3, transaction inventory, M4 CI label và normative evidence đã
+   được nối vào foundation validator.
+
+Focused gate hiện xanh: 9 test `vnext_distributed_pomv`, gồm forged non-zero,
+intent swap, expiry/restart, receipt rotation, exact retry, signer mismatch và
+real-QUIC peer delivery.
+
+Remote CI evidence sẽ được ghi sau khi commit của nhánh hoàn tất 4 job.
