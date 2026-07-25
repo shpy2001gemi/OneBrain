@@ -100,6 +100,11 @@ original bytes. An unsupported root schema major is rejected before execution.
 Duplicate set members are rejected; changing insertion order does not change
 canonical bytes, signature or `EventCid`.
 
+Private-key custody and fail-closed event construction follow the
+[Feed Event Signer Custody Profile v1](FEED_SIGNER_CUSTODY_PROFILE_V1.md).
+The event API binds the signer public key to the validated FeedInception before
+unsigned canonical encoding and never requests private-key bytes.
+
 ### Policy-reference boundary
 
 The authority dependency of a feed is the exact

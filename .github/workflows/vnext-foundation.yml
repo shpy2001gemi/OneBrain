@@ -99,6 +99,7 @@ jobs:
           ku-core/src/foundation/conformance.rs
           ku-core/src/foundation/event.rs
           ku-core/src/foundation/feed.rs
+          ku-core/src/foundation/feed_signer.rs
           ku-core/src/foundation/feed_store.rs
           ku-core/src/foundation/fidelity.rs
           ku-core/src/foundation/fidelity_assessment.rs
@@ -210,6 +211,12 @@ jobs:
 
       - name: Test canonical foundation
         run: cargo test --locked -p ku-core foundation
+
+      - name: Test feed signer custody and pre-side-effect failures
+        run: >-
+          cargo test --locked -p ku-core foundation::feed_signer
+          && cargo test --locked -p ku-core foundation::event
+          && cargo test --locked -p ku-encoder vnext_observation_intake
 
       - name: Test canonical capability layer boundaries
         run: cargo test --locked -p ku-core foundation::capability

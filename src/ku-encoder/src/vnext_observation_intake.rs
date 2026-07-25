@@ -4,16 +4,16 @@
 //! before local extraction. Successful extraction produces a signed private
 //! ObservationEvent and a non-executable Receptor encoding proposal.
 
-use ed25519_dalek::SigningKey;
 use ku_core::foundation::event::EventError;
 use ku_core::foundation::{
     decode_knowledge_event, decode_knowledge_object, AtomicVerifiedBackend, ConceptCcid, EventCid,
-    InMemoryVerifiedBackend, KnowledgeEventEnvelope, KnownObjectKind, ObjectCid, ObjectReference,
-    ObservationError, ObservationEventPayload, ObservationGovernance, PrivateVault,
-    PutVerifiedOutcome, ReceptorAcceptanceProfile, ReceptorCardinality, ResourceProfile,
-    SourceArtifact, SourceArtifactKind, SourceSpan, TypedConstraint, ValidatedFeedInception,
-    ValidatedObservationEvent, VaultKey, VerifiedStoreError, OBSERVATION_EVENT_PAYLOAD_KIND,
-    OBSERVATION_EVENT_TYPE, SOURCE_ARTIFACT_KIND,
+    FeedEventSigner, InMemoryVerifiedBackend, KnowledgeEventEnvelope, KnownObjectKind, ObjectCid,
+    ObjectReference, ObservationError, ObservationEventPayload, ObservationGovernance,
+    PrivateVault, ProvenFeedEventSigner, PutVerifiedOutcome, ReceptorAcceptanceProfile,
+    ReceptorCardinality, ResourceProfile, SourceArtifact, SourceArtifactKind, SourceSpan,
+    TypedConstraint, ValidatedFeedInception, ValidatedObservationEvent, VaultKey,
+    VerifiedStoreError, OBSERVATION_EVENT_PAYLOAD_KIND, OBSERVATION_EVENT_TYPE,
+    SOURCE_ARTIFACT_KIND,
 };
 
 use crate::vnext_receptor_encoder::{
@@ -163,7 +163,7 @@ impl<B: AtomicVerifiedBackend> LocalObservationIntake<B> {
         authorization: ObservationAuthorization,
         adapter: &mut dyn LocalObservationAdapter,
         author: &ValidatedFeedInception,
-        signing_key: &SigningKey,
+        signer: &dyn FeedEventSigner,
     ) -> Result<ObservationIntakeOutcome, ObservationIntakeError> {
         validate_authorization(&capture, authorization)?;
         if capture.observed_frontier == [0; 32]
@@ -172,6 +172,11 @@ impl<B: AtomicVerifiedBackend> LocalObservationIntake<B> {
         {
             return Err(ObservationIntakeError::InvalidCapture);
         }
+        let signer = ProvenFeedEventSigner::prove_for_public_key(
+            signer,
+            author.signed.inception.feed_public_key,
+        )
+        .map_err(EventError::from)?;
 
         let artifact = SourceArtifact {
             source_kind: capture.source_kind,
@@ -245,7 +250,7 @@ impl<B: AtomicVerifiedBackend> LocalObservationIntake<B> {
         );
         event.payload_refs = vec![ObjectReference::new(0, payload_cid.into_bytes())];
         event.causal_parents = causal_parents;
-        let (event_bytes, event_cid) = event.sign(author, signing_key)?.encode()?;
+        let (event_bytes, event_cid) = event.sign_with_proven_signer(author, &signer)?.encode()?;
         let event_store = self.vault.put_verified_event(
             event_cid,
             &event_bytes,
@@ -422,6 +427,7 @@ impl From<VerifiedStoreError> for ObservationIntakeError {
 
 #[cfg(test)]
 mod tests {
+    use ed25519_dalek::SigningKey;
     use ku_core::foundation::{
         decode_feed_inception, ConceptCcid, DeviceId, DisclosureClass, FeedInception,
         NamespaceCommitment, SignedFeedInception, UnknownConstraintPolicy,
@@ -606,6 +612,43 @@ mod tests {
             );
             assert_eq!(adapter.calls, 0);
         }
+    }
+
+    #[test]
+    fn signer_mismatch_fails_before_private_vault_side_effects() {
+        let intake = LocalObservationIntake::in_memory(VaultKey::from_bytes([21; 32]));
+        let (author, key) = author();
+        let wrong_key = SigningKey::from_bytes(&[99; 32]);
+        let capture = capture(SourceArtifactKind::Text);
+        let mut adapter = Adapter {
+            calls: 0,
+            range: ObservationSourceRange { start: 0, end: 12 },
+        };
+
+        assert!(matches!(
+            intake.ingest(
+                capture.clone(),
+                authorization(ObservationAuthorizationState::Authorized),
+                &mut adapter,
+                &author,
+                &wrong_key,
+            ),
+            Err(ObservationIntakeError::Event(EventError::AuthorKeyMismatch))
+        ));
+        assert_eq!(adapter.calls, 0);
+
+        let outcome = intake
+            .ingest(
+                capture,
+                authorization(ObservationAuthorizationState::Authorized),
+                &mut adapter,
+                &author,
+                &key,
+            )
+            .unwrap();
+        assert_eq!(outcome.source_store, PutVerifiedOutcome::Stored);
+        assert_eq!(outcome.payload_store, PutVerifiedOutcome::Stored);
+        assert_eq!(outcome.event_store, PutVerifiedOutcome::Stored);
     }
 
     #[test]

@@ -10,15 +10,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::net::SocketAddr;
 use std::path::Path;
 
-use ed25519_dalek::SigningKey;
 use ku_core::foundation::{
     decode_feed_inception, decode_knowledge_event, decode_knowledge_object, event_author_feed,
     AssessedExerciseEvidence, DisclosureClass, EventCid, ExerciseAuthority, ExerciseEvidence,
-    FeedAuthorityDecision, FeedId, KnowledgeEventEnvelope, KnownObjectKind,
+    FeedAuthorityDecision, FeedEventSigner, FeedId, KnowledgeEventEnvelope, KnownObjectKind,
     MetabolicEvidenceFrontier, MetabolicEvidenceReducer, MetabolicEvidenceView,
     MetabolicViewPolicy, NamespaceCommitment, NodeId, ObjectCid, ObjectReference, ObjectSemantics,
-    ResourceProfile, SelectorCid, UseEvidencePayload, ValidatedKnowledgeEvent,
-    ValidatedUseEvidenceEvent, USE_EVIDENCE_EVENT_TYPE, USE_EVIDENCE_KIND,
+    ProvenFeedEventSigner, ResourceProfile, SelectorCid, UseEvidencePayload,
+    ValidatedKnowledgeEvent, ValidatedUseEvidenceEvent, USE_EVIDENCE_EVENT_TYPE, USE_EVIDENCE_KIND,
 };
 use onebrain_protocol::ReconcileManifestKind;
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
@@ -176,7 +175,7 @@ impl PublicUseEvidencePublisher {
         &self,
         request: &PublishPublicUseEvidenceRequest,
         author: &ku_core::foundation::ValidatedFeedInception,
-        signing_key: &SigningKey,
+        signer: &dyn FeedEventSigner,
     ) -> Result<(PublicUseEvidencePublication, PublicUsePublishOutcome), DistributedPomvError> {
         if request.idempotency_key == [0; 32]
             || request.expected_peer.as_bytes() == &[0; 32]
@@ -184,6 +183,11 @@ impl PublicUseEvidencePublisher {
         {
             return Err(DistributedPomvError::InvalidPublishRequest);
         }
+        let signer = ProvenFeedEventSigner::prove_for_public_key(
+            signer,
+            author.signed.inception.feed_public_key,
+        )
+        .map_err(|error| DistributedPomvError::Evidence(error.to_string()))?;
         let (object_bytes, object_cid) = request
             .payload
             .to_knowledge_object(DisclosureClass::Public)
@@ -247,7 +251,7 @@ impl PublicUseEvidencePublisher {
                     .into_iter()
                     .collect();
                 let (event_bytes, event_cid) = event
-                    .sign(author, signing_key)
+                    .sign_with_proven_signer(author, &signer)
                     .map_err(|error| DistributedPomvError::Evidence(error.to_string()))?
                     .encode()
                     .map_err(|error| DistributedPomvError::Evidence(error.to_string()))?;
@@ -1071,6 +1075,7 @@ pub enum DistributedPomvError {
 mod tests {
     use std::time::Duration;
 
+    use ed25519_dalek::SigningKey;
     use ku_core::foundation::{
         ActorId, ActorRevocation, ActorRootDelegation, ConceptCcid, DeviceId, FeedInception,
         MetabolicViewLimitation, ReservedDomain, UnresolvedAuthorityReason, UseMode,
@@ -1245,6 +1250,35 @@ mod tests {
         assert_eq!(outcome, PublicUsePublishOutcome::ExactReplay);
         assert_eq!(replay, first);
         assert_eq!(reopened.pending_publication_count().unwrap(), 2);
+    }
+
+    #[test]
+    fn signer_mismatch_fails_before_publication_side_effects() {
+        let directory = tempfile::tempdir().unwrap();
+        let (key, _feed_bytes, feed) = plain_feed(0x21);
+        let wrong_key = SigningKey::from_bytes(&[0x31; 32]);
+        let request = PublishPublicUseEvidenceRequest {
+            payload: payload(reference(0x22), reference(0x23), 0x24),
+            expected_peer: NodeId::from_bytes([0x25; 32]),
+            last_known_addr: "127.0.0.1:32001".parse().unwrap(),
+            selector: SelectorCid::from_bytes([0x26; 32]),
+            namespace: NamespaceCommitment::from_bytes([0x27; 32]),
+            idempotency_key: [0x28; 32],
+            confirmation: ExplicitUseConfirmation::new([0x29; 32]).unwrap(),
+        };
+        let publisher = PublicUseEvidencePublisher::open(directory.path()).unwrap();
+
+        assert!(matches!(
+            publisher.publish_confirmed(&request, &feed, &wrong_key),
+            Err(DistributedPomvError::Evidence(ref error))
+                if error == "FEED_SIGNER_PUBLIC_KEY_MISMATCH"
+        ));
+        assert_eq!(publisher.pending_publication_count().unwrap(), 0);
+
+        let (publication, outcome) = publisher.publish_confirmed(&request, &feed, &key).unwrap();
+        assert_eq!(outcome, PublicUsePublishOutcome::Stored);
+        assert_eq!(publication.author_sequence, 0);
+        assert_eq!(publisher.pending_publication_count().unwrap(), 1);
     }
 
     #[test]

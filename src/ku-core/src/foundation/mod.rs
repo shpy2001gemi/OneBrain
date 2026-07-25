@@ -19,6 +19,7 @@ pub mod content_id;
 pub mod envelope;
 pub mod event;
 pub mod feed;
+pub mod feed_signer;
 pub mod feed_store;
 pub mod fidelity;
 pub mod fidelity_assessment;
@@ -118,6 +119,7 @@ pub use feed::{
     decode_feed_inception, FeedInception, NamespaceCommitment, SignedFeedInception,
     ValidatedFeedInception,
 };
+pub use feed_signer::{FeedEventSigner, FeedSignerError, ProvenFeedEventSigner};
 pub use feed_store::{
     FeedEquivocationProof, FeedInsertOutcome, FeedProjection, FeedSuccessorProof, SequenceRange,
     UnresolvedFeedPosition, ValidatedFeedStore,

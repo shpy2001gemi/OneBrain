@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
+use ed25519_dalek::VerifyingKey;
 
 use super::canonical::{
     canonicalize_set_by_key, encode_canonical, CanonicalDocument, CanonicalError, CanonicalValue,
@@ -12,6 +12,7 @@ use super::canonical::{
 use super::content_id::{signature_message, EventCid, PermitCid, ReservedDomain};
 use super::envelope::{validate_envelope, EnvelopePolicy};
 use super::feed::ValidatedFeedInception;
+use super::feed_signer::{FeedEventSigner, FeedSignerError, ProvenFeedEventSigner};
 use super::identity::FeedId;
 use super::object::{DisclosureClass, ObjectError, ObjectReference};
 use super::schema_registry::SCHEMA_KNOWLEDGE_EVENT_ENVELOPE;
@@ -88,21 +89,40 @@ impl KnowledgeEventEnvelope {
     pub fn sign(
         self,
         author: &ValidatedFeedInception,
-        signing_key: &SigningKey,
+        signer: &dyn FeedEventSigner,
     ) -> Result<SignedKnowledgeEvent, EventError> {
         self.validate()?;
         if self.author_feed != author.feed_id {
             return Err(EventError::AuthorFeedMismatch);
         }
-        if signing_key.verifying_key().as_bytes() != &author.signed.inception.feed_public_key {
+        let signer = ProvenFeedEventSigner::prove_for_public_key(
+            signer,
+            author.signed.inception.feed_public_key,
+        )?;
+        self.sign_with_proven_signer(author, &signer)
+    }
+
+    /// Sign with a proof handle established before any caller-owned side
+    /// effect. Feed and public-key binding are checked before canonical encode.
+    pub fn sign_with_proven_signer(
+        self,
+        author: &ValidatedFeedInception,
+        signer: &ProvenFeedEventSigner<'_>,
+    ) -> Result<SignedKnowledgeEvent, EventError> {
+        self.validate()?;
+        if self.author_feed != author.feed_id {
+            return Err(EventError::AuthorFeedMismatch);
+        }
+        if signer.public_key() != author.signed.inception.feed_public_key {
             return Err(EventError::AuthorKeyMismatch);
         }
         let unsigned = self.unsigned_bytes()?;
         let message = signature_message(ReservedDomain::Event, &unsigned)
             .map_err(|_| EventError::InvalidField("signature_domain"))?;
+        let signature = signer.sign_feed_event(&message)?;
         Ok(SignedKnowledgeEvent {
             event: self,
-            signature: signing_key.sign(&message).to_bytes(),
+            signature,
         })
     }
 
@@ -388,6 +408,7 @@ pub enum EventError {
     SetOrder,
     AuthorFeedMismatch,
     AuthorKeyMismatch,
+    Signer(FeedSignerError),
     SignatureInvalid,
 }
 
@@ -402,6 +423,7 @@ impl EventError {
             Self::SetOrder => "EVENT_SET_ORDER",
             Self::AuthorFeedMismatch => "EVENT_AUTHOR_FEED_MISMATCH",
             Self::AuthorKeyMismatch => "EVENT_AUTHOR_KEY_MISMATCH",
+            Self::Signer(error) => error.code(),
             Self::SignatureInvalid => "SIGNATURE_INVALID",
         }
     }
@@ -416,6 +438,15 @@ impl From<CanonicalError> for EventError {
 impl From<ObjectError> for EventError {
     fn from(error: ObjectError) -> Self {
         Self::Object(error)
+    }
+}
+
+impl From<FeedSignerError> for EventError {
+    fn from(error: FeedSignerError) -> Self {
+        match error {
+            FeedSignerError::PublicKeyMismatch => Self::AuthorKeyMismatch,
+            other => Self::Signer(other),
+        }
     }
 }
 
@@ -533,6 +564,8 @@ fn validate_set_order(values: &[CanonicalValue]) -> Result<(), EventError> {
 
 #[cfg(test)]
 mod tests {
+    use ed25519_dalek::SigningKey;
+
     use super::*;
     use crate::foundation::{
         decode_canonical, decode_feed_inception, FeedInception, NamespaceCommitment,
@@ -604,6 +637,19 @@ mod tests {
         assert_eq!(
             duplicate_parent.sign(&author, &key).unwrap_err().code(),
             "CANONICAL_DUPLICATE_KEY"
+        );
+    }
+
+    #[test]
+    fn signer_binding_is_checked_before_canonical_encode() {
+        let (_, author) = make_author(1);
+        let (wrong_key, _) = make_author(3);
+        let mut duplicate_ref = event(author.feed_id);
+        duplicate_ref.payload_refs[1] = duplicate_ref.payload_refs[0].clone();
+
+        assert_eq!(
+            duplicate_ref.sign(&author, &wrong_key).unwrap_err().code(),
+            "EVENT_AUTHOR_KEY_MISMATCH"
         );
     }
 
