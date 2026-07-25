@@ -9,6 +9,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ku_core::foundation::{
     decode_feed_inception, decode_knowledge_event, decode_knowledge_object, event_author_feed,
@@ -20,6 +22,8 @@ use ku_core::foundation::{
     ValidatedKnowledgeEvent, ValidatedUseEvidenceEvent, USE_EVIDENCE_EVENT_TYPE, USE_EVIDENCE_KIND,
 };
 use onebrain_protocol::ReconcileManifestKind;
+use rand::rngs::OsRng;
+use rand::RngCore;
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -31,45 +35,138 @@ const PUBLICATIONS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_public_use_publications_v1");
 const FEED_HEADS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_public_use_feed_heads_v1");
+const PREPARED_PUBLIC_USE: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_prepared_public_use_v1");
+const PREPARED_BY_OPERATION: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_prepared_public_use_by_operation_v1");
 const USE_IDENTITIES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_received_use_identities_v1");
 const VIEW_HEADS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_distributed_pomv_view_heads_v1");
-const PUBLICATION_SCHEMA: u64 = 1;
+const PUBLICATION_SCHEMA: u64 = 2;
+const PREPARED_PUBLIC_USE_SCHEMA: u64 = 1;
 const PUBLICATION_KEY_BYTES: usize = 64;
 const USE_IDENTITY_BYTES: usize = 72;
 const VIEW_LINEAGE_KEY_BYTES: usize = 80;
 const VIEW_HEAD_VALUE_BYTES: usize = 73;
 const MAX_PUBLICATIONS: u64 = 65_536;
+const MAX_PREPARED_PUBLIC_USE_INTENTS: u64 = 65_536;
 const MAX_FLUSH_BATCH: usize = 4_096;
+pub const MAX_PUBLIC_USE_CONSENT_TTL_SECONDS: u64 = 15 * 60;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ExplicitUseConfirmation {
-    commitment: [u8; 32],
-}
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PublicUseIntentCid([u8; 32]);
 
-impl ExplicitUseConfirmation {
-    pub fn new(commitment: [u8; 32]) -> Result<Self, DistributedPomvError> {
-        if commitment == [0; 32] {
-            return Err(DistributedPomvError::ConfirmationRequired);
-        }
-        Ok(Self { commitment })
+impl PublicUseIntentCid {
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
     }
 
-    pub const fn commitment(self) -> [u8; 32] {
-        self.commitment
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    pub const fn into_bytes(self) -> [u8; 32] {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for PublicUseIntentCid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PublicUseIntentCid({self})")
+    }
+}
+
+impl std::fmt::Display for PublicUseIntentCid {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for byte in self.0 {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct PublishPublicUseEvidenceRequest {
+pub struct PreparePublicUseEvidenceRequest {
     pub payload: UseEvidencePayload,
+    pub exact_target: ObjectReference,
     pub expected_peer: NodeId,
-    pub last_known_addr: SocketAddr,
     pub selector: SelectorCid,
     pub namespace: NamespaceCommitment,
+    pub disclosure: DisclosureClass,
     pub idempotency_key: [u8; 32],
-    pub confirmation: ExplicitUseConfirmation,
+    pub expires_at: u64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct SingleUseConsentReceipt([u8; 32]);
+
+impl std::fmt::Debug for SingleUseConsentReceipt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SingleUseConsentReceipt([REDACTED])")
+    }
+}
+
+#[derive(PartialEq, Eq)]
+pub struct PreparedPublicUseIntent {
+    pub intent_cid: PublicUseIntentCid,
+    pub canonical_payload_preview: Vec<u8>,
+    pub exact_target: ObjectReference,
+    pub exact_recipient: NodeId,
+    pub selector: SelectorCid,
+    pub namespace: NamespaceCommitment,
+    pub disclosure: DisclosureClass,
+    pub idempotency_key: [u8; 32],
+    pub expires_at: u64,
+    receipt: SingleUseConsentReceipt,
+}
+
+impl PreparedPublicUseIntent {
+    /// Convert the locally reviewed preparation into a typed confirmation.
+    ///
+    /// The receipt stays private and has no byte-export API. Consuming this
+    /// capability is the runtime boundary that a product UI must place behind
+    /// an explicit user action.
+    pub fn confirm(self, last_known_addr: SocketAddr) -> ConfirmPublicUseEvidenceRequest {
+        ConfirmPublicUseEvidenceRequest {
+            intent_cid: self.intent_cid,
+            last_known_addr,
+            receipt: self.receipt,
+        }
+    }
+}
+
+impl std::fmt::Debug for PreparedPublicUseIntent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedPublicUseIntent")
+            .field("intent_cid", &self.intent_cid)
+            .field("canonical_payload_preview", &self.canonical_payload_preview)
+            .field("exact_target", &self.exact_target)
+            .field("exact_recipient", &self.exact_recipient)
+            .field("selector", &self.selector)
+            .field("namespace", &self.namespace)
+            .field("disclosure", &self.disclosure)
+            .field("idempotency_key", &self.idempotency_key)
+            .field("expires_at", &self.expires_at)
+            .field("receipt", &"[REDACTED]")
+            .finish()
+    }
+}
+
+pub struct ConfirmPublicUseEvidenceRequest {
+    pub intent_cid: PublicUseIntentCid,
+    pub last_known_addr: SocketAddr,
+    receipt: SingleUseConsentReceipt,
+}
+
+impl std::fmt::Debug for ConfirmPublicUseEvidenceRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConfirmPublicUseEvidenceRequest")
+            .field("intent_cid", &self.intent_cid)
+            .field("last_known_addr", &self.last_known_addr)
+            .field("receipt", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,6 +179,7 @@ pub enum PublicUsePublishOutcome {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PublicUseEvidencePublication {
     pub publication_id: [u8; 32],
+    pub intent_cid: PublicUseIntentCid,
     pub author_feed: FeedId,
     pub author_sequence: u64,
     pub idempotency_key: [u8; 32],
@@ -133,10 +231,11 @@ pub struct PublicUseFlushReport {
 struct StoredPublication {
     schema: u64,
     publication_id: [u8; 32],
+    intent_cid: [u8; 32],
     author_feed: [u8; 32],
     author_sequence: u64,
     idempotency_key: [u8; 32],
-    confirmation_commitment: [u8; 32],
+    receipt_commitment: [u8; 32],
     expected_peer: [u8; 32],
     last_known_addr: String,
     selector: [u8; 32],
@@ -147,6 +246,24 @@ struct StoredPublication {
     exported_to_network_outbox: bool,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+struct StoredPreparedPublicUse {
+    schema: u64,
+    intent_cid: [u8; 32],
+    author_feed: [u8; 32],
+    canonical_payload_preview: Vec<u8>,
+    exact_target_kind: u64,
+    exact_target_cid: [u8; 32],
+    exact_recipient: [u8; 32],
+    selector: [u8; 32],
+    namespace: [u8; 32],
+    disclosure: u64,
+    idempotency_key: [u8; 32],
+    expires_at: u64,
+    receipt_commitment: [u8; 32],
+    consumed: bool,
+}
+
 #[derive(Serialize, Deserialize)]
 struct StoredFeedHead {
     next_sequence: u64,
@@ -155,10 +272,33 @@ struct StoredFeedHead {
 
 pub struct PublicUseEvidencePublisher {
     database: Database,
+    consent_clock: Arc<dyn PublicUseConsentClock>,
+}
+
+trait PublicUseConsentClock: Send + Sync {
+    fn now_unix_seconds(&self) -> Result<u64, DistributedPomvError>;
+}
+
+struct SystemPublicUseConsentClock;
+
+impl PublicUseConsentClock for SystemPublicUseConsentClock {
+    fn now_unix_seconds(&self) -> Result<u64, DistributedPomvError> {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .map_err(|_| DistributedPomvError::ConsentClockUnavailable)
+    }
 }
 
 impl PublicUseEvidencePublisher {
     pub fn open(data_dir: &Path) -> Result<Self, DistributedPomvError> {
+        Self::open_with_clock(data_dir, Arc::new(SystemPublicUseConsentClock))
+    }
+
+    fn open_with_clock(
+        data_dir: &Path,
+        consent_clock: Arc<dyn PublicUseConsentClock>,
+    ) -> Result<Self, DistributedPomvError> {
         std::fs::create_dir_all(data_dir)?;
         let database =
             Database::create(data_dir.join("vnext_public_use_sender.redb")).map_err(storage)?;
@@ -166,41 +306,150 @@ impl PublicUseEvidencePublisher {
         {
             write.open_table(PUBLICATIONS).map_err(storage)?;
             write.open_table(FEED_HEADS).map_err(storage)?;
+            write.open_table(PREPARED_PUBLIC_USE).map_err(storage)?;
+            write.open_table(PREPARED_BY_OPERATION).map_err(storage)?;
         }
         write.commit().map_err(storage)?;
-        Ok(Self { database })
+        Ok(Self {
+            database,
+            consent_clock,
+        })
+    }
+
+    pub fn prepare_public_use(
+        &self,
+        request: &PreparePublicUseEvidenceRequest,
+        author: &ku_core::foundation::ValidatedFeedInception,
+    ) -> Result<PreparedPublicUseIntent, DistributedPomvError> {
+        let now = self.consent_clock.now_unix_seconds()?;
+        validate_prepare_request(request, now)?;
+        if !request.payload.subjects.contains(&request.exact_target) {
+            return Err(DistributedPomvError::ConsentTargetMismatch);
+        }
+        let (object_bytes, _) = request
+            .payload
+            .to_knowledge_object(request.disclosure)
+            .map_err(|error| DistributedPomvError::Evidence(format!("{error:?}")))?
+            .encode(ResourceProfile::ObjectV1)
+            .map_err(|error| DistributedPomvError::Evidence(error.to_string()))?;
+        let intent_cid = public_use_intent_cid(
+            author.feed_id,
+            &object_bytes,
+            &request.exact_target,
+            request.expected_peer,
+            request.selector,
+            request.namespace,
+            request.disclosure,
+            request.idempotency_key,
+            request.expires_at,
+        );
+        let receipt = generate_single_use_receipt()?;
+        let receipt_commitment = consent_receipt_commitment(intent_cid, receipt);
+        let operation_key = publication_key(author.feed_id, request.idempotency_key);
+        let mut stored = StoredPreparedPublicUse {
+            schema: PREPARED_PUBLIC_USE_SCHEMA,
+            intent_cid,
+            author_feed: *author.feed_id.as_bytes(),
+            canonical_payload_preview: object_bytes,
+            exact_target_kind: request.exact_target.reference_kind,
+            exact_target_cid: request.exact_target.cid,
+            exact_recipient: *request.expected_peer.as_bytes(),
+            selector: *request.selector.as_bytes(),
+            namespace: *request.namespace.as_bytes(),
+            disclosure: request.disclosure as u64,
+            idempotency_key: request.idempotency_key,
+            expires_at: request.expires_at,
+            receipt_commitment,
+            consumed: false,
+        };
+        validate_stored_prepared_public_use(&stored)?;
+
+        let write = self.database.begin_write().map_err(storage)?;
+        {
+            let mut intents = write.open_table(PREPARED_PUBLIC_USE).map_err(storage)?;
+            let mut operations = write.open_table(PREPARED_BY_OPERATION).map_err(storage)?;
+            let existing = {
+                let value = operations.get(operation_key.as_slice()).map_err(storage)?;
+                value.map(|value| value.value().to_vec())
+            };
+            if let Some(existing) = existing {
+                let existing_intent: [u8; 32] = existing
+                    .try_into()
+                    .map_err(|_| DistributedPomvError::CorruptPreparedConsent)?;
+                if existing_intent != intent_cid {
+                    return Err(DistributedPomvError::IdempotencyConflict);
+                }
+                let bytes = intents
+                    .get(intent_cid.as_slice())
+                    .map_err(storage)?
+                    .map(|value| value.value().to_vec())
+                    .ok_or(DistributedPomvError::CorruptPreparedConsent)?;
+                let mut replay = decode_stored_prepared_public_use(&bytes)?;
+                if replay.consumed {
+                    return Err(DistributedPomvError::ConsentAlreadyConfirmed);
+                }
+                replay.receipt_commitment = receipt_commitment;
+                validate_stored_prepared_public_use(&replay)?;
+                let encoded = encode_stored_prepared_public_use(&replay)?;
+                intents
+                    .insert(intent_cid.as_slice(), encoded.as_slice())
+                    .map_err(storage)?;
+                stored = replay;
+            } else {
+                if intents.len().map_err(storage)? >= MAX_PREPARED_PUBLIC_USE_INTENTS {
+                    return Err(DistributedPomvError::ConsentPreparationLimit);
+                }
+                let encoded = encode_stored_prepared_public_use(&stored)?;
+                intents
+                    .insert(intent_cid.as_slice(), encoded.as_slice())
+                    .map_err(storage)?;
+                operations
+                    .insert(operation_key.as_slice(), intent_cid.as_slice())
+                    .map_err(storage)?;
+            }
+        }
+        write.commit().map_err(storage)?;
+        prepared_public_use_from_stored(&stored, receipt)
     }
 
     pub fn publish_confirmed(
         &self,
-        request: &PublishPublicUseEvidenceRequest,
+        request: &ConfirmPublicUseEvidenceRequest,
         author: &ku_core::foundation::ValidatedFeedInception,
         signer: &dyn FeedEventSigner,
     ) -> Result<(PublicUseEvidencePublication, PublicUsePublishOutcome), DistributedPomvError> {
-        if request.idempotency_key == [0; 32]
-            || request.expected_peer.as_bytes() == &[0; 32]
-            || request.confirmation.commitment == [0; 32]
-        {
-            return Err(DistributedPomvError::InvalidPublishRequest);
-        }
+        let now = self.consent_clock.now_unix_seconds()?;
+        let prepared = self.load_prepared_public_use(request.intent_cid)?;
+        validate_confirmation(&prepared, request, author, now)?;
         let signer = ProvenFeedEventSigner::prove_for_public_key(
             signer,
             author.signed.inception.feed_public_key,
         )
         .map_err(|error| DistributedPomvError::Evidence(error.to_string()))?;
-        let (object_bytes, object_cid) = request
-            .payload
-            .to_knowledge_object(DisclosureClass::Public)
-            .map_err(|error| DistributedPomvError::Evidence(format!("{error:?}")))?
-            .encode(ResourceProfile::ObjectV1)
-            .map_err(|error| DistributedPomvError::Evidence(error.to_string()))?;
+        let object = decode_knowledge_object(
+            &prepared.canonical_payload_preview,
+            ResourceProfile::ObjectV1,
+            &[KnownObjectKind::new(USE_EVIDENCE_KIND, 1)],
+            &[],
+        )
+        .map_err(|_| DistributedPomvError::CorruptPreparedConsent)?;
+        let object_cid = object.cid();
+        let object_bytes = prepared.canonical_payload_preview.clone();
         let feed_bytes = author.original_bytes().to_vec();
-        let key = publication_key(author.feed_id, request.idempotency_key);
+        let key = publication_key(author.feed_id, prepared.idempotency_key);
 
         let write = self.database.begin_write().map_err(storage)?;
         let outcome;
         let stored;
         {
+            let mut intents = write.open_table(PREPARED_PUBLIC_USE).map_err(storage)?;
+            let prepared_bytes = intents
+                .get(request.intent_cid.as_bytes().as_slice())
+                .map_err(storage)?
+                .map(|value| value.value().to_vec())
+                .ok_or(DistributedPomvError::ConsentIntentNotFound)?;
+            let mut prepared = decode_stored_prepared_public_use(&prepared_bytes)?;
+            validate_confirmation(&prepared, request, author, now)?;
             let mut publications = write.open_table(PUBLICATIONS).map_err(storage)?;
             let existing = publications
                 .get(key.as_slice())
@@ -208,7 +457,16 @@ impl PublicUseEvidencePublisher {
                 .map(|value| value.value().to_vec());
             if let Some(bytes) = existing {
                 let mut replay = decode_stored_publication(&bytes)?;
-                validate_replay(&replay, request, author, &feed_bytes, &object_bytes)?;
+                validate_publication_against_prepared(
+                    &replay,
+                    &prepared,
+                    author,
+                    &feed_bytes,
+                    &object_bytes,
+                )?;
+                if !prepared.consumed {
+                    return Err(DistributedPomvError::CorruptPreparedConsent);
+                }
                 let requested_addr = request.last_known_addr.to_string();
                 if replay.last_known_addr == requested_addr {
                     outcome = PublicUsePublishOutcome::ExactReplay;
@@ -223,6 +481,9 @@ impl PublicUseEvidencePublisher {
                 }
                 stored = replay;
             } else {
+                if prepared.consumed {
+                    return Err(DistributedPomvError::CorruptPreparedConsent);
+                }
                 if publications.len().map_err(storage)? >= MAX_PUBLICATIONS {
                     return Err(DistributedPomvError::PublicationLimit);
                 }
@@ -242,7 +503,7 @@ impl PublicUseEvidencePublisher {
                     author.feed_id,
                     head.next_sequence,
                     DisclosureClass::Public,
-                    request.idempotency_key,
+                    prepared.idempotency_key,
                 );
                 event.payload_refs = vec![ObjectReference::new(0, object_cid.into_bytes())];
                 event.causal_parents = head
@@ -256,24 +517,26 @@ impl PublicUseEvidencePublisher {
                     .encode()
                     .map_err(|error| DistributedPomvError::Evidence(error.to_string()))?;
                 let publication_id = publication_id(
+                    prepared.intent_cid,
                     author.feed_id,
-                    request.idempotency_key,
+                    prepared.idempotency_key,
                     event_cid,
-                    request.expected_peer,
-                    request.selector,
-                    request.namespace,
+                    NodeId::from_bytes(prepared.exact_recipient),
+                    SelectorCid::from_bytes(prepared.selector),
+                    NamespaceCommitment::from_bytes(prepared.namespace),
                 );
                 let value = StoredPublication {
                     schema: PUBLICATION_SCHEMA,
                     publication_id,
+                    intent_cid: prepared.intent_cid,
                     author_feed: *author.feed_id.as_bytes(),
                     author_sequence: head.next_sequence,
-                    idempotency_key: request.idempotency_key,
-                    confirmation_commitment: request.confirmation.commitment,
-                    expected_peer: *request.expected_peer.as_bytes(),
+                    idempotency_key: prepared.idempotency_key,
+                    receipt_commitment: prepared.receipt_commitment,
+                    expected_peer: prepared.exact_recipient,
                     last_known_addr: request.last_known_addr.to_string(),
-                    selector: *request.selector.as_bytes(),
-                    namespace: *request.namespace.as_bytes(),
+                    selector: prepared.selector,
+                    namespace: prepared.namespace,
                     feed_bytes,
                     object_bytes,
                     event_bytes,
@@ -299,12 +562,31 @@ impl PublicUseEvidencePublisher {
                         encoded_head.as_slice(),
                     )
                     .map_err(storage)?;
+                prepared.consumed = true;
+                let encoded_prepared = encode_stored_prepared_public_use(&prepared)?;
+                intents
+                    .insert(prepared.intent_cid.as_slice(), encoded_prepared.as_slice())
+                    .map_err(storage)?;
                 stored = value;
                 outcome = PublicUsePublishOutcome::Stored;
             }
         }
         write.commit().map_err(storage)?;
         Ok((publication_from_stored(&stored)?, outcome))
+    }
+
+    fn load_prepared_public_use(
+        &self,
+        intent_cid: PublicUseIntentCid,
+    ) -> Result<StoredPreparedPublicUse, DistributedPomvError> {
+        let read = self.database.begin_read().map_err(storage)?;
+        let table = read.open_table(PREPARED_PUBLIC_USE).map_err(storage)?;
+        let bytes = table
+            .get(intent_cid.as_bytes().as_slice())
+            .map_err(storage)?
+            .map(|value| value.value().to_vec())
+            .ok_or(DistributedPomvError::ConsentIntentNotFound)?;
+        decode_stored_prepared_public_use(&bytes)
     }
 
     pub fn pending_publication_count(&self) -> Result<u64, DistributedPomvError> {
@@ -399,7 +681,202 @@ fn publication_key(feed: FeedId, idempotency_key: [u8; 32]) -> [u8; PUBLICATION_
     key
 }
 
+fn validate_prepare_request(
+    request: &PreparePublicUseEvidenceRequest,
+    now: u64,
+) -> Result<(), DistributedPomvError> {
+    if request.idempotency_key == [0; 32]
+        || request.exact_target.cid == [0; 32]
+        || request.expected_peer.as_bytes() == &[0; 32]
+        || request.selector.as_bytes() == &[0; 32]
+        || request.namespace.as_bytes() == &[0; 32]
+        || request.disclosure != DisclosureClass::Public
+    {
+        return Err(DistributedPomvError::InvalidPublishRequest);
+    }
+    if request.expires_at <= now {
+        return Err(DistributedPomvError::ConsentExpired);
+    }
+    if request.expires_at - now > MAX_PUBLIC_USE_CONSENT_TTL_SECONDS {
+        return Err(DistributedPomvError::ConsentExpiryTooFar);
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn public_use_intent_cid(
+    author_feed: FeedId,
+    canonical_payload_preview: &[u8],
+    exact_target: &ObjectReference,
+    exact_recipient: NodeId,
+    selector: SelectorCid,
+    namespace: NamespaceCommitment,
+    disclosure: DisclosureClass,
+    idempotency_key: [u8; 32],
+    expires_at: u64,
+) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"onebrain:vnext:public-use-consent-intent:1\0");
+    hasher.update(author_feed.as_bytes());
+    hasher.update(&(canonical_payload_preview.len() as u64).to_be_bytes());
+    hasher.update(canonical_payload_preview);
+    hasher.update(&exact_target.reference_kind.to_be_bytes());
+    hasher.update(&exact_target.cid);
+    hasher.update(exact_recipient.as_bytes());
+    hasher.update(selector.as_bytes());
+    hasher.update(namespace.as_bytes());
+    hasher.update(&(disclosure as u64).to_be_bytes());
+    hasher.update(&idempotency_key);
+    hasher.update(&expires_at.to_be_bytes());
+    *hasher.finalize().as_bytes()
+}
+
+fn generate_single_use_receipt() -> Result<SingleUseConsentReceipt, DistributedPomvError> {
+    for _ in 0..2 {
+        let mut receipt = [0u8; 32];
+        OsRng
+            .try_fill_bytes(&mut receipt)
+            .map_err(|_| DistributedPomvError::ConsentEntropyUnavailable)?;
+        if receipt != [0; 32] {
+            return Ok(SingleUseConsentReceipt(receipt));
+        }
+    }
+    Err(DistributedPomvError::ConsentEntropyUnavailable)
+}
+
+fn consent_receipt_commitment(intent_cid: [u8; 32], receipt: SingleUseConsentReceipt) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"onebrain:vnext:public-use-consent-receipt:1\0");
+    hasher.update(&intent_cid);
+    hasher.update(&receipt.0);
+    *hasher.finalize().as_bytes()
+}
+
+fn receipt_commitments_match(claimed: [u8; 32], expected: [u8; 32]) -> bool {
+    claimed
+        .into_iter()
+        .zip(expected)
+        .fold(0u8, |difference, (left, right)| difference | (left ^ right))
+        == 0
+}
+
+fn encode_stored_prepared_public_use(
+    value: &StoredPreparedPublicUse,
+) -> Result<Vec<u8>, DistributedPomvError> {
+    serde_json::to_vec(value).map_err(codec)
+}
+
+fn decode_stored_prepared_public_use(
+    bytes: &[u8],
+) -> Result<StoredPreparedPublicUse, DistributedPomvError> {
+    let value = serde_json::from_slice(bytes).map_err(codec)?;
+    validate_stored_prepared_public_use(&value)?;
+    Ok(value)
+}
+
+fn validate_stored_prepared_public_use(
+    value: &StoredPreparedPublicUse,
+) -> Result<(), DistributedPomvError> {
+    if value.schema != PREPARED_PUBLIC_USE_SCHEMA
+        || value.intent_cid == [0; 32]
+        || value.author_feed == [0; 32]
+        || value.exact_target_cid == [0; 32]
+        || value.exact_recipient == [0; 32]
+        || value.selector == [0; 32]
+        || value.namespace == [0; 32]
+        || value.disclosure != DisclosureClass::Public as u64
+        || value.idempotency_key == [0; 32]
+        || value.expires_at == 0
+        || value.receipt_commitment == [0; 32]
+    {
+        return Err(DistributedPomvError::CorruptPreparedConsent);
+    }
+    let object = decode_knowledge_object(
+        &value.canonical_payload_preview,
+        ResourceProfile::ObjectV1,
+        &[KnownObjectKind::new(USE_EVIDENCE_KIND, 1)],
+        &[],
+    )
+    .map_err(|_| DistributedPomvError::CorruptPreparedConsent)?;
+    if object.disclosure() != DisclosureClass::Public {
+        return Err(DistributedPomvError::CorruptPreparedConsent);
+    }
+    let payload = UseEvidencePayload::from_validated_object(&object)
+        .map_err(|_| DistributedPomvError::CorruptPreparedConsent)?;
+    let exact_target = ObjectReference::new(value.exact_target_kind, value.exact_target_cid);
+    if !payload.subjects.contains(&exact_target) {
+        return Err(DistributedPomvError::CorruptPreparedConsent);
+    }
+    let expected = public_use_intent_cid(
+        FeedId::from_bytes(value.author_feed),
+        &value.canonical_payload_preview,
+        &exact_target,
+        NodeId::from_bytes(value.exact_recipient),
+        SelectorCid::from_bytes(value.selector),
+        NamespaceCommitment::from_bytes(value.namespace),
+        DisclosureClass::Public,
+        value.idempotency_key,
+        value.expires_at,
+    );
+    if expected != value.intent_cid {
+        return Err(DistributedPomvError::CorruptPreparedConsent);
+    }
+    Ok(())
+}
+
+fn prepared_public_use_from_stored(
+    stored: &StoredPreparedPublicUse,
+    receipt: SingleUseConsentReceipt,
+) -> Result<PreparedPublicUseIntent, DistributedPomvError> {
+    validate_stored_prepared_public_use(stored)?;
+    if stored.consumed
+        || !receipt_commitments_match(
+            consent_receipt_commitment(stored.intent_cid, receipt),
+            stored.receipt_commitment,
+        )
+    {
+        return Err(DistributedPomvError::CorruptPreparedConsent);
+    }
+    Ok(PreparedPublicUseIntent {
+        intent_cid: PublicUseIntentCid::from_bytes(stored.intent_cid),
+        canonical_payload_preview: stored.canonical_payload_preview.clone(),
+        exact_target: ObjectReference::new(stored.exact_target_kind, stored.exact_target_cid),
+        exact_recipient: NodeId::from_bytes(stored.exact_recipient),
+        selector: SelectorCid::from_bytes(stored.selector),
+        namespace: NamespaceCommitment::from_bytes(stored.namespace),
+        disclosure: DisclosureClass::Public,
+        idempotency_key: stored.idempotency_key,
+        expires_at: stored.expires_at,
+        receipt,
+    })
+}
+
+fn validate_confirmation(
+    stored: &StoredPreparedPublicUse,
+    request: &ConfirmPublicUseEvidenceRequest,
+    author: &ku_core::foundation::ValidatedFeedInception,
+    now: u64,
+) -> Result<(), DistributedPomvError> {
+    validate_stored_prepared_public_use(stored)?;
+    if stored.intent_cid != request.intent_cid.into_bytes()
+        || stored.author_feed != *author.feed_id.as_bytes()
+    {
+        return Err(DistributedPomvError::ConsentIntentMismatch);
+    }
+    if now >= stored.expires_at {
+        return Err(DistributedPomvError::ConsentExpired);
+    }
+    if !receipt_commitments_match(
+        consent_receipt_commitment(request.intent_cid.into_bytes(), request.receipt),
+        stored.receipt_commitment,
+    ) {
+        return Err(DistributedPomvError::ConsentReceiptInvalid);
+    }
+    Ok(())
+}
+
 fn publication_id(
+    intent_cid: [u8; 32],
     feed: FeedId,
     idempotency_key: [u8; 32],
     event: EventCid,
@@ -409,6 +886,7 @@ fn publication_id(
 ) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"onebrain:vnext:public-use-publication:1\0");
+    hasher.update(&intent_cid);
     hasher.update(feed.as_bytes());
     hasher.update(&idempotency_key);
     hasher.update(event.as_bytes());
@@ -430,8 +908,9 @@ fn decode_stored_publication(bytes: &[u8]) -> Result<StoredPublication, Distribu
 
 fn validate_stored_publication(value: &StoredPublication) -> Result<(), DistributedPomvError> {
     if value.schema != PUBLICATION_SCHEMA
+        || value.intent_cid == [0; 32]
         || value.idempotency_key == [0; 32]
-        || value.confirmation_commitment == [0; 32]
+        || value.receipt_commitment == [0; 32]
         || value.expected_peer == [0; 32]
     {
         return Err(DistributedPomvError::CorruptPublication);
@@ -465,6 +944,7 @@ fn validate_stored_publication(value: &StoredPublication) -> Result<(), Distribu
     let selector = SelectorCid::from_bytes(value.selector);
     let namespace = NamespaceCommitment::from_bytes(value.namespace);
     let expected_id = publication_id(
+        value.intent_cid,
         feed.feed_id,
         value.idempotency_key,
         event.cid(),
@@ -478,19 +958,20 @@ fn validate_stored_publication(value: &StoredPublication) -> Result<(), Distribu
     Ok(())
 }
 
-fn validate_replay(
+fn validate_publication_against_prepared(
     stored: &StoredPublication,
-    request: &PublishPublicUseEvidenceRequest,
+    prepared: &StoredPreparedPublicUse,
     author: &ku_core::foundation::ValidatedFeedInception,
     feed_bytes: &[u8],
     object_bytes: &[u8],
 ) -> Result<(), DistributedPomvError> {
-    if stored.author_feed != *author.feed_id.as_bytes()
-        || stored.idempotency_key != request.idempotency_key
-        || stored.confirmation_commitment != request.confirmation.commitment
-        || stored.expected_peer != *request.expected_peer.as_bytes()
-        || stored.selector != *request.selector.as_bytes()
-        || stored.namespace != *request.namespace.as_bytes()
+    if stored.intent_cid != prepared.intent_cid
+        || stored.author_feed != *author.feed_id.as_bytes()
+        || stored.idempotency_key != prepared.idempotency_key
+        || stored.receipt_commitment != prepared.receipt_commitment
+        || stored.expected_peer != prepared.exact_recipient
+        || stored.selector != prepared.selector
+        || stored.namespace != prepared.namespace
         || stored.feed_bytes != feed_bytes
         || stored.object_bytes != object_bytes
     {
@@ -515,6 +996,7 @@ fn publication_from_stored(
         .map_err(|_| DistributedPomvError::CorruptPublication)?;
     Ok(PublicUseEvidencePublication {
         publication_id: stored.publication_id,
+        intent_cid: PublicUseIntentCid::from_bytes(stored.intent_cid),
         author_feed: feed.feed_id,
         author_sequence: stored.author_sequence,
         idempotency_key: stored.idempotency_key,
@@ -1037,10 +1519,30 @@ fn codec(error: impl std::fmt::Display) -> DistributedPomvError {
 
 #[derive(Debug, Error)]
 pub enum DistributedPomvError {
-    #[error("explicit use confirmation is required")]
-    ConfirmationRequired,
     #[error("public UseEvidence publish request is invalid")]
     InvalidPublishRequest,
+    #[error("prepared Public Use consent has expired")]
+    ConsentExpired,
+    #[error("prepared Public Use consent expiry exceeds the allowed window")]
+    ConsentExpiryTooFar,
+    #[error("prepared Public Use target is not present in the canonical payload")]
+    ConsentTargetMismatch,
+    #[error("prepared Public Use intent was not found")]
+    ConsentIntentNotFound,
+    #[error("prepared Public Use intent does not match this author or confirmation")]
+    ConsentIntentMismatch,
+    #[error("single-use Public Use consent receipt is invalid")]
+    ConsentReceiptInvalid,
+    #[error("prepared Public Use intent was already confirmed")]
+    ConsentAlreadyConfirmed,
+    #[error("prepared Public Use consent limit reached")]
+    ConsentPreparationLimit,
+    #[error("prepared Public Use consent state is corrupt")]
+    CorruptPreparedConsent,
+    #[error("Public Use consent clock is unavailable")]
+    ConsentClockUnavailable,
+    #[error("Public Use consent receipt entropy is unavailable")]
+    ConsentEntropyUnavailable,
     #[error("public UseEvidence publication limit reached")]
     PublicationLimit,
     #[error("public UseEvidence feed sequence exhausted")]
@@ -1073,6 +1575,7 @@ pub enum DistributedPomvError {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Duration;
 
     use ed25519_dalek::SigningKey;
@@ -1084,6 +1587,28 @@ mod tests {
     use super::*;
     use crate::vnext_config::VNextNetworkPolicy;
     use crate::vnext_outbox::OutboundIntentState;
+
+    struct TestConsentClock(AtomicU64);
+
+    impl TestConsentClock {
+        fn new(now: u64) -> Self {
+            Self(AtomicU64::new(now))
+        }
+
+        fn set(&self, now: u64) {
+            self.0.store(now, Ordering::SeqCst);
+        }
+    }
+
+    impl PublicUseConsentClock for TestConsentClock {
+        fn now_unix_seconds(&self) -> Result<u64, DistributedPomvError> {
+            Ok(self.0.load(Ordering::SeqCst))
+        }
+    }
+
+    fn test_publisher(path: &Path, clock: Arc<TestConsentClock>) -> PublicUseEvidencePublisher {
+        PublicUseEvidencePublisher::open_with_clock(path, clock).unwrap()
+    }
 
     fn reference(byte: u8) -> ObjectReference {
         ObjectReference::new(0, [byte; 32])
@@ -1171,67 +1696,94 @@ mod tests {
         }
     }
 
-    fn publish_request(
+    fn prepare_request(
         receiver: &VNextNetworkRuntime,
         selector: SelectorCid,
         namespace: NamespaceCommitment,
         target: ObjectReference,
         policy: ObjectReference,
         idempotency_key: [u8; 32],
-    ) -> PublishPublicUseEvidenceRequest {
-        PublishPublicUseEvidenceRequest {
-            payload: payload(target, policy, 0x41),
+        expires_at: u64,
+    ) -> PreparePublicUseEvidenceRequest {
+        PreparePublicUseEvidenceRequest {
+            payload: payload(target.clone(), policy, 0x41),
+            exact_target: target,
             expected_peer: NodeId::from_bytes(receiver.status().principal),
-            last_known_addr: receiver.local_addr(),
             selector,
             namespace,
+            disclosure: DisclosureClass::Public,
             idempotency_key,
-            confirmation: ExplicitUseConfirmation::new([0x42; 32]).unwrap(),
+            expires_at,
         }
     }
 
     #[test]
     fn publisher_transaction_is_idempotent_restart_safe_and_sequence_linked() {
-        assert!(matches!(
-            ExplicitUseConfirmation::new([0; 32]),
-            Err(DistributedPomvError::ConfirmationRequired)
-        ));
         let directory = tempfile::tempdir().unwrap();
+        let clock = Arc::new(TestConsentClock::new(1_000));
         let (key, _feed_bytes, feed) = plain_feed(0x21);
         let target = reference(0x22);
         let policy = reference(0x23);
-        let request = PublishPublicUseEvidenceRequest {
-            payload: payload(target, policy, 0x24),
+        let request = PreparePublicUseEvidenceRequest {
+            payload: payload(target.clone(), policy, 0x24),
+            exact_target: target,
             expected_peer: NodeId::from_bytes([0x25; 32]),
-            last_known_addr: "127.0.0.1:32001".parse().unwrap(),
             selector: SelectorCid::from_bytes([0x26; 32]),
             namespace: NamespaceCommitment::from_bytes([0x27; 32]),
+            disclosure: DisclosureClass::Public,
             idempotency_key: [0x28; 32],
-            confirmation: ExplicitUseConfirmation::new([0x29; 32]).unwrap(),
+            expires_at: 1_600,
         };
+        let route: SocketAddr = "127.0.0.1:32001".parse().unwrap();
         let first;
+        let confirmation;
         {
-            let publisher = PublicUseEvidencePublisher::open(directory.path()).unwrap();
-            let (publication, outcome) =
-                publisher.publish_confirmed(&request, &feed, &key).unwrap();
+            let publisher = test_publisher(directory.path(), clock.clone());
+            let prepared = publisher.prepare_public_use(&request, &feed).unwrap();
+            assert_eq!(prepared.exact_target, request.exact_target);
+            assert_eq!(prepared.exact_recipient, request.expected_peer);
+            assert_eq!(prepared.selector, request.selector);
+            assert_eq!(prepared.namespace, request.namespace);
+            assert_eq!(prepared.disclosure, DisclosureClass::Public);
+            assert_eq!(prepared.idempotency_key, request.idempotency_key);
+            assert_eq!(prepared.expires_at, request.expires_at);
+            let preview = decode_knowledge_object(
+                &prepared.canonical_payload_preview,
+                ResourceProfile::ObjectV1,
+                &[KnownObjectKind::new(USE_EVIDENCE_KIND, 1)],
+                &[],
+            )
+            .unwrap();
+            assert_eq!(preview.disclosure(), DisclosureClass::Public);
+            confirmation = prepared.confirm(route);
+            let (publication, outcome) = publisher
+                .publish_confirmed(&confirmation, &feed, &key)
+                .unwrap();
             assert_eq!(outcome, PublicUsePublishOutcome::Stored);
+            assert_eq!(publication.intent_cid, confirmation.intent_cid);
             assert_eq!(publication.author_sequence, 0);
             assert_eq!(publisher.pending_publication_count().unwrap(), 1);
-            let (replay, outcome) = publisher.publish_confirmed(&request, &feed, &key).unwrap();
+            let (replay, outcome) = publisher
+                .publish_confirmed(&confirmation, &feed, &key)
+                .unwrap();
             assert_eq!(outcome, PublicUsePublishOutcome::ExactReplay);
             assert_eq!(replay, publication);
 
             let mut conflict = request.clone();
             conflict.payload.task_context_commitment = [0x2A; 32];
             assert!(matches!(
-                publisher.publish_confirmed(&conflict, &feed, &key),
+                publisher.prepare_public_use(&conflict, &feed),
                 Err(DistributedPomvError::IdempotencyConflict)
             ));
 
             let mut second_request = request.clone();
             second_request.idempotency_key = [0x2B; 32];
+            let second_confirmation = publisher
+                .prepare_public_use(&second_request, &feed)
+                .unwrap()
+                .confirm(route);
             let (second, outcome) = publisher
-                .publish_confirmed(&second_request, &feed, &key)
+                .publish_confirmed(&second_confirmation, &feed, &key)
                 .unwrap();
             assert_eq!(outcome, PublicUsePublishOutcome::Stored);
             assert_eq!(second.author_sequence, 1);
@@ -1245,8 +1797,10 @@ mod tests {
             assert_eq!(publisher.pending_publication_count().unwrap(), 2);
             first = publication;
         }
-        let reopened = PublicUseEvidencePublisher::open(directory.path()).unwrap();
-        let (replay, outcome) = reopened.publish_confirmed(&request, &feed, &key).unwrap();
+        let reopened = test_publisher(directory.path(), clock);
+        let (replay, outcome) = reopened
+            .publish_confirmed(&confirmation, &feed, &key)
+            .unwrap();
         assert_eq!(outcome, PublicUsePublishOutcome::ExactReplay);
         assert_eq!(replay, first);
         assert_eq!(reopened.pending_publication_count().unwrap(), 2);
@@ -1255,30 +1809,222 @@ mod tests {
     #[test]
     fn signer_mismatch_fails_before_publication_side_effects() {
         let directory = tempfile::tempdir().unwrap();
+        let clock = Arc::new(TestConsentClock::new(1_000));
         let (key, _feed_bytes, feed) = plain_feed(0x21);
         let wrong_key = SigningKey::from_bytes(&[0x31; 32]);
-        let request = PublishPublicUseEvidenceRequest {
-            payload: payload(reference(0x22), reference(0x23), 0x24),
+        let target = reference(0x22);
+        let request = PreparePublicUseEvidenceRequest {
+            payload: payload(target.clone(), reference(0x23), 0x24),
+            exact_target: target,
             expected_peer: NodeId::from_bytes([0x25; 32]),
-            last_known_addr: "127.0.0.1:32001".parse().unwrap(),
             selector: SelectorCid::from_bytes([0x26; 32]),
             namespace: NamespaceCommitment::from_bytes([0x27; 32]),
+            disclosure: DisclosureClass::Public,
             idempotency_key: [0x28; 32],
-            confirmation: ExplicitUseConfirmation::new([0x29; 32]).unwrap(),
+            expires_at: 1_600,
         };
-        let publisher = PublicUseEvidencePublisher::open(directory.path()).unwrap();
+        let publisher = test_publisher(directory.path(), clock);
+        let confirmation = publisher
+            .prepare_public_use(&request, &feed)
+            .unwrap()
+            .confirm("127.0.0.1:32001".parse().unwrap());
 
         assert!(matches!(
-            publisher.publish_confirmed(&request, &feed, &wrong_key),
+            publisher.publish_confirmed(&confirmation, &feed, &wrong_key),
             Err(DistributedPomvError::Evidence(ref error))
                 if error == "FEED_SIGNER_PUBLIC_KEY_MISMATCH"
         ));
         assert_eq!(publisher.pending_publication_count().unwrap(), 0);
 
-        let (publication, outcome) = publisher.publish_confirmed(&request, &feed, &key).unwrap();
+        let (publication, outcome) = publisher
+            .publish_confirmed(&confirmation, &feed, &key)
+            .unwrap();
         assert_eq!(outcome, PublicUsePublishOutcome::Stored);
         assert_eq!(publication.author_sequence, 0);
         assert_eq!(publisher.pending_publication_count().unwrap(), 1);
+    }
+
+    #[test]
+    fn arbitrary_receipt_intent_swap_and_expiry_fail_closed() {
+        let directory = tempfile::tempdir().unwrap();
+        let clock = Arc::new(TestConsentClock::new(1_000));
+        let (key, _feed_bytes, feed) = plain_feed(0x21);
+        let target = reference(0x22);
+        let base = PreparePublicUseEvidenceRequest {
+            payload: payload(target.clone(), reference(0x23), 0x24),
+            exact_target: target,
+            expected_peer: NodeId::from_bytes([0x25; 32]),
+            selector: SelectorCid::from_bytes([0x26; 32]),
+            namespace: NamespaceCommitment::from_bytes([0x27; 32]),
+            disclosure: DisclosureClass::Public,
+            idempotency_key: [0x28; 32],
+            expires_at: 1_100,
+        };
+        let publisher = test_publisher(directory.path(), clock.clone());
+        let first = publisher.prepare_public_use(&base, &feed).unwrap();
+        let first_intent = first.intent_cid;
+        let confirmation = first.confirm("127.0.0.1:32001".parse().unwrap());
+        let forged = ConfirmPublicUseEvidenceRequest {
+            intent_cid: first_intent,
+            last_known_addr: confirmation.last_known_addr,
+            receipt: SingleUseConsentReceipt([0xAA; 32]),
+        };
+        assert!(matches!(
+            publisher.publish_confirmed(&forged, &feed, &key),
+            Err(DistributedPomvError::ConsentReceiptInvalid)
+        ));
+        let (_, _, wrong_author) = plain_feed(0x31);
+        assert!(matches!(
+            publisher.publish_confirmed(&confirmation, &wrong_author, &key),
+            Err(DistributedPomvError::ConsentIntentMismatch)
+        ));
+
+        let mut second_request = base.clone();
+        second_request.idempotency_key = [0x29; 32];
+        let second = publisher
+            .prepare_public_use(&second_request, &feed)
+            .unwrap();
+        let swapped = ConfirmPublicUseEvidenceRequest {
+            intent_cid: second.intent_cid,
+            last_known_addr: confirmation.last_known_addr,
+            receipt: confirmation.receipt,
+        };
+        assert!(matches!(
+            publisher.publish_confirmed(&swapped, &feed, &key),
+            Err(DistributedPomvError::ConsentReceiptInvalid)
+        ));
+        assert_eq!(publisher.pending_publication_count().unwrap(), 0);
+
+        drop(publisher);
+        clock.set(1_100);
+        let reopened = test_publisher(directory.path(), clock);
+        assert!(matches!(
+            reopened.publish_confirmed(&confirmation, &feed, &key),
+            Err(DistributedPomvError::ConsentExpired)
+        ));
+        assert_eq!(reopened.pending_publication_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn prepare_rejects_wrong_target_disclosure_and_unbounded_expiry() {
+        let directory = tempfile::tempdir().unwrap();
+        let clock = Arc::new(TestConsentClock::new(1_000));
+        let (_, _feed_bytes, feed) = plain_feed(0x21);
+        let target = reference(0x22);
+        let mut request = PreparePublicUseEvidenceRequest {
+            payload: payload(target.clone(), reference(0x23), 0x24),
+            exact_target: reference(0x99),
+            expected_peer: NodeId::from_bytes([0x25; 32]),
+            selector: SelectorCid::from_bytes([0x26; 32]),
+            namespace: NamespaceCommitment::from_bytes([0x27; 32]),
+            disclosure: DisclosureClass::Public,
+            idempotency_key: [0x28; 32],
+            expires_at: 1_100,
+        };
+        let publisher = test_publisher(directory.path(), clock);
+        assert!(matches!(
+            publisher.prepare_public_use(&request, &feed),
+            Err(DistributedPomvError::ConsentTargetMismatch)
+        ));
+
+        request.exact_target = target;
+        request.disclosure = DisclosureClass::LocalOnly;
+        assert!(matches!(
+            publisher.prepare_public_use(&request, &feed),
+            Err(DistributedPomvError::InvalidPublishRequest)
+        ));
+
+        request.disclosure = DisclosureClass::Public;
+        request.expires_at = 1_000;
+        assert!(matches!(
+            publisher.prepare_public_use(&request, &feed),
+            Err(DistributedPomvError::ConsentExpired)
+        ));
+
+        request.expires_at = 1_000 + MAX_PUBLIC_USE_CONSENT_TTL_SECONDS + 1;
+        assert!(matches!(
+            publisher.prepare_public_use(&request, &feed),
+            Err(DistributedPomvError::ConsentExpiryTooFar)
+        ));
+
+        request.expires_at = 1_100;
+        assert!(publisher.prepare_public_use(&request, &feed).is_ok());
+    }
+
+    #[test]
+    fn prepared_and_confirmation_debug_output_redacts_receipt() {
+        let directory = tempfile::tempdir().unwrap();
+        let clock = Arc::new(TestConsentClock::new(1_000));
+        let (_, _feed_bytes, feed) = plain_feed(0x21);
+        let target = reference(0x22);
+        let request = PreparePublicUseEvidenceRequest {
+            payload: payload(target.clone(), reference(0x23), 0x24),
+            exact_target: target,
+            expected_peer: NodeId::from_bytes([0x25; 32]),
+            selector: SelectorCid::from_bytes([0x26; 32]),
+            namespace: NamespaceCommitment::from_bytes([0x27; 32]),
+            disclosure: DisclosureClass::Public,
+            idempotency_key: [0x28; 32],
+            expires_at: 1_100,
+        };
+        let publisher = test_publisher(directory.path(), clock);
+        let prepared = publisher.prepare_public_use(&request, &feed).unwrap();
+        let receipt_debug = format!("{:?}", prepared.receipt.0);
+        let prepared_debug = format!("{prepared:?}");
+        assert!(prepared_debug.contains("[REDACTED]"));
+        assert!(!prepared_debug.contains(&receipt_debug));
+
+        let confirmation = prepared.confirm("127.0.0.1:32001".parse().unwrap());
+        let confirmation_debug = format!("{confirmation:?}");
+        assert!(confirmation_debug.contains("[REDACTED]"));
+        assert!(!confirmation_debug.contains(&receipt_debug));
+    }
+
+    #[test]
+    fn reprepare_rotates_receipt_and_confirmation_has_one_side_effect() {
+        let directory = tempfile::tempdir().unwrap();
+        let clock = Arc::new(TestConsentClock::new(1_000));
+        let (key, _feed_bytes, feed) = plain_feed(0x21);
+        let target = reference(0x22);
+        let request = PreparePublicUseEvidenceRequest {
+            payload: payload(target.clone(), reference(0x23), 0x24),
+            exact_target: target,
+            expected_peer: NodeId::from_bytes([0x25; 32]),
+            selector: SelectorCid::from_bytes([0x26; 32]),
+            namespace: NamespaceCommitment::from_bytes([0x27; 32]),
+            disclosure: DisclosureClass::Public,
+            idempotency_key: [0x28; 32],
+            expires_at: 1_600,
+        };
+        let publisher = test_publisher(directory.path(), clock);
+        let old_confirmation = publisher
+            .prepare_public_use(&request, &feed)
+            .unwrap()
+            .confirm("127.0.0.1:32001".parse().unwrap());
+        let current_confirmation = publisher
+            .prepare_public_use(&request, &feed)
+            .unwrap()
+            .confirm("127.0.0.1:32001".parse().unwrap());
+        assert_eq!(old_confirmation.intent_cid, current_confirmation.intent_cid);
+        assert!(matches!(
+            publisher.publish_confirmed(&old_confirmation, &feed, &key),
+            Err(DistributedPomvError::ConsentReceiptInvalid)
+        ));
+
+        let (publication, outcome) = publisher
+            .publish_confirmed(&current_confirmation, &feed, &key)
+            .unwrap();
+        assert_eq!(outcome, PublicUsePublishOutcome::Stored);
+        let (replay, outcome) = publisher
+            .publish_confirmed(&current_confirmation, &feed, &key)
+            .unwrap();
+        assert_eq!(outcome, PublicUsePublishOutcome::ExactReplay);
+        assert_eq!(replay, publication);
+        assert_eq!(publisher.pending_publication_count().unwrap(), 1);
+        assert!(matches!(
+            publisher.prepare_public_use(&request, &feed),
+            Err(DistributedPomvError::ConsentAlreadyConfirmed)
+        ));
     }
 
     #[test]
@@ -1451,14 +2197,24 @@ mod tests {
         wait_acknowledged(&sender, &root_intents).await;
 
         let publisher = PublicUseEvidencePublisher::open(sender_dir.path()).unwrap();
-        let request = publish_request(
+        let expires_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 600;
+        let preparation = prepare_request(
             &receiver,
             selector,
             namespace,
             target.clone(),
             evidence_policy.clone(),
             [0x56; 32],
+            expires_at,
         );
+        let request = publisher
+            .prepare_public_use(&preparation, &fixture.feed)
+            .unwrap()
+            .confirm(receiver.local_addr());
         let (publication, outcome) = publisher
             .publish_confirmed(&request, &fixture.feed, &fixture.feed_key)
             .unwrap();

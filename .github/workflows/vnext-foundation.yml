@@ -467,7 +467,7 @@ jobs:
           cargo test --locked -p onebrain-node
           --features vnext-network-runtime
           --lib vnext_distributed_kql
-      - name: M4 Public UseEvidence and metabolic view over real peers
+      - name: M4 strong Public Use consent and metabolic view over real peers
         run: >-
           cargo test --locked -p onebrain-node
           --features vnext-network-runtime

@@ -3,7 +3,7 @@
 > **Milestone:** `M4`  
 > **Status:** Implemented behind `vnext-network-runtime` — 2026-07-25  
 > **Code:** [`onebrain-node::vnext_distributed_pomv`](../../../src/onebrain-node/src/vnext_distributed_pomv.rs)  
-> **Depends on:** `POMV-001`, `POMV-002`, `FEED-001`, `AUTH-001`, `OBP-001`
+> **Depends on:** `POMV-001`, `POMV-002`, `FEED-001`, `AUTH-001`, `OBP-001`, [Strong Public Use Consent v1](PUBLIC_USE_CONSENT_PROFILE_V1.md)
 
 ## 1. Demonstrated scope
 
@@ -25,20 +25,25 @@ The implementation is intentionally narrower than the complete PoMV vision:
 
 ## 2. Sender transaction
 
-`PublicUseEvidencePublisher` requires a non-zero
-`ExplicitUseConfirmation`. There is no implicit creation path.
+`PublicUseEvidencePublisher` implements the frozen two-step
+[`prepare → confirm` consent boundary](PUBLIC_USE_CONSENT_PROFILE_V1.md).
+Prepare returns the canonical Public payload preview and exact
+target/recipient/selector/namespace/disclosure/idempotency/expiry binding.
+Confirm consumes its private single-use capability; arbitrary non-zero bytes,
+cross-intent receipts and expired preparations fail closed.
 
 One redb transaction commits all of the logical publication state:
 
-1. the next per-Feed sequence and previous EventCID;
-2. the canonical Public `UseEvidencePayload` and ObjectCID;
-3. the signed `KnowledgeEvent`, EventCID and causal parent;
-4. the non-zero idempotency key and confirmation commitment; and
-5. a durable logical outbound publication record.
+1. the consumed prepared-intent transition;
+2. the next per-Feed sequence and previous EventCID;
+3. the exact prepared canonical Public `UseEvidencePayload` and ObjectCID;
+4. the signed `KnowledgeEvent`, EventCID and causal parent; and
+5. a durable peer-bound logical outbound publication record.
 
-An exact retry returns the existing publication. Reusing the same
-`(FeedId, idempotency_key)` for different content fails closed. A later event
-on the same Feed receives the next sequence and exact causal parent.
+An exact confirm retry returns the existing publication without another
+sequence or event. Reusing the same `(FeedId, idempotency_key)` for different
+prepared content fails closed. A later event on the same Feed receives the
+next sequence and exact causal parent.
 
 `flush_pending` idempotently copies the FeedInception, payload object and event
 into the existing durable network outbox. The logical publication is marked
@@ -46,10 +51,10 @@ exported only after those transfer intents have been stored. Delivery and
 authenticated receipts remain the responsibility of the restart-safe OBP-RP
 outbox.
 
-The caller supplies the Feed signing key for the bounded publish operation.
-The runtime does not retain that private key. A production OS/HSM/remote
-Feed-signer adapter is not shipped by this milestone and is separate from the
-existing injectable NodeID session signer.
+The caller supplies the independent `FeedEventSigner` for the bounded publish
+operation. The runtime proves exact public-key possession before beginning the
+publication transaction and never retains private-key material. This boundary
+is separate from the injectable NodeID session signer.
 
 ## 3. Receiver admission and binding
 
@@ -123,7 +128,8 @@ Every report sets these machine-checkable boundaries to `false`:
 
 The feature-gated test suite proves:
 
-- explicit confirmation and a non-zero idempotency key are mandatory;
+- canonical prepare and exact, unexpired, single-use confirmation are mandatory;
+- arbitrary non-zero, rotated and cross-intent receipts fail closed;
 - sender publication is atomic, idempotent, causal and restart-safe;
 - typed-invalid UseEvidence is quarantined;
 - one event delivered through one, two and five independently authenticated

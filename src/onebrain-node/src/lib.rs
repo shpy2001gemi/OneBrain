@@ -73,10 +73,11 @@ pub use vnext_distributed_kql::{
 };
 #[cfg(feature = "vnext-network-runtime")]
 pub use vnext_distributed_pomv::{
-    DistributedPomvError, DistributedPomvReport, DistributedPomvRuntime,
-    DistributedUseEvidenceObservation, ExplicitUseConfirmation, PublicUseEvidencePublication,
-    PublicUseEvidencePublisher, PublicUseFlushReport, PublicUsePublishOutcome,
-    PublishPublicUseEvidenceRequest,
+    ConfirmPublicUseEvidenceRequest, DistributedPomvError, DistributedPomvReport,
+    DistributedPomvRuntime, DistributedUseEvidenceObservation, PreparePublicUseEvidenceRequest,
+    PreparedPublicUseIntent, PublicUseEvidencePublication, PublicUseEvidencePublisher,
+    PublicUseFlushReport, PublicUseIntentCid, PublicUsePublishOutcome,
+    MAX_PUBLIC_USE_CONSENT_TTL_SECONDS,
 };
 pub use vnext_local_runtime::{
     LocalCandidateInput, LocalCandidateOutcome, LocalMaterializationRequest, LocalRuntimeError,

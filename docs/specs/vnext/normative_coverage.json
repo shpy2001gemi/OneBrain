@@ -173,6 +173,29 @@
       "rationale": "The fixture freezes additive routes, DTO fields, CID/continuation encodings and fail-closed semantics; the validator and mutation tests reject namespace escape, client authority injection, legacy drift and economic/truth amplification."
     },
     {
+      "path": "docs/specs/vnext/PUBLIC_USE_CONSENT_PROFILE_V1.md",
+      "expected_statement_lines": 13,
+      "evidence": [
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+          "needle": "arbitrary_receipt_intent_swap_and_expiry_fail_closed"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+          "needle": "reprepare_rotates_receipt_and_confirmation_has_one_side_effect"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+          "needle": "prepare_rejects_wrong_target_disclosure_and_unbounded_expiry"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+          "needle": "prepared_and_confirmation_debug_output_redacts_receipt"
+        }
+      ],
+      "rationale": "The typed two-step capability, durable receipt commitment, exact intent recomputation and atomic consume/publication transaction reject arbitrary, rotated, swapped and expired confirmation while preserving one idempotent publication across restart."
+    },
+    {
       "path": "docs/specs/vnext/FEED_SIGNER_CUSTODY_PROFILE_V1.md",
       "expected_statement_lines": 5,
       "evidence": [
