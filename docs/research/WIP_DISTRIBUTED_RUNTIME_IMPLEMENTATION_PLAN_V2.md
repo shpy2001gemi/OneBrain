@@ -1067,5 +1067,12 @@ blockers, bắt đầu bằng P1.2 Feed signer custody.
 Focused gate xanh: 3 feed-signer test, 7 event test, 5 observation-intake test
 và 5 distributed-PoMV test có feature thật. Contract validator, product-profile
 mutation test, `cargo fmt`, default workspace all-target compile, feature-enabled
-product compile và Clippy đều xanh; chỉ còn chờ remote CI trên HEAD trước khi
-merge.
+product compile và Clippy đều xanh.
+
+Remote CI run `30168302948` trên commit `a170cd2` hoàn tất thành công ngày
+2026-07-26: foundation contract, Linux default workspace, Linux feature-enabled
+real QUIC và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation và
+0 warning.
+
+P1.2 đã hoàn tất ở cấp repository; work package kế tiếp là P1.3 Strong Public
+Use consent.
