@@ -1106,4 +1106,10 @@ Focused gate hiện xanh: 9 test `vnext_distributed_pomv`, gồm forged non-zero
 intent swap, expiry/restart, receipt rotation, exact retry, signer mismatch và
 real-QUIC peer delivery.
 
-Remote CI evidence sẽ được ghi sau khi commit của nhánh hoàn tất 4 job.
+Remote CI run `30179622056` trên implementation commit `03ae4e4` hoàn tất thành
+công ngày 2026-07-26: foundation contract, Linux default workspace, Linux
+feature-enabled real QUIC và Windows default/vNext/Desktop smoke đều xanh, với
+0 annotation và 0 warning.
+
+P1.3 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
+P1.4 Private KQL persistence.
