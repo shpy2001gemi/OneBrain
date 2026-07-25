@@ -21,6 +21,9 @@ IDENTITY_OBJECT_VECTORS = (
     ROOT / "src/test-vectors/vnext/foundation/identity-object-v1.json"
 )
 FEED_EVENT_VECTORS = ROOT / "src/test-vectors/vnext/foundation/feed-event-v1.json"
+PRODUCT_PROFILE = (
+    ROOT / "src/test-vectors/vnext/product-integration-profile-v1.json"
+)
 
 TASK_ROW = re.compile(r"^\|\s*\[[ x~]\]\s*`([A-Z][A-Z0-9]*-\d{3})`")
 TASK_ID = re.compile(r"(?<!ADR-)(?<!NEG-)\b[A-Z][A-Z0-9]*-\d{3}\b")
@@ -201,6 +204,267 @@ def validate_vectors() -> tuple[int, int, int, int]:
     return len(ids), len(domains), len(schema_ids), len(event_ids)
 
 
+def validate_product_integration_profile(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(PRODUCT_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(
+                f"invalid product integration profile JSON: {error}"
+            ) from error
+
+    if profile.get("format") != "onebrain/vnext-product-integration-profile/1":
+        raise ContractError("unexpected product integration profile format")
+    if profile.get("profile_id") != "VNEXT_PRODUCT_INTEGRATION_PROFILE_V1":
+        raise ContractError("unexpected product integration profile ID")
+    if profile.get("version") != 1 or profile.get("base_path") != "/api/vnext":
+        raise ContractError("unexpected product integration version/base path")
+
+    wire = profile.get("wire")
+    if not isinstance(wire, dict):
+        raise ContractError("product integration profile lacks wire rules")
+    cid = wire.get("cid")
+    expected_cid = {
+        "encoding": "lowercase_hex",
+        "decoded_bytes": 32,
+        "encoded_chars": 64,
+        "prefix": "",
+        "typed": True,
+    }
+    if cid != expected_cid:
+        raise ContractError("product API CID encoding drift")
+    continuation = wire.get("continuation")
+    if not isinstance(continuation, dict) or any(
+        continuation.get(key) != value
+        for key, value in {
+            "encoding": "base64url_no_pad",
+            "prefix": "obc1.",
+            "opaque": True,
+            "context_bound": True,
+            "max_chars": 2048,
+        }.items()
+    ):
+        raise ContractError("product API continuation contract drift")
+
+    envelope = profile.get("envelope")
+    if not isinstance(envelope, dict):
+        raise ContractError("product integration profile lacks envelope rules")
+    expected_envelope = {
+        "success_required": {"ok", "profile", "data", "meta"},
+        "error_required": {"ok", "profile", "error", "meta"},
+        "meta_required": {"lifecycle", "coverage", "limitations", "continuation"},
+        "lifecycle_states": {"disabled", "requested", "active", "degraded"},
+        "coverage_states": {"local_only", "partial"},
+        "work_states": {"pending", "deferred", "quarantined", "conflict"},
+    }
+    for field, expected in expected_envelope.items():
+        value = envelope.get(field)
+        if not isinstance(value, list) or set(value) != expected:
+            raise ContractError(f"product envelope field drift: {field}")
+
+    errors = profile.get("errors")
+    expected_errors = {
+        ("invalid_request", 400, False),
+        ("not_found", 404, False),
+        ("conflict", 409, False),
+        ("expired", 410, False),
+        ("rate_limited", 429, True),
+        ("capability_disabled", 503, False),
+        ("dependency_unavailable", 503, True),
+        ("internal_error", 500, False),
+    }
+    if not isinstance(errors, list):
+        raise ContractError("product integration profile lacks error semantics")
+    actual_errors = {
+        (row.get("code"), row.get("http_status"), row.get("retryable"))
+        for row in errors
+        if isinstance(row, dict)
+    }
+    if actual_errors != expected_errors:
+        raise ContractError("product error code/status/retryability drift")
+
+    dtos = profile.get("dtos")
+    if not isinstance(dtos, dict) or not dtos:
+        raise ContractError("product integration profile lacks DTO definitions")
+    for name, dto in dtos.items():
+        if not isinstance(name, str) or not isinstance(dto, dict):
+            raise ContractError("invalid product DTO definition")
+        required = dto.get("required")
+        if not isinstance(required, list) or not required:
+            raise ContractError(f"product DTO lacks required fields: {name}")
+        if len(required) != len(set(required)):
+            raise ContractError(f"duplicate required field in product DTO: {name}")
+
+    field_types = profile.get("dto_field_types")
+    if not isinstance(field_types, dict) or set(field_types) != set(dtos):
+        raise ContractError("product DTO type inventory drift")
+    for name, fields in field_types.items():
+        if (
+            not isinstance(fields, dict)
+            or set(fields) != set(dtos[name]["required"])
+            or any(not isinstance(value, str) or not value for value in fields.values())
+        ):
+            raise ContractError(f"product DTO field-type drift: {name}")
+
+    expected_endpoints = {
+        ("GET", "/api/vnext/workflow"),
+        ("GET", "/api/vnext/workflow/{stage}"),
+        ("POST", "/api/vnext/kql/needs/prepare"),
+        ("POST", "/api/vnext/kql/needs"),
+        ("GET", "/api/vnext/kql/needs"),
+        ("GET", "/api/vnext/kql/needs/{id}"),
+        ("GET", "/api/vnext/kql/needs/{id}/matches"),
+        ("POST", "/api/vnext/kql/needs/{id}/scan"),
+        ("DELETE", "/api/vnext/kql/needs/{id}"),
+        ("POST", "/api/vnext/pomv/public-use/prepare"),
+        ("POST", "/api/vnext/pomv/public-use/confirm"),
+        ("GET", "/api/vnext/pomv/publications/{id}"),
+        ("GET", "/api/vnext/pomv/views/{target}"),
+        ("GET", "/api/vnext/runtime/status"),
+    }
+    endpoints = profile.get("endpoints")
+    if not isinstance(endpoints, list):
+        raise ContractError("product integration profile lacks endpoints")
+    actual_endpoints: set[tuple[str, str]] = set()
+    for endpoint in endpoints:
+        if not isinstance(endpoint, dict):
+            raise ContractError("invalid product endpoint row")
+        method = endpoint.get("method")
+        path = endpoint.get("path")
+        status = endpoint.get("status")
+        visibility = endpoint.get("visibility")
+        request = endpoint.get("request")
+        response = endpoint.get("response")
+        if not isinstance(method, str) or not isinstance(path, str):
+            raise ContractError("product endpoint lacks method/path")
+        if not path.startswith("/api/vnext/"):
+            raise ContractError(f"vNext endpoint escaped additive namespace: {path}")
+        key = (method, path)
+        if key in actual_endpoints:
+            raise ContractError(f"duplicate product endpoint: {method} {path}")
+        actual_endpoints.add(key)
+        if status not in {"implemented_read_only", "reserved"}:
+            raise ContractError(f"invalid product endpoint status: {method} {path}")
+        expected_visibility = (
+            "authenticated_local_private"
+            if path.startswith("/api/vnext/kql/needs")
+            or path.startswith("/api/vnext/pomv/public-use")
+            else "authenticated_local"
+        )
+        if visibility != expected_visibility:
+            raise ContractError(
+                f"product endpoint visibility drift: {method} {path}"
+            )
+        if request is not None and request not in dtos:
+            raise ContractError(f"undefined request DTO for {method} {path}: {request}")
+        if not isinstance(response, str) or response not in dtos:
+            raise ContractError(f"undefined response DTO for {method} {path}: {response}")
+    if actual_endpoints != expected_endpoints:
+        raise ContractError(
+            "product endpoint inventory drift; "
+            f"missing={sorted(expected_endpoints - actual_endpoints)}, "
+            f"extra={sorted(actual_endpoints - expected_endpoints)}"
+        )
+
+    forbidden_client = profile.get("client_supplied_forbidden_fields")
+    forbidden_response = profile.get("response_forbidden_fields")
+    non_exportable = profile.get("non_exportable_fields")
+    if (
+        not isinstance(forbidden_client, list)
+        or not isinstance(forbidden_response, list)
+        or not isinstance(non_exportable, list)
+    ):
+        raise ContractError("product profile lacks field firewalls")
+    client_fields = set(forbidden_client)
+    response_fields = set(forbidden_response)
+    for endpoint in endpoints:
+        request_name = endpoint.get("request")
+        if isinstance(request_name, str):
+            request_fields = set(dtos[request_name]["required"])
+            if request_fields & client_fields:
+                raise ContractError(
+                    f"client can supply authority/secret field through {request_name}"
+                )
+        response_name = endpoint["response"]
+        output_fields = set(dtos[response_name]["required"])
+        if output_fields & response_fields:
+            raise ContractError(f"private field leaks through {response_name}")
+    if set(non_exportable) != {
+        "local_query",
+        "standing_need_id",
+        "query_definition_cid",
+        "single_use_receipt",
+    }:
+        raise ContractError("non-exportable product field inventory drift")
+
+    legacy = profile.get("legacy_surfaces")
+    expected_legacy = {
+        ("/api/kql", "legacy_local_kql", True),
+        ("/api/watch", "legacy_watch", True),
+        ("pomv", "legacy_local_pomv_scalar_v1", True),
+        ("pomv_breakdown", "legacy_local_pomv_breakdown_v1", True),
+    }
+    if not isinstance(legacy, list):
+        raise ContractError("product profile lacks legacy boundary inventory")
+    actual_legacy = {
+        (row.get("path"), row.get("meaning"), row.get("unchanged"))
+        for row in legacy
+        if isinstance(row, dict)
+    }
+    if actual_legacy != expected_legacy:
+        raise ContractError("legacy product meaning changed or inventory drifted")
+
+    firewalls = profile.get("semantic_firewalls")
+    required_firewalls = {
+        "proposal_executable",
+        "proposal_materializes_mapping",
+        "proposal_grants_authority",
+        "pomv_establishes_truth",
+        "pomv_establishes_benefit",
+        "pomv_authorizes_reward",
+        "pomv_claims_global_completion",
+        "zero_results_claim_global_absence",
+    }
+    if (
+        not isinstance(firewalls, dict)
+        or set(firewalls) != required_firewalls
+        or any(value is not False for value in firewalls.values())
+    ):
+        raise ContractError("product semantic firewall must remain fail-closed")
+
+    match_fields = set(dtos["QuarantinedMatchV1"]["required"])
+    metabolic_fields = set(dtos["MetabolicEvidenceViewV1"]["required"])
+    if not {"state", "executable", "limitations"} <= match_fields:
+        raise ContractError("quarantined match DTO lost non-executable fields")
+    if (
+        field_types["QuarantinedMatchV1"]["state"] != "literal:quarantined"
+        or field_types["QuarantinedMatchV1"]["executable"] != "literal:false"
+    ):
+        raise ContractError("quarantined match DTO weakened its literal types")
+    if not {
+        "establishes_truth",
+        "establishes_benefit",
+        "authorizes_reward",
+        "claims_global_completion",
+        "limitations",
+    } <= metabolic_fields:
+        raise ContractError("metabolic view DTO lost semantic firewall fields")
+    if any(
+        field_types["MetabolicEvidenceViewV1"][field] != "literal:false"
+        for field in {
+            "establishes_truth",
+            "establishes_benefit",
+            "authorizes_reward",
+            "claims_global_completion",
+        }
+    ):
+        raise ContractError("metabolic view DTO weakened its literal false types")
+
+    return len(endpoints), len(dtos)
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -294,6 +558,7 @@ def main() -> int:
         adrs = validate_traceability(tasks)
         assertions = validate_negative_assertions()
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
+        product_endpoints, product_dtos = validate_product_integration_profile()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -306,6 +571,7 @@ def main() -> int:
         f"{vector_count} foundation vectors/{domains} domains, "
         f"{schema_vectors} identity-object vectors, "
         f"{event_vectors} feed-event vectors, {normative_lines} normative lines, "
+        f"{product_endpoints} product endpoints/{product_dtos} DTOs, "
         f"{links} local links"
     )
     return 0

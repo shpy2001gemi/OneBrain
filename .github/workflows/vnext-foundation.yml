@@ -8,7 +8,7 @@ on:
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/specs/vnext/**"
       - "formal/tla/**"
-      - "scripts/ci/validate_vnext_contracts.py"
+      - "scripts/ci/**"
       - "scripts/concept_registry/**"
       - "src/ku-core/**"
       - "src/ku-ai/**"
@@ -24,14 +24,14 @@ on:
       - "src/test-vectors/vnext/**"
       - "src/Cargo.lock"
   push:
-    branches: [main]
+    branches: [main, "codex/**"]
     paths:
       - ".github/workflows/vnext-foundation.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/specs/vnext/**"
       - "formal/tla/**"
-      - "scripts/ci/validate_vnext_contracts.py"
+      - "scripts/ci/**"
       - "scripts/concept_registry/**"
       - "src/ku-core/**"
       - "src/ku-ai/**"
@@ -58,8 +58,8 @@ jobs:
       run:
         working-directory: src
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
       - uses: dtolnay/rust-toolchain@stable
@@ -71,7 +71,9 @@ jobs:
 
       - name: Validate task graph, traceability, vectors, and links
         working-directory: .
-        run: python scripts/ci/validate_vnext_contracts.py
+        run: |
+          python scripts/ci/validate_vnext_contracts.py
+          python -m unittest scripts.ci.test_validate_vnext_product_profile
 
       - name: Build and verify a small Concept Registry fixture
         working-directory: .
@@ -412,7 +414,7 @@ jobs:
       run:
         working-directory: src
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -431,7 +433,7 @@ jobs:
       run:
         working-directory: src
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -477,7 +479,7 @@ jobs:
       run:
         working-directory: src
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

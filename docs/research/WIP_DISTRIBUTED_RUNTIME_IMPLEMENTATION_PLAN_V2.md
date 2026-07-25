@@ -1008,10 +1008,30 @@ Một work package chỉ được đánh dấu hoàn tất khi:
    freeze trong `docs/specs/vnext/`.
 10. Contract validator và Concept Registry unit fixture xanh.
 
-Đã cấu hình nhưng chưa có bằng chứng từ GitHub Actions:
+Remote CI evidence:
 
-- Matrix Linux default workspace, Linux real-QUIC feature, Windows
-  default/feature/Desktop smoke, timeout và cache đã được thêm vào
-  `.github/workflows/vnext-foundation.yml`.
-- P0 chỉ được coi là hoàn tất ở cấp repository sau khi matrix này chạy xanh
-  trên remote CI. Work package kế tiếp sau gate đó là P1.1.
+- GitHub Actions run `30166348320` trên commit `6ecce29` hoàn tất thành công
+  ngày 2026-07-26: foundation contract, Linux default workspace, Linux
+  feature-enabled real QUIC và Windows default/vNext/Desktop smoke đều xanh.
+- P0 đã hoàn tất ở cấp repository. Work package hiện hành là P1.1.
+
+### 2026-07-26 — P1.1 Product integration profile
+
+Đã freeze cục bộ trên nhánh `codex/p1-product-integration-profile`:
+
+1. `VNEXT_PRODUCT_INTEGRATION_PROFILE_V1` và ADR quyết định sản phẩm.
+2. Machine contract gồm 14 endpoint additive dưới `/api/vnext/...` và 18 DTO.
+3. CID product encoding là lowercase hex 64 ký tự có typed field name;
+   continuation là `obc1.` + base64url không padding, opaque và context-bound.
+4. Lifecycle, coverage, work state, limitation và error retryability tách biệt.
+5. Need/Public Use preparation là `authenticated_local_private`; private ID
+   không được đi vào WebSocket, telemetry, public inventory hoặc peer payload.
+6. Client không thể tự cấp authority/frontier/policy implementation/signer key.
+7. Proposal luôn quarantined, non-executable; Metabolic Evidence View không
+   tuyên bố truth, Benefit, reward hoặc global completion.
+8. Bảy mutation test chứng minh validator từ chối namespace escape, visibility
+   downgrade, client authority injection, executable proposal, reward-authorizing
+   PoMV và legacy meaning drift.
+
+Local contract gate xanh: 14 endpoint, 18 DTO, 122 normative lines và 340 local
+links. Remote CI của nhánh vẫn phải xanh trước khi đóng P1.1 ở cấp repository.
