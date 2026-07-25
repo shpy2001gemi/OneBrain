@@ -109,6 +109,7 @@ cargo build --features persist
 | [Foundation Implementation Plan — KU v7.1](research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md) | Kế hoạch thực thi chi tiết: dependency graph, 8 milestone (M0–M7), 99 task có acceptance criteria, Anti-Gravity Reunion MVP, verification/migration/rollout gates và topological work-package queue |
 | [vNext Foundation Contracts](specs/vnext/README.md) | Contract đang triển khai cho WP-001/WP-002: field ownership, normative vocabulary, negative assertions và canonical codec/domain profile |
 | [Legacy/vNext Product Boundary ADR](specs/vnext/LEGACY_VNEXT_PRODUCT_BOUNDARY_ADR_V1.md) | Chốt ranh giới additive: KQL/DHT/PoMV/OBT legacy không được ngầm đổi nghĩa thành vNext; wallet hiện là simulated/non-economic |
+| [vNext Product Integration Profile v1](specs/vnext/VNEXT_PRODUCT_INTEGRATION_PROFILE_V1.md) | Contract P1.1 cho 14 endpoint additive, 18 DTO, CID/continuation encoding, lifecycle/error semantics và proposal/PoMV firewalls |
 | [Distributed Runtime Transaction Inventory](specs/vnext/DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md) | Danh mục boundary và failpoint ID cho crash harness DR-M5, kèm durable owner và restart oracle |
 | [Feature Tree](features/FEATURE_TREE.md) | Cây tính năng v6 — tất cả §1-§8 |
 | [Feature Details](features/FEATURE_DETAILS.md) | Chi tiết kỹ thuật từng feature với code references |

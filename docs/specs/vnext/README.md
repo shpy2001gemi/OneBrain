@@ -23,6 +23,7 @@ This directory owns the cross-crate contracts that must be stable before vNext r
 | `FND-009` | [Anti-Gravity Reunion Corpus v1](corpus/README.md) | Complete | Typed positive, partial, hard-negative, unknown, opposition, distractor and privacy fixtures. |
 | `FND-010` | [ADR Traceability Matrix v1](TRACEABILITY_MATRIX_V1.md) | Complete | All 18 ADRs mapped; CI rejects task cycles, undefined dependencies, broken links and vector drift. |
 | `P0-ADR-001` | [Legacy and vNext Product Boundaries ADR v1](LEGACY_VNEXT_PRODUCT_BOUNDARY_ADR_V1.md) | Complete | Freezes additive endpoint semantics and marks legacy PoMV/wallet values as local non-economic compatibility projections. |
+| `DR-P1.1` | [vNext Product Integration Profile v1](VNEXT_PRODUCT_INTEGRATION_PROFILE_V1.md) · [ADR](VNEXT_PRODUCT_INTEGRATION_ADR_V1.md) | Frozen | Fourteen additive endpoint contracts, eighteen DTO field sets, typed CID/opaque continuation encoding, scoped lifecycle/error semantics and fail-closed proposal/PoMV firewalls. |
 | `M5-00` | [Distributed Runtime Transaction Boundary Inventory v1](DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md) | Inventory frozen | Stable failpoint IDs, durable owners, downstream side effects and restart oracles for M2–M4 crash harness work. |
 | `IDN-001` / `OBJ-001` / `OBJ-002` | [Identity and Knowledge Object Profile v1](IDENTITY_OBJECT_PROFILE_V1.md) | Complete | Full-width role IDs, CRDT dot/clock, schema registry and opaque-safe immutable object envelope. |
 | `IDN-002` / `EVT-001` | [Feed, Authority and Event Profile v1](FEED_EVENT_PROFILE_V1.md) | Complete | Namespace-private FeedInception, frontier-relative delegation/revocation decisions and signed causal event envelope. |
@@ -108,6 +109,7 @@ This directory owns the cross-crate contracts that must be stable before vNext r
 - [Operator Runbook v1](VNEXT_OPERATOR_RUNBOOK_V1.md)
 - [Migration and Rollback Guide v1](VNEXT_MIGRATION_AND_ROLLBACK_GUIDE_V1.md)
 - [Normative Freeze and Evidence Index v1](VNEXT_NORMATIVE_FREEZE_AND_EVIDENCE_INDEX_V1.md)
+- [vNext Product Integration Profile v1](VNEXT_PRODUCT_INTEGRATION_PROFILE_V1.md)
 
 ## Executable foundation gate
 

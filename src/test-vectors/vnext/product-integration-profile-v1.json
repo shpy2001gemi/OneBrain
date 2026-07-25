@@ -1,0 +1,576 @@
+{
+  "format": "onebrain/vnext-product-integration-profile/1",
+  "profile_id": "VNEXT_PRODUCT_INTEGRATION_PROFILE_V1",
+  "version": 1,
+  "base_path": "/api/vnext",
+  "wire": {
+    "json_field_case": "snake_case",
+    "cid": {
+      "encoding": "lowercase_hex",
+      "decoded_bytes": 32,
+      "encoded_chars": 64,
+      "prefix": "",
+      "typed": true
+    },
+    "continuation": {
+      "encoding": "base64url_no_pad",
+      "prefix": "obc1.",
+      "opaque": true,
+      "context_bound": true,
+      "max_chars": 2048
+    }
+  },
+  "envelope": {
+    "success_required": [
+      "ok",
+      "profile",
+      "data",
+      "meta"
+    ],
+    "error_required": [
+      "ok",
+      "profile",
+      "error",
+      "meta"
+    ],
+    "meta_required": [
+      "lifecycle",
+      "coverage",
+      "limitations",
+      "continuation"
+    ],
+    "lifecycle_states": [
+      "disabled",
+      "requested",
+      "active",
+      "degraded"
+    ],
+    "coverage_states": [
+      "local_only",
+      "partial"
+    ],
+    "work_states": [
+      "pending",
+      "deferred",
+      "quarantined",
+      "conflict"
+    ]
+  },
+  "errors": [
+    {
+      "code": "invalid_request",
+      "http_status": 400,
+      "retryable": false
+    },
+    {
+      "code": "not_found",
+      "http_status": 404,
+      "retryable": false
+    },
+    {
+      "code": "conflict",
+      "http_status": 409,
+      "retryable": false
+    },
+    {
+      "code": "expired",
+      "http_status": 410,
+      "retryable": false
+    },
+    {
+      "code": "rate_limited",
+      "http_status": 429,
+      "retryable": true
+    },
+    {
+      "code": "capability_disabled",
+      "http_status": 503,
+      "retryable": false
+    },
+    {
+      "code": "dependency_unavailable",
+      "http_status": 503,
+      "retryable": true
+    },
+    {
+      "code": "internal_error",
+      "http_status": 500,
+      "retryable": false
+    }
+  ],
+  "dtos": {
+    "VNextMetaV1": {
+      "required": [
+        "lifecycle",
+        "coverage",
+        "limitations",
+        "continuation"
+      ]
+    },
+    "VNextErrorV1": {
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "limitations"
+      ]
+    },
+    "WorkflowStagePageV1": {
+      "required": [
+        "items"
+      ]
+    },
+    "WorkflowStageViewV1": {
+      "required": [
+        "stage",
+        "boundary",
+        "scope",
+        "limitations",
+        "next_explicit_action"
+      ]
+    },
+    "NeedPrepareRequestV1": {
+      "required": [
+        "local_query",
+        "scope",
+        "budget",
+        "idempotency_key"
+      ],
+      "local_only": [
+        "local_query"
+      ]
+    },
+    "PreparedNeedV1": {
+      "required": [
+        "intent_cid",
+        "query_definition_cid",
+        "selector_cid",
+        "scope",
+        "budget",
+        "expires_at",
+        "limitations"
+      ]
+    },
+    "NeedActivationRequestV1": {
+      "required": [
+        "intent_cid",
+        "idempotency_key"
+      ]
+    },
+    "NeedViewV1": {
+      "required": [
+        "standing_need_id",
+        "state",
+        "query_definition_cid",
+        "selector_cid",
+        "coverage",
+        "limitations",
+        "revision"
+      ]
+    },
+    "NeedPageV1": {
+      "required": [
+        "items",
+        "coverage",
+        "limitations",
+        "continuation"
+      ]
+    },
+    "NeedScanRequestV1": {
+      "required": [
+        "budget",
+        "continuation",
+        "idempotency_key"
+      ]
+    },
+    "QuarantinedMatchV1": {
+      "required": [
+        "proposal_cid",
+        "candidate_cid",
+        "responder_scope",
+        "selector_cid",
+        "assessed_frontier",
+        "constraints",
+        "limitations",
+        "state",
+        "executable"
+      ]
+    },
+    "MatchPageV1": {
+      "required": [
+        "items",
+        "coverage",
+        "limitations",
+        "continuation"
+      ]
+    },
+    "PublicUsePrepareRequestV1": {
+      "required": [
+        "target_cid",
+        "recipient_node_id",
+        "selector_cid",
+        "namespace",
+        "disclosure",
+        "idempotency_key",
+        "expires_at"
+      ]
+    },
+    "PreparedPublicUseV1": {
+      "required": [
+        "intent_cid",
+        "canonical_payload_preview",
+        "exact_target",
+        "exact_recipient",
+        "selector_cid",
+        "namespace",
+        "disclosure",
+        "idempotency_key",
+        "expires_at"
+      ]
+    },
+    "PublicUseConfirmRequestV1": {
+      "required": [
+        "intent_cid",
+        "single_use_receipt"
+      ]
+    },
+    "PublicationViewV1": {
+      "required": [
+        "publication_cid",
+        "intent_cid",
+        "state",
+        "attempts",
+        "limitations",
+        "revision"
+      ]
+    },
+    "MetabolicEvidenceViewV1": {
+      "required": [
+        "target_cid",
+        "policy_cid",
+        "assessed_frontier",
+        "revision",
+        "use_event_root",
+        "conflicts",
+        "coverage",
+        "limitations",
+        "establishes_truth",
+        "establishes_benefit",
+        "authorizes_reward",
+        "claims_global_completion"
+      ]
+    },
+    "RuntimeStatusV1": {
+      "required": [
+        "compiled",
+        "requested",
+        "active",
+        "kill_switch",
+        "signer_ready",
+        "lifecycle",
+        "coverage",
+        "limitations"
+      ]
+    }
+  },
+  "dto_field_types": {
+    "VNextMetaV1": {
+      "lifecycle": "LifecycleV1",
+      "coverage": "CoverageV1",
+      "limitations": "array:string",
+      "continuation": "nullable:OpaqueContinuationV1"
+    },
+    "VNextErrorV1": {
+      "code": "ErrorCodeV1",
+      "message": "string",
+      "retryable": "boolean",
+      "limitations": "array:string"
+    },
+    "WorkflowStagePageV1": {
+      "items": "array:WorkflowStageViewV1"
+    },
+    "WorkflowStageViewV1": {
+      "stage": "WorkflowStageV1",
+      "boundary": "string",
+      "scope": "ScopeV1",
+      "limitations": "array:string",
+      "next_explicit_action": "string"
+    },
+    "NeedPrepareRequestV1": {
+      "local_query": "string",
+      "scope": "ScopeV1",
+      "budget": "BudgetV1",
+      "idempotency_key": "string"
+    },
+    "PreparedNeedV1": {
+      "intent_cid": "CidHexV1",
+      "query_definition_cid": "CidHexV1",
+      "selector_cid": "CidHexV1",
+      "scope": "ScopeV1",
+      "budget": "BudgetV1",
+      "expires_at": "TimestampUnixSeconds",
+      "limitations": "array:string"
+    },
+    "NeedActivationRequestV1": {
+      "intent_cid": "CidHexV1",
+      "idempotency_key": "string"
+    },
+    "NeedViewV1": {
+      "standing_need_id": "LocalIdHexV1",
+      "state": "NeedStateV1",
+      "query_definition_cid": "CidHexV1",
+      "selector_cid": "CidHexV1",
+      "coverage": "CoverageV1",
+      "limitations": "array:string",
+      "revision": "u64"
+    },
+    "NeedPageV1": {
+      "items": "array:NeedViewV1",
+      "coverage": "CoverageV1",
+      "limitations": "array:string",
+      "continuation": "nullable:OpaqueContinuationV1"
+    },
+    "NeedScanRequestV1": {
+      "budget": "BudgetV1",
+      "continuation": "nullable:OpaqueContinuationV1",
+      "idempotency_key": "string"
+    },
+    "QuarantinedMatchV1": {
+      "proposal_cid": "CidHexV1",
+      "candidate_cid": "CidHexV1",
+      "responder_scope": "ScopeV1",
+      "selector_cid": "CidHexV1",
+      "assessed_frontier": "CidHexV1",
+      "constraints": "ConstraintSetV1",
+      "limitations": "array:string",
+      "state": "literal:quarantined",
+      "executable": "literal:false"
+    },
+    "MatchPageV1": {
+      "items": "array:QuarantinedMatchV1",
+      "coverage": "CoverageV1",
+      "limitations": "array:string",
+      "continuation": "nullable:OpaqueContinuationV1"
+    },
+    "PublicUsePrepareRequestV1": {
+      "target_cid": "CidHexV1",
+      "recipient_node_id": "NodeIdHexV1",
+      "selector_cid": "CidHexV1",
+      "namespace": "string",
+      "disclosure": "DisclosureV1",
+      "idempotency_key": "string",
+      "expires_at": "TimestampUnixSeconds"
+    },
+    "PreparedPublicUseV1": {
+      "intent_cid": "CidHexV1",
+      "canonical_payload_preview": "CanonicalPayloadPreviewV1",
+      "exact_target": "CidHexV1",
+      "exact_recipient": "NodeIdHexV1",
+      "selector_cid": "CidHexV1",
+      "namespace": "string",
+      "disclosure": "DisclosureV1",
+      "idempotency_key": "string",
+      "expires_at": "TimestampUnixSeconds"
+    },
+    "PublicUseConfirmRequestV1": {
+      "intent_cid": "CidHexV1",
+      "single_use_receipt": "OpaqueReceiptV1"
+    },
+    "PublicationViewV1": {
+      "publication_cid": "CidHexV1",
+      "intent_cid": "CidHexV1",
+      "state": "PublicationStateV1",
+      "attempts": "u64",
+      "limitations": "array:string",
+      "revision": "u64"
+    },
+    "MetabolicEvidenceViewV1": {
+      "target_cid": "CidHexV1",
+      "policy_cid": "CidHexV1",
+      "assessed_frontier": "CidHexV1",
+      "revision": "u64",
+      "use_event_root": "CidHexV1",
+      "conflicts": "array:CidHexV1",
+      "coverage": "CoverageV1",
+      "limitations": "array:string",
+      "establishes_truth": "literal:false",
+      "establishes_benefit": "literal:false",
+      "authorizes_reward": "literal:false",
+      "claims_global_completion": "literal:false"
+    },
+    "RuntimeStatusV1": {
+      "compiled": "boolean",
+      "requested": "boolean",
+      "active": "boolean",
+      "kill_switch": "boolean",
+      "signer_ready": "boolean",
+      "lifecycle": "LifecycleV1",
+      "coverage": "CoverageV1",
+      "limitations": "array:string"
+    }
+  },
+  "endpoints": [
+    {
+      "method": "GET",
+      "path": "/api/vnext/workflow",
+      "status": "implemented_read_only",
+      "visibility": "authenticated_local",
+      "request": null,
+      "response": "WorkflowStagePageV1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vnext/workflow/{stage}",
+      "status": "implemented_read_only",
+      "visibility": "authenticated_local",
+      "request": null,
+      "response": "WorkflowStageViewV1"
+    },
+    {
+      "method": "POST",
+      "path": "/api/vnext/kql/needs/prepare",
+      "status": "reserved",
+      "visibility": "authenticated_local_private",
+      "request": "NeedPrepareRequestV1",
+      "response": "PreparedNeedV1"
+    },
+    {
+      "method": "POST",
+      "path": "/api/vnext/kql/needs",
+      "status": "reserved",
+      "visibility": "authenticated_local_private",
+      "request": "NeedActivationRequestV1",
+      "response": "NeedViewV1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vnext/kql/needs",
+      "status": "reserved",
+      "visibility": "authenticated_local_private",
+      "request": null,
+      "response": "NeedPageV1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vnext/kql/needs/{id}",
+      "status": "reserved",
+      "visibility": "authenticated_local_private",
+      "request": null,
+      "response": "NeedViewV1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vnext/kql/needs/{id}/matches",
+      "status": "reserved",
+      "visibility": "authenticated_local_private",
+      "request": null,
+      "response": "MatchPageV1"
+    },
+    {
+      "method": "POST",
+      "path": "/api/vnext/kql/needs/{id}/scan",
+      "status": "reserved",
+      "visibility": "authenticated_local_private",
+      "request": "NeedScanRequestV1",
+      "response": "NeedViewV1"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/vnext/kql/needs/{id}",
+      "status": "reserved",
+      "visibility": "authenticated_local_private",
+      "request": null,
+      "response": "NeedViewV1"
+    },
+    {
+      "method": "POST",
+      "path": "/api/vnext/pomv/public-use/prepare",
+      "status": "reserved",
+      "visibility": "authenticated_local_private",
+      "request": "PublicUsePrepareRequestV1",
+      "response": "PreparedPublicUseV1"
+    },
+    {
+      "method": "POST",
+      "path": "/api/vnext/pomv/public-use/confirm",
+      "status": "reserved",
+      "visibility": "authenticated_local_private",
+      "request": "PublicUseConfirmRequestV1",
+      "response": "PublicationViewV1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vnext/pomv/publications/{id}",
+      "status": "reserved",
+      "visibility": "authenticated_local",
+      "request": null,
+      "response": "PublicationViewV1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vnext/pomv/views/{target}",
+      "status": "reserved",
+      "visibility": "authenticated_local",
+      "request": null,
+      "response": "MetabolicEvidenceViewV1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vnext/runtime/status",
+      "status": "reserved",
+      "visibility": "authenticated_local",
+      "request": null,
+      "response": "RuntimeStatusV1"
+    }
+  ],
+  "legacy_surfaces": [
+    {
+      "path": "/api/kql",
+      "meaning": "legacy_local_kql",
+      "unchanged": true
+    },
+    {
+      "path": "/api/watch",
+      "meaning": "legacy_watch",
+      "unchanged": true
+    },
+    {
+      "path": "pomv",
+      "meaning": "legacy_local_pomv_scalar_v1",
+      "unchanged": true
+    },
+    {
+      "path": "pomv_breakdown",
+      "meaning": "legacy_local_pomv_breakdown_v1",
+      "unchanged": true
+    }
+  ],
+  "client_supplied_forbidden_fields": [
+    "authorized",
+    "authority_frontier",
+    "policy_implementation",
+    "signer_private_key"
+  ],
+  "response_forbidden_fields": [
+    "raw_query",
+    "private_target",
+    "signer_private_key",
+    "single_use_receipt"
+  ],
+  "non_exportable_fields": [
+    "local_query",
+    "standing_need_id",
+    "query_definition_cid",
+    "single_use_receipt"
+  ],
+  "semantic_firewalls": {
+    "proposal_executable": false,
+    "proposal_materializes_mapping": false,
+    "proposal_grants_authority": false,
+    "pomv_establishes_truth": false,
+    "pomv_establishes_benefit": false,
+    "pomv_authorizes_reward": false,
+    "pomv_claims_global_completion": false,
+    "zero_results_claim_global_absence": false
+  }
+}

@@ -154,6 +154,25 @@
       "rationale": "Validated-public admission and whole-object budget deferral preserve exact frontier semantics and prevent partial consumption."
     },
     {
+      "path": "docs/specs/vnext/VNEXT_PRODUCT_INTEGRATION_PROFILE_V1.md",
+      "expected_statement_lines": 10,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/product-integration-profile-v1.json",
+          "needle": "onebrain/vnext-product-integration-profile/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_product_integration_profile"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_product_profile.py",
+          "needle": "test_proposal_cannot_become_executable"
+        }
+      ],
+      "rationale": "The fixture freezes additive routes, DTO fields, CID/continuation encodings and fail-closed semantics; the validator and mutation tests reject namespace escape, client authority injection, legacy drift and economic/truth amplification."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [
