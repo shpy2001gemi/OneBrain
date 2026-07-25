@@ -1034,4 +1034,10 @@ Remote CI evidence:
    PoMV và legacy meaning drift.
 
 Local contract gate xanh: 14 endpoint, 18 DTO, 122 normative lines và 340 local
-links. Remote CI của nhánh vẫn phải xanh trước khi đóng P1.1 ở cấp repository.
+links.
+
+Remote CI run `30167261845` trên commit `197374c` hoàn tất thành công:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation và 0 warning.
+P1.1 đã hoàn tất ở cấp repository; work package kế tiếp là P1.2–P1.5 security
+blockers, bắt đầu bằng P1.2 Feed signer custody.
