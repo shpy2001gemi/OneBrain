@@ -13,6 +13,10 @@ use super::identity::{ActorId, DeviceId};
 pub struct DelegationGrant {
     pub actor: ActorId,
     pub device: DeviceId,
+    /// Exact feed identity initially authorized by this grant. Public
+    /// delegation references, device IDs, namespaces, and generation ranges
+    /// are insufficient to authorize an unrelated feed key.
+    pub subject_feed: super::identity::FeedId,
     pub delegation_ref: EventCid,
     pub namespace_commitment: Option<super::feed::NamespaceCommitment>,
     pub first_generation: u64,
@@ -21,13 +25,17 @@ pub struct DelegationGrant {
 }
 
 impl DelegationGrant {
-    fn covers(&self, feed: &FeedInception) -> bool {
+    fn covers_scope(&self, feed: &FeedInception) -> bool {
         self.device == feed.owner_device
             && Some(*self.delegation_ref.as_bytes()) == feed.actor_delegation_ref
             && self
                 .namespace_commitment
                 .is_none_or(|namespace| namespace == feed.namespace_commitment)
             && (self.first_generation..=self.last_generation).contains(&feed.generation)
+    }
+
+    fn covers(&self, feed: &ValidatedFeedInception) -> bool {
+        self.subject_feed == feed.feed_id && self.covers_scope(&feed.signed.inception)
     }
 }
 
@@ -149,9 +157,11 @@ impl FeedAuthorityView<'_> {
             };
         }
 
-        if let Some(grant) = self.grants.iter().find(|proof| {
-            proof.delegation_ref.as_bytes() == &delegation_ref && proof.covers(inception)
-        }) {
+        if let Some(grant) = self
+            .grants
+            .iter()
+            .find(|proof| proof.delegation_ref.as_bytes() == &delegation_ref && proof.covers(feed))
+        {
             return FeedAuthorityDecision::AuthorizedRelative {
                 actor: grant.actor,
                 grant: grant.proof,
@@ -177,11 +187,30 @@ impl FeedAuthorityView<'_> {
             decision @ FeedAuthorityDecision::AuthorizedRelative { .. } => {
                 FeedSuccessorDecision::AuthorizedRelative(decision)
             }
-            decision @ FeedAuthorityDecision::StaleOrUnresolved { .. } => {
-                FeedSuccessorDecision::StaleOrUnresolved(decision)
-            }
             decision @ FeedAuthorityDecision::QuarantinedRevokedRelative { .. } => {
                 FeedSuccessorDecision::QuarantinedRevokedRelative(decision)
+            }
+            unresolved @ FeedAuthorityDecision::StaleOrUnresolved { .. } => {
+                let previous = &predecessor.signed.inception;
+                let next = &successor.signed.inception;
+                if previous.actor_delegation_ref != next.actor_delegation_ref {
+                    return FeedSuccessorDecision::StaleOrUnresolved(unresolved);
+                }
+                if let Some(grant) = self
+                    .grants
+                    .iter()
+                    .find(|grant| grant.covers(predecessor) && grant.covers_scope(next))
+                {
+                    FeedSuccessorDecision::AuthorizedRelative(
+                        FeedAuthorityDecision::AuthorizedRelative {
+                            actor: grant.actor,
+                            grant: grant.proof,
+                            frontier: self.frontier,
+                        },
+                    )
+                } else {
+                    FeedSuccessorDecision::StaleOrUnresolved(unresolved)
+                }
             }
         }
     }
@@ -266,6 +295,7 @@ mod tests {
         let grant = DelegationGrant {
             actor: ActorId::from_bytes([6; 32]),
             device: successor.signed.inception.owner_device,
+            subject_feed: successor.feed_id,
             delegation_ref: delegation,
             namespace_commitment: None,
             first_generation: 0,
@@ -284,12 +314,41 @@ mod tests {
     }
 
     #[test]
+    fn copied_public_delegation_fields_do_not_authorize_an_unrelated_feed_key() {
+        let (_, authorized, delegation) = feed_pair();
+        let attacker_key = SigningKey::from_bytes(&[0xA5; 32]);
+        let mut copied = authorized.signed.inception.clone();
+        copied.feed_public_key = *attacker_key.verifying_key().as_bytes();
+        let attacker = validated(copied, &attacker_key);
+        assert_ne!(authorized.feed_id, attacker.feed_id);
+
+        let grant = DelegationGrant {
+            actor: ActorId::from_bytes([6; 32]),
+            device: authorized.signed.inception.owner_device,
+            subject_feed: authorized.feed_id,
+            delegation_ref: delegation,
+            namespace_commitment: None,
+            first_generation: 0,
+            last_generation: 5,
+            proof: EventCid::from_bytes([7; 32]),
+        };
+        let view = FeedAuthorityView {
+            frontier: EventCid::from_bytes([9; 32]),
+            grants: &[grant],
+            revocations: &[],
+        };
+        assert_eq!(view.evaluate(&authorized).code(), "AUTHORIZED_RELATIVE");
+        assert_eq!(view.evaluate(&attacker).code(), "STALE_OR_UNRESOLVED");
+    }
+
+    #[test]
     fn accepted_revocation_quarantines_only_covered_generations() {
         let (predecessor, successor, delegation) = feed_pair();
         let actor = ActorId::from_bytes([6; 32]);
         let grant = DelegationGrant {
             actor,
             device: successor.signed.inception.owner_device,
+            subject_feed: successor.feed_id,
             delegation_ref: delegation,
             namespace_commitment: None,
             first_generation: 0,
@@ -326,6 +385,7 @@ mod tests {
         let grant = DelegationGrant {
             actor: ActorId::from_bytes([6; 32]),
             device: bad.signed.inception.owner_device,
+            subject_feed: bad.feed_id,
             delegation_ref: delegation,
             namespace_commitment: None,
             first_generation: 0,
@@ -350,6 +410,7 @@ mod tests {
         let grant = DelegationGrant {
             actor,
             device: successor.signed.inception.owner_device,
+            subject_feed: successor.feed_id,
             delegation_ref: delegation,
             namespace_commitment: None,
             first_generation: 0,

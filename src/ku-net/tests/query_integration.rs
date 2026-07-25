@@ -2,6 +2,7 @@
 //!
 //! End-to-end tests for the full KQL pipeline and stress tests.
 
+use ku_core::foundation::ConceptCcid;
 use ku_core::*;
 use ku_net::identity::*;
 use ku_net::query::cache::QueryCache;
@@ -16,6 +17,10 @@ use ku_net::query::router::QueryRouter;
 use ku_net::query::watch::{WatchCondition, WatchEngine, WatchEvent};
 use std::time::Duration;
 
+fn concept(value: u128) -> ConceptCcid {
+    ConceptCcid::from_bytes(value.to_be_bytes())
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Helpers
 // ════════════════════════════════════════════════════════════════════════════
@@ -26,64 +31,59 @@ fn make_node_id() -> NodeId {
     proof.node_id
 }
 
-fn make_ku(concept_id: u64, trust_score: u16) -> KnowledgeUnit {
-    KnowledgeUnit {
-        codons: vec![Codon {
-            concept_id,
-            role: RoleId::Agent,
-            qualifiers: vec![],
-        }],
-        bonds: vec![],
-        gene: Gene::Fact {
-            triples: vec![Triple {
-                subject: 1,
-                predicate: 2,
-                object: 3,
-            }],
-            certainty: 8000,
-            evidence: vec![],
+fn make_ku_with_gene(concept_id: u64, trust_score: u16, gene_type: u8) -> KuRuntime {
+    let dna = CoreDna {
+        header: CoreDnaHeader {
+            version: 2,
+            gene_type,
+            has_concept_table: true,
         },
-        flags: HeaderFlags::default(),
-        epistemic_status: Some(EpistemicStatus::Evidence),
-        evidence_type: Some(EvidenceType::Experimental),
-        trust: Some(TrustSection {
-            epistemic_status: EpistemicStatus::Evidence,
-            evidence_type: EvidenceType::Experimental,
-            verification_level: 3,
-            corroboration_count: 5,
-            challenge_count: 0,
-            error_susceptibility: 0,
-            trust_score,
-            confidence: 8000,
-            domain_codes: vec![],
-            verifications: vec![],
-            challenges: vec![],
-            ..Default::default()
-        }),
-        epigenetic: None,
-    }
+        concept_table: vec![ConceptTableEntry {
+            local_id: concept_id,
+            ccid: *concept(concept_id as u128).as_bytes(),
+        }],
+        instructions: vec![
+            Instruction::Triple {
+                s: concept_id,
+                p: 2,
+                o: 3,
+            },
+            Instruction::Certainty { level: 8000 },
+        ],
+    };
+    let mut ku = KuRuntime::from_dna(dna).expect("test KU should encode");
+    ku.epi = Epigenetics::with_trust(trust_score, 8000);
+    ku.epi.trust.epistemic_status = EpistemicStatus::Evidence;
+    ku.epi.trust.evidence_type = EvidenceType::Experimental;
+    ku.epi.trust.verification_level = 3;
+    ku.epi.trust.corroboration_count = 5;
+    ku
 }
 
-fn make_ku_with_ctx(concept_id: u64, trust_score: u16, ctx: &[u64]) -> KnowledgeUnit {
+fn make_ku(concept_id: u64, trust_score: u16) -> KuRuntime {
+    make_ku_with_gene(concept_id, trust_score, 0)
+}
+
+fn make_ku_with_ctx(concept_id: u64, trust_score: u16, ctx: &[u64]) -> KuRuntime {
     let mut ku = make_ku(concept_id, trust_score);
-    ku.bonds = ctx
-        .iter()
-        .map(|&c| Bond {
-            target_cid: vec![0x42; 36],
-            relation: RelationType::Extends,
-            weight: 8000,
-            creator: Creator::Human,
-            created_at: 0,
-            evidence: vec![],
-            state: EdgeState::default(),
-            initial_weight: None,
-            decay: None,
-            last_reinforced: None,
-            reinforce_count: None,
-            bidirectional: None,
-            context: vec![c],
-        })
-        .collect();
+    for &local_id in ctx {
+        if !ku
+            .dna
+            .concept_table
+            .iter()
+            .any(|entry| entry.local_id == local_id)
+        {
+            ku.dna.concept_table.push(ConceptTableEntry {
+                local_id,
+                ccid: *concept(local_id as u128).as_bytes(),
+            });
+        }
+    }
+    let mut rebuilt = KuRuntime::from_dna(ku.dna.clone()).expect("context KU should encode");
+    rebuilt.epi = ku.epi;
+    ku = rebuilt;
+    ku.epi.add_bond(vec![0x42; 32], RelationType::Extends, 8000);
+    ku.epi.bonds[0].context.extend_from_slice(ctx);
     ku
 }
 
@@ -96,8 +96,8 @@ fn make_ku_with_ctx(concept_id: u64, trust_score: u16, ctx: &[u64]) -> Knowledge
 fn test_e2e_full_query_pipeline() {
     // 1. Index concepts
     let mut index = ConceptIndex::new(10_000);
-    for concept_id in 1..=100u64 {
-        index.register_concept(concept_id);
+    for concept_id in 1..=100u128 {
+        index.register_concept(concept(concept_id));
     }
 
     // 2. Create query via wire format
@@ -110,9 +110,12 @@ fn test_e2e_full_query_pipeline() {
     );
 
     // 3. Check concept in index
-    assert!(index.has_concept(42), "Concept 42 should be indexed");
     assert!(
-        index.might_have_concept(42),
+        index.has_concept(concept(42)),
+        "Concept 42 should be indexed"
+    );
+    assert!(
+        index.might_have_concept(concept(42)),
         "VacuumFilter should contain 42"
     );
 
@@ -143,7 +146,7 @@ fn test_e2e_watch_fires_on_new_ku() {
             WatchEvent::Create,
             WatchCondition::And(
                 Box::new(WatchCondition::TrustAbove(7000)),
-                Box::new(WatchCondition::HasConcept(42)),
+                Box::new(WatchCondition::HasConcept(concept(42))),
             ),
             "callback://discovery".to_string(),
             3,
@@ -191,12 +194,12 @@ fn test_e2e_gap_to_watch_pipeline() {
     let my_id = make_node_id();
     let mut watch_engine = WatchEngine::new(my_id);
     for gap in &report.gaps {
-        for &concept_id in &gap.concept_ids {
+        for &concept_ccid in &gap.concept_ccids {
             watch_engine.register(
                 make_node_id(),
                 WatchEvent::Create,
-                WatchCondition::HasConcept(concept_id),
-                format!("gap://fill/{}", concept_id),
+                WatchCondition::HasConcept(concept_ccid),
+                format!("gap://fill/{concept_ccid}"),
                 2,
             );
         }
@@ -271,7 +274,7 @@ fn test_e2e_route_merge_learn() {
 
     // Feed back to learner
     learner.record_outcome(&QueryOutcome {
-        concept_id: 42,
+        concept: concept(42),
         resolved_at: QueryScope::Neighbors,
         provider: None,
         quality: results[0].score,
@@ -279,7 +282,7 @@ fn test_e2e_route_merge_learn() {
         result_count: results.len(),
     });
 
-    let recs = learner.recommend_scopes(42);
+    let recs = learner.recommend_scopes(concept(42));
     assert_eq!(recs[0].0, QueryScope::Neighbors);
 }
 
@@ -312,13 +315,13 @@ fn test_e2e_cache_hit_miss() {
 fn test_stress_concept_index_10k() {
     let mut index = ConceptIndex::new(20_000);
 
-    for id in 0..10_000u64 {
-        index.register_concept(id);
+    for id in 0..10_000u128 {
+        index.register_concept(concept(id));
     }
 
     let mut found = 0;
-    for id in 0..10_000u64 {
-        if index.has_concept(id) {
+    for id in 0..10_000u128 {
+        if index.has_concept(concept(id)) {
             found += 1;
         }
     }
@@ -356,7 +359,7 @@ fn test_stress_1000_watches() {
     for i in 0..1000u64 {
         let threshold = (i % 10) as u16 * 1000;
         engine.register(
-            make_node_id(),
+            my_id,
             WatchEvent::Any,
             WatchCondition::TrustAbove(threshold),
             format!("watch://{}", i),
@@ -389,9 +392,9 @@ fn test_stress_cache_1000_entries() {
 fn test_stress_learner_1000_outcomes() {
     let mut learner = PheromoneLearner::new();
 
-    for concept in 0..100u64 {
+    for concept_value in 0..100u64 {
         for _ in 0..10 {
-            let scope = match concept % 6 {
+            let scope = match concept_value % 6 {
                 0 => QueryScope::Local,
                 1 => QueryScope::Neighbors,
                 2 => QueryScope::Cluster,
@@ -399,9 +402,9 @@ fn test_stress_learner_1000_outcomes() {
                 4 => QueryScope::Semantic,
                 _ => QueryScope::Global,
             };
-            let quality = if concept % 3 == 0 { 0.9 } else { 0.2 };
+            let quality = if concept_value % 3 == 0 { 0.9 } else { 0.2 };
             learner.record_outcome(&QueryOutcome {
-                concept_id: concept,
+                concept: concept(concept_value as u128),
                 resolved_at: scope,
                 provider: None,
                 quality,
@@ -428,19 +431,9 @@ fn test_stress_gap_detector_500_kus() {
         kus.push(make_ku(200 + i % 20, 500));
     }
     for i in 0..100u64 {
-        let mut ku = make_ku(300 + i % 30, 3000);
-        ku.gene = Gene::Hypothesis {
-            base_type: 0,
-            body_codons: vec![],
-            maturity_level: 1,
-            confidence: 5000,
-            completeness: 3000,
-            falsifiable: true,
-        };
-        if let Some(ref mut t) = ku.trust {
-            t.corroboration_count = 0;
-            t.challenge_count = 0;
-        }
+        let mut ku = make_ku_with_gene(300 + i % 30, 3000, 1);
+        ku.epi.trust.corroboration_count = 0;
+        ku.epi.trust.challenge_count = 0;
         kus.push(ku);
     }
     for i in 0..100u64 {

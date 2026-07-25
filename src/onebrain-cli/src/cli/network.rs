@@ -43,6 +43,38 @@ pub(crate) async fn cmd_status(node: &OneBrainNode) {
     println!("  Listen:     {}", listener);
     println!("  Data:       {}", config.data_dir.display());
 
+    let registry = node.concept_registry_status();
+    println!();
+    println!("  Concept Registry");
+    println!("  Policy:     {}", registry.mode);
+    println!("  State:      {:?}", registry.state);
+    println!("  Path:       {}", registry.path.display());
+    println!("  Encoder:    v{}", registry.encoder_version);
+    println!("  Backend:    {:?}", registry.backend);
+    println!("  Cache cap:  {}", registry.cache_capacity);
+    if let Some(schema_version) = registry.obr_schema_version {
+        println!("  OBR schema: v{}", schema_version);
+    }
+    if let Some(manifest_version) = registry.manifest_version {
+        println!("  Manifest:   v{}", manifest_version);
+    }
+    if let Some(concept_count) = registry.concept_count {
+        println!("  Concepts:   {}", concept_count);
+    }
+    if let Some(label_count) = registry.label_count {
+        println!("  Labels:     {}", label_count);
+    }
+    if let Some(error) = &registry.error {
+        println!("  Failure:    {:?}", registry.failure_kind);
+        println!("  Error:      {}", error);
+    }
+    if let Some(checksum) = &registry.checksum_blake3 {
+        println!("  BLAKE3:     {}", checksum);
+    }
+    for (source, snapshot) in &registry.source_snapshots {
+        println!("  Source:     {} = {}", source, snapshot);
+    }
+
     // Identity info (if available)
     if let Ok(identity) = node.get_identity_info() {
         let id_short = short_cid(&identity.node_id);
@@ -85,6 +117,24 @@ pub(crate) async fn cmd_status(node: &OneBrainNode) {
         }
     );
     println!("  Fidelity:   {:?}", vnext.fidelity.status);
+    println!(
+        "  OBP-RP:     {:?}{}",
+        vnext.network_runtime.lifecycle,
+        vnext
+            .network_runtime
+            .listen_addr
+            .as_deref()
+            .map(|addr| format!(" on {addr}"))
+            .unwrap_or_default()
+    );
+    println!(
+        "  Sessions:   {} authenticated, {} active; records accepted/deferred/rejected={}/{}/{}",
+        vnext.network_runtime.authenticated_sessions,
+        vnext.network_runtime.active_sessions,
+        vnext.network_runtime.accepted_records,
+        vnext.network_runtime.deferred_records,
+        vnext.network_runtime.rejected_records
+    );
     if !vnext.coverage.limitations.is_empty() {
         println!("  Limits:     {}", vnext.coverage.limitations.join(", "));
     }

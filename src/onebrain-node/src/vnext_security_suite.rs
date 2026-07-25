@@ -61,6 +61,7 @@ pub fn run_security_suite() -> SecuritySuiteReport {
             probe("MERKLE_RIBLT_FALLBACK", merkle_probe()),
             probe("PARSER_EXPANSION_BOMB", resource_bomb_probe()),
             probe("PERMIT_TASK_REPLAY", permit_replay_probe()),
+            probe("FEED_DELEGATION_REPLAY", feed_delegation_replay_probe()),
             probe("SYBIL_CORRELATION", sybil_correlation_probe()),
             probe("PRIVATE_NEED_TAINT", privacy_taint_probe()),
         ],
@@ -73,6 +74,43 @@ fn probe(probe_id: &'static str, attack_rejected: bool) -> SecurityProbeResult {
         attack_rejected,
         authority_amplified: false,
     }
+}
+
+fn feed_delegation_replay_probe() -> bool {
+    let authorized_key = SigningKey::from_bytes(&[51; 32]);
+    let attacker_key = SigningKey::from_bytes(&[52; 32]);
+    let actor = ActorId::from_bytes([53; 32]);
+    let device = DeviceId::from_bytes([54; 32]);
+    let delegation_ref = EventCid::from_bytes([55; 32]);
+    let namespace = NamespaceCommitment::derive(b"security-feed-delegation", [56; 32]).unwrap();
+    let make_feed = |key: &SigningKey| {
+        let mut inception =
+            FeedInception::new(*key.verifying_key().as_bytes(), namespace, 0, device);
+        inception.actor_delegation_ref = Some(delegation_ref.into_bytes());
+        decode_feed_inception(&inception.sign(key).unwrap().encode().unwrap()).unwrap()
+    };
+    let authorized = make_feed(&authorized_key);
+    let attacker = make_feed(&attacker_key);
+    let mut state = KeyStateReducer::new(EventCid::from_bytes([57; 32]));
+    if state.accept_root(ScopedDelegation {
+        grant: DelegationGrant {
+            actor,
+            device,
+            subject_feed: authorized.feed_id,
+            delegation_ref,
+            namespace_commitment: Some(namespace),
+            first_generation: 0,
+            last_generation: 0,
+            proof: EventCid::from_bytes([58; 32]),
+        },
+        parent_delegation_ref: None,
+    }) != KeyStateApplyOutcome::Accepted
+    {
+        return false;
+    }
+    authorized.feed_id != attacker.feed_id
+        && state.evaluate(&authorized).code() == "AUTHORIZED_RELATIVE"
+        && state.evaluate(&attacker).code() == "STALE_OR_UNRESOLVED"
 }
 
 fn session_probe() -> bool {
@@ -156,6 +194,7 @@ fn merkle_probe() -> bool {
         grant: DelegationGrant {
             actor: ActorId::from_bytes([16; 32]),
             device,
+            subject_feed: feed.feed_id,
             delegation_ref: delegation,
             namespace_commitment: Some(feed.signed.inception.namespace_commitment),
             first_generation: 0,
@@ -252,6 +291,7 @@ fn permit_replay_probe() -> bool {
             grant: DelegationGrant {
                 actor: issuer,
                 device: feed.signed.inception.owner_device,
+                subject_feed: feed.feed_id,
                 delegation_ref,
                 namespace_commitment: None,
                 first_generation: 0,
@@ -420,6 +460,6 @@ fn privacy_taint_probe() -> bool {
 #[test]
 fn qa005_security_suite_rejects_every_attack_without_authority_amplification() {
     let report = run_security_suite();
-    assert_eq!(report.probes.len(), 6);
+    assert_eq!(report.probes.len(), 7);
     assert!(report.all_pass(), "{report:#?}");
 }

@@ -19,8 +19,9 @@ pub use legacy_adapter::{
 };
 pub use reconciliation_codec::{
     bind_reconciliation_message, decode_reconciliation_message, encode_reconciliation_message,
-    make_resume_token, reconciliation_binding_digest, reconciliation_capability,
-    reconciliation_profile, validate_reconciliation_context, ReconciliationCodecError,
+    make_peer_bound_resume_token, make_resume_token, reconciliation_binding_digest,
+    reconciliation_capability, reconciliation_profile, reconciliation_resume_scope_digest,
+    validate_reconciliation_context, ReconciliationCodecError,
 };
 pub use session_codec::{
     decode_session_message, encode_session_message, session_signing_bytes, SessionCodecError,

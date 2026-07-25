@@ -12,6 +12,7 @@
 //! 4. If not found → AI creates CCID via fallback
 
 use crate::ccid::Ccid;
+use crate::concept_registry_manifest::ObrHeaderMetadata;
 use std::collections::HashMap;
 
 // ============================================================================
@@ -29,6 +30,45 @@ pub enum ResolveResult {
     Fuzzy(ResolvedConcept),
     /// Not found in registry — AI should create fallback CCID.
     NotFound,
+}
+
+/// Operational failure while consulting a concept registry backend.
+///
+/// This is deliberately distinct from [`ResolveResult::NotFound`]: an absent
+/// label may use the deterministic fallback namespace, while an unavailable or
+/// damaged registry must stop v2 encoding instead of minting a different CCID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConceptLookupError {
+    message: String,
+}
+
+impl ConceptLookupError {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for ConceptLookupError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ConceptLookupError {}
+
+/// Lookup contract shared by the legacy in-memory registry and bounded
+/// on-demand registry backends.
+pub trait ConceptLookup: Send + Sync {
+    fn resolve(&self, name: &str) -> ResolveResult;
+
+    /// Checked lookup used by production encoding. In-memory implementations
+    /// cannot fail after construction, while indexed backends override this to
+    /// preserve I/O and artifact-integrity failures.
+    fn resolve_checked(&self, name: &str) -> Result<ResolveResult, ConceptLookupError> {
+        Ok(self.resolve(name))
+    }
 }
 
 /// A resolved concept with its metadata.
@@ -318,6 +358,62 @@ impl ConceptRegistry {
     const OBR_MAGIC: &'static [u8; 4] = b"OBR1";
     /// OBR header size in bytes.
     const OBR_HEADER_SIZE: usize = 32;
+    const MAX_OBR_ENTRIES: u64 = 100_000_000;
+
+    /// Read and validate only the fixed OBR header without allocating indexes.
+    pub fn inspect_obr(path: &std::path::Path) -> Result<ObrHeaderMetadata, ObrLoadError> {
+        use std::io::Read;
+
+        let mut file = std::fs::File::open(path).map_err(ObrLoadError::Io)?;
+        let file_len = file.metadata().map_err(ObrLoadError::Io)?.len();
+        let mut header = [0u8; Self::OBR_HEADER_SIZE];
+        file.read_exact(&mut header).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::UnexpectedEof {
+                ObrLoadError::TruncatedHeader
+            } else {
+                ObrLoadError::Io(error)
+            }
+        })?;
+        if &header[0..4] != Self::OBR_MAGIC {
+            return Err(ObrLoadError::InvalidMagic);
+        }
+        let schema_version = u32::from_le_bytes(header[4..8].try_into().unwrap());
+        if schema_version != 1 {
+            return Err(ObrLoadError::UnsupportedVersion(schema_version));
+        }
+        let entry_count = u64::from_le_bytes(header[8..16].try_into().unwrap());
+        let label_count = u64::from_le_bytes(header[16..24].try_into().unwrap());
+        if entry_count > Self::MAX_OBR_ENTRIES {
+            return Err(ObrLoadError::ResourceLimit {
+                entries: entry_count,
+                max_entries: Self::MAX_OBR_ENTRIES,
+            });
+        }
+        let minimum_len = (Self::OBR_HEADER_SIZE as u64)
+            .checked_add(
+                entry_count
+                    .checked_mul(26)
+                    .ok_or(ObrLoadError::ResourceLimit {
+                        entries: entry_count,
+                        max_entries: Self::MAX_OBR_ENTRIES,
+                    })?,
+            )
+            .ok_or(ObrLoadError::ResourceLimit {
+                entries: entry_count,
+                max_entries: Self::MAX_OBR_ENTRIES,
+            })?;
+        if file_len < minimum_len {
+            return Err(ObrLoadError::TruncatedBody {
+                expected_minimum: minimum_len,
+                actual: file_len,
+            });
+        }
+        Ok(ObrHeaderMetadata {
+            schema_version,
+            entry_count,
+            label_count,
+        })
+    }
 
     /// Load a ConceptRegistry from an OBR1 binary file.
     ///
@@ -345,12 +441,13 @@ impl ConceptRegistry {
     pub fn load_obr(path: &std::path::Path) -> Result<Self, ObrLoadError> {
         use std::io::Read;
 
+        let metadata = Self::inspect_obr(path)?;
+
         let mut file = std::fs::File::open(path).map_err(|e| ObrLoadError::Io(e))?;
 
         // Read header
         let mut header = [0u8; Self::OBR_HEADER_SIZE];
-        file.read_exact(&mut header)
-            .map_err(|e| ObrLoadError::Io(e))?;
+        file.read_exact(&mut header).map_err(ObrLoadError::Io)?;
 
         // Validate magic
         if &header[0..4] != Self::OBR_MAGIC {
@@ -363,8 +460,7 @@ impl ConceptRegistry {
             return Err(ObrLoadError::UnsupportedVersion(version));
         }
 
-        let entry_count = u64::from_le_bytes(header[8..16].try_into().unwrap()) as usize;
-        let _label_count = u64::from_le_bytes(header[16..24].try_into().unwrap());
+        let entry_count = metadata.entry_count as usize;
 
         // Read entire file into memory for fast parsing (avoids syscall per entry)
         let mut data = Vec::new();
@@ -384,10 +480,10 @@ impl ConceptRegistry {
         let mut pos: usize = 0;
         let mut loaded: usize = 0;
 
-        for _entry_idx in 0..entry_count {
+        for entry_idx in 0..entry_count {
             // Minimum entry: CCID(16) + ext_id(4) + source(1) + cat(1) + name_len(2) + num_labels(2) = 26
             if pos + 26 > data.len() {
-                break;
+                return Err(ObrLoadError::TruncatedEntry(entry_idx as u64));
             }
 
             // CCID (16 bytes)
@@ -409,12 +505,12 @@ impl ConceptRegistry {
 
             // name_len (u16 LE) + name_bytes — canonical name
             if pos + 2 > data.len() {
-                break;
+                return Err(ObrLoadError::TruncatedEntry(entry_idx as u64));
             }
             let name_len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
             pos += 2;
             if pos + name_len > data.len() {
-                break;
+                return Err(ObrLoadError::TruncatedEntry(entry_idx as u64));
             }
 
             let canonical_name = match std::str::from_utf8(&data[pos..pos + name_len]) {
@@ -425,7 +521,7 @@ impl ConceptRegistry {
 
             // num_labels (u16 LE)
             if pos + 2 > data.len() {
-                break;
+                return Err(ObrLoadError::TruncatedEntry(entry_idx as u64));
             }
             let n_labels = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
             pos += 2;
@@ -438,12 +534,12 @@ impl ConceptRegistry {
 
             for _i in 0..n_labels {
                 if pos + 2 > data.len() {
-                    break;
+                    return Err(ObrLoadError::TruncatedEntry(entry_idx as u64));
                 }
                 let len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
                 pos += 2;
                 if pos + len > data.len() {
-                    break;
+                    return Err(ObrLoadError::TruncatedEntry(entry_idx as u64));
                 }
 
                 if let Ok(s) = std::str::from_utf8(&data[pos..pos + len]) {
@@ -469,6 +565,12 @@ impl ConceptRegistry {
         if loaded == 0 && entry_count > 0 {
             return Err(ObrLoadError::NoEntriesLoaded);
         }
+        if loaded != entry_count {
+            return Err(ObrLoadError::EntryCountMismatch {
+                declared: entry_count as u64,
+                loaded: loaded as u64,
+            });
+        }
 
         Ok(registry)
     }
@@ -483,8 +585,18 @@ pub enum ObrLoadError {
     InvalidMagic,
     /// OBR version is not supported (only version 1 is supported).
     UnsupportedVersion(u32),
+    /// Fixed header ended before 32 bytes.
+    TruncatedHeader,
+    /// File is too short to contain the declared number of minimum entries.
+    TruncatedBody { expected_minimum: u64, actual: u64 },
+    /// An individual variable-length record ended unexpectedly.
+    TruncatedEntry(u64),
+    /// Header requests an unsafe allocation.
+    ResourceLimit { entries: u64, max_entries: u64 },
     /// File parsed but no valid entries were loaded.
     NoEntriesLoaded,
+    /// Parsed record count differs from the authenticated header/manifest.
+    EntryCountMismatch { declared: u64, loaded: u64 },
 }
 
 impl std::fmt::Display for ObrLoadError {
@@ -493,7 +605,29 @@ impl std::fmt::Display for ObrLoadError {
             ObrLoadError::Io(e) => write!(f, "OBR I/O error: {}", e),
             ObrLoadError::InvalidMagic => write!(f, "Invalid OBR magic (expected OBR1)"),
             ObrLoadError::UnsupportedVersion(v) => write!(f, "Unsupported OBR version: {}", v),
+            ObrLoadError::TruncatedHeader => write!(f, "Truncated OBR header"),
+            ObrLoadError::TruncatedBody {
+                expected_minimum,
+                actual,
+            } => write!(
+                f,
+                "Truncated OBR body: expected at least {expected_minimum} bytes, found {actual}"
+            ),
+            ObrLoadError::TruncatedEntry(index) => {
+                write!(f, "Truncated OBR entry at index {index}")
+            }
+            ObrLoadError::ResourceLimit {
+                entries,
+                max_entries,
+            } => write!(
+                f,
+                "OBR entry count exceeds resource limit: {entries} > {max_entries}"
+            ),
             ObrLoadError::NoEntriesLoaded => write!(f, "OBR file parsed but no entries loaded"),
+            ObrLoadError::EntryCountMismatch { declared, loaded } => write!(
+                f,
+                "OBR entry count mismatch: declared={declared}, loaded={loaded}"
+            ),
         }
     }
 }
@@ -510,6 +644,12 @@ impl std::error::Error for ObrLoadError {
 impl Default for ConceptRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl ConceptLookup for ConceptRegistry {
+    fn resolve(&self, name: &str) -> ResolveResult {
+        ConceptRegistry::resolve(self, name)
     }
 }
 

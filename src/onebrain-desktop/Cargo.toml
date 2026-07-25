@@ -5,6 +5,13 @@ edition = "2021"
 license = "MIT"
 description = "OneBrain Desktop — native desktop application powered by Tauri 2"
 
+[features]
+default = []
+vnext-network-runtime = [
+    "onebrain-node/vnext-network-runtime",
+    "onebrain-api/vnext-network-runtime",
+]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

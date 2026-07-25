@@ -14,7 +14,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use ku_core::KuRuntime;
+use ku_core::{foundation::ConceptCcid, KuRuntime};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -24,7 +24,7 @@ use ku_core::KuRuntime;
 #[derive(Debug, Clone)]
 pub struct Discovery {
     pub source: DiscoverySource,
-    pub concept_ids: Vec<u64>,
+    pub concept_ccids: Vec<ConceptCcid>,
     pub relevance: f64,
     pub novelty: f64,
     pub serendipity_score: f64,
@@ -43,10 +43,10 @@ pub enum DiscoverySource {
 /// User interest profile.
 #[derive(Debug, Clone)]
 pub struct InterestProfile {
-    pub concept_weights: HashMap<u64, f64>,
+    pub concept_weights: HashMap<ConceptCcid, f64>,
     pub domain_weights: HashMap<u64, f64>,
     pub kus_analyzed: usize,
-    pub known_concepts: HashSet<u64>,
+    pub known_concepts: HashSet<ConceptCcid>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -75,18 +75,20 @@ impl SerendipityEngine {
 
     /// Build interest profile from user's KU collection.
     pub fn build_profile(&mut self, kus: &[KuRuntime]) {
-        let mut concept_counts: HashMap<u64, usize> = HashMap::new();
+        let mut concept_counts: HashMap<ConceptCcid, usize> = HashMap::new();
         let mut domain_counts: HashMap<u64, usize> = HashMap::new();
 
         for ku in kus {
-            for concept_id in ku.concept_ids() {
-                *concept_counts.entry(concept_id).or_insert(0) += 1;
-                self.profile.known_concepts.insert(concept_id);
+            for concept_ccid in ku.concept_ccids() {
+                *concept_counts.entry(concept_ccid).or_insert(0) += 1;
+                self.profile.known_concepts.insert(concept_ccid);
             }
             // Also track bond context concepts as known
             for bond in &ku.epi.bonds {
                 for &ctx_id in &bond.context {
-                    self.profile.known_concepts.insert(ctx_id);
+                    if let Some(ctx_ccid) = ku.concept_ccid(ctx_id) {
+                        self.profile.known_concepts.insert(ctx_ccid);
+                    }
                 }
             }
             for &domain in &ku.epi.trust.domain_codes {
@@ -119,17 +121,19 @@ impl SerendipityEngine {
             let serendipity_score = relevance * novelty;
 
             if serendipity_score >= self.min_score {
-                let concept_ids = ku.concept_ids();
-                let primary = ku.primary_concept().unwrap_or(0);
+                let concept_ccids = ku.concept_ccids();
+                let Some(primary) = ku.primary_concept_ccid() else {
+                    continue;
+                };
 
                 discoveries.push(Discovery {
                     source: DiscoverySource::InterestProbe,
-                    concept_ids,
+                    concept_ccids,
                     relevance,
                     novelty,
                     serendipity_score,
                     suggested_query: format!(
-                        "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} SCOPE DHT",
+                        "FIND (k:KU) WHERE k.concept_ccids CONTAINS \"{}\" SCOPE DHT",
                         primary
                     ),
                     description: format!(
@@ -151,7 +155,7 @@ impl SerendipityEngine {
 
     /// Generate exploratory queries for adjacent topics.
     pub fn generate_exploration_queries(&self) -> Vec<String> {
-        let mut exploration: Vec<(u64, f64)> = self
+        let mut exploration: Vec<(ConceptCcid, f64)> = self
             .profile
             .concept_weights
             .iter()
@@ -161,7 +165,7 @@ impl SerendipityEngine {
         exploration.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         exploration.iter().take(5)
             .map(|(concept, _)| format!(
-                "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} AND k.trust_score > 5000 SCOPE CLUSTER LIMIT 5",
+                "FIND (k:KU) WHERE k.concept_ccids CONTAINS \"{}\" AND k.trust_score > 5000 SCOPE CLUSTER LIMIT 5",
                 concept
             ))
             .collect()
@@ -177,15 +181,17 @@ impl SerendipityEngine {
             return 0.5;
         }
         let mut max_relevance = 0.0_f64;
-        for concept_id in ku.concept_ids() {
-            if let Some(&w) = self.profile.concept_weights.get(&concept_id) {
+        for concept_ccid in ku.concept_ccids() {
+            if let Some(&w) = self.profile.concept_weights.get(&concept_ccid) {
                 max_relevance = max_relevance.max(w);
             }
         }
         for bond in &ku.epi.bonds {
             for &ctx_id in &bond.context {
-                if let Some(&w) = self.profile.concept_weights.get(&ctx_id) {
-                    max_relevance = max_relevance.max(w * 0.7);
+                if let Some(ctx_ccid) = ku.concept_ccid(ctx_id) {
+                    if let Some(&w) = self.profile.concept_weights.get(&ctx_ccid) {
+                        max_relevance = max_relevance.max(w * 0.7);
+                    }
                 }
             }
         }
@@ -198,23 +204,28 @@ impl SerendipityEngine {
         if self.profile.known_concepts.is_empty() {
             return 1.0;
         }
-        let concept_ids = ku.concept_ids();
-        let total = concept_ids.len() + ku.epi.bonds.iter().map(|b| b.context.len()).sum::<usize>();
+        let concept_ccids = ku.concept_ccids();
+        let context_ccids: Vec<_> = ku
+            .epi
+            .bonds
+            .iter()
+            .flat_map(|bond| bond.context.iter())
+            .filter_map(|local_id| ku.concept_ccid(*local_id))
+            .collect();
+        let total = concept_ccids.len() + context_ccids.len();
         if total == 0 {
             return 0.5;
         }
 
         let mut known = 0;
-        for concept_id in &concept_ids {
-            if self.profile.known_concepts.contains(concept_id) {
+        for concept_ccid in &concept_ccids {
+            if self.profile.known_concepts.contains(concept_ccid) {
                 known += 1;
             }
         }
-        for bond in &ku.epi.bonds {
-            for &ctx_id in &bond.context {
-                if self.profile.known_concepts.contains(&ctx_id) {
-                    known += 1;
-                }
+        for context_ccid in &context_ccids {
+            if self.profile.known_concepts.contains(context_ccid) {
+                known += 1;
             }
         }
 
@@ -244,17 +255,30 @@ impl Default for SerendipityEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction};
+    use ku_core::core_dna::{ConceptTableEntry, CoreDna, CoreDnaHeader, Instruction};
     use ku_core::{Epigenetics, KuRuntime, RelationType};
+
+    fn concept(value: u64) -> ConceptCcid {
+        ConceptCcid::from_bytes((value as u128).to_be_bytes())
+    }
 
     fn make_ku(concept_id: u64, ctx: &[u64]) -> KuRuntime {
         let dna = CoreDna {
             header: CoreDnaHeader {
                 version: 2,
                 gene_type: 0,
-                has_concept_table: false,
+                has_concept_table: true,
             },
-            concept_table: Vec::new(),
+            concept_table: std::iter::once(concept_id)
+                .chain([133, 132])
+                .chain(ctx.iter().copied())
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .map(|local_id| ConceptTableEntry {
+                    local_id,
+                    ccid: *concept(local_id).as_bytes(),
+                })
+                .collect(),
             instructions: vec![
                 Instruction::Triple {
                     s: concept_id,
@@ -286,7 +310,10 @@ mod tests {
         engine.build_profile(&kus);
         assert_eq!(engine.profile().kus_analyzed, 3);
         // concept 1 appears in 2 KUs, concept 2 in 1 KU → concept 1 weight > concept 2 weight
-        assert!(engine.profile().concept_weights[&1] > engine.profile().concept_weights[&2]);
+        assert!(
+            engine.profile().concept_weights[&concept(1)]
+                > engine.profile().concept_weights[&concept(2)]
+        );
     }
 
     #[test]

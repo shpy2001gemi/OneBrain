@@ -13,8 +13,8 @@ mod cli;
 
 use onebrain_api::ApiServer;
 use onebrain_node::{
-    mdns_discovery, peer_memory::PeerMemory, seed_client::SeedClient, upnp, NodeConfig,
-    OneBrainNode,
+    mdns_discovery, peer_memory::PeerMemory, seed_client::SeedClient, upnp, ConceptRegistryMode,
+    NodeConfig, OneBrainNode,
 };
 
 #[derive(Parser)]
@@ -40,6 +40,15 @@ enum Commands {
         ollama_url: String,
         #[arg(long, default_value = "qwen3:8b")]
         model: String,
+        /// Path to a compiled Concept Registry (.obr).
+        #[arg(long)]
+        concept_registry: Option<PathBuf>,
+        /// Registry policy: required, optional, or disabled.
+        #[arg(long, default_value = "optional")]
+        concept_registry_mode: ConceptRegistryMode,
+        /// Maximum resolved labels retained by the bounded registry cache.
+        #[arg(long, default_value_t = 4096)]
+        concept_registry_cache_capacity: usize,
         #[arg(long, value_delimiter = ',')]
         seeds: Vec<SocketAddr>,
 
@@ -81,6 +90,9 @@ async fn main() {
             data_dir,
             ollama_url,
             model,
+            concept_registry,
+            concept_registry_mode,
+            concept_registry_cache_capacity,
             seeds,
             api,
             api_port,
@@ -94,6 +106,9 @@ async fn main() {
                 ollama_url,
                 model,
                 seeds,
+                concept_registry_path: concept_registry,
+                concept_registry_mode,
+                concept_registry_cache_capacity,
                 vnext: Default::default(),
             };
             std::fs::create_dir_all(&config.data_dir).expect("Failed to create data directory");
@@ -107,6 +122,8 @@ async fn main() {
             println!("  Data:     {}", config.data_dir.display());
             println!("  Ollama:   {}", config.ollama_url);
             println!("  Model:    {}", config.model);
+            println!("  Registry: {}", config.obr_path().display());
+            println!("  Policy:   {}", config.concept_registry_mode);
             println!("  Seeds:    {:?}", config.seeds);
             if api {
                 println!("  API:      http://127.0.0.1:{}", api_port);

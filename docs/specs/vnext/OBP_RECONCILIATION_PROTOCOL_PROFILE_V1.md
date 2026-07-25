@@ -39,7 +39,7 @@ Every message carries the same `ReconciliationContext` and its domain-separated 
 | `disclosure` | Exact disclosure class for this exchange. `LocalOnly` is forbidden on the wire. |
 | `summary_method` | Correctness summary method; v1 requires `RadixForest256V1`. |
 | `budget` | Per-exchange ceilings for summary nodes, diff ranges, manifests and individual payload bytes. |
-| `resume_mode` | Either disabled or `BoundTokenV1`. |
+| `resume_mode` | Disabled, same-session `BoundTokenV1`, or cross-session `PeerBoundTokenV2`. |
 
 The binding digest is `ManifestCID(canonical(context))`. A peer MUST compare the decoded context with the locally negotiated expected context. Recomputing a digest after changing selector, namespace, disclosure, method, budget or resume mode does not make the message acceptable because expected-context comparison still fails.
 
@@ -72,6 +72,25 @@ The authoritative inventory lanes are `Object`, `Event` and `MappingKernel`; all
 
 A token is invalid if resume was not negotiated, its binding differs, or a Resume message sequence does not equal `next_sequence`. The token itself grants no authority and promises no durable state. Crash-safe journaling, MAC/key ownership and retry behavior are owned by `OBP-005`.
 
+`PeerBoundTokenV2` keeps the enclosing Resume message bound to the fresh
+authenticated transcript, while the token binding identifies the durable
+origin journal. The receiver MUST accept it only when all of the following
+hold:
+
+- the old and new contexts have the same selector, namespace commitment,
+  disclosure class, summary method, budget and resume mode;
+- the receiver-owned MAC validates for the same authenticated initiator and
+  responder NodeIDs;
+- the token checkpoint equals the current durable journal checkpoint;
+- the Resume sequence equals `next_sequence`;
+- an atomic compare-and-swap consumes the token exactly once.
+
+The authenticated transcript is the only context field permitted to change.
+A changed selector/privacy/budget scope, a different peer, a stale checkpoint
+or a concurrent replay is rejected. The token remains opaque operational
+continuation state and grants no authority, truth, adoption, benefit, reward
+or global completion.
+
 ## 6. Resource and canonicalization rules
 
 - Canonical restricted CBOR is mandatory; decode then re-encode MUST reproduce identical bytes.
@@ -90,7 +109,7 @@ Optional RIBLT or future summary accelerators require a new negotiated capabilit
 
 Private StandingNeeds, ClaimEnvelopes, local AI traces and Vault objects MUST NOT enter this schema. Only a disclosure-compatible selector projection may be reconciled. A one-way or delayed carrier can preserve these exact canonical messages; lack of response remains `unknown`, never `false`.
 
-After partition reunion, either component may resume or start a fresh selector-scoped reconciliation. Multiple bridges may repeat messages; this schema gives them stable identities and bindings, while deterministic dedup/convergence is owned by `OBP-004` and `OBP-006`.
+After partition reunion, either component may resume or start a fresh selector-scoped reconciliation. A resumed exchange still binds every new message and payload frame to the fresh authenticated transcript. Multiple bridges may repeat messages; this schema gives them stable identities and bindings, while deterministic dedup/convergence is owned by `OBP-004` and `OBP-006`.
 
 ## 8. Executable evidence
 
@@ -99,4 +118,4 @@ After partition reunion, either component may resume or start a fresh selector-s
 - Frozen Hello vector: `src/test-vectors/vnext/obp/reconcile-v1.json`
 - CI: `.github/workflows/vnext-foundation.yml`
 
-The tests cover all nine message families, canonical round trips, context-field tampering, binding/token/sequence tampering, resource limits, canonical prefixes/order, the `LocalOnly` firewall and negative authority/global-completion assertions.
+The tests cover all nine message families, canonical round trips, context-field tampering, V1 binding/token/sequence tampering, V2 transcript rebinding and stable-scope divergence, resource limits, canonical prefixes/order, the `LocalOnly` firewall and negative authority/global-completion assertions.

@@ -8,17 +8,24 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Mutex;
 
+use super::actor_root::{decode_actor_root_delegation, ValidatedActorRootDelegation};
+use super::authority_event::{authority_event_descriptor, AuthorityEventDescriptor};
 use super::canonical::ResourceProfile;
-use super::content_id::{EventCid, ObjectCid};
-use super::event::{decode_knowledge_event, EventType};
-use super::feed::ValidatedFeedInception;
-use super::object::{decode_knowledge_object, DisclosureClass, KnownObjectKind};
+use super::content_id::{EventCid, ObjectCid, ReservedDomain};
+use super::event::{decode_knowledge_event, EventType, ValidatedKnowledgeEvent};
+use super::feed::{decode_feed_inception, ValidatedFeedInception};
+use super::identity::FeedId;
+use super::object::{
+    decode_knowledge_object, DisclosureClass, KnownObjectKind, ValidatedKnowledgeObject,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum StoredRecordKind {
     Object = 1,
     Event = 2,
+    FeedInception = 3,
+    AuthorityEvent = 4,
 }
 
 impl StoredRecordKind {
@@ -27,6 +34,8 @@ impl StoredRecordKind {
         match value {
             1 => Some(Self::Object),
             2 => Some(Self::Event),
+            3 => Some(Self::FeedInception),
+            4 => Some(Self::AuthorityEvent),
             _ => None,
         }
     }
@@ -111,12 +120,30 @@ pub trait AtomicVerifiedBackend: Send + Sync {
     fn get_accepted(&self, key: &[u8; 33]) -> Result<Option<Vec<u8>>, String>;
 
     fn get_quarantine(&self, id: &[u8; 32]) -> Result<Option<QuarantineRecord>, String>;
+
+    /// Deterministic accepted-record scan used to rebuild derived projections
+    /// such as feed sequence/equivocation state after restart.
+    fn accepted_records(&self, kind: StoredRecordKind) -> Result<Vec<Vec<u8>>, String>;
+
+    /// Atomically accept canonical FeedInception bytes and index every branch
+    /// by FeedId. Multiple branches remain visible; arrival order never grants
+    /// authority.
+    fn accept_feed_inception(
+        &self,
+        key: &[u8; 33],
+        feed_id: &[u8; 32],
+        bytes: &[u8],
+        collision: &QuarantineRecord,
+    ) -> Result<BackendAcceptOutcome, String>;
+
+    fn feed_inceptions(&self, feed_id: &[u8; 32]) -> Result<Vec<Vec<u8>>, String>;
 }
 
 #[derive(Default)]
 struct InMemoryState {
     accepted: HashMap<[u8; 33], Vec<u8>>,
     quarantine: HashMap<[u8; 32], QuarantineRecord>,
+    feed_index: HashMap<[u8; 64], Vec<u8>>,
 }
 
 #[derive(Default)]
@@ -180,6 +207,73 @@ impl AtomicVerifiedBackend for InMemoryVerifiedBackend {
             .get(id)
             .cloned())
     }
+
+    fn accepted_records(&self, kind: StoredRecordKind) -> Result<Vec<Vec<u8>>, String> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| "STORE_LOCK_POISONED".to_string())?;
+        let mut records = state
+            .accepted
+            .iter()
+            .filter(|(key, _)| key[0] == kind as u8)
+            .map(|(key, bytes)| (*key, bytes.clone()))
+            .collect::<Vec<_>>();
+        records.sort_by_key(|(key, _)| *key);
+        Ok(records.into_iter().map(|(_, bytes)| bytes).collect())
+    }
+
+    fn accept_feed_inception(
+        &self,
+        key: &[u8; 33],
+        feed_id: &[u8; 32],
+        bytes: &[u8],
+        collision: &QuarantineRecord,
+    ) -> Result<BackendAcceptOutcome, String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "STORE_LOCK_POISONED".to_string())?;
+        let outcome = match state.accepted.get(key) {
+            Some(existing) if existing == bytes => BackendAcceptOutcome::AlreadyPresent,
+            Some(_) => {
+                state
+                    .quarantine
+                    .entry(collision.quarantine_id)
+                    .or_insert_with(|| collision.clone());
+                BackendAcceptOutcome::CollisionQuarantined
+            }
+            None => {
+                state.accepted.insert(*key, bytes.to_vec());
+                BackendAcceptOutcome::Stored
+            }
+        };
+        if !matches!(outcome, BackendAcceptOutcome::CollisionQuarantined) {
+            let mut index_key = [0u8; 64];
+            index_key[..32].copy_from_slice(feed_id);
+            index_key[32..].copy_from_slice(&key[1..]);
+            state
+                .feed_index
+                .entry(index_key)
+                .or_insert_with(|| bytes.to_vec());
+        }
+        Ok(outcome)
+    }
+
+    fn feed_inceptions(&self, feed_id: &[u8; 32]) -> Result<Vec<Vec<u8>>, String> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| "STORE_LOCK_POISONED".to_string())?;
+        let mut branches = state
+            .feed_index
+            .iter()
+            .filter(|(key, _)| &key[..32] == feed_id)
+            .map(|(key, bytes)| (*key, bytes.clone()))
+            .collect::<Vec<_>>();
+        branches.sort_by_key(|(key, _)| *key);
+        Ok(branches.into_iter().map(|(_, bytes)| bytes).collect())
+    }
 }
 
 pub struct ValidatedStore<B> {
@@ -211,6 +305,16 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
                     )
                 }
             };
+        self.put_validated_object(claimed_cid, &validated)
+    }
+
+    /// Persist an object after a schema-specific decoder has validated its
+    /// typed payload in addition to the generic envelope boundary.
+    pub fn put_validated_object(
+        &self,
+        claimed_cid: ObjectCid,
+        validated: &ValidatedKnowledgeObject,
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
         if !matches!(
             validated.disclosure(),
             DisclosureClass::Public | DisclosureClass::RouteMinimal
@@ -224,13 +328,27 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
                 StoredRecordKind::Object,
                 claimed_cid.into_bytes(),
                 "CID_MISMATCH",
-                bytes,
+                validated.original_bytes(),
             );
         }
         self.accept(
             StoredRecordKind::Object,
             claimed_cid.into_bytes(),
             validated.original_bytes(),
+        )
+    }
+
+    pub fn quarantine_object(
+        &self,
+        claimed_cid: ObjectCid,
+        bytes: &[u8],
+        reason: &'static str,
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
+        self.quarantine(
+            StoredRecordKind::Object,
+            claimed_cid.into_bytes(),
+            reason,
+            bytes,
         )
     }
 
@@ -252,6 +370,17 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
                 )
             }
         };
+        self.put_validated_event(claimed_cid, &validated)
+    }
+
+    /// Persist an event that has already crossed the canonical decoder and
+    /// signature boundary. This lets dependency-aware callers inspect payload
+    /// and causal references without decoding the same signed event twice.
+    pub fn put_validated_event(
+        &self,
+        claimed_cid: EventCid,
+        validated: &ValidatedKnowledgeEvent,
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
         if !matches!(
             validated.signed.event.disclosure,
             DisclosureClass::Public | DisclosureClass::RouteMinimal
@@ -265,7 +394,7 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
                 StoredRecordKind::Event,
                 claimed_cid.into_bytes(),
                 "CID_MISMATCH",
-                bytes,
+                validated.original_bytes(),
             );
         }
         self.accept(
@@ -275,12 +404,229 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
         )
     }
 
+    /// Validate and atomically persist a signed feed inception plus its FeedId
+    /// index. `claimed_cid` commits the complete canonical control record; it
+    /// is deliberately distinct from the stable FeedId.
+    pub fn put_verified_feed_inception(
+        &self,
+        claimed_cid: [u8; 32],
+        bytes: &[u8],
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
+        let validated = match decode_feed_inception(bytes) {
+            Ok(validated) => validated,
+            Err(error) => {
+                return self.quarantine(
+                    StoredRecordKind::FeedInception,
+                    claimed_cid,
+                    error.code(),
+                    bytes,
+                )
+            }
+        };
+        self.put_validated_feed_inception(claimed_cid, &validated)
+    }
+
+    pub fn put_validated_feed_inception(
+        &self,
+        claimed_cid: [u8; 32],
+        validated: &ValidatedFeedInception,
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
+        let bytes = validated.original_bytes();
+        if ReservedDomain::FeedInception.digest(bytes) != claimed_cid {
+            return self.quarantine(
+                StoredRecordKind::FeedInception,
+                claimed_cid,
+                "CID_MISMATCH",
+                bytes,
+            );
+        }
+        let key = AcceptedKey::new(StoredRecordKind::FeedInception, claimed_cid).0;
+        let collision = QuarantineRecord::new(
+            StoredRecordKind::FeedInception,
+            claimed_cid,
+            "SAME_CID_DIFFERENT_BYTES",
+            bytes,
+        );
+        match self
+            .backend
+            .accept_feed_inception(&key, validated.feed_id.as_bytes(), bytes, &collision)
+            .map_err(VerifiedStoreError::Backend)?
+        {
+            BackendAcceptOutcome::Stored => Ok(PutVerifiedOutcome::Stored),
+            BackendAcceptOutcome::AlreadyPresent => Ok(PutVerifiedOutcome::AlreadyPresent),
+            BackendAcceptOutcome::CollisionQuarantined => Ok(PutVerifiedOutcome::Quarantined {
+                quarantine_id: collision.quarantine_id,
+            }),
+        }
+    }
+
+    /// Validate and persist a self-certifying actor-root delegation. Authority
+    /// records have a separate domain and namespace from authored knowledge
+    /// events, so arbitrary event bytes can never enter the authority reducer.
+    pub fn put_verified_actor_root_delegation(
+        &self,
+        claimed_cid: EventCid,
+        bytes: &[u8],
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
+        let validated = match decode_actor_root_delegation(bytes) {
+            Ok(validated) => validated,
+            Err(error) => {
+                return self.quarantine(
+                    StoredRecordKind::AuthorityEvent,
+                    claimed_cid.into_bytes(),
+                    error.code(),
+                    bytes,
+                )
+            }
+        };
+        self.put_validated_actor_root_delegation(claimed_cid, &validated)
+    }
+
+    pub fn put_validated_actor_root_delegation(
+        &self,
+        claimed_cid: EventCid,
+        validated: &ValidatedActorRootDelegation,
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
+        if validated.cid != claimed_cid {
+            return self.quarantine(
+                StoredRecordKind::AuthorityEvent,
+                claimed_cid.into_bytes(),
+                "CID_MISMATCH",
+                validated.original_bytes(),
+            );
+        }
+        self.accept(
+            StoredRecordKind::AuthorityEvent,
+            claimed_cid.into_bytes(),
+            validated.original_bytes(),
+        )
+    }
+
+    /// Persist an authority event that has already crossed its canonical,
+    /// signature, parent and attenuation checks in the dependency-aware sink.
+    pub fn put_validated_authority_event(
+        &self,
+        claimed_cid: EventCid,
+        actual_cid: EventCid,
+        bytes: &[u8],
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
+        if claimed_cid != actual_cid {
+            return self.quarantine(
+                StoredRecordKind::AuthorityEvent,
+                claimed_cid.into_bytes(),
+                "CID_MISMATCH",
+                bytes,
+            );
+        }
+        self.accept(
+            StoredRecordKind::AuthorityEvent,
+            claimed_cid.into_bytes(),
+            bytes,
+        )
+    }
+
+    pub fn quarantine_authority_event(
+        &self,
+        claimed_cid: EventCid,
+        bytes: &[u8],
+        reason: &'static str,
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
+        self.quarantine(
+            StoredRecordKind::AuthorityEvent,
+            claimed_cid.into_bytes(),
+            reason,
+            bytes,
+        )
+    }
+
+    pub fn quarantine_feed_inception(
+        &self,
+        claimed_cid: [u8; 32],
+        bytes: &[u8],
+        reason: &'static str,
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
+        self.quarantine(StoredRecordKind::FeedInception, claimed_cid, reason, bytes)
+    }
+
+    /// Return all valid inception branches for a FeedId in deterministic CID
+    /// order. Key-rotation/delegation authority remains a higher-layer policy.
+    pub fn feed_inceptions(
+        &self,
+        feed_id: FeedId,
+    ) -> Result<Vec<ValidatedFeedInception>, VerifiedStoreError> {
+        self.backend
+            .feed_inceptions(feed_id.as_bytes())
+            .map_err(VerifiedStoreError::Backend)?
+            .into_iter()
+            .map(|bytes| {
+                decode_feed_inception(&bytes)
+                    .map_err(|error| VerifiedStoreError::Backend(error.to_string()))
+            })
+            .collect()
+    }
+
     pub fn get_object(&self, cid: ObjectCid) -> Result<Option<Vec<u8>>, VerifiedStoreError> {
         self.get(StoredRecordKind::Object, cid.into_bytes())
     }
 
+    /// Deterministic CID-ordered scan of objects that crossed the complete
+    /// canonical/schema/CID validation boundary.
+    pub fn accepted_objects(&self) -> Result<Vec<Vec<u8>>, VerifiedStoreError> {
+        self.backend
+            .accepted_records(StoredRecordKind::Object)
+            .map_err(VerifiedStoreError::Backend)
+    }
+
     pub fn get_event(&self, cid: EventCid) -> Result<Option<Vec<u8>>, VerifiedStoreError> {
         self.get(StoredRecordKind::Event, cid.into_bytes())
+    }
+
+    pub fn accepted_events(&self) -> Result<Vec<Vec<u8>>, VerifiedStoreError> {
+        self.backend
+            .accepted_records(StoredRecordKind::Event)
+            .map_err(VerifiedStoreError::Backend)
+    }
+
+    pub fn get_actor_root_delegation(
+        &self,
+        cid: EventCid,
+    ) -> Result<Option<Vec<u8>>, VerifiedStoreError> {
+        self.get(StoredRecordKind::AuthorityEvent, cid.into_bytes())
+    }
+
+    pub fn get_authority_event(
+        &self,
+        cid: EventCid,
+    ) -> Result<Option<Vec<u8>>, VerifiedStoreError> {
+        self.get(StoredRecordKind::AuthorityEvent, cid.into_bytes())
+    }
+
+    pub fn accepted_authority_events(&self) -> Result<Vec<Vec<u8>>, VerifiedStoreError> {
+        self.backend
+            .accepted_records(StoredRecordKind::AuthorityEvent)
+            .map_err(VerifiedStoreError::Backend)
+    }
+
+    /// Deterministic CID-ordered scan used to rebuild frontier-relative actor
+    /// authority after restart. Every returned record crossed the canonical
+    /// decoder, self-certifying ActorId check, and root-key signature boundary.
+    pub fn accepted_actor_root_delegations(
+        &self,
+    ) -> Result<Vec<ValidatedActorRootDelegation>, VerifiedStoreError> {
+        let mut roots = Vec::new();
+        for bytes in self.accepted_authority_events()? {
+            match authority_event_descriptor(&bytes)
+                .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?
+            {
+                AuthorityEventDescriptor::Root => roots.push(
+                    decode_actor_root_delegation(&bytes)
+                        .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?,
+                ),
+                AuthorityEventDescriptor::Delegation { .. }
+                | AuthorityEventDescriptor::Revocation { .. } => {}
+            }
+        }
+        Ok(roots)
     }
 
     pub fn get_quarantine(
@@ -373,6 +719,8 @@ mod persistent {
     const ACCEPTED: TableDefinition<&[u8], &[u8]> = TableDefinition::new("vnext_accepted_records");
     const QUARANTINE: TableDefinition<&[u8], &[u8]> =
         TableDefinition::new("vnext_quarantine_records");
+    const FEED_INDEX: TableDefinition<&[u8], &[u8]> =
+        TableDefinition::new("vnext_feed_inception_index");
 
     pub struct RedbVerifiedBackend {
         db: Database,
@@ -388,6 +736,9 @@ mod persistent {
                     .map_err(|error| error.to_string())?;
                 write
                     .open_table(QUARANTINE)
+                    .map_err(|error| error.to_string())?;
+                write
+                    .open_table(FEED_INDEX)
                     .map_err(|error| error.to_string())?;
             }
             write.commit().map_err(|error| error.to_string())?;
@@ -471,6 +822,89 @@ mod persistent {
                 .map_err(|error| error.to_string())?
                 .map(|guard| guard.value().to_vec());
             encoded.map(|bytes| decode_quarantine(&bytes)).transpose()
+        }
+
+        fn accepted_records(&self, kind: StoredRecordKind) -> Result<Vec<Vec<u8>>, String> {
+            let read = self.db.begin_read().map_err(|error| error.to_string())?;
+            let table = read
+                .open_table(ACCEPTED)
+                .map_err(|error| error.to_string())?;
+            let mut records = Vec::new();
+            for entry in table.iter().map_err(|error| error.to_string())? {
+                let (key, bytes) = entry.map_err(|error| error.to_string())?;
+                if key.value().first() == Some(&(kind as u8)) {
+                    records.push((key.value().to_vec(), bytes.value().to_vec()));
+                }
+            }
+            records.sort_by(|left, right| left.0.cmp(&right.0));
+            Ok(records.into_iter().map(|(_, bytes)| bytes).collect())
+        }
+
+        fn accept_feed_inception(
+            &self,
+            key: &[u8; 33],
+            feed_id: &[u8; 32],
+            bytes: &[u8],
+            collision: &QuarantineRecord,
+        ) -> Result<BackendAcceptOutcome, String> {
+            let write = self.db.begin_write().map_err(|error| error.to_string())?;
+            let outcome;
+            {
+                let mut accepted = write
+                    .open_table(ACCEPTED)
+                    .map_err(|error| error.to_string())?;
+                let existing = accepted
+                    .get(key.as_slice())
+                    .map_err(|error| error.to_string())?
+                    .map(|value| value.value().to_vec());
+                outcome = match existing {
+                    Some(existing) if existing == bytes => BackendAcceptOutcome::AlreadyPresent,
+                    Some(_) => {
+                        let mut quarantine = write
+                            .open_table(QUARANTINE)
+                            .map_err(|error| error.to_string())?;
+                        let encoded = encode_quarantine(collision)?;
+                        quarantine
+                            .insert(collision.quarantine_id.as_slice(), encoded.as_slice())
+                            .map_err(|error| error.to_string())?;
+                        BackendAcceptOutcome::CollisionQuarantined
+                    }
+                    None => {
+                        accepted
+                            .insert(key.as_slice(), bytes)
+                            .map_err(|error| error.to_string())?;
+                        BackendAcceptOutcome::Stored
+                    }
+                };
+                if !matches!(outcome, BackendAcceptOutcome::CollisionQuarantined) {
+                    let mut index_key = [0u8; 64];
+                    index_key[..32].copy_from_slice(feed_id);
+                    index_key[32..].copy_from_slice(&key[1..]);
+                    write
+                        .open_table(FEED_INDEX)
+                        .map_err(|error| error.to_string())?
+                        .insert(index_key.as_slice(), bytes)
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+            write.commit().map_err(|error| error.to_string())?;
+            Ok(outcome)
+        }
+
+        fn feed_inceptions(&self, feed_id: &[u8; 32]) -> Result<Vec<Vec<u8>>, String> {
+            let read = self.db.begin_read().map_err(|error| error.to_string())?;
+            let table = read
+                .open_table(FEED_INDEX)
+                .map_err(|error| error.to_string())?;
+            let mut branches = Vec::new();
+            for entry in table.iter().map_err(|error| error.to_string())? {
+                let (key, bytes) = entry.map_err(|error| error.to_string())?;
+                if key.value().get(..32) == Some(feed_id.as_slice()) {
+                    branches.push((key.value().to_vec(), bytes.value().to_vec()));
+                }
+            }
+            branches.sort_by(|left, right| left.0.cmp(&right.0));
+            Ok(branches.into_iter().map(|(_, bytes)| bytes).collect())
         }
     }
 
@@ -615,9 +1049,9 @@ mod tests {
 
     use super::*;
     use crate::foundation::{
-        decode_feed_inception, CanonicalValue, DisclosureClass, FeedInception,
-        KnowledgeEventEnvelope, KnowledgeObjectEnvelope, NamespaceCommitment, ObjectKind,
-        SchemaVersion,
+        decode_feed_inception, ActorRootDelegation, CanonicalValue, DeviceId, DisclosureClass,
+        FeedInception, KnowledgeEventEnvelope, KnowledgeObjectEnvelope, NamespaceCommitment,
+        ObjectKind, SchemaVersion,
     };
 
     const KNOWN_KIND: KnownObjectKind = KnownObjectKind::new(ObjectKind(10), 1);
@@ -758,5 +1192,150 @@ mod tests {
             .unwrap();
         assert!(matches!(outcome, PutVerifiedOutcome::Quarantined { .. }));
         assert!(store.get_event(cid).unwrap().is_none());
+    }
+
+    #[test]
+    fn feed_inception_is_verified_and_indexed_by_feed_id() {
+        let store = ValidatedStore::new(InMemoryVerifiedBackend::default());
+        let (_, author) = author();
+        let bytes = author.original_bytes().to_vec();
+        let cid = ReservedDomain::FeedInception.digest(&bytes);
+        assert_eq!(
+            store.put_verified_feed_inception(cid, &bytes).unwrap(),
+            PutVerifiedOutcome::Stored
+        );
+        assert_eq!(
+            store.put_verified_feed_inception(cid, &bytes).unwrap(),
+            PutVerifiedOutcome::AlreadyPresent
+        );
+        let branches = store.feed_inceptions(author.feed_id).unwrap();
+        assert_eq!(branches.len(), 1);
+        assert_eq!(branches[0].original_bytes(), bytes);
+    }
+
+    #[test]
+    fn actor_root_delegation_is_domain_separated_verified_and_idempotent() {
+        let store = ValidatedStore::new(InMemoryVerifiedBackend::default());
+        let root_key = SigningKey::from_bytes(&[0x31; 32]);
+        let (_, feed) = author();
+        let proof = ActorRootDelegation::new(
+            *root_key.verifying_key().as_bytes(),
+            feed.feed_id,
+            DeviceId::from_bytes([3; 32]),
+            Some(feed.signed.inception.namespace_commitment),
+            0,
+            0,
+        )
+        .unwrap()
+        .sign(&root_key)
+        .unwrap()
+        .encode()
+        .unwrap();
+        let cid = EventCid::from_bytes(ReservedDomain::AuthorityEvent.digest(&proof));
+        assert_eq!(
+            store
+                .put_verified_actor_root_delegation(cid, &proof)
+                .unwrap(),
+            PutVerifiedOutcome::Stored
+        );
+        assert_eq!(
+            store
+                .put_verified_actor_root_delegation(cid, &proof)
+                .unwrap(),
+            PutVerifiedOutcome::AlreadyPresent
+        );
+        assert_eq!(
+            store.get_actor_root_delegation(cid).unwrap().unwrap(),
+            proof
+        );
+        assert_eq!(store.accepted_actor_root_delegations().unwrap().len(), 1);
+
+        let false_cid = EventCid::from_bytes(ReservedDomain::Event.digest(&proof));
+        assert!(matches!(
+            store
+                .put_verified_actor_root_delegation(false_cid, &proof)
+                .unwrap(),
+            PutVerifiedOutcome::Quarantined { .. }
+        ));
+        assert!(store
+            .get_actor_root_delegation(false_cid)
+            .unwrap()
+            .is_none());
+    }
+
+    #[cfg(feature = "persist")]
+    #[test]
+    fn feed_inception_index_survives_redb_restart() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "onebrain-feed-index-{}-{nonce}.redb",
+            std::process::id()
+        ));
+        let (_, author) = author();
+        let feed_id = author.feed_id;
+        let bytes = author.original_bytes().to_vec();
+        let cid = ReservedDomain::FeedInception.digest(&bytes);
+        {
+            let store = ValidatedStore::new(RedbVerifiedBackend::open(&path).unwrap());
+            assert_eq!(
+                store.put_verified_feed_inception(cid, &bytes).unwrap(),
+                PutVerifiedOutcome::Stored
+            );
+        }
+        let reopened = ValidatedStore::new(RedbVerifiedBackend::open(&path).unwrap());
+        let branches = reopened.feed_inceptions(feed_id).unwrap();
+        assert_eq!(branches.len(), 1);
+        assert_eq!(branches[0].original_bytes(), bytes);
+        drop(reopened);
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[cfg(feature = "persist")]
+    #[test]
+    fn actor_root_delegation_survives_redb_restart() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "onebrain-authority-root-{}-{nonce}.redb",
+            std::process::id()
+        ));
+        let root_key = SigningKey::from_bytes(&[0x32; 32]);
+        let (_, feed) = author();
+        let bytes = ActorRootDelegation::new(
+            *root_key.verifying_key().as_bytes(),
+            feed.feed_id,
+            DeviceId::from_bytes([3; 32]),
+            Some(feed.signed.inception.namespace_commitment),
+            0,
+            0,
+        )
+        .unwrap()
+        .sign(&root_key)
+        .unwrap()
+        .encode()
+        .unwrap();
+        let cid = EventCid::from_bytes(ReservedDomain::AuthorityEvent.digest(&bytes));
+        {
+            let store = ValidatedStore::new(RedbVerifiedBackend::open(&path).unwrap());
+            assert_eq!(
+                store
+                    .put_verified_actor_root_delegation(cid, &bytes)
+                    .unwrap(),
+                PutVerifiedOutcome::Stored
+            );
+        }
+        let reopened = ValidatedStore::new(RedbVerifiedBackend::open(&path).unwrap());
+        assert_eq!(
+            reopened.get_actor_root_delegation(cid).unwrap().unwrap(),
+            bytes
+        );
+        assert_eq!(reopened.accepted_actor_root_delegations().unwrap().len(), 1);
+        drop(reopened);
+        std::fs::remove_file(path).unwrap();
     }
 }

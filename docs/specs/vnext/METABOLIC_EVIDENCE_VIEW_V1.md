@@ -3,6 +3,7 @@
 > **Task:** `POMV-002`  
 > **Status:** Complete  
 > **Depends on:** `POMV-001`, `FEED-001`, `KQL-001`
+> **Live runtime:** [Distributed Public PoMV Runtime Profile v1](DISTRIBUTED_POMV_RUNTIME_PROFILE_V1.md)
 
 ## 1. Purpose
 
@@ -96,7 +97,7 @@ The view does not:
 
 ## 6. Executable evidence
 
-Six tests prove:
+The foundation tests prove:
 
 - QueryHit/retrieval/presentation telemetry cannot change a metabolic view;
 - one EventCID observed through many bridges counts once;
@@ -106,3 +107,11 @@ Six tests prove:
 - arrival order, geography and node tier are absent from the projection; and
 - opposition/refutation Use accumulates evidence without truth, benefit or
   reward claims.
+
+The distributed M4 acceptance test adds real authenticated QUIC evidence: the
+same EventCID delivered through one, two and five source NodeIDs still
+contributes once; an authority-frontier revocation excludes it without
+deleting the immutable record; an idempotency conflict has no arrival-order
+winner; and the exact view root, revision and previous-root lineage survive
+receiver restart. The report also proves that no wallet, OBT, truth, benefit
+or network-completion state is produced.

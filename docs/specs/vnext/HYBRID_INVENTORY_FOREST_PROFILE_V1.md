@@ -7,11 +7,12 @@
 ## 1. Scope and root
 
 Each `HybridInventoryForest` belongs to one exact SelectorCID. It maintains
-separate sparse 256-bit radix lanes for ObjectCID, EventCID and MappingKernelCID
-bytes. A leaf binds record kind, full CID and canonical byte length. Same
+separate sparse 256-bit radix lanes for ObjectCID, EventCID, MappingKernelCID,
+FeedInception CID and AuthorityEvent CID bytes. A leaf binds record kind, full
+CID and canonical byte length. Same
 kind/CID with a different length is a collision, never an overwrite.
 
-The forest root binds the SelectorCID, all three lane roots and canonical feed
+The forest root binds the SelectorCID, all five lane roots and canonical feed
 prefix summaries. It is independent of insertion order and reproduces after a
 canonical snapshot/restore.
 
@@ -50,4 +51,3 @@ accelerate KQL recall but cannot establish reconciliation completion.
 Tests cover insertion-order/root stability, canonical restart, exact divergent
 prefix, CID collision rejection, semantic-shard root isolation and unknown
 checkpoint completion blocking.
-

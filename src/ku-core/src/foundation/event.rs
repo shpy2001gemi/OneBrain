@@ -262,6 +262,26 @@ pub enum EventReadiness {
     MissingParents(Vec<EventCid>),
 }
 
+/// Read the dependency key needed to validate an event signature. The result
+/// is routing metadata only: this function does not authenticate the event and
+/// callers must still use [`decode_knowledge_event`] with a validated
+/// FeedInception before acceptance.
+pub fn event_author_feed(input: &[u8]) -> Result<FeedId, EventError> {
+    let document = CanonicalDocument::parse(input, ResourceProfile::ObjectV1)?;
+    let policy = EnvelopePolicy {
+        schema_id: SCHEMA_KNOWLEDGE_EVENT_ENVELOPE,
+        schema_major: EVENT_SCHEMA_MAJOR,
+        known_body_fields: KNOWN_BODY_FIELDS,
+        known_critical_extensions: &[],
+    };
+    let view = validate_envelope(document.value(), &policy)?;
+    Ok(FeedId::from_bytes(bytes32(
+        view.body,
+        FIELD_AUTHOR_FEED,
+        "author_feed",
+    )?))
+}
+
 pub fn decode_knowledge_event(
     input: &[u8],
     author: &ValidatedFeedInception,
@@ -550,6 +570,7 @@ mod tests {
         let (key, author) = make_author(1);
         let signed = event(author.feed_id).sign(&author, &key).unwrap();
         let (bytes, cid) = signed.encode().unwrap();
+        assert_eq!(event_author_feed(&bytes).unwrap(), author.feed_id);
         let decoded = decode_knowledge_event(&bytes, &author, &[KNOWN_EVENT]).unwrap();
         assert_eq!(decoded.cid(), cid);
         assert_eq!(decoded.original_bytes(), bytes);

@@ -9,6 +9,10 @@ license = "MIT"
 name = "onebrain_api"
 path = "src/lib.rs"
 
+[features]
+default = []
+vnext-network-runtime = ["onebrain-node/vnext-network-runtime"]
+
 [dependencies]
 onebrain-node = { path = "../onebrain-node" }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }

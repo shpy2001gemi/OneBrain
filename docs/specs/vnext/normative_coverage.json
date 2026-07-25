@@ -121,7 +121,7 @@
     },
     {
       "path": "docs/specs/vnext/OBP_RECONCILIATION_PROTOCOL_PROFILE_V1.md",
-      "expected_statement_lines": 5,
+      "expected_statement_lines": 6,
       "evidence": [
         {
           "path": "src/onebrain-protocol/src/reconciliation_codec.rs",

@@ -8,6 +8,9 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use serde::de::{Error as DeError, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use super::canonical::{
     encode_canonical, CanonicalError, CanonicalValue, NormalizedText, ResourceProfile,
 };
@@ -33,6 +36,77 @@ impl ConceptCcid {
 
     pub const fn as_bytes(&self) -> &[u8; 16] {
         &self.0
+    }
+
+    pub fn to_hex(self) -> String {
+        self.0.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+}
+
+impl fmt::Display for ConceptCcid {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.to_hex())
+    }
+}
+
+impl Serialize for ConceptCcid {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ConceptCcid {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ConceptCcidVisitor;
+
+        impl<'de> Visitor<'de> for ConceptCcidVisitor {
+            type Value = ConceptCcid;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("exactly 16 CCID bytes")
+            }
+
+            fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
+            where
+                E: DeError,
+            {
+                let bytes: [u8; 16] = value
+                    .try_into()
+                    .map_err(|_| E::invalid_length(value.len(), &self))?;
+                Ok(ConceptCcid::from_bytes(bytes))
+            }
+
+            fn visit_byte_buf<E>(self, value: Vec<u8>) -> Result<Self::Value, E>
+            where
+                E: DeError,
+            {
+                self.visit_bytes(&value)
+            }
+
+            fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut bytes = [0u8; 16];
+                for (index, byte) in bytes.iter_mut().enumerate() {
+                    *byte = sequence
+                        .next_element()?
+                        .ok_or_else(|| A::Error::invalid_length(index, &self))?;
+                }
+                if sequence.next_element::<u8>()?.is_some() {
+                    return Err(A::Error::invalid_length(17, &self));
+                }
+                Ok(ConceptCcid::from_bytes(bytes))
+            }
+        }
+
+        deserializer.deserialize_bytes(ConceptCcidVisitor)
     }
 }
 
@@ -596,6 +670,37 @@ pub struct SemanticFrameSet {
 }
 
 impl SemanticFrameSet {
+    /// Decode the frozen semantic profile from an already canonical value.
+    /// The final round-trip check rejects unknown fields, non-normalized IDs,
+    /// unreduced ratios, and every other alternate representation.
+    pub fn from_canonical_value(value: &CanonicalValue) -> Result<Self, SemanticError> {
+        let map = semantic_map(value, "semantic")?;
+        if semantic_unsigned(
+            semantic_required(map, 0, "semantic.major")?,
+            "semantic.major",
+        )? != SEMANTIC_PROFILE_MAJOR
+            || semantic_unsigned(
+                semantic_required(map, 1, "semantic.minor")?,
+                "semantic.minor",
+            )? != SEMANTIC_PROFILE_MINOR
+        {
+            return Err(SemanticError::InvalidField("semantic.version"));
+        }
+        let statements = semantic_array(
+            semantic_required(map, 2, "semantic.statements")?,
+            "semantic.statements",
+        )?
+        .iter()
+        .map(parse_statement_frame)
+        .collect::<Result<Vec<_>, _>>()?;
+        let decoded = Self { statements };
+        decoded.validate_shape()?;
+        if decoded.canonical_value()? != *value {
+            return Err(SemanticError::NonCanonicalValue);
+        }
+        Ok(decoded)
+    }
+
     pub fn alpha_normalized(&self) -> Result<Self, SemanticError> {
         self.validate_shape()?;
         let statement_map: BTreeMap<_, _> = self
@@ -748,6 +853,345 @@ impl SemanticFrameSet {
     }
 }
 
+fn parse_statement_frame(value: &CanonicalValue) -> Result<StatementFrame, SemanticError> {
+    let map = semantic_map(value, "statement")?;
+    let statement_id = semantic_u32(semantic_required(map, 0, "statement.id")?, "statement.id")?;
+    let operator_or_predicate = semantic_ccid(
+        semantic_required(map, 1, "statement.operator")?,
+        "statement.operator",
+    )?;
+    let arguments = semantic_array(
+        semantic_required(map, 2, "statement.arguments")?,
+        "statement.arguments",
+    )?
+    .iter()
+    .map(parse_term)
+    .collect::<Result<Vec<_>, _>>()?;
+    let constraints = semantic_array(
+        semantic_required(map, 3, "statement.constraints")?,
+        "statement.constraints",
+    )?
+    .iter()
+    .map(parse_typed_constraint)
+    .collect::<Result<Vec<_>, _>>()?;
+    let qualifiers =
+        parse_statement_qualifiers(semantic_required(map, 4, "statement.qualifiers")?)?;
+    Ok(StatementFrame {
+        statement_id: StatementId(statement_id),
+        operator_or_predicate,
+        arguments,
+        constraints,
+        qualifiers,
+    })
+}
+
+fn parse_term(value: &CanonicalValue) -> Result<TermRef, SemanticError> {
+    let map = semantic_map(value, "term")?;
+    match semantic_unsigned(semantic_required(map, 0, "term.kind")?, "term.kind")? {
+        0 => Ok(TermRef::Concept(semantic_ccid(
+            semantic_required(map, 1, "term.concept")?,
+            "term.concept",
+        )?)),
+        1 => Ok(TermRef::Variable {
+            id: VariableId(semantic_u32(
+                semantic_required(map, 1, "term.variable")?,
+                "term.variable",
+            )?),
+            type_constraint: semantic_optional(map, 2)
+                .map(|value| semantic_ccid(value, "term.type_constraint"))
+                .transpose()?,
+        }),
+        2 => Ok(TermRef::Literal(parse_literal(semantic_required(
+            map,
+            1,
+            "term.literal",
+        )?)?)),
+        3 => Ok(TermRef::Statement(StatementId(semantic_u32(
+            semantic_required(map, 1, "term.statement")?,
+            "term.statement",
+        )?))),
+        4 => Ok(TermRef::KnowledgeObject(ObjectReference::from_value(
+            semantic_required(map, 1, "term.object")?,
+        )?)),
+        5 => Ok(TermRef::Receptor {
+            slot: ReceptorSlotId(semantic_u32(
+                semantic_required(map, 1, "term.receptor")?,
+                "term.receptor",
+            )?),
+            expected_type: semantic_optional(map, 2)
+                .map(|value| semantic_ccid(value, "term.expected_type"))
+                .transpose()?,
+        }),
+        _ => Err(SemanticError::InvalidField("term.kind")),
+    }
+}
+
+fn parse_literal(value: &CanonicalValue) -> Result<LiteralValue, SemanticError> {
+    let map = semantic_map(value, "literal")?;
+    let body = semantic_required(map, 1, "literal.value")?;
+    match semantic_unsigned(semantic_required(map, 0, "literal.kind")?, "literal.kind")? {
+        0 => Ok(LiteralValue::Boolean(semantic_bool(
+            body,
+            "literal.boolean",
+        )?)),
+        1 => match body {
+            CanonicalValue::Text(text) => {
+                Ok(LiteralValue::Text(NormalizedText::new(text.clone())?))
+            }
+            _ => Err(SemanticError::InvalidField("literal.text")),
+        },
+        2 => Ok(LiteralValue::Quantity(parse_quantity(body)?)),
+        3 => match body {
+            CanonicalValue::Bytes(bytes) => Ok(LiteralValue::Bytes(bytes.clone())),
+            _ => Err(SemanticError::InvalidField("literal.bytes")),
+        },
+        _ => Err(SemanticError::InvalidField("literal.kind")),
+    }
+}
+
+fn parse_quantity(value: &CanonicalValue) -> Result<QuantityLiteral, SemanticError> {
+    let map = semantic_map(value, "quantity")?;
+    Ok(QuantityLiteral {
+        value: parse_ratio(semantic_required(map, 0, "quantity.value")?)?,
+        source_unit: parse_unit(semantic_required(map, 1, "quantity.unit")?)?,
+    })
+}
+
+fn parse_unit(value: &CanonicalValue) -> Result<UnitRef, SemanticError> {
+    let map = semantic_map(value, "unit")?;
+    Ok(UnitRef {
+        unit: semantic_ccid(semantic_required(map, 0, "unit.ccid")?, "unit.ccid")?,
+        dimension: parse_dimension(semantic_required(map, 1, "unit.dimension")?)?,
+        scale_to_base: parse_ratio(semantic_required(map, 2, "unit.scale")?)?,
+        offset_to_base: parse_ratio(semantic_required(map, 3, "unit.offset")?)?,
+    })
+}
+
+fn parse_ratio(value: &CanonicalValue) -> Result<ExactRatio, SemanticError> {
+    let map = semantic_map(value, "ratio")?;
+    let numerator = semantic_fixed_bytes::<8>(
+        semantic_required(map, 0, "ratio.numerator")?,
+        "ratio.numerator",
+    )?;
+    let denominator = semantic_fixed_bytes::<8>(
+        semantic_required(map, 1, "ratio.denominator")?,
+        "ratio.denominator",
+    )?;
+    ExactRatio::new(
+        i64::from_be_bytes(numerator),
+        u64::from_be_bytes(denominator),
+    )
+}
+
+fn parse_dimension(value: &CanonicalValue) -> Result<DimensionVector, SemanticError> {
+    let values = semantic_array(value, "dimension")?;
+    if values.len() != 7 {
+        return Err(SemanticError::InvalidField("dimension"));
+    }
+    let mut exponents = [0i8; 7];
+    for (index, value) in values.iter().enumerate() {
+        let encoded = semantic_unsigned(value, "dimension.exponent")?;
+        if encoded > 255 {
+            return Err(SemanticError::InvalidField("dimension.exponent"));
+        }
+        exponents[index] = (encoded as i16 - 128) as i8;
+    }
+    Ok(DimensionVector::new(exponents))
+}
+
+fn parse_typed_constraint(value: &CanonicalValue) -> Result<TypedConstraint, SemanticError> {
+    let map = semantic_map(value, "constraint")?;
+    Ok(TypedConstraint {
+        expression: parse_constraint_expression(semantic_required(
+            map,
+            0,
+            "constraint.expression",
+        )?)?,
+        required: semantic_bool(
+            semantic_required(map, 1, "constraint.required")?,
+            "constraint.required",
+        )?,
+    })
+}
+
+fn parse_constraint_expression(
+    value: &CanonicalValue,
+) -> Result<ConstraintExpression, SemanticError> {
+    let map = semantic_map(value, "constraint.expression")?;
+    match semantic_unsigned(
+        semantic_required(map, 0, "constraint.expression.kind")?,
+        "constraint.expression.kind",
+    )? {
+        0 => {
+            let operator = match semantic_unsigned(
+                semantic_required(map, 2, "constraint.operator")?,
+                "constraint.operator",
+            )? {
+                0 => ComparisonOperator::Equal,
+                1 => ComparisonOperator::NotEqual,
+                2 => ComparisonOperator::LessThan,
+                3 => ComparisonOperator::LessThanOrEqual,
+                4 => ComparisonOperator::GreaterThan,
+                5 => ComparisonOperator::GreaterThanOrEqual,
+                _ => return Err(SemanticError::InvalidField("constraint.operator")),
+            };
+            Ok(ConstraintExpression::Compare {
+                left: parse_term(semantic_required(map, 1, "constraint.left")?)?,
+                operator,
+                right: parse_term(semantic_required(map, 3, "constraint.right")?)?,
+            })
+        }
+        1 => Ok(ConstraintExpression::Dimension {
+            term: parse_term(semantic_required(map, 1, "constraint.term")?)?,
+            expected: parse_dimension(semantic_required(map, 2, "constraint.dimension")?)?,
+        }),
+        2 => Ok(ConstraintExpression::Range {
+            term: parse_term(semantic_required(map, 1, "constraint.term")?)?,
+            lower: parse_quantity(semantic_required(map, 2, "constraint.lower")?)?,
+            upper: parse_quantity(semantic_required(map, 3, "constraint.upper")?)?,
+            include_lower: semantic_bool(
+                semantic_required(map, 4, "constraint.include_lower")?,
+                "constraint.include_lower",
+            )?,
+            include_upper: semantic_bool(
+                semantic_required(map, 5, "constraint.include_upper")?,
+                "constraint.include_upper",
+            )?,
+        }),
+        _ => Err(SemanticError::InvalidField("constraint.expression.kind")),
+    }
+}
+
+fn parse_statement_qualifiers(
+    value: &CanonicalValue,
+) -> Result<StatementQualifiers, SemanticError> {
+    let map = semantic_map(value, "qualifiers")?;
+    let modality = match semantic_unsigned(
+        semantic_required(map, 1, "qualifiers.modality")?,
+        "qualifiers.modality",
+    )? {
+        0 => Modality::Asserted,
+        1 => Modality::Observed,
+        2 => Modality::Reported,
+        3 => Modality::Possible,
+        4 => Modality::Necessary,
+        5 => Modality::Desired,
+        _ => return Err(SemanticError::InvalidField("qualifiers.modality")),
+    };
+    let source_spans = semantic_optional(map, 7)
+        .map(|value| {
+            semantic_array(value, "qualifiers.source_spans")?
+                .iter()
+                .map(parse_source_span)
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    Ok(StatementQualifiers {
+        negated: semantic_bool(
+            semantic_required(map, 0, "qualifiers.negated")?,
+            "qualifiers.negated",
+        )?,
+        modality,
+        condition: semantic_optional(map, 2)
+            .map(|value| semantic_u32(value, "qualifiers.condition").map(StatementId))
+            .transpose()?,
+        time: semantic_optional(map, 3).map(parse_term).transpose()?,
+        location: semantic_optional(map, 4).map(parse_term).transpose()?,
+        perspective: semantic_optional(map, 5).map(parse_term).transpose()?,
+        tolerance: semantic_optional(map, 6).map(parse_quantity).transpose()?,
+        source_spans,
+    })
+}
+
+fn parse_source_span(value: &CanonicalValue) -> Result<SourceSpan, SemanticError> {
+    let map = semantic_map(value, "source_span")?;
+    Ok(SourceSpan {
+        source: ObjectReference::from_value(semantic_required(map, 0, "source_span.source")?)?,
+        start: semantic_unsigned(
+            semantic_required(map, 1, "source_span.start")?,
+            "source_span.start",
+        )?,
+        end: semantic_unsigned(
+            semantic_required(map, 2, "source_span.end")?,
+            "source_span.end",
+        )?,
+    })
+}
+
+fn semantic_map<'a>(
+    value: &'a CanonicalValue,
+    field: &'static str,
+) -> Result<&'a [(u64, CanonicalValue)], SemanticError> {
+    match value {
+        CanonicalValue::Map(values) => Ok(values),
+        _ => Err(SemanticError::InvalidField(field)),
+    }
+}
+
+fn semantic_array<'a>(
+    value: &'a CanonicalValue,
+    field: &'static str,
+) -> Result<&'a [CanonicalValue], SemanticError> {
+    match value {
+        CanonicalValue::Array(values) => Ok(values),
+        _ => Err(SemanticError::InvalidField(field)),
+    }
+}
+
+fn semantic_required<'a>(
+    map: &'a [(u64, CanonicalValue)],
+    key: u64,
+    field: &'static str,
+) -> Result<&'a CanonicalValue, SemanticError> {
+    semantic_optional(map, key).ok_or(SemanticError::InvalidField(field))
+}
+
+fn semantic_optional(map: &[(u64, CanonicalValue)], key: u64) -> Option<&CanonicalValue> {
+    map.iter()
+        .find_map(|(candidate, value)| (*candidate == key).then_some(value))
+}
+
+fn semantic_unsigned(value: &CanonicalValue, field: &'static str) -> Result<u64, SemanticError> {
+    match value {
+        CanonicalValue::Unsigned(value) => Ok(*value),
+        _ => Err(SemanticError::InvalidField(field)),
+    }
+}
+
+fn semantic_u32(value: &CanonicalValue, field: &'static str) -> Result<u32, SemanticError> {
+    u32::try_from(semantic_unsigned(value, field)?).map_err(|_| SemanticError::InvalidField(field))
+}
+
+fn semantic_bool(value: &CanonicalValue, field: &'static str) -> Result<bool, SemanticError> {
+    match value {
+        CanonicalValue::Bool(value) => Ok(*value),
+        _ => Err(SemanticError::InvalidField(field)),
+    }
+}
+
+fn semantic_ccid(
+    value: &CanonicalValue,
+    field: &'static str,
+) -> Result<ConceptCcid, SemanticError> {
+    Ok(ConceptCcid::from_bytes(semantic_fixed_bytes::<16>(
+        value, field,
+    )?))
+}
+
+fn semantic_fixed_bytes<const N: usize>(
+    value: &CanonicalValue,
+    field: &'static str,
+) -> Result<[u8; N], SemanticError> {
+    let CanonicalValue::Bytes(bytes) = value else {
+        return Err(SemanticError::InvalidField(field));
+    };
+    bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| SemanticError::InvalidField(field))
+}
+
 fn visit_statement_terms(
     statement: &StatementFrame,
     visitor: &mut impl FnMut(&TermRef) -> Result<(), SemanticError>,
@@ -847,6 +1291,8 @@ pub enum SemanticError {
     UnknownStatementReference(StatementId),
     VariableTypeConflict(VariableId),
     InvalidSourceSpan,
+    InvalidField(&'static str),
+    NonCanonicalValue,
 }
 
 impl From<CanonicalError> for SemanticError {

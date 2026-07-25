@@ -4,6 +4,7 @@
 //! Uses existing MessageType 0x50-0x52 (QueryForward, QueryResponse, QueryCancel).
 
 use crate::identity::NodeId;
+use ku_core::foundation::ConceptCcid;
 use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -32,16 +33,18 @@ pub struct QueryForwardMsg {
     pub query_id: QueryId,
     /// The originator of the query.
     pub origin: NodeId,
-    /// KQL query string.
-    pub kql: String,
+    /// Commitment to the private local query definition.
+    /// Raw KQL is deliberately not represented on this wire type.
+    pub query_commitment: [u8; 32],
     /// Current scope level.
     pub scope: QueryScope,
     /// Remaining TTL (decremented at each hop).
     pub ttl: u8,
     /// Maximum results wanted.
     pub max_results: u32,
-    /// Concept IDs extracted from the query (for routing hints).
-    pub concept_hints: Vec<u64>,
+    /// Global concept CCIDs selected locally as route-minimal hints.
+    /// Numeric KU-local ConceptIds are forbidden at this boundary.
+    pub concept_hints: Vec<ConceptCcid>,
     /// Nodes already visited (loop prevention).
     pub visited: Vec<NodeId>,
 }
@@ -81,8 +84,10 @@ pub struct WatchRegisterMsg {
     pub watch_id: u64,
     /// The originator node.
     pub origin: NodeId,
-    /// KQL FIND pattern (the inner query of WATCH).
-    pub kql_pattern: String,
+    /// Commitment to the private local standing-query predicate.
+    pub predicate_commitment: [u8; 32],
+    /// Route-minimal global concept identities; never KU-local numeric IDs.
+    pub concept_hints: Vec<ConceptCcid>,
     /// Event filter: 0=CREATE, 1=UPDATE, 2=DEPRECATE, 3=ANY.
     pub event_filter: u8,
     /// TTL for propagation.
@@ -105,9 +110,9 @@ pub struct WatchNotifyMsg {
 impl QueryForwardMsg {
     /// Create a new query forward message.
     pub fn new(kql: String, origin: NodeId, scope: QueryScope, max_results: u32) -> Self {
+        let query_commitment = *blake3::hash(kql.as_bytes()).as_bytes();
         let mut query_id = [0u8; 16];
-        let hash = blake3::hash(kql.as_bytes());
-        query_id.copy_from_slice(&hash.as_bytes()[..16]);
+        query_id.copy_from_slice(&query_commitment[..16]);
         // Mix in origin to make unique per node
         for (i, b) in origin.0[..16].iter().enumerate() {
             query_id[i] ^= b;
@@ -116,7 +121,7 @@ impl QueryForwardMsg {
         Self {
             query_id,
             origin,
-            kql,
+            query_commitment,
             scope,
             ttl: match scope {
                 QueryScope::Local => 0,
@@ -221,5 +226,26 @@ mod tests {
 
         // Same KQL but different origins → different query IDs
         assert_ne!(msg1.query_id, msg2.query_id);
+    }
+
+    #[test]
+    fn query_wire_does_not_contain_raw_kql_or_numeric_concept_ids() {
+        let origin = make_node_id();
+        let raw = "FIND (secret:KU) WHERE secret.private_goal = 424242";
+        let mut msg = QueryForwardMsg::new(raw.to_string(), origin, QueryScope::Dht, 5);
+        let ccid = ConceptCcid::from_bytes([0xA5; 16]);
+        msg.concept_hints.push(ccid);
+
+        let mut bytes = Vec::new();
+        ciborium::into_writer(&msg, &mut bytes).unwrap();
+
+        assert!(!bytes
+            .windows(raw.len())
+            .any(|window| window == raw.as_bytes()));
+        assert!(bytes
+            .windows(ccid.as_bytes().len())
+            .any(|window| window == ccid.as_bytes()));
+        let decoded: QueryForwardMsg = ciborium::from_reader(bytes.as_slice()).unwrap();
+        assert_eq!(decoded.concept_hints, vec![ccid]);
     }
 }

@@ -9,6 +9,7 @@ pub enum ReservedDomain {
     Object,
     Event,
     FeedInception,
+    AuthorityEvent,
     FeedHead,
     ReceptorDefinition,
     AssemblyManifest,
@@ -29,10 +30,11 @@ pub enum ReservedDomain {
 }
 
 impl ReservedDomain {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::Object,
         Self::Event,
         Self::FeedInception,
+        Self::AuthorityEvent,
         Self::FeedHead,
         Self::ReceptorDefinition,
         Self::AssemblyManifest,
@@ -57,6 +59,7 @@ impl ReservedDomain {
             Self::Object => "object",
             Self::Event => "event",
             Self::FeedInception => "feed-inception",
+            Self::AuthorityEvent => "authority-event",
             Self::FeedHead => "feed-head",
             Self::ReceptorDefinition => "receptor-definition",
             Self::AssemblyManifest => "assembly-manifest",
@@ -98,7 +101,7 @@ impl ReservedDomain {
             | Self::QueryDefinition
             | Self::CapabilityDefinition
             | Self::ImplementationManifest => DigestClass::Object,
-            Self::Event | Self::ProviderRetire => DigestClass::Event,
+            Self::Event | Self::AuthorityEvent | Self::ProviderRetire => DigestClass::Event,
             Self::FeedInception => DigestClass::FeedIdMaterial,
             Self::FeedHead => DigestClass::FeedHead,
             Self::MappingKernel => DigestClass::MappingKernel,

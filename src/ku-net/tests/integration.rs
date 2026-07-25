@@ -96,7 +96,7 @@ fn test_e2e_3_nodes_ku_transfer() {
 
     // Verify wire format magic/version
     assert_eq!(&wire_bytes[0..2], &[0x4B, 0x44], "Magic should be 'KD'");
-    assert_eq!(wire_bytes[2], 0x04, "Version should be 4");
+    assert_eq!(wire_bytes[2], VERSION, "Version should match ku-core");
 
     // Step 2: Frame with OBP header
     let header = MessageHeader {
@@ -467,7 +467,7 @@ fn test_e2e_full_pipeline() {
     assert!(keypair.verify(&frame, &sig));
 
     // 8. Decode
-    let (info, decoded_ku) = decode_full_knowledge_unit(&frame[4..]).unwrap();
+    let (info, decoded_ku) = decode_full_knowledge_unit(&frame[MessageHeader::SIZE..]).unwrap();
     assert!(info.crc32_valid);
     assert_eq!(decoded_ku.codons.len(), ku.codons.len());
 

@@ -180,6 +180,13 @@ impl KeyStateReducer {
         }
     }
 
+    /// Return one already-admitted delegation projection. This is used by the
+    /// wire authority validator to bind a child/revocation signature to the
+    /// exact FeedId authorized by its parent, never to a caller-supplied key.
+    pub fn accepted_delegation(&self, delegation_ref: EventCid) -> Option<ScopedDelegation> {
+        self.accepted.get(delegation_ref.as_bytes()).copied()
+    }
+
     pub fn evaluate(&self, feed: &ValidatedFeedInception) -> FeedAuthorityDecision {
         let grants: Vec<_> = self.accepted.values().map(|node| node.grant).collect();
         let revocations = self.expanded_revocations();
@@ -387,6 +394,7 @@ fn hash_delegation_map(
         hasher.update(id);
         hasher.update(grant.actor.as_bytes());
         hasher.update(grant.device.as_bytes());
+        hasher.update(grant.subject_feed.as_bytes());
         hasher.update(grant.delegation_ref.as_bytes());
         match grant.namespace_commitment {
             Some(namespace) => {
@@ -452,7 +460,7 @@ mod tests {
 
     use super::*;
     use crate::foundation::{
-        decode_feed_inception, ActorId, DeviceId, FeedInception, NamespaceCommitment,
+        decode_feed_inception, ActorId, DeviceId, FeedId, FeedInception, NamespaceCommitment,
     };
 
     fn grant(
@@ -468,6 +476,7 @@ mod tests {
             grant: DelegationGrant {
                 actor,
                 device,
+                subject_feed: FeedId::from_bytes([id; 32]),
                 delegation_ref: EventCid::from_bytes([id; 32]),
                 namespace_commitment: namespace,
                 first_generation: first,
@@ -503,7 +512,7 @@ mod tests {
         let device = DeviceId::from_bytes([2; 32]);
         let namespace = NamespaceCommitment::derive(b"key-state", [3; 32]).unwrap();
         let root = grant(10, None, actor, device, None, 0, 9);
-        let child = grant(
+        let mut child = grant(
             11,
             Some(root.grant.delegation_ref),
             actor,
@@ -513,6 +522,7 @@ mod tests {
             3,
         );
         let candidate = feed(4, device, namespace, 1, child.grant.delegation_ref);
+        child.grant.subject_feed = candidate.feed_id;
         let mut reducer = KeyStateReducer::new(EventCid::from_bytes([9; 32]));
         assert_eq!(
             reducer.submit_child(child),
@@ -569,7 +579,7 @@ mod tests {
         let device = DeviceId::from_bytes([2; 32]);
         let namespace = NamespaceCommitment::derive(b"key-state", [3; 32]).unwrap();
         let root = grant(10, None, actor, device, None, 0, 9);
-        let child = grant(
+        let mut child = grant(
             11,
             Some(root.grant.delegation_ref),
             actor,
@@ -579,6 +589,7 @@ mod tests {
             3,
         );
         let candidate = feed(4, device, namespace, 2, child.grant.delegation_ref);
+        child.grant.subject_feed = candidate.feed_id;
         let mut reducer = KeyStateReducer::new(EventCid::from_bytes([9; 32]));
         reducer.accept_root(root);
         reducer.submit_child(child);
@@ -632,7 +643,7 @@ mod tests {
         let actor = ActorId::from_bytes([1; 32]);
         let device = DeviceId::from_bytes([2; 32]);
         let namespace = NamespaceCommitment::derive(b"key-state", [3; 32]).unwrap();
-        let root = grant(10, None, actor, device, Some(namespace), 0, 3);
+        let mut root = grant(10, None, actor, device, Some(namespace), 0, 3);
         let previous_key = SigningKey::from_bytes(&[4; 32]);
         let next_key = SigningKey::from_bytes(&[5; 32]);
         let mut previous = FeedInception::new(
@@ -651,6 +662,7 @@ mod tests {
             decode_feed_inception(&previous.sign(&previous_key).unwrap().encode().unwrap())
                 .unwrap();
         let next = decode_feed_inception(&next.sign(&next_key).unwrap().encode().unwrap()).unwrap();
+        root.grant.subject_feed = previous.feed_id;
 
         let mut reducer = KeyStateReducer::new(EventCid::from_bytes([9; 32]));
         reducer.accept_root(root);

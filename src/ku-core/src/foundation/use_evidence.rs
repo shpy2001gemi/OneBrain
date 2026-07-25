@@ -168,7 +168,9 @@ impl UseEvidencePayload {
         Ok(())
     }
 
-    fn from_object(object: &ValidatedKnowledgeObject) -> Result<Self, UseEvidenceError> {
+    pub fn from_validated_object(
+        object: &ValidatedKnowledgeObject,
+    ) -> Result<Self, UseEvidenceError> {
         let envelope = known_envelope(object, USE_EVIDENCE_KIND)?;
         let map = value_map(&envelope.payload, "use.payload")?;
         let payload = Self {
@@ -285,7 +287,9 @@ impl DerivationEvidencePayload {
         Ok(())
     }
 
-    fn from_object(object: &ValidatedKnowledgeObject) -> Result<Self, UseEvidenceError> {
+    pub fn from_validated_object(
+        object: &ValidatedKnowledgeObject,
+    ) -> Result<Self, UseEvidenceError> {
         let envelope = known_envelope(object, DERIVATION_EVIDENCE_KIND)?;
         let map = value_map(&envelope.payload, "derivation.payload")?;
         let inputs = value_array(map, 2, "derivation.inputs")?
@@ -350,7 +354,7 @@ impl ValidatedUseEvidenceEvent {
             author_feed: event.signed.event.author_feed,
             author_sequence: event.signed.event.author_sequence,
             payload_object: payload_object.cid(),
-            payload: UseEvidencePayload::from_object(payload_object)?,
+            payload: UseEvidencePayload::from_validated_object(payload_object)?,
         })
     }
 
@@ -395,7 +399,7 @@ impl ValidatedDerivationEvidenceEvent {
             author_feed: event.signed.event.author_feed,
             author_sequence: event.signed.event.author_sequence,
             payload_object: payload_object.cid(),
-            payload: DerivationEvidencePayload::from_object(payload_object)?,
+            payload: DerivationEvidencePayload::from_validated_object(payload_object)?,
         })
     }
 
@@ -548,7 +552,8 @@ fn known_envelope(
     match object.semantics() {
         ObjectSemantics::Known(envelope)
             if envelope.kind == expected
-                && envelope.kind_version.major == USE_EVIDENCE_PROFILE_MAJOR =>
+                && envelope.kind_version.major == USE_EVIDENCE_PROFILE_MAJOR
+                && envelope.kind_version.minor == USE_EVIDENCE_PROFILE_MINOR =>
         {
             Ok(envelope)
         }

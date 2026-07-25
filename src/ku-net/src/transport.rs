@@ -235,6 +235,11 @@ impl QuicTransport {
 
     /// Gracefully shut down the transport.
     pub async fn shutdown(&self) {
+        self.close();
+    }
+
+    /// Close the endpoint without requiring an async context.
+    pub fn close(&self) {
         self.endpoint.close(0u32.into(), b"shutdown");
     }
 }
@@ -247,6 +252,21 @@ pub struct OBPConnection {
 }
 
 impl OBPConnection {
+    /// Derive a channel binding from the established TLS 1.3 session.
+    /// Both endpoints obtain the same exporter bytes, while a different QUIC
+    /// connection produces a different binding.
+    pub fn transport_binding(&self) -> Result<[u8; 32], TransportError> {
+        let mut binding = [0u8; 32];
+        self.inner
+            .export_keying_material(
+                &mut binding,
+                b"EXPORTER-OneBrain-vNext-Session",
+                b"obp-rp/1",
+            )
+            .map_err(|error| TransportError::TlsError(format!("TLS exporter failed: {error:?}")))?;
+        Ok(binding)
+    }
+
     /// Send a message using a uni-directional stream (fire-and-forget).
     ///
     /// Use for push-style messages: KU_PUSH, GOSSIP, TRUST_GOSSIP.

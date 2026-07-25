@@ -2,7 +2,8 @@
 
 use super::canonical::{canonicalize_set_by_key, CanonicalValue, ResourceProfile};
 use super::object::{
-    DisclosureClass, KnowledgeObjectEnvelope, ObjectKind, ObjectReference, SchemaVersion,
+    DisclosureClass, KnowledgeObjectEnvelope, ObjectError, ObjectKind, ObjectReference,
+    ObjectSemantics, SchemaVersion, ValidatedKnowledgeObject,
 };
 use super::receptor::StatementLocator;
 use super::schema_registry::OBJECT_KIND_KNOWLEDGE_AFFORDANCE;
@@ -122,6 +123,81 @@ impl KnowledgeAffordance {
         self.offered_roles.contains(&role)
     }
 
+    /// Recover the typed affordance only from a validated, known v1 object.
+    /// Unknown fields, alternate set order, and non-canonical semantic frames
+    /// are rejected by the final canonical round trip.
+    pub fn from_validated_object(
+        validated: &ValidatedKnowledgeObject,
+    ) -> Result<Self, AffordanceError> {
+        let ObjectSemantics::Known(envelope) = validated.semantics() else {
+            return Err(AffordanceError::InvalidField("affordance.object"));
+        };
+        if envelope.kind != KNOWLEDGE_AFFORDANCE_KIND {
+            return Err(AffordanceError::InvalidField("affordance.kind"));
+        }
+        if envelope.kind_version.major != AFFORDANCE_PROFILE_MAJOR
+            || envelope.kind_version.minor != AFFORDANCE_PROFILE_MINOR
+        {
+            return Err(AffordanceError::UnsupportedVersion);
+        }
+        Self::from_canonical_payload(&envelope.payload)
+    }
+
+    pub fn from_canonical_payload(value: &CanonicalValue) -> Result<Self, AffordanceError> {
+        let map = affordance_map(value, "affordance")?;
+        if affordance_unsigned(
+            affordance_required(map, 0, "affordance.major")?,
+            "affordance.major",
+        )? != AFFORDANCE_PROFILE_MAJOR
+            || affordance_unsigned(
+                affordance_required(map, 1, "affordance.minor")?,
+                "affordance.minor",
+            )? != AFFORDANCE_PROFILE_MINOR
+        {
+            return Err(AffordanceError::UnsupportedVersion);
+        }
+        let sources = parse_reference_array(
+            affordance_required(map, 2, "affordance.sources")?,
+            "affordance.sources",
+        )?;
+        let offered_roles = affordance_array(
+            affordance_required(map, 3, "affordance.roles")?,
+            "affordance.roles",
+        )?
+        .iter()
+        .map(|value| affordance_ccid(value, "affordance.role"))
+        .collect::<Result<Vec<_>, _>>()?;
+        let accepted_inputs = affordance_array(
+            affordance_required(map, 4, "affordance.inputs")?,
+            "affordance.inputs",
+        )?
+        .iter()
+        .map(parse_accepted_input)
+        .collect::<Result<Vec<_>, _>>()?;
+        let semantics =
+            parse_affordance_semantics(affordance_required(map, 5, "affordance.semantics")?)?;
+        let abstraction_patterns = affordance_array(
+            affordance_required(map, 6, "affordance.patterns")?,
+            "affordance.patterns",
+        )?
+        .iter()
+        .map(SemanticFrameSet::from_canonical_value)
+        .collect::<Result<Vec<_>, _>>()?;
+        let origin = parse_affordance_origin(affordance_required(map, 7, "affordance.origin")?)?;
+        let decoded = Self {
+            sources,
+            offered_roles,
+            accepted_inputs,
+            semantics,
+            abstraction_patterns,
+            origin,
+        };
+        if decoded.canonical_payload()? != *value {
+            return Err(AffordanceError::NonCanonicalValue);
+        }
+        Ok(decoded)
+    }
+
     pub fn canonical_payload(&self) -> Result<CanonicalValue, AffordanceError> {
         Ok(CanonicalValue::Map(vec![
             (0, CanonicalValue::Unsigned(AFFORDANCE_PROFILE_MAJOR)),
@@ -146,6 +222,191 @@ impl KnowledgeAffordance {
             self.canonical_payload()?,
         ))
     }
+}
+
+fn parse_accepted_input(value: &CanonicalValue) -> Result<AcceptedInput, AffordanceError> {
+    let map = affordance_map(value, "affordance.input")?;
+    Ok(AcceptedInput {
+        receptor_definition: ObjectReference::from_value(affordance_required(
+            map,
+            0,
+            "affordance.input.receptor",
+        )?)?,
+        role: affordance_ccid(
+            affordance_required(map, 1, "affordance.input.role")?,
+            "affordance.input.role",
+        )?,
+        required: affordance_bool(
+            affordance_required(map, 2, "affordance.input.required")?,
+            "affordance.input.required",
+        )?,
+    })
+}
+
+fn parse_affordance_semantics(
+    value: &CanonicalValue,
+) -> Result<AffordanceSemantics, AffordanceError> {
+    let map = affordance_map(value, "affordance.semantics")?;
+    Ok(AffordanceSemantics {
+        preconditions: SemanticFrameSet::from_canonical_value(affordance_required(
+            map,
+            0,
+            "affordance.preconditions",
+        )?)?,
+        outputs: SemanticFrameSet::from_canonical_value(affordance_required(
+            map,
+            1,
+            "affordance.outputs",
+        )?)?,
+        effects: SemanticFrameSet::from_canonical_value(affordance_required(
+            map,
+            2,
+            "affordance.effects",
+        )?)?,
+        properties: SemanticFrameSet::from_canonical_value(affordance_required(
+            map,
+            3,
+            "affordance.properties",
+        )?)?,
+        invariants: SemanticFrameSet::from_canonical_value(affordance_required(
+            map,
+            4,
+            "affordance.invariants",
+        )?)?,
+        operating_conditions: SemanticFrameSet::from_canonical_value(affordance_required(
+            map,
+            5,
+            "affordance.operating_conditions",
+        )?)?,
+        limits: SemanticFrameSet::from_canonical_value(affordance_required(
+            map,
+            6,
+            "affordance.limits",
+        )?)?,
+    })
+}
+
+fn parse_affordance_origin(value: &CanonicalValue) -> Result<AffordanceOrigin, AffordanceError> {
+    let map = affordance_map(value, "affordance.origin")?;
+    match affordance_unsigned(
+        affordance_required(map, 0, "affordance.origin.kind")?,
+        "affordance.origin.kind",
+    )? {
+        0 => {
+            let claims = affordance_array(
+                affordance_required(map, 1, "affordance.origin.claims")?,
+                "affordance.origin.claims",
+            )?
+            .iter()
+            .map(parse_statement_locator)
+            .collect::<Result<Vec<_>, _>>()?;
+            Ok(AffordanceOrigin::Explicit { claims })
+        }
+        1 => Ok(AffordanceOrigin::Derived {
+            derivation_engine: ObjectReference::from_value(affordance_required(
+                map,
+                1,
+                "affordance.origin.engine",
+            )?)?,
+            derivation_rule: ObjectReference::from_value(affordance_required(
+                map,
+                2,
+                "affordance.origin.rule",
+            )?)?,
+            inputs: parse_reference_array(
+                affordance_required(map, 3, "affordance.origin.inputs")?,
+                "affordance.origin.inputs",
+            )?,
+        }),
+        _ => Err(AffordanceError::InvalidField("affordance.origin.kind")),
+    }
+}
+
+fn parse_statement_locator(value: &CanonicalValue) -> Result<StatementLocator, AffordanceError> {
+    let map = affordance_map(value, "statement_locator")?;
+    Ok(StatementLocator {
+        object: ObjectReference::from_value(affordance_required(
+            map,
+            0,
+            "statement_locator.object",
+        )?)?,
+        statement_index: u32::try_from(affordance_unsigned(
+            affordance_required(map, 1, "statement_locator.index")?,
+            "statement_locator.index",
+        )?)
+        .map_err(|_| AffordanceError::InvalidField("statement_locator.index"))?,
+    })
+}
+
+fn parse_reference_array(
+    value: &CanonicalValue,
+    field: &'static str,
+) -> Result<Vec<ObjectReference>, AffordanceError> {
+    affordance_array(value, field)?
+        .iter()
+        .map(|value| ObjectReference::from_value(value).map_err(Into::into))
+        .collect()
+}
+
+fn affordance_map<'a>(
+    value: &'a CanonicalValue,
+    field: &'static str,
+) -> Result<&'a [(u64, CanonicalValue)], AffordanceError> {
+    match value {
+        CanonicalValue::Map(values) => Ok(values),
+        _ => Err(AffordanceError::InvalidField(field)),
+    }
+}
+
+fn affordance_array<'a>(
+    value: &'a CanonicalValue,
+    field: &'static str,
+) -> Result<&'a [CanonicalValue], AffordanceError> {
+    match value {
+        CanonicalValue::Array(values) if values.len() <= MAX_AFFORDANCE_MEMBERS => Ok(values),
+        _ => Err(AffordanceError::InvalidField(field)),
+    }
+}
+
+fn affordance_required<'a>(
+    map: &'a [(u64, CanonicalValue)],
+    key: u64,
+    field: &'static str,
+) -> Result<&'a CanonicalValue, AffordanceError> {
+    map.iter()
+        .find_map(|(candidate, value)| (*candidate == key).then_some(value))
+        .ok_or(AffordanceError::InvalidField(field))
+}
+
+fn affordance_unsigned(
+    value: &CanonicalValue,
+    field: &'static str,
+) -> Result<u64, AffordanceError> {
+    match value {
+        CanonicalValue::Unsigned(value) => Ok(*value),
+        _ => Err(AffordanceError::InvalidField(field)),
+    }
+}
+
+fn affordance_bool(value: &CanonicalValue, field: &'static str) -> Result<bool, AffordanceError> {
+    match value {
+        CanonicalValue::Bool(value) => Ok(*value),
+        _ => Err(AffordanceError::InvalidField(field)),
+    }
+}
+
+fn affordance_ccid(
+    value: &CanonicalValue,
+    field: &'static str,
+) -> Result<ConceptCcid, AffordanceError> {
+    let CanonicalValue::Bytes(bytes) = value else {
+        return Err(AffordanceError::InvalidField(field));
+    };
+    let bytes = bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| AffordanceError::InvalidField(field))?;
+    Ok(ConceptCcid::from_bytes(bytes))
 }
 
 fn canonical_reference_set(values: &[ObjectReference]) -> Result<CanonicalValue, AffordanceError> {
@@ -191,12 +452,22 @@ fn canonical_set(values: Vec<CanonicalValue>) -> Result<CanonicalValue, Affordan
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AffordanceError {
     Semantic(SemanticError),
+    Object(ObjectError),
     Limit,
+    InvalidField(&'static str),
+    UnsupportedVersion,
+    NonCanonicalValue,
 }
 
 impl From<SemanticError> for AffordanceError {
     fn from(error: SemanticError) -> Self {
         Self::Semantic(error)
+    }
+}
+
+impl From<ObjectError> for AffordanceError {
+    fn from(error: ObjectError) -> Self {
+        Self::Object(error)
     }
 }
 
@@ -210,8 +481,8 @@ impl From<super::canonical::CanonicalError> for AffordanceError {
 mod tests {
     use super::*;
     use crate::foundation::{
-        ConstraintExpression, StatementFrame, StatementId, StatementQualifiers, TermRef,
-        TypedConstraint,
+        decode_knowledge_object, ConstraintExpression, KnownObjectKind, StatementFrame,
+        StatementId, StatementQualifiers, TermRef, TypedConstraint,
     };
 
     fn concept(byte: u8) -> ConceptCcid {
@@ -324,5 +595,36 @@ mod tests {
             .canonical_payload()
             .unwrap_err();
         assert!(matches!(error, AffordanceError::Semantic(_)));
+    }
+
+    #[test]
+    fn validated_public_affordance_round_trips_into_typed_semantics() {
+        let original = affordance(vec![reference(1)], vec![concept(1)]);
+        let object = original
+            .to_knowledge_object(DisclosureClass::Public)
+            .unwrap();
+        let (bytes, _) = object.encode(ResourceProfile::ObjectV1).unwrap();
+        let validated = decode_knowledge_object(
+            &bytes,
+            ResourceProfile::ObjectV1,
+            &[KnownObjectKind::new(KNOWLEDGE_AFFORDANCE_KIND, 1)],
+            &[],
+        )
+        .unwrap();
+        let decoded = KnowledgeAffordance::from_validated_object(&validated).unwrap();
+        assert_eq!(
+            decoded.canonical_payload().unwrap(),
+            original.canonical_payload().unwrap()
+        );
+
+        let mut noncanonical = original.canonical_payload().unwrap();
+        let CanonicalValue::Map(fields) = &mut noncanonical else {
+            panic!("affordance payload must be a map");
+        };
+        fields.push((99, CanonicalValue::Null));
+        assert_eq!(
+            KnowledgeAffordance::from_canonical_payload(&noncanonical).unwrap_err(),
+            AffordanceError::NonCanonicalValue
+        );
     }
 }

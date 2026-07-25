@@ -15,6 +15,7 @@
 use std::collections::HashMap;
 
 use crate::identity::NodeId;
+use ku_core::foundation::ConceptCcid;
 
 use super::messages::QueryScope;
 
@@ -26,7 +27,7 @@ use super::messages::QueryScope;
 #[derive(Debug, Clone)]
 pub struct QueryOutcome {
     /// The concept that was queried.
-    pub concept_id: u64,
+    pub concept: ConceptCcid,
     /// Which scope resolved the query.
     pub resolved_at: QueryScope,
     /// Node that provided the best result (if any).
@@ -82,7 +83,7 @@ impl RouteStats {
 /// Learns optimal query routes from outcome feedback.
 pub struct PheromoneLearner {
     /// Stats per (concept, scope) pair.
-    route_stats: HashMap<(u64, u8), RouteStats>,
+    route_stats: HashMap<(ConceptCcid, u8), RouteStats>,
     /// Learning rate for pheromone updates [0.0, 1.0].
     learning_rate: f64,
     /// Evaporation rate per time unit [0.0, 1.0].
@@ -123,7 +124,7 @@ impl PheromoneLearner {
 
     /// Record a query outcome and update pheromones.
     pub fn record_outcome(&mut self, outcome: &QueryOutcome) {
-        let key = (outcome.concept_id, outcome.resolved_at as u8);
+        let key = (outcome.concept, outcome.resolved_at as u8);
         let stats = self.route_stats.entry(key).or_insert_with(RouteStats::new);
 
         stats.total_queries += 1;
@@ -152,7 +153,7 @@ impl PheromoneLearner {
     /// Get the recommended scope for a concept based on learned routes.
     ///
     /// Returns scopes sorted by pheromone strength (best first).
-    pub fn recommend_scopes(&self, concept_id: u64) -> Vec<(QueryScope, f64)> {
+    pub fn recommend_scopes(&self, concept: ConceptCcid) -> Vec<(QueryScope, f64)> {
         let mut scopes: Vec<(QueryScope, f64)> = [
             QueryScope::Local,
             QueryScope::Neighbors,
@@ -163,7 +164,7 @@ impl PheromoneLearner {
         ]
         .iter()
         .map(|&scope| {
-            let key = (concept_id, scope as u8);
+            let key = (concept, scope as u8);
             let pheromone = self
                 .route_stats
                 .get(&key)
@@ -191,8 +192,8 @@ impl PheromoneLearner {
     }
 
     /// Get stats for a concept-scope pair.
-    pub fn get_stats(&self, concept_id: u64, scope: QueryScope) -> Option<&RouteStats> {
-        self.route_stats.get(&(concept_id, scope as u8))
+    pub fn get_stats(&self, concept: ConceptCcid, scope: QueryScope) -> Option<&RouteStats> {
+        self.route_stats.get(&(concept, scope as u8))
     }
 
     /// Number of tracked routes.
@@ -226,9 +227,13 @@ impl Default for PheromoneLearner {
 mod tests {
     use super::*;
 
-    fn success_outcome(concept_id: u64, scope: QueryScope) -> QueryOutcome {
+    fn concept(value: u128) -> ConceptCcid {
+        ConceptCcid::from_bytes(value.to_be_bytes())
+    }
+
+    fn success_outcome(value: u128, scope: QueryScope) -> QueryOutcome {
         QueryOutcome {
-            concept_id,
+            concept: concept(value),
             resolved_at: scope,
             provider: None,
             quality: 0.9,
@@ -237,9 +242,9 @@ mod tests {
         }
     }
 
-    fn failure_outcome(concept_id: u64, scope: QueryScope) -> QueryOutcome {
+    fn failure_outcome(value: u128, scope: QueryScope) -> QueryOutcome {
         QueryOutcome {
-            concept_id,
+            concept: concept(value),
             resolved_at: scope,
             provider: None,
             quality: 0.0,
@@ -255,7 +260,7 @@ mod tests {
 
         learner.record_outcome(&success_outcome(42, QueryScope::Dht));
 
-        let stats = learner.get_stats(42, QueryScope::Dht).unwrap();
+        let stats = learner.get_stats(concept(42), QueryScope::Dht).unwrap();
         assert!(
             stats.pheromone > initial,
             "Success should increase pheromone"
@@ -270,7 +275,7 @@ mod tests {
 
         learner.record_outcome(&failure_outcome(42, QueryScope::Global));
 
-        let stats = learner.get_stats(42, QueryScope::Global).unwrap();
+        let stats = learner.get_stats(concept(42), QueryScope::Global).unwrap();
         assert!(stats.pheromone < 0.5, "Failure should decrease pheromone");
     }
 
@@ -287,7 +292,7 @@ mod tests {
             learner.record_outcome(&failure_outcome(42, QueryScope::Global));
         }
 
-        let recs = learner.recommend_scopes(42);
+        let recs = learner.recommend_scopes(concept(42));
         // DHT should be recommended first
         assert_eq!(recs[0].0, QueryScope::Dht);
         assert!(recs[0].1 > recs.last().unwrap().1);
@@ -302,14 +307,20 @@ mod tests {
             learner.record_outcome(&success_outcome(42, QueryScope::Dht));
         }
 
-        let before = learner.get_stats(42, QueryScope::Dht).unwrap().pheromone;
+        let before = learner
+            .get_stats(concept(42), QueryScope::Dht)
+            .unwrap()
+            .pheromone;
 
         // Evaporate
         for _ in 0..100 {
             learner.evaporate();
         }
 
-        let after = learner.get_stats(42, QueryScope::Dht).unwrap().pheromone;
+        let after = learner
+            .get_stats(concept(42), QueryScope::Dht)
+            .unwrap()
+            .pheromone;
         assert!(
             after < before,
             "Evaporation should decay pheromone toward neutral"
@@ -324,14 +335,14 @@ mod tests {
         for _ in 0..100 {
             learner.record_outcome(&success_outcome(1, QueryScope::Local));
         }
-        let stats = learner.get_stats(1, QueryScope::Local).unwrap();
+        let stats = learner.get_stats(concept(1), QueryScope::Local).unwrap();
         assert!(stats.pheromone <= 0.95, "Pheromone should not exceed max");
 
         // Many failures should not go below min
         for _ in 0..100 {
             learner.record_outcome(&failure_outcome(2, QueryScope::Global));
         }
-        let stats = learner.get_stats(2, QueryScope::Global).unwrap();
+        let stats = learner.get_stats(concept(2), QueryScope::Global).unwrap();
         assert!(stats.pheromone >= 0.05, "Pheromone should not go below min");
     }
 
@@ -340,7 +351,7 @@ mod tests {
         let mut learner = PheromoneLearner::new();
 
         learner.record_outcome(&QueryOutcome {
-            concept_id: 1,
+            concept: concept(1),
             resolved_at: QueryScope::Local,
             provider: None,
             quality: 0.8,
@@ -349,7 +360,7 @@ mod tests {
         });
 
         learner.record_outcome(&QueryOutcome {
-            concept_id: 1,
+            concept: concept(1),
             resolved_at: QueryScope::Local,
             provider: None,
             quality: 0.6,
@@ -357,7 +368,7 @@ mod tests {
             result_count: 2,
         });
 
-        let stats = learner.get_stats(1, QueryScope::Local).unwrap();
+        let stats = learner.get_stats(concept(1), QueryScope::Local).unwrap();
         assert!(
             (stats.avg_quality - 0.7).abs() < 0.01,
             "Avg quality should be ~0.7"
@@ -387,7 +398,7 @@ mod tests {
         learner.record_outcome(&success_outcome(1, QueryScope::Local));
         learner.record_outcome(&failure_outcome(1, QueryScope::Local));
 
-        let stats = learner.get_stats(1, QueryScope::Local).unwrap();
+        let stats = learner.get_stats(concept(1), QueryScope::Local).unwrap();
         assert_eq!(stats.success_rate(), 0.5);
     }
 }

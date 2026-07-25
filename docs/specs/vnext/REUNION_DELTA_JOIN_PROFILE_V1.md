@@ -61,3 +61,10 @@ The caller supplies explicit limits for delta objects, candidate pairs, and prop
 - inverse matching from exact validated public Receptor objects only;
 - private remote objects rejected before matching; and
 - proposal-only quarantine with no executable output.
+
+The feature-gated node runtime additionally covers the full one-hop boundary
+described by
+[Distributed KQL Runtime Profile v1](DISTRIBUTED_KQL_RUNTIME_PROFILE_V1.md):
+real authenticated QUIC/OBP-RP delivery, durable source provenance, local
+StandingNeed reattachment, restart/replay deduplication, partial zero-result
+coverage and a non-executable private proposal.

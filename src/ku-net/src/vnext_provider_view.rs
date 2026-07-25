@@ -325,6 +325,7 @@ mod tests {
                 grant: DelegationGrant {
                     actor: ku_core::foundation::ActorId::from_bytes([byte; 32]),
                     device: feed.signed.inception.owner_device,
+                    subject_feed: feed.feed_id,
                     delegation_ref: delegation,
                     namespace_commitment: None,
                     first_generation: 0,

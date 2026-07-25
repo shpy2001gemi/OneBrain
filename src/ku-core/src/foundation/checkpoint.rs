@@ -1102,6 +1102,7 @@ mod tests {
             grant: DelegationGrant {
                 actor: ActorId::from_bytes([16; 32]),
                 device,
+                subject_feed: feed.feed_id,
                 delegation_ref: delegation,
                 namespace_commitment: Some(feed.signed.inception.namespace_commitment),
                 first_generation: 0,

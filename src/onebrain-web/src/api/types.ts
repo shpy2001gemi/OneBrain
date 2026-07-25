@@ -164,7 +164,27 @@ export interface StatusResponse {
   obt_balance: number;
   version: string;
   model: string;
+  concept_registry: ConceptRegistryStatus;
   vnext: VNextStatusSnapshot;
+}
+
+export interface ConceptRegistryStatus {
+  mode: 'required' | 'optional' | 'disabled';
+  state: 'LOADED' | 'FALLBACK_V1' | 'DISABLED';
+  path: string;
+  encoder_version: number;
+  backend: 'IN_MEMORY' | 'INDEXED_ON_DEMAND' | null;
+  cache_capacity: number;
+  obr_schema_version: number | null;
+  manifest_version: number | null;
+  concept_count: number | null;
+  label_count: number | null;
+  checksum_blake3: string | null;
+  built_at_utc: string | null;
+  builder_version: string | null;
+  source_snapshots: Record<string, string>;
+  failure_kind: 'MISSING' | 'CORRUPT' | 'TRUNCATED' | 'UNSUPPORTED' | 'RESOURCE_LIMIT' | 'MANIFEST' | 'IO' | null;
+  error?: string;
 }
 
 export interface VNextStatusSnapshot {
@@ -201,7 +221,27 @@ export interface VNextStatusSnapshot {
     remote_cognition: ConsentView;
     consent_is_inferred: false;
   };
-  features: Record<string, boolean>;
+  features: {
+    object_event_v1_requested: boolean;
+    obp_rp_requested: boolean;
+    object_event_v1: boolean;
+    obp_rp: boolean;
+    provider_lease: boolean;
+    fidelity: boolean;
+    checkpoint_gc: boolean;
+    legacy_adapter: boolean;
+  };
+  network_runtime: {
+    compiled: boolean;
+    lifecycle: 'DISABLED' | 'BUILD_UNAVAILABLE' | 'CONFIGURED' | 'LISTENING';
+    listen_addr: string | null;
+    authenticated_sessions: number;
+    active_sessions: number;
+    accepted_records: number;
+    deferred_records: number;
+    rejected_records: number;
+    claims_network_completion: false;
+  };
 }
 
 export type ConsentView =

@@ -69,6 +69,30 @@ impl VNextFeatureFlags {
 pub struct VNextFeatureConfig {
     pub enabled: VNextFeatureFlags,
     pub kill_switches: VNextFeatureFlags,
+    pub network: VNextNetworkPolicy,
+}
+
+/// Bounded runtime policy for authenticated QUIC/reconciliation sessions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct VNextNetworkPolicy {
+    pub max_concurrent_sessions: usize,
+    pub handshake_timeout_seconds: u64,
+    pub max_records_per_session: u64,
+    pub max_retries_per_record: u64,
+    pub max_inflight_bytes: u64,
+}
+
+impl Default for VNextNetworkPolicy {
+    fn default() -> Self {
+        Self {
+            max_concurrent_sessions: 64,
+            handshake_timeout_seconds: 10,
+            max_records_per_session: 4_096,
+            max_retries_per_record: 8,
+            max_inflight_bytes: 4 * 1_048_576,
+        }
+    }
 }
 
 impl VNextFeatureConfig {
@@ -77,6 +101,7 @@ impl VNextFeatureConfig {
     }
 
     pub fn validate(&self) -> Result<(), VNextFeatureConfigError> {
+        self.network.validate()?;
         self.require(VNextFeature::ObpRp, VNextFeature::ObjectEventV1)?;
         self.require(VNextFeature::InventoryShadow, VNextFeature::ObjectEventV1)?;
         self.require(VNextFeature::ProviderLease, VNextFeature::ObjectEventV1)?;
@@ -108,6 +133,28 @@ impl VNextFeatureConfig {
     }
 }
 
+impl VNextNetworkPolicy {
+    pub fn validate(self) -> Result<(), VNextFeatureConfigError> {
+        if self.max_concurrent_sessions == 0
+            || self.max_concurrent_sessions > 4_096
+            || self.handshake_timeout_seconds == 0
+            || self.handshake_timeout_seconds > 300
+            // One reconciliation delivery needs at least one manifest record
+            // and one payload record on the authenticated session.
+            || self.max_records_per_session < 2
+            || self.max_records_per_session > 1_000_000
+            || self.max_retries_per_record == 0
+            || self.max_retries_per_record > 1_024
+            || self.max_inflight_bytes == 0
+            || self.max_inflight_bytes > 16 * 1_048_576
+        {
+            Err(VNextFeatureConfigError::InvalidNetworkPolicy)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
 pub enum VNextFeatureConfigError {
     #[error(
@@ -119,6 +166,8 @@ pub enum VNextFeatureConfigError {
         feature: VNextFeature,
         dependency: VNextFeature,
     },
+    #[error("vNext network resource policy is outside the supported bounds")]
+    InvalidNetworkPolicy,
 }
 
 #[cfg(test)]
@@ -177,5 +226,15 @@ mod tests {
         let config: VNextFeatureConfig = serde_json::from_str("{}").unwrap();
         assert_eq!(config, VNextFeatureConfig::default());
         assert!(serde_json::from_str::<VNextFeatureConfig>(r#"{"unknown":true}"#).is_err());
+    }
+
+    #[test]
+    fn one_record_session_cannot_carry_manifest_and_payload() {
+        let mut config = VNextFeatureConfig::default();
+        config.network.max_records_per_session = 1;
+        assert_eq!(
+            config.validate().unwrap_err(),
+            VNextFeatureConfigError::InvalidNetworkPolicy
+        );
     }
 }

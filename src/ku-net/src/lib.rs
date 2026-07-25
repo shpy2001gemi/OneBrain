@@ -53,6 +53,8 @@ pub mod vnext_carrier;
 pub mod vnext_carrier_adapter;
 pub mod vnext_inventory_forest;
 pub mod vnext_provider_view;
+#[cfg(feature = "quic")]
+pub mod vnext_quic_session;
 pub mod vnext_reachability;
 pub mod vnext_reconciliation;
 pub mod vnext_reconciliation_journal;

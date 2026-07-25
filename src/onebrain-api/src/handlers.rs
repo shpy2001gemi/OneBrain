@@ -210,6 +210,7 @@ pub async fn get_status(State(state): State<AppState>) -> ApiResult<StatusRespon
     let peer_count = node.peer_count();
     let uptime_s = state.start_time.elapsed().as_secs();
     let node_name = node.node_name().to_string();
+    let concept_registry = node.concept_registry_status().clone();
     let vnext = node.vnext_status();
 
     // Get balance for tier + obt
@@ -227,6 +228,7 @@ pub async fn get_status(State(state): State<AppState>) -> ApiResult<StatusRespon
         obt_balance,
         version: env!("CARGO_PKG_VERSION").to_string(),
         model: node.config().model.clone(),
+        concept_registry,
         vnext,
     }))
 }

@@ -92,12 +92,46 @@ pub struct ConsentStatusView {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VNextFeatureStatus {
+    pub object_event_v1_requested: bool,
+    pub obp_rp_requested: bool,
     pub object_event_v1: bool,
     pub obp_rp: bool,
     pub provider_lease: bool,
     pub fidelity: bool,
     pub checkpoint_gc: bool,
     pub legacy_adapter: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum NetworkRuntimeLifecycle {
+    Disabled,
+    BuildUnavailable,
+    Configured,
+    Listening,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NetworkRuntimeStatusView {
+    pub compiled: bool,
+    pub lifecycle: NetworkRuntimeLifecycle,
+    pub listen_addr: Option<String>,
+    pub authenticated_sessions: u64,
+    pub active_sessions: usize,
+    pub accepted_records: u64,
+    pub deferred_records: u64,
+    pub rejected_records: u64,
+    pub claims_network_completion: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NetworkRuntimeObservation {
+    pub listen_addr: String,
+    pub authenticated_sessions: u64,
+    pub active_sessions: usize,
+    pub accepted_records: u64,
+    pub deferred_records: u64,
+    pub rejected_records: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,6 +144,7 @@ pub struct VNextStatusSnapshot {
     pub legacy: LegacyStatusView,
     pub consent: ConsentStatusView,
     pub features: VNextFeatureStatus,
+    pub network_runtime: NetworkRuntimeStatusView,
 }
 
 impl VNextStatusSnapshot {
@@ -118,6 +153,22 @@ impl VNextStatusSnapshot {
         observed_peer_count: usize,
         config: &VNextFeatureConfig,
         raw_v1_readable: bool,
+    ) -> Self {
+        Self::local_runtime_with_network(
+            local_record_count,
+            observed_peer_count,
+            config,
+            raw_v1_readable,
+            None,
+        )
+    }
+
+    pub fn local_runtime_with_network(
+        local_record_count: usize,
+        observed_peer_count: usize,
+        config: &VNextFeatureConfig,
+        raw_v1_readable: bool,
+        runtime: Option<NetworkRuntimeObservation>,
     ) -> Self {
         let standalone = observed_peer_count == 0;
         let assessed_frontier = None;
@@ -135,6 +186,40 @@ impl VNextStatusSnapshot {
             legacy_warnings
                 .push("LEGACY_ALIASES_ARE_DOWNGRADED_TO_SCOPED_ADVISORY_EVIDENCE".into());
         }
+        let object_event_requested = config.is_active(VNextFeature::ObjectEventV1);
+        let obp_rp_requested = config.is_active(VNextFeature::ObpRp);
+        let runtime_compiled = cfg!(feature = "vnext-network-runtime");
+        let runtime_listening = runtime.is_some();
+        let network_runtime = match runtime {
+            Some(runtime) => NetworkRuntimeStatusView {
+                compiled: true,
+                lifecycle: NetworkRuntimeLifecycle::Listening,
+                listen_addr: Some(runtime.listen_addr),
+                authenticated_sessions: runtime.authenticated_sessions,
+                active_sessions: runtime.active_sessions,
+                accepted_records: runtime.accepted_records,
+                deferred_records: runtime.deferred_records,
+                rejected_records: runtime.rejected_records,
+                claims_network_completion: false,
+            },
+            None => NetworkRuntimeStatusView {
+                compiled: runtime_compiled,
+                lifecycle: if !obp_rp_requested {
+                    NetworkRuntimeLifecycle::Disabled
+                } else if !runtime_compiled {
+                    NetworkRuntimeLifecycle::BuildUnavailable
+                } else {
+                    NetworkRuntimeLifecycle::Configured
+                },
+                listen_addr: None,
+                authenticated_sessions: 0,
+                active_sessions: 0,
+                accepted_records: 0,
+                deferred_records: 0,
+                rejected_records: 0,
+                claims_network_completion: false,
+            },
+        };
         Self {
             profile_major: VNEXT_STATUS_PROFILE_MAJOR,
             usability: if standalone {
@@ -182,13 +267,16 @@ impl VNextStatusSnapshot {
                 consent_is_inferred: false,
             },
             features: VNextFeatureStatus {
-                object_event_v1: config.is_active(VNextFeature::ObjectEventV1),
-                obp_rp: config.is_active(VNextFeature::ObpRp),
-                provider_lease: config.is_active(VNextFeature::ProviderLease),
+                object_event_v1_requested: object_event_requested,
+                obp_rp_requested,
+                object_event_v1: object_event_requested && runtime_listening,
+                obp_rp: obp_rp_requested && runtime_listening,
+                provider_lease: config.is_active(VNextFeature::ProviderLease) && runtime_listening,
                 fidelity: config.is_active(VNextFeature::Fidelity),
                 checkpoint_gc: config.is_active(VNextFeature::CheckpointGc),
                 legacy_adapter: config.is_active(VNextFeature::LegacyAdapter),
             },
+            network_runtime,
         }
     }
 
@@ -248,5 +336,53 @@ mod tests {
         for forbidden_value in ["\"FULL\"", "\"GLOBAL\"", "\"CLOSED\""] {
             assert!(!json.contains(forbidden_value));
         }
+    }
+
+    #[test]
+    fn requested_feature_is_not_reported_active_without_a_real_listener() {
+        let mut config = VNextFeatureConfig::default();
+        config.enabled.object_event_v1 = true;
+        config.enabled.obp_rp = true;
+        let status = VNextStatusSnapshot::local_runtime(0, 0, &config, false);
+        assert!(status.features.object_event_v1_requested);
+        assert!(status.features.obp_rp_requested);
+        assert!(!status.features.object_event_v1);
+        assert!(!status.features.obp_rp);
+        assert_eq!(
+            status.network_runtime.lifecycle,
+            if cfg!(feature = "vnext-network-runtime") {
+                NetworkRuntimeLifecycle::Configured
+            } else {
+                NetworkRuntimeLifecycle::BuildUnavailable
+            }
+        );
+    }
+
+    #[test]
+    fn listener_observation_activates_runtime_status_without_global_claims() {
+        let mut config = VNextFeatureConfig::default();
+        config.enabled.object_event_v1 = true;
+        config.enabled.obp_rp = true;
+        let status = VNextStatusSnapshot::local_runtime_with_network(
+            0,
+            0,
+            &config,
+            false,
+            Some(NetworkRuntimeObservation {
+                listen_addr: "127.0.0.1:4242".into(),
+                authenticated_sessions: 2,
+                active_sessions: 1,
+                accepted_records: 3,
+                deferred_records: 4,
+                rejected_records: 5,
+            }),
+        );
+        assert!(status.features.object_event_v1);
+        assert!(status.features.obp_rp);
+        assert_eq!(
+            status.network_runtime.lifecycle,
+            NetworkRuntimeLifecycle::Listening
+        );
+        assert!(!status.network_runtime.claims_network_completion);
     }
 }

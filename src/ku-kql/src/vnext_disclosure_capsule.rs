@@ -928,6 +928,7 @@ mod tests {
                 grant: DelegationGrant {
                     actor: issuer,
                     device: signer.signed.inception.owner_device,
+                    subject_feed: signer.feed_id,
                     delegation_ref,
                     namespace_commitment: None,
                     first_generation: 0,

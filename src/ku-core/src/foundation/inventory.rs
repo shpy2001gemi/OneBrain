@@ -31,6 +31,12 @@ pub enum InventoryRecordKind {
     Object = 0,
     Event = 1,
     MappingKernel = 2,
+    /// Signed feed/key inception material required before authored events can
+    /// be signature-validated. This is control-plane data, never KU content.
+    FeedInception = 3,
+    /// Self-certifying actor-root and authority-chain control records. These
+    /// are not knowledge events and must pass their dedicated schema decoder.
+    AuthorityEvent = 4,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

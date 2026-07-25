@@ -61,4 +61,7 @@ and ImplementationManifest layers, not this semantic object.
 - An undeclared role remains unsupported even if a model would rank it similar.
 - Preconditions, outputs, effects, properties, invariants, operating conditions,
   limits and abstraction patterns all use CCID-only alpha-normalized frames.
-
+- A validated known object is accepted by the typed runtime decoder only when
+  every field decodes and the reconstructed affordance re-encodes to the exact
+  canonical payload; missing fields, unknown fields and alternate set/frame
+  representations are rejected.

@@ -982,6 +982,17 @@ fn evaluate_condition(ku: &KuRuntime, cond: &Condition) -> bool {
                 } else {
                     false
                 }
+            } else if field_name == "concept_ccids" {
+                if let Value::Text(target) = value {
+                    target.len() == 32
+                        && target.bytes().all(|byte| byte.is_ascii_hexdigit())
+                        && ku
+                            .concept_ccids()
+                            .iter()
+                            .any(|ccid| ccid.to_hex().eq_ignore_ascii_case(target))
+                } else {
+                    false
+                }
             } else {
                 false
             }
@@ -1198,6 +1209,7 @@ fn extracted_to_f64(v: &ExtractedValue) -> f64 {
 mod tests {
     use super::*;
     use crate::parser::parse_query;
+    use ku_core::core_dna::ConceptTableEntry;
     use ku_core::types::{Bond, Creator, EdgeState, RelationType};
 
     fn make_test_ku(concept: u64, certainty: u16, trust_score: u16) -> KuRuntime {
@@ -1399,6 +1411,36 @@ mod tests {
         // Verify concept_ids method works directly
         assert!(result.rows[0].contains_concept(301));
         assert!(!result.rows[0].contains_concept(999));
+    }
+
+    #[test]
+    fn test_concept_ccids_contains_uses_global_identity() {
+        let ccid = [0xA5; 16];
+        let dna = CoreDna {
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: true,
+            },
+            concept_table: vec![ConceptTableEntry { local_id: 42, ccid }],
+            instructions: vec![Instruction::Triple { s: 42, p: 2, o: 3 }],
+        };
+        let mut exec = LocalExecutor::new();
+        exec.insert(KuRuntime::from_dna(dna).unwrap());
+
+        let query = parse_query(&format!(
+            "FIND (k:KU) WHERE k.concept_ccids CONTAINS \"{}\"",
+            ku_core::foundation::ConceptCcid::from_bytes(ccid)
+        ))
+        .unwrap();
+        let result = exec.execute(&query).unwrap();
+        assert_eq!(result.total_count, 1);
+
+        let miss = parse_query(
+            "FIND (k:KU) WHERE k.concept_ccids CONTAINS \"00000000000000000000000000000000\"",
+        )
+        .unwrap();
+        assert_eq!(exec.execute(&miss).unwrap().total_count, 0);
     }
 
     #[test]

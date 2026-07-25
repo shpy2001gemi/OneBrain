@@ -1107,6 +1107,7 @@ mod tests {
             grant: DelegationGrant {
                 actor: ActorId::from_bytes([36; 32]),
                 device,
+                subject_feed: feed.feed_id,
                 delegation_ref: delegation,
                 namespace_commitment: None,
                 first_generation: 0,

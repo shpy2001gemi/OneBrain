@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use ku_core::KuRuntime;
+use ku_core::{foundation::ConceptCcid, KuRuntime};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -15,9 +15,9 @@ use ku_core::KuRuntime;
 /// A discovered bridge between two knowledge domains.
 #[derive(Debug, Clone)]
 pub struct KnowledgeBridge {
-    pub source_domain: u64,
-    pub target_domain: u64,
-    pub bridge_concepts: Vec<u64>,
+    pub source_domain: ConceptCcid,
+    pub target_domain: ConceptCcid,
+    pub bridge_concepts: Vec<ConceptCcid>,
     pub strength: f64,
     pub suggested_query: String,
     pub description: String,
@@ -68,37 +68,45 @@ impl BridgeFinder {
 
     /// Map each concept to the "domains" it appears in.
     /// A concept's "domain" = primary concept of its containing KU.
-    fn build_concept_domain_map(&self, kus: &[KuRuntime]) -> HashMap<u64, HashSet<u64>> {
-        let mut map: HashMap<u64, HashSet<u64>> = HashMap::new();
+    fn build_concept_domain_map(
+        &self,
+        kus: &[KuRuntime],
+    ) -> HashMap<ConceptCcid, HashSet<ConceptCcid>> {
+        let mut map: HashMap<ConceptCcid, HashSet<ConceptCcid>> = HashMap::new();
         for ku in kus {
-            let domain = match ku.primary_concept() {
-                Some(id) => id,
+            let domain = match ku.primary_concept_ccid() {
+                Some(ccid) => ccid,
                 None => continue,
             };
-            for concept_id in ku.concept_ids() {
-                map.entry(concept_id).or_default().insert(domain);
+            for concept_ccid in ku.concept_ccids() {
+                map.entry(concept_ccid).or_default().insert(domain);
             }
             // Bond context concepts also belong to this domain
             for bond in &ku.epi.bonds {
                 for &ctx_id in &bond.context {
-                    map.entry(ctx_id).or_default().insert(domain);
+                    if let Some(ctx_ccid) = ku.concept_ccid(ctx_id) {
+                        map.entry(ctx_ccid).or_default().insert(domain);
+                    }
                 }
             }
         }
         map
     }
 
-    fn build_domain_strength(&self, kus: &[KuRuntime]) -> HashMap<u64, usize> {
-        let mut strength: HashMap<u64, usize> = HashMap::new();
+    fn build_domain_strength(&self, kus: &[KuRuntime]) -> HashMap<ConceptCcid, usize> {
+        let mut strength: HashMap<ConceptCcid, usize> = HashMap::new();
         for ku in kus {
-            if let Some(primary) = ku.primary_concept() {
+            if let Some(primary) = ku.primary_concept_ccid() {
                 *strength.entry(primary).or_insert(0) += 1;
             }
         }
         strength
     }
 
-    fn find_bridge_concepts(&self, map: &HashMap<u64, HashSet<u64>>) -> Vec<(u64, HashSet<u64>)> {
+    fn find_bridge_concepts(
+        &self,
+        map: &HashMap<ConceptCcid, HashSet<ConceptCcid>>,
+    ) -> Vec<(ConceptCcid, HashSet<ConceptCcid>)> {
         map.iter()
             .filter(|(_, domains)| domains.len() >= 2)
             .map(|(&concept, domains)| (concept, domains.clone()))
@@ -107,13 +115,14 @@ impl BridgeFinder {
 
     fn generate_bridges(
         &self,
-        bridge_concepts: &[(u64, HashSet<u64>)],
-        domain_strength: &HashMap<u64, usize>,
+        bridge_concepts: &[(ConceptCcid, HashSet<ConceptCcid>)],
+        domain_strength: &HashMap<ConceptCcid, usize>,
     ) -> Vec<KnowledgeBridge> {
-        let mut pair_bridges: HashMap<(u64, u64), Vec<u64>> = HashMap::new();
+        let mut pair_bridges: HashMap<(ConceptCcid, ConceptCcid), Vec<ConceptCcid>> =
+            HashMap::new();
 
         for (concept, domains) in bridge_concepts {
-            let list: Vec<u64> = domains.iter().copied().collect();
+            let list: Vec<ConceptCcid> = domains.iter().copied().collect();
             for i in 0..list.len() {
                 for j in (i + 1)..list.len() {
                     let pair = if list[i] < list[j] {
@@ -154,7 +163,7 @@ impl BridgeFinder {
                     bridge_concepts: concepts,
                     strength,
                     suggested_query: format!(
-                        "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} SCOPE DHT",
+                        "FIND (k:KU) WHERE k.concept_ccids CONTAINS \"{}\" SCOPE DHT",
                         target
                     ),
                     description: format!(
@@ -188,17 +197,30 @@ impl Default for BridgeFinder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction};
+    use ku_core::core_dna::{ConceptTableEntry, CoreDna, CoreDnaHeader, Instruction};
     use ku_core::{Epigenetics, KuRuntime, RelationType};
+
+    fn concept(value: u64) -> ConceptCcid {
+        ConceptCcid::from_bytes((value as u128).to_be_bytes())
+    }
 
     fn make_ku(concept_id: u64, ctx_concepts: &[u64]) -> KuRuntime {
         let dna = CoreDna {
             header: CoreDnaHeader {
                 version: 2,
                 gene_type: 0,
-                has_concept_table: false,
+                has_concept_table: true,
             },
-            concept_table: Vec::new(),
+            concept_table: std::iter::once(concept_id)
+                .chain([133, 132])
+                .chain(ctx_concepts.iter().copied())
+                .collect::<HashSet<_>>()
+                .into_iter()
+                .map(|local_id| ConceptTableEntry {
+                    local_id,
+                    ccid: *concept(local_id).as_bytes(),
+                })
+                .collect(),
             instructions: vec![
                 Instruction::Triple {
                     s: concept_id,

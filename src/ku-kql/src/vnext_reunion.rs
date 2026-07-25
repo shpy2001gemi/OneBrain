@@ -188,6 +188,10 @@ pub struct ReunionFrontier {
 }
 
 impl ReunionFrontier {
+    pub fn has_processed_affordance(&self, cid: [u8; 32]) -> bool {
+        self.remote_affordances.contains(&cid)
+    }
+
     pub fn join_affordance_delta(
         &mut self,
         mut delta: Vec<ValidatedRemoteAffordance>,

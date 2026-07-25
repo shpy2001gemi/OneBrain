@@ -238,6 +238,23 @@ impl ReconciliationJournalBackend for SharedJournal {
         self.0.lock().unwrap().insert(*binding, bytes.to_vec());
         Ok(())
     }
+
+    fn compare_and_swap(
+        &self,
+        binding: &[u8; 32],
+        expected: &[u8],
+        replacement: &[u8],
+    ) -> Result<bool, String> {
+        let mut snapshots = self.0.lock().unwrap();
+        let Some(current) = snapshots.get(binding) else {
+            return Ok(false);
+        };
+        if current.as_slice() != expected {
+            return Ok(false);
+        }
+        snapshots.insert(*binding, replacement.to_vec());
+        Ok(true)
+    }
 }
 
 #[derive(Clone, Default)]

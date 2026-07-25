@@ -314,7 +314,7 @@ impl AiEncoder {
     pub async fn encode_v2(
         &self,
         text: &str,
-        registry: &ku_core::concept_registry::ConceptRegistry,
+        registry: &dyn ku_core::concept_registry::ConceptLookup,
     ) -> Result<EncodingResult, EncoderError> {
         use crate::analyzer;
         use crate::builder::KuBuilder;
@@ -390,7 +390,9 @@ impl AiEncoder {
 
         // STEP 4: Resolve concepts (name → CCID)
         let mut resolver = ConceptResolver::new(registry);
-        let resolved = resolver.resolve_all(analyzed);
+        let resolved = resolver
+            .resolve_all(analyzed)
+            .map_err(|error| EncoderError::ConceptRegistry(error.to_string()))?;
         let _total_concepts = resolved.len();
 
         // Log any resolution warnings (fuzzy/ambiguous matches)

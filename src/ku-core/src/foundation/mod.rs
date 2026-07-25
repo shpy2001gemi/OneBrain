@@ -3,9 +3,11 @@
 //! This module is deliberately side-by-side with the KU v7 Core DNA codec. It
 //! does not reinterpret, rewrite, or replace existing Core DNA/CCID bytes.
 
+pub mod actor_root;
 pub mod affordance;
 pub mod assembly;
 pub mod authority;
+pub mod authority_event;
 pub mod canonical;
 pub mod capability;
 pub mod capability_offer;
@@ -40,6 +42,10 @@ pub mod storage;
 pub mod use_evidence;
 pub mod vault;
 
+pub use actor_root::{
+    actor_id_from_root_key, decode_actor_root_delegation, ActorRootDelegation,
+    ActorRootDelegationError, SignedActorRootDelegation, ValidatedActorRootDelegation,
+};
 pub use affordance::{
     AcceptedInput, AffordanceError, AffordanceOrigin, AffordanceSemantics, KnowledgeAffordance,
     KNOWLEDGE_AFFORDANCE_KIND,
@@ -51,6 +57,11 @@ pub use assembly::{
 pub use authority::{
     validate_successor_structure, AcceptedRevocation, DelegationGrant, FeedAuthorityDecision,
     FeedAuthorityView, FeedSuccessorDecision, SuccessorStructureError, UnresolvedAuthorityReason,
+};
+pub use authority_event::{
+    authority_event_descriptor, decode_actor_delegation, decode_actor_revocation, ActorDelegation,
+    ActorRevocation, AuthorityEventDescriptor, AuthorityEventError, SignedActorDelegation,
+    SignedActorRevocation, ValidatedActorDelegation, ValidatedActorRevocation,
 };
 pub use canonical::{
     canonicalize_set_by_key, decode_canonical, encode_canonical, CanonicalDocument, CanonicalError,
@@ -99,8 +110,9 @@ pub use content_id::{
     MappingKernelCid, ObjectCid, PermitCid, ReservedDomain, SelectorCid, TypedDigest, VectorCid,
 };
 pub use event::{
-    decode_knowledge_event, EventReadiness, EventReplayGuard, EventReplayOutcome, EventType,
-    KnowledgeEventEnvelope, SignedKnowledgeEvent, ValidatedKnowledgeEvent,
+    decode_knowledge_event, event_author_feed, EventReadiness, EventReplayGuard,
+    EventReplayOutcome, EventType, KnowledgeEventEnvelope, SignedKnowledgeEvent,
+    ValidatedKnowledgeEvent,
 };
 pub use feed::{
     decode_feed_inception, FeedInception, NamespaceCommitment, SignedFeedInception,

@@ -9,7 +9,7 @@
 //! ```
 
 use ku_core::ccid::{ccid, Ccid};
-use ku_core::concept_registry::{ConceptRegistry, ResolveResult};
+use ku_core::concept_registry::{ConceptLookup, ConceptLookupError, ResolveResult};
 use ku_core::core_dna::Op;
 
 use crate::types::{AnalyzedTriple, ResolvedTriple};
@@ -71,13 +71,13 @@ pub enum ResolutionWarningType {
 ///
 /// Accumulates `ResolutionWarning`s for fuzzy/ambiguous matches.
 pub struct ConceptResolver<'a> {
-    registry: &'a ConceptRegistry,
+    registry: &'a dyn ConceptLookup,
     warnings: Vec<ResolutionWarning>,
 }
 
 impl<'a> ConceptResolver<'a> {
     /// Create a resolver with the given registry.
-    pub fn new(registry: &'a ConceptRegistry) -> Self {
+    pub fn new(registry: &'a dyn ConceptLookup) -> Self {
         Self {
             registry,
             warnings: Vec::new(),
@@ -87,30 +87,30 @@ impl<'a> ConceptResolver<'a> {
     /// Resolve a single concept name to a CCID.
     ///
     /// Tries English name first, then original name, then fallback.
-    pub fn resolve_name(&mut self, name: &str, name_en: &str) -> Ccid {
+    pub fn resolve_name(&mut self, name: &str, name_en: &str) -> Result<Ccid, ConceptLookupError> {
         // 1. Try English canonical name
         if !name_en.is_empty() {
-            if let Some(ccid) = self.try_resolve(name_en) {
-                return ccid;
+            if let Some(ccid) = self.try_resolve(name_en)? {
+                return Ok(ccid);
             }
         }
 
         // 2. Try original language name
         if !name.is_empty() && name != name_en {
-            if let Some(ccid) = self.try_resolve(name) {
-                return ccid;
+            if let Some(ccid) = self.try_resolve(name)? {
+                return Ok(ccid);
             }
         }
 
         // 3. Fallback: generate CCID from English name (or original if no English)
         let fallback_name = if !name_en.is_empty() { name_en } else { name };
-        self.fallback_ccid(fallback_name)
+        Ok(self.fallback_ccid(fallback_name))
     }
 
     /// Try to resolve a name in the registry.
-    fn try_resolve(&mut self, name: &str) -> Option<Ccid> {
-        match self.registry.resolve(name) {
-            ResolveResult::Found(resolved) => Some(resolved.ccid),
+    fn try_resolve(&mut self, name: &str) -> Result<Option<Ccid>, ConceptLookupError> {
+        match self.registry.resolve_checked(name)? {
+            ResolveResult::Found(resolved) => Ok(Some(resolved.ccid)),
             ResolveResult::Fuzzy(resolved) => {
                 self.warnings.push(ResolutionWarning {
                     input_name: name.to_string(),
@@ -118,7 +118,7 @@ impl<'a> ConceptResolver<'a> {
                     chosen_canonical: resolved.canonical_name.clone(),
                     candidate_count: 1,
                 });
-                Some(resolved.ccid)
+                Ok(Some(resolved.ccid))
             }
             ResolveResult::Ambiguous(matches) => {
                 self.warnings.push(ResolutionWarning {
@@ -127,9 +127,9 @@ impl<'a> ConceptResolver<'a> {
                     chosen_canonical: matches[0].canonical_name.clone(),
                     candidate_count: matches.len(),
                 });
-                Some(matches[0].ccid)
+                Ok(Some(matches[0].ccid))
             }
-            ResolveResult::NotFound => None,
+            ResolveResult::NotFound => Ok(None),
         }
     }
 
@@ -163,34 +163,40 @@ impl<'a> ConceptResolver<'a> {
     /// Special handling for `role=formula`:
     /// - Object is NOT resolved to CCID (formula string preserved)
     /// - `formula_string` is set to the raw object text
-    pub fn resolve_triple(&mut self, analyzed: AnalyzedTriple) -> ResolvedTriple {
-        let subject_ccid = self.resolve_name(&analyzed.raw.s, &analyzed.raw.s_en);
-        let predicate_ccid = self.resolve_name(&analyzed.raw.p, &analyzed.raw.p);
+    pub fn resolve_triple(
+        &mut self,
+        analyzed: AnalyzedTriple,
+    ) -> Result<ResolvedTriple, ConceptLookupError> {
+        let subject_ccid = self.resolve_name(&analyzed.raw.s, &analyzed.raw.s_en)?;
+        let predicate_ccid = self.resolve_name(&analyzed.raw.p, &analyzed.raw.p)?;
 
         if analyzed.op == Op::Formula {
             // Formula: preserve object string, don't resolve to CCID
-            ResolvedTriple {
+            Ok(ResolvedTriple {
                 formula_string: Some(analyzed.raw.o.clone()),
                 subject_ccid,
                 object_ccid: None,
                 predicate_ccid,
                 analyzed,
-            }
+            })
         } else {
             // Normal: resolve object to CCID
-            let object_ccid = self.resolve_name(&analyzed.raw.o, &analyzed.raw.o_en);
-            ResolvedTriple {
+            let object_ccid = self.resolve_name(&analyzed.raw.o, &analyzed.raw.o_en)?;
+            Ok(ResolvedTriple {
                 subject_ccid,
                 object_ccid: Some(object_ccid),
                 predicate_ccid,
                 formula_string: None,
                 analyzed,
-            }
+            })
         }
     }
 
     /// Resolve a batch of analyzed triples.
-    pub fn resolve_all(&mut self, triples: Vec<AnalyzedTriple>) -> Vec<ResolvedTriple> {
+    pub fn resolve_all(
+        &mut self,
+        triples: Vec<AnalyzedTriple>,
+    ) -> Result<Vec<ResolvedTriple>, ConceptLookupError> {
         triples
             .into_iter()
             .map(|t| self.resolve_triple(t))
@@ -206,8 +212,22 @@ impl<'a> ConceptResolver<'a> {
 mod tests {
     use super::*;
     use crate::types::SpoTriple;
-    use ku_core::concept_registry::{ConceptCategory, ResolvedConcept};
+    use ku_core::concept_registry::{ConceptCategory, ConceptRegistry, ResolvedConcept};
     use ku_core::core_dna::Op;
+
+    struct FailingRegistry;
+
+    impl ConceptLookup for FailingRegistry {
+        fn resolve(&self, _name: &str) -> ResolveResult {
+            ResolveResult::NotFound
+        }
+
+        fn resolve_checked(&self, _name: &str) -> Result<ResolveResult, ConceptLookupError> {
+            Err(ConceptLookupError::new(
+                "registry sidecar became unreadable",
+            ))
+        }
+    }
 
     fn make_test_registry() -> ConceptRegistry {
         let mut registry = ConceptRegistry::new();
@@ -254,7 +274,7 @@ mod tests {
     fn test_resolve_found_english() {
         let registry = make_test_registry();
         let mut resolver = ConceptResolver::new(&registry);
-        let result = resolver.resolve_name("nước", "water");
+        let result = resolver.resolve_name("nước", "water").unwrap();
         assert_eq!(result, ccid(b"wd:Q283"));
     }
 
@@ -263,7 +283,7 @@ mod tests {
         let registry = make_test_registry();
         let mut resolver = ConceptResolver::new(&registry);
         // English name empty, but original "nước" is in registry
-        let result = resolver.resolve_name("nước", "");
+        let result = resolver.resolve_name("nước", "").unwrap();
         assert_eq!(result, ccid(b"wd:Q283"));
     }
 
@@ -271,10 +291,17 @@ mod tests {
     fn test_resolve_not_found_fallback() {
         let registry = make_test_registry();
         let mut resolver = ConceptResolver::new(&registry);
-        let result = resolver.resolve_name("xyz_unknown", "xyz_unknown");
+        let result = resolver.resolve_name("xyz_unknown", "xyz_unknown").unwrap();
         // Should be a fallback CCID, not a registry CCID
         let expected = ccid(b"ob:xyz_unknown");
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn registry_failure_never_becomes_a_fallback_ccid() {
+        let mut resolver = ConceptResolver::new(&FailingRegistry);
+        let error = resolver.resolve_name("water", "water").unwrap_err();
+        assert!(error.to_string().contains("sidecar became unreadable"));
     }
 
     #[test]
@@ -298,7 +325,7 @@ mod tests {
             certainty: 8000,
         };
 
-        let resolved = resolver.resolve_triple(analyzed);
+        let resolved = resolver.resolve_triple(analyzed).unwrap();
         assert_eq!(resolved.subject_ccid, ccid(b"wd:Q7432")); // desk
         assert_eq!(resolved.object_ccid, Some(ccid(b"wd:Q1075"))); // leg
         assert!(resolved.formula_string.is_none());
@@ -325,7 +352,7 @@ mod tests {
             certainty: 10000,
         };
 
-        let resolved = resolver.resolve_triple(analyzed);
+        let resolved = resolver.resolve_triple(analyzed).unwrap();
         assert!(
             resolved.object_ccid.is_none(),
             "Formula should not resolve object"
@@ -354,7 +381,7 @@ mod tests {
             certainty: 8000,
         }];
 
-        let resolved = resolver.resolve_all(triples);
+        let resolved = resolver.resolve_all(triples).unwrap();
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].subject_ccid, ccid(b"wd:Q283")); // water
     }
@@ -363,8 +390,39 @@ mod tests {
     fn test_fallback_is_deterministic() {
         let registry = make_test_registry();
         let mut resolver = ConceptResolver::new(&registry);
-        let c1 = resolver.resolve_name("xyz", "xyz");
-        let c2 = resolver.resolve_name("xyz", "xyz");
+        let c1 = resolver.resolve_name("xyz", "xyz").unwrap();
+        let c2 = resolver.resolve_name("xyz", "xyz").unwrap();
         assert_eq!(c1, c2, "Fallback CCIDs must be deterministic");
+    }
+
+    #[test]
+    fn wikidata_registry_ccid_survives_wire_without_receiver_registry() {
+        let registry = make_test_registry();
+        let mut resolver = ConceptResolver::new(&registry);
+        let analyzed = AnalyzedTriple {
+            raw: SpoTriple {
+                s: "nước".into(),
+                s_en: "water".into(),
+                p: "has quality".into(),
+                o: "temperature".into(),
+                o_en: "temperature".into(),
+                qty: None,
+                role: "property".into(),
+                notation: None,
+                c: "usually".into(),
+            },
+            op: Op::Quality,
+            certainty: 8000,
+        };
+        let resolved = resolver.resolve_triple(analyzed).unwrap();
+        assert_eq!(resolved.subject_ccid, ccid(b"wd:Q283"));
+
+        let built = crate::builder::KuBuilder::build(vec![resolved]).unwrap();
+        let sender = ku_core::KuRuntime::new(built[0].0.clone(), built[0].1.clone());
+        let receiver = ku_core::KuRuntime::from_wire(sender.wire_bytes.clone()).unwrap();
+        let water = ku_core::foundation::ConceptCcid::from_bytes(ccid(b"wd:Q283"));
+
+        assert!(receiver.concept_ccids().contains(&water));
+        assert_eq!(receiver.primary_concept_ccid(), Some(water));
     }
 }

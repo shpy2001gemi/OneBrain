@@ -195,6 +195,8 @@ pub struct StatusResponse {
     pub obt_balance: u64,
     pub version: String,
     pub model: String,
+    /// Effective external Concept Registry policy and startup result.
+    pub concept_registry: onebrain_node::ConceptRegistryStatus,
     /// Scope-aware vNext status. This projection is display-only.
     pub vnext: onebrain_node::vnext_status::VNextStatusSnapshot,
 }

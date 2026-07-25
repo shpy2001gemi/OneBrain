@@ -8,6 +8,9 @@ pub const SCHEMA_PROVIDER_LEASE: u64 = 5;
 pub const SCHEMA_DELEGATION_PERMIT: u64 = 6;
 pub const SCHEMA_RECONCILIATION_MESSAGE: u64 = 7;
 pub const SCHEMA_MANIFEST: u64 = 8;
+pub const SCHEMA_ACTOR_ROOT_DELEGATION: u64 = 9;
+pub const SCHEMA_ACTOR_DELEGATION: u64 = 10;
+pub const SCHEMA_ACTOR_REVOCATION: u64 = 11;
 
 pub const OBJECT_KIND_LEGACY_EVIDENCE: u64 = 1;
 pub const OBJECT_KIND_SEMANTIC_KERNEL: u64 = 2;
@@ -79,6 +82,18 @@ pub const SCHEMAS_V1: &[RegistryEntry] = &[
     RegistryEntry {
         id: SCHEMA_MANIFEST,
         name: "manifest",
+    },
+    RegistryEntry {
+        id: SCHEMA_ACTOR_ROOT_DELEGATION,
+        name: "actor-root-delegation",
+    },
+    RegistryEntry {
+        id: SCHEMA_ACTOR_DELEGATION,
+        name: "actor-delegation",
+    },
+    RegistryEntry {
+        id: SCHEMA_ACTOR_REVOCATION,
+        name: "actor-revocation",
     },
 ];
 

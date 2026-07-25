@@ -13,6 +13,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::identity::NodeId;
+use ku_core::foundation::ConceptCcid;
 use ku_core::KuRuntime;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -46,8 +47,8 @@ pub enum WatchCondition {
     TrustAbove(u16),
     /// Trust score below threshold.
     TrustBelow(u16),
-    /// Contains a specific concept ID.
-    HasConcept(u64),
+    /// Contains a specific global concept CCID.
+    HasConcept(ConceptCcid),
     /// Has a specific domain code.
     HasDomain(u64),
     /// Always matches.
@@ -62,7 +63,7 @@ impl WatchCondition {
         match self {
             WatchCondition::TrustAbove(threshold) => ku.trust_score() >= *threshold,
             WatchCondition::TrustBelow(threshold) => ku.trust_score() < *threshold,
-            WatchCondition::HasConcept(concept_id) => ku.contains_concept(*concept_id),
+            WatchCondition::HasConcept(concept) => ku.contains_concept_ccid(*concept),
             WatchCondition::HasDomain(domain_code) => {
                 ku.epi.trust.domain_codes.contains(domain_code)
             }
@@ -246,8 +247,12 @@ impl WatchEngine {
 mod tests {
     use super::*;
     use crate::identity::{generate_node_id, KeyPair, PUZZLE_C_SMALL};
-    use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction};
+    use ku_core::core_dna::{ConceptTableEntry, CoreDna, CoreDnaHeader, Instruction};
     use ku_core::{Epigenetics, KuRuntime};
+
+    fn concept(value: u128) -> ConceptCcid {
+        ConceptCcid::from_bytes(value.to_be_bytes())
+    }
 
     fn make_node_id() -> NodeId {
         let kp = KeyPair::generate();
@@ -260,9 +265,12 @@ mod tests {
             header: CoreDnaHeader {
                 version: 2,
                 gene_type: 0,
-                has_concept_table: false,
+                has_concept_table: true,
             },
-            concept_table: Vec::new(),
+            concept_table: vec![ConceptTableEntry {
+                local_id: concept_id,
+                ccid: *concept(concept_id as u128).as_bytes(),
+            }],
             instructions: vec![
                 Instruction::Triple {
                     s: concept_id,
@@ -385,7 +393,7 @@ mod tests {
         engine.register(
             make_node_id(),
             WatchEvent::Any,
-            WatchCondition::HasConcept(42),
+            WatchCondition::HasConcept(concept(42)),
             "".to_string(),
             0,
         );
@@ -416,7 +424,7 @@ mod tests {
             WatchEvent::Any,
             WatchCondition::And(
                 Box::new(WatchCondition::TrustAbove(5000)),
-                Box::new(WatchCondition::HasConcept(42)),
+                Box::new(WatchCondition::HasConcept(concept(42))),
             ),
             "".to_string(),
             0,

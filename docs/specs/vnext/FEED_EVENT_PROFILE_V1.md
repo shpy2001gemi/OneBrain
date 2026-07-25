@@ -47,9 +47,15 @@ no network-wide authority oracle and no wall-clock freshness rule.
 
 The authority projection consumes accepted `DelegationGrant` and
 `AcceptedRevocation` evidence. Each item binds actor, device, delegation-event
-reference and generation range, and retains the `EventCid` of its proof. These
-projection records are not independent authority: the future `FEED-002`
-reducer must derive them from signed, authorized events at a named frontier.
+reference and generation range, and retains the `EventCid` of its proof. A
+`DelegationGrant` additionally binds the exact initially authorized `FeedId`;
+copying a public delegation reference, DeviceId, namespace commitment, and
+generation into an unrelated feed key never grants authority. These
+projection records are not independent authority. The root-only
+`ActorRootDelegation/1` derives one exact initial grant from a self-certifying
+root-key proof. `ActorDelegation/1` and `ActorRevocation/1` are canonical signed
+wire inputs whose authorizing feed, parent/target references and attenuation
+rules are checked before conversion into these projections.
 
 An authority decision has exactly these outcomes:
 
@@ -94,6 +100,21 @@ original bytes. An unsupported root schema major is rejected before execution.
 Duplicate set members are rejected; changing insertion order does not change
 canonical bytes, signature or `EventCid`.
 
+### Policy-reference boundary
+
+The authority dependency of a feed is the exact
+`FeedInception.actor_delegation_ref`, resolved through the self-contained
+signed AuthorityEvent schemas defined by
+[Actor Authority Event Profile v1](ACTOR_ROOT_AUTHORITY_PROFILE_V1.md).
+Knowledge Event field `authorization_ref` belongs to the capability/execution
+plane instead. A `PermitCid` reference alone does not grant feed authority,
+does not make an event executable, and does not become valid merely because
+the event bytes are accepted into immutable storage.
+
+Authority v1 has no mutable external policy document or URI. Any future
+external authority-policy mechanism requires a new schema major and must fail
+closed on v1 implementations.
+
 ## 4. Acceptance evidence
 
 - Different feed keys/devices do not collide; randomized namespace commitments
@@ -101,6 +122,9 @@ canonical bytes, signature or `EventCid`.
 - Feed inception and events preserve their exact validated bytes.
 - Tamper and wrong-author cases fail signature/feed binding.
 - Missing authority proof remains `STALE_OR_UNRESOLVED`.
+- A copied delegation reference cannot authorize a different FeedID/key.
+- An arbitrary Knowledge Event `authorization_ref` cannot change feed
+  authority.
 - Accepted grant authorizes relative to its frontier; accepted covered
   revocation quarantines relative to that same frontier.
 - Rotation commitment binds one exact successor and malformed successor claims
@@ -108,4 +132,3 @@ canonical bytes, signature or `EventCid`.
 - Duplicate, reorder, missing-parent, exact-replay, unknown event type and
   unsupported schema-major paths all have deterministic outcomes.
 - Frozen feed/event vectors pass `ku-core`, `onebrain-protocol` and `ku-net`.
-

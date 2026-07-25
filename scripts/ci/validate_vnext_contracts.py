@@ -149,8 +149,8 @@ def validate_vectors() -> tuple[int, int, int, int]:
         raise ContractError("duplicate foundation vector IDs")
 
     domains = [row.get("domain") for row in vectors["domain_digests"]]
-    if len(domains) != 20 or len(set(domains)) != 20:
-        raise ContractError("foundation vectors must cover 20 unique reserved domains")
+    if len(domains) != 21 or len(set(domains)) != 21:
+        raise ContractError("foundation vectors must cover 21 unique reserved domains")
 
     try:
         schema_vectors = json.loads(read(IDENTITY_OBJECT_VECTORS))

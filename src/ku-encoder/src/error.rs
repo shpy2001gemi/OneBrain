@@ -61,6 +61,10 @@ pub enum EncoderError {
     /// Pre-scanned anchors were modified by the AI model.
     #[error("Anchor verification failed: {0}")]
     AnchorVerificationFailed(String),
+
+    /// The configured Concept Registry became unavailable or inconsistent.
+    #[error("Concept Registry lookup failed: {0}")]
+    ConceptRegistry(String),
 }
 
 #[cfg(test)]

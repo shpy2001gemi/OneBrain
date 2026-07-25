@@ -123,6 +123,10 @@ pub enum ReconciliationSummaryMethod {
 pub enum ReconciliationResumeMode {
     Disabled = 0,
     BoundTokenV1 = 1,
+    /// A receiver-issued token may rebind one durable journal to a newly
+    /// authenticated session. The token is still checked against the exact
+    /// selector scope and authenticated peer pair by the journal owner.
+    PeerBoundTokenV2 = 2,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -152,6 +156,8 @@ pub enum InventoryLane {
     Object = 1,
     Event = 2,
     MappingKernel = 3,
+    FeedInception = 4,
+    AuthorityEvent = 5,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -178,6 +184,8 @@ pub enum ReconcileManifestKind {
     Object = 1,
     Event = 2,
     MappingKernel = 3,
+    FeedInception = 4,
+    AuthorityEvent = 5,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -196,6 +204,9 @@ pub enum ReconcileReceiptStatus {
     AlreadyPresent = 2,
     RejectedInvalid = 3,
     DeferredBudget = 4,
+    /// Validation could not run because feed/key/object/policy material has not
+    /// arrived yet. This is non-terminal and must not consume a retry budget.
+    DeferredMissingDependency = 5,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -227,9 +238,12 @@ pub enum ReconciliationAbortCode {
     LocalPolicy = 5,
 }
 
-/// Opaque continuation material plus inspectable scope binding. OBP-005 will
-/// define persistence and MAC ownership; this protocol type cannot grant any
-/// authority by itself.
+/// Opaque continuation material plus an inspectable journal binding. Under
+/// `BoundTokenV1` the binding is the current reconciliation context. Under
+/// `PeerBoundTokenV2` it identifies the durable origin journal while the
+/// enclosing Resume message remains bound to the newly authenticated context.
+/// OBP-005 owns persistence, scope comparison and peer-bound MAC validation;
+/// this protocol type cannot grant any authority by itself.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReconciliationResumeToken {
     pub binding_digest: [u8; 32],

@@ -21,6 +21,7 @@ pub mod blob_store;
 pub mod ccid; // ★ v7 NEW: Content-Addressed Concept Identity (128-bit BLAKE3)
 pub mod concept_dict; // ★ v6 NEW: ConceptDict for name ↔ ID lookup
 pub mod concept_registry; // ★ v7 NEW: Offline concept name → CCID lookup (200MB registry)
+pub mod concept_registry_manifest;
 pub mod core_dna;
 pub mod crdt;
 pub mod decoder;
@@ -44,6 +45,7 @@ pub mod graph_fedr; // ★ OBKG: Federated RotatE training protocol (FedR)
 pub mod graph_qualifiers; // ★ OBKG: Bond qualifiers (temporal, confidence, source, context)
 pub mod graph_types; // ★ OBKG: Graph domain types (BondMeta, BondEvent, Decayable)
 pub mod immune;
+pub mod indexed_concept_registry;
 pub mod ku_lifecycle; // ★ v6 NEW: KuRuntime ↔ PomvRuntime lifecycle orchestrator
 pub mod ku_runtime; // ★ v6 NEW: Unified 3-layer runtime composite
 pub mod ku_system_prompt;
@@ -113,8 +115,16 @@ pub use core_dna::{
 // ★ v7 NEW: Re-export CCID and Concept Registry
 pub use ccid::{ccid, ccid_from_wikidata, Ccid};
 pub use concept_registry::{
-    AddResult, CollisionRecord, ConceptCategory, ConceptRegistry, ResolveResult, ResolvedConcept,
+    AddResult, CollisionRecord, ConceptCategory, ConceptLookup, ConceptRegistry, ResolveResult,
+    ResolvedConcept,
 };
+pub use concept_registry_manifest::{
+    load_and_validate_manifest, manifest_path as concept_registry_manifest_path,
+    verification_stamp_path as concept_registry_verification_stamp_path,
+    ConceptRegistryIndexManifest, ConceptRegistryManifest, ConceptRegistryManifestError,
+    ConceptRegistrySourceManifest, ObrHeaderMetadata, CONCEPT_REGISTRY_MANIFEST_VERSION,
+};
+pub use indexed_concept_registry::{IndexedConceptRegistry, IndexedRegistryError};
 
 // ★ v6 NEW: Re-export Encoding Consensus types
 pub use encoding_consensus::{ConsensusConfig, EncodingConsensus, EncodingStatus};

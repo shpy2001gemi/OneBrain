@@ -36,10 +36,14 @@ not create freshness.
 A `ScopedDelegation` binds an accepted grant to an optional parent delegation.
 Root admission is a separate explicit operation representing a previously
 verified principal/root proof. A submitted child cannot promote itself to root.
+Every grant binds one exact initial `FeedId`; the other public inception fields
+are scope checks, not substitutes for feed-key identity.
 
 Child delegation attenuation is monotonic:
 
 - actor identity must equal the parent actor;
+- the granted subject FeedID is explicit and cannot be inferred from a copied
+  delegation reference;
 - generation range must be wholly inside the parent range;
 - if the parent binds a namespace commitment, the child must bind the same one;
 - a child may narrow an unbound parent to one namespace but cannot widen a bound
@@ -79,7 +83,8 @@ isolated partition.
 - Sparse maximum sequence cannot trigger an unbounded loop/allocation.
 - Child-before-parent delegation remains stale, then reconciles automatically.
 - Generation/namespace widening is rejected by attenuation.
+- A second feed key copying all public delegation scope fields remains
+  `STALE_OR_UNRESOLVED`.
 - Accepted ancestor revocation cascades; unauthorized/missing revocation proof
   never becomes fresh authority.
 - A precommitted, in-scope key rotation remains authorized.
-

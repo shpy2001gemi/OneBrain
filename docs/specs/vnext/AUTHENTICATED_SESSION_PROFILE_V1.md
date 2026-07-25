@@ -30,8 +30,9 @@ transcript.
 
 The transport binding must come from an authenticated carrier exporter or an
 equivalent channel transcript. A different binding, key, nonce relationship or
-transcript is rejected. The current vNext implementation has only an in-memory
-test harness; the old TCP/JSON demo remains isolated under `legacy` and is not a
+transcript is rejected. The executable runtime now performs this exchange over
+real QUIC/TLS 1.3 listeners. The in-memory harness remains a deterministic test
+carrier; the old TCP/JSON demo remains isolated under `legacy` and is not a
 vNext authenticated carrier.
 
 ## 3. Negotiation and downgrade defense
@@ -69,3 +70,12 @@ profile/capability negotiation, transport MITM, key mismatch, transcript
 tampering, nonce reuse, signed downgrade, signed capability stripping, replay,
 default namespace unlinkability and non-authoritative selective feed evidence.
 
+## 7. Private-key custody
+
+Handshake construction depends on the
+[`SessionIdentitySigner`](NODE_IDENTITY_KEY_CUSTODY_PROFILE_V1.md) boundary,
+not on exportable private-key bytes. Production embedders can inject an OS
+keystore, HSM, hardware token, or remote signer. The signer must prove
+possession of its advertised Ed25519 public key before the runtime creates
+storage or binds a listener; failure is terminal for startup and never falls
+back to another identity.

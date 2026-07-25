@@ -23,7 +23,7 @@ can later reconcile through one or many bridges without a global epoch.
 | canonical bytes | [Canonical Profile v1](CANONICAL_PROFILE_V1.md) | deterministic CBOR, domain-separated BLAKE3 identity and bounded decoding |
 | object identity | [Identity/Object Profile v1](IDENTITY_OBJECT_PROFILE_V1.md) | immutable full-width IDs, schema ownership and opaque-safe envelopes |
 | causal authority | [Feed/Event Profile v1](FEED_EVENT_PROFILE_V1.md) | signed events, private feed inception and frontier-relative authority |
-| authenticated link | [Authenticated Session Profile v1](AUTHENTICATED_SESSION_PROFILE_V1.md) | transcript/channel binding and downgrade defense |
+| authenticated link | [Authenticated Session Profile v1](AUTHENTICATED_SESSION_PROFILE_V1.md) and [Node Identity Key Custody Profile v1](NODE_IDENTITY_KEY_CUSTODY_PROFILE_V1.md) | transcript/channel binding, downgrade defense and non-exportable signer boundary |
 | scoped inventory | [Inventory Scope](INVENTORY_SCOPE_PROFILE_V1.md) and [Hybrid Inventory Forest](HYBRID_INVENTORY_FOREST_PROFILE_V1.md) | bounded selector-relative set comparison with full CIDs |
 | reconciliation | [OBP Reconciliation Protocol](OBP_RECONCILIATION_PROTOCOL_PROFILE_V1.md) and [State Machine](DETERMINISTIC_RECONCILIATION_STATE_MACHINE_V1.md) | manifest-before-payload, validation-before-accept and resumable convergence |
 | carrier adapters | [Deterministic Carrier](DETERMINISTIC_CARRIER_PROFILE_V1.md) and [Cross-Carrier Reconciliation](CROSS_CARRIER_RECONCILIATION_PROFILE_V1.md) | identical canonical records across memory, file, delayed and QUIC framing |
@@ -50,8 +50,11 @@ not label opaque custody as validated understanding.
 Canonical payloads are carrier-independent. Session identity, transcript,
 selector CID, namespace, disclosure class, inventory roots, checkpoint bounds
 and resource budgets are explicit. Truncated display IDs are never accepted as
-wire identity. Continuation tokens are bound to their exact context and cannot
-be replayed into a different selector or frontier.
+wire identity. `BoundTokenV1` continuations bind the exact original context.
+`PeerBoundTokenV2` may name an origin journal from a fresh authenticated
+transcript, but remains MAC-bound to the same ordered peers and exact
+selector/namespace/disclosure/method/budget scope. Its checkpoint is consumed
+atomically once; changing peer, scope, frontier, key, or sequence fails closed.
 
 Every decoder applies size, depth, count, compression-ratio and expansion
 limits before allocation or durable storage. A malformed branch is isolated;

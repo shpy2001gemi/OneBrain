@@ -9,6 +9,13 @@ license = "MIT"
 name = "onebrain"
 path = "src/main.rs"
 
+[features]
+default = []
+vnext-network-runtime = [
+    "onebrain-node/vnext-network-runtime",
+    "onebrain-api/vnext-network-runtime",
+]
+
 [dependencies]
 onebrain-node = { path = "../onebrain-node" }
 onebrain-api = { path = "../onebrain-api" }
@@ -16,4 +23,3 @@ ku-core = { path = "../ku-core" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-std", "io-util"] }
 blake3 = "1"
-

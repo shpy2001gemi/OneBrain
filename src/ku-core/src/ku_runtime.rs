@@ -23,6 +23,7 @@ use crate::core_dna::{decode_core_dna, encode_core_dna, CoreDna, Instruction};
 use crate::encoding_consensus::EncodingStatus;
 use crate::epigenetics::{Epigenetics, Expression};
 use crate::error::KuError;
+use crate::foundation::ConceptCcid;
 use crate::pomv_runtime::TrustSectionUpdate;
 use crate::types::ConceptId;
 
@@ -259,6 +260,55 @@ impl KuRuntime {
         ids.sort_unstable();
         ids.dedup();
         ids
+    }
+
+    /// Extract globally meaningful concept identities referenced by this KU.
+    ///
+    /// Numeric `ConceptId` values are compression-local to the KU. This method
+    /// resolves only referenced IDs that have an explicit Concept Table entry,
+    /// then returns a stable, sorted, deduplicated CCID set for indexes and
+    /// network boundaries.
+    pub fn concept_ccids(&self) -> Vec<ConceptCcid> {
+        let referenced: std::collections::HashSet<ConceptId> =
+            self.concept_ids().into_iter().collect();
+        let mut ccids: Vec<_> = self
+            .dna
+            .concept_table
+            .iter()
+            .filter(|entry| referenced.contains(&entry.local_id))
+            .map(|entry| ConceptCcid::from_bytes(entry.ccid))
+            .collect();
+        ccids.sort_unstable();
+        ccids.dedup();
+        ccids
+    }
+
+    /// Resolve one KU-local compressed concept ID to its globally meaningful
+    /// CCID. Network and cross-KU code must use this method instead of treating
+    /// the numeric ID as a shared identity.
+    pub fn concept_ccid(&self, local_id: ConceptId) -> Option<ConceptCcid> {
+        self.dna
+            .concept_table
+            .iter()
+            .find(|entry| entry.local_id == local_id)
+            .map(|entry| ConceptCcid::from_bytes(entry.ccid))
+    }
+
+    /// Resolve the first subject-like local concept to its global CCID.
+    ///
+    /// Returns `None` for legacy KUs or malformed/self-incomplete v2 KUs rather
+    /// than treating a numeric local ID as a global network identity.
+    pub fn primary_concept_ccid(&self) -> Option<ConceptCcid> {
+        let primary = self.primary_concept()?;
+        self.concept_ccid(primary)
+    }
+
+    /// Network-safe concept membership check.
+    pub fn contains_concept_ccid(&self, ccid: ConceptCcid) -> bool {
+        self.dna
+            .concept_table
+            .iter()
+            .any(|entry| entry.ccid == *ccid.as_bytes())
     }
 
     /// Extract concept-to-concept graph edges from instructions + concept_table.
@@ -938,6 +988,45 @@ mod tests {
         assert!(ids.contains(&500));
         assert!(ids.contains(&1042));
         assert!(ids.contains(&600));
+    }
+
+    #[test]
+    fn network_concepts_are_ccids_not_local_ids() {
+        use crate::core_dna::ConceptTableEntry;
+
+        let local_id = 16_512;
+        let first_ccid = [0x11; 16];
+        let second_ccid = [0x22; 16];
+        let make = |ccid| {
+            KuRuntime::from_dna(CoreDna {
+                header: CoreDnaHeader {
+                    version: 2,
+                    gene_type: 0,
+                    has_concept_table: true,
+                },
+                concept_table: vec![ConceptTableEntry { local_id, ccid }],
+                instructions: vec![Instruction::Triple {
+                    s: local_id,
+                    p: 2,
+                    o: 3,
+                }],
+            })
+            .unwrap()
+        };
+
+        let first = make(first_ccid);
+        let second = make(second_ccid);
+        assert_eq!(first.primary_concept(), second.primary_concept());
+        assert_ne!(first.concept_ccids(), second.concept_ccids());
+        assert_eq!(
+            first.primary_concept_ccid(),
+            Some(ConceptCcid::from_bytes(first_ccid))
+        );
+        assert!(first.contains_concept_ccid(ConceptCcid::from_bytes(first_ccid)));
+        assert!(!first.contains_concept_ccid(ConceptCcid::from_bytes(second_ccid)));
+
+        let decoded = KuRuntime::from_wire(first.wire_bytes.clone()).unwrap();
+        assert_eq!(decoded.concept_ccids(), first.concept_ccids());
     }
 
     #[test]

@@ -193,12 +193,12 @@ fn tv09_ku_wire_magic_version() {
     // Magic: "KD" = 0x4B44
     assert_eq!(wire[0], 0x4B, "Magic byte 0 = 'K'");
     assert_eq!(wire[1], 0x44, "Magic byte 1 = 'D'");
-    // Version: 0x04
-    assert_eq!(wire[2], 0x04, "Version = 4");
+    // Version is owned by ku-core's current KU wire profile.
+    assert_eq!(wire[2], VERSION, "Version matches ku-core");
     // Flags byte present
     assert!(
         wire.len() >= 7,
-        "Min wire size: 2 magic + 1 ver + 1 flags + 2 len + 4 crc = 10"
+        "Min wire size: 2 magic + 1 ver + 1 flags + 4 len + 4 crc = 12"
     );
 
     // Last 4 bytes are CRC-32

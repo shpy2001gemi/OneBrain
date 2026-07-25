@@ -498,15 +498,19 @@ fn parse_kind(value: u64) -> Result<InventoryRecordKind, InventoryForestError> {
         0 => Ok(InventoryRecordKind::Object),
         1 => Ok(InventoryRecordKind::Event),
         2 => Ok(InventoryRecordKind::MappingKernel),
+        3 => Ok(InventoryRecordKind::FeedInception),
+        4 => Ok(InventoryRecordKind::AuthorityEvent),
         _ => Err(InventoryForestError::InvalidRecordKind),
     }
 }
 
-const fn all_kinds() -> [InventoryRecordKind; 3] {
+const fn all_kinds() -> [InventoryRecordKind; 5] {
     [
         InventoryRecordKind::Object,
         InventoryRecordKind::Event,
         InventoryRecordKind::MappingKernel,
+        InventoryRecordKind::FeedInception,
+        InventoryRecordKind::AuthorityEvent,
     ]
 }
 
@@ -578,6 +582,7 @@ fn bytes32_value(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InventoryForestError {
     Canonical(CanonicalError),
+    Backend(String),
     InvalidField(&'static str),
     InvalidPrefix,
     InvalidLength,
@@ -596,6 +601,107 @@ impl From<CanonicalError> for InventoryForestError {
         Self::Canonical(error)
     }
 }
+
+#[cfg(feature = "persist")]
+pub mod persistent {
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use redb::{Database, ReadableTable, TableDefinition};
+
+    use super::*;
+
+    const FORESTS: TableDefinition<&[u8], &[u8]> =
+        TableDefinition::new("vnext_selector_inventory_forests");
+
+    /// ACID snapshot store for selector-scoped authoritative inventory.
+    /// Semantic shard hints are derived and therefore intentionally omitted by
+    /// `HybridInventoryForest::snapshot_bytes`.
+    #[derive(Clone)]
+    pub struct RedbInventoryForestBackend {
+        db: Arc<Database>,
+    }
+
+    impl RedbInventoryForestBackend {
+        pub fn open(path: &Path) -> Result<Self, InventoryForestError> {
+            let db = Database::create(path)
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            let write = db
+                .begin_write()
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            {
+                write
+                    .open_table(FORESTS)
+                    .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            }
+            write
+                .commit()
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            Ok(Self { db: Arc::new(db) })
+        }
+
+        pub fn load(
+            &self,
+            selector: SelectorCid,
+        ) -> Result<HybridInventoryForest, InventoryForestError> {
+            let read = self
+                .db
+                .begin_read()
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            let table = read
+                .open_table(FORESTS)
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            let bytes = table
+                .get(selector.as_bytes().as_slice())
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?
+                .map(|guard| guard.value().to_vec());
+            match bytes {
+                Some(bytes) => HybridInventoryForest::restore(&bytes),
+                None => Ok(HybridInventoryForest::new(selector)),
+            }
+        }
+
+        /// Atomically read, update, and replace one selector snapshot. Redb
+        /// serializes writers, preventing concurrent sessions from losing a
+        /// leaf through read-modify-write races.
+        pub fn insert_record(
+            &self,
+            selector: SelectorCid,
+            leaf: InventoryLeaf,
+        ) -> Result<InventoryInsertOutcome, InventoryForestError> {
+            let write = self
+                .db
+                .begin_write()
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            let outcome;
+            {
+                let mut table = write
+                    .open_table(FORESTS)
+                    .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+                let bytes = table
+                    .get(selector.as_bytes().as_slice())
+                    .map_err(|error| InventoryForestError::Backend(error.to_string()))?
+                    .map(|guard| guard.value().to_vec());
+                let mut forest = match bytes {
+                    Some(bytes) => HybridInventoryForest::restore(&bytes)?,
+                    None => HybridInventoryForest::new(selector),
+                };
+                outcome = forest.insert_record(leaf)?;
+                let snapshot = forest.snapshot_bytes()?;
+                table
+                    .insert(selector.as_bytes().as_slice(), snapshot.as_slice())
+                    .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            }
+            write
+                .commit()
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            Ok(outcome)
+        }
+    }
+}
+
+#[cfg(feature = "persist")]
+pub use persistent::RedbInventoryForestBackend;
 
 #[cfg(test)]
 mod tests {
@@ -710,6 +816,51 @@ mod tests {
         assert_eq!(
             forest.insert_record(changed).unwrap_err(),
             InventoryForestError::CidCollision
+        );
+    }
+
+    #[cfg(feature = "persist")]
+    #[test]
+    fn selector_inventory_survives_redb_restart_and_remains_isolated() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("inventory.redb");
+        let first_selector = selector(1);
+        let second_selector = selector(2);
+        let first_leaf = leaf(InventoryRecordKind::Object, 0x11);
+        let first_root = {
+            let backend = RedbInventoryForestBackend::open(&path).unwrap();
+            assert_eq!(
+                backend.insert_record(first_selector, first_leaf).unwrap(),
+                InventoryInsertOutcome::Added
+            );
+            assert_eq!(
+                backend.insert_record(first_selector, first_leaf).unwrap(),
+                InventoryInsertOutcome::ExactReplay
+            );
+            assert_eq!(
+                backend
+                    .load(second_selector)
+                    .unwrap()
+                    .range_summary(
+                        InventoryRecordKind::Object,
+                        InventoryRange::new(0, [0; 32]).unwrap()
+                    )
+                    .record_count,
+                0
+            );
+            backend.load(first_selector).unwrap().root()
+        };
+        let reopened = RedbInventoryForestBackend::open(&path).unwrap();
+        let forest = reopened.load(first_selector).unwrap();
+        assert_eq!(forest.root(), first_root);
+        assert_eq!(
+            forest
+                .range_summary(
+                    InventoryRecordKind::Object,
+                    InventoryRange::new(0, [0; 32]).unwrap()
+                )
+                .record_count,
+            1
         );
     }
 }

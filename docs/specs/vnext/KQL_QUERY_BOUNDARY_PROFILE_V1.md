@@ -77,3 +77,15 @@ specified by [RouteNeedSketch Packet v1](ROUTE_NEED_SKETCH_PACKET_V1.md).
 - Partial batches/receipts cannot omit both limitation and continuation.
 - Exact zero results are explicitly selector-relative and never global.
 - Rare route tokens and a fourth route packet for one run are rejected.
+
+## 6. Implemented M3 network slice
+
+The first live distributed runtime does not transmit a query packet. It
+reconciles validated Public `KnowledgeAffordance` objects from authenticated
+direct peers and joins them locally against private durable StandingNeeds.
+Consequently, peer timeout or absence never blocks local KQL; an empty observed
+delta returns zero results with partial, path-limited coverage.
+
+The durable boundary, source provenance and restart behavior are specified in
+[Distributed KQL Runtime Profile v1](DISTRIBUTED_KQL_RUNTIME_PROFILE_V1.md).
+Route-minimal active discovery remains optional future M6 work.

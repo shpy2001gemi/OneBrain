@@ -5,16 +5,23 @@
 //! anti-gaming guard, and peer networking.
 
 use crate::anti_gaming_guard::AntiGamingGuard;
+use crate::concept_registry_runtime::{
+    initialize_concept_registry, ConceptRegistryRuntimeState, ConceptRegistryStatus,
+};
 use crate::config::NodeConfig;
 use crate::error::NodeError;
 use crate::network::{recv_message, send_message, NetMessage, NodeEvent, PeerInfo};
 use crate::peer_manager::PeerManager;
 use crate::verifier_service;
+#[cfg(feature = "vnext-network-runtime")]
+use crate::vnext_network_runtime::{OutboundVNextSession, VNextNetworkRuntime};
+#[cfg(feature = "vnext-network-runtime")]
+use ku_net::vnext_session::SessionIdentitySigner;
 
 use crate::types::*;
 use ku_ai::OllamaBackend;
 use ku_core::blob_store::{BlobCid, BlobMeta};
-use ku_core::concept_registry::ConceptRegistry;
+use ku_core::concept_registry::ConceptLookup;
 use ku_core::text_parser::{default_dict, ConceptDict};
 use ku_core::KuRuntime;
 use ku_encoder::{AiEncoder, EncoderConfig, EncodingResult};
@@ -107,7 +114,17 @@ pub struct OneBrainNode {
     staked_amount: u64,
     /// ConceptRegistry for encode_v2 (loaded from concepts.obr).
     /// None if OBR file not found — falls back to encode v1.
-    registry: Option<ConceptRegistry>,
+    registry: Option<Box<dyn ConceptLookup>>,
+    /// Observable startup policy/result for the external Concept Registry.
+    registry_status: ConceptRegistryStatus,
+    /// Real authenticated QUIC/OBP-RP subsystem. It exists only after the
+    /// feature is compiled, requested, not killed, and successfully bound.
+    #[cfg(feature = "vnext-network-runtime")]
+    vnext_network_runtime: Option<VNextNetworkRuntime>,
+    /// Optional caller-owned node signer. Embedders can back this with an OS
+    /// keystore, HSM, or remote signer; private-key bytes never enter OneBrain.
+    #[cfg(feature = "vnext-network-runtime")]
+    vnext_identity_signer: Option<Arc<dyn SessionIdentitySigner>>,
 }
 
 impl OneBrainNode {
@@ -128,6 +145,42 @@ impl OneBrainNode {
             .vnext
             .validate()
             .map_err(|error| NodeError::Config(error.to_string()))?;
+        #[cfg(not(feature = "vnext-network-runtime"))]
+        if config
+            .vnext
+            .is_active(crate::vnext_config::VNextFeature::ObpRp)
+        {
+            return Err(NodeError::Config(
+                "obp_rp is active in configuration, but this binary was built without the vnext-network-runtime feature"
+                    .to_string(),
+            ));
+        }
+
+        // Resolve the registry before initializing AI, storage, or network side
+        // effects. Required mode therefore fails fast and predictably.
+        let loaded_registry = initialize_concept_registry(&config)?;
+        match loaded_registry.status.state {
+            ConceptRegistryRuntimeState::Loaded => eprintln!(
+                "  ConceptRegistry loaded from {} ({} concepts, {} labels)",
+                loaded_registry.status.path.display(),
+                loaded_registry.status.concept_count.unwrap_or_default(),
+                loaded_registry.status.label_count.unwrap_or_default()
+            ),
+            ConceptRegistryRuntimeState::FallbackV1 => eprintln!(
+                "  ConceptRegistry unavailable at {}; using encoder v1: {}",
+                loaded_registry.status.path.display(),
+                loaded_registry
+                    .status
+                    .error
+                    .as_deref()
+                    .unwrap_or("unknown error")
+            ),
+            ConceptRegistryRuntimeState::Disabled => {
+                eprintln!("  ConceptRegistry disabled explicitly; using encoder v1")
+            }
+        }
+        let registry = loaded_registry.registry;
+        let registry_status = loaded_registry.status;
 
         // Create chat backend
         let chat_backend =
@@ -179,21 +232,6 @@ impl OneBrainNode {
         // Create anti-gaming guard
         let guard = AntiGamingGuard::new();
 
-        // Load ConceptRegistry for encode_v2 (optional, graceful fallback)
-        let registry = match ConceptRegistry::load_obr(&config.obr_path()) {
-            Ok(reg) => {
-                eprintln!("  ✓ ConceptRegistry loaded ({} concepts)", reg.len());
-                Some(reg)
-            }
-            Err(_) => {
-                eprintln!(
-                    "  ⚠ ConceptRegistry not found at {:?}, using encode v1",
-                    config.obr_path()
-                );
-                None
-            }
-        };
-
         // Create shared state
         let shared = Arc::new(Mutex::new(SharedState {
             storage,
@@ -230,6 +268,11 @@ impl OneBrainNode {
             drafts: HashMap::new(),
             staked_amount: 0,
             registry,
+            registry_status,
+            #[cfg(feature = "vnext-network-runtime")]
+            vnext_network_runtime: None,
+            #[cfg(feature = "vnext-network-runtime")]
+            vnext_identity_signer: None,
             devices: vec![DeviceInfo {
                 device_id: format!("dev-{:08x}", rand_u32()),
                 name: device_name,
@@ -244,19 +287,71 @@ impl OneBrainNode {
         })
     }
 
+    /// Inject a caller-owned signer before starting the network. When omitted,
+    /// the compatibility/development file signer is used.
+    #[cfg(feature = "vnext-network-runtime")]
+    pub fn set_vnext_identity_signer(&mut self, signer: Arc<dyn SessionIdentitySigner>) {
+        self.vnext_identity_signer = Some(signer);
+    }
+
     /// Start the TCP listener and spawn the background accept loop.
     ///
     /// Returns the local address the listener is bound to.
     pub async fn start_network(&mut self) -> Result<SocketAddr, NodeError> {
         let bind_addr: SocketAddr = ([0, 0, 0, 0], self.config.port).into();
-        let listener = TcpListener::bind(bind_addr).await.map_err(|e| {
-            NodeError::Network(format!("Failed to bind TCP on {}: {}", bind_addr, e))
-        })?;
+        #[cfg(feature = "vnext-network-runtime")]
+        let mut pending_vnext = if self
+            .config
+            .vnext
+            .is_active(crate::vnext_config::VNextFeature::ObpRp)
+        {
+            Some(if let Some(signer) = self.vnext_identity_signer.clone() {
+                VNextNetworkRuntime::start_with_signer(
+                    &self.config.data_dir,
+                    bind_addr,
+                    self.config.vnext.network,
+                    signer,
+                )
+                .await
+                .map_err(|error| {
+                    NodeError::Network(format!("Failed to start authenticated OBP-RP: {error}"))
+                })?
+            } else {
+                VNextNetworkRuntime::start(
+                    &self.config.data_dir,
+                    bind_addr,
+                    self.config.vnext.network,
+                )
+                .await
+                .map_err(|error| {
+                    NodeError::Network(format!("Failed to start authenticated OBP-RP: {error}"))
+                })?
+            })
+        } else {
+            None
+        };
+        let listener = match TcpListener::bind(bind_addr).await {
+            Ok(listener) => listener,
+            Err(error) => {
+                #[cfg(feature = "vnext-network-runtime")]
+                if let Some(runtime) = pending_vnext.as_mut() {
+                    runtime.shutdown().await;
+                }
+                return Err(NodeError::Network(format!(
+                    "Failed to bind TCP on {}: {}",
+                    bind_addr, error
+                )));
+            }
+        };
 
         let local_addr = listener
             .local_addr()
             .map_err(|e| NodeError::Network(format!("Failed to get local addr: {}", e)))?;
         self.listener_addr = Some(local_addr);
+        #[cfg(feature = "vnext-network-runtime")]
+        {
+            self.vnext_network_runtime = pending_vnext;
+        }
 
         // Spawn background listener task
         let shared = Arc::clone(&self.shared);
@@ -524,7 +619,7 @@ impl OneBrainNode {
         // Smart dispatch: v2 if ConceptRegistry available, v1 fallback
         let encoding_result: EncodingResult = if let Some(ref reg) = self.registry {
             encoder
-                .encode_v2(text, reg)
+                .encode_v2(text, reg.as_ref())
                 .await
                 .map_err(NodeError::Encoder)?
         } else {
@@ -673,14 +768,56 @@ impl OneBrainNode {
         &self.config
     }
 
+    /// Return the effective Concept Registry startup policy and load result.
+    pub fn concept_registry_status(&self) -> &ConceptRegistryStatus {
+        &self.registry_status
+    }
+
     /// Build a scope-aware, display-only vNext status projection.
     pub fn vnext_status(&self) -> crate::vnext_status::VNextStatusSnapshot {
-        crate::vnext_status::VNextStatusSnapshot::local_runtime(
+        #[cfg(feature = "vnext-network-runtime")]
+        let runtime = self.vnext_network_runtime.as_ref().map(|runtime| {
+            let status = runtime.status();
+            crate::vnext_status::NetworkRuntimeObservation {
+                listen_addr: status.listen_addr.to_string(),
+                authenticated_sessions: status.authenticated_sessions,
+                active_sessions: status.active_sessions,
+                accepted_records: status.accepted_records,
+                deferred_records: status.deferred_records,
+                rejected_records: status.rejected_records,
+            }
+        });
+        #[cfg(not(feature = "vnext-network-runtime"))]
+        let runtime = None;
+        crate::vnext_status::VNextStatusSnapshot::local_runtime_with_network(
             self.ku_count().unwrap_or(0),
             self.peer_count(),
             &self.config.vnext,
             true,
+            runtime,
         )
+    }
+
+    /// Address of the real UDP/QUIC OBP-RP listener, if it is running.
+    #[cfg(feature = "vnext-network-runtime")]
+    pub fn vnext_listener_addr(&self) -> Option<SocketAddr> {
+        self.vnext_network_runtime
+            .as_ref()
+            .map(VNextNetworkRuntime::local_addr)
+    }
+
+    /// Establish a transcript-authenticated outbound vNext session.
+    #[cfg(feature = "vnext-network-runtime")]
+    pub async fn connect_vnext_peer(
+        &self,
+        addr: SocketAddr,
+    ) -> Result<OutboundVNextSession, NodeError> {
+        self.vnext_network_runtime
+            .as_ref()
+            .ok_or_else(|| NodeError::Network("authenticated OBP-RP runtime is not active".into()))?
+            .connect(addr)
+            .await
+            .map_err(|error| NodeError::Network(error.to_string()))
     }
 
     /// Get the listener address (if network is started).

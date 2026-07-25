@@ -30,6 +30,25 @@ Snapshots use restricted canonical CBOR under `manifest/1` limits. Decode requir
 
 Changing the journal, sequence, context or local token key invalidates the token. A token remains operational continuation data and grants no authority, adoption, truth or reward.
 
+`PeerBoundTokenV2` adds crash-safe continuation across a newly authenticated
+session. The journal snapshot stores a stable resume-scope digest over every
+context field except the authenticated transcript. On Resume, the receiver:
+
+1. loads the journal named by the token's origin binding;
+2. compares the new stable scope exactly;
+3. verifies the checkpoint, next sequence and a MAC derived from the
+   receiver's persistent identity plus both authenticated NodeIDs;
+4. consumes the snapshot with atomic compare-and-swap so concurrent replay
+   cannot establish two continuations;
+5. rebinds stored manifest bodies to the fresh context before accepting a
+   fresh payload frame.
+
+Minor-0 journal snapshots are upgraded only through an exact full-context
+open. They cannot be promoted by presenting a cross-session token. A valid V2
+resume therefore changes only the authenticated transcript, survives receiver
+restart, and remains fail-closed for a different peer, selector, privacy scope,
+budget, key, checkpoint or replayed token.
+
 ## Bounds
 
 - maximum 4,096 canonical manifest batches per journal snapshot;
@@ -45,6 +64,8 @@ Changing the journal, sequence, context or local token key invalidates the token
 - atomic Redb backend under the existing `persist` feature;
 - crash-on-Nth-transition harness covering manifest commit, reservation, post-sink journal commit and recovery;
 - Redb close/reopen test preserving manifest and accepted identity;
-- bounded retry/backpressure and continuation-token tests.
+- bounded retry/backpressure and continuation-token tests;
+- V2 wrong-key/wrong-scope/single-use tests and a real QUIC reconnect test that
+  resumes after receiver restart without resending the manifest.
 
 Implementation: `src/ku-net/src/vnext_reconciliation_journal.rs`.

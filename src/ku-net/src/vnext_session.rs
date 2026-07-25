@@ -62,15 +62,34 @@ pub fn principal_node_id(public_key: &[u8; 32]) -> NodeId {
     NodeId::from_bytes(*hasher.finalize().as_bytes())
 }
 
+/// Signing boundary for the transport NodeID. Production deployments can
+/// implement this trait with an OS keystore, hardware token or remote signer;
+/// the QUIC/session runtime never needs access to private-key bytes.
+pub trait SessionIdentitySigner: Send + Sync {
+    fn public_key(&self) -> [u8; 32];
+
+    fn sign_session_message(&self, message: &[u8]) -> Result<[u8; 64], String>;
+}
+
+impl SessionIdentitySigner for SigningKey {
+    fn public_key(&self) -> [u8; 32] {
+        *self.verifying_key().as_bytes()
+    }
+
+    fn sign_session_message(&self, message: &[u8]) -> Result<[u8; 64], String> {
+        Ok(self.sign(message).to_bytes())
+    }
+}
+
 pub fn create_hello(
-    key: &SigningKey,
+    key: &dyn SessionIdentitySigner,
     transport_binding: [u8; 32],
     initiator_nonce: [u8; 32],
     profiles: Vec<SessionProfile>,
     capabilities: Vec<SessionCapability>,
     feed_proofs: Vec<SelectiveFeedProof>,
 ) -> Result<SessionHello, SessionError> {
-    let public_key = *key.verifying_key().as_bytes();
+    let public_key = key.public_key();
     let mut hello = SessionHello {
         transport_binding,
         initiator_nonce,
@@ -82,7 +101,9 @@ pub fn create_hello(
         signature: [0; 64],
     };
     let message = SessionHandshakeMessage::Hello(hello.clone());
-    hello.signature = key.sign(&signature_preimage(&message)?).to_bytes();
+    hello.signature = key
+        .sign_session_message(&signature_preimage(&message)?)
+        .map_err(SessionError::SignerUnavailable)?;
     // Final schema validation, including a non-zero signature.
     encode_session_message(&SessionHandshakeMessage::Hello(hello.clone()))?;
     Ok(hello)
@@ -106,7 +127,7 @@ pub fn verify_hello(
 pub fn create_welcome(
     hello: &SessionHello,
     expected_transport_binding: [u8; 32],
-    responder_key: &SigningKey,
+    responder_key: &dyn SessionIdentitySigner,
     responder_nonce: [u8; 32],
     supported_profiles: &[SessionProfile],
     supported_capabilities: &[SessionCapability],
@@ -120,7 +141,7 @@ pub fn create_welcome(
     let negotiated_capabilities =
         capability_intersection(&hello.capabilities, supported_capabilities);
     let initiator_transcript = hello_transcript(hello)?;
-    let public_key = *responder_key.verifying_key().as_bytes();
+    let public_key = responder_key.public_key();
     let mut welcome = SessionWelcome {
         transport_binding: expected_transport_binding,
         initiator_transcript,
@@ -134,8 +155,8 @@ pub fn create_welcome(
     };
     let message = SessionHandshakeMessage::Welcome(welcome.clone());
     welcome.signature = responder_key
-        .sign(&signature_preimage(&message)?)
-        .to_bytes();
+        .sign_session_message(&signature_preimage(&message)?)
+        .map_err(SessionError::SignerUnavailable)?;
     encode_session_message(&SessionHandshakeMessage::Welcome(welcome.clone()))?;
     Ok(welcome)
 }
@@ -177,7 +198,7 @@ pub fn verify_welcome(
 pub fn create_finish(
     hello: &SessionHello,
     welcome: &SessionWelcome,
-    initiator_key: &SigningKey,
+    initiator_key: &dyn SessionIdentitySigner,
     expected_transport_binding: [u8; 32],
     supported_profiles: &[SessionProfile],
     supported_capabilities: &[SessionCapability],
@@ -189,7 +210,7 @@ pub fn create_finish(
         supported_profiles,
         supported_capabilities,
     )?;
-    if initiator_key.verifying_key().as_bytes() != &hello.node_public_key {
+    if initiator_key.public_key() != hello.node_public_key {
         return Err(SessionError::PrincipalKeyMismatch);
     }
     let mut finish = SessionFinish {
@@ -199,8 +220,8 @@ pub fn create_finish(
     };
     let message = SessionHandshakeMessage::Finish(finish.clone());
     finish.signature = initiator_key
-        .sign(&signature_preimage(&message)?)
-        .to_bytes();
+        .sign_session_message(&signature_preimage(&message)?)
+        .map_err(SessionError::SignerUnavailable)?;
     encode_session_message(&SessionHandshakeMessage::Finish(finish.clone()))?;
     Ok(finish)
 }
@@ -363,6 +384,7 @@ pub enum SessionError {
     Downgrade,
     CapabilityMismatch,
     Replay,
+    SignerUnavailable(String),
 }
 
 impl From<SessionCodecError> for SessionError {

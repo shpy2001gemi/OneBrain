@@ -3,6 +3,7 @@
 > **Task:** `POMV-001`  
 > **Status:** Executable evidence contract — frozen 2026-07-20  
 > **Code:** [`ku-core::foundation::use_evidence`](../../../src/ku-core/src/foundation/use_evidence.rs)
+> **Live runtime:** [Distributed Public PoMV Runtime Profile v1](DISTRIBUTED_POMV_RUNTIME_PROFILE_V1.md)
 
 ## 1. Meaning
 
@@ -63,3 +64,10 @@ Tests cover signed typed binding, EventCID replay deduplication, separate
 authority reassessment, exact derivation inputs/output/roles, absence of
 exposure-only modes and mismatch rejection.
 
+The feature-gated distributed runtime additionally performs complete typed
+`UseEvidencePayload` admission at the validated-storage boundary. It
+quarantines a generic-envelope-valid but typed-invalid UseEvidence object,
+requires authenticated selector-bound source provenance and binds the exact
+accepted event to its exact accepted payload before it can enter a metabolic
+projection. Its currently demonstrated network scope is Public UseEvidence;
+distributed DerivationEvidence remains deferred.

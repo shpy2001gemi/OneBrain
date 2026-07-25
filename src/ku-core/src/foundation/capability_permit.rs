@@ -515,6 +515,7 @@ mod tests {
                 grant: DelegationGrant {
                     actor,
                     device: validated.signed.inception.owner_device,
+                    subject_feed: validated.feed_id,
                     delegation_ref,
                     namespace_commitment: None,
                     first_generation: 0,

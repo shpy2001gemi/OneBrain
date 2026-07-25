@@ -282,6 +282,8 @@ fn parse_manifest_kind(value: u64) -> Result<ReconcileManifestKind, CarrierError
         1 => Ok(ReconcileManifestKind::Object),
         2 => Ok(ReconcileManifestKind::Event),
         3 => Ok(ReconcileManifestKind::MappingKernel),
+        4 => Ok(ReconcileManifestKind::FeedInception),
+        5 => Ok(ReconcileManifestKind::AuthorityEvent),
         _ => Err(CarrierError::InvalidField("carrier.payload_kind")),
     }
 }

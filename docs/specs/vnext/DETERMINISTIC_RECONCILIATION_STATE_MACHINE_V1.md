@@ -40,7 +40,8 @@ The states are:
 
 The reference planner:
 
-- emits canonical top-level summaries for Object, Event and MappingKernel radix lanes;
+- emits canonical top-level summaries for Object, Event, MappingKernel,
+  FeedInception and AuthorityEvent radix lanes;
 - compares each remote node with the same local lane/prefix;
 - emits sorted, duplicate-free divergent ranges;
 - projects full-CID manifest entries from those ranges under a caller budget;
@@ -63,4 +64,9 @@ Transport loss is not interpreted as falsity. A payload delivered before its man
 - Canonical message contract: `src/onebrain-protocol/src/reconciliation_codec.rs`
 - CI gate: `.github/workflows/vnext-foundation.yml`
 
-Tests cover manifest-before-payload, no sink call before CID checks, drop/reorder/duplicate convergence, corrupt-branch isolation, deterministic summary/diff/manifest, context/selector rejection and explicit refusal to close on an unexplained feed-prefix root difference.
+Tests cover manifest-before-payload, no sink call before CID checks,
+drop/reorder/duplicate convergence, corrupt-branch isolation, deterministic
+summary/diff/manifest, context/selector rejection and explicit refusal to close
+on an unexplained feed-prefix root difference. AuthorityEvent payloads still
+require their dedicated canonical decoder at the validate-then-accept boundary;
+the reconciliation state machine never grants authority by delivery alone.

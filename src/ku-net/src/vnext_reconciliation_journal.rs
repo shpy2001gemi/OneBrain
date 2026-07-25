@@ -13,8 +13,9 @@ use ku_core::foundation::{
     ResourceProfile,
 };
 use onebrain_protocol::{
-    decode_reconciliation_message, encode_reconciliation_message, make_resume_token,
-    reconciliation_binding_digest, validate_reconciliation_context, ReconcileManifestKind,
+    bind_reconciliation_message, decode_reconciliation_message, encode_reconciliation_message,
+    make_peer_bound_resume_token, make_resume_token, reconciliation_binding_digest,
+    reconciliation_resume_scope_digest, validate_reconciliation_context, ReconcileManifestKind,
     ReconcileReceiptStatus, ReconciliationBody, ReconciliationContext, ReconciliationMessage,
     ReconciliationResumeMode, ReconciliationResumeToken,
 };
@@ -25,7 +26,7 @@ use crate::vnext_reconciliation::{
 };
 
 const JOURNAL_MAJOR: u64 = 1;
-const JOURNAL_MINOR: u64 = 0;
+const JOURNAL_MINOR: u64 = 1;
 const MAX_MANIFEST_BATCHES: usize = 4_096;
 const MAX_JOURNAL_RECORDS: usize = 65_536;
 
@@ -51,6 +52,14 @@ impl ReconciliationJournalConfig {
 pub trait ReconciliationJournalBackend: Send + Sync {
     fn load(&self, binding: &[u8; 32]) -> Result<Option<Vec<u8>>, String>;
     fn store_atomically(&self, binding: &[u8; 32], bytes: &[u8]) -> Result<(), String>;
+    /// Replace one exact snapshot. This consumes a resume token without a
+    /// check-then-write race when two fresh sessions replay it concurrently.
+    fn compare_and_swap(
+        &self,
+        binding: &[u8; 32],
+        expected: &[u8],
+        replacement: &[u8],
+    ) -> Result<bool, String>;
 }
 
 #[derive(Default)]
@@ -75,6 +84,26 @@ impl ReconciliationJournalBackend for InMemoryReconciliationJournalBackend {
             .insert(*binding, bytes.to_vec());
         Ok(())
     }
+
+    fn compare_and_swap(
+        &self,
+        binding: &[u8; 32],
+        expected: &[u8],
+        replacement: &[u8],
+    ) -> Result<bool, String> {
+        let mut snapshots = self
+            .snapshots
+            .lock()
+            .map_err(|_| "RECONCILIATION_JOURNAL_LOCK_POISONED".to_owned())?;
+        let Some(current) = snapshots.get(binding) else {
+            return Ok(false);
+        };
+        if current.as_slice() != expected {
+            return Ok(false);
+        }
+        snapshots.insert(*binding, replacement.to_vec());
+        Ok(true)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -87,6 +116,7 @@ struct AcceptedRecord {
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct JournalProjection {
     binding: [u8; 32],
+    resume_scope: [u8; 32],
     config: ReconciliationJournalConfig,
     next_sequence: u64,
     manifests: BTreeMap<[u8; 32], Vec<u8>>,
@@ -96,9 +126,10 @@ struct JournalProjection {
 }
 
 impl JournalProjection {
-    fn new(binding: [u8; 32], config: ReconciliationJournalConfig) -> Self {
+    fn new(binding: [u8; 32], resume_scope: [u8; 32], config: ReconciliationJournalConfig) -> Self {
         Self {
             binding,
+            resume_scope,
             config,
             next_sequence: 0,
             manifests: BTreeMap::new(),
@@ -109,6 +140,10 @@ impl JournalProjection {
     }
 
     fn encode(&self) -> Result<Vec<u8>, ReconciliationJournalError> {
+        self.encode_version(JOURNAL_MINOR)
+    }
+
+    fn encode_version(&self, minor: u64) -> Result<Vec<u8>, ReconciliationJournalError> {
         let manifests = self
             .manifests
             .iter()
@@ -141,30 +176,31 @@ impl JournalProjection {
                 ])
             })
             .collect();
-        encode_canonical(
-            &CanonicalValue::Map(vec![
-                (0, CanonicalValue::Unsigned(JOURNAL_MAJOR)),
-                (1, CanonicalValue::Unsigned(JOURNAL_MINOR)),
-                (2, CanonicalValue::Bytes(self.binding.to_vec())),
-                (
-                    3,
-                    CanonicalValue::Map(vec![
-                        (
-                            0,
-                            CanonicalValue::Unsigned(self.config.max_retries_per_record),
-                        ),
-                        (1, CanonicalValue::Unsigned(self.config.max_inflight_bytes)),
-                    ]),
-                ),
-                (4, CanonicalValue::Unsigned(self.next_sequence)),
-                (5, CanonicalValue::Array(manifests)),
-                (6, CanonicalValue::Array(accepted)),
-                (7, CanonicalValue::Array(retries)),
-                (8, CanonicalValue::Unsigned(self.inflight_bytes)),
-            ]),
-            ResourceProfile::ManifestV1,
-        )
-        .map_err(Into::into)
+        let mut fields = vec![
+            (0, CanonicalValue::Unsigned(JOURNAL_MAJOR)),
+            (1, CanonicalValue::Unsigned(minor)),
+            (2, CanonicalValue::Bytes(self.binding.to_vec())),
+            (
+                3,
+                CanonicalValue::Map(vec![
+                    (
+                        0,
+                        CanonicalValue::Unsigned(self.config.max_retries_per_record),
+                    ),
+                    (1, CanonicalValue::Unsigned(self.config.max_inflight_bytes)),
+                ]),
+            ),
+            (4, CanonicalValue::Unsigned(self.next_sequence)),
+            (5, CanonicalValue::Array(manifests)),
+            (6, CanonicalValue::Array(accepted)),
+            (7, CanonicalValue::Array(retries)),
+            (8, CanonicalValue::Unsigned(self.inflight_bytes)),
+        ];
+        if minor >= 1 {
+            fields.push((9, CanonicalValue::Bytes(self.resume_scope.to_vec())));
+        }
+        encode_canonical(&CanonicalValue::Map(fields), ResourceProfile::ManifestV1)
+            .map_err(Into::into)
     }
 
     fn decode(bytes: &[u8]) -> Result<Self, ReconciliationJournalError> {
@@ -173,7 +209,16 @@ impl JournalProjection {
         if unsigned(root, 0, "journal.major")? != JOURNAL_MAJOR {
             return Err(ReconciliationJournalError::UnsupportedVersion);
         }
+        let minor = unsigned(root, 1, "journal.minor")?;
+        if minor > JOURNAL_MINOR {
+            return Err(ReconciliationJournalError::UnsupportedVersion);
+        }
         let binding = bytes32(root, 2, "journal.binding")?;
+        let resume_scope = if minor == 0 {
+            [0; 32]
+        } else {
+            bytes32(root, 9, "journal.resume_scope")?
+        };
         let config_map = map(required(root, 3, "journal.config")?, "journal.config")?;
         let config = ReconciliationJournalConfig {
             max_retries_per_record: unsigned(config_map, 0, "journal.max_retries")?,
@@ -189,7 +234,7 @@ impl JournalProjection {
         {
             return Err(ReconciliationJournalError::Limit);
         }
-        let mut projection = Self::new(binding, config);
+        let mut projection = Self::new(binding, resume_scope, config);
         projection.next_sequence = unsigned(root, 4, "journal.next_sequence")?;
         projection.inflight_bytes = unsigned(root, 8, "journal.inflight")?;
         if projection.inflight_bytes > config.max_inflight_bytes {
@@ -232,7 +277,7 @@ impl JournalProjection {
                 return Err(ReconciliationJournalError::InvalidRetryRecord);
             }
         }
-        if projection.encode()? != bytes {
+        if projection.encode_version(minor)? != bytes {
             return Err(ReconciliationJournalError::NonCanonicalJournal);
         }
         Ok(projection)
@@ -268,28 +313,33 @@ impl<B: ReconciliationJournalBackend, S: ValidateThenAcceptSink>
     ) -> Result<Self, ReconciliationJournalError> {
         let config = config.validate()?;
         let binding = reconciliation_binding_digest(&context)?;
-        let projection = match backend
+        let resume_scope = reconciliation_resume_scope_digest(&context)?;
+        let mut projection = match backend
             .load(&binding)
             .map_err(ReconciliationJournalError::Backend)?
         {
             Some(bytes) => {
                 let stored = JournalProjection::decode(&bytes)?;
-                if stored.binding != binding || stored.config != config {
+                if stored.binding != binding
+                    || stored.config != config
+                    || (stored.resume_scope != [0; 32] && stored.resume_scope != resume_scope)
+                {
                     return Err(ReconciliationJournalError::ContextOrConfigMismatch);
                 }
                 stored
             }
-            None => JournalProjection::new(binding, config),
+            None => JournalProjection::new(binding, resume_scope, config),
         };
-        let mut receiver = ReconciliationReceiver::new(context.clone(), sink)?;
-        for bytes in projection.manifests.values() {
-            let message = decode_reconciliation_message(bytes)?;
-            validate_reconciliation_context(&context, &message)?;
-            receiver.ingest_manifest(&message)?;
+        // Minor-0 snapshots predate cross-session scope binding. They may be
+        // upgraded only through an exact full-context open (the lookup key is
+        // the recomputed context binding), never through a Resume token.
+        if projection.resume_scope == [0; 32] {
+            projection.resume_scope = resume_scope;
+            backend
+                .store_atomically(&binding, &projection.encode()?)
+                .map_err(ReconciliationJournalError::Backend)?;
         }
-        for record in projection.accepted.values() {
-            receiver.restore_accepted(record.kind, record.cid, record.status);
-        }
+        let receiver = restore_receiver(&context, &projection, sink)?;
         let mut session = Self {
             backend,
             projection,
@@ -304,6 +354,58 @@ impl<B: ReconciliationJournalBackend, S: ValidateThenAcceptSink>
             session.persist(recovered)?;
         }
         Ok(session)
+    }
+
+    /// Consume a receiver-issued V2 token and rebind its durable journal to a
+    /// fresh authenticated context with the exact same selector/privacy/budget
+    /// scope. The backend compare-and-swap makes a token single-use even when
+    /// concurrent sessions race to replay it.
+    pub fn resume(
+        backend: B,
+        context: ReconciliationContext,
+        config: ReconciliationJournalConfig,
+        sink: S,
+        token: &ReconciliationResumeToken,
+        token_key: [u8; 32],
+    ) -> Result<Self, ReconciliationJournalError> {
+        if context.resume_mode != ReconciliationResumeMode::PeerBoundTokenV2 {
+            return Err(ReconciliationJournalError::ResumeNotNegotiated);
+        }
+        let config = config.validate()?;
+        let resume_scope = reconciliation_resume_scope_digest(&context)?;
+        let original = backend
+            .load(&token.binding_digest)
+            .map_err(ReconciliationJournalError::Backend)?
+            .ok_or(ReconciliationJournalError::InvalidResumeToken)?;
+        let stored = JournalProjection::decode(&original)?;
+        if stored.binding != token.binding_digest
+            || stored.resume_scope != resume_scope
+            || stored.config != config
+        {
+            return Err(ReconciliationJournalError::InvalidResumeToken);
+        }
+        validate_token_against(&stored, token, token_key)?;
+
+        let mut consumed = stored;
+        consumed.next_sequence = token
+            .next_sequence
+            .checked_add(1)
+            .ok_or(ReconciliationJournalError::InvalidResumeToken)?;
+        consumed.inflight_bytes = 0;
+        let replacement = consumed.encode()?;
+        if !backend
+            .compare_and_swap(&consumed.binding, &original, &replacement)
+            .map_err(ReconciliationJournalError::Backend)?
+        {
+            return Err(ReconciliationJournalError::InvalidResumeToken);
+        }
+        let receiver = restore_receiver(&context, &consumed, sink)?;
+        Ok(Self {
+            backend,
+            projection: consumed,
+            receiver,
+            context,
+        })
     }
 
     pub fn ingest_manifest(
@@ -377,7 +479,8 @@ impl<B: ReconciliationJournalBackend, S: ValidateThenAcceptSink>
                     .saturating_add(1)
                     .min(completed.config.max_retries_per_record);
             }
-            PayloadIngestOutcome::DeferredUntilManifest => {}
+            PayloadIngestOutcome::DeferredUntilManifest
+            | PayloadIngestOutcome::DeferredMissingDependency => {}
         }
         self.persist(completed)?;
         Ok(JournaledPayloadOutcome::Delivered(outcome))
@@ -388,7 +491,10 @@ impl<B: ReconciliationJournalBackend, S: ValidateThenAcceptSink>
         next_sequence: u64,
         token_key: [u8; 32],
     ) -> Result<ReconciliationResumeToken, ReconciliationJournalError> {
-        if self.context.resume_mode != ReconciliationResumeMode::BoundTokenV1 {
+        if !matches!(
+            self.context.resume_mode,
+            ReconciliationResumeMode::BoundTokenV1 | ReconciliationResumeMode::PeerBoundTokenV2
+        ) {
             return Err(ReconciliationJournalError::ResumeNotNegotiated);
         }
         let mut next = self.projection.clone();
@@ -401,7 +507,23 @@ impl<B: ReconciliationJournalBackend, S: ValidateThenAcceptSink>
             checkpoint,
             next_sequence,
         );
-        make_resume_token(&self.context, checkpoint, next_sequence, opaque).map_err(Into::into)
+        match self.context.resume_mode {
+            ReconciliationResumeMode::BoundTokenV1 => {
+                make_resume_token(&self.context, checkpoint, next_sequence, opaque)
+                    .map_err(Into::into)
+            }
+            ReconciliationResumeMode::PeerBoundTokenV2 => make_peer_bound_resume_token(
+                &self.context,
+                self.projection.binding,
+                checkpoint,
+                next_sequence,
+                opaque,
+            )
+            .map_err(Into::into),
+            ReconciliationResumeMode::Disabled => {
+                Err(ReconciliationJournalError::ResumeNotNegotiated)
+            }
+        }
     }
 
     pub fn validate_resume_token(
@@ -409,29 +531,39 @@ impl<B: ReconciliationJournalBackend, S: ValidateThenAcceptSink>
         token: &ReconciliationResumeToken,
         token_key: [u8; 32],
     ) -> Result<(), ReconciliationJournalError> {
-        let checkpoint = self.projection.checkpoint_digest()?;
-        if token.binding_digest != self.projection.binding
-            || token.checkpoint_digest != checkpoint
-            || token.next_sequence != self.projection.next_sequence
-            || token.opaque
-                != token_mac(
-                    token_key,
-                    self.projection.binding,
-                    checkpoint,
-                    token.next_sequence,
-                )
-        {
-            return Err(ReconciliationJournalError::InvalidResumeToken);
-        }
-        Ok(())
+        validate_token_against(&self.projection, token, token_key)
     }
 
     pub fn state(&self) -> ReceiverState {
         self.receiver.state()
     }
 
+    pub fn resume_mode(&self) -> ReconciliationResumeMode {
+        self.context.resume_mode
+    }
+
     pub fn accepted_cids(&self) -> Vec<[u8; 32]> {
         self.receiver.accepted_cids()
+    }
+
+    /// Produce a transcript/context-bound cumulative receipt projection for
+    /// the peer. A receipt reports local validation state only; it does not
+    /// establish truth, authority, adoption, benefit, reward, or completion.
+    pub fn receipt_message(
+        &self,
+        sequence: u64,
+    ) -> Result<Option<ReconciliationMessage>, ReconciliationJournalError> {
+        self.receiver.receipt_message(sequence).map_err(Into::into)
+    }
+
+    pub fn progress_message(
+        &self,
+        sequence: u64,
+        resume_token: Option<ReconciliationResumeToken>,
+    ) -> Result<ReconciliationMessage, ReconciliationJournalError> {
+        self.receiver
+            .progress_message_with_resume(sequence, resume_token)
+            .map_err(Into::into)
     }
 
     pub fn journal_checkpoint(&self) -> Result<[u8; 32], ReconciliationJournalError> {
@@ -452,6 +584,52 @@ impl<B: ReconciliationJournalBackend, S: ValidateThenAcceptSink>
     }
 }
 
+fn restore_receiver<S: ValidateThenAcceptSink>(
+    context: &ReconciliationContext,
+    projection: &JournalProjection,
+    sink: S,
+) -> Result<ReconciliationReceiver<S>, ReconciliationJournalError> {
+    let mut receiver = ReconciliationReceiver::new(context.clone(), sink)?;
+    for bytes in projection.manifests.values() {
+        let stored = decode_reconciliation_message(bytes)?;
+        let ReconciliationBody::Manifest { entries } = stored.body else {
+            return Err(ReconciliationJournalError::InvalidManifestRecord);
+        };
+        let rebound = bind_reconciliation_message(
+            context.clone(),
+            stored.sequence,
+            ReconciliationBody::Manifest { entries },
+        )?;
+        receiver.ingest_manifest(&rebound)?;
+    }
+    for record in projection.accepted.values() {
+        receiver.restore_accepted(record.kind, record.cid, record.status);
+    }
+    Ok(receiver)
+}
+
+fn validate_token_against(
+    projection: &JournalProjection,
+    token: &ReconciliationResumeToken,
+    token_key: [u8; 32],
+) -> Result<(), ReconciliationJournalError> {
+    let checkpoint = projection.checkpoint_digest()?;
+    if token.binding_digest != projection.binding
+        || token.checkpoint_digest != checkpoint
+        || token.next_sequence != projection.next_sequence
+        || token.opaque
+            != token_mac(
+                token_key,
+                projection.binding,
+                checkpoint,
+                token.next_sequence,
+            )
+    {
+        return Err(ReconciliationJournalError::InvalidResumeToken);
+    }
+    Ok(())
+}
+
 fn token_mac(key: [u8; 32], binding: [u8; 32], checkpoint: [u8; 32], sequence: u64) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new_keyed(&key);
     hasher.update(b"onebrain:vnext:reconciliation-resume-token:1\0");
@@ -464,16 +642,18 @@ fn token_mac(key: [u8; 32], binding: [u8; 32], checkpoint: [u8; 32], sequence: u
 #[cfg(feature = "persist")]
 pub mod persistent {
     use std::path::Path;
+    use std::sync::Arc;
 
-    use redb::{Database, TableDefinition};
+    use redb::{Database, ReadableTable, TableDefinition};
 
     use super::ReconciliationJournalBackend;
 
     const JOURNALS: TableDefinition<&[u8], &[u8]> =
         TableDefinition::new("vnext_reconciliation_journals");
 
+    #[derive(Clone)]
     pub struct RedbReconciliationJournalBackend {
-        db: Database,
+        db: Arc<Database>,
     }
 
     impl RedbReconciliationJournalBackend {
@@ -486,7 +666,7 @@ pub mod persistent {
                     .map_err(|error| error.to_string())?;
             }
             write.commit().map_err(|error| error.to_string())?;
-            Ok(Self { db })
+            Ok(Self { db: Arc::new(db) })
         }
     }
 
@@ -514,6 +694,33 @@ pub mod persistent {
             }
             write.commit().map_err(|error| error.to_string())
         }
+
+        fn compare_and_swap(
+            &self,
+            binding: &[u8; 32],
+            expected: &[u8],
+            replacement: &[u8],
+        ) -> Result<bool, String> {
+            let write = self.db.begin_write().map_err(|error| error.to_string())?;
+            let swapped;
+            {
+                let mut table = write
+                    .open_table(JOURNALS)
+                    .map_err(|error| error.to_string())?;
+                let matches = table
+                    .get(binding.as_slice())
+                    .map_err(|error| error.to_string())?
+                    .is_some_and(|value| value.value() == expected);
+                if matches {
+                    table
+                        .insert(binding.as_slice(), replacement)
+                        .map_err(|error| error.to_string())?;
+                }
+                swapped = matches;
+            }
+            write.commit().map_err(|error| error.to_string())?;
+            Ok(swapped)
+        }
     }
 }
 
@@ -522,6 +729,8 @@ fn parse_kind(value: u64) -> Result<ReconcileManifestKind, ReconciliationJournal
         1 => Ok(ReconcileManifestKind::Object),
         2 => Ok(ReconcileManifestKind::Event),
         3 => Ok(ReconcileManifestKind::MappingKernel),
+        4 => Ok(ReconcileManifestKind::FeedInception),
+        5 => Ok(ReconcileManifestKind::AuthorityEvent),
         _ => Err(ReconciliationJournalError::InvalidField("record.kind")),
     }
 }
@@ -532,6 +741,7 @@ fn parse_status(value: u64) -> Result<ReconcileReceiptStatus, ReconciliationJour
         2 => Ok(ReconcileReceiptStatus::AlreadyPresent),
         3 => Ok(ReconcileReceiptStatus::RejectedInvalid),
         4 => Ok(ReconcileReceiptStatus::DeferredBudget),
+        5 => Ok(ReconcileReceiptStatus::DeferredMissingDependency),
         _ => Err(ReconciliationJournalError::InvalidField("record.status")),
     }
 }
@@ -643,6 +853,7 @@ impl From<ReconciliationError> for ReconciliationJournalError {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
 
     use ku_core::foundation::{DisclosureClass, NamespaceCommitment, SelectorCid};
@@ -659,6 +870,7 @@ mod tests {
         state: Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>,
         insertions: Arc<Mutex<u64>>,
         reject: bool,
+        defer_missing_dependency: Arc<AtomicBool>,
     }
 
     impl ValidateThenAcceptSink for SharedSink {
@@ -670,6 +882,9 @@ mod tests {
         ) -> Result<crate::vnext_reconciliation::PayloadSinkOutcome, String> {
             if self.reject {
                 return Ok(PayloadSinkOutcome::RejectedInvalid);
+            }
+            if self.defer_missing_dependency.load(Ordering::SeqCst) {
+                return Ok(PayloadSinkOutcome::DeferredMissingDependency);
             }
             let mut state = self.state.lock().unwrap();
             let key = (kind as u64, cid);
@@ -693,6 +908,15 @@ mod tests {
         fn store_atomically(&self, binding: &[u8; 32], bytes: &[u8]) -> Result<(), String> {
             self.0.store_atomically(binding, bytes)
         }
+
+        fn compare_and_swap(
+            &self,
+            binding: &[u8; 32],
+            expected: &[u8],
+            replacement: &[u8],
+        ) -> Result<bool, String> {
+            self.0.compare_and_swap(binding, expected, replacement)
+        }
     }
 
     #[derive(Clone)]
@@ -715,6 +939,15 @@ mod tests {
             }
             self.inner.store_atomically(binding, bytes)
         }
+
+        fn compare_and_swap(
+            &self,
+            binding: &[u8; 32],
+            expected: &[u8],
+            replacement: &[u8],
+        ) -> Result<bool, String> {
+            self.inner.compare_and_swap(binding, expected, replacement)
+        }
     }
 
     fn context() -> ReconciliationContext {
@@ -734,6 +967,13 @@ mod tests {
         }
     }
 
+    fn peer_bound_context(transcript: [u8; 32]) -> ReconciliationContext {
+        let mut context = context();
+        context.authenticated_transcript = transcript;
+        context.resume_mode = ReconciliationResumeMode::PeerBoundTokenV2;
+        context
+    }
+
     fn config() -> ReconciliationJournalConfig {
         ReconciliationJournalConfig {
             max_retries_per_record: 2,
@@ -751,8 +991,15 @@ mod tests {
     }
 
     fn manifest(frame: &BoundPayloadFrame) -> ReconciliationMessage {
+        manifest_for(&context(), frame)
+    }
+
+    fn manifest_for(
+        context: &ReconciliationContext,
+        frame: &BoundPayloadFrame,
+    ) -> ReconciliationMessage {
         bind_reconciliation_message(
-            context(),
+            context.clone(),
             1,
             ReconciliationBody::Manifest {
                 entries: vec![ReconcileManifestEntry {
@@ -836,6 +1083,133 @@ mod tests {
     }
 
     #[test]
+    fn minor_zero_snapshot_upgrades_only_through_exact_context_open() {
+        let backend = SharedMemoryBackend::default();
+        let binding = reconciliation_binding_digest(&context()).unwrap();
+        let legacy = JournalProjection::new(binding, [0; 32], config())
+            .encode_version(0)
+            .unwrap();
+        backend.store_atomically(&binding, &legacy).unwrap();
+
+        JournaledReconciliationSession::open(
+            backend.clone(),
+            context(),
+            config(),
+            SharedSink::default(),
+        )
+        .unwrap();
+        let upgraded = backend.load(&binding).unwrap().unwrap();
+        let projection = JournalProjection::decode(&upgraded).unwrap();
+        assert_eq!(
+            projection.resume_scope,
+            reconciliation_resume_scope_digest(&context()).unwrap()
+        );
+        assert_ne!(legacy, upgraded);
+    }
+
+    #[test]
+    fn peer_bound_token_rebinds_a_journal_once_to_a_fresh_transcript() {
+        let backend = SharedMemoryBackend::default();
+        let sink = SharedSink::default();
+        let origin_context = peer_bound_context([0x31; 32]);
+        let origin_frame = BoundPayloadFrame::new(
+            &origin_context,
+            ReconcileManifestKind::Object,
+            b"cross-session-object".to_vec(),
+        )
+        .unwrap();
+        let token_key = [0x41; 32];
+        let token = {
+            let mut origin = JournaledReconciliationSession::open(
+                backend.clone(),
+                origin_context,
+                config(),
+                sink.clone(),
+            )
+            .unwrap();
+            origin
+                .ingest_manifest(&manifest_for(&origin.context, &origin_frame))
+                .unwrap();
+            assert_eq!(
+                origin.ingest_payload(&origin_frame).unwrap(),
+                JournaledPayloadOutcome::Delivered(PayloadIngestOutcome::ValidatedStored)
+            );
+            origin.issue_resume_token(7, token_key).unwrap()
+        };
+
+        let fresh_context = peer_bound_context([0x32; 32]);
+        let fresh_frame = BoundPayloadFrame::new(
+            &fresh_context,
+            ReconcileManifestKind::Object,
+            b"cross-session-object".to_vec(),
+        )
+        .unwrap();
+        let mut resumed = JournaledReconciliationSession::resume(
+            backend.clone(),
+            fresh_context,
+            config(),
+            sink.clone(),
+            &token,
+            token_key,
+        )
+        .unwrap();
+        assert_eq!(resumed.state(), ReceiverState::ManifestBatchComplete);
+        assert_eq!(
+            resumed.ingest_payload(&fresh_frame).unwrap(),
+            JournaledPayloadOutcome::Delivered(PayloadIngestOutcome::AlreadyPresent)
+        );
+        assert_eq!(*sink.insertions.lock().unwrap(), 1);
+
+        assert!(matches!(
+            JournaledReconciliationSession::resume(
+                backend.clone(),
+                peer_bound_context([0x33; 32]),
+                config(),
+                sink.clone(),
+                &token,
+                token_key,
+            ),
+            Err(ReconciliationJournalError::InvalidResumeToken)
+        ));
+
+        let next = resumed.issue_resume_token(12, token_key).unwrap();
+        drop(resumed);
+        assert!(matches!(
+            JournaledReconciliationSession::resume(
+                backend.clone(),
+                peer_bound_context([0x34; 32]),
+                config(),
+                sink.clone(),
+                &next,
+                [0x42; 32],
+            ),
+            Err(ReconciliationJournalError::InvalidResumeToken)
+        ));
+        let mut wrong_scope = peer_bound_context([0x35; 32]);
+        wrong_scope.selector = SelectorCid::from_bytes([0x99; 32]);
+        assert!(matches!(
+            JournaledReconciliationSession::resume(
+                backend.clone(),
+                wrong_scope,
+                config(),
+                sink.clone(),
+                &next,
+                token_key,
+            ),
+            Err(ReconciliationJournalError::InvalidResumeToken)
+        ));
+        JournaledReconciliationSession::resume(
+            backend,
+            peer_bound_context([0x36; 32]),
+            config(),
+            sink,
+            &next,
+            token_key,
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn retry_and_backpressure_are_bounded_and_persisted() {
         let backend = SharedMemoryBackend::default();
         let mut rejecting = SharedSink::default();
@@ -876,6 +1250,45 @@ mod tests {
             reopened.ingest_payload(&oversized).unwrap(),
             JournaledPayloadOutcome::Backpressured
         );
+    }
+
+    #[test]
+    fn missing_dependency_is_non_terminal_and_does_not_consume_retry_budget() {
+        let backend = SharedMemoryBackend::default();
+        let sink = SharedSink::default();
+        sink.defer_missing_dependency.store(true, Ordering::SeqCst);
+        let frame = frame();
+        let mut session = JournaledReconciliationSession::open(
+            backend.clone(),
+            context(),
+            config(),
+            sink.clone(),
+        )
+        .unwrap();
+        session.ingest_manifest(&manifest(&frame)).unwrap();
+
+        for _ in 0..5 {
+            assert_eq!(
+                session.ingest_payload(&frame).unwrap(),
+                JournaledPayloadOutcome::Delivered(PayloadIngestOutcome::DeferredMissingDependency)
+            );
+        }
+        assert_eq!(
+            session.state(),
+            ReceiverState::ReceivingPayloads { pending: 1 }
+        );
+        drop(session);
+
+        sink.defer_missing_dependency.store(false, Ordering::SeqCst);
+        let mut reopened =
+            JournaledReconciliationSession::open(backend, context(), config(), sink.clone())
+                .unwrap();
+        assert_eq!(
+            reopened.ingest_payload(&frame).unwrap(),
+            JournaledPayloadOutcome::Delivered(PayloadIngestOutcome::ValidatedStored)
+        );
+        assert_eq!(reopened.state(), ReceiverState::ManifestBatchComplete);
+        assert_eq!(*sink.insertions.lock().unwrap(), 1);
     }
 
     #[cfg(feature = "persist")]

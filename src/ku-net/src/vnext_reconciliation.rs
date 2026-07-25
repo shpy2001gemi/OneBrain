@@ -11,7 +11,7 @@ use onebrain_protocol::{
     bind_reconciliation_message, reconciliation_binding_digest, validate_reconciliation_context,
     InventoryDiffRange, InventoryLane, InventorySummaryNode, ReconcileManifestEntry,
     ReconcileManifestKind, ReconcileReceiptEntry, ReconcileReceiptStatus, ReconciliationBody,
-    ReconciliationContext, ReconciliationMessage, ReconciliationPhase,
+    ReconciliationContext, ReconciliationMessage, ReconciliationPhase, ReconciliationResumeToken,
 };
 
 use crate::vnext_inventory_forest::{HybridInventoryForest, InventoryLeaf, InventoryRange};
@@ -20,6 +20,7 @@ use crate::vnext_inventory_forest::{HybridInventoryForest, InventoryLeaf, Invent
 pub enum PayloadSinkOutcome {
     ValidatedStored,
     AlreadyPresent,
+    DeferredMissingDependency,
     RejectedInvalid,
 }
 
@@ -86,6 +87,7 @@ pub enum PayloadIngestOutcome {
     ValidatedStored,
     AlreadyPresent,
     DeferredUntilManifest,
+    DeferredMissingDependency,
     Rejected(PayloadRejectReason),
 }
 
@@ -179,6 +181,7 @@ impl<S: ValidateThenAcceptSink> ReconciliationReceiver<S> {
             return PayloadIngestOutcome::Rejected(PayloadRejectReason::ContentCid);
         }
         if self.accepted.contains(&key) {
+            self.mark_accepted(key, ReconcileReceiptStatus::AlreadyPresent);
             return PayloadIngestOutcome::AlreadyPresent;
         }
         match self
@@ -192,6 +195,11 @@ impl<S: ValidateThenAcceptSink> ReconciliationReceiver<S> {
             Ok(PayloadSinkOutcome::AlreadyPresent) => {
                 self.mark_accepted(key, ReconcileReceiptStatus::AlreadyPresent);
                 PayloadIngestOutcome::AlreadyPresent
+            }
+            Ok(PayloadSinkOutcome::DeferredMissingDependency) => {
+                self.receipt_status
+                    .insert(key, ReconcileReceiptStatus::DeferredMissingDependency);
+                PayloadIngestOutcome::DeferredMissingDependency
             }
             Ok(PayloadSinkOutcome::RejectedInvalid) => {
                 self.mark_rejected(key);
@@ -257,6 +265,14 @@ impl<S: ValidateThenAcceptSink> ReconciliationReceiver<S> {
         &self,
         sequence: u64,
     ) -> Result<ReconciliationMessage, ReconciliationError> {
+        self.progress_message_with_resume(sequence, None)
+    }
+
+    pub fn progress_message_with_resume(
+        &self,
+        sequence: u64,
+        resume_token: Option<ReconciliationResumeToken>,
+    ) -> Result<ReconciliationMessage, ReconciliationError> {
         let (phase, pending) = match self.state() {
             ReceiverState::AwaitingManifest => (ReconciliationPhase::Diffing, None),
             ReceiverState::ReceivingPayloads { pending }
@@ -274,7 +290,7 @@ impl<S: ValidateThenAcceptSink> ReconciliationReceiver<S> {
                 phase,
                 processed: self.accepted.len() as u64,
                 pending_upper_bound: pending,
-                resume_token: None,
+                resume_token,
             },
         )?)
     }
@@ -438,19 +454,29 @@ fn manifest_entry(leaf: InventoryLeaf) -> ReconcileManifestEntry {
             InventoryRecordKind::Object => ReconcileManifestKind::Object,
             InventoryRecordKind::Event => ReconcileManifestKind::Event,
             InventoryRecordKind::MappingKernel => ReconcileManifestKind::MappingKernel,
+            InventoryRecordKind::FeedInception => ReconcileManifestKind::FeedInception,
+            InventoryRecordKind::AuthorityEvent => ReconcileManifestKind::AuthorityEvent,
         },
         cid: leaf.cid,
         canonical_length: leaf.canonical_length,
     }
 }
 
-fn lane_kinds() -> [(InventoryLane, InventoryRecordKind); 3] {
+fn lane_kinds() -> [(InventoryLane, InventoryRecordKind); 5] {
     [
         (InventoryLane::Object, InventoryRecordKind::Object),
         (InventoryLane::Event, InventoryRecordKind::Event),
         (
             InventoryLane::MappingKernel,
             InventoryRecordKind::MappingKernel,
+        ),
+        (
+            InventoryLane::FeedInception,
+            InventoryRecordKind::FeedInception,
+        ),
+        (
+            InventoryLane::AuthorityEvent,
+            InventoryRecordKind::AuthorityEvent,
         ),
     ]
 }
@@ -460,6 +486,8 @@ fn record_kind(lane: InventoryLane) -> InventoryRecordKind {
         InventoryLane::Object => InventoryRecordKind::Object,
         InventoryLane::Event => InventoryRecordKind::Event,
         InventoryLane::MappingKernel => InventoryRecordKind::MappingKernel,
+        InventoryLane::FeedInception => InventoryRecordKind::FeedInception,
+        InventoryLane::AuthorityEvent => InventoryRecordKind::AuthorityEvent,
     }
 }
 
@@ -472,6 +500,8 @@ fn manifest_kind(value: u64) -> Option<ReconcileManifestKind> {
         1 => Some(ReconcileManifestKind::Object),
         2 => Some(ReconcileManifestKind::Event),
         3 => Some(ReconcileManifestKind::MappingKernel),
+        4 => Some(ReconcileManifestKind::FeedInception),
+        5 => Some(ReconcileManifestKind::AuthorityEvent),
         _ => None,
     }
 }
@@ -481,6 +511,8 @@ fn content_digest(kind: ReconcileManifestKind, bytes: &[u8]) -> [u8; 32] {
         ReconcileManifestKind::Object => ReservedDomain::Object,
         ReconcileManifestKind::Event => ReservedDomain::Event,
         ReconcileManifestKind::MappingKernel => ReservedDomain::MappingKernel,
+        ReconcileManifestKind::FeedInception => ReservedDomain::FeedInception,
+        ReconcileManifestKind::AuthorityEvent => ReservedDomain::AuthorityEvent,
     };
     domain.digest(bytes)
 }

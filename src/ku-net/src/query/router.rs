@@ -232,8 +232,8 @@ impl QueryRouter {
         let mut targets = Vec::new();
 
         // Use concept hints to look up DHT keys
-        for &concept_id in &query.concept_hints {
-            let key = ConceptIndex::concept_to_key(concept_id);
+        for &concept in &query.concept_hints {
+            let key = ConceptIndex::concept_to_key(concept);
             let closest = dht.find_closest_nodes(&key);
             for entry in closest.iter().take(3) {
                 if !query.has_visited(&entry.node_id) && entry.node_id != self.my_id {
@@ -248,8 +248,8 @@ impl QueryRouter {
 
         // If no concept hints, use all concepts from the index
         if targets.is_empty() {
-            for &concept_id in concept_index.concepts().iter().take(3) {
-                let key = ConceptIndex::concept_to_key(concept_id);
+            for &concept in concept_index.concepts().iter().take(3) {
+                let key = ConceptIndex::concept_to_key(concept);
                 let closest = dht.find_closest_nodes(&key);
                 for entry in closest.iter().take(2) {
                     if !query.has_visited(&entry.node_id) && entry.node_id != self.my_id {
@@ -283,8 +283,8 @@ impl QueryRouter {
         let visited: Vec<NodeId> = query.visited.clone();
 
         // Use pheromone trails for each concept hint
-        for &concept_id in &query.concept_hints {
-            let topic_key = ConceptIndex::concept_to_key(concept_id);
+        for &concept in &query.concept_hints {
+            let topic_key = ConceptIndex::concept_to_key(concept);
             let hops = pheromone.route_query(&topic_key, &visited);
 
             for node_id in hops.into_iter().take(3) {

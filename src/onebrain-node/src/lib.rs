@@ -5,6 +5,7 @@
 //! All interface projects (CLI, Web, Desktop, Mobile) depend on this.
 
 pub mod anti_gaming_guard;
+pub mod concept_registry_runtime;
 pub mod config;
 pub mod display;
 pub mod error;
@@ -19,22 +20,39 @@ pub mod upnp;
 pub mod verifier_service;
 pub mod vnext_companion;
 pub mod vnext_config;
+#[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_distributed_kql;
+#[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_distributed_pomv;
 pub mod vnext_legacy_migration;
 pub mod vnext_local_runtime;
 pub mod vnext_m5_benchmark;
 pub mod vnext_m6_model;
 pub mod vnext_mixed_conformance;
+#[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_network_runtime;
+#[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_outbox;
 pub mod vnext_performance_budgets;
+#[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_record_provenance;
 pub mod vnext_reunion_canary;
 pub mod vnext_reward_firewall;
 pub mod vnext_scale_simulation;
 #[cfg(test)]
 pub mod vnext_security_suite;
 pub mod vnext_status;
+pub mod vnext_validated_sink;
 pub mod vnext_workflow_surface;
 
-pub use config::NodeConfig;
+pub use concept_registry_runtime::{
+    ConceptRegistryBackendKind, ConceptRegistryFailureKind, ConceptRegistryRuntimeState,
+    ConceptRegistryStatus,
+};
+pub use config::{ConceptRegistryMode, NodeConfig};
 pub use error::NodeError;
+#[cfg(feature = "vnext-network-runtime")]
+pub use ku_net::vnext_session::SessionIdentitySigner;
 pub use network::{NetMessage, NodeEvent, PeerInfo};
 pub use node::{EncodeStoreResult, OneBrainNode};
 pub use vnext_companion::{
@@ -46,6 +64,19 @@ pub use vnext_companion::{
 };
 pub use vnext_config::{
     VNextFeature, VNextFeatureConfig, VNextFeatureConfigError, VNextFeatureFlags,
+    VNextNetworkPolicy,
+};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_distributed_kql::{
+    DistributedKqlBudget, DistributedKqlError, DistributedKqlMatch, DistributedKqlReport,
+    DistributedKqlRuntime,
+};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_distributed_pomv::{
+    DistributedPomvError, DistributedPomvReport, DistributedPomvRuntime,
+    DistributedUseEvidenceObservation, ExplicitUseConfirmation, PublicUseEvidencePublication,
+    PublicUseEvidencePublisher, PublicUseFlushReport, PublicUsePublishOutcome,
+    PublishPublicUseEvidenceRequest,
 };
 pub use vnext_local_runtime::{
     LocalCandidateInput, LocalCandidateOutcome, LocalMaterializationRequest, LocalRuntimeError,
@@ -59,6 +90,16 @@ pub use vnext_m5_benchmark::{
     MetricFraction, PrivacyLeakageProbe, PrivacyMetrics,
 };
 pub use vnext_m6_model::{run_m6_bounded_models, BoundedInvariantResult, M6BoundedModelReport};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_network_runtime::{
+    OutboundDeliveryReport, OutboundVNextSession, VNextNetworkRuntime, VNextNetworkRuntimeError,
+    VNextNetworkRuntimeState, VNextNetworkRuntimeStatus,
+};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_outbox::{
+    OutboundIntentState, OutboundOutbox, OutboundOutboxError, OutboundTransferIntent,
+    OutboxEnqueueOutcome,
+};
 pub use vnext_performance_budgets::{
     run_performance_budget_suite, PerformanceBudgetReport, PerformanceBudgetV1,
     PerformanceSuiteError, TimedMetric, PERFORMANCE_BUDGET_PROFILE,
@@ -69,6 +110,8 @@ pub use vnext_reward_firewall::{
     RewardEvidenceConsumer, RewardEvidenceKind, RewardEvidenceNotice, RewardFirewallConfigError,
     RewardFirewallPolicy, RewardObserveOutcome,
 };
+pub use vnext_status::{NetworkRuntimeLifecycle, NetworkRuntimeStatusView};
+pub use vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};
 pub use vnext_workflow_surface::{
     workflow_stage_view, workflow_surface, WorkflowStage, WorkflowStageView,
 };

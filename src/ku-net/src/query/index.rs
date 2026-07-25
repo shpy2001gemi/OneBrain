@@ -5,18 +5,19 @@
 
 use crate::dht::DhtNode;
 use crate::vacuum::VacuumFilter;
+use ku_core::foundation::ConceptCcid;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Concept Index
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Maps concept IDs to DHT-compatible 32-byte keys.
+/// Maps global concept CCIDs to DHT-compatible 32-byte keys.
 ///
-/// A concept ID (u64) is hashed via BLAKE3 to produce a 32-byte DHT key.
+/// The full 16-byte CCID is domain-separated and hashed via BLAKE3.
 /// This allows looking up which nodes hold KUs about a given concept.
 pub struct ConceptIndex {
-    /// Local concept IDs that this node holds KUs for.
-    local_concepts: Vec<u64>,
+    /// Global concept CCIDs that this node holds KUs for.
+    local_concepts: Vec<ConceptCcid>,
     /// VacuumFilter advertising our concepts to neighbors.
     filter: VacuumFilter,
     /// Maximum concepts to index.
@@ -33,45 +34,47 @@ impl ConceptIndex {
         }
     }
 
-    /// Convert a concept ID to a 32-byte DHT key.
-    pub fn concept_to_key(concept_id: u64) -> [u8; 32] {
-        let bytes = concept_id.to_be_bytes();
-        *blake3::hash(&bytes).as_bytes()
+    /// Convert a global concept CCID to a domain-separated 32-byte DHT key.
+    pub fn concept_to_key(concept: ConceptCcid) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"onebrain:concept-dht-key/1\0");
+        hasher.update(concept.as_bytes());
+        *hasher.finalize().as_bytes()
     }
 
     /// Register a concept as locally available.
     ///
     /// Adds the concept to the local index and VacuumFilter.
-    pub fn register_concept(&mut self, concept_id: u64) {
+    pub fn register_concept(&mut self, concept: ConceptCcid) {
         if self.local_concepts.len() >= self.capacity {
             return;
         }
-        if !self.local_concepts.contains(&concept_id) {
-            self.local_concepts.push(concept_id);
+        if !self.local_concepts.contains(&concept) {
+            self.local_concepts.push(concept);
             // Insert into VacuumFilter using the concept key
-            let key = Self::concept_to_key(concept_id);
+            let key = Self::concept_to_key(concept);
             self.filter.insert(&key);
         }
     }
 
-    /// Register multiple concepts from a KU's codons.
-    pub fn register_concepts(&mut self, concept_ids: &[u64]) {
-        for &id in concept_ids {
-            self.register_concept(id);
+    /// Register multiple global concepts from a KU's Concept Table.
+    pub fn register_concepts(&mut self, concepts: &[ConceptCcid]) {
+        for &concept in concepts {
+            self.register_concept(concept);
         }
     }
 
     /// Check if a concept is locally available.
-    pub fn has_concept(&self, concept_id: u64) -> bool {
-        self.local_concepts.contains(&concept_id)
+    pub fn has_concept(&self, concept: ConceptCcid) -> bool {
+        self.local_concepts.contains(&concept)
     }
 
     /// Check the VacuumFilter (probabilistic) for a concept.
     ///
     /// Returns true if the concept *might* be locally available.
     /// False positives are possible; false negatives are not.
-    pub fn might_have_concept(&self, concept_id: u64) -> bool {
-        let key = Self::concept_to_key(concept_id);
+    pub fn might_have_concept(&self, concept: ConceptCcid) -> bool {
+        let key = Self::concept_to_key(concept);
         self.filter.contains(&key)
     }
 
@@ -81,8 +84,8 @@ impl ConceptIndex {
     /// in the DHT at the concept's key position.
     pub fn publish_to_dht(&self, dht: &mut DhtNode, node_info: &[u8]) -> usize {
         let mut published = 0;
-        for &concept_id in &self.local_concepts {
-            let key = Self::concept_to_key(concept_id);
+        for &concept in &self.local_concepts {
+            let key = Self::concept_to_key(concept);
             if dht.store(key, node_info.to_vec()).is_ok() {
                 published += 1;
             }
@@ -100,8 +103,8 @@ impl ConceptIndex {
         self.local_concepts.len()
     }
 
-    /// Get all indexed concept IDs.
-    pub fn concepts(&self) -> &[u64] {
+    /// Get all indexed global concept identities.
+    pub fn concepts(&self) -> &[ConceptCcid] {
         &self.local_concepts
     }
 }
@@ -120,38 +123,42 @@ impl Default for ConceptIndex {
 mod tests {
     use super::*;
 
+    fn concept(value: u128) -> ConceptCcid {
+        ConceptCcid::from_bytes(value.to_be_bytes())
+    }
+
     #[test]
     fn test_concept_to_key_deterministic() {
-        let k1 = ConceptIndex::concept_to_key(42);
-        let k2 = ConceptIndex::concept_to_key(42);
+        let k1 = ConceptIndex::concept_to_key(concept(42));
+        let k2 = ConceptIndex::concept_to_key(concept(42));
         assert_eq!(k1, k2);
 
-        let k3 = ConceptIndex::concept_to_key(43);
+        let k3 = ConceptIndex::concept_to_key(concept(43));
         assert_ne!(k1, k3);
     }
 
     #[test]
     fn test_register_and_lookup() {
         let mut idx = ConceptIndex::new(100);
-        idx.register_concept(100);
-        idx.register_concept(200);
-        idx.register_concept(300);
+        idx.register_concept(concept(100));
+        idx.register_concept(concept(200));
+        idx.register_concept(concept(300));
 
-        assert!(idx.has_concept(100));
-        assert!(idx.has_concept(200));
-        assert!(!idx.has_concept(400));
+        assert!(idx.has_concept(concept(100)));
+        assert!(idx.has_concept(concept(200)));
+        assert!(!idx.has_concept(concept(400)));
         assert_eq!(idx.count(), 3);
     }
 
     #[test]
     fn test_vacuum_filter_populated() {
         let mut idx = ConceptIndex::new(100);
-        idx.register_concept(42);
-        idx.register_concept(99);
+        idx.register_concept(concept(42));
+        idx.register_concept(concept(99));
 
         // VacuumFilter should contain registered concepts
-        assert!(idx.might_have_concept(42));
-        assert!(idx.might_have_concept(99));
+        assert!(idx.might_have_concept(concept(42)));
+        assert!(idx.might_have_concept(concept(99)));
         // Unregistered concept — most likely false
         // (VacuumFilter has false positives, so we can't assert false definitively)
     }
@@ -159,29 +166,29 @@ mod tests {
     #[test]
     fn test_register_bulk() {
         let mut idx = ConceptIndex::new(100);
-        idx.register_concepts(&[1, 2, 3, 4, 5]);
+        idx.register_concepts(&[concept(1), concept(2), concept(3), concept(4), concept(5)]);
         assert_eq!(idx.count(), 5);
-        assert!(idx.has_concept(3));
+        assert!(idx.has_concept(concept(3)));
     }
 
     #[test]
     fn test_no_duplicate_registration() {
         let mut idx = ConceptIndex::new(100);
-        idx.register_concept(42);
-        idx.register_concept(42);
-        idx.register_concept(42);
+        idx.register_concept(concept(42));
+        idx.register_concept(concept(42));
+        idx.register_concept(concept(42));
         assert_eq!(idx.count(), 1);
     }
 
     #[test]
     fn test_capacity_limit() {
         let mut idx = ConceptIndex::new(3);
-        idx.register_concept(1);
-        idx.register_concept(2);
-        idx.register_concept(3);
-        idx.register_concept(4); // Should be ignored
+        idx.register_concept(concept(1));
+        idx.register_concept(concept(2));
+        idx.register_concept(concept(3));
+        idx.register_concept(concept(4)); // Should be ignored
         assert_eq!(idx.count(), 3);
-        assert!(!idx.has_concept(4));
+        assert!(!idx.has_concept(concept(4)));
     }
 
     #[test]
@@ -193,8 +200,8 @@ mod tests {
         let mut dht = DhtNode::new(proof.node_id);
 
         let mut idx = ConceptIndex::new(100);
-        idx.register_concept(42);
-        idx.register_concept(99);
+        idx.register_concept(concept(42));
+        idx.register_concept(concept(99));
 
         let node_info = b"node:192.168.1.1:4242";
         let count = idx.publish_to_dht(&mut dht, node_info);
@@ -202,7 +209,22 @@ mod tests {
         assert_eq!(dht.storage_count(), 2);
 
         // Verify we can look up by concept key
-        let key = ConceptIndex::concept_to_key(42);
+        let key = ConceptIndex::concept_to_key(concept(42));
         assert!(dht.has(&key));
+    }
+
+    #[test]
+    fn equal_local_ids_cannot_alias_distinct_ccids() {
+        let first = ConceptCcid::from_bytes([0x11; 16]);
+        let second = ConceptCcid::from_bytes([0x22; 16]);
+        let mut index = ConceptIndex::new(2);
+        index.register_concept(first);
+        index.register_concept(second);
+
+        assert_eq!(index.count(), 2);
+        assert_ne!(
+            ConceptIndex::concept_to_key(first),
+            ConceptIndex::concept_to_key(second)
+        );
     }
 }

@@ -38,6 +38,7 @@
     { "id": "domain-object", "domain": "object", "canonical_hex": "a0", "digest_hex": "8bb5fe870bc17ae5a1aec54f98f3e3f2bbd01631bef1f1f1d5ab0c9c11e2ea86" },
     { "id": "domain-event", "domain": "event", "canonical_hex": "a0", "digest_hex": "81155b1ed6dfa0d3ef010c2510dc11c071e5b86d079d7e2b32e138666c3003ab" },
     { "id": "domain-feed-inception", "domain": "feed-inception", "canonical_hex": "a0", "digest_hex": "3139ae9f68fa6d8218ebc16bf6379a11ea82d1b4c6e93a8ed052f98394887d8c" },
+    { "id": "domain-authority-event", "domain": "authority-event", "canonical_hex": "a0", "digest_hex": "23c4aa3461e7b8971d896d7596e24b29d741f8a7777fcd8139dd5234f0ef1231" },
     { "id": "domain-feed-head", "domain": "feed-head", "canonical_hex": "a0", "digest_hex": "ea4a881aa8a3ac5cb07c485133ce05a284fe359353948f834e37db662a4ea036" },
     { "id": "domain-receptor-definition", "domain": "receptor-definition", "canonical_hex": "a0", "digest_hex": "67557052dae5cd204fc582dc94c81aab668f00541e2f04d2d1d4cc31129fbe50" },
     { "id": "domain-assembly-manifest", "domain": "assembly-manifest", "canonical_hex": "a0", "digest_hex": "7dd334ba2957b83b00660c25354bbaa01da4e373fff4b072153c65c83f937328" },

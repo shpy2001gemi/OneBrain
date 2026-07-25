@@ -18,7 +18,7 @@ use super::messages::{QueryId, QueryScope};
 pub struct RankedResult {
     /// The KU data.
     pub ku: KuRuntime,
-    /// Content hash for deduplication (BLAKE3 of serialized KU).
+    /// Canonical KU CID used for deduplication.
     pub content_hash: [u8; 32],
     /// Trust-based relevance score [0.0, 1.0].
     pub score: f64,
@@ -137,16 +137,10 @@ impl ResultMerger {
 
 /// Compute a deterministic content hash for a KU (for dedup).
 fn compute_ku_hash(ku: &KuRuntime) -> [u8; 32] {
-    // Hash the serialized form
-    let mut data = Vec::new();
-    // Use concept_ids + gene_type as identity (bonds and trust can change)
-    for concept_id in ku.concept_ids() {
-        data.extend_from_slice(&concept_id.to_be_bytes());
-        data.push(0u8); // no role equivalent in v6
-    }
-    // Hash gene type
-    data.push(ku.gene_type());
-    *blake3::hash(&data).as_bytes()
+    // The runtime CID is already BLAKE3(canonical Core DNA wire bytes). It is
+    // stable across mutable epigenetic overlays and, unlike local ConceptIds,
+    // includes the v7 concept table containing globally meaningful CCIDs.
+    ku.cid_bytes()
 }
 
 /// Compute a relevance score for a KU based on trust and scope.
@@ -177,7 +171,7 @@ fn compute_score(ku: &KuRuntime, scope: &QueryScope) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction};
+    use ku_core::core_dna::{ConceptTableEntry, CoreDna, CoreDnaHeader, Instruction};
     use ku_core::{Epigenetics, KuRuntime};
 
     fn make_ku(trust_score: u16, concept_id: u64) -> KuRuntime {
@@ -200,6 +194,31 @@ mod tests {
         let mut ku = KuRuntime::from_dna(dna).unwrap();
         ku.epi = Epigenetics::with_trust(trust_score, 8000);
         ku
+    }
+
+    fn make_v7_ku(ccid_seed: u8) -> KuRuntime {
+        let ids = [16_512, 16_513, 16_514];
+        let dna = CoreDna {
+            header: CoreDnaHeader {
+                version: 2,
+                gene_type: 0,
+                has_concept_table: true,
+            },
+            concept_table: ids
+                .iter()
+                .enumerate()
+                .map(|(offset, local_id)| ConceptTableEntry {
+                    local_id: *local_id,
+                    ccid: [ccid_seed.wrapping_add(offset as u8); 16],
+                })
+                .collect(),
+            instructions: vec![Instruction::Triple {
+                s: ids[0],
+                p: ids[1],
+                o: ids[2],
+            }],
+        };
+        KuRuntime::from_dna(dna).unwrap()
     }
 
     #[test]
@@ -230,6 +249,21 @@ mod tests {
         let results = merger.finalize();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].source_count, 2);
+    }
+
+    #[test]
+    fn test_merger_does_not_collapse_distinct_ccids_with_same_local_ids() {
+        let mut merger = ResultMerger::new([0x42; 16], 10);
+        let first = make_v7_ku(1);
+        let second = make_v7_ku(101);
+
+        assert_eq!(first.concept_ids(), second.concept_ids());
+        assert_ne!(first.cid_bytes(), second.cid_bytes());
+
+        merger.add_results(vec![first], QueryScope::Neighbors);
+        merger.add_results(vec![second], QueryScope::Neighbors);
+
+        assert_eq!(merger.result_count(), 2);
     }
 
     #[test]

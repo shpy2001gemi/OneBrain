@@ -50,6 +50,34 @@ pub fn reconciliation_binding_digest(
     Ok(ReservedDomain::Manifest.digest(&bytes))
 }
 
+/// Stable reconciliation scope used only when a receiver rebinds a durable
+/// journal to a fresh authenticated transcript. The transcript is deliberately
+/// excluded; every selector, privacy and resource boundary remains committed.
+pub fn reconciliation_resume_scope_digest(
+    context: &ReconciliationContext,
+) -> Result<[u8; 32], ReconciliationCodecError> {
+    validate_context(context)?;
+    let bytes = encode_canonical(
+        &CanonicalValue::Map(vec![
+            (0, CanonicalValue::Unsigned(1)),
+            (
+                1,
+                CanonicalValue::Bytes(context.selector.as_bytes().to_vec()),
+            ),
+            (
+                2,
+                CanonicalValue::Bytes(context.namespace.as_bytes().to_vec()),
+            ),
+            (3, CanonicalValue::Unsigned(context.disclosure as u64)),
+            (4, CanonicalValue::Unsigned(context.summary_method as u64)),
+            (5, budget_value(context.budget)),
+            (6, CanonicalValue::Unsigned(context.resume_mode as u64)),
+        ]),
+        ResourceProfile::ControlV1,
+    )?;
+    Ok(ReservedDomain::Manifest.digest(&bytes))
+}
+
 pub fn bind_reconciliation_message(
     context: ReconciliationContext,
     sequence: u64,
@@ -77,6 +105,31 @@ pub fn make_resume_token(
     }
     Ok(ReconciliationResumeToken {
         binding_digest: reconciliation_binding_digest(context)?,
+        checkpoint_digest,
+        next_sequence,
+        opaque,
+    })
+}
+
+/// Construct the continuation token used by `PeerBoundTokenV2`. Its binding
+/// names the durable origin journal rather than the fresh session context.
+/// The journal layer must additionally validate the stable scope and
+/// peer-bound MAC before accepting a Resume message.
+pub fn make_peer_bound_resume_token(
+    context: &ReconciliationContext,
+    origin_binding_digest: [u8; 32],
+    checkpoint_digest: [u8; 32],
+    next_sequence: u64,
+    opaque: [u8; 32],
+) -> Result<ReconciliationResumeToken, ReconciliationCodecError> {
+    if context.resume_mode != ReconciliationResumeMode::PeerBoundTokenV2 {
+        return Err(ReconciliationCodecError::ResumeNotNegotiated);
+    }
+    if origin_binding_digest == [0; 32] {
+        return Err(ReconciliationCodecError::ResumeBindingMismatch);
+    }
+    Ok(ReconciliationResumeToken {
+        binding_digest: origin_binding_digest,
         checkpoint_digest,
         next_sequence,
         opaque,
@@ -287,11 +340,20 @@ fn validate_token(
     token: &ReconciliationResumeToken,
     is_resume: bool,
 ) -> Result<(), ReconciliationCodecError> {
-    if message.context.resume_mode != ReconciliationResumeMode::BoundTokenV1 {
-        return Err(ReconciliationCodecError::ResumeNotNegotiated);
-    }
-    if token.binding_digest != message.binding_digest {
-        return Err(ReconciliationCodecError::ResumeBindingMismatch);
+    match message.context.resume_mode {
+        ReconciliationResumeMode::BoundTokenV1 => {
+            if token.binding_digest != message.binding_digest {
+                return Err(ReconciliationCodecError::ResumeBindingMismatch);
+            }
+        }
+        ReconciliationResumeMode::PeerBoundTokenV2 => {
+            if token.binding_digest == [0; 32] {
+                return Err(ReconciliationCodecError::ResumeBindingMismatch);
+            }
+        }
+        ReconciliationResumeMode::Disabled => {
+            return Err(ReconciliationCodecError::ResumeNotNegotiated);
+        }
     }
     if is_resume && token.next_sequence != message.sequence {
         return Err(ReconciliationCodecError::InvalidResumeSequence);
@@ -338,25 +400,17 @@ fn context_value(context: &ReconciliationContext) -> CanonicalValue {
         ),
         (3, CanonicalValue::Unsigned(context.disclosure as u64)),
         (4, CanonicalValue::Unsigned(context.summary_method as u64)),
-        (
-            5,
-            CanonicalValue::Map(vec![
-                (
-                    0,
-                    CanonicalValue::Unsigned(context.budget.max_summary_nodes),
-                ),
-                (1, CanonicalValue::Unsigned(context.budget.max_diff_ranges)),
-                (
-                    2,
-                    CanonicalValue::Unsigned(context.budget.max_manifest_entries),
-                ),
-                (
-                    3,
-                    CanonicalValue::Unsigned(context.budget.max_payload_bytes),
-                ),
-            ]),
-        ),
+        (5, budget_value(context.budget)),
         (6, CanonicalValue::Unsigned(context.resume_mode as u64)),
+    ])
+}
+
+fn budget_value(budget: ReconciliationBudget) -> CanonicalValue {
+    CanonicalValue::Map(vec![
+        (0, CanonicalValue::Unsigned(budget.max_summary_nodes)),
+        (1, CanonicalValue::Unsigned(budget.max_diff_ranges)),
+        (2, CanonicalValue::Unsigned(budget.max_manifest_entries)),
+        (3, CanonicalValue::Unsigned(budget.max_payload_bytes)),
     ])
 }
 
@@ -697,6 +751,7 @@ fn parse_resume_mode(value: u64) -> Result<ReconciliationResumeMode, Reconciliat
     match value {
         0 => Ok(ReconciliationResumeMode::Disabled),
         1 => Ok(ReconciliationResumeMode::BoundTokenV1),
+        2 => Ok(ReconciliationResumeMode::PeerBoundTokenV2),
         _ => Err(ReconciliationCodecError::InvalidField(
             "context.resume_mode",
         )),
@@ -711,6 +766,8 @@ fn parse_lane(value: &CanonicalValue) -> Result<InventoryLane, ReconciliationCod
         1 => Ok(InventoryLane::Object),
         2 => Ok(InventoryLane::Event),
         3 => Ok(InventoryLane::MappingKernel),
+        4 => Ok(InventoryLane::FeedInception),
+        5 => Ok(InventoryLane::AuthorityEvent),
         _ => Err(ReconciliationCodecError::InvalidField("inventory.lane")),
     }
 }
@@ -720,6 +777,8 @@ fn parse_manifest_kind(value: u64) -> Result<ReconcileManifestKind, Reconciliati
         1 => Ok(ReconcileManifestKind::Object),
         2 => Ok(ReconcileManifestKind::Event),
         3 => Ok(ReconcileManifestKind::MappingKernel),
+        4 => Ok(ReconcileManifestKind::FeedInception),
+        5 => Ok(ReconcileManifestKind::AuthorityEvent),
         _ => Err(ReconciliationCodecError::InvalidField("manifest.kind")),
     }
 }
@@ -730,6 +789,7 @@ fn parse_receipt_status(value: u64) -> Result<ReconcileReceiptStatus, Reconcilia
         2 => Ok(ReconcileReceiptStatus::AlreadyPresent),
         3 => Ok(ReconcileReceiptStatus::RejectedInvalid),
         4 => Ok(ReconcileReceiptStatus::DeferredBudget),
+        5 => Ok(ReconcileReceiptStatus::DeferredMissingDependency),
         _ => Err(ReconciliationCodecError::InvalidField("receipt.status")),
     }
 }
@@ -942,7 +1002,11 @@ mod tests {
             hello(context.clone()).body,
             ReconciliationBody::SelectorOffer {
                 inventory_root: [5; 32],
-                lanes: vec![InventoryLane::Object, InventoryLane::Event],
+                lanes: vec![
+                    InventoryLane::Object,
+                    InventoryLane::Event,
+                    InventoryLane::FeedInception,
+                ],
                 checkpoint_frontier: None,
             },
             ReconciliationBody::InventorySummary {
@@ -967,14 +1031,14 @@ mod tests {
             },
             ReconciliationBody::Manifest {
                 entries: vec![ReconcileManifestEntry {
-                    kind: ReconcileManifestKind::Object,
+                    kind: ReconcileManifestKind::FeedInception,
                     cid: [7; 32],
                     canonical_length: 128,
                 }],
             },
             ReconciliationBody::Receipt {
                 entries: vec![ReconcileReceiptEntry {
-                    kind: ReconcileManifestKind::Object,
+                    kind: ReconcileManifestKind::FeedInception,
                     cid: [7; 32],
                     status: ReconcileReceiptStatus::ValidatedStored,
                 }],
@@ -1098,6 +1162,48 @@ mod tests {
         assert_eq!(
             encode_reconciliation_message(&resume).unwrap_err(),
             ReconciliationCodecError::ResumeBindingMismatch
+        );
+    }
+
+    #[test]
+    fn peer_bound_v2_rebinds_only_the_transcript_at_the_codec_boundary() {
+        let mut origin = context();
+        origin.resume_mode = ReconciliationResumeMode::PeerBoundTokenV2;
+        let mut fresh = origin.clone();
+        fresh.authenticated_transcript = [0x44; 32];
+        assert_ne!(
+            reconciliation_binding_digest(&origin).unwrap(),
+            reconciliation_binding_digest(&fresh).unwrap()
+        );
+        assert_eq!(
+            reconciliation_resume_scope_digest(&origin).unwrap(),
+            reconciliation_resume_scope_digest(&fresh).unwrap()
+        );
+
+        let token = make_peer_bound_resume_token(
+            &origin,
+            reconciliation_binding_digest(&origin).unwrap(),
+            [0x55; 32],
+            7,
+            [0x66; 32],
+        )
+        .unwrap();
+        let resume = bind_reconciliation_message(
+            fresh.clone(),
+            token.next_sequence,
+            ReconciliationBody::Resume {
+                token: token.clone(),
+            },
+        )
+        .unwrap();
+        let bytes = encode_reconciliation_message(&resume).unwrap();
+        assert_eq!(decode_reconciliation_message(&bytes).unwrap(), resume);
+        assert_ne!(token.binding_digest, resume.binding_digest);
+
+        fresh.selector = SelectorCid::from_bytes([0x77; 32]);
+        assert_ne!(
+            reconciliation_resume_scope_digest(&origin).unwrap(),
+            reconciliation_resume_scope_digest(&fresh).unwrap()
         );
     }
 

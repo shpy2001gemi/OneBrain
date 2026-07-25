@@ -6,8 +6,53 @@
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use crate::vnext_config::VNextFeatureConfig;
+
+/// Controls whether the node may fall back to the legacy encoder when the
+/// external Concept Registry is unavailable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConceptRegistryMode {
+    /// Registry load failures stop node initialization before side effects.
+    Required,
+    /// Registry load failures are exposed in status and encoder v1 is used.
+    Optional,
+    /// Do not attempt to open the registry; encoder v1 is selected explicitly.
+    Disabled,
+}
+
+impl Default for ConceptRegistryMode {
+    fn default() -> Self {
+        Self::Optional
+    }
+}
+
+impl std::fmt::Display for ConceptRegistryMode {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Required => "required",
+            Self::Optional => "optional",
+            Self::Disabled => "disabled",
+        })
+    }
+}
+
+impl FromStr for ConceptRegistryMode {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "required" => Ok(Self::Required),
+            "optional" => Ok(Self::Optional),
+            "disabled" => Ok(Self::Disabled),
+            _ => Err(format!(
+                "invalid concept registry mode '{value}'; expected required, optional, or disabled"
+            )),
+        }
+    }
+}
 
 /// Configuration for an OneBrain node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +69,15 @@ pub struct NodeConfig {
     pub model: String,
     /// Seed peer addresses for initial discovery.
     pub seeds: Vec<SocketAddr>,
+    /// Explicit Concept Registry path. When absent, use data_dir/concepts.obr.
+    #[serde(default)]
+    pub concept_registry_path: Option<PathBuf>,
+    /// Whether registry failures are fatal, optional, or deliberately disabled.
+    #[serde(default)]
+    pub concept_registry_mode: ConceptRegistryMode,
+    /// Maximum number of on-demand label resolutions retained in memory.
+    #[serde(default = "default_concept_registry_cache_capacity")]
+    pub concept_registry_cache_capacity: usize,
     /// vNext features and independent emergency kill switches.
     #[serde(default)]
     pub vnext: VNextFeatureConfig,
@@ -64,7 +118,9 @@ impl NodeConfig {
     ///
     /// Used by encode_v2 for concept name → CCID resolution.
     pub fn obr_path(&self) -> PathBuf {
-        self.data_dir.join("concepts.obr")
+        self.concept_registry_path
+            .clone()
+            .unwrap_or_else(|| self.data_dir.join("concepts.obr"))
     }
 
     /// Default seed node domains for peer discovery.
@@ -85,7 +141,66 @@ impl Default for NodeConfig {
             ollama_url: "http://localhost:11434".to_string(),
             model: "qwen3:8b".to_string(),
             seeds: Vec::new(),
+            concept_registry_path: None,
+            concept_registry_mode: ConceptRegistryMode::Optional,
+            concept_registry_cache_capacity: default_concept_registry_cache_capacity(),
             vnext: VNextFeatureConfig::default(),
         }
+    }
+}
+
+fn default_concept_registry_cache_capacity() -> usize {
+    4096
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_defaults_remain_backward_compatible() {
+        let config = NodeConfig::default();
+        assert_eq!(config.concept_registry_mode, ConceptRegistryMode::Optional);
+        assert_eq!(
+            config.obr_path(),
+            PathBuf::from("./onebrain_data").join("concepts.obr")
+        );
+    }
+
+    #[test]
+    fn explicit_registry_path_is_not_relative_to_the_working_directory() {
+        let mut config = NodeConfig::default();
+        config.concept_registry_path = Some(PathBuf::from("D:/registry/concepts.obr"));
+        assert_eq!(config.obr_path(), PathBuf::from("D:/registry/concepts.obr"));
+    }
+
+    #[test]
+    fn legacy_serialized_config_gets_optional_registry_defaults() {
+        let config: NodeConfig = serde_json::from_str(
+            r#"{
+                "name":"test",
+                "port":4242,
+                "data_dir":"./data",
+                "ollama_url":"http://localhost:11434",
+                "model":"test-model",
+                "seeds":[]
+            }"#,
+        )
+        .unwrap();
+        assert_eq!(config.concept_registry_mode, ConceptRegistryMode::Optional);
+        assert_eq!(config.obr_path(), PathBuf::from("./data/concepts.obr"));
+    }
+
+    #[test]
+    fn registry_mode_parses_cli_values_strictly() {
+        assert_eq!(
+            "required".parse(),
+            Ok::<ConceptRegistryMode, String>(ConceptRegistryMode::Required)
+        );
+        assert_eq!(
+            "OPTIONAL".parse(),
+            Ok::<ConceptRegistryMode, String>(ConceptRegistryMode::Optional)
+        );
+        assert!("fallback-silently".parse::<ConceptRegistryMode>().is_err());
     }
 }

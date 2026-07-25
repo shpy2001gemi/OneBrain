@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use ku_core::KuRuntime;
+use ku_core::{foundation::ConceptCcid, KuRuntime};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Types
@@ -23,8 +23,8 @@ pub struct KnowledgeGap {
     pub gap_type: GapType,
     /// Severity score [0.0, 1.0]. Higher = more important to fill.
     pub severity: f64,
-    /// Related concept IDs.
-    pub concept_ids: Vec<u64>,
+    /// Related globally meaningful concept identities.
+    pub concept_ccids: Vec<ConceptCcid>,
     /// Suggested KQL query to fill this gap.
     pub suggested_query: String,
     /// Human-readable description.
@@ -97,18 +97,24 @@ impl GapDetector {
     }
 
     /// Build maps of defined (in codons) and referenced (in bond contexts) concepts.
-    fn build_concept_maps(&self, kus: &[KuRuntime]) -> (HashMap<u64, usize>, HashMap<u64, usize>) {
-        let mut defined: HashMap<u64, usize> = HashMap::new();
-        let mut referenced: HashMap<u64, usize> = HashMap::new();
+    fn build_concept_maps(
+        &self,
+        kus: &[KuRuntime],
+    ) -> (HashMap<ConceptCcid, usize>, HashMap<ConceptCcid, usize>) {
+        let mut defined: HashMap<ConceptCcid, usize> = HashMap::new();
+        let mut referenced: HashMap<ConceptCcid, usize> = HashMap::new();
 
         for ku in kus {
-            for concept_id in ku.concept_ids() {
-                *defined.entry(concept_id).or_insert(0) += 1;
+            for concept_ccid in ku.concept_ccids() {
+                *defined.entry(concept_ccid).or_insert(0) += 1;
             }
-            // Bond context concept IDs are references to related concepts
+            // Bond contexts use KU-local compression IDs. Only entries with an
+            // explicit Concept Table mapping may cross into discovery output.
             for bond in &ku.epi.bonds {
                 for &ctx_id in &bond.context {
-                    *referenced.entry(ctx_id).or_insert(0) += 1;
+                    if let Some(ctx_ccid) = ku.concept_ccid(ctx_id) {
+                        *referenced.entry(ctx_ccid).or_insert(0) += 1;
+                    }
                 }
             }
         }
@@ -117,53 +123,53 @@ impl GapDetector {
 
     fn find_orphans(
         &self,
-        defined: &HashMap<u64, usize>,
-        referenced: &HashMap<u64, usize>,
+        defined: &HashMap<ConceptCcid, usize>,
+        referenced: &HashMap<ConceptCcid, usize>,
     ) -> Vec<KnowledgeGap> {
         referenced
             .iter()
             .filter(|(cid, _)| !defined.contains_key(cid))
-            .map(|(&concept_id, &ref_count)| KnowledgeGap {
+            .map(|(&concept_ccid, &ref_count)| KnowledgeGap {
                 gap_type: GapType::OrphanConcept,
                 severity: (ref_count as f64 / 10.0).min(1.0),
-                concept_ids: vec![concept_id],
+                concept_ccids: vec![concept_ccid],
                 suggested_query: format!(
-                    "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} SCOPE DHT",
-                    concept_id
+                    "FIND (k:KU) WHERE k.concept_ccids CONTAINS \"{}\" SCOPE DHT",
+                    concept_ccid
                 ),
                 description: format!(
                     "Concept {} referenced {} times but has no defining KU",
-                    concept_id, ref_count
+                    concept_ccid, ref_count
                 ),
             })
             .collect()
     }
 
     fn find_low_confidence(&self, kus: &[KuRuntime]) -> Vec<KnowledgeGap> {
-        let mut low_conf: HashMap<u64, Vec<u16>> = HashMap::new();
+        let mut low_conf: HashMap<ConceptCcid, Vec<u16>> = HashMap::new();
         for ku in kus {
             let ts = ku.trust_score();
             if ts < self.trust_threshold {
-                if let Some(primary) = ku.primary_concept() {
+                if let Some(primary) = ku.primary_concept_ccid() {
                     low_conf.entry(primary).or_default().push(ts);
                 }
             }
         }
         low_conf.into_iter()
             .filter(|(_, scores)| scores.len() >= 2)
-            .map(|(concept_id, scores)| {
+            .map(|(concept_ccid, scores)| {
                 let avg = scores.iter().map(|&s| s as f64).sum::<f64>() / scores.len() as f64;
                 KnowledgeGap {
                     gap_type: GapType::LowConfidenceRegion,
                     severity: 1.0 - (avg / self.trust_threshold as f64),
-                    concept_ids: vec![concept_id],
+                    concept_ccids: vec![concept_ccid],
                     suggested_query: format!(
-                        "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} AND k.trust_score > {} SCOPE CLUSTER",
-                        concept_id, self.trust_threshold
+                        "FIND (k:KU) WHERE k.concept_ccids CONTAINS \"{}\" AND k.trust_score > {} SCOPE CLUSTER",
+                        concept_ccid, self.trust_threshold
                     ),
                     description: format!(
                         "Concept {} has {} KUs with avg trust {:.0} (threshold: {})",
-                        concept_id, scores.len(), avg, self.trust_threshold
+                        concept_ccid, scores.len(), avg, self.trust_threshold
                     ),
                 }
             })
@@ -177,13 +183,13 @@ impl GapDetector {
             })
             .filter_map(|ku| {
                 let ts = ku.trust_score();
-                ku.primary_concept().map(|primary| {
+                ku.primary_concept_ccid().map(|primary| {
                     KnowledgeGap {
                         gap_type: GapType::MissingEvidence,
                         severity: 0.5 + (ts as f64 / 20_000.0),
-                        concept_ids: vec![primary],
+                        concept_ccids: vec![primary],
                         suggested_query: format!(
-                            "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} AND k.corroboration_count > 0 SCOPE CLUSTER",
+                            "FIND (k:KU) WHERE k.concept_ccids CONTAINS \"{}\" AND k.corroboration_count > 0 SCOPE CLUSTER",
                             primary
                         ),
                         description: format!(
@@ -200,12 +206,12 @@ impl GapDetector {
             .filter(|ku| ku.gene_type() == 1) // Hypothesis gene type
             .filter(|ku| ku.epi.trust.corroboration_count == 0 && ku.epi.trust.challenge_count == 0)
             .filter_map(|ku| {
-                ku.primary_concept().map(|primary| KnowledgeGap {
+                ku.primary_concept_ccid().map(|primary| KnowledgeGap {
                     gap_type: GapType::UntestedHypothesis,
                     severity: 0.8,
-                    concept_ids: vec![primary],
+                    concept_ccids: vec![primary],
                     suggested_query: format!(
-                        "FIND (k:KU) WHERE k.codons CONTAINS concept_id = {} SCOPE DHT",
+                        "FIND (k:KU) WHERE k.concept_ccids CONTAINS \"{}\" SCOPE DHT",
                         primary
                     ),
                     description: format!("Hypothesis about concept {} untested", primary),
@@ -228,17 +234,27 @@ impl Default for GapDetector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ku_core::core_dna::{CoreDna, CoreDnaHeader, Instruction};
+    use ku_core::core_dna::{ConceptTableEntry, CoreDna, CoreDnaHeader, Instruction};
     use ku_core::{Epigenetics, KuRuntime, RelationType};
+
+    fn concept(value: u64) -> ConceptCcid {
+        ConceptCcid::from_bytes((value as u128).to_be_bytes())
+    }
 
     fn make_ku(concept_id: u64, trust_score: u16) -> KuRuntime {
         let dna = CoreDna {
             header: CoreDnaHeader {
                 version: 2,
                 gene_type: 0,
-                has_concept_table: false,
+                has_concept_table: true,
             },
-            concept_table: Vec::new(),
+            concept_table: [concept_id, 133, 132]
+                .into_iter()
+                .map(|local_id| ConceptTableEntry {
+                    local_id,
+                    ccid: *concept(local_id).as_bytes(),
+                })
+                .collect(),
             instructions: vec![
                 Instruction::Triple {
                     s: concept_id,
@@ -256,6 +272,22 @@ mod tests {
 
     fn make_ku_with_ctx(trust_score: u16, concept_id: u64, ctx_concepts: &[u64]) -> KuRuntime {
         let mut ku = make_ku(concept_id, trust_score);
+        for &local_id in ctx_concepts {
+            if !ku
+                .dna
+                .concept_table
+                .iter()
+                .any(|entry| entry.local_id == local_id)
+            {
+                ku.dna.concept_table.push(ConceptTableEntry {
+                    local_id,
+                    ccid: *concept(local_id).as_bytes(),
+                });
+            }
+        }
+        let mut rebuilt = KuRuntime::from_dna(ku.dna.clone()).unwrap();
+        rebuilt.epi = ku.epi;
+        ku = rebuilt;
         ku.epi.add_bond(vec![0x42; 32], RelationType::Extends, 8000);
         if let Some(bond) = ku.epi.bonds.last_mut() {
             bond.context = ctx_concepts.iter().copied().collect();
@@ -320,9 +352,17 @@ mod tests {
             header: CoreDnaHeader {
                 version: 2,
                 gene_type: 1,
-                has_concept_table: false,
+                has_concept_table: true,
             },
-            concept_table: Vec::new(),
+            concept_table: [42, 133, 132]
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .map(|local_id| ConceptTableEntry {
+                    local_id,
+                    ccid: *concept(local_id).as_bytes(),
+                })
+                .collect(),
             instructions: vec![
                 Instruction::Triple {
                     s: 42,
