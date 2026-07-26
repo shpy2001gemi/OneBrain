@@ -2067,3 +2067,16 @@ Local evidence:
 M5-05 đã hoàn tất ở cấp implementation; cần remote foundation CI trước khi
 merge về `main`. Work package kế tiếp là M5-06 Mixed version, runtime kill
 switch và rollback.
+
+Remote foundation CI run
+[`30225262555`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30225262555)
+trên implementation commit `96a1ab6` hoàn tất thành công ngày 2026-07-27:
+foundation contract, Linux default workspace, Linux feature-enabled real-QUIC
+acceptance (gồm gate M5.5 đủ 25 process-kill cases và physical Redb reclaim)
+cùng Windows default/vNext/Desktop smoke đều xanh, 4/4 job. Real-QUIC, Windows
+và Linux default có 0 annotation; foundation chỉ giữ bốn warning lint React
+baseline đã biết, không có error hoặc warning M5-05 mới.
+
+M5-05 đã hoàn tất ở cấp implementation và remote evidence. Sau khi
+fast-forward vào `main`, work package kế tiếp là M5-06 Mixed version, runtime
+kill switch và rollback.
