@@ -1853,3 +1853,65 @@ React baseline đã biết, không có error hoặc warning M5-02 mới.
 M5-02 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
 `main`, work package kế tiếp là M5-03 Real Redb/process crash harness
 (crash-consistency và idempotency).
+
+### 2026-07-26 — M5-03 Real Redb/process crash harness
+
+Đã triển khai cục bộ trên nhánh `codex/dr-m5-crash-harness`:
+
+1. Freeze
+   [`REAL_REDB_PROCESS_CRASH_HARNESS_V1.md`](../specs/vnext/REAL_REDB_PROCESS_CRASH_HARNESS_V1.md)
+   cùng machine profile `onebrain/dr-m5-crash-harness/1`.
+2. Bổ sung feature `vnext-crash-harness` mặc định tắt và failpoint xác thực bằng
+   kill switch, exact boundary/phase, marker path mới và token riêng từng ca.
+   Marker được fsync trước khi child chờ parent kill.
+3. Gắn đủ năm failpoint phase vào source path của 13 durable boundary:
+   Public Use prepare/publish/outbox handoff, outbox enqueue/receipt, journal,
+   validated storage, inventory, authority input, private KQL vault, durable
+   match và PoMV identity/view lineage.
+4. Bổ sung real Redb child-process harness chạy ma trận 13×5 = 65 lần kill thật.
+   Parent chỉ kill sau khi xác minh marker đã fsync, rồi dùng `Database::open`
+   để recovery và replay hai lần; không dùng create trong restart path.
+5. Freeze oracle 11 trường, canonical JSON/SHA-256 và crash report 65 ca.
+   Complete oracle có SHA-256
+   `9c312d251b2347c65149f16fd6a55327cd962ee8d5806bb5bcb642648d9c4aeb`;
+   crash report có SHA-256
+   `9457130a211e12924c5e6322631a0b6c8ac811de90f67c435a2fd0ed11ed4dcd`.
+6. Disk-full/read-only injection fail explicit trước mutation. Corrupt/truncated
+   Redb được preflight fail explicit; input file không bị rewrite, xóa hoặc tạo
+   lại. Authority oracle luôn giữ `DENY_UNRESOLVED`.
+7. CI real-QUIC có thêm gate M5.3 chạy toàn bộ crash harness một luồng; validator
+   và 11 mutation tests khóa feature firewall, boundary/phase matrix, open-not-
+   create, oracle/report digest, storage-fault inventory và owner-hook mapping.
+
+Local evidence:
+
+- M5-03 child-process harness: 5/5 test xanh, gồm đủ 65/65 ca kill;
+- `onebrain-node --features vnext-crash-harness --lib`: 145/145 test xanh;
+- durable owner tests: validated storage 11/11, inventory 6/6, journal 7/7,
+  private KQL vault 4/4 test xanh;
+- M5-03 mutation tests: 11/11; toàn bộ machine-profile mutation tests: 62/62
+  xanh;
+- `cargo test --workspace --locked --no-fail-fast -- --test-threads=2`: xanh;
+- `cargo clippy --locked -p onebrain-node --features vnext-crash-harness
+  --all-targets -- --cap-lints warn`: exit code 0, chỉ còn warning baseline;
+- `cargo fmt --all -- --check`: xanh;
+- `validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37 negative assertions,
+  55 foundation vectors/21 domains, 13 DR-M5 boundaries/11 oracle fields,
+  3 M5-01 lanes/13 state bounds/3 exit oracles, 22 M5-02 reasons/4 gauges/
+  4 exit oracles, 13 M5-03 boundaries/5 phases/65 process kills/4 storage
+  faults, 475 normative lines và 398 local links.
+
+M5-03 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
+`main`. Work package kế tiếp là M5-04 Chaos, parser adversarial và fuzz.
+
+Remote CI run
+[`30211632805`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30211632805)
+trên implementation commit `60b30ce` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real-QUIC
+acceptance (gồm M5.3 đủ 65 process-kill cases) và Windows
+default/vNext/Desktop smoke đều xanh. Real-QUIC, Windows và Linux default jobs
+có 0 annotation; foundation job giữ bốn warning lint React baseline đã biết,
+không có error hoặc warning M5-03 mới.
+
+M5-03 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
+`main`, work package kế tiếp là M5-04 Chaos, parser adversarial và fuzz.

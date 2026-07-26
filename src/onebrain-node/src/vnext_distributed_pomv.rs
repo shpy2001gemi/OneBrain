@@ -12,10 +12,10 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ku_core::foundation::{
-    decode_feed_inception, decode_knowledge_event, decode_knowledge_object, event_author_feed,
-    AssessedExerciseEvidence, DisclosureClass, EventCid, ExerciseAuthority, ExerciseEvidence,
-    FeedAuthorityDecision, FeedEventSigner, FeedId, KnowledgeEventEnvelope, KnownObjectKind,
-    MetabolicEvidenceFrontier, MetabolicEvidenceReducer, MetabolicEvidenceView,
+    decode_feed_inception, decode_knowledge_event, decode_knowledge_object, dr_m5_failpoint,
+    event_author_feed, AssessedExerciseEvidence, DisclosureClass, EventCid, ExerciseAuthority,
+    ExerciseEvidence, FeedAuthorityDecision, FeedEventSigner, FeedId, KnowledgeEventEnvelope,
+    KnownObjectKind, MetabolicEvidenceFrontier, MetabolicEvidenceReducer, MetabolicEvidenceView,
     NamespaceCommitment, NodeId, ObjectCid, ObjectReference, ObjectSemantics,
     ProvenFeedEventSigner, ResourceProfile, SelectorCid, UseEvidencePayload,
     ValidatedKnowledgeEvent, ValidatedUseEvidenceEvent, USE_EVIDENCE_EVENT_TYPE, USE_EVIDENCE_KIND,
@@ -387,7 +387,9 @@ impl PublicUseEvidencePublisher {
         };
         validate_stored_prepared_public_use(&stored)?;
 
+        dr_m5_failpoint::hit("TX-PUSE-000", "before_begin_write");
         let write = self.database.begin_write().map_err(storage)?;
+        dr_m5_failpoint::hit("TX-PUSE-000", "after_begin_write_before_mutation");
         {
             let mut intents = write.open_table(PREPARED_PUBLIC_USE).map_err(storage)?;
             let mut operations = write.open_table(PREPARED_BY_OPERATION).map_err(storage)?;
@@ -431,8 +433,12 @@ impl PublicUseEvidencePublisher {
                     .map_err(storage)?;
             }
         }
+        dr_m5_failpoint::hit("TX-PUSE-000", "after_mutation_before_commit");
         write.commit().map_err(storage)?;
-        prepared_public_use_from_stored(&stored, receipt)
+        dr_m5_failpoint::hit("TX-PUSE-000", "after_commit_before_next_side_effect");
+        let prepared = prepared_public_use_from_stored(&stored, receipt)?;
+        dr_m5_failpoint::hit("TX-PUSE-000", "after_next_side_effect_before_ack");
+        Ok(prepared)
     }
 
     pub fn publish_confirmed(
@@ -461,7 +467,9 @@ impl PublicUseEvidencePublisher {
         let feed_bytes = author.original_bytes().to_vec();
         let key = publication_key(author.feed_id, prepared.idempotency_key);
 
+        dr_m5_failpoint::hit("TX-PUSE-001", "before_begin_write");
         let write = self.database.begin_write().map_err(storage)?;
+        dr_m5_failpoint::hit("TX-PUSE-001", "after_begin_write_before_mutation");
         let outcome;
         let stored;
         {
@@ -583,8 +591,12 @@ impl PublicUseEvidencePublisher {
                 outcome = PublicUsePublishOutcome::Stored;
             }
         }
+        dr_m5_failpoint::hit("TX-PUSE-001", "after_mutation_before_commit");
         write.commit().map_err(storage)?;
-        Ok((publication_from_stored(&stored)?, outcome))
+        dr_m5_failpoint::hit("TX-PUSE-001", "after_commit_before_next_side_effect");
+        let publication = publication_from_stored(&stored)?;
+        dr_m5_failpoint::hit("TX-PUSE-001", "after_next_side_effect_before_ack");
+        Ok((publication, outcome))
     }
 
     fn load_prepared_public_use(
@@ -695,7 +707,9 @@ impl PublicUseEvidencePublisher {
         for (key, stored) in pending {
             report.scanned_publications = report.scanned_publications.saturating_add(1);
             let publication = publication_from_stored(&stored)?;
+            dr_m5_failpoint::hit("TX-PUSE-002", "before_begin_write");
             for intent in publication.transfer_intents(network)? {
+                dr_m5_failpoint::hit("TX-PUSE-002", "after_begin_write_before_mutation");
                 match network.enqueue_outbound(&intent)? {
                     OutboxEnqueueOutcome::Added => {
                         report.added_intents = report.added_intents.saturating_add(1)
@@ -709,7 +723,10 @@ impl PublicUseEvidencePublisher {
                     }
                 }
             }
+            dr_m5_failpoint::hit("TX-PUSE-002", "after_mutation_before_commit");
+            dr_m5_failpoint::hit("TX-PUSE-002", "after_commit_before_next_side_effect");
             self.mark_exported(key)?;
+            dr_m5_failpoint::hit("TX-PUSE-002", "after_next_side_effect_before_ack");
             report.exported_publications = report.exported_publications.saturating_add(1);
         }
         Ok(report)
@@ -1109,7 +1126,9 @@ impl DurableUseIdentityIndex {
         identity: [u8; USE_IDENTITY_BYTES],
         event: EventCid,
     ) -> Result<IdentityObserveOutcome, DistributedPomvError> {
+        dr_m5_failpoint::hit("TX-POMV-001", "before_begin_write");
         let write = self.database.begin_write().map_err(storage)?;
+        dr_m5_failpoint::hit("TX-POMV-001", "after_begin_write_before_mutation");
         let outcome;
         {
             let mut table = write.open_table(USE_IDENTITIES).map_err(storage)?;
@@ -1142,7 +1161,10 @@ impl DurableUseIdentityIndex {
                     .map_err(storage)?;
             }
         }
+        dr_m5_failpoint::hit("TX-POMV-001", "after_mutation_before_commit");
         write.commit().map_err(storage)?;
+        dr_m5_failpoint::hit("TX-POMV-001", "after_commit_before_next_side_effect");
+        dr_m5_failpoint::hit("TX-POMV-001", "after_next_side_effect_before_ack");
         Ok(outcome)
     }
 
@@ -1167,7 +1189,9 @@ impl DurableUseIdentityIndex {
         root: [u8; 32],
     ) -> Result<(u64, Option<[u8; 32]>), DistributedPomvError> {
         let key = view_lineage_key(target, policy);
+        dr_m5_failpoint::hit("TX-POMV-002", "before_begin_write");
         let write = self.database.begin_write().map_err(storage)?;
+        dr_m5_failpoint::hit("TX-POMV-002", "after_begin_write_before_mutation");
         let result;
         {
             let mut table = write.open_table(VIEW_HEADS).map_err(storage)?;
@@ -1198,7 +1222,10 @@ impl DurableUseIdentityIndex {
                 .map_err(storage)?;
             result = (head.revision, head.previous);
         }
+        dr_m5_failpoint::hit("TX-POMV-002", "after_mutation_before_commit");
         write.commit().map_err(storage)?;
+        dr_m5_failpoint::hit("TX-POMV-002", "after_commit_before_next_side_effect");
+        dr_m5_failpoint::hit("TX-POMV-002", "after_next_side_effect_before_ack");
         Ok(result)
     }
 

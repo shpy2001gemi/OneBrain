@@ -3,8 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use ku_core::foundation::{
-    decode_canonical, encode_canonical, CanonicalError, CanonicalValue, CheckpointCid, EventCid,
-    FeedId, InventoryRecordKind, ResourceProfile, SelectorCid,
+    decode_canonical, dr_m5_failpoint, encode_canonical, CanonicalError, CanonicalValue,
+    CheckpointCid, EventCid, FeedId, InventoryRecordKind, ResourceProfile, SelectorCid,
 };
 
 pub const INVENTORY_FOREST_PROFILE_MAJOR: u64 = 1;
@@ -669,10 +669,12 @@ pub mod persistent {
             selector: SelectorCid,
             leaf: InventoryLeaf,
         ) -> Result<InventoryInsertOutcome, InventoryForestError> {
+            dr_m5_failpoint::hit("TX-INV-001", "before_begin_write");
             let write = self
                 .db
                 .begin_write()
                 .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            dr_m5_failpoint::hit("TX-INV-001", "after_begin_write_before_mutation");
             let outcome;
             {
                 let mut table = write
@@ -692,9 +694,12 @@ pub mod persistent {
                     .insert(selector.as_bytes().as_slice(), snapshot.as_slice())
                     .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
             }
+            dr_m5_failpoint::hit("TX-INV-001", "after_mutation_before_commit");
             write
                 .commit()
                 .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            dr_m5_failpoint::hit("TX-INV-001", "after_commit_before_next_side_effect");
+            dr_m5_failpoint::hit("TX-INV-001", "after_next_side_effect_before_ack");
             Ok(outcome)
         }
     }

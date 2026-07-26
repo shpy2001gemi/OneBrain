@@ -20,6 +20,8 @@ pub mod upnp;
 pub mod verifier_service;
 pub mod vnext_companion;
 pub mod vnext_config;
+#[cfg(feature = "vnext-crash-harness")]
+pub mod vnext_crash_harness;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_distributed_kql;
 #[cfg(feature = "vnext-network-runtime")]

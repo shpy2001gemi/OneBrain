@@ -16,6 +16,7 @@ pub mod checkpoint;
 pub mod checkpoint_compaction;
 pub mod conformance;
 pub mod content_id;
+pub mod dr_m5_failpoint;
 pub mod envelope;
 pub mod event;
 pub mod feed;

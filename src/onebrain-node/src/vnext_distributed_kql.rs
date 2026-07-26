@@ -10,9 +10,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use ku_core::foundation::{
-    decode_knowledge_object, CoverageBasis, CoverageLimitation, CoverageStatement, CoverageStatus,
-    DisclosureClass, EventCid, KnowledgeAffordance, KnownObjectKind, NodeId, ObjectReference,
-    ObjectSemantics, ResourceProfile, SelectorCid, KNOWLEDGE_AFFORDANCE_KIND,
+    decode_knowledge_object, dr_m5_failpoint, CoverageBasis, CoverageLimitation, CoverageStatement,
+    CoverageStatus, DisclosureClass, EventCid, KnowledgeAffordance, KnownObjectKind, NodeId,
+    ObjectReference, ObjectSemantics, ResourceProfile, SelectorCid, KNOWLEDGE_AFFORDANCE_KIND,
 };
 use ku_kql::vnext_private_need::{
     LocalNeedVaultKey, PrivateNeedBundle, PrivateNeedLifecycle, RedbPrivateNeedVault,
@@ -505,10 +505,12 @@ impl DurableMatchIndex {
         value[32..64].copy_from_slice(selector.as_bytes());
         value[64..].copy_from_slice(source_frontier.as_bytes());
 
+        dr_m5_failpoint::hit("TX-KQL-001", "before_begin_write");
         let write = self
             .database
             .begin_write()
             .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        dr_m5_failpoint::hit("TX-KQL-001", "after_begin_write_before_mutation");
         let newly_recorded;
         {
             let mut table = write
@@ -536,9 +538,12 @@ impl DurableMatchIndex {
                 }
             }
         }
+        dr_m5_failpoint::hit("TX-KQL-001", "after_mutation_before_commit");
         write
             .commit()
             .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        dr_m5_failpoint::hit("TX-KQL-001", "after_commit_before_next_side_effect");
+        dr_m5_failpoint::hit("TX-KQL-001", "after_next_side_effect_before_ack");
         Ok(newly_recorded)
     }
 
@@ -578,10 +583,12 @@ impl DurableMatchIndex {
     }
 
     fn set_cursor(&self, selector: SelectorCid, sequence: u64) -> Result<(), DistributedKqlError> {
+        dr_m5_failpoint::hit("TX-KQL-001", "before_begin_write");
         let write = self
             .database
             .begin_write()
             .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        dr_m5_failpoint::hit("TX-KQL-001", "after_begin_write_before_mutation");
         {
             let mut table = write
                 .open_table(CURSORS)
@@ -593,9 +600,13 @@ impl DurableMatchIndex {
                 )
                 .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
         }
+        dr_m5_failpoint::hit("TX-KQL-001", "after_mutation_before_commit");
         write
             .commit()
-            .map_err(|error| DistributedKqlError::Storage(error.to_string()))
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        dr_m5_failpoint::hit("TX-KQL-001", "after_commit_before_next_side_effect");
+        dr_m5_failpoint::hit("TX-KQL-001", "after_next_side_effect_before_ack");
+        Ok(())
     }
 
     fn reset_cursor(&self, selector: SelectorCid) -> Result<(), DistributedKqlError> {

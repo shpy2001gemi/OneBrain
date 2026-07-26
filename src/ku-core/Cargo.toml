@@ -9,6 +9,8 @@ license = "MIT"
 default = []
 # Enable persistent ConceptDict storage (pure Rust, no C compiler needed)
 persist = ["dep:redb"]
+# Test-only process-kill synchronization. Production builds leave every hook a no-op.
+dr-m5-crash-harness = []
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
