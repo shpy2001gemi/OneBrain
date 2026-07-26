@@ -10,6 +10,7 @@ on:
       - "formal/tla/**"
       - "scripts/ci/**"
       - "scripts/concept_registry/**"
+      - "src/**"
       - "src/ku-core/**"
       - "src/ku-ai/**"
       - "src/ku-encoder/**"
@@ -33,6 +34,7 @@ on:
       - "formal/tla/**"
       - "scripts/ci/**"
       - "scripts/concept_registry/**"
+      - "src/**"
       - "src/ku-core/**"
       - "src/ku-ai/**"
       - "src/ku-encoder/**"
@@ -82,6 +84,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_ws_profile
           python -m unittest scripts.ci.test_validate_vnext_cli_profile
           python -m unittest scripts.ci.test_validate_vnext_desktop_web_ux_profile
+          python -m unittest scripts.ci.test_validate_vnext_dr_m5_baseline
 
       - name: P3.4 Web UX build, lint, and receipt contract
         working-directory: src/onebrain-web

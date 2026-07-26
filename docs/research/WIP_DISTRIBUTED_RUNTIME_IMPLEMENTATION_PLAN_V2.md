@@ -1687,3 +1687,48 @@ shutdown mới từ P3.4.
 
 P3.4 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
 `main`, work package kế tiếp là DR-M5.
+
+### 2026-07-26 — DR-M5 / M5-00 Baseline và CI feature matrix
+
+Đã triển khai cục bộ trên nhánh `codex/dr-m5-baseline`:
+
+1. Freeze
+   [`DISTRIBUTED_RUNTIME_HARDENING_BASELINE_V1.md`](../specs/vnext/DISTRIBUTED_RUNTIME_HARDENING_BASELINE_V1.md)
+   cùng machine profile `onebrain/dr-m5-baseline/1`.
+2. Khóa chính xác 13 transaction-boundary ID, năm failpoint phase và 11
+   invariant-oracle field. Mỗi boundary có durable owner và ánh xạ tới ít nhất
+   một oracle component; toàn bộ oracle field đều có boundary bao phủ.
+3. Freeze empty-oracle specimen theo JSON UTF-8 sort-key/no-whitespace và
+   SHA-256 `e1ca1110a77a8147e18576929544a91fd3d68692fbb43a4344ff391e96cc735c`.
+4. CI path filter cho cả pull request và push có `src/**`, nên mọi thay đổi
+   runtime đều kích hoạt feature-enabled real-QUIC acceptance.
+5. Validator kiểm tra trực tiếp job `vnext-network-runtime`, timeout hữu hạn
+   45 phút và 14 acceptance step từ M2–M4, P1–P3 tới node lifecycle; default
+   hoặc Windows smoke không thể thay thế gate này.
+6. Thêm bảy mutation tests để chặn path escape, timeout mất giới hạn,
+   boundary/oracle/phase bị xóa và digest drift.
+
+Local evidence:
+
+- DR-M5 baseline mutation tests: 7/7 xanh;
+- toàn bộ machine-profile validators: 33/33 xanh;
+- `validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37 negative assertions,
+  55 foundation vectors/21 domains, 14 REST endpoints/18 DTOs, 10 private-WS
+  events/4 topics, 11 CLI commands, 2 Desktop/Web receipt vectors, 13 DR-M5
+  boundaries/11 oracle fields, 398 normative lines và 390 local links;
+- `git diff --check`: xanh, chỉ có thông báo chuyển LF/CRLF của Git trên
+  Windows.
+
+M5-00 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
+`main`. Work package kế tiếp là M5-01 Unified resource admission và fairness.
+
+Remote CI run
+[`30203846856`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30203846856)
+trên implementation commit `ff76c46` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real-QUIC
+acceptance và Windows default/vNext/Desktop smoke đều xanh. Real-QUIC, Windows
+và Linux default jobs có 0 annotation; foundation job giữ bốn warning lint
+React baseline đã biết.
+
+M5-00 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
+`main`, work package kế tiếp là M5-01 Unified resource admission và fairness.
