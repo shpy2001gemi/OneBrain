@@ -196,6 +196,33 @@ pub struct VNextNetworkRuntime {
     state: VNextNetworkRuntimeState,
 }
 
+/// Identity material that has already passed proof-of-possession validation.
+///
+/// Product startup prepares this value before opening any durable network
+/// stores, so an unavailable or mismatched external signer fails without
+/// leaving a partially initialized runtime behind.
+pub(crate) struct PreparedVNextIdentity {
+    signer: Arc<dyn SessionIdentitySigner>,
+    public_key: [u8; 32],
+}
+
+pub(crate) fn prepare_vnext_identity(
+    data_dir: &Path,
+    identity: Option<Arc<dyn SessionIdentitySigner>>,
+) -> Result<PreparedVNextIdentity, VNextNetworkRuntimeError> {
+    let signer: Arc<dyn SessionIdentitySigner> = match identity {
+        Some(identity) => identity,
+        None => {
+            std::fs::create_dir_all(data_dir)?;
+            Arc::new(load_or_create_identity(
+                &data_dir.join("vnext_identity.key"),
+            )?)
+        }
+    };
+    let public_key = validate_identity_signer(signer.as_ref())?;
+    Ok(PreparedVNextIdentity { signer, public_key })
+}
+
 impl VNextNetworkRuntime {
     /// Start with the built-in local file signer. This is a compatibility and
     /// development path; production deployments should use
@@ -205,9 +232,11 @@ impl VNextNetworkRuntime {
         bind_addr: SocketAddr,
         policy: VNextNetworkPolicy,
     ) -> Result<Self, VNextNetworkRuntimeError> {
-        Self::start_inner(data_dir, bind_addr, policy, true).await
+        let identity = prepare_vnext_identity(data_dir, None)?;
+        Self::start_prepared(data_dir, bind_addr, policy, identity).await
     }
 
+    #[cfg(test)]
     async fn start_inner(
         data_dir: &Path,
         bind_addr: SocketAddr,
@@ -217,18 +246,36 @@ impl VNextNetworkRuntime {
         policy
             .validate()
             .map_err(|error| VNextNetworkRuntimeError::Config(error.to_string()))?;
+        let identity = prepare_vnext_identity(data_dir, None)?;
         std::fs::create_dir_all(data_dir)?;
-        let identity: Arc<dyn SessionIdentitySigner> = Arc::new(load_or_create_identity(
-            &data_dir.join("vnext_identity.key"),
-        )?);
-        let identity_public_key = validate_identity_signer(identity.as_ref())?;
         Self::start_initialized(
             data_dir,
             bind_addr,
             policy,
             continuous_outbound,
-            identity,
-            identity_public_key,
+            identity.signer,
+            identity.public_key,
+        )
+        .await
+    }
+
+    pub(crate) async fn start_prepared(
+        data_dir: &Path,
+        bind_addr: SocketAddr,
+        policy: VNextNetworkPolicy,
+        identity: PreparedVNextIdentity,
+    ) -> Result<Self, VNextNetworkRuntimeError> {
+        policy
+            .validate()
+            .map_err(|error| VNextNetworkRuntimeError::Config(error.to_string()))?;
+        std::fs::create_dir_all(data_dir)?;
+        Self::start_initialized(
+            data_dir,
+            bind_addr,
+            policy,
+            true,
+            identity.signer,
+            identity.public_key,
         )
         .await
     }
@@ -242,20 +289,8 @@ impl VNextNetworkRuntime {
         policy: VNextNetworkPolicy,
         identity: Arc<dyn SessionIdentitySigner>,
     ) -> Result<Self, VNextNetworkRuntimeError> {
-        policy
-            .validate()
-            .map_err(|error| VNextNetworkRuntimeError::Config(error.to_string()))?;
-        let identity_public_key = validate_identity_signer(identity.as_ref())?;
-        std::fs::create_dir_all(data_dir)?;
-        Self::start_initialized(
-            data_dir,
-            bind_addr,
-            policy,
-            true,
-            identity,
-            identity_public_key,
-        )
-        .await
+        let identity = prepare_vnext_identity(data_dir, Some(identity))?;
+        Self::start_prepared(data_dir, bind_addr, policy, identity).await
     }
 
     async fn start_initialized(

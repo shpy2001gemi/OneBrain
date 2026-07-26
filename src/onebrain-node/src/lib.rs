@@ -113,8 +113,8 @@ pub use vnext_performance_budgets::{
 pub use vnext_product_runtime::{
     VNextProductLaneStatus, VNextProductRuntime, VNextProductRuntimeDependencies,
     VNextProductRuntimeError, VNextProductRuntimeState, VNextProductRuntimeStatus,
-    VNextProductServices, VNextProductSignerMode, VNextStoragePressure,
-    MAX_PRODUCT_BACKGROUND_WORKERS,
+    VNextProductServices, VNextProductSignerMode, VNextProductWorkerKind, VNextShutdownPhase,
+    VNextStartupPhase, VNextStoragePressure, MAX_PRODUCT_BACKGROUND_WORKERS,
 };
 pub use vnext_reunion_canary::{DeterministicReunionTrace, ReunionTraceEntry, ReunionTracePhase};
 pub use vnext_reward_firewall::{

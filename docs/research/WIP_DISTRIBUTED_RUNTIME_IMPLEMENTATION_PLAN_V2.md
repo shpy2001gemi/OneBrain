@@ -1286,3 +1286,42 @@ và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
 
 P2.2 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
 P2.3 Startup/shutdown lifecycle.
+
+### 2026-07-26 — P2.3 Startup/shutdown lifecycle
+
+Đã triển khai cục bộ trên nhánh `codex/p2-runtime-lifecycle`:
+
+1. Aggregate thực thi và expose trace startup tám pha:
+   validate config/dependencies, validate signer/Vault capability, mở enabled
+   stores, mở authenticated QUIC, rehydrate private needs, drain/recover
+   logical publication outbox, start bounded lane workers, rồi mới `Running`.
+2. Identity signer proof-of-possession được tách thành prepared dependency và
+   fail trước durable subsystem stores. KQL có explicit unhydrated open rồi
+   rehydrate sau khi listener hoạt động.
+3. Mỗi lane active có đúng một scheduler worker dùng poll interval đã cấu
+   hình; publication worker retry bounded durable outbox. Thiếu authenticated
+   route giữ publication pending, không đánh dấu export giả.
+4. Shutdown thực thi trace năm pha: fence operation mới, cooperative cancel
+   workers, snapshot safe metadata, stop network, rồi drop/close lane stores.
+   `OneBrainNode` nay sở hữu handle của legacy TCP accept loop và có explicit
+   `shutdown_network`.
+5. Startup artifact guard chỉ theo dõi danh sách vNext artifact explicit,
+   rollback chỉ xóa file mới tạo. Signer failure, QUIC bind failure sau store
+   open và legacy TCP bind failure sau aggregate startup đều rollback sạch;
+   pre-existing artifact được giữ nguyên.
+6. Typed status expose startup/shutdown trace, số private need rehydrated,
+   publication pending lúc startup, worker count và worker poll ticks; mọi
+   wallet/OBT/global-completion claim vẫn false.
+
+Local evidence:
+
+- focused aggregate lifecycle/rollback tests: 6/6 xanh;
+- node-owned startup/shutdown/TCP-bind rollback integration: 4/4 xanh;
+- feature-enabled `onebrain-node` lib: 124/124 xanh;
+- default workspace tests, workspace check, feature-enabled API/CLI/node
+  check, `onebrain-node --no-deps` clippy và rustfmt: xanh;
+- `python scripts/ci/validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37
+  negative assertions, 55 vectors/21 domains, 9 identity/object vectors, 4
+  feed/event vectors, 246 normative lines, 14 endpoints/18 DTOs và 367 local
+  links;
+- product-profile validator tests: 8/8 xanh.

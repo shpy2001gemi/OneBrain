@@ -5,10 +5,13 @@
 
 #![cfg(feature = "vnext-network-runtime")]
 
+use std::collections::BTreeSet;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use ku_core::foundation::{
     FeedEventSigner, NodeId, ObjectReference, SelectorCid, ValidatedFeedInception,
@@ -32,11 +35,24 @@ use crate::vnext_distributed_pomv::{
     PublicUsePublishOutcome,
 };
 use crate::vnext_network_runtime::{
-    OutboundVNextSession, VNextNetworkRuntime, VNextNetworkRuntimeError, VNextNetworkRuntimeStatus,
+    prepare_vnext_identity, OutboundVNextSession, VNextNetworkRuntime, VNextNetworkRuntimeError,
+    VNextNetworkRuntimeState, VNextNetworkRuntimeStatus,
 };
 use crate::vnext_route_authority::{AuthenticatedRoute, LocalPolicyRegistry, LocalPolicyVersion};
 
 pub const MAX_PRODUCT_BACKGROUND_WORKERS: usize = 8;
+const VNEXT_STARTUP_ARTIFACTS: &[&str] = &[
+    "vnext_identity.key",
+    "vnext_private_need_vault.redb",
+    "vnext_distributed_kql.redb",
+    "vnext_public_use_sender.redb",
+    "vnext_distributed_pomv.redb",
+    "vnext_verified.redb",
+    "vnext_reconciliation.redb",
+    "vnext_inventory.redb",
+    "vnext_record_provenance.redb",
+    "vnext_outbox.redb",
+];
 
 /// Caller-owned dependencies that must be supplied before product runtime
 /// startup. The vault key is consumed by the encrypted local store and is not
@@ -59,6 +75,34 @@ impl VNextProductRuntimeDependencies {
 pub enum VNextProductRuntimeState {
     Running,
     Stopped,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VNextStartupPhase {
+    ConfigurationValidated,
+    SignerAndVaultValidated,
+    StoresOpened,
+    AuthenticatedQuicStarted,
+    PrivateNeedsRehydrated,
+    PublicationOutboxDrained,
+    WorkersStarted,
+    Running,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VNextShutdownPhase {
+    OperationsFenced,
+    WorkersCancelled,
+    SafeMetadataFlushed,
+    NetworkStopped,
+    StoresClosed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VNextProductWorkerKind {
+    DistributedKql,
+    PublicUsePublication,
+    DistributedPomv,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -107,6 +151,11 @@ pub struct VNextProductRuntimeStatus {
     pub active_product_workers: usize,
     pub max_product_workers: usize,
     pub cancellation_requested: bool,
+    pub startup_trace: Vec<VNextStartupPhase>,
+    pub shutdown_trace: Vec<VNextShutdownPhase>,
+    pub rehydrated_private_needs: usize,
+    pub startup_pending_publications: u64,
+    pub worker_poll_ticks: u64,
     pub changes_wallet_state: bool,
     pub changes_obt_state: bool,
     pub claims_network_completion: bool,
@@ -117,9 +166,11 @@ pub struct VNextProductRuntimeStatus {
 /// Raw subsystem references intentionally have no public accessor. All product
 /// operations cross [`VNextProductServices`].
 pub struct VNextProductRuntime {
-    network: VNextNetworkRuntime,
+    network: Option<Arc<VNextNetworkRuntime>>,
+    last_network_status: VNextNetworkRuntimeStatus,
+    local_addr: SocketAddr,
     distributed_kql: Option<Mutex<DistributedKqlRuntime>>,
-    public_use: Option<PublicUseEvidencePublisher>,
+    public_use: Option<Arc<PublicUseEvidencePublisher>>,
     distributed_pomv: Option<DistributedPomvRuntime>,
     policy_versions: Vec<LocalPolicyVersion>,
     lanes: VNextProductLaneStatus,
@@ -128,6 +179,12 @@ pub struct VNextProductRuntime {
     workers: BoundedProductWorkers,
     signer_mode: VNextProductSignerMode,
     state: VNextProductRuntimeState,
+    startup_trace: Vec<VNextStartupPhase>,
+    shutdown_trace: Vec<VNextShutdownPhase>,
+    rehydrated_private_needs: usize,
+    startup_pending_publications: u64,
+    startup_artifacts: Vec<PathBuf>,
+    startup_data_dir_created: bool,
 }
 
 impl VNextProductRuntime {
@@ -138,29 +195,44 @@ impl VNextProductRuntime {
         dependencies: VNextProductRuntimeDependencies,
         identity_signer: Option<Arc<dyn SessionIdentitySigner>>,
     ) -> Result<Self, VNextProductRuntimeError> {
+        let mut startup_trace = Vec::with_capacity(8);
         config
             .validate()
             .map_err(|error| VNextProductRuntimeError::Configuration(error.to_string()))?;
+        startup_trace.push(VNextStartupPhase::ConfigurationValidated);
         let lanes = VNextProductLaneStatus::from_config(config);
         let budgets = config.runtime_budgets;
         let storage = ProductStorageGuard::new(data_dir, budgets);
         storage.ensure_writable()?;
+        let mut artifact_guard = StartupArtifactGuard::new(data_dir)?;
         let VNextProductRuntimeDependencies {
             private_need_vault_key,
             policies,
         } = dependencies;
         let policy_versions = policies.versions();
+        let signer_mode = if identity_signer.is_some() {
+            VNextProductSignerMode::CallerOwned
+        } else {
+            VNextProductSignerMode::CompatibilityFile
+        };
+        // LocalNeedVaultKey is a fixed-size, caller-owned capability. Its
+        // persisted ciphertext proof is checked when the unopened KQL owner is
+        // rehydrated below; signer proof-of-possession is checked here before
+        // any durable subsystem store is opened.
+        let prepared_identity = prepare_vnext_identity(data_dir, identity_signer)?;
+        startup_trace.push(VNextStartupPhase::SignerAndVaultValidated);
 
         // A disabled lane has no owner and therefore creates no lane database.
-        let distributed_kql = lanes
+        let mut distributed_kql = lanes
             .distributed_kql_one_hop
-            .then(|| DistributedKqlRuntime::open(data_dir, private_need_vault_key))
+            .then(|| DistributedKqlRuntime::open_unhydrated(data_dir, private_need_vault_key))
             .transpose()?
             .map(Mutex::new);
         let public_use = lanes
             .public_use_evidence_publish
             .then(|| PublicUseEvidencePublisher::open(data_dir))
-            .transpose()?;
+            .transpose()?
+            .map(Arc::new);
         let distributed_pomv = lanes
             .distributed_pomv_view
             .then(|| {
@@ -172,21 +244,65 @@ impl VNextProductRuntime {
                 )
             })
             .transpose()?;
-        let signer_mode = if identity_signer.is_some() {
-            VNextProductSignerMode::CallerOwned
-        } else {
-            VNextProductSignerMode::CompatibilityFile
-        };
-        let network = match identity_signer {
-            Some(signer) => {
-                VNextNetworkRuntime::start_with_signer(data_dir, bind_addr, config.network, signer)
-                    .await?
+        startup_trace.push(VNextStartupPhase::StoresOpened);
+
+        let network = Arc::new(
+            VNextNetworkRuntime::start_prepared(
+                data_dir,
+                bind_addr,
+                config.network,
+                prepared_identity,
+            )
+            .await?,
+        );
+        startup_trace.push(VNextStartupPhase::AuthenticatedQuicStarted);
+        let last_network_status = network.status();
+        let local_addr = network.local_addr();
+
+        let rehydrated_private_needs = distributed_kql
+            .as_mut()
+            .map(|kql| {
+                kql.get_mut()
+                    .map_err(|_| VNextProductRuntimeError::KqlLockPoisoned)?
+                    .rehydrate_private_needs()
+                    .map_err(VNextProductRuntimeError::from)
+            })
+            .transpose()?
+            .unwrap_or_default();
+        startup_trace.push(VNextStartupPhase::PrivateNeedsRehydrated);
+
+        // Recover the logical publication outbox before scheduling retries.
+        // Routes are session-derived, so startup records durable pending work;
+        // the publication worker may retry it only after a route is available.
+        let startup_pending_publications = if let Some(public_use) = public_use.as_ref() {
+            match public_use.flush_pending(&network, budgets.publication_flush_batch) {
+                Ok(_) | Err(DistributedPomvError::AuthenticatedRouteUnavailable) => {}
+                Err(error) => return Err(error.into()),
             }
-            None => VNextNetworkRuntime::start(data_dir, bind_addr, config.network).await?,
+            public_use.pending_publication_count()?
+        } else {
+            0
         };
+        startup_trace.push(VNextStartupPhase::PublicationOutboxDrained);
+
+        let mut workers = BoundedProductWorkers::new(MAX_PRODUCT_BACKGROUND_WORKERS);
+        workers.start_lane_workers(
+            lanes,
+            budgets.worker_poll_interval_millis,
+            public_use
+                .as_ref()
+                .map(|publisher| (Arc::clone(publisher), Arc::clone(&network))),
+            budgets.publication_flush_batch,
+        )?;
+        startup_trace.push(VNextStartupPhase::WorkersStarted);
+        startup_trace.push(VNextStartupPhase::Running);
+        let startup_data_dir_created = !artifact_guard.data_dir_preexisting;
+        let startup_artifacts = artifact_guard.commit();
 
         Ok(Self {
-            network,
+            network: Some(network),
+            last_network_status,
+            local_addr,
             distributed_kql,
             public_use,
             distributed_pomv,
@@ -194,9 +310,15 @@ impl VNextProductRuntime {
             lanes,
             budgets,
             storage,
-            workers: BoundedProductWorkers::new(MAX_PRODUCT_BACKGROUND_WORKERS),
+            workers,
             signer_mode,
             state: VNextProductRuntimeState::Running,
+            startup_trace,
+            shutdown_trace: Vec::with_capacity(5),
+            rehydrated_private_needs,
+            startup_pending_publications,
+            startup_artifacts,
+            startup_data_dir_created,
         })
     }
 
@@ -209,8 +331,46 @@ impl VNextProductRuntime {
             return;
         }
         self.state = VNextProductRuntimeState::Stopped;
+        self.shutdown_trace
+            .push(VNextShutdownPhase::OperationsFenced);
         self.workers.shutdown().await;
-        self.network.shutdown().await;
+        self.shutdown_trace
+            .push(VNextShutdownPhase::WorkersCancelled);
+        self.flush_safe_pending_metadata();
+        self.shutdown_trace
+            .push(VNextShutdownPhase::SafeMetadataFlushed);
+        if let Some(network) = self.network.take() {
+            self.last_network_status = network.status();
+            if let Ok(mut network) = Arc::try_unwrap(network) {
+                network.shutdown().await;
+            }
+            self.last_network_status.state = VNextNetworkRuntimeState::Stopped;
+        }
+        self.shutdown_trace.push(VNextShutdownPhase::NetworkStopped);
+        self.distributed_kql.take();
+        self.public_use.take();
+        self.distributed_pomv.take();
+        self.shutdown_trace.push(VNextShutdownPhase::StoresClosed);
+    }
+
+    /// Abort an otherwise successful product startup because a later
+    /// node-owned startup phase failed (for example, the legacy TCP bind).
+    /// Only artifacts that did not exist before this startup are removed.
+    pub async fn rollback_startup(mut self) -> Result<(), VNextProductRuntimeError> {
+        self.shutdown().await;
+        let startup_artifacts = std::mem::take(&mut self.startup_artifacts);
+        let remove_data_dir = self.startup_data_dir_created;
+        let data_dir = self.storage.data_dir.clone();
+        drop(self);
+        remove_startup_artifacts(startup_artifacts)?;
+        if remove_data_dir {
+            match std::fs::remove_dir(data_dir) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(())
     }
 
     fn ensure_running(&self) -> Result<(), VNextProductRuntimeError> {
@@ -219,6 +379,28 @@ impl VNextProductRuntime {
         } else {
             Err(VNextProductRuntimeError::Stopped)
         }
+    }
+
+    fn network(&self) -> Result<&VNextNetworkRuntime, VNextProductRuntimeError> {
+        self.ensure_running()?;
+        self.network
+            .as_ref()
+            .map(Arc::as_ref)
+            .ok_or(VNextProductRuntimeError::Stopped)
+    }
+
+    fn flush_safe_pending_metadata(&mut self) {
+        if let Some(kql) = self.distributed_kql.as_ref() {
+            if let Ok(kql) = kql.lock() {
+                self.rehydrated_private_needs = kql.active_target_count();
+            }
+        }
+        if let Some(public_use) = self.public_use.as_ref() {
+            if let Ok(pending) = public_use.pending_publication_count() {
+                self.startup_pending_publications = pending;
+            }
+        }
+        let _ = self.storage.used_bytes();
     }
 
     fn kql(&self) -> Result<MutexGuard<'_, DistributedKqlRuntime>, VNextProductRuntimeError> {
@@ -234,6 +416,7 @@ impl VNextProductRuntime {
     fn publisher(&self) -> Result<&PublicUseEvidencePublisher, VNextProductRuntimeError> {
         self.public_use
             .as_ref()
+            .map(Arc::as_ref)
             .ok_or(VNextProductRuntimeError::LaneDisabled(
                 VNextFeature::PublicUseEvidencePublish,
             ))
@@ -285,11 +468,15 @@ pub struct VNextProductServices<'a> {
 
 impl VNextProductServices<'_> {
     pub fn local_addr(&self) -> SocketAddr {
-        self.runtime.network.local_addr()
+        self.runtime.local_addr
     }
 
     pub fn network_status(&self) -> VNextNetworkRuntimeStatus {
-        self.runtime.network.status()
+        self.runtime
+            .network
+            .as_ref()
+            .map(|network| network.status())
+            .unwrap_or_else(|| self.runtime.last_network_status.clone())
     }
 
     pub fn status(&self) -> Result<VNextProductRuntimeStatus, VNextProductRuntimeError> {
@@ -320,15 +507,21 @@ impl VNextProductServices<'_> {
             .runtime
             .public_use
             .as_ref()
-            .map(PublicUseEvidencePublisher::pending_publication_count)
+            .map(|publisher| publisher.pending_publication_count())
             .transpose()?
             .unwrap_or_default();
         let storage_bytes = self.runtime.storage.used_bytes()?;
         Ok(VNextProductRuntimeStatus {
             state: self.runtime.state,
             signer_mode: self.runtime.signer_mode,
-            network: self.runtime.network.status(),
-            authenticated_routes: self.runtime.network.authenticated_route_count()?,
+            network: self.network_status(),
+            authenticated_routes: self
+                .runtime
+                .network
+                .as_ref()
+                .map(|network| network.authenticated_route_count())
+                .transpose()?
+                .unwrap_or_default(),
             active_private_needs,
             durable_matches,
             pending_publications,
@@ -345,6 +538,11 @@ impl VNextProductServices<'_> {
             active_product_workers: self.runtime.workers.len(),
             max_product_workers: self.runtime.workers.capacity(),
             cancellation_requested: self.runtime.workers.is_cancelled(),
+            startup_trace: self.runtime.startup_trace.clone(),
+            shutdown_trace: self.runtime.shutdown_trace.clone(),
+            rehydrated_private_needs: self.runtime.rehydrated_private_needs,
+            startup_pending_publications: self.runtime.startup_pending_publications,
+            worker_poll_ticks: self.runtime.workers.poll_ticks(),
             changes_wallet_state: false,
             changes_obt_state: false,
             claims_network_completion: false,
@@ -355,8 +553,11 @@ impl VNextProductServices<'_> {
         &self,
         addr: SocketAddr,
     ) -> Result<OutboundVNextSession, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime.network.connect(addr).await.map_err(Into::into)
+        self.runtime
+            .network()?
+            .connect(addr)
+            .await
+            .map_err(Into::into)
     }
 
     pub fn authenticated_route(
@@ -365,7 +566,7 @@ impl VNextProductServices<'_> {
     ) -> Result<Option<AuthenticatedRoute>, VNextProductRuntimeError> {
         self.runtime.ensure_running()?;
         self.runtime
-            .network
+            .network()?
             .authenticated_route(peer)
             .map_err(Into::into)
     }
@@ -452,7 +653,7 @@ impl VNextProductServices<'_> {
         self.runtime.ensure_storage_writable()?;
         self.runtime
             .kql()?
-            .process_one_hop_affordance_delta(&self.runtime.network, selector, budget)
+            .process_one_hop_affordance_delta(self.runtime.network()?, selector, budget)
             .map_err(Into::into)
     }
 
@@ -497,7 +698,7 @@ impl VNextProductServices<'_> {
         }
         self.runtime
             .publisher()?
-            .flush_pending(&self.runtime.network, limit)
+            .flush_pending(self.runtime.network()?, limit)
             .map_err(Into::into)
     }
 
@@ -511,7 +712,7 @@ impl VNextProductServices<'_> {
         self.runtime.ensure_storage_writable()?;
         self.runtime
             .pomv()?
-            .materialize_public_use_view(&self.runtime.network, selector, target, policy_version)
+            .materialize_public_use_view(self.runtime.network()?, selector, target, policy_version)
             .map_err(Into::into)
     }
 
@@ -522,6 +723,77 @@ impl VNextProductServices<'_> {
         self.runtime.ensure_running()?;
         Ok(self.runtime.kql()?.proposal(id).cloned())
     }
+}
+
+struct StartupArtifactGuard {
+    data_dir: PathBuf,
+    preexisting: BTreeSet<&'static str>,
+    data_dir_preexisting: bool,
+    committed: bool,
+}
+
+impl StartupArtifactGuard {
+    fn new(data_dir: &Path) -> Result<Self, VNextProductRuntimeError> {
+        let data_dir_preexisting = data_dir.exists();
+        if data_dir_preexisting && !data_dir.is_dir() {
+            return Err(VNextProductRuntimeError::InvalidDataDirectory(
+                data_dir.to_path_buf(),
+            ));
+        }
+        let preexisting = VNEXT_STARTUP_ARTIFACTS
+            .iter()
+            .copied()
+            .filter(|name| data_dir.join(name).exists())
+            .collect();
+        Ok(Self {
+            data_dir: data_dir.to_path_buf(),
+            preexisting,
+            data_dir_preexisting,
+            committed: false,
+        })
+    }
+
+    fn new_artifacts(&self) -> Vec<PathBuf> {
+        VNEXT_STARTUP_ARTIFACTS
+            .iter()
+            .copied()
+            .filter(|name| !self.preexisting.contains(name))
+            .map(|name| self.data_dir.join(name))
+            .filter(|path| path.exists())
+            .collect()
+    }
+
+    fn commit(&mut self) -> Vec<PathBuf> {
+        let artifacts = self.new_artifacts();
+        self.committed = true;
+        artifacts
+    }
+
+    fn rollback(&self) {
+        let _ = remove_startup_artifacts(self.new_artifacts());
+        if !self.data_dir_preexisting {
+            let _ = std::fs::remove_dir(&self.data_dir);
+        }
+    }
+}
+
+impl Drop for StartupArtifactGuard {
+    fn drop(&mut self) {
+        if !self.committed {
+            self.rollback();
+        }
+    }
+}
+
+fn remove_startup_artifacts(paths: Vec<PathBuf>) -> Result<(), VNextProductRuntimeError> {
+    for path in paths {
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
 }
 
 struct ProductStorageGuard {
@@ -583,12 +855,10 @@ impl ProductStorageGuard {
 }
 
 #[derive(Clone)]
-#[allow(dead_code)] // Concrete worker loops are registered by P2.3.
 struct ProductCancellation {
     receiver: watch::Receiver<bool>,
 }
 
-#[allow(dead_code)] // Concrete worker loops are registered by P2.3.
 impl ProductCancellation {
     async fn cancelled(&mut self) {
         while !*self.receiver.borrow() {
@@ -598,6 +868,7 @@ impl ProductCancellation {
         }
     }
 
+    #[cfg(test)]
     fn is_cancelled(&self) -> bool {
         *self.receiver.borrow()
     }
@@ -605,8 +876,9 @@ impl ProductCancellation {
 
 struct BoundedProductWorkers {
     cancellation: watch::Sender<bool>,
-    tasks: Vec<JoinHandle<()>>,
+    tasks: Vec<(VNextProductWorkerKind, JoinHandle<()>)>,
     max_workers: usize,
+    poll_ticks: Arc<AtomicU64>,
 }
 
 impl BoundedProductWorkers {
@@ -616,6 +888,7 @@ impl BoundedProductWorkers {
             cancellation,
             tasks: Vec::new(),
             max_workers,
+            poll_ticks: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -631,10 +904,69 @@ impl BoundedProductWorkers {
         *self.cancellation.borrow()
     }
 
-    /// P2.3 will register the concrete product loops through this bounded
-    /// owner. P2.1 freezes ownership and cancellation semantics first.
-    #[allow(dead_code)]
-    fn spawn<F, Fut>(&mut self, worker: F) -> Result<(), VNextProductRuntimeError>
+    fn poll_ticks(&self) -> u64 {
+        self.poll_ticks.load(Ordering::Relaxed)
+    }
+
+    fn start_lane_workers(
+        &mut self,
+        lanes: VNextProductLaneStatus,
+        poll_interval_millis: u64,
+        publication: Option<(Arc<PublicUseEvidencePublisher>, Arc<VNextNetworkRuntime>)>,
+        publication_flush_batch: usize,
+    ) -> Result<(), VNextProductRuntimeError> {
+        let interval = Duration::from_millis(poll_interval_millis);
+        for (enabled, kind) in [
+            (
+                lanes.distributed_kql_one_hop,
+                VNextProductWorkerKind::DistributedKql,
+            ),
+            (
+                lanes.public_use_evidence_publish,
+                VNextProductWorkerKind::PublicUsePublication,
+            ),
+            (
+                lanes.distributed_pomv_view,
+                VNextProductWorkerKind::DistributedPomv,
+            ),
+        ] {
+            if !enabled {
+                continue;
+            }
+            let poll_ticks = Arc::clone(&self.poll_ticks);
+            let publication = if kind == VNextProductWorkerKind::PublicUsePublication {
+                publication.clone()
+            } else {
+                None
+            };
+            self.spawn(kind, move |mut cancellation| async move {
+                let mut ticker = tokio::time::interval(interval);
+                loop {
+                    tokio::select! {
+                        _ = cancellation.cancelled() => break,
+                        _ = ticker.tick() => {
+                            poll_ticks.fetch_add(1, Ordering::Relaxed);
+                            if let Some((publisher, network)) = publication.as_ref() {
+                                // Missing authenticated routes are retryable;
+                                // durable publications remain unexported.
+                                let _ = publisher.flush_pending(
+                                    network,
+                                    publication_flush_batch,
+                                );
+                            }
+                        }
+                    }
+                }
+            })?;
+        }
+        Ok(())
+    }
+
+    fn spawn<F, Fut>(
+        &mut self,
+        kind: VNextProductWorkerKind,
+        worker: F,
+    ) -> Result<(), VNextProductRuntimeError>
     where
         F: FnOnce(ProductCancellation) -> Fut,
         Fut: Future<Output = ()> + Send + 'static,
@@ -645,21 +977,26 @@ impl BoundedProductWorkers {
         let token = ProductCancellation {
             receiver: self.cancellation.subscribe(),
         };
-        self.tasks.push(tokio::spawn(worker(token)));
+        self.tasks.push((kind, tokio::spawn(worker(token))));
         Ok(())
     }
 
     async fn shutdown(&mut self) {
         self.cancellation.send_replace(true);
-        for mut task in self.tasks.drain(..) {
-            task.abort();
-            let _ = (&mut task).await;
+        for (_, mut task) in self.tasks.drain(..) {
+            if tokio::time::timeout(Duration::from_secs(5), &mut task)
+                .await
+                .is_err()
+            {
+                task.abort();
+                let _ = (&mut task).await;
+            }
         }
     }
 
     fn cancel_and_abort(&mut self) {
         self.cancellation.send_replace(true);
-        for task in self.tasks.drain(..) {
+        for (_, task) in self.tasks.drain(..) {
             task.abort();
         }
     }
@@ -692,6 +1029,8 @@ pub enum VNextProductRuntimeError {
     },
     #[error("vNext storage size accounting overflowed")]
     StorageSizeOverflow,
+    #[error("vNext product data path is not a directory: {0}")]
+    InvalidDataDirectory(PathBuf),
     #[error("vNext network runtime failed: {0}")]
     Network(#[from] VNextNetworkRuntimeError),
     #[error("vNext distributed KQL runtime failed: {0}")]
@@ -708,6 +1047,20 @@ mod tests {
     use crate::vnext_config::VNextFeatureConfig;
     use ed25519_dalek::SigningKey;
     use ku_core::foundation::{MetabolicViewPolicy, ObjectReference};
+
+    struct UnavailableIdentitySigner {
+        public_key: [u8; 32],
+    }
+
+    impl SessionIdentitySigner for UnavailableIdentitySigner {
+        fn public_key(&self) -> [u8; 32] {
+            self.public_key
+        }
+
+        fn sign_session_message(&self, _message: &[u8]) -> Result<[u8; 64], String> {
+            Err("signer offline".into())
+        }
+    }
 
     fn dependencies(marker: u8) -> VNextProductRuntimeDependencies {
         let version = LocalPolicyVersion::new(1).unwrap();
@@ -786,9 +1139,24 @@ mod tests {
         assert!(before.lanes.public_use_evidence_publish);
         assert!(before.lanes.distributed_pomv_view);
         assert_eq!(before.budgets, config.runtime_budgets);
-        assert_eq!(before.active_product_workers, 0);
+        assert_eq!(before.active_product_workers, 3);
         assert_eq!(before.max_product_workers, MAX_PRODUCT_BACKGROUND_WORKERS);
         assert!(!before.cancellation_requested);
+        assert_eq!(
+            before.startup_trace,
+            vec![
+                VNextStartupPhase::ConfigurationValidated,
+                VNextStartupPhase::SignerAndVaultValidated,
+                VNextStartupPhase::StoresOpened,
+                VNextStartupPhase::AuthenticatedQuicStarted,
+                VNextStartupPhase::PrivateNeedsRehydrated,
+                VNextStartupPhase::PublicationOutboxDrained,
+                VNextStartupPhase::WorkersStarted,
+                VNextStartupPhase::Running,
+            ]
+        );
+        assert_eq!(before.rehydrated_private_needs, 0);
+        assert_eq!(before.startup_pending_publications, 0);
         assert!(!before.changes_wallet_state);
         assert!(!before.changes_obt_state);
         assert!(!before.claims_network_completion);
@@ -807,6 +1175,16 @@ mod tests {
         right.shutdown().await;
         assert_eq!(left.state, VNextProductRuntimeState::Stopped);
         assert!(left.workers.is_cancelled());
+        assert_eq!(
+            left.shutdown_trace,
+            vec![
+                VNextShutdownPhase::OperationsFenced,
+                VNextShutdownPhase::WorkersCancelled,
+                VNextShutdownPhase::SafeMetadataFlushed,
+                VNextShutdownPhase::NetworkStopped,
+                VNextShutdownPhase::StoresClosed,
+            ]
+        );
         assert!(matches!(
             left.services().authenticated_route(right_principal),
             Err(VNextProductRuntimeError::Stopped)
@@ -815,35 +1193,121 @@ mod tests {
 
     #[tokio::test]
     async fn product_worker_owner_is_bounded_and_cancelled() {
-        let directory = tempfile::tempdir().unwrap();
-        let config = all_lanes_config();
-        let mut runtime = VNextProductRuntime::start(
-            directory.path(),
-            "127.0.0.1:0".parse().unwrap(),
-            &config,
-            dependencies(30),
-            None,
-        )
-        .await
-        .unwrap();
+        let mut workers = BoundedProductWorkers::new(MAX_PRODUCT_BACKGROUND_WORKERS);
         for _ in 0..MAX_PRODUCT_BACKGROUND_WORKERS {
-            runtime
-                .workers
-                .spawn(|mut cancellation| async move {
-                    cancellation.cancelled().await;
-                })
+            workers
+                .spawn(
+                    VNextProductWorkerKind::DistributedKql,
+                    |mut cancellation| async move {
+                        cancellation.cancelled().await;
+                    },
+                )
                 .unwrap();
         }
         assert!(matches!(
-            runtime.workers.spawn(|_| async {}),
+            workers.spawn(VNextProductWorkerKind::DistributedKql, |_| async {}),
             Err(VNextProductRuntimeError::WorkerCapacityReached)
         ));
         let cancellation = ProductCancellation {
-            receiver: runtime.workers.cancellation.subscribe(),
+            receiver: workers.cancellation.subscribe(),
         };
-        runtime.shutdown().await;
+        workers.shutdown().await;
         assert!(cancellation.is_cancelled());
-        assert_eq!(runtime.workers.len(), 0);
+        assert_eq!(workers.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn signer_failure_and_post_store_bind_failure_rollback_cleanly() {
+        let signer_failure_dir = tempfile::tempdir().unwrap();
+        let config = all_lanes_config();
+        let public_key = *SigningKey::from_bytes(&[0x71; 32])
+            .verifying_key()
+            .as_bytes();
+        let error = VNextProductRuntime::start(
+            signer_failure_dir.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(71),
+            Some(Arc::new(UnavailableIdentitySigner { public_key })),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(matches!(
+            error,
+            VNextProductRuntimeError::Network(VNextNetworkRuntimeError::IdentitySignerUnavailable(
+                _
+            ))
+        ));
+        assert!(VNEXT_STARTUP_ARTIFACTS
+            .iter()
+            .all(|name| !signer_failure_dir.path().join(name).exists()));
+
+        let occupied_dir = tempfile::tempdir().unwrap();
+        let failed_dir = tempfile::tempdir().unwrap();
+        let mut occupied = VNextProductRuntime::start(
+            occupied_dir.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(72),
+            Some(Arc::new(SigningKey::from_bytes(&[0x72; 32]))),
+        )
+        .await
+        .unwrap();
+        let occupied_addr = occupied.services().local_addr();
+        let error = VNextProductRuntime::start(
+            failed_dir.path(),
+            occupied_addr,
+            &config,
+            dependencies(73),
+            Some(Arc::new(SigningKey::from_bytes(&[0x73; 32]))),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(matches!(error, VNextProductRuntimeError::Network(_)));
+        assert!(VNEXT_STARTUP_ARTIFACTS
+            .iter()
+            .all(|name| !failed_dir.path().join(name).exists()));
+        occupied.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn explicit_startup_rollback_closes_stores_and_removes_only_new_artifacts() {
+        let directory = tempfile::tempdir().unwrap();
+        let preserved = directory.path().join("vnext_verified.redb");
+        std::fs::write(&preserved, b"caller-owned-existing-artifact").unwrap();
+        let config = all_lanes_config();
+        let error = VNextProductRuntime::start(
+            directory.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(74),
+            Some(Arc::new(SigningKey::from_bytes(&[0x74; 32]))),
+        )
+        .await
+        .err()
+        .unwrap();
+        assert!(matches!(error, VNextProductRuntimeError::Network(_)));
+        assert_eq!(
+            std::fs::read(&preserved).unwrap(),
+            b"caller-owned-existing-artifact"
+        );
+
+        let clean_dir = tempfile::tempdir().unwrap();
+        let runtime = VNextProductRuntime::start(
+            clean_dir.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(75),
+            Some(Arc::new(SigningKey::from_bytes(&[0x75; 32]))),
+        )
+        .await
+        .unwrap();
+        runtime.rollback_startup().await.unwrap();
+        assert!(VNEXT_STARTUP_ARTIFACTS
+            .iter()
+            .all(|name| !clean_dir.path().join(name).exists()));
     }
 
     #[tokio::test]

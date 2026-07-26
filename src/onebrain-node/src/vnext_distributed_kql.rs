@@ -110,14 +110,35 @@ impl DistributedKqlRuntime {
         data_dir: &Path,
         vault_key: LocalNeedVaultKey,
     ) -> Result<Self, DistributedKqlError> {
+        let mut runtime = Self::open_unhydrated(data_dir, vault_key)?;
+        runtime.rehydrate_private_needs()?;
+        Ok(runtime)
+    }
+
+    pub(crate) fn open_unhydrated(
+        data_dir: &Path,
+        vault_key: LocalNeedVaultKey,
+    ) -> Result<Self, DistributedKqlError> {
         std::fs::create_dir_all(data_dir)?;
         if data_dir.join("vnext_standing_needs.redb").exists() {
             return Err(DistributedKqlError::LegacyPrivateNeedState);
         }
         let private_needs =
             RedbPrivateNeedVault::open(&data_dir.join("vnext_private_need_vault.redb"), vault_key)?;
+        let durable_matches =
+            DurableMatchIndex::open(&data_dir.join("vnext_distributed_kql.redb"))?;
+        Ok(Self {
+            private_needs,
+            targets: BTreeMap::new(),
+            frontier: ReunionFrontier::default(),
+            quarantine: ProposalQuarantine::default(),
+            durable_matches,
+        })
+    }
+
+    pub(crate) fn rehydrate_private_needs(&mut self) -> Result<usize, DistributedKqlError> {
         let mut targets = BTreeMap::new();
-        for record in private_needs.load_all()? {
+        for record in self.private_needs.load_all()? {
             if record.lifecycle == PrivateNeedLifecycle::Active {
                 let target = record
                     .bundle
@@ -125,15 +146,8 @@ impl DistributedKqlRuntime {
                 targets.insert(*record.id.as_bytes(), target.target);
             }
         }
-        let durable_matches =
-            DurableMatchIndex::open(&data_dir.join("vnext_distributed_kql.redb"))?;
-        Ok(Self {
-            private_needs,
-            targets,
-            frontier: ReunionFrontier::default(),
-            quarantine: ProposalQuarantine::default(),
-            durable_matches,
-        })
+        self.targets = targets;
+        Ok(self.targets.len())
     }
 
     /// Atomically persist the LOCAL_ONLY QueryDefinition and exact typed
