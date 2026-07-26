@@ -9,9 +9,10 @@ use std::collections::BTreeSet;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use ku_core::foundation::{
-    decode_canonical, encode_canonical, CanonicalError, CanonicalValue, ConceptCcid,
-    DisclosureClass, EventCid, LiteralValue, ObjectReference, ReceptorDefinition, ResourceProfile,
-    SemanticError, SemanticFrameSet, StatementFrame, StatementId, StatementQualifiers, TermRef,
+    decode_canonical, dr_m5_failpoint, encode_canonical, CanonicalError, CanonicalValue,
+    ConceptCcid, DisclosureClass, EventCid, LiteralValue, ObjectReference, ReceptorDefinition,
+    ResourceProfile, SemanticError, SemanticFrameSet, StatementFrame, StatementId,
+    StatementQualifiers, TermRef,
 };
 use zeroize::Zeroize;
 
@@ -615,10 +616,12 @@ mod persistent {
             let id = record.id;
             let bytes = record.canonical_bytes()?;
             let storage_key = self.cipher.storage_key(id);
+            dr_m5_failpoint::hit("TX-KQL-000", "before_begin_write");
             let write = self
                 .database
                 .begin_write()
                 .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
+            dr_m5_failpoint::hit("TX-KQL-000", "after_begin_write_before_mutation");
             let outcome;
             {
                 let mut table = write
@@ -657,9 +660,12 @@ mod persistent {
                     StandingNeedWriteOutcome::Stored
                 };
             }
+            dr_m5_failpoint::hit("TX-KQL-000", "after_mutation_before_commit");
             write
                 .commit()
                 .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
+            dr_m5_failpoint::hit("TX-KQL-000", "after_commit_before_next_side_effect");
+            dr_m5_failpoint::hit("TX-KQL-000", "after_next_side_effect_before_ack");
             Ok((id, outcome))
         }
 

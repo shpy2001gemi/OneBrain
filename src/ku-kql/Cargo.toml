@@ -9,6 +9,7 @@ license = "MIT"
 default = []
 # Enable persistent storage (requires complete toolchain for getrandom)
 storage = ["dep:redb", "ku-core/persist"]
+dr-m5-crash-harness = ["ku-core/dr-m5-crash-harness"]
 
 [dependencies]
 # KU data types

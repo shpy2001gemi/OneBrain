@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ku_core::foundation::{
-    DisclosureClass, NamespaceCommitment, NodeId, ReservedDomain, SelectorCid,
+    dr_m5_failpoint, DisclosureClass, NamespaceCommitment, NodeId, ReservedDomain, SelectorCid,
 };
 use onebrain_protocol::{ReconcileManifestKind, ReconcileReceiptStatus};
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
@@ -147,7 +147,9 @@ impl OutboundOutbox {
         intent: &OutboundTransferIntent,
     ) -> Result<OutboxEnqueueOutcome, OutboundOutboxError> {
         validate_intent(intent)?;
+        dr_m5_failpoint::hit("TX-OUT-001", "before_begin_write");
         let write = self.db.begin_write().map_err(backend)?;
+        dr_m5_failpoint::hit("TX-OUT-001", "after_begin_write_before_mutation");
         let outcome;
         {
             let mut table = write.open_table(OUTBOX).map_err(backend)?;
@@ -196,7 +198,10 @@ impl OutboundOutbox {
                 }
             }
         }
+        dr_m5_failpoint::hit("TX-OUT-001", "after_mutation_before_commit");
         write.commit().map_err(backend)?;
+        dr_m5_failpoint::hit("TX-OUT-001", "after_commit_before_next_side_effect");
+        dr_m5_failpoint::hit("TX-OUT-001", "after_next_side_effect_before_ack");
         Ok(outcome)
     }
 
@@ -321,7 +326,7 @@ impl OutboundOutbox {
     }
 
     pub fn record_transport_attempt(&self, id: &[u8; 32]) -> Result<u64, OutboundOutboxError> {
-        self.update(id, |intent| {
+        self.update(id, "TX-OUT-001", |intent| {
             if intent.state == OutboundIntentState::Pending {
                 intent.transport_attempts = intent.transport_attempts.saturating_add(1);
             }
@@ -337,7 +342,7 @@ impl OutboundOutbox {
         if max_transport_attempts == 0 {
             return Err(OutboundOutboxError::InvalidLimit);
         }
-        self.update_terminal(id, |intent| {
+        self.update_terminal(id, "TX-OUT-001", |intent| {
             if intent.state == OutboundIntentState::Pending
                 && intent.transport_attempts >= max_transport_attempts
             {
@@ -356,7 +361,7 @@ impl OutboundOutbox {
         if max_validation_retries == 0 {
             return Err(OutboundOutboxError::InvalidLimit);
         }
-        self.update_terminal(id, |intent| {
+        self.update_terminal(id, "TX-OUT-002", |intent| {
             if intent.state.is_terminal() {
                 return Ok(intent.state);
             }
@@ -429,9 +434,12 @@ impl OutboundOutbox {
     fn update_terminal<T>(
         &self,
         id: &[u8; 32],
+        boundary: &'static str,
         update: impl FnOnce(&mut OutboundTransferIntent) -> Result<T, OutboundOutboxError>,
     ) -> Result<T, OutboundOutboxError> {
+        dr_m5_failpoint::hit(boundary, "before_begin_write");
         let write = self.db.begin_write().map_err(backend)?;
+        dr_m5_failpoint::hit(boundary, "after_begin_write_before_mutation");
         let result;
         {
             let mut table = write.open_table(OUTBOX).map_err(backend)?;
@@ -452,16 +460,22 @@ impl OutboundOutbox {
                 .insert(id.as_slice(), encoded.as_slice())
                 .map_err(backend)?;
         }
+        dr_m5_failpoint::hit(boundary, "after_mutation_before_commit");
         write.commit().map_err(backend)?;
+        dr_m5_failpoint::hit(boundary, "after_commit_before_next_side_effect");
+        dr_m5_failpoint::hit(boundary, "after_next_side_effect_before_ack");
         Ok(result)
     }
 
     fn update<T>(
         &self,
         id: &[u8; 32],
+        boundary: &'static str,
         update: impl FnOnce(&mut OutboundTransferIntent) -> Result<T, OutboundOutboxError>,
     ) -> Result<T, OutboundOutboxError> {
+        dr_m5_failpoint::hit(boundary, "before_begin_write");
         let write = self.db.begin_write().map_err(backend)?;
+        dr_m5_failpoint::hit(boundary, "after_begin_write_before_mutation");
         let result;
         {
             let mut table = write.open_table(OUTBOX).map_err(backend)?;
@@ -478,7 +492,10 @@ impl OutboundOutbox {
                 .insert(id.as_slice(), encoded.as_slice())
                 .map_err(backend)?;
         }
+        dr_m5_failpoint::hit(boundary, "after_mutation_before_commit");
         write.commit().map_err(backend)?;
+        dr_m5_failpoint::hit(boundary, "after_commit_before_next_side_effect");
+        dr_m5_failpoint::hit(boundary, "after_next_side_effect_before_ack");
         Ok(result)
     }
 }

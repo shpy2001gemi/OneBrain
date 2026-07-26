@@ -1,0 +1,145 @@
+{
+  "format": "onebrain/dr-m5-crash-harness/1",
+  "profile_id": "REAL_REDB_PROCESS_CRASH_HARNESS_V1",
+  "version": 1,
+  "feature": {
+    "name": "vnext-crash-harness",
+    "default_enabled": false,
+    "kill_switch_env": "ONEBRAIN_DR_M5_FAILPOINTS_ENABLED",
+    "kill_switch_value": "1",
+    "requires_exact_failpoint": true,
+    "requires_fsynced_marker": true,
+    "requires_per_case_token": true
+  },
+  "process_kill": {
+    "worker": "vnext_crash_harness::tests::dr_m5_process_kill_worker",
+    "parent_action": "wait_for_fsynced_marker_then_kill_child",
+    "marker_timeout_seconds": 10,
+    "child_success_is_failure": true,
+    "restart_uses_open_not_create": true
+  },
+  "boundaries": [
+    "TX-PUSE-000",
+    "TX-PUSE-001",
+    "TX-PUSE-002",
+    "TX-OUT-001",
+    "TX-OUT-002",
+    "TX-JRN-001",
+    "TX-VAL-001",
+    "TX-INV-001",
+    "TX-AUTH-001",
+    "TX-KQL-000",
+    "TX-KQL-001",
+    "TX-POMV-001",
+    "TX-POMV-002"
+  ],
+  "phases": [
+    "before_begin_write",
+    "after_begin_write_before_mutation",
+    "after_mutation_before_commit",
+    "after_commit_before_next_side_effect",
+    "after_next_side_effect_before_ack"
+  ],
+  "required_process_kill_cases": 65,
+  "oracle": {
+    "format": "onebrain/dr-m5-oracle/1",
+    "canonicalization": "json-sort-keys-no-whitespace-utf8",
+    "digest_algorithm": "sha256",
+    "fields": [
+      "accepted_object_cids",
+      "accepted_event_cids",
+      "selector_inventory_roots",
+      "reconciliation_journals",
+      "pending_outbox",
+      "authority_decisions",
+      "private_need_records",
+      "distributed_kql_matches",
+      "prepared_public_use",
+      "public_use_publications",
+      "metabolic_views"
+    ],
+    "expected_complete_fixture_sha256": "9c312d251b2347c65149f16fd6a55327cd962ee8d5806bb5bcb642648d9c4aeb"
+  },
+  "report": {
+    "format": "onebrain/dr-m5-crash-report/1",
+    "required_case_fields": [
+      "boundary",
+      "phase",
+      "child_exit",
+      "restart_result",
+      "oracle_sha256",
+      "canonical_rows",
+      "side_effect_rows",
+      "ack_rows",
+      "exact_replay_digest"
+    ],
+    "expected_sha256": "9457130a211e12924c5e6322631a0b6c8ac811de90f67c435a2fd0ed11ed4dcd",
+    "claims_network_completion": false
+  },
+  "storage_faults": [
+    "disk_full",
+    "read_only",
+    "corrupt_store",
+    "truncated_store"
+  ],
+  "recovery_invariants": [
+    "accepted_and_pending_state_is_not_lost",
+    "replay_does_not_add_rows_or_change_oracle_digest",
+    "authority_decision_remains_fail_closed_without_amplification",
+    "corrupt_or_truncated_store_fails_explicitly_without_recreation"
+  ],
+  "owner_hooks": [
+    {
+      "boundary": "TX-PUSE-000",
+      "path": "src/onebrain-node/src/vnext_distributed_pomv.rs"
+    },
+    {
+      "boundary": "TX-PUSE-001",
+      "path": "src/onebrain-node/src/vnext_distributed_pomv.rs"
+    },
+    {
+      "boundary": "TX-PUSE-002",
+      "path": "src/onebrain-node/src/vnext_distributed_pomv.rs"
+    },
+    {
+      "boundary": "TX-OUT-001",
+      "path": "src/onebrain-node/src/vnext_outbox.rs"
+    },
+    {
+      "boundary": "TX-OUT-002",
+      "path": "src/onebrain-node/src/vnext_outbox.rs"
+    },
+    {
+      "boundary": "TX-JRN-001",
+      "path": "src/ku-net/src/vnext_reconciliation_journal.rs"
+    },
+    {
+      "boundary": "TX-VAL-001",
+      "path": "src/ku-core/src/foundation/storage.rs"
+    },
+    {
+      "boundary": "TX-INV-001",
+      "path": "src/ku-net/src/vnext_inventory_forest.rs"
+    },
+    {
+      "boundary": "TX-AUTH-001",
+      "path": "src/ku-core/src/foundation/storage.rs"
+    },
+    {
+      "boundary": "TX-KQL-000",
+      "path": "src/ku-kql/src/vnext_private_need.rs"
+    },
+    {
+      "boundary": "TX-KQL-001",
+      "path": "src/onebrain-node/src/vnext_distributed_kql.rs"
+    },
+    {
+      "boundary": "TX-POMV-001",
+      "path": "src/onebrain-node/src/vnext_distributed_pomv.rs"
+    },
+    {
+      "boundary": "TX-POMV-002",
+      "path": "src/onebrain-node/src/vnext_distributed_pomv.rs"
+    }
+  ]
+}

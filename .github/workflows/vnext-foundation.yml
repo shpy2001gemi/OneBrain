@@ -87,6 +87,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_baseline
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_resource_admission
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_observability
+          python -m unittest scripts.ci.test_validate_vnext_dr_m5_crash_harness
 
       - name: P3.4 Web UX build, lint, and receipt contract
         working-directory: src/onebrain-web
@@ -116,6 +117,7 @@ jobs:
           ku-core/src/foundation/checkpoint.rs
           ku-core/src/foundation/checkpoint_compaction.rs
           ku-core/src/foundation/content_id.rs
+          ku-core/src/foundation/dr_m5_failpoint.rs
           ku-core/src/foundation/envelope.rs
           ku-core/src/foundation/conformance.rs
           ku-core/src/foundation/event.rs
@@ -182,6 +184,7 @@ jobs:
           ku-kql/src/vnext_standing_need.rs
           ku-kql/src/vnext_structural_signature.rs
           onebrain-node/src/vnext_config.rs
+          onebrain-node/src/vnext_crash_harness.rs
           onebrain-node/src/vnext_distributed_kql.rs
           onebrain-node/src/vnext_distributed_pomv.rs
           onebrain-node/src/vnext_network_runtime.rs
@@ -568,6 +571,12 @@ jobs:
           && cargo test --locked -p onebrain-api
           --features vnext-network-runtime --lib
           vnext_api::tests::runtime_status_and_disabled_lane_keep_the_vnext_envelope
+      - name: M5.3 real Redb process-kill crash matrix
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-crash-harness
+          --lib vnext_crash_harness::tests
+          -- --test-threads=1
       - name: P3.1 authenticated REST API contract and real-runtime flow
         run: >-
           cargo test --locked -p onebrain-api

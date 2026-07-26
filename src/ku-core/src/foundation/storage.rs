@@ -12,6 +12,7 @@ use super::actor_root::{decode_actor_root_delegation, ValidatedActorRootDelegati
 use super::authority_event::{authority_event_descriptor, AuthorityEventDescriptor};
 use super::canonical::ResourceProfile;
 use super::content_id::{EventCid, ObjectCid, ReservedDomain};
+use super::dr_m5_failpoint;
 use super::event::{decode_knowledge_event, EventType, ValidatedKnowledgeEvent};
 use super::feed::{decode_feed_inception, ValidatedFeedInception};
 use super::identity::FeedId;
@@ -756,7 +757,14 @@ mod persistent {
             bytes: &[u8],
             collision: &QuarantineRecord,
         ) -> Result<BackendAcceptOutcome, String> {
+            let boundary = if key[0] == StoredRecordKind::AuthorityEvent as u8 {
+                "TX-AUTH-001"
+            } else {
+                "TX-VAL-001"
+            };
+            dr_m5_failpoint::hit(boundary, "before_begin_write");
             let write = self.db.begin_write().map_err(|error| error.to_string())?;
+            dr_m5_failpoint::hit(boundary, "after_begin_write_before_mutation");
             let outcome;
             {
                 let mut accepted = write
@@ -800,7 +808,10 @@ mod persistent {
                     }
                 };
             }
+            dr_m5_failpoint::hit(boundary, "after_mutation_before_commit");
             write.commit().map_err(|error| error.to_string())?;
+            dr_m5_failpoint::hit(boundary, "after_commit_before_next_side_effect");
+            dr_m5_failpoint::hit(boundary, "after_next_side_effect_before_ack");
             Ok(outcome)
         }
 
@@ -873,7 +884,9 @@ mod persistent {
             bytes: &[u8],
             collision: &QuarantineRecord,
         ) -> Result<BackendAcceptOutcome, String> {
+            dr_m5_failpoint::hit("TX-VAL-001", "before_begin_write");
             let write = self.db.begin_write().map_err(|error| error.to_string())?;
+            dr_m5_failpoint::hit("TX-VAL-001", "after_begin_write_before_mutation");
             let outcome;
             {
                 let mut accepted = write
@@ -927,7 +940,10 @@ mod persistent {
                         .map_err(|error| error.to_string())?;
                 }
             }
+            dr_m5_failpoint::hit("TX-VAL-001", "after_mutation_before_commit");
             write.commit().map_err(|error| error.to_string())?;
+            dr_m5_failpoint::hit("TX-VAL-001", "after_commit_before_next_side_effect");
+            dr_m5_failpoint::hit("TX-VAL-001", "after_next_side_effect_before_ack");
             Ok(outcome)
         }
 

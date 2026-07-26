@@ -39,6 +39,9 @@ DR_M5_RESOURCE_PROFILE = (
 DR_M5_OBSERVABILITY_PROFILE = (
     ROOT / "src/test-vectors/vnext/dr-m5-observability-v1.json"
 )
+DR_M5_CRASH_HARNESS_PROFILE = (
+    ROOT / "src/test-vectors/vnext/dr-m5-crash-harness-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -1520,6 +1523,227 @@ def validate_vnext_dr_m5_observability(
     return len(expected_reasons), len(expected_gauges), len(expected_oracles)
 
 
+def validate_vnext_dr_m5_crash_harness(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(DR_M5_CRASH_HARNESS_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid M5-03 crash-harness profile JSON: {error}") from error
+
+    if (
+        profile.get("format") != "onebrain/dr-m5-crash-harness/1"
+        or profile.get("profile_id") != "REAL_REDB_PROCESS_CRASH_HARNESS_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("unexpected M5-03 crash-harness profile")
+
+    feature = profile.get("feature")
+    if feature != {
+        "name": "vnext-crash-harness",
+        "default_enabled": False,
+        "kill_switch_env": "ONEBRAIN_DR_M5_FAILPOINTS_ENABLED",
+        "kill_switch_value": "1",
+        "requires_exact_failpoint": True,
+        "requires_fsynced_marker": True,
+        "requires_per_case_token": True,
+    }:
+        raise ContractError("M5-03 default-off failpoint firewall drift")
+
+    process_kill = profile.get("process_kill")
+    if process_kill != {
+        "worker": "vnext_crash_harness::tests::dr_m5_process_kill_worker",
+        "parent_action": "wait_for_fsynced_marker_then_kill_child",
+        "marker_timeout_seconds": 10,
+        "child_success_is_failure": True,
+        "restart_uses_open_not_create": True,
+    }:
+        raise ContractError("M5-03 child-process kill contract drift")
+
+    expected_boundaries = [
+        "TX-PUSE-000",
+        "TX-PUSE-001",
+        "TX-PUSE-002",
+        "TX-OUT-001",
+        "TX-OUT-002",
+        "TX-JRN-001",
+        "TX-VAL-001",
+        "TX-INV-001",
+        "TX-AUTH-001",
+        "TX-KQL-000",
+        "TX-KQL-001",
+        "TX-POMV-001",
+        "TX-POMV-002",
+    ]
+    if profile.get("boundaries") != expected_boundaries:
+        raise ContractError("M5-03 boundary inventory drift")
+    expected_phases = [
+        "before_begin_write",
+        "after_begin_write_before_mutation",
+        "after_mutation_before_commit",
+        "after_commit_before_next_side_effect",
+        "after_next_side_effect_before_ack",
+    ]
+    if profile.get("phases") != expected_phases:
+        raise ContractError("M5-03 failpoint phase inventory drift")
+    expected_case_count = len(expected_boundaries) * len(expected_phases)
+    if profile.get("required_process_kill_cases") != expected_case_count:
+        raise ContractError("M5-03 process-kill case count drift")
+
+    expected_oracle_fields = [
+        "accepted_object_cids",
+        "accepted_event_cids",
+        "selector_inventory_roots",
+        "reconciliation_journals",
+        "pending_outbox",
+        "authority_decisions",
+        "private_need_records",
+        "distributed_kql_matches",
+        "prepared_public_use",
+        "public_use_publications",
+        "metabolic_views",
+    ]
+    oracle = profile.get("oracle")
+    if oracle != {
+        "format": "onebrain/dr-m5-oracle/1",
+        "canonicalization": "json-sort-keys-no-whitespace-utf8",
+        "digest_algorithm": "sha256",
+        "fields": expected_oracle_fields,
+        "expected_complete_fixture_sha256": (
+            "9c312d251b2347c65149f16fd6a55327cd962ee8d5806bb5bcb642648d9c4aeb"
+        ),
+    }:
+        raise ContractError("M5-03 recovery oracle or digest drift")
+
+    expected_case_fields = [
+        "boundary",
+        "phase",
+        "child_exit",
+        "restart_result",
+        "oracle_sha256",
+        "canonical_rows",
+        "side_effect_rows",
+        "ack_rows",
+        "exact_replay_digest",
+    ]
+    report = profile.get("report")
+    if report != {
+        "format": "onebrain/dr-m5-crash-report/1",
+        "required_case_fields": expected_case_fields,
+        "expected_sha256": (
+            "9457130a211e12924c5e6322631a0b6c8ac811de90f67c435a2fd0ed11ed4dcd"
+        ),
+        "claims_network_completion": False,
+    }:
+        raise ContractError("M5-03 crash report schema, digest, or claim drift")
+
+    expected_faults = ["disk_full", "read_only", "corrupt_store", "truncated_store"]
+    if profile.get("storage_faults") != expected_faults:
+        raise ContractError("M5-03 storage-fault inventory drift")
+    expected_invariants = [
+        "accepted_and_pending_state_is_not_lost",
+        "replay_does_not_add_rows_or_change_oracle_digest",
+        "authority_decision_remains_fail_closed_without_amplification",
+        "corrupt_or_truncated_store_fails_explicitly_without_recreation",
+    ]
+    if profile.get("recovery_invariants") != expected_invariants:
+        raise ContractError("M5-03 recovery invariant inventory drift")
+
+    expected_hook_paths = {
+        "TX-PUSE-000": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+        "TX-PUSE-001": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+        "TX-PUSE-002": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+        "TX-OUT-001": "src/onebrain-node/src/vnext_outbox.rs",
+        "TX-OUT-002": "src/onebrain-node/src/vnext_outbox.rs",
+        "TX-JRN-001": "src/ku-net/src/vnext_reconciliation_journal.rs",
+        "TX-VAL-001": "src/ku-core/src/foundation/storage.rs",
+        "TX-INV-001": "src/ku-net/src/vnext_inventory_forest.rs",
+        "TX-AUTH-001": "src/ku-core/src/foundation/storage.rs",
+        "TX-KQL-000": "src/ku-kql/src/vnext_private_need.rs",
+        "TX-KQL-001": "src/onebrain-node/src/vnext_distributed_kql.rs",
+        "TX-POMV-001": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+        "TX-POMV-002": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+    }
+    hooks = profile.get("owner_hooks")
+    if not isinstance(hooks, list) or len(hooks) != len(expected_hook_paths):
+        raise ContractError("M5-03 owner-hook inventory drift")
+    observed_hooks: dict[str, str] = {}
+    for hook in hooks:
+        if not isinstance(hook, dict):
+            raise ContractError("M5-03 invalid owner-hook row")
+        boundary = hook.get("boundary")
+        path = hook.get("path")
+        if not isinstance(boundary, str) or not isinstance(path, str):
+            raise ContractError("M5-03 invalid owner-hook binding")
+        if boundary in observed_hooks:
+            raise ContractError(f"M5-03 duplicate owner hook: {boundary}")
+        observed_hooks[boundary] = path
+    if observed_hooks != expected_hook_paths:
+        raise ContractError("M5-03 owner-hook path binding drift")
+    for boundary, relative in observed_hooks.items():
+        source = read(ROOT / relative)
+        if boundary not in source:
+            raise ContractError(f"M5-03 owner hook missing: {relative}: {boundary}")
+        for phase in expected_phases:
+            if phase not in source:
+                raise ContractError(f"M5-03 phase hook missing: {relative}: {phase}")
+
+    failpoint_source = read(ROOT / "src/ku-core/src/foundation/dr_m5_failpoint.rs")
+    for needle in (
+        "file.sync_all()",
+        ".create_new(true)",
+        "ONEBRAIN_DR_M5_FAILPOINTS_ENABLED",
+        "ONEBRAIN_DR_M5_TOKEN",
+    ):
+        if needle not in failpoint_source:
+            raise ContractError(f"M5-03 authenticated failpoint evidence missing: {needle}")
+    harness_source = read(ROOT / "src/onebrain-node/src/vnext_crash_harness.rs")
+    for needle in (
+        "child.kill()",
+        "Database::open(path)",
+        "child_process_kill_matrix_recovers_exactly_once_with_stable_oracle",
+        "disk_full_and_read_only_faults_are_explicit_and_non_mutating",
+        "corrupt_and_truncated_store_fail_explicitly_without_recreation",
+        "DR_M5_CRASH_REPORT_SHA256",
+        "claims_network_completion: false",
+    ):
+        if needle not in harness_source:
+            raise ContractError(f"M5-03 harness implementation evidence missing: {needle}")
+
+    node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
+    if (
+        "default = []" not in node_manifest
+        or "vnext-crash-harness = [" not in node_manifest
+        or '"ku-core/dr-m5-crash-harness"' not in node_manifest
+        or '"ku-net/dr-m5-crash-harness"' not in node_manifest
+        or '"ku-kql/dr-m5-crash-harness"' not in node_manifest
+    ):
+        raise ContractError("M5-03 feature firewall wiring missing")
+
+    inventory = read(DR_M5_TRANSACTION_INVENTORY)
+    if "M5-03 process-kill coverage complete" not in inventory:
+        raise ContractError("M5-03 transaction inventory status is stale")
+    spec = read(VNEXT / "REAL_REDB_PROCESS_CRASH_HARNESS_V1.md")
+    if "dr-m5-crash-harness-v1.json" not in spec:
+        raise ContractError("M5-03 normative profile is not linked to machine contract")
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    if (
+        "- name: M5.3 real Redb process-kill crash matrix" not in workflow
+        or "python -m unittest scripts.ci.test_validate_vnext_dr_m5_crash_harness"
+        not in workflow
+        or "--features vnext-crash-harness" not in workflow
+    ):
+        raise ContractError("M5-03 CI acceptance gate missing")
+
+    return (
+        len(expected_boundaries),
+        len(expected_phases),
+        expected_case_count,
+        len(expected_faults),
+    )
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -1624,6 +1848,12 @@ def main() -> int:
         m5_reason_codes, m5_runtime_gauges, m5_observability_oracles = (
             validate_vnext_dr_m5_observability()
         )
+        (
+            m5_crash_boundaries,
+            m5_crash_phases,
+            m5_crash_cases,
+            m5_crash_faults,
+        ) = validate_vnext_dr_m5_crash_harness()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -1645,6 +1875,8 @@ def main() -> int:
         f"{m5_exit_oracles} exit oracles, "
         f"{m5_reason_codes} M5-02 reasons/{m5_runtime_gauges} gauges/"
         f"{m5_observability_oracles} exit oracles, "
+        f"{m5_crash_boundaries} M5-03 boundaries/{m5_crash_phases} phases/"
+        f"{m5_crash_cases} process kills/{m5_crash_faults} storage faults, "
         f"{links} local links"
     )
     return 0

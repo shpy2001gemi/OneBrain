@@ -646,6 +646,8 @@ pub mod persistent {
 
     use redb::{Database, ReadableTable, TableDefinition};
 
+    use ku_core::foundation::dr_m5_failpoint;
+
     use super::ReconciliationJournalBackend;
 
     const JOURNALS: TableDefinition<&[u8], &[u8]> =
@@ -683,7 +685,9 @@ pub mod persistent {
         }
 
         fn store_atomically(&self, binding: &[u8; 32], bytes: &[u8]) -> Result<(), String> {
+            dr_m5_failpoint::hit("TX-JRN-001", "before_begin_write");
             let write = self.db.begin_write().map_err(|error| error.to_string())?;
+            dr_m5_failpoint::hit("TX-JRN-001", "after_begin_write_before_mutation");
             {
                 let mut table = write
                     .open_table(JOURNALS)
@@ -692,7 +696,11 @@ pub mod persistent {
                     .insert(binding.as_slice(), bytes)
                     .map_err(|error| error.to_string())?;
             }
-            write.commit().map_err(|error| error.to_string())
+            dr_m5_failpoint::hit("TX-JRN-001", "after_mutation_before_commit");
+            write.commit().map_err(|error| error.to_string())?;
+            dr_m5_failpoint::hit("TX-JRN-001", "after_commit_before_next_side_effect");
+            dr_m5_failpoint::hit("TX-JRN-001", "after_next_side_effect_before_ack");
+            Ok(())
         }
 
         fn compare_and_swap(

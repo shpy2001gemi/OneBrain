@@ -589,6 +589,33 @@
       "rationale": "A fixed-enum atomic registry, finite histogram buckets, durable outbox timestamps, typed network/product transitions and an authenticated local snapshot provide deterministic observability without identity-bearing metric labels or completeness claims."
     },
     {
+      "path": "docs/specs/vnext/REAL_REDB_PROCESS_CRASH_HARNESS_V1.md",
+      "expected_statement_lines": 27,
+      "evidence": [
+        {
+          "path": "src/ku-core/src/foundation/dr_m5_failpoint.rs",
+          "needle": "file.sync_all()"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_crash_harness.rs",
+          "needle": "child_process_kill_matrix_recovers_exactly_once_with_stable_oracle"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_crash_harness.rs",
+          "needle": "Database::open(path)"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_crash_harness.rs",
+          "needle": "corrupt_and_truncated_store_fail_explicitly_without_recreation"
+        },
+        {
+          "path": "src/test-vectors/vnext/dr-m5-crash-harness-v1.json",
+          "needle": "\"required_process_kill_cases\": 65"
+        }
+      ],
+      "rationale": "A default-off authenticated failpoint, fsynced-marker parent kill, real Redb reopen, exact 11-field oracle and frozen 13-by-5 report prove bounded crash recovery, idempotency, fail-closed authority and explicit corruption failure."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [
