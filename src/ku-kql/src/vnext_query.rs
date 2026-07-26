@@ -4,10 +4,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ku_core::foundation::schema_registry::OBJECT_KIND_QUERY_DEFINITION;
 use ku_core::foundation::{
-    canonicalize_set_by_key, encode_canonical, Budget, CanonicalValue, ConceptCcid,
-    CoverageStatement, CoverageStatus, DisclosureClass, EventCid, KnowledgeObjectEnvelope,
-    MappingKernelCid, ObjectCid, ObjectKind, ObjectReference, ResourceProfile, SchemaVersion,
-    Selector, SelectorCid, SemanticError, SemanticFrameSet,
+    canonicalize_set_by_key, decode_knowledge_object, encode_canonical, Budget, CanonicalValue,
+    ConceptCcid, CoverageStatement, CoverageStatus, DisclosureClass, EventCid,
+    KnowledgeObjectEnvelope, KnownObjectKind, MappingKernelCid, ObjectCid, ObjectKind,
+    ObjectReference, ObjectSemantics, ResourceProfile, SchemaVersion, Selector, SelectorCid,
+    SemanticError, SemanticFrameSet,
 };
 
 pub const QUERY_DEFINITION_KIND: ObjectKind = ObjectKind(OBJECT_KIND_QUERY_DEFINITION);
@@ -98,6 +99,140 @@ impl QueryDefinition {
             .encode(ResourceProfile::ObjectV1)?
             .1)
     }
+
+    pub fn private_canonical_bytes(&self) -> Result<Vec<u8>, QueryContractError> {
+        Ok(self
+            .to_private_knowledge_object()?
+            .encode(ResourceProfile::ObjectV1)?
+            .0)
+    }
+
+    /// Strict inverse used only after an encrypted Private Vault record has
+    /// authenticated successfully.
+    pub fn from_private_canonical_bytes(bytes: &[u8]) -> Result<Self, QueryContractError> {
+        let validated = decode_knowledge_object(
+            bytes,
+            ResourceProfile::ObjectV1,
+            &[KnownObjectKind::new(
+                QUERY_DEFINITION_KIND,
+                QUERY_PROFILE_MAJOR,
+            )],
+            &[],
+        )?;
+        let ObjectSemantics::Known(envelope) = validated.semantics() else {
+            return Err(QueryContractError::InvalidPrivateDefinition);
+        };
+        if envelope.kind != QUERY_DEFINITION_KIND
+            || envelope.kind_version.major != QUERY_PROFILE_MAJOR
+            || envelope.kind_version.minor != QUERY_PROFILE_MINOR
+            || !matches!(
+                envelope.disclosure,
+                DisclosureClass::LocalOnly | DisclosureClass::NegotiatedEncrypted
+            )
+        {
+            return Err(QueryContractError::InvalidPrivateDefinition);
+        }
+        let payload = query_map(&envelope.payload)?;
+        if query_unsigned(query_required(payload, 0)?)? != QUERY_PROFILE_MAJOR
+            || query_unsigned(query_required(payload, 1)?)? != QUERY_PROFILE_MINOR
+        {
+            return Err(QueryContractError::InvalidPrivateDefinition);
+        }
+        let need_map = query_map(query_required(payload, 2)?)?;
+        let privacy = match query_unsigned(query_required(need_map, 4)?)? {
+            1 => DisclosureClass::NegotiatedEncrypted,
+            3 => DisclosureClass::LocalOnly,
+            _ => return Err(QueryContractError::FullNeedMustRemainPrivate),
+        };
+        let definition = Self {
+            need: KnowledgeNeedIr {
+                receptor_definitions: parse_query_references(query_required(need_map, 0)?)?,
+                desired_roles: parse_query_roles(query_required(need_map, 1)?)?,
+                goal: SemanticFrameSet::from_canonical_value(query_required(need_map, 2)?)?,
+                local_context: SemanticFrameSet::from_canonical_value(query_required(
+                    need_map, 3,
+                )?)?,
+                privacy,
+            },
+            query_policy: parse_query_reference(query_required(payload, 3)?)?,
+            exploration_policy: parse_query_reference(query_required(payload, 4)?)?,
+        };
+        definition.need.validate()?;
+        if definition.private_canonical_bytes()? != bytes {
+            return Err(QueryContractError::InvalidPrivateDefinition);
+        }
+        Ok(definition)
+    }
+}
+
+fn query_map(value: &CanonicalValue) -> Result<&[(u64, CanonicalValue)], QueryContractError> {
+    match value {
+        CanonicalValue::Map(map) => Ok(map),
+        _ => Err(QueryContractError::InvalidPrivateDefinition),
+    }
+}
+
+fn query_array(value: &CanonicalValue) -> Result<&[CanonicalValue], QueryContractError> {
+    match value {
+        CanonicalValue::Array(values) => Ok(values),
+        _ => Err(QueryContractError::InvalidPrivateDefinition),
+    }
+}
+
+fn query_required(
+    map: &[(u64, CanonicalValue)],
+    key: u64,
+) -> Result<&CanonicalValue, QueryContractError> {
+    map.iter()
+        .find_map(|(candidate, value)| (*candidate == key).then_some(value))
+        .ok_or(QueryContractError::InvalidPrivateDefinition)
+}
+
+fn query_unsigned(value: &CanonicalValue) -> Result<u64, QueryContractError> {
+    match value {
+        CanonicalValue::Unsigned(value) => Ok(*value),
+        _ => Err(QueryContractError::InvalidPrivateDefinition),
+    }
+}
+
+fn parse_query_reference(value: &CanonicalValue) -> Result<ObjectReference, QueryContractError> {
+    let map = query_map(value)?;
+    let reference_kind = query_unsigned(query_required(map, 0)?)?;
+    let CanonicalValue::Bytes(cid) = query_required(map, 1)? else {
+        return Err(QueryContractError::InvalidPrivateDefinition);
+    };
+    Ok(ObjectReference::new(
+        reference_kind,
+        cid.as_slice()
+            .try_into()
+            .map_err(|_| QueryContractError::InvalidPrivateDefinition)?,
+    ))
+}
+
+fn parse_query_references(
+    value: &CanonicalValue,
+) -> Result<Vec<ObjectReference>, QueryContractError> {
+    query_array(value)?
+        .iter()
+        .map(parse_query_reference)
+        .collect()
+}
+
+fn parse_query_roles(value: &CanonicalValue) -> Result<Vec<ConceptCcid>, QueryContractError> {
+    query_array(value)?
+        .iter()
+        .map(|value| {
+            let CanonicalValue::Bytes(bytes) = value else {
+                return Err(QueryContractError::InvalidPrivateDefinition);
+            };
+            Ok(ConceptCcid::from_bytes(
+                bytes
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| QueryContractError::InvalidPrivateDefinition)?,
+            ))
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -589,6 +724,7 @@ pub enum QueryContractError {
     InvalidRouteSketch,
     RoutePacketLimit,
     RouteEntropyReuse,
+    InvalidPrivateDefinition,
 }
 
 pub const fn route_padding_target(padding_class: u8) -> Option<usize> {

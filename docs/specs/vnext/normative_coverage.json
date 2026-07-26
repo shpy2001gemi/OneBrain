@@ -173,6 +173,33 @@
       "rationale": "The fixture freezes additive routes, DTO fields, CID/continuation encodings and fail-closed semantics; the validator and mutation tests reject namespace escape, client authority injection, legacy drift and economic/truth amplification."
     },
     {
+      "path": "docs/specs/vnext/PRIVATE_KQL_PERSISTENCE_PROFILE_V1.md",
+      "expected_statement_lines": 14,
+      "evidence": [
+        {
+          "path": "src/ku-kql/src/vnext_private_need.rs",
+          "needle": "deterministic_adapter_and_private_codec_round_trip"
+        },
+        {
+          "path": "src/ku-kql/src/vnext_private_need.rs",
+          "needle": "encrypted_vault_rehydrates_exact_target_without_plaintext_or_plain_id"
+        },
+        {
+          "path": "src/ku-kql/src/vnext_private_need.rs",
+          "needle": "wrong_key_and_tamper_fail_closed"
+        },
+        {
+          "path": "src/ku-kql/src/vnext_private_need.rs",
+          "needle": "pause_resume_cancel_and_retire_are_durable_and_terminal"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_kql.rs",
+          "needle": "two_real_peers_create_one_private_match_and_restart_does_not_duplicate_it"
+        }
+      ],
+      "rationale": "Canonical bundle validation, caller-keyed authenticated encryption, opaque indexes, fail-closed restart, durable lifecycle tombstones and exact real-QUIC payload assertions prove the private persistence and non-publication boundary."
+    },
+    {
       "path": "docs/specs/vnext/PUBLIC_USE_CONSENT_PROFILE_V1.md",
       "expected_statement_lines": 13,
       "evidence": [

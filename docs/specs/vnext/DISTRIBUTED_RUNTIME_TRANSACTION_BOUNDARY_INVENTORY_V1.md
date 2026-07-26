@@ -16,6 +16,7 @@ After every injected crash and restart, the harness compares:
 - selector inventory roots;
 - reconciliation journal and pending outbox state;
 - feed/authority branches and decisions;
+- encrypted private-need lifecycle records and active-target projection;
 - distributed KQL durable match set;
 - prepared Public Use intent, receipt commitment, and consumed state;
 - Public Use publication state;
@@ -37,7 +38,8 @@ balance as correctness evidence.
 | `TX-VAL-001` | Validate-then-accept object/event/feed record | `RedbValidatedStorageBackend`; `vnext_accepted_records`, `vnext_feed_inception_index`, `vnext_quarantine_records` | Update inventory and authority projection | Invalid bytes never enter accepted storage; collisions remain quarantined; accepted bytes are unchanged | Atomic backend tests exist; disk-full/corruption/process-kill pending |
 | `TX-INV-001` | Selector inventory snapshot update | `RedbInventoryForestBackend`; `vnext_selector_inventory_forests` | Advertise new selector root | Inventory root equals the accepted record set for its selector; duplicate insert is root-stable | Reopen/root tests exist; accepted-store-to-inventory kill window pending |
 | `TX-AUTH-001` | Accepted feed/authority input to rebuildable authority view | Accepted store is canonical; authority projection is derived | Answer frontier-relative authority queries | No authority amplification; all equivocation/conflict branches survive | Network restart/reunion tests exist; explicit failpoint pending |
-| `TX-KQL-001` | One-hop durable match record | `DurableMatchIndex`; `vnext_distributed_kql_matches_v1` | Emit local bounded match/notification | One affordance delta creates at most one match identity; exact local private target is never public | Real-peer restart/dedup test exists; process-kill and private target persistence pending |
+| `TX-KQL-000` | Encrypted private QueryDefinition/LocalNeedTarget record or terminal tombstone | `RedbPrivateNeedVault`; `vnext_private_need_vault_v1` | Update in-memory active-target projection | Correct key restores the exact active target; paused stays inactive; canceled/retired cannot resurrect; wrong key/tamper fails closed | Codec, privacy, wrong-key/tamper, lifecycle and in-process restart tests exist; child-process kill pending |
+| `TX-KQL-001` | One-hop durable match record | `DurableMatchIndex`; `vnext_distributed_kql_matches_v1` | Emit local bounded match/notification | One affordance delta creates at most one match identity; exact local private target is never public | Real-peer automatic-rehydrate/restart/dedup test exists; process-kill pending |
 | `TX-POMV-001` | Received use identity branch set | `ReceivedUseIdentityIndex`; `vnext_received_use_identities_v1` | Materialize policy/frontier-relative view | One EventCID counts once across 1/2/5 paths; conflicting EventCIDs remain branches | Restart/conflict test exists; child-process kill pending |
 | `TX-POMV-002` | Metabolic view head/lineage revision | `ReceivedUseIdentityIndex`; `vnext_distributed_pomv_view_heads_v1` | Return read-only view | View root, prior root, revision, policy and frontier restore exactly; no wallet/OBT mutation | Real-QUIC restart test exists; process-kill matrix pending |
 

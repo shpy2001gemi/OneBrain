@@ -25,6 +25,7 @@ pub mod vnext_matcher;
 pub mod vnext_multipath;
 pub mod vnext_obkg_projection;
 pub mod vnext_planner;
+pub mod vnext_private_need;
 pub mod vnext_proposal;
 pub mod vnext_query;
 pub mod vnext_query_view;

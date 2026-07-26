@@ -85,7 +85,7 @@ fn validate_known_public_object(
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocalNeedTarget {
     pub need: StandingNeed,
     pub receptor: ReceptorDefinition,
@@ -104,7 +104,7 @@ pub struct LocalNeedTarget {
 }
 
 impl LocalNeedTarget {
-    fn validate(&self) -> Result<StandingNeedId, ReunionError> {
+    pub fn validate(&self) -> Result<StandingNeedId, ReunionError> {
         self.need.validate()?;
         if self.need.state != StandingNeedState::Active {
             return Err(ReunionError::StandingNeedNotActive);
