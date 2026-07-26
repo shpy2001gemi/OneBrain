@@ -1431,3 +1431,15 @@ Local evidence:
 
 P2.5 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
 `main`.
+
+Remote CI run
+[`30188838227`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30188838227)
+trên implementation commit `c31b90f` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P2.5 đã hoàn tất ở cấp implementation. Toàn bộ P2 exit gate hiện có executable
+evidence cho independent flags/kill switches, safe-default resource ownership,
+partial-start rollback, restart idempotency, crash-safe publication recovery,
+offline local KQL và aggregate-lock-free vNext product operations. Sau khi
+merge về `main`, work package kế tiếp là P3.1 REST API.
