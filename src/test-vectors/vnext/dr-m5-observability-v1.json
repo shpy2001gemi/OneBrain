@@ -1,0 +1,149 @@
+{
+  "format": "onebrain/dr-m5-observability/1",
+  "profile_id": "STRUCTURED_OBSERVABILITY_PROFILE_V1",
+  "version": 1,
+  "profile_major": 1,
+  "claims_network_completion": false,
+  "reason_codes": [
+    "ACCEPTED_NEW",
+    "ALREADY_PRESENT",
+    "REPLAYED",
+    "DEFERRED_MISSING_DEPENDENCY",
+    "DEFERRED_BUDGET",
+    "QUARANTINED_INVALID",
+    "REJECTED_CONTEXT_BINDING",
+    "REJECTED_SELECTOR",
+    "REJECTED_LENGTH",
+    "REJECTED_CONTENT_CID",
+    "REJECTED_SINK",
+    "REJECTED_AUTHORITY",
+    "REJECTED_STORAGE",
+    "REJECTED_RATE_LIMIT",
+    "REJECTED_REPLAY",
+    "REJECTED_SESSION",
+    "REJECTED_PROTOCOL",
+    "JOURNAL_FAILURE",
+    "OUTBOX_RETRY_EXHAUSTED",
+    "POMV_IDENTITY_CONFLICT",
+    "REGISTRY_FALLBACK",
+    "TRANSPORT_FAILURE"
+  ],
+  "outcome_counters": [
+    "accepted_new",
+    "already_present",
+    "replayed",
+    "deferred",
+    "quarantined",
+    "rejected"
+  ],
+  "resource_metrics": {
+    "counters": [
+      "admitted_bytes",
+      "admitted_work_units",
+      "rate_limited"
+    ],
+    "record_bytes_inclusive_upper_bounds": [
+      64,
+      1024,
+      4096,
+      16384,
+      65536,
+      262144,
+      1048576,
+      18446744073709551615
+    ],
+    "work_units_inclusive_upper_bounds": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      64,
+      256,
+      18446744073709551615
+    ]
+  },
+  "runtime_gauges": [
+    "active_journals",
+    "pending_outbox",
+    "retry_exhausted_outbox",
+    "oldest_pending_outbox_age_seconds"
+  ],
+  "journal_age_seconds_inclusive_upper_bounds": [
+    0,
+    1,
+    5,
+    30,
+    60,
+    300,
+    900,
+    18446744073709551615
+  ],
+  "reconciliation": {
+    "counters": [
+      "selector_scans",
+      "partial_selector_scans",
+      "assessed_frontier_items"
+    ],
+    "latest_gauge": "latest_lag_records",
+    "lag_records_inclusive_upper_bounds": [
+      0,
+      1,
+      2,
+      4,
+      8,
+      16,
+      64,
+      18446744073709551615
+    ]
+  },
+  "pomv": [
+    "identity_conflicts",
+    "latest_view_revision"
+  ],
+  "registry_states": [
+    "UNKNOWN",
+    "DISABLED",
+    "LOADED",
+    "FALLBACK_V1"
+  ],
+  "structured_logging": {
+    "target": "onebrain::vnext::observability",
+    "required_fields": [
+      "reason_code",
+      "count",
+      "bytes",
+      "work_units"
+    ],
+    "free_form_identity_fields": false,
+    "swallowed_adversarial_errors": false
+  },
+  "privacy": {
+    "forbidden_metric_labels": [
+      "node_id",
+      "peer_id",
+      "selector",
+      "feed_id",
+      "object_cid",
+      "event_cid",
+      "standing_need_id",
+      "private_need",
+      "local_query"
+    ],
+    "contains_high_cardinality_labels": false,
+    "contains_private_need_labels": false
+  },
+  "operator_snapshot": {
+    "rest_method": "GET",
+    "rest_path": "/api/vnext/runtime/status",
+    "field": "observability",
+    "authenticated_local": true,
+    "claims_network_completion": false
+  },
+  "exit_oracles": [
+    "every_adversarial_outcome_has_one_typed_reason_transition",
+    "exact_counter_transitions_are_reproducible",
+    "operator_snapshot_contains_no_private_or_high_cardinality_labels",
+    "status_never_claims_network_completeness"
+  ]
+}

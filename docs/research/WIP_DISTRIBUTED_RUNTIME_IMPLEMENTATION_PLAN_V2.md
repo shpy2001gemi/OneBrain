@@ -1776,7 +1776,7 @@ Local evidence:
   Windows.
 
 M5-01 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
-`main`. Work package kế tiếp là M5-02 Crash-consistency và idempotency.
+`main`. Work package kế tiếp là M5-02 Structured observability.
 
 Remote CI run
 [`30207146374`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30207146374)
@@ -1787,4 +1787,57 @@ và Linux default jobs có 0 annotation; foundation job giữ bốn warning lint
 React baseline đã biết, không có error hoặc warning M5-01 mới.
 
 M5-01 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
-`main`, work package kế tiếp là M5-02 Crash-consistency và idempotency.
+`main`, work package kế tiếp là M5-02 Structured observability.
+
+### 2026-07-26 — M5-02 Structured observability
+
+Đã triển khai cục bộ trên nhánh `codex/dr-m5-structured-observability`:
+
+1. Freeze
+   [`STRUCTURED_OBSERVABILITY_PROFILE_V1.md`](../specs/vnext/STRUCTURED_OBSERVABILITY_PROFILE_V1.md)
+   cùng machine profile `onebrain/dr-m5-observability/1`: 22 reason code hữu
+   hạn, sáu outcome counter, histogram bucket hữu hạn, bốn runtime gauge và bốn
+   exit oracle.
+2. Bổ sung telemetry dùng atomic, fixed-cardinality cho accepted/new,
+   already-present, replay, deferred, quarantine/rejection, admission
+   bytes/work/rate-limit, journal/outbox depth-age, retry exhausted,
+   reconciliation lag, selector/frontier coverage, PoMV conflict/view revision
+   và Concept Registry state.
+3. Mọi event telemetry chỉ dùng reason code đã freeze và số hữu hạn; API
+   `GET /api/vnext/runtime/status` trả operator snapshot xác thực cục bộ, không
+   chứa NodeID, peer, selector, CID hoặc private Need làm metric label và luôn
+   giữ `claims_network_completion=false`.
+4. Thay các nhánh `Err(_)` bị nuốt trong real-QUIC runtime bằng typed transition
+   và structured log có `reason_code`, `count`, `bytes`, `work_units`; test
+   adversarial real-QUIC xác nhận payload không hợp lệ tạo đúng một quarantine
+   transition.
+5. Nâng outbox lên schema v3 với timestamp enqueue/update để đo pending age.
+   Bản ghi v1/v2 vẫn đọc được; tuổi enqueue legacy tiếp tục là `unknown`, không
+   bị suy đoán sau update.
+6. CI thêm acceptance M5-02 cho telemetry, mapping admission/payload và
+   authenticated operator snapshot; validator cùng 10 mutation tests khóa
+   reason inventory, histogram, privacy firewall, logging, registry fallback
+   và completeness claim.
+
+Local evidence:
+
+- `cargo test --workspace --locked --no-fail-fast -- --test-threads=2`: xanh;
+- `onebrain-node` feature-enabled library: 140/140 xanh; observability: 4/4
+  xanh; outbox: 8/8 xanh;
+- `onebrain-api` feature-enabled library: 15/15 xanh;
+- M5-02 mutation tests: 10/10 xanh;
+- `cargo clippy` feature-enabled all-targets: exit code 0, chỉ còn warning
+  baseline đã biết;
+- `cargo fmt --all --manifest-path src/Cargo.toml -- --check`: xanh;
+- `validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37 negative assertions,
+  55 foundation vectors/21 domains, 14 REST endpoints/18 DTOs, 10 private-WS
+  events/4 topics, 11 CLI commands, 2 Desktop/Web receipt vectors, 13 DR-M5
+  boundaries/11 oracle fields, 3 M5-01 lanes/13 state bounds/3 exit oracles,
+  22 M5-02 reasons/4 gauges/4 exit oracles, 448 normative lines và 394 local
+  links;
+- `git diff --check`: xanh, chỉ có thông báo chuyển LF/CRLF của Git trên
+  Windows.
+
+M5-02 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
+`main`. Work package kế tiếp là M5-03 Real Redb/process crash harness
+(crash-consistency và idempotency).

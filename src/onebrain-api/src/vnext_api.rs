@@ -500,6 +500,7 @@ pub struct RuntimeStatusV1 {
     pub signer_ready: bool,
     pub lifecycle: LifecycleV1,
     pub coverage: CoverageV1,
+    pub observability: onebrain_node::VNextObservabilitySnapshot,
     pub limitations: Vec<String>,
 }
 
@@ -852,6 +853,7 @@ pub async fn get_runtime_status(State(state): State<AppState>) -> VNextResult<Ru
         signer_ready,
         lifecycle,
         coverage,
+        observability: status.network_runtime.observability.clone(),
         limitations: limitations.clone(),
     };
     Ok(success(
@@ -2496,6 +2498,19 @@ mod tests {
         assert_eq!(body["ok"], true);
         assert_eq!(body["profile"], VNEXT_PRODUCT_PROFILE);
         assert!(body["data"]["limitations"].is_array());
+        assert_eq!(body["data"]["observability"]["profile_major"], 1);
+        assert_eq!(
+            body["data"]["observability"]["contains_high_cardinality_labels"],
+            false
+        );
+        assert_eq!(
+            body["data"]["observability"]["contains_private_need_labels"],
+            false
+        );
+        assert_eq!(
+            body["data"]["observability"]["claims_network_completion"],
+            false
+        );
         assert!(body["meta"]["continuation"].is_null());
 
         let (status, body) = call(

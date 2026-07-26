@@ -31,6 +31,7 @@ pub mod vnext_m6_model;
 pub mod vnext_mixed_conformance;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_network_runtime;
+pub mod vnext_observability;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_outbox;
 pub mod vnext_performance_budgets;
@@ -100,10 +101,16 @@ pub use vnext_network_runtime::{
     OutboundDeliveryReport, OutboundVNextSession, VNextNetworkRuntime, VNextNetworkRuntimeError,
     VNextNetworkRuntimeState, VNextNetworkRuntimeStatus,
 };
+pub use vnext_observability::{
+    VNextHistogramSnapshot, VNextObservability, VNextObservabilitySnapshot, VNextOutcomeSnapshot,
+    VNextPomvSnapshot, VNextReasonCode, VNextReasonCount, VNextReconciliationSnapshot,
+    VNextRegistryTelemetryState, VNextResourceSnapshot, VNextRuntimeGaugeSnapshot,
+    VNEXT_OBSERVABILITY_PROFILE_MAJOR,
+};
 #[cfg(feature = "vnext-network-runtime")]
 pub use vnext_outbox::{
-    OutboundIntentState, OutboundOutbox, OutboundOutboxError, OutboundTransferIntent,
-    OutboxEnqueueOutcome,
+    OutboundIntentState, OutboundOutbox, OutboundOutboxError, OutboundOutboxStats,
+    OutboundTransferIntent, OutboxEnqueueOutcome,
 };
 pub use vnext_performance_budgets::{
     run_performance_budget_suite, PerformanceBudgetReport, PerformanceBudgetV1,

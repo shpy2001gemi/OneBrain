@@ -36,6 +36,9 @@ DR_M5_BASELINE_PROFILE = ROOT / "src/test-vectors/vnext/dr-m5-baseline-v1.json"
 DR_M5_RESOURCE_PROFILE = (
     ROOT / "src/test-vectors/vnext/dr-m5-resource-admission-v1.json"
 )
+DR_M5_OBSERVABILITY_PROFILE = (
+    ROOT / "src/test-vectors/vnext/dr-m5-observability-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -1301,6 +1304,222 @@ def validate_vnext_dr_m5_resource_admission(
     return len(expected_lanes), len(expected_state_bounds), len(expected_oracles)
 
 
+def validate_vnext_dr_m5_observability(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(DR_M5_OBSERVABILITY_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid M5-02 observability profile JSON: {error}") from error
+
+    if (
+        profile.get("format") != "onebrain/dr-m5-observability/1"
+        or profile.get("profile_id") != "STRUCTURED_OBSERVABILITY_PROFILE_V1"
+        or profile.get("version") != 1
+        or profile.get("profile_major") != 1
+        or profile.get("claims_network_completion") is not False
+    ):
+        raise ContractError("unexpected M5-02 observability profile")
+
+    expected_reasons = [
+        "ACCEPTED_NEW",
+        "ALREADY_PRESENT",
+        "REPLAYED",
+        "DEFERRED_MISSING_DEPENDENCY",
+        "DEFERRED_BUDGET",
+        "QUARANTINED_INVALID",
+        "REJECTED_CONTEXT_BINDING",
+        "REJECTED_SELECTOR",
+        "REJECTED_LENGTH",
+        "REJECTED_CONTENT_CID",
+        "REJECTED_SINK",
+        "REJECTED_AUTHORITY",
+        "REJECTED_STORAGE",
+        "REJECTED_RATE_LIMIT",
+        "REJECTED_REPLAY",
+        "REJECTED_SESSION",
+        "REJECTED_PROTOCOL",
+        "JOURNAL_FAILURE",
+        "OUTBOX_RETRY_EXHAUSTED",
+        "POMV_IDENTITY_CONFLICT",
+        "REGISTRY_FALLBACK",
+        "TRANSPORT_FAILURE",
+    ]
+    if profile.get("reason_codes") != expected_reasons:
+        raise ContractError("M5-02 typed reason-code inventory drift")
+
+    expected_outcomes = [
+        "accepted_new",
+        "already_present",
+        "replayed",
+        "deferred",
+        "quarantined",
+        "rejected",
+    ]
+    if profile.get("outcome_counters") != expected_outcomes:
+        raise ContractError("M5-02 outcome counter inventory drift")
+
+    max_u64 = 18_446_744_073_709_551_615
+    resources = profile.get("resource_metrics")
+    if resources != {
+        "counters": ["admitted_bytes", "admitted_work_units", "rate_limited"],
+        "record_bytes_inclusive_upper_bounds": [
+            64,
+            1_024,
+            4_096,
+            16_384,
+            65_536,
+            262_144,
+            1_048_576,
+            max_u64,
+        ],
+        "work_units_inclusive_upper_bounds": [1, 2, 4, 8, 16, 64, 256, max_u64],
+    }:
+        raise ContractError("M5-02 resource metric or finite bucket drift")
+
+    expected_gauges = [
+        "active_journals",
+        "pending_outbox",
+        "retry_exhausted_outbox",
+        "oldest_pending_outbox_age_seconds",
+    ]
+    if profile.get("runtime_gauges") != expected_gauges:
+        raise ContractError("M5-02 runtime gauge inventory drift")
+    if profile.get("journal_age_seconds_inclusive_upper_bounds") != [
+        0,
+        1,
+        5,
+        30,
+        60,
+        300,
+        900,
+        max_u64,
+    ]:
+        raise ContractError("M5-02 journal age bucket drift")
+
+    reconciliation = profile.get("reconciliation")
+    if reconciliation != {
+        "counters": [
+            "selector_scans",
+            "partial_selector_scans",
+            "assessed_frontier_items",
+        ],
+        "latest_gauge": "latest_lag_records",
+        "lag_records_inclusive_upper_bounds": [0, 1, 2, 4, 8, 16, 64, max_u64],
+    }:
+        raise ContractError("M5-02 reconciliation metric drift")
+    if profile.get("pomv") != ["identity_conflicts", "latest_view_revision"]:
+        raise ContractError("M5-02 PoMV metric drift")
+    if profile.get("registry_states") != [
+        "UNKNOWN",
+        "DISABLED",
+        "LOADED",
+        "FALLBACK_V1",
+    ]:
+        raise ContractError("M5-02 registry-state inventory drift")
+
+    logging = profile.get("structured_logging")
+    if logging != {
+        "target": "onebrain::vnext::observability",
+        "required_fields": ["reason_code", "count", "bytes", "work_units"],
+        "free_form_identity_fields": False,
+        "swallowed_adversarial_errors": False,
+    }:
+        raise ContractError("M5-02 structured logging contract drift")
+
+    expected_forbidden_labels = [
+        "node_id",
+        "peer_id",
+        "selector",
+        "feed_id",
+        "object_cid",
+        "event_cid",
+        "standing_need_id",
+        "private_need",
+        "local_query",
+    ]
+    privacy = profile.get("privacy")
+    if privacy != {
+        "forbidden_metric_labels": expected_forbidden_labels,
+        "contains_high_cardinality_labels": False,
+        "contains_private_need_labels": False,
+    }:
+        raise ContractError("M5-02 privacy label firewall drift")
+
+    if profile.get("operator_snapshot") != {
+        "rest_method": "GET",
+        "rest_path": "/api/vnext/runtime/status",
+        "field": "observability",
+        "authenticated_local": True,
+        "claims_network_completion": False,
+    }:
+        raise ContractError("M5-02 operator snapshot contract drift")
+
+    expected_oracles = [
+        "every_adversarial_outcome_has_one_typed_reason_transition",
+        "exact_counter_transitions_are_reproducible",
+        "operator_snapshot_contains_no_private_or_high_cardinality_labels",
+        "status_never_claims_network_completeness",
+    ]
+    if profile.get("exit_oracles") != expected_oracles:
+        raise ContractError("M5-02 exit oracle drift")
+
+    source_contract = {
+        "src/onebrain-node/src/vnext_observability.rs": (
+            "pub const REASON_CODE_COUNT: usize = 22",
+            "pub fn record_count",
+            "pub fn begin_journal",
+            "pub fn observe_outbox",
+            "pub fn observe_selector_coverage",
+            "serialized_snapshot_has_no_identity_selector_or_private_need_label_surface",
+        ),
+        "src/onebrain-node/src/vnext_outbox.rs": (
+            "const MAGIC_V3",
+            "pub fn stats",
+            "oldest_pending_age_seconds",
+            "legacy_v1_and_v2_intents_decode_with_unknown_age",
+        ),
+        "src/onebrain-node/src/vnext_network_runtime.rs": (
+            "observable_resource_admission_error",
+            "payload_reject_reason",
+            "admission_and_payload_failures_map_to_stable_low_cardinality_reasons",
+            "two_runtime_listeners_authenticate_and_reject_unvalidated_payload_bytes",
+        ),
+        "src/onebrain-node/src/vnext_product_runtime.rs": (
+            "observe_selector_coverage",
+            "observe_pomv",
+            "observe_registry_state",
+        ),
+        "src/onebrain-api/src/vnext_api.rs": (
+            "pub observability: onebrain_node::VNextObservabilitySnapshot",
+            'body["data"]["observability"]["contains_high_cardinality_labels"]',
+        ),
+    }
+    for relative, needles in source_contract.items():
+        text = read(ROOT / relative)
+        for needle in needles:
+            if needle not in text:
+                raise ContractError(
+                    f"M5-02 implementation evidence missing: {relative}: {needle}"
+                )
+
+    if "Err(_)" in read(ROOT / "src/onebrain-node/src/vnext_network_runtime.rs"):
+        raise ContractError("M5-02 network runtime still swallows an untyped error")
+    spec = read(VNEXT / "STRUCTURED_OBSERVABILITY_PROFILE_V1.md")
+    if "dr-m5-observability-v1.json" not in spec:
+        raise ContractError("M5-02 normative profile is not linked to machine contract")
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    if (
+        "- name: M5.2 typed observability and operator snapshot" not in workflow
+        or "python -m unittest scripts.ci.test_validate_vnext_dr_m5_observability"
+        not in workflow
+    ):
+        raise ContractError("M5-02 CI acceptance gate missing")
+
+    return len(expected_reasons), len(expected_gauges), len(expected_oracles)
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -1402,6 +1621,9 @@ def main() -> int:
         m5_resource_lanes, m5_state_bounds, m5_exit_oracles = (
             validate_vnext_dr_m5_resource_admission()
         )
+        m5_reason_codes, m5_runtime_gauges, m5_observability_oracles = (
+            validate_vnext_dr_m5_observability()
+        )
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -1421,6 +1643,8 @@ def main() -> int:
         f"{dr_m5_boundaries} DR-M5 boundaries/{dr_m5_oracle_fields} oracle fields, "
         f"{m5_resource_lanes} M5-01 lanes/{m5_state_bounds} state bounds/"
         f"{m5_exit_oracles} exit oracles, "
+        f"{m5_reason_codes} M5-02 reasons/{m5_runtime_gauges} gauges/"
+        f"{m5_observability_oracles} exit oracles, "
         f"{links} local links"
     )
     return 0

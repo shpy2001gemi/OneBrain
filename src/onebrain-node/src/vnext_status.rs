@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::vnext_config::{VNextFeature, VNextFeatureConfig};
+use crate::vnext_observability::VNextObservabilitySnapshot;
 
 pub const VNEXT_STATUS_PROFILE_MAJOR: u16 = 1;
 
@@ -127,6 +128,7 @@ pub struct NetworkRuntimeStatusView {
     pub accepted_records: u64,
     pub deferred_records: u64,
     pub rejected_records: u64,
+    pub observability: VNextObservabilitySnapshot,
     pub claims_network_completion: bool,
 }
 
@@ -138,6 +140,7 @@ pub struct NetworkRuntimeObservation {
     pub accepted_records: u64,
     pub deferred_records: u64,
     pub rejected_records: u64,
+    pub observability: VNextObservabilitySnapshot,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -206,6 +209,7 @@ impl VNextStatusSnapshot {
                 accepted_records: runtime.accepted_records,
                 deferred_records: runtime.deferred_records,
                 rejected_records: runtime.rejected_records,
+                observability: runtime.observability,
                 claims_network_completion: false,
             },
             None => NetworkRuntimeStatusView {
@@ -223,6 +227,7 @@ impl VNextStatusSnapshot {
                 accepted_records: 0,
                 deferred_records: 0,
                 rejected_records: 0,
+                observability: VNextObservabilitySnapshot::default(),
                 claims_network_completion: false,
             },
         };
@@ -391,6 +396,7 @@ mod tests {
                 accepted_records: 3,
                 deferred_records: 4,
                 rejected_records: 5,
+                observability: VNextObservabilitySnapshot::default(),
             }),
         );
         assert!(status.features.object_event_v1);

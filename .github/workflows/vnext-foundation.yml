@@ -86,6 +86,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_desktop_web_ux_profile
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_baseline
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_resource_admission
+          python -m unittest scripts.ci.test_validate_vnext_dr_m5_observability
 
       - name: P3.4 Web UX build, lint, and receipt contract
         working-directory: src/onebrain-web
@@ -184,6 +185,7 @@ jobs:
           onebrain-node/src/vnext_distributed_kql.rs
           onebrain-node/src/vnext_distributed_pomv.rs
           onebrain-node/src/vnext_network_runtime.rs
+          onebrain-node/src/vnext_observability.rs
           onebrain-node/src/vnext_outbox.rs
           onebrain-node/src/vnext_record_provenance.rs
           onebrain-node/src/lib.rs
@@ -556,6 +558,16 @@ jobs:
           --features vnext-network-runtime --lib vnext_outbox
           && cargo test --locked -p onebrain-node
           --features vnext-network-runtime --lib vnext_record_provenance
+      - name: M5.2 typed observability and operator snapshot
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime --lib vnext_observability
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime --lib
+          vnext_network_runtime::tests::admission_and_payload_failures_map_to_stable_low_cardinality_reasons
+          && cargo test --locked -p onebrain-api
+          --features vnext-network-runtime --lib
+          vnext_api::tests::runtime_status_and_disabled_lane_keep_the_vnext_envelope
       - name: P3.1 authenticated REST API contract and real-runtime flow
         run: >-
           cargo test --locked -p onebrain-api

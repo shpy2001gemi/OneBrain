@@ -562,6 +562,33 @@
       "rationale": "Separate UI trust surfaces, source-checked semantic labels, cross-language consent-receipt vectors and process-level graceful restart enforce the P3.4 boundaries without changing legacy endpoint meaning."
     },
     {
+      "path": "docs/specs/vnext/STRUCTURED_OBSERVABILITY_PROFILE_V1.md",
+      "expected_statement_lines": 24,
+      "evidence": [
+        {
+          "path": "src/onebrain-node/src/vnext_observability.rs",
+          "needle": "pub const REASON_CODE_COUNT: usize = 22"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_observability.rs",
+          "needle": "serialized_snapshot_has_no_identity_selector_or_private_need_label_surface"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_outbox.rs",
+          "needle": "legacy_v1_and_v2_intents_decode_with_unknown_age"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_network_runtime.rs",
+          "needle": "admission_and_payload_failures_map_to_stable_low_cardinality_reasons"
+        },
+        {
+          "path": "src/onebrain-api/src/vnext_api.rs",
+          "needle": "body[\"data\"][\"observability\"][\"contains_high_cardinality_labels\"]"
+        }
+      ],
+      "rationale": "A fixed-enum atomic registry, finite histogram buckets, durable outbox timestamps, typed network/product transitions and an authenticated local snapshot provide deterministic observability without identity-bearing metric labels or completeness claims."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [

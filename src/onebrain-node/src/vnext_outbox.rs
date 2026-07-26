@@ -9,6 +9,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ku_core::foundation::{
     DisclosureClass, NamespaceCommitment, NodeId, ReservedDomain, SelectorCid,
@@ -23,8 +24,10 @@ const TOMBSTONES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_outbound_terminal_tombstones_v2");
 const MAGIC_V1: &[u8; 8] = b"OBOUTV1\0";
 const MAGIC_V2: &[u8; 8] = b"OBOUTV2\0";
+const MAGIC_V3: &[u8; 8] = b"OBOUTV3\0";
 const FIXED_BYTES_V1: usize = 206;
 const FIXED_BYTES_V2: usize = 222;
+const FIXED_BYTES_V3: usize = 238;
 const FAIR_CURSOR_KEY: &[u8] = b"fair_cursor";
 const TERMINAL_HEAD_KEY: &[u8] = b"terminal_head";
 pub const MAX_OUTBOX_PAYLOAD_BYTES: usize = 1_048_576;
@@ -60,6 +63,8 @@ pub struct OutboundTransferIntent {
     pub transport_attempts: u64,
     pub validation_retries: u64,
     pub terminal_sequence: u64,
+    pub enqueued_at_unix_seconds: u64,
+    pub updated_at_unix_seconds: u64,
     pub state: OutboundIntentState,
 }
 
@@ -79,6 +84,7 @@ impl OutboundTransferIntent {
         }
         let cid = content_domain(kind).digest(&canonical_bytes);
         let id = intent_id(expected_peer, selector, namespace, disclosure, kind, cid);
+        let now = unix_seconds();
         let intent = Self {
             id,
             expected_peer,
@@ -92,6 +98,8 @@ impl OutboundTransferIntent {
             transport_attempts: 0,
             validation_retries: 0,
             terminal_sequence: 0,
+            enqueued_at_unix_seconds: now,
+            updated_at_unix_seconds: now,
             state: OutboundIntentState::Pending,
         };
         validate_intent(&intent)?;
@@ -104,6 +112,16 @@ pub enum OutboxEnqueueOutcome {
     Added,
     Existing,
     RouteUpdated,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct OutboundOutboxStats {
+    pub total: u64,
+    pub pending: u64,
+    pub acknowledged: u64,
+    pub dead_letter: u64,
+    pub retry_exhausted: u64,
+    pub oldest_pending_age_seconds: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -158,6 +176,7 @@ impl OutboundOutbox {
                         if stored.state == OutboundIntentState::Pending {
                             stored.transport_attempts = 0;
                         }
+                        touch(&mut stored);
                         let encoded = encode_intent(&stored)?;
                         table
                             .insert(intent.id.as_slice(), encoded.as_slice())
@@ -256,6 +275,49 @@ impl OutboundOutbox {
             .map_err(backend)?
             .map(|guard| decode_intent(guard.value()))
             .transpose()
+    }
+
+    pub fn stats(&self) -> Result<OutboundOutboxStats, OutboundOutboxError> {
+        let read = self.db.begin_read().map_err(backend)?;
+        let table = read.open_table(OUTBOX).map_err(backend)?;
+        let now = unix_seconds();
+        let mut stats = OutboundOutboxStats::default();
+        let mut oldest_pending = None::<u64>;
+        let mut pending_age_known = true;
+        for entry in table.iter().map_err(backend)? {
+            let (_, value) = entry.map_err(backend)?;
+            let intent = decode_intent(value.value())?;
+            stats.total = stats.total.saturating_add(1);
+            match intent.state {
+                OutboundIntentState::Pending => {
+                    stats.pending = stats.pending.saturating_add(1);
+                    if intent.enqueued_at_unix_seconds == 0 {
+                        pending_age_known = false;
+                    } else {
+                        oldest_pending = Some(
+                            oldest_pending
+                                .unwrap_or(intent.enqueued_at_unix_seconds)
+                                .min(intent.enqueued_at_unix_seconds),
+                        );
+                    }
+                }
+                OutboundIntentState::Acknowledged => {
+                    stats.acknowledged = stats.acknowledged.saturating_add(1);
+                }
+                OutboundIntentState::DeadLetter => {
+                    stats.dead_letter = stats.dead_letter.saturating_add(1);
+                }
+                OutboundIntentState::RetryExhausted => {
+                    stats.retry_exhausted = stats.retry_exhausted.saturating_add(1);
+                }
+            }
+        }
+        stats.oldest_pending_age_seconds = if pending_age_known {
+            oldest_pending.map(|timestamp| now.saturating_sub(timestamp))
+        } else {
+            None
+        };
+        Ok(stats)
     }
 
     pub fn record_transport_attempt(&self, id: &[u8; 32]) -> Result<u64, OutboundOutboxError> {
@@ -381,6 +443,7 @@ impl OutboundOutbox {
             let mut intent = decode_intent(&bytes)?;
             let was_terminal = intent.state.is_terminal();
             result = update(&mut intent)?;
+            touch(&mut intent);
             if !was_terminal && intent.state.is_terminal() {
                 intent.terminal_sequence = next_terminal_sequence(&write)?;
             }
@@ -409,6 +472,7 @@ impl OutboundOutbox {
                 .ok_or(OutboundOutboxError::MissingIntent)?;
             let mut intent = decode_intent(&bytes)?;
             result = update(&mut intent)?;
+            touch(&mut intent);
             let encoded = encode_intent(&intent)?;
             table
                 .insert(id.as_slice(), encoded.as_slice())
@@ -427,6 +491,8 @@ fn validate_intent(intent: &OutboundTransferIntent) -> Result<(), OutboundOutbox
             DisclosureClass::Public | DisclosureClass::RouteMinimal
         )
         || content_domain(intent.kind).digest(&intent.canonical_bytes) != intent.cid
+        || (intent.enqueued_at_unix_seconds != 0
+            && intent.updated_at_unix_seconds < intent.enqueued_at_unix_seconds)
         || intent_id(
             intent.expected_peer,
             intent.selector,
@@ -511,8 +577,8 @@ fn parse_state(value: u8) -> Result<OutboundIntentState, OutboundOutboxError> {
 
 fn encode_intent(intent: &OutboundTransferIntent) -> Result<Vec<u8>, OutboundOutboxError> {
     validate_intent(intent)?;
-    let mut output = Vec::with_capacity(FIXED_BYTES_V2 + intent.canonical_bytes.len());
-    output.extend_from_slice(MAGIC_V2);
+    let mut output = Vec::with_capacity(FIXED_BYTES_V3 + intent.canonical_bytes.len());
+    output.extend_from_slice(MAGIC_V3);
     output.extend_from_slice(&intent.id);
     output.extend_from_slice(intent.expected_peer.as_bytes());
     match intent.last_known_addr.ip() {
@@ -536,9 +602,11 @@ fn encode_intent(intent: &OutboundTransferIntent) -> Result<Vec<u8>, OutboundOut
     output.push(intent.state as u8);
     output.extend_from_slice(&intent.validation_retries.to_be_bytes());
     output.extend_from_slice(&intent.terminal_sequence.to_be_bytes());
+    output.extend_from_slice(&intent.enqueued_at_unix_seconds.to_be_bytes());
+    output.extend_from_slice(&intent.updated_at_unix_seconds.to_be_bytes());
     output.extend_from_slice(&(intent.canonical_bytes.len() as u64).to_be_bytes());
     output.extend_from_slice(&intent.canonical_bytes);
-    debug_assert_eq!(output.len(), FIXED_BYTES_V2 + intent.canonical_bytes.len());
+    debug_assert_eq!(output.len(), FIXED_BYTES_V3 + intent.canonical_bytes.len());
     Ok(output)
 }
 
@@ -547,13 +615,17 @@ fn decode_intent(bytes: &[u8]) -> Result<OutboundTransferIntent, OutboundOutboxE
         return Err(OutboundOutboxError::InvalidRecord);
     }
     let is_v1 = &bytes[..8] == MAGIC_V1;
-    if !is_v1 && &bytes[..8] != MAGIC_V2 {
+    let is_v2 = &bytes[..8] == MAGIC_V2;
+    let is_v3 = &bytes[..8] == MAGIC_V3;
+    if !is_v1 && !is_v2 && !is_v3 {
         return Err(OutboundOutboxError::InvalidRecord);
     }
     let fixed_bytes = if is_v1 {
         FIXED_BYTES_V1
-    } else {
+    } else if is_v2 {
         FIXED_BYTES_V2
+    } else {
+        FIXED_BYTES_V3
     };
     if bytes.len() < fixed_bytes {
         return Err(OutboundOutboxError::InvalidRecord);
@@ -592,8 +664,9 @@ fn decode_intent(bytes: &[u8]) -> Result<OutboundTransferIntent, OutboundOutboxE
             .map_err(|_| OutboundOutboxError::InvalidRecord)?,
     );
     let state = parse_state(bytes[197])?;
-    let (validation_retries, terminal_sequence, payload_offset) = if is_v1 {
-        (0, 0, 198)
+    let (validation_retries, terminal_sequence, enqueued_at, updated_at, payload_offset) = if is_v1
+    {
+        (0, 0, 0, 0, 198)
     } else {
         let validation_retries = u64::from_be_bytes(
             bytes[198..206]
@@ -605,7 +678,27 @@ fn decode_intent(bytes: &[u8]) -> Result<OutboundTransferIntent, OutboundOutboxE
                 .try_into()
                 .map_err(|_| OutboundOutboxError::InvalidRecord)?,
         );
-        (validation_retries, terminal_sequence, 214)
+        if is_v2 {
+            (validation_retries, terminal_sequence, 0, 0, 214)
+        } else {
+            let enqueued_at = u64::from_be_bytes(
+                bytes[214..222]
+                    .try_into()
+                    .map_err(|_| OutboundOutboxError::InvalidRecord)?,
+            );
+            let updated_at = u64::from_be_bytes(
+                bytes[222..230]
+                    .try_into()
+                    .map_err(|_| OutboundOutboxError::InvalidRecord)?,
+            );
+            (
+                validation_retries,
+                terminal_sequence,
+                enqueued_at,
+                updated_at,
+                230,
+            )
+        }
     };
     let payload_len = u64::from_be_bytes(
         bytes[payload_offset..payload_offset + 8]
@@ -631,6 +724,8 @@ fn decode_intent(bytes: &[u8]) -> Result<OutboundTransferIntent, OutboundOutboxE
         transport_attempts,
         validation_retries,
         terminal_sequence,
+        enqueued_at_unix_seconds: enqueued_at,
+        updated_at_unix_seconds: updated_at,
         state,
     };
     validate_intent(&intent)?;
@@ -641,6 +736,18 @@ fn array32(bytes: &[u8]) -> Result<[u8; 32], OutboundOutboxError> {
     bytes
         .try_into()
         .map_err(|_| OutboundOutboxError::InvalidRecord)
+}
+
+fn unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn touch(intent: &mut OutboundTransferIntent) {
+    let now = unix_seconds();
+    intent.updated_at_unix_seconds = now.max(intent.enqueued_at_unix_seconds);
 }
 
 fn next_terminal_sequence(write: &redb::WriteTransaction) -> Result<u64, OutboundOutboxError> {
@@ -793,18 +900,52 @@ mod tests {
     }
 
     #[test]
-    fn legacy_v1_intent_decodes_into_separate_v2_counters() {
+    fn legacy_v1_and_v2_intents_decode_with_unknown_age() {
         let intent = intent("127.0.0.1:5001".parse().unwrap());
-        let encoded_v2 = encode_intent(&intent).unwrap();
+        let encoded_v3 = encode_intent(&intent).unwrap();
         let mut encoded_v1 = Vec::with_capacity(FIXED_BYTES_V1 + intent.canonical_bytes.len());
         encoded_v1.extend_from_slice(MAGIC_V1);
-        encoded_v1.extend_from_slice(&encoded_v2[8..198]);
-        encoded_v1.extend_from_slice(&encoded_v2[214..]);
-        let decoded = decode_intent(&encoded_v1).unwrap();
-        assert_eq!(decoded, intent);
-        assert_eq!(decoded.transport_attempts, 0);
-        assert_eq!(decoded.validation_retries, 0);
-        assert_eq!(decoded.terminal_sequence, 0);
+        encoded_v1.extend_from_slice(&encoded_v3[8..198]);
+        encoded_v1.extend_from_slice(&encoded_v3[230..]);
+        let decoded_v1 = decode_intent(&encoded_v1).unwrap();
+        assert_eq!(decoded_v1.transport_attempts, 0);
+        assert_eq!(decoded_v1.validation_retries, 0);
+        assert_eq!(decoded_v1.terminal_sequence, 0);
+        assert_eq!(decoded_v1.enqueued_at_unix_seconds, 0);
+        assert_eq!(decoded_v1.updated_at_unix_seconds, 0);
+
+        let mut encoded_v2 = Vec::with_capacity(FIXED_BYTES_V2 + intent.canonical_bytes.len());
+        encoded_v2.extend_from_slice(MAGIC_V2);
+        encoded_v2.extend_from_slice(&encoded_v3[8..214]);
+        encoded_v2.extend_from_slice(&encoded_v3[230..]);
+        let decoded_v2 = decode_intent(&encoded_v2).unwrap();
+        assert_eq!(decoded_v2.id, intent.id);
+        assert_eq!(decoded_v2.validation_retries, intent.validation_retries);
+        assert_eq!(decoded_v2.terminal_sequence, intent.terminal_sequence);
+        assert_eq!(decoded_v2.enqueued_at_unix_seconds, 0);
+        assert_eq!(decoded_v2.updated_at_unix_seconds, 0);
+        let mut touched_legacy = decoded_v2;
+        touch(&mut touched_legacy);
+        assert_eq!(touched_legacy.enqueued_at_unix_seconds, 0);
+        assert!(touched_legacy.updated_at_unix_seconds > 0);
+    }
+
+    #[test]
+    fn stats_report_terminal_depth_and_honest_oldest_pending_age() {
+        let directory = tempfile::tempdir().unwrap();
+        let outbox = OutboundOutbox::open(&directory.path().join("outbox.redb")).unwrap();
+        let pending = intent_with(1, "127.0.0.1:5001".parse().unwrap());
+        let exhausted = intent_with(2, "127.0.0.1:5002".parse().unwrap());
+        outbox.enqueue(&pending).unwrap();
+        outbox.enqueue(&exhausted).unwrap();
+        outbox.record_transport_attempt(&exhausted.id).unwrap();
+        outbox.mark_retry_exhausted(&exhausted.id, 1).unwrap();
+
+        let stats = outbox.stats().unwrap();
+        assert_eq!(stats.total, 2);
+        assert_eq!(stats.pending, 1);
+        assert_eq!(stats.retry_exhausted, 1);
+        assert!(stats.oldest_pending_age_seconds.is_some());
     }
 
     #[test]
