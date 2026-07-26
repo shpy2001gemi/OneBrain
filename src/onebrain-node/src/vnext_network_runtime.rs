@@ -23,16 +23,16 @@ use ku_net::vnext_quic_session::{
     AuthenticatedCarrierRecord, AuthenticatedCarrierSession,
 };
 use ku_net::vnext_reconciliation::{
-    BoundPayloadFrame, PayloadIngestOutcome, PayloadSinkOutcome, ReceiverState,
-    ValidateThenAcceptSink,
+    BoundPayloadFrame, PayloadIngestOutcome, PayloadRejectReason, PayloadSinkOutcome,
+    ReceiverState, ValidateThenAcceptSink,
 };
 use ku_net::vnext_reconciliation_journal::persistent::RedbReconciliationJournalBackend;
 use ku_net::vnext_reconciliation_journal::{
     JournaledPayloadOutcome, JournaledReconciliationSession, ReconciliationJournalConfig,
 };
 use ku_net::vnext_resource_gate::{
-    AdmissionStage, HandshakeAdmission, ResourceUsage, RuntimeAdmissionController,
-    RuntimeAdmissionLimits, SessionAdmission,
+    AdmissionStage, HandshakeAdmission, ResourceAdmissionError, ResourceUsage,
+    RuntimeAdmissionController, RuntimeAdmissionLimits, SessionAdmission,
 };
 use ku_net::vnext_session::{
     principal_node_id, AuthenticatedSession, SessionIdentitySigner, SessionReplayGuard,
@@ -51,6 +51,10 @@ use tokio::sync::{watch, Mutex as AsyncMutex, Notify};
 use tokio::task::JoinHandle;
 
 use crate::vnext_config::VNextNetworkPolicy;
+use crate::vnext_observability::{
+    VNextJournalObservation, VNextObservability, VNextObservabilitySnapshot, VNextReasonCode,
+    VNextRegistryTelemetryState,
+};
 use crate::vnext_outbox::{
     OutboundIntentState, OutboundOutbox, OutboundTransferIntent, OutboxEnqueueOutcome,
     MAX_OUTBOX_PAYLOAD_BYTES,
@@ -80,6 +84,7 @@ struct InventoryingSink {
     selector: ku_core::foundation::SelectorCid,
     source_peer: NodeId,
     storage: NetworkStorageAdmission,
+    observability: Arc<VNextObservability>,
 }
 
 impl ValidateThenAcceptSink for InventoryingSink {
@@ -89,7 +94,14 @@ impl ValidateThenAcceptSink for InventoryingSink {
         cid: [u8; 32],
         canonical_bytes: &[u8],
     ) -> Result<PayloadSinkOutcome, String> {
-        self.storage.ensure_writable(canonical_bytes.len() as u64)?;
+        if let Err(error) = self.storage.ensure_writable(canonical_bytes.len() as u64) {
+            self.observability.record(
+                VNextReasonCode::RejectedStorage,
+                canonical_bytes.len() as u64,
+                1,
+            );
+            return Err(error);
+        }
         let outcome = self
             .inner
             .validate_then_accept(kind, cid, canonical_bytes)?;
@@ -199,6 +211,7 @@ pub struct VNextNetworkRuntimeStatus {
     pub accepted_records: u64,
     pub deferred_records: u64,
     pub rejected_records: u64,
+    pub observability: VNextObservabilitySnapshot,
     pub claims_network_completion: bool,
 }
 
@@ -231,6 +244,7 @@ struct OutboundDeliveryEngine {
     routes: AuthenticatedRouteDirectory,
     principal: NodeId,
     counters: Arc<RuntimeCounters>,
+    observability: Arc<VNextObservability>,
     admission: RuntimeAdmissionController,
     outbox: OutboundOutbox,
     scheduler: AsyncMutex<()>,
@@ -244,6 +258,7 @@ pub struct VNextNetworkRuntime {
     principal: NodeId,
     listen_addr: SocketAddr,
     counters: Arc<RuntimeCounters>,
+    observability: Arc<VNextObservability>,
     validated_sink: PersistentSink,
     inventory: RedbInventoryForestBackend,
     provenance: RedbRecordProvenance,
@@ -431,6 +446,15 @@ impl VNextNetworkRuntime {
         ));
         let routes = AuthenticatedRouteDirectory::default();
         let counters = Arc::new(RuntimeCounters::default());
+        let observability = Arc::new(VNextObservability::default());
+        let outbox_stats = outbox
+            .stats()
+            .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
+        observability.observe_outbox(
+            outbox_stats.pending,
+            outbox_stats.retry_exhausted,
+            outbox_stats.oldest_pending_age_seconds,
+        );
         let admission = RuntimeAdmissionController::new(admission_limits(policy))
             .map_err(|error| VNextNetworkRuntimeError::Config(format!("{error:?}")))?;
         let accept_task = tokio::spawn(accept_loop(
@@ -440,6 +464,7 @@ impl VNextNetworkRuntime {
             routes.clone(),
             principal,
             Arc::clone(&counters),
+            Arc::clone(&observability),
             admission.clone(),
             journal,
             sink.clone(),
@@ -455,6 +480,7 @@ impl VNextNetworkRuntime {
             routes: routes.clone(),
             principal,
             counters: Arc::clone(&counters),
+            observability: Arc::clone(&observability),
             admission,
             outbox,
             scheduler: AsyncMutex::new(()),
@@ -474,6 +500,7 @@ impl VNextNetworkRuntime {
             principal,
             listen_addr,
             counters,
+            observability,
             validated_sink: sink,
             inventory,
             provenance,
@@ -492,6 +519,16 @@ impl VNextNetworkRuntime {
     }
 
     pub fn status(&self) -> VNextNetworkRuntimeStatus {
+        if let Err(error) = self.outbound.refresh_outbox_observability() {
+            self.observability
+                .record(VNextReasonCode::JournalFailure, 0, 1);
+            tracing::warn!(
+                target: "onebrain::vnext::observability",
+                reason_code = VNextReasonCode::JournalFailure.code(),
+                error = %error,
+                "vNext outbox gauge refresh failed"
+            );
+        }
         VNextNetworkRuntimeStatus {
             state: self.state,
             listen_addr: self.listen_addr,
@@ -502,8 +539,15 @@ impl VNextNetworkRuntime {
             accepted_records: self.counters.accepted_records.load(Ordering::Relaxed),
             deferred_records: self.counters.deferred_records.load(Ordering::Relaxed),
             rejected_records: self.counters.rejected_records.load(Ordering::Relaxed),
+            observability: self
+                .observability
+                .snapshot(VNextRegistryTelemetryState::Unknown),
             claims_network_completion: false,
         }
+    }
+
+    pub(crate) fn observability(&self) -> Arc<VNextObservability> {
+        Arc::clone(&self.observability)
     }
 
     pub fn inventory_root(
@@ -632,6 +676,20 @@ impl VNextNetworkRuntime {
             .outbox
             .enqueue(intent)
             .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
+        match outcome {
+            OutboxEnqueueOutcome::Added => {
+                self.observability
+                    .record(VNextReasonCode::AcceptedNew, 0, 1)
+            }
+            OutboxEnqueueOutcome::Existing => {
+                self.observability.record(VNextReasonCode::Replayed, 0, 1)
+            }
+            OutboxEnqueueOutcome::RouteUpdated => {
+                self.observability
+                    .record(VNextReasonCode::AlreadyPresent, 0, 1)
+            }
+        }
+        self.outbound.refresh_outbox_observability()?;
         self.outbound_notify.notify_one();
         Ok(outcome)
     }
@@ -667,6 +725,19 @@ impl VNextNetworkRuntime {
 }
 
 impl OutboundDeliveryEngine {
+    fn refresh_outbox_observability(&self) -> Result<(), VNextNetworkRuntimeError> {
+        let stats = self
+            .outbox
+            .stats()
+            .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
+        self.observability.observe_outbox(
+            stats.pending,
+            stats.retry_exhausted,
+            stats.oldest_pending_age_seconds,
+        );
+        Ok(())
+    }
+
     async fn deliver_once(
         &self,
         limit: usize,
@@ -690,6 +761,8 @@ impl OutboundDeliveryEngine {
                 self.outbox
                     .mark_retry_exhausted(&seed.id, self.policy.max_retries_per_record)
                     .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
+                self.observability
+                    .record(VNextReasonCode::OutboxRetryExhausted, 0, 1);
                 report.retry_exhausted += 1;
                 continue;
             }
@@ -713,6 +786,7 @@ impl OutboundDeliveryEngine {
 
             self.deliver_outbound_batch(&batch, &mut report).await?;
         }
+        self.refresh_outbox_observability()?;
         Ok(report)
     }
 
@@ -732,13 +806,23 @@ impl OutboundDeliveryEngine {
         let first = &batch[0];
         let mut session = match self.connect(first.last_known_addr).await {
             Ok(session) => session,
-            Err(_) => {
+            Err(error) => {
+                self.observability
+                    .record(VNextReasonCode::TransportFailure, 0, batch.len() as u64);
+                tracing::warn!(
+                    target: "onebrain::vnext::observability",
+                    reason_code = VNextReasonCode::TransportFailure.code(),
+                    error = %error,
+                    "vNext outbound connection failed"
+                );
                 report.failed += batch.len();
                 self.mark_transport_failures(batch, report)?;
                 return Ok(());
             }
         };
         if session.authenticated().responder != first.expected_peer {
+            self.observability
+                .record(VNextReasonCode::RejectedAuthority, batch.len() as u64, 1);
             session.close();
             report.failed += batch.len();
             self.mark_transport_failures(batch, report)?;
@@ -796,6 +880,8 @@ impl OutboundDeliveryEngine {
         )
         .map_err(|error| VNextNetworkRuntimeError::Session(format!("{error:?}")))?;
         if session.send(&manifest_record).await.is_err() {
+            self.observability
+                .record(VNextReasonCode::TransportFailure, 0, batch.len() as u64);
             session.close();
             report.failed += batch.len();
             self.mark_transport_failures(batch, report)?;
@@ -807,6 +893,8 @@ impl OutboundDeliveryEngine {
                 .await
                 .is_err()
             {
+                self.observability
+                    .record(VNextReasonCode::TransportFailure, 0, 1);
                 session.close();
                 report.failed += batch.len();
                 self.mark_transport_failures(batch, report)?;
@@ -847,6 +935,8 @@ impl OutboundDeliveryEngine {
 
         for intent in batch {
             let Some(status) = statuses.get(&(intent.kind as u64, intent.cid)).copied() else {
+                self.observability
+                    .record(VNextReasonCode::TransportFailure, 0, 1);
                 report.failed += 1;
                 self.mark_transport_failures(std::slice::from_ref(intent), report)?;
                 continue;
@@ -856,14 +946,49 @@ impl OutboundDeliveryEngine {
                 .apply_receipt(&intent.id, status, self.policy.max_retries_per_record)
                 .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
             match (state, status) {
+                (OutboundIntentState::Acknowledged, ReconcileReceiptStatus::ValidatedStored) => {
+                    self.observability.record(
+                        VNextReasonCode::AcceptedNew,
+                        intent.canonical_bytes.len() as u64,
+                        1,
+                    );
+                    report.acknowledged += 1;
+                }
+                (OutboundIntentState::Acknowledged, ReconcileReceiptStatus::AlreadyPresent) => {
+                    self.observability.record(
+                        VNextReasonCode::AlreadyPresent,
+                        intent.canonical_bytes.len() as u64,
+                        1,
+                    );
+                    report.acknowledged += 1;
+                }
                 (OutboundIntentState::Acknowledged, _) => report.acknowledged += 1,
-                (OutboundIntentState::DeadLetter, _) => report.rejected += 1,
-                (OutboundIntentState::RetryExhausted, _) => report.retry_exhausted += 1,
+                (OutboundIntentState::DeadLetter, _) => {
+                    self.observability.record(
+                        VNextReasonCode::RejectedSink,
+                        intent.canonical_bytes.len() as u64,
+                        1,
+                    );
+                    report.rejected += 1;
+                }
+                (OutboundIntentState::RetryExhausted, _) => {
+                    self.observability
+                        .record(VNextReasonCode::OutboxRetryExhausted, 0, 1);
+                    report.retry_exhausted += 1;
+                }
+                (OutboundIntentState::Pending, ReconcileReceiptStatus::DeferredBudget) => {
+                    self.observability
+                        .record(VNextReasonCode::DeferredBudget, 0, 1);
+                    report.deferred += 1;
+                }
                 (
                     OutboundIntentState::Pending,
-                    ReconcileReceiptStatus::DeferredBudget
-                    | ReconcileReceiptStatus::DeferredMissingDependency,
-                ) => report.deferred += 1,
+                    ReconcileReceiptStatus::DeferredMissingDependency,
+                ) => {
+                    self.observability
+                        .record(VNextReasonCode::DeferredMissingDependency, 0, 1);
+                    report.deferred += 1;
+                }
                 _ => report.failed += 1,
             }
         }
@@ -881,6 +1006,8 @@ impl OutboundDeliveryEngine {
                 .mark_retry_exhausted(&intent.id, self.policy.max_retries_per_record)
                 .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
             if state == OutboundIntentState::RetryExhausted {
+                self.observability
+                    .record(VNextReasonCode::OutboxRetryExhausted, 0, 1);
                 report.retry_exhausted += 1;
             }
         }
@@ -894,7 +1021,7 @@ impl OutboundDeliveryEngine {
         let handshake_admission = self
             .admission
             .try_begin_handshake(addr.ip())
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         let connection = self
             .transport
             .connect(addr)
@@ -916,12 +1043,20 @@ impl OutboundDeliveryEngine {
         .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
         let session_admission = handshake_admission
             .promote(authenticated.responder)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         self.replay_guard
             .lock()
-            .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?
+            .map_err(|_| {
+                self.observability
+                    .record(VNextReasonCode::RejectedReplay, 0, 1);
+                VNextNetworkRuntimeError::ReplayGuard
+            })?
             .accept(&authenticated)
-            .map_err(|error| VNextNetworkRuntimeError::Session(format!("{error:?}")))?;
+            .map_err(|error| {
+                self.observability
+                    .record(VNextReasonCode::RejectedReplay, 0, 1);
+                VNextNetworkRuntimeError::Session(format!("{error:?}"))
+            })?;
         self.routes
             .observe_outbound(self.principal, &authenticated, connection.remote_addr())
             .map_err(VNextNetworkRuntimeError::RouteDirectory)?;
@@ -938,6 +1073,7 @@ impl OutboundDeliveryEngine {
             authenticated,
             carrier,
             admission: session_admission,
+            observability: Arc::clone(&self.observability),
         })
     }
 }
@@ -1051,7 +1187,16 @@ async fn run_outbound_scheduler(
                 retry_delay = OUTBOUND_RETRY_BASE;
                 run_now = true;
             }
-            Err(_) => {
+            Err(error) => {
+                engine
+                    .observability
+                    .record(VNextReasonCode::JournalFailure, 0, 1);
+                tracing::warn!(
+                    target: "onebrain::vnext::observability",
+                    reason_code = VNextReasonCode::JournalFailure.code(),
+                    error = %error,
+                    "vNext outbound scheduling pass failed"
+                );
                 if !wait_for_outbound_wake(&notify, &mut shutdown, Some(retry_delay)).await {
                     return;
                 }
@@ -1097,6 +1242,7 @@ pub struct OutboundVNextSession {
     authenticated: AuthenticatedSession,
     carrier: AuthenticatedCarrierSession,
     admission: SessionAdmission,
+    observability: Arc<VNextObservability>,
 }
 
 impl OutboundVNextSession {
@@ -1110,7 +1256,7 @@ impl OutboundVNextSession {
                 .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
             self.admission
                 .admit_context(message.binding_digest)
-                .map_err(resource_admission_error)?;
+                .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         }
         let frame_bytes = record
             .canonical_bytes()
@@ -1119,22 +1265,22 @@ impl OutboundVNextSession {
         let mut admission = self
             .admission
             .begin_record(frame_bytes)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         admission
             .advance(AdmissionStage::Frame, 1)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         admission
             .advance(AdmissionStage::Protocol, 1)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         admission
             .advance(AdmissionStage::Journal, 1)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         send_carrier_record(&self.connection, record)
             .await
             .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
         admission
             .advance(AdmissionStage::Application, 1)
-            .map_err(resource_admission_error)
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))
     }
 
     pub async fn recv(&mut self) -> Result<AuthenticatedCarrierRecord, VNextNetworkRuntimeError> {
@@ -1146,10 +1292,10 @@ impl OutboundVNextSession {
         let mut admission = self
             .admission
             .begin_record(payload.len() as u64)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         admission
             .advance(AdmissionStage::Frame, 1)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         let record = self
             .carrier
             .decode_and_validate_payload(&payload)
@@ -1157,17 +1303,17 @@ impl OutboundVNextSession {
         if let AuthenticatedCarrierRecord::Reconciliation(message) = &record {
             self.admission
                 .admit_context(message.binding_digest)
-                .map_err(resource_admission_error)?;
+                .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         }
         admission
             .advance(AdmissionStage::Protocol, 1)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         admission
             .advance(AdmissionStage::Journal, 1)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         admission
             .advance(AdmissionStage::Application, 1)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         Ok(record)
     }
 
@@ -1184,6 +1330,7 @@ async fn accept_loop(
     routes: AuthenticatedRouteDirectory,
     principal: NodeId,
     counters: Arc<RuntimeCounters>,
+    observability: Arc<VNextObservability>,
     admission: RuntimeAdmissionController,
     journal: RedbReconciliationJournalBackend,
     sink: PersistentSink,
@@ -1195,12 +1342,21 @@ async fn accept_loop(
     loop {
         let connection = match transport.accept().await {
             Ok(connection) => connection,
-            Err(_) => break,
+            Err(error) => {
+                tracing::warn!(
+                    target: "onebrain::vnext::observability",
+                    reason_code = VNextReasonCode::TransportFailure.code(),
+                    error = %error,
+                    "vNext accept loop stopped"
+                );
+                break;
+            }
         };
         let handshake_admission = match admission.try_begin_handshake(connection.remote_addr().ip())
         {
             Ok(admission) => admission,
-            Err(_) => {
+            Err(error) => {
+                let _ = observable_resource_admission_error(&observability, error);
                 counters.rejected_sessions.fetch_add(1, Ordering::Relaxed);
                 connection.close("OBP-RP handshake resource budget exhausted");
                 continue;
@@ -1209,6 +1365,7 @@ async fn accept_loop(
         let identity = Arc::clone(&identity);
         let replay_guard = Arc::clone(&replay_guard);
         let counters = Arc::clone(&counters);
+        let observability = Arc::clone(&observability);
         let routes = routes.clone();
         let journal = journal.clone();
         let sink = sink.clone();
@@ -1224,6 +1381,7 @@ async fn accept_loop(
                 routes,
                 principal,
                 Arc::clone(&counters),
+                observability,
                 journal,
                 sink,
                 inventory,
@@ -1249,6 +1407,7 @@ async fn handle_inbound_connection(
     routes: AuthenticatedRouteDirectory,
     principal: NodeId,
     counters: Arc<RuntimeCounters>,
+    observability: Arc<VNextObservability>,
     journal_backend: RedbReconciliationJournalBackend,
     sink: PersistentSink,
     inventory: RedbInventoryForestBackend,
@@ -1272,12 +1431,18 @@ async fn handle_inbound_connection(
     .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
     let session_admission = handshake_admission
         .promote(authenticated.initiator)
-        .map_err(resource_admission_error)?;
+        .map_err(|error| observable_resource_admission_error(&observability, error))?;
     replay_guard
         .lock()
-        .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?
+        .map_err(|_| {
+            observability.record(VNextReasonCode::RejectedReplay, 0, 1);
+            VNextNetworkRuntimeError::ReplayGuard
+        })?
         .accept(&authenticated)
-        .map_err(|error| VNextNetworkRuntimeError::Session(format!("{error:?}")))?;
+        .map_err(|error| {
+            observability.record(VNextReasonCode::RejectedReplay, 0, 1);
+            VNextNetworkRuntimeError::Session(format!("{error:?}"))
+        })?;
     routes
         .observe_inbound(principal, &authenticated, connection.remote_addr())
         .map_err(VNextNetworkRuntimeError::RouteDirectory)?;
@@ -1295,31 +1460,54 @@ async fn handle_inbound_connection(
     )
     .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
     let mut journals = BTreeMap::<[u8; 32], PersistentJournal>::new();
+    let mut journal_observations = BTreeMap::<[u8; 32], VNextJournalObservation>::new();
     let mut outbound_sequence = 1u64;
     for _ in 0..policy.max_records_per_session {
         let frame_payload = match carrier.recv_frame_payload(&connection).await {
             Ok(payload) => payload,
-            Err(_) => break,
+            Err(error) => {
+                observability.record(VNextReasonCode::RejectedProtocol, 0, 1);
+                tracing::warn!(
+                    target: "onebrain::vnext::observability",
+                    reason_code = VNextReasonCode::RejectedProtocol.code(),
+                    error = %error,
+                    "vNext carrier receive rejected"
+                );
+                break;
+            }
         };
         let mut resource_record = session_admission
             .begin_record(frame_payload.len() as u64)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&observability, error))?;
         resource_record
             .advance(AdmissionStage::Frame, 1)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&observability, error))?;
         let record = match carrier.decode_and_validate_payload(&frame_payload) {
             Ok(record) => record,
-            Err(_) => break,
+            Err(error) => {
+                observability.record(
+                    VNextReasonCode::RejectedProtocol,
+                    frame_payload.len() as u64,
+                    1,
+                );
+                tracing::warn!(
+                    target: "onebrain::vnext::observability",
+                    reason_code = VNextReasonCode::RejectedProtocol.code(),
+                    error = %error,
+                    "vNext carrier payload rejected"
+                );
+                break;
+            }
         };
         resource_record
             .advance(AdmissionStage::Protocol, 1)
-            .map_err(resource_admission_error)?;
+            .map_err(|error| observable_resource_admission_error(&observability, error))?;
         match record {
             AuthenticatedCarrierRecord::Reconciliation(message) => {
                 let binding = message.binding_digest;
                 session_admission
                     .admit_context(binding)
-                    .map_err(resource_admission_error)?;
+                    .map_err(|error| observable_resource_admission_error(&observability, error))?;
                 if let ReconciliationBody::Resume { token } = &message.body {
                     if journals.contains_key(&binding) {
                         return Err(VNextNetworkRuntimeError::Journal(
@@ -1333,6 +1521,7 @@ async fn handle_inbound_connection(
                         selector: message.context.selector,
                         source_peer,
                         storage: storage.clone(),
+                        observability: Arc::clone(&observability),
                     };
                     let mut resumed = JournaledReconciliationSession::resume(
                         journal_backend.clone(),
@@ -1364,12 +1553,17 @@ async fn handle_inbound_connection(
                         .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
                     outbound_sequence = progress_sequence.saturating_add(2);
                     journals.insert(binding, resumed);
+                    journal_observations.insert(binding, observability.begin_journal());
                     resource_record
                         .advance(AdmissionStage::Journal, 1)
-                        .map_err(resource_admission_error)?;
+                        .map_err(|error| {
+                            observable_resource_admission_error(&observability, error)
+                        })?;
                     resource_record
                         .advance(AdmissionStage::Application, 1)
-                        .map_err(resource_admission_error)?;
+                        .map_err(|error| {
+                            observable_resource_admission_error(&observability, error)
+                        })?;
                     continue;
                 }
                 if !journals.contains_key(&binding) {
@@ -1380,6 +1574,7 @@ async fn handle_inbound_connection(
                         selector: message.context.selector,
                         source_peer,
                         storage: storage.clone(),
+                        observability: Arc::clone(&observability),
                     };
                     let session = JournaledReconciliationSession::open(
                         journal_backend.clone(),
@@ -1392,30 +1587,58 @@ async fn handle_inbound_connection(
                     )
                     .map_err(|error| VNextNetworkRuntimeError::Journal(format!("{error:?}")))?;
                     journals.insert(binding, session);
+                    journal_observations.insert(binding, observability.begin_journal());
                 }
                 if matches!(message.body, ReconciliationBody::Manifest { .. }) {
-                    journals
+                    let manifest_outcome = journals
                         .get_mut(&binding)
                         .expect("journal inserted")
                         .ingest_manifest(&message)
                         .map_err(|error| VNextNetworkRuntimeError::Journal(format!("{error:?}")))?;
+                    observability.record_count(
+                        VNextReasonCode::AcceptedNew,
+                        manifest_outcome.new_entries,
+                        0,
+                        manifest_outcome.new_entries,
+                    );
+                    observability.record_count(
+                        VNextReasonCode::Replayed,
+                        manifest_outcome.replayed_entries,
+                        0,
+                        manifest_outcome.replayed_entries,
+                    );
+                    observability.record_count(
+                        VNextReasonCode::RejectedLength,
+                        manifest_outcome.conflicting_lengths,
+                        0,
+                        manifest_outcome.conflicting_lengths,
+                    );
                 }
                 resource_record
                     .advance(AdmissionStage::Journal, 1)
-                    .map_err(resource_admission_error)?;
+                    .map_err(|error| observable_resource_admission_error(&observability, error))?;
                 resource_record
                     .advance(AdmissionStage::Application, 1)
-                    .map_err(resource_admission_error)?;
+                    .map_err(|error| observable_resource_admission_error(&observability, error))?;
             }
             AuthenticatedCarrierRecord::BoundPayload(frame) => {
                 let Some(journal) = journals.get_mut(&frame.binding_digest) else {
                     counters.deferred_records.fetch_add(1, Ordering::Relaxed);
+                    observability.record(
+                        VNextReasonCode::DeferredMissingDependency,
+                        frame.canonical_bytes.len() as u64,
+                        1,
+                    );
                     resource_record
                         .advance(AdmissionStage::Journal, 1)
-                        .map_err(resource_admission_error)?;
+                        .map_err(|error| {
+                            observable_resource_admission_error(&observability, error)
+                        })?;
                     resource_record
                         .advance(AdmissionStage::Application, 1)
-                        .map_err(resource_admission_error)?;
+                        .map_err(|error| {
+                            observable_resource_admission_error(&observability, error)
+                        })?;
                     continue;
                 };
                 let payload_outcome = journal
@@ -1452,32 +1675,72 @@ async fn handle_inbound_connection(
                     outbound_sequence = outbound_sequence.saturating_add(1);
                 }
                 match payload_outcome {
-                    JournaledPayloadOutcome::Delivered(
-                        PayloadIngestOutcome::ValidatedStored
-                        | PayloadIngestOutcome::AlreadyPresent,
-                    ) => {
+                    JournaledPayloadOutcome::Delivered(PayloadIngestOutcome::ValidatedStored) => {
+                        observability.record(
+                            VNextReasonCode::AcceptedNew,
+                            frame.canonical_bytes.len() as u64,
+                            5,
+                        );
+                        counters.accepted_records.fetch_add(1, Ordering::Relaxed);
+                    }
+                    JournaledPayloadOutcome::Delivered(PayloadIngestOutcome::AlreadyPresent) => {
+                        observability.record(
+                            VNextReasonCode::AlreadyPresent,
+                            frame.canonical_bytes.len() as u64,
+                            5,
+                        );
                         counters.accepted_records.fetch_add(1, Ordering::Relaxed);
                     }
                     JournaledPayloadOutcome::Delivered(
                         PayloadIngestOutcome::DeferredUntilManifest
                         | PayloadIngestOutcome::DeferredMissingDependency,
-                    )
-                    | JournaledPayloadOutcome::Backpressured => {
+                    ) => {
+                        observability.record(
+                            VNextReasonCode::DeferredMissingDependency,
+                            frame.canonical_bytes.len() as u64,
+                            5,
+                        );
                         counters.deferred_records.fetch_add(1, Ordering::Relaxed);
                     }
-                    JournaledPayloadOutcome::Delivered(PayloadIngestOutcome::Rejected(_))
-                    | JournaledPayloadOutcome::RetryExhausted => {
+                    JournaledPayloadOutcome::Backpressured => {
+                        observability.record(
+                            VNextReasonCode::DeferredBudget,
+                            frame.canonical_bytes.len() as u64,
+                            5,
+                        );
+                        counters.deferred_records.fetch_add(1, Ordering::Relaxed);
+                    }
+                    JournaledPayloadOutcome::Delivered(PayloadIngestOutcome::Rejected(reason)) => {
+                        observability.record(
+                            payload_reject_reason(reason),
+                            frame.canonical_bytes.len() as u64,
+                            5,
+                        );
+                        counters.rejected_records.fetch_add(1, Ordering::Relaxed);
+                    }
+                    JournaledPayloadOutcome::RetryExhausted => {
+                        observability.record(
+                            VNextReasonCode::OutboxRetryExhausted,
+                            frame.canonical_bytes.len() as u64,
+                            5,
+                        );
                         counters.rejected_records.fetch_add(1, Ordering::Relaxed);
                     }
                 }
+                let pending = match journal.state() {
+                    ReceiverState::ReceivingPayloads { pending }
+                    | ReceiverState::PartialInvalid { pending, .. } => pending,
+                    ReceiverState::AwaitingManifest | ReceiverState::ManifestBatchComplete => 0,
+                };
+                observability.observe_reconciliation_lag(pending);
                 debug_assert!(!journal.state().is_globally_complete());
                 let _ = ReceiverState::AwaitingManifest;
                 resource_record
                     .advance(AdmissionStage::Journal, 1)
-                    .map_err(resource_admission_error)?;
+                    .map_err(|error| observable_resource_admission_error(&observability, error))?;
                 resource_record
                     .advance(AdmissionStage::Application, 1)
-                    .map_err(resource_admission_error)?;
+                    .map_err(|error| observable_resource_admission_error(&observability, error))?;
             }
         }
         debug_assert!(resource_record.is_complete());
@@ -1517,10 +1780,44 @@ fn random_nonce() -> [u8; 32] {
     nonce
 }
 
-fn resource_admission_error(
-    error: ku_net::vnext_resource_gate::ResourceAdmissionError,
-) -> VNextNetworkRuntimeError {
+fn resource_admission_error(error: ResourceAdmissionError) -> VNextNetworkRuntimeError {
     VNextNetworkRuntimeError::ResourceAdmission(format!("{error:?}"))
+}
+
+fn observable_resource_admission_error(
+    observability: &VNextObservability,
+    error: ResourceAdmissionError,
+) -> VNextNetworkRuntimeError {
+    let reason = match error {
+        ResourceAdmissionError::WindowGlobal
+        | ResourceAdmissionError::WindowIp
+        | ResourceAdmissionError::WindowPeer
+        | ResourceAdmissionError::Contexts
+        | ResourceAdmissionError::SessionRecords
+        | ResourceAdmissionError::SessionBytes
+        | ResourceAdmissionError::SessionWork => VNextReasonCode::RejectedRateLimit,
+        ResourceAdmissionError::HandshakeGlobal
+        | ResourceAdmissionError::HandshakeIp
+        | ResourceAdmissionError::SessionGlobal
+        | ResourceAdmissionError::SessionIp
+        | ResourceAdmissionError::SessionPeer => VNextReasonCode::RejectedSession,
+        ResourceAdmissionError::InvalidLimits
+        | ResourceAdmissionError::StageOrder
+        | ResourceAdmissionError::LockPoisoned => VNextReasonCode::RejectedProtocol,
+    };
+    observability.record(reason, 0, 1);
+    resource_admission_error(error)
+}
+
+fn payload_reject_reason(reason: PayloadRejectReason) -> VNextReasonCode {
+    match reason {
+        PayloadRejectReason::ContextBinding => VNextReasonCode::RejectedContextBinding,
+        PayloadRejectReason::Selector => VNextReasonCode::RejectedSelector,
+        PayloadRejectReason::UndeclaredLength => VNextReasonCode::RejectedLength,
+        PayloadRejectReason::ContentCid => VNextReasonCode::RejectedContentCid,
+        PayloadRejectReason::SinkValidation => VNextReasonCode::QuarantinedInvalid,
+        PayloadRejectReason::SinkFailure => VNextReasonCode::RejectedSink,
+    }
 }
 
 fn validate_identity_signer(
@@ -2332,7 +2629,21 @@ mod tests {
         .unwrap();
         assert_eq!(right.status().authenticated_sessions, 1);
         assert_eq!(right.status().accepted_records, 0);
-        assert!(!right.status().claims_network_completion);
+        let status = right.status();
+        assert_eq!(status.observability.outcomes.quarantined, 1);
+        assert_eq!(
+            status
+                .observability
+                .reasons
+                .iter()
+                .find(|counter| counter.reason == VNextReasonCode::QuarantinedInvalid)
+                .unwrap()
+                .count,
+            1
+        );
+        assert!(!status.observability.contains_high_cardinality_labels);
+        assert!(!status.observability.claims_network_completion);
+        assert!(!status.claims_network_completion);
 
         outbound.close();
         left.shutdown().await;
@@ -3529,5 +3840,32 @@ mod tests {
             OUTBOUND_RETRY_MAX
         );
         assert_eq!(next_retry_delay(OUTBOUND_RETRY_MAX), OUTBOUND_RETRY_MAX);
+    }
+
+    #[test]
+    fn admission_and_payload_failures_map_to_stable_low_cardinality_reasons() {
+        let observability = VNextObservability::default();
+        let _ =
+            observable_resource_admission_error(&observability, ResourceAdmissionError::WindowIp);
+        let _ = observable_resource_admission_error(
+            &observability,
+            ResourceAdmissionError::SessionPeer,
+        );
+        let _ =
+            observable_resource_admission_error(&observability, ResourceAdmissionError::StageOrder);
+        assert_eq!(
+            payload_reject_reason(PayloadRejectReason::ContextBinding),
+            VNextReasonCode::RejectedContextBinding
+        );
+        assert_eq!(
+            payload_reject_reason(PayloadRejectReason::SinkValidation),
+            VNextReasonCode::QuarantinedInvalid
+        );
+
+        let snapshot = observability.snapshot(VNextRegistryTelemetryState::Unknown);
+        assert_eq!(snapshot.resources.rate_limited, 1);
+        assert_eq!(snapshot.outcomes.rejected, 3);
+        assert!(!snapshot.contains_high_cardinality_labels);
+        assert!(!snapshot.contains_private_need_labels);
     }
 }

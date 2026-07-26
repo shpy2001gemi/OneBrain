@@ -831,7 +831,20 @@ impl OneBrainNode {
     pub fn vnext_status(&self) -> crate::vnext_status::VNextStatusSnapshot {
         #[cfg(feature = "vnext-network-runtime")]
         let runtime = self.vnext_product_runtime.as_ref().map(|runtime| {
-            let status = runtime.services().network_status();
+            let services = runtime.services();
+            let registry_state = match self.registry_status.state {
+                crate::ConceptRegistryRuntimeState::Loaded => {
+                    crate::vnext_observability::VNextRegistryTelemetryState::Loaded
+                }
+                crate::ConceptRegistryRuntimeState::FallbackV1 => {
+                    crate::vnext_observability::VNextRegistryTelemetryState::FallbackV1
+                }
+                crate::ConceptRegistryRuntimeState::Disabled => {
+                    crate::vnext_observability::VNextRegistryTelemetryState::Disabled
+                }
+            };
+            services.observe_registry_state(registry_state);
+            let status = services.network_status();
             crate::vnext_status::NetworkRuntimeObservation {
                 listen_addr: status.listen_addr.to_string(),
                 authenticated_sessions: status.authenticated_sessions,
@@ -839,6 +852,7 @@ impl OneBrainNode {
                 accepted_records: status.accepted_records,
                 deferred_records: status.deferred_records,
                 rejected_records: status.rejected_records,
+                observability: status.observability,
             }
         });
         #[cfg(not(feature = "vnext-network-runtime"))]

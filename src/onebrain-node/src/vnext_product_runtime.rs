@@ -39,6 +39,9 @@ use crate::vnext_network_runtime::{
     prepare_vnext_identity, OutboundVNextSession, VNextNetworkRuntime, VNextNetworkRuntimeError,
     VNextNetworkRuntimeState, VNextNetworkRuntimeStatus,
 };
+use crate::vnext_observability::{
+    VNextObservability, VNextObservabilitySnapshot, VNextReasonCode, VNextRegistryTelemetryState,
+};
 use crate::vnext_route_authority::{AuthenticatedRoute, LocalPolicyRegistry, LocalPolicyVersion};
 
 pub const MAX_PRODUCT_BACKGROUND_WORKERS: usize = 8;
@@ -144,6 +147,7 @@ pub struct VNextProductRuntimeStatus {
     pub active_private_needs: usize,
     pub durable_matches: u64,
     pub pending_publications: u64,
+    pub observability: VNextObservabilitySnapshot,
     pub policy_versions: Vec<u32>,
     pub lanes: VNextProductLaneStatus,
     pub budgets: VNextRuntimeBudgets,
@@ -199,6 +203,7 @@ struct VNextProductServiceCore {
     max_product_workers: usize,
     worker_cancellation: watch::Receiver<bool>,
     worker_poll_ticks: Arc<AtomicU64>,
+    observability: Arc<VNextObservability>,
 }
 
 struct VNextServiceLifecycle {
@@ -302,6 +307,7 @@ impl VNextProductRuntime {
         );
         startup_trace.push(VNextStartupPhase::AuthenticatedQuicStarted);
         let last_network_status = network.status();
+        let observability = network.observability();
         let local_addr = network.local_addr();
 
         let rehydrated_private_needs = distributed_kql
@@ -366,6 +372,7 @@ impl VNextProductRuntime {
             max_product_workers: workers.capacity(),
             worker_cancellation: workers.cancellation.subscribe(),
             worker_poll_ticks: Arc::clone(&workers.poll_ticks),
+            observability,
         });
 
         Ok(Self {
@@ -671,6 +678,12 @@ impl VNextProductServices {
             .clone()
     }
 
+    pub(crate) fn observe_registry_state(&self, state: VNextRegistryTelemetryState) {
+        if let Ok(lease) = self.lease() {
+            lease.core.observability.observe_registry_state(state);
+        }
+    }
+
     pub fn status(&self) -> Result<VNextProductRuntimeStatus, VNextProductRuntimeError> {
         let lease = self.lease()?;
         let core = &lease.core;
@@ -699,6 +712,9 @@ impl VNextProductServices {
             active_private_needs,
             durable_matches,
             pending_publications,
+            observability: core
+                .observability
+                .snapshot(VNextRegistryTelemetryState::Unknown),
             policy_versions: core
                 .policy_versions
                 .iter()
@@ -853,6 +869,43 @@ impl VNextProductServices {
             .kql()?
             .process_one_hop_affordance_delta(&network, selector, budget)
             .map_err(Into::into);
+        if let Ok(report) = &result {
+            lease.core.observability.observe_selector_coverage(
+                report.coverage.assessed_frontier.len() as u64,
+                report.coverage.continuation.is_some(),
+            );
+            lease.core.observability.record_count(
+                VNextReasonCode::AcceptedNew,
+                report.new_matches,
+                0,
+                report.scanned_public_affordances,
+            );
+            lease.core.observability.record_count(
+                VNextReasonCode::Replayed,
+                report
+                    .replayed_matches
+                    .saturating_add(report.duplicate_frontier_objects),
+                0,
+                0,
+            );
+            lease.core.observability.record_count(
+                VNextReasonCode::QuarantinedInvalid,
+                report.ignored_invalid_affordances,
+                0,
+                0,
+            );
+        } else {
+            lease
+                .core
+                .observability
+                .record(VNextReasonCode::JournalFailure, 0, 1);
+            tracing::warn!(
+                target: "onebrain::vnext::observability",
+                reason_code = VNextReasonCode::JournalFailure.code(),
+                operation = "distributed_kql_scan",
+                "vNext product operation failed"
+            );
+        }
         result
     }
 
@@ -938,11 +991,53 @@ impl VNextProductServices {
         let lease = self.lease()?;
         lease.core.ensure_storage_writable()?;
         let network = lease.core.network()?;
-        lease
+        let result = lease
             .core
             .pomv()?
             .materialize_public_use_view(&network, selector, target, policy_version)
-            .map_err(Into::into)
+            .map_err(Into::into);
+        if let Ok(report) = &result {
+            lease.core.observability.observe_selector_coverage(
+                report.observations.len() as u64,
+                report.incremental_continuation,
+            );
+            lease
+                .core
+                .observability
+                .observe_pomv(report.idempotency_conflicts, report.view.revision);
+            lease.core.observability.record_count(
+                VNextReasonCode::AcceptedNew,
+                report.newly_indexed_events,
+                0,
+                report
+                    .changed_object_records
+                    .saturating_add(report.changed_event_records),
+            );
+            lease.core.observability.record_count(
+                VNextReasonCode::Replayed,
+                report.replayed_index_events,
+                0,
+                0,
+            );
+            lease.core.observability.record_count(
+                VNextReasonCode::QuarantinedInvalid,
+                report.invalid_or_unbound_records,
+                0,
+                0,
+            );
+        } else {
+            lease
+                .core
+                .observability
+                .record(VNextReasonCode::JournalFailure, 0, 1);
+            tracing::warn!(
+                target: "onebrain::vnext::observability",
+                reason_code = VNextReasonCode::JournalFailure.code(),
+                operation = "distributed_pomv_view",
+                "vNext product operation failed"
+            );
+        }
+        result
     }
 
     pub fn proposal(
