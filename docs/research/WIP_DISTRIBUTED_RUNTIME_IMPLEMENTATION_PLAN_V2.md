@@ -1974,5 +1974,16 @@ Local evidence:
   faults, 7 M5-04 chaos/5 floods/6 fuzz targets/18 corpus cases/5 exit oracles,
   504 normative lines và 400 local links.
 
-M5-04 đã hoàn tất ở cấp implementation; cần remote CI và nightly fuzz evidence
-trước khi merge về `main`. Work package kế tiếp là M5-05 Operational compaction.
+Remote foundation CI run
+[`30213637077`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30213637077)
+trên implementation commit `20ff1ca` hoàn tất thành công ngày 2026-07-27:
+foundation contract, Linux default workspace, Linux feature-enabled real-QUIC
+acceptance (gồm M5-04 chaos/flood/trace) và Windows default/vNext/Desktop smoke
+đều xanh. Bốn annotation là warning lint React baseline đã biết; không có error
+hoặc warning M5-04 mới.
+
+M5-04 đã hoàn tất implementation và remote foundation evidence. Workflow nightly
+mới chỉ được GitHub cho phép `workflow_dispatch` sau khi file workflow hiện diện
+trên default branch, vì vậy implementation/evidence được fast-forward vào `main`
+trước khi dispatch matrix sáu fuzz target. Work package chỉ đóng sau khi nightly
+fuzz evidence xanh. Work package kế tiếp là M5-05 Operational compaction.
