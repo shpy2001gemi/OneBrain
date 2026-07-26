@@ -117,6 +117,7 @@ This directory owns the cross-crate contracts that must be stable before vNext r
 | `QA-006` | [Algebraic and Trace Property Suite v1](ALGEBRAIC_AND_TRACE_PROPERTY_SUITE_V1.md) | Complete | Seven named properties for merge, reducer, materialization/adoption, authority, retirement and scoped completion under permutation and replay. |
 | `QA-007` | [Logical-Node Scale and Analytical Bound Profile v1](LOGICAL_NODE_SCALE_AND_ANALYTICAL_BOUND_PROFILE_V1.md) | Complete | Streaming 10k/100k split-operate-reunite simulation plus local-cap state/bandwidth analysis; 30B is explicitly an assumption-bound extrapolation, not a simulated claim. |
 | `QA-008` | [Performance Regression Budget Profile v1](PERFORMANCE_REGRESSION_BUDGET_PROFILE_V1.md) | Complete | Versioned correctness-coupled budgets for object bytes, inventory update/diff, duplicate bridges, hot provider hints and restore time. |
+| `QA-009` | [Chaos and Fuzz Profile v1](CHAOS_AND_FUZZ_PROFILE_V1.md) | Complete | Authenticated real-QUIC chaos, bounded flood/slowloris acceptance, long fair-redelivery traces, six shared parser targets, PR corpus smoke and pinned nightly fuzz budgets. |
 | `DOC-001` | [Normative Freeze and Evidence Index v1](VNEXT_NORMATIVE_FREEZE_AND_EVIDENCE_INDEX_V1.md) | Complete | Frozen interoperability profile, operator runbook, migration/rollback guide, gate evidence and explicit optional/default-off lanes. |
 
 ## Foundation release pack

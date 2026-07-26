@@ -300,6 +300,53 @@ impl OBPConnection {
         Ok(())
     }
 
+    /// DR-M5-only writer for bounded slow-writer and slowloris acceptance.
+    ///
+    /// This is deliberately unavailable outside the explicit chaos feature.
+    /// It may emit a declared length that differs from the chunks so the
+    /// receiver's prefix-first allocation and finite timeout can be tested.
+    #[cfg(feature = "dr-m5-chaos-harness")]
+    pub async fn send_length_prefixed_uni_chunks(
+        &self,
+        declared_length: u32,
+        chunks: &[&[u8]],
+        inter_chunk_delay: Duration,
+        hold_before_finish: Duration,
+    ) -> Result<(), TransportError> {
+        let actual = chunks.iter().try_fold(0usize, |total, chunk| {
+            total.checked_add(chunk.len()).ok_or_else(|| {
+                TransportError::SendFailed("Chaos frame length overflow".to_string())
+            })
+        })?;
+        if actual > MAX_PAYLOAD_SIZE {
+            return Err(TransportError::SendFailed(
+                "Chaos frame exceeds the absolute transport cap".to_string(),
+            ));
+        }
+        let mut stream =
+            self.inner.open_uni().await.map_err(|error| {
+                TransportError::SendFailed(format!("Open chaos stream: {error}"))
+            })?;
+        stream
+            .write_all(&declared_length.to_be_bytes())
+            .await
+            .map_err(|error| TransportError::SendFailed(format!("Write chaos prefix: {error}")))?;
+        for (index, chunk) in chunks.iter().enumerate() {
+            stream.write_all(chunk).await.map_err(|error| {
+                TransportError::SendFailed(format!("Write chaos chunk: {error}"))
+            })?;
+            if index + 1 < chunks.len() && !inter_chunk_delay.is_zero() {
+                tokio::time::sleep(inter_chunk_delay).await;
+            }
+        }
+        if !hold_before_finish.is_zero() {
+            tokio::time::sleep(hold_before_finish).await;
+        }
+        stream
+            .finish()
+            .map_err(|error| TransportError::SendFailed(format!("Finish chaos stream: {error}")))
+    }
+
     /// Send a request and wait for response using bi-directional stream.
     ///
     /// Use for req/resp messages: FIND_NODE, FIND_VALUE, QUERY_FORWARD.

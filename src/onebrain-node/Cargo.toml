@@ -9,6 +9,10 @@ license = "MIT"
 name = "onebrain_node"
 path = "src/lib.rs"
 
+[[example]]
+name = "dr_m5_fuzz_corpus_smoke"
+required-features = ["vnext-chaos-harness"]
+
 [features]
 default = []
 vnext-network-runtime = [
@@ -24,6 +28,11 @@ vnext-crash-harness = [
     "ku-core/dr-m5-crash-harness",
     "ku-net/dr-m5-crash-harness",
     "ku-kql/dr-m5-crash-harness",
+    "dep:sha2",
+]
+vnext-chaos-harness = [
+    "vnext-network-runtime",
+    "ku-net/dr-m5-chaos-harness",
     "dep:sha2",
 ]
 

@@ -288,6 +288,85 @@ impl JournalProjection {
     }
 }
 
+/// Exercise private journal token/snapshot parsers from the DR-M5 fuzz harness
+/// without exposing journal internals to production callers.
+#[cfg(feature = "dr-m5-chaos-harness")]
+pub fn fuzz_decode_journal_token_and_snapshot(bytes: &[u8]) {
+    if let Ok(snapshot) = JournalProjection::decode(bytes) {
+        let encoded = snapshot
+            .encode()
+            .expect("a decoded journal snapshot must re-encode");
+        assert_eq!(encoded, bytes, "accepted journal bytes must be canonical");
+    }
+    if let Ok(message) = decode_reconciliation_message(bytes) {
+        let token = match &message.body {
+            ReconciliationBody::Progress {
+                resume_token: Some(token),
+                ..
+            }
+            | ReconciliationBody::Resume { token } => Some(token),
+            _ => None,
+        };
+        if let Some(token) = token {
+            let _candidate_mac = token_mac(
+                [0xa5; 32],
+                token.binding_digest,
+                token.checkpoint_digest,
+                token.next_sequence,
+            );
+            assert_eq!(
+                encode_reconciliation_message(&message)
+                    .expect("accepted journal token message re-encodes"),
+                bytes
+            );
+            assert!(!message.grants_authority());
+        }
+    }
+
+    let seed = *blake3::hash(bytes).as_bytes();
+    let token_key = *blake3::keyed_hash(&[0xa5; 32], bytes).as_bytes();
+    let mut projection = JournalProjection::new(
+        seed,
+        [0; 32],
+        ReconciliationJournalConfig {
+            max_retries_per_record: 1,
+            max_inflight_bytes: 4_096,
+        },
+    );
+    projection.next_sequence = u64::from_be_bytes(
+        seed[..8]
+            .try_into()
+            .expect("a digest always has eight sequence bytes"),
+    );
+    let checkpoint = projection
+        .checkpoint_digest()
+        .expect("bounded synthesized journal checkpoint");
+    let mut token = ReconciliationResumeToken {
+        binding_digest: projection.binding,
+        checkpoint_digest: checkpoint,
+        next_sequence: projection.next_sequence,
+        opaque: token_mac(
+            token_key,
+            projection.binding,
+            checkpoint,
+            projection.next_sequence,
+        ),
+    };
+    validate_token_against(&projection, &token, token_key)
+        .expect("synthesized journal token validates");
+    match seed[8] % 4 {
+        0 => token.binding_digest[0] ^= 1,
+        1 => token.checkpoint_digest[0] ^= 1,
+        2 => token.next_sequence ^= 1,
+        3 => token.opaque[0] ^= 1,
+        _ => unreachable!("modulo four"),
+    }
+    assert_eq!(
+        validate_token_against(&projection, &token, token_key),
+        Err(ReconciliationJournalError::InvalidResumeToken)
+    );
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum JournaledPayloadOutcome {
     Delivered(PayloadIngestOutcome),

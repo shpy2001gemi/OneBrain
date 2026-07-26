@@ -12,6 +12,7 @@ quic = ["dep:quinn", "dep:rustls", "dep:tokio", "dep:rcgen"]
 # Enable DHT persistence (redb-backed storage for DHT entries + replica metadata)
 persist = ["dep:redb", "ku-core/persist"]
 dr-m5-crash-harness = ["ku-core/dr-m5-crash-harness"]
+dr-m5-chaos-harness = ["quic"]
 
 [dependencies]
 # Crypto

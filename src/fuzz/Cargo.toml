@@ -1,0 +1,51 @@
+[package]
+name = "onebrain-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "=0.4.13"
+onebrain-node = { path = "../onebrain-node", features = ["vnext-chaos-harness"] }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "canonical_codec"
+path = "fuzz_targets/canonical_codec.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "session_reconciliation_codec"
+path = "fuzz_targets/session_reconciliation_codec.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "carrier_frame"
+path = "fuzz_targets/carrier_frame.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "journal_token_snapshot"
+path = "fuzz_targets/journal_token_snapshot.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "domain_records"
+path = "fuzz_targets/domain_records.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "legacy_adapter"
+path = "fuzz_targets/legacy_adapter.rs"
+test = false
+doc = false

@@ -26,6 +26,8 @@ pub mod vnext_crash_harness;
 pub mod vnext_distributed_kql;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_distributed_pomv;
+#[cfg(feature = "vnext-chaos-harness")]
+pub mod vnext_fuzz_targets;
 pub mod vnext_legacy_migration;
 pub mod vnext_local_runtime;
 pub mod vnext_m5_benchmark;

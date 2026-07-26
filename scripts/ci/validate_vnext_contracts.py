@@ -42,6 +42,9 @@ DR_M5_OBSERVABILITY_PROFILE = (
 DR_M5_CRASH_HARNESS_PROFILE = (
     ROOT / "src/test-vectors/vnext/dr-m5-crash-harness-v1.json"
 )
+DR_M5_CHAOS_FUZZ_PROFILE = (
+    ROOT / "src/test-vectors/vnext/dr-m5-chaos-fuzz-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -1744,6 +1747,254 @@ def validate_vnext_dr_m5_crash_harness(
     )
 
 
+def validate_vnext_dr_m5_chaos_fuzz(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(DR_M5_CHAOS_FUZZ_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid M5-04 profile JSON: {error}") from error
+    if (
+        profile.get("format") != "onebrain/dr-m5-chaos-fuzz/1"
+        or profile.get("profile_id") != "CHAOS_AND_FUZZ_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("M5-04 profile identity drift")
+
+    feature = profile.get("feature")
+    if feature != {"name": "vnext-chaos-harness", "default_enabled": False}:
+        raise ContractError("M5-04 feature firewall drift")
+
+    expected_chaos = [
+        "drop",
+        "duplicate",
+        "delay",
+        "reorder",
+        "disconnect",
+        "partition_reunion",
+        "slow_reader_writer",
+    ]
+    real_quic = profile.get("real_quic")
+    if not isinstance(real_quic, dict) or (
+        real_quic.get("scenarios") != expected_chaos
+        or real_quic.get("timeout_seconds") != 15
+        or real_quic.get("authenticated") is not True
+        or real_quic.get("reconnect_reauthenticates") is not True
+        or real_quic.get("fair_redelivery") is not True
+    ):
+        raise ContractError("M5-04 real-QUIC scenario contract drift")
+
+    expected_floods = [
+        "pre_auth",
+        "authenticated_sessions",
+        "contexts_manifests",
+        "unique_invalid_cids",
+        "slowloris",
+    ]
+    flood = profile.get("flood")
+    if not isinstance(flood, dict) or (
+        flood.get("scenarios") != expected_floods
+        or flood.get("pre_auth_attempts") != 20_000
+        or flood.get("authenticated_session_attempts") != 1_024
+        or flood.get("context_manifest_attempts") != 1_024
+        or flood.get("context_limit") != 8
+        or flood.get("unique_invalid_cids") != 4_096
+        or flood.get("slowloris_deadline_ms") != 75
+    ):
+        raise ContractError("M5-04 flood bound drift")
+
+    trace = profile.get("property_trace")
+    expected_oracle = (
+        "a93a054ece2eabd5afacaaa21a233137a1987c82d646a6e1138598dc225c5a53"
+    )
+    if not isinstance(trace, dict) or (
+        trace.get("seeds") != 64
+        or trace.get("steps_per_seed") != 4_096
+        or trace.get("record_count") != 64
+        or trace.get("oracle_algorithm") != "blake3"
+        or trace.get("expected_oracle_blake3") != expected_oracle
+        or trace.get("claims_network_completion") is not False
+        or trace.get("grants_authority") is not False
+    ):
+        raise ContractError("M5-04 long-trace oracle drift")
+
+    expected_targets = [
+        "canonical_codec",
+        "session_reconciliation_codec",
+        "carrier_frame",
+        "journal_token_snapshot",
+        "domain_records",
+        "legacy_adapter",
+    ]
+    fuzz = profile.get("fuzz")
+    expected_corpus_digest = (
+        "465d554e235738511b69e37c33c0b5e6fcccbc09f8b30e010d7d3eac916c66fd"
+    )
+    if not isinstance(fuzz, dict) or (
+        fuzz.get("cargo_fuzz_version") != "0.13.2"
+        or fuzz.get("libfuzzer_sys_version") != "0.4.13"
+        or fuzz.get("max_input_bytes") != 4_096
+        or fuzz.get("targets") != expected_targets
+        or fuzz.get("pr_corpus_seeds_per_target") != 3
+        or fuzz.get("required_pr_corpus_cases") != 18
+        or fuzz.get("corpus_manifest_sha256") != expected_corpus_digest
+    ):
+        raise ContractError("M5-04 fuzz target/corpus contract drift")
+
+    nightly = profile.get("nightly")
+    if not isinstance(nightly, dict) or nightly != {
+        "workflow": ".github/workflows/vnext-fuzz-nightly.yml",
+        "max_total_time_seconds_per_target": 60,
+        "timeout_seconds_per_input": 10,
+        "matrix_targets": 6,
+        "artifact_retention_days": 14,
+    }:
+        raise ContractError("M5-04 nightly budget drift")
+
+    expected_exit = [
+        "zero_panic_oom_hang_privacy_or_invariant_failure",
+        "bounded_state_under_flood",
+        "fair_redelivery_same_oracle_root",
+        "pr_corpus_smoke_all_targets",
+        "versioned_nightly_budget",
+    ]
+    if profile.get("exit_oracles") != expected_exit:
+        raise ContractError("M5-04 exit oracle drift")
+
+    chaos_source = read(ROOT / "src/ku-net/src/vnext_chaos.rs")
+    for needle in (
+        "real_quic_drop_duplicate_delay_reorder_disconnect_and_reunion_converge",
+        "floods_and_slowloris_remain_bounded_without_state_amplification",
+        "long_delivery_traces_converge_to_one_oracle_under_fair_redelivery",
+        "private-standing-need-must-not-cross-chaos-wire",
+        "accepted.extend(source)",
+        "claims_network_completion: false",
+    ):
+        if needle not in chaos_source:
+            raise ContractError(f"M5-04 chaos implementation evidence missing: {needle}")
+
+    shared_target_source = read(
+        ROOT / "src/onebrain-node/src/vnext_fuzz_targets.rs"
+    )
+    for needle in (
+        "decode_canonical",
+        "decode_session_message",
+        "decode_reconciliation_message",
+        "QuicRecordAdapter::decode",
+        "fuzz_decode_journal_token_and_snapshot",
+        "decode_knowledge_object",
+        "decode_knowledge_event",
+        "decode_feed_inception",
+        "decode_actor_delegation",
+        "decode_actor_revocation",
+        "UseEvidencePayload::from_validated_object",
+        "legacy::parse_peer_message",
+        "assert!(!adapter.grants_vnext_authority())",
+    ):
+        if needle not in shared_target_source:
+            raise ContractError(f"M5-04 parser target evidence missing: {needle}")
+    journal_source = read(
+        ROOT / "src/ku-net/src/vnext_reconciliation_journal.rs"
+    )
+    if "validate_token_against(&projection, &token, token_key)" not in journal_source:
+        raise ContractError("M5-04 journal token validator fuzz evidence missing")
+
+    fuzz_manifest = read(ROOT / "src/fuzz/Cargo.toml")
+    if (
+        'libfuzzer-sys = "=0.4.13"' not in fuzz_manifest
+        or 'features = ["vnext-chaos-harness"]' not in fuzz_manifest
+    ):
+        raise ContractError("M5-04 cargo-fuzz manifest/version wiring drift")
+    fuzz_lock = read(ROOT / "src/fuzz/Cargo.lock")
+    if not re.search(
+        r'(?m)^name = "libfuzzer-sys"\nversion = "0\.4\.13"$',
+        fuzz_lock,
+    ):
+        raise ContractError("M5-04 cargo-fuzz lockfile version drift")
+    for target in expected_targets:
+        relative = f"fuzz_targets/{target}.rs"
+        if f'name = "{target}"' not in fuzz_manifest or relative not in fuzz_manifest:
+            raise ContractError(f"M5-04 fuzz manifest target missing: {target}")
+        target_source = read(ROOT / "src/fuzz" / relative)
+        if (
+            f'run_target("{target}", data)' not in target_source
+            or "MAX_FUZZ_INPUT_BYTES" not in target_source
+        ):
+            raise ContractError(f"M5-04 fuzz target wrapper drift: {target}")
+
+    corpus_root = ROOT / "src/fuzz/corpus"
+    attributes = read(ROOT / ".gitattributes")
+    if "src/fuzz/corpus/** -text" not in attributes:
+        raise ContractError("M5-04 corpus byte-preservation attribute missing")
+    digest = hashlib.sha256()
+    digest.update(b"onebrain:dr-m5:fuzz-corpus:1\0")
+    corpus_cases = 0
+
+    def digest_field(value: bytes) -> None:
+        digest.update(len(value).to_bytes(8, "big"))
+        digest.update(value)
+
+    for target in expected_targets:
+        digest_field(target.encode("utf-8"))
+        directory = corpus_root / target
+        if not directory.is_dir():
+            raise ContractError(f"M5-04 corpus directory missing: {target}")
+        files = sorted(path for path in directory.iterdir() if path.is_file())
+        if len(files) != 3:
+            raise ContractError(f"M5-04 corpus seed count drift: {target}")
+        for path in files:
+            data = path.read_bytes()
+            if not data or len(data) > 4_096:
+                raise ContractError(f"M5-04 corpus seed bound drift: {path.name}")
+            digest_field(path.name.encode("utf-8"))
+            digest_field(data)
+            corpus_cases += 1
+    if digest.hexdigest() != expected_corpus_digest:
+        raise ContractError("M5-04 corpus manifest digest drift")
+
+    nightly_source = read(ROOT / ".github/workflows/vnext-fuzz-nightly.yml")
+    for needle in (
+        "cargo install cargo-fuzz --version 0.13.2 --locked",
+        "-max_total_time=60 -timeout=10 -max_len=4096",
+        "retention-days: 14",
+    ):
+        if needle not in nightly_source:
+            raise ContractError(f"M5-04 nightly workflow evidence missing: {needle}")
+    for target in expected_targets:
+        if f"- {target}" not in nightly_source:
+            raise ContractError(f"M5-04 nightly target missing: {target}")
+
+    node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
+    if (
+        "default = []" not in node_manifest
+        or "vnext-chaos-harness = [" not in node_manifest
+        or '"ku-net/dr-m5-chaos-harness"' not in node_manifest
+        or 'required-features = ["vnext-chaos-harness"]' not in node_manifest
+    ):
+        raise ContractError("M5-04 feature firewall wiring missing")
+    spec = read(VNEXT / "CHAOS_AND_FUZZ_PROFILE_V1.md")
+    if "dr-m5-chaos-fuzz-v1.json" not in spec:
+        raise ContractError("M5-04 normative profile is not linked to machine contract")
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    for needle in (
+        "python -m unittest scripts.ci.test_validate_vnext_dr_m5_chaos_fuzz",
+        "- name: M5.4 real-QUIC chaos and adversarial flood",
+        "- name: M5.4 deterministic parser corpus smoke",
+        "--features vnext-chaos-harness",
+    ):
+        if needle not in workflow:
+            raise ContractError(f"M5-04 PR acceptance gate missing: {needle}")
+
+    return (
+        len(expected_chaos),
+        len(expected_floods),
+        len(expected_targets),
+        corpus_cases,
+        len(expected_exit),
+    )
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -1854,6 +2105,13 @@ def main() -> int:
             m5_crash_cases,
             m5_crash_faults,
         ) = validate_vnext_dr_m5_crash_harness()
+        (
+            m5_chaos_scenarios,
+            m5_flood_scenarios,
+            m5_fuzz_targets,
+            m5_corpus_cases,
+            m5_chaos_exit_oracles,
+        ) = validate_vnext_dr_m5_chaos_fuzz()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -1877,6 +2135,9 @@ def main() -> int:
         f"{m5_observability_oracles} exit oracles, "
         f"{m5_crash_boundaries} M5-03 boundaries/{m5_crash_phases} phases/"
         f"{m5_crash_cases} process kills/{m5_crash_faults} storage faults, "
+        f"{m5_chaos_scenarios} M5-04 chaos/{m5_flood_scenarios} floods/"
+        f"{m5_fuzz_targets} fuzz targets/{m5_corpus_cases} corpus cases/"
+        f"{m5_chaos_exit_oracles} exit oracles, "
         f"{links} local links"
     )
     return 0

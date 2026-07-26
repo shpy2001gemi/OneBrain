@@ -616,6 +616,37 @@
       "rationale": "A default-off authenticated failpoint, fsynced-marker parent kill, real Redb reopen, exact 11-field oracle and frozen 13-by-5 report prove bounded crash recovery, idempotency, fail-closed authority and explicit corruption failure."
     },
     {
+      "path": "docs/specs/vnext/CHAOS_AND_FUZZ_PROFILE_V1.md",
+      "expected_statement_lines": 29,
+      "evidence": [
+        {
+          "path": "src/ku-net/src/vnext_chaos.rs",
+          "needle": "real_quic_drop_duplicate_delay_reorder_disconnect_and_reunion_converge"
+        },
+        {
+          "path": "src/ku-net/src/vnext_chaos.rs",
+          "needle": "floods_and_slowloris_remain_bounded_without_state_amplification"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_fuzz_targets.rs",
+          "needle": "pub const FUZZ_TARGETS: [&str; 6]"
+        },
+        {
+          "path": "src/onebrain-node/examples/dr_m5_fuzz_corpus_smoke.rs",
+          "needle": "CORPUS_MANIFEST_SHA256"
+        },
+        {
+          "path": ".github/workflows/vnext-fuzz-nightly.yml",
+          "needle": "cargo install cargo-fuzz --version 0.13.2 --locked"
+        },
+        {
+          "path": "src/test-vectors/vnext/dr-m5-chaos-fuzz-v1.json",
+          "needle": "\"required_pr_corpus_cases\": 18"
+        }
+      ],
+      "rationale": "Authenticated real-QUIC fault injection, bounded resource floods, deterministic long traces, shared parser entry points, frozen PR corpus and pinned nightly libFuzzer budgets prove convergence and fail-closed parsing without adding network authority."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [

@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/vnext-foundation.yml"
+      - ".github/workflows/vnext-fuzz-nightly.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/specs/vnext/**"
@@ -28,6 +29,7 @@ on:
     branches: [main, "codex/**"]
     paths:
       - ".github/workflows/vnext-foundation.yml"
+      - ".github/workflows/vnext-fuzz-nightly.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/specs/vnext/**"
@@ -88,6 +90,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_resource_admission
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_observability
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_crash_harness
+          python -m unittest scripts.ci.test_validate_vnext_dr_m5_chaos_fuzz
 
       - name: P3.4 Web UX build, lint, and receipt contract
         working-directory: src/onebrain-web
@@ -159,6 +162,7 @@ jobs:
           ku-net/src/vnext_bridge_merge.rs
           ku-net/src/vnext_carrier.rs
           ku-net/src/vnext_carrier_adapter.rs
+          ku-net/src/vnext_chaos.rs
           ku-net/src/vnext_reachability.rs
           ku-net/src/vnext_reconciliation.rs
           ku-net/src/vnext_reconciliation_journal.rs
@@ -187,6 +191,7 @@ jobs:
           onebrain-node/src/vnext_crash_harness.rs
           onebrain-node/src/vnext_distributed_kql.rs
           onebrain-node/src/vnext_distributed_pomv.rs
+          onebrain-node/src/vnext_fuzz_targets.rs
           onebrain-node/src/vnext_network_runtime.rs
           onebrain-node/src/vnext_observability.rs
           onebrain-node/src/vnext_outbox.rs
@@ -209,6 +214,7 @@ jobs:
           onebrain-node/src/vnext_workflow_surface.rs
           onebrain-node/examples/qa007_scale_report.rs
           onebrain-node/examples/qa008_performance_report.rs
+          onebrain-node/examples/dr_m5_fuzz_corpus_smoke.rs
           onebrain-node/tests/anti_gravity_reunion.rs
           onebrain-api/src/handlers.rs
           onebrain-api/src/server.rs
@@ -577,6 +583,21 @@ jobs:
           --features vnext-crash-harness
           --lib vnext_crash_harness::tests
           -- --test-threads=1
+      - name: M5.4 real-QUIC chaos and adversarial flood
+        run: >-
+          cargo test --locked -p ku-net
+          --features dr-m5-chaos-harness
+          --lib vnext_chaos
+          -- --test-threads=1
+          && cargo test --locked -p onebrain-node
+          --features vnext-chaos-harness
+          --lib vnext_fuzz_targets
+          -- --test-threads=1
+      - name: M5.4 deterministic parser corpus smoke
+        run: >-
+          cargo run --locked -p onebrain-node
+          --features vnext-chaos-harness
+          --example dr_m5_fuzz_corpus_smoke
       - name: P3.1 authenticated REST API contract and real-runtime flow
         run: >-
           cargo test --locked -p onebrain-api

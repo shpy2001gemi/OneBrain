@@ -1,0 +1,78 @@
+{
+  "format": "onebrain/dr-m5-chaos-fuzz/1",
+  "profile_id": "CHAOS_AND_FUZZ_PROFILE_V1",
+  "version": 1,
+  "feature": {
+    "name": "vnext-chaos-harness",
+    "default_enabled": false
+  },
+  "real_quic": {
+    "scenarios": [
+      "drop",
+      "duplicate",
+      "delay",
+      "reorder",
+      "disconnect",
+      "partition_reunion",
+      "slow_reader_writer"
+    ],
+    "timeout_seconds": 15,
+    "authenticated": true,
+    "reconnect_reauthenticates": true,
+    "fair_redelivery": true
+  },
+  "flood": {
+    "scenarios": [
+      "pre_auth",
+      "authenticated_sessions",
+      "contexts_manifests",
+      "unique_invalid_cids",
+      "slowloris"
+    ],
+    "pre_auth_attempts": 20000,
+    "authenticated_session_attempts": 1024,
+    "context_manifest_attempts": 1024,
+    "context_limit": 8,
+    "unique_invalid_cids": 4096,
+    "slowloris_deadline_ms": 75
+  },
+  "property_trace": {
+    "seeds": 64,
+    "steps_per_seed": 4096,
+    "record_count": 64,
+    "oracle_algorithm": "blake3",
+    "expected_oracle_blake3": "a93a054ece2eabd5afacaaa21a233137a1987c82d646a6e1138598dc225c5a53",
+    "claims_network_completion": false,
+    "grants_authority": false
+  },
+  "fuzz": {
+    "cargo_fuzz_version": "0.13.2",
+    "libfuzzer_sys_version": "0.4.13",
+    "max_input_bytes": 4096,
+    "targets": [
+      "canonical_codec",
+      "session_reconciliation_codec",
+      "carrier_frame",
+      "journal_token_snapshot",
+      "domain_records",
+      "legacy_adapter"
+    ],
+    "pr_corpus_seeds_per_target": 3,
+    "required_pr_corpus_cases": 18,
+    "corpus_manifest_sha256": "465d554e235738511b69e37c33c0b5e6fcccbc09f8b30e010d7d3eac916c66fd"
+  },
+  "nightly": {
+    "workflow": ".github/workflows/vnext-fuzz-nightly.yml",
+    "max_total_time_seconds_per_target": 60,
+    "timeout_seconds_per_input": 10,
+    "matrix_targets": 6,
+    "artifact_retention_days": 14
+  },
+  "exit_oracles": [
+    "zero_panic_oom_hang_privacy_or_invariant_failure",
+    "bounded_state_under_flood",
+    "fair_redelivery_same_oracle_root",
+    "pr_corpus_smoke_all_targets",
+    "versioned_nightly_budget"
+  ]
+}

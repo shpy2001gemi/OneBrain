@@ -1,0 +1,2 @@
+# Frozen fuzz seeds are byte-exact corpus artifacts on every platform.
+src/fuzz/corpus/** -text

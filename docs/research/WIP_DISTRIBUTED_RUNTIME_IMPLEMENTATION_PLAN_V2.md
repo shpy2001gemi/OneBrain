@@ -1915,3 +1915,64 @@ không có error hoặc warning M5-03 mới.
 
 M5-03 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
 `main`, work package kế tiếp là M5-04 Chaos, parser adversarial và fuzz.
+
+### 2026-07-27 — M5-04 Chaos, parser adversarial và fuzz
+
+Đã triển khai cục bộ trên nhánh `codex/dr-m5-chaos-fuzz`:
+
+1. Freeze
+   [`CHAOS_AND_FUZZ_PROFILE_V1.md`](../specs/vnext/CHAOS_AND_FUZZ_PROFILE_V1.md)
+   cùng machine profile `onebrain/dr-m5-chaos-fuzz/1`, feature
+   `vnext-chaos-harness` mặc định tắt và example corpus có
+   `required-features` để không làm rộng default build.
+2. Bổ sung generator deterministic chạy 64 seed × 4.096 bước × 64 record,
+   bắt buộc đi qua drop, duplicate, delay, reorder, disconnect,
+   partition/reunion và slow reader/writer. Fair redelivery hội tụ về cùng
+   BLAKE3 oracle root
+   `a93a054ece2eabd5afacaaa21a233137a1987c82d646a6e1138598dc225c5a53`
+   mà không cấp authority hoặc claim network completion.
+3. Bổ sung acceptance trên QUIC thật và session đã xác thực: manifest trước
+   payload, drop/duplicate/delay/reorder, đóng endpoint, partition, bind endpoint
+   mới, xác thực lại, slow writer theo chunk và slow reader có deadline. Private
+   StandingNeed canary không xuất hiện trong wire frame.
+4. Bổ sung flood gate gồm 20.000 pre-auth attempt, 1.024 authenticated-session
+   promotion vượt cap, 1.024 context/manifest attempt với cap 8, 4.096 unique
+   invalid CID và slowloris prefix/partial body với deadline 75 ms. Rejection
+   không làm lớn identity/context map và không authority amplification.
+5. Tạo sáu shared parser target cho canonical codec, session/reconciliation
+   codec, carrier frame, journal snapshot, domain Object/Event/Feed/Authority/
+   UseEvidence/DerivationEvidence và legacy adapter. Decoder chấp nhận canonical
+   bytes phải re-encode byte-for-byte; legacy không được phát `GLOBAL` hoặc cấp
+   vNext authority.
+6. Tạo cargo-fuzz workspace riêng, pin `libfuzzer-sys = 0.4.13`, sáu wrapper
+   target và corpus PR đúng 3 seed/target. 18 case có frozen SHA-256
+   `465d554e235738511b69e37c33c0b5e6fcccbc09f8b30e010d7d3eac916c66fd`.
+7. Thêm nightly workflow pin `cargo-fuzz 0.13.2`, matrix sáu target, mỗi target
+   60 giây, timeout từng input 10 giây, max input 4.096 byte và giữ crash
+   artifact 14 ngày.
+8. CI foundation thêm real-QUIC chaos/flood, shared-target adversarial test,
+   deterministic corpus smoke; validator và 12 mutation tests khóa scenario,
+   resource cap, trace/oracle, target/corpus, digest, nightly budget và feature
+   firewall.
+
+Local evidence:
+
+- M5-04 real-QUIC chaos/flood/trace: 3/3 test xanh;
+- `ku-net --features dr-m5-chaos-harness --lib`: 294/294 test xanh;
+- `onebrain-node --features vnext-chaos-harness --lib`: 141/141 test xanh;
+- PR corpus smoke: 18/18 case, corpus SHA-256 và chaos oracle đúng frozen value;
+- M5-04 mutation tests: 12/12; toàn bộ machine-profile mutation tests: 74/74
+  xanh;
+- `cargo test --workspace --locked --no-fail-fast -- --test-threads=2`: xanh;
+- feature-enabled clippy: exit code 0, chỉ còn warning baseline, không có warning
+  M5-04 mới;
+- `cargo fmt --all -- --check`: xanh;
+- `validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37 negative assertions,
+  55 foundation vectors/21 domains, 13 DR-M5 boundaries/11 oracle fields,
+  3 M5-01 lanes/13 state bounds/3 exit oracles, 22 M5-02 reasons/4 gauges/
+  4 exit oracles, 13 M5-03 boundaries/5 phases/65 process kills/4 storage
+  faults, 7 M5-04 chaos/5 floods/6 fuzz targets/18 corpus cases/5 exit oracles,
+  504 normative lines và 400 local links.
+
+M5-04 đã hoàn tất ở cấp implementation; cần remote CI và nightly fuzz evidence
+trước khi merge về `main`. Work package kế tiếp là M5-05 Operational compaction.

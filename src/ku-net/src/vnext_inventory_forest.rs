@@ -2,9 +2,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(feature = "persist")]
+use ku_core::foundation::dr_m5_failpoint;
 use ku_core::foundation::{
-    decode_canonical, dr_m5_failpoint, encode_canonical, CanonicalError, CanonicalValue,
-    CheckpointCid, EventCid, FeedId, InventoryRecordKind, ResourceProfile, SelectorCid,
+    decode_canonical, encode_canonical, CanonicalError, CanonicalValue, CheckpointCid, EventCid,
+    FeedId, InventoryRecordKind, ResourceProfile, SelectorCid,
 };
 
 pub const INVENTORY_FOREST_PROFILE_MAJOR: u64 = 1;

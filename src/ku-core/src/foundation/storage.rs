@@ -12,6 +12,7 @@ use super::actor_root::{decode_actor_root_delegation, ValidatedActorRootDelegati
 use super::authority_event::{authority_event_descriptor, AuthorityEventDescriptor};
 use super::canonical::ResourceProfile;
 use super::content_id::{EventCid, ObjectCid, ReservedDomain};
+#[cfg(feature = "persist")]
 use super::dr_m5_failpoint;
 use super::event::{decode_knowledge_event, EventType, ValidatedKnowledgeEvent};
 use super::feed::{decode_feed_inception, ValidatedFeedInception};
