@@ -2,7 +2,7 @@
 
 use crate::vnext_carrier::{CarrierError, CarrierRecord, DeliveryInjection, DeterministicCarrier};
 
-const MAX_QUIC_FRAME_BYTES: usize = 4_194_304;
+pub const MAX_QUIC_FRAME_BYTES: usize = 4_194_304;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DelayedDelivery {
@@ -87,7 +87,16 @@ impl QuicRecordAdapter {
         if frame.len() != length + 4 {
             return Err(CarrierAdapterError::LengthMismatch);
         }
-        CarrierRecord::decode(&frame[4..]).map_err(Into::into)
+        Self::decode_payload(&frame[4..])
+    }
+
+    /// Decode payload bytes after the transport has already validated the
+    /// length prefix and allocated within the carrier lane cap.
+    pub fn decode_payload(payload: &[u8]) -> Result<CarrierRecord, CarrierAdapterError> {
+        if payload.is_empty() || payload.len() > MAX_QUIC_FRAME_BYTES {
+            return Err(CarrierAdapterError::FrameLimit);
+        }
+        CarrierRecord::decode(payload).map_err(Into::into)
     }
 
     pub const fn grants_authority() -> bool {

@@ -13,8 +13,9 @@ use thiserror::Error;
 use crate::error::TransportError;
 use crate::transport::OBPConnection;
 use crate::vnext_carrier::CarrierRecord;
-use crate::vnext_carrier_adapter::{CarrierAdapterError, QuicRecordAdapter};
+use crate::vnext_carrier_adapter::{CarrierAdapterError, QuicRecordAdapter, MAX_QUIC_FRAME_BYTES};
 use crate::vnext_reconciliation::BoundPayloadFrame;
+use crate::vnext_resource_gate::{PROTOCOL_PAYLOAD_MAX_BYTES, SESSION_CONTROL_MAX_BYTES};
 use crate::vnext_session::{
     authenticate_session, create_finish, create_hello, create_welcome, AuthenticatedSession,
     SessionError, SessionIdentitySigner,
@@ -30,6 +31,7 @@ pub async fn initiate_authenticated_session(
     capabilities: &[SessionCapability],
     feed_proofs: Vec<SelectiveFeedProof>,
 ) -> Result<AuthenticatedSession, QuicSessionError> {
+    let control_limit = SESSION_CONTROL_MAX_BYTES as usize;
     let transport_binding = connection.transport_binding()?;
     let hello = create_hello(
         key,
@@ -40,9 +42,10 @@ pub async fn initiate_authenticated_session(
         feed_proofs,
     )?;
     let response = connection
-        .request(&encode_session_message(&SessionHandshakeMessage::Hello(
-            hello.clone(),
-        ))?)
+        .request_with_limit(
+            &encode_session_message(&SessionHandshakeMessage::Hello(hello.clone()))?,
+            control_limit,
+        )
         .await?;
     let SessionHandshakeMessage::Welcome(welcome) = decode_session_message(&response)? else {
         return Err(QuicSessionError::UnexpectedMessage("WELCOME"));
@@ -56,9 +59,10 @@ pub async fn initiate_authenticated_session(
         capabilities,
     )?;
     connection
-        .send_uni(&encode_session_message(&SessionHandshakeMessage::Finish(
-            finish.clone(),
-        ))?)
+        .send_uni_with_limit(
+            &encode_session_message(&SessionHandshakeMessage::Finish(finish.clone()))?,
+            control_limit,
+        )
         .await?;
     authenticate_session(
         &hello,
@@ -82,8 +86,9 @@ pub async fn accept_authenticated_session(
     capabilities: &[SessionCapability],
     feed_proofs: Vec<SelectiveFeedProof>,
 ) -> Result<AuthenticatedSession, QuicSessionError> {
+    let control_limit = SESSION_CONTROL_MAX_BYTES as usize;
     let transport_binding = connection.transport_binding()?;
-    let (request, responder) = connection.accept_bi().await?;
+    let (request, responder) = connection.accept_bi_with_limit(control_limit).await?;
     let SessionHandshakeMessage::Hello(hello) = decode_session_message(&request)? else {
         return Err(QuicSessionError::UnexpectedMessage("HELLO"));
     };
@@ -97,11 +102,12 @@ pub async fn accept_authenticated_session(
         feed_proofs,
     )?;
     responder
-        .respond(&encode_session_message(&SessionHandshakeMessage::Welcome(
-            welcome.clone(),
-        ))?)
+        .respond_with_limit(
+            &encode_session_message(&SessionHandshakeMessage::Welcome(welcome.clone()))?,
+            control_limit,
+        )
         .await?;
-    let finish_bytes = connection.recv_uni().await?;
+    let finish_bytes = connection.recv_uni_with_limit(control_limit).await?;
     let SessionHandshakeMessage::Finish(finish) = decode_session_message(&finish_bytes)? else {
         return Err(QuicSessionError::UnexpectedMessage("FINISH"));
     };
@@ -130,26 +136,66 @@ pub enum AuthenticatedCarrierRecord {
 pub struct AuthenticatedCarrierSession {
     authenticated: AuthenticatedSession,
     contexts: BTreeMap<[u8; 32], onebrain_protocol::ReconciliationContext>,
+    max_contexts: usize,
 }
+
+pub const DEFAULT_CONTEXTS_PER_SESSION: usize = 4_096;
 
 impl AuthenticatedCarrierSession {
     pub fn new(authenticated: AuthenticatedSession) -> Self {
         Self {
             authenticated,
             contexts: BTreeMap::new(),
+            max_contexts: DEFAULT_CONTEXTS_PER_SESSION,
         }
+    }
+
+    pub fn with_context_limit(
+        authenticated: AuthenticatedSession,
+        max_contexts: usize,
+    ) -> Result<Self, QuicSessionError> {
+        if max_contexts == 0 {
+            return Err(QuicSessionError::InvalidContextLimit);
+        }
+        Ok(Self {
+            authenticated,
+            contexts: BTreeMap::new(),
+            max_contexts,
+        })
     }
 
     pub fn authenticated(&self) -> &AuthenticatedSession {
         &self.authenticated
     }
 
+    pub fn context_count(&self) -> usize {
+        self.contexts.len()
+    }
+
     pub async fn recv(
         &mut self,
         connection: &OBPConnection,
     ) -> Result<AuthenticatedCarrierRecord, QuicSessionError> {
-        let frame = connection.recv_uni().await?;
-        let record = QuicRecordAdapter::decode(&frame)?;
+        let payload = self.recv_frame_payload(connection).await?;
+        self.decode_and_validate_payload(&payload)
+    }
+
+    /// The transport checks the untrusted prefix before allocating this frame.
+    pub async fn recv_frame_payload(
+        &self,
+        connection: &OBPConnection,
+    ) -> Result<Vec<u8>, QuicSessionError> {
+        connection
+            .recv_length_prefixed_uni(MAX_QUIC_FRAME_BYTES)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub fn decode_and_validate_payload(
+        &mut self,
+        payload: &[u8],
+    ) -> Result<AuthenticatedCarrierRecord, QuicSessionError> {
+        let record = QuicRecordAdapter::decode_payload(payload)?;
         self.validate(record)
     }
 
@@ -159,6 +205,9 @@ impl AuthenticatedCarrierSession {
     ) -> Result<AuthenticatedCarrierRecord, QuicSessionError> {
         match record {
             CarrierRecord::ReconciliationMessage(bytes) => {
+                if bytes.is_empty() || bytes.len() as u64 > PROTOCOL_PAYLOAD_MAX_BYTES {
+                    return Err(QuicSessionError::ProtocolPayloadLimit);
+                }
                 let message = decode_reconciliation_message(&bytes)?;
                 if message.context.authenticated_transcript != self.authenticated.session_id {
                     return Err(QuicSessionError::AuthenticatedTranscriptMismatch);
@@ -173,12 +222,20 @@ impl AuthenticatedCarrierSession {
                     }
                     Some(_) => {}
                     None => {
+                        if self.contexts.len() >= self.max_contexts {
+                            return Err(QuicSessionError::ContextLimit);
+                        }
                         self.contexts.insert(binding, message.context.clone());
                     }
                 }
                 Ok(AuthenticatedCarrierRecord::Reconciliation(message))
             }
             CarrierRecord::BoundPayload(frame) => {
+                if frame.canonical_bytes.is_empty()
+                    || frame.canonical_bytes.len() as u64 > PROTOCOL_PAYLOAD_MAX_BYTES
+                {
+                    return Err(QuicSessionError::ProtocolPayloadLimit);
+                }
                 let Some(context) = self.contexts.get(&frame.binding_digest) else {
                     return Err(QuicSessionError::PayloadBeforeContext);
                 };
@@ -197,8 +254,9 @@ pub async fn send_carrier_record(
     connection: &OBPConnection,
     record: &CarrierRecord,
 ) -> Result<(), QuicSessionError> {
+    let frame = QuicRecordAdapter::encode(record)?;
     connection
-        .send_uni(&QuicRecordAdapter::encode(record)?)
+        .send_uni_with_limit(&frame, MAX_QUIC_FRAME_BYTES + 4)
         .await
         .map_err(Into::into)
 }
@@ -225,6 +283,12 @@ pub enum QuicSessionError {
     PayloadBeforeContext,
     #[error("bound payload selector does not match its authenticated context")]
     PayloadSelectorMismatch,
+    #[error("authenticated carrier context limit is zero")]
+    InvalidContextLimit,
+    #[error("authenticated carrier context limit exceeded")]
+    ContextLimit,
+    #[error("canonical protocol payload exceeds its lane limit")]
+    ProtocolPayloadLimit,
 }
 
 impl From<SessionError> for QuicSessionError {

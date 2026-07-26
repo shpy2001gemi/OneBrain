@@ -19,6 +19,9 @@ use super::object::{
     decode_knowledge_object, DisclosureClass, KnownObjectKind, ValidatedKnowledgeObject,
 };
 
+pub const MAX_VERIFIED_ACCEPTED_RECORDS: u64 = 65_536;
+pub const MAX_VERIFIED_QUARANTINE_RECORDS: u64 = 65_536;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum StoredRecordKind {
@@ -712,7 +715,7 @@ impl std::error::Error for VerifiedStoreError {}
 mod persistent {
     use std::path::Path;
 
-    use redb::{Database, ReadableTable, TableDefinition};
+    use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 
     use super::*;
 
@@ -770,12 +773,26 @@ mod persistent {
                             .open_table(QUARANTINE)
                             .map_err(|error| error.to_string())?;
                         let encoded = encode_quarantine(collision)?;
+                        if quarantine
+                            .get(collision.quarantine_id.as_slice())
+                            .map_err(|error| error.to_string())?
+                            .is_none()
+                            && quarantine.len().map_err(|error| error.to_string())?
+                                >= MAX_VERIFIED_QUARANTINE_RECORDS
+                        {
+                            return Err("VNEXT_VERIFIED_QUARANTINE_LIMIT".to_string());
+                        }
                         quarantine
                             .insert(collision.quarantine_id.as_slice(), encoded.as_slice())
                             .map_err(|error| error.to_string())?;
                         BackendAcceptOutcome::CollisionQuarantined
                     }
                     None => {
+                        if accepted.len().map_err(|error| error.to_string())?
+                            >= MAX_VERIFIED_ACCEPTED_RECORDS
+                        {
+                            return Err("VNEXT_VERIFIED_ACCEPTED_LIMIT".to_string());
+                        }
                         accepted
                             .insert(key.as_slice(), bytes)
                             .map_err(|error| error.to_string())?;
@@ -794,6 +811,15 @@ mod persistent {
                 let mut table = write
                     .open_table(QUARANTINE)
                     .map_err(|error| error.to_string())?;
+                if table
+                    .get(record.quarantine_id.as_slice())
+                    .map_err(|error| error.to_string())?
+                    .is_none()
+                    && table.len().map_err(|error| error.to_string())?
+                        >= MAX_VERIFIED_QUARANTINE_RECORDS
+                {
+                    return Err("VNEXT_VERIFIED_QUARANTINE_LIMIT".to_string());
+                }
                 table
                     .insert(record.quarantine_id.as_slice(), encoded.as_slice())
                     .map_err(|error| error.to_string())?;
@@ -864,12 +890,26 @@ mod persistent {
                             .open_table(QUARANTINE)
                             .map_err(|error| error.to_string())?;
                         let encoded = encode_quarantine(collision)?;
+                        if quarantine
+                            .get(collision.quarantine_id.as_slice())
+                            .map_err(|error| error.to_string())?
+                            .is_none()
+                            && quarantine.len().map_err(|error| error.to_string())?
+                                >= MAX_VERIFIED_QUARANTINE_RECORDS
+                        {
+                            return Err("VNEXT_VERIFIED_QUARANTINE_LIMIT".to_string());
+                        }
                         quarantine
                             .insert(collision.quarantine_id.as_slice(), encoded.as_slice())
                             .map_err(|error| error.to_string())?;
                         BackendAcceptOutcome::CollisionQuarantined
                     }
                     None => {
+                        if accepted.len().map_err(|error| error.to_string())?
+                            >= MAX_VERIFIED_ACCEPTED_RECORDS
+                        {
+                            return Err("VNEXT_VERIFIED_ACCEPTED_LIMIT".to_string());
+                        }
                         accepted
                             .insert(key.as_slice(), bytes)
                             .map_err(|error| error.to_string())?;

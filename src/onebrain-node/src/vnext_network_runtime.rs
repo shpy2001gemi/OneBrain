@@ -30,20 +30,24 @@ use ku_net::vnext_reconciliation_journal::persistent::RedbReconciliationJournalB
 use ku_net::vnext_reconciliation_journal::{
     JournaledPayloadOutcome, JournaledReconciliationSession, ReconciliationJournalConfig,
 };
+use ku_net::vnext_resource_gate::{
+    AdmissionStage, HandshakeAdmission, ResourceUsage, RuntimeAdmissionController,
+    RuntimeAdmissionLimits, SessionAdmission,
+};
 use ku_net::vnext_session::{
     principal_node_id, AuthenticatedSession, SessionIdentitySigner, SessionReplayGuard,
 };
 use onebrain_protocol::{
-    bind_reconciliation_message, encode_reconciliation_message, reconciliation_capability,
-    reconciliation_profile, ReconcileManifestEntry, ReconcileReceiptStatus, ReconciliationBody,
-    ReconciliationBudget, ReconciliationContext, ReconciliationResumeMode,
-    ReconciliationSummaryMethod,
+    bind_reconciliation_message, decode_reconciliation_message, encode_reconciliation_message,
+    reconciliation_capability, reconciliation_profile, ReconcileManifestEntry,
+    ReconcileReceiptStatus, ReconciliationBody, ReconciliationBudget, ReconciliationContext,
+    ReconciliationResumeMode, ReconciliationSummaryMethod,
 };
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::sync::{watch, Mutex as AsyncMutex, Notify, Semaphore};
+use tokio::sync::{watch, Mutex as AsyncMutex, Notify};
 use tokio::task::JoinHandle;
 
 use crate::vnext_config::VNextNetworkPolicy;
@@ -62,6 +66,7 @@ const IDENTITY_MAGIC: &[u8; 8] = b"OBIDV1\0\0";
 const IDENTITY_BYTES: usize = 40;
 const OUTBOUND_RETRY_BASE: Duration = Duration::from_millis(250);
 const OUTBOUND_RETRY_MAX: Duration = Duration::from_secs(30);
+const DEFAULT_NETWORK_STORAGE_HARD_WATERMARK_BYTES: u64 = 1_024 * 1_048_576;
 
 type PersistentSink = SharedVNextValidatedSink<RedbVerifiedBackend>;
 type PersistentJournal =
@@ -74,6 +79,7 @@ struct InventoryingSink {
     provenance: RedbRecordProvenance,
     selector: ku_core::foundation::SelectorCid,
     source_peer: NodeId,
+    storage: NetworkStorageAdmission,
 }
 
 impl ValidateThenAcceptSink for InventoryingSink {
@@ -83,6 +89,7 @@ impl ValidateThenAcceptSink for InventoryingSink {
         cid: [u8; 32],
         canonical_bytes: &[u8],
     ) -> Result<PayloadSinkOutcome, String> {
+        self.storage.ensure_writable(canonical_bytes.len() as u64)?;
         let outcome = self
             .inner
             .validate_then_accept(kind, cid, canonical_bytes)?;
@@ -136,6 +143,44 @@ impl ValidateThenAcceptSink for InventoryingSink {
     }
 }
 
+#[derive(Clone)]
+struct NetworkStorageAdmission {
+    data_dir: PathBuf,
+    hard_watermark_bytes: u64,
+}
+
+impl NetworkStorageAdmission {
+    fn used_bytes(&self) -> Result<u64, String> {
+        let entries = std::fs::read_dir(&self.data_dir).map_err(|error| error.to_string())?;
+        let mut used = 0u64;
+        for entry in entries {
+            let entry = entry.map_err(|error| error.to_string())?;
+            if !entry.file_name().to_string_lossy().starts_with("vnext_") {
+                continue;
+            }
+            let metadata = entry.metadata().map_err(|error| error.to_string())?;
+            if metadata.is_file() {
+                used = used
+                    .checked_add(metadata.len())
+                    .ok_or_else(|| "VNEXT_STORAGE_SIZE_OVERFLOW".to_string())?;
+            }
+        }
+        Ok(used)
+    }
+
+    fn ensure_writable(&self, incoming_bytes: u64) -> Result<(), String> {
+        let projected = self
+            .used_bytes()?
+            .checked_add(incoming_bytes)
+            .ok_or_else(|| "VNEXT_STORAGE_SIZE_OVERFLOW".to_string())?;
+        if projected > self.hard_watermark_bytes {
+            Err("VNEXT_STORAGE_HARD_WATERMARK".to_string())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum VNextNetworkRuntimeState {
@@ -186,6 +231,7 @@ struct OutboundDeliveryEngine {
     routes: AuthenticatedRouteDirectory,
     principal: NodeId,
     counters: Arc<RuntimeCounters>,
+    admission: RuntimeAdmissionController,
     outbox: OutboundOutbox,
     scheduler: AsyncMutex<()>,
     policy: VNextNetworkPolicy,
@@ -247,7 +293,17 @@ impl VNextNetworkRuntime {
         policy: VNextNetworkPolicy,
     ) -> Result<Self, VNextNetworkRuntimeError> {
         let identity = prepare_vnext_identity(data_dir, None)?;
-        Self::start_prepared(data_dir, bind_addr, policy, identity).await
+        std::fs::create_dir_all(data_dir)?;
+        Self::start_initialized(
+            data_dir,
+            bind_addr,
+            policy,
+            true,
+            DEFAULT_NETWORK_STORAGE_HARD_WATERMARK_BYTES,
+            identity.signer,
+            identity.public_key,
+        )
+        .await
     }
 
     #[cfg(test)]
@@ -267,6 +323,7 @@ impl VNextNetworkRuntime {
             bind_addr,
             policy,
             continuous_outbound,
+            DEFAULT_NETWORK_STORAGE_HARD_WATERMARK_BYTES,
             identity.signer,
             identity.public_key,
         )
@@ -277,6 +334,7 @@ impl VNextNetworkRuntime {
         data_dir: &Path,
         bind_addr: SocketAddr,
         policy: VNextNetworkPolicy,
+        storage_hard_watermark_bytes: u64,
         identity: PreparedVNextIdentity,
     ) -> Result<Self, VNextNetworkRuntimeError> {
         policy
@@ -288,6 +346,7 @@ impl VNextNetworkRuntime {
             bind_addr,
             policy,
             true,
+            storage_hard_watermark_bytes,
             identity.signer,
             identity.public_key,
         )
@@ -304,7 +363,20 @@ impl VNextNetworkRuntime {
         identity: Arc<dyn SessionIdentitySigner>,
     ) -> Result<Self, VNextNetworkRuntimeError> {
         let identity = prepare_vnext_identity(data_dir, Some(identity))?;
-        Self::start_prepared(data_dir, bind_addr, policy, identity).await
+        policy
+            .validate()
+            .map_err(|error| VNextNetworkRuntimeError::Config(error.to_string()))?;
+        std::fs::create_dir_all(data_dir)?;
+        Self::start_initialized(
+            data_dir,
+            bind_addr,
+            policy,
+            true,
+            DEFAULT_NETWORK_STORAGE_HARD_WATERMARK_BYTES,
+            identity.signer,
+            identity.public_key,
+        )
+        .await
     }
 
     async fn start_initialized(
@@ -312,10 +384,20 @@ impl VNextNetworkRuntime {
         bind_addr: SocketAddr,
         policy: VNextNetworkPolicy,
         continuous_outbound: bool,
+        storage_hard_watermark_bytes: u64,
         identity: Arc<dyn SessionIdentitySigner>,
         identity_public_key: [u8; 32],
     ) -> Result<Self, VNextNetworkRuntimeError> {
         let principal = principal_node_id(&identity_public_key);
+        if storage_hard_watermark_bytes == 0 {
+            return Err(VNextNetworkRuntimeError::Config(
+                "storage hard watermark must be non-zero".to_string(),
+            ));
+        }
+        let storage_admission = NetworkStorageAdmission {
+            data_dir: data_dir.to_path_buf(),
+            hard_watermark_bytes: storage_hard_watermark_bytes,
+        };
         let sink = SharedVNextValidatedSink::new(VNextValidatedSink::new(
             RedbVerifiedBackend::open(&data_dir.join("vnext_verified.redb"))
                 .map_err(VNextNetworkRuntimeError::Storage)?,
@@ -343,10 +425,14 @@ impl VNextNetworkRuntime {
         let listen_addr = transport
             .local_addr()
             .map_err(|error| VNextNetworkRuntimeError::Transport(error.to_string()))?;
-        let replay_guard = Arc::new(Mutex::new(SessionReplayGuard::default()));
+        let replay_guard = Arc::new(Mutex::new(
+            SessionReplayGuard::with_capacity(policy.max_replay_entries)
+                .map_err(|error| VNextNetworkRuntimeError::Config(format!("{error:?}")))?,
+        ));
         let routes = AuthenticatedRouteDirectory::default();
         let counters = Arc::new(RuntimeCounters::default());
-        let semaphore = Arc::new(Semaphore::new(policy.max_concurrent_sessions));
+        let admission = RuntimeAdmissionController::new(admission_limits(policy))
+            .map_err(|error| VNextNetworkRuntimeError::Config(format!("{error:?}")))?;
         let accept_task = tokio::spawn(accept_loop(
             Arc::clone(&transport),
             Arc::clone(&identity),
@@ -354,11 +440,12 @@ impl VNextNetworkRuntime {
             routes.clone(),
             principal,
             Arc::clone(&counters),
-            semaphore,
+            admission.clone(),
             journal,
             sink.clone(),
             inventory.clone(),
             provenance.clone(),
+            storage_admission,
             policy,
         ));
         let outbound = Arc::new(OutboundDeliveryEngine {
@@ -368,6 +455,7 @@ impl VNextNetworkRuntime {
             routes: routes.clone(),
             principal,
             counters: Arc::clone(&counters),
+            admission,
             outbox,
             scheduler: AsyncMutex::new(()),
             policy,
@@ -588,7 +676,7 @@ impl OutboundDeliveryEngine {
         let bounded_limit = limit.min(max_payload_records);
         let mut pending = self
             .outbox
-            .pending(bounded_limit)
+            .pending_fair(bounded_limit)
             .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
         let mut report = OutboundDeliveryReport {
             scanned: pending.len(),
@@ -598,7 +686,10 @@ impl OutboundDeliveryEngine {
 
         while !pending.is_empty() {
             let seed = pending.remove(0);
-            if seed.attempts >= self.policy.max_retries_per_record {
+            if seed.transport_attempts >= self.policy.max_retries_per_record {
+                self.outbox
+                    .mark_retry_exhausted(&seed.id, self.policy.max_retries_per_record)
+                    .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
                 report.retry_exhausted += 1;
                 continue;
             }
@@ -609,7 +700,7 @@ impl OutboundDeliveryEngine {
             while candidate < pending.len() {
                 let next = &pending[candidate];
                 let next_bytes = next.canonical_bytes.len() as u64;
-                if next.attempts < self.policy.max_retries_per_record
+                if next.transport_attempts < self.policy.max_retries_per_record
                     && same_delivery_batch(&batch[0], next)
                     && batch_bytes.saturating_add(next_bytes) <= self.policy.max_inflight_bytes
                 {
@@ -633,7 +724,7 @@ impl OutboundDeliveryEngine {
         debug_assert!(!batch.is_empty());
         for intent in batch {
             self.outbox
-                .record_attempt(&intent.id)
+                .record_transport_attempt(&intent.id)
                 .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
             report.attempted += 1;
         }
@@ -643,12 +734,14 @@ impl OutboundDeliveryEngine {
             Ok(session) => session,
             Err(_) => {
                 report.failed += batch.len();
+                self.mark_transport_failures(batch, report)?;
                 return Ok(());
             }
         };
         if session.authenticated().responder != first.expected_peer {
             session.close();
             report.failed += batch.len();
+            self.mark_transport_failures(batch, report)?;
             return Ok(());
         }
 
@@ -705,6 +798,7 @@ impl OutboundDeliveryEngine {
         if session.send(&manifest_record).await.is_err() {
             session.close();
             report.failed += batch.len();
+            self.mark_transport_failures(batch, report)?;
             return Ok(());
         }
         for frame in frames {
@@ -715,6 +809,7 @@ impl OutboundDeliveryEngine {
             {
                 session.close();
                 report.failed += batch.len();
+                self.mark_transport_failures(batch, report)?;
                 return Ok(());
             }
         }
@@ -753,15 +848,17 @@ impl OutboundDeliveryEngine {
         for intent in batch {
             let Some(status) = statuses.get(&(intent.kind as u64, intent.cid)).copied() else {
                 report.failed += 1;
+                self.mark_transport_failures(std::slice::from_ref(intent), report)?;
                 continue;
             };
             let state = self
                 .outbox
-                .apply_receipt(&intent.id, status)
+                .apply_receipt(&intent.id, status, self.policy.max_retries_per_record)
                 .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
             match (state, status) {
                 (OutboundIntentState::Acknowledged, _) => report.acknowledged += 1,
-                (OutboundIntentState::Rejected, _) => report.rejected += 1,
+                (OutboundIntentState::DeadLetter, _) => report.rejected += 1,
+                (OutboundIntentState::RetryExhausted, _) => report.retry_exhausted += 1,
                 (
                     OutboundIntentState::Pending,
                     ReconcileReceiptStatus::DeferredBudget
@@ -773,10 +870,31 @@ impl OutboundDeliveryEngine {
         Ok(())
     }
 
+    fn mark_transport_failures(
+        &self,
+        batch: &[OutboundTransferIntent],
+        report: &mut OutboundDeliveryReport,
+    ) -> Result<(), VNextNetworkRuntimeError> {
+        for intent in batch {
+            let state = self
+                .outbox
+                .mark_retry_exhausted(&intent.id, self.policy.max_retries_per_record)
+                .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
+            if state == OutboundIntentState::RetryExhausted {
+                report.retry_exhausted += 1;
+            }
+        }
+        Ok(())
+    }
+
     async fn connect(
         &self,
         addr: SocketAddr,
     ) -> Result<OutboundVNextSession, VNextNetworkRuntimeError> {
+        let handshake_admission = self
+            .admission
+            .try_begin_handshake(addr.ip())
+            .map_err(resource_admission_error)?;
         let connection = self
             .transport
             .connect(addr)
@@ -796,6 +914,9 @@ impl OutboundDeliveryEngine {
         .await
         .map_err(|_| VNextNetworkRuntimeError::HandshakeTimeout)?
         .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
+        let session_admission = handshake_admission
+            .promote(authenticated.responder)
+            .map_err(resource_admission_error)?;
         self.replay_guard
             .lock()
             .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?
@@ -807,11 +928,16 @@ impl OutboundDeliveryEngine {
         self.counters
             .authenticated_sessions
             .fetch_add(1, Ordering::Relaxed);
-        let carrier = AuthenticatedCarrierSession::new(authenticated.clone());
+        let carrier = AuthenticatedCarrierSession::with_context_limit(
+            authenticated.clone(),
+            self.policy.max_contexts_per_session,
+        )
+        .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
         Ok(OutboundVNextSession {
             connection,
             authenticated,
             carrier,
+            admission: session_admission,
         })
     }
 }
@@ -853,6 +979,36 @@ fn same_delivery_batch(left: &OutboundTransferIntent, right: &OutboundTransferIn
         && left.selector == right.selector
         && left.namespace == right.namespace
         && left.disclosure == right.disclosure
+}
+
+fn admission_limits(policy: VNextNetworkPolicy) -> RuntimeAdmissionLimits {
+    let per_peer_window = ResourceUsage {
+        records: policy.max_records_per_peer_window,
+        bytes: policy.max_bytes_per_peer_window,
+        work: policy.max_work_per_peer_window,
+    };
+    let scale = |usage: ResourceUsage, factor: usize| ResourceUsage {
+        records: usage.records.saturating_mul(factor as u64),
+        bytes: usage.bytes.saturating_mul(factor as u64),
+        work: usage.work.saturating_mul(factor as u64),
+    };
+    RuntimeAdmissionLimits {
+        max_handshakes_global: policy.max_concurrent_handshakes as u64,
+        max_handshakes_per_ip: policy.max_handshakes_per_ip as u64,
+        max_sessions_global: policy.max_concurrent_sessions as u64,
+        max_sessions_per_ip: policy.max_sessions_per_ip as u64,
+        max_sessions_per_peer: policy.max_sessions_per_peer as u64,
+        max_contexts_per_session: policy.max_contexts_per_session as u64,
+        per_session: ResourceUsage {
+            records: policy.max_records_per_session,
+            bytes: policy.max_bytes_per_peer_window,
+            work: policy.max_work_per_session,
+        },
+        rate_window: Duration::from_secs(policy.rate_window_seconds),
+        global_per_window: scale(per_peer_window, policy.max_concurrent_sessions),
+        per_ip_per_window: scale(per_peer_window, policy.max_sessions_per_ip),
+        per_peer_per_window: per_peer_window,
+    }
 }
 
 async fn run_outbound_scheduler(
@@ -940,6 +1096,7 @@ pub struct OutboundVNextSession {
     connection: OBPConnection,
     authenticated: AuthenticatedSession,
     carrier: AuthenticatedCarrierSession,
+    admission: SessionAdmission,
 }
 
 impl OutboundVNextSession {
@@ -948,16 +1105,70 @@ impl OutboundVNextSession {
     }
 
     pub async fn send(&self, record: &CarrierRecord) -> Result<(), VNextNetworkRuntimeError> {
+        if let CarrierRecord::ReconciliationMessage(bytes) = record {
+            let message = decode_reconciliation_message(bytes)
+                .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
+            self.admission
+                .admit_context(message.binding_digest)
+                .map_err(resource_admission_error)?;
+        }
+        let frame_bytes = record
+            .canonical_bytes()
+            .map_err(|error| VNextNetworkRuntimeError::Session(format!("{error:?}")))?
+            .len() as u64;
+        let mut admission = self
+            .admission
+            .begin_record(frame_bytes)
+            .map_err(resource_admission_error)?;
+        admission
+            .advance(AdmissionStage::Frame, 1)
+            .map_err(resource_admission_error)?;
+        admission
+            .advance(AdmissionStage::Protocol, 1)
+            .map_err(resource_admission_error)?;
+        admission
+            .advance(AdmissionStage::Journal, 1)
+            .map_err(resource_admission_error)?;
         send_carrier_record(&self.connection, record)
             .await
-            .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))
+            .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
+        admission
+            .advance(AdmissionStage::Application, 1)
+            .map_err(resource_admission_error)
     }
 
     pub async fn recv(&mut self) -> Result<AuthenticatedCarrierRecord, VNextNetworkRuntimeError> {
-        self.carrier
-            .recv(&self.connection)
+        let payload = self
+            .carrier
+            .recv_frame_payload(&self.connection)
             .await
-            .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))
+            .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
+        let mut admission = self
+            .admission
+            .begin_record(payload.len() as u64)
+            .map_err(resource_admission_error)?;
+        admission
+            .advance(AdmissionStage::Frame, 1)
+            .map_err(resource_admission_error)?;
+        let record = self
+            .carrier
+            .decode_and_validate_payload(&payload)
+            .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
+        if let AuthenticatedCarrierRecord::Reconciliation(message) = &record {
+            self.admission
+                .admit_context(message.binding_digest)
+                .map_err(resource_admission_error)?;
+        }
+        admission
+            .advance(AdmissionStage::Protocol, 1)
+            .map_err(resource_admission_error)?;
+        admission
+            .advance(AdmissionStage::Journal, 1)
+            .map_err(resource_admission_error)?;
+        admission
+            .advance(AdmissionStage::Application, 1)
+            .map_err(resource_admission_error)?;
+        Ok(record)
     }
 
     pub fn close(&self) {
@@ -973,11 +1184,12 @@ async fn accept_loop(
     routes: AuthenticatedRouteDirectory,
     principal: NodeId,
     counters: Arc<RuntimeCounters>,
-    semaphore: Arc<Semaphore>,
+    admission: RuntimeAdmissionController,
     journal: RedbReconciliationJournalBackend,
     sink: PersistentSink,
     inventory: RedbInventoryForestBackend,
     provenance: RedbRecordProvenance,
+    storage: NetworkStorageAdmission,
     policy: VNextNetworkPolicy,
 ) {
     loop {
@@ -985,11 +1197,12 @@ async fn accept_loop(
             Ok(connection) => connection,
             Err(_) => break,
         };
-        let permit = match Arc::clone(&semaphore).try_acquire_owned() {
-            Ok(permit) => permit,
+        let handshake_admission = match admission.try_begin_handshake(connection.remote_addr().ip())
+        {
+            Ok(admission) => admission,
             Err(_) => {
                 counters.rejected_sessions.fetch_add(1, Ordering::Relaxed);
-                connection.close("OBP-RP session budget exhausted");
+                connection.close("OBP-RP handshake resource budget exhausted");
                 continue;
             }
         };
@@ -1001,10 +1214,11 @@ async fn accept_loop(
         let sink = sink.clone();
         let inventory = inventory.clone();
         let provenance = provenance.clone();
+        let storage = storage.clone();
         tokio::spawn(async move {
-            let _permit = permit;
             if handle_inbound_connection(
                 connection,
+                handshake_admission,
                 identity,
                 replay_guard,
                 routes,
@@ -1014,6 +1228,7 @@ async fn accept_loop(
                 sink,
                 inventory,
                 provenance,
+                storage,
                 policy,
             )
             .await
@@ -1028,6 +1243,7 @@ async fn accept_loop(
 #[allow(clippy::too_many_arguments)]
 async fn handle_inbound_connection(
     connection: OBPConnection,
+    handshake_admission: HandshakeAdmission,
     identity: Arc<dyn SessionIdentitySigner>,
     replay_guard: Arc<Mutex<SessionReplayGuard>>,
     routes: AuthenticatedRouteDirectory,
@@ -1037,6 +1253,7 @@ async fn handle_inbound_connection(
     sink: PersistentSink,
     inventory: RedbInventoryForestBackend,
     provenance: RedbRecordProvenance,
+    storage: NetworkStorageAdmission,
     policy: VNextNetworkPolicy,
 ) -> Result<(), VNextNetworkRuntimeError> {
     let authenticated = tokio::time::timeout(
@@ -1053,6 +1270,9 @@ async fn handle_inbound_connection(
     .await
     .map_err(|_| VNextNetworkRuntimeError::HandshakeTimeout)?
     .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
+    let session_admission = handshake_admission
+        .promote(authenticated.initiator)
+        .map_err(resource_admission_error)?;
     replay_guard
         .lock()
         .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?
@@ -1069,17 +1289,37 @@ async fn handle_inbound_connection(
 
     let resume_token_key = peer_bound_resume_token_key(identity.as_ref(), &authenticated)?;
     let source_peer = authenticated.initiator;
-    let mut carrier = AuthenticatedCarrierSession::new(authenticated);
+    let mut carrier = AuthenticatedCarrierSession::with_context_limit(
+        authenticated,
+        policy.max_contexts_per_session,
+    )
+    .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
     let mut journals = BTreeMap::<[u8; 32], PersistentJournal>::new();
     let mut outbound_sequence = 1u64;
     for _ in 0..policy.max_records_per_session {
-        let record = match carrier.recv(&connection).await {
+        let frame_payload = match carrier.recv_frame_payload(&connection).await {
+            Ok(payload) => payload,
+            Err(_) => break,
+        };
+        let mut resource_record = session_admission
+            .begin_record(frame_payload.len() as u64)
+            .map_err(resource_admission_error)?;
+        resource_record
+            .advance(AdmissionStage::Frame, 1)
+            .map_err(resource_admission_error)?;
+        let record = match carrier.decode_and_validate_payload(&frame_payload) {
             Ok(record) => record,
             Err(_) => break,
         };
+        resource_record
+            .advance(AdmissionStage::Protocol, 1)
+            .map_err(resource_admission_error)?;
         match record {
             AuthenticatedCarrierRecord::Reconciliation(message) => {
                 let binding = message.binding_digest;
+                session_admission
+                    .admit_context(binding)
+                    .map_err(resource_admission_error)?;
                 if let ReconciliationBody::Resume { token } = &message.body {
                     if journals.contains_key(&binding) {
                         return Err(VNextNetworkRuntimeError::Journal(
@@ -1092,6 +1332,7 @@ async fn handle_inbound_connection(
                         provenance: provenance.clone(),
                         selector: message.context.selector,
                         source_peer,
+                        storage: storage.clone(),
                     };
                     let mut resumed = JournaledReconciliationSession::resume(
                         journal_backend.clone(),
@@ -1123,6 +1364,12 @@ async fn handle_inbound_connection(
                         .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
                     outbound_sequence = progress_sequence.saturating_add(2);
                     journals.insert(binding, resumed);
+                    resource_record
+                        .advance(AdmissionStage::Journal, 1)
+                        .map_err(resource_admission_error)?;
+                    resource_record
+                        .advance(AdmissionStage::Application, 1)
+                        .map_err(resource_admission_error)?;
                     continue;
                 }
                 if !journals.contains_key(&binding) {
@@ -1132,6 +1379,7 @@ async fn handle_inbound_connection(
                         provenance: provenance.clone(),
                         selector: message.context.selector,
                         source_peer,
+                        storage: storage.clone(),
                     };
                     let session = JournaledReconciliationSession::open(
                         journal_backend.clone(),
@@ -1152,10 +1400,22 @@ async fn handle_inbound_connection(
                         .ingest_manifest(&message)
                         .map_err(|error| VNextNetworkRuntimeError::Journal(format!("{error:?}")))?;
                 }
+                resource_record
+                    .advance(AdmissionStage::Journal, 1)
+                    .map_err(resource_admission_error)?;
+                resource_record
+                    .advance(AdmissionStage::Application, 1)
+                    .map_err(resource_admission_error)?;
             }
             AuthenticatedCarrierRecord::BoundPayload(frame) => {
                 let Some(journal) = journals.get_mut(&frame.binding_digest) else {
                     counters.deferred_records.fetch_add(1, Ordering::Relaxed);
+                    resource_record
+                        .advance(AdmissionStage::Journal, 1)
+                        .map_err(resource_admission_error)?;
+                    resource_record
+                        .advance(AdmissionStage::Application, 1)
+                        .map_err(resource_admission_error)?;
                     continue;
                 };
                 let payload_outcome = journal
@@ -1212,8 +1472,15 @@ async fn handle_inbound_connection(
                 }
                 debug_assert!(!journal.state().is_globally_complete());
                 let _ = ReceiverState::AwaitingManifest;
+                resource_record
+                    .advance(AdmissionStage::Journal, 1)
+                    .map_err(resource_admission_error)?;
+                resource_record
+                    .advance(AdmissionStage::Application, 1)
+                    .map_err(resource_admission_error)?;
             }
         }
+        debug_assert!(resource_record.is_complete());
     }
     connection.close("OBP-RP record budget reached");
     Ok(())
@@ -1248,6 +1515,12 @@ fn random_nonce() -> [u8; 32] {
     let mut nonce = [0u8; 32];
     OsRng.fill_bytes(&mut nonce);
     nonce
+}
+
+fn resource_admission_error(
+    error: ku_net::vnext_resource_gate::ResourceAdmissionError,
+) -> VNextNetworkRuntimeError {
+    VNextNetworkRuntimeError::ResourceAdmission(format!("{error:?}"))
 }
 
 fn validate_identity_signer(
@@ -1328,6 +1601,8 @@ pub enum VNextNetworkRuntimeError {
     Inventory(String),
     #[error("vNext record provenance persistence failed: {0}")]
     Provenance(String),
+    #[error("vNext unified resource admission rejected work: {0}")]
+    ResourceAdmission(String),
     #[error("vNext outbound outbox failed: {0}")]
     Outbox(String),
     #[error("vNext identity file is corrupt: {}", .0.display())]
@@ -1383,6 +1658,22 @@ mod tests {
             self.signatures.fetch_add(1, Ordering::Relaxed);
             Ok(self.key.sign(message).to_bytes())
         }
+    }
+
+    #[test]
+    fn network_storage_admission_enforces_projected_hard_watermark() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(directory.path().join("vnext_existing.redb"), [0u8; 8]).unwrap();
+        std::fs::write(directory.path().join("unrelated.bin"), [0u8; 64]).unwrap();
+        let admission = NetworkStorageAdmission {
+            data_dir: directory.path().to_path_buf(),
+            hard_watermark_bytes: 10,
+        };
+        assert!(admission.ensure_writable(2).is_ok());
+        assert_eq!(
+            admission.ensure_writable(3),
+            Err("VNEXT_STORAGE_HARD_WATERMARK".to_string())
+        );
     }
 
     struct MismatchedExternalSigner {
@@ -2535,7 +2826,9 @@ mod tests {
         assert!(!report.claims_network_completion);
         let stored = left.outbound_intent(&intent.id).unwrap().unwrap();
         assert_eq!(stored.state, OutboundIntentState::Acknowledged);
-        assert_eq!(stored.attempts, 1);
+        assert_eq!(stored.transport_attempts, 0);
+        assert_eq!(stored.validation_retries, 0);
+        assert!(stored.terminal_sequence > 0);
 
         tokio::time::timeout(Duration::from_secs(5), async {
             while right.status().accepted_records != 1 {

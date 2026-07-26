@@ -295,6 +295,7 @@ impl VNextProductRuntime {
                 data_dir,
                 bind_addr,
                 config.network,
+                budgets.storage_hard_watermark_bytes,
                 prepared_identity,
             )
             .await?,
