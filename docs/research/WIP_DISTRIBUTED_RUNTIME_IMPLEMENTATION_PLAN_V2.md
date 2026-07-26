@@ -1721,3 +1721,14 @@ Local evidence:
 
 M5-00 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
 `main`. Work package kế tiếp là M5-01 Unified resource admission và fairness.
+
+Remote CI run
+[`30203846856`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30203846856)
+trên implementation commit `ff76c46` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real-QUIC
+acceptance và Windows default/vNext/Desktop smoke đều xanh. Real-QUIC, Windows
+và Linux default jobs có 0 annotation; foundation job giữ bốn warning lint
+React baseline đã biết.
+
+M5-00 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
+`main`, work package kế tiếp là M5-01 Unified resource admission và fairness.
