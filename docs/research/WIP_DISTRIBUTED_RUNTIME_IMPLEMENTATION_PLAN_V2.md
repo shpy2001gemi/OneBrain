@@ -1388,3 +1388,46 @@ và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
 
 P2.4 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
 P2.5 Concurrency.
+
+### 2026-07-26 — P2.5 Concurrency
+
+Đã triển khai cục bộ trên nhánh `codex/p2-concurrency`:
+
+1. `VNextProductServices` nay là weak, cloneable, `Send + Sync + 'static`
+   service handle thay vì façade borrow theo lifetime của aggregate runtime.
+   API có snapshot helper chỉ giữ `Arc<Mutex<OneBrainNode>>` đủ lâu để clone
+   handle.
+2. Mỗi operation nhận một admitted service lease qua lifecycle gate rất ngắn.
+   Gate không được giữ trong QUIC wait, Redb work, caller-owned signer call,
+   background worker hoặc PoMV materialization.
+3. Product workers tiếp tục chỉ giữ lane-specific publisher/network handles,
+   cancellation receiver và bounded poll state; không giữ node aggregate.
+4. Shutdown fence admission trước, từ chối request mới bằng typed `Stopped`,
+   drain operation đã admit, rồi cancel/join workers, flush safe metadata,
+   dừng listener và đóng KQL/publication/PoMV stores theo thứ tự.
+5. Cloneable service handles chỉ giữ `Weak` core, nên handle còn sống không kéo
+   dài lifetime listener/store sau shutdown; stopped network snapshot vẫn đọc
+   được để status surface fail-closed.
+6. Test concurrency giữ đồng thời hai aggregate owner mutex nhưng vẫn hoàn
+   thành authenticated QUIC connect, Redb status scan, caller-owned signer call
+   và PoMV view materialization bằng service handles độc lập.
+7. Đã freeze
+   [`RUNTIME_CONCURRENCY_PROFILE_V1.md`](../specs/vnext/RUNTIME_CONCURRENCY_PROFILE_V1.md),
+   thêm normative coverage và CI gate riêng cho P2.5.
+
+Local evidence:
+
+- feature-enabled `onebrain-node` lib: 128/128 xanh;
+- node-owned lifecycle integration: 4/4 xanh;
+- compile-time service-handle contract: `Clone + Send + Sync + 'static`;
+- aggregate-lock exclusion và shutdown fence/drain tests: xanh;
+- default workspace tests, workspace check, feature-enabled API/CLI/Desktop/node
+  check, `onebrain-node` clippy và rustfmt: xanh;
+- `python scripts/ci/validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37
+  negative assertions, 55 vectors/21 domains, 9 identity/object vectors, 4
+  feed/event vectors, 294 normative lines, 14 endpoints/18 DTOs và 374 local
+  links;
+- product-profile validator tests: 8/8 xanh.
+
+P2.5 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
+`main`.

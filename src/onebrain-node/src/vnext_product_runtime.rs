@@ -8,9 +8,10 @@
 use std::collections::BTreeSet;
 use std::future::Future;
 use std::net::SocketAddr;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
 use ku_core::foundation::{
@@ -21,7 +22,7 @@ use ku_kql::vnext_proposal::ProposalId;
 use ku_kql::vnext_standing_need::{StandingNeed, StandingNeedId, StandingNeedWriteOutcome};
 use ku_net::vnext_session::SessionIdentitySigner;
 use thiserror::Error;
-use tokio::sync::watch;
+use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 
 use crate::vnext_config::{VNextFeature, VNextFeatureConfig, VNextRuntimeBudgets};
@@ -166,25 +167,69 @@ pub struct VNextProductRuntimeStatus {
 /// Raw subsystem references intentionally have no public accessor. All product
 /// operations cross [`VNextProductServices`].
 pub struct VNextProductRuntime {
-    network: Option<Arc<VNextNetworkRuntime>>,
-    last_network_status: VNextNetworkRuntimeStatus,
+    core: Option<Arc<VNextProductServiceCore>>,
+    last_network_status: Arc<Mutex<VNextNetworkRuntimeStatus>>,
     local_addr: SocketAddr,
-    distributed_kql: Option<Mutex<DistributedKqlRuntime>>,
-    public_use: Option<Arc<PublicUseEvidencePublisher>>,
-    distributed_pomv: Option<DistributedPomvRuntime>,
-    policy_versions: Vec<LocalPolicyVersion>,
-    lanes: VNextProductLaneStatus,
-    budgets: VNextRuntimeBudgets,
-    storage: ProductStorageGuard,
     workers: BoundedProductWorkers,
-    signer_mode: VNextProductSignerMode,
     state: VNextProductRuntimeState,
-    startup_trace: Vec<VNextStartupPhase>,
     shutdown_trace: Vec<VNextShutdownPhase>,
     rehydrated_private_needs: usize,
     startup_pending_publications: u64,
     startup_artifacts: Vec<PathBuf>,
     startup_data_dir_created: bool,
+    data_dir: PathBuf,
+}
+
+struct VNextProductServiceCore {
+    lifecycle: Mutex<VNextServiceLifecycle>,
+    drained: Notify,
+    network: Mutex<Option<Arc<VNextNetworkRuntime>>>,
+    distributed_kql: OptionalKqlOwner,
+    public_use: Mutex<Option<Arc<PublicUseEvidencePublisher>>>,
+    distributed_pomv: Mutex<Option<Arc<DistributedPomvRuntime>>>,
+    policy_versions: Vec<LocalPolicyVersion>,
+    lanes: VNextProductLaneStatus,
+    budgets: VNextRuntimeBudgets,
+    storage: ProductStorageGuard,
+    signer_mode: VNextProductSignerMode,
+    startup_trace: Vec<VNextStartupPhase>,
+    rehydrated_private_needs: usize,
+    startup_pending_publications: u64,
+    active_product_workers: usize,
+    max_product_workers: usize,
+    worker_cancellation: watch::Receiver<bool>,
+    worker_poll_ticks: Arc<AtomicU64>,
+}
+
+struct VNextServiceLifecycle {
+    accepting: bool,
+    in_flight: usize,
+}
+
+struct OptionalKqlOwner {
+    runtime: Mutex<Option<DistributedKqlRuntime>>,
+}
+
+struct KqlOwnerGuard<'a> {
+    guard: MutexGuard<'a, Option<DistributedKqlRuntime>>,
+}
+
+impl Deref for KqlOwnerGuard<'_> {
+    type Target = DistributedKqlRuntime;
+
+    fn deref(&self) -> &Self::Target {
+        self.guard
+            .as_ref()
+            .expect("lane presence checked before KQL guard construction")
+    }
+}
+
+impl DerefMut for KqlOwnerGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.guard
+            .as_mut()
+            .expect("lane presence checked before KQL guard construction")
+    }
 }
 
 impl VNextProductRuntime {
@@ -226,8 +271,7 @@ impl VNextProductRuntime {
         let mut distributed_kql = lanes
             .distributed_kql_one_hop
             .then(|| DistributedKqlRuntime::open_unhydrated(data_dir, private_need_vault_key))
-            .transpose()?
-            .map(Mutex::new);
+            .transpose()?;
         let public_use = lanes
             .public_use_evidence_publish
             .then(|| PublicUseEvidencePublisher::open(data_dir))
@@ -262,9 +306,7 @@ impl VNextProductRuntime {
         let rehydrated_private_needs = distributed_kql
             .as_mut()
             .map(|kql| {
-                kql.get_mut()
-                    .map_err(|_| VNextProductRuntimeError::KqlLockPoisoned)?
-                    .rehydrate_private_needs()
+                kql.rehydrate_private_needs()
                     .map_err(VNextProductRuntimeError::from)
             })
             .transpose()?
@@ -298,32 +340,54 @@ impl VNextProductRuntime {
         startup_trace.push(VNextStartupPhase::Running);
         let startup_data_dir_created = !artifact_guard.data_dir_preexisting;
         let startup_artifacts = artifact_guard.commit();
-
-        Ok(Self {
-            network: Some(network),
-            last_network_status,
-            local_addr,
-            distributed_kql,
-            public_use,
-            distributed_pomv,
+        let last_network_status = Arc::new(Mutex::new(last_network_status));
+        let core = Arc::new(VNextProductServiceCore {
+            lifecycle: Mutex::new(VNextServiceLifecycle {
+                accepting: true,
+                in_flight: 0,
+            }),
+            drained: Notify::new(),
+            network: Mutex::new(Some(network)),
+            distributed_kql: OptionalKqlOwner {
+                runtime: Mutex::new(distributed_kql),
+            },
+            public_use: Mutex::new(public_use),
+            distributed_pomv: Mutex::new(distributed_pomv.map(Arc::new)),
             policy_versions,
             lanes,
             budgets,
             storage,
-            workers,
             signer_mode,
-            state: VNextProductRuntimeState::Running,
             startup_trace,
+            rehydrated_private_needs,
+            startup_pending_publications,
+            active_product_workers: workers.len(),
+            max_product_workers: workers.capacity(),
+            worker_cancellation: workers.cancellation.subscribe(),
+            worker_poll_ticks: Arc::clone(&workers.poll_ticks),
+        });
+
+        Ok(Self {
+            core: Some(core),
+            last_network_status,
+            local_addr,
+            workers,
+            state: VNextProductRuntimeState::Running,
             shutdown_trace: Vec::with_capacity(5),
             rehydrated_private_needs,
             startup_pending_publications,
             startup_artifacts,
             startup_data_dir_created,
+            data_dir: data_dir.to_path_buf(),
         })
     }
 
-    pub fn services(&self) -> VNextProductServices<'_> {
-        VNextProductServices { runtime: self }
+    pub fn services(&self) -> VNextProductServices {
+        VNextProductServices {
+            core: self.core.as_ref().map(Arc::downgrade).unwrap_or_default(),
+            local_addr: self.local_addr,
+            last_network_status: Arc::clone(&self.last_network_status),
+        }
     }
 
     pub async fn shutdown(&mut self) {
@@ -331,25 +395,36 @@ impl VNextProductRuntime {
             return;
         }
         self.state = VNextProductRuntimeState::Stopped;
+        if let Some(core) = self.core.as_ref() {
+            core.fence_operations();
+        }
         self.shutdown_trace
             .push(VNextShutdownPhase::OperationsFenced);
+        if let Some(core) = self.core.as_ref() {
+            core.wait_until_drained().await;
+        }
         self.workers.shutdown().await;
         self.shutdown_trace
             .push(VNextShutdownPhase::WorkersCancelled);
         self.flush_safe_pending_metadata();
         self.shutdown_trace
             .push(VNextShutdownPhase::SafeMetadataFlushed);
-        if let Some(network) = self.network.take() {
-            self.last_network_status = network.status();
+        let Some(core) = self.core.take() else {
+            return;
+        };
+        if let Some(network) = core.take_network() {
+            let mut last_network_status = network.status();
             if let Ok(mut network) = Arc::try_unwrap(network) {
                 network.shutdown().await;
             }
-            self.last_network_status.state = VNextNetworkRuntimeState::Stopped;
+            last_network_status.state = VNextNetworkRuntimeState::Stopped;
+            *self
+                .last_network_status
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = last_network_status;
         }
         self.shutdown_trace.push(VNextShutdownPhase::NetworkStopped);
-        self.distributed_kql.take();
-        self.public_use.take();
-        self.distributed_pomv.take();
+        core.close_stores();
         self.shutdown_trace.push(VNextShutdownPhase::StoresClosed);
     }
 
@@ -360,7 +435,7 @@ impl VNextProductRuntime {
         self.shutdown().await;
         let startup_artifacts = std::mem::take(&mut self.startup_artifacts);
         let remove_data_dir = self.startup_data_dir_created;
-        let data_dir = self.storage.data_dir.clone();
+        let data_dir = self.data_dir.clone();
         drop(self);
         remove_startup_artifacts(startup_artifacts)?;
         if remove_data_dir {
@@ -373,61 +448,126 @@ impl VNextProductRuntime {
         Ok(())
     }
 
-    fn ensure_running(&self) -> Result<(), VNextProductRuntimeError> {
-        if self.state == VNextProductRuntimeState::Running {
-            Ok(())
-        } else {
-            Err(VNextProductRuntimeError::Stopped)
-        }
-    }
-
-    fn network(&self) -> Result<&VNextNetworkRuntime, VNextProductRuntimeError> {
-        self.ensure_running()?;
-        self.network
-            .as_ref()
-            .map(Arc::as_ref)
-            .ok_or(VNextProductRuntimeError::Stopped)
-    }
-
     fn flush_safe_pending_metadata(&mut self) {
-        if let Some(kql) = self.distributed_kql.as_ref() {
-            if let Ok(kql) = kql.lock() {
-                self.rehydrated_private_needs = kql.active_target_count();
-            }
+        let Some(core) = self.core.as_ref() else {
+            return;
+        };
+        if let Ok(kql) = core.kql() {
+            self.rehydrated_private_needs = kql.active_target_count();
         }
-        if let Some(public_use) = self.public_use.as_ref() {
+        if let Ok(public_use) = core.publisher() {
             if let Ok(pending) = public_use.pending_publication_count() {
                 self.startup_pending_publications = pending;
             }
         }
-        let _ = self.storage.used_bytes();
+        let _ = core.storage.used_bytes();
     }
+}
 
-    fn kql(&self) -> Result<MutexGuard<'_, DistributedKqlRuntime>, VNextProductRuntimeError> {
-        self.distributed_kql
-            .as_ref()
-            .ok_or(VNextProductRuntimeError::LaneDisabled(
-                VNextFeature::DistributedKqlOneHop,
-            ))?
+impl Drop for VNextProductRuntime {
+    fn drop(&mut self) {
+        if let Some(core) = self.core.as_ref() {
+            core.fence_operations();
+        }
+        self.workers.cancel_and_abort();
+        self.state = VNextProductRuntimeState::Stopped;
+    }
+}
+
+impl VNextProductServiceCore {
+    fn acquire(self: &Arc<Self>) -> Result<VNextServiceLease, VNextProductRuntimeError> {
+        let mut lifecycle = self
+            .lifecycle
             .lock()
-            .map_err(|_| VNextProductRuntimeError::KqlLockPoisoned)
+            .map_err(|_| VNextProductRuntimeError::LifecycleLockPoisoned)?;
+        if !lifecycle.accepting {
+            return Err(VNextProductRuntimeError::Stopped);
+        }
+        lifecycle.in_flight = lifecycle
+            .in_flight
+            .checked_add(1)
+            .ok_or(VNextProductRuntimeError::InFlightOverflow)?;
+        drop(lifecycle);
+        Ok(VNextServiceLease {
+            core: Arc::clone(self),
+        })
     }
 
-    fn publisher(&self) -> Result<&PublicUseEvidencePublisher, VNextProductRuntimeError> {
-        self.public_use
+    fn fence_operations(&self) {
+        let mut lifecycle = self
+            .lifecycle
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        lifecycle.accepting = false;
+    }
+
+    async fn wait_until_drained(&self) {
+        loop {
+            let notified = self.drained.notified();
+            let in_flight = self
+                .lifecycle
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .in_flight;
+            if in_flight == 0 {
+                return;
+            }
+            notified.await;
+        }
+    }
+
+    fn network(&self) -> Result<Arc<VNextNetworkRuntime>, VNextProductRuntimeError> {
+        self.network
+            .lock()
+            .map_err(|_| VNextProductRuntimeError::SubsystemLockPoisoned("network"))?
             .as_ref()
-            .map(Arc::as_ref)
+            .map(Arc::clone)
+            .ok_or(VNextProductRuntimeError::Stopped)
+    }
+
+    fn kql(&self) -> Result<KqlOwnerGuard<'_>, VNextProductRuntimeError> {
+        self.distributed_kql.lock()
+    }
+
+    fn publisher(&self) -> Result<Arc<PublicUseEvidencePublisher>, VNextProductRuntimeError> {
+        self.public_use
+            .lock()
+            .map_err(|_| VNextProductRuntimeError::SubsystemLockPoisoned("publication"))?
+            .as_ref()
+            .map(Arc::clone)
             .ok_or(VNextProductRuntimeError::LaneDisabled(
                 VNextFeature::PublicUseEvidencePublish,
             ))
     }
 
-    fn pomv(&self) -> Result<&DistributedPomvRuntime, VNextProductRuntimeError> {
+    fn pomv(&self) -> Result<Arc<DistributedPomvRuntime>, VNextProductRuntimeError> {
         self.distributed_pomv
+            .lock()
+            .map_err(|_| VNextProductRuntimeError::SubsystemLockPoisoned("PoMV"))?
             .as_ref()
+            .map(Arc::clone)
             .ok_or(VNextProductRuntimeError::LaneDisabled(
                 VNextFeature::DistributedPomvView,
             ))
+    }
+
+    fn take_network(&self) -> Option<Arc<VNextNetworkRuntime>> {
+        self.network
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take()
+    }
+
+    fn close_stores(&self) {
+        self.distributed_kql.take();
+        self.public_use
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        self.distributed_pomv
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
     }
 
     fn ensure_storage_writable(&self) -> Result<(), VNextProductRuntimeError> {
@@ -453,107 +593,142 @@ impl VNextProductRuntime {
     }
 }
 
-impl Drop for VNextProductRuntime {
-    fn drop(&mut self) {
-        self.workers.cancel_and_abort();
-        self.state = VNextProductRuntimeState::Stopped;
+impl OptionalKqlOwner {
+    fn lock(&self) -> Result<KqlOwnerGuard<'_>, VNextProductRuntimeError> {
+        let guard = self
+            .runtime
+            .lock()
+            .map_err(|_| VNextProductRuntimeError::KqlLockPoisoned)?;
+        if guard.is_none() {
+            return Err(VNextProductRuntimeError::LaneDisabled(
+                VNextFeature::DistributedKqlOneHop,
+            ));
+        }
+        Ok(KqlOwnerGuard { guard })
+    }
+
+    fn take(&self) {
+        self.runtime
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
     }
 }
 
-/// Narrow product-facing operations. Its private fields make it impossible for
-/// API callers to acquire a raw subsystem runtime through this façade.
-pub struct VNextProductServices<'a> {
-    runtime: &'a VNextProductRuntime,
+struct VNextServiceLease {
+    core: Arc<VNextProductServiceCore>,
 }
 
-impl VNextProductServices<'_> {
+impl Drop for VNextServiceLease {
+    fn drop(&mut self) {
+        let mut lifecycle = self
+            .core
+            .lifecycle
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        debug_assert!(lifecycle.in_flight > 0);
+        lifecycle.in_flight = lifecycle.in_flight.saturating_sub(1);
+        let drained = lifecycle.in_flight == 0;
+        drop(lifecycle);
+        if drained {
+            self.core.drained.notify_waiters();
+        }
+    }
+}
+
+/// Cloneable product-facing handle. It owns no subsystem and can therefore be
+/// snapshotted under the aggregate node mutex, then used after that mutex has
+/// been released.
+#[derive(Clone)]
+pub struct VNextProductServices {
+    core: Weak<VNextProductServiceCore>,
+    local_addr: SocketAddr,
+    last_network_status: Arc<Mutex<VNextNetworkRuntimeStatus>>,
+}
+
+impl VNextProductServices {
+    fn lease(&self) -> Result<VNextServiceLease, VNextProductRuntimeError> {
+        self.core
+            .upgrade()
+            .ok_or(VNextProductRuntimeError::Stopped)?
+            .acquire()
+    }
+
     pub fn local_addr(&self) -> SocketAddr {
-        self.runtime.local_addr
+        self.local_addr
     }
 
     pub fn network_status(&self) -> VNextNetworkRuntimeStatus {
-        self.runtime
-            .network
-            .as_ref()
-            .map(|network| network.status())
-            .unwrap_or_else(|| self.runtime.last_network_status.clone())
+        if let Ok(lease) = self.lease() {
+            if let Ok(network) = lease.core.network() {
+                return network.status();
+            }
+        }
+        self.last_network_status
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
     }
 
     pub fn status(&self) -> Result<VNextProductRuntimeStatus, VNextProductRuntimeError> {
-        let active_private_needs = self
-            .runtime
-            .distributed_kql
-            .as_ref()
-            .map(|kql| {
-                kql.lock()
-                    .map(|kql| kql.active_target_count())
-                    .map_err(|_| VNextProductRuntimeError::KqlLockPoisoned)
-            })
-            .transpose()?
-            .unwrap_or_default();
-        let durable_matches = self
-            .runtime
-            .distributed_kql
-            .as_ref()
-            .map(|kql| {
-                kql.lock()
-                    .map_err(|_| VNextProductRuntimeError::KqlLockPoisoned)?
-                    .durable_match_count()
-                    .map_err(VNextProductRuntimeError::from)
-            })
-            .transpose()?
-            .unwrap_or_default();
-        let pending_publications = self
-            .runtime
-            .public_use
-            .as_ref()
-            .map(|publisher| publisher.pending_publication_count())
-            .transpose()?
-            .unwrap_or_default();
-        let storage_bytes = self.runtime.storage.used_bytes()?;
-        Ok(VNextProductRuntimeStatus {
-            state: self.runtime.state,
-            signer_mode: self.runtime.signer_mode,
-            network: self.network_status(),
-            authenticated_routes: self
-                .runtime
-                .network
-                .as_ref()
-                .map(|network| network.authenticated_route_count())
-                .transpose()?
-                .unwrap_or_default(),
+        let lease = self.lease()?;
+        let core = &lease.core;
+        let (active_private_needs, durable_matches) = match core.kql() {
+            Ok(kql) => (
+                kql.active_target_count(),
+                kql.durable_match_count()
+                    .map_err(VNextProductRuntimeError::from)?,
+            ),
+            Err(VNextProductRuntimeError::LaneDisabled(_)) => (0, 0),
+            Err(error) => return Err(error),
+        };
+        let pending_publications = match core.publisher() {
+            Ok(publisher) => publisher.pending_publication_count()?,
+            Err(VNextProductRuntimeError::LaneDisabled(_)) => 0,
+            Err(error) => return Err(error),
+        };
+        let network = core.network()?;
+        let storage_bytes = core.storage.used_bytes()?;
+        let cancellation_requested = *core.worker_cancellation.borrow();
+        let status = VNextProductRuntimeStatus {
+            state: VNextProductRuntimeState::Running,
+            signer_mode: core.signer_mode,
+            network: network.status(),
+            authenticated_routes: network.authenticated_route_count()?,
             active_private_needs,
             durable_matches,
             pending_publications,
-            policy_versions: self
-                .runtime
+            policy_versions: core
                 .policy_versions
                 .iter()
                 .map(|version| version.get())
                 .collect(),
-            lanes: self.runtime.lanes,
-            budgets: self.runtime.budgets,
+            lanes: core.lanes,
+            budgets: core.budgets,
             storage_bytes,
-            storage_pressure: self.runtime.storage.pressure(storage_bytes),
-            active_product_workers: self.runtime.workers.len(),
-            max_product_workers: self.runtime.workers.capacity(),
-            cancellation_requested: self.runtime.workers.is_cancelled(),
-            startup_trace: self.runtime.startup_trace.clone(),
-            shutdown_trace: self.runtime.shutdown_trace.clone(),
-            rehydrated_private_needs: self.runtime.rehydrated_private_needs,
-            startup_pending_publications: self.runtime.startup_pending_publications,
-            worker_poll_ticks: self.runtime.workers.poll_ticks(),
+            storage_pressure: core.storage.pressure(storage_bytes),
+            active_product_workers: core.active_product_workers,
+            max_product_workers: core.max_product_workers,
+            cancellation_requested,
+            startup_trace: core.startup_trace.clone(),
+            shutdown_trace: Vec::new(),
+            rehydrated_private_needs: core.rehydrated_private_needs,
+            startup_pending_publications: core.startup_pending_publications,
+            worker_poll_ticks: core.worker_poll_ticks.load(Ordering::Relaxed),
             changes_wallet_state: false,
             changes_obt_state: false,
             claims_network_completion: false,
-        })
+        };
+        Ok(status)
     }
 
     pub async fn connect_peer(
         &self,
         addr: SocketAddr,
     ) -> Result<OutboundVNextSession, VNextProductRuntimeError> {
-        self.runtime
+        let lease = self.lease()?;
+        lease
+            .core
             .network()?
             .connect(addr)
             .await
@@ -564,8 +739,9 @@ impl VNextProductServices<'_> {
         &self,
         peer: NodeId,
     ) -> Result<Option<AuthenticatedRoute>, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime
+        let lease = self.lease()?;
+        lease
+            .core
             .network()?
             .authenticated_route(peer)
             .map_err(Into::into)
@@ -575,20 +751,23 @@ impl VNextProductServices<'_> {
         &self,
         bundle: PrivateNeedBundle,
     ) -> Result<(StandingNeedId, StandingNeedWriteOutcome), VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime.ensure_storage_writable()?;
-        self.runtime
+        let lease = self.lease()?;
+        lease.core.ensure_storage_writable()?;
+        let result = lease
+            .core
             .kql()?
             .register_private_need(bundle)
-            .map_err(Into::into)
+            .map_err(Into::into);
+        result
     }
 
     pub fn standing_need(
         &self,
         id: StandingNeedId,
     ) -> Result<Option<StandingNeed>, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime.kql()?.standing_need(id).map_err(Into::into)
+        let lease = self.lease()?;
+        let result = lease.core.kql()?.standing_need(id).map_err(Into::into);
+        result
     }
 
     pub fn pause_private_need(
@@ -596,12 +775,14 @@ impl VNextProductServices<'_> {
         id: StandingNeedId,
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime.ensure_storage_writable()?;
-        self.runtime
+        let lease = self.lease()?;
+        lease.core.ensure_storage_writable()?;
+        let result = lease
+            .core
             .kql()?
             .pause(id, expected_generation)
-            .map_err(Into::into)
+            .map_err(Into::into);
+        result
     }
 
     pub fn resume_private_need(
@@ -609,12 +790,14 @@ impl VNextProductServices<'_> {
         id: StandingNeedId,
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime.ensure_storage_writable()?;
-        self.runtime
+        let lease = self.lease()?;
+        lease.core.ensure_storage_writable()?;
+        let result = lease
+            .core
             .kql()?
             .resume(id, expected_generation)
-            .map_err(Into::into)
+            .map_err(Into::into);
+        result
     }
 
     pub fn cancel_private_need(
@@ -622,12 +805,14 @@ impl VNextProductServices<'_> {
         id: StandingNeedId,
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime.ensure_storage_writable()?;
-        self.runtime
+        let lease = self.lease()?;
+        lease.core.ensure_storage_writable()?;
+        let result = lease
+            .core
             .kql()?
             .cancel(id, expected_generation)
-            .map_err(Into::into)
+            .map_err(Into::into);
+        result
     }
 
     pub fn retire_private_need(
@@ -635,12 +820,14 @@ impl VNextProductServices<'_> {
         id: StandingNeedId,
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime.ensure_storage_writable()?;
-        self.runtime
+        let lease = self.lease()?;
+        lease.core.ensure_storage_writable()?;
+        let result = lease
+            .core
             .kql()?
             .retire(id, expected_generation)
-            .map_err(Into::into)
+            .map_err(Into::into);
+        result
     }
 
     pub fn process_one_hop_affordance_delta(
@@ -648,13 +835,16 @@ impl VNextProductServices<'_> {
         selector: SelectorCid,
         budget: DistributedKqlBudget,
     ) -> Result<DistributedKqlReport, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime.ensure_kql_budget(budget)?;
-        self.runtime.ensure_storage_writable()?;
-        self.runtime
+        let lease = self.lease()?;
+        lease.core.ensure_kql_budget(budget)?;
+        lease.core.ensure_storage_writable()?;
+        let network = lease.core.network()?;
+        let result = lease
+            .core
             .kql()?
-            .process_one_hop_affordance_delta(self.runtime.network()?, selector, budget)
-            .map_err(Into::into)
+            .process_one_hop_affordance_delta(&network, selector, budget)
+            .map_err(Into::into);
+        result
     }
 
     pub fn prepare_public_use(
@@ -662,9 +852,10 @@ impl VNextProductServices<'_> {
         request: &PreparePublicUseEvidenceRequest,
         author: &ValidatedFeedInception,
     ) -> Result<PreparedPublicUseIntent, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime.ensure_storage_writable()?;
-        self.runtime
+        let lease = self.lease()?;
+        lease.core.ensure_storage_writable()?;
+        lease
+            .core
             .publisher()?
             .prepare_public_use(request, author)
             .map_err(Into::into)
@@ -677,9 +868,10 @@ impl VNextProductServices<'_> {
         signer: &dyn FeedEventSigner,
     ) -> Result<(PublicUseEvidencePublication, PublicUsePublishOutcome), VNextProductRuntimeError>
     {
-        self.runtime.ensure_running()?;
-        self.runtime.ensure_storage_writable()?;
-        self.runtime
+        let lease = self.lease()?;
+        lease.core.ensure_storage_writable()?;
+        lease
+            .core
             .publisher()?
             .publish_confirmed(request, author, signer)
             .map_err(Into::into)
@@ -689,16 +881,18 @@ impl VNextProductServices<'_> {
         &self,
         limit: usize,
     ) -> Result<PublicUseFlushReport, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime.ensure_storage_writable()?;
-        if limit > self.runtime.budgets.publication_flush_batch {
+        let lease = self.lease()?;
+        lease.core.ensure_storage_writable()?;
+        if limit > lease.core.budgets.publication_flush_batch {
             return Err(VNextProductRuntimeError::BudgetExceeded(
                 VNextFeature::PublicUseEvidencePublish,
             ));
         }
-        self.runtime
+        let network = lease.core.network()?;
+        lease
+            .core
             .publisher()?
-            .flush_pending(self.runtime.network()?, limit)
+            .flush_pending(&network, limit)
             .map_err(Into::into)
     }
 
@@ -708,11 +902,13 @@ impl VNextProductServices<'_> {
         target: ObjectReference,
         policy_version: LocalPolicyVersion,
     ) -> Result<DistributedPomvReport, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        self.runtime.ensure_storage_writable()?;
-        self.runtime
+        let lease = self.lease()?;
+        lease.core.ensure_storage_writable()?;
+        let network = lease.core.network()?;
+        lease
+            .core
             .pomv()?
-            .materialize_public_use_view(self.runtime.network()?, selector, target, policy_version)
+            .materialize_public_use_view(&network, selector, target, policy_version)
             .map_err(Into::into)
     }
 
@@ -720,8 +916,9 @@ impl VNextProductServices<'_> {
         &self,
         id: ProposalId,
     ) -> Result<Option<ku_kql::vnext_proposal::BindingProposal>, VNextProductRuntimeError> {
-        self.runtime.ensure_running()?;
-        Ok(self.runtime.kql()?.proposal(id).cloned())
+        let lease = self.lease()?;
+        let proposal = lease.core.kql()?.proposal(id).cloned();
+        Ok(proposal)
     }
 }
 
@@ -900,12 +1097,9 @@ impl BoundedProductWorkers {
         self.max_workers
     }
 
+    #[cfg(test)]
     fn is_cancelled(&self) -> bool {
         *self.cancellation.borrow()
-    }
-
-    fn poll_ticks(&self) -> u64 {
-        self.poll_ticks.load(Ordering::Relaxed)
     }
 
     fn start_lane_workers(
@@ -1006,6 +1200,12 @@ impl BoundedProductWorkers {
 pub enum VNextProductRuntimeError {
     #[error("vNext product runtime is stopped")]
     Stopped,
+    #[error("vNext product service lifecycle lock is poisoned")]
+    LifecycleLockPoisoned,
+    #[error("vNext product {0} subsystem lock is poisoned")]
+    SubsystemLockPoisoned(&'static str),
+    #[error("vNext product in-flight operation counter overflowed")]
+    InFlightOverflow,
     #[error("vNext product KQL owner lock is poisoned")]
     KqlLockPoisoned,
     #[error("vNext product background worker capacity reached")]
@@ -1046,7 +1246,10 @@ mod tests {
     use super::*;
     use crate::vnext_config::VNextFeatureConfig;
     use ed25519_dalek::SigningKey;
-    use ku_core::foundation::{MetabolicViewPolicy, ObjectReference};
+    use ku_core::foundation::{
+        decode_feed_inception, ConceptCcid, DeviceId, DisclosureClass, FeedInception,
+        MetabolicViewPolicy, NamespaceCommitment, ObjectReference, UseEvidencePayload, UseMode,
+    };
 
     struct UnavailableIdentitySigner {
         public_key: [u8; 32],
@@ -1090,6 +1293,13 @@ mod tests {
         config.enabled.public_use_evidence_publish = true;
         config.enabled.distributed_pomv_view = true;
         config
+    }
+
+    fn assert_cloneable_static_service_handle<T: Clone + Send + Sync + 'static>() {}
+
+    #[test]
+    fn product_service_handle_is_cloneable_send_sync_and_static() {
+        assert_cloneable_static_service_handle::<VNextProductServices>();
     }
 
     #[tokio::test]
@@ -1189,6 +1399,170 @@ mod tests {
             left.services().authenticated_route(right_principal),
             Err(VNextProductRuntimeError::Stopped)
         ));
+    }
+
+    #[tokio::test]
+    async fn service_handle_runs_while_aggregate_owner_mutexes_are_held() {
+        let left_dir = tempfile::tempdir().unwrap();
+        let right_dir = tempfile::tempdir().unwrap();
+        let config = all_lanes_config();
+        let left = Arc::new(tokio::sync::Mutex::new(
+            VNextProductRuntime::start(
+                left_dir.path(),
+                "127.0.0.1:0".parse().unwrap(),
+                &config,
+                dependencies(81),
+                Some(Arc::new(SigningKey::from_bytes(&[0x81; 32]))),
+            )
+            .await
+            .unwrap(),
+        ));
+        let right = Arc::new(tokio::sync::Mutex::new(
+            VNextProductRuntime::start(
+                right_dir.path(),
+                "127.0.0.1:0".parse().unwrap(),
+                &config,
+                dependencies(82),
+                Some(Arc::new(SigningKey::from_bytes(&[0x82; 32]))),
+            )
+            .await
+            .unwrap(),
+        ));
+        let left_services = left.lock().await.services();
+        let right_services = right.lock().await.services();
+        let right_addr = right_services.local_addr();
+        let right_principal = NodeId::from_bytes(right_services.network_status().principal);
+        let feed_key = SigningKey::from_bytes(&[0x86; 32]);
+        let namespace = NamespaceCommitment::derive(b"p2.5-service-handle", [0x87; 32]).unwrap();
+        let feed_bytes = FeedInception::new(
+            *feed_key.verifying_key().as_bytes(),
+            namespace,
+            0,
+            DeviceId::from_bytes([0x88; 32]),
+        )
+        .sign(&feed_key)
+        .unwrap()
+        .encode()
+        .unwrap();
+        let author = decode_feed_inception(&feed_bytes).unwrap();
+        let target = ObjectReference::new(0, [0x84; 32]);
+        let policy = ObjectReference::new(0, [0x85; 32]);
+        let request = PreparePublicUseEvidenceRequest {
+            payload: UseEvidencePayload {
+                subjects: vec![target.clone()],
+                mode: UseMode::Application,
+                actor_class: ConceptCcid::from_bytes([0x89; 16]),
+                task_context_commitment: [0x8A; 32],
+                causal_role: ConceptCcid::from_bytes([0x8B; 16]),
+                assembly: None,
+                mapping: None,
+                outcome_observation: None,
+                use_policy: policy,
+                observed_frontier: [0x8C; 32],
+            },
+            exact_target: target.clone(),
+            expected_peer: right_principal,
+            selector: SelectorCid::from_bytes([0x83; 32]),
+            namespace,
+            disclosure: DisclosureClass::Public,
+            idempotency_key: [0x8D; 32],
+            expires_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 60,
+        };
+
+        // These guards model API/CLI/Desktop owning the aggregate
+        // Arc<Mutex<OneBrainNode>>. Service work must not attempt to reacquire
+        // either aggregate mutex.
+        let left_owner = left.lock().await;
+        let right_owner = right.lock().await;
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            left_services.connect_peer(right_addr),
+        )
+        .await
+        .expect("network wait tried to reacquire an aggregate owner mutex")
+        .unwrap();
+        let status = tokio::time::timeout(Duration::from_secs(1), async { left_services.status() })
+            .await
+            .expect("Redb status scan tried to reacquire an aggregate owner mutex")
+            .unwrap();
+        assert_eq!(status.authenticated_routes, 1);
+        let prepared = left_services.prepare_public_use(&request, &author).unwrap();
+        left_services
+            .publish_confirmed_public_use(&prepared.confirm(), &author, &feed_key)
+            .expect("signer call tried to reacquire an aggregate owner mutex");
+        let view = tokio::time::timeout(Duration::from_secs(1), async {
+            left_services.materialize_public_use_view(
+                SelectorCid::from_bytes([0x83; 32]),
+                target,
+                LocalPolicyVersion::new(1).unwrap(),
+            )
+        })
+        .await
+        .expect("view materialization tried to reacquire an aggregate owner mutex")
+        .unwrap();
+        assert!(view.view.cumulative_event_ids.is_empty());
+        drop(right_owner);
+        drop(left_owner);
+
+        left.lock().await.shutdown().await;
+        right.lock().await.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn shutdown_fences_new_work_and_drains_existing_service_leases() {
+        let directory = tempfile::tempdir().unwrap();
+        let config = all_lanes_config();
+        let runtime = VNextProductRuntime::start(
+            directory.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(85),
+            Some(Arc::new(SigningKey::from_bytes(&[0x85; 32]))),
+        )
+        .await
+        .unwrap();
+        let services = runtime.services();
+        let lease = services.lease().unwrap();
+        let mut shutdown = tokio::spawn(async move {
+            let mut runtime = runtime;
+            runtime.shutdown().await;
+            runtime
+        });
+
+        tokio::task::yield_now().await;
+        assert!(matches!(
+            services.status(),
+            Err(VNextProductRuntimeError::Stopped)
+        ));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(25), &mut shutdown)
+                .await
+                .is_err(),
+            "shutdown completed before the active service lease drained"
+        );
+        drop(lease);
+        let runtime = tokio::time::timeout(Duration::from_secs(3), shutdown)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            services.network_status().state,
+            VNextNetworkRuntimeState::Stopped
+        );
+        assert_eq!(
+            runtime.shutdown_trace,
+            vec![
+                VNextShutdownPhase::OperationsFenced,
+                VNextShutdownPhase::WorkersCancelled,
+                VNextShutdownPhase::SafeMetadataFlushed,
+                VNextShutdownPhase::NetworkStopped,
+                VNextShutdownPhase::StoresClosed,
+            ]
+        );
     }
 
     #[tokio::test]
@@ -1383,7 +1757,10 @@ mod tests {
                 VNextFeature::DistributedKqlOneHop
             ))
         ));
-        runtime.storage.hard_watermark_bytes = 1;
+        Arc::get_mut(runtime.core.as_mut().unwrap())
+            .unwrap()
+            .storage
+            .hard_watermark_bytes = 1;
         assert!(matches!(
             runtime.services().flush_pending_public_use(1),
             Err(VNextProductRuntimeError::StorageHardWatermark { .. })

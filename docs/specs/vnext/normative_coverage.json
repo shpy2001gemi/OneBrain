@@ -293,6 +293,29 @@
       "rationale": "Independent safe-default lane flags determine which durable owners exist, while startup validation and typed service guards enforce KQL, PoMV, publication, worker, per-peer and storage bounds before side effects."
     },
     {
+      "path": "docs/specs/vnext/RUNTIME_CONCURRENCY_PROFILE_V1.md",
+      "expected_statement_lines": 23,
+      "evidence": [
+        {
+          "path": "src/onebrain-node/src/vnext_product_runtime.rs",
+          "needle": "product_service_handle_is_cloneable_send_sync_and_static"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_product_runtime.rs",
+          "needle": "service_handle_runs_while_aggregate_owner_mutexes_are_held"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_product_runtime.rs",
+          "needle": "shutdown_fences_new_work_and_drains_existing_service_leases"
+        },
+        {
+          "path": "src/onebrain-api/src/server.rs",
+          "needle": "pub async fn vnext_product_services"
+        }
+      ],
+      "rationale": "A weak cloneable static service handle snapshots under the aggregate node mutex, a short admission lease keeps only the subsystem core alive during work, and executable tests prove QUIC waits, Redb scans, signer calls and PoMV materialization proceed while aggregate owner locks remain held; shutdown fences and drains those leases before listener/store closure."
+    },
+    {
       "path": "docs/specs/vnext/RUNTIME_INCREMENTAL_PROCESSING_PROFILE_V1.md",
       "expected_statement_lines": 25,
       "evidence": [
