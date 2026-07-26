@@ -1903,3 +1903,15 @@ Local evidence:
 
 M5-03 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
 `main`. Work package kế tiếp là M5-04 Chaos, parser adversarial và fuzz.
+
+Remote CI run
+[`30211632805`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30211632805)
+trên implementation commit `60b30ce` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real-QUIC
+acceptance (gồm M5.3 đủ 65 process-kill cases) và Windows
+default/vNext/Desktop smoke đều xanh. Real-QUIC, Windows và Linux default jobs
+có 0 annotation; foundation job giữ bốn warning lint React baseline đã biết,
+không có error hoặc warning M5-03 mới.
+
+M5-03 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
+`main`, work package kế tiếp là M5-04 Chaos, parser adversarial và fuzz.
