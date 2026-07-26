@@ -33,7 +33,16 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     let _ = window.emit("navigate", "/settings");
                 }
             }
-            "quit" => app.exit(0),
+            "quit" => {
+                let app = app.clone();
+                let node = app
+                    .try_state::<crate::state::AppState>()
+                    .and_then(|state| state.node.get().cloned());
+                tauri::async_runtime::spawn(async move {
+                    crate::commands::shutdown_node(node).await;
+                    app.exit(0);
+                });
+            }
             _ => {}
         })
         .on_tray_icon_event(|tray, event| {

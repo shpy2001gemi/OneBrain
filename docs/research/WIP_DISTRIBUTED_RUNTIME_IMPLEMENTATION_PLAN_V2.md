@@ -1621,3 +1621,58 @@ và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
 
 P3.3 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
 `main`, work package kế tiếp là P3.4 Desktop/Web UX.
+
+### 2026-07-26 — P3.4 Desktop/Web UX
+
+Đã triển khai cục bộ trên nhánh `codex/p3-desktop-web-ux`:
+
+1. Discovery tách rõ `Local KQL` và `One-hop discovery`. Local KQL chỉ gọi
+   legacy local endpoint; one-hop dùng toàn bộ authenticated P3.1 Need flow
+   prepare/activate/list/scan/matches/retire.
+2. Mọi one-hop match được hiển thị là `quarantined proposal`,
+   `executable=false`, kèm responder scope, selector, assessed frontier,
+   constraints, limitations và opaque continuation. Zero-result chỉ nói về
+   local/bounded frontier, không tuyên bố network-wide absence.
+3. PoMV page tách `Legacy local scalar` khỏi
+   `vNext Evidence View / Public Use`. Evidence view hiển thị
+   policy/frontier/revision/coverage/limitations/conflict và giữ bốn semantic
+   flag fail-closed; conflict được ghi rõ unresolved, không phải Authorized.
+4. Public Use wizard bắt buộc acknowledgement Public/permanent trước prepare,
+   hiển thị exact canonical payload/target/recipient/selector/namespace/
+   disclosure/idempotency/expiry, rồi yêu cầu nhập lại exact `intent_cid`
+   trước khi dẫn xuất interaction receipt BLAKE3. Receipt không xuất hiện
+   trong UI.
+5. Publication lookup hiển thị outbox `pending`/`deferred`, attempts, revision
+   và limitations mà không suy diễn delivery acknowledgement. View/status
+   retrieval đều được ghi rõ read-only, không thể tự tạo UseEvidence.
+6. Settings hiển thị độc lập compiled/requested/active/kill-switch/
+   signer-readiness cùng lifecycle, coverage và limitations.
+7. Desktop IPC quit, tray quit và restart đều chờ
+   `OneBrainNode::shutdown_network()`. Restart dựng lại toàn bộ process để
+   caller-owned vNext dependencies được tái tạo an toàn.
+8. Đã freeze
+   [`VNEXT_DESKTOP_WEB_UX_PROFILE_V1.md`](../specs/vnext/VNEXT_DESKTOP_WEB_UX_PROFILE_V1.md),
+   machine profile, source-contract validator và hai cross-language receipt
+   vectors. CI foundation chạy thêm Node 24, `npm ci`, lint, production build
+   và receipt tests.
+
+Local evidence:
+
+- Web TypeScript build và Vite production build: xanh;
+- oxlint: xanh với 4 warning baseline có sẵn, không có warning mới từ P3.4;
+- Web BLAKE3 interaction receipt vectors: 2/2 xanh;
+- browser QA với node/API local: Local/one-hop tabs, legacy/vNext PoMV tabs,
+  Public/permanent guard, zero-result wording và Settings status đều đúng;
+  không có browser console error; QA phát hiện và đã sửa default KQL từ cú
+  pháp `MATCH` không hợp lệ sang `FIND (k:KU) SCOPE LOCAL LIMIT 20`;
+- Desktop default và feature-enabled build: xanh;
+- REST P3.1: 7/7, private WebSocket P3.2: 8/8, CLI P3.3: 7/7,
+  default/legacy API: 13/13 test xanh;
+- machine-profile validators: 26/26 test xanh;
+- `validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37 negative assertions,
+  55 vectors/21 domains, 14 REST endpoints/18 DTOs, 10 private-WS events/
+  4 topics, 11 CLI commands, 2 Desktop/Web receipt vectors, 384 normative
+  lines và 387 local links.
+
+P3.4 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
+`main`. Work package kế tiếp sau P3.4 là DR-M5.

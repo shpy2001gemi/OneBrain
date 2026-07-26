@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import type { StatusResponse } from '../api/types';
-import { Server, Cpu, Database, Shield, RefreshCw, Check, AlertCircle, Bell, ArrowRightLeft, Loader2 } from 'lucide-react';
-import { api } from '../api/client';
+import type { StatusResponse, VNextRuntimeStatus } from '../api/types';
+import { Server, Cpu, Database, Shield, RefreshCw, Check, AlertCircle, Bell, ArrowRightLeft, Loader2, Network } from 'lucide-react';
+import { api, VNextApiError } from '../api/client';
 import { formatSize } from '../utils/format';
 
 interface OllamaModel {
@@ -98,12 +98,15 @@ export function SettingsPage() {
   const [currentModel, setCurrentModel] = useState('');
   const [loadedModels, setLoadedModels] = useState<string[]>([]);
   const [status, setStatus] = useState<StatusResponse | null>(null);
+  const [vnextStatus, setVnextStatus] = useState<VNextRuntimeStatus | null>(null);
+  const [vnextStatusError, setVnextStatusError] = useState('');
   const [msg, setMsg] = useState('');
   const [msgType, setMsgType] = useState<'ok' | 'err'>('ok');
   const [switching, setSwitching] = useState('');
 
   useEffect(() => {
     fetchStatus();
+    fetchVnextStatus();
     fetchModels();
     fetchLoaded();
   }, []);
@@ -114,6 +117,21 @@ export function SettingsPage() {
       setStatus(s);
       setCurrentModel(s.model || '');
     } catch {}
+  };
+
+  const fetchVnextStatus = async () => {
+    setVnextStatusError('');
+    try {
+      const result = await api.getVNextRuntimeStatus();
+      setVnextStatus(result.data);
+    } catch (reason) {
+      setVnextStatus(null);
+      setVnextStatusError(
+        reason instanceof VNextApiError
+          ? `${reason.code}: ${reason.message} (${reason.meta.lifecycle})`
+          : reason instanceof Error ? reason.message : String(reason),
+      );
+    }
   };
 
   const fetchModels = async () => {
@@ -250,6 +268,51 @@ export function SettingsPage() {
           </div>
         </div>
 
+        {/* vNext Runtime Boundary */}
+        <div className="glass-card animate-in" style={{ gridColumn: '1 / -1' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Network size={18} style={{ color: 'var(--ob-accent)' }} /> vNext Runtime Boundary
+            </h3>
+            <button className="btn btn-ghost" onClick={fetchVnextStatus}>
+              <RefreshCw size={14} /> Refresh
+            </button>
+          </div>
+          {vnextStatus ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(110px, 1fr))', gap: 10 }}>
+                <RuntimeFlag label="Compiled" value={vnextStatus.compiled} />
+                <RuntimeFlag label="Requested" value={vnextStatus.requested} />
+                <RuntimeFlag label="Active" value={vnextStatus.active} />
+                <RuntimeFlag label="Kill switch" value={vnextStatus.kill_switch} warning />
+                <RuntimeFlag label="Signer ready" value={vnextStatus.signer_ready} />
+              </div>
+              <div style={{ marginTop: 12, fontSize: '0.78rem', color: 'var(--ob-text-tertiary)' }}>
+                Lifecycle: <strong>{vnextStatus.lifecycle}</strong> · Coverage: <strong>{vnextStatus.coverage}</strong>
+              </div>
+              {vnextStatus.limitations.length > 0 && (
+                <div style={{ marginTop: 6, fontSize: '0.72rem', color: 'var(--ob-text-tertiary)' }}>
+                  Limitations: {vnextStatus.limitations.join(' · ')}
+                </div>
+              )}
+            </>
+          ) : (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(110px, 1fr))', gap: 10 }}>
+                {['Compiled', 'Requested', 'Active', 'Kill switch', 'Signer ready'].map(label => (
+                  <div key={label} style={{ padding: 10, borderRadius: 8, background: 'var(--ob-surface)' }}>
+                    <div style={{ color: 'var(--ob-text-tertiary)', fontSize: '0.7rem' }}>{label}</div>
+                    <strong>unknown</strong>
+                  </div>
+                ))}
+              </div>
+              <p style={{ color: 'var(--ob-warning)', fontSize: '0.78rem', marginTop: 10 }}>
+                {vnextStatusError || 'Loading vNext status…'}
+              </p>
+            </div>
+          )}
+        </div>
+
         {/* Ollama Models */}
         <div className="glass-card animate-in" style={{ gridColumn: '1 / -1' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
@@ -333,6 +396,26 @@ export function SettingsPage() {
         {/* Notification Preferences */}
         <NotificationPrefsPanel />
       </div>
+    </div>
+  );
+}
+
+function RuntimeFlag({
+  label,
+  value,
+  warning = false,
+}: {
+  label: string;
+  value: boolean;
+  warning?: boolean;
+}) {
+  const activeColor = warning ? 'var(--ob-warning)' : 'var(--ob-success)';
+  return (
+    <div style={{ padding: 10, borderRadius: 8, background: 'var(--ob-surface)', border: '1px solid var(--ob-glass-border)' }}>
+      <div style={{ color: 'var(--ob-text-tertiary)', fontSize: '0.7rem' }}>{label}</div>
+      <strong style={{ color: value ? activeColor : 'var(--ob-text-secondary)' }}>
+        {value ? 'yes' : 'no'}
+      </strong>
     </div>
   );
 }

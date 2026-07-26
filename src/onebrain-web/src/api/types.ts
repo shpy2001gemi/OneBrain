@@ -422,3 +422,171 @@ export interface Draft {
   created: number;
   updated: number;
 }
+
+// ─── vNext product surface ──────────────────────────────────────────────────
+
+export type VNextLifecycle = 'disabled' | 'requested' | 'active' | 'degraded';
+export type VNextCoverage = 'local_only' | 'partial';
+
+export interface VNextMeta {
+  lifecycle: VNextLifecycle;
+  coverage: VNextCoverage;
+  limitations: string[];
+  continuation: string | null;
+}
+
+export interface VNextResult<T> {
+  data: T;
+  meta: VNextMeta;
+}
+
+export interface VNextScope {
+  kind: 'one_hop' | 'authenticated_direct_peers';
+  max_hops: number;
+  node_ids: string[];
+}
+
+export interface VNextBudget {
+  max_scan_records: number;
+  max_affordances: number;
+  max_pairs: number;
+  max_proposals: number;
+}
+
+export interface NeedPrepareRequest {
+  local_query: string;
+  scope: VNextScope;
+  budget: VNextBudget;
+  idempotency_key: string;
+}
+
+export interface PreparedNeed {
+  intent_cid: string;
+  query_definition_cid: string;
+  selector_cid: string;
+  scope: VNextScope;
+  budget: VNextBudget;
+  expires_at: number;
+  limitations: string[];
+}
+
+export interface NeedView {
+  standing_need_id: string;
+  state: string;
+  query_definition_cid: string;
+  selector_cid: string;
+  coverage: VNextCoverage;
+  limitations: string[];
+  revision: number;
+}
+
+export interface NeedPage {
+  items: NeedView[];
+  coverage: VNextCoverage;
+  limitations: string[];
+  continuation: string | null;
+}
+
+export interface ConstraintObservation {
+  constraint_index: number;
+  evaluation: string;
+  required: boolean;
+}
+
+export interface QuarantinedMatch {
+  proposal_cid: string;
+  candidate_cid: string;
+  responder_scope: VNextScope;
+  selector_cid: string;
+  assessed_frontier: string;
+  constraints: {
+    observations: ConstraintObservation[];
+    all_required_satisfied: boolean;
+  };
+  limitations: string[];
+  state: 'quarantined';
+  executable: false;
+}
+
+export interface MatchPage {
+  items: QuarantinedMatch[];
+  coverage: VNextCoverage;
+  limitations: string[];
+  continuation: string | null;
+}
+
+export type VNextUseMode =
+  | 'application'
+  | 'transformation'
+  | 'epistemic'
+  | 'transfer'
+  | 'discovery'
+  | 'receptor_discovered'
+  | 'candidate_evaluated'
+  | 'constraint_clarified'
+  | 'gap_partially_filled'
+  | 'assembly_used'
+  | 'analogical_transfer'
+  | 'compared_or_opposed'
+  | 'capability_result_used';
+
+export interface PublicUsePrepareRequest {
+  target_cid: string;
+  recipient_node_id: string;
+  selector_cid: string;
+  namespace: string;
+  disclosure: {
+    classification: 'public';
+    permanent: true;
+    use_mode: VNextUseMode;
+  };
+  idempotency_key: string;
+  expires_at: number;
+}
+
+export interface PreparedPublicUse {
+  intent_cid: string;
+  canonical_payload_preview: string;
+  exact_target: string;
+  exact_recipient: string;
+  selector_cid: string;
+  namespace: string;
+  disclosure: PublicUsePrepareRequest['disclosure'];
+  idempotency_key: string;
+  expires_at: number;
+}
+
+export interface PublicationView {
+  publication_cid: string;
+  intent_cid: string;
+  state: 'pending' | 'deferred' | 'delivered' | string;
+  attempts: number;
+  limitations: string[];
+  revision: number;
+}
+
+export interface MetabolicEvidenceView {
+  target_cid: string;
+  policy_cid: string;
+  assessed_frontier: string;
+  revision: number;
+  use_event_root: string;
+  conflicts: string[];
+  coverage: VNextCoverage;
+  limitations: string[];
+  establishes_truth: false;
+  establishes_benefit: false;
+  authorizes_reward: false;
+  claims_global_completion: false;
+}
+
+export interface VNextRuntimeStatus {
+  compiled: boolean;
+  requested: boolean;
+  active: boolean;
+  kill_switch: boolean;
+  signer_ready: boolean;
+  lifecycle: VNextLifecycle;
+  coverage: VNextCoverage;
+  limitations: string[];
+}

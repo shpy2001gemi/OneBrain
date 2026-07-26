@@ -28,6 +28,9 @@ PRIVATE_WS_PROFILE = (
     ROOT / "src/test-vectors/vnext/private-websocket-profile-v1.json"
 )
 VNEXT_CLI_PROFILE = ROOT / "src/test-vectors/vnext/vnext-cli-profile-v1.json"
+VNEXT_DESKTOP_WEB_UX_PROFILE = (
+    ROOT / "src/test-vectors/vnext/vnext-desktop-web-ux-profile-v1.json"
+)
 
 TASK_ROW = re.compile(r"^\|\s*\[[ x~]\]\s*`([A-Z][A-Z0-9]*-\d{3})`")
 TASK_ID = re.compile(r"(?<!ADR-)(?<!NEG-)\b[A-Z][A-Z0-9]*-\d{3}\b")
@@ -751,6 +754,191 @@ def validate_vnext_cli_profile(
     return len(commands)
 
 
+def validate_vnext_desktop_web_ux_profile(
+    profile: dict[str, object] | None = None,
+) -> int:
+    if profile is None:
+        try:
+            profile = json.loads(read(VNEXT_DESKTOP_WEB_UX_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(
+                f"invalid vNext Desktop/Web UX profile JSON: {error}"
+            ) from error
+
+    if profile.get("format") != "onebrain/vnext-desktop-web-ux-profile/1":
+        raise ContractError("unexpected vNext Desktop/Web UX profile format")
+    if profile.get("profile_id") != "VNEXT_DESKTOP_WEB_UX_PROFILE_V1":
+        raise ContractError("unexpected vNext Desktop/Web UX profile ID")
+    if profile.get("version") != 1:
+        raise ContractError("unexpected vNext Desktop/Web UX profile version")
+
+    discovery = profile.get("discovery")
+    expected_match_fields = {
+        "responder_scope",
+        "selector_cid",
+        "assessed_frontier",
+        "limitations",
+        "continuation",
+    }
+    if (
+        not isinstance(discovery, dict)
+        or discovery.get("local_kql_contacts_peers") is not False
+        or discovery.get("one_hop_is_separate_surface") is not True
+        or discovery.get("one_hop_scope") != "one_hop"
+        or discovery.get("zero_result_claims_global_absence") is not False
+        or discovery.get("match_label") != "quarantined proposal"
+        or discovery.get("match_executable") is not False
+        or set(discovery.get("required_match_fields", [])) != expected_match_fields
+    ):
+        raise ContractError("vNext Desktop/Web discovery firewall drift")
+
+    pomv = profile.get("pomv")
+    expected_view_fields = {
+        "policy_cid",
+        "assessed_frontier",
+        "revision",
+        "conflicts",
+        "coverage",
+        "limitations",
+    }
+    if (
+        not isinstance(pomv, dict)
+        or pomv.get("legacy_scalar_is_separate") is not True
+        or pomv.get("view_load_creates_use_evidence") is not False
+        or pomv.get("publication_lookup_creates_use_evidence") is not False
+        or pomv.get("conflict_displays_authorized") is not False
+        or set(pomv.get("required_view_fields", [])) != expected_view_fields
+    ):
+        raise ContractError("vNext Desktop/Web PoMV firewall drift")
+
+    public_use = profile.get("public_use")
+    expected_preview = {
+        "canonical_payload_preview",
+        "exact_target",
+        "exact_recipient",
+        "selector_cid",
+        "namespace",
+        "disclosure",
+        "intent_cid",
+        "idempotency_key",
+        "expires_at",
+    }
+    if (
+        not isinstance(public_use, dict)
+        or public_use.get("prepare_creates_use_evidence") is not False
+        or public_use.get("public_permanent_acknowledgement_required") is not True
+        or public_use.get("exact_typed_intent_required") is not True
+        or public_use.get("receipt_derived_after_exact_match") is not True
+        or public_use.get("receipt_exported_to_ui") is not False
+        or set(public_use.get("required_preview_fields", [])) != expected_preview
+        or set(public_use.get("publication_states_visible", []))
+        != {"pending", "deferred"}
+        or public_use.get("delivery_acknowledgement_inferred") is not False
+    ):
+        raise ContractError("vNext Desktop/Web Public Use firewall drift")
+
+    expected_status = {
+        "compiled",
+        "requested",
+        "active",
+        "kill_switch",
+        "signer_ready",
+        "lifecycle",
+        "coverage",
+        "limitations",
+    }
+    if set(profile.get("settings_fields", [])) != expected_status:
+        raise ContractError("vNext Desktop/Web status field inventory drift")
+
+    if profile.get("desktop") != {
+        "quit_graceful_shutdown": True,
+        "restart_graceful_shutdown": True,
+        "restart_rebuilds_process": True,
+        "tray_quit_bypasses_shutdown": False,
+    }:
+        raise ContractError("vNext Desktop lifecycle firewall drift")
+
+    compatibility = profile.get("compatibility")
+    if (
+        not isinstance(compatibility, dict)
+        or any(value is not False for value in compatibility.values())
+        or set(compatibility)
+        != {
+            "legacy_kql_reinterpreted",
+            "legacy_pomv_reinterpreted",
+            "private_websocket_cross_client_delivery",
+            "api_cli_replay_identity_changed",
+        }
+    ):
+        raise ContractError("vNext Desktop/Web compatibility firewall drift")
+
+    vectors = profile.get("receipt_vectors")
+    if (
+        not isinstance(vectors, list)
+        or len(vectors) != 2
+        or any(
+            not isinstance(row, dict)
+            or not re.fullmatch(r"[0-9a-f]{64}", str(row.get("intent_cid", "")))
+            or not re.fullmatch(
+                r"obc1\.[A-Za-z0-9_-]{43}", str(row.get("receipt", ""))
+            )
+            for row in vectors
+        )
+    ):
+        raise ContractError("vNext Desktop/Web receipt vector drift")
+
+    source_contract = {
+        "src/onebrain-web/src/pages/Discovery.tsx": (
+            "Local KQL",
+            "One-hop discovery",
+        ),
+        "src/onebrain-web/src/pages/OneHopDiscovery.tsx": (
+            "quarantined proposal",
+            "Responder scope",
+            "Assessed frontier",
+            "Coverage outside this assessed",
+        ),
+        "src/onebrain-web/src/pages/Pomv.tsx": (
+            "Legacy local scalar",
+            "vNext Evidence View / Public Use",
+        ),
+        "src/onebrain-web/src/pages/VNextPomv.tsx": (
+            "Exact canonical payload bytes",
+            "Type the exact intent CID to confirm",
+            "outbox /",
+            "UNRESOLVED CONFLICT — not Authorized",
+        ),
+        "src/onebrain-web/src/api/client.ts": (
+            '"single_use_receipt":"[REDACTED]"',
+        ),
+        "src/onebrain-web/src/pages/Settings.tsx": (
+            "Compiled",
+            "Requested",
+            "Active",
+            "Kill switch",
+            "Signer ready",
+        ),
+        "src/onebrain-desktop/src/commands.rs": (
+            "shutdown_network().await",
+            "shutdown_node(state.node.get().cloned()).await;\n    app.restart()",
+            "shutdown_node(state.node.get().cloned()).await;\n    app.exit(0)",
+        ),
+        "src/onebrain-desktop/src/tray.rs": (
+            "crate::commands::shutdown_node(node).await;\n                    app.exit(0)",
+        ),
+    }
+    for relative, needles in source_contract.items():
+        text = read(ROOT / relative)
+        for needle in needles:
+            if needle not in text:
+                raise ContractError(
+                    f"vNext Desktop/Web implementation evidence missing: "
+                    f"{relative}: {needle}"
+                )
+
+    return len(vectors)
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -847,6 +1035,7 @@ def main() -> int:
         product_endpoints, product_dtos = validate_product_integration_profile()
         ws_events, ws_topics = validate_private_websocket_profile()
         cli_commands = validate_vnext_cli_profile()
+        ux_receipt_vectors = validate_vnext_desktop_web_ux_profile()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -862,6 +1051,7 @@ def main() -> int:
         f"{product_endpoints} product endpoints/{product_dtos} DTOs, "
         f"{ws_events} private-WS events/{ws_topics} topics, "
         f"{cli_commands} vNext CLI commands, "
+        f"{ux_receipt_vectors} Desktop/Web receipt vectors, "
         f"{links} local links"
     )
     return 0

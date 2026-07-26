@@ -4,7 +4,10 @@ import type {
   WalletTransaction, UserProfile, ConfigView,
   AiHealthInfo, PeerView, BlobMeta, FollowedNode, PeerProfile,
   DeviceInfo, SyncStatus, WatchInfo, ImportResult, BulkDeleteResult,
-  Draft, NeighborInfo,
+  Draft, NeighborInfo, VNextMeta, VNextResult, NeedPrepareRequest,
+  PreparedNeed, NeedView, NeedPage, VNextBudget, MatchPage,
+  PublicUsePrepareRequest, PreparedPublicUse, PublicationView,
+  MetabolicEvidenceView, VNextRuntimeStatus,
 } from './types';
 import { logDebug } from '../components/DebugConsole';
 import { isTauri, getApiConfig } from './tauri';
@@ -93,6 +96,103 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
     }
     throw err;
   }
+}
+
+type VNextEnvelope<T> =
+  | { ok: true; profile: string; data: T; meta: VNextMeta }
+  | {
+      ok: false;
+      profile: string;
+      error: {
+        code: string;
+        message: string;
+        retryable: boolean;
+        limitations: string[];
+      };
+      meta: VNextMeta;
+    };
+
+export class VNextApiError extends Error {
+  readonly code: string;
+  readonly meta: VNextMeta;
+  readonly retryable: boolean;
+
+  constructor(
+    message: string,
+    code: string,
+    meta: VNextMeta,
+    retryable: boolean,
+  ) {
+    super(message);
+    this.name = 'VNextApiError';
+    this.code = code;
+    this.meta = meta;
+    this.retryable = retryable;
+  }
+}
+
+function vnextDebugBody(path: string, body: BodyInit | null | undefined) {
+  if (!body) return undefined;
+  if (path === '/api/vnext/pomv/public-use/confirm') {
+    return '{"intent_cid":"[BOUND]","single_use_receipt":"[REDACTED]"}';
+  }
+  if (path === '/api/vnext/kql/needs/prepare') {
+    try {
+      const parsed = JSON.parse(String(body)) as Record<string, unknown>;
+      parsed.local_query = '[PRIVATE_REDACTED]';
+      return JSON.stringify(parsed);
+    } catch {
+      return '[PRIVATE_REDACTED]';
+    }
+  }
+  return String(body);
+}
+
+async function vnextRequest<T>(
+  path: string,
+  opts: RequestInit = {},
+): Promise<VNextResult<T>> {
+  await ensureConfig();
+  const method = (opts.method || 'GET').toUpperCase();
+  const start = performance.now();
+  logDebug({ type: 'request', method, path, body: vnextDebugBody(path, opts.body) });
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${getToken()}`,
+      ...opts.headers,
+    },
+  });
+  const duration = Math.round(performance.now() - start);
+  const json = await res.json() as VNextEnvelope<T>;
+  if (!json.ok) {
+    logDebug({
+      type: 'error',
+      method,
+      path,
+      status: res.status,
+      duration,
+      message: json.error.message,
+      body: JSON.stringify(json, null, 2),
+    });
+    throw new VNextApiError(
+      json.error.message,
+      json.error.code,
+      json.meta,
+      json.error.retryable,
+    );
+  }
+  logDebug({
+    type: 'response',
+    method,
+    path,
+    status: res.status,
+    duration,
+    body: JSON.stringify(json, null, 2).slice(0, 2000),
+  });
+  return { data: json.data, meta: json.meta };
 }
 
 // ─── Identity ────────────────────
@@ -369,4 +469,76 @@ export const api = {
     request<{ domains: Array<{ name: string; ku_count: number; avg_pomv: number; pomv_profile: 'legacy_local_pomv_scalar_v1'; pomv_is_economic: false; example_cids: string[] }> }>('/api/domains'),
   kusByDomain: (domain: string, page = 1, limit = 20) =>
     request<{ kus: KuListItem[]; total: number; page: number }>(`/api/domains/${encodeURIComponent(domain)}/kus?page=${page}&limit=${limit}`),
+
+  // ─── vNext: private one-hop discovery ──────────────────────────────────
+  prepareNeed: (input: NeedPrepareRequest) =>
+    vnextRequest<PreparedNeed>('/api/vnext/kql/needs/prepare', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  activateNeed: (intentCid: string, idempotencyKey: string) =>
+    vnextRequest<NeedView>('/api/vnext/kql/needs', {
+      method: 'POST',
+      body: JSON.stringify({
+        intent_cid: intentCid,
+        idempotency_key: idempotencyKey,
+      }),
+    }),
+  listNeeds: (continuation?: string, limit = 100) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (continuation) params.set('continuation', continuation);
+    return vnextRequest<NeedPage>(`/api/vnext/kql/needs?${params}`);
+  },
+  getNeed: (id: string) =>
+    vnextRequest<NeedView>(`/api/vnext/kql/needs/${encodeURIComponent(id)}`),
+  scanNeed: (
+    id: string,
+    budget: VNextBudget,
+    idempotencyKey: string,
+    continuation?: string,
+  ) =>
+    vnextRequest<NeedView>(`/api/vnext/kql/needs/${encodeURIComponent(id)}/scan`, {
+      method: 'POST',
+      body: JSON.stringify({
+        budget,
+        continuation: continuation || null,
+        idempotency_key: idempotencyKey,
+      }),
+    }),
+  listNeedMatches: (id: string, continuation?: string, limit = 100) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (continuation) params.set('continuation', continuation);
+    return vnextRequest<MatchPage>(
+      `/api/vnext/kql/needs/${encodeURIComponent(id)}/matches?${params}`,
+    );
+  },
+  retireNeed: (id: string) =>
+    vnextRequest<NeedView>(`/api/vnext/kql/needs/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+
+  // ─── vNext: Public Use and Metabolic Evidence View ─────────────────────
+  preparePublicUse: (input: PublicUsePrepareRequest) =>
+    vnextRequest<PreparedPublicUse>('/api/vnext/pomv/public-use/prepare', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  confirmPublicUse: (intentCid: string, singleUseReceipt: string) =>
+    vnextRequest<PublicationView>('/api/vnext/pomv/public-use/confirm', {
+      method: 'POST',
+      body: JSON.stringify({
+        intent_cid: intentCid,
+        single_use_receipt: singleUseReceipt,
+      }),
+    }),
+  getPublication: (id: string) =>
+    vnextRequest<PublicationView>(
+      `/api/vnext/pomv/publications/${encodeURIComponent(id)}`,
+    ),
+  getMetabolicView: (target: string) =>
+    vnextRequest<MetabolicEvidenceView>(
+      `/api/vnext/pomv/views/${encodeURIComponent(target)}`,
+    ),
+  getVNextRuntimeStatus: () =>
+    vnextRequest<VNextRuntimeStatus>('/api/vnext/runtime/status'),
 };

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Lightbulb, Layers, ChevronRight, Flame, Sparkles } from 'lucide-react';
+import { Lightbulb, Layers, ChevronRight, Flame, Sparkles, Database, Radar } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/client';
 import type { KuListItem } from '../api/types';
 import { GENE_TYPE_COLORS, type GeneType } from '../api/types';
+import { LocalKqlDiscovery } from './LocalKqlDiscovery';
+import { OneHopDiscovery } from './OneHopDiscovery';
 
 type TrendingItem = { ku: KuListItem; trend_score: number; reason: string };
 type RecommendedItem = { ku: KuListItem; relevance: number; reason: string };
@@ -29,6 +31,7 @@ const REASON_COLORS: Record<string, string> = {
 
 export function DiscoveryPage() {
   const { t } = useTranslation();
+  const [surface, setSurface] = useState<'local' | 'one_hop'>('local');
   const [tab, setTab] = useState<'trending' | 'recommended' | 'domains'>('trending');
   const [trending, setTrending] = useState<TrendingItem[]>([]);
   const [recommended, setRecommended] = useState<RecommendedItem[]>([]);
@@ -59,11 +62,28 @@ export function DiscoveryPage() {
     { key: 'domains' as const, icon: Layers, label: t('discovery.domains') },
   ];
 
+  if (surface === 'one_hop') {
+    return (
+      <div className="page">
+        <div className="page-header">
+          <h1><Sparkles size={28} style={{ display: 'inline', marginRight: 8, verticalAlign: 'middle' }} />{t('discovery.title')}</h1>
+          <p>Local execution and one-hop peer discovery are separate trust boundaries.</p>
+        </div>
+        <DiscoverySurfaceTabs surface={surface} setSurface={setSurface} />
+        <OneHopDiscovery />
+      </div>
+    );
+  }
+
   return (
     <div className="page">
       <div className="page-header">
         <h1><Sparkles size={28} style={{ display: 'inline', marginRight: 8, verticalAlign: 'middle' }} />{t('discovery.title')}</h1>
+        <p>Local execution and one-hop peer discovery are separate trust boundaries.</p>
       </div>
+
+      <DiscoverySurfaceTabs surface={surface} setSurface={setSurface} />
+      <LocalKqlDiscovery />
 
       {/* Tab Bar */}
       <div style={{
@@ -180,6 +200,31 @@ export function DiscoveryPage() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function DiscoverySurfaceTabs({
+  surface,
+  setSurface,
+}: {
+  surface: 'local' | 'one_hop';
+  setSurface: (surface: 'local' | 'one_hop') => void;
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+      <button
+        className={surface === 'local' ? 'btn btn-primary' : 'btn btn-ghost'}
+        onClick={() => setSurface('local')}
+      >
+        <Database size={16} /> Local KQL
+      </button>
+      <button
+        className={surface === 'one_hop' ? 'btn btn-primary' : 'btn btn-ghost'}
+        onClick={() => setSurface('one_hop')}
+      >
+        <Radar size={16} /> One-hop discovery
+      </button>
     </div>
   );
 }

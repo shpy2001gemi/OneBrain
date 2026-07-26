@@ -62,6 +62,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: src/onebrain-web/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -76,6 +81,15 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_product_profile
           python -m unittest scripts.ci.test_validate_vnext_ws_profile
           python -m unittest scripts.ci.test_validate_vnext_cli_profile
+          python -m unittest scripts.ci.test_validate_vnext_desktop_web_ux_profile
+
+      - name: P3.4 Web UX build, lint, and receipt contract
+        working-directory: src/onebrain-web
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+          npm run test:vnext
 
       - name: Build and verify a small Concept Registry fixture
         working-directory: .
@@ -189,6 +203,8 @@ jobs:
           onebrain-cli/src/cli/mod.rs
           onebrain-cli/src/cli/vnext.rs
           onebrain-cli/src/cli/workflow.rs
+          onebrain-desktop/src/commands.rs
+          onebrain-desktop/src/tray.rs
           onebrain-protocol/src/codec.rs
           onebrain-protocol/src/legacy.rs
           onebrain-protocol/src/legacy_adapter.rs
