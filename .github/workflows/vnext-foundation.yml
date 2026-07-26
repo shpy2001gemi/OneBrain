@@ -167,6 +167,7 @@ jobs:
           onebrain-node/src/vnext_m6_model.rs
           onebrain-node/src/vnext_mixed_conformance.rs
           onebrain-node/src/vnext_performance_budgets.rs
+          onebrain-node/src/vnext_product_runtime.rs
           onebrain-node/src/vnext_reunion_canary.rs
           onebrain-node/src/vnext_reward_firewall.rs
           onebrain-node/src/vnext_route_authority.rs
@@ -481,6 +482,11 @@ jobs:
           cargo test --locked -p onebrain-node
           --features vnext-network-runtime
           --lib vnext_route_authority
+      - name: P2.1 node-owned product runtime aggregate
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_product_runtime
       - name: Node-owned real QUIC lifecycle
         run: >-
           cargo test --locked -p onebrain-node

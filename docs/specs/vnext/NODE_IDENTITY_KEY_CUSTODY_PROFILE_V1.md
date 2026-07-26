@@ -36,8 +36,9 @@ public key. An invalid public key, unavailable signer, or mismatched signature
 fails startup. There is no fallback to another identity.
 
 `OneBrainNode::set_vnext_identity_signer` exposes the same boundary to embedded
-deployments before `start_network`. The resulting NodeID is derived from the
-external public key exactly as it is for the built-in signer.
+deployments before `start_network`. P2.1 forwards that handle through the
+node-owned `VNextProductRuntime` aggregate; the resulting NodeID is derived
+from the external public key exactly as it is for the built-in signer.
 
 ## 3. Compatibility file signer
 

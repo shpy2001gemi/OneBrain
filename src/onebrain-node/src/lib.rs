@@ -35,6 +35,8 @@ pub mod vnext_network_runtime;
 pub mod vnext_outbox;
 pub mod vnext_performance_budgets;
 #[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_product_runtime;
+#[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_record_provenance;
 pub mod vnext_reunion_canary;
 pub mod vnext_reward_firewall;
@@ -106,6 +108,12 @@ pub use vnext_outbox::{
 pub use vnext_performance_budgets::{
     run_performance_budget_suite, PerformanceBudgetReport, PerformanceBudgetV1,
     PerformanceSuiteError, TimedMetric, PERFORMANCE_BUDGET_PROFILE,
+};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_product_runtime::{
+    VNextProductRuntime, VNextProductRuntimeDependencies, VNextProductRuntimeError,
+    VNextProductRuntimeState, VNextProductRuntimeStatus, VNextProductServices,
+    VNextProductSignerMode, DEFAULT_PRODUCT_POMV_RECORDS, MAX_PRODUCT_BACKGROUND_WORKERS,
 };
 pub use vnext_reunion_canary::{DeterministicReunionTrace, ReunionTraceEntry, ReunionTracePhase};
 pub use vnext_reward_firewall::{

@@ -114,6 +114,7 @@ cargo build --features persist
 | [Strong Public Use Consent Profile v1](specs/vnext/PUBLIC_USE_CONSENT_PROFILE_V1.md) | Contract P1.3 thay confirmation khác zero bằng canonical prepare, exact-intent confirm, receipt dùng một lần, expiry và replay protection |
 | [Private KQL Persistence Profile v1](specs/vnext/PRIVATE_KQL_PERSISTENCE_PROFILE_V1.md) | Contract P1.4 mã hóa exact QueryDefinition/LocalNeedTarget, tự rehydrate sau restart và khóa resurrection bằng tombstone |
 | [Route and Authority Boundary Profile v1](specs/vnext/ROUTE_AUTHORITY_BOUNDARY_PROFILE_V1.md) | Contract P1.5 chỉ học route sau authenticated handshake, chỉ dùng policy version allow-list và tự resolve authority frontier từ validated local state |
+| [Runtime Ownership Profile v1](specs/vnext/RUNTIME_OWNERSHIP_PROFILE_V1.md) | Contract P2.1 gom network/KQL/Public Use/PoMV vào một aggregate do node sở hữu, bắt buộc Vault/Policy injection và chỉ mở typed service façade |
 | [Distributed Runtime Transaction Inventory](specs/vnext/DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md) | Danh mục boundary và failpoint ID cho crash harness DR-M5, kèm durable owner và restart oracle |
 | [Feature Tree](features/FEATURE_TREE.md) | Cây tính năng v6 — tất cả §1-§8 |
 | [Feature Details](features/FEATURE_DETAILS.md) | Chi tiết kỹ thuật từng feature với code references |

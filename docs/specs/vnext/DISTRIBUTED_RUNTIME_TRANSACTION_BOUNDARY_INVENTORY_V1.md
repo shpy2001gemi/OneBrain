@@ -7,6 +7,9 @@
 
 This inventory names durable commit boundaries that already exist in M2–M4.
 Listing a boundary is not evidence that its process-kill gate has passed.
+Since P2.1, the listed network, KQL, Public Use, and PoMV owners are held by one
+node-owned `VNextProductRuntime`; table-level transaction identities and
+restart oracles remain unchanged.
 
 ## Required oracle
 
