@@ -27,6 +27,7 @@ use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 use thiserror::Error;
 
 use crate::vnext_network_runtime::{VNextNetworkRuntime, VNextNetworkRuntimeError};
+use crate::vnext_record_provenance::MAX_TYPED_DELTA_PAGE_RECORDS;
 
 const MATCHES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_distributed_kql_matches_v1");
@@ -34,6 +35,7 @@ const CURSORS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_distributed_kql_cursors_v1");
 const MATCH_KEY_BYTES: usize = 64;
 const MATCH_VALUE_BYTES: usize = 96;
+const MAX_DURABLE_KQL_MATCHES: u64 = 65_536;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DistributedKqlBudget {
@@ -289,7 +291,8 @@ impl DistributedKqlRuntime {
         let known_frontier_objects = 0u64;
         let cursor = self.durable_matches.cursor(selector)?;
         let page_limit = usize::try_from(budget.max_scan_records.min(budget.max_affordances))
-            .map_err(|_| DistributedKqlError::Limit)?;
+            .map_err(|_| DistributedKqlError::Limit)?
+            .min(MAX_TYPED_DELTA_PAGE_RECORDS);
         let indexed = network.typed_record_delta(
             selector,
             ReconcileManifestKind::Object,
@@ -519,6 +522,13 @@ impl DurableMatchIndex {
                 Some(existing) if existing == value => newly_recorded = false,
                 Some(_) => return Err(DistributedKqlError::DurableMatchConflict),
                 None => {
+                    if table
+                        .len()
+                        .map_err(|error| DistributedKqlError::Storage(error.to_string()))?
+                        >= MAX_DURABLE_KQL_MATCHES
+                    {
+                        return Err(DistributedKqlError::Limit);
+                    }
                     table
                         .insert(key.as_slice(), value.as_slice())
                         .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;

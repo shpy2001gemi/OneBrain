@@ -1732,3 +1732,48 @@ React baseline đã biết.
 
 M5-00 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
 `main`, work package kế tiếp là M5-01 Unified resource admission và fairness.
+
+### 2026-07-26 — M5-01 Unified resource admission và fairness
+
+Đã triển khai cục bộ trên nhánh `codex/dr-m5-resource-admission`:
+
+1. Freeze
+   [`UNIFIED_RESOURCE_ADMISSION_AND_FAIRNESS_V1.md`](../specs/vnext/UNIFIED_RESOURCE_ADMISSION_AND_FAIRNESS_V1.md)
+   cùng machine profile `onebrain/dr-m5-resource-admission/1`.
+2. Bổ sung admission controller dùng chung cho inbound/outbound với quota hữu
+   hạn theo global, IP, peer và session. Handshake được giữ quota trước xác
+   thực, rồi promote nguyên tử sang session gắn NodeId đã xác thực.
+3. Mọi record đi qua đúng thứ tự `stream-read -> carrier-frame ->
+   protocol-payload -> reconciliation-journal -> application-sink`, với cap
+   riêng cho ba lane và kiểm tra length-prefix trước khi cấp phát payload.
+4. Giới hạn cứng replay guard, context/session, proposal quarantine, provenance,
+   typed stores, peer fanout, incremental scan page và storage watermark.
+5. Nâng durable outbox lên schema v2: tách transport attempt khỏi validation
+   retry, thêm trạng thái `retry_exhausted`, terminal sequence, round-robin
+   cursor bền vững và compact terminal có tombstone hữu hạn. Schema v1 vẫn đọc
+   được và terminal state không thể quay lại pending.
+6. CI real-QUIC chạy thêm acceptance M5-01; source-contract validator và tám
+   mutation tests khóa admission layer, quota, durable bounds, incremental
+   scan, terminal outbox và scoped status.
+
+Local evidence:
+
+- `cargo test --workspace --locked --no-fail-fast -- --test-threads=2`: xanh;
+- `ku-net` feature-enabled real-QUIC: 291/291 xanh; resource admission:
+  8/8 xanh;
+- `onebrain-node` feature-enabled library: 134/134 xanh; network runtime:
+  17/17 xanh; outbox: 7/7 xanh;
+- M5-01 mutation tests: 8/8 xanh;
+- `cargo clippy` feature-enabled all-targets: exit code 0, chỉ còn warning
+  baseline đã biết;
+- `cargo fmt --all --manifest-path src/Cargo.toml -- --check`: xanh;
+- `validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37 negative assertions,
+  55 foundation vectors/21 domains, 14 REST endpoints/18 DTOs, 10 private-WS
+  events/4 topics, 11 CLI commands, 2 Desktop/Web receipt vectors, 13 DR-M5
+  boundaries/11 oracle fields, 3 M5-01 lanes/13 state bounds/3 exit oracles,
+  424 normative lines và 392 local links;
+- `git diff --check`: xanh, chỉ có thông báo chuyển LF/CRLF của Git trên
+  Windows.
+
+M5-01 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
+`main`. Work package kế tiếp là M5-02 Crash-consistency và idempotency.

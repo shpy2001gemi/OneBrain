@@ -1,6 +1,6 @@
 //! Authenticated, transcript-bound vNext session negotiation.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use ku_core::foundation::NodeId;
@@ -40,18 +40,60 @@ pub struct AuthenticatedSession {
     pub feed_evidence: Vec<SessionFeedEvidence>,
 }
 
-#[derive(Default)]
 pub struct SessionReplayGuard {
     accepted: BTreeSet<[u8; 32]>,
+    order: VecDeque<[u8; 32]>,
+    capacity: usize,
+}
+
+pub const DEFAULT_SESSION_REPLAY_ENTRIES: usize = 65_536;
+
+impl Default for SessionReplayGuard {
+    fn default() -> Self {
+        Self {
+            accepted: BTreeSet::new(),
+            order: VecDeque::new(),
+            capacity: DEFAULT_SESSION_REPLAY_ENTRIES,
+        }
+    }
 }
 
 impl SessionReplayGuard {
-    pub fn accept(&mut self, session: &AuthenticatedSession) -> Result<(), SessionError> {
-        if self.accepted.insert(session.session_id) {
-            Ok(())
-        } else {
-            Err(SessionError::Replay)
+    pub fn with_capacity(capacity: usize) -> Result<Self, SessionError> {
+        if capacity == 0 {
+            return Err(SessionError::InvalidReplayCapacity);
         }
+        Ok(Self {
+            accepted: BTreeSet::new(),
+            order: VecDeque::new(),
+            capacity,
+        })
+    }
+
+    pub fn accept(&mut self, session: &AuthenticatedSession) -> Result<(), SessionError> {
+        if self.accepted.contains(&session.session_id) {
+            return Err(SessionError::Replay);
+        }
+        if self.order.len() == self.capacity {
+            if let Some(expired) = self.order.pop_front() {
+                self.accepted.remove(&expired);
+            }
+        }
+        self.accepted.insert(session.session_id);
+        self.order.push_back(session.session_id);
+        Ok(())
+    }
+
+    pub fn len(&self) -> usize {
+        self.order.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.order.is_empty()
+    }
+
+    pub const fn capacity(&self) -> usize {
+        self.capacity
     }
 }
 
@@ -384,6 +426,7 @@ pub enum SessionError {
     Downgrade,
     CapabilityMismatch,
     Replay,
+    InvalidReplayCapacity,
     SignerUnavailable(String),
 }
 
@@ -559,6 +602,33 @@ mod tests {
         let mut guard = SessionReplayGuard::default();
         guard.accept(&session).unwrap();
         assert_eq!(guard.accept(&session).unwrap_err(), SessionError::Replay);
+    }
+
+    #[test]
+    fn replay_guard_evicts_oldest_entry_at_its_hard_cap() {
+        let (hello, welcome, finish, profiles, capabilities) = handshake(Vec::new(), Vec::new());
+        let mut first =
+            authenticate_session(&hello, &welcome, &finish, [3; 32], &profiles, &capabilities)
+                .unwrap();
+        let mut second = first.clone();
+        second.session_id = [2; 32];
+        let mut third = first.clone();
+        third.session_id = [3; 32];
+        first.session_id = [1; 32];
+
+        let mut guard = SessionReplayGuard::with_capacity(2).unwrap();
+        guard.accept(&first).unwrap();
+        guard.accept(&second).unwrap();
+        assert_eq!(guard.len(), 2);
+        guard.accept(&third).unwrap();
+        assert_eq!(guard.len(), 2);
+        assert_eq!(guard.accept(&third), Err(SessionError::Replay));
+        guard.accept(&first).unwrap();
+        assert_eq!(guard.len(), 2);
+        assert_eq!(
+            SessionReplayGuard::with_capacity(0).err(),
+            Some(SessionError::InvalidReplayCapacity)
+        );
     }
 
     #[test]

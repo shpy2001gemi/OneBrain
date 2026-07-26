@@ -271,6 +271,17 @@ impl OBPConnection {
     ///
     /// Use for push-style messages: KU_PUSH, GOSSIP, TRUST_GOSSIP.
     pub async fn send_uni(&self, data: &[u8]) -> Result<(), TransportError> {
+        self.send_uni_with_limit(data, MAX_PAYLOAD_SIZE).await
+    }
+
+    /// Send a uni-directional message only when it fits the caller's
+    /// lane-specific limit.
+    pub async fn send_uni_with_limit(
+        &self,
+        data: &[u8],
+        max_bytes: usize,
+    ) -> Result<(), TransportError> {
+        ensure_send_limit(data, max_bytes)?;
         let mut stream = self
             .inner
             .open_uni()
@@ -293,6 +304,17 @@ impl OBPConnection {
     ///
     /// Use for req/resp messages: FIND_NODE, FIND_VALUE, QUERY_FORWARD.
     pub async fn request(&self, data: &[u8]) -> Result<Vec<u8>, TransportError> {
+        self.request_with_limit(data, MAX_PAYLOAD_SIZE).await
+    }
+
+    /// Request/response variant with one explicit lane limit for both
+    /// directions.
+    pub async fn request_with_limit(
+        &self,
+        data: &[u8],
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, TransportError> {
+        ensure_send_limit(data, max_bytes)?;
         let (mut send, mut recv) = self
             .inner
             .open_bi()
@@ -306,9 +328,9 @@ impl OBPConnection {
         send.finish()
             .map_err(|e| TransportError::SendFailed(format!("Finish: {}", e)))?;
 
-        // Read response (max 64KB)
+        // `read_to_end` refuses to grow beyond the exact lane cap.
         let response = recv
-            .read_to_end(MAX_PAYLOAD_SIZE)
+            .read_to_end(max_bytes)
             .await
             .map_err(|e| TransportError::RecvFailed(format!("Read: {}", e)))?;
 
@@ -317,6 +339,10 @@ impl OBPConnection {
 
     /// Accept an incoming uni-directional stream and read its contents.
     pub async fn recv_uni(&self) -> Result<Vec<u8>, TransportError> {
+        self.recv_uni_with_limit(MAX_PAYLOAD_SIZE).await
+    }
+
+    pub async fn recv_uni_with_limit(&self, max_bytes: usize) -> Result<Vec<u8>, TransportError> {
         let mut stream = self
             .inner
             .accept_uni()
@@ -324,15 +350,62 @@ impl OBPConnection {
             .map_err(|e| TransportError::RecvFailed(format!("Accept uni: {}", e)))?;
 
         let data = stream
-            .read_to_end(MAX_PAYLOAD_SIZE)
+            .read_to_end(max_bytes)
             .await
             .map_err(|e| TransportError::RecvFailed(format!("Read: {}", e)))?;
 
         Ok(data)
     }
 
+    /// Read a 32-bit big-endian carrier length before allocating the payload.
+    /// The returned bytes exclude the prefix and cannot exceed `max_payload`.
+    pub async fn recv_length_prefixed_uni(
+        &self,
+        max_payload: usize,
+    ) -> Result<Vec<u8>, TransportError> {
+        let mut stream = self
+            .inner
+            .accept_uni()
+            .await
+            .map_err(|e| TransportError::RecvFailed(format!("Accept uni: {e}")))?;
+        let mut prefix = [0u8; 4];
+        stream
+            .read_exact(&mut prefix)
+            .await
+            .map_err(|e| TransportError::RecvFailed(format!("Read length prefix: {e}")))?;
+        let declared = u32::from_be_bytes(prefix) as usize;
+        if declared == 0 || declared > max_payload {
+            return Err(TransportError::RecvFailed(
+                "Lane-specific frame length rejected before allocation".into(),
+            ));
+        }
+        let mut payload = vec![0u8; declared];
+        stream
+            .read_exact(&mut payload)
+            .await
+            .map_err(|e| TransportError::RecvFailed(format!("Read framed payload: {e}")))?;
+        if stream
+            .read_chunk(1, true)
+            .await
+            .map_err(|e| TransportError::RecvFailed(format!("Read frame trailer: {e}")))?
+            .is_some()
+        {
+            return Err(TransportError::RecvFailed(
+                "Length-prefixed frame has trailing bytes".into(),
+            ));
+        }
+        Ok(payload)
+    }
+
     /// Accept an incoming bi-directional stream (for handling requests).
     pub async fn accept_bi(&self) -> Result<(Vec<u8>, BiResponder), TransportError> {
+        self.accept_bi_with_limit(MAX_PAYLOAD_SIZE).await
+    }
+
+    pub async fn accept_bi_with_limit(
+        &self,
+        max_bytes: usize,
+    ) -> Result<(Vec<u8>, BiResponder), TransportError> {
         let (send, mut recv) = self
             .inner
             .accept_bi()
@@ -340,7 +413,7 @@ impl OBPConnection {
             .map_err(|e| TransportError::RecvFailed(format!("Accept bi: {}", e)))?;
 
         let request = recv
-            .read_to_end(MAX_PAYLOAD_SIZE)
+            .read_to_end(max_bytes)
             .await
             .map_err(|e| TransportError::RecvFailed(format!("Read: {}", e)))?;
 
@@ -378,6 +451,15 @@ pub struct BiResponder {
 impl BiResponder {
     /// Send the response back to the requester.
     pub async fn respond(&self, data: &[u8]) -> Result<(), TransportError> {
+        self.respond_with_limit(data, MAX_PAYLOAD_SIZE).await
+    }
+
+    pub async fn respond_with_limit(
+        &self,
+        data: &[u8],
+        max_bytes: usize,
+    ) -> Result<(), TransportError> {
+        ensure_send_limit(data, max_bytes)?;
         let mut guard = self.send.lock().await;
         let mut stream = guard
             .take()
@@ -391,6 +473,16 @@ impl BiResponder {
             .finish()
             .map_err(|e| TransportError::SendFailed(format!("Finish response: {}", e)))?;
 
+        Ok(())
+    }
+}
+
+fn ensure_send_limit(data: &[u8], max_bytes: usize) -> Result<(), TransportError> {
+    if data.is_empty() || data.len() > max_bytes {
+        Err(TransportError::SendFailed(
+            "Message exceeds lane-specific send limit".into(),
+        ))
+    } else {
         Ok(())
     }
 }
@@ -493,6 +585,7 @@ mod tests {
 
         let request_msg = b"FIND_NODE request";
         let response_msg = b"FIND_NODE response: 3 nodes";
+        let (response_read_tx, response_read_rx) = tokio::sync::oneshot::channel();
 
         // Server: accept bi-stream, echo response
         let resp_msg = response_msg.to_vec();
@@ -501,6 +594,7 @@ mod tests {
             let (request, responder) = conn.accept_bi().await.unwrap();
             assert_eq!(request, request_msg);
             responder.respond(&resp_msg).await.unwrap();
+            response_read_rx.await.unwrap();
             server.shutdown().await;
         });
 
@@ -508,6 +602,7 @@ mod tests {
         let conn = client.connect(server_addr).await.unwrap();
         let response = conn.request(request_msg).await.unwrap();
         assert_eq!(response, response_msg);
+        response_read_tx.send(()).unwrap();
 
         server_handle.await.unwrap();
         client.shutdown().await;

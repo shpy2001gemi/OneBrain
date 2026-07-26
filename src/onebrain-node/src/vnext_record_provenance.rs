@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use ku_core::foundation::{NodeId, SelectorCid};
 use onebrain_protocol::ReconcileManifestKind;
-use redb::{Database, ReadableTable, TableDefinition};
+use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 
 const OBSERVATIONS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_record_source_observations_v1");
@@ -25,6 +25,11 @@ const TYPED_PREFIX_BYTES: usize = 32 + 8 + 8;
 const TYPED_RECORD_KEY_BYTES: usize = TYPED_PREFIX_BYTES + 8;
 const TYPED_LOOKUP_KEY_BYTES: usize = TYPED_PREFIX_BYTES + 32;
 const TYPED_PEER_KEY_BYTES: usize = TYPED_LOOKUP_KEY_BYTES + 32;
+pub const MAX_PROVENANCE_OBSERVATIONS: u64 = 262_144;
+pub const MAX_TYPED_PROVENANCE_RECORDS: u64 = 65_536;
+pub const MAX_TYPED_PROVENANCE_PREFIXES: u64 = 65_536;
+pub const MAX_SOURCE_PEERS_PER_RECORD: usize = 64;
+pub const MAX_TYPED_DELTA_PAGE_RECORDS: usize = 4_096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct IndexedTypedRecord {
@@ -89,6 +94,30 @@ impl RedbRecordProvenance {
             let mut table = write
                 .open_table(OBSERVATIONS)
                 .map_err(|error| error.to_string())?;
+            if table
+                .get(key.as_slice())
+                .map_err(|error| error.to_string())?
+                .is_none()
+            {
+                if table.len().map_err(|error| error.to_string())? >= MAX_PROVENANCE_OBSERVATIONS {
+                    return Err("VNEXT_PROVENANCE_OBSERVATION_LIMIT".to_string());
+                }
+                let prefix = observation_prefix(kind, cid, selector);
+                let mut peers = 0usize;
+                for entry in table
+                    .range::<&[u8]>(prefix.as_slice()..)
+                    .map_err(|error| error.to_string())?
+                {
+                    let (peer_key, _) = entry.map_err(|error| error.to_string())?;
+                    if !peer_key.value().starts_with(&prefix) {
+                        break;
+                    }
+                    peers += 1;
+                    if peers >= MAX_SOURCE_PEERS_PER_RECORD {
+                        return Err("VNEXT_PROVENANCE_PEER_LIMIT".to_string());
+                    }
+                }
+            }
             table
                 .insert(key.as_slice(), &[][..])
                 .map_err(|error| error.to_string())?;
@@ -149,8 +178,14 @@ impl RedbRecordProvenance {
                         .get(prefix.as_slice())
                         .map_err(|error| error.to_string())?
                         .map(|value| decode_sequence(value.value()))
-                        .transpose()?
-                        .unwrap_or(0);
+                        .transpose()?;
+                    if current.is_none()
+                        && heads.len().map_err(|error| error.to_string())?
+                            >= MAX_TYPED_PROVENANCE_PREFIXES
+                    {
+                        return Err("VNEXT_TYPED_PREFIX_LIMIT".to_string());
+                    }
+                    let current = current.unwrap_or(0);
                     let next = current
                         .checked_add(1)
                         .ok_or_else(|| "VNEXT_TYPED_RECORD_SEQUENCE_EXHAUSTED".to_string())?;
@@ -161,11 +196,19 @@ impl RedbRecordProvenance {
                 };
                 let record_key = typed_record_key(prefix, sequence);
                 let value = typed_record_value(cid, canonical_bytes);
-                write
-                    .open_table(TYPED_RECORDS)
-                    .map_err(|error| error.to_string())?
-                    .insert(record_key.as_slice(), value.as_slice())
-                    .map_err(|error| error.to_string())?;
+                {
+                    let mut records = write
+                        .open_table(TYPED_RECORDS)
+                        .map_err(|error| error.to_string())?;
+                    if records.len().map_err(|error| error.to_string())?
+                        >= MAX_TYPED_PROVENANCE_RECORDS
+                    {
+                        return Err("VNEXT_TYPED_RECORD_LIMIT".to_string());
+                    }
+                    records
+                        .insert(record_key.as_slice(), value.as_slice())
+                        .map_err(|error| error.to_string())?;
+                }
                 write
                     .open_table(TYPED_RECORD_KEYS)
                     .map_err(|error| error.to_string())?
@@ -176,11 +219,38 @@ impl RedbRecordProvenance {
         };
 
         let peer_key = typed_peer_key(prefix, cid, peer);
-        write
-            .open_table(TYPED_RECORD_PEERS)
-            .map_err(|error| error.to_string())?
-            .insert(peer_key.as_slice(), &[][..])
-            .map_err(|error| error.to_string())?;
+        {
+            let mut peers = write
+                .open_table(TYPED_RECORD_PEERS)
+                .map_err(|error| error.to_string())?;
+            if peers
+                .get(peer_key.as_slice())
+                .map_err(|error| error.to_string())?
+                .is_none()
+            {
+                if peers.len().map_err(|error| error.to_string())? >= MAX_PROVENANCE_OBSERVATIONS {
+                    return Err("VNEXT_TYPED_PEER_GLOBAL_LIMIT".to_string());
+                }
+                let peer_prefix = typed_lookup_key(prefix, cid);
+                let mut peer_count = 0usize;
+                for entry in peers
+                    .range::<&[u8]>(peer_prefix.as_slice()..)
+                    .map_err(|error| error.to_string())?
+                {
+                    let (stored_key, _) = entry.map_err(|error| error.to_string())?;
+                    if !stored_key.value().starts_with(&peer_prefix) {
+                        break;
+                    }
+                    peer_count += 1;
+                    if peer_count >= MAX_SOURCE_PEERS_PER_RECORD {
+                        return Err("VNEXT_TYPED_PEER_LIMIT".to_string());
+                    }
+                }
+            }
+            peers
+                .insert(peer_key.as_slice(), &[][..])
+                .map_err(|error| error.to_string())?;
+        }
         write.commit().map_err(|error| error.to_string())?;
 
         // Keep the compatibility provenance view populated for callers that
@@ -199,6 +269,9 @@ impl RedbRecordProvenance {
     ) -> Result<IndexedTypedDelta, String> {
         if limit == 0 {
             return Err("VNEXT_TYPED_RECORD_LIMIT_ZERO".to_string());
+        }
+        if limit > MAX_TYPED_DELTA_PAGE_RECORDS {
+            return Err("VNEXT_TYPED_RECORD_PAGE_LIMIT".to_string());
         }
         let prefix = typed_prefix(selector, kind, type_id);
         let start = typed_record_key(
@@ -502,5 +575,42 @@ mod tests {
             .unwrap()
             .records
             .is_empty());
+    }
+
+    #[test]
+    fn provenance_peer_fanout_and_delta_page_are_hard_bounded() {
+        let directory = tempfile::tempdir().unwrap();
+        let store =
+            RedbRecordProvenance::open(directory.path().join("bounded-provenance.redb")).unwrap();
+        let selector = SelectorCid::from_bytes([0x41; 32]);
+        for marker in 0..MAX_SOURCE_PEERS_PER_RECORD {
+            store
+                .observe(
+                    ReconcileManifestKind::Object,
+                    [0x42; 32],
+                    selector,
+                    NodeId::from_bytes([marker as u8; 32]),
+                )
+                .unwrap();
+        }
+        assert_eq!(
+            store.observe(
+                ReconcileManifestKind::Object,
+                [0x42; 32],
+                selector,
+                NodeId::from_bytes([0xff; 32]),
+            ),
+            Err("VNEXT_PROVENANCE_PEER_LIMIT".to_string())
+        );
+        assert_eq!(
+            store.typed_delta(
+                selector,
+                ReconcileManifestKind::Object,
+                1,
+                0,
+                MAX_TYPED_DELTA_PAGE_RECORDS + 1,
+            ),
+            Err("VNEXT_TYPED_RECORD_PAGE_LIMIT".to_string())
+        );
     }
 }

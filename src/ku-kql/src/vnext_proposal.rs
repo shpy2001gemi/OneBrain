@@ -11,6 +11,7 @@ use ku_core::foundation::{
 pub const MAX_PROPOSAL_CANDIDATES: usize = 16_384;
 pub const MAX_SCORE_COMPONENTS: usize = 1_024;
 pub const MAX_CONSTRAINT_OBSERVATIONS: usize = 16_384;
+pub const MAX_PROPOSAL_QUARANTINE_RECORDS: usize = 65_536;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ProposalId([u8; 32]);
@@ -210,14 +211,36 @@ impl BindingProposal {
 
 /// Explicitly non-executable, local proposal storage. It has no materialization
 /// or graph-projection API.
-#[derive(Default)]
 pub struct ProposalQuarantine {
     proposals: BTreeMap<[u8; 32], BindingProposal>,
+    capacity: usize,
+}
+
+impl Default for ProposalQuarantine {
+    fn default() -> Self {
+        Self {
+            proposals: BTreeMap::new(),
+            capacity: MAX_PROPOSAL_QUARANTINE_RECORDS,
+        }
+    }
 }
 
 impl ProposalQuarantine {
+    pub fn with_capacity(capacity: usize) -> Result<Self, ProposalError> {
+        if capacity == 0 || capacity > MAX_PROPOSAL_QUARANTINE_RECORDS {
+            return Err(ProposalError::Limit);
+        }
+        Ok(Self {
+            proposals: BTreeMap::new(),
+            capacity,
+        })
+    }
+
     pub fn insert(&mut self, proposal: BindingProposal) -> Result<ProposalId, ProposalError> {
         let id = proposal.proposal_id()?;
+        if !self.proposals.contains_key(id.as_bytes()) && self.proposals.len() >= self.capacity {
+            return Err(ProposalError::Limit);
+        }
         self.proposals.entry(id.0).or_insert(proposal);
         Ok(id)
     }
@@ -235,6 +258,10 @@ impl ProposalQuarantine {
 
     pub const fn is_executable(&self) -> bool {
         false
+    }
+
+    pub fn len(&self) -> usize {
+        self.proposals.len()
     }
 }
 
@@ -424,6 +451,22 @@ mod tests {
         let id = store.insert(proposal).unwrap();
         assert!(store.get(id).is_some());
         assert!(!store.is_executable());
+    }
+
+    #[test]
+    fn proposal_quarantine_rejects_new_identity_at_capacity() {
+        let mut store = ProposalQuarantine::with_capacity(1).unwrap();
+        let first = proposal(Vec::new());
+        let mut second = proposal(Vec::new());
+        second.expiry.created_at_evaluation += 1;
+        assert!(store.insert(first.clone()).is_ok());
+        assert_eq!(store.len(), 1);
+        assert!(store.insert(first).is_ok());
+        assert_eq!(store.insert(second), Err(ProposalError::Limit));
+        assert_eq!(
+            ProposalQuarantine::with_capacity(0).err(),
+            Some(ProposalError::Limit)
+        );
     }
 
     #[test]

@@ -75,6 +75,29 @@
       "rationale": "The frozen machine profile and mutation tests bind every runtime-source change to a finite real-QUIC gate, preserve 13 stable crash boundary IDs and five phases, and reproduce the 11-field empty-oracle digest without claiming later hardening evidence."
     },
     {
+      "path": "docs/specs/vnext/UNIFIED_RESOURCE_ADMISSION_AND_FAIRNESS_V1.md",
+      "expected_statement_lines": 26,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/dr-m5-resource-admission-v1.json",
+          "needle": "onebrain/dr-m5-resource-admission/1"
+        },
+        {
+          "path": "src/ku-net/src/vnext_resource_gate.rs",
+          "needle": "RuntimeAdmissionController"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_outbox.rs",
+          "needle": "exhausted_first_page_cannot_starve_healthy_pending_work"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_vnext_dr_m5_resource_admission"
+        }
+      ],
+      "rationale": "The M5-01 machine profile and mutation tests freeze pre-allocation lane caps, ordered stream-to-application admission, global/IP/NodeID rate quotas, bounded durable state, prefix pagination and restart-safe outbox fairness without claiming global completion."
+    },
+    {
       "path": "docs/specs/vnext/FIELD_OWNERSHIP_MATRIX_V1.md",
       "expected_statement_lines": 19,
       "evidence": [

@@ -85,6 +85,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_cli_profile
           python -m unittest scripts.ci.test_validate_vnext_desktop_web_ux_profile
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_baseline
+          python -m unittest scripts.ci.test_validate_vnext_dr_m5_resource_admission
 
       - name: P3.4 Web UX build, lint, and receipt contract
         working-directory: src/onebrain-web
@@ -150,6 +151,7 @@ jobs:
           ku-encoder/src/vnext_receptor_encoder.rs
           ku-net/tests/foundation_conformance.rs
           ku-net/src/lib.rs
+          ku-net/src/transport.rs
           ku-net/src/vnext_inventory_forest.rs
           ku-net/src/vnext_bridge_merge.rs
           ku-net/src/vnext_carrier.rs
@@ -158,6 +160,7 @@ jobs:
           ku-net/src/vnext_reconciliation.rs
           ku-net/src/vnext_reconciliation_journal.rs
           ku-net/src/vnext_resource_gate.rs
+          ku-net/src/vnext_quic_session.rs
           ku-net/src/vnext_provider_view.rs
           ku-net/src/vnext_session.rs
           ku-kql/src/vnext_proposal.rs
@@ -178,6 +181,11 @@ jobs:
           ku-kql/src/vnext_standing_need.rs
           ku-kql/src/vnext_structural_signature.rs
           onebrain-node/src/vnext_config.rs
+          onebrain-node/src/vnext_distributed_kql.rs
+          onebrain-node/src/vnext_distributed_pomv.rs
+          onebrain-node/src/vnext_network_runtime.rs
+          onebrain-node/src/vnext_outbox.rs
+          onebrain-node/src/vnext_record_provenance.rs
           onebrain-node/src/lib.rs
           onebrain-node/src/vnext_companion.rs
           onebrain-node/src/vnext_local_runtime.rs
@@ -538,6 +546,16 @@ jobs:
           cargo test --locked -p onebrain-node
           --features vnext-network-runtime
           --lib vnext_product_runtime
+      - name: M5.1 unified resource admission and fair outbox
+        run: >-
+          cargo test --locked -p ku-net
+          vnext_resource_gate --lib
+          && cargo test --locked -p ku-net
+          --features quic vnext_quic_session --lib
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime --lib vnext_outbox
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime --lib vnext_record_provenance
       - name: P3.1 authenticated REST API contract and real-runtime flow
         run: >-
           cargo test --locked -p onebrain-api

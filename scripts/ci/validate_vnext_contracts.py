@@ -33,6 +33,9 @@ VNEXT_DESKTOP_WEB_UX_PROFILE = (
     ROOT / "src/test-vectors/vnext/vnext-desktop-web-ux-profile-v1.json"
 )
 DR_M5_BASELINE_PROFILE = ROOT / "src/test-vectors/vnext/dr-m5-baseline-v1.json"
+DR_M5_RESOURCE_PROFILE = (
+    ROOT / "src/test-vectors/vnext/dr-m5-resource-admission-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -1129,6 +1132,175 @@ def validate_vnext_dr_m5_baseline(
     return len(boundary_ids), len(expected_fields)
 
 
+def validate_vnext_dr_m5_resource_admission(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(DR_M5_RESOURCE_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid M5-01 resource profile JSON: {error}") from error
+
+    if (
+        profile.get("format") != "onebrain/dr-m5-resource-admission/1"
+        or profile.get("profile_id") != "UNIFIED_RESOURCE_ADMISSION_AND_FAIRNESS_V1"
+        or profile.get("version") != 1
+        or profile.get("claims_network_completion") is not False
+    ):
+        raise ContractError("unexpected M5-01 resource admission profile")
+
+    expected_pipeline = [
+        "stream_read",
+        "frame",
+        "protocol",
+        "journal",
+        "application",
+    ]
+    if profile.get("pipeline") != expected_pipeline:
+        raise ContractError("M5-01 ordered admission pipeline drift")
+
+    expected_lanes = [
+        {
+            "id": "session_control",
+            "max_bytes": 262_144,
+            "prefix_checked_before_allocation": False,
+        },
+        {
+            "id": "carrier_frame",
+            "max_bytes": 4_194_304,
+            "prefix_checked_before_allocation": True,
+        },
+        {
+            "id": "protocol_payload",
+            "max_bytes": 1_048_576,
+            "prefix_checked_before_allocation": False,
+        },
+    ]
+    if profile.get("allocation_lanes") != expected_lanes:
+        raise ContractError("M5-01 allocation lane contract drift")
+
+    expected_quotas = {
+        "handshakes_global": 128,
+        "handshakes_per_ip": 8,
+        "sessions_global": 64,
+        "sessions_per_ip": 8,
+        "sessions_per_node_id": 4,
+        "contexts_per_session": 64,
+        "replay_entries": 65_536,
+        "rate_window_seconds": 60,
+        "records_per_session": 4_096,
+        "bytes_per_session": 16_777_216,
+        "work_per_session": 1_000_000,
+        "records_per_node_id_window": 8_192,
+        "bytes_per_node_id_window": 16_777_216,
+        "work_per_node_id_window": 2_000_000,
+        "per_ip_window_derivation": "per_node_id_window_times_sessions_per_ip",
+        "global_window_derivation": "per_node_id_window_times_sessions_global",
+    }
+    if profile.get("default_quotas") != expected_quotas:
+        raise ContractError("M5-01 identity or rate quota drift")
+
+    expected_state_bounds = {
+        "proposal_quarantine_records": 65_536,
+        "accepted_records": 65_536,
+        "verified_quarantine_records": 65_536,
+        "inventory_records": 65_536,
+        "provenance_observations": 262_144,
+        "typed_provenance_records": 65_536,
+        "typed_provenance_prefixes": 65_536,
+        "source_peers_per_record": 64,
+        "distributed_kql_matches": 65_536,
+        "outbox_records": 65_536,
+        "outbox_tombstones": 65_536,
+        "storage_soft_watermark_bytes": 536_870_912,
+        "storage_hard_watermark_bytes": 1_073_741_824,
+    }
+    if profile.get("bounded_durable_state") != expected_state_bounds:
+        raise ContractError("M5-01 durable-state bound drift")
+
+    scans = profile.get("incremental_scans")
+    if scans != {
+        "index": "selector_kind_type_prefix",
+        "cursor": "monotonic_sequence",
+        "max_page_records": 4_096,
+        "consumers": ["distributed_kql", "distributed_pomv"],
+    }:
+        raise ContractError("M5-01 incremental scan contract drift")
+
+    outbox = profile.get("outbox")
+    if outbox != {
+        "states": ["Pending", "Acknowledged", "DeadLetter", "RetryExhausted"],
+        "fair_cursor": "persisted_round_robin",
+        "transport_counter": "transport_attempts",
+        "validation_counter": "validation_retries",
+        "terminal_order": "terminal_sequence",
+        "terminal_compaction": "tombstone_before_payload_delete",
+        "max_records_inspected_per_quantum": 65_536,
+    }:
+        raise ContractError("M5-01 fair outbox contract drift")
+
+    expected_oracles = [
+        "flood_peer_bounded_with_constant_controller_overhead",
+        "healthy_peer_progresses_within_finite_quanta",
+        "retry_exhausted_prefix_cannot_starve_pending_work",
+    ]
+    if profile.get("exit_oracles") != expected_oracles:
+        raise ContractError("M5-01 exit oracle drift")
+
+    source_contract = {
+        "src/ku-net/src/vnext_resource_gate.rs": (
+            "pub fn admit_length_prefix",
+            "pub struct RuntimeAdmissionController",
+            "pub fn try_begin_handshake",
+            "pub fn begin_record",
+            "fn rejected_flood_does_not_grow_identity_maps",
+        ),
+        "src/ku-net/src/transport.rs": ("recv_length_prefixed_uni", "read_exact(&mut prefix)"),
+        "src/ku-net/src/vnext_session.rs": (
+            "DEFAULT_SESSION_REPLAY_ENTRIES",
+            "pub fn with_capacity",
+        ),
+        "src/onebrain-node/src/vnext_outbox.rs": (
+            "DeadLetter",
+            "RetryExhausted",
+            "pending_fair",
+            "transport_attempts",
+            "validation_retries",
+            "compact_terminal",
+            "exhausted_first_page_cannot_starve_healthy_pending_work",
+        ),
+        "src/onebrain-node/src/vnext_record_provenance.rs": (
+            "MAX_TYPED_DELTA_PAGE_RECORDS",
+            "MAX_SOURCE_PEERS_PER_RECORD",
+            "typed_delta",
+        ),
+        "src/ku-core/src/foundation/storage.rs": (
+            "MAX_VERIFIED_ACCEPTED_RECORDS",
+            "MAX_VERIFIED_QUARANTINE_RECORDS",
+        ),
+    }
+    for relative, needles in source_contract.items():
+        text = read(ROOT / relative)
+        for needle in needles:
+            if needle not in text:
+                raise ContractError(
+                    f"M5-01 implementation evidence missing: {relative}: {needle}"
+                )
+
+    spec = read(VNEXT / "UNIFIED_RESOURCE_ADMISSION_AND_FAIRNESS_V1.md")
+    if "dr-m5-resource-admission-v1.json" not in spec:
+        raise ContractError("M5-01 normative profile is not linked to machine contract")
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    if (
+        "- name: M5.1 unified resource admission and fair outbox" not in workflow
+        or "python -m unittest scripts.ci.test_validate_vnext_dr_m5_resource_admission"
+        not in workflow
+    ):
+        raise ContractError("M5-01 CI acceptance gate missing")
+
+    return len(expected_lanes), len(expected_state_bounds), len(expected_oracles)
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -1227,6 +1399,9 @@ def main() -> int:
         cli_commands = validate_vnext_cli_profile()
         ux_receipt_vectors = validate_vnext_desktop_web_ux_profile()
         dr_m5_boundaries, dr_m5_oracle_fields = validate_vnext_dr_m5_baseline()
+        m5_resource_lanes, m5_state_bounds, m5_exit_oracles = (
+            validate_vnext_dr_m5_resource_admission()
+        )
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -1244,6 +1419,8 @@ def main() -> int:
         f"{cli_commands} vNext CLI commands, "
         f"{ux_receipt_vectors} Desktop/Web receipt vectors, "
         f"{dr_m5_boundaries} DR-M5 boundaries/{dr_m5_oracle_fields} oracle fields, "
+        f"{m5_resource_lanes} M5-01 lanes/{m5_state_bounds} state bounds/"
+        f"{m5_exit_oracles} exit oracles, "
         f"{links} local links"
     )
     return 0

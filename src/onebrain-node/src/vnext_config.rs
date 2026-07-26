@@ -127,9 +127,20 @@ impl Default for VNextRuntimeBudgets {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct VNextNetworkPolicy {
+    pub max_concurrent_handshakes: usize,
+    pub max_handshakes_per_ip: usize,
     pub max_concurrent_sessions: usize,
+    pub max_sessions_per_ip: usize,
+    pub max_sessions_per_peer: usize,
+    pub max_contexts_per_session: usize,
+    pub max_replay_entries: usize,
     pub handshake_timeout_seconds: u64,
+    pub rate_window_seconds: u64,
     pub max_records_per_session: u64,
+    pub max_work_per_session: u64,
+    pub max_records_per_peer_window: u64,
+    pub max_bytes_per_peer_window: u64,
+    pub max_work_per_peer_window: u64,
     pub max_retries_per_record: u64,
     pub max_inflight_bytes: u64,
 }
@@ -137,9 +148,20 @@ pub struct VNextNetworkPolicy {
 impl Default for VNextNetworkPolicy {
     fn default() -> Self {
         Self {
+            max_concurrent_handshakes: 128,
+            max_handshakes_per_ip: 8,
             max_concurrent_sessions: 64,
+            max_sessions_per_ip: 8,
+            max_sessions_per_peer: 4,
+            max_contexts_per_session: 64,
+            max_replay_entries: 65_536,
             handshake_timeout_seconds: 10,
+            rate_window_seconds: 60,
             max_records_per_session: 4_096,
+            max_work_per_session: 1_000_000,
+            max_records_per_peer_window: 8_192,
+            max_bytes_per_peer_window: 16 * 1_048_576,
+            max_work_per_peer_window: 2_000_000,
             max_retries_per_record: 8,
             max_inflight_bytes: 4 * 1_048_576,
         }
@@ -236,14 +258,38 @@ impl VNextRuntimeBudgets {
 
 impl VNextNetworkPolicy {
     pub fn validate(self) -> Result<(), VNextFeatureConfigError> {
-        if self.max_concurrent_sessions == 0
+        let minimum_pipeline_work = self.max_records_per_session.checked_mul(4);
+        if self.max_concurrent_handshakes == 0
+            || self.max_concurrent_handshakes > 8_192
+            || self.max_handshakes_per_ip == 0
+            || self.max_handshakes_per_ip > self.max_concurrent_handshakes
+            || self.max_concurrent_sessions == 0
             || self.max_concurrent_sessions > 4_096
+            || self.max_sessions_per_ip == 0
+            || self.max_sessions_per_ip > self.max_concurrent_sessions
+            || self.max_sessions_per_peer == 0
+            || self.max_sessions_per_peer > self.max_concurrent_sessions
+            || self.max_contexts_per_session == 0
+            || self.max_contexts_per_session > 65_536
+            || self.max_replay_entries == 0
+            || self.max_replay_entries > 1_000_000
             || self.handshake_timeout_seconds == 0
             || self.handshake_timeout_seconds > 300
+            || self.rate_window_seconds == 0
+            || self.rate_window_seconds > 3_600
             // One reconciliation delivery needs at least one manifest record
             // and one payload record on the authenticated session.
             || self.max_records_per_session < 2
             || self.max_records_per_session > 1_000_000
+            || minimum_pipeline_work
+                .is_none_or(|minimum| self.max_work_per_session < minimum)
+            || self.max_work_per_session > 100_000_000
+            || self.max_records_per_peer_window < self.max_records_per_session
+            || self.max_records_per_peer_window > 10_000_000
+            || self.max_bytes_per_peer_window < self.max_inflight_bytes
+            || self.max_bytes_per_peer_window > 1_073_741_824
+            || self.max_work_per_peer_window < self.max_work_per_session
+            || self.max_work_per_peer_window > 1_000_000_000
             || self.max_retries_per_record == 0
             || self.max_retries_per_record > 1_024
             || self.max_inflight_bytes == 0
@@ -338,6 +384,32 @@ mod tests {
     fn one_record_session_cannot_carry_manifest_and_payload() {
         let mut config = VNextFeatureConfig::default();
         config.network.max_records_per_session = 1;
+        assert_eq!(
+            config.validate().unwrap_err(),
+            VNextFeatureConfigError::InvalidNetworkPolicy
+        );
+    }
+
+    #[test]
+    fn network_identity_and_rate_quotas_fail_closed_when_inconsistent() {
+        let mut config = VNextFeatureConfig::default();
+        config.network.max_sessions_per_ip =
+            config.network.max_concurrent_sessions.saturating_add(1);
+        assert_eq!(
+            config.validate().unwrap_err(),
+            VNextFeatureConfigError::InvalidNetworkPolicy
+        );
+
+        let mut config = VNextFeatureConfig::default();
+        config.network.max_bytes_per_peer_window =
+            config.network.max_inflight_bytes.saturating_sub(1);
+        assert_eq!(
+            config.validate().unwrap_err(),
+            VNextFeatureConfigError::InvalidNetworkPolicy
+        );
+
+        let mut config = VNextFeatureConfig::default();
+        config.network.max_replay_entries = 0;
         assert_eq!(
             config.validate().unwrap_err(),
             VNextFeatureConfigError::InvalidNetworkPolicy

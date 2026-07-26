@@ -29,6 +29,7 @@ use thiserror::Error;
 
 use crate::vnext_network_runtime::{VNextNetworkRuntime, VNextNetworkRuntimeError};
 use crate::vnext_outbox::{OutboundTransferIntent, OutboxEnqueueOutcome};
+use crate::vnext_record_provenance::MAX_TYPED_DELTA_PAGE_RECORDS;
 use crate::vnext_route_authority::{
     AuthenticatedRouteOrigin, AuthorityFrontierResolution, LocalPolicyRegistry,
     LocalPolicyRegistryError, LocalPolicyVersion,
@@ -1544,14 +1545,14 @@ impl DistributedPomvRuntime {
             ReconcileManifestKind::Object,
             USE_EVIDENCE_KIND.0,
             object_cursor,
-            self.max_records,
+            self.max_records.min(MAX_TYPED_DELTA_PAGE_RECORDS),
         )?;
         let event_delta = network.typed_record_delta(
             selector,
             ReconcileManifestKind::Event,
             USE_EVIDENCE_EVENT_TYPE.0,
             event_cursor,
-            self.max_records,
+            self.max_records.min(MAX_TYPED_DELTA_PAGE_RECORDS),
         )?;
         let changed_event_cids = event_delta
             .records

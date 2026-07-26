@@ -1,0 +1,91 @@
+{
+  "format": "onebrain/dr-m5-resource-admission/1",
+  "profile_id": "UNIFIED_RESOURCE_ADMISSION_AND_FAIRNESS_V1",
+  "version": 1,
+  "pipeline": [
+    "stream_read",
+    "frame",
+    "protocol",
+    "journal",
+    "application"
+  ],
+  "allocation_lanes": [
+    {
+      "id": "session_control",
+      "max_bytes": 262144,
+      "prefix_checked_before_allocation": false
+    },
+    {
+      "id": "carrier_frame",
+      "max_bytes": 4194304,
+      "prefix_checked_before_allocation": true
+    },
+    {
+      "id": "protocol_payload",
+      "max_bytes": 1048576,
+      "prefix_checked_before_allocation": false
+    }
+  ],
+  "default_quotas": {
+    "handshakes_global": 128,
+    "handshakes_per_ip": 8,
+    "sessions_global": 64,
+    "sessions_per_ip": 8,
+    "sessions_per_node_id": 4,
+    "contexts_per_session": 64,
+    "replay_entries": 65536,
+    "rate_window_seconds": 60,
+    "records_per_session": 4096,
+    "bytes_per_session": 16777216,
+    "work_per_session": 1000000,
+    "records_per_node_id_window": 8192,
+    "bytes_per_node_id_window": 16777216,
+    "work_per_node_id_window": 2000000,
+    "per_ip_window_derivation": "per_node_id_window_times_sessions_per_ip",
+    "global_window_derivation": "per_node_id_window_times_sessions_global"
+  },
+  "bounded_durable_state": {
+    "proposal_quarantine_records": 65536,
+    "accepted_records": 65536,
+    "verified_quarantine_records": 65536,
+    "inventory_records": 65536,
+    "provenance_observations": 262144,
+    "typed_provenance_records": 65536,
+    "typed_provenance_prefixes": 65536,
+    "source_peers_per_record": 64,
+    "distributed_kql_matches": 65536,
+    "outbox_records": 65536,
+    "outbox_tombstones": 65536,
+    "storage_soft_watermark_bytes": 536870912,
+    "storage_hard_watermark_bytes": 1073741824
+  },
+  "incremental_scans": {
+    "index": "selector_kind_type_prefix",
+    "cursor": "monotonic_sequence",
+    "max_page_records": 4096,
+    "consumers": [
+      "distributed_kql",
+      "distributed_pomv"
+    ]
+  },
+  "outbox": {
+    "states": [
+      "Pending",
+      "Acknowledged",
+      "DeadLetter",
+      "RetryExhausted"
+    ],
+    "fair_cursor": "persisted_round_robin",
+    "transport_counter": "transport_attempts",
+    "validation_counter": "validation_retries",
+    "terminal_order": "terminal_sequence",
+    "terminal_compaction": "tombstone_before_payload_delete",
+    "max_records_inspected_per_quantum": 65536
+  },
+  "exit_oracles": [
+    "flood_peer_bounded_with_constant_controller_overhead",
+    "healthy_peer_progresses_within_finite_quanta",
+    "retry_exhausted_prefix_cannot_starve_pending_work"
+  ],
+  "claims_network_completion": false
+}
