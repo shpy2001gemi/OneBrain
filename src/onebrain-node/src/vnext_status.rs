@@ -94,8 +94,14 @@ pub struct ConsentStatusView {
 pub struct VNextFeatureStatus {
     pub object_event_v1_requested: bool,
     pub obp_rp_requested: bool,
+    pub distributed_kql_one_hop_requested: bool,
+    pub public_use_evidence_publish_requested: bool,
+    pub distributed_pomv_view_requested: bool,
     pub object_event_v1: bool,
     pub obp_rp: bool,
+    pub distributed_kql_one_hop: bool,
+    pub public_use_evidence_publish: bool,
+    pub distributed_pomv_view: bool,
     pub provider_lease: bool,
     pub fidelity: bool,
     pub checkpoint_gc: bool,
@@ -269,8 +275,18 @@ impl VNextStatusSnapshot {
             features: VNextFeatureStatus {
                 object_event_v1_requested: object_event_requested,
                 obp_rp_requested,
+                distributed_kql_one_hop_requested: config.enabled.distributed_kql_one_hop,
+                public_use_evidence_publish_requested: config.enabled.public_use_evidence_publish,
+                distributed_pomv_view_requested: config.enabled.distributed_pomv_view,
                 object_event_v1: object_event_requested && runtime_listening,
                 obp_rp: obp_rp_requested && runtime_listening,
+                distributed_kql_one_hop: config.is_active(VNextFeature::DistributedKqlOneHop)
+                    && runtime_listening,
+                public_use_evidence_publish: config
+                    .is_active(VNextFeature::PublicUseEvidencePublish)
+                    && runtime_listening,
+                distributed_pomv_view: config.is_active(VNextFeature::DistributedPomvView)
+                    && runtime_listening,
                 provider_lease: config.is_active(VNextFeature::ProviderLease) && runtime_listening,
                 fidelity: config.is_active(VNextFeature::Fidelity),
                 checkpoint_gc: config.is_active(VNextFeature::CheckpointGc),

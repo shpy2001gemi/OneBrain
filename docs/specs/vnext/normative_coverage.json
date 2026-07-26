@@ -259,7 +259,38 @@
           "needle": "pub struct VNextProductServices"
         }
       ],
-      "rationale": "The node-owned aggregate opens every durable/runtime owner before exposing a typed private-field façade; mandatory Vault/Policy injection, bounded worker ownership, cancellation and real-QUIC tests prove the P2.1 ownership boundary without activating P2.2 lanes."
+      "rationale": "The node-owned aggregate is the sole owner of the network and every enabled lane runtime before exposing a typed private-field façade; mandatory Vault/Policy injection, bounded worker ownership, cancellation and real-QUIC tests prove the P2.1 ownership boundary."
+    },
+    {
+      "path": "docs/specs/vnext/RUNTIME_FEATURE_BUDGET_PROFILE_V1.md",
+      "expected_statement_lines": 26,
+      "evidence": [
+        {
+          "path": "src/onebrain-node/src/vnext_config.rs",
+          "needle": "product_lanes_have_independent_kill_switches_and_dependencies"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_config.rs",
+          "needle": "runtime_budgets_are_bounded_and_cross_checked"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_product_runtime.rs",
+          "needle": "independent_lane_kill_switches_prevent_store_creation_and_operations"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_product_runtime.rs",
+          "needle": "configured_budgets_and_storage_hard_watermark_fail_closed"
+        },
+        {
+          "path": "src/onebrain-node/tests/vnext_node_runtime.rs",
+          "needle": "feature_flags_start_a_real_node_owned_product_runtime_and_status_tracks_it"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+          "needle": "pomv_record_and_view_limits_fail_closed_at_startup"
+        }
+      ],
+      "rationale": "Independent safe-default lane flags determine which durable owners exist, while startup validation and typed service guards enforce KQL, PoMV, publication, worker, per-peer and storage bounds before side effects."
     },
     {
       "path": "docs/specs/vnext/PUBLIC_USE_CONSENT_PROFILE_V1.md",

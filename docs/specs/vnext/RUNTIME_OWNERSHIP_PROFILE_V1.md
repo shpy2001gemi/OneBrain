@@ -10,8 +10,8 @@
 
 `OneBrainNode` MUST own at most one active `VNextProductRuntime`.
 
-The aggregate MUST be the sole product owner of `VNextNetworkRuntime`,
-`DistributedKqlRuntime`, `PublicUseEvidencePublisher`, and
+The aggregate MUST be the sole product owner of `VNextNetworkRuntime` and of
+each enabled `DistributedKqlRuntime`, `PublicUseEvidencePublisher`, and
 `DistributedPomvRuntime`.
 
 The aggregate MUST transitively own the authenticated route directory through
@@ -77,7 +77,8 @@ dependencies or create any vNext database, listener, or worker.
 
 This profile freezes ownership, dependency injection, façade access, bounded
 worker registration, and owner cancellation. P2.2 adds independent product
-lane flags and budgets. P2.3 adds the complete startup, drain, shutdown, and
+lane flags, optional lane owners, and budgets. P2.3 adds the complete startup,
+drain, shutdown, and
 partial-start rollback protocol. P2.4 replaces full scans with durable
 incremental cursors, and P2.5 removes long work from the legacy global node
 lock.

@@ -7,6 +7,9 @@ use thiserror::Error;
 pub enum VNextFeature {
     ObjectEventV1,
     ObpRp,
+    DistributedKqlOneHop,
+    PublicUseEvidencePublish,
+    DistributedPomvView,
     InventoryShadow,
     ProviderLease,
     Fidelity,
@@ -21,6 +24,9 @@ impl VNextFeature {
         match self {
             Self::ObjectEventV1 => "object_event_v1",
             Self::ObpRp => "obp_rp",
+            Self::DistributedKqlOneHop => "distributed_kql_one_hop",
+            Self::PublicUseEvidencePublish => "public_use_evidence_publish",
+            Self::DistributedPomvView => "distributed_pomv_view",
             Self::InventoryShadow => "inventory_shadow",
             Self::ProviderLease => "provider_lease",
             Self::Fidelity => "fidelity",
@@ -38,6 +44,9 @@ impl VNextFeature {
 pub struct VNextFeatureFlags {
     pub object_event_v1: bool,
     pub obp_rp: bool,
+    pub distributed_kql_one_hop: bool,
+    pub public_use_evidence_publish: bool,
+    pub distributed_pomv_view: bool,
     pub inventory_shadow: bool,
     pub provider_lease: bool,
     pub fidelity: bool,
@@ -52,6 +61,9 @@ impl VNextFeatureFlags {
         match feature {
             VNextFeature::ObjectEventV1 => self.object_event_v1,
             VNextFeature::ObpRp => self.obp_rp,
+            VNextFeature::DistributedKqlOneHop => self.distributed_kql_one_hop,
+            VNextFeature::PublicUseEvidencePublish => self.public_use_evidence_publish,
+            VNextFeature::DistributedPomvView => self.distributed_pomv_view,
             VNextFeature::InventoryShadow => self.inventory_shadow,
             VNextFeature::ProviderLease => self.provider_lease,
             VNextFeature::Fidelity => self.fidelity,
@@ -70,6 +82,45 @@ pub struct VNextFeatureConfig {
     pub enabled: VNextFeatureFlags,
     pub kill_switches: VNextFeatureFlags,
     pub network: VNextNetworkPolicy,
+    pub runtime_budgets: VNextRuntimeBudgets,
+}
+
+/// Hard product-runtime bounds. These are configuration policy, not caller
+/// hints: typed service requests may narrow them but can never exceed them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct VNextRuntimeBudgets {
+    pub kql_max_scan_records: u64,
+    pub kql_max_affordances: u64,
+    pub kql_max_pairs: u64,
+    pub kql_max_proposals: u64,
+    pub pomv_max_records: usize,
+    pub pomv_max_view_records: usize,
+    pub publication_flush_batch: usize,
+    pub worker_poll_interval_millis: u64,
+    pub per_peer_work_units: u64,
+    pub per_peer_bytes: u64,
+    pub storage_soft_watermark_bytes: u64,
+    pub storage_hard_watermark_bytes: u64,
+}
+
+impl Default for VNextRuntimeBudgets {
+    fn default() -> Self {
+        Self {
+            kql_max_scan_records: 4_096,
+            kql_max_affordances: 1_024,
+            kql_max_pairs: 65_536,
+            kql_max_proposals: 4_096,
+            pomv_max_records: 4_096,
+            pomv_max_view_records: 1_024,
+            publication_flush_batch: 128,
+            worker_poll_interval_millis: 1_000,
+            per_peer_work_units: 1_000_000,
+            per_peer_bytes: 4 * 1_048_576,
+            storage_soft_watermark_bytes: 512 * 1_048_576,
+            storage_hard_watermark_bytes: 1_024 * 1_048_576,
+        }
+    }
 }
 
 /// Bounded runtime policy for authenticated QUIC/reconciliation sessions.
@@ -102,7 +153,16 @@ impl VNextFeatureConfig {
 
     pub fn validate(&self) -> Result<(), VNextFeatureConfigError> {
         self.network.validate()?;
+        self.runtime_budgets.validate(&self.network)?;
         self.require(VNextFeature::ObpRp, VNextFeature::ObjectEventV1)?;
+        for lane in [
+            VNextFeature::DistributedKqlOneHop,
+            VNextFeature::PublicUseEvidencePublish,
+            VNextFeature::DistributedPomvView,
+        ] {
+            self.require(lane, VNextFeature::ObjectEventV1)?;
+            self.require(lane, VNextFeature::ObpRp)?;
+        }
         self.require(VNextFeature::InventoryShadow, VNextFeature::ObjectEventV1)?;
         self.require(VNextFeature::ProviderLease, VNextFeature::ObjectEventV1)?;
         self.require(VNextFeature::ProviderLease, VNextFeature::ObpRp)?;
@@ -127,6 +187,47 @@ impl VNextFeatureConfig {
                 feature,
                 dependency,
             })
+        } else {
+            Ok(())
+        }
+    }
+}
+
+impl VNextRuntimeBudgets {
+    pub fn validate(self, network: &VNextNetworkPolicy) -> Result<(), VNextFeatureConfigError> {
+        let kql_work = self
+            .kql_max_scan_records
+            .checked_add(self.kql_max_pairs)
+            .and_then(|value| value.checked_add(self.kql_max_proposals));
+        if self.kql_max_scan_records == 0
+            || self.kql_max_scan_records > 1_000_000
+            || self.kql_max_affordances == 0
+            || self.kql_max_affordances > 65_536
+            || self.kql_max_affordances > self.kql_max_scan_records
+            || self.kql_max_pairs == 0
+            || self.kql_max_pairs > 1_000_000
+            || self.kql_max_proposals == 0
+            || self.kql_max_proposals > 65_536
+            || self.pomv_max_records == 0
+            || self.pomv_max_records > 65_536
+            || self.pomv_max_view_records == 0
+            || self.pomv_max_view_records > self.pomv_max_records
+            || self.publication_flush_batch == 0
+            || self.publication_flush_batch > 4_096
+            || self.worker_poll_interval_millis < 10
+            || self.worker_poll_interval_millis > 600_000
+            || self.per_peer_work_units == 0
+            || self.per_peer_work_units > 10_000_000
+            || self.per_peer_bytes == 0
+            || self.per_peer_bytes > 16 * 1_048_576
+            || network.max_records_per_session > self.per_peer_work_units
+            || network.max_inflight_bytes > self.per_peer_bytes
+            || kql_work.is_none_or(|work| work > self.per_peer_work_units)
+            || self.storage_soft_watermark_bytes == 0
+            || self.storage_soft_watermark_bytes >= self.storage_hard_watermark_bytes
+            || self.storage_hard_watermark_bytes > 1_099_511_627_776
+        {
+            Err(VNextFeatureConfigError::InvalidRuntimeBudgets)
         } else {
             Ok(())
         }
@@ -168,6 +269,8 @@ pub enum VNextFeatureConfigError {
     },
     #[error("vNext network resource policy is outside the supported bounds")]
     InvalidNetworkPolicy,
+    #[error("vNext product runtime budgets are outside the supported bounds")]
+    InvalidRuntimeBudgets,
 }
 
 #[cfg(test)]
@@ -180,6 +283,9 @@ mod tests {
         for feature in [
             VNextFeature::ObjectEventV1,
             VNextFeature::ObpRp,
+            VNextFeature::DistributedKqlOneHop,
+            VNextFeature::PublicUseEvidencePublish,
+            VNextFeature::DistributedPomvView,
             VNextFeature::InventoryShadow,
             VNextFeature::ProviderLease,
             VNextFeature::Fidelity,
@@ -235,6 +341,49 @@ mod tests {
         assert_eq!(
             config.validate().unwrap_err(),
             VNextFeatureConfigError::InvalidNetworkPolicy
+        );
+    }
+
+    #[test]
+    fn product_lanes_have_independent_kill_switches_and_dependencies() {
+        let mut config = VNextFeatureConfig::default();
+        config.enabled.object_event_v1 = true;
+        config.enabled.obp_rp = true;
+        config.enabled.distributed_kql_one_hop = true;
+        config.enabled.public_use_evidence_publish = true;
+        config.enabled.distributed_pomv_view = true;
+        config.kill_switches.public_use_evidence_publish = true;
+        assert!(config.is_active(VNextFeature::DistributedKqlOneHop));
+        assert!(!config.is_active(VNextFeature::PublicUseEvidencePublish));
+        assert!(config.is_active(VNextFeature::DistributedPomvView));
+        assert!(config.validate().is_ok());
+
+        config.kill_switches.obp_rp = true;
+        assert_eq!(
+            config.validate().unwrap_err(),
+            VNextFeatureConfigError::DependencyDisabled {
+                feature: VNextFeature::DistributedKqlOneHop,
+                dependency: VNextFeature::ObpRp,
+            }
+        );
+    }
+
+    #[test]
+    fn runtime_budgets_are_bounded_and_cross_checked() {
+        let mut config = VNextFeatureConfig::default();
+        config.runtime_budgets.kql_max_affordances =
+            config.runtime_budgets.kql_max_scan_records + 1;
+        assert_eq!(
+            config.validate().unwrap_err(),
+            VNextFeatureConfigError::InvalidRuntimeBudgets
+        );
+
+        let mut config = VNextFeatureConfig::default();
+        config.runtime_budgets.storage_soft_watermark_bytes =
+            config.runtime_budgets.storage_hard_watermark_bytes;
+        assert_eq!(
+            config.validate().unwrap_err(),
+            VNextFeatureConfigError::InvalidRuntimeBudgets
         );
     }
 }

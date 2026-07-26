@@ -1243,3 +1243,37 @@ và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
 
 P2.1 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
 P2.2 Feature flags và budgets.
+
+### 2026-07-26 — P2.2 Feature flags và budgets
+
+Đã triển khai cục bộ trên nhánh `codex/p2-feature-flags-budgets`:
+
+1. Thêm ba flag và kill switch độc lập:
+   `distributed_kql_one_hop`, `public_use_evidence_publish` và
+   `distributed_pomv_view`; mỗi lane yêu cầu đồng thời `object_event_v1` và
+   `obp_rp`.
+2. Aggregate chỉ mở owner/DB của lane active. Lane bị kill không tạo private
+   KQL Vault/match DB, publication DB hoặc PoMV DB; typed operation trả
+   lane-specific disabled error.
+3. `VNextRuntimeBudgets` hard-bound KQL scan/object/pair/proposal, PoMV
+   reducer/view records, publication flush batch, worker poll interval,
+   per-peer work/bytes và vNext storage soft/hard watermarks.
+4. Caller chỉ có thể thu hẹp KQL/flush budget. Request vượt config,
+   PoMV limit sai, hoặc write khi chạm hard watermark đều fail closed.
+5. Typed status tách requested/active lane, toàn bộ configured budget,
+   accounted `vnext_` bytes và soft-watermark pressure; wallet, OBT và global
+   completion claim vẫn false.
+
+Local evidence:
+
+- focused config tests: 7/7 xanh;
+- focused aggregate tests: 4/4 xanh;
+- node-owned runtime integration: 3/3 xanh;
+- feature-enabled `onebrain-node` lib: 121/121 xanh;
+- default workspace tests, workspace check, feature product check,
+  `onebrain-node --no-deps` clippy và rustfmt: xanh;
+- `python scripts/ci/validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37
+  negative assertions, 55 vectors/21 domains, 9 identity/object vectors, 4
+  feed/event vectors, 215 normative lines, 14 endpoints/18 DTOs và 363 local
+  links;
+- product-profile validator tests: 8/8 xanh.

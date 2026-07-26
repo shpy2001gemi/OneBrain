@@ -487,6 +487,11 @@ jobs:
           cargo test --locked -p onebrain-node
           --features vnext-network-runtime
           --lib vnext_product_runtime
+      - name: P2.2 independent product lanes and hard budgets
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_config
       - name: Node-owned real QUIC lifecycle
         run: >-
           cargo test --locked -p onebrain-node
