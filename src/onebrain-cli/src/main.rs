@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 mod cli;
 
+use cli::vnext::{NeedArgs, PomvArgs, VNextArgs, VNextStartArgs};
 use onebrain_api::ApiServer;
 use onebrain_node::{
     mdns_discovery, peer_memory::PeerMemory, seed_client::SeedClient, upnp, ConceptRegistryMode,
@@ -64,7 +65,15 @@ enum Commands {
         /// Path to built web dashboard (default: auto-detect)
         #[arg(long)]
         web_dir: Option<PathBuf>,
+        #[command(flatten)]
+        vnext: VNextStartArgs,
     },
+    /// Manage private one-hop standing Needs through the authenticated local API.
+    Need(NeedArgs),
+    /// Prepare, explicitly confirm, and inspect vNext PoMV evidence.
+    Pomv(PomvArgs),
+    /// Inspect the vNext product runtime.
+    Vnext(VNextArgs),
 }
 
 fn generate_peer_id() -> String {
@@ -84,6 +93,9 @@ async fn main() {
     let args = CliArgs::parse();
 
     match args.command {
+        Commands::Need(args) => exit_on_client_error(cli::vnext::execute_need(args).await),
+        Commands::Pomv(args) => exit_on_client_error(cli::vnext::execute_pomv(args).await),
+        Commands::Vnext(args) => exit_on_client_error(cli::vnext::execute_vnext(args).await),
         Commands::Start {
             name,
             port,
@@ -98,7 +110,42 @@ async fn main() {
             api_port,
             api_token,
             web_dir,
+            vnext,
         } => {
+            let vnext_config = match vnext.feature_config() {
+                Ok(config) => config,
+                Err(error) => {
+                    eprintln!("Invalid vNext configuration: {error}");
+                    std::process::exit(2);
+                }
+            };
+            #[cfg(not(feature = "vnext-network-runtime"))]
+            if vnext.requested() {
+                eprintln!(
+                    "vNext product lanes require a binary built with --features vnext-network-runtime"
+                );
+                std::process::exit(2);
+            }
+            #[cfg(feature = "vnext-network-runtime")]
+            let vnext_dependencies = if vnext.requested() {
+                match cli::vnext::prepare_runtime_dependencies(&data_dir) {
+                    Ok(dependencies) => Some(dependencies),
+                    Err(error) => {
+                        eprintln!("Failed to prepare vNext runtime dependencies: {error}");
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                None
+            };
+            #[cfg(feature = "vnext-network-runtime")]
+            let vnext_feed_publisher = match cli::vnext::prepare_feed_publisher(&vnext, &data_dir) {
+                Ok(publisher) => publisher,
+                Err(error) => {
+                    eprintln!("Failed to prepare selected Feed signer: {error}");
+                    std::process::exit(1);
+                }
+            };
             let config = NodeConfig {
                 name,
                 port,
@@ -109,7 +156,7 @@ async fn main() {
                 concept_registry_path: concept_registry,
                 concept_registry_mode,
                 concept_registry_cache_capacity,
-                vnext: Default::default(),
+                vnext: vnext_config,
             };
             std::fs::create_dir_all(&config.data_dir).expect("Failed to create data directory");
 
@@ -128,6 +175,20 @@ async fn main() {
             if api {
                 println!("  API:      http://127.0.0.1:{}", api_port);
             }
+            println!(
+                "  vNext:    {}",
+                if vnext.requested() {
+                    "requested"
+                } else {
+                    "disabled"
+                }
+            );
+            println!("  Feed signer provider: {}", vnext.describe_signer());
+            if vnext.vnext_feed_signer_provider == cli::vnext::FeedSignerProvider::DevelopmentFile {
+                eprintln!(
+                    "  ⚠ DEVELOPMENT ONLY: Feed events use an exportable local file key; this is not production custody."
+                );
+            }
             println!();
 
             let seed_addrs = config.seeds.clone();
@@ -139,6 +200,13 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
+            #[cfg(feature = "vnext-network-runtime")]
+            if let Some(dependencies) = vnext_dependencies {
+                if let Err(error) = node.set_vnext_product_dependencies(dependencies) {
+                    eprintln!("Failed to configure vNext product runtime: {error}");
+                    std::process::exit(1);
+                }
+            }
             println!("  \u{2713} Node initialized successfully");
 
             match node.start_network().await {
@@ -223,6 +291,10 @@ async fn main() {
 
                 let mut api_server =
                     ApiServer::with_shared_node(shared_node.clone(), api_token.clone(), api_port);
+                #[cfg(feature = "vnext-network-runtime")]
+                if let Some(publisher) = vnext_feed_publisher {
+                    api_server = api_server.with_vnext_feed_publisher(publisher);
+                }
                 if let Some(ref dir) = resolved_web_dir {
                     api_server = api_server.with_web_dir(dir.clone());
                     println!("  ✓ Web Dashboard: http://127.0.0.1:{}", api_port);
@@ -257,5 +329,171 @@ async fn main() {
                 }
             }
         }
+    }
+}
+
+fn exit_on_client_error(result: Result<(), String>) {
+    if let Err(error) = result {
+        eprintln!("vNext CLI error: {error}");
+        std::process::exit(2);
+    }
+}
+
+#[cfg(test)]
+mod vnext_command_tests {
+    use super::*;
+
+    #[test]
+    fn p3_cli_command_inventory_is_parseable() {
+        const ID: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+        for command in [
+            vec![
+                "onebrain",
+                "need",
+                "prepare",
+                "--query",
+                "FIND capability",
+                "--idempotency-key",
+                "need-1",
+                "--api-token",
+                "test",
+            ],
+            vec![
+                "onebrain",
+                "need",
+                "activate",
+                "--intent",
+                ID,
+                "--idempotency-key",
+                "need-1",
+                "--api-token",
+                "test",
+            ],
+            vec!["onebrain", "need", "list", "--api-token", "test"],
+            vec![
+                "onebrain",
+                "need",
+                "scan",
+                "--need",
+                ID,
+                "--idempotency-key",
+                "scan-1",
+                "--api-token",
+                "test",
+            ],
+            vec![
+                "onebrain",
+                "need",
+                "matches",
+                "--need",
+                ID,
+                "--api-token",
+                "test",
+            ],
+            vec![
+                "onebrain",
+                "need",
+                "retire",
+                "--need",
+                ID,
+                "--api-token",
+                "test",
+            ],
+            vec![
+                "onebrain",
+                "pomv",
+                "use",
+                "prepare",
+                "--target",
+                ID,
+                "--recipient",
+                ID,
+                "--selector",
+                ID,
+                "--namespace",
+                "public-use",
+                "--idempotency-key",
+                "public-use-1",
+                "--expires-at",
+                "4102444800",
+                "--public-permanent",
+                "--api-token",
+                "test",
+            ],
+            vec![
+                "onebrain",
+                "pomv",
+                "use",
+                "confirm",
+                "--intent",
+                ID,
+                "--api-token",
+                "test",
+            ],
+            vec![
+                "onebrain",
+                "pomv",
+                "use",
+                "status",
+                "--publication",
+                ID,
+                "--api-token",
+                "test",
+            ],
+            vec![
+                "onebrain",
+                "pomv",
+                "view",
+                "--target",
+                ID,
+                "--api-token",
+                "test",
+            ],
+            vec!["onebrain", "vnext", "status", "--api-token", "test"],
+        ] {
+            assert!(
+                CliArgs::try_parse_from(command).is_ok(),
+                "command should parse"
+            );
+        }
+    }
+
+    #[test]
+    fn public_use_has_no_yes_bypass_and_prepare_requires_acknowledgement() {
+        const ID: &str = "2121212121212121212121212121212121212121212121212121212121212121";
+        let confirm_with_yes = CliArgs::try_parse_from([
+            "onebrain",
+            "pomv",
+            "use",
+            "confirm",
+            "--intent",
+            ID,
+            "--yes",
+            "--api-token",
+            "test",
+        ]);
+        assert!(confirm_with_yes.is_err());
+
+        let prepare_without_ack = CliArgs::try_parse_from([
+            "onebrain",
+            "pomv",
+            "use",
+            "prepare",
+            "--target",
+            ID,
+            "--recipient",
+            ID,
+            "--selector",
+            ID,
+            "--namespace",
+            "public-use",
+            "--idempotency-key",
+            "public-use-1",
+            "--expires-at",
+            "4102444800",
+            "--api-token",
+            "test",
+        ]);
+        assert!(prepare_without_ack.is_err());
     }
 }

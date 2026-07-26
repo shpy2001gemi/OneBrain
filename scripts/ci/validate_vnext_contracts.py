@@ -27,6 +27,7 @@ PRODUCT_PROFILE = (
 PRIVATE_WS_PROFILE = (
     ROOT / "src/test-vectors/vnext/private-websocket-profile-v1.json"
 )
+VNEXT_CLI_PROFILE = ROOT / "src/test-vectors/vnext/vnext-cli-profile-v1.json"
 
 TASK_ROW = re.compile(r"^\|\s*\[[ x~]\]\s*`([A-Z][A-Z0-9]*-\d{3})`")
 TASK_ID = re.compile(r"(?<!ADR-)(?<!NEG-)\b[A-Z][A-Z0-9]*-\d{3}\b")
@@ -621,6 +622,135 @@ def validate_private_websocket_profile(
     return len(events), len(topics)
 
 
+def validate_vnext_cli_profile(
+    profile: dict[str, object] | None = None,
+) -> int:
+    if profile is None:
+        try:
+            profile = json.loads(read(VNEXT_CLI_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid vNext CLI profile JSON: {error}") from error
+
+    if profile.get("format") != "onebrain/vnext-cli-profile/1":
+        raise ContractError("unexpected vNext CLI profile format")
+    if profile.get("profile_id") != "VNEXT_CLI_PROFILE_V1":
+        raise ContractError("unexpected vNext CLI profile ID")
+    if profile.get("version") != 1:
+        raise ContractError("unexpected vNext CLI profile version")
+
+    expected_commands = {
+        "need prepare",
+        "need activate",
+        "need list",
+        "need scan",
+        "need matches",
+        "need retire",
+        "pomv use prepare",
+        "pomv use confirm",
+        "pomv use status",
+        "pomv view",
+        "vnext status",
+    }
+    commands = profile.get("commands")
+    if not isinstance(commands, list) or set(commands) != expected_commands:
+        raise ContractError("vNext CLI command inventory drift")
+
+    transport = profile.get("transport")
+    if transport != {
+        "contract": "VNEXT_PRODUCT_INTEGRATION_PROFILE_V1",
+        "authentication": "bearer",
+        "default_api_url": "http://127.0.0.1:4280",
+        "token_environment": "ONEBRAIN_API_TOKEN",
+    }:
+        raise ContractError("vNext CLI transport contract drift")
+
+    need = profile.get("need")
+    expected_need = {
+        "scope": "one_hop",
+        "raw_query_local_only": True,
+        "exact_replay_identity": True,
+        "match_state": "quarantined",
+        "match_executable": False,
+        "zero_result_claims_global_absence": False,
+        "continuation_opaque": True,
+    }
+    if need != expected_need:
+        raise ContractError("vNext CLI Need firewall drift")
+
+    public_use = profile.get("public_use")
+    if not isinstance(public_use, dict):
+        raise ContractError("vNext CLI profile lacks Public Use contract")
+    expected_preview = {
+        "canonical_payload_preview",
+        "exact_target",
+        "exact_recipient",
+        "selector_cid",
+        "namespace",
+        "disclosure",
+        "intent_cid",
+        "expires_at",
+    }
+    if (
+        public_use.get("prepare_creates_evidence") is not False
+        or public_use.get("prepare_requires_public_permanent_acknowledgement")
+        is not True
+        or set(public_use.get("preview_required", [])) != expected_preview
+        or public_use.get("confirmation_requires_exact_typed_intent") is not True
+        or public_use.get("yes_bypass") is not False
+        or public_use.get("single_use_receipt_exported") is not False
+        or public_use.get("exact_replay_identity") is not True
+        or public_use.get("delivery_acknowledgement_inferred") is not False
+    ):
+        raise ContractError("vNext CLI Public Use contract drift")
+
+    signer = profile.get("feed_signer")
+    if not isinstance(signer, dict):
+        raise ContractError("vNext CLI profile lacks Feed signer contract")
+    if (
+        signer.get("selection_explicit") is not True
+        or set(signer.get("providers", [])) != {"none", "development-file"}
+        or signer.get("development_file_requires_opt_in") is not True
+        or signer.get("development_file_warning") is not True
+        or signer.get("development_file_production_custody") is not False
+        or signer.get("fallback_on_failure") is not False
+    ):
+        raise ContractError("vNext CLI Feed signer contract drift")
+
+    expected_false = {
+        "establishes_truth": False,
+        "establishes_benefit": False,
+        "authorizes_reward": False,
+        "claims_global_completion": False,
+        "conflict_displays_authorized": False,
+    }
+    if profile.get("view_firewalls") != expected_false:
+        raise ContractError("vNext CLI view firewall drift")
+
+    expected_status = {
+        "compiled",
+        "requested",
+        "active",
+        "kill_switch",
+        "signer_ready",
+        "lifecycle",
+        "coverage",
+        "limitations",
+    }
+    status_fields = profile.get("status_fields")
+    if not isinstance(status_fields, list) or set(status_fields) != expected_status:
+        raise ContractError("vNext CLI status field inventory drift")
+
+    legacy = profile.get("legacy")
+    if legacy != {
+        "kql_reinterpreted": False,
+        "pomv_scalar_reinterpreted": False,
+        "status_reinterpreted": False,
+    }:
+        raise ContractError("vNext CLI legacy isolation drift")
+
+    return len(commands)
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -716,6 +846,7 @@ def main() -> int:
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
         ws_events, ws_topics = validate_private_websocket_profile()
+        cli_commands = validate_vnext_cli_profile()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -730,6 +861,7 @@ def main() -> int:
         f"{event_vectors} feed-event vectors, {normative_lines} normative lines, "
         f"{product_endpoints} product endpoints/{product_dtos} DTOs, "
         f"{ws_events} private-WS events/{ws_topics} topics, "
+        f"{cli_commands} vNext CLI commands, "
         f"{links} local links"
     )
     return 0

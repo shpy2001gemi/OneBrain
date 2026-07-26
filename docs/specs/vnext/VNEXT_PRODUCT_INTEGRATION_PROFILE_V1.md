@@ -158,7 +158,8 @@ not upgrade `pending` or `deferred` work to accepted, published, or complete.
 
 These firewalls apply to REST, CLI, Desktop, Web, and the
 [private WebSocket extension](VNEXT_PRIVATE_WEBSOCKET_PROFILE_V1.md) of the
-same product contract.
+same product contract. The executable command projection is frozen by the
+[vNext CLI extension](VNEXT_CLI_PROFILE_V1.md).
 
 ## 8. Acceptance evidence
 

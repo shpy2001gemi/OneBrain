@@ -17,6 +17,7 @@ mod social;
 mod tags;
 #[cfg(test)]
 mod tests;
+pub(crate) mod vnext;
 mod wallet;
 mod workflow;
 

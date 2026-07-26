@@ -20,6 +20,15 @@ vnext-network-runtime = [
 onebrain-node = { path = "../onebrain-node" }
 onebrain-api = { path = "../onebrain-api" }
 ku-core = { path = "../ku-core" }
+ku-kql = { path = "../ku-kql" }
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-std", "io-util"] }
 blake3 = "1"
+base64 = "0.22"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+rand = "0.8"
+reqwest = { version = "0.12", features = ["json", "native-tls"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
