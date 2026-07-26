@@ -231,6 +231,37 @@
       "rationale": "Authenticated-session-only route mutation, immutable allow-listed policy resolution and terminal validated-local authority derivation remove caller-controlled address, policy and favorable-frontier injection while preserving fail-closed ambiguity."
     },
     {
+      "path": "docs/specs/vnext/RUNTIME_OWNERSHIP_PROFILE_V1.md",
+      "expected_statement_lines": 19,
+      "evidence": [
+        {
+          "path": "src/onebrain-node/src/vnext_product_runtime.rs",
+          "needle": "aggregate_owns_every_runtime_and_exposes_typed_services"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_product_runtime.rs",
+          "needle": "product_worker_owner_is_bounded_and_cancelled"
+        },
+        {
+          "path": "src/onebrain-node/tests/vnext_node_runtime.rs",
+          "needle": "feature_flags_start_a_real_node_owned_product_runtime_and_status_tracks_it"
+        },
+        {
+          "path": "src/onebrain-node/tests/vnext_node_runtime.rs",
+          "needle": "active_product_runtime_requires_vault_and_policy_dependencies"
+        },
+        {
+          "path": "src/onebrain-node/tests/vnext_node_runtime.rs",
+          "needle": "inactive_vnext_creates_no_product_runtime_resources"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_product_runtime.rs",
+          "needle": "pub struct VNextProductServices"
+        }
+      ],
+      "rationale": "The node-owned aggregate opens every durable/runtime owner before exposing a typed private-field façade; mandatory Vault/Policy injection, bounded worker ownership, cancellation and real-QUIC tests prove the P2.1 ownership boundary without activating P2.2 lanes."
+    },
+    {
       "path": "docs/specs/vnext/PUBLIC_USE_CONSENT_PROFILE_V1.md",
       "expected_statement_lines": 13,
       "evidence": [

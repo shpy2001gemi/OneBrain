@@ -1192,3 +1192,54 @@ xanh, với 0 annotation.
 
 P1.5 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
 P2.1 Runtime ownership.
+
+### 2026-07-26 — P2.1 Runtime ownership
+
+Đã triển khai cục bộ trên nhánh `codex/p2-runtime-ownership`:
+
+1. `VNextProductRuntime` là aggregate duy nhất sở hữu
+   `VNextNetworkRuntime`, `DistributedKqlRuntime`,
+   `PublicUseEvidencePublisher`, `DistributedPomvRuntime`, route directory
+   thông qua network owner, policy versions và bounded product worker owner.
+2. `OneBrainNode` không còn giữ raw network runtime riêng. Mọi status, listener
+   và peer connection đều đi qua `VNextProductServices`; façade không có
+   getter trả raw subsystem runtime.
+3. Startup khi `obp_rp` active bắt buộc caller inject
+   `VNextProductRuntimeDependencies` gồm Vault key và immutable local policy
+   registry. Thiếu dependency thất bại trước identity file, validated store
+   hoặc listener side effect.
+4. Existing caller-owned `SessionIdentitySigner` được forward qua aggregate;
+   test real QUIC chứng minh không tạo compatibility `vnext_identity.key`.
+5. Aggregate giữ cancellation source và registry tối đa 8 product worker;
+   worker thứ chín fail closed, shutdown/drop fence và abort toàn bộ owned
+   task. P2.1 chưa tự khởi động polling lane trước P2.2/P2.3.
+6. Typed status tách signer mode, route, private need, durable match,
+   publication, policy và worker state; các claim wallet, OBT và global
+   completion luôn false.
+7. Default-disabled node không cần dependency và không tạo bất kỳ vNext DB,
+   identity, listener hoặc product worker nào.
+
+Focused local evidence:
+
+- `cargo test --locked -p onebrain-node --features vnext-network-runtime --lib
+  vnext_product_runtime -- --test-threads=1`: 2/2 xanh;
+- `cargo test --locked -p onebrain-node --features vnext-network-runtime
+  --test vnext_node_runtime -- --test-threads=1`: 3/3 xanh;
+- `cargo test --workspace --locked --no-fail-fast -- --test-threads=2`: xanh;
+- default-feature clippy cho các foundation crates và feature-enabled clippy
+  cho toàn bộ `onebrain-node` targets: xanh;
+- default workspace check, feature-enabled product check và
+  `cargo fmt --all -- --check`: xanh;
+- `python scripts/ci/validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37
+  negative assertions, 55 vectors/21 domains, 9 identity/object vectors, 4
+  feed/event vectors, 189 normative lines, 14 endpoints/18 DTOs và 360 local
+  links.
+
+Remote CI run
+[`30183959855`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30183959855)
+trên implementation commit `ef71871` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P2.1 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
+P2.2 Feature flags và budgets.

@@ -14,7 +14,12 @@ use crate::network::{recv_message, send_message, NetMessage, NodeEvent, PeerInfo
 use crate::peer_manager::PeerManager;
 use crate::verifier_service;
 #[cfg(feature = "vnext-network-runtime")]
-use crate::vnext_network_runtime::{OutboundVNextSession, VNextNetworkRuntime};
+use crate::vnext_network_runtime::OutboundVNextSession;
+#[cfg(feature = "vnext-network-runtime")]
+use crate::vnext_product_runtime::{
+    VNextProductRuntime, VNextProductRuntimeDependencies, VNextProductRuntimeStatus,
+    VNextProductServices,
+};
 #[cfg(feature = "vnext-network-runtime")]
 use ku_net::vnext_session::SessionIdentitySigner;
 
@@ -117,10 +122,15 @@ pub struct OneBrainNode {
     registry: Option<Box<dyn ConceptLookup>>,
     /// Observable startup policy/result for the external Concept Registry.
     registry_status: ConceptRegistryStatus,
-    /// Real authenticated QUIC/OBP-RP subsystem. It exists only after the
-    /// feature is compiled, requested, not killed, and successfully bound.
+    /// Sole owner of the integrated vNext network/KQL/Public Use/PoMV slice.
+    /// It exists only after the feature is compiled, requested, not killed,
+    /// supplied with local Vault/Policy dependencies, and successfully bound.
     #[cfg(feature = "vnext-network-runtime")]
-    vnext_network_runtime: Option<VNextNetworkRuntime>,
+    vnext_product_runtime: Option<VNextProductRuntime>,
+    /// Caller-owned Vault and allow-listed policy dependencies consumed at
+    /// product runtime startup.
+    #[cfg(feature = "vnext-network-runtime")]
+    vnext_product_dependencies: Option<VNextProductRuntimeDependencies>,
     /// Optional caller-owned node signer. Embedders can back this with an OS
     /// keystore, HSM, or remote signer; private-key bytes never enter OneBrain.
     #[cfg(feature = "vnext-network-runtime")]
@@ -270,7 +280,9 @@ impl OneBrainNode {
             registry,
             registry_status,
             #[cfg(feature = "vnext-network-runtime")]
-            vnext_network_runtime: None,
+            vnext_product_runtime: None,
+            #[cfg(feature = "vnext-network-runtime")]
+            vnext_product_dependencies: None,
             #[cfg(feature = "vnext-network-runtime")]
             vnext_identity_signer: None,
             devices: vec![DeviceInfo {
@@ -294,6 +306,22 @@ impl OneBrainNode {
         self.vnext_identity_signer = Some(signer);
     }
 
+    /// Inject caller-owned encrypted Vault and allow-listed policy handles
+    /// before starting the integrated vNext product runtime.
+    #[cfg(feature = "vnext-network-runtime")]
+    pub fn set_vnext_product_dependencies(
+        &mut self,
+        dependencies: VNextProductRuntimeDependencies,
+    ) -> Result<(), NodeError> {
+        if self.vnext_product_runtime.is_some() {
+            return Err(NodeError::Config(
+                "vNext product dependencies cannot change after runtime startup".into(),
+            ));
+        }
+        self.vnext_product_dependencies = Some(dependencies);
+        Ok(())
+    }
+
     /// Start the TCP listener and spawn the background accept loop.
     ///
     /// Returns the local address the listener is bound to.
@@ -305,28 +333,27 @@ impl OneBrainNode {
             .vnext
             .is_active(crate::vnext_config::VNextFeature::ObpRp)
         {
-            Some(if let Some(signer) = self.vnext_identity_signer.clone() {
-                VNextNetworkRuntime::start_with_signer(
+            let dependencies = self.vnext_product_dependencies.take().ok_or_else(|| {
+                NodeError::Config(
+                    "active OBP-RP requires caller-owned vNext Vault and Policy dependencies"
+                        .into(),
+                )
+            })?;
+            Some(
+                VNextProductRuntime::start(
                     &self.config.data_dir,
                     bind_addr,
                     self.config.vnext.network,
-                    signer,
+                    dependencies,
+                    self.vnext_identity_signer.clone(),
                 )
                 .await
                 .map_err(|error| {
-                    NodeError::Network(format!("Failed to start authenticated OBP-RP: {error}"))
-                })?
-            } else {
-                VNextNetworkRuntime::start(
-                    &self.config.data_dir,
-                    bind_addr,
-                    self.config.vnext.network,
-                )
-                .await
-                .map_err(|error| {
-                    NodeError::Network(format!("Failed to start authenticated OBP-RP: {error}"))
-                })?
-            })
+                    NodeError::Network(format!(
+                        "Failed to start integrated vNext product runtime: {error}"
+                    ))
+                })?,
+            )
         } else {
             None
         };
@@ -350,7 +377,7 @@ impl OneBrainNode {
         self.listener_addr = Some(local_addr);
         #[cfg(feature = "vnext-network-runtime")]
         {
-            self.vnext_network_runtime = pending_vnext;
+            self.vnext_product_runtime = pending_vnext;
         }
 
         // Spawn background listener task
@@ -776,8 +803,8 @@ impl OneBrainNode {
     /// Build a scope-aware, display-only vNext status projection.
     pub fn vnext_status(&self) -> crate::vnext_status::VNextStatusSnapshot {
         #[cfg(feature = "vnext-network-runtime")]
-        let runtime = self.vnext_network_runtime.as_ref().map(|runtime| {
-            let status = runtime.status();
+        let runtime = self.vnext_product_runtime.as_ref().map(|runtime| {
+            let status = runtime.services().network_status();
             crate::vnext_status::NetworkRuntimeObservation {
                 listen_addr: status.listen_addr.to_string(),
                 authenticated_sessions: status.authenticated_sessions,
@@ -801,9 +828,31 @@ impl OneBrainNode {
     /// Address of the real UDP/QUIC OBP-RP listener, if it is running.
     #[cfg(feature = "vnext-network-runtime")]
     pub fn vnext_listener_addr(&self) -> Option<SocketAddr> {
-        self.vnext_network_runtime
+        self.vnext_product_runtime
             .as_ref()
-            .map(VNextNetworkRuntime::local_addr)
+            .map(|runtime| runtime.services().local_addr())
+    }
+
+    /// Typed product façade for API/CLI/Desktop integration. Raw subsystem
+    /// runtime references are deliberately not exposed.
+    #[cfg(feature = "vnext-network-runtime")]
+    pub fn vnext_product_services(&self) -> Option<VNextProductServices<'_>> {
+        self.vnext_product_runtime
+            .as_ref()
+            .map(VNextProductRuntime::services)
+    }
+
+    #[cfg(feature = "vnext-network-runtime")]
+    pub fn vnext_product_runtime_status(
+        &self,
+    ) -> Result<Option<VNextProductRuntimeStatus>, NodeError> {
+        self.vnext_product_services()
+            .map(|services| {
+                services
+                    .status()
+                    .map_err(|error| NodeError::Network(error.to_string()))
+            })
+            .transpose()
     }
 
     /// Establish a transcript-authenticated outbound vNext session.
@@ -812,10 +861,9 @@ impl OneBrainNode {
         &self,
         addr: SocketAddr,
     ) -> Result<OutboundVNextSession, NodeError> {
-        self.vnext_network_runtime
-            .as_ref()
+        self.vnext_product_services()
             .ok_or_else(|| NodeError::Network("authenticated OBP-RP runtime is not active".into()))?
-            .connect(addr)
+            .connect_peer(addr)
             .await
             .map_err(|error| NodeError::Network(error.to_string()))
     }
