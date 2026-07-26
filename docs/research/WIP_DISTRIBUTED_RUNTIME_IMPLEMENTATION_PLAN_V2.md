@@ -1982,8 +1982,24 @@ acceptance (gồm M5-04 chaos/flood/trace) và Windows default/vNext/Desktop smo
 đều xanh. Bốn annotation là warning lint React baseline đã biết; không có error
 hoặc warning M5-04 mới.
 
-M5-04 đã hoàn tất implementation và remote foundation evidence. Workflow nightly
-mới chỉ được GitHub cho phép `workflow_dispatch` sau khi file workflow hiện diện
-trên default branch, vì vậy implementation/evidence được fast-forward vào `main`
-trước khi dispatch matrix sáu fuzz target. Work package chỉ đóng sau khi nightly
-fuzz evidence xanh. Work package kế tiếp là M5-05 Operational compaction.
+Sau khi fast-forward vào `main`, nightly attempt
+[`30214178598`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30214178598)
+phát hiện compiler drift: Rust nightly mới nhất ICE khi codegen `tokio` dưới
+AddressSanitizer, trước khi fuzz target bắt đầu chạy. Không có parser crash hoặc
+crash artifact. Toolchain đã được freeze thành `nightly-2026-07-20` trong
+workflow, machine profile và validator ở commit `e89b2e1`.
+
+Remote final evidence trên commit `e89b2e1`:
+
+- foundation run
+  [`30214349838`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30214349838):
+  foundation contract, Linux default workspace, Linux feature-enabled real-QUIC
+  acceptance và Windows default/vNext/Desktop smoke đều xanh, 4/4 job;
+- nightly fuzz run
+  [`30214359847`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30214359847):
+  canonical codec, session/reconciliation codec, carrier frame, journal
+  token/snapshot, domain records và legacy adapter đều chạy hết frozen budget và
+  xanh, 6/6 target.
+
+M5-04 đã hoàn tất implementation, local gates, remote foundation CI và nightly
+fuzz evidence trên `main`. Work package kế tiếp là M5-05 Operational compaction.
