@@ -1380,5 +1380,11 @@ Local evidence:
   links;
 - product-profile validator tests: 8/8 xanh.
 
-P2.4 đã hoàn tất ở cấp local implementation; cần remote CI implementation xanh
-trước khi ghi evidence commit, merge vào `main` và chuyển sang P2.5 Concurrency.
+Remote CI run
+[`30187596908`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30187596908)
+trên implementation commit `9993efc` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P2.4 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
+P2.5 Concurrency.
