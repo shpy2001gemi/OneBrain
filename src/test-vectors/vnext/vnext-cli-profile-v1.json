@@ -1,0 +1,85 @@
+{
+  "format": "onebrain/vnext-cli-profile/1",
+  "profile_id": "VNEXT_CLI_PROFILE_V1",
+  "version": 1,
+  "transport": {
+    "contract": "VNEXT_PRODUCT_INTEGRATION_PROFILE_V1",
+    "authentication": "bearer",
+    "default_api_url": "http://127.0.0.1:4280",
+    "token_environment": "ONEBRAIN_API_TOKEN"
+  },
+  "commands": [
+    "need prepare",
+    "need activate",
+    "need list",
+    "need scan",
+    "need matches",
+    "need retire",
+    "pomv use prepare",
+    "pomv use confirm",
+    "pomv use status",
+    "pomv view",
+    "vnext status"
+  ],
+  "need": {
+    "scope": "one_hop",
+    "raw_query_local_only": true,
+    "exact_replay_identity": true,
+    "match_state": "quarantined",
+    "match_executable": false,
+    "zero_result_claims_global_absence": false,
+    "continuation_opaque": true
+  },
+  "public_use": {
+    "prepare_creates_evidence": false,
+    "prepare_requires_public_permanent_acknowledgement": true,
+    "preview_required": [
+      "canonical_payload_preview",
+      "exact_target",
+      "exact_recipient",
+      "selector_cid",
+      "namespace",
+      "disclosure",
+      "intent_cid",
+      "expires_at"
+    ],
+    "confirmation_requires_exact_typed_intent": true,
+    "yes_bypass": false,
+    "single_use_receipt_exported": false,
+    "exact_replay_identity": true,
+    "delivery_acknowledgement_inferred": false
+  },
+  "feed_signer": {
+    "selection_explicit": true,
+    "providers": [
+      "none",
+      "development-file"
+    ],
+    "development_file_requires_opt_in": true,
+    "development_file_warning": true,
+    "development_file_production_custody": false,
+    "fallback_on_failure": false
+  },
+  "view_firewalls": {
+    "establishes_truth": false,
+    "establishes_benefit": false,
+    "authorizes_reward": false,
+    "claims_global_completion": false,
+    "conflict_displays_authorized": false
+  },
+  "status_fields": [
+    "compiled",
+    "requested",
+    "active",
+    "kill_switch",
+    "signer_ready",
+    "lifecycle",
+    "coverage",
+    "limitations"
+  ],
+  "legacy": {
+    "kql_reinterpreted": false,
+    "pomv_scalar_reinterpreted": false,
+    "status_reinterpreted": false
+  }
+}

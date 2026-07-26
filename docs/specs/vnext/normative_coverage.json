@@ -362,6 +362,29 @@
       "rationale": "Bearer-minted random one-use tickets bind immutable topics and an exact client session; real two-client WebSocket tests, bounded queue overflow, private-field suppression, replay deduplication and all-false view events prove the P3.2 isolation boundary."
     },
     {
+      "path": "docs/specs/vnext/VNEXT_CLI_PROFILE_V1.md",
+      "expected_statement_lines": 32,
+      "evidence": [
+        {
+          "path": "src/onebrain-cli/src/main.rs",
+          "needle": "public_use_has_no_yes_bypass_and_prepare_requires_acknowledgement"
+        },
+        {
+          "path": "src/onebrain-cli/src/cli/vnext.rs",
+          "needle": "real_cli_client_preserves_need_and_public_use_replay_identity"
+        },
+        {
+          "path": "src/onebrain-cli/src/cli/vnext.rs",
+          "needle": "start_configuration_is_safe_default_and_development_signer_is_double_opt_in"
+        },
+        {
+          "path": "src/test-vectors/vnext/vnext-cli-profile-v1.json",
+          "needle": "onebrain/vnext-cli-profile/1"
+        }
+      ],
+      "rationale": "The additive authenticated REST client exposes the eleven P3.3 commands without reinterpreting legacy surfaces; parsing, fail-closed rendering, double-opt-in development signer startup and a real runtime/API replay test prove exact confirmation, scope-honest output and signer-custody warnings."
+    },
+    {
       "path": "docs/specs/vnext/RUNTIME_INCREMENTAL_PROCESSING_PROFILE_V1.md",
       "expected_statement_lines": 25,
       "evidence": [

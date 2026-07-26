@@ -56,6 +56,12 @@ onebrain start [OPTIONS]
 | `--api-port PORT` | `4280` | API server port |
 | `--api-token TOKEN` | `onebrain-dev-token` | API Bearer token for authentication |
 | `--web-dir DIR` | auto-detect | Path to built web dashboard assets |
+| `--vnext-kql` | `false` | Enable bounded one-hop private Need runtime |
+| `--vnext-public-use` | `false` | Enable explicitly confirmed Public UseEvidence |
+| `--vnext-pomv-view` | `false` | Enable read-only Metabolic Evidence Views |
+| `--vnext-feed-signer-provider PROVIDER` | `none` | Explicit Feed signer selection: `none` or `development-file` |
+| `--allow-development-file-signer` | `false` | Required second opt-in for the non-production file signer |
+| `--vnext-feed-key-file PATH` | data directory | Optional development Feed key path |
 | `--version` | — | Display version and exit |
 
 ### 2.2 First-Run
@@ -193,11 +199,47 @@ Type 'help' for commands.
 | | `quit` / `exit` | Exit | ✅ Implemented |
 | | `<free text>` | Chat with AI | ✅ Implemented |
 
-**Total: 51/51 commands ✅ — All implemented**
+**Total: 51 legacy REPL commands plus 11 additive vNext command paths ✅**
 
 ---
 
-### 3.2 Command Details
+### 3.2 Additive vNext commands
+
+These commands are non-REPL clients of the authenticated local API. Supply
+`--api-token` or set `ONEBRAIN_API_TOKEN`.
+
+```text
+onebrain need prepare|activate|list|scan|matches|retire
+onebrain pomv use prepare|confirm|status
+onebrain pomv view
+onebrain vnext status
+```
+
+`need matches` always presents results as `quarantined proposal` with
+`executable=false`. Empty pages are bounded/local results, never claims that
+knowledge is absent from the network.
+
+Public Use is two-step:
+
+1. `pomv use prepare` requires `--public-permanent` and prints the exact
+   canonical preview, target, recipient, selector, namespace and `intent_cid`.
+2. `pomv use confirm --intent <CID>` warns about Public/permanent publication
+   and requires typing the exact CID interactively. There is no `--yes` bypass.
+
+Example development startup:
+
+```powershell
+cargo run -p onebrain-cli --features vnext-network-runtime -- start `
+  --api --vnext-kql --vnext-public-use --vnext-pomv-view `
+  --vnext-feed-signer-provider development-file `
+  --allow-development-file-signer
+```
+
+The file signer is explicitly development-only and prints an exportable-key
+warning. Production custody must be injected by a host implementation rather
+than inferred from this adapter.
+
+### 3.3 Command Details
 
 ---
 

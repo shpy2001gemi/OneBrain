@@ -1561,3 +1561,63 @@ và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
 
 P3.2 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
 `main`, work package kế tiếp là P3.3 CLI.
+
+### 2026-07-26 — P3.3 CLI
+
+Đã triển khai cục bộ trên nhánh `codex/p3-vnext-cli`:
+
+1. Thêm 11 command path additive dùng đúng authenticated P3.1 REST contract:
+   `need prepare|activate|list|scan|matches|retire`,
+   `pomv use prepare|confirm|status`, `pomv view` và `vnext status`.
+   Legacy REPL `kql`, PoMV scalar và `status` không bị đổi nghĩa.
+2. CLI nhận Bearer token qua `--api-token` hoặc `ONEBRAIN_API_TOKEN`, kiểm tra
+   typed CID lowercase 32 byte, opaque continuation, page/budget và
+   idempotency input trước request.
+3. Need output giữ scope local/partial: zero result không tuyên bố network-wide
+   absence; match bắt buộc `quarantined proposal`, `executable=false` và bị
+   client từ chối nếu server projection làm yếu firewall.
+4. Public Use prepare bắt buộc `--public-permanent`, hiển thị exact canonical
+   preview/target/recipient/selector/namespace/disclosure/intent/expiry nhưng
+   không tạo evidence và không lộ receipt.
+5. Public Use confirm in cảnh báo Public/permanent và yêu cầu người vận hành
+   nhập lại đúng `intent_cid`. Không có `--yes`; receipt chỉ được dẫn xuất sau
+   exact typed confirmation rồi gửi thẳng tới authenticated endpoint.
+6. `pomv view` fail closed nếu bất kỳ truth/benefit/reward/global flag nào khác
+   `false`; publication status không suy diễn delivery acknowledgement.
+7. CLI startup có các flag lane riêng. Public Use fail closed khi chưa chọn
+   Feed signer provider. `development-file` cần cả provider selection và
+   `--allow-development-file-signer`, đồng thời luôn in warning exportable,
+   non-production custody; không fallback provider.
+8. Đã freeze
+   [`VNEXT_CLI_PROFILE_V1.md`](../specs/vnext/VNEXT_CLI_PROFILE_V1.md) và
+   machine profile cho command inventory, exact consent, signer selection,
+   scope-honest output, legacy isolation và semantic firewalls; CI có gate
+   P3.3 riêng.
+
+Local evidence:
+
+- default CLI: 37/37 test xanh;
+- feature-enabled CLI: 38/38 test xanh;
+- feature-enabled real runtime/API/CLI test chứng minh Need prepare/activate
+  exact replay giữ cùng identity, Public Use prepare không xuất receipt và
+  confirmation replay giữ cùng publication identity;
+- workspace tests, workspace check, feature-enabled Node/API/CLI/Desktop
+  checks, CLI clippy và rustfmt: xanh; clippy chỉ còn warning baseline cũ;
+- Web production build/lint: xanh, giữ nguyên 4 warning baseline;
+- `python scripts/ci/validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37
+  negative assertions, 55 vectors/21 domains, 9 identity/object vectors, 4
+  feed/event vectors, 366 normative lines, 14 REST endpoints/18 DTOs, 10
+  private-WS events/4 topics, 11 vNext CLI commands và 386 local links;
+- product/WebSocket validators: 14/14 xanh; CLI validator: 6/6 xanh.
+
+P3.3 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
+`main`. Work package kế tiếp là P3.4 Desktop/Web UX.
+
+Remote CI run
+[`30197999020`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30197999020)
+trên implementation commit `10c7b7d` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P3.3 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
+`main`, work package kế tiếp là P3.4 Desktop/Web UX.
