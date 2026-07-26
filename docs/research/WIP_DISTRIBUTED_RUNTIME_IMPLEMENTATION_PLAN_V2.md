@@ -1184,3 +1184,11 @@ Focused local evidence:
   negative assertions, 55 vectors/21 domains, 9 identity/object vectors, 4
   feed/event vectors, 170 normative lines, 14 endpoints/18 DTOs và 356 local
   links.
+
+Remote CI run `30182736780` trên implementation commit `ff1cacc` hoàn tất
+thành công ngày 2026-07-26: foundation contract, Linux default workspace,
+Linux feature-enabled real QUIC và Windows default/vNext/Desktop smoke đều
+xanh, với 0 annotation.
+
+P1.5 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
+P2.1 Runtime ownership.
