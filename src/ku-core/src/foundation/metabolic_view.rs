@@ -30,6 +30,12 @@ pub struct MetabolicViewPolicy {
 }
 
 impl MetabolicViewPolicy {
+    /// Validate and canonicalize a locally configured policy before it enters
+    /// an allow-listed runtime registry.
+    pub fn validated(&self) -> Result<Self, MetabolicViewError> {
+        self.normalized()
+    }
+
     fn normalized(&self) -> Result<Self, MetabolicViewError> {
         if self.policy_ref.cid == [0; 32]
             || self.accepted_evidence_policies.is_empty()

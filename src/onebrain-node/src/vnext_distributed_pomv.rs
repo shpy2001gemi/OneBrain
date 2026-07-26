@@ -7,7 +7,6 @@
 #![cfg(feature = "vnext-network-runtime")]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,7 +16,7 @@ use ku_core::foundation::{
     AssessedExerciseEvidence, DisclosureClass, EventCid, ExerciseAuthority, ExerciseEvidence,
     FeedAuthorityDecision, FeedEventSigner, FeedId, KnowledgeEventEnvelope, KnownObjectKind,
     MetabolicEvidenceFrontier, MetabolicEvidenceReducer, MetabolicEvidenceView,
-    MetabolicViewPolicy, NamespaceCommitment, NodeId, ObjectCid, ObjectReference, ObjectSemantics,
+    NamespaceCommitment, NodeId, ObjectCid, ObjectReference, ObjectSemantics,
     ProvenFeedEventSigner, ResourceProfile, SelectorCid, UseEvidencePayload,
     ValidatedKnowledgeEvent, ValidatedUseEvidenceEvent, USE_EVIDENCE_EVENT_TYPE, USE_EVIDENCE_KIND,
 };
@@ -30,6 +29,10 @@ use thiserror::Error;
 
 use crate::vnext_network_runtime::{VNextNetworkRuntime, VNextNetworkRuntimeError};
 use crate::vnext_outbox::{OutboundTransferIntent, OutboxEnqueueOutcome};
+use crate::vnext_route_authority::{
+    AuthenticatedRouteOrigin, AuthorityFrontierResolution, LocalPolicyRegistry,
+    LocalPolicyRegistryError, LocalPolicyVersion,
+};
 
 const PUBLICATIONS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_public_use_publications_v1");
@@ -43,7 +46,8 @@ const USE_IDENTITIES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_received_use_identities_v1");
 const VIEW_HEADS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_distributed_pomv_view_heads_v1");
-const PUBLICATION_SCHEMA: u64 = 2;
+const PUBLICATION_SCHEMA: u64 = 3;
+const LEGACY_PUBLICATION_SCHEMA_WITH_CALLER_ROUTE: u64 = 2;
 const PREPARED_PUBLIC_USE_SCHEMA: u64 = 1;
 const PUBLICATION_KEY_BYTES: usize = 64;
 const USE_IDENTITY_BYTES: usize = 72;
@@ -127,10 +131,9 @@ impl PreparedPublicUseIntent {
     /// The receipt stays private and has no byte-export API. Consuming this
     /// capability is the runtime boundary that a product UI must place behind
     /// an explicit user action.
-    pub fn confirm(self, last_known_addr: SocketAddr) -> ConfirmPublicUseEvidenceRequest {
+    pub fn confirm(self) -> ConfirmPublicUseEvidenceRequest {
         ConfirmPublicUseEvidenceRequest {
             intent_cid: self.intent_cid,
-            last_known_addr,
             receipt: self.receipt,
         }
     }
@@ -155,7 +158,6 @@ impl std::fmt::Debug for PreparedPublicUseIntent {
 
 pub struct ConfirmPublicUseEvidenceRequest {
     pub intent_cid: PublicUseIntentCid,
-    pub last_known_addr: SocketAddr,
     receipt: SingleUseConsentReceipt,
 }
 
@@ -163,7 +165,6 @@ impl std::fmt::Debug for ConfirmPublicUseEvidenceRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ConfirmPublicUseEvidenceRequest")
             .field("intent_cid", &self.intent_cid)
-            .field("last_known_addr", &self.last_known_addr)
             .field("receipt", &"[REDACTED]")
             .finish()
     }
@@ -173,7 +174,6 @@ impl std::fmt::Debug for ConfirmPublicUseEvidenceRequest {
 pub enum PublicUsePublishOutcome {
     Stored,
     ExactReplay,
-    RouteUpdated,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -189,13 +189,21 @@ pub struct PublicUseEvidencePublication {
     pub event_bytes: Vec<u8>,
     pub event_cid: EventCid,
     pub expected_peer: NodeId,
-    pub last_known_addr: SocketAddr,
     pub selector: SelectorCid,
     pub namespace: NamespaceCommitment,
 }
 
 impl PublicUseEvidencePublication {
-    pub fn transfer_intents(&self) -> Result<Vec<OutboundTransferIntent>, DistributedPomvError> {
+    pub fn transfer_intents(
+        &self,
+        network: &VNextNetworkRuntime,
+    ) -> Result<Vec<OutboundTransferIntent>, DistributedPomvError> {
+        let route = network
+            .authenticated_route(self.expected_peer)?
+            .ok_or(DistributedPomvError::AuthenticatedRouteUnavailable)?;
+        if route.origin != AuthenticatedRouteOrigin::OutboundResponder {
+            return Err(DistributedPomvError::AuthenticatedRouteUnavailable);
+        }
         [
             (ReconcileManifestKind::FeedInception, &self.feed_bytes),
             (ReconcileManifestKind::Object, &self.object_bytes),
@@ -205,7 +213,7 @@ impl PublicUseEvidencePublication {
         .map(|(kind, bytes)| {
             OutboundTransferIntent::new(
                 self.expected_peer,
-                self.last_known_addr,
+                route.addr,
                 self.selector,
                 self.namespace,
                 DisclosureClass::Public,
@@ -237,7 +245,8 @@ struct StoredPublication {
     idempotency_key: [u8; 32],
     receipt_commitment: [u8; 32],
     expected_peer: [u8; 32],
-    last_known_addr: String,
+    #[serde(rename = "last_known_addr", default, skip_serializing)]
+    legacy_caller_route: Option<String>,
     selector: [u8; 32],
     namespace: [u8; 32],
     feed_bytes: Vec<u8>,
@@ -456,7 +465,7 @@ impl PublicUseEvidencePublisher {
                 .map_err(storage)?
                 .map(|value| value.value().to_vec());
             if let Some(bytes) = existing {
-                let mut replay = decode_stored_publication(&bytes)?;
+                let replay = decode_stored_publication(&bytes)?;
                 validate_publication_against_prepared(
                     &replay,
                     &prepared,
@@ -467,18 +476,7 @@ impl PublicUseEvidencePublisher {
                 if !prepared.consumed {
                     return Err(DistributedPomvError::CorruptPreparedConsent);
                 }
-                let requested_addr = request.last_known_addr.to_string();
-                if replay.last_known_addr == requested_addr {
-                    outcome = PublicUsePublishOutcome::ExactReplay;
-                } else {
-                    replay.last_known_addr = requested_addr;
-                    replay.exported_to_network_outbox = false;
-                    let encoded = encode_stored_publication(&replay)?;
-                    publications
-                        .insert(key.as_slice(), encoded.as_slice())
-                        .map_err(storage)?;
-                    outcome = PublicUsePublishOutcome::RouteUpdated;
-                }
+                outcome = PublicUsePublishOutcome::ExactReplay;
                 stored = replay;
             } else {
                 if prepared.consumed {
@@ -534,7 +532,7 @@ impl PublicUseEvidencePublisher {
                     idempotency_key: prepared.idempotency_key,
                     receipt_commitment: prepared.receipt_commitment,
                     expected_peer: prepared.exact_recipient,
-                    last_known_addr: request.last_known_addr.to_string(),
+                    legacy_caller_route: None,
                     selector: prepared.selector,
                     namespace: prepared.namespace,
                     feed_bytes,
@@ -634,7 +632,7 @@ impl PublicUseEvidencePublisher {
         for (key, stored) in pending {
             report.scanned_publications = report.scanned_publications.saturating_add(1);
             let publication = publication_from_stored(&stored)?;
-            for intent in publication.transfer_intents()? {
+            for intent in publication.transfer_intents(network)? {
                 match network.enqueue_outbound(&intent)? {
                     OutboxEnqueueOutcome::Added => {
                         report.added_intents = report.added_intents.saturating_add(1)
@@ -901,7 +899,12 @@ fn encode_stored_publication(value: &StoredPublication) -> Result<Vec<u8>, Distr
 }
 
 fn decode_stored_publication(bytes: &[u8]) -> Result<StoredPublication, DistributedPomvError> {
-    let value = serde_json::from_slice(bytes).map_err(codec)?;
+    let mut value: StoredPublication = serde_json::from_slice(bytes).map_err(codec)?;
+    if value.schema == LEGACY_PUBLICATION_SCHEMA_WITH_CALLER_ROUTE {
+        value.schema = PUBLICATION_SCHEMA;
+        value.legacy_caller_route = None;
+        value.exported_to_network_outbox = false;
+    }
     validate_stored_publication(&value)?;
     Ok(value)
 }
@@ -952,7 +955,7 @@ fn validate_stored_publication(value: &StoredPublication) -> Result<(), Distribu
         selector,
         namespace,
     );
-    if expected_id != value.publication_id || value.last_known_addr.parse::<SocketAddr>().is_err() {
+    if expected_id != value.publication_id {
         return Err(DistributedPomvError::CorruptPublication);
     }
     Ok(())
@@ -1006,10 +1009,6 @@ fn publication_from_stored(
         event_bytes: stored.event_bytes.clone(),
         event_cid: event.cid(),
         expected_peer: NodeId::from_bytes(stored.expected_peer),
-        last_known_addr: stored
-            .last_known_addr
-            .parse()
-            .map_err(|_| DistributedPomvError::CorruptPublication)?,
         selector: SelectorCid::from_bytes(stored.selector),
         namespace: NamespaceCommitment::from_bytes(stored.namespace),
     })
@@ -1269,10 +1268,15 @@ pub struct DistributedPomvReport {
 pub struct DistributedPomvRuntime {
     identities: DurableUseIdentityIndex,
     max_records: usize,
+    policies: LocalPolicyRegistry,
 }
 
 impl DistributedPomvRuntime {
-    pub fn open(data_dir: &Path, max_records: usize) -> Result<Self, DistributedPomvError> {
+    pub fn open(
+        data_dir: &Path,
+        max_records: usize,
+        policies: LocalPolicyRegistry,
+    ) -> Result<Self, DistributedPomvError> {
         std::fs::create_dir_all(data_dir)?;
         // Validate the configured capacity at startup.
         MetabolicEvidenceReducer::new(max_records)
@@ -1282,6 +1286,7 @@ impl DistributedPomvRuntime {
                 &data_dir.join("vnext_distributed_pomv.redb"),
             )?,
             max_records,
+            policies,
         })
     }
 
@@ -1298,9 +1303,13 @@ impl DistributedPomvRuntime {
         network: &VNextNetworkRuntime,
         selector: SelectorCid,
         target: ObjectReference,
-        policy: &MetabolicViewPolicy,
-        authority_frontier: EventCid,
+        policy_version: LocalPolicyVersion,
     ) -> Result<DistributedPomvReport, DistributedPomvError> {
+        let policy = self
+            .policies
+            .resolve(policy_version)
+            .ok_or(DistributedPomvError::PolicyVersionNotAllowed)?
+            .clone();
         let mut objects = BTreeMap::new();
         let mut ignored_non_use_records = 0u64;
         let mut invalid_or_unbound_records = 0u64;
@@ -1334,6 +1343,7 @@ impl DistributedPomvRuntime {
         }
 
         let mut candidates = Vec::new();
+        let mut authority_resolutions = BTreeMap::<FeedId, AuthorityFrontierResolution>::new();
         let mut newly_indexed_events = 0u64;
         let mut replayed_index_events = 0u64;
         for bytes in network.accepted_event_bytes()? {
@@ -1345,7 +1355,19 @@ impl DistributedPomvRuntime {
                 }
             };
             let branches = network.feed_inception_branches(feed_id)?;
-            let decisions = network.feed_authority_at(feed_id, authority_frontier)?;
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                authority_resolutions.entry(feed_id)
+            {
+                entry.insert(network.resolve_feed_authority(feed_id)?);
+            }
+            let decisions = match authority_resolutions.get(&feed_id) {
+                Some(AuthorityFrontierResolution::Resolved { decisions, .. }) => decisions.clone(),
+                Some(
+                    AuthorityFrontierResolution::Missing
+                    | AuthorityFrontierResolution::Ambiguous { .. },
+                )
+                | None => Vec::new(),
+            };
             let mut event = None::<ValidatedKnowledgeEvent>;
             let mut verifying_branches = Vec::new();
             for (index, branch) in branches.iter().enumerate() {
@@ -1447,10 +1469,13 @@ impl DistributedPomvRuntime {
                 positions.insert(observation.author_feed, position);
             }
         }
-        let frontier = MetabolicEvidenceFrontier::new(authority_frontier.into_bytes(), positions)
-            .map_err(|error| DistributedPomvError::Metabolic(format!("{error:?}")))?;
+        let frontier = MetabolicEvidenceFrontier::new(
+            local_authority_frontier_digest(&authority_resolutions),
+            positions,
+        )
+        .map_err(|error| DistributedPomvError::Metabolic(format!("{error:?}")))?;
         let mut view = reducer
-            .materialize(target, policy, &frontier)
+            .materialize(target, &policy, &frontier)
             .map_err(|error| DistributedPomvError::Metabolic(format!("{error:?}")))?;
         let (revision, previous_view_root) = self.identities.apply_view_lineage(
             &view.target,
@@ -1474,6 +1499,34 @@ impl DistributedPomvRuntime {
             claims_network_completion: false,
         })
     }
+}
+
+fn local_authority_frontier_digest(
+    resolutions: &BTreeMap<FeedId, AuthorityFrontierResolution>,
+) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"onebrain:vnext:validated-local-authority-frontier:1\0");
+    hasher.update(&(resolutions.len() as u64).to_be_bytes());
+    for (feed, resolution) in resolutions {
+        hasher.update(feed.as_bytes());
+        match resolution {
+            AuthorityFrontierResolution::Resolved { frontier, .. } => {
+                hasher.update(&[1]);
+                hasher.update(frontier.as_bytes());
+            }
+            AuthorityFrontierResolution::Missing => {
+                hasher.update(&[0]);
+            }
+            AuthorityFrontierResolution::Ambiguous { frontiers } => {
+                hasher.update(&[2]);
+                hasher.update(&(frontiers.len() as u64).to_be_bytes());
+                for frontier in frontiers {
+                    hasher.update(frontier.as_bytes());
+                }
+            }
+        }
+    }
+    *hasher.finalize().as_bytes()
 }
 
 struct UseCandidate {
@@ -1557,6 +1610,12 @@ pub enum DistributedPomvError {
     IdentityIndexCorrupt,
     #[error("public UseEvidence batch limit is invalid")]
     InvalidLimit,
+    #[error("authenticated route for the exact recipient is unavailable")]
+    AuthenticatedRouteUnavailable,
+    #[error("requested local policy version is not allow-listed")]
+    PolicyVersionNotAllowed,
+    #[error("local policy registry failed: {0}")]
+    PolicyRegistry(#[from] LocalPolicyRegistryError),
     #[error("public UseEvidence codec failed: {0}")]
     Codec(String),
     #[error("public UseEvidence storage failed: {0}")]
@@ -1581,7 +1640,8 @@ mod tests {
     use ed25519_dalek::SigningKey;
     use ku_core::foundation::{
         ActorId, ActorRevocation, ActorRootDelegation, ConceptCcid, DeviceId, FeedInception,
-        MetabolicViewLimitation, ReservedDomain, UnresolvedAuthorityReason, UseMode,
+        MetabolicViewLimitation, MetabolicViewPolicy, ReservedDomain, UnresolvedAuthorityReason,
+        UseMode,
     };
 
     use super::*;
@@ -1734,7 +1794,6 @@ mod tests {
             idempotency_key: [0x28; 32],
             expires_at: 1_600,
         };
-        let route: SocketAddr = "127.0.0.1:32001".parse().unwrap();
         let first;
         let confirmation;
         {
@@ -1755,7 +1814,7 @@ mod tests {
             )
             .unwrap();
             assert_eq!(preview.disclosure(), DisclosureClass::Public);
-            confirmation = prepared.confirm(route);
+            confirmation = prepared.confirm();
             let (publication, outcome) = publisher
                 .publish_confirmed(&confirmation, &feed, &key)
                 .unwrap();
@@ -1768,6 +1827,26 @@ mod tests {
                 .unwrap();
             assert_eq!(outcome, PublicUsePublishOutcome::ExactReplay);
             assert_eq!(replay, publication);
+            let publication_key = publication_key(feed.feed_id, request.idempotency_key);
+            let legacy_bytes = {
+                let read = publisher.database.begin_read().unwrap();
+                let publications = read.open_table(PUBLICATIONS).unwrap();
+                publications
+                    .get(publication_key.as_slice())
+                    .unwrap()
+                    .unwrap()
+                    .value()
+                    .to_vec()
+            };
+            let mut legacy: serde_json::Value = serde_json::from_slice(&legacy_bytes).unwrap();
+            legacy["schema"] = serde_json::Value::from(LEGACY_PUBLICATION_SCHEMA_WITH_CALLER_ROUTE);
+            legacy["last_known_addr"] = serde_json::Value::from("127.0.0.1:9");
+            legacy["exported_to_network_outbox"] = serde_json::Value::from(true);
+            let migrated =
+                decode_stored_publication(&serde_json::to_vec(&legacy).unwrap()).unwrap();
+            assert_eq!(migrated.schema, PUBLICATION_SCHEMA);
+            assert_eq!(migrated.legacy_caller_route, None);
+            assert!(!migrated.exported_to_network_outbox);
 
             let mut conflict = request.clone();
             conflict.payload.task_context_commitment = [0x2A; 32];
@@ -1781,7 +1860,7 @@ mod tests {
             let second_confirmation = publisher
                 .prepare_public_use(&second_request, &feed)
                 .unwrap()
-                .confirm(route);
+                .confirm();
             let (second, outcome) = publisher
                 .publish_confirmed(&second_confirmation, &feed, &key)
                 .unwrap();
@@ -1827,7 +1906,7 @@ mod tests {
         let confirmation = publisher
             .prepare_public_use(&request, &feed)
             .unwrap()
-            .confirm("127.0.0.1:32001".parse().unwrap());
+            .confirm();
 
         assert!(matches!(
             publisher.publish_confirmed(&confirmation, &feed, &wrong_key),
@@ -1863,10 +1942,9 @@ mod tests {
         let publisher = test_publisher(directory.path(), clock.clone());
         let first = publisher.prepare_public_use(&base, &feed).unwrap();
         let first_intent = first.intent_cid;
-        let confirmation = first.confirm("127.0.0.1:32001".parse().unwrap());
+        let confirmation = first.confirm();
         let forged = ConfirmPublicUseEvidenceRequest {
             intent_cid: first_intent,
-            last_known_addr: confirmation.last_known_addr,
             receipt: SingleUseConsentReceipt([0xAA; 32]),
         };
         assert!(matches!(
@@ -1886,7 +1964,6 @@ mod tests {
             .unwrap();
         let swapped = ConfirmPublicUseEvidenceRequest {
             intent_cid: second.intent_cid,
-            last_known_addr: confirmation.last_known_addr,
             receipt: confirmation.receipt,
         };
         assert!(matches!(
@@ -1974,7 +2051,7 @@ mod tests {
         assert!(prepared_debug.contains("[REDACTED]"));
         assert!(!prepared_debug.contains(&receipt_debug));
 
-        let confirmation = prepared.confirm("127.0.0.1:32001".parse().unwrap());
+        let confirmation = prepared.confirm();
         let confirmation_debug = format!("{confirmation:?}");
         assert!(confirmation_debug.contains("[REDACTED]"));
         assert!(!confirmation_debug.contains(&receipt_debug));
@@ -2000,11 +2077,11 @@ mod tests {
         let old_confirmation = publisher
             .prepare_public_use(&request, &feed)
             .unwrap()
-            .confirm("127.0.0.1:32001".parse().unwrap());
+            .confirm();
         let current_confirmation = publisher
             .prepare_public_use(&request, &feed)
             .unwrap()
-            .confirm("127.0.0.1:32001".parse().unwrap());
+            .confirm();
         assert_eq!(old_confirmation.intent_cid, current_confirmation.intent_cid);
         assert!(matches!(
             publisher.publish_confirmed(&old_confirmation, &feed, &key),
@@ -2183,6 +2260,7 @@ mod tests {
             accepted_evidence_policies: vec![evidence_policy.clone()],
             recent_event_horizon: 16,
         };
+        let policy_version = LocalPolicyVersion::new(1).unwrap();
 
         let root_intents = enqueue_records(
             &sender,
@@ -2214,7 +2292,7 @@ mod tests {
         let request = publisher
             .prepare_public_use(&preparation, &fixture.feed)
             .unwrap()
-            .confirm(receiver.local_addr());
+            .confirm();
         let (publication, outcome) = publisher
             .publish_confirmed(&request, &fixture.feed, &fixture.feed_key)
             .unwrap();
@@ -2230,19 +2308,40 @@ mod tests {
         assert_eq!(flush.exported_publications, 1);
         assert_eq!(flush.added_intents, 3);
         assert_eq!(publisher.pending_publication_count().unwrap(), 0);
-        let publication_intents = publication.transfer_intents().unwrap();
+        let unrouted_dir = tempfile::tempdir().unwrap();
+        let mut unrouted = VNextNetworkRuntime::start(
+            unrouted_dir.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            VNextNetworkPolicy::default(),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            publication.transfer_intents(&unrouted),
+            Err(DistributedPomvError::AuthenticatedRouteUnavailable)
+        ));
+        unrouted.shutdown().await;
+        let publication_intents = publication.transfer_intents(&sender).unwrap();
         wait_acknowledged(&sender, &publication_intents).await;
         wait_event_sources(&receiver, publication.event_cid, selector, 1).await;
 
-        let pomv = DistributedPomvRuntime::open(receiver_dir.path(), 1_024).unwrap();
-        let one_path = pomv
-            .materialize_public_use_view(
+        let pomv = DistributedPomvRuntime::open(
+            receiver_dir.path(),
+            1_024,
+            LocalPolicyRegistry::new([(policy_version, view_policy.clone())]).unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            pomv.materialize_public_use_view(
                 &receiver,
                 selector,
                 target.clone(),
-                &view_policy,
-                fixture.root_cid,
-            )
+                LocalPolicyVersion::new(2).unwrap(),
+            ),
+            Err(DistributedPomvError::PolicyVersionNotAllowed)
+        ));
+        let one_path = pomv
+            .materialize_public_use_view(&receiver, selector, target.clone(), policy_version)
             .unwrap();
         assert_eq!(
             one_path.view.cumulative_event_ids,
@@ -2298,13 +2397,7 @@ mod tests {
             wait_acknowledged(&runtime, &intents).await;
             wait_event_sources(&receiver, publication.event_cid, selector, expected_paths).await;
             let report = pomv
-                .materialize_public_use_view(
-                    &receiver,
-                    selector,
-                    target.clone(),
-                    &view_policy,
-                    fixture.root_cid,
-                )
+                .materialize_public_use_view(&receiver, selector, target.clone(), policy_version)
                 .unwrap();
             assert_eq!(
                 report.view.cumulative_event_ids,
@@ -2350,13 +2443,7 @@ mod tests {
         );
         wait_acknowledged(&sender, &unknown_intents).await;
         let with_unknown = pomv
-            .materialize_public_use_view(
-                &receiver,
-                selector,
-                target.clone(),
-                &view_policy,
-                fixture.root_cid,
-            )
+            .materialize_public_use_view(&receiver, selector, target.clone(), policy_version)
             .unwrap();
         assert_eq!(
             with_unknown.view.cumulative_event_ids,
@@ -2389,15 +2476,14 @@ mod tests {
         )
         .await
         .unwrap();
-        let reopened = DistributedPomvRuntime::open(receiver_dir.path(), 1_024).unwrap();
+        let reopened = DistributedPomvRuntime::open(
+            receiver_dir.path(),
+            1_024,
+            LocalPolicyRegistry::new([(policy_version, view_policy.clone())]).unwrap(),
+        )
+        .unwrap();
         let after_restart = reopened
-            .materialize_public_use_view(
-                &restarted,
-                selector,
-                target.clone(),
-                &view_policy,
-                fixture.root_cid,
-            )
+            .materialize_public_use_view(&restarted, selector, target.clone(), policy_version)
             .unwrap();
         assert_eq!(after_restart.view.view_root, restart_root);
         assert_eq!(after_restart.view.revision, 2);
@@ -2456,13 +2542,7 @@ mod tests {
             "QUARANTINED_REVOKED_RELATIVE"
         );
         let revoked = reopened
-            .materialize_public_use_view(
-                &restarted,
-                selector,
-                target.clone(),
-                &view_policy,
-                revocation_cid,
-            )
+            .materialize_public_use_view(&restarted, selector, target.clone(), policy_version)
             .unwrap();
         assert!(revoked.view.cumulative_event_ids.is_empty());
         assert!(revoked.observations.iter().any(|observation| {
@@ -2510,13 +2590,7 @@ mod tests {
         );
         wait_acknowledged(&control_sender, &conflict_intents).await;
         let conflict = reopened
-            .materialize_public_use_view(
-                &restarted,
-                selector,
-                target,
-                &view_policy,
-                fixture.root_cid,
-            )
+            .materialize_public_use_view(&restarted, selector, target, policy_version)
             .unwrap();
         assert_eq!(conflict.idempotency_conflicts, 1);
         assert!(conflict.view.cumulative_event_ids.is_empty());

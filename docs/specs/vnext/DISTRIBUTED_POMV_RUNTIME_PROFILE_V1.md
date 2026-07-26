@@ -77,9 +77,9 @@ authorship, authority, truth, benefit or completion.
 
 ## 4. Authority, replay and conflict rules
 
-Callers cannot assert `ExerciseAuthority::Authorized`. For every verifying
-FeedInception branch, the runtime derives its decision against the exact
-caller-supplied authority frontier:
+Callers cannot assert `ExerciseAuthority::Authorized` or name a favorable
+authority frontier. For every verifying FeedInception branch, the runtime
+derives a terminal frontier from validated local authority state:
 
 | Feed authority decision | PoMV assessment |
 | --- | --- |
@@ -103,9 +103,11 @@ of EventCIDs.
 ## 5. Durable metabolic view
 
 `DistributedPomvRuntime` rebuilds accepted observations from durable objects,
-events, source provenance, Feed state and authority state. It then applies the
-frozen `MetabolicEvidenceReducer` using the exact target, policy reference,
-accepted evidence policies and authority frontier supplied by the caller.
+events, source provenance, Feed state and authority state. It resolves the
+requested allow-listed local policy version and applies the frozen
+`MetabolicEvidenceReducer` using the exact target and a derived local authority
+frontier commitment. The caller supplies neither the policy object nor the
+frontier.
 
 The runtime persists a view head per `(target, policy)`:
 
