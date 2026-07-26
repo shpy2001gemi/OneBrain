@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::extract::Request;
-use axum::http::{header, HeaderValue, Method, StatusCode};
+use axum::http::{header, HeaderName, HeaderValue, Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
@@ -25,6 +25,7 @@ use onebrain_node::OneBrainNode;
 use crate::handlers;
 use crate::types::ApiErrorResponse;
 use crate::vnext_api::VNextRestCoordinator;
+use crate::vnext_ws::{VNextWsHub, VNEXT_WS_CLIENT_SESSION_HEADER};
 
 // ─── App State ─────────────────────────────────────────────────────────────
 
@@ -40,6 +41,8 @@ pub struct AppState {
     /// Local authenticated orchestration state for short-lived prepared vNext
     /// capabilities. Durable runtime state remains node-owned.
     pub vnext_rest: VNextRestCoordinator,
+    /// Bounded, per-client vNext WebSocket tickets and event queues.
+    pub vnext_ws: VNextWsHub,
 }
 
 impl AppState {
@@ -71,6 +74,7 @@ impl ApiServer {
                 web_dir: None,
                 event_broadcast,
                 vnext_rest: VNextRestCoordinator::default(),
+                vnext_ws: VNextWsHub::default(),
             },
             port,
         }
@@ -87,9 +91,15 @@ impl ApiServer {
                 web_dir: None,
                 event_broadcast,
                 vnext_rest: VNextRestCoordinator::default(),
+                vnext_ws: VNextWsHub::default(),
             },
             port,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn vnext_ws_hub(&self) -> VNextWsHub {
+        self.state.vnext_ws.clone()
     }
 
     /// Set the directory containing built web dashboard files.
@@ -163,7 +173,12 @@ impl ApiServer {
                 Method::DELETE,
                 Method::OPTIONS,
             ])
-            .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT])
+            .allow_headers([
+                header::CONTENT_TYPE,
+                header::AUTHORIZATION,
+                header::ACCEPT,
+                HeaderName::from_static(VNEXT_WS_CLIENT_SESSION_HEADER),
+            ])
             .allow_credentials(true);
 
         // Build route tree
@@ -227,6 +242,10 @@ impl ApiServer {
             .route(
                 "/api/vnext/runtime/status",
                 get(crate::vnext_api::get_runtime_status),
+            )
+            .route(
+                "/api/vnext/ws/tickets",
+                post(crate::vnext_ws::create_ticket),
             )
             .route("/api/peers", get(handlers::get_peers))
             .route("/api/peers/connect", post(handlers::connect_peer))
@@ -355,8 +374,12 @@ impl ApiServer {
             .route("/api/domains", get(handlers::list_domains))
             .route("/api/domains/{domain}/kus", get(handlers::kus_by_domain));
 
-        // WebSocket (no auth middleware)
-        let ws_routes = Router::new().route("/ws/events", get(handlers::ws_events));
+        // WebSockets perform their own upgrade-compatible authentication.
+        // The legacy path retains its query-token boundary; the vNext path
+        // consumes a short-lived, single-use ticket minted behind Bearer auth.
+        let ws_routes = Router::new()
+            .route("/ws/events", get(handlers::ws_events))
+            .route("/api/vnext/ws", get(crate::vnext_ws::vnext_ws_events));
 
         let mut router = Router::new()
             .merge(api_routes)

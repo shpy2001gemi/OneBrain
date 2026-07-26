@@ -14,7 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::extract::rejection::JsonRejection;
 use axum::extract::rejection::QueryRejection;
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -87,7 +87,7 @@ pub struct VNextHttpError {
 }
 
 impl VNextHttpError {
-    fn new(
+    pub(crate) fn new(
         status: StatusCode,
         code: &'static str,
         message: impl Into<String>,
@@ -118,7 +118,7 @@ impl VNextHttpError {
         }
     }
 
-    fn invalid(message: impl Into<String>) -> Self {
+    pub(crate) fn invalid(message: impl Into<String>) -> Self {
         Self::new(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -201,9 +201,9 @@ impl IntoResponse for VNextHttpError {
     }
 }
 
-type VNextResult<T> = Result<Json<VNextSuccessV1<T>>, VNextHttpError>;
+pub(crate) type VNextResult<T> = Result<Json<VNextSuccessV1<T>>, VNextHttpError>;
 
-fn success<T: Serialize>(data: T, meta: VNextMetaV1) -> Json<VNextSuccessV1<T>> {
+pub(crate) fn success<T: Serialize>(data: T, meta: VNextMetaV1) -> Json<VNextSuccessV1<T>> {
     Json(VNextSuccessV1 {
         ok: true,
         profile: VNEXT_PRODUCT_PROFILE,
@@ -212,7 +212,7 @@ fn success<T: Serialize>(data: T, meta: VNextMetaV1) -> Json<VNextSuccessV1<T>> 
     })
 }
 
-fn active_meta(
+pub(crate) fn active_meta(
     coverage: CoverageV1,
     limitations: impl IntoIterator<Item = impl Into<String>>,
     continuation: Option<String>,
@@ -599,7 +599,7 @@ impl VNextRestCoordinator {
         self.lock().feed_publisher = Some(publisher);
     }
 
-    fn signer_ready(&self) -> bool {
+    pub(crate) fn signer_ready(&self) -> bool {
         #[cfg(feature = "vnext-network-runtime")]
         {
             self.lock().feed_publisher.is_some()
@@ -1613,12 +1613,13 @@ fn quarantined_match(
 pub async fn scan_need(
     State(state): State<AppState>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     body: Result<Json<NeedScanRequestV1>, JsonRejection>,
 ) -> VNextResult<NeedViewV1> {
     let request = parse_json(body)?;
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
-        let _ = (state, id, request);
+        let _ = (state, id, headers, request);
         return Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
@@ -1729,17 +1730,26 @@ pub async fn scan_need(
             view: view.clone(),
             continuation: scan_continuation.clone(),
         };
-        let mut coordinator = state.vnext_rest.lock();
-        let cache = coordinator.match_cache.entry(id_bytes).or_default();
-        for item in projected {
-            let proposal = bytes32("proposal_cid", &item.proposal_cid)
-                .expect("runtime produced a valid proposal CID");
-            cache.items.insert(proposal, item);
-        }
-        cache.scan_continuation = scan_continuation.clone();
-        coordinator
-            .scan_operations
-            .insert(request.idempotency_key, replay);
+        let new_match_count = {
+            let mut coordinator = state.vnext_rest.lock();
+            let cache = coordinator.match_cache.entry(id_bytes).or_default();
+            let mut new_match_count = 0usize;
+            for item in projected {
+                let proposal = bytes32("proposal_cid", &item.proposal_cid)
+                    .expect("runtime produced a valid proposal CID");
+                if cache.items.insert(proposal, item).is_none() {
+                    new_match_count = new_match_count.saturating_add(1);
+                }
+            }
+            cache.scan_continuation = scan_continuation.clone();
+            coordinator
+                .scan_operations
+                .insert(request.idempotency_key, replay);
+            new_match_count
+        };
+        state
+            .vnext_ws
+            .publish_bounded_match(&headers, new_match_count);
         Ok(success(
             view,
             active_meta(
@@ -2058,12 +2068,13 @@ pub async fn prepare_public_use(
 
 pub async fn confirm_public_use(
     State(state): State<AppState>,
+    headers: HeaderMap,
     body: Result<Json<PublicUseConfirmRequestV1>, JsonRejection>,
 ) -> VNextResult<PublicationViewV1> {
     let request = parse_json(body)?;
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
-        let _ = (state, request);
+        let _ = (state, headers, request);
         return Err(VNextHttpError::disabled(
             "Public UseEvidence publication runtime is not compiled",
             false,
@@ -2132,6 +2143,11 @@ pub async fn confirm_public_use(
                 VNextHttpError::dependency("committed publication projection is unavailable")
             })?;
         let data = publication_view(&record);
+        if outcome != onebrain_node::vnext_distributed_pomv::PublicUsePublishOutcome::ExactReplay {
+            state
+                .vnext_ws
+                .publish_publication_state(&headers, &data.state, data.revision, false);
+        }
         Ok(success(
             data,
             active_meta(
@@ -2201,10 +2217,11 @@ fn metabolic_limitation(limitation: ku_core::foundation::MetabolicViewLimitation
 pub async fn get_metabolic_view(
     State(state): State<AppState>,
     Path(target): Path<String>,
+    headers: HeaderMap,
 ) -> VNextResult<MetabolicEvidenceViewV1> {
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
-        let _ = (state, target);
+        let _ = (state, target, headers);
         return Err(VNextHttpError::disabled(
             "distributed PoMV view runtime is not compiled",
             false,
@@ -2234,6 +2251,12 @@ pub async fn get_metabolic_view(
                 &[&target_cid],
             )),
             _ => {
+                state.vnext_ws.publish_view_state(
+                    &headers,
+                    target_cid,
+                    0,
+                    &["multiple_selector_contexts".into()],
+                );
                 return Err(VNextHttpError::conflict(
                     "target has multiple local selector contexts; an explicit profile revision is required",
                 ));
@@ -2279,6 +2302,9 @@ pub async fn get_metabolic_view(
             .filter(|observation| observation.authority != ExerciseAuthority::Authorized)
             .map(|observation| hex32(observation.event_cid.as_bytes()))
             .collect::<Vec<_>>();
+        state
+            .vnext_ws
+            .publish_view_state(&headers, target_cid, report.view.revision, &conflicts);
         let data = MetabolicEvidenceViewV1 {
             target_cid: hex32(&report.view.target.cid),
             policy_cid: hex32(&report.view.policy.policy_ref.cid),
@@ -2326,10 +2352,26 @@ mod tests {
         path: &str,
         body: Option<Value>,
     ) -> (StatusCode, Value) {
+        call_with_client_session(router, method, path, body, None).await
+    }
+
+    async fn call_with_client_session(
+        router: axum::Router,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+        client_session: Option<&str>,
+    ) -> (StatusCode, Value) {
         let mut builder = Request::builder()
             .method(method)
             .uri(path)
             .header("Authorization", "Bearer p3-test-token");
+        if let Some(client_session) = client_session {
+            builder = builder.header(
+                crate::vnext_ws::VNEXT_WS_CLIENT_SESSION_HEADER,
+                client_session,
+            );
+        }
         let body = match body {
             Some(value) => {
                 builder = builder.header("Content-Type", "application/json");
@@ -2535,6 +2577,7 @@ mod tests {
     ) -> (
         axum::Router,
         Arc<tokio::sync::Mutex<onebrain_node::OneBrainNode>>,
+        crate::vnext_ws::VNextWsHub,
     ) {
         use ed25519_dalek::SigningKey;
         use ku_core::foundation::{
@@ -2572,17 +2615,18 @@ mod tests {
         let signer: Arc<dyn ku_core::foundation::FeedEventSigner> = feed_key;
         let publisher = VNextFeedPublisher::new(author, signer).unwrap();
         let shared = Arc::new(tokio::sync::Mutex::new(node));
-        let router = ApiServer::with_shared_node(Arc::clone(&shared), "p3-test-token".into(), 0)
-            .with_vnext_feed_publisher(publisher)
-            .build_router();
-        (router, shared)
+        let server = ApiServer::with_shared_node(Arc::clone(&shared), "p3-test-token".into(), 0)
+            .with_vnext_feed_publisher(publisher);
+        let hub = server.vnext_ws_hub();
+        let router = server.build_router();
+        (router, shared, hub)
     }
 
     #[cfg(feature = "vnext-network-runtime")]
     #[tokio::test]
     async fn need_rest_flow_is_private_idempotent_partial_and_quarantined() {
         let directory = tempfile::tempdir().unwrap();
-        let (router, shared) = active_router(&directory).await;
+        let (router, shared, _) = active_router(&directory).await;
         let request = valid_need_prepare();
         let (status, first) = call(
             router.clone(),
@@ -2703,7 +2747,11 @@ mod tests {
     #[tokio::test]
     async fn public_use_requires_exact_explicit_confirmation_and_replays_identity() {
         let directory = tempfile::tempdir().unwrap();
-        let (router, shared) = active_router(&directory).await;
+        let (router, shared, hub) = active_router(&directory).await;
+        let (client_session, mut ws_events) = hub.open_test_session(&[
+            crate::vnext_ws::VNextWsTopicV1::Publications,
+            crate::vnext_ws::VNextWsTopicV1::Views,
+        ]);
         let expires_at = now_epoch() + 120;
         let prepare = json!({
             "target_cid": "41".repeat(32),
@@ -2755,11 +2803,12 @@ mod tests {
             "intent_cid": intent,
             "single_use_receipt": receipt
         });
-        let (status, publication) = call(
+        let (status, publication) = call_with_client_session(
             router.clone(),
             Method::POST,
             "/api/vnext/pomv/public-use/confirm",
             Some(confirmation.clone()),
+            Some(&client_session),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
@@ -2769,12 +2818,19 @@ mod tests {
             .to_string();
         assert_eq!(publication_id.len(), 64);
         assert_ne!(publication["data"]["state"], "authorized");
+        let publication_event = ws_events.try_recv().unwrap();
+        assert!(matches!(
+            publication_event.event_type,
+            crate::vnext_ws::VNextWsEventTypeV1::PublicationQueued
+                | crate::vnext_ws::VNextWsEventTypeV1::PublicationDeferred
+        ));
 
-        let (_, replay) = call(
+        let (_, replay) = call_with_client_session(
             router.clone(),
             Method::POST,
             "/api/vnext/pomv/public-use/confirm",
             Some(confirmation),
+            Some(&client_session),
         )
         .await;
         assert_eq!(
@@ -2782,6 +2838,7 @@ mod tests {
             publication["data"]["publication_cid"]
         );
         assert!(replay.to_string().contains("exact_confirmation_replay"));
+        assert!(ws_events.try_recv().is_err());
 
         let (status, fetched) = call(
             router.clone(),
@@ -2795,11 +2852,12 @@ mod tests {
             fetched["data"]["publication_cid"],
             publication["data"]["publication_cid"]
         );
-        let (status, view) = call(
+        let (status, view) = call_with_client_session(
             router,
             Method::GET,
             &format!("/api/vnext/pomv/views/{}", "41".repeat(32)),
             None,
+            Some(&client_session),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{view}");
@@ -2812,6 +2870,22 @@ mod tests {
         ] {
             assert_eq!(view["data"][field], false);
         }
+        let view_event = ws_events.try_recv().unwrap();
+        assert!(matches!(
+            view_event.event_type,
+            crate::vnext_ws::VNextWsEventTypeV1::ViewRevision
+                | crate::vnext_ws::VNextWsEventTypeV1::ViewConflict
+        ));
+        let event_wire = serde_json::to_value(view_event).unwrap();
+        for field in [
+            "establishes_truth",
+            "establishes_benefit",
+            "authorizes_reward",
+            "claims_global_completion",
+        ] {
+            assert_eq!(event_wire["data"][field], false);
+        }
+        assert!(!event_wire.to_string().contains(&"41".repeat(32)));
         shared.lock().await.shutdown_network().await;
     }
 }

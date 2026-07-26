@@ -74,6 +74,7 @@ jobs:
         run: |
           python scripts/ci/validate_vnext_contracts.py
           python -m unittest scripts.ci.test_validate_vnext_product_profile
+          python -m unittest scripts.ci.test_validate_vnext_ws_profile
 
       - name: Build and verify a small Concept Registry fixture
         working-directory: .
@@ -181,6 +182,7 @@ jobs:
           onebrain-api/src/handlers.rs
           onebrain-api/src/server.rs
           onebrain-api/src/vnext_api.rs
+          onebrain-api/src/vnext_ws.rs
           onebrain-cli/src/cli/help.rs
           onebrain-cli/src/cli/mod.rs
           onebrain-cli/src/cli/workflow.rs
@@ -519,6 +521,12 @@ jobs:
           cargo test --locked -p onebrain-api
           --features vnext-network-runtime
           --lib vnext_api::tests
+          -- --test-threads=1
+      - name: P3.2 private WebSocket isolation and backpressure
+        run: >-
+          cargo test --locked -p onebrain-api
+          --features vnext-network-runtime
+          --lib vnext_ws::tests
           -- --test-threads=1
       - name: Node-owned real QUIC lifecycle
         run: >-

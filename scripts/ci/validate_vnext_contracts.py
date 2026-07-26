@@ -24,6 +24,9 @@ FEED_EVENT_VECTORS = ROOT / "src/test-vectors/vnext/foundation/feed-event-v1.jso
 PRODUCT_PROFILE = (
     ROOT / "src/test-vectors/vnext/product-integration-profile-v1.json"
 )
+PRIVATE_WS_PROFILE = (
+    ROOT / "src/test-vectors/vnext/private-websocket-profile-v1.json"
+)
 
 TASK_ROW = re.compile(r"^\|\s*\[[ x~]\]\s*`([A-Z][A-Z0-9]*-\d{3})`")
 TASK_ID = re.compile(r"(?<!ADR-)(?<!NEG-)\b[A-Z][A-Z0-9]*-\d{3}\b")
@@ -465,6 +468,159 @@ def validate_product_integration_profile(
     return len(endpoints), len(dtos)
 
 
+def validate_private_websocket_profile(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(PRIVATE_WS_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(
+                f"invalid private WebSocket profile JSON: {error}"
+            ) from error
+
+    if profile.get("format") != "onebrain/vnext-private-websocket-profile/1":
+        raise ContractError("unexpected private WebSocket profile format")
+    if profile.get("profile_id") != "VNEXT_PRIVATE_WEBSOCKET_PROFILE_V1":
+        raise ContractError("unexpected private WebSocket profile ID")
+    if profile.get("version") != 1:
+        raise ContractError("unexpected private WebSocket profile version")
+
+    expected_routes = {
+        (
+            "POST",
+            "/api/vnext/ws/tickets",
+            "bearer",
+            "VNextWsTicketRequestV1",
+            "VNextWsTicketV1",
+        ),
+        (
+            "GET",
+            "/api/vnext/ws",
+            "single_use_ticket",
+            "VNextWsTicketQuery",
+            "websocket_upgrade",
+        ),
+    }
+    routes = profile.get("routes")
+    if not isinstance(routes, list):
+        raise ContractError("private WebSocket profile lacks routes")
+    actual_routes = {
+        (
+            row.get("method"),
+            row.get("path"),
+            row.get("authentication"),
+            row.get("request"),
+            row.get("response"),
+        )
+        for row in routes
+        if isinstance(row, dict)
+    }
+    if actual_routes != expected_routes:
+        raise ContractError("private WebSocket route inventory drift")
+
+    expected_ticket = {
+        "encoding": "base64url_no_pad",
+        "prefix": "obw1.",
+        "decoded_bytes": 32,
+        "single_use": True,
+        "ticket_ttl_seconds": 30,
+        "session_ttl_seconds": 900,
+        "subscription_immutable": True,
+    }
+    if profile.get("ticket") != expected_ticket:
+        raise ContractError("private WebSocket ticket contract drift")
+
+    expected_topics = {"matches", "publications", "views", "runtime"}
+    topics = profile.get("topics")
+    if not isinstance(topics, list) or set(topics) != expected_topics:
+        raise ContractError("private WebSocket topic inventory drift")
+
+    expected_envelope = {
+        "profile",
+        "event_type",
+        "sequence",
+        "timestamp",
+        "lifecycle",
+        "coverage",
+        "limitations",
+        "data",
+    }
+    envelope = profile.get("event_envelope_required")
+    if not isinstance(envelope, list) or set(envelope) != expected_envelope:
+        raise ContractError("private WebSocket event envelope drift")
+
+    expected_events = {
+        "subscription_ready",
+        "bounded_match_available",
+        "publication_queued",
+        "publication_delivered",
+        "publication_deferred",
+        "view_revision",
+        "view_conflict",
+        "lane_active",
+        "lane_disabled",
+        "lane_degraded",
+    }
+    events = profile.get("event_types")
+    if not isinstance(events, list) or set(events) != expected_events:
+        raise ContractError("private WebSocket event inventory drift")
+
+    expected_limits = {
+        "max_topics": 4,
+        "max_pending_tickets": 128,
+        "max_active_sessions": 64,
+        "event_queue_capacity": 32,
+        "max_client_message_bytes": 4096,
+    }
+    if profile.get("limits") != expected_limits:
+        raise ContractError("private WebSocket bounded limits drift")
+
+    expected_publication_states = {
+        "queued": "pending",
+        "delivered": "delivered",
+        "deferred": "deferred",
+        "delivered_requires_durable_authenticated_acknowledgement": True,
+    }
+    if profile.get("publication_states") != expected_publication_states:
+        raise ContractError("private WebSocket publication state drift")
+
+    expected_non_exportable = {
+        "local_query",
+        "standing_need_id",
+        "query_definition_cid",
+        "private_target",
+        "proposal_cid",
+        "single_use_receipt",
+        "client_session",
+        "ticket",
+    }
+    non_exportable = profile.get("event_non_exportable_fields")
+    if not isinstance(non_exportable, list) or set(non_exportable) != expected_non_exportable:
+        raise ContractError("private WebSocket non-exportable field inventory drift")
+
+    expected_firewalls = {
+        "cross_client_delivery",
+        "event_is_authority",
+        "event_materializes_mapping",
+        "event_creates_use_evidence",
+        "event_establishes_truth",
+        "event_establishes_benefit",
+        "event_authorizes_reward",
+        "event_claims_global_completion",
+        "slow_client_blocks_runtime",
+    }
+    firewalls = profile.get("semantic_firewalls")
+    if (
+        not isinstance(firewalls, dict)
+        or set(firewalls) != expected_firewalls
+        or any(value is not False for value in firewalls.values())
+    ):
+        raise ContractError("private WebSocket semantic firewall must remain fail-closed")
+
+    return len(events), len(topics)
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -559,6 +715,7 @@ def main() -> int:
         assertions = validate_negative_assertions()
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
+        ws_events, ws_topics = validate_private_websocket_profile()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -572,6 +729,7 @@ def main() -> int:
         f"{schema_vectors} identity-object vectors, "
         f"{event_vectors} feed-event vectors, {normative_lines} normative lines, "
         f"{product_endpoints} product endpoints/{product_dtos} DTOs, "
+        f"{ws_events} private-WS events/{ws_topics} topics, "
         f"{links} local links"
     )
     return 0
