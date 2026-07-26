@@ -1947,11 +1947,11 @@ M5-03 đã hoàn tất ở cấp implementation và remote evidence. Sau khi mer
 6. Tạo cargo-fuzz workspace riêng, pin `libfuzzer-sys = 0.4.13`, sáu wrapper
    target và corpus PR đúng 3 seed/target. 18 case có frozen SHA-256
    `465d554e235738511b69e37c33c0b5e6fcccbc09f8b30e010d7d3eac916c66fd`.
-7. Thêm nightly workflow pin `cargo-fuzz 0.13.2`, matrix sáu target, mỗi target
-   60 giây, timeout từng input 10 giây, max input 4.096 byte và giữ crash
-   artifact 14 ngày.
+7. Thêm nightly workflow pin Rust `nightly-2026-07-20`,
+   `cargo-fuzz 0.13.2`, matrix sáu target, mỗi target 60 giây, timeout từng
+   input 10 giây, max input 4.096 byte và giữ crash artifact 14 ngày.
 8. CI foundation thêm real-QUIC chaos/flood, shared-target adversarial test,
-   deterministic corpus smoke; validator và 12 mutation tests khóa scenario,
+   deterministic corpus smoke; validator và 13 mutation tests khóa scenario,
    resource cap, trace/oracle, target/corpus, digest, nightly budget và feature
    firewall.
 
@@ -1961,7 +1961,7 @@ Local evidence:
 - `ku-net --features dr-m5-chaos-harness --lib`: 294/294 test xanh;
 - `onebrain-node --features vnext-chaos-harness --lib`: 141/141 test xanh;
 - PR corpus smoke: 18/18 case, corpus SHA-256 và chaos oracle đúng frozen value;
-- M5-04 mutation tests: 12/12; toàn bộ machine-profile mutation tests: 74/74
+- M5-04 mutation tests: 13/13; toàn bộ machine-profile mutation tests: 75/75
   xanh;
 - `cargo test --workspace --locked --no-fail-fast -- --test-threads=2`: xanh;
 - feature-enabled clippy: exit code 0, chỉ còn warning baseline, không có warning

@@ -1845,6 +1845,7 @@ def validate_vnext_dr_m5_chaos_fuzz(
     nightly = profile.get("nightly")
     if not isinstance(nightly, dict) or nightly != {
         "workflow": ".github/workflows/vnext-fuzz-nightly.yml",
+        "rust_toolchain": "nightly-2026-07-20",
         "max_total_time_seconds_per_target": 60,
         "timeout_seconds_per_input": 10,
         "matrix_targets": 6,
@@ -1955,6 +1956,8 @@ def validate_vnext_dr_m5_chaos_fuzz(
 
     nightly_source = read(ROOT / ".github/workflows/vnext-fuzz-nightly.yml")
     for needle in (
+        "RUSTUP_TOOLCHAIN: nightly-2026-07-20",
+        'rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --no-self-update',
         "cargo install cargo-fuzz --version 0.13.2 --locked",
         "-max_total_time=60 -timeout=10 -max_len=4096",
         "retention-days: 14",

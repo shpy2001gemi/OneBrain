@@ -30,9 +30,12 @@ jobs:
     defaults:
       run:
         working-directory: src/fuzz
+    env:
+      RUSTUP_TOOLCHAIN: nightly-2026-07-20
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install frozen Rust nightly
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --no-self-update
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |

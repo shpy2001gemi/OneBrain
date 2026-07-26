@@ -43,7 +43,7 @@ Machine-readable contract:
 - An accepted canonical, session, reconciliation, carrier, or journal encoding MUST re-encode byte-for-byte.
 - Domain-record fuzzing MUST cover Object, Event, Feed, Authority, UseEvidence, and DerivationEvidence decode paths.
 - Legacy fuzzing MUST preserve the no-authority boundary and MUST NOT serialize `GLOBAL` as a vNext scope.
-- Nightly CI MUST pin cargo-fuzz 0.13.2 and libfuzzer-sys 0.4.13.
+- Nightly CI MUST pin Rust nightly-2026-07-20, cargo-fuzz 0.13.2, and libfuzzer-sys 0.4.13.
 - Nightly CI MUST give every frozen target 60 seconds total, a 10-second per-input timeout, and a 4,096-byte maximum.
 - Nightly crashes MUST upload artifacts for 14 days.
 

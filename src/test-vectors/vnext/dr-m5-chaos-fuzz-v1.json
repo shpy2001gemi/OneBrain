@@ -63,6 +63,7 @@
   },
   "nightly": {
     "workflow": ".github/workflows/vnext-fuzz-nightly.yml",
+    "rust_toolchain": "nightly-2026-07-20",
     "max_total_time_seconds_per_target": 60,
     "timeout_seconds_per_input": 10,
     "matrix_targets": 6,

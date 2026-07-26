@@ -81,6 +81,12 @@ class VNextDrM5ChaosFuzzTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "nightly"):
             validate_vnext_dr_m5_chaos_fuzz(profile)
 
+    def test_nightly_toolchain_cannot_drift(self) -> None:
+        profile = copy.deepcopy(frozen_profile())
+        profile["nightly"]["rust_toolchain"] = "nightly"
+        with self.assertRaisesRegex(ContractError, "nightly"):
+            validate_vnext_dr_m5_chaos_fuzz(profile)
+
     def test_exit_oracle_cannot_disappear(self) -> None:
         profile = copy.deepcopy(frozen_profile())
         profile["exit_oracles"].remove("bounded_state_under_flood")
