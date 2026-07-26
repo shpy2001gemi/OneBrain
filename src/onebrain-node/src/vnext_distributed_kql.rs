@@ -14,14 +14,14 @@ use ku_core::foundation::{
     DisclosureClass, EventCid, KnowledgeAffordance, KnownObjectKind, NodeId, ObjectReference,
     ObjectSemantics, ResourceProfile, SelectorCid, KNOWLEDGE_AFFORDANCE_KIND,
 };
+use ku_kql::vnext_private_need::{
+    LocalNeedVaultKey, PrivateNeedBundle, PrivateNeedLifecycle, RedbPrivateNeedVault,
+};
 use ku_kql::vnext_proposal::{BindingProposal, ProposalId, ProposalQuarantine};
 use ku_kql::vnext_reunion::{
     LocalNeedTarget, ReunionBudget, ReunionFrontier, ValidatedRemoteAffordance,
 };
-use ku_kql::vnext_standing_need::{
-    RedbStandingNeedBackend, StandingNeed, StandingNeedId, StandingNeedState, StandingNeedStore,
-    StandingNeedWriteOutcome,
-};
+use ku_kql::vnext_standing_need::{StandingNeed, StandingNeedId, StandingNeedWriteOutcome};
 use onebrain_protocol::ReconcileManifestKind;
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 use thiserror::Error;
@@ -93,7 +93,7 @@ pub struct DistributedKqlReport {
 }
 
 pub struct DistributedKqlRuntime {
-    standing_needs: StandingNeedStore<RedbStandingNeedBackend>,
+    private_needs: RedbPrivateNeedVault,
     targets: BTreeMap<[u8; 32], LocalNeedTarget>,
     frontier: ReunionFrontier,
     quarantine: ProposalQuarantine,
@@ -101,36 +101,54 @@ pub struct DistributedKqlRuntime {
 }
 
 impl DistributedKqlRuntime {
-    pub fn open(data_dir: &Path) -> Result<Self, DistributedKqlError> {
+    pub fn open(
+        data_dir: &Path,
+        vault_key: LocalNeedVaultKey,
+    ) -> Result<Self, DistributedKqlError> {
         std::fs::create_dir_all(data_dir)?;
-        let standing_needs = StandingNeedStore::new(
-            RedbStandingNeedBackend::open(data_dir.join("vnext_standing_needs.redb"))
-                .map_err(DistributedKqlError::Storage)?,
-        );
+        if data_dir.join("vnext_standing_needs.redb").exists() {
+            return Err(DistributedKqlError::LegacyPrivateNeedState);
+        }
+        let private_needs =
+            RedbPrivateNeedVault::open(&data_dir.join("vnext_private_need_vault.redb"), vault_key)?;
+        let mut targets = BTreeMap::new();
+        for record in private_needs.load_all()? {
+            if record.lifecycle == PrivateNeedLifecycle::Active {
+                let target = record
+                    .bundle
+                    .ok_or(DistributedKqlError::PrivateNeedInvariant)?;
+                targets.insert(*record.id.as_bytes(), target.target);
+            }
+        }
         let durable_matches =
             DurableMatchIndex::open(&data_dir.join("vnext_distributed_kql.redb"))?;
         Ok(Self {
-            standing_needs,
-            targets: BTreeMap::new(),
+            private_needs,
+            targets,
             frontier: ReunionFrontier::default(),
             quarantine: ProposalQuarantine::default(),
             durable_matches,
         })
     }
 
-    /// Persist the LOCAL_ONLY StandingNeed and attach the private typed target
-    /// for this process. After restart the caller rehydrates this target from
-    /// its Private Vault; exact reattachment is idempotent.
-    pub fn register_local_target(
+    /// Atomically persist the LOCAL_ONLY QueryDefinition and exact typed
+    /// target in the encrypted Private Vault.
+    pub fn register_private_need(
         &mut self,
-        target: LocalNeedTarget,
+        bundle: PrivateNeedBundle,
     ) -> Result<(StandingNeedId, StandingNeedWriteOutcome), DistributedKqlError> {
-        target.need.validate()?;
-        if target.need.state != StandingNeedState::Active {
+        if bundle.target.need.state != ku_kql::vnext_standing_need::StandingNeedState::Active {
             return Err(DistributedKqlError::StandingNeedInactive);
         }
-        let (id, outcome) = self.standing_needs.put(&target.need)?;
-        self.targets.insert(*id.as_bytes(), target);
+        let target = bundle.target.clone();
+        let (id, outcome) = self.private_needs.put(bundle)?;
+        if !matches!(
+            outcome,
+            StandingNeedWriteOutcome::StaleGeneration
+                | StandingNeedWriteOutcome::GenerationConflict
+        ) {
+            self.targets.insert(*id.as_bytes(), target);
+        }
         Ok((id, outcome))
     }
 
@@ -138,7 +156,57 @@ impl DistributedKqlRuntime {
         &self,
         id: StandingNeedId,
     ) -> Result<Option<StandingNeed>, DistributedKqlError> {
-        self.standing_needs.get(id).map_err(Into::into)
+        Ok(self
+            .private_needs
+            .get(id)?
+            .and_then(|record| record.bundle.map(|bundle| bundle.target.need)))
+    }
+
+    pub fn active_target_count(&self) -> usize {
+        self.targets.len()
+    }
+
+    pub fn pause(
+        &mut self,
+        id: StandingNeedId,
+        expected_generation: u64,
+    ) -> Result<u64, DistributedKqlError> {
+        let record = self.private_needs.pause(id, expected_generation)?;
+        self.targets.remove(id.as_bytes());
+        Ok(record.generation)
+    }
+
+    pub fn resume(
+        &mut self,
+        id: StandingNeedId,
+        expected_generation: u64,
+    ) -> Result<u64, DistributedKqlError> {
+        let record = self.private_needs.resume(id, expected_generation)?;
+        let bundle = record
+            .bundle
+            .ok_or(DistributedKqlError::PrivateNeedInvariant)?;
+        self.targets.insert(*id.as_bytes(), bundle.target);
+        Ok(record.generation)
+    }
+
+    pub fn cancel(
+        &mut self,
+        id: StandingNeedId,
+        expected_generation: u64,
+    ) -> Result<u64, DistributedKqlError> {
+        let record = self.private_needs.cancel(id, expected_generation)?;
+        self.targets.remove(id.as_bytes());
+        Ok(record.generation)
+    }
+
+    pub fn retire(
+        &mut self,
+        id: StandingNeedId,
+        expected_generation: u64,
+    ) -> Result<u64, DistributedKqlError> {
+        let record = self.private_needs.retire(id, expected_generation)?;
+        self.targets.remove(id.as_bytes());
+        Ok(record.generation)
     }
 
     pub fn proposal(&self, id: ProposalId) -> Option<&BindingProposal> {
@@ -466,12 +534,20 @@ pub enum DistributedKqlError {
     MissingAffordanceProvenance,
     #[error("distributed KQL durable match identity conflicts")]
     DurableMatchConflict,
+    #[error("distributed KQL private-need invariant failed")]
+    PrivateNeedInvariant,
+    #[error(
+        "legacy plaintext StandingNeed state requires explicit recreation in the encrypted vault"
+    )]
+    LegacyPrivateNeedState,
     #[error("distributed KQL resource limit exceeded")]
     Limit,
     #[error("distributed KQL filesystem operation failed: {0}")]
     Io(#[from] std::io::Error),
     #[error("distributed KQL StandingNeed failed: {0:?}")]
     StandingNeed(ku_kql::vnext_standing_need::StandingNeedError),
+    #[error("distributed KQL Private Vault failed: {0:?}")]
+    PrivateNeed(ku_kql::vnext_private_need::PrivateNeedError),
     #[error("distributed KQL network runtime failed: {0}")]
     Network(#[from] VNextNetworkRuntimeError),
 }
@@ -482,17 +558,24 @@ impl From<ku_kql::vnext_standing_need::StandingNeedError> for DistributedKqlErro
     }
 }
 
+impl From<ku_kql::vnext_private_need::PrivateNeedError> for DistributedKqlError {
+    fn from(error: ku_kql::vnext_private_need::PrivateNeedError) -> Self {
+        Self::PrivateNeed(error)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
     use ku_core::foundation::{
         AcceptedInput, AffordanceOrigin, AffordanceSemantics, ConceptCcid, KnowledgeObjectEnvelope,
-        NamespaceCommitment, ObjectCid, ReceptorAcceptanceProfile, ReceptorCardinality,
-        ReceptorDefinition, ReceptorOrigin, StatementFrame, StatementId, StatementLocator,
-        StatementQualifiers, TermRef, UnknownConstraintPolicy, RECEPTOR_DEFINITION_KIND,
+        NamespaceCommitment, ReceptorAcceptanceProfile, ReceptorCardinality, ReceptorDefinition,
+        ReceptorOrigin, StatementFrame, StatementId, StatementLocator, StatementQualifiers,
+        TermRef, UnknownConstraintPolicy, RECEPTOR_DEFINITION_KIND,
     };
     use ku_kql::vnext_matcher::MatcherMetricConcepts;
+    use ku_kql::vnext_query::{KnowledgeNeedIr, QueryDefinition};
 
     use super::*;
     use crate::vnext_config::VNextNetworkPolicy;
@@ -513,7 +596,7 @@ mod tests {
     fn frames(marker: u8) -> ku_core::foundation::SemanticFrameSet {
         ku_core::foundation::SemanticFrameSet {
             statements: vec![StatementFrame {
-                statement_id: StatementId(1),
+                statement_id: StatementId(0),
                 operator_or_predicate: concept(3),
                 arguments: vec![TermRef::Concept(concept(marker))],
                 constraints: vec![],
@@ -571,35 +654,52 @@ mod tests {
         }
     }
 
-    fn target(selector: SelectorCid) -> LocalNeedTarget {
+    fn private_need(selector: SelectorCid) -> PrivateNeedBundle {
         let receptor_object = receptor()
             .to_knowledge_object(DisclosureClass::LocalOnly)
             .unwrap();
         let (_, receptor_cid) = receptor_object.encode(ResourceProfile::ObjectV1).unwrap();
-        LocalNeedTarget {
-            need: StandingNeed::new_local(
-                ObjectReference::new(RECEPTOR_DEFINITION_KIND.0, receptor_cid.into_bytes()),
-                ObjectCid::from_bytes([0xF1; 32]),
-                selector,
-                reference(32),
-                [33; 32],
-            ),
-            receptor: receptor(),
-            required_semantics: frames(60),
-            local_context: empty(),
-            generator: reference(34),
-            derivation_rule: Some(reference(35)),
-            evidence: vec![reference(36)],
-            index_commitment: Some(reference(37)),
-            rule_commitment: Some(reference(38)),
-            metrics: MatcherMetricConcepts {
-                structural_fit: concept(40),
-                constraint_fit: concept(41),
+        let receptor_definition =
+            ObjectReference::new(RECEPTOR_DEFINITION_KIND.0, receptor_cid.into_bytes());
+        let query_definition = QueryDefinition {
+            need: KnowledgeNeedIr {
+                receptor_definitions: vec![receptor_definition.clone()],
+                desired_roles: vec![concept(1)],
+                goal: frames(60),
+                local_context: frames(99),
+                privacy: DisclosureClass::LocalOnly,
             },
-            unmapped_reason: concept(42),
-            source_frontier: EventCid::from_bytes([43; 32]),
-            created_at_evaluation: 1,
-            expires_after_evaluations: 10,
+            query_policy: reference(30),
+            exploration_policy: reference(31),
+        };
+        let query_cid = query_definition.private_cid().unwrap();
+        PrivateNeedBundle {
+            query_definition,
+            target: LocalNeedTarget {
+                need: StandingNeed::new_local(
+                    receptor_definition,
+                    query_cid,
+                    selector,
+                    reference(32),
+                    [33; 32],
+                ),
+                receptor: receptor(),
+                required_semantics: frames(60),
+                local_context: frames(99),
+                generator: reference(34),
+                derivation_rule: Some(reference(35)),
+                evidence: vec![reference(36)],
+                index_commitment: Some(reference(37)),
+                rule_commitment: Some(reference(38)),
+                metrics: MatcherMetricConcepts {
+                    structural_fit: concept(40),
+                    constraint_fit: concept(41),
+                },
+                unmapped_reason: concept(42),
+                source_frontier: EventCid::from_bytes([43; 32]),
+                created_at_evaluation: 1,
+                expires_after_evaluations: 10,
+            },
         }
     }
 
@@ -697,9 +797,15 @@ mod tests {
             OutboundIntentState::Acknowledged
         );
 
-        let mut local = DistributedKqlRuntime::open(receiver_dir.path()).unwrap();
+        let mut local = DistributedKqlRuntime::open(
+            receiver_dir.path(),
+            LocalNeedVaultKey::from_bytes([0xA5; 32]),
+        )
+        .unwrap();
         assert_eq!(local.durable_match_count().unwrap(), 0);
-        let (need_id, outcome) = local.register_local_target(target(selector)).unwrap();
+        let private_need = private_need(selector);
+        let private_query_cid = private_need.query_definition.private_cid().unwrap();
+        let (need_id, outcome) = local.register_private_need(private_need).unwrap();
         assert_eq!(outcome, StandingNeedWriteOutcome::Stored);
         let one_object_budget = DistributedKqlBudget {
             max_affordances: 1,
@@ -764,11 +870,15 @@ mod tests {
         assert!(!intent
             .canonical_bytes
             .windows(32)
-            .any(|window| window == [0xF1; 32]));
+            .any(|window| window == private_query_cid.as_bytes()));
         assert!(!intent
             .canonical_bytes
             .windows(32)
             .any(|window| window == need_id.as_bytes()));
+        assert!(!intent
+            .canonical_bytes
+            .windows(16)
+            .any(|window| window == [99; 16]));
 
         // Network absence never blocks local KQL. A selector with no observed
         // direct-peer source stays explicitly partial with zero results after
@@ -798,10 +908,21 @@ mod tests {
         )
         .await
         .unwrap();
-        let mut reopened = DistributedKqlRuntime::open(receiver_dir.path()).unwrap();
-        let (reopened_need, outcome) = reopened.register_local_target(target(selector)).unwrap();
-        assert_eq!(reopened_need, need_id);
-        assert_eq!(outcome, StandingNeedWriteOutcome::ExactReplay);
+        let mut reopened = DistributedKqlRuntime::open(
+            receiver_dir.path(),
+            LocalNeedVaultKey::from_bytes([0xA5; 32]),
+        )
+        .unwrap();
+        assert_eq!(reopened.active_target_count(), 1);
+        assert_eq!(
+            reopened
+                .standing_need(need_id)
+                .unwrap()
+                .unwrap()
+                .id()
+                .unwrap(),
+            need_id
+        );
         let replay = reopened
             .process_one_hop_affordance_delta(&restarted, selector, DistributedKqlBudget::default())
             .unwrap();
@@ -813,5 +934,68 @@ mod tests {
         assert!(reopened.proposal(replay.matches[0].proposal).is_some());
 
         restarted.shutdown().await;
+    }
+
+    #[test]
+    fn lifecycle_controls_are_rehydrated_without_resurrecting_tombstones() {
+        let directory = tempfile::tempdir().unwrap();
+        let selector = SelectorCid::from_bytes([0xE1; 32]);
+        let mut runtime = DistributedKqlRuntime::open(
+            directory.path(),
+            LocalNeedVaultKey::from_bytes([0xB5; 32]),
+        )
+        .unwrap();
+        let (id, _) = runtime
+            .register_private_need(private_need(selector))
+            .unwrap();
+        assert_eq!(runtime.active_target_count(), 1);
+        assert_eq!(runtime.pause(id, 0).unwrap(), 1);
+        assert_eq!(runtime.active_target_count(), 0);
+        drop(runtime);
+
+        let mut reopened = DistributedKqlRuntime::open(
+            directory.path(),
+            LocalNeedVaultKey::from_bytes([0xB5; 32]),
+        )
+        .unwrap();
+        assert_eq!(reopened.active_target_count(), 0);
+        assert_eq!(
+            reopened.standing_need(id).unwrap().unwrap().state,
+            ku_kql::vnext_standing_need::StandingNeedState::Paused
+        );
+        assert_eq!(reopened.resume(id, 1).unwrap(), 2);
+        assert_eq!(reopened.active_target_count(), 1);
+        assert_eq!(reopened.cancel(id, 2).unwrap(), 3);
+        assert_eq!(reopened.active_target_count(), 0);
+        drop(reopened);
+
+        let final_open = DistributedKqlRuntime::open(
+            directory.path(),
+            LocalNeedVaultKey::from_bytes([0xB5; 32]),
+        )
+        .unwrap();
+        assert_eq!(final_open.active_target_count(), 0);
+        assert!(final_open.standing_need(id).unwrap().is_none());
+    }
+
+    #[test]
+    fn legacy_plaintext_standing_need_state_is_not_silently_accepted() {
+        let directory = tempfile::tempdir().unwrap();
+        std::fs::write(
+            directory.path().join("vnext_standing_needs.redb"),
+            b"legacy-state",
+        )
+        .unwrap();
+        assert!(matches!(
+            DistributedKqlRuntime::open(
+                directory.path(),
+                LocalNeedVaultKey::from_bytes([0xD5; 32]),
+            ),
+            Err(DistributedKqlError::LegacyPrivateNeedState)
+        ));
+        assert!(!directory
+            .path()
+            .join("vnext_private_need_vault.redb")
+            .exists());
     }
 }

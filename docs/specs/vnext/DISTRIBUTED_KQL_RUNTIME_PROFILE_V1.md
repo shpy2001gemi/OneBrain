@@ -50,15 +50,17 @@ The runtime persists:
 
 - Public validated object bytes and selector-scoped inventory;
 - authenticated source observations by exact peer and selector;
-- the `LOCAL_ONLY` `StandingNeed`;
+- the exact `LOCAL_ONLY` `QueryDefinition` and `LocalNeedTarget` bundle in the
+  caller-keyed [Private KQL Vault](PRIVATE_KQL_PERSISTENCE_PROFILE_V1.md);
 - an idempotent match record keyed by
   `(StandingNeedID, BindingProposalID)` and bound to the exact affordance CID,
   selector and local source frontier.
 
-The private typed `LocalNeedTarget` remains a process-local attachment. After a
-restart, the caller must rehydrate it from the Private Vault. Exact
-reattachment is idempotent; replay reconstructs the proposal in private
-quarantine without increasing the durable match count.
+At startup the runtime authenticates and validates every bounded vault record,
+then automatically rehydrates only active targets. Paused targets remain
+encrypted and inactive. Canceled or retired records are terminal tombstones
+and cannot be resurrected by stale target replay. Wrong-key, tampered, legacy
+plaintext or inconsistent state fails closed before any target becomes active.
 
 ## 4. Matching and result semantics
 
@@ -92,11 +94,15 @@ demonstrates:
 - durable receipt and exact authenticated peer/selector provenance;
 - bounded scans advancing past the first CID without pagination starvation;
 - no raw KQL, private QueryDefinitionCID or StandingNeedID in the exact
-  application payload;
+  application payload, and no private semantic context in that payload;
 - zero results remaining partial after the source peer goes offline;
-- receiver and KQL-runtime restart preserving the same need and match count;
+- receiver and KQL-runtime restart automatically restoring the exact target,
+  same need and match count without caller re-registration;
 - replay rebuilding one quarantined proposal without duplicate durable state;
 - no automatic materialization, adoption or network-completion claim.
 
 Additional unit tests cover typed affordance round-trip validation,
 typed-invalid quarantine, and restart-safe selector-scoped source provenance.
+The P1.4 focused suite additionally covers encrypted-at-rest target recovery,
+wrong keys, tamper, deterministic local-intent commitment, durable
+pause/resume, and terminal cancel/retire tombstones.

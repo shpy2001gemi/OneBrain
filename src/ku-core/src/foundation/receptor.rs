@@ -172,6 +172,75 @@ impl ReceptorDefinition {
             self.canonical_payload()?,
         ))
     }
+
+    /// Decode the frozen receptor payload used by encrypted local KQL state.
+    pub fn from_canonical_payload(value: &CanonicalValue) -> Result<Self, ReceptorError> {
+        let map = receptor_map(value)?;
+        if receptor_unsigned(receptor_required(map, 0)?)? != RECEPTOR_PROFILE_MAJOR
+            || receptor_unsigned(receptor_required(map, 1)?)? != RECEPTOR_PROFILE_MINOR
+        {
+            return Err(ReceptorError::InvalidPayload);
+        }
+        let role = receptor_ccid(receptor_required(map, 2)?)?;
+        let expected_types = receptor_array(receptor_required(map, 3)?)?
+            .iter()
+            .map(receptor_ccid)
+            .collect::<Result<Vec<_>, _>>()?;
+        let hard_constraints = receptor_array(receptor_required(map, 4)?)?
+            .iter()
+            .map(TypedConstraint::from_canonical_value)
+            .collect::<Result<Vec<_>, _>>()?;
+        let cardinality_map = receptor_map(receptor_required(map, 5)?)?;
+        let minimum = receptor_u32(receptor_required(cardinality_map, 0)?)?;
+        let maximum = receptor_optional(cardinality_map, 1)
+            .map(receptor_u32)
+            .transpose()?;
+        let origin_map = receptor_map(receptor_required(map, 6)?)?;
+        let origin = match receptor_unsigned(receptor_required(origin_map, 0)?)? {
+            0 => ReceptorOrigin::Declared {
+                source: parse_statement_locator(receptor_required(origin_map, 1)?)?,
+            },
+            1 => ReceptorOrigin::Derived {
+                derivation_rule: ObjectReference::from_value(receptor_required(origin_map, 1)?)
+                    .map_err(ReceptorError::Object)?,
+                inputs: parse_reference_array(receptor_required(origin_map, 2)?)?,
+            },
+            2 => ReceptorOrigin::Emergent {
+                detector: ObjectReference::from_value(receptor_required(origin_map, 1)?)
+                    .map_err(ReceptorError::Object)?,
+                observations: parse_reference_array(receptor_required(origin_map, 2)?)?,
+            },
+            _ => return Err(ReceptorError::InvalidPayload),
+        };
+        let acceptance_map = receptor_map(receptor_required(map, 7)?)?;
+        let unknown_constraint_policy =
+            match receptor_unsigned(receptor_required(acceptance_map, 2)?)? {
+                0 => UnknownConstraintPolicy::RejectBinding,
+                1 => UnknownConstraintPolicy::KeepUnresolved,
+                2 => UnknownConstraintPolicy::AllowWithExplicitWaiver,
+                _ => return Err(ReceptorError::InvalidPayload),
+            };
+        let decoded = Self {
+            role,
+            expected_types,
+            hard_constraints,
+            cardinality: ReceptorCardinality::new(minimum, maximum)?,
+            origin,
+            acceptance: ReceptorAcceptanceProfile {
+                policy: ObjectReference::from_value(receptor_required(acceptance_map, 0)?)
+                    .map_err(ReceptorError::Object)?,
+                required_evidence_kinds: receptor_array(receptor_required(acceptance_map, 1)?)?
+                    .iter()
+                    .map(receptor_ccid)
+                    .collect::<Result<Vec<_>, _>>()?,
+                unknown_constraint_policy,
+            },
+        };
+        if decoded.canonical_payload()? != *value {
+            return Err(ReceptorError::InvalidPayload);
+        }
+        Ok(decoded)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -329,9 +398,11 @@ fn canonical_reference_set(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReceptorError {
     Semantic(SemanticError),
+    Object(super::object::ObjectError),
     Cardinality,
     Limit,
     ClaimMustUsePrivateStorage,
+    InvalidPayload,
 }
 
 impl From<SemanticError> for ReceptorError {
@@ -344,6 +415,71 @@ impl From<super::canonical::CanonicalError> for ReceptorError {
     fn from(error: super::canonical::CanonicalError) -> Self {
         Self::Semantic(SemanticError::Canonical(error))
     }
+}
+
+fn receptor_map(value: &CanonicalValue) -> Result<&[(u64, CanonicalValue)], ReceptorError> {
+    match value {
+        CanonicalValue::Map(map) => Ok(map),
+        _ => Err(ReceptorError::InvalidPayload),
+    }
+}
+
+fn receptor_array(value: &CanonicalValue) -> Result<&[CanonicalValue], ReceptorError> {
+    match value {
+        CanonicalValue::Array(values) => Ok(values),
+        _ => Err(ReceptorError::InvalidPayload),
+    }
+}
+
+fn receptor_optional(map: &[(u64, CanonicalValue)], key: u64) -> Option<&CanonicalValue> {
+    map.iter()
+        .find_map(|(candidate, value)| (*candidate == key).then_some(value))
+}
+
+fn receptor_required(
+    map: &[(u64, CanonicalValue)],
+    key: u64,
+) -> Result<&CanonicalValue, ReceptorError> {
+    receptor_optional(map, key).ok_or(ReceptorError::InvalidPayload)
+}
+
+fn receptor_unsigned(value: &CanonicalValue) -> Result<u64, ReceptorError> {
+    match value {
+        CanonicalValue::Unsigned(value) => Ok(*value),
+        _ => Err(ReceptorError::InvalidPayload),
+    }
+}
+
+fn receptor_u32(value: &CanonicalValue) -> Result<u32, ReceptorError> {
+    u32::try_from(receptor_unsigned(value)?).map_err(|_| ReceptorError::InvalidPayload)
+}
+
+fn receptor_ccid(value: &CanonicalValue) -> Result<ConceptCcid, ReceptorError> {
+    let CanonicalValue::Bytes(bytes) = value else {
+        return Err(ReceptorError::InvalidPayload);
+    };
+    Ok(ConceptCcid::from_bytes(
+        bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| ReceptorError::InvalidPayload)?,
+    ))
+}
+
+fn parse_reference_array(value: &CanonicalValue) -> Result<Vec<ObjectReference>, ReceptorError> {
+    receptor_array(value)?
+        .iter()
+        .map(|value| ObjectReference::from_value(value).map_err(ReceptorError::Object))
+        .collect()
+}
+
+fn parse_statement_locator(value: &CanonicalValue) -> Result<StatementLocator, ReceptorError> {
+    let map = receptor_map(value)?;
+    Ok(StatementLocator {
+        object: ObjectReference::from_value(receptor_required(map, 0)?)
+            .map_err(ReceptorError::Object)?,
+        statement_index: receptor_u32(receptor_required(map, 1)?)?,
+    })
 }
 
 #[cfg(test)]

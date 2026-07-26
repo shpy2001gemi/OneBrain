@@ -1113,3 +1113,38 @@ feature-enabled real QUIC và Windows default/vNext/Desktop smoke đều xanh, v
 
 P1.3 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
 P1.4 Private KQL persistence.
+
+### 2026-07-26 — P1.4 Private KQL persistence
+
+Đã triển khai trên nhánh `codex/p1-private-kql-persistence`:
+
+1. `PrivateNeedBundle` bind canonical private `QueryDefinition` với exact
+   `LocalNeedTarget`; runtime không còn dùng plaintext
+   `vnext_standing_needs.redb` làm source of truth.
+2. `RedbPrivateNeedVault` dùng caller-supplied key, XChaCha20-Poly1305,
+   domain-separated nonce/index subkeys và keyed commitment thay vì
+   plaintext `StandingNeedID` làm table key.
+3. `adapt_local_intent` validate raw KQL hoặc non-empty user intent, chỉ giữ
+   one-way commitment trong local semantic context và deterministically tạo
+   `QueryDefinition + LocalNeedTarget`.
+4. Startup authenticate, canonical-validate và tự rehydrate exact active
+   target; caller không cần đăng ký lại sau restart.
+5. Pause/resume tăng generation và giữ bundle mã hóa; cancel/retire atomically
+   thay bundle bằng terminal tombstone không chứa target.
+6. Wrong key, tamper, identity mismatch, stale generation, invalid transition
+   và legacy plaintext state đều fail closed trước activation.
+7. Focused privacy tests chứng minh raw KQL, canonical target bundle và
+   plaintext `StandingNeedID` không xuất hiện trên file Vault.
+8. Real-QUIC M3 test chứng minh restart tự rehydrate, durable match không nhân
+   đôi và exact outbound payload không chứa raw KQL, private
+   `QueryDefinitionCID`, `StandingNeedID` hoặc private semantic context.
+9. Contract `PRIVATE_KQL_PERSISTENCE_PROFILE_V1`, `TX-KQL-000`, M3 profile và
+   CI focused step đã được nối vào normative documentation.
+
+Remote CI run `30181305411` trên implementation commit `b297cb1` hoàn tất thành
+công ngày 2026-07-26: foundation contract, Linux default workspace, Linux
+feature-enabled real QUIC và Windows default/vNext/Desktop smoke đều xanh, với
+0 annotation.
+
+P1.4 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
+P1.5 Secret scan và privacy regression gate.

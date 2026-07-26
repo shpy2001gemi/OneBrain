@@ -299,6 +299,9 @@ jobs:
       - name: Test persistent local StandingNeeds
         run: cargo test --locked -p ku-kql --features storage vnext_standing_need
 
+      - name: Test encrypted private KQL persistence and lifecycle
+        run: cargo test --locked -p ku-kql --features storage vnext_private_need
+
       - name: Test deterministic vocabulary-neutral structural signatures
         run: cargo test --locked -p ku-kql vnext_structural_signature
 
@@ -462,7 +465,7 @@ jobs:
           cargo test --locked -p onebrain-node
           --features vnext-network-runtime
           --lib vnext_network_runtime
-      - name: M3 one-hop distributed KQL over real peers
+      - name: M3 private-vault-rehydrated distributed KQL over real peers
         run: >-
           cargo test --locked -p onebrain-node
           --features vnext-network-runtime

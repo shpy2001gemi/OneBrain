@@ -541,6 +541,22 @@ impl TypedConstraint {
             (1, CanonicalValue::Bool(self.required)),
         ])
     }
+
+    /// Decode one canonical typed constraint for higher-level private codecs.
+    ///
+    /// The round-trip check keeps this entry point as strict as the enclosing
+    /// semantic profile: alternate or unknown representations are rejected.
+    pub fn from_canonical_value(value: &CanonicalValue) -> Result<Self, SemanticError> {
+        let decoded = parse_typed_constraint(value)?;
+        if decoded.to_value() != *value {
+            return Err(SemanticError::NonCanonicalValue);
+        }
+        Ok(decoded)
+    }
+
+    pub fn canonical_value(&self) -> CanonicalValue {
+        self.to_value()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
