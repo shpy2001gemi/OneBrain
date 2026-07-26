@@ -1,0 +1,168 @@
+{
+  "format": "onebrain/dr-m5-baseline/1",
+  "profile_id": "DISTRIBUTED_RUNTIME_HARDENING_BASELINE_V1",
+  "version": 1,
+  "runtime_change_globs": [
+    "src/**"
+  ],
+  "real_quic_gate": {
+    "workflow_path": ".github/workflows/vnext-foundation.yml",
+    "job_id": "vnext-network-runtime",
+    "timeout_minutes": 45,
+    "required_steps": [
+      "Compile product entrypoints with the runtime feature",
+      "M2 authenticated OBP-RP over real QUIC",
+      "M3 private-vault-rehydrated distributed KQL over real peers",
+      "M4 strong Public Use consent and metabolic view over real peers",
+      "P1.5 authenticated route and local authority boundary",
+      "P2.1 node-owned product runtime aggregate",
+      "P2.2 independent product lanes and hard budgets",
+      "P2.3 ordered lifecycle and partial-start rollback",
+      "P2.4 durable selector/type incremental processing",
+      "P2.5 cloneable service handles and concurrency fence",
+      "P3.1 authenticated REST API contract and real-runtime flow",
+      "P3.2 private WebSocket isolation and backpressure",
+      "P3.3 authenticated CLI contract and real-runtime replay",
+      "Node-owned real QUIC lifecycle"
+    ]
+  },
+  "failpoint_phases": [
+    "before_begin_write",
+    "after_begin_write_before_mutation",
+    "after_mutation_before_commit",
+    "after_commit_before_next_side_effect",
+    "after_next_side_effect_before_ack"
+  ],
+  "invariant_oracle": {
+    "format": "onebrain/dr-m5-oracle/1",
+    "canonicalization": "json-sort-keys-no-whitespace-utf8",
+    "digest_algorithm": "sha256",
+    "fields": [
+      "accepted_object_cids",
+      "accepted_event_cids",
+      "selector_inventory_roots",
+      "reconciliation_journals",
+      "pending_outbox",
+      "authority_decisions",
+      "private_need_records",
+      "distributed_kql_matches",
+      "prepared_public_use",
+      "public_use_publications",
+      "metabolic_views"
+    ]
+  },
+  "transaction_boundaries": [
+    {
+      "id": "TX-PUSE-000",
+      "durable_owner": "PublicUseEvidencePublisher/prepared-intent",
+      "oracle_components": [
+        "prepared_public_use"
+      ]
+    },
+    {
+      "id": "TX-PUSE-001",
+      "durable_owner": "PublicUseEvidencePublisher/publication-and-feed-head",
+      "oracle_components": [
+        "prepared_public_use",
+        "public_use_publications"
+      ]
+    },
+    {
+      "id": "TX-PUSE-002",
+      "durable_owner": "PublicationStore/DurableOutbox",
+      "oracle_components": [
+        "public_use_publications",
+        "pending_outbox"
+      ]
+    },
+    {
+      "id": "TX-OUT-001",
+      "durable_owner": "DurableOutbox/outbound-intents",
+      "oracle_components": [
+        "pending_outbox"
+      ]
+    },
+    {
+      "id": "TX-OUT-002",
+      "durable_owner": "DurableOutbox/receipt-state",
+      "oracle_components": [
+        "pending_outbox"
+      ]
+    },
+    {
+      "id": "TX-JRN-001",
+      "durable_owner": "RedbReconciliationJournalBackend",
+      "oracle_components": [
+        "reconciliation_journals"
+      ]
+    },
+    {
+      "id": "TX-VAL-001",
+      "durable_owner": "RedbValidatedStorageBackend",
+      "oracle_components": [
+        "accepted_object_cids",
+        "accepted_event_cids"
+      ]
+    },
+    {
+      "id": "TX-INV-001",
+      "durable_owner": "RedbInventoryForestBackend",
+      "oracle_components": [
+        "selector_inventory_roots"
+      ]
+    },
+    {
+      "id": "TX-AUTH-001",
+      "durable_owner": "AcceptedStore/AuthorityProjection",
+      "oracle_components": [
+        "authority_decisions"
+      ]
+    },
+    {
+      "id": "TX-KQL-000",
+      "durable_owner": "RedbPrivateNeedVault",
+      "oracle_components": [
+        "private_need_records"
+      ]
+    },
+    {
+      "id": "TX-KQL-001",
+      "durable_owner": "DurableMatchIndex",
+      "oracle_components": [
+        "distributed_kql_matches"
+      ]
+    },
+    {
+      "id": "TX-POMV-001",
+      "durable_owner": "ReceivedUseIdentityIndex/identity-branches",
+      "oracle_components": [
+        "metabolic_views"
+      ]
+    },
+    {
+      "id": "TX-POMV-002",
+      "durable_owner": "ReceivedUseIdentityIndex/view-lineage",
+      "oracle_components": [
+        "metabolic_views"
+      ]
+    }
+  ],
+  "empty_oracle_specimen": {
+    "snapshot": {
+      "format": "onebrain/dr-m5-oracle/1",
+      "version": 1,
+      "accepted_object_cids": [],
+      "accepted_event_cids": [],
+      "selector_inventory_roots": [],
+      "reconciliation_journals": [],
+      "pending_outbox": [],
+      "authority_decisions": [],
+      "private_need_records": [],
+      "distributed_kql_matches": [],
+      "prepared_public_use": [],
+      "public_use_publications": [],
+      "metabolic_views": []
+    },
+    "sha256": "e1ca1110a77a8147e18576929544a91fd3d68692fbb43a4344ff391e96cc735c"
+  }
+}

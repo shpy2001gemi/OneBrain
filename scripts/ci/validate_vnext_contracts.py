@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -31,6 +32,11 @@ VNEXT_CLI_PROFILE = ROOT / "src/test-vectors/vnext/vnext-cli-profile-v1.json"
 VNEXT_DESKTOP_WEB_UX_PROFILE = (
     ROOT / "src/test-vectors/vnext/vnext-desktop-web-ux-profile-v1.json"
 )
+DR_M5_BASELINE_PROFILE = ROOT / "src/test-vectors/vnext/dr-m5-baseline-v1.json"
+DR_M5_TRANSACTION_INVENTORY = (
+    VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
+)
+VNEXT_FOUNDATION_WORKFLOW = ROOT / ".github/workflows/vnext-foundation.yml"
 
 TASK_ROW = re.compile(r"^\|\s*\[[ x~]\]\s*`([A-Z][A-Z0-9]*-\d{3})`")
 TASK_ID = re.compile(r"(?<!ADR-)(?<!NEG-)\b[A-Z][A-Z0-9]*-\d{3}\b")
@@ -939,6 +945,190 @@ def validate_vnext_desktop_web_ux_profile(
     return len(vectors)
 
 
+def validate_vnext_dr_m5_baseline(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(DR_M5_BASELINE_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid DR-M5 baseline JSON: {error}") from error
+
+    if (
+        profile.get("format") != "onebrain/dr-m5-baseline/1"
+        or profile.get("profile_id")
+        != "DISTRIBUTED_RUNTIME_HARDENING_BASELINE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("unexpected DR-M5 baseline profile")
+
+    if profile.get("runtime_change_globs") != ["src/**"]:
+        raise ContractError("DR-M5 runtime path trigger drift")
+
+    expected_steps = {
+        "Compile product entrypoints with the runtime feature",
+        "M2 authenticated OBP-RP over real QUIC",
+        "M3 private-vault-rehydrated distributed KQL over real peers",
+        "M4 strong Public Use consent and metabolic view over real peers",
+        "P1.5 authenticated route and local authority boundary",
+        "P2.1 node-owned product runtime aggregate",
+        "P2.2 independent product lanes and hard budgets",
+        "P2.3 ordered lifecycle and partial-start rollback",
+        "P2.4 durable selector/type incremental processing",
+        "P2.5 cloneable service handles and concurrency fence",
+        "P3.1 authenticated REST API contract and real-runtime flow",
+        "P3.2 private WebSocket isolation and backpressure",
+        "P3.3 authenticated CLI contract and real-runtime replay",
+        "Node-owned real QUIC lifecycle",
+    }
+    gate = profile.get("real_quic_gate")
+    required_steps = gate.get("required_steps") if isinstance(gate, dict) else None
+    if (
+        not isinstance(gate, dict)
+        or gate.get("workflow_path") != ".github/workflows/vnext-foundation.yml"
+        or gate.get("job_id") != "vnext-network-runtime"
+        or not isinstance(gate.get("timeout_minutes"), int)
+        or not 0 < gate["timeout_minutes"] <= 45
+        or not isinstance(required_steps, list)
+        or any(not isinstance(step, str) for step in required_steps)
+        or set(required_steps) != expected_steps
+    ):
+        raise ContractError("DR-M5 real-QUIC gate drift")
+
+    expected_phases = [
+        "before_begin_write",
+        "after_begin_write_before_mutation",
+        "after_mutation_before_commit",
+        "after_commit_before_next_side_effect",
+        "after_next_side_effect_before_ack",
+    ]
+    if profile.get("failpoint_phases") != expected_phases:
+        raise ContractError("DR-M5 failpoint phase vocabulary drift")
+
+    expected_fields = {
+        "accepted_object_cids",
+        "accepted_event_cids",
+        "selector_inventory_roots",
+        "reconciliation_journals",
+        "pending_outbox",
+        "authority_decisions",
+        "private_need_records",
+        "distributed_kql_matches",
+        "prepared_public_use",
+        "public_use_publications",
+        "metabolic_views",
+    }
+    oracle = profile.get("invariant_oracle")
+    oracle_fields = oracle.get("fields") if isinstance(oracle, dict) else None
+    if (
+        not isinstance(oracle, dict)
+        or oracle.get("format") != "onebrain/dr-m5-oracle/1"
+        or oracle.get("canonicalization")
+        != "json-sort-keys-no-whitespace-utf8"
+        or oracle.get("digest_algorithm") != "sha256"
+        or not isinstance(oracle_fields, list)
+        or any(not isinstance(field, str) for field in oracle_fields)
+        or set(oracle_fields) != expected_fields
+    ):
+        raise ContractError("DR-M5 invariant oracle drift")
+
+    expected_boundaries = {
+        "TX-PUSE-000",
+        "TX-PUSE-001",
+        "TX-PUSE-002",
+        "TX-OUT-001",
+        "TX-OUT-002",
+        "TX-JRN-001",
+        "TX-VAL-001",
+        "TX-INV-001",
+        "TX-AUTH-001",
+        "TX-KQL-000",
+        "TX-KQL-001",
+        "TX-POMV-001",
+        "TX-POMV-002",
+    }
+    boundaries = profile.get("transaction_boundaries")
+    if not isinstance(boundaries, list):
+        raise ContractError("DR-M5 transaction boundary inventory missing")
+    boundary_ids: list[str] = []
+    covered_oracle_fields: set[str] = set()
+    for boundary in boundaries:
+        if not isinstance(boundary, dict):
+            raise ContractError("invalid DR-M5 transaction boundary row")
+        boundary_id = boundary.get("id")
+        owner = boundary.get("durable_owner")
+        components = boundary.get("oracle_components")
+        if (
+            not isinstance(boundary_id, str)
+            or not isinstance(owner, str)
+            or not owner.strip()
+            or not isinstance(components, list)
+            or not components
+            or any(not isinstance(component, str) for component in components)
+            or any(component not in expected_fields for component in components)
+        ):
+            raise ContractError("invalid DR-M5 transaction boundary contract")
+        boundary_ids.append(boundary_id)
+        covered_oracle_fields.update(components)
+    if (
+        set(boundary_ids) != expected_boundaries
+        or len(boundary_ids) != len(set(boundary_ids))
+    ):
+        raise ContractError("DR-M5 transaction boundary ID drift")
+    if covered_oracle_fields != expected_fields:
+        raise ContractError("DR-M5 transaction boundaries do not cover the oracle")
+
+    specimen = profile.get("empty_oracle_specimen")
+    if not isinstance(specimen, dict) or not isinstance(specimen.get("snapshot"), dict):
+        raise ContractError("DR-M5 empty oracle specimen missing")
+    snapshot = specimen["snapshot"]
+    if (
+        snapshot.get("format") != "onebrain/dr-m5-oracle/1"
+        or snapshot.get("version") != 1
+        or set(snapshot) != expected_fields | {"format", "version"}
+        or any(snapshot.get(field) != [] for field in expected_fields)
+    ):
+        raise ContractError("DR-M5 empty oracle snapshot drift")
+    canonical = json.dumps(
+        snapshot, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+    if specimen.get("sha256") != hashlib.sha256(canonical).hexdigest():
+        raise ContractError("DR-M5 empty oracle digest drift")
+
+    inventory = read(DR_M5_TRANSACTION_INVENTORY)
+    for boundary_id in expected_boundaries:
+        if f"| `{boundary_id}` |" not in inventory:
+            raise ContractError(
+                f"DR-M5 boundary missing from transaction inventory: {boundary_id}"
+            )
+    for index, phase in enumerate(expected_phases, start=1):
+        if f"{index}. `{phase}`" not in inventory:
+            raise ContractError(f"DR-M5 failpoint phase missing from inventory: {phase}")
+
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    if workflow.count('- "src/**"') < 2:
+        raise ContractError("DR-M5 src/** trigger missing from PR or push workflow")
+    job_match = re.search(
+        r"(?ms)^  vnext-network-runtime:\s*$"
+        r"(?P<body>.*?)(?=^  [A-Za-z0-9_-]+:\s*$|\Z)",
+        workflow,
+    )
+    if not job_match:
+        raise ContractError("DR-M5 real-QUIC workflow job missing")
+    job = job_match.group("body")
+    timeout_match = re.search(r"(?m)^\s+timeout-minutes:\s*(\d+)\s*$", job)
+    if (
+        not timeout_match
+        or int(timeout_match.group(1)) != gate["timeout_minutes"]
+        or any(f"- name: {step}" not in job for step in expected_steps)
+    ):
+        raise ContractError("DR-M5 real-QUIC workflow contract drift")
+    if "python -m unittest scripts.ci.test_validate_vnext_dr_m5_baseline" not in workflow:
+        raise ContractError("DR-M5 baseline mutation tests missing from CI")
+
+    return len(boundary_ids), len(expected_fields)
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -1036,6 +1226,7 @@ def main() -> int:
         ws_events, ws_topics = validate_private_websocket_profile()
         cli_commands = validate_vnext_cli_profile()
         ux_receipt_vectors = validate_vnext_desktop_web_ux_profile()
+        dr_m5_boundaries, dr_m5_oracle_fields = validate_vnext_dr_m5_baseline()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -1052,6 +1243,7 @@ def main() -> int:
         f"{ws_events} private-WS events/{ws_topics} topics, "
         f"{cli_commands} vNext CLI commands, "
         f"{ux_receipt_vectors} Desktop/Web receipt vectors, "
+        f"{dr_m5_boundaries} DR-M5 boundaries/{dr_m5_oracle_fields} oracle fields, "
         f"{links} local links"
     )
     return 0

@@ -52,6 +52,29 @@
       "rationale": "Separate layer identities and permit attenuation are type and reducer boundaries; routing hints remain non-authoritative by construction."
     },
     {
+      "path": "docs/specs/vnext/DISTRIBUTED_RUNTIME_HARDENING_BASELINE_V1.md",
+      "expected_statement_lines": 14,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/dr-m5-baseline-v1.json",
+          "needle": "onebrain/dr-m5-baseline/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_vnext_dr_m5_baseline"
+        },
+        {
+          "path": ".github/workflows/vnext-foundation.yml",
+          "needle": "- \"src/**\""
+        },
+        {
+          "path": "docs/specs/vnext/DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md",
+          "needle": "TX-POMV-002"
+        }
+      ],
+      "rationale": "The frozen machine profile and mutation tests bind every runtime-source change to a finite real-QUIC gate, preserve 13 stable crash boundary IDs and five phases, and reproduce the 11-field empty-oracle digest without claiming later hardening evidence."
+    },
+    {
       "path": "docs/specs/vnext/FIELD_OWNERSHIP_MATRIX_V1.md",
       "expected_statement_lines": 19,
       "evidence": [
