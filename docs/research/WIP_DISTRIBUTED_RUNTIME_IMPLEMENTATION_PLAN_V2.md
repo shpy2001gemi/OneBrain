@@ -1489,3 +1489,12 @@ Local evidence:
 P3.1 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
 `main`. P3.2 private WebSocket vẫn là work package độc lập kế tiếp và không
 được suy diễn là đã hoàn tất từ REST surface này.
+
+Remote CI run
+[`30190977790`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30190977790)
+trên implementation commit `065930f` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P3.1 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
+`main`, work package kế tiếp là P3.2 private WebSocket.
