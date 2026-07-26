@@ -647,6 +647,33 @@
       "rationale": "Authenticated real-QUIC fault injection, bounded resource floods, deterministic long traces, shared parser entry points, frozen PR corpus and pinned nightly libFuzzer budgets prove convergence and fail-closed parsing without adding network authority."
     },
     {
+      "path": "docs/specs/vnext/OPERATIONAL_COMPACTION_PROFILE_V1.md",
+      "expected_statement_lines": 41,
+      "evidence": [
+        {
+          "path": "src/ku-core/src/foundation/operational_compaction.rs",
+          "needle": "pub struct OperationalCompactionPermit"
+        },
+        {
+          "path": "src/ku-net/src/vnext_reconciliation_journal.rs",
+          "needle": "m5_05_journal_process_kill_matrix_restores_exact_root"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_outbox.rs",
+          "needle": "physical_reclaim_reduces_disk_after_terminal_payload_compaction"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_operational_compaction.rs",
+          "needle": "m5_05_operational_process_kill_matrix_restores_exact_root"
+        },
+        {
+          "path": "src/test-vectors/vnext/dr-m5-operational-compaction-v1.json",
+          "needle": "\"required_process_kill_cases\": 25"
+        }
+      ],
+      "rationale": "Generation-fenced compaction, atomic journal and outbox audit replacement, bounded raw evidence with overflow hashes, canonical derived snapshots, 25 real process-kill recoveries and measured Redb reclamation preserve exact semantics while reducing durable bytes."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [

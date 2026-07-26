@@ -7,12 +7,13 @@
 #![cfg(feature = "vnext-network-runtime")]
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ku_core::foundation::{
-    dr_m5_failpoint, DisclosureClass, NamespaceCommitment, NodeId, ReservedDomain, SelectorCid,
+    dr_m5_failpoint, DisclosureClass, NamespaceCommitment, NodeId, OperationalCompactionPermit,
+    ReservedDomain, SelectorCid,
 };
 use onebrain_protocol::{ReconcileManifestKind, ReconcileReceiptStatus};
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
@@ -28,6 +29,8 @@ const MAGIC_V3: &[u8; 8] = b"OBOUTV3\0";
 const FIXED_BYTES_V1: usize = 206;
 const FIXED_BYTES_V2: usize = 222;
 const FIXED_BYTES_V3: usize = 238;
+const TOMBSTONE_BYTES_V1: usize = 25;
+const TOMBSTONE_BYTES_V2: usize = 89;
 const FAIR_CURSOR_KEY: &[u8] = b"fair_cursor";
 const TERMINAL_HEAD_KEY: &[u8] = b"terminal_head";
 pub const MAX_OUTBOX_PAYLOAD_BYTES: usize = 1_048_576;
@@ -124,14 +127,38 @@ pub struct OutboundOutboxStats {
     pub oldest_pending_age_seconds: Option<u64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutboundAuditTombstone {
+    pub intent_id: [u8; 32],
+    pub state: OutboundIntentState,
+    pub terminal_sequence: u64,
+    pub transport_attempts: u64,
+    pub validation_retries: u64,
+    pub cid: [u8; 32],
+    pub payload_digest: [u8; 32],
+    pub legacy_without_payload_digest: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OutboundCompactionReport {
+    pub removed_records: u64,
+    pub removed_payload_bytes: u64,
+    pub retained_pending: u64,
+    pub retained_terminal: u64,
+    pub audit_tombstones: u64,
+    pub audit_root: [u8; 32],
+}
+
 #[derive(Clone)]
 pub struct OutboundOutbox {
     db: Arc<Database>,
+    path: Arc<PathBuf>,
 }
 
 impl OutboundOutbox {
     pub fn open(path: &Path) -> Result<Self, OutboundOutboxError> {
-        let db = Database::create(path).map_err(backend)?;
+        let path = path.to_path_buf();
+        let db = Database::create(&path).map_err(backend)?;
         let write = db.begin_write().map_err(backend)?;
         {
             write.open_table(OUTBOX).map_err(backend)?;
@@ -139,7 +166,10 @@ impl OutboundOutbox {
             write.open_table(TOMBSTONES).map_err(backend)?;
         }
         write.commit().map_err(backend)?;
-        Ok(Self { db: Arc::new(db) })
+        Ok(Self {
+            db: Arc::new(db),
+            path: Arc::new(path),
+        })
     }
 
     pub fn enqueue(
@@ -387,17 +417,25 @@ impl OutboundOutbox {
     }
 
     /// Remove old terminal payloads while atomically retaining bounded audit
-    /// tombstones. Pending work is never compacted.
+    /// tombstones. Pending work is never compacted, and a stale kill-switch
+    /// generation aborts before commit.
     pub fn compact_terminal(
         &self,
+        permit: &OperationalCompactionPermit,
         retain_latest: usize,
         limit: usize,
-    ) -> Result<usize, OutboundOutboxError> {
+    ) -> Result<OutboundCompactionReport, OutboundOutboxError> {
         if limit == 0 || limit > MAX_OUTBOX_RECORDS as usize {
             return Err(OutboundOutboxError::InvalidLimit);
         }
+        permit
+            .ensure_current()
+            .map_err(|_| OutboundOutboxError::CompactionFenced)?;
+        dr_m5_failpoint::hit("TX-CMP-OUT-001", "before_begin_write");
         let write = self.db.begin_write().map_err(backend)?;
+        dr_m5_failpoint::hit("TX-CMP-OUT-001", "after_begin_write_before_mutation");
         let mut terminal = Vec::new();
+        let mut pending_count = 0u64;
         {
             let table = write.open_table(OUTBOX).map_err(backend)?;
             for entry in table.iter().map_err(backend)? {
@@ -408,16 +446,24 @@ impl OutboundOutbox {
                         intent.terminal_sequence,
                         key.value().to_vec(),
                         encode_tombstone(&intent),
+                        intent.canonical_bytes.len() as u64,
                     ));
+                } else {
+                    pending_count = pending_count.saturating_add(1);
                 }
             }
         }
-        terminal.sort_by_key(|(sequence, key, _)| (*sequence, key.clone()));
+        terminal.sort_by_key(|(sequence, key, _, _)| (*sequence, key.clone()));
         let remove_count = terminal.len().saturating_sub(retain_latest).min(limit);
+        let removed_payload_bytes = terminal
+            .iter()
+            .take(remove_count)
+            .map(|(_, _, _, payload_bytes)| *payload_bytes)
+            .sum();
         {
             let mut outbox = write.open_table(OUTBOX).map_err(backend)?;
             let mut tombstones = write.open_table(TOMBSTONES).map_err(backend)?;
-            for (_, key, tombstone) in terminal.into_iter().take(remove_count) {
+            for (_, key, tombstone, _) in terminal.iter().take(remove_count) {
                 if tombstones.len().map_err(backend)? >= MAX_OUTBOX_TOMBSTONES {
                     remove_oldest_tombstone(&mut tombstones)?;
                 }
@@ -427,8 +473,96 @@ impl OutboundOutbox {
                 outbox.remove(key.as_slice()).map_err(backend)?;
             }
         }
-        write.commit().map_err(backend)?;
-        Ok(remove_count)
+        dr_m5_failpoint::hit("TX-CMP-OUT-001", "after_mutation_before_commit");
+        permit
+            .run_if_current(|| write.commit())
+            .map_err(|_| OutboundOutboxError::CompactionFenced)?
+            .map_err(backend)?;
+        dr_m5_failpoint::hit("TX-CMP-OUT-001", "after_commit_before_next_side_effect");
+        let audit_tombstones = self.tombstone_count()?;
+        let audit_root = self.audit_root()?;
+        dr_m5_failpoint::hit("TX-CMP-OUT-001", "after_next_side_effect_before_ack");
+        Ok(OutboundCompactionReport {
+            removed_records: remove_count as u64,
+            removed_payload_bytes,
+            retained_pending: pending_count,
+            retained_terminal: terminal.len().saturating_sub(remove_count) as u64,
+            audit_tombstones,
+            audit_root,
+        })
+    }
+
+    pub fn tombstone(
+        &self,
+        id: &[u8; 32],
+    ) -> Result<Option<OutboundAuditTombstone>, OutboundOutboxError> {
+        let read = self.db.begin_read().map_err(backend)?;
+        let table = read.open_table(TOMBSTONES).map_err(backend)?;
+        table
+            .get(id.as_slice())
+            .map_err(backend)?
+            .map(|value| decode_tombstone(*id, value.value()))
+            .transpose()
+    }
+
+    pub fn tombstone_count(&self) -> Result<u64, OutboundOutboxError> {
+        let read = self.db.begin_read().map_err(backend)?;
+        read.open_table(TOMBSTONES)
+            .map_err(backend)?
+            .len()
+            .map_err(backend)
+    }
+
+    pub fn audit_root(&self) -> Result<[u8; 32], OutboundOutboxError> {
+        let read = self.db.begin_read().map_err(backend)?;
+        let table = read.open_table(TOMBSTONES).map_err(backend)?;
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"onebrain:vnext:outbox-compaction-audit:1\0");
+        for entry in table.iter().map_err(backend)? {
+            let (key, value) = entry.map_err(backend)?;
+            let id = array32(key.value())?;
+            let tombstone = decode_tombstone(id, value.value())?;
+            hasher.update(&tombstone.intent_id);
+            hasher.update(&[tombstone.state as u8]);
+            hasher.update(&tombstone.terminal_sequence.to_be_bytes());
+            hasher.update(&tombstone.transport_attempts.to_be_bytes());
+            hasher.update(&tombstone.validation_retries.to_be_bytes());
+            hasher.update(&tombstone.cid);
+            hasher.update(&tombstone.payload_digest);
+            hasher.update(&[u8::from(tombstone.legacy_without_payload_digest)]);
+        }
+        Ok(*hasher.finalize().as_bytes())
+    }
+
+    pub fn disk_bytes(&self) -> Result<u64, OutboundOutboxError> {
+        std::fs::metadata(self.path.as_ref())
+            .map(|metadata| metadata.len())
+            .map_err(backend)
+    }
+
+    /// Reclaim free Redb pages after logical compaction. The outbox must not
+    /// have live clones so the database can be borrowed exclusively.
+    pub fn reclaim_disk(
+        &mut self,
+        permit: &OperationalCompactionPermit,
+    ) -> Result<bool, OutboundOutboxError> {
+        permit
+            .ensure_current()
+            .map_err(|_| OutboundOutboxError::CompactionFenced)?;
+        let database =
+            Arc::get_mut(&mut self.db).ok_or(OutboundOutboxError::CompactionDatabaseBusy)?;
+        let mut reclaimed = false;
+        for _ in 0..64 {
+            if !permit
+                .run_if_current(|| database.compact())
+                .map_err(|_| OutboundOutboxError::CompactionFenced)?
+                .map_err(backend)?
+            {
+                break;
+            }
+            reclaimed = true;
+        }
+        Ok(reclaimed)
     }
 
     fn update_terminal<T>(
@@ -790,12 +924,61 @@ fn next_terminal_sequence(write: &redb::WriteTransaction) -> Result<u64, Outboun
 }
 
 fn encode_tombstone(intent: &OutboundTransferIntent) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(25);
+    let mut bytes = Vec::with_capacity(TOMBSTONE_BYTES_V2);
     bytes.push(intent.state as u8);
     bytes.extend_from_slice(&intent.terminal_sequence.to_be_bytes());
     bytes.extend_from_slice(&intent.transport_attempts.to_be_bytes());
     bytes.extend_from_slice(&intent.validation_retries.to_be_bytes());
+    bytes.extend_from_slice(&intent.cid);
+    bytes.extend_from_slice(blake3::hash(&intent.canonical_bytes).as_bytes());
     bytes
+}
+
+fn decode_tombstone(
+    intent_id: [u8; 32],
+    bytes: &[u8],
+) -> Result<OutboundAuditTombstone, OutboundOutboxError> {
+    if !matches!(bytes.len(), TOMBSTONE_BYTES_V1 | TOMBSTONE_BYTES_V2) {
+        return Err(OutboundOutboxError::InvalidRecord);
+    }
+    let state = parse_state(bytes[0])?;
+    if !state.is_terminal() {
+        return Err(OutboundOutboxError::InvalidRecord);
+    }
+    let terminal_sequence = u64::from_be_bytes(
+        bytes[1..9]
+            .try_into()
+            .map_err(|_| OutboundOutboxError::InvalidRecord)?,
+    );
+    if terminal_sequence == 0 {
+        return Err(OutboundOutboxError::InvalidRecord);
+    }
+    let transport_attempts = u64::from_be_bytes(
+        bytes[9..17]
+            .try_into()
+            .map_err(|_| OutboundOutboxError::InvalidRecord)?,
+    );
+    let validation_retries = u64::from_be_bytes(
+        bytes[17..25]
+            .try_into()
+            .map_err(|_| OutboundOutboxError::InvalidRecord)?,
+    );
+    let legacy_without_payload_digest = bytes.len() == TOMBSTONE_BYTES_V1;
+    let (cid, payload_digest) = if legacy_without_payload_digest {
+        ([0; 32], [0; 32])
+    } else {
+        (array32(&bytes[25..57])?, array32(&bytes[57..89])?)
+    };
+    Ok(OutboundAuditTombstone {
+        intent_id,
+        state,
+        terminal_sequence,
+        transport_attempts,
+        validation_retries,
+        cid,
+        payload_digest,
+        legacy_without_payload_digest,
+    })
 }
 
 fn remove_oldest_tombstone(
@@ -805,7 +988,7 @@ fn remove_oldest_tombstone(
     for entry in table.iter().map_err(backend)? {
         let (key, value) = entry.map_err(backend)?;
         let value = value.value();
-        if value.len() != 25 {
+        if !matches!(value.len(), TOMBSTONE_BYTES_V1 | TOMBSTONE_BYTES_V2) {
             return Err(OutboundOutboxError::InvalidRecord);
         }
         let sequence = u64::from_be_bytes(
@@ -848,10 +1031,27 @@ pub enum OutboundOutboxError {
     IdentityCollision,
     #[error("outbox terminal sequence exhausted")]
     SequenceExhausted,
+    #[error("outbox compaction generation is disabled or stale")]
+    CompactionFenced,
+    #[error("outbox database has live clones and cannot reclaim disk")]
+    CompactionDatabaseBusy,
 }
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "vnext-compaction-harness")]
+    use std::fs;
+    #[cfg(feature = "vnext-compaction-harness")]
+    use std::path::Path;
+    #[cfg(feature = "vnext-compaction-harness")]
+    use std::process::{Command, Stdio};
+    #[cfg(feature = "vnext-compaction-harness")]
+    use std::thread;
+    #[cfg(feature = "vnext-compaction-harness")]
+    use std::time::{Duration, Instant};
+
+    use ku_core::foundation::OperationalCompactionSwitch;
+
     use super::*;
 
     fn intent(addr: SocketAddr) -> OutboundTransferIntent {
@@ -1062,8 +1262,213 @@ mod tests {
         outbox
             .apply_receipt(&dead.id, ReconcileReceiptStatus::RejectedInvalid, 2)
             .unwrap();
-        assert_eq!(outbox.compact_terminal(1, 8).unwrap(), 1);
+        let switch = OperationalCompactionSwitch::new_disabled();
+        switch.enable();
+        let permit = switch.acquire().unwrap();
+        let report = outbox.compact_terminal(&permit, 1, 8).unwrap();
+        assert_eq!(report.removed_records, 1);
+        assert_eq!(report.audit_tombstones, 1);
+        let tombstone = outbox.tombstone(&acknowledged.id).unwrap().unwrap();
+        assert_eq!(tombstone.state, OutboundIntentState::Acknowledged);
+        assert_eq!(tombstone.cid, acknowledged.cid);
+        assert_eq!(
+            tombstone.payload_digest,
+            *blake3::hash(&acknowledged.canonical_bytes).as_bytes()
+        );
+        assert!(!tombstone.legacy_without_payload_digest);
         assert!(outbox.get(&pending.id).unwrap().is_some());
         assert_eq!(outbox.pending_fair(8).unwrap(), vec![pending]);
+    }
+
+    #[test]
+    fn stale_compaction_generation_cannot_delete_terminal_or_pending_work() {
+        let directory = tempfile::tempdir().unwrap();
+        let outbox = OutboundOutbox::open(&directory.path().join("outbox.redb")).unwrap();
+        let addr = "127.0.0.1:5001".parse().unwrap();
+        let terminal = intent_with(1, addr);
+        let pending = intent_with(2, addr);
+        outbox.enqueue(&terminal).unwrap();
+        outbox.enqueue(&pending).unwrap();
+        outbox
+            .apply_receipt(&terminal.id, ReconcileReceiptStatus::AlreadyPresent, 2)
+            .unwrap();
+
+        let switch = OperationalCompactionSwitch::new_disabled();
+        switch.enable();
+        let stale = switch.acquire().unwrap();
+        switch.disable();
+        assert_eq!(
+            outbox.compact_terminal(&stale, 0, 8),
+            Err(OutboundOutboxError::CompactionFenced)
+        );
+        assert!(outbox.get(&terminal.id).unwrap().is_some());
+        assert!(outbox.get(&pending.id).unwrap().is_some());
+        assert_eq!(outbox.tombstone_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn physical_reclaim_reduces_disk_after_terminal_payload_compaction() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("reclaim.redb");
+        let mut outbox = OutboundOutbox::open(&path).unwrap();
+        let addr = "127.0.0.1:5001".parse().unwrap();
+        let mut intents = Vec::new();
+        for marker in 1..=32u8 {
+            let intent = OutboundTransferIntent::new(
+                NodeId::from_bytes([marker; 32]),
+                addr,
+                SelectorCid::from_bytes([2; 32]),
+                NamespaceCommitment::from_bytes([3; 32]),
+                DisclosureClass::Public,
+                ReconcileManifestKind::Object,
+                vec![marker; 128 * 1024],
+            )
+            .unwrap();
+            outbox.enqueue(&intent).unwrap();
+            outbox
+                .apply_receipt(&intent.id, ReconcileReceiptStatus::AlreadyPresent, 2)
+                .unwrap();
+            intents.push(intent);
+        }
+        let disk_before = outbox.disk_bytes().unwrap();
+        let switch = OperationalCompactionSwitch::new_disabled();
+        switch.enable();
+        let permit = switch.acquire().unwrap();
+        let report = outbox.compact_terminal(&permit, 0, 32).unwrap();
+        assert_eq!(report.removed_records, 32);
+        assert!(report.removed_payload_bytes >= 4 * 1_048_576);
+        assert!(intents
+            .iter()
+            .all(|intent| outbox.get(&intent.id).unwrap().is_none()));
+        assert!(outbox.reclaim_disk(&permit).unwrap());
+        let disk_after = outbox.disk_bytes().unwrap();
+        assert!(
+            disk_after < disk_before,
+            "physical compaction must reduce disk bytes: before={disk_before}, after={disk_after}"
+        );
+    }
+
+    #[cfg(feature = "vnext-compaction-harness")]
+    const COMPACTION_CHILD_ENV: &str = "ONEBRAIN_M5_05_OUTBOX_CHILD";
+    #[cfg(feature = "vnext-compaction-harness")]
+    const COMPACTION_DATABASE_ENV: &str = "ONEBRAIN_M5_05_OUTBOX_DATABASE";
+    #[cfg(feature = "vnext-compaction-harness")]
+    const COMPACTION_CHILD_TEST: &str = "vnext_outbox::tests::m5_05_outbox_compaction_worker";
+
+    #[cfg(feature = "vnext-compaction-harness")]
+    #[test]
+    fn m5_05_outbox_compaction_worker() {
+        if std::env::var_os(COMPACTION_CHILD_ENV).is_none() {
+            return;
+        }
+        let database = std::env::var_os(COMPACTION_DATABASE_ENV).unwrap();
+        compact_outbox(Path::new(&database));
+    }
+
+    #[cfg(feature = "vnext-compaction-harness")]
+    #[test]
+    fn m5_05_outbox_process_kill_matrix_restores_exact_root() {
+        let expected_directory = tempfile::tempdir().unwrap();
+        let expected_path = expected_directory.path().join("expected.redb");
+        initialize_outbox(&expected_path);
+        let expected = compact_outbox(&expected_path);
+
+        for phase in dr_m5_failpoint::FAILPOINT_PHASES {
+            let directory = tempfile::tempdir().unwrap();
+            let database = directory.path().join("outbox.redb");
+            let marker = directory.path().join("armed.json");
+            initialize_outbox(&database);
+            let token = format!("outbox-{phase}-{}", std::process::id());
+            let mut child = Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg(COMPACTION_CHILD_TEST)
+                .arg("--nocapture")
+                .env(COMPACTION_CHILD_ENV, "1")
+                .env(COMPACTION_DATABASE_ENV, &database)
+                .env(dr_m5_failpoint::ENABLE_ENV, "1")
+                .env(
+                    dr_m5_failpoint::FAILPOINT_ENV,
+                    format!("TX-CMP-OUT-001:{phase}"),
+                )
+                .env(dr_m5_failpoint::MARKER_ENV, &marker)
+                .env(dr_m5_failpoint::TOKEN_ENV, &token)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            wait_for_compaction_marker(&mut child, &marker, &token, phase);
+            child.kill().unwrap();
+            assert!(!child.wait().unwrap().success());
+            assert_eq!(compact_outbox(&database), expected, "outbox phase {phase}");
+        }
+    }
+
+    #[cfg(feature = "vnext-compaction-harness")]
+    fn initialize_outbox(path: &Path) {
+        let outbox = OutboundOutbox::open(path).unwrap();
+        let addr = "127.0.0.1:5001".parse().unwrap();
+        let acknowledged = intent_with(1, addr);
+        let dead = intent_with(2, addr);
+        let pending = intent_with(3, addr);
+        for intent in [&acknowledged, &dead, &pending] {
+            outbox.enqueue(intent).unwrap();
+        }
+        outbox
+            .apply_receipt(&acknowledged.id, ReconcileReceiptStatus::AlreadyPresent, 2)
+            .unwrap();
+        outbox
+            .apply_receipt(&dead.id, ReconcileReceiptStatus::RejectedInvalid, 2)
+            .unwrap();
+    }
+
+    #[cfg(feature = "vnext-compaction-harness")]
+    fn compact_outbox(path: &Path) -> (OutboundOutboxStats, [u8; 32], u64, Vec<[u8; 32]>) {
+        let outbox = OutboundOutbox::open(path).unwrap();
+        let switch = OperationalCompactionSwitch::new_disabled();
+        switch.enable();
+        let permit = switch.acquire().unwrap();
+        outbox.compact_terminal(&permit, 0, 8).unwrap();
+        let mut pending = outbox
+            .pending_fair(8)
+            .unwrap()
+            .into_iter()
+            .map(|intent| intent.id)
+            .collect::<Vec<_>>();
+        pending.sort();
+        let mut stats = outbox.stats().unwrap();
+        // Wall-clock age is operator telemetry, not a crash-consistency
+        // oracle. Durable counters, roots, tombstones and pending identities
+        // remain exact below.
+        stats.oldest_pending_age_seconds = None;
+        (
+            stats,
+            outbox.audit_root().unwrap(),
+            outbox.tombstone_count().unwrap(),
+            pending,
+        )
+    }
+
+    #[cfg(feature = "vnext-compaction-harness")]
+    fn wait_for_compaction_marker(
+        child: &mut std::process::Child,
+        marker: &Path,
+        token: &str,
+        phase: &str,
+    ) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if marker.is_file() {
+                let body = fs::read_to_string(marker).unwrap();
+                assert!(body.contains("\"boundary\":\"TX-CMP-OUT-001\""));
+                assert!(body.contains(&format!("\"phase\":\"{phase}\"")));
+                assert!(body.contains(&format!("\"token\":\"{token}\"")));
+                return;
+            }
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("outbox {phase} exited before marker: {status}");
+            }
+            assert!(Instant::now() < deadline, "outbox {phase} marker timeout");
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 }

@@ -1,0 +1,118 @@
+{
+  "format": "onebrain/dr-m5-operational-compaction/1",
+  "profile_id": "OPERATIONAL_COMPACTION_PROFILE_V1",
+  "version": 1,
+  "feature": {
+    "name": "vnext-compaction-harness",
+    "default_enabled": false
+  },
+  "kill_switch": {
+    "default_enabled": false,
+    "generation_fenced": true,
+    "stale_permit_commits": false
+  },
+  "journal": {
+    "allowed_compactable_states": [
+      "completed",
+      "superseded"
+    ],
+    "protected_states": [
+      "pending",
+      "retrying",
+      "inflight",
+      "missing_dependency"
+    ],
+    "audit_identity": "full_manifest_digest",
+    "exact_canonical_length_required": true,
+    "semantic_root_unchanged": true
+  },
+  "outbox": {
+    "terminal_states": [
+      "acknowledged",
+      "dead_letter",
+      "retry_exhausted"
+    ],
+    "protected_states": [
+      "pending"
+    ],
+    "audit_before_delete": true,
+    "audit_and_delete_atomic": true,
+    "payload_digest": "blake3",
+    "max_tombstones": 65536,
+    "physical_disk_decrease_required": true
+  },
+  "bounded_evidence": {
+    "lanes": [
+      "quarantine",
+      "provenance"
+    ],
+    "max_records_per_lane": 4096,
+    "max_record_bytes": 1048576,
+    "overflow_fields": [
+      "dropped_records",
+      "dropped_bytes",
+      "chain_root",
+      "last_dropped_id"
+    ],
+    "retry_last_overflow_idempotent": true
+  },
+  "derived_snapshots": {
+    "lanes": [
+      "kql",
+      "pomv"
+    ],
+    "reducer_version": 1,
+    "max_rows": 65536,
+    "max_snapshot_bytes": 16777216,
+    "canonical_exact_restore": true,
+    "fixture": {
+      "rows": [
+        {
+          "key_hex": "01",
+          "value_byte": 1,
+          "value_length": 32
+        },
+        {
+          "key_hex": "02",
+          "value_byte": 2,
+          "value_length": 64
+        },
+        {
+          "key_hex": "03",
+          "value_byte": 3,
+          "value_length": 96
+        }
+      ],
+      "kql_source_root_blake3": "0ca08333f6db371de7674d19cb99db26df952b72a87ca6ee37226a9bf0872910",
+      "kql_projection_root_blake3": "230a443d1bd69814e05fb2a2173c4d895556b262b39586204120fa48d8442194",
+      "pomv_source_root_blake3": "7fbcf8ee16d00a0c31391f45dcf0c424387c53dafa2ea77d0a4a37a5f799f689",
+      "pomv_projection_root_blake3": "73f25199ee54961a10dc3585ed28d8fc08e1be432ced37f1f0b3a92582ccc571"
+    }
+  },
+  "process_kill": {
+    "boundaries": [
+      "TX-CMP-JRN-001",
+      "TX-CMP-OUT-001",
+      "TX-CMP-QAR-001",
+      "TX-CMP-PRV-001",
+      "TX-CMP-IDX-001"
+    ],
+    "phases": [
+      "before_begin_write",
+      "after_begin_write_before_mutation",
+      "after_mutation_before_commit",
+      "after_commit_before_next_side_effect",
+      "after_next_side_effect_before_ack"
+    ],
+    "required_process_kill_cases": 25,
+    "real_redb_reopen": true,
+    "retry_after_reopen": true
+  },
+  "exit_oracles": [
+    "exact_root_after_every_crash",
+    "pending_work_continues",
+    "semantic_result_unchanged",
+    "logical_payload_bytes_decrease",
+    "physical_disk_bytes_decrease"
+  ]
+}

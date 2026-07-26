@@ -45,6 +45,9 @@ DR_M5_CRASH_HARNESS_PROFILE = (
 DR_M5_CHAOS_FUZZ_PROFILE = (
     ROOT / "src/test-vectors/vnext/dr-m5-chaos-fuzz-v1.json"
 )
+DR_M5_OPERATIONAL_COMPACTION_PROFILE = (
+    ROOT / "src/test-vectors/vnext/dr-m5-operational-compaction-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -1998,6 +2001,252 @@ def validate_vnext_dr_m5_chaos_fuzz(
     )
 
 
+def validate_vnext_dr_m5_operational_compaction(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(DR_M5_OPERATIONAL_COMPACTION_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid M5-05 profile JSON: {error}") from error
+    if (
+        profile.get("format") != "onebrain/dr-m5-operational-compaction/1"
+        or profile.get("profile_id") != "OPERATIONAL_COMPACTION_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("M5-05 profile identity drift")
+
+    feature = profile.get("feature")
+    if feature != {
+        "name": "vnext-compaction-harness",
+        "default_enabled": False,
+    }:
+        raise ContractError("M5-05 feature firewall drift")
+
+    kill_switch = profile.get("kill_switch")
+    if kill_switch != {
+        "default_enabled": False,
+        "generation_fenced": True,
+        "stale_permit_commits": False,
+    }:
+        raise ContractError("M5-05 kill-switch generation fence drift")
+
+    journal = profile.get("journal")
+    if journal != {
+        "allowed_compactable_states": ["completed", "superseded"],
+        "protected_states": [
+            "pending",
+            "retrying",
+            "inflight",
+            "missing_dependency",
+        ],
+        "audit_identity": "full_manifest_digest",
+        "exact_canonical_length_required": True,
+        "semantic_root_unchanged": True,
+    }:
+        raise ContractError("M5-05 journal eligibility/protection drift")
+
+    outbox = profile.get("outbox")
+    if outbox != {
+        "terminal_states": [
+            "acknowledged",
+            "dead_letter",
+            "retry_exhausted",
+        ],
+        "protected_states": ["pending"],
+        "audit_before_delete": True,
+        "audit_and_delete_atomic": True,
+        "payload_digest": "blake3",
+        "max_tombstones": 65_536,
+        "physical_disk_decrease_required": True,
+    }:
+        raise ContractError("M5-05 outbox audit-before-delete contract drift")
+
+    bounded = profile.get("bounded_evidence")
+    expected_overflow_fields = [
+        "dropped_records",
+        "dropped_bytes",
+        "chain_root",
+        "last_dropped_id",
+    ]
+    if bounded != {
+        "lanes": ["quarantine", "provenance"],
+        "max_records_per_lane": 4_096,
+        "max_record_bytes": 1_048_576,
+        "overflow_fields": expected_overflow_fields,
+        "retry_last_overflow_idempotent": True,
+    }:
+        raise ContractError("M5-05 bounded evidence/overflow contract drift")
+
+    derived = profile.get("derived_snapshots")
+    frozen_fixture = {
+        "rows": [
+            {"key_hex": "01", "value_byte": 1, "value_length": 32},
+            {"key_hex": "02", "value_byte": 2, "value_length": 64},
+            {"key_hex": "03", "value_byte": 3, "value_length": 96},
+        ],
+        "kql_source_root_blake3": (
+            "0ca08333f6db371de7674d19cb99db26df952b72a87ca6ee37226a9bf0872910"
+        ),
+        "kql_projection_root_blake3": (
+            "230a443d1bd69814e05fb2a2173c4d895556b262b39586204120fa48d8442194"
+        ),
+        "pomv_source_root_blake3": (
+            "7fbcf8ee16d00a0c31391f45dcf0c424387c53dafa2ea77d0a4a37a5f799f689"
+        ),
+        "pomv_projection_root_blake3": (
+            "73f25199ee54961a10dc3585ed28d8fc08e1be432ced37f1f0b3a92582ccc571"
+        ),
+    }
+    if derived != {
+        "lanes": ["kql", "pomv"],
+        "reducer_version": 1,
+        "max_rows": 65_536,
+        "max_snapshot_bytes": 16_777_216,
+        "canonical_exact_restore": True,
+        "fixture": frozen_fixture,
+    }:
+        raise ContractError("M5-05 derived snapshot/root contract drift")
+
+    expected_boundaries = [
+        "TX-CMP-JRN-001",
+        "TX-CMP-OUT-001",
+        "TX-CMP-QAR-001",
+        "TX-CMP-PRV-001",
+        "TX-CMP-IDX-001",
+    ]
+    expected_phases = [
+        "before_begin_write",
+        "after_begin_write_before_mutation",
+        "after_mutation_before_commit",
+        "after_commit_before_next_side_effect",
+        "after_next_side_effect_before_ack",
+    ]
+    process_kill = profile.get("process_kill")
+    expected_case_count = len(expected_boundaries) * len(expected_phases)
+    if not isinstance(process_kill, dict) or (
+        process_kill.get("boundaries") != expected_boundaries
+        or process_kill.get("phases") != expected_phases
+        or process_kill.get("required_process_kill_cases") != expected_case_count
+        or process_kill.get("real_redb_reopen") is not True
+        or process_kill.get("retry_after_reopen") is not True
+    ):
+        raise ContractError("M5-05 process-kill matrix drift")
+
+    expected_exit = [
+        "exact_root_after_every_crash",
+        "pending_work_continues",
+        "semantic_result_unchanged",
+        "logical_payload_bytes_decrease",
+        "physical_disk_bytes_decrease",
+    ]
+    if profile.get("exit_oracles") != expected_exit:
+        raise ContractError("M5-05 exit oracle drift")
+
+    switch_source = read(
+        ROOT / "src/ku-core/src/foundation/operational_compaction.rs"
+    )
+    for needle in (
+        "pub struct OperationalCompactionSwitch",
+        "AtomicBool::new(false)",
+        ".fetch_add(1, Ordering::AcqRel)",
+        "pub struct OperationalCompactionPermit",
+        "pub fn run_if_current",
+        "switch_is_default_off_and_stale_permits_never_revive",
+    ):
+        if needle not in switch_source:
+            raise ContractError(
+                f"M5-05 kill-switch implementation evidence missing: {needle}"
+            )
+
+    journal_source = read(
+        ROOT / "src/ku-net/src/vnext_reconciliation_journal.rs"
+    )
+    for needle in (
+        "compact_completed_manifests",
+        "accepted.canonical_length == entry.canonical_length",
+        "next.compacted_manifests.insert(*digest)",
+        "store_compaction_atomically",
+        "m5_05_journal_process_kill_matrix_restores_exact_root",
+    ):
+        if needle not in journal_source:
+            raise ContractError(
+                f"M5-05 journal implementation evidence missing: {needle}"
+            )
+
+    outbox_source = read(ROOT / "src/onebrain-node/src/vnext_outbox.rs")
+    for needle in (
+        "pub struct OutboundAuditTombstone",
+        "if intent.state.is_terminal()",
+        "let mut tombstones",
+        "outbox.remove",
+        "physical_reclaim_reduces_disk_after_terminal_payload_compaction",
+        "m5_05_outbox_process_kill_matrix_restores_exact_root",
+    ):
+        if needle not in outbox_source:
+            raise ContractError(
+                f"M5-05 outbox implementation evidence missing: {needle}"
+            )
+
+    operational_source = read(
+        ROOT / "src/onebrain-node/src/vnext_operational_compaction.rs"
+    )
+    for needle in (
+        "MAX_OPERATIONAL_EVIDENCE_RECORDS: u64 = 4_096",
+        "MAX_OPERATIONAL_EVIDENCE_BYTES: usize = 1_048_576",
+        "previous.last_dropped_id == id",
+        "MAX_DERIVED_SNAPSHOT_ROWS: usize = 65_536",
+        "MAX_DERIVED_SNAPSHOT_BYTES: usize = 16 * 1_048_576",
+        "frozen_kql_and_pomv_snapshot_roots_match_profile",
+        "m5_05_operational_process_kill_matrix_restores_exact_root",
+    ):
+        if needle not in operational_source:
+            raise ContractError(
+                f"M5-05 operational implementation evidence missing: {needle}"
+            )
+    for boundary in expected_boundaries[2:]:
+        if boundary not in operational_source:
+            raise ContractError(
+                f"M5-05 operational boundary evidence missing: {boundary}"
+            )
+
+    node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
+    if (
+        "default = []" not in node_manifest
+        or "vnext-compaction-harness = [" not in node_manifest
+        or '"ku-core/dr-m5-crash-harness"' not in node_manifest
+        or '"ku-net/dr-m5-crash-harness"' not in node_manifest
+    ):
+        raise ContractError("M5-05 feature firewall wiring missing")
+
+    inventory = read(DR_M5_TRANSACTION_INVENTORY)
+    for boundary in expected_boundaries:
+        if boundary not in inventory:
+            raise ContractError(
+                f"M5-05 transaction inventory missing boundary: {boundary}"
+            )
+    spec = read(VNEXT / "OPERATIONAL_COMPACTION_PROFILE_V1.md")
+    if "dr-m5-operational-compaction-v1.json" not in spec:
+        raise ContractError("M5-05 normative profile is not linked to machine contract")
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    for needle in (
+        "python -m unittest scripts.ci.test_validate_vnext_dr_m5_operational_compaction",
+        "- name: M5.5 operational compaction and process-kill recovery",
+        "--features persist,dr-m5-crash-harness",
+        "--features vnext-compaction-harness",
+    ):
+        if needle not in workflow:
+            raise ContractError(f"M5-05 PR acceptance gate missing: {needle}")
+
+    return (
+        len(expected_boundaries),
+        len(expected_phases),
+        expected_case_count,
+        len(derived["lanes"]),
+        len(expected_exit),
+    )
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -2115,6 +2364,13 @@ def main() -> int:
             m5_corpus_cases,
             m5_chaos_exit_oracles,
         ) = validate_vnext_dr_m5_chaos_fuzz()
+        (
+            m5_compaction_boundaries,
+            m5_compaction_phases,
+            m5_compaction_cases,
+            m5_compaction_derived_lanes,
+            m5_compaction_exit_oracles,
+        ) = validate_vnext_dr_m5_operational_compaction()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -2141,6 +2397,10 @@ def main() -> int:
         f"{m5_chaos_scenarios} M5-04 chaos/{m5_flood_scenarios} floods/"
         f"{m5_fuzz_targets} fuzz targets/{m5_corpus_cases} corpus cases/"
         f"{m5_chaos_exit_oracles} exit oracles, "
+        f"{m5_compaction_boundaries} M5-05 boundaries/"
+        f"{m5_compaction_phases} phases/{m5_compaction_cases} process kills/"
+        f"{m5_compaction_derived_lanes} derived lanes/"
+        f"{m5_compaction_exit_oracles} exit oracles, "
         f"{links} local links"
     )
     return 0

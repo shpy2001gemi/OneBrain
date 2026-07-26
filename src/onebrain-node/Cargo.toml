@@ -35,6 +35,13 @@ vnext-chaos-harness = [
     "ku-net/dr-m5-chaos-harness",
     "dep:sha2",
 ]
+vnext-compaction-harness = [
+    "vnext-network-runtime",
+    "ku-core/dr-m5-crash-harness",
+    "ku-net/dr-m5-crash-harness",
+    "ku-kql/dr-m5-crash-harness",
+    "dep:sha2",
+]
 
 [dependencies]
 ku-core = { path = "../ku-core" }

@@ -37,6 +37,8 @@ pub mod vnext_mixed_conformance;
 pub mod vnext_network_runtime;
 pub mod vnext_observability;
 #[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_operational_compaction;
+#[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_outbox;
 pub mod vnext_performance_budgets;
 #[cfg(feature = "vnext-network-runtime")]
@@ -112,9 +114,17 @@ pub use vnext_observability::{
     VNEXT_OBSERVABILITY_PROFILE_MAJOR,
 };
 #[cfg(feature = "vnext-network-runtime")]
+pub use vnext_operational_compaction::{
+    BoundedEvidenceKind, DerivedIndexLane, DerivedIndexRow, DerivedIndexSnapshot,
+    EvidenceRecordOutcome, OperationalCompactionError, OperationalCompactionPolicy,
+    OperationalCompactionStore, OperationalEvidenceStats, OverflowEvidence,
+    MAX_DERIVED_SNAPSHOT_BYTES, MAX_DERIVED_SNAPSHOT_ROWS, MAX_OPERATIONAL_EVIDENCE_BYTES,
+    MAX_OPERATIONAL_EVIDENCE_RECORDS, OPERATIONAL_COMPACTION_PROFILE_MAJOR,
+};
+#[cfg(feature = "vnext-network-runtime")]
 pub use vnext_outbox::{
-    OutboundIntentState, OutboundOutbox, OutboundOutboxError, OutboundOutboxStats,
-    OutboundTransferIntent, OutboxEnqueueOutcome,
+    OutboundAuditTombstone, OutboundCompactionReport, OutboundIntentState, OutboundOutbox,
+    OutboundOutboxError, OutboundOutboxStats, OutboundTransferIntent, OutboxEnqueueOutcome,
 };
 pub use vnext_performance_budgets::{
     run_performance_budget_suite, PerformanceBudgetReport, PerformanceBudgetV1,

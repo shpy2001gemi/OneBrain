@@ -2003,3 +2003,67 @@ Remote final evidence trên commit `e89b2e1`:
 
 M5-04 đã hoàn tất implementation, local gates, remote foundation CI và nightly
 fuzz evidence trên `main`. Work package kế tiếp là M5-05 Operational compaction.
+
+### 2026-07-27 — M5-05 Operational compaction
+
+Đã triển khai cục bộ trên nhánh `codex/dr-m5-operational-compaction`:
+
+1. Freeze
+   [`OPERATIONAL_COMPACTION_PROFILE_V1.md`](../specs/vnext/OPERATIONAL_COMPACTION_PROFILE_V1.md)
+   cùng machine profile `onebrain/dr-m5-operational-compaction/1` và feature
+   `vnext-compaction-harness` mặc định tắt.
+2. Bổ sung `OperationalCompactionSwitch` mặc định disable, permit gắn exact
+   generation và read/write commit gate. `disable()`/`enable()` chờ durable
+   commit hiện tại kết thúc rồi fence toàn bộ permit cũ; stale permit không thể
+   đi qua commit gate.
+3. Nâng reconciliation journal lên minor 2, giữ exact canonical length cho
+   accepted record. Chỉ manifest có toàn bộ entry đã accepted đúng length mới
+   được thay payload bằng full manifest digest; Pending, retry, inflight và
+   missing-dependency vẫn còn. Semantic root, receipt và accepted set không đổi,
+   kể cả reopen hoặc re-ingest manifest đã compact.
+4. Outbox chỉ xóa `Acknowledged`, `DeadLetter` và `RetryExhausted`. Cùng một
+   Redb transaction ghi audit tombstone gồm intent/state/sequence/attempts/
+   retries/CID/payload BLAKE3 trước khi xóa terminal payload; Pending không bao
+   giờ là candidate. Audit được cap 65.536 record.
+5. Bổ sung quarantine và provenance store có cap riêng, hard cap 4.096 record/
+   lane và 1 MiB/record. Khi đầy, raw payload không được giữ; overflow evidence
+   giữ dropped count/bytes, deterministic chain root và last dropped ID. Retry
+   sau crash của cùng overflow ID không tăng đôi counter.
+6. Bổ sung canonical KQL/PoMV derived-index snapshot: lane, reducer version,
+   sorted/deduplicated rows, source/projection BLAKE3 roots, cap 65.536 row và
+   16 MiB. Decode từ chối corruption/trailing bytes; restore phải đúng byte và
+   đúng frozen roots.
+7. Gắn năm phase failpoint vào năm boundary mới `TX-CMP-JRN-001`,
+   `TX-CMP-OUT-001`, `TX-CMP-QAR-001`, `TX-CMP-PRV-001` và
+   `TX-CMP-IDX-001`. Ba parent/child harness thực hiện đủ 25 lần process kill
+   trên Redb thật, reopen rồi retry idempotent và so exact durable oracle.
+8. Logical compaction chứng minh snapshot/payload bytes giảm; Redb page
+   compaction trên 4 MiB terminal payload chứng minh file vật lý giảm thật.
+   Transaction inventory, normative coverage và foundation CI đã có gate M5.5;
+   validator cùng 14 mutation tests khóa firewall, eligibility/protection,
+   bounds, roots, matrix và exit oracles.
+
+Local evidence:
+
+- commit-gate concurrency và stale-generation tests: 2/2 xanh;
+- journal M5-05: 11/11; outbox M5-05: 12/12; operational store: 7/7 xanh;
+- process-kill matrix: 25/25 ca kill/reopen/retry xanh;
+- `onebrain-node --features vnext-compaction-harness --lib`: 151/151 xanh;
+- `cargo test --workspace --locked --no-fail-fast -- --test-threads=2`: xanh;
+- M5-05 mutation tests: 14/14; toàn bộ machine-profile mutation tests: 89/89
+  xanh;
+- default và feature-enabled `cargo check`: xanh;
+- feature-enabled `cargo clippy` cho `ku-net` và `onebrain-node`: exit code 0,
+  chỉ còn warning baseline đã biết;
+- `cargo fmt --all -- --check` và `git diff --check`: xanh;
+- `validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37 negative assertions,
+  55 foundation vectors/21 domains, 13 DR-M5 boundaries/11 oracle fields,
+  3 M5-01 lanes/13 state bounds/3 exit oracles, 22 M5-02 reasons/4 gauges/
+  4 exit oracles, 13 M5-03 boundaries/5 phases/65 process kills/4 storage
+  faults, 7 M5-04 chaos/5 floods/6 fuzz targets/18 corpus cases/5 exit oracles,
+  5 M5-05 boundaries/5 phases/25 process kills/2 derived lanes/5 exit oracles,
+  545 normative lines và 402 local links.
+
+M5-05 đã hoàn tất ở cấp implementation; cần remote foundation CI trước khi
+merge về `main`. Work package kế tiếp là M5-06 Mixed version, runtime kill
+switch và rollback.

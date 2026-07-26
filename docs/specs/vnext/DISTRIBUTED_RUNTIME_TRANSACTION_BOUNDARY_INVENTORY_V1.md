@@ -1,12 +1,13 @@
 # Distributed Runtime Transaction Boundary Inventory v1
 
-> Status: Frozen inventory; M5-03 process-kill coverage complete
+> Status: Frozen inventory; M5-03 process-kill coverage complete; M5-05 operational coverage complete
 > Version: 1.0  
-> Date: 2026-07-25  
+> Date: 2026-07-27
 > Purpose: failpoint IDs and recovery oracles for DR-M5 process-kill testing
 
-This inventory names durable commit boundaries that already exist in M2–M4.
-Listing a boundary is not evidence that its process-kill gate has passed.
+This inventory names durable commit boundaries from M2–M4 plus the M5-05
+operational-compaction boundaries. Listing a boundary is not evidence that its
+process-kill gate has passed.
 Since P2.1, the listed network, KQL, Public Use, and PoMV owners are held by one
 node-owned `VNextProductRuntime`; table-level transaction identities and
 restart oracles remain unchanged.
@@ -45,6 +46,11 @@ balance as correctness evidence.
 | `TX-KQL-001` | One-hop durable match record | `DurableMatchIndex`; `vnext_distributed_kql_matches_v1` | Emit local bounded match/notification | One affordance delta creates at most one match identity; exact local private target is never public | Five-phase match/cursor hook plus duplicate-free replay oracle |
 | `TX-POMV-001` | Received use identity branch set | `ReceivedUseIdentityIndex`; `vnext_received_use_identities_v1` | Materialize policy/frontier-relative view | One EventCID counts once across 1/2/5 paths; conflicting EventCIDs remain branches | Five-phase identity hook plus conflict-preserving replay oracle |
 | `TX-POMV-002` | Metabolic view head/lineage revision | `ReceivedUseIdentityIndex`; `vnext_distributed_pomv_view_heads_v1` | Return read-only view | View root, prior root, revision, policy and frontier restore exactly; no wallet/OBT mutation | Five-phase lineage hook plus root/revision replay oracle |
+| `TX-CMP-JRN-001` | Completed reconciliation-manifest payload replacement | `RedbReconciliationJournalBackend`; `vnext_reconciliation_journals` | Resume pending/missing-dependency work | Accepted identities and exact lengths survive; pending manifests remain; semantic root is unchanged | M5-05 five-phase child-process kill/reopen and idempotent retry |
+| `TX-CMP-OUT-001` | Terminal outbox audit tombstone and payload deletion | `OutboundOutbox`; `vnext_outbound_intents`, `vnext_outbound_terminal_tombstones_v2` | Reclaim free Redb pages | Tombstone and terminal deletion are atomic; pending intents survive; audit root restores exactly | M5-05 five-phase child-process kill/reopen and idempotent retry |
+| `TX-CMP-QAR-001` | Quarantine overflow evidence update | `OperationalCompactionStore`; `vnext_compaction_quarantine_v1`, `vnext_compaction_overflow_v1` | Return bounded admission outcome | Raw quarantine cap holds; retry does not double-count the last overflow ID; oracle root restores exactly | M5-05 five-phase child-process kill/reopen and idempotent retry |
+| `TX-CMP-PRV-001` | Provenance overflow evidence update | `OperationalCompactionStore`; `vnext_compaction_provenance_v1`, `vnext_compaction_overflow_v1` | Return bounded admission outcome | Raw provenance cap holds; retry does not double-count the last overflow ID; oracle root restores exactly | M5-05 five-phase child-process kill/reopen and idempotent retry |
+| `TX-CMP-IDX-001` | KQL/PoMV derived-index snapshot replacement | `OperationalCompactionStore`; `vnext_compaction_derived_snapshots_v1` | Restore and verify exact snapshot | Canonical bytes, lane, reducer version, rows, source root and projection root restore exactly | M5-05 five-phase child-process kill/reopen and idempotent replacement |
 
 ## Mandatory failpoint phases
 

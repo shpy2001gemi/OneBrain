@@ -5,12 +5,12 @@
 //! If the process crashes after sink acceptance but before journal commit,
 //! fair redelivery observes `AlreadyPresent` and repairs the journal.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
 use ku_core::foundation::{
-    decode_canonical, encode_canonical, CanonicalError, CanonicalValue, ReservedDomain,
-    ResourceProfile,
+    decode_canonical, dr_m5_failpoint, encode_canonical, CanonicalError, CanonicalValue,
+    OperationalCompactionPermit, ReservedDomain, ResourceProfile,
 };
 use onebrain_protocol::{
     bind_reconciliation_message, decode_reconciliation_message, encode_reconciliation_message,
@@ -26,7 +26,7 @@ use crate::vnext_reconciliation::{
 };
 
 const JOURNAL_MAJOR: u64 = 1;
-const JOURNAL_MINOR: u64 = 1;
+const JOURNAL_MINOR: u64 = 2;
 const MAX_MANIFEST_BATCHES: usize = 4_096;
 const MAX_JOURNAL_RECORDS: usize = 65_536;
 
@@ -34,6 +34,15 @@ const MAX_JOURNAL_RECORDS: usize = 65_536;
 pub struct ReconciliationJournalConfig {
     pub max_retries_per_record: u64,
     pub max_inflight_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReconciliationJournalCompactionReport {
+    pub removed_completed_manifests: u64,
+    pub snapshot_bytes_before: u64,
+    pub snapshot_bytes_after: u64,
+    pub compacted_audit_entries: u64,
+    pub semantic_root: [u8; 32],
 }
 
 impl ReconciliationJournalConfig {
@@ -52,6 +61,16 @@ impl ReconciliationJournalConfig {
 pub trait ReconciliationJournalBackend: Send + Sync {
     fn load(&self, binding: &[u8; 32]) -> Result<Option<Vec<u8>>, String>;
     fn store_atomically(&self, binding: &[u8; 32], bytes: &[u8]) -> Result<(), String>;
+    fn store_compaction_atomically(
+        &self,
+        binding: &[u8; 32],
+        bytes: &[u8],
+        permit: &OperationalCompactionPermit,
+    ) -> Result<(), String> {
+        permit
+            .run_if_current(|| self.store_atomically(binding, bytes))
+            .map_err(|_| "COMPACTION_FENCED".to_owned())?
+    }
     /// Replace one exact snapshot. This consumes a resume token without a
     /// check-then-write race when two fresh sessions replay it concurrently.
     fn compare_and_swap(
@@ -111,6 +130,7 @@ struct AcceptedRecord {
     kind: ReconcileManifestKind,
     cid: [u8; 32],
     status: ReconcileReceiptStatus,
+    canonical_length: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -120,6 +140,7 @@ struct JournalProjection {
     config: ReconciliationJournalConfig,
     next_sequence: u64,
     manifests: BTreeMap<[u8; 32], Vec<u8>>,
+    compacted_manifests: BTreeSet<[u8; 32]>,
     accepted: BTreeMap<(u64, [u8; 32]), AcceptedRecord>,
     retries: BTreeMap<(u64, [u8; 32]), u64>,
     inflight_bytes: u64,
@@ -133,6 +154,7 @@ impl JournalProjection {
             config,
             next_sequence: 0,
             manifests: BTreeMap::new(),
+            compacted_manifests: BTreeSet::new(),
             accepted: BTreeMap::new(),
             retries: BTreeMap::new(),
             inflight_bytes: 0,
@@ -144,6 +166,13 @@ impl JournalProjection {
     }
 
     fn encode_version(&self, minor: u64) -> Result<Vec<u8>, ReconciliationJournalError> {
+        if self.manifests.len() > MAX_MANIFEST_BATCHES
+            || self.compacted_manifests.len() > MAX_MANIFEST_BATCHES
+            || self.accepted.len() > MAX_JOURNAL_RECORDS
+            || self.retries.len() > MAX_JOURNAL_RECORDS
+        {
+            return Err(ReconciliationJournalError::Limit);
+        }
         let manifests = self
             .manifests
             .iter()
@@ -158,11 +187,15 @@ impl JournalProjection {
             .accepted
             .values()
             .map(|record| {
-                CanonicalValue::Map(vec![
+                let mut fields = vec![
                     (0, CanonicalValue::Unsigned(record.kind as u64)),
                     (1, CanonicalValue::Bytes(record.cid.to_vec())),
                     (2, CanonicalValue::Unsigned(record.status as u64)),
-                ])
+                ];
+                if minor >= 2 {
+                    fields.push((3, CanonicalValue::Unsigned(record.canonical_length)));
+                }
+                CanonicalValue::Map(fields)
             })
             .collect();
         let retries = self
@@ -199,6 +232,17 @@ impl JournalProjection {
         if minor >= 1 {
             fields.push((9, CanonicalValue::Bytes(self.resume_scope.to_vec())));
         }
+        if minor >= 2 {
+            fields.push((
+                10,
+                CanonicalValue::Array(
+                    self.compacted_manifests
+                        .iter()
+                        .map(|digest| CanonicalValue::Bytes(digest.to_vec()))
+                        .collect(),
+                ),
+            ));
+        }
         encode_canonical(&CanonicalValue::Map(fields), ResourceProfile::ManifestV1)
             .map_err(Into::into)
     }
@@ -228,7 +272,13 @@ impl JournalProjection {
         let manifest_values = array(root, 5, "journal.manifests")?;
         let accepted_values = array(root, 6, "journal.accepted")?;
         let retry_values = array(root, 7, "journal.retries")?;
+        let compacted_values = if minor >= 2 {
+            array(root, 10, "journal.compacted_manifests")?
+        } else {
+            &[]
+        };
         if manifest_values.len() > MAX_MANIFEST_BATCHES
+            || compacted_values.len() > MAX_MANIFEST_BATCHES
             || accepted_values.len() > MAX_JOURNAL_RECORDS
             || retry_values.len() > MAX_JOURNAL_RECORDS
         {
@@ -255,7 +305,17 @@ impl JournalProjection {
             let kind = parse_kind(unsigned(entry, 0, "journal.accepted.kind")?)?;
             let cid = bytes32(entry, 1, "journal.accepted.cid")?;
             let status = parse_status(unsigned(entry, 2, "journal.accepted.status")?)?;
-            let record = AcceptedRecord { kind, cid, status };
+            let canonical_length = if minor >= 2 {
+                unsigned(entry, 3, "journal.accepted.canonical_length")?
+            } else {
+                0
+            };
+            let record = AcceptedRecord {
+                kind,
+                cid,
+                status,
+                canonical_length,
+            };
             if projection
                 .accepted
                 .insert((kind as u64, cid), record)
@@ -277,6 +337,19 @@ impl JournalProjection {
                 return Err(ReconciliationJournalError::InvalidRetryRecord);
             }
         }
+        for value in compacted_values {
+            let CanonicalValue::Bytes(bytes) = value else {
+                return Err(ReconciliationJournalError::InvalidField(
+                    "journal.compacted_manifest",
+                ));
+            };
+            let digest = fixed32(bytes, "journal.compacted_manifest")?;
+            if projection.manifests.contains_key(&digest)
+                || !projection.compacted_manifests.insert(digest)
+            {
+                return Err(ReconciliationJournalError::InvalidManifestRecord);
+            }
+        }
         if projection.encode_version(minor)? != bytes {
             return Err(ReconciliationJournalError::NonCanonicalJournal);
         }
@@ -285,6 +358,68 @@ impl JournalProjection {
 
     fn checkpoint_digest(&self) -> Result<[u8; 32], ReconciliationJournalError> {
         Ok(ReservedDomain::Manifest.digest(&self.encode()?))
+    }
+
+    fn completed_manifest_digests(&self) -> Result<Vec<[u8; 32]>, ReconciliationJournalError> {
+        let mut completed = Vec::new();
+        for (digest, bytes) in &self.manifests {
+            let message = decode_reconciliation_message(bytes)?;
+            let ReconciliationBody::Manifest { entries } = message.body else {
+                return Err(ReconciliationJournalError::InvalidManifestRecord);
+            };
+            if entries.iter().all(|entry| {
+                self.accepted
+                    .get(&(entry.kind as u64, entry.cid))
+                    .is_some_and(|accepted| {
+                        accepted.canonical_length != 0
+                            && accepted.canonical_length == entry.canonical_length
+                    })
+            }) {
+                completed.push(*digest);
+            }
+        }
+        Ok(completed)
+    }
+
+    fn semantic_root(&self) -> Result<[u8; 32], ReconciliationJournalError> {
+        let mut pending = BTreeSet::new();
+        for bytes in self.manifests.values() {
+            let message = decode_reconciliation_message(bytes)?;
+            let ReconciliationBody::Manifest { entries } = message.body else {
+                return Err(ReconciliationJournalError::InvalidManifestRecord);
+            };
+            for entry in entries {
+                if !self.accepted.contains_key(&(entry.kind as u64, entry.cid)) {
+                    pending.insert((entry.kind as u64, entry.cid, entry.canonical_length));
+                }
+            }
+        }
+
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"onebrain:vnext:reconciliation-journal-semantic:1\0");
+        hasher.update(&self.binding);
+        hasher.update(&self.resume_scope);
+        hasher.update(&self.config.max_retries_per_record.to_be_bytes());
+        hasher.update(&self.config.max_inflight_bytes.to_be_bytes());
+        hasher.update(&self.next_sequence.to_be_bytes());
+        hasher.update(&self.inflight_bytes.to_be_bytes());
+        for record in self.accepted.values() {
+            hasher.update(&(record.kind as u64).to_be_bytes());
+            hasher.update(&record.cid);
+            hasher.update(&(record.status as u64).to_be_bytes());
+            hasher.update(&record.canonical_length.to_be_bytes());
+        }
+        for ((kind, cid), count) in &self.retries {
+            hasher.update(&kind.to_be_bytes());
+            hasher.update(cid);
+            hasher.update(&count.to_be_bytes());
+        }
+        for (kind, cid, canonical_length) in pending {
+            hasher.update(&kind.to_be_bytes());
+            hasher.update(&cid);
+            hasher.update(&canonical_length.to_be_bytes());
+        }
+        Ok(*hasher.finalize().as_bytes())
     }
 }
 
@@ -498,7 +633,7 @@ impl<B: ReconciliationJournalBackend, S: ValidateThenAcceptSink>
         let bytes = encode_reconciliation_message(message)?;
         let digest = ReservedDomain::Manifest.digest(&bytes);
         let mut next = self.projection.clone();
-        if !next.manifests.contains_key(&digest) {
+        if !next.manifests.contains_key(&digest) && !next.compacted_manifests.contains(&digest) {
             if next.manifests.len() >= MAX_MANIFEST_BATCHES {
                 return Err(ReconciliationJournalError::Limit);
             }
@@ -548,6 +683,7 @@ impl<B: ReconciliationJournalBackend, S: ValidateThenAcceptSink>
                         kind: frame.kind,
                         cid: frame.cid,
                         status,
+                        canonical_length: size,
                     },
                 );
                 completed.retries.remove(&key);
@@ -649,6 +785,73 @@ impl<B: ReconciliationJournalBackend, S: ValidateThenAcceptSink>
         self.projection.checkpoint_digest()
     }
 
+    /// Replace fully completed manifest payloads with bounded audit digests.
+    /// Accepted records, retries, inflight reservations and every pending or
+    /// missing-dependency manifest remain durable.
+    pub fn compact_completed_manifests(
+        &mut self,
+        permit: &OperationalCompactionPermit,
+        limit: usize,
+    ) -> Result<ReconciliationJournalCompactionReport, ReconciliationJournalError> {
+        if limit == 0 || limit > MAX_MANIFEST_BATCHES {
+            return Err(ReconciliationJournalError::Limit);
+        }
+        permit
+            .ensure_current()
+            .map_err(|_| ReconciliationJournalError::CompactionFenced)?;
+        let before = self.projection.encode()?;
+        let semantic_root = self.projection.semantic_root()?;
+        let completed = self.projection.completed_manifest_digests()?;
+        let available_audit_slots =
+            MAX_MANIFEST_BATCHES.saturating_sub(self.projection.compacted_manifests.len());
+        let remove = completed
+            .into_iter()
+            .take(limit.min(available_audit_slots))
+            .collect::<Vec<_>>();
+
+        dr_m5_failpoint::hit("TX-CMP-JRN-001", "before_begin_write");
+        dr_m5_failpoint::hit("TX-CMP-JRN-001", "after_begin_write_before_mutation");
+        let mut next = self.projection.clone();
+        for digest in &remove {
+            // The audit digest is inserted in the replacement snapshot before
+            // the verbose manifest bytes are removed from that same snapshot.
+            next.compacted_manifests.insert(*digest);
+            next.manifests.remove(digest);
+        }
+        let after = next.encode()?;
+        if next.semantic_root()? != semantic_root {
+            return Err(ReconciliationJournalError::SemanticDrift);
+        }
+        dr_m5_failpoint::hit("TX-CMP-JRN-001", "after_mutation_before_commit");
+        permit
+            .ensure_current()
+            .map_err(|_| ReconciliationJournalError::CompactionFenced)?;
+        self.backend
+            .store_compaction_atomically(&next.binding, &after, permit)
+            .map_err(|error| {
+                if error == "COMPACTION_FENCED" {
+                    ReconciliationJournalError::CompactionFenced
+                } else {
+                    ReconciliationJournalError::Backend(error)
+                }
+            })?;
+        self.projection = next;
+        dr_m5_failpoint::hit("TX-CMP-JRN-001", "after_commit_before_next_side_effect");
+        let report = ReconciliationJournalCompactionReport {
+            removed_completed_manifests: remove.len() as u64,
+            snapshot_bytes_before: before.len() as u64,
+            snapshot_bytes_after: after.len() as u64,
+            compacted_audit_entries: self.projection.compacted_manifests.len() as u64,
+            semantic_root,
+        };
+        dr_m5_failpoint::hit("TX-CMP-JRN-001", "after_next_side_effect_before_ack");
+        Ok(report)
+    }
+
+    pub fn journal_semantic_root(&self) -> Result<[u8; 32], ReconciliationJournalError> {
+        self.projection.semantic_root()
+    }
+
     pub fn into_sink(self) -> S {
         self.receiver.into_sink()
     }
@@ -682,7 +885,12 @@ fn restore_receiver<S: ValidateThenAcceptSink>(
         receiver.ingest_manifest(&rebound)?;
     }
     for record in projection.accepted.values() {
-        receiver.restore_accepted(record.kind, record.cid, record.status);
+        receiver.restore_accepted(
+            record.kind,
+            record.cid,
+            record.status,
+            record.canonical_length,
+        );
     }
     Ok(receiver)
 }
@@ -720,12 +928,12 @@ fn token_mac(key: [u8; 32], binding: [u8; 32], checkpoint: [u8; 32], sequence: u
 
 #[cfg(feature = "persist")]
 pub mod persistent {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::sync::Arc;
 
     use redb::{Database, ReadableTable, TableDefinition};
 
-    use ku_core::foundation::dr_m5_failpoint;
+    use ku_core::foundation::{dr_m5_failpoint, OperationalCompactionPermit};
 
     use super::ReconciliationJournalBackend;
 
@@ -735,11 +943,13 @@ pub mod persistent {
     #[derive(Clone)]
     pub struct RedbReconciliationJournalBackend {
         db: Arc<Database>,
+        path: Arc<PathBuf>,
     }
 
     impl RedbReconciliationJournalBackend {
         pub fn open(path: impl AsRef<Path>) -> Result<Self, String> {
-            let db = Database::create(path).map_err(|error| error.to_string())?;
+            let path = path.as_ref().to_path_buf();
+            let db = Database::create(&path).map_err(|error| error.to_string())?;
             let write = db.begin_write().map_err(|error| error.to_string())?;
             {
                 write
@@ -747,7 +957,39 @@ pub mod persistent {
                     .map_err(|error| error.to_string())?;
             }
             write.commit().map_err(|error| error.to_string())?;
-            Ok(Self { db: Arc::new(db) })
+            Ok(Self {
+                db: Arc::new(db),
+                path: Arc::new(path),
+            })
+        }
+
+        pub fn disk_bytes(&self) -> Result<u64, String> {
+            std::fs::metadata(self.path.as_ref())
+                .map(|metadata| metadata.len())
+                .map_err(|error| error.to_string())
+        }
+
+        pub fn reclaim_disk(
+            &mut self,
+            permit: &OperationalCompactionPermit,
+        ) -> Result<bool, String> {
+            permit
+                .ensure_current()
+                .map_err(|_| "COMPACTION_FENCED".to_owned())?;
+            let database =
+                Arc::get_mut(&mut self.db).ok_or_else(|| "COMPACTION_DATABASE_BUSY".to_owned())?;
+            let mut reclaimed = false;
+            for _ in 0..64 {
+                if !permit
+                    .run_if_current(|| database.compact())
+                    .map_err(|_| "COMPACTION_FENCED".to_owned())?
+                    .map_err(|error| error.to_string())?
+                {
+                    break;
+                }
+                reclaimed = true;
+            }
+            Ok(reclaimed)
         }
     }
 
@@ -780,6 +1022,30 @@ pub mod persistent {
             dr_m5_failpoint::hit("TX-JRN-001", "after_commit_before_next_side_effect");
             dr_m5_failpoint::hit("TX-JRN-001", "after_next_side_effect_before_ack");
             Ok(())
+        }
+
+        fn store_compaction_atomically(
+            &self,
+            binding: &[u8; 32],
+            bytes: &[u8],
+            permit: &OperationalCompactionPermit,
+        ) -> Result<(), String> {
+            permit
+                .ensure_current()
+                .map_err(|_| "COMPACTION_FENCED".to_owned())?;
+            let write = self.db.begin_write().map_err(|error| error.to_string())?;
+            {
+                let mut table = write
+                    .open_table(JOURNALS)
+                    .map_err(|error| error.to_string())?;
+                table
+                    .insert(binding.as_slice(), bytes)
+                    .map_err(|error| error.to_string())?;
+            }
+            permit
+                .run_if_current(|| write.commit())
+                .map_err(|_| "COMPACTION_FENCED".to_owned())?
+                .map_err(|error| error.to_string())
         }
 
         fn compare_and_swap(
@@ -891,7 +1157,10 @@ fn bytes32(
     key: u64,
     field: &'static str,
 ) -> Result<[u8; 32], ReconciliationJournalError> {
-    let bytes = byte_string(map, key, field)?;
+    fixed32(byte_string(map, key, field)?, field)
+}
+
+fn fixed32(bytes: &[u8], field: &'static str) -> Result<[u8; 32], ReconciliationJournalError> {
     if bytes.len() != 32 {
         return Err(ReconciliationJournalError::InvalidField(field));
     }
@@ -918,6 +1187,8 @@ pub enum ReconciliationJournalError {
     ResumeNotNegotiated,
     InvalidResumeToken,
     Limit,
+    CompactionFenced,
+    SemanticDrift,
 }
 
 impl From<CanonicalError> for ReconciliationJournalError {
@@ -940,10 +1211,22 @@ impl From<ReconciliationError> for ReconciliationJournalError {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    use std::fs;
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    use std::path::Path;
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, Mutex};
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    use std::thread;
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    use std::time::{Duration, Instant};
 
-    use ku_core::foundation::{DisclosureClass, NamespaceCommitment, SelectorCid};
+    use ku_core::foundation::{
+        DisclosureClass, NamespaceCommitment, OperationalCompactionSwitch, SelectorCid,
+    };
     use onebrain_protocol::{
         bind_reconciliation_message, ReconcileManifestEntry, ReconciliationBudget,
         ReconciliationSummaryMethod,
@@ -1378,6 +1661,90 @@ mod tests {
         assert_eq!(*sink.insertions.lock().unwrap(), 1);
     }
 
+    #[test]
+    fn compaction_removes_only_completed_manifests_and_restores_exact_semantics() {
+        let backend = SharedMemoryBackend::default();
+        let sink = SharedSink::default();
+        let completed = frame();
+        let pending = BoundPayloadFrame::new(
+            &context(),
+            ReconcileManifestKind::Object,
+            b"pending-missing-dependency".to_vec(),
+        )
+        .unwrap();
+        let mut session = JournaledReconciliationSession::open(
+            backend.clone(),
+            context(),
+            config(),
+            sink.clone(),
+        )
+        .unwrap();
+        session.ingest_manifest(&manifest(&completed)).unwrap();
+        session.ingest_manifest(&manifest(&pending)).unwrap();
+        session.ingest_payload(&completed).unwrap();
+        assert_eq!(
+            session.state(),
+            ReceiverState::ReceivingPayloads { pending: 1 }
+        );
+        let semantic_root = session.journal_semantic_root().unwrap();
+        let receipt = session.receipt_message(11).unwrap();
+
+        let switch = OperationalCompactionSwitch::new_disabled();
+        switch.enable();
+        let permit = switch.acquire().unwrap();
+        let report = session
+            .compact_completed_manifests(&permit, MAX_MANIFEST_BATCHES)
+            .unwrap();
+        assert_eq!(report.removed_completed_manifests, 1);
+        assert_eq!(report.compacted_audit_entries, 1);
+        assert!(report.snapshot_bytes_after < report.snapshot_bytes_before);
+        assert_eq!(report.semantic_root, semantic_root);
+        assert_eq!(session.journal_semantic_root().unwrap(), semantic_root);
+        assert_eq!(session.receipt_message(11).unwrap(), receipt);
+        drop(session);
+
+        let mut reopened =
+            JournaledReconciliationSession::open(backend, context(), config(), sink.clone())
+                .unwrap();
+        assert_eq!(
+            reopened.state(),
+            ReceiverState::ReceivingPayloads { pending: 1 }
+        );
+        assert_eq!(reopened.accepted_cids(), vec![completed.cid]);
+        assert_eq!(reopened.journal_semantic_root().unwrap(), semantic_root);
+        assert_eq!(reopened.receipt_message(11).unwrap(), receipt);
+        let compacted_checkpoint = reopened.journal_checkpoint().unwrap();
+        reopened.ingest_manifest(&manifest(&completed)).unwrap();
+        assert_eq!(reopened.journal_checkpoint().unwrap(), compacted_checkpoint);
+        assert_eq!(
+            reopened.ingest_payload(&pending).unwrap(),
+            JournaledPayloadOutcome::Delivered(PayloadIngestOutcome::ValidatedStored)
+        );
+        assert_eq!(reopened.state(), ReceiverState::ManifestBatchComplete);
+    }
+
+    #[test]
+    fn stale_compaction_permit_does_not_mutate_journal() {
+        let backend = SharedMemoryBackend::default();
+        let sink = SharedSink::default();
+        let frame = frame();
+        let mut session =
+            JournaledReconciliationSession::open(backend, context(), config(), sink).unwrap();
+        session.ingest_manifest(&manifest(&frame)).unwrap();
+        session.ingest_payload(&frame).unwrap();
+        let before = session.journal_checkpoint().unwrap();
+
+        let switch = OperationalCompactionSwitch::new_disabled();
+        switch.enable();
+        let permit = switch.acquire().unwrap();
+        switch.disable();
+        assert_eq!(
+            session.compact_completed_manifests(&permit, 1),
+            Err(ReconciliationJournalError::CompactionFenced)
+        );
+        assert_eq!(session.journal_checkpoint().unwrap(), before);
+    }
+
     #[cfg(feature = "persist")]
     #[test]
     fn redb_journal_reopens_with_manifest_and_accepted_identity() {
@@ -1402,5 +1769,137 @@ mod tests {
         assert_eq!(reopened.state(), ReceiverState::ManifestBatchComplete);
         assert_eq!(reopened.accepted_cids(), vec![frame.cid]);
         assert_eq!(*sink.insertions.lock().unwrap(), 1);
+    }
+
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    const COMPACTION_CHILD_ENV: &str = "ONEBRAIN_M5_05_JOURNAL_CHILD";
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    const COMPACTION_DATABASE_ENV: &str = "ONEBRAIN_M5_05_JOURNAL_DATABASE";
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    const COMPACTION_CHILD_TEST: &str =
+        "vnext_reconciliation_journal::tests::m5_05_journal_compaction_worker";
+
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    #[test]
+    fn m5_05_journal_compaction_worker() {
+        if std::env::var_os(COMPACTION_CHILD_ENV).is_none() {
+            return;
+        }
+        let database = std::env::var_os(COMPACTION_DATABASE_ENV).unwrap();
+        compact_redb_journal(Path::new(&database));
+    }
+
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    #[test]
+    fn m5_05_journal_process_kill_matrix_restores_exact_root() {
+        let expected_directory = tempfile::tempdir().unwrap();
+        let expected_path = expected_directory.path().join("expected.redb");
+        initialize_redb_journal(&expected_path);
+        let expected = compact_redb_journal(&expected_path);
+
+        for phase in dr_m5_failpoint::FAILPOINT_PHASES {
+            let directory = tempfile::tempdir().unwrap();
+            let database = directory.path().join("journal.redb");
+            let marker = directory.path().join("armed.json");
+            initialize_redb_journal(&database);
+            let token = format!("journal-{phase}-{}", std::process::id());
+            let mut child = Command::new(std::env::current_exe().unwrap())
+                .arg("--exact")
+                .arg(COMPACTION_CHILD_TEST)
+                .arg("--nocapture")
+                .env(COMPACTION_CHILD_ENV, "1")
+                .env(COMPACTION_DATABASE_ENV, &database)
+                .env(dr_m5_failpoint::ENABLE_ENV, "1")
+                .env(
+                    dr_m5_failpoint::FAILPOINT_ENV,
+                    format!("TX-CMP-JRN-001:{phase}"),
+                )
+                .env(dr_m5_failpoint::MARKER_ENV, &marker)
+                .env(dr_m5_failpoint::TOKEN_ENV, &token)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            wait_for_compaction_marker(&mut child, &marker, &token, phase);
+            child.kill().unwrap();
+            assert!(!child.wait().unwrap().success());
+
+            let recovered = compact_redb_journal(&database);
+            assert_eq!(recovered, expected, "journal phase {phase}");
+        }
+    }
+
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    fn initialize_redb_journal(path: &Path) {
+        use super::persistent::RedbReconciliationJournalBackend;
+
+        let backend = RedbReconciliationJournalBackend::open(path).unwrap();
+        let completed = frame();
+        let pending = BoundPayloadFrame::new(
+            &context(),
+            ReconcileManifestKind::Object,
+            b"process-kill-pending".to_vec(),
+        )
+        .unwrap();
+        let mut session = JournaledReconciliationSession::open(
+            backend,
+            context(),
+            config(),
+            SharedSink::default(),
+        )
+        .unwrap();
+        session.ingest_manifest(&manifest(&completed)).unwrap();
+        session.ingest_manifest(&manifest(&pending)).unwrap();
+        session.ingest_payload(&completed).unwrap();
+    }
+
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    fn compact_redb_journal(path: &Path) -> ([u8; 32], [u8; 32], ReceiverState, Vec<[u8; 32]>) {
+        use super::persistent::RedbReconciliationJournalBackend;
+
+        let backend = RedbReconciliationJournalBackend::open(path).unwrap();
+        let mut session = JournaledReconciliationSession::open(
+            backend,
+            context(),
+            config(),
+            SharedSink::default(),
+        )
+        .unwrap();
+        let switch = OperationalCompactionSwitch::new_disabled();
+        switch.enable();
+        let permit = switch.acquire().unwrap();
+        session
+            .compact_completed_manifests(&permit, MAX_MANIFEST_BATCHES)
+            .unwrap();
+        (
+            session.journal_checkpoint().unwrap(),
+            session.journal_semantic_root().unwrap(),
+            session.state(),
+            session.accepted_cids(),
+        )
+    }
+
+    #[cfg(all(feature = "persist", feature = "dr-m5-crash-harness"))]
+    fn wait_for_compaction_marker(
+        child: &mut std::process::Child,
+        marker: &Path,
+        token: &str,
+        phase: &str,
+    ) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if marker.is_file() {
+                let body = fs::read_to_string(marker).unwrap();
+                assert!(body.contains("\"boundary\":\"TX-CMP-JRN-001\""));
+                assert!(body.contains(&format!("\"phase\":\"{phase}\"")));
+                assert!(body.contains(&format!("\"token\":\"{token}\"")));
+                return;
+            }
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("journal {phase} exited before marker: {status}");
+            }
+            assert!(Instant::now() < deadline, "journal {phase} marker timeout");
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 }

@@ -305,8 +305,16 @@ impl<S: ValidateThenAcceptSink> ReconciliationReceiver<S> {
         kind: ReconcileManifestKind,
         cid: [u8; 32],
         status: ReconcileReceiptStatus,
+        canonical_length: u64,
     ) {
-        self.mark_accepted(record_key(kind, cid), status);
+        let key = record_key(kind, cid);
+        if canonical_length != 0 {
+            self.manifest_lengths
+                .entry(key)
+                .or_default()
+                .insert(canonical_length);
+        }
+        self.mark_accepted(key, status);
     }
 
     fn mark_rejected(&mut self, key: (u64, [u8; 32])) {

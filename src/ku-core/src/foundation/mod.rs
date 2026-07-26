@@ -33,6 +33,7 @@ pub mod metabolic_view;
 pub mod migration;
 pub mod object;
 pub mod observation;
+pub mod operational_compaction;
 pub mod outcome_evidence;
 pub mod provider;
 pub mod receptor;
@@ -187,6 +188,9 @@ pub use observation::{
     MAX_OBSERVATION_SPANS, MAX_RAW_OBSERVATION_BYTES, OBSERVATION_EVENT_PAYLOAD_KIND,
     OBSERVATION_EVENT_TYPE, OBSERVATION_PROFILE_MAJOR, OBSERVATION_PROFILE_MINOR,
     SOURCE_ARTIFACT_KIND,
+};
+pub use operational_compaction::{
+    CompactionFenceError, OperationalCompactionPermit, OperationalCompactionSwitch,
 };
 pub use outcome_evidence::{
     AffectedPrincipal, AffectedScope, AssessedOutcomeObservation, AttributionStatus,

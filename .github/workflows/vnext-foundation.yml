@@ -91,6 +91,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_observability
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_crash_harness
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_chaos_fuzz
+          python -m unittest scripts.ci.test_validate_vnext_dr_m5_operational_compaction
 
       - name: P3.4 Web UX build, lint, and receipt contract
         working-directory: src/onebrain-web
@@ -137,6 +138,7 @@ jobs:
           ku-core/src/foundation/metabolic_view.rs
           ku-core/src/foundation/object.rs
           ku-core/src/foundation/observation.rs
+          ku-core/src/foundation/operational_compaction.rs
           ku-core/src/foundation/outcome_evidence.rs
           ku-core/src/foundation/provider.rs
           ku-core/src/foundation/receptor.rs
@@ -194,6 +196,7 @@ jobs:
           onebrain-node/src/vnext_fuzz_targets.rs
           onebrain-node/src/vnext_network_runtime.rs
           onebrain-node/src/vnext_observability.rs
+          onebrain-node/src/vnext_operational_compaction.rs
           onebrain-node/src/vnext_outbox.rs
           onebrain-node/src/vnext_record_provenance.rs
           onebrain-node/src/lib.rs
@@ -598,6 +601,20 @@ jobs:
           cargo run --locked -p onebrain-node
           --features vnext-chaos-harness
           --example dr_m5_fuzz_corpus_smoke
+      - name: M5.5 operational compaction and process-kill recovery
+        run: >-
+          cargo test --locked -p ku-net
+          --features persist,dr-m5-crash-harness
+          --lib vnext_reconciliation_journal
+          -- --test-threads=1
+          && cargo test --locked -p onebrain-node
+          --features vnext-compaction-harness
+          --lib vnext_outbox
+          -- --test-threads=1
+          && cargo test --locked -p onebrain-node
+          --features vnext-compaction-harness
+          --lib vnext_operational_compaction
+          -- --test-threads=1
       - name: P3.1 authenticated REST API contract and real-runtime flow
         run: >-
           cargo test --locked -p onebrain-api
