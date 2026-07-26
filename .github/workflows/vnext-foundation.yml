@@ -497,6 +497,17 @@ jobs:
           cargo test --locked -p onebrain-node
           --features vnext-network-runtime
           --lib vnext_product_runtime
+      - name: P2.4 durable selector/type incremental processing
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_record_provenance
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_distributed_kql
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_distributed_pomv
       - name: Node-owned real QUIC lifecycle
         run: >-
           cargo test --locked -p onebrain-node

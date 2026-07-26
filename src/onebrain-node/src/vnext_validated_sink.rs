@@ -60,22 +60,16 @@ impl<B: AtomicVerifiedBackend> SharedVNextValidatedSink<B> {
             .map_err(|error| error.to_string())
     }
 
-    pub fn accepted_objects(&self) -> Result<Vec<Vec<u8>>, String> {
+    #[cfg(feature = "vnext-network-runtime")]
+    pub(crate) fn accepted_record_type(
+        &self,
+        kind: ReconcileManifestKind,
+        canonical_bytes: &[u8],
+    ) -> Result<Option<u64>, String> {
         self.0
             .lock()
             .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
-            .store()
-            .accepted_objects()
-            .map_err(|error| error.to_string())
-    }
-
-    pub fn accepted_events(&self) -> Result<Vec<Vec<u8>>, String> {
-        self.0
-            .lock()
-            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
-            .store()
-            .accepted_events()
-            .map_err(|error| error.to_string())
+            .accepted_record_type(kind, canonical_bytes)
     }
 
     #[cfg(feature = "vnext-network-runtime")]
@@ -132,6 +126,47 @@ impl<B: AtomicVerifiedBackend> VNextValidatedSink<B> {
 
     pub fn store(&self) -> &ValidatedStore<B> {
         &self.store
+    }
+
+    #[cfg(feature = "vnext-network-runtime")]
+    fn accepted_record_type(
+        &self,
+        kind: ReconcileManifestKind,
+        canonical_bytes: &[u8],
+    ) -> Result<Option<u64>, String> {
+        match kind {
+            ReconcileManifestKind::Object => {
+                let validated = decode_knowledge_object(
+                    canonical_bytes,
+                    ResourceProfile::ObjectV1,
+                    &self.known_object_kinds,
+                    &[],
+                )
+                .map_err(|error| error.to_string())?;
+                Ok(Some(match validated.semantics() {
+                    ObjectSemantics::Known(envelope) => envelope.kind.0,
+                    ObjectSemantics::Opaque { kind, .. } => kind.0,
+                }))
+            }
+            ReconcileManifestKind::Event => {
+                let feed = event_author_feed(canonical_bytes).map_err(|error| error.to_string())?;
+                let authors = self
+                    .store
+                    .feed_inceptions(feed)
+                    .map_err(|error| error.to_string())?;
+                let validated = authors
+                    .iter()
+                    .find_map(|author| {
+                        decode_knowledge_event(canonical_bytes, author, &self.known_event_types)
+                            .ok()
+                    })
+                    .ok_or_else(|| "ACCEPTED_EVENT_TYPE_UNRESOLVED".to_string())?;
+                Ok(Some(validated.signed.event.event_type.0))
+            }
+            ReconcileManifestKind::MappingKernel
+            | ReconcileManifestKind::FeedInception
+            | ReconcileManifestKind::AuthorityEvent => Ok(None),
+        }
     }
 
     /// Rebuild the single-writer feed projection exclusively from durable,

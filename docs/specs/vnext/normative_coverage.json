@@ -293,6 +293,29 @@
       "rationale": "Independent safe-default lane flags determine which durable owners exist, while startup validation and typed service guards enforce KQL, PoMV, publication, worker, per-peer and storage bounds before side effects."
     },
     {
+      "path": "docs/specs/vnext/RUNTIME_INCREMENTAL_PROCESSING_PROFILE_V1.md",
+      "expected_statement_lines": 25,
+      "evidence": [
+        {
+          "path": "src/onebrain-node/src/vnext_record_provenance.rs",
+          "needle": "typed_selector_delta_uses_monotonic_sequence_and_survives_restart"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_kql.rs",
+          "needle": "two_real_peers_create_one_private_match_and_restart_does_not_duplicate_it"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+          "needle": "public_use_over_one_two_five_paths_is_counted_once_and_survives_restart"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+          "needle": "publisher_transaction_is_idempotent_restart_safe_and_sequence_linked"
+        }
+      ],
+      "rationale": "Authenticated admission writes selector/type-bound monotonic indexes; bounded durable KQL and PoMV cursors eliminate per-request accepted-store scans, suppress duplicate match notifications, and preserve changed-input, identity and view continuation across crash and restart."
+    },
+    {
       "path": "docs/specs/vnext/RUNTIME_LIFECYCLE_PROFILE_V1.md",
       "expected_statement_lines": 31,
       "evidence": [

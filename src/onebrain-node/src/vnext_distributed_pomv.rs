@@ -46,6 +46,10 @@ const USE_IDENTITIES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_received_use_identities_v1");
 const VIEW_HEADS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_distributed_pomv_view_heads_v1");
+const TYPED_INPUTS: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_distributed_pomv_typed_inputs_v1");
+const INPUT_CURSORS: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_distributed_pomv_input_cursors_v1");
 const PUBLICATION_SCHEMA: u64 = 3;
 const LEGACY_PUBLICATION_SCHEMA_WITH_CALLER_ROUTE: u64 = 2;
 const PREPARED_PUBLIC_USE_SCHEMA: u64 = 1;
@@ -53,10 +57,13 @@ const PUBLICATION_KEY_BYTES: usize = 64;
 const USE_IDENTITY_BYTES: usize = 72;
 const VIEW_LINEAGE_KEY_BYTES: usize = 80;
 const VIEW_HEAD_VALUE_BYTES: usize = 73;
+const INPUT_PREFIX_BYTES: usize = 32 + 8 + 8;
+const INPUT_KEY_BYTES: usize = INPUT_PREFIX_BYTES + 32;
 const MAX_PUBLICATIONS: u64 = 65_536;
 const MAX_PREPARED_PUBLIC_USE_INTENTS: u64 = 65_536;
 const MAX_FLUSH_BATCH: usize = 4_096;
 pub const MAX_PUBLIC_USE_CONSENT_TTL_SECONDS: u64 = 15 * 60;
+type DurableTypedInput = ([u8; 32], Vec<u8>);
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PublicUseIntentCid([u8; 32]);
@@ -1034,6 +1041,8 @@ impl DurableUseIdentityIndex {
         {
             write.open_table(USE_IDENTITIES).map_err(storage)?;
             write.open_table(VIEW_HEADS).map_err(storage)?;
+            write.open_table(TYPED_INPUTS).map_err(storage)?;
+            write.open_table(INPUT_CURSORS).map_err(storage)?;
         }
         write.commit().map_err(storage)?;
         Ok(Self { database })
@@ -1136,6 +1145,125 @@ impl DurableUseIdentityIndex {
         write.commit().map_err(storage)?;
         Ok(result)
     }
+
+    fn input_cursor(
+        &self,
+        selector: SelectorCid,
+        kind: ReconcileManifestKind,
+        type_id: u64,
+    ) -> Result<u64, DistributedPomvError> {
+        let key = input_prefix(selector, kind, type_id);
+        let read = self.database.begin_read().map_err(storage)?;
+        let table = read.open_table(INPUT_CURSORS).map_err(storage)?;
+        let value = table
+            .get(key.as_slice())
+            .map_err(storage)?
+            .map(|value| value.value().to_vec());
+        match value {
+            Some(value) => value
+                .as_slice()
+                .try_into()
+                .map(u64::from_be_bytes)
+                .map_err(|_| DistributedPomvError::InputIndexCorrupt),
+            None => Ok(0),
+        }
+    }
+
+    fn inputs(
+        &self,
+        selector: SelectorCid,
+        kind: ReconcileManifestKind,
+        type_id: u64,
+    ) -> Result<Vec<DurableTypedInput>, DistributedPomvError> {
+        let prefix = input_prefix(selector, kind, type_id);
+        let read = self.database.begin_read().map_err(storage)?;
+        let table = read.open_table(TYPED_INPUTS).map_err(storage)?;
+        let mut inputs = Vec::new();
+        for entry in table.range::<&[u8]>(prefix.as_slice()..).map_err(storage)? {
+            let (key, value) = entry.map_err(storage)?;
+            let key = key.value();
+            if key.len() != INPUT_KEY_BYTES || !key.starts_with(&prefix) {
+                break;
+            }
+            let mut cid = [0u8; 32];
+            cid.copy_from_slice(&key[INPUT_PREFIX_BYTES..]);
+            inputs.push((cid, value.value().to_vec()));
+        }
+        Ok(inputs)
+    }
+
+    fn commit_inputs(
+        &self,
+        selector: SelectorCid,
+        object_cursor: u64,
+        objects: &[DurableTypedInput],
+        event_cursor: u64,
+        events: &[DurableTypedInput],
+    ) -> Result<(), DistributedPomvError> {
+        let object_prefix =
+            input_prefix(selector, ReconcileManifestKind::Object, USE_EVIDENCE_KIND.0);
+        let event_prefix = input_prefix(
+            selector,
+            ReconcileManifestKind::Event,
+            USE_EVIDENCE_EVENT_TYPE.0,
+        );
+        let write = self.database.begin_write().map_err(storage)?;
+        {
+            let mut table = write.open_table(TYPED_INPUTS).map_err(storage)?;
+            for (cid, bytes) in objects {
+                let key = input_key(object_prefix, *cid);
+                let existing = table
+                    .get(key.as_slice())
+                    .map_err(storage)?
+                    .map(|value| value.value().to_vec());
+                match existing {
+                    Some(existing) if existing != *bytes => {
+                        return Err(DistributedPomvError::InputIndexConflict)
+                    }
+                    Some(_) => {}
+                    None => {
+                        table
+                            .insert(key.as_slice(), bytes.as_slice())
+                            .map_err(storage)?;
+                    }
+                }
+            }
+            for (cid, bytes) in events {
+                let key = input_key(event_prefix, *cid);
+                let existing = table
+                    .get(key.as_slice())
+                    .map_err(storage)?
+                    .map(|value| value.value().to_vec());
+                match existing {
+                    Some(existing) if existing != *bytes => {
+                        return Err(DistributedPomvError::InputIndexConflict)
+                    }
+                    Some(_) => {}
+                    None => {
+                        table
+                            .insert(key.as_slice(), bytes.as_slice())
+                            .map_err(storage)?;
+                    }
+                }
+            }
+        }
+        {
+            let mut cursors = write.open_table(INPUT_CURSORS).map_err(storage)?;
+            cursors
+                .insert(
+                    object_prefix.as_slice(),
+                    object_cursor.to_be_bytes().as_slice(),
+                )
+                .map_err(storage)?;
+            cursors
+                .insert(
+                    event_prefix.as_slice(),
+                    event_cursor.to_be_bytes().as_slice(),
+                )
+                .map_err(storage)?;
+        }
+        write.commit().map_err(storage)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1154,6 +1282,25 @@ fn view_lineage_key(
     key[8..40].copy_from_slice(&target.cid);
     key[40..48].copy_from_slice(&policy.reference_kind.to_be_bytes());
     key[48..].copy_from_slice(&policy.cid);
+    key
+}
+
+fn input_prefix(
+    selector: SelectorCid,
+    kind: ReconcileManifestKind,
+    type_id: u64,
+) -> [u8; INPUT_PREFIX_BYTES] {
+    let mut key = [0u8; INPUT_PREFIX_BYTES];
+    key[..32].copy_from_slice(selector.as_bytes());
+    key[32..40].copy_from_slice(&(kind as u64).to_be_bytes());
+    key[40..].copy_from_slice(&type_id.to_be_bytes());
+    key
+}
+
+fn input_key(prefix: [u8; INPUT_PREFIX_BYTES], cid: [u8; 32]) -> [u8; INPUT_KEY_BYTES] {
+    let mut key = [0u8; INPUT_KEY_BYTES];
+    key[..INPUT_PREFIX_BYTES].copy_from_slice(&prefix);
+    key[INPUT_PREFIX_BYTES..].copy_from_slice(&cid);
     key
 }
 
@@ -1253,6 +1400,9 @@ pub struct DistributedUseEvidenceObservation {
 pub struct DistributedPomvReport {
     pub view: MetabolicEvidenceView,
     pub observations: Vec<DistributedUseEvidenceObservation>,
+    pub changed_object_records: u64,
+    pub changed_event_records: u64,
+    pub incremental_continuation: bool,
     pub newly_indexed_events: u64,
     pub replayed_index_events: u64,
     pub ignored_non_use_records: u64,
@@ -1324,12 +1474,68 @@ impl DistributedPomvRuntime {
             .resolve(policy_version)
             .ok_or(DistributedPomvError::PolicyVersionNotAllowed)?
             .clone();
+        let object_cursor = self.identities.input_cursor(
+            selector,
+            ReconcileManifestKind::Object,
+            USE_EVIDENCE_KIND.0,
+        )?;
+        let event_cursor = self.identities.input_cursor(
+            selector,
+            ReconcileManifestKind::Event,
+            USE_EVIDENCE_EVENT_TYPE.0,
+        )?;
+        let object_delta = network.typed_record_delta(
+            selector,
+            ReconcileManifestKind::Object,
+            USE_EVIDENCE_KIND.0,
+            object_cursor,
+            self.max_records,
+        )?;
+        let event_delta = network.typed_record_delta(
+            selector,
+            ReconcileManifestKind::Event,
+            USE_EVIDENCE_EVENT_TYPE.0,
+            event_cursor,
+            self.max_records,
+        )?;
+        let changed_event_cids = event_delta
+            .records
+            .iter()
+            .map(|record| record.cid)
+            .collect::<BTreeSet<_>>();
+        let mut object_inputs = self
+            .identities
+            .inputs(selector, ReconcileManifestKind::Object, USE_EVIDENCE_KIND.0)?
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        object_inputs.extend(
+            object_delta
+                .records
+                .iter()
+                .map(|record| (record.cid, record.canonical_bytes.clone())),
+        );
+        let mut event_inputs = self
+            .identities
+            .inputs(
+                selector,
+                ReconcileManifestKind::Event,
+                USE_EVIDENCE_EVENT_TYPE.0,
+            )?
+            .into_iter()
+            .collect::<BTreeMap<_, _>>();
+        event_inputs.extend(
+            event_delta
+                .records
+                .iter()
+                .map(|record| (record.cid, record.canonical_bytes.clone())),
+        );
+
         let mut objects = BTreeMap::new();
         let mut ignored_non_use_records = 0u64;
         let mut invalid_or_unbound_records = 0u64;
-        for bytes in network.accepted_object_bytes()? {
+        for bytes in object_inputs.values() {
             let validated = match decode_knowledge_object(
-                &bytes,
+                bytes,
                 ResourceProfile::ObjectV1,
                 &[KnownObjectKind::new(USE_EVIDENCE_KIND, 1)],
                 &[],
@@ -1360,8 +1566,8 @@ impl DistributedPomvRuntime {
         let mut authority_resolutions = BTreeMap::<FeedId, AuthorityFrontierResolution>::new();
         let mut newly_indexed_events = 0u64;
         let mut replayed_index_events = 0u64;
-        for bytes in network.accepted_event_bytes()? {
-            let feed_id = match event_author_feed(&bytes) {
+        for bytes in event_inputs.values() {
+            let feed_id = match event_author_feed(bytes) {
                 Ok(feed) => feed,
                 Err(_) => {
                     invalid_or_unbound_records = invalid_or_unbound_records.saturating_add(1);
@@ -1386,7 +1592,7 @@ impl DistributedPomvRuntime {
             let mut verifying_branches = Vec::new();
             for (index, branch) in branches.iter().enumerate() {
                 let Ok(validated) =
-                    decode_knowledge_event(&bytes, branch, &[USE_EVIDENCE_EVENT_TYPE])
+                    decode_knowledge_event(bytes, branch, &[USE_EVIDENCE_EVENT_TYPE])
                 else {
                     continue;
                 };
@@ -1418,12 +1624,14 @@ impl DistributedPomvRuntime {
                 }
             };
             let identity = use_identity(feed_id, event.signed.event.idempotency_key);
-            match self.identities.observe(identity, event.cid())? {
-                IdentityObserveOutcome::Added | IdentityObserveOutcome::ConflictObserved => {
-                    newly_indexed_events = newly_indexed_events.saturating_add(1)
-                }
-                IdentityObserveOutcome::ExactReplay => {
-                    replayed_index_events = replayed_index_events.saturating_add(1)
+            if changed_event_cids.contains(event.cid().as_bytes()) {
+                match self.identities.observe(identity, event.cid())? {
+                    IdentityObserveOutcome::Added | IdentityObserveOutcome::ConflictObserved => {
+                        newly_indexed_events = newly_indexed_events.saturating_add(1)
+                    }
+                    IdentityObserveOutcome::ExactReplay => {
+                        replayed_index_events = replayed_index_events.saturating_add(1)
+                    }
                 }
             }
             let source_peers = network.record_source_peers(
@@ -1501,9 +1709,29 @@ impl DistributedPomvRuntime {
         )?;
         view.revision = revision;
         view.previous_view_root = previous_view_root;
+        let new_objects = object_delta
+            .records
+            .iter()
+            .map(|record| (record.cid, record.canonical_bytes.clone()))
+            .collect::<Vec<_>>();
+        let new_events = event_delta
+            .records
+            .iter()
+            .map(|record| (record.cid, record.canonical_bytes.clone()))
+            .collect::<Vec<_>>();
+        self.identities.commit_inputs(
+            selector,
+            object_delta.next_cursor,
+            &new_objects,
+            event_delta.next_cursor,
+            &new_events,
+        )?;
         Ok(DistributedPomvReport {
             view,
             observations,
+            changed_object_records: object_delta.records.len() as u64,
+            changed_event_records: event_delta.records.len() as u64,
+            incremental_continuation: !object_delta.exhausted || !event_delta.exhausted,
             newly_indexed_events,
             replayed_index_events,
             ignored_non_use_records,
@@ -1625,6 +1853,10 @@ pub enum DistributedPomvError {
     CorruptPublication,
     #[error("received UseEvidence identity index is corrupt")]
     IdentityIndexCorrupt,
+    #[error("distributed PoMV typed input index is corrupt")]
+    InputIndexCorrupt,
+    #[error("distributed PoMV typed input identity conflicts")]
+    InputIndexConflict,
     #[error("public UseEvidence batch limit is invalid")]
     InvalidLimit,
     #[error("distributed PoMV view limit is invalid")]
@@ -2394,6 +2626,11 @@ mod tests {
             ExerciseAuthority::Authorized
         );
         assert_eq!(one_path.observations[0].source_peers.len(), 1);
+        assert_eq!(one_path.changed_object_records, 1);
+        assert_eq!(one_path.changed_event_records, 1);
+        assert!(!one_path.incremental_continuation);
+        assert_eq!(one_path.newly_indexed_events, 1);
+        assert_eq!(one_path.replayed_index_events, 0);
         assert_eq!(one_path.view.revision, 1);
         assert_eq!(one_path.view.previous_view_root, None);
         let one_path_root = one_path.view.view_root;
@@ -2445,6 +2682,10 @@ mod tests {
                 vec![publication.event_cid]
             );
             assert_eq!(report.observations[0].source_peers.len(), expected_paths);
+            assert_eq!(report.changed_object_records, 0);
+            assert_eq!(report.changed_event_records, 0);
+            assert_eq!(report.newly_indexed_events, 0);
+            assert_eq!(report.replayed_index_events, 0);
             assert_eq!(report.view.view_root, one_path_root);
             assert_eq!(report.view.revision, 1);
             bridges.push((directory, runtime));
@@ -2527,6 +2768,10 @@ mod tests {
             .materialize_public_use_view(&restarted, selector, target.clone(), policy_version)
             .unwrap();
         assert_eq!(after_restart.view.view_root, restart_root);
+        assert_eq!(after_restart.changed_object_records, 0);
+        assert_eq!(after_restart.changed_event_records, 0);
+        assert_eq!(after_restart.newly_indexed_events, 0);
+        assert_eq!(after_restart.replayed_index_events, 0);
         assert_eq!(after_restart.view.revision, 2);
         assert_eq!(after_restart.view.previous_view_root, Some(one_path_root));
         assert_eq!(
@@ -2585,6 +2830,8 @@ mod tests {
         let revoked = reopened
             .materialize_public_use_view(&restarted, selector, target.clone(), policy_version)
             .unwrap();
+        assert_eq!(revoked.changed_object_records, 0);
+        assert_eq!(revoked.changed_event_records, 0);
         assert!(revoked.view.cumulative_event_ids.is_empty());
         assert!(revoked.observations.iter().any(|observation| {
             observation.event_cid == publication.event_cid
