@@ -508,6 +508,11 @@ jobs:
           && cargo test --locked -p onebrain-node
           --features vnext-network-runtime
           --lib vnext_distributed_pomv
+      - name: P2.5 cloneable service handles and concurrency fence
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_product_runtime
       - name: Node-owned real QUIC lifecycle
         run: >-
           cargo test --locked -p onebrain-node

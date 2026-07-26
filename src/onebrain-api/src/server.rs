@@ -38,6 +38,15 @@ pub struct AppState {
     pub event_broadcast: broadcast::Sender<String>,
 }
 
+impl AppState {
+    /// Snapshot the cloneable vNext service handle under the aggregate node
+    /// mutex. Callers release that mutex before long-running subsystem work.
+    #[cfg(feature = "vnext-network-runtime")]
+    pub async fn vnext_product_services(&self) -> Option<onebrain_node::VNextProductServices> {
+        self.node.lock().await.vnext_product_services()
+    }
+}
+
 // ─── API Server ────────────────────────────────────────────────────────────
 
 /// The headless API server.

@@ -863,7 +863,7 @@ impl OneBrainNode {
     /// Typed product façade for API/CLI/Desktop integration. Raw subsystem
     /// runtime references are deliberately not exposed.
     #[cfg(feature = "vnext-network-runtime")]
-    pub fn vnext_product_services(&self) -> Option<VNextProductServices<'_>> {
+    pub fn vnext_product_services(&self) -> Option<VNextProductServices> {
         self.vnext_product_runtime
             .as_ref()
             .map(VNextProductRuntime::services)
