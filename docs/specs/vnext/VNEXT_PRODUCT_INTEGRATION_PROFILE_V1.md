@@ -6,6 +6,9 @@
 > **Version:** 1
 > **Freeze date:** 2026-07-26
 > **Machine contract:** [`product-integration-profile-v1.json`](../../../src/test-vectors/vnext/product-integration-profile-v1.json)
+> **Implementation:** the twelve routes marked `reserved` at freeze time are
+> implemented by [vNext REST API Profile v1](VNEXT_REST_API_PROFILE_V1.md);
+> the table below retains its historical freeze-state column.
 
 ## 1. Scope and compatibility boundary
 

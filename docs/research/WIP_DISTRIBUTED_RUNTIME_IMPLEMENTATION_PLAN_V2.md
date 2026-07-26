@@ -1443,3 +1443,58 @@ evidence cho independent flags/kill switches, safe-default resource ownership,
 partial-start rollback, restart idempotency, crash-safe publication recovery,
 offline local KQL và aggregate-lock-free vNext product operations. Sau khi
 merge về `main`, work package kế tiếp là P3.1 REST API.
+
+### 2026-07-26 — P3.1 REST API
+
+Đã triển khai cục bộ trên nhánh `codex/p3-rest-api`:
+
+1. Đã nối đủ 12 route freeze của P3.1 vào Axum dưới auth boundary hiện hữu:
+   prepare/activate/list/get/matches/scan/delete cho private Need, prepare/confirm/
+   publication cho Public UseEvidence, read-only Metabolic Evidence View và
+   runtime status.
+2. Đã freeze success/error envelope, typed identifier, lifecycle/coverage,
+   bounded page size và continuation token opaque, endpoint/context-bound.
+   `local_only` và `partial` là coverage có scope, không phải global absence.
+3. Raw private query chỉ tồn tại trong prepared request ngắn hạn; runtime/vault
+   chỉ nhận commitment và encrypted standing bundle. Match trả về luôn
+   `quarantined`, `executable=false`; REST không có materialize/adopt path.
+4. Public-use prepare chỉ trả preview và interaction receipt không bí mật.
+   Exact core consent capability được giữ typed trong process, consume một lần
+   bởi confirm và không serialize. Publisher bắt buộc caller-owned Feed signer
+   chứng minh key possession; private key bytes không đi qua API.
+5. Publication state chỉ là `deferred` trước outbox hoặc `pending` sau durable
+   enqueue; không dựng delivery acknowledgement. Metabolic Evidence View chỉ
+   đọc typed local records và giữ toàn bộ truth/benefit/reward/global flags
+   bằng `false`.
+6. Runtime status tách riêng compiled, requested, active, kill switch và signer
+   readiness. Mọi runtime operation snapshot cloneable
+   `VNextProductServices` ngoài global node mutex.
+7. Đã freeze
+   [`VNEXT_REST_API_PROFILE_V1.md`](../specs/vnext/VNEXT_REST_API_PROFILE_V1.md),
+   thêm normative coverage và feature-enabled CI gate riêng cho P3.1.
+
+Local evidence:
+
+- default `onebrain-api` REST contract tests: 5/5 xanh;
+- feature-enabled real-runtime REST acceptance tests: 7/7 xanh, gồm exact
+  Need replay/lifecycle/scan/retire và Public UseEvidence
+  prepare/confirm/replay/publication/view;
+- feature-enabled `onebrain-node` lib: 128/128 xanh;
+- node-owned lifecycle integration: 4/4 xanh;
+- default workspace tests, workspace check, feature-enabled
+  API/CLI/Desktop/node checks, API/node clippy, web production build/lint và
+  rustfmt: xanh;
+- contract validator và product-profile validator tests: xanh.
+
+P3.1 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
+`main`. P3.2 private WebSocket vẫn là work package độc lập kế tiếp và không
+được suy diễn là đã hoàn tất từ REST surface này.
+
+Remote CI run
+[`30190977790`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30190977790)
+trên implementation commit `065930f` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P3.1 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
+`main`, work package kế tiếp là P3.2 private WebSocket.

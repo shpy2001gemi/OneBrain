@@ -17,13 +17,14 @@ use axum::Router;
 use tokio::sync::broadcast;
 use tokio::sync::Mutex;
 use tower_http::cors::CorsLayer;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeDir;
 use tracing;
 
 use onebrain_node::OneBrainNode;
 
 use crate::handlers;
 use crate::types::ApiErrorResponse;
+use crate::vnext_api::VNextRestCoordinator;
 
 // ─── App State ─────────────────────────────────────────────────────────────
 
@@ -36,6 +37,9 @@ pub struct AppState {
     pub web_dir: Option<PathBuf>,
     /// Broadcast channel for sending events to WS clients without holding the node lock.
     pub event_broadcast: broadcast::Sender<String>,
+    /// Local authenticated orchestration state for short-lived prepared vNext
+    /// capabilities. Durable runtime state remains node-owned.
+    pub vnext_rest: VNextRestCoordinator,
 }
 
 impl AppState {
@@ -66,6 +70,7 @@ impl ApiServer {
                 start_time: Instant::now(),
                 web_dir: None,
                 event_broadcast,
+                vnext_rest: VNextRestCoordinator::default(),
             },
             port,
         }
@@ -81,6 +86,7 @@ impl ApiServer {
                 start_time: Instant::now(),
                 web_dir: None,
                 event_broadcast,
+                vnext_rest: VNextRestCoordinator::default(),
             },
             port,
         }
@@ -90,6 +96,18 @@ impl ApiServer {
     /// If set, the server will serve the web dashboard at `/`.
     pub fn with_web_dir(mut self, path: PathBuf) -> Self {
         self.state.web_dir = Some(path);
+        self
+    }
+
+    /// Attach a caller-owned Feed author/signer provider for explicit Public
+    /// Use confirmation. The signer is proof-checked by
+    /// `VNextFeedPublisher::new`; no private key bytes enter the API.
+    #[cfg(feature = "vnext-network-runtime")]
+    pub fn with_vnext_feed_publisher(
+        self,
+        publisher: crate::vnext_api::VNextFeedPublisher,
+    ) -> Self {
+        self.state.vnext_rest.set_feed_publisher(publisher);
         self
     }
 
@@ -169,6 +187,46 @@ impl ApiServer {
             .route(
                 "/api/vnext/workflow/{stage}",
                 get(handlers::get_vnext_workflow_stage),
+            )
+            .route(
+                "/api/vnext/kql/needs/prepare",
+                post(crate::vnext_api::prepare_need),
+            )
+            .route(
+                "/api/vnext/kql/needs",
+                post(crate::vnext_api::activate_need).get(crate::vnext_api::list_needs),
+            )
+            .route(
+                "/api/vnext/kql/needs/{id}",
+                get(crate::vnext_api::get_need).delete(crate::vnext_api::retire_need),
+            )
+            .route(
+                "/api/vnext/kql/needs/{id}/matches",
+                get(crate::vnext_api::list_need_matches),
+            )
+            .route(
+                "/api/vnext/kql/needs/{id}/scan",
+                post(crate::vnext_api::scan_need),
+            )
+            .route(
+                "/api/vnext/pomv/public-use/prepare",
+                post(crate::vnext_api::prepare_public_use),
+            )
+            .route(
+                "/api/vnext/pomv/public-use/confirm",
+                post(crate::vnext_api::confirm_public_use),
+            )
+            .route(
+                "/api/vnext/pomv/publications/{id}",
+                get(crate::vnext_api::get_publication),
+            )
+            .route(
+                "/api/vnext/pomv/views/{target}",
+                get(crate::vnext_api::get_metabolic_view),
+            )
+            .route(
+                "/api/vnext/runtime/status",
+                get(crate::vnext_api::get_runtime_status),
             )
             .route("/api/peers", get(handlers::get_peers))
             .route("/api/peers/connect", post(handlers::connect_peer))
@@ -314,7 +372,6 @@ impl ApiServer {
             let index_file = web_dir.join("index.html");
             if web_dir.exists() && index_file.exists() {
                 // Serve static files from the web directory
-                let serve_dir = ServeDir::new(web_dir.clone());
                 router = router.nest_service("/assets", ServeDir::new(web_dir.join("assets")));
 
                 // Serve known static files at root

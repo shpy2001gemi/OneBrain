@@ -190,6 +190,21 @@ impl DistributedKqlRuntime {
             .and_then(|record| record.bundle.map(|bundle| bundle.target.need)))
     }
 
+    /// Return non-terminal local StandingNeeds in stable identifier order.
+    ///
+    /// Encrypted bundles remain inside the Private Vault. Product callers
+    /// receive only the typed management projection.
+    pub fn standing_needs(
+        &self,
+    ) -> Result<Vec<(StandingNeedId, StandingNeed)>, DistributedKqlError> {
+        Ok(self
+            .private_needs
+            .load_all()?
+            .into_iter()
+            .filter_map(|record| record.bundle.map(|bundle| (record.id, bundle.target.need)))
+            .collect())
+    }
+
     pub fn active_target_count(&self) -> usize {
         self.targets.len()
     }

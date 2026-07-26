@@ -180,6 +180,7 @@ jobs:
           onebrain-node/tests/anti_gravity_reunion.rs
           onebrain-api/src/handlers.rs
           onebrain-api/src/server.rs
+          onebrain-api/src/vnext_api.rs
           onebrain-cli/src/cli/help.rs
           onebrain-cli/src/cli/mod.rs
           onebrain-cli/src/cli/workflow.rs
@@ -513,6 +514,12 @@ jobs:
           cargo test --locked -p onebrain-node
           --features vnext-network-runtime
           --lib vnext_product_runtime
+      - name: P3.1 authenticated REST API contract and real-runtime flow
+        run: >-
+          cargo test --locked -p onebrain-api
+          --features vnext-network-runtime
+          --lib vnext_api::tests
+          -- --test-threads=1
       - name: Node-owned real QUIC lifecycle
         run: >-
           cargo test --locked -p onebrain-node
