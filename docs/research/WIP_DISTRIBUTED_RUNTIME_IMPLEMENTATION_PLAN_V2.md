@@ -1612,3 +1612,12 @@ Local evidence:
 
 P3.3 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
 `main`. Work package kế tiếp là P3.4 Desktop/Web UX.
+
+Remote CI run
+[`30197999020`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30197999020)
+trên implementation commit `10c7b7d` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P3.3 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
+`main`, work package kế tiếp là P3.4 Desktop/Web UX.
