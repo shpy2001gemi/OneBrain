@@ -30,6 +30,8 @@ use crate::vnext_network_runtime::{VNextNetworkRuntime, VNextNetworkRuntimeError
 
 const MATCHES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_distributed_kql_matches_v1");
+const CURSORS: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_distributed_kql_cursors_v1");
 const MATCH_KEY_BYTES: usize = 64;
 const MATCH_VALUE_BYTES: usize = 96;
 
@@ -160,6 +162,7 @@ impl DistributedKqlRuntime {
             return Err(DistributedKqlError::StandingNeedInactive);
         }
         let target = bundle.target.clone();
+        let selector = target.need.selector;
         let (id, outcome) = self.private_needs.put(bundle)?;
         if !matches!(
             outcome,
@@ -167,6 +170,12 @@ impl DistributedKqlRuntime {
                 | StandingNeedWriteOutcome::GenerationConflict
         ) {
             self.targets.insert(*id.as_bytes(), target);
+        }
+        if matches!(
+            outcome,
+            StandingNeedWriteOutcome::Stored | StandingNeedWriteOutcome::Updated
+        ) {
+            self.durable_matches.reset_cursor(selector)?;
         }
         Ok((id, outcome))
     }
@@ -204,6 +213,8 @@ impl DistributedKqlRuntime {
         let bundle = record
             .bundle
             .ok_or(DistributedKqlError::PrivateNeedInvariant)?;
+        self.durable_matches
+            .reset_cursor(bundle.target.need.selector)?;
         self.targets.insert(*id.as_bytes(), bundle.target);
         Ok(record.generation)
     }
@@ -260,16 +271,21 @@ impl DistributedKqlRuntime {
         let mut delta = Vec::new();
         let mut ignored = 0u64;
         let mut invalid_affordances = 0u64;
-        let mut known_frontier_objects = 0u64;
-        let mut budget_exhausted = false;
-        let mut last_scanned_cid = None;
-        for (scanned, bytes) in network.accepted_object_bytes()?.into_iter().enumerate() {
-            if scanned as u64 >= budget.max_scan_records {
-                budget_exhausted = true;
-                break;
-            }
+        let known_frontier_objects = 0u64;
+        let cursor = self.durable_matches.cursor(selector)?;
+        let page_limit = usize::try_from(budget.max_scan_records.min(budget.max_affordances))
+            .map_err(|_| DistributedKqlError::Limit)?;
+        let indexed = network.typed_record_delta(
+            selector,
+            ReconcileManifestKind::Object,
+            KNOWLEDGE_AFFORDANCE_KIND.0,
+            cursor,
+            page_limit,
+        )?;
+        for record in &indexed.records {
+            let bytes = &record.canonical_bytes;
             let validated = decode_knowledge_object(
-                &bytes,
+                bytes,
                 ResourceProfile::ObjectV1,
                 &[KnownObjectKind::new(KNOWLEDGE_AFFORDANCE_KIND, 1)],
                 &[],
@@ -285,23 +301,7 @@ impl DistributedKqlRuntime {
                 ignored = ignored.saturating_add(1);
                 continue;
             }
-            if self
-                .frontier
-                .has_processed_affordance(validated.cid().into_bytes())
-            {
-                known_frontier_objects = known_frontier_objects.saturating_add(1);
-                continue;
-            }
-            let peers = network.record_source_peers(
-                ReconcileManifestKind::Object,
-                validated.cid().into_bytes(),
-                selector,
-            )?;
-            if peers.is_empty() {
-                continue;
-            }
-            if delta.len() as u64 >= budget.max_affordances {
-                budget_exhausted = true;
+            if record.source_peers.is_empty() {
                 continue;
             }
             let affordance = match KnowledgeAffordance::from_validated_object(&validated) {
@@ -317,12 +317,11 @@ impl DistributedKqlRuntime {
             let remote = ValidatedRemoteAffordance::from_public_object(&validated, affordance)
                 .map_err(|error| DistributedKqlError::Reunion(format!("{error:?}")))?;
             let reference = remote.reference().clone();
-            last_scanned_cid = Some(reference.cid);
             observations.insert(
                 reference.cid,
                 AffordanceObservation {
                     reference,
-                    peers,
+                    peers: record.source_peers.clone(),
                     canonical_bytes: u64::try_from(bytes.len())
                         .map_err(|_| DistributedKqlError::Limit)?,
                 },
@@ -382,32 +381,34 @@ impl DistributedKqlRuntime {
             )?;
             if newly_recorded {
                 new_matches = new_matches.saturating_add(1);
+                returned_bytes = returned_bytes.saturating_add(observation.canonical_bytes);
+                matches.push(DistributedKqlMatch {
+                    proposal: record.proposal,
+                    standing_need: need,
+                    affordance: observation.reference.clone(),
+                    responder_scope: observation.peers.clone(),
+                    selector,
+                    assessed_frontier: source_frontier,
+                    newly_recorded,
+                });
             } else {
                 replayed_matches = replayed_matches.saturating_add(1);
             }
-            returned_bytes = returned_bytes.saturating_add(observation.canonical_bytes);
-            matches.push(DistributedKqlMatch {
-                proposal: record.proposal,
-                standing_need: need,
-                affordance: observation.reference.clone(),
-                responder_scope: observation.peers.clone(),
-                selector,
-                assessed_frontier: source_frontier,
-                newly_recorded,
-            });
         }
+        self.durable_matches
+            .set_cursor(selector, indexed.next_cursor)?;
         matches.sort_by_key(|entry| (*entry.standing_need.as_bytes(), *entry.proposal.as_bytes()));
 
         let mut assessed_frontier = target_by_id.values().copied().collect::<Vec<_>>();
         assessed_frontier.sort_by_key(|event| *event.as_bytes());
         assessed_frontier.dedup();
         let mut limitations = vec![CoverageLimitation::PathLimited];
-        if budget_exhausted || reunion.budget_deferred_objects > 0 {
+        if !indexed.exhausted || reunion.budget_deferred_objects > 0 {
             limitations.push(CoverageLimitation::BudgetExhausted);
         }
-        let continuation_needed = budget_exhausted || reunion.budget_deferred_objects > 0;
-        let continuation = continuation_needed
-            .then(|| continuation_token(selector, last_scanned_cid.unwrap_or([0; 32])));
+        let continuation_needed = !indexed.exhausted || reunion.budget_deferred_objects > 0;
+        let continuation =
+            continuation_needed.then(|| continuation_token(selector, indexed.next_cursor));
         let coverage = CoverageStatement {
             selector,
             assessed_frontier,
@@ -422,7 +423,7 @@ impl DistributedKqlRuntime {
             .validate()
             .map_err(|error| DistributedKqlError::Coverage(format!("{error:?}")))?;
         Ok(DistributedKqlReport {
-            scanned_public_affordances: reunion.processed_delta_objects,
+            scanned_public_affordances: indexed.records.len() as u64,
             ignored_non_affordance_objects: ignored,
             ignored_invalid_affordances: invalid_affordances,
             duplicate_frontier_objects: known_frontier_objects
@@ -459,6 +460,9 @@ impl DurableMatchIndex {
         {
             write
                 .open_table(MATCHES)
+                .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+            write
+                .open_table(CURSORS)
                 .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
         }
         write
@@ -525,13 +529,74 @@ impl DurableMatchIndex {
             .len()
             .map_err(|error| DistributedKqlError::Storage(error.to_string()))
     }
+
+    fn cursor(&self, selector: SelectorCid) -> Result<u64, DistributedKqlError> {
+        let read = self
+            .database
+            .begin_read()
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        let table = read
+            .open_table(CURSORS)
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        let value = table
+            .get(selector.as_bytes().as_slice())
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))?
+            .map(|value| value.value().to_vec());
+        match value {
+            Some(value) => value
+                .as_slice()
+                .try_into()
+                .map(u64::from_be_bytes)
+                .map_err(|_| DistributedKqlError::CursorCorrupt),
+            None => Ok(0),
+        }
+    }
+
+    fn set_cursor(&self, selector: SelectorCid, sequence: u64) -> Result<(), DistributedKqlError> {
+        let write = self
+            .database
+            .begin_write()
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        {
+            let mut table = write
+                .open_table(CURSORS)
+                .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+            table
+                .insert(
+                    selector.as_bytes().as_slice(),
+                    sequence.to_be_bytes().as_slice(),
+                )
+                .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        }
+        write
+            .commit()
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))
+    }
+
+    fn reset_cursor(&self, selector: SelectorCid) -> Result<(), DistributedKqlError> {
+        let write = self
+            .database
+            .begin_write()
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        {
+            let mut table = write
+                .open_table(CURSORS)
+                .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+            table
+                .remove(selector.as_bytes().as_slice())
+                .map_err(|error| DistributedKqlError::Storage(error.to_string()))?;
+        }
+        write
+            .commit()
+            .map_err(|error| DistributedKqlError::Storage(error.to_string()))
+    }
 }
 
-fn continuation_token(selector: SelectorCid, last_cid: [u8; 32]) -> [u8; 32] {
+fn continuation_token(selector: SelectorCid, sequence: u64) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"onebrain:vnext:distributed-kql-continuation:1\0");
+    hasher.update(b"onebrain:vnext:distributed-kql-continuation:2\0");
     hasher.update(selector.as_bytes());
-    hasher.update(&last_cid);
+    hasher.update(&sequence.to_be_bytes());
     *hasher.finalize().as_bytes()
 }
 
@@ -557,6 +622,8 @@ pub enum DistributedKqlError {
     MissingAffordanceProvenance,
     #[error("distributed KQL durable match identity conflicts")]
     DurableMatchConflict,
+    #[error("distributed KQL durable cursor is corrupt")]
+    CursorCorrupt,
     #[error("distributed KQL private-need invariant failed")]
     PrivateNeedInvariant,
     #[error(
@@ -873,13 +940,14 @@ mod tests {
         assert!(local.proposal(matched.proposal).is_some());
         assert_eq!(local.durable_match_count().unwrap(), 1);
 
-        // The first bounded scan cannot starve later CIDs. Once both objects
-        // advance the frontier, another pass has no new work.
+        // The first bounded scan cannot starve later arrivals. Once the
+        // durable typed cursor reaches the head, another pass performs no
+        // accepted-store scan and has no new work.
         let drained = local
             .process_one_hop_affordance_delta(&receiver, selector, one_object_budget)
             .unwrap();
         assert_eq!(drained.scanned_public_affordances, 0);
-        assert_eq!(drained.duplicate_frontier_objects, 2);
+        assert_eq!(drained.duplicate_frontier_objects, 0);
         assert!(drained.matches.is_empty());
         assert!(drained.coverage.continuation.is_none());
 
@@ -951,11 +1019,11 @@ mod tests {
             .process_one_hop_affordance_delta(&restarted, selector, DistributedKqlBudget::default())
             .unwrap();
         assert_eq!(replay.new_matches, 0);
-        assert_eq!(replay.replayed_matches, 1);
-        assert_eq!(replay.matches.len(), 1);
-        assert!(!replay.matches[0].newly_recorded);
+        assert_eq!(replay.replayed_matches, 0);
+        assert_eq!(replay.scanned_public_affordances, 0);
+        assert!(replay.matches.is_empty());
+        assert!(replay.coverage.continuation.is_none());
         assert_eq!(reopened.durable_match_count().unwrap(), 1);
-        assert!(reopened.proposal(replay.matches[0].proposal).is_some());
 
         restarted.shutdown().await;
     }

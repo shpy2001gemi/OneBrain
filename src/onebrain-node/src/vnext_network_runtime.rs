@@ -114,9 +114,23 @@ impl ValidateThenAcceptSink for InventoryingSink {
                     },
                 )
                 .map_err(|error| format!("VNEXT_INVENTORY: {error:?}"))?;
-            self.provenance
-                .observe(kind, cid, self.selector, self.source_peer)
-                .map_err(|error| format!("VNEXT_PROVENANCE: {error}"))?;
+            match self.inner.accepted_record_type(kind, canonical_bytes)? {
+                Some(type_id) => self
+                    .provenance
+                    .observe_typed(
+                        kind,
+                        type_id,
+                        cid,
+                        canonical_bytes,
+                        self.selector,
+                        self.source_peer,
+                    )
+                    .map_err(|error| format!("VNEXT_PROVENANCE: {error}"))?,
+                None => self
+                    .provenance
+                    .observe(kind, cid, self.selector, self.source_peer)
+                    .map_err(|error| format!("VNEXT_PROVENANCE: {error}"))?,
+            }
         }
         Ok(outcome)
     }
@@ -414,16 +428,17 @@ impl VNextNetworkRuntime {
             .map_err(|error| VNextNetworkRuntimeError::Inventory(format!("{error:?}")))
     }
 
-    pub fn accepted_object_bytes(&self) -> Result<Vec<Vec<u8>>, VNextNetworkRuntimeError> {
-        self.validated_sink
-            .accepted_objects()
-            .map_err(VNextNetworkRuntimeError::Storage)
-    }
-
-    pub fn accepted_event_bytes(&self) -> Result<Vec<Vec<u8>>, VNextNetworkRuntimeError> {
-        self.validated_sink
-            .accepted_events()
-            .map_err(VNextNetworkRuntimeError::Storage)
+    pub(crate) fn typed_record_delta(
+        &self,
+        selector: ku_core::foundation::SelectorCid,
+        kind: onebrain_protocol::ReconcileManifestKind,
+        type_id: u64,
+        after_sequence: u64,
+        limit: usize,
+    ) -> Result<crate::vnext_record_provenance::IndexedTypedDelta, VNextNetworkRuntimeError> {
+        self.provenance
+            .typed_delta(selector, kind, type_id, after_sequence, limit)
+            .map_err(VNextNetworkRuntimeError::Provenance)
     }
 
     pub fn feed_inception_branches(

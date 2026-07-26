@@ -1334,3 +1334,57 @@ và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
 
 P2.3 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
 P2.4 Incremental processing.
+
+### 2026-07-26 — P2.4 Incremental processing
+
+Đã triển khai cục bộ trên nhánh `codex/p2-incremental-processing`:
+
+1. Authenticated validate-then-accept admission nay ghi secondary index theo
+   exact selector, manifest record kind và typed kind. Mỗi typed stream có
+   durable sequence tăng đơn điệu, reverse CID index chống ghi lặp và
+   source-peer set riêng; cursor không dựa vào thứ tự CID ngẫu nhiên.
+2. Exact replay giữ nguyên sequence/canonical bytes và chỉ bổ sung peer
+   provenance. Conflict cùng typed key/CID nhưng khác bytes fail closed.
+   Prefix-range page bị chặn bởi hard limit và expose durable next cursor.
+3. Network runtime đã bỏ façade `accepted_object_bytes()` và
+   `accepted_event_bytes()`. Distributed KQL chỉ đọc typed Affordance delta,
+   persist cursor theo selector sau durable match commit, và chỉ trả notification
+   khi match identity được ghi lần đầu. Crash/restart không phát notification
+   trùng.
+4. Khi private need mới được lưu hoặc được update/resume, chỉ cursor của exact
+   selector liên quan được reset để historical Affordance có thể join với need
+   set mới; exact registration replay không tạo lại công việc.
+5. Distributed PoMV có cursor độc lập cho UseEvidence Object/Event và durable
+   selector-scoped input cache. View request chỉ discover changed typed records;
+   input cache cùng hai cursor được commit atomically sau identity dedup và
+   materialization thành công.
+6. Request PoMV không có record mới báo zero changed input và không re-observe
+   EventCID thành event mới. Authority/feed frontier vẫn có thể rebuild view từ
+   bounded local typed cache và chỉ tăng revision khi view root thay đổi.
+7. Đã freeze
+   [`RUNTIME_INCREMENTAL_PROCESSING_PROFILE_V1.md`](../specs/vnext/RUNTIME_INCREMENTAL_PROCESSING_PROFILE_V1.md),
+   thêm normative coverage và CI gate riêng cho index, KQL và PoMV.
+
+Local evidence:
+
+- selector/type sequence, replay, scope và restart index: 2/2 xanh;
+- distributed KQL exactly-once/cursor/lifecycle: 3/3 xanh;
+- distributed PoMV changed-input/multi-path/authority/restart: 10/10 xanh;
+- feature-enabled `onebrain-node` lib: 125/125 xanh;
+- node-owned lifecycle integration: 4/4 xanh;
+- default workspace tests, workspace check, feature-enabled API/CLI/node check,
+  `onebrain-node` clippy và rustfmt: xanh;
+- `python scripts/ci/validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37
+  negative assertions, 55 vectors/21 domains, 9 identity/object vectors, 4
+  feed/event vectors, 271 normative lines, 14 endpoints/18 DTOs và 371 local
+  links;
+- product-profile validator tests: 8/8 xanh.
+
+Remote CI run
+[`30187596908`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30187596908)
+trên implementation commit `9993efc` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P2.4 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
+P2.5 Concurrency.
