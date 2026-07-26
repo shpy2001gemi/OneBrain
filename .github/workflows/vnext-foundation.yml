@@ -492,6 +492,11 @@ jobs:
           cargo test --locked -p onebrain-node
           --features vnext-network-runtime
           --lib vnext_config
+      - name: P2.3 ordered lifecycle and partial-start rollback
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_product_runtime
       - name: Node-owned real QUIC lifecycle
         run: >-
           cargo test --locked -p onebrain-node

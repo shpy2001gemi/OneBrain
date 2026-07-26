@@ -116,6 +116,7 @@ cargo build --features persist
 | [Route and Authority Boundary Profile v1](specs/vnext/ROUTE_AUTHORITY_BOUNDARY_PROFILE_V1.md) | Contract P1.5 chỉ học route sau authenticated handshake, chỉ dùng policy version allow-list và tự resolve authority frontier từ validated local state |
 | [Runtime Ownership Profile v1](specs/vnext/RUNTIME_OWNERSHIP_PROFILE_V1.md) | Contract P2.1 gom network/KQL/Public Use/PoMV vào một aggregate do node sở hữu, bắt buộc Vault/Policy injection và chỉ mở typed service façade |
 | [Runtime Feature and Budget Profile v1](specs/vnext/RUNTIME_FEATURE_BUDGET_PROFILE_V1.md) | Contract P2.2 cho ba lane độc lập, kill switch thật và hard budgets cho KQL, PoMV, publication, workers, peer và storage |
+| [Runtime Lifecycle Profile v1](specs/vnext/RUNTIME_LIFECYCLE_PROFILE_V1.md) | Contract P2.3 cho startup/shutdown có thứ tự, outbox recovery, bounded workers và partial-start rollback sạch |
 | [Distributed Runtime Transaction Inventory](specs/vnext/DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md) | Danh mục boundary và failpoint ID cho crash harness DR-M5, kèm durable owner và restart oracle |
 | [Feature Tree](features/FEATURE_TREE.md) | Cây tính năng v6 — tất cả §1-§8 |
 | [Feature Details](features/FEATURE_DETAILS.md) | Chi tiết kỹ thuật từng feature với code references |

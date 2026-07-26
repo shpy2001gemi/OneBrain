@@ -41,6 +41,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
+use tokio::task::JoinHandle;
 
 /// Result of a successful encode-and-store operation.
 pub struct EncodeStoreResult {
@@ -91,6 +92,8 @@ pub struct OneBrainNode {
     pub event_tx: mpsc::Sender<NodeEvent>,
     /// TCP listener address (set after start_network).
     listener_addr: Option<SocketAddr>,
+    /// Node-owned legacy TCP accept loop, fenced by explicit shutdown/drop.
+    listener_task: Option<JoinHandle<()>>,
     // ── Tier C in-memory state ──
     /// Search history log.
     search_history: Vec<SearchHistoryEntry>,
@@ -266,6 +269,7 @@ impl OneBrainNode {
             event_rx,
             event_tx,
             listener_addr: None,
+            listener_task: None,
             search_history: Vec::new(),
             notification_prefs: NotificationPrefs::default(),
             saved_searches: Vec::new(),
@@ -326,6 +330,11 @@ impl OneBrainNode {
     ///
     /// Returns the local address the listener is bound to.
     pub async fn start_network(&mut self) -> Result<SocketAddr, NodeError> {
+        if self.listener_task.is_some() {
+            return Err(NodeError::Network(
+                "network listener is already running".into(),
+            ));
+        }
         let bind_addr: SocketAddr = ([0, 0, 0, 0], self.config.port).into();
         #[cfg(feature = "vnext-network-runtime")]
         let mut pending_vnext = if self
@@ -361,8 +370,12 @@ impl OneBrainNode {
             Ok(listener) => listener,
             Err(error) => {
                 #[cfg(feature = "vnext-network-runtime")]
-                if let Some(runtime) = pending_vnext.as_mut() {
-                    runtime.shutdown().await;
+                if let Some(runtime) = pending_vnext.take() {
+                    if let Err(rollback_error) = runtime.rollback_startup().await {
+                        return Err(NodeError::Network(format!(
+                            "Failed to bind TCP on {bind_addr}: {error}; vNext startup rollback failed: {rollback_error}"
+                        )));
+                    }
                 }
                 return Err(NodeError::Network(format!(
                     "Failed to bind TCP on {}: {}",
@@ -383,11 +396,25 @@ impl OneBrainNode {
         // Spawn background listener task
         let shared = Arc::clone(&self.shared);
         let event_tx = self.event_tx.clone();
-        tokio::spawn(async move {
+        self.listener_task = Some(tokio::spawn(async move {
             listener_loop(listener, shared, event_tx).await;
-        });
+        }));
 
         Ok(local_addr)
+    }
+
+    /// Fence new network operations and stop every node-owned listener and
+    /// integrated vNext owner in deterministic order.
+    pub async fn shutdown_network(&mut self) {
+        if let Some(mut task) = self.listener_task.take() {
+            task.abort();
+            let _ = (&mut task).await;
+        }
+        self.listener_addr = None;
+        #[cfg(feature = "vnext-network-runtime")]
+        if let Some(mut runtime) = self.vnext_product_runtime.take() {
+            runtime.shutdown().await;
+        }
     }
 
     /// Connect to a seed peer and exchange handshake.
@@ -3415,6 +3442,14 @@ impl OneBrainNode {
         limit: usize,
     ) -> Result<(Vec<KuListItem>, usize), NodeError> {
         self.list_kus(page, limit, Some(domain), "created")
+    }
+}
+
+impl Drop for OneBrainNode {
+    fn drop(&mut self) {
+        if let Some(task) = self.listener_task.take() {
+            task.abort();
+        }
     }
 }
 
