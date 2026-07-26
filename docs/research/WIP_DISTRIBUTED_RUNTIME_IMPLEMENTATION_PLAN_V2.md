@@ -1225,7 +1225,21 @@ Focused local evidence:
   vnext_product_runtime -- --test-threads=1`: 2/2 xanh;
 - `cargo test --locked -p onebrain-node --features vnext-network-runtime
   --test vnext_node_runtime -- --test-threads=1`: 3/3 xanh;
+- `cargo test --workspace --locked --no-fail-fast -- --test-threads=2`: xanh;
+- default-feature clippy cho các foundation crates và feature-enabled clippy
+  cho toàn bộ `onebrain-node` targets: xanh;
+- default workspace check, feature-enabled product check và
+  `cargo fmt --all -- --check`: xanh;
 - `python scripts/ci/validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37
   negative assertions, 55 vectors/21 domains, 9 identity/object vectors, 4
   feed/event vectors, 189 normative lines, 14 endpoints/18 DTOs và 360 local
   links.
+
+Remote CI run
+[`30183959855`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30183959855)
+trên implementation commit `ef71871` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P2.1 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
+P2.2 Feature flags và budgets.
