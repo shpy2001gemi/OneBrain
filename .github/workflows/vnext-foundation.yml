@@ -169,6 +169,7 @@ jobs:
           onebrain-node/src/vnext_performance_budgets.rs
           onebrain-node/src/vnext_reunion_canary.rs
           onebrain-node/src/vnext_reward_firewall.rs
+          onebrain-node/src/vnext_route_authority.rs
           onebrain-node/src/vnext_scale_simulation.rs
           onebrain-node/src/vnext_security_suite.rs
           onebrain-node/src/vnext_status.rs
@@ -475,6 +476,11 @@ jobs:
           cargo test --locked -p onebrain-node
           --features vnext-network-runtime
           --lib vnext_distributed_pomv
+      - name: P1.5 authenticated route and local authority boundary
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_route_authority
       - name: Node-owned real QUIC lifecycle
         run: >-
           cargo test --locked -p onebrain-node

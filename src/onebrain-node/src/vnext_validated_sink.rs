@@ -78,22 +78,18 @@ impl<B: AtomicVerifiedBackend> SharedVNextValidatedSink<B> {
             .map_err(|error| error.to_string())
     }
 
-    /// Evaluate every durable inception branch for `feed_id` relative to one
-    /// exact self-certifying actor-root proof. The named proof is the complete
-    /// authority frontier in the root-only v1 profile; unrelated locally known
-    /// roots are deliberately excluded.
-    pub fn feed_authority_at_root(
-        &self,
-        feed_id: FeedId,
-        authority_root: EventCid,
-    ) -> Result<Vec<FeedAuthorityDecision>, String> {
+    #[cfg(feature = "vnext-network-runtime")]
+    pub(crate) fn accepted_authority_events(&self) -> Result<Vec<Vec<u8>>, String> {
         self.0
             .lock()
             .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
-            .feed_authority_at_root(feed_id, authority_root)
+            .store()
+            .accepted_authority_events()
+            .map_err(|error| error.to_string())
     }
 
-    pub fn feed_authority_at(
+    #[cfg(feature = "vnext-network-runtime")]
+    pub(crate) fn feed_authority_at(
         &self,
         feed_id: FeedId,
         authority_frontier: EventCid,
@@ -162,7 +158,8 @@ impl<B: AtomicVerifiedBackend> VNextValidatedSink<B> {
         Ok(feeds.projection(feed_id))
     }
 
-    pub fn feed_authority_at_root(
+    #[cfg(test)]
+    pub(crate) fn feed_authority_at_root(
         &self,
         feed_id: FeedId,
         authority_root: EventCid,
@@ -172,7 +169,8 @@ impl<B: AtomicVerifiedBackend> VNextValidatedSink<B> {
 
     /// Rebuild the exact authority ancestor closure ending at the named
     /// frontier. Unrelated locally stored authority branches are excluded.
-    pub fn feed_authority_at(
+    #[cfg(any(test, feature = "vnext-network-runtime"))]
+    pub(crate) fn feed_authority_at(
         &self,
         feed_id: FeedId,
         authority_frontier: EventCid,

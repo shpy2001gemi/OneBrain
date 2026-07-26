@@ -200,6 +200,37 @@
       "rationale": "Canonical bundle validation, caller-keyed authenticated encryption, opaque indexes, fail-closed restart, durable lifecycle tombstones and exact real-QUIC payload assertions prove the private persistence and non-publication boundary."
     },
     {
+      "path": "docs/specs/vnext/ROUTE_AUTHORITY_BOUNDARY_PROFILE_V1.md",
+      "expected_statement_lines": 16,
+      "evidence": [
+        {
+          "path": "src/onebrain-node/src/vnext_route_authority.rs",
+          "needle": "route_directory_requires_authenticated_role_and_preserves_bijection"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_route_authority.rs",
+          "needle": "policy_registry_rejects_arbitrary_or_duplicate_versions"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_route_authority.rs",
+          "needle": "authority_resolver_uses_local_terminal_state_and_fails_closed_on_ambiguity"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_network_runtime.rs",
+          "needle": "valid outbound handshake records responder route"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+          "needle": "AuthenticatedRouteUnavailable"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_distributed_pomv.rs",
+          "needle": "PolicyVersionNotAllowed"
+        }
+      ],
+      "rationale": "Authenticated-session-only route mutation, immutable allow-listed policy resolution and terminal validated-local authority derivation remove caller-controlled address, policy and favorable-frontier injection while preserving fail-closed ambiguity."
+    },
+    {
       "path": "docs/specs/vnext/PUBLIC_USE_CONSENT_PROFILE_V1.md",
       "expected_statement_lines": 13,
       "evidence": [

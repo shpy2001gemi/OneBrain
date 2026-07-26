@@ -1147,4 +1147,48 @@ feature-enabled real QUIC và Windows default/vNext/Desktop smoke đều xanh, v
 0 annotation.
 
 P1.4 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
-P1.5 Secret scan và privacy regression gate.
+P1.5 Route và authority boundary.
+
+### 2026-07-26 — P1.5 Route và authority boundary
+
+Đã triển khai cục bộ trên nhánh `codex/p1-route-authority-boundary`:
+
+1. `AuthenticatedRouteDirectory` giữ index hai chiều có giới hạn và chỉ nhận
+   update sau signed handshake cùng replay guard hợp lệ; NodeID luôn lấy từ
+   exact authenticated session role.
+2. Outbound responder route được ưu tiên hơn inbound source port; Public Use
+   confirmation không còn nhận `SocketAddr`, còn publication export tự resolve
+   exact recipient từ authenticated route directory và thiếu route thì giữ
+   publication pending.
+3. `LocalPolicyRegistry` bất biến sau startup, chỉ chứa tối đa 64 policy version
+   khác zero đã qua canonical validation; PoMV request chỉ chọn version đã
+   allow-list, không truyền arbitrary policy object/implementation.
+4. Authority-frontier resolver dựng terminal tips từ authority events đã qua
+   validated local store. Missing hoặc nhiều relevant incomparable tips đều
+   fail closed; API/runtime public surface không còn cho caller truyền frontier
+   lịch sử thuận lợi.
+5. Metabolic view frontier là domain-separated commitment của sorted per-feed
+   local resolution; restart và revocation vẫn tái tạo đúng view lineage.
+6. Publication schema v3 không ghi route do caller cung cấp. Record schema v2
+   được đọc với legacy route bị loại bỏ và được requeue để resolve sau fresh
+   authenticated handshake.
+
+Focused local evidence:
+
+- `cargo test --locked -p onebrain-node --features vnext-network-runtime --lib
+  vnext_route_authority -- --test-threads=1`: 3/3 xanh;
+- `cargo test --locked -p onebrain-node --features vnext-network-runtime --lib
+  vnext_distributed_pomv -- --test-threads=1`: 9/9 xanh, gồm real QUIC,
+  missing-route, unknown-policy, restart, multipath và revocation;
+- `python scripts/ci/validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37
+  negative assertions, 55 vectors/21 domains, 9 identity/object vectors, 4
+  feed/event vectors, 170 normative lines, 14 endpoints/18 DTOs và 356 local
+  links.
+
+Remote CI run `30182736780` trên implementation commit `ff1cacc` hoàn tất
+thành công ngày 2026-07-26: foundation contract, Linux default workspace,
+Linux feature-enabled real QUIC và Windows default/vNext/Desktop smoke đều
+xanh, với 0 annotation.
+
+P1.5 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
+P2.1 Runtime ownership.

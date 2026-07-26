@@ -38,6 +38,8 @@ pub mod vnext_performance_budgets;
 pub mod vnext_record_provenance;
 pub mod vnext_reunion_canary;
 pub mod vnext_reward_firewall;
+#[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_route_authority;
 pub mod vnext_scale_simulation;
 #[cfg(test)]
 pub mod vnext_security_suite;
@@ -110,6 +112,12 @@ pub use vnext_reward_firewall::{
     execute_knowledge_operation, KnowledgeRewardFirewall, RewardConsumerError, RewardDrainReport,
     RewardEvidenceConsumer, RewardEvidenceKind, RewardEvidenceNotice, RewardFirewallConfigError,
     RewardFirewallPolicy, RewardObserveOutcome,
+};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_route_authority::{
+    AuthenticatedRoute, AuthenticatedRouteDirectory, AuthenticatedRouteOrigin,
+    AuthorityFrontierResolution, AuthorityResolverError, LocalPolicyRegistry,
+    LocalPolicyRegistryError, LocalPolicyVersion, RouteDirectoryError,
 };
 pub use vnext_status::{NetworkRuntimeLifecycle, NetworkRuntimeStatusView};
 pub use vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};

@@ -13,8 +13,7 @@ use std::time::Duration;
 
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use ku_core::foundation::{
-    EventCid, FeedAuthorityDecision, FeedId, FeedProjection, InventoryRecordKind, NodeId,
-    RedbVerifiedBackend,
+    FeedId, FeedProjection, InventoryRecordKind, NodeId, RedbVerifiedBackend,
 };
 use ku_net::transport::{OBPConnection, QuicTransport, TransportConfig};
 use ku_net::vnext_carrier::CarrierRecord;
@@ -53,6 +52,10 @@ use crate::vnext_outbox::{
     MAX_OUTBOX_PAYLOAD_BYTES,
 };
 use crate::vnext_record_provenance::RedbRecordProvenance;
+use crate::vnext_route_authority::{
+    resolve_authority_frontier, AuthenticatedRoute, AuthenticatedRouteDirectory,
+    AuthorityFrontierResolution, AuthorityResolverError, RouteDirectoryError,
+};
 use crate::vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};
 
 const IDENTITY_MAGIC: &[u8; 8] = b"OBIDV1\0\0";
@@ -166,6 +169,8 @@ struct OutboundDeliveryEngine {
     transport: Arc<QuicTransport>,
     identity: Arc<dyn SessionIdentitySigner>,
     replay_guard: Arc<Mutex<SessionReplayGuard>>,
+    routes: AuthenticatedRouteDirectory,
+    principal: NodeId,
     counters: Arc<RuntimeCounters>,
     outbox: OutboundOutbox,
     scheduler: AsyncMutex<()>,
@@ -182,6 +187,7 @@ pub struct VNextNetworkRuntime {
     validated_sink: PersistentSink,
     inventory: RedbInventoryForestBackend,
     provenance: RedbRecordProvenance,
+    routes: AuthenticatedRouteDirectory,
     outbound: Arc<OutboundDeliveryEngine>,
     outbound_notify: Arc<Notify>,
     outbound_shutdown: watch::Sender<bool>,
@@ -289,12 +295,15 @@ impl VNextNetworkRuntime {
             .local_addr()
             .map_err(|error| VNextNetworkRuntimeError::Transport(error.to_string()))?;
         let replay_guard = Arc::new(Mutex::new(SessionReplayGuard::default()));
+        let routes = AuthenticatedRouteDirectory::default();
         let counters = Arc::new(RuntimeCounters::default());
         let semaphore = Arc::new(Semaphore::new(policy.max_concurrent_sessions));
         let accept_task = tokio::spawn(accept_loop(
             Arc::clone(&transport),
             Arc::clone(&identity),
             Arc::clone(&replay_guard),
+            routes.clone(),
+            principal,
             Arc::clone(&counters),
             semaphore,
             journal,
@@ -307,6 +316,8 @@ impl VNextNetworkRuntime {
             transport: Arc::clone(&transport),
             identity: Arc::clone(&identity),
             replay_guard: Arc::clone(&replay_guard),
+            routes: routes.clone(),
+            principal,
             counters: Arc::clone(&counters),
             outbox,
             scheduler: AsyncMutex::new(()),
@@ -329,6 +340,7 @@ impl VNextNetworkRuntime {
             validated_sink: sink,
             inventory,
             provenance,
+            routes,
             outbound,
             outbound_notify,
             outbound_shutdown,
@@ -399,6 +411,37 @@ impl VNextNetworkRuntime {
             .map_err(VNextNetworkRuntimeError::Provenance)
     }
 
+    pub fn authenticated_route(
+        &self,
+        peer: NodeId,
+    ) -> Result<Option<AuthenticatedRoute>, VNextNetworkRuntimeError> {
+        self.routes
+            .resolve(peer)
+            .map_err(VNextNetworkRuntimeError::RouteDirectory)
+    }
+
+    pub fn authenticated_route_count(&self) -> Result<usize, VNextNetworkRuntimeError> {
+        self.routes
+            .len()
+            .map_err(VNextNetworkRuntimeError::RouteDirectory)
+    }
+
+    /// Resolve authority exclusively from locally validated authority records.
+    /// A caller cannot name a favorable historical frontier.
+    pub fn resolve_feed_authority(
+        &self,
+        feed_id: FeedId,
+    ) -> Result<AuthorityFrontierResolution, VNextNetworkRuntimeError> {
+        let events = self
+            .validated_sink
+            .accepted_authority_events()
+            .map_err(VNextNetworkRuntimeError::Storage)?;
+        resolve_authority_frontier(&events, |frontier| {
+            self.validated_sink.feed_authority_at(feed_id, frontier)
+        })
+        .map_err(VNextNetworkRuntimeError::AuthorityResolver)
+    }
+
     pub fn feed_projection(
         &self,
         feed_id: FeedId,
@@ -420,21 +463,23 @@ impl VNextNetworkRuntime {
 
     /// Root-only v1 authority projection at one exact, durable proof frontier.
     /// This does not claim global validity or knowledge of later revocations.
-    pub fn feed_authority_at_root(
+    #[cfg(test)]
+    pub(crate) fn feed_authority_at_root(
         &self,
         feed_id: FeedId,
-        authority_root: EventCid,
-    ) -> Result<Vec<FeedAuthorityDecision>, VNextNetworkRuntimeError> {
+        authority_root: ku_core::foundation::EventCid,
+    ) -> Result<Vec<ku_core::foundation::FeedAuthorityDecision>, VNextNetworkRuntimeError> {
         self.validated_sink
-            .feed_authority_at_root(feed_id, authority_root)
+            .feed_authority_at(feed_id, authority_root)
             .map_err(VNextNetworkRuntimeError::Storage)
     }
 
-    pub fn feed_authority_at(
+    #[cfg(test)]
+    pub(crate) fn feed_authority_at(
         &self,
         feed_id: FeedId,
-        authority_frontier: EventCid,
-    ) -> Result<Vec<FeedAuthorityDecision>, VNextNetworkRuntimeError> {
+        authority_frontier: ku_core::foundation::EventCid,
+    ) -> Result<Vec<ku_core::foundation::FeedAuthorityDecision>, VNextNetworkRuntimeError> {
         self.validated_sink
             .feed_authority_at(feed_id, authority_frontier)
             .map_err(VNextNetworkRuntimeError::Storage)
@@ -706,6 +751,9 @@ impl OutboundDeliveryEngine {
             .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?
             .accept(&authenticated)
             .map_err(|error| VNextNetworkRuntimeError::Session(format!("{error:?}")))?;
+        self.routes
+            .observe_outbound(self.principal, &authenticated, connection.remote_addr())
+            .map_err(VNextNetworkRuntimeError::RouteDirectory)?;
         self.counters
             .authenticated_sessions
             .fetch_add(1, Ordering::Relaxed);
@@ -872,6 +920,8 @@ async fn accept_loop(
     transport: Arc<QuicTransport>,
     identity: Arc<dyn SessionIdentitySigner>,
     replay_guard: Arc<Mutex<SessionReplayGuard>>,
+    routes: AuthenticatedRouteDirectory,
+    principal: NodeId,
     counters: Arc<RuntimeCounters>,
     semaphore: Arc<Semaphore>,
     journal: RedbReconciliationJournalBackend,
@@ -896,6 +946,7 @@ async fn accept_loop(
         let identity = Arc::clone(&identity);
         let replay_guard = Arc::clone(&replay_guard);
         let counters = Arc::clone(&counters);
+        let routes = routes.clone();
         let journal = journal.clone();
         let sink = sink.clone();
         let inventory = inventory.clone();
@@ -906,6 +957,8 @@ async fn accept_loop(
                 connection,
                 identity,
                 replay_guard,
+                routes,
+                principal,
                 Arc::clone(&counters),
                 journal,
                 sink,
@@ -922,10 +975,13 @@ async fn accept_loop(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_inbound_connection(
     connection: OBPConnection,
     identity: Arc<dyn SessionIdentitySigner>,
     replay_guard: Arc<Mutex<SessionReplayGuard>>,
+    routes: AuthenticatedRouteDirectory,
+    principal: NodeId,
     counters: Arc<RuntimeCounters>,
     journal_backend: RedbReconciliationJournalBackend,
     sink: PersistentSink,
@@ -952,6 +1008,9 @@ async fn handle_inbound_connection(
         .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?
         .accept(&authenticated)
         .map_err(|error| VNextNetworkRuntimeError::Session(format!("{error:?}")))?;
+    routes
+        .observe_inbound(principal, &authenticated, connection.remote_addr())
+        .map_err(VNextNetworkRuntimeError::RouteDirectory)?;
     counters
         .authenticated_sessions
         .fetch_add(1, Ordering::Relaxed);
@@ -1207,6 +1266,10 @@ pub enum VNextNetworkRuntimeError {
     HandshakeTimeout,
     #[error("vNext replay guard unavailable")]
     ReplayGuard,
+    #[error("vNext authenticated route directory failed: {0}")]
+    RouteDirectory(#[from] RouteDirectoryError),
+    #[error("vNext authority-frontier resolver failed: {0}")]
+    AuthorityResolver(#[from] AuthorityResolverError),
     #[error("vNext persistent storage failed: {0}")]
     Storage(String),
     #[error("vNext reconciliation journal failed: {0}")]
@@ -1235,7 +1298,7 @@ mod tests {
     use ed25519_dalek::Signer;
     use ku_core::foundation::{
         decode_actor_root_delegation, decode_feed_inception, ActorDelegation, ActorRevocation,
-        ActorRootDelegation, ConceptCcid, DeviceId, DisclosureClass, FeedInception,
+        ActorRootDelegation, ConceptCcid, DeviceId, DisclosureClass, EventCid, FeedInception,
         KnowledgeEventEnvelope, NamespaceCommitment, ObjectReference, ReservedDomain, SelectorCid,
         UseEvidencePayload, UseMode, USE_EVIDENCE_EVENT_TYPE,
     };
@@ -1850,7 +1913,26 @@ mod tests {
         )
         .await
         .unwrap();
+        assert_eq!(left.authenticated_route_count().unwrap(), 0);
+        assert_eq!(right.authenticated_route_count().unwrap(), 0);
+        let left_principal = NodeId::from_bytes(left.status().principal);
+        let right_principal = NodeId::from_bytes(right.status().principal);
         let mut outbound = left.connect(right.local_addr()).await.unwrap();
+        let outbound_route = left
+            .authenticated_route(right_principal)
+            .unwrap()
+            .expect("valid outbound handshake records responder route");
+        assert_eq!(outbound_route.addr, right.local_addr());
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if right.authenticated_route(left_principal).unwrap().is_some() {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
         let context = context(outbound.authenticated().session_id, 0x61);
         let frame = BoundPayloadFrame::new(
             &context,

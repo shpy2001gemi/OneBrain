@@ -72,9 +72,9 @@ Confirmation MUST recompute this binding from durable state; caller-supplied
 preview, target, recipient, selector, namespace, disclosure, idempotency, or
 expiry substitutions are not accepted.
 
-`last_known_addr` is deliberately excluded. It is an unauthoritative,
-replaceable availability hint; outbound QUIC still authenticates the exact
-prepared `NodeID`. P1.5 owns the authenticated `NodeID ↔ SocketAddr` directory.
+`last_known_addr` is deliberately excluded. P1.5 resolves the exact prepared
+`NodeID` through the authenticated route directory; confirmation cannot supply
+or replace the outbound address.
 
 ## 4. Receipt lifecycle and idempotency
 
@@ -104,8 +104,8 @@ next Feed head, and `consumed = true` on the prepared intent.
 
 A receipt can cause at most one publication/sequence transition. An exact
 retry returns the same publication; it does not allocate another sequence,
-event, or consent transition. A route-only retry may replace the unauthoritative
-address and requeue the same peer-bound publication.
+event, consent transition, or route. Route resolution happens later at the
+network-outbox handoff.
 
 Wrong, forged, rotated, intent-swapped, missing, corrupt, or expired receipt
 state MUST fail closed before publication side effects.
