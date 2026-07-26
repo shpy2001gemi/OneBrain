@@ -1268,6 +1268,7 @@ pub struct DistributedPomvReport {
 pub struct DistributedPomvRuntime {
     identities: DurableUseIdentityIndex,
     max_records: usize,
+    max_view_records: usize,
     policies: LocalPolicyRegistry,
 }
 
@@ -1277,15 +1278,28 @@ impl DistributedPomvRuntime {
         max_records: usize,
         policies: LocalPolicyRegistry,
     ) -> Result<Self, DistributedPomvError> {
+        Self::open_with_limits(data_dir, max_records, max_records, policies)
+    }
+
+    pub fn open_with_limits(
+        data_dir: &Path,
+        max_records: usize,
+        max_view_records: usize,
+        policies: LocalPolicyRegistry,
+    ) -> Result<Self, DistributedPomvError> {
         std::fs::create_dir_all(data_dir)?;
         // Validate the configured capacity at startup.
         MetabolicEvidenceReducer::new(max_records)
             .map_err(|error| DistributedPomvError::Metabolic(format!("{error:?}")))?;
+        if max_view_records == 0 || max_view_records > max_records {
+            return Err(DistributedPomvError::InvalidViewLimit);
+        }
         Ok(Self {
             identities: DurableUseIdentityIndex::open(
                 &data_dir.join("vnext_distributed_pomv.redb"),
             )?,
             max_records,
+            max_view_records,
             policies,
         })
     }
@@ -1448,6 +1462,9 @@ impl DistributedPomvRuntime {
                 evidence: ExerciseEvidence::Use(candidate.evidence.clone()),
                 authority: candidate.authority,
             });
+            if observations.len() >= self.max_view_records {
+                return Err(DistributedPomvError::ViewLimitExceeded);
+            }
             observations.push(DistributedUseEvidenceObservation {
                 event_cid: candidate.evidence.event_cid(),
                 payload_object: candidate.evidence.payload_object_cid(),
@@ -1610,6 +1627,10 @@ pub enum DistributedPomvError {
     IdentityIndexCorrupt,
     #[error("public UseEvidence batch limit is invalid")]
     InvalidLimit,
+    #[error("distributed PoMV view limit is invalid")]
+    InvalidViewLimit,
+    #[error("distributed PoMV view record limit reached")]
+    ViewLimitExceeded,
     #[error("authenticated route for the exact recipient is unavailable")]
     AuthenticatedRouteUnavailable,
     #[error("requested local policy version is not allow-listed")]
@@ -1664,6 +1685,26 @@ mod tests {
         fn now_unix_seconds(&self) -> Result<u64, DistributedPomvError> {
             Ok(self.0.load(Ordering::SeqCst))
         }
+    }
+
+    #[test]
+    fn pomv_record_and_view_limits_fail_closed_at_startup() {
+        let directory = tempfile::tempdir().unwrap();
+        let version = LocalPolicyVersion::new(1).unwrap();
+        let policy = MetabolicViewPolicy {
+            policy_ref: ObjectReference::new(0, [0x61; 32]),
+            accepted_evidence_policies: vec![ObjectReference::new(0, [0x62; 32])],
+            recent_event_horizon: 64,
+        };
+        let registry = LocalPolicyRegistry::new([(version, policy)]).unwrap();
+        assert!(matches!(
+            DistributedPomvRuntime::open_with_limits(directory.path(), 8, 0, registry.clone()),
+            Err(DistributedPomvError::InvalidViewLimit)
+        ));
+        assert!(matches!(
+            DistributedPomvRuntime::open_with_limits(directory.path(), 8, 9, registry),
+            Err(DistributedPomvError::InvalidViewLimit)
+        ));
     }
 
     fn test_publisher(path: &Path, clock: Arc<TestConsentClock>) -> PublicUseEvidencePublisher {

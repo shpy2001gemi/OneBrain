@@ -7,7 +7,7 @@
 
 use std::future::Future;
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use ku_core::foundation::{
@@ -21,7 +21,7 @@ use thiserror::Error;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::vnext_config::VNextNetworkPolicy;
+use crate::vnext_config::{VNextFeature, VNextFeatureConfig, VNextRuntimeBudgets};
 use crate::vnext_distributed_kql::{
     DistributedKqlBudget, DistributedKqlError, DistributedKqlReport, DistributedKqlRuntime,
 };
@@ -37,7 +37,6 @@ use crate::vnext_network_runtime::{
 use crate::vnext_route_authority::{AuthenticatedRoute, LocalPolicyRegistry, LocalPolicyVersion};
 
 pub const MAX_PRODUCT_BACKGROUND_WORKERS: usize = 8;
-pub const DEFAULT_PRODUCT_POMV_RECORDS: usize = 4_096;
 
 /// Caller-owned dependencies that must be supplied before product runtime
 /// startup. The vault key is consumed by the encrypted local store and is not
@@ -68,6 +67,29 @@ pub enum VNextProductSignerMode {
     CompatibilityFile,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VNextProductLaneStatus {
+    pub distributed_kql_one_hop: bool,
+    pub public_use_evidence_publish: bool,
+    pub distributed_pomv_view: bool,
+}
+
+impl VNextProductLaneStatus {
+    fn from_config(config: &VNextFeatureConfig) -> Self {
+        Self {
+            distributed_kql_one_hop: config.is_active(VNextFeature::DistributedKqlOneHop),
+            public_use_evidence_publish: config.is_active(VNextFeature::PublicUseEvidencePublish),
+            distributed_pomv_view: config.is_active(VNextFeature::DistributedPomvView),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VNextStoragePressure {
+    Normal,
+    SoftWatermark,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VNextProductRuntimeStatus {
     pub state: VNextProductRuntimeState,
@@ -78,6 +100,10 @@ pub struct VNextProductRuntimeStatus {
     pub durable_matches: u64,
     pub pending_publications: u64,
     pub policy_versions: Vec<u32>,
+    pub lanes: VNextProductLaneStatus,
+    pub budgets: VNextRuntimeBudgets,
+    pub storage_bytes: u64,
+    pub storage_pressure: VNextStoragePressure,
     pub active_product_workers: usize,
     pub max_product_workers: usize,
     pub cancellation_requested: bool,
@@ -92,10 +118,13 @@ pub struct VNextProductRuntimeStatus {
 /// operations cross [`VNextProductServices`].
 pub struct VNextProductRuntime {
     network: VNextNetworkRuntime,
-    distributed_kql: Mutex<DistributedKqlRuntime>,
-    public_use: PublicUseEvidencePublisher,
-    distributed_pomv: DistributedPomvRuntime,
+    distributed_kql: Option<Mutex<DistributedKqlRuntime>>,
+    public_use: Option<PublicUseEvidencePublisher>,
+    distributed_pomv: Option<DistributedPomvRuntime>,
     policy_versions: Vec<LocalPolicyVersion>,
+    lanes: VNextProductLaneStatus,
+    budgets: VNextRuntimeBudgets,
+    storage: ProductStorageGuard,
     workers: BoundedProductWorkers,
     signer_mode: VNextProductSignerMode,
     state: VNextProductRuntimeState,
@@ -105,22 +134,44 @@ impl VNextProductRuntime {
     pub async fn start(
         data_dir: &Path,
         bind_addr: SocketAddr,
-        network_policy: VNextNetworkPolicy,
+        config: &VNextFeatureConfig,
         dependencies: VNextProductRuntimeDependencies,
         identity_signer: Option<Arc<dyn SessionIdentitySigner>>,
     ) -> Result<Self, VNextProductRuntimeError> {
+        config
+            .validate()
+            .map_err(|error| VNextProductRuntimeError::Configuration(error.to_string()))?;
+        let lanes = VNextProductLaneStatus::from_config(config);
+        let budgets = config.runtime_budgets;
+        let storage = ProductStorageGuard::new(data_dir, budgets);
+        storage.ensure_writable()?;
         let VNextProductRuntimeDependencies {
             private_need_vault_key,
             policies,
         } = dependencies;
         let policy_versions = policies.versions();
 
-        // Durable product stores are opened before the listener. This makes
-        // dependency failure visible without leaving a live network runtime.
-        let distributed_kql = DistributedKqlRuntime::open(data_dir, private_need_vault_key)?;
-        let public_use = PublicUseEvidencePublisher::open(data_dir)?;
-        let distributed_pomv =
-            DistributedPomvRuntime::open(data_dir, DEFAULT_PRODUCT_POMV_RECORDS, policies)?;
+        // A disabled lane has no owner and therefore creates no lane database.
+        let distributed_kql = lanes
+            .distributed_kql_one_hop
+            .then(|| DistributedKqlRuntime::open(data_dir, private_need_vault_key))
+            .transpose()?
+            .map(Mutex::new);
+        let public_use = lanes
+            .public_use_evidence_publish
+            .then(|| PublicUseEvidencePublisher::open(data_dir))
+            .transpose()?;
+        let distributed_pomv = lanes
+            .distributed_pomv_view
+            .then(|| {
+                DistributedPomvRuntime::open_with_limits(
+                    data_dir,
+                    budgets.pomv_max_records,
+                    budgets.pomv_max_view_records,
+                    policies,
+                )
+            })
+            .transpose()?;
         let signer_mode = if identity_signer.is_some() {
             VNextProductSignerMode::CallerOwned
         } else {
@@ -128,18 +179,21 @@ impl VNextProductRuntime {
         };
         let network = match identity_signer {
             Some(signer) => {
-                VNextNetworkRuntime::start_with_signer(data_dir, bind_addr, network_policy, signer)
+                VNextNetworkRuntime::start_with_signer(data_dir, bind_addr, config.network, signer)
                     .await?
             }
-            None => VNextNetworkRuntime::start(data_dir, bind_addr, network_policy).await?,
+            None => VNextNetworkRuntime::start(data_dir, bind_addr, config.network).await?,
         };
 
         Ok(Self {
             network,
-            distributed_kql: Mutex::new(distributed_kql),
+            distributed_kql,
             public_use,
             distributed_pomv,
             policy_versions,
+            lanes,
+            budgets,
+            storage,
             workers: BoundedProductWorkers::new(MAX_PRODUCT_BACKGROUND_WORKERS),
             signer_mode,
             state: VNextProductRuntimeState::Running,
@@ -169,8 +223,50 @@ impl VNextProductRuntime {
 
     fn kql(&self) -> Result<MutexGuard<'_, DistributedKqlRuntime>, VNextProductRuntimeError> {
         self.distributed_kql
+            .as_ref()
+            .ok_or(VNextProductRuntimeError::LaneDisabled(
+                VNextFeature::DistributedKqlOneHop,
+            ))?
             .lock()
             .map_err(|_| VNextProductRuntimeError::KqlLockPoisoned)
+    }
+
+    fn publisher(&self) -> Result<&PublicUseEvidencePublisher, VNextProductRuntimeError> {
+        self.public_use
+            .as_ref()
+            .ok_or(VNextProductRuntimeError::LaneDisabled(
+                VNextFeature::PublicUseEvidencePublish,
+            ))
+    }
+
+    fn pomv(&self) -> Result<&DistributedPomvRuntime, VNextProductRuntimeError> {
+        self.distributed_pomv
+            .as_ref()
+            .ok_or(VNextProductRuntimeError::LaneDisabled(
+                VNextFeature::DistributedPomvView,
+            ))
+    }
+
+    fn ensure_storage_writable(&self) -> Result<(), VNextProductRuntimeError> {
+        self.storage.ensure_writable()
+    }
+
+    fn ensure_kql_budget(
+        &self,
+        budget: DistributedKqlBudget,
+    ) -> Result<(), VNextProductRuntimeError> {
+        budget.validate()?;
+        if budget.max_scan_records > self.budgets.kql_max_scan_records
+            || budget.max_affordances > self.budgets.kql_max_affordances
+            || budget.max_pairs > self.budgets.kql_max_pairs
+            || budget.max_proposals > self.budgets.kql_max_proposals
+        {
+            Err(VNextProductRuntimeError::BudgetExceeded(
+                VNextFeature::DistributedKqlOneHop,
+            ))
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -197,21 +293,55 @@ impl VNextProductServices<'_> {
     }
 
     pub fn status(&self) -> Result<VNextProductRuntimeStatus, VNextProductRuntimeError> {
-        let kql = self.runtime.kql()?;
+        let active_private_needs = self
+            .runtime
+            .distributed_kql
+            .as_ref()
+            .map(|kql| {
+                kql.lock()
+                    .map(|kql| kql.active_target_count())
+                    .map_err(|_| VNextProductRuntimeError::KqlLockPoisoned)
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let durable_matches = self
+            .runtime
+            .distributed_kql
+            .as_ref()
+            .map(|kql| {
+                kql.lock()
+                    .map_err(|_| VNextProductRuntimeError::KqlLockPoisoned)?
+                    .durable_match_count()
+                    .map_err(VNextProductRuntimeError::from)
+            })
+            .transpose()?
+            .unwrap_or_default();
+        let pending_publications = self
+            .runtime
+            .public_use
+            .as_ref()
+            .map(PublicUseEvidencePublisher::pending_publication_count)
+            .transpose()?
+            .unwrap_or_default();
+        let storage_bytes = self.runtime.storage.used_bytes()?;
         Ok(VNextProductRuntimeStatus {
             state: self.runtime.state,
             signer_mode: self.runtime.signer_mode,
             network: self.runtime.network.status(),
             authenticated_routes: self.runtime.network.authenticated_route_count()?,
-            active_private_needs: kql.active_target_count(),
-            durable_matches: kql.durable_match_count()?,
-            pending_publications: self.runtime.public_use.pending_publication_count()?,
+            active_private_needs,
+            durable_matches,
+            pending_publications,
             policy_versions: self
                 .runtime
                 .policy_versions
                 .iter()
                 .map(|version| version.get())
                 .collect(),
+            lanes: self.runtime.lanes,
+            budgets: self.runtime.budgets,
+            storage_bytes,
+            storage_pressure: self.runtime.storage.pressure(storage_bytes),
             active_product_workers: self.runtime.workers.len(),
             max_product_workers: self.runtime.workers.capacity(),
             cancellation_requested: self.runtime.workers.is_cancelled(),
@@ -245,6 +375,7 @@ impl VNextProductServices<'_> {
         bundle: PrivateNeedBundle,
     ) -> Result<(StandingNeedId, StandingNeedWriteOutcome), VNextProductRuntimeError> {
         self.runtime.ensure_running()?;
+        self.runtime.ensure_storage_writable()?;
         self.runtime
             .kql()?
             .register_private_need(bundle)
@@ -265,6 +396,7 @@ impl VNextProductServices<'_> {
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
         self.runtime.ensure_running()?;
+        self.runtime.ensure_storage_writable()?;
         self.runtime
             .kql()?
             .pause(id, expected_generation)
@@ -277,6 +409,7 @@ impl VNextProductServices<'_> {
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
         self.runtime.ensure_running()?;
+        self.runtime.ensure_storage_writable()?;
         self.runtime
             .kql()?
             .resume(id, expected_generation)
@@ -289,6 +422,7 @@ impl VNextProductServices<'_> {
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
         self.runtime.ensure_running()?;
+        self.runtime.ensure_storage_writable()?;
         self.runtime
             .kql()?
             .cancel(id, expected_generation)
@@ -301,6 +435,7 @@ impl VNextProductServices<'_> {
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
         self.runtime.ensure_running()?;
+        self.runtime.ensure_storage_writable()?;
         self.runtime
             .kql()?
             .retire(id, expected_generation)
@@ -313,6 +448,8 @@ impl VNextProductServices<'_> {
         budget: DistributedKqlBudget,
     ) -> Result<DistributedKqlReport, VNextProductRuntimeError> {
         self.runtime.ensure_running()?;
+        self.runtime.ensure_kql_budget(budget)?;
+        self.runtime.ensure_storage_writable()?;
         self.runtime
             .kql()?
             .process_one_hop_affordance_delta(&self.runtime.network, selector, budget)
@@ -325,8 +462,9 @@ impl VNextProductServices<'_> {
         author: &ValidatedFeedInception,
     ) -> Result<PreparedPublicUseIntent, VNextProductRuntimeError> {
         self.runtime.ensure_running()?;
+        self.runtime.ensure_storage_writable()?;
         self.runtime
-            .public_use
+            .publisher()?
             .prepare_public_use(request, author)
             .map_err(Into::into)
     }
@@ -339,8 +477,9 @@ impl VNextProductServices<'_> {
     ) -> Result<(PublicUseEvidencePublication, PublicUsePublishOutcome), VNextProductRuntimeError>
     {
         self.runtime.ensure_running()?;
+        self.runtime.ensure_storage_writable()?;
         self.runtime
-            .public_use
+            .publisher()?
             .publish_confirmed(request, author, signer)
             .map_err(Into::into)
     }
@@ -350,8 +489,14 @@ impl VNextProductServices<'_> {
         limit: usize,
     ) -> Result<PublicUseFlushReport, VNextProductRuntimeError> {
         self.runtime.ensure_running()?;
+        self.runtime.ensure_storage_writable()?;
+        if limit > self.runtime.budgets.publication_flush_batch {
+            return Err(VNextProductRuntimeError::BudgetExceeded(
+                VNextFeature::PublicUseEvidencePublish,
+            ));
+        }
         self.runtime
-            .public_use
+            .publisher()?
             .flush_pending(&self.runtime.network, limit)
             .map_err(Into::into)
     }
@@ -363,8 +508,9 @@ impl VNextProductServices<'_> {
         policy_version: LocalPolicyVersion,
     ) -> Result<DistributedPomvReport, VNextProductRuntimeError> {
         self.runtime.ensure_running()?;
+        self.runtime.ensure_storage_writable()?;
         self.runtime
-            .distributed_pomv
+            .pomv()?
             .materialize_public_use_view(&self.runtime.network, selector, target, policy_version)
             .map_err(Into::into)
     }
@@ -375,6 +521,64 @@ impl VNextProductServices<'_> {
     ) -> Result<Option<ku_kql::vnext_proposal::BindingProposal>, VNextProductRuntimeError> {
         self.runtime.ensure_running()?;
         Ok(self.runtime.kql()?.proposal(id).cloned())
+    }
+}
+
+struct ProductStorageGuard {
+    data_dir: PathBuf,
+    soft_watermark_bytes: u64,
+    hard_watermark_bytes: u64,
+}
+
+impl ProductStorageGuard {
+    fn new(data_dir: &Path, budgets: VNextRuntimeBudgets) -> Self {
+        Self {
+            data_dir: data_dir.to_path_buf(),
+            soft_watermark_bytes: budgets.storage_soft_watermark_bytes,
+            hard_watermark_bytes: budgets.storage_hard_watermark_bytes,
+        }
+    }
+
+    fn used_bytes(&self) -> Result<u64, VNextProductRuntimeError> {
+        let entries = match std::fs::read_dir(&self.data_dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(error) => return Err(error.into()),
+        };
+        let mut used = 0u64;
+        for entry in entries {
+            let entry = entry?;
+            if !entry.file_name().to_string_lossy().starts_with("vnext_") {
+                continue;
+            }
+            let metadata = entry.metadata()?;
+            if metadata.is_file() {
+                used = used
+                    .checked_add(metadata.len())
+                    .ok_or(VNextProductRuntimeError::StorageSizeOverflow)?;
+            }
+        }
+        Ok(used)
+    }
+
+    fn pressure(&self, used_bytes: u64) -> VNextStoragePressure {
+        if used_bytes >= self.soft_watermark_bytes {
+            VNextStoragePressure::SoftWatermark
+        } else {
+            VNextStoragePressure::Normal
+        }
+    }
+
+    fn ensure_writable(&self) -> Result<(), VNextProductRuntimeError> {
+        let used_bytes = self.used_bytes()?;
+        if used_bytes >= self.hard_watermark_bytes {
+            Err(VNextProductRuntimeError::StorageHardWatermark {
+                used_bytes,
+                hard_watermark_bytes: self.hard_watermark_bytes,
+            })
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -469,17 +673,39 @@ pub enum VNextProductRuntimeError {
     KqlLockPoisoned,
     #[error("vNext product background worker capacity reached")]
     WorkerCapacityReached,
+    #[error(
+        "vNext product lane {feature_name} is disabled",
+        feature_name = .0.name()
+    )]
+    LaneDisabled(VNextFeature),
+    #[error(
+        "vNext product lane {feature_name} request exceeds its configured budget",
+        feature_name = .0.name()
+    )]
+    BudgetExceeded(VNextFeature),
+    #[error("vNext product runtime configuration failed: {0}")]
+    Configuration(String),
+    #[error("vNext storage hard watermark reached ({used_bytes}/{hard_watermark_bytes} bytes)")]
+    StorageHardWatermark {
+        used_bytes: u64,
+        hard_watermark_bytes: u64,
+    },
+    #[error("vNext storage size accounting overflowed")]
+    StorageSizeOverflow,
     #[error("vNext network runtime failed: {0}")]
     Network(#[from] VNextNetworkRuntimeError),
     #[error("vNext distributed KQL runtime failed: {0}")]
     DistributedKql(#[from] DistributedKqlError),
     #[error("vNext distributed PoMV runtime failed: {0}")]
     DistributedPomv(#[from] DistributedPomvError),
+    #[error("vNext product filesystem operation failed: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vnext_config::VNextFeatureConfig;
     use ed25519_dalek::SigningKey;
     use ku_core::foundation::{MetabolicViewPolicy, ObjectReference};
 
@@ -503,16 +729,27 @@ mod tests {
         )
     }
 
+    fn all_lanes_config() -> VNextFeatureConfig {
+        let mut config = VNextFeatureConfig::default();
+        config.enabled.object_event_v1 = true;
+        config.enabled.obp_rp = true;
+        config.enabled.distributed_kql_one_hop = true;
+        config.enabled.public_use_evidence_publish = true;
+        config.enabled.distributed_pomv_view = true;
+        config
+    }
+
     #[tokio::test]
     async fn aggregate_owns_every_runtime_and_exposes_typed_services() {
         let left_dir = tempfile::tempdir().unwrap();
         let right_dir = tempfile::tempdir().unwrap();
         let left_signer: Arc<dyn SessionIdentitySigner> =
             Arc::new(SigningKey::from_bytes(&[0x31; 32]));
+        let config = all_lanes_config();
         let mut left = VNextProductRuntime::start(
             left_dir.path(),
             "127.0.0.1:0".parse().unwrap(),
-            VNextNetworkPolicy::default(),
+            &config,
             dependencies(10),
             Some(left_signer),
         )
@@ -521,7 +758,7 @@ mod tests {
         let mut right = VNextProductRuntime::start(
             right_dir.path(),
             "127.0.0.1:0".parse().unwrap(),
-            VNextNetworkPolicy::default(),
+            &config,
             dependencies(20),
             None,
         )
@@ -545,6 +782,10 @@ mod tests {
         assert_eq!(before.active_private_needs, 0);
         assert_eq!(before.pending_publications, 0);
         assert_eq!(before.policy_versions, vec![1]);
+        assert!(before.lanes.distributed_kql_one_hop);
+        assert!(before.lanes.public_use_evidence_publish);
+        assert!(before.lanes.distributed_pomv_view);
+        assert_eq!(before.budgets, config.runtime_budgets);
         assert_eq!(before.active_product_workers, 0);
         assert_eq!(before.max_product_workers, MAX_PRODUCT_BACKGROUND_WORKERS);
         assert!(!before.cancellation_requested);
@@ -575,10 +816,11 @@ mod tests {
     #[tokio::test]
     async fn product_worker_owner_is_bounded_and_cancelled() {
         let directory = tempfile::tempdir().unwrap();
+        let config = all_lanes_config();
         let mut runtime = VNextProductRuntime::start(
             directory.path(),
             "127.0.0.1:0".parse().unwrap(),
-            VNextNetworkPolicy::default(),
+            &config,
             dependencies(30),
             None,
         )
@@ -602,5 +844,86 @@ mod tests {
         runtime.shutdown().await;
         assert!(cancellation.is_cancelled());
         assert_eq!(runtime.workers.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn independent_lane_kill_switches_prevent_store_creation_and_operations() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = all_lanes_config();
+        config.kill_switches.distributed_kql_one_hop = true;
+        config.kill_switches.public_use_evidence_publish = true;
+        config.kill_switches.distributed_pomv_view = true;
+        let mut runtime = VNextProductRuntime::start(
+            directory.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(40),
+            None,
+        )
+        .await
+        .unwrap();
+
+        for file in [
+            "vnext_private_need_vault.redb",
+            "vnext_distributed_kql.redb",
+            "vnext_public_use_sender.redb",
+            "vnext_distributed_pomv.redb",
+        ] {
+            assert!(!directory.path().join(file).exists(), "unexpected {file}");
+        }
+        assert!(directory.path().join("vnext_verified.redb").exists());
+        let status = runtime.services().status().unwrap();
+        assert!(!status.lanes.distributed_kql_one_hop);
+        assert!(!status.lanes.public_use_evidence_publish);
+        assert!(!status.lanes.distributed_pomv_view);
+        assert!(matches!(
+            runtime.services().process_one_hop_affordance_delta(
+                SelectorCid::from_bytes([0x41; 32]),
+                DistributedKqlBudget::default(),
+            ),
+            Err(VNextProductRuntimeError::LaneDisabled(
+                VNextFeature::DistributedKqlOneHop
+            ))
+        ));
+        runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn configured_budgets_and_storage_hard_watermark_fail_closed() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = all_lanes_config();
+        config.runtime_budgets.kql_max_scan_records = 8;
+        config.runtime_budgets.kql_max_affordances = 4;
+        config.runtime_budgets.kql_max_pairs = 16;
+        config.runtime_budgets.kql_max_proposals = 8;
+        let mut runtime = VNextProductRuntime::start(
+            directory.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(50),
+            None,
+        )
+        .await
+        .unwrap();
+        let oversized = DistributedKqlBudget {
+            max_scan_records: 9,
+            max_affordances: 4,
+            max_pairs: 16,
+            max_proposals: 8,
+        };
+        assert!(matches!(
+            runtime
+                .services()
+                .process_one_hop_affordance_delta(SelectorCid::from_bytes([0x51; 32]), oversized,),
+            Err(VNextProductRuntimeError::BudgetExceeded(
+                VNextFeature::DistributedKqlOneHop
+            ))
+        ));
+        runtime.storage.hard_watermark_bytes = 1;
+        assert!(matches!(
+            runtime.services().flush_pending_public_use(1),
+            Err(VNextProductRuntimeError::StorageHardWatermark { .. })
+        ));
+        runtime.shutdown().await;
     }
 }

@@ -68,7 +68,7 @@ pub use vnext_companion::{
 };
 pub use vnext_config::{
     VNextFeature, VNextFeatureConfig, VNextFeatureConfigError, VNextFeatureFlags,
-    VNextNetworkPolicy,
+    VNextNetworkPolicy, VNextRuntimeBudgets,
 };
 #[cfg(feature = "vnext-network-runtime")]
 pub use vnext_distributed_kql::{
@@ -111,9 +111,10 @@ pub use vnext_performance_budgets::{
 };
 #[cfg(feature = "vnext-network-runtime")]
 pub use vnext_product_runtime::{
-    VNextProductRuntime, VNextProductRuntimeDependencies, VNextProductRuntimeError,
-    VNextProductRuntimeState, VNextProductRuntimeStatus, VNextProductServices,
-    VNextProductSignerMode, DEFAULT_PRODUCT_POMV_RECORDS, MAX_PRODUCT_BACKGROUND_WORKERS,
+    VNextProductLaneStatus, VNextProductRuntime, VNextProductRuntimeDependencies,
+    VNextProductRuntimeError, VNextProductRuntimeState, VNextProductRuntimeStatus,
+    VNextProductServices, VNextProductSignerMode, VNextStoragePressure,
+    MAX_PRODUCT_BACKGROUND_WORKERS,
 };
 pub use vnext_reunion_canary::{DeterministicReunionTrace, ReunionTraceEntry, ReunionTracePhase};
 pub use vnext_reward_firewall::{

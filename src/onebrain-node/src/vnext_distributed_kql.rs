@@ -35,6 +35,7 @@ const MATCH_VALUE_BYTES: usize = 96;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DistributedKqlBudget {
+    pub max_scan_records: u64,
     pub max_affordances: u64,
     pub max_pairs: u64,
     pub max_proposals: u64,
@@ -43,6 +44,7 @@ pub struct DistributedKqlBudget {
 impl Default for DistributedKqlBudget {
     fn default() -> Self {
         Self {
+            max_scan_records: 4_096,
             max_affordances: 1_024,
             max_pairs: 65_536,
             max_proposals: 4_096,
@@ -51,9 +53,12 @@ impl Default for DistributedKqlBudget {
 }
 
 impl DistributedKqlBudget {
-    fn validate(self) -> Result<(), DistributedKqlError> {
-        if self.max_affordances == 0
+    pub fn validate(self) -> Result<(), DistributedKqlError> {
+        if self.max_scan_records == 0
+            || self.max_scan_records > 1_000_000
+            || self.max_affordances == 0
             || self.max_affordances > 65_536
+            || self.max_affordances > self.max_scan_records
             || self.max_pairs == 0
             || self.max_pairs > 1_000_000
             || self.max_proposals == 0
@@ -244,7 +249,11 @@ impl DistributedKqlRuntime {
         let mut known_frontier_objects = 0u64;
         let mut budget_exhausted = false;
         let mut last_scanned_cid = None;
-        for bytes in network.accepted_object_bytes()? {
+        for (scanned, bytes) in network.accepted_object_bytes()?.into_iter().enumerate() {
+            if scanned as u64 >= budget.max_scan_records {
+                budget_exhausted = true;
+                break;
+            }
             let validated = decode_knowledge_object(
                 &bytes,
                 ResourceProfile::ObjectV1,
@@ -808,6 +817,7 @@ mod tests {
         let (need_id, outcome) = local.register_private_need(private_need).unwrap();
         assert_eq!(outcome, StandingNeedWriteOutcome::Stored);
         let one_object_budget = DistributedKqlBudget {
+            max_scan_records: 16,
             max_affordances: 1,
             max_pairs: 16,
             max_proposals: 16,

@@ -32,6 +32,9 @@ async fn feature_flags_start_a_real_node_owned_product_runtime_and_status_tracks
     config.concept_registry_mode = ConceptRegistryMode::Disabled;
     config.vnext.enabled.object_event_v1 = true;
     config.vnext.enabled.obp_rp = true;
+    config.vnext.enabled.distributed_kql_one_hop = true;
+    config.vnext.enabled.public_use_evidence_publish = true;
+    config.vnext.enabled.distributed_pomv_view = true;
     assert!(config.vnext.is_active(VNextFeature::ObpRp));
 
     let mut node = OneBrainNode::new(config).await.unwrap();
@@ -58,6 +61,9 @@ async fn feature_flags_start_a_real_node_owned_product_runtime_and_status_tracks
     );
     assert!(after.features.object_event_v1);
     assert!(after.features.obp_rp);
+    assert!(after.features.distributed_kql_one_hop);
+    assert!(after.features.public_use_evidence_publish);
+    assert!(after.features.distributed_pomv_view);
     assert!(!after.network_runtime.claims_network_completion);
     let product = node
         .vnext_product_runtime_status()

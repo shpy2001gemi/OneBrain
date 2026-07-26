@@ -343,7 +343,7 @@ impl OneBrainNode {
                 VNextProductRuntime::start(
                     &self.config.data_dir,
                     bind_addr,
-                    self.config.vnext.network,
+                    &self.config.vnext,
                     dependencies,
                     self.vnext_identity_signer.clone(),
                 )
