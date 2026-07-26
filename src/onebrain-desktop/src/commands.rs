@@ -1,9 +1,12 @@
 //! Tauri IPC commands — invoked from the frontend via `invoke()`.
 
 use crate::state::AppState;
+use onebrain_node::OneBrainNode;
 use serde_json::json;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tauri::State;
+use tokio::sync::Mutex;
 
 // ─── API / Node Info ───────────────────────────────────────────────────────
 
@@ -72,16 +75,27 @@ pub async fn import_knowledge_file(
 
 // ─── Node Control ──────────────────────────────────────────────────────────
 
-/// Restart the node (placeholder — needs more complex state management).
+/// Fence and drain every node-owned network/runtime task before process exit.
+pub(crate) async fn shutdown_node(node: Option<Arc<Mutex<OneBrainNode>>>) {
+    if let Some(node) = node {
+        node.lock().await.shutdown_network().await;
+    }
+}
+
+/// Gracefully stop the node and restart the whole desktop process so
+/// caller-owned vNext runtime dependencies are rebuilt safely.
 #[tauri::command]
-pub async fn restart_node(_state: State<'_, AppState>) -> Result<(), String> {
-    Ok(())
+pub async fn restart_node(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    shutdown_node(state.node.get().cloned()).await;
+    app.restart()
 }
 
 /// Gracefully quit the application.
 #[tauri::command]
-pub fn quit_app(app: tauri::AppHandle) {
+pub async fn quit_app(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    shutdown_node(state.node.get().cloned()).await;
     app.exit(0);
+    Ok(())
 }
 
 // ─── First-Run Wizard ──────────────────────────────────────────────────────

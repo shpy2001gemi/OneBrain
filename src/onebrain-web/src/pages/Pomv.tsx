@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Activity, Search, Dna, Shield, TrendingUp } from 'lucide-react';
+import { Activity, Search, Dna, Shield, TrendingUp, Network } from 'lucide-react';
 import { api } from '../api/client';
 import type { KuDetail } from '../api/types';
+import { VNextPomv } from './VNextPomv';
 
 const POMV_DIMS = [
   { key: 'metabolic', label: 'Metabolic', icon: Activity, color: '#06b6d4', desc: 'Usage frequency and recency' },
@@ -13,6 +14,7 @@ const POMV_DIMS = [
 ] as const;
 
 export function PomvPage() {
+  const [surface, setSurface] = useState<'legacy' | 'vnext'>('legacy');
   const [cidInput, setCidInput] = useState('');
   const [ku, setKu] = useState<KuDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -35,12 +37,27 @@ export function PomvPage() {
   const pomvScore = ku ? ku.pomv * 100 : 0;
   const breakdown = ku?.pomv_breakdown;
 
+  if (surface === 'vnext') {
+    return (
+      <div className="page">
+        <div className="page-header">
+          <h1>vNext Metabolic Evidence</h1>
+          <p>Policy/frontier-relative views and explicit Public Use publication</p>
+        </div>
+        <PomvSurfaceTabs surface={surface} setSurface={setSurface} />
+        <VNextPomv />
+      </div>
+    );
+  }
+
   return (
     <div className="page">
       <div className="page-header">
         <h1>Legacy Local PoMV Scalar</h1>
         <p>Local compatibility metric — non-economic and separate from vNext Metabolic Evidence View</p>
       </div>
+
+      <PomvSurfaceTabs surface={surface} setSurface={setSurface} />
 
       <div className="glass-card" style={{ borderColor: 'rgba(245,158,11,0.45)', color: 'var(--ob-warning)', marginBottom: 'var(--ob-gap-lg)' }}>
         This scalar is not UseEvidence, Outcome, Benefit, authority, reward, or a network-wide truth claim.
@@ -132,6 +149,31 @@ export function PomvPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function PomvSurfaceTabs({
+  surface,
+  setSurface,
+}: {
+  surface: 'legacy' | 'vnext';
+  setSurface: (surface: 'legacy' | 'vnext') => void;
+}) {
+  return (
+    <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+      <button
+        className={surface === 'legacy' ? 'btn btn-primary' : 'btn btn-ghost'}
+        onClick={() => setSurface('legacy')}
+      >
+        <Activity size={16} /> Legacy local scalar
+      </button>
+      <button
+        className={surface === 'vnext' ? 'btn btn-primary' : 'btn btn-ghost'}
+        onClick={() => setSurface('vnext')}
+      >
+        <Network size={16} /> vNext Evidence View / Public Use
+      </button>
     </div>
   );
 }

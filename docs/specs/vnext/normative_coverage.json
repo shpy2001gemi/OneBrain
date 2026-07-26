@@ -485,6 +485,37 @@
       "rationale": "The typed signer boundary excludes private-key export and fallback; proof-of-possession plus pre-encode binding and durable-state tests prove fail-closed custody behavior before Vault and publication side effects."
     },
     {
+      "path": "docs/specs/vnext/VNEXT_DESKTOP_WEB_UX_PROFILE_V1.md",
+      "expected_statement_lines": 18,
+      "evidence": [
+        {
+          "path": "src/onebrain-web/src/pages/OneHopDiscovery.tsx",
+          "needle": "quarantined proposal"
+        },
+        {
+          "path": "src/onebrain-web/src/pages/VNextPomv.tsx",
+          "needle": "Type the exact intent CID to confirm"
+        },
+        {
+          "path": "src/onebrain-web/tests/vnextReceipt.test.ts",
+          "needle": "frozen Rust/CLI BLAKE3 framing"
+        },
+        {
+          "path": "src/onebrain-web/src/api/client.ts",
+          "needle": "\"single_use_receipt\":\"[REDACTED]\""
+        },
+        {
+          "path": "src/onebrain-desktop/src/commands.rs",
+          "needle": "shutdown_network().await"
+        },
+        {
+          "path": "src/onebrain-desktop/src/tray.rs",
+          "needle": "crate::commands::shutdown_node(node).await"
+        }
+      ],
+      "rationale": "Separate UI trust surfaces, source-checked semantic labels, cross-language consent-receipt vectors and process-level graceful restart enforce the P3.4 boundaries without changing legacy endpoint meaning."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [

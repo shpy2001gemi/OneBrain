@@ -1,0 +1,89 @@
+{
+  "format": "onebrain/vnext-desktop-web-ux-profile/1",
+  "profile_id": "VNEXT_DESKTOP_WEB_UX_PROFILE_V1",
+  "version": 1,
+  "discovery": {
+    "local_kql_contacts_peers": false,
+    "one_hop_is_separate_surface": true,
+    "one_hop_scope": "one_hop",
+    "zero_result_claims_global_absence": false,
+    "match_label": "quarantined proposal",
+    "match_executable": false,
+    "required_match_fields": [
+      "responder_scope",
+      "selector_cid",
+      "assessed_frontier",
+      "limitations",
+      "continuation"
+    ]
+  },
+  "pomv": {
+    "legacy_scalar_is_separate": true,
+    "view_load_creates_use_evidence": false,
+    "publication_lookup_creates_use_evidence": false,
+    "conflict_displays_authorized": false,
+    "required_view_fields": [
+      "policy_cid",
+      "assessed_frontier",
+      "revision",
+      "conflicts",
+      "coverage",
+      "limitations"
+    ]
+  },
+  "public_use": {
+    "prepare_creates_use_evidence": false,
+    "public_permanent_acknowledgement_required": true,
+    "exact_typed_intent_required": true,
+    "receipt_derived_after_exact_match": true,
+    "receipt_exported_to_ui": false,
+    "required_preview_fields": [
+      "canonical_payload_preview",
+      "exact_target",
+      "exact_recipient",
+      "selector_cid",
+      "namespace",
+      "disclosure",
+      "intent_cid",
+      "idempotency_key",
+      "expires_at"
+    ],
+    "publication_states_visible": [
+      "pending",
+      "deferred"
+    ],
+    "delivery_acknowledgement_inferred": false
+  },
+  "settings_fields": [
+    "compiled",
+    "requested",
+    "active",
+    "kill_switch",
+    "signer_ready",
+    "lifecycle",
+    "coverage",
+    "limitations"
+  ],
+  "desktop": {
+    "quit_graceful_shutdown": true,
+    "restart_graceful_shutdown": true,
+    "restart_rebuilds_process": true,
+    "tray_quit_bypasses_shutdown": false
+  },
+  "compatibility": {
+    "legacy_kql_reinterpreted": false,
+    "legacy_pomv_reinterpreted": false,
+    "private_websocket_cross_client_delivery": false,
+    "api_cli_replay_identity_changed": false
+  },
+  "receipt_vectors": [
+    {
+      "intent_cid": "1111111111111111111111111111111111111111111111111111111111111111",
+      "receipt": "obc1.Xty15PTowg0NrRClYO_Oqp3UAyS1HOQx_-N8DwH1Rh4"
+    },
+    {
+      "intent_cid": "4141414141414141414141414141414141414141414141414141414141414141",
+      "receipt": "obc1.Oo1te0JXXyKLZ2BHG858E3eeOJ6YcT2Y63pHVN_-850"
+    }
+  ]
+}
