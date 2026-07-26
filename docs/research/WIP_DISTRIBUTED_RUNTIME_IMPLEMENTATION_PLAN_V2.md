@@ -1676,3 +1676,14 @@ Local evidence:
 
 P3.4 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
 `main`. Work package kế tiếp sau P3.4 là DR-M5.
+
+Remote CI run
+[`30202193937`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30202193937)
+trên implementation commit `720c21c` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh. Run có 4 annotation warning
+lint React baseline đã biết, không có error hoặc warning protocol/receipt/
+shutdown mới từ P3.4.
+
+P3.4 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
+`main`, work package kế tiếp là DR-M5.
