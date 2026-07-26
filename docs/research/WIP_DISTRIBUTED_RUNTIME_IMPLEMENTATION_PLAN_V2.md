@@ -1552,3 +1552,12 @@ Local evidence:
 
 P3.2 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
 `main`. Work package kế tiếp là P3.3 CLI.
+
+Remote CI run
+[`30196124596`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30196124596)
+trên implementation commit `fb85c60` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P3.2 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
+`main`, work package kế tiếp là P3.3 CLI.
