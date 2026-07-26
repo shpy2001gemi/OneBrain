@@ -1325,3 +1325,12 @@ Local evidence:
   feed/event vectors, 246 normative lines, 14 endpoints/18 DTOs và 367 local
   links;
 - product-profile validator tests: 8/8 xanh.
+
+Remote CI run
+[`30186486655`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30186486655)
+trên implementation commit `f43d9da` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P2.3 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
+P2.4 Incremental processing.
