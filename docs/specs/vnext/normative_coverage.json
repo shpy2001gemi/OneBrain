@@ -339,6 +339,29 @@
       "rationale": "Authenticated router tests exercise the frozen endpoint/DTO envelope over both disabled and real feature-enabled node-owned runtimes; strict CID/continuation checks, exact Need/Public Use replay, quarantine projections and all-false metabolic flags prove the P3.1 product boundary."
     },
     {
+      "path": "docs/specs/vnext/VNEXT_PRIVATE_WEBSOCKET_PROFILE_V1.md",
+      "expected_statement_lines": 26,
+      "evidence": [
+        {
+          "path": "src/onebrain-api/src/vnext_ws.rs",
+          "needle": "two_real_websockets_receive_only_their_client_scoped_event"
+        },
+        {
+          "path": "src/onebrain-api/src/vnext_ws.rs",
+          "needle": "bounded_backpressure_disconnects_only_the_slow_session"
+        },
+        {
+          "path": "src/onebrain-api/src/vnext_ws.rs",
+          "needle": "publication_and_view_events_are_typed_fail_closed_and_deduplicated"
+        },
+        {
+          "path": "src/test-vectors/vnext/private-websocket-profile-v1.json",
+          "needle": "onebrain/vnext-private-websocket-profile/1"
+        }
+      ],
+      "rationale": "Bearer-minted random one-use tickets bind immutable topics and an exact client session; real two-client WebSocket tests, bounded queue overflow, private-field suppression, replay deduplication and all-false view events prove the P3.2 isolation boundary."
+    },
+    {
       "path": "docs/specs/vnext/RUNTIME_INCREMENTAL_PROCESSING_PROFILE_V1.md",
       "expected_statement_lines": 25,
       "evidence": [

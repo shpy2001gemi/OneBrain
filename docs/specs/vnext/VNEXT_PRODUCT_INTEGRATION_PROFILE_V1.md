@@ -91,6 +91,12 @@ wire encodings, semantic firewalls, or required DTO fields. Additive optional
 fields require a profile-minor revision; incompatible changes require a new
 major profile.
 
+P3.2 adds ticket minting and WebSocket upgrade paths as an extension contract
+under the same `/api/vnext/...` namespace. Their authentication, immutable
+subscription, event vocabulary, private-field suppression and backpressure
+rules are frozen separately by the
+[vNext Private WebSocket Profile v1](VNEXT_PRIVATE_WEBSOCKET_PROFILE_V1.md).
+
 ## 5. DTO boundaries
 
 The machine contract freezes every required field. These groups explain their
@@ -150,8 +156,9 @@ not upgrade `pending` or `deferred` work to accepted, published, or complete.
 5. Loading, retrieving, presenting, or paging a result cannot create
    UseEvidence.
 
-These firewalls apply to REST, CLI, Desktop, Web, and future WebSocket
-projections of the same product contract.
+These firewalls apply to REST, CLI, Desktop, Web, and the
+[private WebSocket extension](VNEXT_PRIVATE_WEBSOCKET_PROFILE_V1.md) of the
+same product contract.
 
 ## 8. Acceptance evidence
 

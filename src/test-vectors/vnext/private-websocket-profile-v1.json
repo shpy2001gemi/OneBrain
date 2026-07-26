@@ -1,0 +1,92 @@
+{
+  "format": "onebrain/vnext-private-websocket-profile/1",
+  "profile_id": "VNEXT_PRIVATE_WEBSOCKET_PROFILE_V1",
+  "version": 1,
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/api/vnext/ws/tickets",
+      "authentication": "bearer",
+      "request": "VNextWsTicketRequestV1",
+      "response": "VNextWsTicketV1"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vnext/ws",
+      "authentication": "single_use_ticket",
+      "request": "VNextWsTicketQuery",
+      "response": "websocket_upgrade"
+    }
+  ],
+  "ticket": {
+    "encoding": "base64url_no_pad",
+    "prefix": "obw1.",
+    "decoded_bytes": 32,
+    "single_use": true,
+    "ticket_ttl_seconds": 30,
+    "session_ttl_seconds": 900,
+    "subscription_immutable": true
+  },
+  "topics": [
+    "matches",
+    "publications",
+    "views",
+    "runtime"
+  ],
+  "event_envelope_required": [
+    "profile",
+    "event_type",
+    "sequence",
+    "timestamp",
+    "lifecycle",
+    "coverage",
+    "limitations",
+    "data"
+  ],
+  "event_types": [
+    "subscription_ready",
+    "bounded_match_available",
+    "publication_queued",
+    "publication_delivered",
+    "publication_deferred",
+    "view_revision",
+    "view_conflict",
+    "lane_active",
+    "lane_disabled",
+    "lane_degraded"
+  ],
+  "limits": {
+    "max_topics": 4,
+    "max_pending_tickets": 128,
+    "max_active_sessions": 64,
+    "event_queue_capacity": 32,
+    "max_client_message_bytes": 4096
+  },
+  "publication_states": {
+    "queued": "pending",
+    "delivered": "delivered",
+    "deferred": "deferred",
+    "delivered_requires_durable_authenticated_acknowledgement": true
+  },
+  "event_non_exportable_fields": [
+    "local_query",
+    "standing_need_id",
+    "query_definition_cid",
+    "private_target",
+    "proposal_cid",
+    "single_use_receipt",
+    "client_session",
+    "ticket"
+  ],
+  "semantic_firewalls": {
+    "cross_client_delivery": false,
+    "event_is_authority": false,
+    "event_materializes_mapping": false,
+    "event_creates_use_evidence": false,
+    "event_establishes_truth": false,
+    "event_establishes_benefit": false,
+    "event_authorizes_reward": false,
+    "event_claims_global_completion": false,
+    "slow_client_blocks_runtime": false
+  }
+}

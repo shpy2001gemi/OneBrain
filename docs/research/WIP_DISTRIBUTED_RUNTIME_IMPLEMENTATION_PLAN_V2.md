@@ -1498,3 +1498,66 @@ và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
 
 P3.1 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
 `main`, work package kế tiếp là P3.2 private WebSocket.
+
+### 2026-07-26 — P3.2 Private WebSocket
+
+Đã triển khai cục bộ trên nhánh `codex/p3-private-websocket`:
+
+1. Thêm Bearer-authenticated `POST /api/vnext/ws/tickets` để mint ticket
+   `obw1` random 32 byte, single-use, TTL 30 giây cùng client-session
+   capability TTL 15 phút. `GET /api/vnext/ws` chỉ upgrade sau khi consume
+   đúng ticket; missing/invalid/expired/replay cùng fail closed.
+2. Ticket bind immutable 1–4 topic `matches`, `publications`, `views`,
+   `runtime`. REST vẫn bắt buộc Bearer; optional
+   `X-OneBrain-VNext-Client-Session` chỉ route wake-up event tới đúng session,
+   không cấp authority.
+3. vNext dùng per-client `mpsc` queue, không dùng legacy global broadcast:
+   tối đa 128 pending ticket, 64 active session, 32 event/session và 4 KiB
+   client frame. Full/closed queue loại riêng slow session bằng non-blocking
+   `try_send`, không chặn runtime/client khác.
+4. Match event chỉ chứa bounded new count, `quarantined` và
+   `executable=false`; StandingNeed ID, QueryDefinition CID, raw query,
+   private target và proposal CID không đi vào WebSocket.
+5. Publication queued/deferred chỉ phát cho new confirmation; exact replay
+   không duplicate. `delivered` bị chặn nếu không có durable authenticated
+   acknowledgement thật.
+6. View revision/conflict deduplicate theo session và chỉ mang revision,
+   conflict count cùng bốn truth/benefit/reward/global flag literal `false`;
+   target, policy, frontier, evidence root và event IDs vẫn chỉ ở REST.
+7. Runtime subscription nhận bounded local lane snapshot, tách
+   compiled/requested/active/kill-switch/signer readiness. Legacy
+   `/ws/events?token=...` được giữ nguyên compatibility.
+8. Đã freeze
+   [`VNEXT_PRIVATE_WEBSOCKET_PROFILE_V1.md`](../specs/vnext/VNEXT_PRIVATE_WEBSOCKET_PROFILE_V1.md)
+   và machine profile cho 10 event type, 4 topic, hard limits,
+   non-exportable fields và semantic firewalls; CI có gate P3.2 riêng.
+
+Local evidence:
+
+- default `onebrain-api` lib: 13/13 xanh;
+- feature-enabled `onebrain-api` lib: 15/15 xanh;
+- P3.2 focused tests: 8/8 xanh, gồm two real WebSocket clients, exact-client
+  isolation, topic scope, single-use ticket, Bearer mint, backpressure,
+  publication/view firewall, lane snapshot và legacy handshake;
+- feature-enabled `onebrain-node` lib: 128/128 xanh;
+- node-owned lifecycle integration: 4/4 xanh;
+- default workspace tests, workspace check, feature-enabled
+  API/CLI/Desktop/node checks, API clippy, web production build/lint và
+  rustfmt: xanh;
+- `python scripts/ci/validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37
+  negative assertions, 55 vectors/21 domains, 9 identity/object vectors, 4
+  feed/event vectors, 334 normative lines, 14 REST endpoints/18 DTOs, 10
+  private-WS events/4 topics và 384 local links;
+- product-profile validator: 8/8 xanh; private-WebSocket validator: 6/6 xanh.
+
+P3.2 đã hoàn tất ở cấp implementation; cần remote CI trước khi merge về
+`main`. Work package kế tiếp là P3.3 CLI.
+
+Remote CI run
+[`30196124596`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30196124596)
+trên implementation commit `fb85c60` hoàn tất thành công ngày 2026-07-26:
+foundation contract, Linux default workspace, Linux feature-enabled real QUIC
+và Windows default/vNext/Desktop smoke đều xanh, với 0 annotation.
+
+P3.2 đã hoàn tất ở cấp implementation và remote evidence. Sau khi merge về
+`main`, work package kế tiếp là P3.3 CLI.

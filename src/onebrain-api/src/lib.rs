@@ -5,6 +5,7 @@ pub mod handlers;
 pub mod server;
 pub mod types;
 pub mod vnext_api;
+pub mod vnext_ws;
 
 pub use server::ApiServer;
 #[cfg(feature = "vnext-network-runtime")]
