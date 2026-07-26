@@ -1141,4 +1141,10 @@ P1.4 Private KQL persistence.
 9. Contract `PRIVATE_KQL_PERSISTENCE_PROFILE_V1`, `TX-KQL-000`, M3 profile và
    CI focused step đã được nối vào normative documentation.
 
-Remote CI evidence sẽ được ghi sau khi implementation commit được push.
+Remote CI run `30181305411` trên implementation commit `b297cb1` hoàn tất thành
+công ngày 2026-07-26: foundation contract, Linux default workspace, Linux
+feature-enabled real QUIC và Windows default/vNext/Desktop smoke đều xanh, với
+0 annotation.
+
+P1.4 đã hoàn tất ở cấp implementation; work package kế tiếp sau khi merge là
+P1.5 Secret scan và privacy regression gate.
