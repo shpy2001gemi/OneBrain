@@ -33,7 +33,7 @@ use crate::vnext_distributed_pomv::{
     ConfirmPublicUseEvidenceRequest, DistributedPomvError, DistributedPomvReport,
     DistributedPomvRuntime, PreparePublicUseEvidenceRequest, PreparedPublicUseIntent,
     PublicUseEvidencePublication, PublicUseEvidencePublisher, PublicUseFlushReport,
-    PublicUsePublishOutcome,
+    PublicUsePublicationRecord, PublicUsePublishOutcome,
 };
 use crate::vnext_network_runtime::{
     prepare_vnext_identity, OutboundVNextSession, VNextNetworkRuntime, VNextNetworkRuntimeError,
@@ -770,6 +770,14 @@ impl VNextProductServices {
         result
     }
 
+    pub fn standing_needs(
+        &self,
+    ) -> Result<Vec<(StandingNeedId, StandingNeed)>, VNextProductRuntimeError> {
+        let lease = self.lease()?;
+        let result = lease.core.kql()?.standing_needs().map_err(Into::into);
+        result
+    }
+
     pub fn pause_private_need(
         &self,
         id: StandingNeedId,
@@ -893,6 +901,30 @@ impl VNextProductServices {
             .core
             .publisher()?
             .flush_pending(&network, limit)
+            .map_err(Into::into)
+    }
+
+    pub fn public_use_publication(
+        &self,
+        publication_id: [u8; 32],
+    ) -> Result<Option<PublicUsePublicationRecord>, VNextProductRuntimeError> {
+        let lease = self.lease()?;
+        lease
+            .core
+            .publisher()?
+            .publication(publication_id)
+            .map_err(Into::into)
+    }
+
+    pub fn public_use_selectors_for_target(
+        &self,
+        target: &ObjectReference,
+    ) -> Result<Vec<SelectorCid>, VNextProductRuntimeError> {
+        let lease = self.lease()?;
+        lease
+            .core
+            .publisher()?
+            .publication_selectors_for_target(target)
             .map_err(Into::into)
     }
 

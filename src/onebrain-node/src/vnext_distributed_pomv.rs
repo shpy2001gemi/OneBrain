@@ -242,6 +242,12 @@ pub struct PublicUseFlushReport {
     pub route_updated_intents: u64,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PublicUsePublicationRecord {
+    pub publication: PublicUseEvidencePublication,
+    pub exported_to_network_outbox: bool,
+}
+
 #[derive(Serialize, Deserialize)]
 struct StoredPublication {
     schema: u64,
@@ -605,6 +611,55 @@ impl PublicUseEvidencePublisher {
             }
         }
         Ok(pending)
+    }
+
+    /// Look up one durable publication without exposing the underlying Redb
+    /// table or receipt commitment to product callers.
+    pub fn publication(
+        &self,
+        publication_id: [u8; 32],
+    ) -> Result<Option<PublicUsePublicationRecord>, DistributedPomvError> {
+        let read = self.database.begin_read().map_err(storage)?;
+        let table = read.open_table(PUBLICATIONS).map_err(storage)?;
+        for entry in table.iter().map_err(storage)? {
+            let (_, value) = entry.map_err(storage)?;
+            let stored = decode_stored_publication(value.value())?;
+            if stored.publication_id == publication_id {
+                return Ok(Some(PublicUsePublicationRecord {
+                    publication: publication_from_stored(&stored)?,
+                    exported_to_network_outbox: stored.exported_to_network_outbox,
+                }));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Return the stable selector set of local Public Use publications whose
+    /// canonical payload names the exact typed target.
+    pub fn publication_selectors_for_target(
+        &self,
+        target: &ObjectReference,
+    ) -> Result<Vec<SelectorCid>, DistributedPomvError> {
+        let read = self.database.begin_read().map_err(storage)?;
+        let table = read.open_table(PUBLICATIONS).map_err(storage)?;
+        let mut selectors = BTreeSet::new();
+        for entry in table.iter().map_err(storage)? {
+            let (_, value) = entry.map_err(storage)?;
+            let stored = decode_stored_publication(value.value())?;
+            let object = decode_knowledge_object(
+                &stored.object_bytes,
+                ResourceProfile::ObjectV1,
+                &[KnownObjectKind::new(USE_EVIDENCE_KIND, 1)],
+                &[],
+            )
+            .map_err(|_| DistributedPomvError::CorruptPublication)?;
+            let payload = UseEvidencePayload::from_validated_object(&object)
+                .map_err(|_| DistributedPomvError::CorruptPublication)?;
+            if payload.subjects.contains(target) {
+                selectors.insert(stored.selector);
+            }
+        }
+        Ok(selectors.into_iter().map(SelectorCid::from_bytes).collect())
     }
 
     pub fn flush_pending(

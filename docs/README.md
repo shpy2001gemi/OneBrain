@@ -119,6 +119,7 @@ cargo build --features persist
 | [Runtime Lifecycle Profile v1](specs/vnext/RUNTIME_LIFECYCLE_PROFILE_V1.md) | Contract P2.3 cho startup/shutdown có thứ tự, outbox recovery, bounded workers và partial-start rollback sạch |
 | [Runtime Incremental Processing Profile v1](specs/vnext/RUNTIME_INCREMENTAL_PROCESSING_PROFILE_V1.md) | Contract P2.4 cho selector/type index có sequence tăng đơn điệu, durable KQL/PoMV cursors, notification đúng một lần và PoMV changed-input cache |
 | [Runtime Concurrency Profile v1](specs/vnext/RUNTIME_CONCURRENCY_PROFILE_V1.md) | Contract P2.5 cho cloneable service handle, aggregate-lock exclusion, operation lease, shutdown fence và in-flight drain |
+| [vNext REST API Profile v1](specs/vnext/VNEXT_REST_API_PROFILE_V1.md) | Contract P3.1 triển khai 12 endpoint reserved bằng envelope/DTO đã freeze, private capability, exact consent, opaque continuation và status/coverage fail-closed |
 | [Distributed Runtime Transaction Inventory](specs/vnext/DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md) | Danh mục boundary và failpoint ID cho crash harness DR-M5, kèm durable owner và restart oracle |
 | [Feature Tree](features/FEATURE_TREE.md) | Cây tính năng v6 — tất cả §1-§8 |
 | [Feature Details](features/FEATURE_DETAILS.md) | Chi tiết kỹ thuật từng feature với code references |

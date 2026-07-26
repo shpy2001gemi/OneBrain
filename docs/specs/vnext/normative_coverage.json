@@ -316,6 +316,29 @@
       "rationale": "A weak cloneable static service handle snapshots under the aggregate node mutex, a short admission lease keeps only the subsystem core alive during work, and executable tests prove QUIC waits, Redb scans, signer calls and PoMV materialization proceed while aggregate owner locks remain held; shutdown fences and drains those leases before listener/store closure."
     },
     {
+      "path": "docs/specs/vnext/VNEXT_REST_API_PROFILE_V1.md",
+      "expected_statement_lines": 14,
+      "evidence": [
+        {
+          "path": "src/onebrain-api/src/vnext_api.rs",
+          "needle": "runtime_status_and_disabled_lane_keep_the_vnext_envelope"
+        },
+        {
+          "path": "src/onebrain-api/src/vnext_api.rs",
+          "needle": "need_rest_flow_is_private_idempotent_partial_and_quarantined"
+        },
+        {
+          "path": "src/onebrain-api/src/vnext_api.rs",
+          "needle": "public_use_requires_exact_explicit_confirmation_and_replays_identity"
+        },
+        {
+          "path": "src/onebrain-api/src/server.rs",
+          "needle": "/api/vnext/runtime/status"
+        }
+      ],
+      "rationale": "Authenticated router tests exercise the frozen endpoint/DTO envelope over both disabled and real feature-enabled node-owned runtimes; strict CID/continuation checks, exact Need/Public Use replay, quarantine projections and all-false metabolic flags prove the P3.1 product boundary."
+    },
+    {
       "path": "docs/specs/vnext/RUNTIME_INCREMENTAL_PROCESSING_PROFILE_V1.md",
       "expected_statement_lines": 25,
       "evidence": [
