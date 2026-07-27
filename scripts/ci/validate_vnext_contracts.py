@@ -2494,6 +2494,9 @@ def validate_vnext_soak_runner_kit(
         "realpath -m \"$RUNNER_HOME\"",
         'rm -rf -- "$RUNNER_HOME"',
         "No inbound firewall port is required",
+        "run_privileged",
+        "command_exists dnf",
+        "command_exists yum",
     )
     for needle in script_needles:
         if needle not in runner_script:
@@ -2519,6 +2522,7 @@ def validate_vnext_soak_runner_kit(
         "uninstall",
         "repo public",
         "không chứa SSH key",
+        "Rocky/Alma/RHEL",
     )
     for needle in guide_needles:
         if needle not in runner_guide:

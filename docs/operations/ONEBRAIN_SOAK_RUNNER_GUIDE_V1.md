@@ -33,7 +33,7 @@ Tham khảo:
 
 Khuyến nghị:
 
-- Ubuntu 22.04/24.04 x64 hoặc Debian tương đương;
+- Ubuntu 22.04/24.04, Debian tương đương, Rocky/Alma/RHEL 8+ x64;
 - 4 vCPU, 8 GiB RAM;
 - SSD từ 50 GiB;
 - đồng hồ NTP đồng bộ;
@@ -152,21 +152,36 @@ Script kiểm tra:
 - kết nối HTTPS tới GitHub;
 - không yêu cầu inbound port.
 
-Nếu Ubuntu/Debian thiếu dependency:
+Nếu thiếu dependency trên Ubuntu/Debian hoặc Rocky/Alma/RHEL/CentOS Stream 8+:
 
 ```bash
 "$RUNNER_KIT" deps
 "$RUNNER_KIT" doctor
 ```
 
-Lệnh `deps` chỉ cài build/runtime dependency qua `apt`. GitHub runner vẫn nằm
-portable dưới:
+Lệnh `deps` tự nhận diện `apt`, `dnf` hoặc `yum`. Có thể chạy lệnh này bằng
+`root`, hoặc bằng user có `sudo`; GitHub runner vẫn nằm portable dưới:
 
 ```text
 ~/.local/share/onebrain-actions-runner
 ```
 
 Không có systemd service được tạo.
+
+Nếu đang đăng nhập bằng `root`, chỉ dùng `root` để chạy `deps` và tạo user riêng.
+Không chạy `setup`, `setup-run`, `run` hoặc `start` bằng `root`:
+
+```bash
+./onebrain-soak-runner.sh deps
+useradd --create-home --shell /bin/bash onebrain
+install -d -o onebrain -g onebrain /home/onebrain/onebrain-runner-kit
+install -m 0755 -o onebrain -g onebrain \
+  ./onebrain-soak-runner.sh \
+  /home/onebrain/onebrain-runner-kit/onebrain-soak-runner.sh
+su - onebrain
+cd ~/onebrain-runner-kit
+./onebrain-soak-runner.sh doctor
+```
 
 ## 6. Lấy registration token
 

@@ -1,2 +1,5 @@
 # Frozen fuzz seeds are byte-exact corpus artifacts on every platform.
 src/fuzz/corpus/** -text
+
+# Shell entrypoints are downloaded and executed directly on Linux.
+*.sh text eol=lf

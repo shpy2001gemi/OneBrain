@@ -34,7 +34,7 @@ OneBrain portable soak runner
 Usage:
   onebrain-soak-runner.sh                 Interactive menu
   onebrain-soak-runner.sh doctor          Check OS, tools, resources and network
-  onebrain-soak-runner.sh deps            Install Ubuntu/Debian build dependencies
+  onebrain-soak-runner.sh deps            Install build dependencies (apt/dnf/yum)
   onebrain-soak-runner.sh setup           Configure an ephemeral one-job runner
   onebrain-soak-runner.sh setup --persistent
                                          Configure a reusable stopped runner
@@ -110,7 +110,7 @@ doctor() {
         fi
     done
     if [[ "$failed" -ne 0 ]]; then
-        warn "Run '$0 deps' on Ubuntu/Debian, then rerun doctor."
+        warn "Run '$0 deps', then rerun doctor."
     fi
 
     local memory_kib
@@ -156,17 +156,37 @@ doctor() {
     info "Doctor passed."
 }
 
+run_privileged() {
+    if [[ "$(id -u)" -eq 0 ]]; then
+        "$@"
+    elif command_exists sudo; then
+        sudo "$@"
+    else
+        die "Dependency installation requires root or sudo. The runner itself must still run as a non-root user."
+    fi
+}
+
 install_dependencies() {
     require_linux_x64
-    if ! command_exists apt-get; then
-        die "Automatic dependency setup supports Ubuntu/Debian only. Install the commands listed by doctor manually."
-    fi
-    command_exists sudo || die "sudo is required for dependency installation."
     info "Installing build/runtime dependencies. The Actions runner itself remains portable."
-    sudo apt-get update
-    sudo apt-get install -y \
-        ca-certificates curl git tar gzip coreutils python3 \
-        build-essential cmake pkg-config perl libssl-dev libicu-dev zlib1g-dev
+    if command_exists apt-get; then
+        run_privileged apt-get update
+        run_privileged apt-get install -y \
+            ca-certificates curl git tar gzip coreutils python3 \
+            build-essential cmake pkg-config perl libssl-dev libicu-dev zlib1g-dev
+    elif command_exists dnf; then
+        run_privileged dnf install -y \
+            ca-certificates curl git tar gzip coreutils python3 \
+            gcc gcc-c++ make cmake pkgconf-pkg-config perl \
+            openssl-devel libicu-devel zlib-devel
+    elif command_exists yum; then
+        run_privileged yum install -y \
+            ca-certificates curl git tar gzip coreutils python3 \
+            gcc gcc-c++ make cmake pkgconfig perl \
+            openssl-devel libicu-devel zlib-devel
+    else
+        die "Unsupported package manager. Install the commands listed by doctor manually."
+    fi
 }
 
 github_api_curl_args() {
