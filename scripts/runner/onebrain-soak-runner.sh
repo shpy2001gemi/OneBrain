@@ -99,7 +99,7 @@ require_supported_host() {
 }
 
 require_supported_distribution() {
-    [[ "$HOST_KIND" == "linux-x64" ]] || return
+    [[ "$HOST_KIND" == "linux-x64" ]] || return 0
     [[ -r /etc/os-release ]] || {
         warn "Cannot read /etc/os-release; verify the distribution against GitHub's supported runner list."
         return
@@ -133,7 +133,7 @@ command_exists() {
 }
 
 activate_macos_tool_paths() {
-    [[ "$HOST_KIND" == "macos-arm64" ]] || return
+    [[ "$HOST_KIND" == "macos-arm64" ]] || return 0
     if [[ -x /opt/homebrew/bin/brew ]]; then
         export PATH="/opt/homebrew/bin:${PATH}"
         local python_prefix

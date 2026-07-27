@@ -38,7 +38,15 @@ class VNextMacOsSoakRunnerKitTests(unittest.TestCase):
         )
 
     def test_macos_runner_kit_is_accepted(self) -> None:
-        self.assertEqual(self.validate(), (7, 8, 7, 5))
+        self.assertEqual(self.validate(), (9, 8, 7, 5))
+
+    def test_cross_platform_skip_helpers_must_return_success(self) -> None:
+        mutated = self.script.replace(
+            '[[ "$HOST_KIND" == "linux-x64" ]] || return 0',
+            '[[ "$HOST_KIND" == "linux-x64" ]] || return',
+        )
+        with self.assertRaisesRegex(ContractError, "macOS runner safety"):
+            self.validate(script=mutated)
 
     def test_native_runner_asset_cannot_change(self) -> None:
         mutated = self.script.replace(

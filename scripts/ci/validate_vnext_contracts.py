@@ -2511,6 +2511,8 @@ def validate_vnext_soak_runner_kit(
         "shasum -a 256",
         "caffeinate -dimsu",
         "brew install python@3.13 cmake pkgconf",
+        '[[ "$HOST_KIND" == "linux-x64" ]] || return 0',
+        '[[ "$HOST_KIND" == "macos-arm64" ]] || return 0',
     )
     for needle in script_needles:
         if needle not in runner_script:
@@ -2582,6 +2584,8 @@ def validate_vnext_macos_soak_runner_kit(
         "caffeinate -dimsu",
         "brew install python@3.13 cmake pkgconf",
         "macOS purge target must be below HOME",
+        '[[ "$HOST_KIND" == "linux-x64" ]] || return 0',
+        '[[ "$HOST_KIND" == "macos-arm64" ]] || return 0',
     )
     for needle in script_needles:
         if needle not in runner_script:

@@ -137,6 +137,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_soak_runner_kit
           python -m unittest scripts.ci.test_validate_vnext_macos_soak_runner_kit
           bash -n scripts/runner/onebrain-soak-runner.sh
+          bash scripts/ci/test_onebrain_soak_runner_macos.sh
 
       - name: P3.4 Web UX build, lint, and receipt contract
         working-directory: src/onebrain-web
