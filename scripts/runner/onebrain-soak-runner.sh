@@ -4,12 +4,38 @@ set -Eeuo pipefail
 # Portable GitHub Actions runner for OneBrain M5-07 soak jobs.
 #
 # The default setup is ephemeral: the runner accepts one job, unregisters
-# itself automatically, and exits. No systemd service is installed.
+# itself automatically, and exits. No system service is installed.
+
+HOST_OS="$(uname -s)"
+HOST_ARCH="$(uname -m)"
+HOST_KIND="unsupported"
+RUNNER_ASSET_ID=""
+RUNNER_DISPLAY_NAME=""
+DEFAULT_RUNNER_HOME="${HOME}/.local/share/onebrain-actions-runner"
+DEFAULT_RUNNER_LABELS="onebrain-soak"
+
+case "${HOST_OS}/${HOST_ARCH}" in
+    Linux/x86_64 | Linux/amd64)
+        HOST_KIND="linux-x64"
+        RUNNER_ASSET_ID="linux-x64"
+        RUNNER_DISPLAY_NAME="Linux x64"
+        ;;
+    Darwin/arm64 | Darwin/aarch64)
+        HOST_KIND="macos-arm64"
+        RUNNER_ASSET_ID="osx-arm64"
+        RUNNER_DISPLAY_NAME="macOS ARM64"
+        DEFAULT_RUNNER_HOME="${HOME}/Library/Application Support/OneBrain/actions-runner"
+        DEFAULT_RUNNER_LABELS="onebrain-soak-macos-arm64"
+        if [[ -x /opt/homebrew/bin/brew ]]; then
+            export PATH="/opt/homebrew/bin:${PATH}"
+        fi
+        ;;
+esac
 
 REPOSITORY_URL="${ONEBRAIN_RUNNER_REPOSITORY_URL:-https://github.com/shpy2001gemi/OneBrain}"
-RUNNER_HOME="${ONEBRAIN_RUNNER_HOME:-${HOME}/.local/share/onebrain-actions-runner}"
+RUNNER_HOME="${ONEBRAIN_RUNNER_HOME:-${DEFAULT_RUNNER_HOME}}"
 RUNNER_NAME="${ONEBRAIN_RUNNER_NAME:-onebrain-soak-$(hostname -s)}"
-RUNNER_LABELS="${ONEBRAIN_RUNNER_LABELS:-onebrain-soak}"
+RUNNER_LABELS="${ONEBRAIN_RUNNER_LABELS:-${DEFAULT_RUNNER_LABELS}}"
 PID_FILE="${RUNNER_HOME}/.onebrain-runner.pid"
 LOG_FILE="${RUNNER_HOME}/.onebrain-runner.log"
 MODE_FILE="${RUNNER_HOME}/.onebrain-runner-mode"
@@ -34,7 +60,7 @@ OneBrain portable soak runner
 Usage:
   onebrain-soak-runner.sh                 Interactive menu
   onebrain-soak-runner.sh doctor          Check OS, tools, resources and network
-  onebrain-soak-runner.sh deps            Install build dependencies (apt/dnf/yum)
+  onebrain-soak-runner.sh deps            Install/check build dependencies
   onebrain-soak-runner.sh setup           Configure an ephemeral one-job runner
   onebrain-soak-runner.sh setup --persistent
                                          Configure a reusable stopped runner
@@ -57,20 +83,23 @@ Optional environment:
   ONEBRAIN_RUNNER_REMOVE_TOKEN   Short-lived removal token
   GITHUB_TOKEN                   Optional token for release metadata rate limit
 
+Supported hosts:
+  Linux x64
+  macOS ARM64 / Apple Silicon (M1 or later)
+
 No inbound firewall port is required. The runner and M5-07 loopback QUIC
-workload only require outbound HTTPS (TCP 443) to GitHub.
+workload only require outbound HTTPS (TCP 443) to GitHub. On macOS the runner
+uses caffeinate while active so the machine does not sleep during a soak.
 EOF
 }
 
-require_linux_x64() {
-    [[ "$(uname -s)" == "Linux" ]] || die "This kit supports Linux only."
-    case "$(uname -m)" in
-        x86_64 | amd64) ;;
-        *) die "This workflow requires Linux x64; found $(uname -m)." ;;
-    esac
+require_supported_host() {
+    [[ "$HOST_KIND" != "unsupported" ]] ||
+        die "Supported hosts are Linux x64 and native macOS ARM64; found ${HOST_OS}/${HOST_ARCH}."
 }
 
 require_supported_distribution() {
+    [[ "$HOST_KIND" == "linux-x64" ]] || return
     [[ -r /etc/os-release ]] || {
         warn "Cannot read /etc/os-release; verify the distribution against GitHub's supported runner list."
         return
@@ -103,6 +132,27 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+activate_macos_tool_paths() {
+    [[ "$HOST_KIND" == "macos-arm64" ]] || return
+    if [[ -x /opt/homebrew/bin/brew ]]; then
+        export PATH="/opt/homebrew/bin:${PATH}"
+        local python_prefix
+        python_prefix="$(/opt/homebrew/bin/brew --prefix python@3.13 2>/dev/null || true)"
+        if [[ -n "$python_prefix" ]]; then
+            export PATH="${python_prefix}/libexec/bin:${PATH}"
+        fi
+    fi
+}
+
+resolve_path() {
+    local path="$1"
+    if [[ "$HOST_KIND" == "linux-x64" ]] && command_exists realpath; then
+        realpath -m "$path"
+    else
+        python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "$path"
+    fi
+}
+
 network_probe() {
     local url="$1"
     if curl --silent --show-error --location --head \
@@ -115,15 +165,26 @@ network_probe() {
 }
 
 doctor() {
-    require_linux_x64
+    require_supported_host
     require_supported_distribution
+    activate_macos_tool_paths
     local failed=0
     local command_name
-    local required_commands=(
-        curl git tar gzip sha256sum realpath python3
-        cc c++ make cmake pkg-config perl
-    )
+    local required_commands=()
+    if [[ "$HOST_KIND" == "linux-x64" ]]; then
+        required_commands=(
+            curl git tar gzip sha256sum realpath python3
+            cc c++ make cmake pkg-config perl
+        )
+    else
+        required_commands=(
+            curl git tar gzip shasum python3
+            cc c++ make cmake pkg-config perl
+            xcode-select sysctl sw_vers caffeinate
+        )
+    fi
 
+    info "Host: ${RUNNER_DISPLAY_NAME} (${HOST_OS}/${HOST_ARCH})"
     info "Checking required commands"
     for command_name in "${required_commands[@]}"; do
         if command_exists "$command_name"; then
@@ -138,7 +199,17 @@ doctor() {
     fi
 
     local memory_kib
-    memory_kib="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || true)"
+    if [[ "$HOST_KIND" == "linux-x64" ]]; then
+        memory_kib="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || true)"
+    else
+        local memory_bytes
+        memory_bytes="$(sysctl -n hw.memsize 2>/dev/null || true)"
+        if [[ "$memory_bytes" =~ ^[0-9]+$ ]]; then
+            memory_kib=$((memory_bytes / 1024))
+        else
+            memory_kib=""
+        fi
+    fi
     if [[ -n "$memory_kib" ]]; then
         local memory_gib=$((memory_kib / 1024 / 1024))
         info "Memory: ${memory_gib} GiB"
@@ -160,10 +231,16 @@ doctor() {
         warn "Less than 30 GiB free; use at least 50 GiB for build cache and soak evidence."
     fi
 
-    if command_exists timedatectl; then
+    if [[ "$HOST_KIND" == "linux-x64" ]] && command_exists timedatectl; then
         local ntp_state
         ntp_state="$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)"
         [[ "$ntp_state" == "yes" ]] || warn "System clock is not reported as NTP-synchronized."
+    fi
+
+    if [[ "$HOST_KIND" == "macos-arm64" ]] &&
+        ! xcode-select --print-path >/dev/null 2>&1; then
+        warn "Xcode Command Line Tools are not installed; run '$0 deps'."
+        failed=1
     fi
 
     command_exists curl || return 1
@@ -191,10 +268,22 @@ run_privileged() {
 }
 
 install_dependencies() {
-    require_linux_x64
+    require_supported_host
     require_supported_distribution
     info "Installing build/runtime dependencies. The Actions runner itself remains portable."
-    if command_exists apt-get; then
+    if [[ "$HOST_KIND" == "macos-arm64" ]]; then
+        require_non_root
+        if ! xcode-select --print-path >/dev/null 2>&1; then
+            info "Opening Apple's Xcode Command Line Tools installer."
+            xcode-select --install || true
+            die "Complete the Apple installer, then rerun '$0 deps'."
+        fi
+        activate_macos_tool_paths
+        command_exists brew ||
+            die "Homebrew is required for Python, CMake and pkgconf. Install it from https://brew.sh, then rerun '$0 deps'."
+        brew install python@3.13 cmake pkgconf
+        activate_macos_tool_paths
+    elif command_exists apt-get; then
         run_privileged apt-get update
         run_privileged apt-get install -y \
             ca-certificates curl git tar gzip coreutils python3 \
@@ -228,6 +317,8 @@ github_api_curl_args() {
 }
 
 download_runner() {
+    require_supported_host
+    activate_macos_tool_paths
     if [[ -x "${RUNNER_HOME}/config.sh" ]]; then
         info "Portable runner already downloaded at ${RUNNER_HOME}."
         return
@@ -237,7 +328,7 @@ download_runner() {
     fi
 
     github_api_curl_args
-    info "Resolving the latest official actions/runner Linux x64 release"
+    info "Resolving the latest official actions/runner ${RUNNER_DISPLAY_NAME} release"
     local release_json
     release_json="$(curl "${GITHUB_API_CURL_ARGS[@]}" \
         "https://api.github.com/repos/actions/runner/releases/latest")"
@@ -250,24 +341,30 @@ import re
 import sys
 
 release = json.load(sys.stdin)
+asset_id = sys.argv[1]
+display_name = sys.argv[2]
 assets = [
     asset for asset in release.get("assets", [])
-    if re.fullmatch(r"actions-runner-linux-x64-[0-9.]+\.tar\.gz", asset.get("name", ""))
+    if re.fullmatch(
+        rf"actions-runner-{re.escape(asset_id)}-[0-9.]+\.tar\.gz",
+        asset.get("name", ""),
+    )
 ]
 if len(assets) != 1:
-    raise SystemExit("expected exactly one Linux x64 runner archive")
+    raise SystemExit(f"expected exactly one {display_name} runner archive")
 asset = assets[0]
 digest = asset.get("digest") or ""
-print(release.get("tag_name", ""))
-print(asset.get("browser_download_url", ""))
-print(digest)
-'
+print("\t".join([
+    release.get("tag_name", ""),
+    asset.get("browser_download_url", ""),
+    digest,
+]))
+' "$RUNNER_ASSET_ID" "$RUNNER_DISPLAY_NAME"
     )"
-    local metadata_lines=()
-    mapfile -t metadata_lines <<<"$metadata"
-    local version="${metadata_lines[0]:-}"
-    local download_url="${metadata_lines[1]:-}"
-    local digest="${metadata_lines[2]:-}"
+    local version=""
+    local download_url=""
+    local digest=""
+    IFS=$'\t' read -r version download_url digest <<<"$metadata"
     local expected_sha="${digest#sha256:}"
     [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Invalid runner release tag: ${version}"
     [[ "$download_url" == https://github.com/actions/runner/releases/download/* ]] ||
@@ -288,7 +385,15 @@ print(digest)
         rm -rf -- "$temp_root"
         die "Runner download failed."
     fi
-    if ! printf '%s  %s\n' "$expected_sha" "$archive" | sha256sum --check --status; then
+    local actual_sha=""
+    if [[ "$HOST_KIND" == "linux-x64" ]]; then
+        if printf '%s  %s\n' "$expected_sha" "$archive" | sha256sum --check --status; then
+            actual_sha="$expected_sha"
+        fi
+    else
+        actual_sha="$(shasum -a 256 "$archive" | awk '{print $1}')"
+    fi
+    if [[ "$actual_sha" != "$expected_sha" ]]; then
         rm -rf -- "$temp_root"
         die "Runner archive SHA-256 verification failed."
     fi
@@ -333,7 +438,7 @@ require_configured() {
 
 setup_runner() {
     local mode="${1:-ephemeral}"
-    require_linux_x64
+    require_supported_host
     require_non_root
     [[ "$mode" == "ephemeral" || "$mode" == "persistent" ]] ||
         die "Unknown runner mode: ${mode}"
@@ -375,7 +480,7 @@ setup_runner() {
 }
 
 run_foreground() {
-    require_linux_x64
+    require_supported_host
     require_non_root
     require_configured
     is_background_running && die "Background runner is already active."
@@ -384,11 +489,14 @@ run_foreground() {
     printf '%s\n' "$$" >"$PID_FILE"
     info "Running in foreground. Ctrl+C stops the listener; an active job will fail if interrupted."
     cd "$RUNNER_HOME"
+    if [[ "$HOST_KIND" == "macos-arm64" ]]; then
+        exec caffeinate -dimsu ./run.sh
+    fi
     exec ./run.sh
 }
 
 start_background() {
-    require_linux_x64
+    require_supported_host
     require_non_root
     require_configured
     if is_background_running; then
@@ -399,8 +507,15 @@ start_background() {
     umask 077
     (
         cd "$RUNNER_HOME"
-        nohup ./run.sh >>"$LOG_FILE" 2>&1 &
-        printf '%s\n' "$!" >"$PID_FILE"
+        if [[ "$HOST_KIND" == "macos-arm64" ]]; then
+            nohup ./run.sh >>"$LOG_FILE" 2>&1 &
+            local runner_pid="$!"
+            nohup caffeinate -dimsu -w "$runner_pid" >>"$LOG_FILE" 2>&1 &
+            printf '%s\n' "$runner_pid" >"$PID_FILE"
+        else
+            nohup ./run.sh >>"$LOG_FILE" 2>&1 &
+            printf '%s\n' "$!" >"$PID_FILE"
+        fi
     )
     sleep 2
     if ! is_background_running; then
@@ -453,6 +568,7 @@ stop_background() {
 }
 
 show_status() {
+    info "Host: ${RUNNER_DISPLAY_NAME} (${HOST_OS}/${HOST_ARCH})"
     info "Repository: ${REPOSITORY_URL}"
     info "Runner home: ${RUNNER_HOME}"
     info "Runner name: ${RUNNER_NAME}"
@@ -477,7 +593,7 @@ follow_logs() {
 }
 
 remove_registration() {
-    require_linux_x64
+    require_supported_host
     require_non_root
     [[ -x "${RUNNER_HOME}/config.sh" ]] || die "Runner files are not present."
     is_background_running && die "Stop the background runner before removing registration."
@@ -499,14 +615,19 @@ remove_registration() {
 
 validate_purge_target() {
     local resolved
-    resolved="$(realpath -m "$RUNNER_HOME")"
+    resolved="$(resolve_path "$RUNNER_HOME")"
     case "$resolved" in
         / | /home | /root | /usr | /opt | /var | "$HOME")
             die "Unsafe purge target: ${resolved}"
             ;;
     esac
-    [[ "$resolved" == "$HOME/"* || "$resolved" == /opt/* || "$resolved" == /srv/* ]] ||
-        die "Purge target must be below HOME, /opt, or /srv: ${resolved}"
+    if [[ "$HOST_KIND" == "macos-arm64" ]]; then
+        [[ "$resolved" == "$HOME/"* ]] ||
+            die "macOS purge target must be below HOME: ${resolved}"
+    else
+        [[ "$resolved" == "$HOME/"* || "$resolved" == /opt/* || "$resolved" == /srv/* ]] ||
+            die "Purge target must be below HOME, /opt, or /srv: ${resolved}"
+    fi
 }
 
 purge_local() {

@@ -370,6 +370,8 @@ impl RuntimeSignalSnapshot {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SoakReleaseReport {
     pub profile: String,
+    pub host_os: String,
+    pub host_arch: String,
     pub run_profile: SoakProfile,
     pub elapsed_seconds: u64,
     pub cycles: u64,
@@ -657,6 +659,8 @@ pub async fn run_soak_release(
     let task_leak_detected = !task_count.passes();
     let mut report = SoakReleaseReport {
         profile: SOAK_RELEASE_PROFILE.to_owned(),
+        host_os: std::env::consts::OS.to_owned(),
+        host_arch: std::env::consts::ARCH.to_owned(),
         run_profile: config.profile,
         elapsed_seconds,
         cycles,
@@ -1218,7 +1222,73 @@ fn current_rss_bytes() -> Option<u64> {
         .flatten()
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct MacOsProcTaskInfo {
+    virtual_size: u64,
+    resident_size: u64,
+    total_user: u64,
+    total_system: u64,
+    threads_user: u64,
+    threads_system: u64,
+    policy: i32,
+    faults: i32,
+    pageins: i32,
+    cow_faults: i32,
+    messages_sent: i32,
+    messages_received: i32,
+    syscalls_mach: i32,
+    syscalls_unix: i32,
+    context_switches: i32,
+    thread_count: i32,
+    running_thread_count: i32,
+    priority: i32,
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "proc")]
+extern "C" {
+    fn proc_pidinfo(
+        pid: i32,
+        flavor: i32,
+        argument: u64,
+        buffer: *mut std::ffi::c_void,
+        buffer_size: i32,
+    ) -> i32;
+}
+
+#[cfg(target_os = "macos")]
+fn macos_proc_task_info() -> Option<MacOsProcTaskInfo> {
+    const PROC_PIDTASKINFO: i32 = 4;
+    let pid = i32::try_from(std::process::id()).ok()?;
+    let buffer_size = i32::try_from(std::mem::size_of::<MacOsProcTaskInfo>()).ok()?;
+    let mut info = std::mem::MaybeUninit::<MacOsProcTaskInfo>::zeroed();
+    // SAFETY: proc_pidinfo writes at most buffer_size bytes into an aligned
+    // proc_taskinfo-compatible buffer owned by this function.
+    let written = unsafe {
+        proc_pidinfo(
+            pid,
+            PROC_PIDTASKINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            buffer_size,
+        )
+    };
+    if written != buffer_size {
+        return None;
+    }
+    // SAFETY: A full proc_taskinfo payload was written above.
+    Some(unsafe { info.assume_init() })
+}
+
+#[cfg(target_os = "macos")]
+fn current_rss_bytes() -> Option<u64> {
+    let bytes = macos_proc_task_info()?.resident_size;
+    (bytes > 0).then_some(bytes)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 fn current_rss_bytes() -> Option<u64> {
     None
 }
@@ -1290,7 +1360,13 @@ fn current_task_count() -> Option<u64> {
     }
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(target_os = "macos")]
+fn current_task_count() -> Option<u64> {
+    let count = u64::try_from(macos_proc_task_info()?.thread_count).ok()?;
+    (count > 0).then_some(count)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
 fn current_task_count() -> Option<u64> {
     None
 }
@@ -1512,5 +1588,14 @@ mod tests {
         assert!(!report.pre_release_qualified);
         assert!(!report.rollback_recommended);
         assert!(report.rollback_reasons.is_empty());
+        assert_eq!(report.host_os, std::env::consts::OS);
+        assert_eq!(report.host_arch, std::env::consts::ARCH);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn m5_07_macos_proc_metrics_are_available() {
+        assert!(current_rss_bytes().is_some());
+        assert!(current_task_count().is_some());
     }
 }

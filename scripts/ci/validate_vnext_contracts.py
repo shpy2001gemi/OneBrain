@@ -59,9 +59,15 @@ DR_M5_TRANSACTION_INVENTORY = (
 )
 VNEXT_FOUNDATION_WORKFLOW = ROOT / ".github/workflows/vnext-foundation.yml"
 VNEXT_SOAK_WORKFLOW = ROOT / ".github/workflows/vnext-soak.yml"
+VNEXT_MACOS_SOAK_WORKFLOW = (
+    ROOT / ".github/workflows/vnext-soak-macos-arm64.yml"
+)
 VNEXT_SOAK_RUNNER_SCRIPT = ROOT / "scripts/runner/onebrain-soak-runner.sh"
 VNEXT_SOAK_RUNNER_GUIDE = (
     ROOT / "docs/operations/ONEBRAIN_SOAK_RUNNER_GUIDE_V1.md"
+)
+VNEXT_MACOS_SOAK_RUNNER_GUIDE = (
+    ROOT / "docs/operations/ONEBRAIN_SOAK_RUNNER_MAC_M2_GUIDE_V1.md"
 )
 
 TASK_ROW = re.compile(r"^\|\s*\[[ x~]\]\s*`([A-Z][A-Z0-9]*-\d{3})`")
@@ -2491,13 +2497,20 @@ def validate_vnext_soak_runner_kit(
         "setup_runner ephemeral",
         "setup-run",
         "./config.sh remove --token",
-        "realpath -m \"$RUNNER_HOME\"",
+        "resolve_path \"$RUNNER_HOME\"",
+        "realpath -m \"$path\"",
         'rm -rf -- "$RUNNER_HOME"',
         "No inbound firewall port is required",
         "run_privileged",
         "command_exists dnf",
         "command_exists yum",
         "require_supported_distribution",
+        "Darwin/arm64",
+        'RUNNER_ASSET_ID="osx-arm64"',
+        'DEFAULT_RUNNER_LABELS="onebrain-soak-macos-arm64"',
+        "shasum -a 256",
+        "caffeinate -dimsu",
+        "brew install python@3.13 cmake pkgconf",
     )
     for needle in script_needles:
         if needle not in runner_script:
@@ -2544,6 +2557,89 @@ def validate_vnext_soak_runner_kit(
         raise ContractError("M5-07 self-hosted workflow must not run on pull requests")
 
     return len(script_needles), len(guide_needles), len(workflow_needles)
+
+
+def validate_vnext_macos_soak_runner_kit(
+    runner_script: str | None = None,
+    runner_guide: str | None = None,
+    soak_workflow: str | None = None,
+    foundation_workflow: str | None = None,
+) -> tuple[int, int, int, int]:
+    if runner_script is None:
+        runner_script = read(VNEXT_SOAK_RUNNER_SCRIPT)
+    if runner_guide is None:
+        runner_guide = read(VNEXT_MACOS_SOAK_RUNNER_GUIDE)
+    if soak_workflow is None:
+        soak_workflow = read(VNEXT_MACOS_SOAK_WORKFLOW)
+    if foundation_workflow is None:
+        foundation_workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+
+    script_needles = (
+        "Darwin/arm64",
+        'RUNNER_ASSET_ID="osx-arm64"',
+        'DEFAULT_RUNNER_LABELS="onebrain-soak-macos-arm64"',
+        "shasum -a 256",
+        "caffeinate -dimsu",
+        "brew install python@3.13 cmake pkgconf",
+        "macOS purge target must be below HOME",
+    )
+    for needle in script_needles:
+        if needle not in runner_script:
+            raise ContractError(f"M5-07 macOS runner safety missing: {needle}")
+
+    guide_needles = (
+        "Không cần mở TCP/UDP inbound",
+        "macOS ARM64 (Darwin/arm64)",
+        "actions-runner-osx-arm64",
+        "onebrain-soak-macos-arm64",
+        "caffeinate",
+        "pre-release-72h",
+        "uninstall",
+        "~/Library/Application Support/OneBrain/actions-runner",
+    )
+    for needle in guide_needles:
+        if needle not in runner_guide:
+            raise ContractError(f"M5-07 macOS runner guide missing: {needle}")
+
+    workflow_needles = (
+        "permissions:\n  contents: read",
+        "workflow_dispatch:",
+        "github.ref == 'refs/heads/main'",
+        "runs-on: [self-hosted, macOS, ARM64, onebrain-soak-macos-arm64]",
+        "timeout-minutes: 4440",
+        "caffeinate -dimsu",
+        "actions/upload-artifact@v4",
+    )
+    for needle in workflow_needles:
+        if needle not in soak_workflow:
+            raise ContractError(
+                f"M5-07 macOS self-hosted workflow safety missing: {needle}"
+            )
+    for forbidden in ("pull_request:", "schedule:"):
+        if forbidden in soak_workflow:
+            raise ContractError(
+                f"M5-07 macOS workflow must remain manual-only: {forbidden}"
+            )
+
+    foundation_needles = (
+        "runs-on: macos-15",
+        'test "$(uname -m)" = "arm64"',
+        "m5_07_macos_proc_metrics_are_available",
+        "m5_07_release_smoke_uses_real_quic_fsync_and_all_fault_cycles",
+        "python -m unittest scripts.ci.test_validate_vnext_macos_soak_runner_kit",
+    )
+    for needle in foundation_needles:
+        if needle not in foundation_workflow:
+            raise ContractError(
+                f"M5-07 hosted macOS acceptance lane missing: {needle}"
+            )
+
+    return (
+        len(script_needles),
+        len(guide_needles),
+        len(workflow_needles),
+        len(foundation_needles),
+    )
 
 
 def validate_vnext_dr_m5_soak_release(
@@ -2681,6 +2777,10 @@ def validate_vnext_dr_m5_soak_release(
         "run_partition_reunion_cycle(",
         "DURATION_OR_CYCLE_EVIDENCE_INCOMPLETE",
         "m5_07_release_smoke_uses_real_quic_fsync_and_all_fault_cycles",
+        "pub host_os: String",
+        "pub host_arch: String",
+        "proc_pidinfo(",
+        "m5_07_macos_proc_metrics_are_available",
     ):
         if needle not in source:
             raise ContractError(f"M5-07 implementation evidence missing: {needle}")
@@ -2719,6 +2819,10 @@ def validate_vnext_dr_m5_soak_release(
             raise ContractError(f"M5-07 long-soak workflow missing: {needle}")
 
     validate_vnext_soak_runner_kit(soak_workflow=soak_workflow)
+    validate_vnext_macos_soak_runner_kit(
+        soak_workflow=read(VNEXT_MACOS_SOAK_WORKFLOW),
+        foundation_workflow=foundation,
+    )
 
     spec = read(VNEXT / "SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1.md")
     if "dr-m5-soak-release-v1.json" not in spec:

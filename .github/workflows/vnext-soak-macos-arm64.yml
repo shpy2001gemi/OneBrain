@@ -1,0 +1,62 @@
+name: vNext soak macOS ARM64
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Qualifying soak evidence profile
+        required: true
+        default: nightly-24h
+        type: choice
+        options:
+          - nightly-24h
+          - pre-release-72h
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vnext-soak-macos-arm64-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  long-soak-macos-arm64:
+    if: github.ref == 'refs/heads/main'
+    name: macOS ARM64 ${{ inputs.profile }}
+    runs-on: [self-hosted, macOS, ARM64, onebrain-soak-macos-arm64]
+    timeout-minutes: 4440
+    defaults:
+      run:
+        shell: bash
+        working-directory: src
+    env:
+      SOAK_PROFILE: ${{ inputs.profile }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify native Apple Silicon host
+        run: |
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "arm64"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - name: Run qualifying optimized macOS ARM64 soak
+        run: >-
+          caffeinate -dimsu
+          cargo run --locked --release -p onebrain-node
+          --features vnext-soak-harness
+          --example dr_m5_soak_release --
+          --profile "$SOAK_PROFILE"
+          --data-dir "$RUNNER_TEMP/onebrain-m5-07-macos-arm64"
+          --output "$RUNNER_TEMP/onebrain-m5-07-macos-arm64-report.json"
+      - name: Preserve qualifying macOS ARM64 soak evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-soak-macos-arm64-${{ env.SOAK_PROFILE }}-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/onebrain-m5-07-macos-arm64-report.json
+          if-no-files-found: warn
+          retention-days: 90

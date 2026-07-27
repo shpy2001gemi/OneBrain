@@ -45,6 +45,10 @@ Provision, firewall, foreground/background operation and removal of that
 runner follow the
 [Portable Linux Soak Runner Guide](../../operations/ONEBRAIN_SOAK_RUNNER_GUIDE_V1.md).
 The default ephemeral setup accepts one job and installs no system service.
+For Apple Silicon, use the manual-only workflow and
+[Portable Mac mini M2 Runner Guide](../../operations/ONEBRAIN_SOAK_RUNNER_MAC_M2_GUIDE_V1.md).
+It requires a native `arm64` terminal, routes only to the
+`onebrain-soak-macos-arm64` label, and keeps the Mac awake with `caffeinate`.
 
 ## 3. Safe enablement order
 

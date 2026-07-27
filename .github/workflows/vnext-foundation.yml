@@ -6,6 +6,7 @@ on:
       - ".github/workflows/vnext-foundation.yml"
       - ".github/workflows/vnext-fuzz-nightly.yml"
       - ".github/workflows/vnext-soak.yml"
+      - ".github/workflows/vnext-soak-macos-arm64.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/operations/**"
@@ -34,6 +35,7 @@ on:
       - ".github/workflows/vnext-foundation.yml"
       - ".github/workflows/vnext-fuzz-nightly.yml"
       - ".github/workflows/vnext-soak.yml"
+      - ".github/workflows/vnext-soak-macos-arm64.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/operations/**"
@@ -61,6 +63,38 @@ permissions:
   contents: read
 
 jobs:
+  macos-arm64-soak-smoke:
+    runs-on: macos-15
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: src
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verify hosted Apple Silicon lane
+        run: |
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "arm64"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - name: Verify native macOS resource collectors
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-soak-harness
+          m5_07_macos_proc_metrics_are_available
+          -- --nocapture
+      - name: Run macOS ARM64 real-QUIC release smoke
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-soak-harness
+          m5_07_release_smoke_uses_real_quic_fsync_and_all_fault_cycles
+          -- --nocapture
+
   foundation-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -101,6 +135,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_mixed_rollback
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_soak_release
           python -m unittest scripts.ci.test_validate_vnext_soak_runner_kit
+          python -m unittest scripts.ci.test_validate_vnext_macos_soak_runner_kit
           bash -n scripts/runner/onebrain-soak-runner.sh
 
       - name: P3.4 Web UX build, lint, and receipt contract

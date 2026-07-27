@@ -2267,3 +2267,48 @@ Remote acceptance:
 - Foundation contract trên Linux đã chạy full validator, 120 mutation tests và
   `bash -n` cho portable runner; Linux default workspace, Linux feature-enabled
   real-QUIC acceptance và Windows default/vNext/Desktop smoke đều xanh.
+
+### 2026-07-27 — M5-07 portable Mac mini M2 soak runner kit
+
+Đã mở rộng runner operations kit trên nhánh
+`codex/m5-07-macos-arm64-runner`:
+
+1. Cùng script
+   [`onebrain-soak-runner.sh`](../../scripts/runner/onebrain-soak-runner.sh)
+   tự nhận diện native `Darwin/arm64`, tải đúng asset
+   `actions-runner-osx-arm64`, xác minh SHA-256 bằng `shasum`, đăng ký nhãn
+   `onebrain-soak-macos-arm64` và mặc định vẫn là ephemeral một job.
+2. Lệnh `deps` kiểm tra Xcode Command Line Tools và cài `python@3.13`, `cmake`,
+   `pkgconf` bằng Homebrew. Runner không cài LaunchAgent/LaunchDaemon; foreground
+   và background đều dùng `caffeinate` để ngăn Mac sleep trong lúc chạy.
+3. Hướng dẫn
+   [`ONEBRAIN_SOAK_RUNNER_MAC_M2_GUIDE_V1.md`](../operations/ONEBRAIN_SOAK_RUNNER_MAC_M2_GUIDE_V1.md)
+   bao phủ native ARM64/Rosetta check, dependency, token, bấm chạy, firewall,
+   workflow, artifact, bật/tắt, gỡ đăng ký, purge và troubleshooting. Không cần
+   inbound port; chỉ cần outbound HTTPS TCP 443 tới GitHub.
+4. Workflow
+   [`vnext-soak-macos-arm64.yml`](../../.github/workflows/vnext-soak-macos-arm64.yml)
+   chỉ cho phép chạy thủ công từ `main`, chỉ có `contents: read`, và chỉ route
+   tới self-hosted runner có đủ nhãn `self-hosted`, `macOS`, `ARM64`,
+   `onebrain-soak-macos-arm64`.
+5. Soak report ghi `host_os` và `host_arch`. Trên macOS, harness lấy RSS và
+   thread count từ Apple `proc_pidinfo` thay vì bỏ trống metric.
+6. Foundation CI thêm lane GitHub-hosted `macos-15` ARM64 để compile/chạy native
+   resource collector và real-QUIC M5-07 smoke trước khi thay đổi được merge.
+7. Validator cùng 11 mutation tests mới khóa native asset, checksum, label,
+   `caffeinate`, main-only, manual-only, read-only permission, no-inbound guide
+   và hosted Apple Silicon acceptance lane.
+
+Local evidence:
+
+- toàn bộ `scripts/ci` mutation/contract suite: 134/134 xanh;
+- full vNext contract validator: xanh, 414 local links;
+- `bash -n`, YAML parse và `git diff --check`: xanh;
+- Windows M5-07 authenticated real-QUIC/fsync/fault-cycle smoke: 1/1 xanh,
+  154 test khác được filter đúng mục tiêu.
+
+Chưa claim runner thực tế hoặc long-soak qualification trên Mac mini M2. Sau
+remote foundation CI xanh, operator vẫn phải đăng ký runner bằng token ngắn hạn
+và giữ artifact `nightly-24h`/`pre-release-72h` từ chính máy đó. Smoke trên
+GitHub-hosted Apple Silicon chỉ xác nhận portability, không thay thế evidence
+24/72 giờ.

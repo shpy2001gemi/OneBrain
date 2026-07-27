@@ -26,7 +26,7 @@ class VNextSoakRunnerKitTests(unittest.TestCase):
             validate_vnext_soak_runner_kit(
                 self.script, self.guide, self.workflow
             ),
-            (14, 9, 3),
+            (21, 9, 3),
         )
 
     def test_ephemeral_default_cannot_disappear(self) -> None:
