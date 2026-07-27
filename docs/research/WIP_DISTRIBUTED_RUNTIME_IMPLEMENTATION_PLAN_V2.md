@@ -2137,3 +2137,15 @@ Local evidence:
 
 M5-06 đã hoàn tất ở cấp implementation và local gates; cần remote foundation
 CI trước khi fast-forward về `main`.
+
+Remote foundation CI run
+[`30231721837`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30231721837)
+trên implementation commit `adf239b` hoàn tất thành công ngày 2026-07-27:
+foundation contract, Linux default workspace, Linux feature-enabled real-QUIC
+acceptance và Windows default/vNext/Desktop smoke đều xanh, 4/4 job. Gate
+M5.6 trên Linux chạy byte-exact N-1 corpus, năm process-kill/reopen case,
+product kill/rollback/restart/re-enable và concurrent real TCP/QUIC. Không có
+error hoặc warning M5-06 mới.
+
+M5-06 đã hoàn tất implementation, local gates và remote evidence. Work package
+kế tiếp là M5-07 Soak, performance và release gate.
