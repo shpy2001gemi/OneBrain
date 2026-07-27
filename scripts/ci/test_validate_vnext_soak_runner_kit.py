@@ -26,7 +26,7 @@ class VNextSoakRunnerKitTests(unittest.TestCase):
             validate_vnext_soak_runner_kit(
                 self.script, self.guide, self.workflow
             ),
-            (13, 8, 3),
+            (14, 9, 3),
         )
 
     def test_ephemeral_default_cannot_disappear(self) -> None:
@@ -48,6 +48,13 @@ class VNextSoakRunnerKitTests(unittest.TestCase):
 
     def test_yum_dependency_support_cannot_disappear(self) -> None:
         mutated = self.script.replace("command_exists yum", "command_exists rpm")
+        with self.assertRaisesRegex(ContractError, "portable runner safety"):
+            validate_vnext_soak_runner_kit(mutated, self.guide, self.workflow)
+
+    def test_eol_rhel_guard_cannot_disappear(self) -> None:
+        mutated = self.script.replace(
+            "require_supported_distribution", "allow_eol_distribution"
+        )
         with self.assertRaisesRegex(ContractError, "portable runner safety"):
             validate_vnext_soak_runner_kit(mutated, self.guide, self.workflow)
 

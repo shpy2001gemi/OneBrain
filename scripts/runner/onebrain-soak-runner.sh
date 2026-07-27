@@ -70,6 +70,29 @@ require_linux_x64() {
     esac
 }
 
+require_supported_distribution() {
+    [[ -r /etc/os-release ]] || {
+        warn "Cannot read /etc/os-release; verify the distribution against GitHub's supported runner list."
+        return
+    }
+
+    local ID="" ID_LIKE="" VERSION_ID="" PRETTY_NAME=""
+    # shellcheck disable=SC1091
+    source /etc/os-release
+    local distribution_identity=" ${ID:-} ${ID_LIKE:-} "
+    local version_major="${VERSION_ID%%.*}"
+
+    if [[ "$distribution_identity" == *" rhel "* ||
+          "$distribution_identity" == *" centos "* ||
+          "$distribution_identity" == *" rocky "* ||
+          "$distribution_identity" == *" almalinux "* ||
+          "$distribution_identity" == *" ol "* ]]; then
+        if [[ "$version_major" =~ ^[0-9]+$ ]] && ((version_major < 8)); then
+            die "${PRETTY_NAME:-This distribution} is unsupported. GitHub Actions requires CentOS/RHEL 8 or later; migrate this server instead of using archived EOL repositories."
+        fi
+    fi
+}
+
 require_non_root() {
     if [[ "$(id -u)" -eq 0 ]]; then
         die "Do not run the Actions runner as root. Use a dedicated unprivileged user."
@@ -93,6 +116,7 @@ network_probe() {
 
 doctor() {
     require_linux_x64
+    require_supported_distribution
     local failed=0
     local command_name
     local required_commands=(
@@ -168,6 +192,7 @@ run_privileged() {
 
 install_dependencies() {
     require_linux_x64
+    require_supported_distribution
     info "Installing build/runtime dependencies. The Actions runner itself remains portable."
     if command_exists apt-get; then
         run_privileged apt-get update

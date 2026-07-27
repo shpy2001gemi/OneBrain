@@ -44,6 +44,10 @@ M5-07 chạy QUIC thật trên loopback, build Rust release, đo fsync/RSS/disk/
 và giữ job chạy 24 hoặc 72 giờ. Không chạy workload nặng khác trên máy trong
 thời gian soak.
 
+CentOS 7 không được hỗ trợ: hệ điều hành này đã EOL và GitHub Actions yêu cầu
+CentOS/RHEL 8 trở lên. Không đổi sang mirror archive/vault để chạy soak; hãy
+migrate máy sang Rocky/Alma 9, RHEL 9 hoặc Ubuntu 24.04 trước.
+
 ## 3. Firewall và port
 
 ### Không mở inbound port cho OneBrain

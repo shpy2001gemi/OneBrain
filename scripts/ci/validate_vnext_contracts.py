@@ -2497,6 +2497,7 @@ def validate_vnext_soak_runner_kit(
         "run_privileged",
         "command_exists dnf",
         "command_exists yum",
+        "require_supported_distribution",
     )
     for needle in script_needles:
         if needle not in runner_script:
@@ -2523,6 +2524,7 @@ def validate_vnext_soak_runner_kit(
         "repo public",
         "không chứa SSH key",
         "Rocky/Alma/RHEL",
+        "CentOS 7 không được hỗ trợ",
     )
     for needle in guide_needles:
         if needle not in runner_guide:
