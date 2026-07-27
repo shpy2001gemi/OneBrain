@@ -62,7 +62,7 @@ status_output="$(
     HOME="$FAKE_HOME" PATH="${FAKE_BIN}:${PATH}" \
         bash "$RUNNER_SCRIPT" status 2>&1
 )"
-expected_runner_home="${FAKE_HOME}/.local/share/onebrain-actions-runner"
+expected_runner_home="${FAKE_HOME}/onebrain-actions-runner"
 grep -F "[onebrain-runner] Runner home: ${expected_runner_home}" \
     <<<"$status_output" >/dev/null
 [[ "$expected_runner_home" != *" "* ]]

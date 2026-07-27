@@ -2580,12 +2580,13 @@ def validate_vnext_macos_soak_runner_kit(
     script_needles = (
         "Darwin/arm64",
         'RUNNER_ASSET_ID="osx-arm64"',
-        'DEFAULT_RUNNER_HOME="${HOME}/.local/share/onebrain-actions-runner"',
+        'DEFAULT_RUNNER_HOME="${HOME}/onebrain-actions-runner"',
         'DEFAULT_RUNNER_LABELS="onebrain-soak-macos-arm64"',
         "shasum -a 256",
         "caffeinate -dimsu",
         "brew install python@3.13 cmake pkgconf",
         "macOS purge target must be below HOME",
+        "Cannot write runner parent directory",
         '[[ "$HOST_KIND" == "linux-x64" ]] || return 0',
         '[[ "$HOST_KIND" == "macos-arm64" ]] || return 0',
     )
@@ -2601,7 +2602,7 @@ def validate_vnext_macos_soak_runner_kit(
         "caffeinate",
         "pre-release-72h",
         "uninstall",
-        "~/.local/share/onebrain-actions-runner",
+        "~/onebrain-actions-runner",
     )
     for needle in guide_needles:
         if needle not in runner_guide:

@@ -24,6 +24,7 @@ case "${HOST_OS}/${HOST_ARCH}" in
         HOST_KIND="macos-arm64"
         RUNNER_ASSET_ID="osx-arm64"
         RUNNER_DISPLAY_NAME="macOS ARM64"
+        DEFAULT_RUNNER_HOME="${HOME}/onebrain-actions-runner"
         DEFAULT_RUNNER_LABELS="onebrain-soak-macos-arm64"
         if [[ -x /opt/homebrew/bin/brew ]]; then
             export PATH="/opt/homebrew/bin:${PATH}"
@@ -401,8 +402,16 @@ print("\t".join([
         die "Runner archive extraction failed."
     fi
 
-    mkdir -p "$(dirname "$RUNNER_HOME")"
-    mv "$extracted" "$RUNNER_HOME"
+    local runner_parent
+    runner_parent="$(dirname "$RUNNER_HOME")"
+    if ! mkdir -p "$runner_parent" || [[ ! -w "$runner_parent" ]]; then
+        rm -rf -- "$temp_root"
+        die "Cannot write runner parent directory: ${runner_parent}. Set ONEBRAIN_RUNNER_HOME to a writable path below HOME."
+    fi
+    if ! mv "$extracted" "$RUNNER_HOME"; then
+        rm -rf -- "$temp_root"
+        die "Cannot install runner at ${RUNNER_HOME}. Set ONEBRAIN_RUNNER_HOME to a writable path below HOME."
+    fi
     chmod 700 "$RUNNER_HOME"
     rm -rf -- "$temp_root"
     info "Verified runner installed portably at ${RUNNER_HOME}."

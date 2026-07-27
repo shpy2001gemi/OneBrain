@@ -234,7 +234,7 @@ Gõ `PURGE` để xác nhận. Gỡ đăng ký và xóa local trong một lần:
 Runner home mặc định:
 
 ```text
-~/.local/share/onebrain-actions-runner
+~/onebrain-actions-runner
 ```
 
 Ephemeral runner đã hoàn thành job thường tự deregister. Khi đó chỉ cần kiểm tra

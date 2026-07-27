@@ -38,7 +38,7 @@ class VNextMacOsSoakRunnerKitTests(unittest.TestCase):
         )
 
     def test_macos_runner_kit_is_accepted(self) -> None:
-        self.assertEqual(self.validate(), (10, 8, 7, 5))
+        self.assertEqual(self.validate(), (11, 8, 7, 5))
 
     def test_cross_platform_skip_helpers_must_return_success(self) -> None:
         mutated = self.script.replace(
@@ -50,8 +50,16 @@ class VNextMacOsSoakRunnerKitTests(unittest.TestCase):
 
     def test_default_runner_home_cannot_contain_spaces(self) -> None:
         mutated = self.script.replace(
-            'DEFAULT_RUNNER_HOME="${HOME}/.local/share/onebrain-actions-runner"',
+            'DEFAULT_RUNNER_HOME="${HOME}/onebrain-actions-runner"',
             'DEFAULT_RUNNER_HOME="${HOME}/Library/Application Support/OneBrain/actions-runner"',
+        )
+        with self.assertRaisesRegex(ContractError, "macOS runner safety"):
+            self.validate(script=mutated)
+
+    def test_unwritable_parent_must_have_explicit_error(self) -> None:
+        mutated = self.script.replace(
+            "Cannot write runner parent directory",
+            "runner install failed",
         )
         with self.assertRaisesRegex(ContractError, "macOS runner safety"):
             self.validate(script=mutated)
