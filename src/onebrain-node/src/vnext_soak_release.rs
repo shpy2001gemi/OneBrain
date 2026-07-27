@@ -632,10 +632,12 @@ pub async fn run_soak_release(
     let mut active_sessions_after_shutdown = 0u64;
     if let Some(mut runtime) = receiver.take() {
         runtime.shutdown().await;
+        wait_for_no_active_sessions(&runtime).await?;
         active_sessions_after_shutdown =
             active_sessions_after_shutdown.saturating_add(runtime.status().active_sessions as u64);
     }
     sender.shutdown().await;
+    wait_for_no_active_sessions(&sender).await?;
     active_sessions_after_shutdown =
         active_sessions_after_shutdown.saturating_add(sender.status().active_sessions as u64);
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -1097,9 +1099,19 @@ async fn wait_for_no_active_sessions(
     runtime: &VNextNetworkRuntime,
 ) -> Result<(), SoakReleaseError> {
     tokio::time::timeout(Duration::from_secs(5), async {
+        let mut zero_since = None;
         loop {
             if runtime.status().active_sessions == 0 {
-                return;
+                let since = zero_since.get_or_insert_with(Instant::now);
+                // Runtime shutdown aborts the accept loop, while an already
+                // accepted handshake may still publish its active-session
+                // guard. Require a bounded quiescence window so that a
+                // transient zero cannot hide that late task.
+                if since.elapsed() >= Duration::from_millis(250) {
+                    return;
+                }
+            } else {
+                zero_since = None;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
