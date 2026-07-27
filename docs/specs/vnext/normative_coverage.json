@@ -309,7 +309,7 @@
     },
     {
       "path": "docs/specs/vnext/RUNTIME_FEATURE_BUDGET_PROFILE_V1.md",
-      "expected_statement_lines": 26,
+      "expected_statement_lines": 27,
       "evidence": [
         {
           "path": "src/onebrain-node/src/vnext_config.rs",
@@ -455,7 +455,7 @@
     },
     {
       "path": "docs/specs/vnext/RUNTIME_LIFECYCLE_PROFILE_V1.md",
-      "expected_statement_lines": 31,
+      "expected_statement_lines": 32,
       "evidence": [
         {
           "path": "src/onebrain-node/src/vnext_product_runtime.rs",
@@ -672,6 +672,37 @@
         }
       ],
       "rationale": "Generation-fenced compaction, atomic journal and outbox audit replacement, bounded raw evidence with overflow hashes, canonical derived snapshots, 25 real process-kill recoveries and measured Redb reclamation preserve exact semantics while reducing durable bytes."
+    },
+    {
+      "path": "docs/specs/vnext/MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1.md",
+      "expected_statement_lines": 14,
+      "evidence": [
+        {
+          "path": "src/onebrain-node/src/vnext_runtime_rollout.rs",
+          "needle": "m5_06_runtime_rollback_process_kill_matrix_recovers_exact_generation"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_product_runtime.rs",
+          "needle": "runtime_kill_rollback_restart_and_explicit_reenable_use_real_quic"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_network_runtime.rs",
+          "needle": "generation.is_current()"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_mixed_conformance.rs",
+          "needle": "verify_frozen_n_minus_one_wire_corpus"
+        },
+        {
+          "path": "src/onebrain-node/tests/vnext_node_runtime.rs",
+          "needle": "legacy_tcp_and_vnext_quic_exchange_concurrently_on_real_loopback"
+        },
+        {
+          "path": "src/test-vectors/vnext/dr-m5-mixed-rollback-v1.json",
+          "needle": "\"required_process_kill_cases\": 5"
+        }
+      ],
+      "rationale": "Durable per-lane generations, per-record session checks, atomic rollback, stale-config rejection, frozen N-1 bytes, real concurrent TCP/QUIC and five process-kill recoveries prove bounded mixed-version rollback without data or authority amplification."
     },
     {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",

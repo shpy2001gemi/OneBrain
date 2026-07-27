@@ -19,7 +19,10 @@ startup may continue.
 
 Enabled lane stores MUST open before the authenticated QUIC listener starts.
 
-Disabled lane stores MUST remain unopened throughout startup and recovery.
+Never-requested lane stores MUST remain unopened throughout startup and
+recovery. Provisioned stores MAY remain open behind a durable runtime
+generation fence as specified by
+[`MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1.md`](MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1.md).
 
 The authenticated QUIC listener MUST be active before private-needs are
 rehydrated into the in-memory KQL target set.
@@ -89,6 +92,10 @@ the failed attempt.
 
 Rollback MUST preserve every pre-existing file, including pre-existing vNext
 artifacts.
+
+The durable runtime rollout generation store MUST survive partial startup
+rollback because it records operator kill/re-enable intent, not recovered
+product evidence.
 
 A legacy TCP bind failure after successful vNext startup MUST invoke aggregate
 rollback before returning the bind error.

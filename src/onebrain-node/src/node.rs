@@ -21,6 +21,8 @@ use crate::vnext_product_runtime::{
     VNextProductServices,
 };
 #[cfg(feature = "vnext-network-runtime")]
+use crate::vnext_runtime_rollout::{VNextRuntimeLane, VNextRuntimeRolloutSnapshot};
+#[cfg(feature = "vnext-network-runtime")]
 use ku_net::vnext_session::SessionIdentitySigner;
 
 use crate::types::*;
@@ -830,8 +832,20 @@ impl OneBrainNode {
     /// Build a scope-aware, display-only vNext status projection.
     pub fn vnext_status(&self) -> crate::vnext_status::VNextStatusSnapshot {
         #[cfg(feature = "vnext-network-runtime")]
+        let mut effective_vnext = self.config.vnext.clone();
+        #[cfg(feature = "vnext-network-runtime")]
         let runtime = self.vnext_product_runtime.as_ref().map(|runtime| {
             let services = runtime.services();
+            if let Ok(status) = services.status() {
+                effective_vnext.kill_switches.obp_rp =
+                    !status.rollout.lane(VNextRuntimeLane::Network).enabled;
+                effective_vnext.kill_switches.distributed_kql_one_hop =
+                    !status.lanes.distributed_kql_one_hop;
+                effective_vnext.kill_switches.public_use_evidence_publish =
+                    !status.lanes.public_use_evidence_publish;
+                effective_vnext.kill_switches.distributed_pomv_view =
+                    !status.lanes.distributed_pomv_view;
+            }
             let registry_state = match self.registry_status.state {
                 crate::ConceptRegistryRuntimeState::Loaded => {
                     crate::vnext_observability::VNextRegistryTelemetryState::Loaded
@@ -857,10 +871,12 @@ impl OneBrainNode {
         });
         #[cfg(not(feature = "vnext-network-runtime"))]
         let runtime = None;
+        #[cfg(not(feature = "vnext-network-runtime"))]
+        let effective_vnext = self.config.vnext.clone();
         crate::vnext_status::VNextStatusSnapshot::local_runtime_with_network(
             self.ku_count().unwrap_or(0),
             self.peer_count(),
-            &self.config.vnext,
+            &effective_vnext,
             true,
             runtime,
         )
@@ -906,6 +922,41 @@ impl OneBrainNode {
             .ok_or_else(|| NodeError::Network("authenticated OBP-RP runtime is not active".into()))?
             .connect_peer(addr)
             .await
+            .map_err(|error| NodeError::Network(error.to_string()))
+    }
+
+    /// Persist an emergency kill for one vNext runtime lane. Legacy TCP and
+    /// local/offline knowledge paths remain owned and available independently.
+    #[cfg(feature = "vnext-network-runtime")]
+    pub fn kill_vnext_runtime_lane(
+        &self,
+        lane: VNextRuntimeLane,
+    ) -> Result<VNextRuntimeRolloutSnapshot, NodeError> {
+        self.vnext_product_services()
+            .ok_or_else(|| NodeError::Network("authenticated OBP-RP runtime is not active".into()))?
+            .kill_runtime_lane(lane)
+            .map_err(|error| NodeError::Network(error.to_string()))
+    }
+
+    /// Explicitly re-enable one configured lane on a later generation.
+    #[cfg(feature = "vnext-network-runtime")]
+    pub fn reenable_vnext_runtime_lane(
+        &self,
+        lane: VNextRuntimeLane,
+    ) -> Result<VNextRuntimeRolloutSnapshot, NodeError> {
+        self.vnext_product_services()
+            .ok_or_else(|| NodeError::Network("authenticated OBP-RP runtime is not active".into()))?
+            .reenable_runtime_lane(lane)
+            .map_err(|error| NodeError::Network(error.to_string()))
+    }
+
+    /// Atomically disable every vNext network/product lane without deleting
+    /// raw, journal, outbox, quarantine, wallet, or OBT state.
+    #[cfg(feature = "vnext-network-runtime")]
+    pub fn rollback_vnext_runtime(&self) -> Result<VNextRuntimeRolloutSnapshot, NodeError> {
+        self.vnext_product_services()
+            .ok_or_else(|| NodeError::Network("authenticated OBP-RP runtime is not active".into()))?
+            .rollback_runtime()
             .map_err(|error| NodeError::Network(error.to_string()))
     }
 

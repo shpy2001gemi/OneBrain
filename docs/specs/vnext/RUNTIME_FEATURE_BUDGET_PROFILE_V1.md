@@ -19,7 +19,10 @@ Every active product lane MUST require active `obp_rp`.
 
 All three product lanes MUST remain disabled in the default configuration.
 
-A disabled or killed lane MUST NOT open its lane-specific durable database.
+A lane never requested by configuration MUST NOT open its lane-specific
+durable database. A provisioned lane killed at runtime MUST retain its owner
+and database so explicit generation-advancing re-enable does not recreate or
+lose durable state.
 
 A typed operation targeting a disabled lane MUST fail closed with the exact
 disabled lane identity.
@@ -86,7 +89,8 @@ Focused tests prove:
 
 - defaults and serialized omissions leave every product lane disabled;
 - each kill switch is independent and dependency validation is fail closed;
-- killed lanes create no KQL, publication, or PoMV database;
+- never-requested lanes create no KQL, publication, or PoMV database;
+- provisioned killed lanes retain their databases for explicit re-enable;
 - typed calls into a killed lane return a lane-specific error;
 - oversized KQL work and storage above the hard watermark fail before work;
   and

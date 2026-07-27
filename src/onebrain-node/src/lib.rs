@@ -49,6 +49,8 @@ pub mod vnext_reunion_canary;
 pub mod vnext_reward_firewall;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_route_authority;
+#[cfg(feature = "vnext-network-runtime")]
+pub mod vnext_runtime_rollout;
 pub mod vnext_scale_simulation;
 #[cfg(test)]
 pub mod vnext_security_suite;
@@ -148,6 +150,12 @@ pub use vnext_route_authority::{
     AuthenticatedRoute, AuthenticatedRouteDirectory, AuthenticatedRouteOrigin,
     AuthorityFrontierResolution, AuthorityResolverError, LocalPolicyRegistry,
     LocalPolicyRegistryError, LocalPolicyVersion, RouteDirectoryError,
+};
+#[cfg(feature = "vnext-network-runtime")]
+pub use vnext_runtime_rollout::{
+    VNextRuntimeGenerationLease, VNextRuntimeLane, VNextRuntimeLaneRequest,
+    VNextRuntimeLaneSnapshot, VNextRuntimeRollout, VNextRuntimeRolloutError,
+    VNextRuntimeRolloutSnapshot, VNEXT_RUNTIME_ROLLOUT_PROFILE_MAJOR,
 };
 pub use vnext_status::{NetworkRuntimeLifecycle, NetworkRuntimeStatusView};
 pub use vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};

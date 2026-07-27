@@ -64,6 +64,9 @@ use crate::vnext_route_authority::{
     resolve_authority_frontier, AuthenticatedRoute, AuthenticatedRouteDirectory,
     AuthorityFrontierResolution, AuthorityResolverError, RouteDirectoryError,
 };
+use crate::vnext_runtime_rollout::{
+    VNextRuntimeGenerationLease, VNextRuntimeLane, VNextRuntimeRollout,
+};
 use crate::vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};
 
 const IDENTITY_MAGIC: &[u8; 8] = b"OBIDV1\0\0";
@@ -249,6 +252,7 @@ struct OutboundDeliveryEngine {
     outbox: OutboundOutbox,
     scheduler: AsyncMutex<()>,
     policy: VNextNetworkPolicy,
+    rollout: Option<VNextRuntimeRollout>,
 }
 
 /// Owns the real QUIC endpoint, persistent validated store, persistent
@@ -317,6 +321,7 @@ impl VNextNetworkRuntime {
             DEFAULT_NETWORK_STORAGE_HARD_WATERMARK_BYTES,
             identity.signer,
             identity.public_key,
+            None,
         )
         .await
     }
@@ -341,6 +346,7 @@ impl VNextNetworkRuntime {
             DEFAULT_NETWORK_STORAGE_HARD_WATERMARK_BYTES,
             identity.signer,
             identity.public_key,
+            None,
         )
         .await
     }
@@ -351,6 +357,7 @@ impl VNextNetworkRuntime {
         policy: VNextNetworkPolicy,
         storage_hard_watermark_bytes: u64,
         identity: PreparedVNextIdentity,
+        rollout: VNextRuntimeRollout,
     ) -> Result<Self, VNextNetworkRuntimeError> {
         policy
             .validate()
@@ -364,6 +371,7 @@ impl VNextNetworkRuntime {
             storage_hard_watermark_bytes,
             identity.signer,
             identity.public_key,
+            Some(rollout),
         )
         .await
     }
@@ -390,10 +398,12 @@ impl VNextNetworkRuntime {
             DEFAULT_NETWORK_STORAGE_HARD_WATERMARK_BYTES,
             identity.signer,
             identity.public_key,
+            None,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn start_initialized(
         data_dir: &Path,
         bind_addr: SocketAddr,
@@ -402,6 +412,7 @@ impl VNextNetworkRuntime {
         storage_hard_watermark_bytes: u64,
         identity: Arc<dyn SessionIdentitySigner>,
         identity_public_key: [u8; 32],
+        rollout: Option<VNextRuntimeRollout>,
     ) -> Result<Self, VNextNetworkRuntimeError> {
         let principal = principal_node_id(&identity_public_key);
         if storage_hard_watermark_bytes == 0 {
@@ -472,6 +483,7 @@ impl VNextNetworkRuntime {
             provenance.clone(),
             storage_admission,
             policy,
+            rollout.clone(),
         ));
         let outbound = Arc::new(OutboundDeliveryEngine {
             transport: Arc::clone(&transport),
@@ -485,6 +497,7 @@ impl VNextNetworkRuntime {
             outbox,
             scheduler: AsyncMutex::new(()),
             policy,
+            rollout,
         });
         let outbound_notify = Arc::new(Notify::new());
         let (outbound_shutdown, shutdown_rx) = watch::channel(false);
@@ -742,6 +755,12 @@ impl OutboundDeliveryEngine {
         &self,
         limit: usize,
     ) -> Result<OutboundDeliveryReport, VNextNetworkRuntimeError> {
+        let _runtime_generation = self
+            .rollout
+            .as_ref()
+            .map(|rollout| rollout.acquire(VNextRuntimeLane::Network))
+            .transpose()
+            .map_err(|error| VNextNetworkRuntimeError::RuntimeFenced(error.to_string()))?;
         let _scheduler = self.scheduler.lock().await;
         let max_payload_records = self.policy.max_records_per_session.saturating_sub(1) as usize;
         let bounded_limit = limit.min(max_payload_records);
@@ -1018,6 +1037,12 @@ impl OutboundDeliveryEngine {
         &self,
         addr: SocketAddr,
     ) -> Result<OutboundVNextSession, VNextNetworkRuntimeError> {
+        let runtime_generation = self
+            .rollout
+            .as_ref()
+            .map(|rollout| rollout.acquire(VNextRuntimeLane::Network))
+            .transpose()
+            .map_err(|error| VNextNetworkRuntimeError::RuntimeFenced(error.to_string()))?;
         let handshake_admission = self
             .admission
             .try_begin_handshake(addr.ip())
@@ -1074,6 +1099,7 @@ impl OutboundDeliveryEngine {
             carrier,
             admission: session_admission,
             observability: Arc::clone(&self.observability),
+            runtime_generation,
         })
     }
 }
@@ -1243,6 +1269,7 @@ pub struct OutboundVNextSession {
     carrier: AuthenticatedCarrierSession,
     admission: SessionAdmission,
     observability: Arc<VNextObservability>,
+    runtime_generation: Option<VNextRuntimeGenerationLease>,
 }
 
 impl OutboundVNextSession {
@@ -1251,6 +1278,7 @@ impl OutboundVNextSession {
     }
 
     pub async fn send(&self, record: &CarrierRecord) -> Result<(), VNextNetworkRuntimeError> {
+        self.ensure_runtime_generation()?;
         if let CarrierRecord::ReconciliationMessage(bytes) = record {
             let message = decode_reconciliation_message(bytes)
                 .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
@@ -1284,6 +1312,7 @@ impl OutboundVNextSession {
     }
 
     pub async fn recv(&mut self) -> Result<AuthenticatedCarrierRecord, VNextNetworkRuntimeError> {
+        self.ensure_runtime_generation()?;
         let payload = self
             .carrier
             .recv_frame_payload(&self.connection)
@@ -1320,6 +1349,20 @@ impl OutboundVNextSession {
     pub fn close(&self) {
         self.connection.close("OBP-RP session complete");
     }
+
+    fn ensure_runtime_generation(&self) -> Result<(), VNextNetworkRuntimeError> {
+        if self
+            .runtime_generation
+            .as_ref()
+            .is_some_and(|generation| !generation.is_current())
+        {
+            Err(VNextNetworkRuntimeError::RuntimeFenced(
+                "network generation changed".to_string(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1338,6 +1381,7 @@ async fn accept_loop(
     provenance: RedbRecordProvenance,
     storage: NetworkStorageAdmission,
     policy: VNextNetworkPolicy,
+    rollout: Option<VNextRuntimeRollout>,
 ) {
     loop {
         let connection = match transport.accept().await {
@@ -1350,6 +1394,24 @@ async fn accept_loop(
                     "vNext accept loop stopped"
                 );
                 break;
+            }
+        };
+        let runtime_generation = match rollout
+            .as_ref()
+            .map(|rollout| rollout.acquire(VNextRuntimeLane::Network))
+            .transpose()
+        {
+            Ok(generation) => generation,
+            Err(error) => {
+                tracing::warn!(
+                    target: "onebrain::vnext::observability",
+                    reason_code = VNextReasonCode::RejectedProtocol.code(),
+                    error = %error,
+                    "vNext runtime generation rejected inbound session"
+                );
+                counters.rejected_sessions.fetch_add(1, Ordering::Relaxed);
+                connection.close("OBP-RP runtime generation fenced");
+                continue;
             }
         };
         let handshake_admission = match admission.try_begin_handshake(connection.remote_addr().ip())
@@ -1388,6 +1450,7 @@ async fn accept_loop(
                 provenance,
                 storage,
                 policy,
+                runtime_generation,
             )
             .await
             .is_err()
@@ -1414,6 +1477,7 @@ async fn handle_inbound_connection(
     provenance: RedbRecordProvenance,
     storage: NetworkStorageAdmission,
     policy: VNextNetworkPolicy,
+    runtime_generation: Option<VNextRuntimeGenerationLease>,
 ) -> Result<(), VNextNetworkRuntimeError> {
     let authenticated = tokio::time::timeout(
         Duration::from_secs(policy.handshake_timeout_seconds),
@@ -1463,6 +1527,7 @@ async fn handle_inbound_connection(
     let mut journal_observations = BTreeMap::<[u8; 32], VNextJournalObservation>::new();
     let mut outbound_sequence = 1u64;
     for _ in 0..policy.max_records_per_session {
+        ensure_runtime_generation(&runtime_generation)?;
         let frame_payload = match carrier.recv_frame_payload(&connection).await {
             Ok(payload) => payload,
             Err(error) => {
@@ -1476,6 +1541,7 @@ async fn handle_inbound_connection(
                 break;
             }
         };
+        ensure_runtime_generation(&runtime_generation)?;
         let mut resource_record = session_admission
             .begin_record(frame_payload.len() as u64)
             .map_err(|error| observable_resource_admission_error(&observability, error))?;
@@ -1874,6 +1940,21 @@ fn load_identity(path: &Path) -> Result<SigningKey, VNextNetworkRuntimeError> {
     Ok(SigningKey::from_bytes(&seed))
 }
 
+fn ensure_runtime_generation(
+    generation: &Option<VNextRuntimeGenerationLease>,
+) -> Result<(), VNextNetworkRuntimeError> {
+    if generation
+        .as_ref()
+        .is_some_and(|generation| !generation.is_current())
+    {
+        Err(VNextNetworkRuntimeError::RuntimeFenced(
+            "network generation changed".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum VNextNetworkRuntimeError {
     #[error("vNext runtime configuration failed: {0}")]
@@ -1902,6 +1983,8 @@ pub enum VNextNetworkRuntimeError {
     ResourceAdmission(String),
     #[error("vNext outbound outbox failed: {0}")]
     Outbox(String),
+    #[error("vNext runtime generation is fenced: {0}")]
+    RuntimeFenced(String),
     #[error("vNext identity file is corrupt: {}", .0.display())]
     IdentityCorrupt(PathBuf),
     #[error("vNext identity signer returned an invalid Ed25519 public key")]

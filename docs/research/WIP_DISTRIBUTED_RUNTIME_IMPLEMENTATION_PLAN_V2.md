@@ -2080,3 +2080,60 @@ baseline đã biết, không có error hoặc warning M5-05 mới.
 M5-05 đã hoàn tất ở cấp implementation và remote evidence. Sau khi
 fast-forward vào `main`, work package kế tiếp là M5-06 Mixed version, runtime
 kill switch và rollback.
+
+### 2026-07-27 — M5-06 Mixed version, runtime kill switch và rollback
+
+Đã triển khai cục bộ trên nhánh `codex/dr-m5-mixed-version-rollback`:
+
+1. Freeze
+   [`MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1.md`](../specs/vnext/MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1.md)
+   và machine profile `onebrain/dr-m5-mixed-rollback/1`. Corpus N-1 giữ exact
+   TCP frame prefix và JSON payload cho `PeerHello`, `PeerList` và
+   `VerifyResponse`; parser hiện tại phải decode rồi reserialize byte-for-byte.
+2. Bổ sung `VNextRuntimeRollout` dùng Redb thật, giữ enabled bit và generation
+   bền vững riêng cho network, distributed KQL, Public UseEvidence publish và
+   distributed PoMV view. Config startup chỉ được disable; config cũ không thể
+   tự re-enable state đã kill/rollback. Re-enable là operator action tường minh
+   và luôn tăng generation.
+3. Typed product service lấy generation lease trước side effect. Kill
+   idempotent chặn acquisition mới; operation đã qua generation check được
+   phép drain. Publication worker và outbound scheduler đều lấy lane lease
+   trước khi đụng durable work.
+4. Outbound và inbound QUIC đều gắn network generation. Session cũ recheck
+   trước mỗi record; sau network kill, record mới trên session cũ và handshake
+   inbound/outbound mới đều fail closed.
+5. `rollback_runtime()` disable atomically cả bốn lane tại `TX-ROL-001`, không
+   xóa raw, journal, outbox, quarantine, provenance, KQL/PoMV store, wallet hay
+   OBT. Node status phản ánh effective durable lane truth; legacy TCP và
+   local/offline owner không bị dừng.
+6. Provisioned store được giữ phía sau fence để explicit re-enable không cần
+   tái tạo dữ liệu. Never-requested lane vẫn không tạo owner. Partial startup
+   rollback xóa artifact mới nhưng giữ durable rollout decision.
+7. Parent/child harness kill process ở đủ năm phase của `TX-ROL-001`, reopen
+   Redb rồi retry idempotent; mọi đường crash hội tụ về cả bốn lane disabled ở
+   exact generation 2.
+8. Foundation CI đã có gate M5.6 cho machine validator, N-1 corpus, process
+   kill, product rollback/restart/re-enable và concurrent real TCP/QUIC.
+
+Local evidence:
+
+- N-1 mixed conformance: 2/2 test xanh, gồm 3 frozen fixture byte-exact;
+- runtime rollout: 5/5 test xanh dưới `vnext-crash-harness`, gồm đủ 5
+  process-kill/reopen/retry case;
+- product runtime: 10/10 test xanh, gồm outbound/inbound kill, old-session
+  per-record fence, rollback, stale-config restart và explicit re-enable;
+- node real transport: 5/5 test xanh; legacy TCP và authenticated QUIC trao
+  đổi đồng thời, legacy tiếp tục hoạt động trong khi vNext đã rollback;
+- toàn bộ `onebrain-node --features vnext-network-runtime --lib`: 152/152 test
+  xanh; default `onebrain-node` lib/integration/doc tests đều xanh;
+- 100/100 machine-profile mutation tests xanh;
+- default workspace `cargo check --workspace --all-targets` và feature-enabled
+  node/API/CLI checks xanh;
+- feature-enabled Clippy exit code 0, không có warning M5-06 mới;
+- `cargo fmt --all -- --check` và `git diff --check` xanh;
+- `validate_vnext_contracts.py`: 99 tasks, 18 ADRs, 37 negative assertions,
+  4 M5-06 lanes/3 N-1 fixtures/5 process-kill phases/7 exit oracles,
+  561 normative lines và 408 local links.
+
+M5-06 đã hoàn tất ở cấp implementation và local gates; cần remote foundation
+CI trước khi fast-forward về `main`.

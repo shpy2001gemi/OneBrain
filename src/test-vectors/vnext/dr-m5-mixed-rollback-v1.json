@@ -1,0 +1,87 @@
+{
+  "format": "onebrain/dr-m5-mixed-rollback/1",
+  "profile_id": "MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1",
+  "version": 1,
+  "transports": {
+    "simultaneous": true,
+    "legacy": "tcp-json-v1",
+    "vnext": "authenticated-quic-obp-rp-v1",
+    "real_loopback_required": true
+  },
+  "legacy_n_minus_one": {
+    "fixture_kind": "frozen-wire-corpus",
+    "source_release": "onebrain-legacy-tcp-json-v1",
+    "byte_exact_reserialization": true,
+    "vnext_authority": false,
+    "corpus": [
+      {
+        "id": "n-1-peer-hello",
+        "payload_hex": "7b225065657248656c6c6f223a7b226e616d65223a226e2d6d696e75732d6f6e65222c22706f7274223a373037302c226b755f636f756e74223a337d7d",
+        "framed_hex": "0000003d7b225065657248656c6c6f223a7b226e616d65223a226e2d6d696e75732d6f6e65222c22706f7274223a373037302c226b755f636f756e74223a337d7d"
+      },
+      {
+        "id": "n-1-peer-list",
+        "payload_hex": "7b22506565724c697374223a7b227065657273223a5b223132372e302e302e313a37303730225d7d7d",
+        "framed_hex": "000000297b22506565724c697374223a7b227065657273223a5b223132372e302e302e313a37303730225d7d7d"
+      },
+      {
+        "id": "n-1-verify-response",
+        "payload_hex": "7b22566572696679526573706f6e7365223a7b226369645f686578223a2261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162222c2261677265656d656e745f73636f7265223a312e302c227665726966696564223a747275657d7d",
+        "framed_hex": "000000877b22566572696679526573706f6e7365223a7b226369645f686578223a2261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162222c2261677265656d656e745f73636f7265223a312e302c227665726966696564223a747275657d7d"
+      }
+    ]
+  },
+  "runtime_generation_fence": {
+    "lanes": [
+      "network",
+      "distributed_kql_one_hop",
+      "public_use_evidence_publish",
+      "distributed_pomv_view"
+    ],
+    "startup_config_may_disable": true,
+    "startup_config_may_reenable": false,
+    "explicit_reenable_required": true,
+    "kill_is_idempotent": true,
+    "reenable_advances_generation": true,
+    "session_rule": "existing-session-must-recheck-before-each-record",
+    "inflight_rule": "operation-past-generation-check-may-drain"
+  },
+  "rollback": {
+    "atomic_all_lane_disable": true,
+    "preserves": [
+      "raw",
+      "journal",
+      "outbox",
+      "quarantine",
+      "provenance",
+      "wallet",
+      "obt"
+    ],
+    "stale_config_reenable": false,
+    "legacy_local_offline_available": true,
+    "changes_wallet_state": false,
+    "changes_obt_state": false
+  },
+  "process_kill": {
+    "boundary": "TX-ROL-001",
+    "phases": [
+      "before_begin_write",
+      "after_begin_write_before_mutation",
+      "after_mutation_before_commit",
+      "after_commit_before_next_side_effect",
+      "after_next_side_effect_before_ack"
+    ],
+    "required_process_kill_cases": 5,
+    "real_redb_reopen": true,
+    "retry_after_reopen": true
+  },
+  "exit_oracles": [
+    "no_new_session_after_network_kill",
+    "no_new_publish_after_publication_kill",
+    "independent_product_lane_fences",
+    "stale_config_cannot_reenable",
+    "rollback_preserves_durable_evidence",
+    "legacy_and_vnext_real_transports_coexist",
+    "wallet_and_obt_unchanged"
+  ]
+}

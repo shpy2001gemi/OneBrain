@@ -48,6 +48,9 @@ DR_M5_CHAOS_FUZZ_PROFILE = (
 DR_M5_OPERATIONAL_COMPACTION_PROFILE = (
     ROOT / "src/test-vectors/vnext/dr-m5-operational-compaction-v1.json"
 )
+DR_M5_MIXED_ROLLBACK_PROFILE = (
+    ROOT / "src/test-vectors/vnext/dr-m5-mixed-rollback-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -2247,6 +2250,219 @@ def validate_vnext_dr_m5_operational_compaction(
     )
 
 
+def validate_vnext_dr_m5_mixed_rollback(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(DR_M5_MIXED_ROLLBACK_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid M5-06 profile JSON: {error}") from error
+    if (
+        profile.get("format") != "onebrain/dr-m5-mixed-rollback/1"
+        or profile.get("profile_id") != "MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("M5-06 profile identity drift")
+
+    if profile.get("transports") != {
+        "simultaneous": True,
+        "legacy": "tcp-json-v1",
+        "vnext": "authenticated-quic-obp-rp-v1",
+        "real_loopback_required": True,
+    }:
+        raise ContractError("M5-06 simultaneous real-transport contract drift")
+
+    legacy = profile.get("legacy_n_minus_one")
+    if not isinstance(legacy, dict) or (
+        legacy.get("fixture_kind") != "frozen-wire-corpus"
+        or legacy.get("source_release") != "onebrain-legacy-tcp-json-v1"
+        or legacy.get("byte_exact_reserialization") is not True
+        or legacy.get("vnext_authority") is not False
+    ):
+        raise ContractError("M5-06 N-1 fixture contract drift")
+    corpus = legacy.get("corpus")
+    if not isinstance(corpus, list) or len(corpus) != 3:
+        raise ContractError("M5-06 N-1 corpus coverage drift")
+    ids: set[str] = set()
+    for row in corpus:
+        if not isinstance(row, dict):
+            raise ContractError("M5-06 N-1 corpus row is not an object")
+        fixture_id = row.get("id")
+        payload_hex = row.get("payload_hex")
+        framed_hex = row.get("framed_hex")
+        if (
+            not isinstance(fixture_id, str)
+            or fixture_id in ids
+            or not isinstance(payload_hex, str)
+            or not isinstance(framed_hex, str)
+        ):
+            raise ContractError("M5-06 N-1 corpus identity/hex drift")
+        ids.add(fixture_id)
+        try:
+            payload = bytes.fromhex(payload_hex)
+            frame = bytes.fromhex(framed_hex)
+        except ValueError as error:
+            raise ContractError("M5-06 N-1 corpus contains invalid hex") from error
+        if len(frame) < 4 or int.from_bytes(frame[:4], "big") != len(payload):
+            raise ContractError("M5-06 N-1 frame length drift")
+        if frame[4:] != payload:
+            raise ContractError("M5-06 N-1 frame payload drift")
+        try:
+            decoded = json.loads(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ContractError("M5-06 N-1 payload is not frozen JSON") from error
+        if not isinstance(decoded, dict) or len(decoded) != 1:
+            raise ContractError("M5-06 N-1 legacy message shape drift")
+
+    expected_lanes = [
+        "network",
+        "distributed_kql_one_hop",
+        "public_use_evidence_publish",
+        "distributed_pomv_view",
+    ]
+    generation = profile.get("runtime_generation_fence")
+    if generation != {
+        "lanes": expected_lanes,
+        "startup_config_may_disable": True,
+        "startup_config_may_reenable": False,
+        "explicit_reenable_required": True,
+        "kill_is_idempotent": True,
+        "reenable_advances_generation": True,
+        "session_rule": "existing-session-must-recheck-before-each-record",
+        "inflight_rule": "operation-past-generation-check-may-drain",
+    }:
+        raise ContractError("M5-06 runtime generation fence drift")
+
+    expected_preserved = [
+        "raw",
+        "journal",
+        "outbox",
+        "quarantine",
+        "provenance",
+        "wallet",
+        "obt",
+    ]
+    rollback = profile.get("rollback")
+    if rollback != {
+        "atomic_all_lane_disable": True,
+        "preserves": expected_preserved,
+        "stale_config_reenable": False,
+        "legacy_local_offline_available": True,
+        "changes_wallet_state": False,
+        "changes_obt_state": False,
+    }:
+        raise ContractError("M5-06 rollback preservation contract drift")
+
+    expected_phases = [
+        "before_begin_write",
+        "after_begin_write_before_mutation",
+        "after_mutation_before_commit",
+        "after_commit_before_next_side_effect",
+        "after_next_side_effect_before_ack",
+    ]
+    process_kill = profile.get("process_kill")
+    if process_kill != {
+        "boundary": "TX-ROL-001",
+        "phases": expected_phases,
+        "required_process_kill_cases": 5,
+        "real_redb_reopen": True,
+        "retry_after_reopen": True,
+    }:
+        raise ContractError("M5-06 process-kill matrix drift")
+
+    expected_exit = [
+        "no_new_session_after_network_kill",
+        "no_new_publish_after_publication_kill",
+        "independent_product_lane_fences",
+        "stale_config_cannot_reenable",
+        "rollback_preserves_durable_evidence",
+        "legacy_and_vnext_real_transports_coexist",
+        "wallet_and_obt_unchanged",
+    ]
+    if profile.get("exit_oracles") != expected_exit:
+        raise ContractError("M5-06 exit oracle drift")
+
+    rollout_source = read(
+        ROOT / "src/onebrain-node/src/vnext_runtime_rollout.rs"
+    )
+    for needle in (
+        'TableDefinition::new("vnext_runtime_rollout_v1")',
+        'const TX_RUNTIME_ROLLBACK: &str = "TX-ROL-001"',
+        "Startup may apply a",
+        "pub fn kill(",
+        "pub fn reenable(",
+        "pub fn rollback(",
+        "m5_06_runtime_rollback_process_kill_matrix_recovers_exact_generation",
+    ):
+        if needle not in rollout_source:
+            raise ContractError(
+                f"M5-06 rollout implementation evidence missing: {needle}"
+            )
+
+    product_source = read(
+        ROOT / "src/onebrain-node/src/vnext_product_runtime.rs"
+    )
+    for needle in (
+        "kill_runtime_lane",
+        "reenable_runtime_lane",
+        "rollback_runtime",
+        "runtime_kill_rollback_restart_and_explicit_reenable_use_real_quic",
+        "VNextRuntimeLane::DistributedKql",
+        "VNextRuntimeLane::PublicUseEvidencePublish",
+        "VNextRuntimeLane::DistributedPomvView",
+    ):
+        if needle not in product_source:
+            raise ContractError(
+                f"M5-06 product fence evidence missing: {needle}"
+            )
+
+    network_source = read(
+        ROOT / "src/onebrain-node/src/vnext_network_runtime.rs"
+    )
+    for needle in (
+        "network generation changed",
+        "generation.is_current()",
+        'connection.close("OBP-RP runtime generation fenced")',
+    ):
+        if needle not in network_source:
+            raise ContractError(
+                f"M5-06 network generation evidence missing: {needle}"
+            )
+
+    mixed_source = read(
+        ROOT / "src/onebrain-node/src/vnext_mixed_conformance.rs"
+    )
+    if "verify_frozen_n_minus_one_wire_corpus" not in mixed_source:
+        raise ContractError("M5-06 frozen N-1 executable evidence missing")
+    node_test = read(
+        ROOT / "src/onebrain-node/tests/vnext_node_runtime.rs"
+    )
+    if (
+        "legacy_tcp_and_vnext_quic_exchange_concurrently_on_real_loopback"
+        not in node_test
+    ):
+        raise ContractError("M5-06 simultaneous transport evidence missing")
+
+    inventory = read(DR_M5_TRANSACTION_INVENTORY)
+    if "TX-ROL-001" not in inventory:
+        raise ContractError("M5-06 transaction inventory missing TX-ROL-001")
+    spec = read(VNEXT / "MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1.md")
+    if "dr-m5-mixed-rollback-v1.json" not in spec:
+        raise ContractError("M5-06 normative profile is not linked to machine contract")
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    for needle in (
+        "python -m unittest scripts.ci.test_validate_vnext_dr_m5_mixed_rollback",
+        "- name: M5.6 mixed-version runtime rollback and process-kill recovery",
+        "--features vnext-crash-harness",
+        "--lib vnext_runtime_rollout",
+    ):
+        if needle not in workflow:
+            raise ContractError(f"M5-06 PR acceptance gate missing: {needle}")
+
+    return len(expected_lanes), len(corpus), len(expected_phases), len(expected_exit)
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -2371,6 +2587,12 @@ def main() -> int:
             m5_compaction_derived_lanes,
             m5_compaction_exit_oracles,
         ) = validate_vnext_dr_m5_operational_compaction()
+        (
+            m5_rollback_lanes,
+            m5_n_minus_one_fixtures,
+            m5_rollback_phases,
+            m5_rollback_exit_oracles,
+        ) = validate_vnext_dr_m5_mixed_rollback()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -2401,6 +2623,9 @@ def main() -> int:
         f"{m5_compaction_phases} phases/{m5_compaction_cases} process kills/"
         f"{m5_compaction_derived_lanes} derived lanes/"
         f"{m5_compaction_exit_oracles} exit oracles, "
+        f"{m5_rollback_lanes} M5-06 lanes/{m5_n_minus_one_fixtures} N-1 fixtures/"
+        f"{m5_rollback_phases} process-kill phases/"
+        f"{m5_rollback_exit_oracles} exit oracles, "
         f"{links} local links"
     )
     return 0

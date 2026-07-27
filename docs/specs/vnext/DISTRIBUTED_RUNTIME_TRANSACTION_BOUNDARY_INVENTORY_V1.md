@@ -5,6 +5,8 @@
 > Date: 2026-07-27
 > Purpose: failpoint IDs and recovery oracles for DR-M5 process-kill testing
 
+M5-06 runtime-rollback process-kill coverage is complete for `TX-ROL-001`.
+
 This inventory names durable commit boundaries from M2–M4 plus the M5-05
 operational-compaction boundaries. Listing a boundary is not evidence that its
 process-kill gate has passed.
@@ -51,6 +53,7 @@ balance as correctness evidence.
 | `TX-CMP-QAR-001` | Quarantine overflow evidence update | `OperationalCompactionStore`; `vnext_compaction_quarantine_v1`, `vnext_compaction_overflow_v1` | Return bounded admission outcome | Raw quarantine cap holds; retry does not double-count the last overflow ID; oracle root restores exactly | M5-05 five-phase child-process kill/reopen and idempotent retry |
 | `TX-CMP-PRV-001` | Provenance overflow evidence update | `OperationalCompactionStore`; `vnext_compaction_provenance_v1`, `vnext_compaction_overflow_v1` | Return bounded admission outcome | Raw provenance cap holds; retry does not double-count the last overflow ID; oracle root restores exactly | M5-05 five-phase child-process kill/reopen and idempotent retry |
 | `TX-CMP-IDX-001` | KQL/PoMV derived-index snapshot replacement | `OperationalCompactionStore`; `vnext_compaction_derived_snapshots_v1` | Restore and verify exact snapshot | Canonical bytes, lane, reducer version, rows, source root and projection root restore exactly | M5-05 five-phase child-process kill/reopen and idempotent replacement |
+| `TX-ROL-001` | Atomic network/KQL/Public Use/PoMV runtime rollback generation | `VNextRuntimeRollout`; `vnext_runtime_rollout_v1` | Reject later sessions, records, publications, and distributed side effects | All four lanes restore disabled at one exact generation; stale enabled config cannot revive them; raw/journal/outbox/quarantine/provenance/wallet/OBT remain untouched | M5-06 five-phase child-process kill/reopen and idempotent retry |
 
 ## Mandatory failpoint phases
 

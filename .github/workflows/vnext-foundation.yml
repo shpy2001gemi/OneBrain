@@ -92,6 +92,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_crash_harness
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_chaos_fuzz
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_operational_compaction
+          python -m unittest scripts.ci.test_validate_vnext_dr_m5_mixed_rollback
 
       - name: P3.4 Web UX build, lint, and receipt contract
         working-directory: src/onebrain-web
@@ -208,6 +209,7 @@ jobs:
           onebrain-node/src/vnext_mixed_conformance.rs
           onebrain-node/src/vnext_performance_budgets.rs
           onebrain-node/src/vnext_product_runtime.rs
+          onebrain-node/src/vnext_runtime_rollout.rs
           onebrain-node/src/vnext_reunion_canary.rs
           onebrain-node/src/vnext_reward_firewall.rs
           onebrain-node/src/vnext_route_authority.rs
@@ -614,6 +616,23 @@ jobs:
           && cargo test --locked -p onebrain-node
           --features vnext-compaction-harness
           --lib vnext_operational_compaction
+          -- --test-threads=1
+      - name: M5.6 mixed-version runtime rollback and process-kill recovery
+        run: >-
+          cargo test --locked -p onebrain-node
+          --lib vnext_mixed_conformance
+          -- --test-threads=1
+          && cargo test --locked -p onebrain-node
+          --features vnext-crash-harness
+          --lib vnext_runtime_rollout
+          -- --test-threads=1
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --lib vnext_product_runtime
+          -- --test-threads=1
+          && cargo test --locked -p onebrain-node
+          --features vnext-network-runtime
+          --test vnext_node_runtime
           -- --test-threads=1
       - name: P3.1 authenticated REST API contract and real-runtime flow
         run: >-

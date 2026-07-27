@@ -5,7 +5,7 @@ use ku_kql::vnext_private_need::LocalNeedVaultKey;
 use onebrain_node::{
     ConceptRegistryMode, LocalPolicyRegistry, LocalPolicyVersion, NetworkRuntimeLifecycle,
     NodeConfig, OneBrainNode, VNextFeature, VNextProductRuntimeDependencies,
-    VNextProductRuntimeState, VNextStartupPhase,
+    VNextProductRuntimeState, VNextRuntimeLane, VNextStartupPhase,
 };
 use tokio::net::TcpListener;
 
@@ -127,6 +127,68 @@ async fn inactive_vnext_creates_no_product_runtime_resources() {
     ] {
         assert!(!directory.path().join(file).exists(), "unexpected {file}");
     }
+}
+
+#[tokio::test]
+async fn legacy_tcp_and_vnext_quic_exchange_concurrently_on_real_loopback() {
+    let left_dir = tempfile::tempdir().unwrap();
+    let right_dir = tempfile::tempdir().unwrap();
+    let mut left_config = NodeConfig {
+        name: "mixed-left".into(),
+        port: 0,
+        data_dir: left_dir.path().to_path_buf(),
+        concept_registry_mode: ConceptRegistryMode::Disabled,
+        ..NodeConfig::default()
+    };
+    left_config.vnext.enabled.object_event_v1 = true;
+    left_config.vnext.enabled.obp_rp = true;
+    let mut right_config = left_config.clone();
+    right_config.name = "mixed-right".into();
+    right_config.data_dir = right_dir.path().to_path_buf();
+
+    let mut left = OneBrainNode::new(left_config).await.unwrap();
+    let mut right = OneBrainNode::new(right_config).await.unwrap();
+    left.set_vnext_product_dependencies(product_dependencies())
+        .unwrap();
+    right
+        .set_vnext_product_dependencies(product_dependencies())
+        .unwrap();
+    let left_tcp = left.start_network().await.unwrap();
+    let right_tcp = right.start_network().await.unwrap();
+    let left_quic = left.vnext_listener_addr().unwrap();
+    let right_quic = right.vnext_listener_addr().unwrap();
+    assert_ne!(left_tcp, left_quic);
+    assert_ne!(right_tcp, right_quic);
+
+    let right_tcp_loopback = ([127, 0, 0, 1], right_tcp.port()).into();
+    let right_quic_loopback = ([127, 0, 0, 1], right_quic.port()).into();
+    let (legacy, vnext) = tokio::join!(
+        left.connect_to_seed(right_tcp_loopback),
+        left.connect_vnext_peer(right_quic_loopback)
+    );
+    legacy.unwrap();
+    let vnext = vnext.unwrap();
+    vnext.close();
+    assert_eq!(left.listener_addr(), Some(left_tcp));
+    assert_eq!(left.vnext_listener_addr(), Some(left_quic));
+
+    left.rollback_vnext_runtime().unwrap();
+    assert!(!left.vnext_status().features.obp_rp);
+    left.connect_to_seed(right_tcp_loopback).await.unwrap();
+    assert!(
+        left.connect_vnext_peer(right_quic_loopback).await.is_err(),
+        "runtime rollback did not fence the vNext network lane"
+    );
+    left.reenable_vnext_runtime_lane(VNextRuntimeLane::Network)
+        .unwrap();
+    assert!(left.vnext_status().features.obp_rp);
+    left.connect_vnext_peer(right_quic_loopback)
+        .await
+        .unwrap()
+        .close();
+
+    left.shutdown_network().await;
+    right.shutdown_network().await;
 }
 
 #[tokio::test]

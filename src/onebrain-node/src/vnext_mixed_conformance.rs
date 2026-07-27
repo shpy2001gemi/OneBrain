@@ -26,6 +26,7 @@ use onebrain_protocol::{
     LEGACY_ENCODING_FULL, LEGACY_SCOPE_GLOBAL,
 };
 
+use crate::network::NetMessage;
 use crate::vnext_config::VNextFeatureConfig;
 use crate::vnext_status::{CoverageViewStatus, LocalUsability, VNextStatusSnapshot};
 
@@ -62,6 +63,51 @@ pub struct MixedVersionConformanceReport {
     pub usable_during_seed_outage: bool,
     pub relay_delay_preserves_unknown_pending: bool,
     pub unsafe_legacy_offer_rejected: bool,
+}
+
+/// Decode the checked-in N-1 TCP/JSON corpus exactly as the legacy listener
+/// does. The four-byte big-endian frame prefix and original payload bytes are
+/// both frozen; vNext types never enter this parser.
+pub fn verify_frozen_n_minus_one_wire_corpus() -> Result<usize, String> {
+    let profile: serde_json::Value = serde_json::from_str(include_str!(
+        "../../test-vectors/vnext/dr-m5-mixed-rollback-v1.json"
+    ))
+    .map_err(debug)?;
+    let rows = profile
+        .pointer("/legacy_n_minus_one/corpus")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| "M5_06_N_MINUS_ONE_CORPUS_MISSING".to_string())?;
+    if rows.is_empty() {
+        return Err("M5_06_N_MINUS_ONE_CORPUS_EMPTY".to_string());
+    }
+    for row in rows {
+        let payload = decode_hex(
+            row.get("payload_hex")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| "M5_06_N_MINUS_ONE_PAYLOAD_MISSING".to_string())?,
+        )?;
+        let frame = decode_hex(
+            row.get("framed_hex")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| "M5_06_N_MINUS_ONE_FRAME_MISSING".to_string())?,
+        )?;
+        if frame.len() < 4
+            || u32::from_be_bytes(
+                frame[..4]
+                    .try_into()
+                    .map_err(|_| "M5_06_N_MINUS_ONE_FRAME_PREFIX".to_string())?,
+            ) as usize
+                != payload.len()
+            || frame[4..] != payload
+        {
+            return Err("M5_06_N_MINUS_ONE_FRAME_DRIFT".to_string());
+        }
+        let message: NetMessage = serde_json::from_slice(&payload).map_err(debug)?;
+        if serde_json::to_vec(&message).map_err(debug)? != payload {
+            return Err("M5_06_N_MINUS_ONE_RESERIALIZATION_DRIFT".to_string());
+        }
+    }
+    Ok(rows.len())
 }
 
 impl MixedVersionConformanceReport {
@@ -330,6 +376,19 @@ fn debug(error: impl std::fmt::Debug) -> String {
     format!("{error:?}")
 }
 
+fn decode_hex(hex: &str) -> Result<Vec<u8>, String> {
+    if !hex.len().is_multiple_of(2) {
+        return Err("M5_06_N_MINUS_ONE_HEX_LENGTH".to_string());
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|index| {
+            u8::from_str_radix(&hex[index..index + 2], 16)
+                .map_err(|_| "M5_06_N_MINUS_ONE_HEX".to_string())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,5 +406,10 @@ mod tests {
         assert!(!report.has_authority_amplification());
         assert!(!report.has_network_completion_amplification());
         assert!(report.cells.iter().all(|cell| !cell.establishes_fidelity));
+    }
+
+    #[test]
+    fn frozen_n_minus_one_tcp_json_corpus_is_byte_exact() {
+        assert_eq!(verify_frozen_n_minus_one_wire_corpus().unwrap(), 3);
     }
 }

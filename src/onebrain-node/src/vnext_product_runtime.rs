@@ -43,6 +43,10 @@ use crate::vnext_observability::{
     VNextObservability, VNextObservabilitySnapshot, VNextReasonCode, VNextRegistryTelemetryState,
 };
 use crate::vnext_route_authority::{AuthenticatedRoute, LocalPolicyRegistry, LocalPolicyVersion};
+use crate::vnext_runtime_rollout::{
+    VNextRuntimeGenerationLease, VNextRuntimeLane, VNextRuntimeLaneRequest, VNextRuntimeRollout,
+    VNextRuntimeRolloutError, VNextRuntimeRolloutSnapshot,
+};
 
 pub const MAX_PRODUCT_BACKGROUND_WORKERS: usize = 8;
 const VNEXT_STARTUP_ARTIFACTS: &[&str] = &[
@@ -123,11 +127,13 @@ pub struct VNextProductLaneStatus {
 }
 
 impl VNextProductLaneStatus {
-    fn from_config(config: &VNextFeatureConfig) -> Self {
+    fn from_rollout(snapshot: &VNextRuntimeRolloutSnapshot) -> Self {
         Self {
-            distributed_kql_one_hop: config.is_active(VNextFeature::DistributedKqlOneHop),
-            public_use_evidence_publish: config.is_active(VNextFeature::PublicUseEvidencePublish),
-            distributed_pomv_view: config.is_active(VNextFeature::DistributedPomvView),
+            distributed_kql_one_hop: snapshot.lane(VNextRuntimeLane::DistributedKql).enabled,
+            public_use_evidence_publish: snapshot
+                .lane(VNextRuntimeLane::PublicUseEvidencePublish)
+                .enabled,
+            distributed_pomv_view: snapshot.lane(VNextRuntimeLane::DistributedPomvView).enabled,
         }
     }
 }
@@ -150,6 +156,7 @@ pub struct VNextProductRuntimeStatus {
     pub observability: VNextObservabilitySnapshot,
     pub policy_versions: Vec<u32>,
     pub lanes: VNextProductLaneStatus,
+    pub rollout: VNextRuntimeRolloutSnapshot,
     pub budgets: VNextRuntimeBudgets,
     pub storage_bytes: u64,
     pub storage_pressure: VNextStoragePressure,
@@ -192,7 +199,7 @@ struct VNextProductServiceCore {
     public_use: Mutex<Option<Arc<PublicUseEvidencePublisher>>>,
     distributed_pomv: Mutex<Option<Arc<DistributedPomvRuntime>>>,
     policy_versions: Vec<LocalPolicyVersion>,
-    lanes: VNextProductLaneStatus,
+    rollout: VNextRuntimeRollout,
     budgets: VNextRuntimeBudgets,
     storage: ProductStorageGuard,
     signer_mode: VNextProductSignerMode,
@@ -209,6 +216,29 @@ struct VNextProductServiceCore {
 struct VNextServiceLifecycle {
     accepting: bool,
     in_flight: usize,
+}
+
+fn rollout_requested_lanes(config: &VNextFeatureConfig) -> VNextRuntimeLaneRequest {
+    let network = config.enabled.object_event_v1 && config.enabled.obp_rp;
+    VNextRuntimeLaneRequest {
+        network,
+        distributed_kql: network && config.enabled.distributed_kql_one_hop,
+        public_use_evidence_publish: network && config.enabled.public_use_evidence_publish,
+        distributed_pomv_view: network && config.enabled.distributed_pomv_view,
+    }
+}
+
+fn rollout_configured_kills(config: &VNextFeatureConfig) -> VNextRuntimeLaneRequest {
+    VNextRuntimeLaneRequest {
+        network: config.kill_switches.obp_rp,
+        distributed_kql: config.kill_switches.distributed_kql_one_hop,
+        public_use_evidence_publish: config.kill_switches.public_use_evidence_publish,
+        distributed_pomv_view: config.kill_switches.distributed_pomv_view,
+    }
+}
+
+fn lanes_network_enabled(rollout: &VNextRuntimeRollout) -> Result<bool, VNextRuntimeRolloutError> {
+    Ok(rollout.snapshot()?.lane(VNextRuntimeLane::Network).enabled)
 }
 
 struct OptionalKqlOwner {
@@ -250,7 +280,15 @@ impl VNextProductRuntime {
             .validate()
             .map_err(|error| VNextProductRuntimeError::Configuration(error.to_string()))?;
         startup_trace.push(VNextStartupPhase::ConfigurationValidated);
-        let lanes = VNextProductLaneStatus::from_config(config);
+        let requested_lanes = rollout_requested_lanes(config);
+        let provisioned_lanes = VNextProductLaneStatus {
+            distributed_kql_one_hop: requested_lanes.distributed_kql,
+            public_use_evidence_publish: requested_lanes.public_use_evidence_publish,
+            distributed_pomv_view: requested_lanes.distributed_pomv_view,
+        };
+        let rollout =
+            VNextRuntimeRollout::open(data_dir, requested_lanes, rollout_configured_kills(config))?;
+        let lanes = VNextProductLaneStatus::from_rollout(&rollout.snapshot()?);
         let budgets = config.runtime_budgets;
         let storage = ProductStorageGuard::new(data_dir, budgets);
         storage.ensure_writable()?;
@@ -272,17 +310,19 @@ impl VNextProductRuntime {
         let prepared_identity = prepare_vnext_identity(data_dir, identity_signer)?;
         startup_trace.push(VNextStartupPhase::SignerAndVaultValidated);
 
-        // A disabled lane has no owner and therefore creates no lane database.
-        let mut distributed_kql = lanes
+        // A never-requested lane has no owner. A provisioned lane stays open
+        // behind its durable generation fence so it can be re-enabled without
+        // recreating durable state.
+        let mut distributed_kql = provisioned_lanes
             .distributed_kql_one_hop
             .then(|| DistributedKqlRuntime::open_unhydrated(data_dir, private_need_vault_key))
             .transpose()?;
-        let public_use = lanes
+        let public_use = provisioned_lanes
             .public_use_evidence_publish
             .then(|| PublicUseEvidencePublisher::open(data_dir))
             .transpose()?
             .map(Arc::new);
-        let distributed_pomv = lanes
+        let distributed_pomv = provisioned_lanes
             .distributed_pomv_view
             .then(|| {
                 DistributedPomvRuntime::open_with_limits(
@@ -302,6 +342,7 @@ impl VNextProductRuntime {
                 config.network,
                 budgets.storage_hard_watermark_bytes,
                 prepared_identity,
+                rollout.clone(),
             )
             .await?,
         );
@@ -323,25 +364,31 @@ impl VNextProductRuntime {
         // Recover the logical publication outbox before scheduling retries.
         // Routes are session-derived, so startup records durable pending work;
         // the publication worker may retry it only after a route is available.
-        let startup_pending_publications = if let Some(public_use) = public_use.as_ref() {
-            match public_use.flush_pending(&network, budgets.publication_flush_batch) {
-                Ok(_) | Err(DistributedPomvError::AuthenticatedRouteUnavailable) => {}
-                Err(error) => return Err(error.into()),
-            }
-            public_use.pending_publication_count()?
-        } else {
-            0
-        };
+        let startup_pending_publications =
+            if lanes.public_use_evidence_publish && lanes_network_enabled(&rollout)? {
+                if let Some(public_use) = public_use.as_ref() {
+                    match public_use.flush_pending(&network, budgets.publication_flush_batch) {
+                        Ok(_) | Err(DistributedPomvError::AuthenticatedRouteUnavailable) => {}
+                        Err(error) => return Err(error.into()),
+                    }
+                    public_use.pending_publication_count()?
+                } else {
+                    0
+                }
+            } else {
+                0
+            };
         startup_trace.push(VNextStartupPhase::PublicationOutboxDrained);
 
         let mut workers = BoundedProductWorkers::new(MAX_PRODUCT_BACKGROUND_WORKERS);
         workers.start_lane_workers(
-            lanes,
+            provisioned_lanes,
             budgets.worker_poll_interval_millis,
             public_use
                 .as_ref()
                 .map(|publisher| (Arc::clone(publisher), Arc::clone(&network))),
             budgets.publication_flush_batch,
+            rollout.clone(),
         )?;
         startup_trace.push(VNextStartupPhase::WorkersStarted);
         startup_trace.push(VNextStartupPhase::Running);
@@ -361,7 +408,7 @@ impl VNextProductRuntime {
             public_use: Mutex::new(public_use),
             distributed_pomv: Mutex::new(distributed_pomv.map(Arc::new)),
             policy_versions,
-            lanes,
+            rollout,
             budgets,
             storage,
             signer_mode,
@@ -450,6 +497,9 @@ impl VNextProductRuntime {
             match std::fs::remove_dir(data_dir) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                // The durable rollout decision is operator state, not a
+                // partially initialized product artifact.
+                Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => {}
                 Err(error) => return Err(error.into()),
             }
         }
@@ -483,7 +533,10 @@ impl Drop for VNextProductRuntime {
 }
 
 impl VNextProductServiceCore {
-    fn acquire(self: &Arc<Self>) -> Result<VNextServiceLease, VNextProductRuntimeError> {
+    fn acquire(
+        self: &Arc<Self>,
+        lane: Option<VNextRuntimeLane>,
+    ) -> Result<VNextServiceLease, VNextProductRuntimeError> {
         let mut lifecycle = self
             .lifecycle
             .lock()
@@ -491,6 +544,7 @@ impl VNextProductServiceCore {
         if !lifecycle.accepting {
             return Err(VNextProductRuntimeError::Stopped);
         }
+        let generation = lane.map(|lane| self.rollout.acquire(lane)).transpose()?;
         lifecycle.in_flight = lifecycle
             .in_flight
             .checked_add(1)
@@ -498,6 +552,7 @@ impl VNextProductServiceCore {
         drop(lifecycle);
         Ok(VNextServiceLease {
             core: Arc::clone(self),
+            _generation: generation,
         })
     }
 
@@ -625,6 +680,7 @@ impl OptionalKqlOwner {
 
 struct VNextServiceLease {
     core: Arc<VNextProductServiceCore>,
+    _generation: Option<VNextRuntimeGenerationLease>,
 }
 
 impl Drop for VNextServiceLease {
@@ -659,7 +715,17 @@ impl VNextProductServices {
         self.core
             .upgrade()
             .ok_or(VNextProductRuntimeError::Stopped)?
-            .acquire()
+            .acquire(None)
+    }
+
+    fn lane_lease(
+        &self,
+        lane: VNextRuntimeLane,
+    ) -> Result<VNextServiceLease, VNextProductRuntimeError> {
+        self.core
+            .upgrade()
+            .ok_or(VNextProductRuntimeError::Stopped)?
+            .acquire(Some(lane))
     }
 
     pub fn local_addr(&self) -> SocketAddr {
@@ -687,6 +753,8 @@ impl VNextProductServices {
     pub fn status(&self) -> Result<VNextProductRuntimeStatus, VNextProductRuntimeError> {
         let lease = self.lease()?;
         let core = &lease.core;
+        let rollout = core.rollout.snapshot()?;
+        let lanes = VNextProductLaneStatus::from_rollout(&rollout);
         let (active_private_needs, durable_matches) = match core.kql() {
             Ok(kql) => (
                 kql.active_target_count(),
@@ -720,7 +788,8 @@ impl VNextProductServices {
                 .iter()
                 .map(|version| version.get())
                 .collect(),
-            lanes: core.lanes,
+            lanes,
+            rollout,
             budgets: core.budgets,
             storage_bytes,
             storage_pressure: core.storage.pressure(storage_bytes),
@@ -739,11 +808,42 @@ impl VNextProductServices {
         Ok(status)
     }
 
+    /// Persist an emergency lane kill. Operations already admitted on the
+    /// previous generation may drain; subsequent acquisitions fail closed.
+    pub fn kill_runtime_lane(
+        &self,
+        lane: VNextRuntimeLane,
+    ) -> Result<VNextRuntimeRolloutSnapshot, VNextProductRuntimeError> {
+        let lease = self.lease()?;
+        lease.core.rollout.kill(lane)?;
+        Ok(lease.core.rollout.snapshot()?)
+    }
+
+    /// Explicit operator acknowledgement that advances the generation and
+    /// re-enables one configured lane.
+    pub fn reenable_runtime_lane(
+        &self,
+        lane: VNextRuntimeLane,
+    ) -> Result<VNextRuntimeRolloutSnapshot, VNextProductRuntimeError> {
+        let lease = self.lease()?;
+        lease.core.rollout.reenable(lane)?;
+        Ok(lease.core.rollout.snapshot()?)
+    }
+
+    /// Atomically fence network and all product lanes. No raw, journal,
+    /// outbox, quarantine, wallet, or OBT data is removed.
+    pub fn rollback_runtime(
+        &self,
+    ) -> Result<VNextRuntimeRolloutSnapshot, VNextProductRuntimeError> {
+        let lease = self.lease()?;
+        Ok(lease.core.rollout.rollback()?)
+    }
+
     pub async fn connect_peer(
         &self,
         addr: SocketAddr,
     ) -> Result<OutboundVNextSession, VNextProductRuntimeError> {
-        let lease = self.lease()?;
+        let lease = self.lane_lease(VNextRuntimeLane::Network)?;
         lease
             .core
             .network()?
@@ -768,7 +868,7 @@ impl VNextProductServices {
         &self,
         bundle: PrivateNeedBundle,
     ) -> Result<(StandingNeedId, StandingNeedWriteOutcome), VNextProductRuntimeError> {
-        let lease = self.lease()?;
+        let lease = self.lane_lease(VNextRuntimeLane::DistributedKql)?;
         lease.core.ensure_storage_writable()?;
         let result = lease
             .core
@@ -800,7 +900,7 @@ impl VNextProductServices {
         id: StandingNeedId,
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
-        let lease = self.lease()?;
+        let lease = self.lane_lease(VNextRuntimeLane::DistributedKql)?;
         lease.core.ensure_storage_writable()?;
         let result = lease
             .core
@@ -815,7 +915,7 @@ impl VNextProductServices {
         id: StandingNeedId,
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
-        let lease = self.lease()?;
+        let lease = self.lane_lease(VNextRuntimeLane::DistributedKql)?;
         lease.core.ensure_storage_writable()?;
         let result = lease
             .core
@@ -830,7 +930,7 @@ impl VNextProductServices {
         id: StandingNeedId,
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
-        let lease = self.lease()?;
+        let lease = self.lane_lease(VNextRuntimeLane::DistributedKql)?;
         lease.core.ensure_storage_writable()?;
         let result = lease
             .core
@@ -845,7 +945,7 @@ impl VNextProductServices {
         id: StandingNeedId,
         expected_generation: u64,
     ) -> Result<u64, VNextProductRuntimeError> {
-        let lease = self.lease()?;
+        let lease = self.lane_lease(VNextRuntimeLane::DistributedKql)?;
         lease.core.ensure_storage_writable()?;
         let result = lease
             .core
@@ -860,7 +960,8 @@ impl VNextProductServices {
         selector: SelectorCid,
         budget: DistributedKqlBudget,
     ) -> Result<DistributedKqlReport, VNextProductRuntimeError> {
-        let lease = self.lease()?;
+        let _network_lease = self.lane_lease(VNextRuntimeLane::Network)?;
+        let lease = self.lane_lease(VNextRuntimeLane::DistributedKql)?;
         lease.core.ensure_kql_budget(budget)?;
         lease.core.ensure_storage_writable()?;
         let network = lease.core.network()?;
@@ -914,7 +1015,7 @@ impl VNextProductServices {
         request: &PreparePublicUseEvidenceRequest,
         author: &ValidatedFeedInception,
     ) -> Result<PreparedPublicUseIntent, VNextProductRuntimeError> {
-        let lease = self.lease()?;
+        let lease = self.lane_lease(VNextRuntimeLane::PublicUseEvidencePublish)?;
         lease.core.ensure_storage_writable()?;
         lease
             .core
@@ -930,7 +1031,7 @@ impl VNextProductServices {
         signer: &dyn FeedEventSigner,
     ) -> Result<(PublicUseEvidencePublication, PublicUsePublishOutcome), VNextProductRuntimeError>
     {
-        let lease = self.lease()?;
+        let lease = self.lane_lease(VNextRuntimeLane::PublicUseEvidencePublish)?;
         lease.core.ensure_storage_writable()?;
         lease
             .core
@@ -943,7 +1044,8 @@ impl VNextProductServices {
         &self,
         limit: usize,
     ) -> Result<PublicUseFlushReport, VNextProductRuntimeError> {
-        let lease = self.lease()?;
+        let _network_lease = self.lane_lease(VNextRuntimeLane::Network)?;
+        let lease = self.lane_lease(VNextRuntimeLane::PublicUseEvidencePublish)?;
         lease.core.ensure_storage_writable()?;
         if limit > lease.core.budgets.publication_flush_batch {
             return Err(VNextProductRuntimeError::BudgetExceeded(
@@ -988,7 +1090,8 @@ impl VNextProductServices {
         target: ObjectReference,
         policy_version: LocalPolicyVersion,
     ) -> Result<DistributedPomvReport, VNextProductRuntimeError> {
-        let lease = self.lease()?;
+        let _network_lease = self.lane_lease(VNextRuntimeLane::Network)?;
+        let lease = self.lane_lease(VNextRuntimeLane::DistributedPomvView)?;
         lease.core.ensure_storage_writable()?;
         let network = lease.core.network()?;
         let result = lease
@@ -1236,6 +1339,7 @@ impl BoundedProductWorkers {
         poll_interval_millis: u64,
         publication: Option<(Arc<PublicUseEvidencePublisher>, Arc<VNextNetworkRuntime>)>,
         publication_flush_batch: usize,
+        rollout: VNextRuntimeRollout,
     ) -> Result<(), VNextProductRuntimeError> {
         let interval = Duration::from_millis(poll_interval_millis);
         for (enabled, kind) in [
@@ -1261,6 +1365,7 @@ impl BoundedProductWorkers {
             } else {
                 None
             };
+            let rollout = rollout.clone();
             self.spawn(kind, move |mut cancellation| async move {
                 let mut ticker = tokio::time::interval(interval);
                 loop {
@@ -1269,6 +1374,16 @@ impl BoundedProductWorkers {
                         _ = ticker.tick() => {
                             poll_ticks.fetch_add(1, Ordering::Relaxed);
                             if let Some((publisher, network)) = publication.as_ref() {
+                                let Ok(_network_generation) =
+                                    rollout.acquire(VNextRuntimeLane::Network)
+                                else {
+                                    continue;
+                                };
+                                let Ok(_publication_generation) = rollout
+                                    .acquire(VNextRuntimeLane::PublicUseEvidencePublish)
+                                else {
+                                    continue;
+                                };
                                 // Missing authenticated routes are retryable;
                                 // durable publications remain unexported.
                                 let _ = publisher.flush_pending(
@@ -1359,6 +1474,8 @@ pub enum VNextProductRuntimeError {
     StorageSizeOverflow,
     #[error("vNext product data path is not a directory: {0}")]
     InvalidDataDirectory(PathBuf),
+    #[error("vNext runtime rollout failed: {0}")]
+    RuntimeRollout(#[from] VNextRuntimeRolloutError),
     #[error("vNext network runtime failed: {0}")]
     Network(#[from] VNextNetworkRuntimeError),
     #[error("vNext distributed KQL runtime failed: {0}")]
@@ -1378,6 +1495,7 @@ mod tests {
         decode_feed_inception, ConceptCcid, DeviceId, DisclosureClass, FeedInception,
         MetabolicViewPolicy, NamespaceCommitment, ObjectReference, UseEvidencePayload, UseMode,
     };
+    use ku_net::vnext_carrier::CarrierRecord;
 
     struct UnavailableIdentitySigner {
         public_key: [u8; 32],
@@ -1810,10 +1928,30 @@ mod tests {
         assert!(VNEXT_STARTUP_ARTIFACTS
             .iter()
             .all(|name| !clean_dir.path().join(name).exists()));
+
+        let parent = tempfile::tempdir().unwrap();
+        let newly_created = parent.path().join("new-runtime-data");
+        let runtime = VNextProductRuntime::start(
+            &newly_created,
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(76),
+            Some(Arc::new(SigningKey::from_bytes(&[0x76; 32]))),
+        )
+        .await
+        .unwrap();
+        runtime.rollback_startup().await.unwrap();
+        assert!(newly_created.join("vnext_runtime_rollout.redb").is_file());
+        assert!(VNEXT_STARTUP_ARTIFACTS
+            .iter()
+            .all(|name| !newly_created.join(name).exists()));
     }
 
     #[tokio::test]
-    async fn independent_lane_kill_switches_prevent_store_creation_and_operations() {
+    // Historical evidence ID:
+    // independent_lane_kill_switches_prevent_store_creation_and_operations.
+    // M5-06 supersedes store deletion with retained provisioned owners.
+    async fn independent_lane_kill_switches_fence_operations_and_remain_reenableable() {
         let directory = tempfile::tempdir().unwrap();
         let mut config = all_lanes_config();
         config.kill_switches.distributed_kql_one_hop = true;
@@ -1835,7 +1973,10 @@ mod tests {
             "vnext_public_use_sender.redb",
             "vnext_distributed_pomv.redb",
         ] {
-            assert!(!directory.path().join(file).exists(), "unexpected {file}");
+            assert!(
+                directory.path().join(file).exists(),
+                "provisioned lane must retain {file} for explicit re-enable"
+            );
         }
         assert!(directory.path().join("vnext_verified.redb").exists());
         let status = runtime.services().status().unwrap();
@@ -1847,11 +1988,191 @@ mod tests {
                 SelectorCid::from_bytes([0x41; 32]),
                 DistributedKqlBudget::default(),
             ),
-            Err(VNextProductRuntimeError::LaneDisabled(
-                VNextFeature::DistributedKqlOneHop
+            Err(VNextProductRuntimeError::RuntimeRollout(
+                VNextRuntimeRolloutError::LaneFenced {
+                    lane: VNextRuntimeLane::DistributedKql,
+                    ..
+                }
             ))
         ));
+        let services = runtime.services();
+        services
+            .reenable_runtime_lane(VNextRuntimeLane::DistributedKql)
+            .unwrap();
+        assert!(services.status().unwrap().lanes.distributed_kql_one_hop);
+        assert!(services
+            .process_one_hop_affordance_delta(
+                SelectorCid::from_bytes([0x41; 32]),
+                DistributedKqlBudget::default(),
+            )
+            .is_ok());
         runtime.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn runtime_kill_rollback_restart_and_explicit_reenable_use_real_quic() {
+        let left_dir = tempfile::tempdir().unwrap();
+        let right_dir = tempfile::tempdir().unwrap();
+        let config = all_lanes_config();
+        let mut left = VNextProductRuntime::start(
+            left_dir.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(91),
+            Some(Arc::new(SigningKey::from_bytes(&[0x91; 32]))),
+        )
+        .await
+        .unwrap();
+        let mut right = VNextProductRuntime::start(
+            right_dir.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(92),
+            Some(Arc::new(SigningKey::from_bytes(&[0x92; 32]))),
+        )
+        .await
+        .unwrap();
+        let left_services = left.services();
+        let right_services = right.services();
+        let left_addr = left_services.local_addr();
+        let right_addr = right_services.local_addr();
+
+        left_services
+            .kill_runtime_lane(VNextRuntimeLane::Network)
+            .unwrap();
+        assert!(matches!(
+            left_services.connect_peer(right_addr).await,
+            Err(VNextProductRuntimeError::RuntimeRollout(
+                VNextRuntimeRolloutError::LaneFenced {
+                    lane: VNextRuntimeLane::Network,
+                    ..
+                }
+            ))
+        ));
+        assert!(
+            tokio::time::timeout(
+                Duration::from_secs(3),
+                right_services.connect_peer(left_addr)
+            )
+            .await
+            .unwrap()
+            .is_err(),
+            "durably killed inbound QUIC lane accepted a new session"
+        );
+        left_services
+            .reenable_runtime_lane(VNextRuntimeLane::Network)
+            .unwrap();
+        let old_generation_session = left_services.connect_peer(right_addr).await.unwrap();
+        left_services
+            .kill_runtime_lane(VNextRuntimeLane::Network)
+            .unwrap();
+        assert!(matches!(
+            old_generation_session
+                .send(&CarrierRecord::ReconciliationMessage(Vec::new()))
+                .await,
+            Err(VNextNetworkRuntimeError::RuntimeFenced(_))
+        ));
+        old_generation_session.close();
+        left_services
+            .reenable_runtime_lane(VNextRuntimeLane::Network)
+            .unwrap();
+
+        left_services
+            .kill_runtime_lane(VNextRuntimeLane::PublicUseEvidencePublish)
+            .unwrap();
+        assert!(matches!(
+            left_services.flush_pending_public_use(1),
+            Err(VNextProductRuntimeError::RuntimeRollout(
+                VNextRuntimeRolloutError::LaneFenced {
+                    lane: VNextRuntimeLane::PublicUseEvidencePublish,
+                    ..
+                }
+            ))
+        ));
+        assert!(
+            left_services
+                .status()
+                .unwrap()
+                .lanes
+                .distributed_kql_one_hop
+        );
+
+        let protected_databases = [
+            "vnext_verified.redb",
+            "vnext_reconciliation.redb",
+            "vnext_record_provenance.redb",
+            "vnext_outbox.redb",
+            "vnext_distributed_kql.redb",
+            "vnext_public_use_sender.redb",
+            "vnext_distributed_pomv.redb",
+        ];
+        for name in [
+            "raw-retained.bin",
+            "journal-retained.bin",
+            "quarantine-retained.bin",
+            "wallet-retained.bin",
+            "obt-retained.bin",
+        ] {
+            std::fs::write(left_dir.path().join(name), name.as_bytes()).unwrap();
+        }
+        let rolled_back = left_services.rollback_runtime().unwrap();
+        assert!(rolled_back.lanes.iter().all(|lane| !lane.enabled));
+        assert!(!rolled_back.changes_wallet_state);
+        assert!(!rolled_back.changes_obt_state);
+        for name in protected_databases {
+            assert!(
+                left_dir.path().join(name).is_file(),
+                "rollback deleted protected runtime database {name}"
+            );
+        }
+        for name in [
+            "raw-retained.bin",
+            "journal-retained.bin",
+            "quarantine-retained.bin",
+            "wallet-retained.bin",
+            "obt-retained.bin",
+        ] {
+            assert_eq!(
+                std::fs::read(left_dir.path().join(name)).unwrap(),
+                name.as_bytes(),
+                "rollback changed protected runtime evidence {name}"
+            );
+        }
+
+        left.shutdown().await;
+        let mut restarted = VNextProductRuntime::start(
+            left_dir.path(),
+            "127.0.0.1:0".parse().unwrap(),
+            &config,
+            dependencies(91),
+            Some(Arc::new(SigningKey::from_bytes(&[0x91; 32]))),
+        )
+        .await
+        .unwrap();
+        let restarted_services = restarted.services();
+        let stale = restarted_services.status().unwrap().rollout;
+        assert!(
+            stale.lanes.iter().all(|lane| !lane.enabled),
+            "stale enabled config re-enabled a durably rolled back lane"
+        );
+        for lane in VNextRuntimeLane::ALL {
+            restarted_services.reenable_runtime_lane(lane).unwrap();
+        }
+        assert!(restarted_services
+            .status()
+            .unwrap()
+            .rollout
+            .lanes
+            .iter()
+            .all(|lane| lane.enabled));
+        restarted_services
+            .connect_peer(right_addr)
+            .await
+            .unwrap()
+            .close();
+
+        restarted.shutdown().await;
+        right.shutdown().await;
     }
 
     #[tokio::test]
