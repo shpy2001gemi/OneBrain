@@ -2204,3 +2204,19 @@ Implementation và release-smoke gate đã có; work package chỉ được ch�
 sau khi remote foundation CI xanh và có artifact `pre-release-72h` đủ 259.200
 giây trên runner đã pin. Bước sau M5-07 là P5 canary, nhưng chưa được mở release
 gate chỉ từ smoke evidence.
+
+Remote acceptance:
+
+- Run
+  [`30235464683`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30235464683)
+  trên implementation commit `09a1e2f` hoàn tất thành công ngày 2026-07-27:
+  foundation contract, Linux default workspace, Linux feature-enabled
+  real-QUIC acceptance và Windows default/vNext/Desktop smoke đều xanh, 4/4
+  job.
+- Gate M5.7 trên Linux chạy release unit smoke và optimized executable smoke
+  thành công. Run đầu trên `fe47edc` đã bắt được transient-zero race của
+  inbound active-session counter sau shutdown; harness hiện yêu cầu quiescence
+  liên tục 250 ms trên cả hai endpoint trong timeout hữu hạn rồi mới kết luận
+  không leak.
+- Remote smoke evidence xác nhận implementation gate, không thay thế artifact
+  `nightly-24h` hoặc `pre-release-72h`.
