@@ -51,10 +51,14 @@ DR_M5_OPERATIONAL_COMPACTION_PROFILE = (
 DR_M5_MIXED_ROLLBACK_PROFILE = (
     ROOT / "src/test-vectors/vnext/dr-m5-mixed-rollback-v1.json"
 )
+DR_M5_SOAK_RELEASE_PROFILE = (
+    ROOT / "src/test-vectors/vnext/dr-m5-soak-release-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
 VNEXT_FOUNDATION_WORKFLOW = ROOT / ".github/workflows/vnext-foundation.yml"
+VNEXT_SOAK_WORKFLOW = ROOT / ".github/workflows/vnext-soak.yml"
 
 TASK_ROW = re.compile(r"^\|\s*\[[ x~]\]\s*`([A-Z][A-Z0-9]*-\d{3})`")
 TASK_ID = re.compile(r"(?<!ADR-)(?<!NEG-)\b[A-Z][A-Z0-9]*-\d{3}\b")
@@ -2463,6 +2467,191 @@ def validate_vnext_dr_m5_mixed_rollback(
     return len(expected_lanes), len(corpus), len(expected_phases), len(expected_exit)
 
 
+def validate_vnext_dr_m5_soak_release(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(DR_M5_SOAK_RELEASE_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid M5-07 profile JSON: {error}") from error
+    if (
+        profile.get("format") != "onebrain/dr-m5-soak-release/1"
+        or profile.get("profile_id") != "SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("M5-07 profile identity drift")
+
+    if profile.get("build") != {
+        "cargo_profile": "release",
+        "transport": "authenticated-real-quic-loopback",
+        "long_runner": ["self-hosted", "linux", "x64", "onebrain-soak"],
+        "github_hosted_job_limit_hours": 6,
+    }:
+        raise ContractError("M5-07 release build/runner contract drift")
+
+    run_profiles = profile.get("run_profiles")
+    expected_profiles = {
+        "smoke": {
+            "minimum_elapsed_seconds": 0,
+            "minimum_fault_cycles": 3,
+            "release_qualifying": False,
+        },
+        "nightly-24h": {
+            "minimum_elapsed_seconds": 86_400,
+            "minimum_fault_cycles": 3,
+            "release_qualifying": False,
+        },
+        "pre-release-72h": {
+            "minimum_elapsed_seconds": 259_200,
+            "minimum_fault_cycles": 3,
+            "release_qualifying": True,
+        },
+    }
+    if run_profiles != expected_profiles:
+        raise ContractError("M5-07 duration qualification drift")
+
+    expected_latency = {
+        "quic_authenticated_connect": {
+            "p50": 500_000,
+            "p95": 1_000_000,
+            "p99": 2_000_000,
+        },
+        "fsync_4k": {
+            "p50": 100_000,
+            "p95": 500_000,
+            "p99": 2_000_000,
+        },
+        "kql_incremental_scan_max": 250_000,
+        "pomv_incremental_scan_max": 250_000,
+    }
+    if profile.get("latency_budgets_micros") != expected_latency:
+        raise ContractError("M5-07 latency percentile budget drift")
+
+    expected_growth = {
+        "rss_bytes": {
+            "hard_cap": 536_870_912,
+            "max_growth": 134_217_728,
+            "max_positive_slope_per_cycle": 8_388_608,
+        },
+        "disk_bytes": {
+            "hard_cap": 536_870_912,
+            "max_growth": 33_554_432,
+            "max_positive_slope_per_cycle": 2_097_152,
+        },
+        "task_count": {
+            "hard_cap": 512,
+            "max_growth": 16,
+            "max_positive_slope_per_cycle": 4,
+        },
+    }
+    if profile.get("growth_budgets") != expected_growth:
+        raise ContractError("M5-07 resource growth budget drift")
+
+    expected_lanes = ["distributed-kql-one-hop", "distributed-pomv-view"]
+    if profile.get("incremental_scan") != {
+        "lanes": expected_lanes,
+        "max_records_per_scan": 64,
+        "drained_scan_records": 0,
+        "durable_selector_type_cursor": True,
+    }:
+        raise ContractError("M5-07 incremental scan contract drift")
+
+    expected_faults = [
+        "slow-peer",
+        "bounded-session-flood",
+        "partition-reunion",
+    ]
+    if profile.get("fault_cycle") != expected_faults:
+        raise ContractError("M5-07 fault cycle coverage drift")
+
+    expected_signals = [
+        "quic-latency-percentiles",
+        "fsync-latency-percentiles",
+        "rss-growth-and-slope",
+        "disk-growth-and-slope",
+        "task-growth-and-leak",
+        "incremental-scan-budget",
+        "runtime-bounded-counters",
+        "rollback-reason-codes",
+    ]
+    if profile.get("operator_signals") != expected_signals:
+        raise ContractError("M5-07 operator signal coverage drift")
+
+    expected_exit = [
+        "no-unbounded-memory-disk-task-slope",
+        "no-task-or-session-leak",
+        "m3-fair-redelivery-root-preserved",
+        "m4-no-truth-benefit-wallet-obt-amplification",
+        "operator-can-detect-and-rollback",
+        "short-run-cannot-claim-long-soak",
+        "pre-release-requires-72-real-hours",
+    ]
+    if profile.get("exit_oracles") != expected_exit:
+        raise ContractError("M5-07 exit oracle drift")
+
+    source = read(ROOT / "src/onebrain-node/src/vnext_soak_release.rs")
+    for needle in (
+        'pub const SOAK_RELEASE_PROFILE: &str = "onebrain/dr-m5-soak-release/1"',
+        "pub async fn run_soak_release(",
+        "measure_quic_connects(",
+        "measure_fsync(",
+        "measure_incremental_scans(",
+        "run_slow_peer_cycle(",
+        "run_bounded_flood_cycle(",
+        "run_partition_reunion_cycle(",
+        "DURATION_OR_CYCLE_EVIDENCE_INCOMPLETE",
+        "m5_07_release_smoke_uses_real_quic_fsync_and_all_fault_cycles",
+    ):
+        if needle not in source:
+            raise ContractError(f"M5-07 implementation evidence missing: {needle}")
+
+    cargo = read(ROOT / "src/onebrain-node/Cargo.toml")
+    for needle in (
+        'name = "dr_m5_soak_release"',
+        'required-features = ["vnext-soak-harness"]',
+        "vnext-soak-harness = [",
+        '"ku-net/dr-m5-chaos-harness"',
+    ):
+        if needle not in cargo:
+            raise ContractError(f"M5-07 Cargo gate missing: {needle}")
+
+    foundation = read(VNEXT_FOUNDATION_WORKFLOW)
+    for needle in (
+        "python -m unittest scripts.ci.test_validate_vnext_dr_m5_soak_release",
+        "- name: M5.7 optimized real-QUIC soak and performance release smoke",
+        "cargo test --locked --release -p onebrain-node",
+        "--features vnext-soak-harness",
+        "--profile smoke",
+    ):
+        if needle not in foundation:
+            raise ContractError(f"M5-07 PR acceptance gate missing: {needle}")
+
+    soak_workflow = read(VNEXT_SOAK_WORKFLOW)
+    for needle in (
+        'cron: "41 1 * * *"',
+        "runs-on: [self-hosted, linux, x64, onebrain-soak]",
+        "timeout-minutes: 4440",
+        "nightly-24h",
+        "pre-release-72h",
+        "actions/upload-artifact@v4",
+    ):
+        if needle not in soak_workflow:
+            raise ContractError(f"M5-07 long-soak workflow missing: {needle}")
+
+    spec = read(VNEXT / "SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1.md")
+    if "dr-m5-soak-release-v1.json" not in spec:
+        raise ContractError("M5-07 normative profile is not linked to machine contract")
+
+    return (
+        len(expected_profiles),
+        len(expected_latency),
+        len(expected_growth),
+        len(expected_faults),
+        len(expected_exit),
+    )
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -2593,6 +2782,13 @@ def main() -> int:
             m5_rollback_phases,
             m5_rollback_exit_oracles,
         ) = validate_vnext_dr_m5_mixed_rollback()
+        (
+            m5_soak_profiles,
+            m5_performance_metrics,
+            m5_growth_metrics,
+            m5_fault_cycles,
+            m5_soak_exit_oracles,
+        ) = validate_vnext_dr_m5_soak_release()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -2626,6 +2822,9 @@ def main() -> int:
         f"{m5_rollback_lanes} M5-06 lanes/{m5_n_minus_one_fixtures} N-1 fixtures/"
         f"{m5_rollback_phases} process-kill phases/"
         f"{m5_rollback_exit_oracles} exit oracles, "
+        f"{m5_soak_profiles} M5-07 profiles/{m5_performance_metrics} performance metrics/"
+        f"{m5_growth_metrics} growth metrics/{m5_fault_cycles} fault cycles/"
+        f"{m5_soak_exit_oracles} exit oracles, "
         f"{links} local links"
     )
     return 0

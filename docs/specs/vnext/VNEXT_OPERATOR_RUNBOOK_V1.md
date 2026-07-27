@@ -25,11 +25,21 @@ cargo test -p ku-core qa006_ --lib
 cargo test -p ku-net qa006_ --lib
 cargo test -p onebrain-node qa007_ --lib
 cargo test -p onebrain-node qa008_ --lib
+cargo run --release -p onebrain-node --features vnext-soak-harness \
+  --example dr_m5_soak_release -- --profile smoke \
+  --output target/m5-07/soak-report.json
 ```
 
 Record the code revision, configuration, platform and benchmark profile root.
 Timing results are regression evidence for that environment, not a universal
 throughput promise.
+
+The smoke report validates the release binary and fault-cycle harness only; it
+does not qualify a release. The scheduled `vNext soak and release gate`
+workflow runs `nightly-24h` on a dedicated Linux runner labeled
+`onebrain-soak`. Before canary or release, manually run `pre-release-72h` on
+the same pinned runner class and retain its JSON artifact with commit SHA and
+workflow metadata. Any `rollback_reasons` entry blocks release.
 
 ## 3. Safe enablement order
 
@@ -100,6 +110,14 @@ receipts and rebuild the derived view root before considering another dry run.
 Retain every encoding attempt, mismatch dimension and alternate. Recompute the
 assessment under the named policy/frontier. Do not delete a KU or label it
 false; lower use can follow naturally from poor task fit or fidelity evidence.
+
+### Soak or performance regression
+
+Inspect QUIC and fsync percentiles, then RSS/disk/task growth and the KQL/PoMV
+incremental scan fields. A positive unbounded slope, non-zero active session
+after shutdown, task leak, reunion-root mismatch or semantic amplification is
+a rollback trigger. Do not loosen a frozen budget to make an existing report
+green; create a reviewed profile revision and rerun the complete duration.
 
 ## 6. Rollback trigger and order
 

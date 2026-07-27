@@ -1,0 +1,92 @@
+{
+  "format": "onebrain/dr-m5-soak-release/1",
+  "profile_id": "SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1",
+  "version": 1,
+  "build": {
+    "cargo_profile": "release",
+    "transport": "authenticated-real-quic-loopback",
+    "long_runner": ["self-hosted", "linux", "x64", "onebrain-soak"],
+    "github_hosted_job_limit_hours": 6
+  },
+  "run_profiles": {
+    "smoke": {
+      "minimum_elapsed_seconds": 0,
+      "minimum_fault_cycles": 3,
+      "release_qualifying": false
+    },
+    "nightly-24h": {
+      "minimum_elapsed_seconds": 86400,
+      "minimum_fault_cycles": 3,
+      "release_qualifying": false
+    },
+    "pre-release-72h": {
+      "minimum_elapsed_seconds": 259200,
+      "minimum_fault_cycles": 3,
+      "release_qualifying": true
+    }
+  },
+  "latency_budgets_micros": {
+    "quic_authenticated_connect": {
+      "p50": 500000,
+      "p95": 1000000,
+      "p99": 2000000
+    },
+    "fsync_4k": {
+      "p50": 100000,
+      "p95": 500000,
+      "p99": 2000000
+    },
+    "kql_incremental_scan_max": 250000,
+    "pomv_incremental_scan_max": 250000
+  },
+  "growth_budgets": {
+    "rss_bytes": {
+      "hard_cap": 536870912,
+      "max_growth": 134217728,
+      "max_positive_slope_per_cycle": 8388608
+    },
+    "disk_bytes": {
+      "hard_cap": 536870912,
+      "max_growth": 33554432,
+      "max_positive_slope_per_cycle": 2097152
+    },
+    "task_count": {
+      "hard_cap": 512,
+      "max_growth": 16,
+      "max_positive_slope_per_cycle": 4
+    }
+  },
+  "incremental_scan": {
+    "lanes": [
+      "distributed-kql-one-hop",
+      "distributed-pomv-view"
+    ],
+    "max_records_per_scan": 64,
+    "drained_scan_records": 0,
+    "durable_selector_type_cursor": true
+  },
+  "fault_cycle": [
+    "slow-peer",
+    "bounded-session-flood",
+    "partition-reunion"
+  ],
+  "operator_signals": [
+    "quic-latency-percentiles",
+    "fsync-latency-percentiles",
+    "rss-growth-and-slope",
+    "disk-growth-and-slope",
+    "task-growth-and-leak",
+    "incremental-scan-budget",
+    "runtime-bounded-counters",
+    "rollback-reason-codes"
+  ],
+  "exit_oracles": [
+    "no-unbounded-memory-disk-task-slope",
+    "no-task-or-session-leak",
+    "m3-fair-redelivery-root-preserved",
+    "m4-no-truth-benefit-wallet-obt-amplification",
+    "operator-can-detect-and-rollback",
+    "short-run-cannot-claim-long-soak",
+    "pre-release-requires-72-real-hours"
+  ]
+}

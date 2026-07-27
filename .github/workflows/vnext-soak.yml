@@ -1,0 +1,92 @@
+name: vNext soak and release gate
+
+on:
+  schedule:
+    - cron: "41 1 * * *"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Soak evidence profile
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - nightly-24h
+          - pre-release-72h
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vnext-soak-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    if: github.event_name == 'workflow_dispatch' && inputs.profile == 'smoke'
+    name: Release smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: src
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - name: Run optimized real-QUIC release smoke
+        run: >-
+          cargo run --locked --release -p onebrain-node
+          --features vnext-soak-harness
+          --example dr_m5_soak_release --
+          --profile smoke
+          --data-dir "$RUNNER_TEMP/onebrain-m5-07"
+          --output "$RUNNER_TEMP/onebrain-m5-07-report.json"
+      - name: Preserve release-smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-soak-smoke-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/onebrain-m5-07-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  long-soak:
+    if: github.event_name == 'schedule' || inputs.profile != 'smoke'
+    name: ${{ github.event_name == 'schedule' && 'Nightly 24h' || inputs.profile }}
+    runs-on: [self-hosted, linux, x64, onebrain-soak]
+    timeout-minutes: 4440
+    defaults:
+      run:
+        working-directory: src
+    env:
+      SOAK_PROFILE: ${{ github.event_name == 'schedule' && 'nightly-24h' || inputs.profile }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - name: Run qualifying optimized soak
+        run: >-
+          cargo run --locked --release -p onebrain-node
+          --features vnext-soak-harness
+          --example dr_m5_soak_release --
+          --profile "$SOAK_PROFILE"
+          --data-dir "$RUNNER_TEMP/onebrain-m5-07"
+          --output "$RUNNER_TEMP/onebrain-m5-07-report.json"
+      - name: Preserve qualifying soak evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-soak-${{ env.SOAK_PROFILE }}-${{ github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/onebrain-m5-07-report.json
+          if-no-files-found: warn
+          retention-days: 90

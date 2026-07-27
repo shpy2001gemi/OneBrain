@@ -69,9 +69,9 @@ faster.
 
 ## 5. Limits and next calibration
 
-This is a deterministic micro-regression profile, not a network capacity test.
-It does not measure disk fsync, real QUIC congestion, radio energy, WAN latency,
-allocator RSS or archive download time. Release CI should add a pinned-hardware
-optimized-build lane and establish p50/p95 baselines before tightening these
-portable debug ceilings.
-
+This remains a deterministic micro-regression profile, not a network capacity
+test. Disk fsync, authenticated real-QUIC p50/p95/p99, process RSS, task count,
+disk growth, durable KQL/PoMV incremental scans and long fault cycles are owned
+by the separate
+[M5-07 Soak and Release Gate Profile](SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1.md).
+Neither profile measures radio energy, WAN latency or archive download time.

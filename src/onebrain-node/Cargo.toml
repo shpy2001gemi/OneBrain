@@ -13,6 +13,10 @@ path = "src/lib.rs"
 name = "dr_m5_fuzz_corpus_smoke"
 required-features = ["vnext-chaos-harness"]
 
+[[example]]
+name = "dr_m5_soak_release"
+required-features = ["vnext-soak-harness"]
+
 [features]
 default = []
 vnext-network-runtime = [
@@ -41,6 +45,10 @@ vnext-compaction-harness = [
     "ku-net/dr-m5-crash-harness",
     "ku-kql/dr-m5-crash-harness",
     "dep:sha2",
+]
+vnext-soak-harness = [
+    "vnext-network-runtime",
+    "ku-net/dr-m5-chaos-harness",
 ]
 
 [dependencies]

@@ -705,6 +705,29 @@
       "rationale": "Durable per-lane generations, per-record session checks, atomic rollback, stale-config rejection, frozen N-1 bytes, real concurrent TCP/QUIC and five process-kill recoveries prove bounded mixed-version rollback without data or authority amplification."
     },
     {
+      "path": "docs/specs/vnext/SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1.md",
+      "expected_statement_lines": 8,
+      "evidence": [
+        {
+          "path": "src/onebrain-node/src/vnext_soak_release.rs",
+          "needle": "m5_07_release_smoke_uses_real_quic_fsync_and_all_fault_cycles"
+        },
+        {
+          "path": "src/test-vectors/vnext/dr-m5-soak-release-v1.json",
+          "needle": "\"minimum_elapsed_seconds\": 259200"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_vnext_dr_m5_soak_release"
+        },
+        {
+          "path": ".github/workflows/vnext-soak.yml",
+          "needle": "runs-on: [self-hosted, linux, x64, onebrain-soak]"
+        }
+      ],
+      "rationale": "One optimized harness measures real authenticated QUIC, fsync, RSS, disk, task count and durable incremental indexes across repeated slow/flood/partition cycles; frozen duration gates prevent smoke evidence from impersonating 24-hour or 72-hour qualification and expose finite rollback reasons."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [

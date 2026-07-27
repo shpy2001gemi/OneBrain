@@ -53,6 +53,7 @@ The semantic guardrails are indexed in the [Normative Vocabulary](NORMATIVE_VOCA
 | algebraic and trace properties | [QA-006 property suite](ALGEBRAIC_AND_TRACE_PROPERTY_SUITE_V1.md) |
 | 10k/100k logical-node simulation and 30B analytical bounds | [QA-007 scale profile](LOGICAL_NODE_SCALE_AND_ANALYTICAL_BOUND_PROFILE_V1.md) |
 | correctness-coupled performance budgets | [QA-008 performance profile](PERFORMANCE_REGRESSION_BUDGET_PROFILE_V1.md) |
+| optimized soak and release qualification | [M5-07 soak/release profile](SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1.md) |
 | operator-visible scope and consent | [Scoped Runtime Status](SCOPED_RUNTIME_STATUS_PROFILE_V1.md) |
 | migration and legacy preservation | [Migration profile](ADDITIVE_MIGRATION_STORAGE_PROFILE_V1.md), [backfill profile](LEGACY_DATA_BACKFILL_PROFILE_V1.md), [operator guide](VNEXT_MIGRATION_AND_ROLLBACK_GUIDE_V1.md) |
 | interoperable independent implementations | [Interoperability Profile](VNEXT_INTEROPERABILITY_PROFILE_V1.md) |

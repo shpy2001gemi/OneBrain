@@ -54,6 +54,8 @@ pub mod vnext_runtime_rollout;
 pub mod vnext_scale_simulation;
 #[cfg(test)]
 pub mod vnext_security_suite;
+#[cfg(feature = "vnext-soak-harness")]
+pub mod vnext_soak_release;
 pub mod vnext_status;
 pub mod vnext_validated_sink;
 pub mod vnext_workflow_surface;
@@ -156,6 +158,12 @@ pub use vnext_runtime_rollout::{
     VNextRuntimeGenerationLease, VNextRuntimeLane, VNextRuntimeLaneRequest,
     VNextRuntimeLaneSnapshot, VNextRuntimeRollout, VNextRuntimeRolloutError,
     VNextRuntimeRolloutSnapshot, VNEXT_RUNTIME_ROLLOUT_PROFILE_MAJOR,
+};
+#[cfg(feature = "vnext-soak-harness")]
+pub use vnext_soak_release::{
+    run_soak_release, GrowthMetric, IncrementalScanMetric, LatencyPercentiles,
+    RuntimeSignalSnapshot, SoakProfile, SoakReleaseBudgets, SoakReleaseError, SoakReleaseReport,
+    SoakRunConfig, SOAK_RELEASE_PROFILE,
 };
 pub use vnext_status::{NetworkRuntimeLifecycle, NetworkRuntimeStatusView};
 pub use vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};

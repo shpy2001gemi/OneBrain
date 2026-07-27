@@ -2149,3 +2149,58 @@ error hoặc warning M5-06 mới.
 
 M5-06 đã hoàn tất implementation, local gates và remote evidence. Work package
 kế tiếp là M5-07 Soak, performance và release gate.
+
+### 2026-07-27 — M5-07 Soak, performance và release gate
+
+Đã triển khai cục bộ trên nhánh `codex/dr-m5-soak-release-gate`:
+
+1. Freeze
+   [`SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1.md`](../specs/vnext/SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1.md)
+   và machine profile `onebrain/dr-m5-soak-release/1`. Ba evidence class
+   `smoke`, `nightly-24h` và `pre-release-72h` dùng cùng release binary; smoke
+   không thể tự nhận long-soak qualification.
+2. Bổ sung release harness đo authenticated real-QUIC connect p50/p95/p99,
+   4 KiB write+fsync p50/p95/p99, RSS, recursive disk bytes và OS task count.
+   Growth được lấy sau full warm-up và giữ hard cap, endpoint growth cap cùng
+   positive per-cycle slope.
+3. KQL và PoMV benchmark đúng durable selector/type sequence index mà hai
+   runtime incremental sử dụng. Scan đầu phải thấy typed fixture trong budget;
+   scan tiếp từ durable cursor phải trả zero record.
+4. Mỗi ba fault cycle chạy đủ authenticated slow peer, per-peer session flood
+   bị chặn tại cap, endpoint partition/restart/reunion qua QUIC thật. Mỗi cycle
+   đồng thời chạy deterministic drop/duplicate/delay/reorder trace và so exact
+   fair-redelivery oracle root.
+5. Report JSON giữ bounded runtime counters và finite rollback reason codes cho
+   latency, fsync, memory/disk/task slope, leak, KQL/PoMV scan, M3 reunion,
+   semantic amplification và thiếu duration evidence. Wallet/OBT, truth,
+   Benefit, authority và network-completion đều fail closed.
+6. Foundation CI có optimized release smoke. Workflow riêng chạy nightly 24
+   giờ theo lịch và pre-release 72 giờ thủ công trên Linux self-hosted runner
+   có nhãn `onebrain-soak`; đây là bắt buộc vì GitHub-hosted job bị giới hạn
+   sáu giờ. JSON evidence được upload thành artifact.
+7. Validator cùng 12 mutation tests khóa release build, real transport, 24/72
+   giờ thực, percentile, growth slope, durable cursor, fault families,
+   operator signals và bảy exit oracle.
+
+Local evidence ban đầu:
+
+- M5-07 machine-profile mutation tests: 12/12 xanh;
+- full machine-profile mutation suite: 112/112 xanh;
+- feature-enabled `onebrain-node` lib: 155/155 xanh; default lib: 87/87 xanh;
+- default workspace all-target compile, feature-enabled all-target compile và
+  `onebrain-api`/`onebrain-cli` consumer compile: xanh;
+- Clippy feature-enabled all-target hoàn tất; chỉ còn warning baseline ngoài
+  M5-07;
+- M5-07 release smoke unit gate: 3/3 xanh trên Windows, gồm real QUIC, fsync,
+  KQL/PoMV incremental scan và đủ ba fault cycle;
+- optimized executable smoke: QUIC p50 `15.989 µs`, p95/p99 `18.990 µs`;
+  fsync p50 `620 µs`, p95/p99 `1.334 µs`; RSS steady-state slope âm, disk
+  positive slope `1.316.864 byte/cycle` dưới cap `2.097.152`, task slope zero;
+  KQL first/drained `2.013/979 µs`, PoMV `1.418/1.441 µs`, mỗi lane thấy
+  đúng một typed record rồi scan tiếp trả zero;
+- report smoke không claim `pre_release_qualified`.
+
+Implementation và release-smoke gate đã có; work package chỉ được chốt DR-M5
+sau khi remote foundation CI xanh và có artifact `pre-release-72h` đủ 259.200
+giây trên runner đã pin. Bước sau M5-07 là P5 canary, nhưng chưa được mở release
+gate chỉ từ smoke evidence.

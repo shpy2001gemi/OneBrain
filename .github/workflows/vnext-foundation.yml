@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/vnext-foundation.yml"
       - ".github/workflows/vnext-fuzz-nightly.yml"
+      - ".github/workflows/vnext-soak.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/specs/vnext/**"
@@ -30,6 +31,7 @@ on:
     paths:
       - ".github/workflows/vnext-foundation.yml"
       - ".github/workflows/vnext-fuzz-nightly.yml"
+      - ".github/workflows/vnext-soak.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/specs/vnext/**"
@@ -93,6 +95,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_chaos_fuzz
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_operational_compaction
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_mixed_rollback
+          python -m unittest scripts.ci.test_validate_vnext_dr_m5_soak_release
 
       - name: P3.4 Web UX build, lint, and receipt contract
         working-directory: src/onebrain-web
@@ -211,6 +214,7 @@ jobs:
           onebrain-node/src/vnext_product_runtime.rs
           onebrain-node/src/vnext_runtime_rollout.rs
           onebrain-node/src/vnext_reunion_canary.rs
+          onebrain-node/src/vnext_soak_release.rs
           onebrain-node/src/vnext_reward_firewall.rs
           onebrain-node/src/vnext_route_authority.rs
           onebrain-node/src/vnext_scale_simulation.rs
@@ -220,6 +224,7 @@ jobs:
           onebrain-node/examples/qa007_scale_report.rs
           onebrain-node/examples/qa008_performance_report.rs
           onebrain-node/examples/dr_m5_fuzz_corpus_smoke.rs
+          onebrain-node/examples/dr_m5_soak_release.rs
           onebrain-node/tests/anti_gravity_reunion.rs
           onebrain-api/src/handlers.rs
           onebrain-api/src/server.rs
@@ -634,6 +639,18 @@ jobs:
           --features vnext-network-runtime
           --test vnext_node_runtime
           -- --test-threads=1
+      - name: M5.7 optimized real-QUIC soak and performance release smoke
+        run: >-
+          cargo test --locked --release -p onebrain-node
+          --features vnext-soak-harness
+          --lib vnext_soak_release
+          -- --test-threads=1
+          && cargo run --locked --release -p onebrain-node
+          --features vnext-soak-harness
+          --example dr_m5_soak_release --
+          --profile smoke
+          --data-dir "${RUNNER_TEMP}/onebrain-m5-07-ci"
+          --output "${RUNNER_TEMP}/onebrain-m5-07-ci-report.json"
       - name: P3.1 authenticated REST API contract and real-runtime flow
         run: >-
           cargo test --locked -p onebrain-api
