@@ -24,7 +24,6 @@ case "${HOST_OS}/${HOST_ARCH}" in
         HOST_KIND="macos-arm64"
         RUNNER_ASSET_ID="osx-arm64"
         RUNNER_DISPLAY_NAME="macOS ARM64"
-        DEFAULT_RUNNER_HOME="${HOME}/Library/Application Support/OneBrain/actions-runner"
         DEFAULT_RUNNER_LABELS="onebrain-soak-macos-arm64"
         if [[ -x /opt/homebrew/bin/brew ]]; then
             export PATH="/opt/homebrew/bin:${PATH}"

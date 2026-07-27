@@ -234,11 +234,23 @@ Gõ `PURGE` để xác nhận. Gỡ đăng ký và xóa local trong một lần:
 Runner home mặc định:
 
 ```text
-~/Library/Application Support/OneBrain/actions-runner
+~/.local/share/onebrain-actions-runner
 ```
 
 Ephemeral runner đã hoàn thành job thường tự deregister. Khi đó chỉ cần kiểm tra
 runner không còn trong GitHub Settings rồi chạy `purge`.
+
+Các bản kit trước hotfix `M5-07` từng dùng đường dẫn có dấu cách
+`~/Library/Application Support/OneBrain/actions-runner`. GitHub Actions không
+thực thi ổn định work script từ runner home này. Sau khi xóa runner cũ khỏi
+GitHub Settings, dọn bản local cũ bằng:
+
+```bash
+ONEBRAIN_RUNNER_HOME="$HOME/Library/Application Support/OneBrain/actions-runner" \
+  ./onebrain-soak-runner.sh purge
+```
+
+Gõ `PURGE` để xác nhận đúng thư mục cũ.
 
 ## 11. Troubleshooting
 
