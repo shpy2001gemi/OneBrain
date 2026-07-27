@@ -2257,3 +2257,13 @@ Local evidence:
 Đăng ký và chạy thật trên server chưa được claim: bước đó cần Linux x64 server
 và registration token ngắn hạn lấy trực tiếp từ repository Settings. Token
 không được ghi vào source, log hoặc tài liệu.
+
+Remote acceptance:
+
+- Run
+  [`30239075298`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30239075298)
+  trên implementation commit `5878b04` hoàn tất thành công ngày 2026-07-27,
+  4/4 job xanh.
+- Foundation contract trên Linux đã chạy full validator, 120 mutation tests và
+  `bash -n` cho portable runner; Linux default workspace, Linux feature-enabled
+  real-QUIC acceptance và Windows default/vNext/Desktop smoke đều xanh.
