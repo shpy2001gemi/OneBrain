@@ -59,6 +59,10 @@ DR_M5_TRANSACTION_INVENTORY = (
 )
 VNEXT_FOUNDATION_WORKFLOW = ROOT / ".github/workflows/vnext-foundation.yml"
 VNEXT_SOAK_WORKFLOW = ROOT / ".github/workflows/vnext-soak.yml"
+VNEXT_SOAK_RUNNER_SCRIPT = ROOT / "scripts/runner/onebrain-soak-runner.sh"
+VNEXT_SOAK_RUNNER_GUIDE = (
+    ROOT / "docs/operations/ONEBRAIN_SOAK_RUNNER_GUIDE_V1.md"
+)
 
 TASK_ROW = re.compile(r"^\|\s*\[[ x~]\]\s*`([A-Z][A-Z0-9]*-\d{3})`")
 TASK_ID = re.compile(r"(?<!ADR-)(?<!NEG-)\b[A-Z][A-Z0-9]*-\d{3}\b")
@@ -2467,6 +2471,75 @@ def validate_vnext_dr_m5_mixed_rollback(
     return len(expected_lanes), len(corpus), len(expected_phases), len(expected_exit)
 
 
+def validate_vnext_soak_runner_kit(
+    runner_script: str | None = None,
+    runner_guide: str | None = None,
+    soak_workflow: str | None = None,
+) -> tuple[int, int, int]:
+    if runner_script is None:
+        runner_script = read(VNEXT_SOAK_RUNNER_SCRIPT)
+    if runner_guide is None:
+        runner_guide = read(VNEXT_SOAK_RUNNER_GUIDE)
+    if soak_workflow is None:
+        soak_workflow = read(VNEXT_SOAK_WORKFLOW)
+
+    script_needles = (
+        "require_non_root",
+        "sha256sum --check --status",
+        "--labels \"$RUNNER_LABELS\"",
+        "--ephemeral",
+        "setup_runner ephemeral",
+        "setup-run",
+        "./config.sh remove --token",
+        "realpath -m \"$RUNNER_HOME\"",
+        'rm -rf -- "$RUNNER_HOME"',
+        "No inbound firewall port is required",
+    )
+    for needle in script_needles:
+        if needle not in runner_script:
+            raise ContractError(f"M5-07 portable runner safety missing: {needle}")
+    for forbidden in (
+        "RUNNER_ALLOW_RUNASROOT",
+        'rm -rf -- "$HOME"',
+        'rm -rf "$HOME"',
+        "sudo ufw",
+        "--no-default-labels",
+        "--disableupdate",
+    ):
+        if forbidden in runner_script:
+            raise ContractError(
+                f"M5-07 portable runner contains forbidden behavior: {forbidden}"
+            )
+
+    guide_needles = (
+        "Không cần mở TCP/UDP inbound",
+        "sudo ufw allow out 443/tcp",
+        "setup-run",
+        "pre-release-72h",
+        "uninstall",
+        "repo public",
+        "không chứa SSH key",
+    )
+    for needle in guide_needles:
+        if needle not in runner_guide:
+            raise ContractError(f"M5-07 portable runner guide missing: {needle}")
+
+    workflow_needles = (
+        "permissions:\n  contents: read",
+        "github.ref == 'refs/heads/main'",
+        "runs-on: [self-hosted, linux, x64, onebrain-soak]",
+    )
+    for needle in workflow_needles:
+        if needle not in soak_workflow:
+            raise ContractError(
+                f"M5-07 self-hosted workflow safety missing: {needle}"
+            )
+    if "pull_request:" in soak_workflow:
+        raise ContractError("M5-07 self-hosted workflow must not run on pull requests")
+
+    return len(script_needles), len(guide_needles), len(workflow_needles)
+
+
 def validate_vnext_dr_m5_soak_release(
     profile: dict[str, object] | None = None,
 ) -> tuple[int, int, int, int, int]:
@@ -2638,6 +2711,8 @@ def validate_vnext_dr_m5_soak_release(
     ):
         if needle not in soak_workflow:
             raise ContractError(f"M5-07 long-soak workflow missing: {needle}")
+
+    validate_vnext_soak_runner_kit(soak_workflow=soak_workflow)
 
     spec = read(VNEXT / "SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1.md")
     if "dr-m5-soak-release-v1.json" not in spec:

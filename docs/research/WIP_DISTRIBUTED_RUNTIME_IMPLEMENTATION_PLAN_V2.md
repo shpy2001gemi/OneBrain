@@ -2220,3 +2220,40 @@ Remote acceptance:
   không leak.
 - Remote smoke evidence xác nhận implementation gate, không thay thế artifact
   `nightly-24h` hoặc `pre-release-72h`.
+
+### 2026-07-27 — M5-07 portable Linux soak runner kit
+
+Đã bổ sung runner operations kit trên nhánh
+`codex/m5-07-portable-soak-runner`:
+
+1. Script
+   [`onebrain-soak-runner.sh`](../../scripts/runner/onebrain-soak-runner.sh)
+   tự lấy bản `actions/runner` Linux x64 mới nhất, xác minh SHA-256 từ GitHub
+   release metadata, đăng ký nhãn `onebrain-soak` và mặc định dùng
+   `--ephemeral`: nhận một job, tự deregister rồi thoát.
+2. Script không cài systemd, không cho chạy dưới root và cung cấp
+   `doctor/deps/setup-run/run/start/stop/status/logs/remove/purge/uninstall`.
+   Stop và purge cần xác nhận; purge kiểm tra resolved target trước khi xóa.
+3. Hướng dẫn
+   [`ONEBRAIN_SOAK_RUNNER_GUIDE_V1.md`](../operations/ONEBRAIN_SOAK_RUNNER_GUIDE_V1.md)
+   bao phủ cấu hình máy, registration/removal token, foreground/background,
+   firewall, artifact và troubleshooting. Runner không cần inbound port;
+   chỉ cần outbound HTTPS TCP 443 tới GitHub. Real QUIC của M5-07 chỉ bind
+   loopback.
+4. Long-soak workflow chỉ chạy khi `github.ref == refs/heads/main`; pull
+   request không thể route job tới self-hosted runner. Permission vẫn chỉ
+   `contents: read`.
+5. Foundation CI khóa Bash syntax và tám mutation case cho ephemeral default,
+   non-root, SHA-256, safe purge, main-only, no-PR và no-inbound contract.
+
+Local evidence:
+
+- runner-kit + M5-07 mutation tests: 20/20 xanh;
+- `bash -n`, YAML parse và `git diff --check`: xanh;
+- full vNext contract validator: xanh, 413 local links;
+- negative preflight trên môi trường Linux thiếu compiler/outbound chứng minh
+  `doctor` fail closed và in đúng dependency/network lỗi.
+
+Đăng ký và chạy thật trên server chưa được claim: bước đó cần Linux x64 server
+và registration token ngắn hạn lấy trực tiếp từ repository Settings. Token
+không được ghi vào source, log hoặc tài liệu.

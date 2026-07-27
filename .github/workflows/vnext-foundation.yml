@@ -8,10 +8,12 @@ on:
       - ".github/workflows/vnext-soak.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
+      - "docs/operations/**"
       - "docs/specs/vnext/**"
       - "formal/tla/**"
       - "scripts/ci/**"
       - "scripts/concept_registry/**"
+      - "scripts/runner/**"
       - "src/**"
       - "src/ku-core/**"
       - "src/ku-ai/**"
@@ -34,10 +36,12 @@ on:
       - ".github/workflows/vnext-soak.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
+      - "docs/operations/**"
       - "docs/specs/vnext/**"
       - "formal/tla/**"
       - "scripts/ci/**"
       - "scripts/concept_registry/**"
+      - "scripts/runner/**"
       - "src/**"
       - "src/ku-core/**"
       - "src/ku-ai/**"
@@ -96,6 +100,8 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_operational_compaction
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_mixed_rollback
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_soak_release
+          python -m unittest scripts.ci.test_validate_vnext_soak_runner_kit
+          bash -n scripts/runner/onebrain-soak-runner.sh
 
       - name: P3.4 Web UX build, lint, and receipt contract
         working-directory: src/onebrain-web

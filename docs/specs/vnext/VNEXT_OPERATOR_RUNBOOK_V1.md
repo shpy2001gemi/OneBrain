@@ -41,6 +41,11 @@ workflow runs `nightly-24h` on a dedicated Linux runner labeled
 the same pinned runner class and retain its JSON artifact with commit SHA and
 workflow metadata. Any `rollback_reasons` entry blocks release.
 
+Provision, firewall, foreground/background operation and removal of that
+runner follow the
+[Portable Linux Soak Runner Guide](../../operations/ONEBRAIN_SOAK_RUNNER_GUIDE_V1.md).
+The default ephemeral setup accepts one job and installs no system service.
+
 ## 3. Safe enablement order
 
 All additive vNext feature flags begin disabled. Enable one bounded lane at a

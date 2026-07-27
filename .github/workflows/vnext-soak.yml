@@ -57,7 +57,9 @@ jobs:
           retention-days: 30
 
   long-soak:
-    if: github.event_name == 'schedule' || inputs.profile != 'smoke'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'schedule' || inputs.profile != 'smoke')
     name: ${{ github.event_name == 'schedule' && 'Nightly 24h' || inputs.profile }}
     runs-on: [self-hosted, linux, x64, onebrain-soak]
     timeout-minutes: 4440
