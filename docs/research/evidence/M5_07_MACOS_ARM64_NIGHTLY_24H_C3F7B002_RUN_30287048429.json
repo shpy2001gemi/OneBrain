@@ -1,0 +1,121 @@
+{
+  "profile": "onebrain/dr-m5-soak-release/1",
+  "host_os": "macos",
+  "host_arch": "aarch64",
+  "run_profile": "nightly24h",
+  "elapsed_seconds": 86453,
+  "cycles": 1436,
+  "slow_peer_cycles": 479,
+  "bounded_flood_cycles": 479,
+  "partition_reunion_cycles": 478,
+  "fair_redelivery_oracle_matches": true,
+  "quic_connect_latency": {
+    "samples": 64,
+    "p50_micros": 952,
+    "p95_micros": 1203,
+    "p99_micros": 2312,
+    "max_micros": 2312,
+    "budget": {
+      "p50_max_micros": 500000,
+      "p95_max_micros": 1000000,
+      "p99_max_micros": 2000000
+    }
+  },
+  "fsync_latency": {
+    "samples": 64,
+    "p50_micros": 3356,
+    "p95_micros": 4496,
+    "p99_micros": 10799,
+    "max_micros": 10799,
+    "budget": {
+      "p50_max_micros": 100000,
+      "p95_max_micros": 500000,
+      "p99_max_micros": 2000000
+    }
+  },
+  "rss_bytes": {
+    "available": true,
+    "samples": 1438,
+    "first": 51757056,
+    "last": 53559296,
+    "peak": 68042752,
+    "positive_growth": 1802240,
+    "signed_slope_per_cycle": 1254,
+    "budget": {
+      "hard_cap": 536870912,
+      "max_growth": 134217728,
+      "max_positive_slope_per_cycle": 8388608
+    }
+  },
+  "disk_bytes": {
+    "available": true,
+    "samples": 1438,
+    "first": 36655184,
+    "last": 41963600,
+    "peak": 41963600,
+    "positive_growth": 5308416,
+    "signed_slope_per_cycle": 3694,
+    "budget": {
+      "hard_cap": 536870912,
+      "max_growth": 33554432,
+      "max_positive_slope_per_cycle": 2097152
+    }
+  },
+  "task_count": {
+    "available": true,
+    "samples": 1438,
+    "first": 9,
+    "last": 9,
+    "peak": 9,
+    "positive_growth": 0,
+    "signed_slope_per_cycle": 0,
+    "budget": {
+      "hard_cap": 512,
+      "max_growth": 16,
+      "max_positive_slope_per_cycle": 4
+    }
+  },
+  "kql_incremental_scan": {
+    "lane": "distributed-kql-one-hop",
+    "first_scan_records": 1,
+    "first_scan_micros": 6004,
+    "drained_scan_records": 0,
+    "drained_scan_micros": 3003,
+    "max_records": 64,
+    "max_micros": 250000
+  },
+  "pomv_incremental_scan": {
+    "lane": "distributed-pomv-view",
+    "first_scan_records": 1,
+    "first_scan_micros": 5986,
+    "drained_scan_records": 0,
+    "drained_scan_micros": 5999,
+    "max_records": 64,
+    "max_micros": 250000
+  },
+  "final_runtime_signals": {
+    "authenticated_sessions": 2950,
+    "active_sessions": 0,
+    "rejected_sessions": 1,
+    "accepted_records": 0,
+    "deferred_records": 0,
+    "rejected_records": 0,
+    "pending_outbox": 0,
+    "retry_exhausted_outbox": 0,
+    "contains_high_cardinality_labels": false,
+    "contains_private_need_labels": false,
+    "claims_network_completion": false
+  },
+  "active_sessions_after_shutdown": 0,
+  "task_leak_detected": false,
+  "changes_wallet_state": false,
+  "changes_obt_state": false,
+  "grants_authority": false,
+  "claims_truth": false,
+  "claims_benefit": false,
+  "claims_network_completion": false,
+  "qualification_met": true,
+  "pre_release_qualified": false,
+  "rollback_recommended": false,
+  "rollback_reasons": []
+}

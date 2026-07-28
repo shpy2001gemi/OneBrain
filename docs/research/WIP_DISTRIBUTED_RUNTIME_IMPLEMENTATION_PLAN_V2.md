@@ -2312,3 +2312,40 @@ remote foundation CI xanh, operator vẫn phải đăng ký runner bằng token 
 và giữ artifact `nightly-24h`/`pre-release-72h` từ chính máy đó. Smoke trên
 GitHub-hosted Apple Silicon chỉ xác nhận portability, không thay thế evidence
 24/72 giờ.
+
+### 2026-07-29 — M5-07 Mac mini M2 nightly-24h remote evidence
+
+Run
+[`30287048429`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30287048429)
+trên commit `c3f7b0023e361d4adf296f0802a9ac0d6258aa06` đã hoàn tất thành công bằng
+runner ephemeral `onebrain-soak-Hungs-Mac-mini` native `macOS/aarch64`. Job chạy
+từ `2026-07-27T16:57:13Z` đến `2026-07-28T17:02:31Z`, upload artifact
+`vnext-soak-macos-arm64-nightly-24h-c3f7b0023e361d4adf296f0802a9ac0d6258aa06-30287048429`
+rồi tự gỡ registration và thoát mã `0`.
+
+Artifact JSON gốc được giữ tại
+[`M5_07_MACOS_ARM64_NIGHTLY_24H_C3F7B002_RUN_30287048429.json`](evidence/M5_07_MACOS_ARM64_NIGHTLY_24H_C3F7B002_RUN_30287048429.json),
+3.028 byte, SHA-256
+`07d0fcd92773811455edcca828654144be751e9db734fab7bc539cd9e75177b7`.
+Evidence xác nhận:
+
+- monotonic elapsed `86.453` giây, vượt nightly floor `86.400` giây;
+- 1.436 fault cycle, gồm 479 slow-peer, 479 bounded-flood và 478
+  partition/restart/reunion; fair-redelivery oracle khớp;
+- real-QUIC connect p50/p95/p99 `952/1.203/2.312 µs`, đều dưới budget;
+- write+fsync p50/p95/p99 `3.356/4.496/10.799 µs`, đều dưới budget;
+- RSS tăng `1.802.240` byte, peak `68.042.752` byte; disk tăng `5.308.416`
+  byte, peak `41.963.600` byte; task count giữ nguyên `9`; mọi hard cap,
+  endpoint-growth cap và positive slope đều đạt;
+- KQL first/drained `1/0` record trong `6.004/3.003 µs`; PoMV `1/0` record
+  trong `5.986/5.999 µs`, đều dưới scan budget;
+- shutdown còn `0` active session, không task leak, không pending/retry-exhausted
+  outbox, không wallet/OBT/authority/truth/Benefit/network-completion mutation;
+- `qualification_met=true`, `rollback_recommended=false`, rollback reason rỗng.
+
+Runner control channel có một HTTP timeout 100 giây trong lúc Internet gián
+đoạn, sau đó tự reconnect và hoàn tất job cùng artifact thành công. Đây là
+nightly evidence hợp lệ nhưng đúng theo frozen profile vẫn giữ
+`pre_release_qualified=false`; M5-07 và DR-M5 chưa được chốt cho tới khi một
+artifact `pre-release-72h` trên `main` đạt đủ `259.200` monotonic giây và mọi
+oracle/budget trong cùng report.
