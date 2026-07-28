@@ -134,6 +134,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_operational_compaction
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_mixed_rollback
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_soak_release
+          python -m unittest scripts.ci.test_validate_vnext_p5_canary_preflight
           python -m unittest scripts.ci.test_validate_vnext_soak_runner_kit
           python -m unittest scripts.ci.test_validate_vnext_macos_soak_runner_kit
           bash -n scripts/runner/onebrain-soak-runner.sh
@@ -247,6 +248,7 @@ jobs:
           onebrain-node/src/vnext_record_provenance.rs
           onebrain-node/src/lib.rs
           onebrain-node/src/vnext_companion.rs
+          onebrain-node/src/vnext_canary_operations.rs
           onebrain-node/src/vnext_local_runtime.rs
           onebrain-node/src/vnext_legacy_migration.rs
           onebrain-node/src/vnext_m5_benchmark.rs
@@ -267,6 +269,7 @@ jobs:
           onebrain-node/examples/qa008_performance_report.rs
           onebrain-node/examples/dr_m5_fuzz_corpus_smoke.rs
           onebrain-node/examples/dr_m5_soak_release.rs
+          onebrain-node/examples/p5_canary_preflight.rs
           onebrain-node/tests/anti_gravity_reunion.rs
           onebrain-api/src/handlers.rs
           onebrain-api/src/server.rs
@@ -693,6 +696,17 @@ jobs:
           --profile smoke
           --data-dir "${RUNNER_TEMP}/onebrain-m5-07-ci"
           --output "${RUNNER_TEMP}/onebrain-m5-07-ci-report.json"
+      - name: P5.1 three-node authenticated QUIC canary preflight
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-canary-harness
+          --lib p5_01_
+          -- --test-threads=1
+          && cargo run --locked --release -p onebrain-node
+          --features vnext-canary-harness
+          --example p5_canary_preflight --
+          --data-dir "${RUNNER_TEMP}/onebrain-p5-01-ci"
+          --output "${RUNNER_TEMP}/onebrain-p5-01-ci-report.json"
       - name: P3.1 authenticated REST API contract and real-runtime flow
         run: >-
           cargo test --locked -p onebrain-api

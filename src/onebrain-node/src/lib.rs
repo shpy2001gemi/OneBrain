@@ -18,6 +18,8 @@ pub mod seed_client;
 pub mod types;
 pub mod upnp;
 pub mod verifier_service;
+#[cfg(feature = "vnext-canary-harness")]
+pub mod vnext_canary_operations;
 pub mod vnext_companion;
 pub mod vnext_config;
 #[cfg(feature = "vnext-crash-harness")]
@@ -70,6 +72,11 @@ pub use error::NodeError;
 pub use ku_net::vnext_session::SessionIdentitySigner;
 pub use network::{NetMessage, NodeEvent, PeerInfo};
 pub use node::{EncodeStoreResult, OneBrainNode};
+#[cfg(feature = "vnext-canary-harness")]
+pub use vnext_canary_operations::{
+    run_p5_canary_preflight, P5CanaryPreflightError, P5CanaryPreflightReport, P5_CANARY_NODE_COUNT,
+    P5_CANARY_PREFLIGHT_PROFILE, P5_CANARY_RING_DELIVERIES, P5_CANARY_ROUTE_OBSERVATIONS,
+};
 pub use vnext_companion::{
     companion_disclosure_scope, CompanionContext, CompanionDisclosureGrants, CompanionError,
     CompanionMaterializationCandidate, CompanionMultipathRequest, CompanionNetworkStatus,

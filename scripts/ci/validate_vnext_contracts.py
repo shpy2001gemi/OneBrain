@@ -54,6 +54,9 @@ DR_M5_MIXED_ROLLBACK_PROFILE = (
 DR_M5_SOAK_RELEASE_PROFILE = (
     ROOT / "src/test-vectors/vnext/dr-m5-soak-release-v1.json"
 )
+P5_CANARY_PREFLIGHT_PROFILE = (
+    ROOT / "src/test-vectors/vnext/p5-canary-preflight-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -2844,6 +2847,119 @@ def validate_vnext_dr_m5_soak_release(
     )
 
 
+def validate_vnext_p5_canary_preflight(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(P5_CANARY_PREFLIGHT_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid P5-01 canary profile JSON: {error}") from error
+    if (
+        profile.get("format") != "onebrain/p5-canary-preflight/1"
+        or profile.get("profile_id") != "P5_CANARY_PREFLIGHT_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("P5-01 canary profile identity drift")
+
+    scope = profile.get("scope")
+    if scope != {
+        "host_count": 1,
+        "logical_node_count": 3,
+        "transport": "authenticated-real-quic-loopback",
+        "production_canary_qualifying": False,
+    }:
+        raise ContractError("P5-01 canary scope drift")
+
+    topology = profile.get("topology")
+    expected_topology = {
+        "independent_durable_directories": 3,
+        "independent_principals": 3,
+        "ring_deliveries": 3,
+        "minimum_authenticated_route_observations": 6,
+    }
+    if topology != expected_topology:
+        raise ContractError("P5-01 canary topology drift")
+
+    expected_faults = [
+        "old-route-partition",
+        "durable-node-restart",
+        "authenticated-route-address-change",
+        "reunion-idempotent-replay",
+    ]
+    if profile.get("fault_drills") != expected_faults:
+        raise ContractError("P5-01 canary fault drill drift")
+
+    expected_exit = [
+        "three-distinct-principals",
+        "durable-principal-survives-restart",
+        "route-generation-advances",
+        "replayed-feed-has-one-durable-branch",
+        "zero-active-session-after-quiescence",
+        "no-wallet-or-obt-side-effect",
+        "no-authority-or-network-completion-claim",
+        "nonempty-operator-directory-fails-closed",
+    ]
+    if profile.get("exit_oracles") != expected_exit:
+        raise ContractError("P5-01 canary exit oracle drift")
+
+    if profile.get("production_gate") != {
+        "requires_pre_release_72h": True,
+        "requires_multi_host_canary": True,
+        "preflight_can_open_release": False,
+    }:
+        raise ContractError("P5-01 canary production gate drift")
+
+    source = read(ROOT / "src/onebrain-node/src/vnext_canary_operations.rs")
+    for needle in (
+        'pub const P5_CANARY_PREFLIGHT_PROFILE: &str = "onebrain/p5-canary-preflight/1"',
+        "pub async fn run_p5_canary_preflight(",
+        "P5_CANARY_NODE_COUNT: usize = 3",
+        "P5_CANARY_RING_DELIVERIES: usize = 3",
+        "P5_CANARY_ROUTE_OBSERVATIONS: usize = 6",
+        "partition_rejected_old_route",
+        "restarted_principal_stable",
+        "route_generation_advanced",
+        "durable_feed_branches_after_replay",
+        "production_canary_qualified: false",
+        "p5_01_three_node_real_quic_partition_restart_route_change_reunion",
+        "p5_01_nonempty_node_directory_fails_before_runtime_start",
+    ):
+        if needle not in source:
+            raise ContractError(f"P5-01 implementation evidence missing: {needle}")
+
+    cargo = read(ROOT / "src/onebrain-node/Cargo.toml")
+    for needle in (
+        'name = "p5_canary_preflight"',
+        'required-features = ["vnext-canary-harness"]',
+        'vnext-canary-harness = ["vnext-network-runtime"]',
+    ):
+        if needle not in cargo:
+            raise ContractError(f"P5-01 Cargo gate missing: {needle}")
+
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    for needle in (
+        "python -m unittest scripts.ci.test_validate_vnext_p5_canary_preflight",
+        "- name: P5.1 three-node authenticated QUIC canary preflight",
+        "--features vnext-canary-harness",
+        "--example p5_canary_preflight",
+    ):
+        if needle not in workflow:
+            raise ContractError(f"P5-01 PR acceptance gate missing: {needle}")
+
+    spec = read(VNEXT / "P5_CANARY_PREFLIGHT_PROFILE_V1.md")
+    if "p5-canary-preflight-v1.json" not in spec:
+        raise ContractError("P5-01 normative profile is not linked to machine contract")
+
+    return (
+        expected_topology["independent_principals"],
+        expected_topology["ring_deliveries"],
+        expected_topology["minimum_authenticated_route_observations"],
+        len(expected_faults),
+        len(expected_exit),
+    )
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -2981,6 +3097,13 @@ def main() -> int:
             m5_fault_cycles,
             m5_soak_exit_oracles,
         ) = validate_vnext_dr_m5_soak_release()
+        (
+            p5_canary_nodes,
+            p5_ring_deliveries,
+            p5_route_observations,
+            p5_fault_drills,
+            p5_exit_oracles,
+        ) = validate_vnext_p5_canary_preflight()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -3017,6 +3140,9 @@ def main() -> int:
         f"{m5_soak_profiles} M5-07 profiles/{m5_performance_metrics} performance metrics/"
         f"{m5_growth_metrics} growth metrics/{m5_fault_cycles} fault cycles/"
         f"{m5_soak_exit_oracles} exit oracles, "
+        f"{p5_canary_nodes} P5-01 nodes/{p5_ring_deliveries} ring deliveries/"
+        f"{p5_route_observations} route observations/{p5_fault_drills} fault drills/"
+        f"{p5_exit_oracles} exit oracles, "
         f"{links} local links"
     )
     return 0

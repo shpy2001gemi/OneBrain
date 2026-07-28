@@ -2349,3 +2349,49 @@ nightly evidence hợp lệ nhưng đúng theo frozen profile vẫn giữ
 `pre_release_qualified=false`; M5-07 và DR-M5 chưa được chốt cho tới khi một
 artifact `pre-release-72h` trên `main` đạt đủ `259.200` monotonic giây và mọi
 oracle/budget trong cùng report.
+
+### 2026-07-29 — P5-01 single-host three-node canary preflight
+
+Trong lúc Mac mini M2 tiếp tục chạy `pre-release-72h` trên commit đã pin
+`1055db85e359d520d3ae30df97f52529b3d299e7`, nhánh độc lập
+`codex/p5-canary-preflight` bắt đầu phần việc P5 không làm thay đổi evidence của
+job dài:
+
+1. Đóng băng
+   [`P5_CANARY_PREFLIGHT_PROFILE_V1.md`](../specs/vnext/P5_CANARY_PREFLIGHT_PROFILE_V1.md)
+   và machine contract
+   [`p5-canary-preflight-v1.json`](../../src/test-vectors/vnext/p5-canary-preflight-v1.json).
+2. Thêm `vnext-canary-harness` và executable `p5_canary_preflight`, tạo ba
+   logical node có durable directory/principal độc lập trên một host.
+3. Qua authenticated real QUIC, harness gửi ba FeedInception theo vòng A→B→C→A,
+   giữ sáu authenticated route observations, chặn route UDP cũ khi B dừng, rồi
+   restart B từ cùng durable directory trên địa chỉ mới.
+4. Reunion replay giữ đúng một durable feed branch; route generation tăng,
+   principal B không đổi và toàn bộ session quiesce về `0`.
+5. Preflight fail closed nếu operator directory không rỗng, không xóa hoặc ghi
+   đè byte hiện hữu.
+
+Local optimized report:
+
+- `profile=onebrain/p5-canary-preflight/1`;
+- `node_count=3`, `distinct_principals=3`, `initial_ring_deliveries=3`;
+- `authenticated_route_observations=6`;
+- partition/restart/address-change/route-generation/replay oracle đều `true`;
+- durable branch trước restart và sau replay đều bằng `1`;
+- `active_sessions_after_quiescence=0`;
+- không wallet/OBT/authority/network-completion side effect;
+- `preflight_passed=true`, nhưng
+  `production_canary_qualified=false`.
+
+Local gates:
+
+- P5-01 Rust tests: 2/2 xanh;
+- P5-01 machine-profile mutation tests: 9/9 xanh;
+- full vNext contract validator: xanh, 577 normative lines và 419 local links;
+- optimized executable/report: xanh.
+
+Đây chỉ là preflight một host và chưa hoàn tất P5 production. Nhánh này không
+thay thế hoặc được tính vào run `pre-release-72h` đang chạy. Multi-host canary,
+signer/disk/slow-peer, backup/restore, rollback/re-enable và operator rollout
+gate vẫn còn mở; production release vẫn bắt buộc artifact 72 giờ hợp lệ trên
+commit được chọn.

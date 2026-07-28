@@ -128,12 +128,14 @@ This directory owns the cross-crate contracts that must be stable before vNext r
 - [Migration and Rollback Guide v1](VNEXT_MIGRATION_AND_ROLLBACK_GUIDE_V1.md)
 - [Normative Freeze and Evidence Index v1](VNEXT_NORMATIVE_FREEZE_AND_EVIDENCE_INDEX_V1.md)
 - [vNext Product Integration Profile v1](VNEXT_PRODUCT_INTEGRATION_PROFILE_V1.md)
+- [P5 Canary Preflight Profile v1](P5_CANARY_PREFLIGHT_PROFILE_V1.md)
 
 ## Executable foundation gate
 
 - [Frozen canonical vectors](../../../src/test-vectors/vnext/foundation/canonical-v1.json)
 - [Frozen identity/object vectors](../../../src/test-vectors/vnext/foundation/identity-object-v1.json)
 - [Frozen feed/event vectors](../../../src/test-vectors/vnext/foundation/feed-event-v1.json)
+- [Frozen P5 single-host canary preflight](../../../src/test-vectors/vnext/p5-canary-preflight-v1.json)
 - [Frozen public knowledge exchange selector](../../../src/test-vectors/vnext/inventory/public-knowledge-exchange-v1.json)
 - [Reference Rust foundation](../../../src/ku-core/src/foundation)
 - [vNext contract validator](../../../scripts/ci/validate_vnext_contracts.py)

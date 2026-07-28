@@ -28,6 +28,10 @@ cargo test -p onebrain-node qa008_ --lib
 cargo run --release -p onebrain-node --features vnext-soak-harness \
   --example dr_m5_soak_release -- --profile smoke \
   --output target/m5-07/soak-report.json
+cargo run --release -p onebrain-node --features vnext-canary-harness \
+  --example p5_canary_preflight -- \
+  --data-dir target/p5-01/operator-preflight \
+  --output target/p5-01/canary-preflight-report.json
 ```
 
 Record the code revision, configuration, platform and benchmark profile root.
@@ -40,6 +44,12 @@ workflow runs `nightly-24h` on a dedicated Linux runner labeled
 `onebrain-soak`. Before canary or release, manually run `pre-release-72h` on
 the same pinned runner class and retain its JSON artifact with commit SHA and
 workflow metadata. Any `rollback_reasons` entry blocks release.
+
+The P5 preflight creates three independent logical nodes on one host, exercises
+authenticated QUIC partition/restart/route-change/reunion, then writes a
+machine-readable report. Use a new empty `--data-dir` for each invocation. A
+green report is implementation evidence only: it deliberately cannot qualify
+the production canary or replace the pinned 72-hour and multi-host gates.
 
 Provision, firewall, foreground/background operation and removal of that
 runner follow the
