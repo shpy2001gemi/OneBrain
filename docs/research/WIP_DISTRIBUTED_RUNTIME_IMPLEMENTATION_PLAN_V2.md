@@ -2395,3 +2395,49 @@ thay thế hoặc được tính vào run `pre-release-72h` đang chạy. Multi-
 signer/disk/slow-peer, backup/restore, rollback/re-enable và operator rollout
 gate vẫn còn mở; production release vẫn bắt buộc artifact 72 giờ hợp lệ trên
 commit được chọn.
+
+### 2026-07-29 — P5-02 đến P5-06 operational preflight
+
+Trong khi `pre-release-72h` tiếp tục chạy trên `main` tại commit đã pin
+`1055db85e359d520d3ae30df97f52529b3d299e7`, các phần P5 không phụ thuộc kết
+quả 72 giờ được thực hiện trên nhánh riêng `codex/p5-canary-preflight`:
+
+1. P5-02 dùng đúng runtime boundary để chứng minh signer outage fail-closed
+   trước durable side effect, hard disk watermark trả `REJECTED_STORAGE`, và
+   một slow authenticated peer không chặn healthy peer tiến triển qua real
+   QUIC.
+2. P5-03 tạo backup offline gồm bảy durable file với manifest path đã sort,
+   exact length/BLAKE3, aggregate root domain-separated và fsync. Restore xác
+   minh toàn archive trước khi tạo target; archive bị sửa một byte bị từ chối
+   fail-closed.
+3. P5-04 rollback nguyên tử bốn runtime lane, giữ principal/raw feed/journal/
+   pending outbox/quarantine/operational root. Restart với stale enabled config
+   không tự bật lane; từng lane chỉ trở lại sau explicit generation-advancing
+   re-enable, rồi authenticated real QUIC mới kết nối lại.
+4. P5-05 xác nhận cả 12 public feature flag mặc định tắt, bốn effective runtime
+   lane bằng `0` khi mở lại bằng default config, và local private KQL vẫn
+   canonical round-trip khi network off.
+5. P5-06 xuất dashboard machine-readable với signer/registry/lane/session/
+   journal/outbox/quarantine/storage signals, 10 incident code và finite
+   response action; snapshot không chứa NodeID, selector, private Need hoặc
+   free-form peer label.
+6. Đóng băng
+   [`P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md`](../specs/vnext/P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md),
+   machine contract
+   [`p5-operations-preflight-v1.json`](../../src/test-vectors/vnext/p5-operations-preflight-v1.json),
+   mutation validator, CI gate và operator runbook.
+
+Local evidence:
+
+- P5 Rust tests gồm P5-01 và P5-02..P5-06: 5/5 xanh;
+- P5 machine-profile mutation tests: 22/22 xanh;
+- full vNext contract validator: xanh, 595 normative lines và 424 local links;
+- release executable report: `preflight_passed=true`, ba fault drill đạt,
+  bảy durable file restore đúng, corrupt archive bị chặn, bốn lane rollback/
+  re-enable đúng, 12 flag default-off và dashboard privacy gate đạt;
+- report giữ `consumes_pre_release_72h_evidence=false`,
+  `multi_host_canary_qualified=false` và
+  `production_canary_qualified=false`.
+
+Các gate còn mở không bị che bởi preflight này: artifact 72 giờ đã pin,
+multi-host production canary và operator-approved production rollout.

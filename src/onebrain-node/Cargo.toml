@@ -21,6 +21,10 @@ required-features = ["vnext-soak-harness"]
 name = "p5_canary_preflight"
 required-features = ["vnext-canary-harness"]
 
+[[example]]
+name = "p5_operations_preflight"
+required-features = ["vnext-canary-harness"]
+
 [features]
 default = []
 vnext-network-runtime = [

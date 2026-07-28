@@ -57,6 +57,9 @@ DR_M5_SOAK_RELEASE_PROFILE = (
 P5_CANARY_PREFLIGHT_PROFILE = (
     ROOT / "src/test-vectors/vnext/p5-canary-preflight-v1.json"
 )
+P5_OPERATIONS_PREFLIGHT_PROFILE = (
+    ROOT / "src/test-vectors/vnext/p5-operations-preflight-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -2960,6 +2963,241 @@ def validate_vnext_p5_canary_preflight(
     )
 
 
+def validate_vnext_p5_operations_preflight(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(P5_OPERATIONS_PREFLIGHT_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(
+                f"invalid P5-02..P5-06 operations profile JSON: {error}"
+            ) from error
+    if (
+        profile.get("format") != "onebrain/p5-operations-preflight/1"
+        or profile.get("profile_id") != "P5_OPERATIONS_PREFLIGHT_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("P5-02..P5-06 operations profile identity drift")
+
+    if profile.get("scope") != {
+        "host_count": 1,
+        "uses_authenticated_real_quic": True,
+        "consumes_pre_release_72h_evidence": False,
+        "multi_host_canary_qualifying": False,
+        "production_canary_qualifying": False,
+    }:
+        raise ContractError("P5-02..P5-06 operations scope drift")
+
+    expected_faults = [
+        "session-signer-unavailable-before-durable-side-effect",
+        "storage-hard-watermark-rejects-payload",
+        "slow-authenticated-peer-does-not-block-healthy-peer",
+    ]
+    expected_fault_exit = [
+        "zero-signer-outage-durable-files",
+        "rejected-storage-reason-visible",
+        "zero-durable-feed-branch-under-disk-pressure",
+        "healthy-peer-progress-within-5000ms",
+        "zero-active-session-after-quiescence",
+        "no-wallet-obt-authority-or-completion-amplification",
+    ]
+    fault_drills = profile.get("p5_02_fault_drills")
+    if not isinstance(fault_drills, dict):
+        raise ContractError("P5-02 fault drill contract missing")
+    if fault_drills.get("faults") != expected_faults:
+        raise ContractError("P5-02 fault drill drift")
+    if fault_drills.get("exit_oracles") != expected_fault_exit:
+        raise ContractError("P5-02 exit oracle drift")
+
+    expected_durable_files = [
+        "vnext_identity.key",
+        "vnext_verified.redb",
+        "vnext_reconciliation.redb",
+        "vnext_inventory.redb",
+        "vnext_record_provenance.redb",
+        "vnext_outbox.redb",
+        "vnext_operational_compaction.redb",
+    ]
+    expected_integrity = [
+        "sorted-relative-path-manifest",
+        "per-file-length-and-blake3",
+        "domain-separated-aggregate-root",
+        "fsync-each-copied-file",
+        "reject-symlink-and-non-regular-entry",
+        "corruption-fails-before-restore-target-creation",
+    ]
+    expected_restore_exit = [
+        "principal-preserved",
+        "one-raw-feed-branch-preserved",
+        "journal-bytes-preserved",
+        "pending-outbox-preserved",
+        "quarantine-and-provenance-preserved",
+        "operational-root-preserved",
+    ]
+    backup = profile.get("p5_03_backup_restore")
+    if not isinstance(backup, dict):
+        raise ContractError("P5-03 backup/restore contract missing")
+    if backup.get("archive_profile") != "onebrain/p5-offline-backup/1":
+        raise ContractError("P5-03 archive profile drift")
+    if backup.get("required_durable_files") != expected_durable_files:
+        raise ContractError("P5-03 durable file set drift")
+    if backup.get("integrity") != expected_integrity:
+        raise ContractError("P5-03 integrity gate drift")
+    if backup.get("restore_oracles") != expected_restore_exit:
+        raise ContractError("P5-03 restore oracle drift")
+
+    expected_lanes = [
+        "network",
+        "distributed_kql_one_hop",
+        "public_use_evidence_publish",
+        "distributed_pomv_view",
+    ]
+    expected_rollback_sequence = [
+        "run",
+        "atomic-rollback",
+        "network-fenced",
+        "shutdown",
+        "durable-state-inspection",
+        "restart-with-stale-enabled-config",
+        "explicit-reenable-each-lane",
+        "authenticated-real-quic-reconnect",
+    ]
+    expected_preserved = [
+        "principal",
+        "raw-feed",
+        "journal",
+        "pending-outbox",
+        "quarantine",
+        "operational-root",
+    ]
+    rollback = profile.get("p5_04_rollback_reenable")
+    if not isinstance(rollback, dict):
+        raise ContractError("P5-04 rollback/re-enable contract missing")
+    if rollback.get("lanes") != expected_lanes:
+        raise ContractError("P5-04 lane set drift")
+    if rollback.get("sequence") != expected_rollback_sequence:
+        raise ContractError("P5-04 rollback sequence drift")
+    if rollback.get("preserved") != expected_preserved:
+        raise ContractError("P5-04 preservation oracle drift")
+
+    expected_rollout = {
+        "default_feature_flag_count": 12,
+        "runtime_lane_count": 4,
+        "stale_config_may_enable": False,
+        "explicit_generation_advancing_reenable_required": True,
+        "default_config_effective_lanes_after_reopen": 0,
+        "local_kql_round_trip_with_network_off": True,
+    }
+    if profile.get("p5_05_default_off_rollout") != expected_rollout:
+        raise ContractError("P5-05 default-off rollout drift")
+
+    expected_signals = [
+        "startup-phase-count",
+        "signer-health",
+        "registry-health",
+        "lane-generation-and-state",
+        "authenticated-route-and-session-count",
+        "journal-count",
+        "outbox-count-and-age",
+        "quarantine-and-provenance-count",
+        "storage-bytes-and-pressure",
+        "finite-incident-and-action-codes",
+    ]
+    expected_incidents = [
+        "SIGNER_UNAVAILABLE",
+        "REGISTRY_CORRUPT",
+        "STORAGE_SOFT_WATERMARK",
+        "STORAGE_REJECTED",
+        "PENDING_OUTBOX",
+        "RETRY_EXHAUSTED_OUTBOX",
+        "ACTIVE_JOURNAL",
+        "QUARANTINE_PRESENT",
+        "LANE_FENCED",
+        "ROLLBACK_ACTIVE",
+    ]
+    dashboard = profile.get("p5_06_operator_dashboard")
+    if not isinstance(dashboard, dict):
+        raise ContractError("P5-06 operator dashboard contract missing")
+    if dashboard.get("profile") != "onebrain/p5-operator-dashboard/1":
+        raise ContractError("P5-06 dashboard profile drift")
+    if dashboard.get("signals") != expected_signals:
+        raise ContractError("P5-06 signal set drift")
+    if dashboard.get("incident_codes") != expected_incidents:
+        raise ContractError("P5-06 incident code drift")
+    if dashboard.get("privacy") != {
+        "contains_node_id": False,
+        "contains_selector": False,
+        "contains_private_need": False,
+        "contains_free_form_label": False,
+    }:
+        raise ContractError("P5-06 privacy boundary drift")
+
+    expected_external_gates = [
+        "pinned-pre-release-72h-artifact",
+        "multi-host-production-canary",
+        "operator-approved-production-rollout",
+    ]
+    if profile.get("remaining_external_gates") != expected_external_gates:
+        raise ContractError("P5-02..P5-06 external gate drift")
+
+    source = read(ROOT / "src/onebrain-node/src/vnext_p5_operations.rs")
+    for needle in (
+        'pub const P5_OPERATIONS_PREFLIGHT_PROFILE: &str = "onebrain/p5-operations-preflight/1"',
+        "pub async fn run_p5_operations_preflight(",
+        "start_canary_harness(",
+        "VNextReasonCode::RejectedStorage",
+        "create_offline_backup(",
+        "restore_offline_backup(",
+        "corrupt_archive_failed_before_restore",
+        "rollback_runtime()",
+        "local_kql_round_trip_with_network_off",
+        "pub fn build_operator_dashboard(",
+        "production_canary_qualified: false",
+        "p5_02_through_p5_06_operational_preflight_passes_without_72h",
+    ):
+        if needle not in source:
+            raise ContractError(
+                f"P5-02..P5-06 implementation evidence missing: {needle}"
+            )
+
+    network_source = read(ROOT / "src/onebrain-node/src/vnext_network_runtime.rs")
+    if "pub(crate) async fn start_canary_harness(" not in network_source:
+        raise ContractError("P5 operations gated network harness missing")
+
+    cargo = read(ROOT / "src/onebrain-node/Cargo.toml")
+    for needle in (
+        'name = "p5_operations_preflight"',
+        'required-features = ["vnext-canary-harness"]',
+        'vnext-canary-harness = ["vnext-network-runtime"]',
+    ):
+        if needle not in cargo:
+            raise ContractError(f"P5 operations Cargo gate missing: {needle}")
+
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    for needle in (
+        "python -m unittest scripts.ci.test_validate_vnext_p5_operations_preflight",
+        "- name: P5.2-P5.6 operational fault backup rollback and dashboard preflight",
+        "--example p5_operations_preflight",
+    ):
+        if needle not in workflow:
+            raise ContractError(f"P5 operations PR acceptance gate missing: {needle}")
+
+    spec = read(VNEXT / "P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md")
+    if "p5-operations-preflight-v1.json" not in spec:
+        raise ContractError("P5 operations profile is not linked to machine contract")
+
+    return (
+        len(expected_faults),
+        len(expected_durable_files),
+        len(expected_lanes),
+        expected_rollout["default_feature_flag_count"],
+        len(expected_signals),
+        len(expected_incidents),
+        len(expected_external_gates),
+    )
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -3104,6 +3342,15 @@ def main() -> int:
             p5_fault_drills,
             p5_exit_oracles,
         ) = validate_vnext_p5_canary_preflight()
+        (
+            p5_operations_faults,
+            p5_durable_files,
+            p5_rollout_lanes,
+            p5_feature_flags,
+            p5_dashboard_signals,
+            p5_incident_codes,
+            p5_external_gates,
+        ) = validate_vnext_p5_operations_preflight()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -3143,6 +3390,10 @@ def main() -> int:
         f"{p5_canary_nodes} P5-01 nodes/{p5_ring_deliveries} ring deliveries/"
         f"{p5_route_observations} route observations/{p5_fault_drills} fault drills/"
         f"{p5_exit_oracles} exit oracles, "
+        f"{p5_operations_faults} P5-02 faults/{p5_durable_files} P5-03 durable files/"
+        f"{p5_rollout_lanes} P5-04 lanes/{p5_feature_flags} P5-05 default-off flags/"
+        f"{p5_dashboard_signals} P5-06 signals/{p5_incident_codes} incident codes/"
+        f"{p5_external_gates} external gates, "
         f"{links} local links"
     )
     return 0

@@ -284,7 +284,7 @@ async fn bind_old_route(addr: SocketAddr) -> Result<UdpSocket, P5CanaryPreflight
     }
 }
 
-async fn send_feed(
+pub(crate) async fn send_feed(
     sender: &VNextNetworkRuntime,
     receiver: &VNextNetworkRuntime,
     marker: u8,
@@ -342,7 +342,7 @@ async fn wait_for_feed_acceptance(
     .map_err(|_| P5CanaryPreflightError::Timeout("durable feed acceptance"))?
 }
 
-async fn wait_for_no_active_sessions(
+pub(crate) async fn wait_for_no_active_sessions(
     runtime: &VNextNetworkRuntime,
 ) -> Result<(), P5CanaryPreflightError> {
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -363,7 +363,7 @@ async fn wait_for_no_active_sessions(
     .map_err(|_| P5CanaryPreflightError::Timeout("active session quiescence"))
 }
 
-fn signed_feed(marker: u8) -> Result<(FeedId, Vec<u8>), P5CanaryPreflightError> {
+pub(crate) fn signed_feed(marker: u8) -> Result<(FeedId, Vec<u8>), P5CanaryPreflightError> {
     let key = SigningKey::from_bytes(&[marker; 32]);
     let namespace = NamespaceCommitment::derive(
         b"onebrain:p5:canary-preflight:feed:1",
@@ -383,7 +383,7 @@ fn signed_feed(marker: u8) -> Result<(FeedId, Vec<u8>), P5CanaryPreflightError> 
     Ok((feed_id, bytes))
 }
 
-fn canary_context(session_id: [u8; 32], marker: u8) -> ReconciliationContext {
+pub(crate) fn canary_context(session_id: [u8; 32], marker: u8) -> ReconciliationContext {
     ReconciliationContext {
         authenticated_transcript: session_id,
         selector: SelectorCid::from_bytes([marker; 32]),

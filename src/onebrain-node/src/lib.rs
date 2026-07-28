@@ -42,6 +42,8 @@ pub mod vnext_observability;
 pub mod vnext_operational_compaction;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_outbox;
+#[cfg(feature = "vnext-canary-harness")]
+pub mod vnext_p5_operations;
 pub mod vnext_performance_budgets;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_product_runtime;
@@ -136,6 +138,14 @@ pub use vnext_operational_compaction::{
 pub use vnext_outbox::{
     OutboundAuditTombstone, OutboundCompactionReport, OutboundIntentState, OutboundOutbox,
     OutboundOutboxError, OutboundOutboxStats, OutboundTransferIntent, OutboxEnqueueOutcome,
+};
+#[cfg(feature = "vnext-canary-harness")]
+pub use vnext_p5_operations::{
+    build_operator_dashboard, run_p5_operations_preflight, P5BackupRestoreReport,
+    P5DefaultOffRolloutReport, P5FaultDrillReport, P5OperationsError, P5OperationsPreflightReport,
+    P5OperatorAction, P5OperatorDashboardReport, P5OperatorDashboardSnapshot, P5OperatorIncident,
+    P5OperatorLaneSnapshot, P5RegistryHealth, P5RollbackReenableReport, P5SignerHealth,
+    P5_OPERATIONS_PREFLIGHT_PROFILE, P5_PROTECTED_DURABLE_FILES,
 };
 pub use vnext_performance_budgets::{
     run_performance_budget_suite, PerformanceBudgetReport, PerformanceBudgetV1,

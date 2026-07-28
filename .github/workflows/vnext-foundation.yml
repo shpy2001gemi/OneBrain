@@ -135,6 +135,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_mixed_rollback
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_soak_release
           python -m unittest scripts.ci.test_validate_vnext_p5_canary_preflight
+          python -m unittest scripts.ci.test_validate_vnext_p5_operations_preflight
           python -m unittest scripts.ci.test_validate_vnext_soak_runner_kit
           python -m unittest scripts.ci.test_validate_vnext_macos_soak_runner_kit
           bash -n scripts/runner/onebrain-soak-runner.sh
@@ -249,6 +250,7 @@ jobs:
           onebrain-node/src/lib.rs
           onebrain-node/src/vnext_companion.rs
           onebrain-node/src/vnext_canary_operations.rs
+          onebrain-node/src/vnext_p5_operations.rs
           onebrain-node/src/vnext_local_runtime.rs
           onebrain-node/src/vnext_legacy_migration.rs
           onebrain-node/src/vnext_m5_benchmark.rs
@@ -270,6 +272,7 @@ jobs:
           onebrain-node/examples/dr_m5_fuzz_corpus_smoke.rs
           onebrain-node/examples/dr_m5_soak_release.rs
           onebrain-node/examples/p5_canary_preflight.rs
+          onebrain-node/examples/p5_operations_preflight.rs
           onebrain-node/tests/anti_gravity_reunion.rs
           onebrain-api/src/handlers.rs
           onebrain-api/src/server.rs
@@ -707,6 +710,17 @@ jobs:
           --example p5_canary_preflight --
           --data-dir "${RUNNER_TEMP}/onebrain-p5-01-ci"
           --output "${RUNNER_TEMP}/onebrain-p5-01-ci-report.json"
+      - name: P5.2-P5.6 operational fault backup rollback and dashboard preflight
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-canary-harness
+          --lib vnext_p5_operations
+          -- --test-threads=1
+          && cargo run --locked --release -p onebrain-node
+          --features vnext-canary-harness
+          --example p5_operations_preflight --
+          --data-dir "${RUNNER_TEMP}/onebrain-p5-operations-ci"
+          --output "${RUNNER_TEMP}/onebrain-p5-operations-ci-report.json"
       - name: P3.1 authenticated REST API contract and real-runtime flow
         run: >-
           cargo test --locked -p onebrain-api

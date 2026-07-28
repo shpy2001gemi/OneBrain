@@ -351,6 +351,35 @@ impl VNextNetworkRuntime {
         .await
     }
 
+    /// Start a bounded canary runtime with an explicit storage watermark and
+    /// optional outbound worker. This is compiled only for the P5 harness so
+    /// production callers cannot bypass the product-owned startup path.
+    #[cfg(feature = "vnext-canary-harness")]
+    pub(crate) async fn start_canary_harness(
+        data_dir: &Path,
+        bind_addr: SocketAddr,
+        policy: VNextNetworkPolicy,
+        continuous_outbound: bool,
+        storage_hard_watermark_bytes: u64,
+    ) -> Result<Self, VNextNetworkRuntimeError> {
+        policy
+            .validate()
+            .map_err(|error| VNextNetworkRuntimeError::Config(error.to_string()))?;
+        let identity = prepare_vnext_identity(data_dir, None)?;
+        std::fs::create_dir_all(data_dir)?;
+        Self::start_initialized(
+            data_dir,
+            bind_addr,
+            policy,
+            continuous_outbound,
+            storage_hard_watermark_bytes,
+            identity.signer,
+            identity.public_key,
+            None,
+        )
+        .await
+    }
+
     pub(crate) async fn start_prepared(
         data_dir: &Path,
         bind_addr: SocketAddr,
