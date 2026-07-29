@@ -266,6 +266,25 @@ abstract final class ObmDesignTokens {
     },
   };
 
+  static const Map<String, List<String>> fontFamilies = <String, List<String>>{
+    'ui': <String>['Nunito Sans', 'Noto Sans', 'system-ui', 'sans-serif'],
+    'data': <String>['Roboto Mono', 'SFMono-Regular', 'ui-monospace', 'monospace'],
+  };
+
+  static const Map<String, String> typographyFamilies = <String, String>{
+    'display': 'ui',
+    'headlineLarge': 'ui',
+    'headlineMedium': 'ui',
+    'titleLarge': 'ui',
+    'titleMedium': 'ui',
+    'bodyLarge': 'ui',
+    'bodyMedium': 'ui',
+    'labelLarge': 'ui',
+    'labelMedium': 'ui',
+    'caption': 'ui',
+    'data': 'data',
+  };
+
   static const Map<String, Map<String, double>> typography = <String, Map<String, double>>{
     'display': <String, double>{
       'size': 32.0,
@@ -333,6 +352,15 @@ abstract final class ObmDesignTokens {
       'weight': 600.0,
       'letterSpacing': 0.0,
     },
+  };
+
+  static const iconFamily = 'Material Symbols Rounded';
+
+  static const Map<String, double> iconSize = <String, double>{
+    'inline': 20.0,
+    'control': 24.0,
+    'navigation': 28.0,
+    'hero': 32.0,
   };
 
   static const Map<String, List<Color>> gradients =

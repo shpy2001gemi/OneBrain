@@ -149,12 +149,18 @@ abstract final class OneBrainTheme {
 
   static TextStyle _tokenTextStyle(String key, Color color) {
     final token = ObmDesignTokens.typography[key]!;
+    final familyToken = ObmDesignTokens.typographyFamilies[key]!;
+    final family = ObmDesignTokens.fontFamilies[familyToken]!.first;
     return TextStyle(
       color: color,
+      fontFamily: family,
       fontSize: token['size'],
       height: token['lineHeight']! / token['size']!,
       fontWeight: _fontWeight(token['weight']!.round()),
       letterSpacing: token['letterSpacing'],
+      fontFeatures: key == 'data'
+          ? const <FontFeature>[FontFeature.tabularFigures()]
+          : null,
     );
   }
 

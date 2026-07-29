@@ -7,6 +7,7 @@ import '../../design/onebrain_theme_extensions.dart';
 import '../../l10n/app_localizations.dart';
 import '../../platform/mobile_host_gateway.dart';
 import '../shared/obm_button.dart';
+import '../shared/obm_icon.dart';
 import '../shared/obm_node_fact_card.dart';
 import '../shared/obm_screen_frame.dart';
 
@@ -57,7 +58,7 @@ class WelcomeScreen extends ConsumerWidget {
             ObmNodeFactCard(
               title: strings.nodeFactTitle,
               body: strings.nodeFactBody,
-              icon: Icons.hub_outlined,
+              icon: ObmSymbol.hub,
               tone: ObmStatusTone.pausedPrivate,
               statusLabel: strings.statusPrivate,
             ),
@@ -65,7 +66,7 @@ class WelcomeScreen extends ConsumerWidget {
             ObmNodeFactCard(
               title: strings.registryFactTitle,
               body: strings.registryFactBody,
-              icon: Icons.cloud_download_outlined,
+              icon: ObmSymbol.cloudDownload,
               tone: ObmStatusTone.waiting,
               statusLabel: strings.statusWaiting,
             ),
@@ -73,7 +74,7 @@ class WelcomeScreen extends ConsumerWidget {
             ObmNodeFactCard(
               title: strings.requestFactTitle,
               body: strings.requestFactBody,
-              icon: Icons.wifi_off_outlined,
+              icon: ObmSymbol.wifiOff,
               tone: ObmStatusTone.ready,
               statusLabel: strings.statusReady,
             ),
@@ -82,13 +83,13 @@ class WelcomeScreen extends ConsumerWidget {
               loading: () => ObmNodeFactCard(
                 title: strings.nativeHostTitle,
                 body: strings.nativeHostLoading,
-                icon: Icons.phone_android_outlined,
+                icon: ObmSymbol.phoneAndroid,
                 tone: ObmStatusTone.waiting,
               ),
               error: (error, stackTrace) => ObmNodeFactCard(
                 title: strings.nativeHostTitle,
                 body: strings.nativeHostUnavailable,
-                icon: Icons.phonelink_erase_outlined,
+                icon: ObmSymbol.phonelinkErase,
                 tone: ObmStatusTone.offlineUnavailable,
               ),
               data: (snapshot) => ObmNodeFactCard(
@@ -97,7 +98,7 @@ class WelcomeScreen extends ConsumerWidget {
                   snapshot.platform,
                   snapshot.apiVersion,
                 ),
-                icon: Icons.phone_android_outlined,
+                icon: ObmSymbol.phoneAndroid,
                 tone: snapshot.registryRequestIssued
                     ? ObmStatusTone.failed
                     : ObmStatusTone.ready,
@@ -108,13 +109,13 @@ class WelcomeScreen extends ConsumerWidget {
               loading: () => ObmNodeFactCard(
                 title: strings.rustBridgeTitle,
                 body: strings.rustBridgeLoading,
-                icon: Icons.memory_outlined,
+                icon: ObmSymbol.memory,
                 tone: ObmStatusTone.waiting,
               ),
               error: (error, stackTrace) => ObmNodeFactCard(
                 title: strings.rustBridgeTitle,
                 body: strings.rustBridgeUnavailable,
-                icon: Icons.memory_outlined,
+                icon: ObmSymbol.memory,
                 tone: ObmStatusTone.offlineUnavailable,
               ),
               data: (snapshot) {
@@ -130,7 +131,7 @@ class WelcomeScreen extends ConsumerWidget {
                           snapshot.rustAbiVersion,
                         )
                       : strings.rustBridgeUnavailable,
-                  icon: Icons.memory_outlined,
+                  icon: ObmSymbol.memory,
                   tone: verified
                       ? ObmStatusTone.ready
                       : ObmStatusTone.offlineUnavailable,

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../design/onebrain_theme_extensions.dart';
 import '../../l10n/app_localizations.dart';
 import '../shared/obm_button.dart';
+import '../shared/obm_icon.dart';
 import '../shared/obm_node_fact_card.dart';
 import '../shared/obm_screen_frame.dart';
 import '../shared/obm_status_badge.dart';
@@ -19,7 +20,7 @@ class ComponentGalleryScreen extends StatelessWidget {
       leading: IconButton(
         tooltip: strings.backAction,
         onPressed: context.pop,
-        icon: const Icon(Icons.arrow_back),
+        icon: const ObmIcon(ObmSymbol.arrowBack),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -65,7 +66,7 @@ class ComponentGalleryScreen extends StatelessWidget {
           ObmNodeFactCard(
             title: strings.nodeFactTitle,
             body: strings.nodeFactBody,
-            icon: Icons.hub_outlined,
+            icon: ObmSymbol.hub,
             tone: ObmStatusTone.information,
           ),
         ],

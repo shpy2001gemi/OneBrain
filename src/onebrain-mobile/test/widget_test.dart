@@ -71,6 +71,33 @@ void main() {
     expect(theme.extension<OneBrainDataStyle>(), isNotNull);
     expect(theme.extension<OneBrainLayout>(), isNotNull);
   });
+
+  testWidgets('reduced motion resolves all semantic durations to zero', (
+    tester,
+  ) async {
+    late OneBrainMotion resolved;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OneBrainTheme.light,
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: Builder(
+            builder: (context) {
+              resolved = context.motion;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+
+    expect(resolved.instant, Duration.zero);
+    expect(resolved.press, Duration.zero);
+    expect(resolved.micro, Duration.zero);
+    expect(resolved.standard, Duration.zero);
+    expect(resolved.emphasized, Duration.zero);
+    expect(resolved.long, Duration.zero);
+  });
 }
 
 Widget _testApp() => ProviderScope(

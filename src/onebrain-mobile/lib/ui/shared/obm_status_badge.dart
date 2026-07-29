@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design/onebrain_theme_extensions.dart';
+import 'obm_icon.dart';
 
 class ObmStatusBadge extends StatelessWidget {
   const ObmStatusBadge({required this.label, required this.tone, super.key});
@@ -27,7 +28,7 @@ class ObmStatusBadge extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(_icon, color: palette.content),
+              ObmIcon(_icon, size: ObmIconSize.inline, color: palette.content),
               SizedBox(width: context.spacing.sm),
               Flexible(
                 child: Text(
@@ -44,13 +45,13 @@ class ObmStatusBadge extends StatelessWidget {
     );
   }
 
-  IconData get _icon => switch (tone) {
-    ObmStatusTone.ready => Icons.check_circle_outline,
-    ObmStatusTone.information => Icons.info_outline,
-    ObmStatusTone.waiting => Icons.schedule,
-    ObmStatusTone.pausedPrivate => Icons.shield_outlined,
-    ObmStatusTone.degraded => Icons.build_circle_outlined,
-    ObmStatusTone.failed => Icons.cancel_outlined,
-    ObmStatusTone.offlineUnavailable => Icons.cloud_off_outlined,
+  ObmSymbol get _icon => switch (tone) {
+    ObmStatusTone.ready => ObmSymbol.checkCircle,
+    ObmStatusTone.information => ObmSymbol.info,
+    ObmStatusTone.waiting => ObmSymbol.schedule,
+    ObmStatusTone.pausedPrivate => ObmSymbol.shield,
+    ObmStatusTone.degraded => ObmSymbol.buildCircle,
+    ObmStatusTone.failed => ObmSymbol.cancel,
+    ObmStatusTone.offlineUnavailable => ObmSymbol.cloudOff,
   };
 }

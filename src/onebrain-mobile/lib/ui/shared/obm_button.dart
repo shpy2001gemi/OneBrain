@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design/onebrain_theme_extensions.dart';
+import 'obm_icon.dart';
 
 enum ObmButtonVariant { primary, tonal, outline, text, destructive }
 
@@ -18,7 +19,7 @@ class ObmButton extends StatelessWidget {
   final String label;
   final VoidCallback? onPressed;
   final ObmButtonVariant variant;
-  final IconData? leadingIcon;
+  final ObmSymbol? leadingIcon;
   final bool busy;
   final String? disabledReason;
 
@@ -35,7 +36,7 @@ class ObmButton extends StatelessWidget {
             child: const CircularProgressIndicator(),
           )
         else if (leadingIcon != null)
-          Icon(leadingIcon),
+          ObmIcon(leadingIcon!),
         if (busy || leadingIcon != null) SizedBox(width: context.spacing.sm),
         Flexible(child: Text(label)),
       ],

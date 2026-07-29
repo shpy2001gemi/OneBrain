@@ -57,6 +57,8 @@ The checked-in app now includes:
 - generated semantic tokens and Material 3 theme extensions;
 - shared catalog widgets instead of screen-local controls;
 - generated English/Vietnamese localization;
+- pinned offline Nunito Sans, Roboto Mono and Material Symbols Rounded assets
+  with license/hash verification;
 - `go_router` entry/onboarding routes;
 - Riverpod-owned async presentation state;
 - one Pigeon schema that generates Dart, Kotlin and Swift host APIs with an
@@ -72,6 +74,19 @@ See [`PACKAGE_POLICY.md`](./PACKAGE_POLICY.md) for the package-first and
 shared-widget contract, and [`RUST_BRIDGE.md`](./RUST_BRIDGE.md) for ABI,
 thread-ownership, build and fallback details.
 
+The current automated evidence additionally covers:
+
+- eight Windows goldens spanning light/dark, high contrast, English/Vietnamese,
+  200% text, reduced motion and compact/large/expanded layouts;
+- Android 16 integration of async `started`, `cancelled` and `completed`
+  events, idempotent cancellation, and the bounded `HOST_INVALID_DELAY` error;
+- a release APK without Registry/model payloads and without Android network
+  permission;
+- static Dart/Kotlin/Swift/Rust bootstrap isolation from transport APIs.
+
+These are MOB-01 feasibility gates. They do not authorize Registry Init,
+background seeding or a product network lane.
+
 ## Generate and test
 
 From `src/onebrain-mobile`:
@@ -86,12 +101,19 @@ dart run tool/generate_design_tokens.dart
 dart run pigeon --input pigeons/mobile_host_api.dart
 python tool/normalize_generated_sources.py
 flutter gen-l10n
+python tool/verify_font_assets.py
+python tool/verify_bootstrap_source_isolation.py
 dart format lib/app lib/design/onebrain_theme.dart
 dart format lib/design/onebrain_theme_extensions.dart lib/main.dart
 dart format lib/platform/mobile_host_gateway.dart lib/ui test tool pigeons
 flutter analyze
-flutter test
+flutter test --exclude-tags golden
+flutter test test/golden_test.dart
 flutter build apk --debug
+flutter test integration_test/native_host_bridge_test.dart -d emulator-5554
+python tool/build_rust_android.py --release
+flutter build apk --release --target-platform android-arm64,android-x64
+python tool/inspect_android_permissions.py build/app/outputs/flutter-apk/app-release.apk
 ```
 
 On macOS, run `bash tool/build_rust_ios.sh` before the Flutter iOS build. iOS

@@ -26,9 +26,9 @@ concurrency:
 
 jobs:
   android:
-    name: Flutter tests and Android debug package
+    name: Flutter tests, native bridge and Android packages
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     defaults:
       run:
         working-directory: src/onebrain-mobile
@@ -45,6 +45,10 @@ jobs:
           cache: true
       - name: Resolve packages
         run: flutter pub get
+      - name: Verify pinned font and rounded-icon assets
+        run: python tool/verify_font_assets.py
+      - name: Verify BootstrapOnly source isolation
+        run: python tool/verify_bootstrap_source_isolation.py
       - name: Install pinned Rust mobile build tools
         run: |
           cargo install cargo-ndk --version 4.1.2 --locked
@@ -77,18 +81,64 @@ jobs:
       - name: Analyze
         run: flutter analyze
       - name: Test
-        run: flutter test
+        run: flutter test --exclude-tags golden
       - name: Build Android debug APK
         run: flutter build apk --debug
       - name: Reject bundled Registry and model payloads
         run: >-
           python tool/scan_mobile_package.py
           build/app/outputs/flutter-apk/app-debug.apk
+      - name: Enable KVM for Android integration tests
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Exercise typed host bridge on Android 16
+        uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          working-directory: src/onebrain-mobile
+          script: flutter test integration_test/native_host_bridge_test.dart -d emulator-5554
+      - name: Build BootstrapOnly Android release APK
+        run: |
+          python tool/build_rust_android.py --release
+          flutter build apk --release --target-platform android-arm64,android-x64
+      - name: Prove release has no Registry payload or network capability
+        run: |
+          python tool/scan_mobile_package.py \
+            build/app/outputs/flutter-apk/app-release.apk
+          python tool/inspect_android_permissions.py \
+            build/app/outputs/flutter-apk/app-release.apk
       - name: Validate owner-approved mobile contracts
         working-directory: ${{ github.workspace }}
         run: |
           python scripts/ci/validate_mobile_build_contracts.py
           python -m unittest scripts.ci.test_validate_mobile_build_contracts
+
+  goldens:
+    name: Windows design-system goldens
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: src/onebrain-mobile
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.5"
+          channel: stable
+          cache: true
+      - name: Resolve packages
+        run: flutter pub get
+      - name: Verify pinned assets
+        run: python tool/verify_font_assets.py
+      - name: Compare design-system golden matrix
+        run: flutter test test/golden_test.dart
 
   ios:
     name: iOS simulator compile

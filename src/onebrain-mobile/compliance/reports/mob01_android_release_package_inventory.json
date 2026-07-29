@@ -1,0 +1,62 @@
+{
+  "entry_count": 74,
+  "forbidden_payload_count": 0,
+  "format": "onebrain.mobile.package-inventory/1",
+  "generated_at": "2026-07-29T15:43:47.171509+00:00",
+  "largest_entries": [
+    {
+      "compressed_bytes": 6567772,
+      "path": "assets/flutter_assets/assets/fonts/MaterialSymbolsRounded-Variable.ttf",
+      "uncompressed_bytes": 15073992
+    },
+    {
+      "compressed_bytes": 12564656,
+      "path": "lib/x86_64/libflutter.so",
+      "uncompressed_bytes": 12564656
+    },
+    {
+      "compressed_bytes": 11317824,
+      "path": "lib/arm64-v8a/libflutter.so",
+      "uncompressed_bytes": 11317824
+    },
+    {
+      "compressed_bytes": 4981680,
+      "path": "lib/x86_64/libapp.so",
+      "uncompressed_bytes": 4981680
+    },
+    {
+      "compressed_bytes": 4850608,
+      "path": "lib/arm64-v8a/libapp.so",
+      "uncompressed_bytes": 4850608
+    },
+    {
+      "compressed_bytes": 262131,
+      "path": "assets/flutter_assets/assets/fonts/NunitoSans-Variable.ttf",
+      "uncompressed_bytes": 571240
+    },
+    {
+      "compressed_bytes": 242221,
+      "path": "classes.dex",
+      "uncompressed_bytes": 538472
+    },
+    {
+      "compressed_bytes": 535704,
+      "path": "lib/x86_64/libonebrain_mobile_bridge.so",
+      "uncompressed_bytes": 535704
+    },
+    {
+      "compressed_bytes": 483304,
+      "path": "lib/arm64-v8a/libonebrain_mobile_bridge.so",
+      "uncompressed_bytes": 483304
+    },
+    {
+      "compressed_bytes": 128960,
+      "path": "assets/flutter_assets/assets/fonts/RobotoMono-Variable.ttf",
+      "uncompressed_bytes": 183700
+    }
+  ],
+  "package": "app-release.apk",
+  "package_bytes": 42154502,
+  "package_sha256": "d3288936f5740fb5f4064ce4619118b7eda95e5f5d1acdc2d30039240006f794",
+  "violations": []
+}

@@ -1,0 +1,42 @@
+{
+  "format": "onebrain.mobile.font-assets/1",
+  "source_date": "2026-07-29",
+  "assets": [
+    {
+      "family": "Nunito Sans",
+      "asset": "assets/fonts/NunitoSans-Variable.ttf",
+      "source_repository": "https://github.com/google/fonts",
+      "source_commit": "7ff85c87f93ea6cca5f41c69f2e4edcb90240f26",
+      "source_path": "ofl/nunitosans/NunitoSans[YTLC,opsz,wdth,wght].ttf",
+      "sha256": "f934d7142fb4784bf828da485b7dcbd90c0c80d514e9d49a5da0ed3a1ae2491d",
+      "bytes": 571240,
+      "license": "SIL Open Font License 1.1",
+      "license_asset": "assets/licenses/NunitoSans-OFL.txt",
+      "license_sha256": "efbb0c9e864cef973982d9a17567e6be5c3d1759695574586f3f18c7ecca064b"
+    },
+    {
+      "family": "Roboto Mono",
+      "asset": "assets/fonts/RobotoMono-Variable.ttf",
+      "source_repository": "https://github.com/google/fonts",
+      "source_commit": "7ff85c87f93ea6cca5f41c69f2e4edcb90240f26",
+      "source_path": "ofl/robotomono/RobotoMono[wght].ttf",
+      "sha256": "66a80e79d17e4c7cabd162e2916578a4cc08fd19eef6e2a643305eae9c567b2b",
+      "bytes": 183700,
+      "license": "SIL Open Font License 1.1",
+      "license_asset": "assets/licenses/RobotoMono-OFL.txt",
+      "license_sha256": "50ab8dd54680d3473f649c9db86fece88434d097c7834475c1c72d2f8c429215"
+    },
+    {
+      "family": "Material Symbols Rounded",
+      "asset": "assets/fonts/MaterialSymbolsRounded-Variable.ttf",
+      "source_repository": "https://github.com/google/material-design-icons",
+      "source_commit": "528cb964c01fb2b09bc3b9208f82b6d8f8c1c1e2",
+      "source_path": "variablefont/MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf",
+      "sha256": "8817f9df195b582d45a6031c1d9e1533595dd7a6f0e76abc309bdc3cc4d72ee1",
+      "bytes": 15073992,
+      "license": "Apache License 2.0",
+      "license_asset": "assets/licenses/MaterialSymbolsRounded-Apache-2.0.txt",
+      "license_sha256": "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd"
+    }
+  ]
+}

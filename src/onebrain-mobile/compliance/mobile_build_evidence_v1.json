@@ -68,9 +68,39 @@
       "id": "MOB-01-ANDROID-COLD-START",
       "path": "src/onebrain-mobile/compliance/reports/mob01_android_debug_cold_start.json",
       "proves": "ADB ActivityManager provided a repeatable five-sample Android 16 debug-emulator cold-start feasibility baseline, explicitly not a release SLO."
+    },
+    {
+      "id": "MOB-01-DESIGN-GOLDENS",
+      "path": "src/onebrain-mobile/test/golden_test.dart",
+      "proves": "Eight checked-in design-system goldens cover light, dark, high contrast, English, Vietnamese, 200 percent text, reduced motion and compact, large and expanded layouts."
+    },
+    {
+      "id": "MOB-01-OFFLINE-FONT-ASSETS",
+      "path": "src/onebrain-mobile/assets/font_asset_manifest_v1.json",
+      "proves": "Nunito Sans, Roboto Mono and Material Symbols Rounded are bundled with pinned upstream commits, byte sizes, SHA-256 values and license assets."
+    },
+    {
+      "id": "MOB-01-ANDROID-NATIVE-INTEGRATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob01_android_native_bridge_integration.json",
+      "proves": "Android 16 exercised the real Pigeon/Kotlin/JNI/Rust snapshot plus started, cancelled and completed events, idempotent cancellation and bounded HOST_INVALID_DELAY error."
+    },
+    {
+      "id": "MOB-01-BOOTSTRAP-SOURCE-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob01_bootstrap_source_isolation.json",
+      "proves": "Static inspection found zero forbidden Dart, Kotlin, Swift or Rust transport references in the BootstrapOnly slice."
+    },
+    {
+      "id": "MOB-01-ANDROID-RELEASE-PERMISSIONS",
+      "path": "src/onebrain-mobile/compliance/reports/mob01_android_release_permissions.json",
+      "proves": "The BootstrapOnly Android release APK has no INTERNET, Wi-Fi, nearby, Bluetooth or network-state capability."
+    },
+    {
+      "id": "MOB-01-ANDROID-RELEASE-INVENTORY",
+      "path": "src/onebrain-mobile/compliance/reports/mob01_android_release_package_inventory.json",
+      "proves": "The arm64/x86_64 release APK contains no prohibited Registry, database, index, model or archive payload."
     }
   ],
   "deviations": [],
   "last_reviewed": "2026-07-29",
-  "notes": "MOB-01 foundation now includes a bounded Rust C ABI/JNI feasibility bridge, Android arm64/x86_64 cross-compilation, generated cbindgen header, and runtime typed round-trip evidence. Authority hashing is UTF-8/LF canonicalized so the same reviewed source validates on Windows, macOS and Linux. This phase makes no ReadyOffline, Registry, CORE-runtime, or product-readiness claim."
+  "notes": "MOB-01 foundation now includes a bounded Rust C ABI/JNI feasibility bridge, Android arm64/x86_64 cross-compilation, generated cbindgen header, runtime async/event/cancel/error evidence, pinned offline typography/icon assets, a multi-mode golden matrix, and BootstrapOnly source/package/permission isolation. Authority hashing is UTF-8/LF canonicalized so the same reviewed source validates on Windows, macOS and Linux. Physical Android and iOS device launch remain required before MOB-01 exit. This phase makes no ReadyOffline, Registry, CORE-runtime, or product-readiness claim."
 }

@@ -21,7 +21,9 @@ String _render(Map<String, Object?> root) {
   final status = _map(color, 'status');
   final gradient = _map(color, 'gradient');
   final typography = _map(root, 'typography');
+  final fontFamily = _map(typography, 'fontFamily');
   final style = _map(typography, 'style');
+  final icon = _map(root, 'icon');
   final buffer = StringBuffer()
     ..writeln('// GENERATED CODE - DO NOT MODIFY BY HAND.')
     ..writeln('// Source: mobile_design_tokens_v1.json')
@@ -60,7 +62,22 @@ String _render(Map<String, Object?> root) {
     _map(_map(root, 'layout'), 'maxWidth'),
   );
   _writeNestedNumberMap(buffer, 'componentMetrics', _map(root, 'component'));
+  _writeStringListMap(buffer, 'fontFamilies', fontFamily);
+  _writeStringMap(
+    buffer,
+    'typographyFamilies',
+    style.map(
+      (key, value) => MapEntry(
+        key,
+        ((value as Map).cast<String, Object?>()['family'] as String),
+      ),
+    ),
+  );
   _writeTextStyleMap(buffer, style);
+  buffer
+    ..writeln()
+    ..writeln("  static const iconFamily = '${icon['family']}';");
+  _writeNumberMap(buffer, 'iconSize', _map(icon, 'size'));
   _writeGradientMap(buffer, gradient);
   for (final appearance in <String>['light', 'dark']) {
     final states = _map(status, appearance);
@@ -79,6 +96,41 @@ String _render(Map<String, Object?> root) {
   }
   buffer.writeln('}');
   return buffer.toString();
+}
+
+void _writeStringMap(
+  StringBuffer buffer,
+  String name,
+  Map<String, String> values,
+) {
+  buffer
+    ..writeln()
+    ..writeln('  static const Map<String, String> $name = <String, String>{');
+  for (final entry in values.entries) {
+    buffer.writeln("    '${entry.key}': '${entry.value}',");
+  }
+  buffer.writeln('  };');
+}
+
+void _writeStringListMap(
+  StringBuffer buffer,
+  String name,
+  Map<String, Object?> values,
+) {
+  buffer
+    ..writeln()
+    ..writeln(
+      '  static const Map<String, List<String>> $name = '
+      '<String, List<String>>{',
+    );
+  for (final entry in values.entries) {
+    final families = (entry.value as List).cast<String>();
+    buffer.writeln(
+      "    '${entry.key}': <String>["
+      "${families.map((family) => "'$family'").join(', ')}],",
+    );
+  }
+  buffer.writeln('  };');
 }
 
 Map<String, Object?> _map(Map<String, Object?> parent, String key) =>

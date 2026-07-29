@@ -196,6 +196,15 @@ class OneBrainMotion extends ThemeExtension<OneBrainMotion> {
   final Duration emphasized;
   final Duration long;
 
+  static const reduced = OneBrainMotion(
+    instant: Duration.zero,
+    press: Duration.zero,
+    micro: Duration.zero,
+    standard: Duration.zero,
+    emphasized: Duration.zero,
+    long: Duration.zero,
+  );
+
   @override
   OneBrainMotion copyWith({
     Duration? instant,
@@ -330,7 +339,9 @@ extension OneBrainThemeContext on BuildContext {
   OneBrainGradients get gradients =>
       Theme.of(this).extension<OneBrainGradients>()!;
 
-  OneBrainMotion get motion => Theme.of(this).extension<OneBrainMotion>()!;
+  OneBrainMotion get motion => MediaQuery.disableAnimationsOf(this)
+      ? OneBrainMotion.reduced
+      : Theme.of(this).extension<OneBrainMotion>()!;
 
   OneBrainDataStyle get dataStyle =>
       Theme.of(this).extension<OneBrainDataStyle>()!;

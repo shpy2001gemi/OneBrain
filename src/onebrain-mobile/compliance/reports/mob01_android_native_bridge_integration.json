@@ -1,0 +1,24 @@
+{
+  "format": "onebrain.mobile.integration-evidence/1",
+  "generated_at": "2026-07-29T22:37:00+07:00",
+  "work_package": "MOB-01",
+  "device": {
+    "id": "emulator-5554",
+    "model": "sdk_gphone64_x86_64",
+    "platform": "Android 16",
+    "api_level": 36,
+    "abi": "x86_64"
+  },
+  "command": "flutter test integration_test/native_host_bridge_test.dart -d emulator-5554",
+  "test": "MOB-01 typed host bridge supports async events cancellation and errors",
+  "result": "passed",
+  "assertions": [
+    "Pigeon bootstrap snapshot crossed Kotlin and JNI into Rust ABI revision 1",
+    "registryRequestIssued remained false",
+    "started and cancelled events used the same operation identifier",
+    "cancellation was idempotent",
+    "a short operation emitted started and completed",
+    "a delay over 30000 milliseconds returned HOST_INVALID_DELAY"
+  ],
+  "limitations": "Android emulator feasibility evidence; physical Android and iOS device launch remain MOB-01 exit gates."
+}
