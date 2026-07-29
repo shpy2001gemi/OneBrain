@@ -4,18 +4,35 @@ import '../../design/generated/mobile_design_tokens.g.dart';
 
 enum ObmSymbol {
   arrowBack('arrow_back'),
+  assistant('auto_awesome'),
+  backup('encrypted'),
   buildCircle('build_circle'),
   cancel('cancel'),
+  capture('add_circle'),
   checkCircle('check_circle'),
   cloudDownload('cloud_download'),
   cloudOff('cloud_off'),
+  database('database'),
+  description('description'),
+  editNote('edit_note'),
+  expandMore('expand_more'),
+  folder('folder'),
+  home('home'),
   hub('hub'),
   info('info'),
+  language('language'),
+  library('local_library'),
+  lock('lock'),
   memory('memory'),
+  operations('pending_actions'),
   phoneAndroid('phone_android'),
   phonelinkErase('phonelink_erase'),
   schedule('schedule'),
+  search('search'),
+  settings('settings'),
   shield('shield'),
+  storage('hard_drive'),
+  translate('translate'),
   wifiOff('wifi_off');
 
   const ObmSymbol(this.glyph);
@@ -51,22 +68,28 @@ class ObmIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final logicalSize = ObmDesignTokens.iconSize[size.token]!;
-    final glyph = Text(
-      symbol.glyph,
-      maxLines: 1,
-      overflow: TextOverflow.clip,
-      textScaler: TextScaler.noScaling,
-      style: TextStyle(
-        color: color ?? IconTheme.of(context).color,
-        fontFamily: ObmDesignTokens.iconFamily,
-        fontSize: logicalSize,
-        height: 1,
-        fontVariations: <FontVariation>[
-          const FontVariation('FILL', 0),
-          const FontVariation('GRAD', 0),
-          FontVariation('opsz', logicalSize),
-          const FontVariation('wght', 400),
-        ],
+    final glyph = SizedBox.square(
+      dimension: logicalSize,
+      child: ClipRect(
+        child: Text(
+          symbol.glyph,
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+          textAlign: TextAlign.center,
+          textScaler: TextScaler.noScaling,
+          style: TextStyle(
+            color: color ?? IconTheme.of(context).color,
+            fontFamily: ObmDesignTokens.iconFamily,
+            fontSize: logicalSize,
+            height: 1,
+            fontVariations: <FontVariation>[
+              const FontVariation('FILL', 0),
+              const FontVariation('GRAD', 0),
+              FontVariation('opsz', logicalSize),
+              const FontVariation('wght', 400),
+            ],
+          ),
+        ),
       ),
     );
     if (semanticLabel == null) {

@@ -1,6 +1,6 @@
 [package]
 name = "onebrain-mobile-core"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Autonomous OneBrain mobile runtime profile and bootstrap state"
@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 ed25519-dalek = "2"
-blake3 = "1"
+blake3 = { version = "1", features = ["pure"] }
 chacha20poly1305 = "0.11"
 getrandom = "0.3"
 hex = "0.4"

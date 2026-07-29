@@ -69,9 +69,19 @@ void main() {
       locale: Locale('vi'),
       gallery: true,
     ),
+    const _GoldenCase(
+      name: 'home_limited_compact_light_en',
+      size: Size(360, 800),
+      home: true,
+    ),
+    const _GoldenCase(
+      name: 'capture_text_large_light_en',
+      size: Size(430, 932),
+      textCapture: true,
+    ),
   ];
 
-  group('MOB-03 design-system golden matrix', () {
+  group('MOB-04 design-system golden matrix', () {
     for (final goldenCase in cases) {
       testWidgets(goldenCase.name, (tester) async {
         await _pumpGolden(tester, goldenCase);
@@ -86,7 +96,7 @@ void main() {
   });
 }
 
-const _goldenBoundaryKey = ValueKey<String>('mob02-golden-boundary');
+const _goldenBoundaryKey = ValueKey<String>('mob04-golden-boundary');
 
 Future<void> _pumpGolden(WidgetTester tester, _GoldenCase goldenCase) async {
   tester.view.physicalSize = goldenCase.size;
@@ -138,6 +148,46 @@ Future<void> _pumpGolden(WidgetTester tester, _GoldenCase goldenCase) async {
     await tester.scrollUntilVisible(find.text('Mobile runtime profile'), 240);
     await tester.pumpAndSettle();
   }
+
+  if (goldenCase.home || goldenCase.textCapture) {
+    await _enterLimitedShell(tester, goldenCase.locale);
+  }
+
+  if (goldenCase.textCapture) {
+    final captureAction = goldenCase.locale.languageCode == 'vi'
+        ? 'Ghi văn bản'
+        : 'Capture text';
+    await _tapVisible(tester, captureAction);
+  }
+}
+
+Future<void> _enterLimitedShell(WidgetTester tester, Locale locale) async {
+  final labels = locale.languageCode == 'vi'
+      ? const <String>[
+          'Tiếp tục kiểm tra thiết bị',
+          'Tiếp',
+          'Tiếp',
+          'Tiếp',
+          'Tạm dùng chế độ Giới hạn',
+        ]
+      : const <String>[
+          'Continue to device preflight',
+          'Next',
+          'Next',
+          'Next',
+          'Use Limited mode for now',
+        ];
+  for (final label in labels) {
+    await _tapVisible(tester, label);
+  }
+}
+
+Future<void> _tapVisible(WidgetTester tester, String label) async {
+  final target = find.text(label);
+  await tester.ensureVisible(target);
+  await tester.pumpAndSettle();
+  await tester.tap(target);
+  await tester.pumpAndSettle();
 }
 
 Future<void> _loadFont(String family, String asset) async {
@@ -156,6 +206,8 @@ class _GoldenCase {
     this.reducedMotion = false,
     this.gallery = false,
     this.runtime = false,
+    this.home = false,
+    this.textCapture = false,
   });
 
   final String name;
@@ -167,6 +219,8 @@ class _GoldenCase {
   final bool reducedMotion;
   final bool gallery;
   final bool runtime;
+  final bool home;
+  final bool textCapture;
 }
 
 class _FakeMobileHostGateway implements MobileHostGateway {
@@ -176,18 +230,18 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
       const MobileHostSnapshot(
         platform: 'Android test',
-        apiVersion: '3',
+        apiVersion: '5',
         registryRequestIssued: false,
         rustCoreLinked: true,
         rustCoreVersion: '0.1.0-test',
-        rustAbiVersion: 3,
+        rustAbiVersion: 5,
         rustRoundTripVerified: true,
       );
 
   @override
   Future<MobileRuntimeSnapshot> inspectRuntimeProfile() async =>
       const MobileRuntimeSnapshot(
-        profileVersion: 'MOB-03/1',
+        profileVersion: 'MOB-04/1',
         processGeneration: 1,
         activationPhase: 'Active',
         activeGrantCount: 1,
@@ -206,7 +260,23 @@ class _FakeMobileHostGateway implements MobileHostGateway {
         identityDomainsSeparated: true,
         privacyDefaultsFailSafe: true,
         redactedHistoryReady: true,
+        encryptedRawDraftCount: 0,
+        onboardingCursor: MobileOnboardingCursor.welcome,
       );
+
+  @override
+  Future<void> setOnboardingCursor(MobileOnboardingCursor cursor) async {}
+
+  @override
+  Future<MobileRawDraftReceipt> saveRawTextDraft({
+    required String contentLanguage,
+    required String content,
+  }) async => MobileRawDraftReceipt(
+    draftRef: 'draft_00000000000000000000000000000000',
+    contentLanguage: contentLanguage,
+    contentBytes: content.length,
+    totalDrafts: 1,
+  );
 
   @override
   Future<String> startFeasibilityOperation(Duration delay) async =>

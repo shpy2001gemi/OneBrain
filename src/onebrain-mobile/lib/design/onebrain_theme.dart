@@ -135,17 +135,34 @@ abstract final class OneBrainTheme {
   static TextTheme _textTheme({
     required Color primary,
     required Color secondary,
-  }) => TextTheme(
-    displayLarge: _tokenTextStyle('display', primary),
-    headlineLarge: _tokenTextStyle('headlineLarge', primary),
-    headlineMedium: _tokenTextStyle('headlineMedium', primary),
-    titleLarge: _tokenTextStyle('titleLarge', primary),
-    titleMedium: _tokenTextStyle('titleMedium', primary),
-    bodyLarge: _tokenTextStyle('bodyLarge', primary),
-    bodyMedium: _tokenTextStyle('bodyMedium', secondary),
-    labelLarge: _tokenTextStyle('labelLarge', primary),
-    labelMedium: _tokenTextStyle('labelMedium', secondary),
-  );
+  }) {
+    final display = _tokenTextStyle('display', primary);
+    final headlineLarge = _tokenTextStyle('headlineLarge', primary);
+    final headlineMedium = _tokenTextStyle('headlineMedium', primary);
+    final titleLarge = _tokenTextStyle('titleLarge', primary);
+    final titleMedium = _tokenTextStyle('titleMedium', primary);
+    final bodyLarge = _tokenTextStyle('bodyLarge', primary);
+    final bodyMedium = _tokenTextStyle('bodyMedium', secondary);
+    final labelLarge = _tokenTextStyle('labelLarge', primary);
+    final labelMedium = _tokenTextStyle('labelMedium', secondary);
+    return TextTheme(
+      displayLarge: display,
+      displayMedium: display,
+      displaySmall: headlineLarge,
+      headlineLarge: headlineLarge,
+      headlineMedium: headlineMedium,
+      headlineSmall: headlineMedium,
+      titleLarge: titleLarge,
+      titleMedium: titleMedium,
+      titleSmall: titleMedium,
+      bodyLarge: bodyLarge,
+      bodyMedium: bodyMedium,
+      bodySmall: bodyMedium,
+      labelLarge: labelLarge,
+      labelMedium: labelMedium,
+      labelSmall: labelMedium,
+    );
+  }
 
   static TextStyle _tokenTextStyle(String key, Color color) {
     final token = ObmDesignTokens.typography[key]!;

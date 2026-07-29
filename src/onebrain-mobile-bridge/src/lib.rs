@@ -13,11 +13,12 @@ use std::{
 
 use onebrain_mobile_core::{
     ActivationPhase, AppLockPolicy, MobileFeatureFlags, MobileRuntimeFacade, MobileRuntimeSnapshot,
-    ResourceBudgets, RuntimeServices, SecurityBootstrapMaterial, SecuritySessionState,
+    OnboardingCursor, ResourceBudgets, RuntimeServices, SecurityBootstrapMaterial,
+    SecuritySessionState,
 };
 
 /// Stable ABI revision understood by the current Swift/Kotlin adapters.
-pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 3;
+pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 5;
 
 pub const OB_MOBILE_RUNTIME_OK: u32 = 0;
 pub const OB_MOBILE_RUNTIME_INVALID_PATH: u32 = 1;
@@ -25,6 +26,8 @@ pub const OB_MOBILE_RUNTIME_CORE_ERROR: u32 = 2;
 pub const OB_MOBILE_RUNTIME_LOCK_POISONED: u32 = 3;
 pub const OB_MOBILE_RUNTIME_NOT_OPEN: u32 = 4;
 pub const OB_MOBILE_RUNTIME_INVALID_SECURITY_MATERIAL: u32 = 5;
+pub const OB_MOBILE_RUNTIME_INVALID_DRAFT: u32 = 6;
+pub const OB_MOBILE_RUNTIME_INVALID_ONBOARDING_CURSOR: u32 = 7;
 
 const CORE_VERSION: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
@@ -52,6 +55,8 @@ pub struct ObMobileRuntimeSnapshot {
     pub identity_domains_separated: u8,
     pub privacy_defaults_fail_safe: u8,
     pub redacted_history_ready: u8,
+    pub encrypted_raw_draft_count: u64,
+    pub onboarding_cursor: u32,
 }
 
 impl ObMobileRuntimeSnapshot {
@@ -76,6 +81,8 @@ impl ObMobileRuntimeSnapshot {
             identity_domains_separated: 0,
             privacy_defaults_fail_safe: 0,
             redacted_history_ready: 0,
+            encrypted_raw_draft_count: 0,
+            onboarding_cursor: 0,
         }
     }
 
@@ -104,7 +111,51 @@ impl ObMobileRuntimeSnapshot {
             identity_domains_separated: bool_byte(snapshot.identity_domains_separated),
             privacy_defaults_fail_safe: bool_byte(snapshot.privacy_defaults_fail_safe),
             redacted_history_ready: bool_byte(snapshot.redacted_history_ready),
+            encrypted_raw_draft_count: snapshot.encrypted_raw_draft_count,
+            onboarding_cursor: snapshot.onboarding_cursor.code(),
         }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ObMobileRawDraftReceipt {
+    pub status_code: u32,
+    pub draft_ref: [u8; 39],
+    pub draft_ref_len: u32,
+    pub content_language: [u8; 36],
+    pub content_language_len: u32,
+    pub content_bytes: u64,
+    pub saved_at_monotonic_ms: u64,
+    pub total_drafts: u64,
+}
+
+impl ObMobileRawDraftReceipt {
+    const fn error(status_code: u32) -> Self {
+        Self {
+            status_code,
+            draft_ref: [0; 39],
+            draft_ref_len: 0,
+            content_language: [0; 36],
+            content_language_len: 0,
+            content_bytes: 0,
+            saved_at_monotonic_ms: 0,
+            total_drafts: 0,
+        }
+    }
+
+    fn from_core(receipt: onebrain_mobile_core::RawDraftReceipt) -> Self {
+        let mut bridged = Self::error(OB_MOBILE_RUNTIME_OK);
+        let draft_ref = receipt.draft_ref.as_bytes();
+        let language = receipt.content_language.as_bytes();
+        bridged.draft_ref[..draft_ref.len()].copy_from_slice(draft_ref);
+        bridged.draft_ref_len = u32::try_from(draft_ref.len()).unwrap_or(0);
+        bridged.content_language[..language.len()].copy_from_slice(language);
+        bridged.content_language_len = u32::try_from(language.len()).unwrap_or(0);
+        bridged.content_bytes = receipt.content_bytes;
+        bridged.saved_at_monotonic_ms = receipt.saved_at_monotonic_ms;
+        bridged.total_drafts = receipt.total_drafts;
+        bridged
     }
 }
 
@@ -233,6 +284,49 @@ pub extern "C" fn ob_mobile_runtime_lock_private_node() -> u32 {
     }
 }
 
+/// Persist bounded UTF-8 text as an encrypted `PrivateLocal` raw draft.
+///
+/// The returned reference is opaque. No filesystem path, database handle,
+/// encryption key or plaintext content is returned.
+///
+/// # Safety
+///
+/// Both pointers must reference their declared readable byte lengths for the
+/// duration of this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_save_raw_text_draft_utf8(
+    content_language: *const u8,
+    content_language_len: usize,
+    content_utf8: *const u8,
+    content_len: usize,
+) -> ObMobileRawDraftReceipt {
+    if content_language.is_null()
+        || content_utf8.is_null()
+        || content_language_len == 0
+        || content_language_len > 35
+        || content_len == 0
+        || content_len > 512 * 1024
+    {
+        return ObMobileRawDraftReceipt::error(OB_MOBILE_RUNTIME_INVALID_DRAFT);
+    }
+    let language_bytes = unsafe { slice::from_raw_parts(content_language, content_language_len) };
+    let language = match str::from_utf8(language_bytes) {
+        Ok(language) => language,
+        Err(_) => return ObMobileRawDraftReceipt::error(OB_MOBILE_RUNTIME_INVALID_DRAFT),
+    };
+    let content = unsafe { slice::from_raw_parts(content_utf8, content_len) };
+    save_raw_text_draft(language, content)
+}
+
+/// Persist a bounded onboarding resume cursor in the Rust bootstrap store.
+#[unsafe(no_mangle)]
+pub extern "C" fn ob_mobile_runtime_set_onboarding_cursor(cursor_code: u32) -> u32 {
+    let Some(cursor) = OnboardingCursor::from_code(cursor_code) else {
+        return OB_MOBILE_RUNTIME_INVALID_ONBOARDING_CURSOR;
+    };
+    set_onboarding_cursor(cursor)
+}
+
 fn open_runtime(data_root: PathBuf) -> ObMobileRuntimeSnapshot {
     let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
     let mut guard = match runtime.lock() {
@@ -314,6 +408,38 @@ fn runtime_snapshot() -> ObMobileRuntimeSnapshot {
     )
 }
 
+fn save_raw_text_draft(content_language: &str, content_utf8: &[u8]) -> ObMobileRawDraftReceipt {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRawDraftReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_mut() else {
+        return ObMobileRawDraftReceipt::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.save_raw_text_draft(content_language, content_utf8) {
+        Ok(receipt) => ObMobileRawDraftReceipt::from_core(receipt),
+        Err(_) => ObMobileRawDraftReceipt::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn set_onboarding_cursor(cursor: OnboardingCursor) -> u32 {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return OB_MOBILE_RUNTIME_LOCK_POISONED,
+    };
+    let Some(facade) = guard.as_ref() else {
+        return OB_MOBILE_RUNTIME_NOT_OPEN;
+    };
+    match facade.set_onboarding_cursor(cursor) {
+        Ok(()) => OB_MOBILE_RUNTIME_OK,
+        Err(_) => OB_MOBILE_RUNTIME_CORE_ERROR,
+    }
+}
+
 const fn bool_byte(value: bool) -> u8 {
     if value {
         1
@@ -343,8 +469,9 @@ mod android {
 
     use super::{
         ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
-        ob_mobile_bridge_round_trip, ob_mobile_runtime_lock_private_node, open_runtime,
-        open_runtime_secured, runtime_snapshot, CORE_VERSION,
+        ob_mobile_bridge_round_trip, ob_mobile_runtime_lock_private_node,
+        ob_mobile_runtime_set_onboarding_cursor, open_runtime, open_runtime_secured,
+        runtime_snapshot, save_raw_text_draft, CORE_VERSION,
     };
     use onebrain_mobile_core::SecurityBootstrapMaterial;
     use zeroize::Zeroize;
@@ -425,6 +552,48 @@ mod android {
 
     #[jni_mangle(
         "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeSaveRawTextDraft"
+    )]
+    pub fn native_runtime_save_raw_text_draft<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        content_language: JString<'caller>,
+        content: JString<'caller>,
+    ) -> JString<'caller> {
+        let language = unowned_env
+            .with_env(|env| content_language.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let text = unowned_env
+            .with_env(|env| content.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let receipt = save_raw_text_draft(&language, text.as_bytes());
+        let draft_ref = if receipt.status_code == super::OB_MOBILE_RUNTIME_OK {
+            std::str::from_utf8(&receipt.draft_ref[..receipt.draft_ref_len as usize]).unwrap_or("")
+        } else {
+            ""
+        };
+        unowned_env
+            .with_env(|env| JString::from_str(env, draft_ref))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeSetOnboardingCursor"
+    )]
+    pub fn native_runtime_set_onboarding_cursor(
+        _env: EnvUnowned<'_>,
+        _class: JClass<'_>,
+        cursor_code: jint,
+    ) -> jint {
+        if cursor_code < 0 {
+            return super::OB_MOBILE_RUNTIME_INVALID_ONBOARDING_CURSOR as jint;
+        }
+        ob_mobile_runtime_set_onboarding_cursor(cursor_code as u32) as jint
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
         "nativeRuntimeProcessGeneration"
     )]
     pub fn native_runtime_process_generation(_env: EnvUnowned<'_>, _class: JClass<'_>) -> jlong {
@@ -445,6 +614,25 @@ mod android {
     )]
     pub fn native_runtime_active_grant_count(_env: EnvUnowned<'_>, _class: JClass<'_>) -> jint {
         runtime_snapshot().active_grant_count as jint
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeEncryptedRawDraftCount"
+    )]
+    pub fn native_runtime_encrypted_raw_draft_count(
+        _env: EnvUnowned<'_>,
+        _class: JClass<'_>,
+    ) -> jlong {
+        runtime_snapshot().encrypted_raw_draft_count as jlong
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeOnboardingCursor"
+    )]
+    pub fn native_runtime_onboarding_cursor(_env: EnvUnowned<'_>, _class: JClass<'_>) -> jint {
+        runtime_snapshot().onboarding_cursor as jint
     }
 
     macro_rules! boolean_runtime_getter {
@@ -545,7 +733,7 @@ mod tests {
 
     #[test]
     fn abi_and_version_are_bounded_and_stable() {
-        assert_eq!(ob_mobile_bridge_abi_version(), 3);
+        assert_eq!(ob_mobile_bridge_abi_version(), 5);
         let version = unsafe { CStr::from_ptr(ob_mobile_bridge_core_version()) };
         assert_eq!(version.to_str().expect("version UTF-8"), "0.1.0");
         assert!(version.to_bytes().len() <= 32);

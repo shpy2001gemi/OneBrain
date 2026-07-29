@@ -1,8 +1,9 @@
 use crate::{
     run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, ExecutionGrant,
-    ExecutionGrantKind, MobileCoreError, MobileFeatureFlags, NetworkScope, ResourceBudgets,
-    RuntimeServices, SecureIdentitySession, SecurityBootstrapMaterial, SecuritySessionState,
-    TransferLandingRecord, MOBILE_RUNTIME_PROFILE_VERSION,
+    ExecutionGrantKind, MobileCoreError, MobileFeatureFlags, NetworkScope, OnboardingCursor,
+    RawDraftReceipt, ResourceBudgets, RuntimeServices, SecureIdentitySession,
+    SecurityBootstrapMaterial, SecuritySessionState, TransferLandingRecord,
+    MOBILE_RUNTIME_PROFILE_VERSION,
 };
 
 const FOREGROUND_GRANT_ID: &str = "native.foreground";
@@ -35,6 +36,8 @@ pub struct MobileRuntimeSnapshot {
     pub identity_domains_separated: bool,
     pub privacy_defaults_fail_safe: bool,
     pub redacted_history_ready: bool,
+    pub encrypted_raw_draft_count: u64,
+    pub onboarding_cursor: OnboardingCursor,
 }
 
 pub struct MobileRuntimeFacade {
@@ -98,7 +101,9 @@ impl MobileRuntimeFacade {
             if let Some((material, policy)) = security {
                 let authority = material.installation_authority();
                 let vault_path = services.paths.private_vault_database_path();
-                let session = SecureIdentitySession::open(material, &vault_path, now, policy)?;
+                let draft_path = services.paths.private_draft_database_path();
+                let session =
+                    SecureIdentitySession::open(material, &vault_path, &draft_path, now, policy)?;
                 let created = store.bind_installation_authority(&authority)?;
                 (Some(session), true, created)
             } else {
@@ -201,6 +206,12 @@ impl MobileRuntimeFacade {
                 .store
                 .recent_security_history(1)
                 .is_ok_and(|records| self.secure_identity.is_none() || !records.is_empty()),
+            encrypted_raw_draft_count: self
+                .secure_identity
+                .as_ref()
+                .and_then(|session| session.raw_draft_count().ok())
+                .unwrap_or(0),
+            onboarding_cursor: self.store.onboarding_cursor().unwrap_or_default(),
         }
     }
 
@@ -233,6 +244,41 @@ impl MobileRuntimeFacade {
         Ok(())
     }
 
+    pub fn save_raw_text_draft(
+        &mut self,
+        content_language: &str,
+        content_utf8: &[u8],
+    ) -> Result<RawDraftReceipt, MobileCoreError> {
+        if self.snapshot().registry_state != "BootstrapOnly" {
+            return Err(MobileCoreError::InvalidArgument(
+                "raw draft command is only the Limited-mode source intake".into(),
+            ));
+        }
+        let now = self.services.clock.monotonic_millis();
+        let receipt = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .save_raw_text_draft(content_language, content_utf8, now)?;
+        self.store.append_security_history(
+            self.arbiter.process_generation(),
+            now,
+            "PRIVATE_RAW_DRAFT_SAVED",
+            "CAPTURE",
+            true,
+        )?;
+        self.services.telemetry.record("mobile_raw_draft_saved");
+        Ok(receipt)
+    }
+
+    pub fn set_onboarding_cursor(&self, cursor: OnboardingCursor) -> Result<(), MobileCoreError> {
+        self.store.set_onboarding_cursor(cursor)?;
+        self.services
+            .telemetry
+            .record("mobile_onboarding_cursor_saved");
+        Ok(())
+    }
+
     pub fn unlock_private_node(
         &mut self,
         material: SecurityBootstrapMaterial,
@@ -254,9 +300,11 @@ impl MobileRuntimeFacade {
         }
         let now = self.services.clock.monotonic_millis();
         let vault_path = self.services.paths.private_vault_database_path();
+        let draft_path = self.services.paths.private_draft_database_path();
         self.secure_identity = Some(SecureIdentitySession::open(
             material,
             &vault_path,
+            &draft_path,
             now,
             lock_policy,
         )?);

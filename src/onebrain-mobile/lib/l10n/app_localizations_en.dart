@@ -164,4 +164,340 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get notImplementedBody =>
       'Device storage preflight and explicit Init planning are intentionally not simulated in this slice.';
+
+  @override
+  String onboardingStep(int current, int total) {
+    return 'Step $current of $total';
+  }
+
+  @override
+  String get onboardingProgressSaveError =>
+      'Onboarding progress could not be saved. Please try again.';
+
+  @override
+  String get nextAction => 'Next';
+
+  @override
+  String get preflightTitle => 'Check the foundations';
+
+  @override
+  String get preflightBody =>
+      'This check separates required local foundations from optional capabilities. Final Registry storage and network admission happen only after a signed Init plan exists.';
+
+  @override
+  String get preflightRuntimeTitle => 'Protected runtime';
+
+  @override
+  String get preflightRuntimeBody =>
+      'The device-bound identity, encrypted vault and one Rust writer are available.';
+
+  @override
+  String get preflightStorageTitle => 'Required data is separate';
+
+  @override
+  String get preflightStorageBody =>
+      'The app contains no Concept Registry release. The initial dataset is downloaded after launch and may use more than 2 GB including working space.';
+
+  @override
+  String get preflightOptionalTitle => 'Optional lanes stay off';
+
+  @override
+  String get preflightOptionalBody =>
+      'Local or cloud AI, notifications and node networking are not required to save a private raw draft.';
+
+  @override
+  String get identityTitle => 'This installation is its own node';
+
+  @override
+  String get identityBody =>
+      'OneBrain created independent Node, feed and Actor authority domains for this phone. It does not replicate or extend a desktop node.';
+
+  @override
+  String get identityReadyTitle => 'Independent authority';
+
+  @override
+  String get identityReadyBody =>
+      'Private signing material stays behind the native and Rust boundary. Only typed public facts may reach the UI.';
+
+  @override
+  String get securityTitle => 'Private by default';
+
+  @override
+  String get securityBody =>
+      'Raw capture starts as PrivateLocal. Backgrounding locks the private session; public and network transitions require separate confirmation.';
+
+  @override
+  String get securityVaultTitle => 'Encrypted local storage';
+
+  @override
+  String get securityVaultBody =>
+      'Private drafts and validated private objects use device-bound encrypted stores excluded from generic OS backup.';
+
+  @override
+  String get initHandoffTitle => 'Add required Concept data after launch';
+
+  @override
+  String get initHandoffBody =>
+      'Concept lookup, validation, KU encode, Library search and local KQL remain unavailable until one exact signed Registry release is verified and activated.';
+
+  @override
+  String get initHandoffLimitedTitle => 'Limited mode remains useful';
+
+  @override
+  String get initHandoffLimitedBody =>
+      'You can capture and save encrypted raw text drafts now. Init, Operations, storage and diagnostics remain available.';
+
+  @override
+  String get openInitAction => 'Open required-data Init';
+
+  @override
+  String get limitedModeAction => 'Use Limited mode for now';
+
+  @override
+  String get initTitle => 'Required Concept data';
+
+  @override
+  String get initBody =>
+      'No Registry request has been made. MOB-05 will resolve the signed target and show exact bytes, capacity, network and energy facts before any large transfer.';
+
+  @override
+  String get initBoundaryTitle => 'Post-launch download';
+
+  @override
+  String get initBoundaryBody =>
+      'concepts.obr and its indexes are never bundled in the APK or IPA. This screen does not simulate their presence.';
+
+  @override
+  String get initUnavailableAction => 'Begin Init';
+
+  @override
+  String get initUnavailableReason =>
+      'Signed Registry planning and transfer are not active in this build.';
+
+  @override
+  String get homeTitle => 'Home';
+
+  @override
+  String get homeGreeting => 'A bright place for private ideas';
+
+  @override
+  String get limitedTitle => 'Limited mode';
+
+  @override
+  String get limitedBody =>
+      'Your node is protected, but required Concept data is not active. Raw drafts work; Concept-dependent features stay honestly unavailable.';
+
+  @override
+  String get requiredInitTitle => 'Finish required data';
+
+  @override
+  String get requiredInitBody =>
+      'Open Init to review the post-launch data boundary. No transfer starts from this card.';
+
+  @override
+  String get quickCaptureTitle => 'Capture a thought';
+
+  @override
+  String get quickCaptureBody =>
+      'Save bounded text directly into the encrypted PrivateLocal draft store. No LLM or network is used.';
+
+  @override
+  String get captureAction => 'Capture text';
+
+  @override
+  String get draftCountTitle => 'Encrypted drafts';
+
+  @override
+  String draftCountBody(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count private raw drafts saved on this device.',
+      one: '1 private raw draft saved on this device.',
+      zero: 'No private raw drafts saved yet.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get operationsTitle => 'Operations';
+
+  @override
+  String get operationsBody =>
+      'No Registry, model, import, backup, sync or seed operation is active.';
+
+  @override
+  String get navHome => 'Home';
+
+  @override
+  String get navLibrary => 'Library';
+
+  @override
+  String get navCapture => 'Capture';
+
+  @override
+  String get navAssistant => 'Assistant';
+
+  @override
+  String get navSettings => 'Settings';
+
+  @override
+  String get libraryTitle => 'Library';
+
+  @override
+  String get libraryBody =>
+      'Local shelves keep origin, acquisition, retention and semantic state separate. This clean Limited node has no active Concept release.';
+
+  @override
+  String get myKnowledgeTitle => 'My / local KU';
+
+  @override
+  String get myKnowledgeBody =>
+      'Private KU browse and detail become available after Registry activation and deterministic validation.';
+
+  @override
+  String get receivedKnowledgeTitle => 'Received KU';
+
+  @override
+  String get receivedKnowledgeBody =>
+      'Received shelves require the Networked Mobile Beta gate; they are not simulated locally.';
+
+  @override
+  String get mediaLibraryTitle => 'My media';
+
+  @override
+  String get mediaLibraryBody =>
+      'Owned originals and derived media will use verified encrypted storage. Media ingestion is not active in this slice.';
+
+  @override
+  String get conceptsTitle => 'Concepts, search and KQL';
+
+  @override
+  String get conceptsBody =>
+      'These routes require one healthy active Concept Registry release.';
+
+  @override
+  String get registryRequiredReason =>
+      'Required Concept Registry data is not active.';
+
+  @override
+  String get networkBetaReason =>
+      'Node networking is disabled until the Networked Mobile Beta gate.';
+
+  @override
+  String get captureTitle => 'Capture';
+
+  @override
+  String get captureBody =>
+      'Every source begins as PrivateLocal. Derived text or candidates never overwrite the owned original.';
+
+  @override
+  String get textCaptureTitle => 'Text or clipboard';
+
+  @override
+  String get textCaptureBody =>
+      'Compose bounded text and save it directly into the encrypted raw-draft store.';
+
+  @override
+  String get shareCaptureTitle => 'Share into OneBrain';
+
+  @override
+  String get shareCaptureBody =>
+      'The typed encrypted share-spool boundary is reserved; no unprotected share payload is accepted in this build.';
+
+  @override
+  String get fileCaptureTitle => 'Photo, video, document or audio';
+
+  @override
+  String get fileCaptureBody =>
+      'System picker ingestion and verified media staging arrive with the media lifecycle package.';
+
+  @override
+  String get textComposerTitle => 'Private text draft';
+
+  @override
+  String get textComposerBody =>
+      'This source is saved only on this device. Saving does not encode a KU, publish, share or invoke AI.';
+
+  @override
+  String get contentLanguageLabel => 'Content language';
+
+  @override
+  String get draftTextLabel => 'Your text';
+
+  @override
+  String get draftTextHint => 'Write or paste a thought…';
+
+  @override
+  String get savePrivateDraftAction => 'Save private draft';
+
+  @override
+  String get draftSavedTitle => 'Saved on this device';
+
+  @override
+  String draftSavedBody(int bytes, int count) {
+    return '$bytes encrypted source bytes saved. The private store now contains $count draft(s).';
+  }
+
+  @override
+  String get draftSaveError =>
+      'The private draft could not be saved. Your text remains in the editor.';
+
+  @override
+  String get draftBlankError => 'Enter some text before saving.';
+
+  @override
+  String get assistantTitle => 'Assistant';
+
+  @override
+  String get assistantBody =>
+      'The deterministic no-LLM baseline is preserved. Local, system and cloud LLM routes are separate optional packages and are currently off.';
+
+  @override
+  String get settingsTitle => 'Settings';
+
+  @override
+  String get settingsBody =>
+      'Inspect protected runtime, required data, storage and optional capability boundaries.';
+
+  @override
+  String get runtimeSettingsTitle => 'Runtime and diagnostics';
+
+  @override
+  String get runtimeSettingsBody =>
+      'BootstrapOnly profile, protected identity, one writer and redacted security history.';
+
+  @override
+  String get registrySettingsTitle => 'Concept Registry';
+
+  @override
+  String get registrySettingsBody =>
+      'No release is active and no Registry request has been issued.';
+
+  @override
+  String get storageSettingsTitle => 'Storage';
+
+  @override
+  String get storageSettingsBody =>
+      'Protected drafts, Registry, model, media, staging and reclaimable bytes stay separate.';
+
+  @override
+  String get backupSettingsTitle => 'Encrypted backup and export';
+
+  @override
+  String get backupSettingsBody =>
+      'The versioned authenticated archive engine is present; user-selected destination wiring remains gated.';
+
+  @override
+  String get languageSettingsTitle => 'Language and accessibility';
+
+  @override
+  String get languageSettingsBody =>
+      'English and Vietnamese UI, system text scaling, contrast and Reduce Motion use the shared design contract.';
+
+  @override
+  String get unavailableTitle => 'Feature not available yet';
+
+  @override
+  String get backHomeAction => 'Back to Home';
 }

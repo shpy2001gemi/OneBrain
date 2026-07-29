@@ -4,7 +4,10 @@ use ed25519_dalek::{Signer, SigningKey};
 use ku_core::foundation::{PrivateVault, RedbVerifiedBackend, VaultKey};
 use zeroize::Zeroizing;
 
-use crate::{InstallationAuthorityRecord, MobileCoreError};
+use crate::{
+    InstallationAuthorityRecord, MobileCoreError, PrivateDraftKey, PrivateDraftStore,
+    RawDraftReceipt,
+};
 
 pub const SECURITY_BOOTSTRAP_MATERIAL_BYTES: usize = 192;
 const SIGNATURE_MESSAGE_MAX_BYTES: usize = 1024 * 1024;
@@ -172,12 +175,14 @@ pub struct SecureIdentitySession {
     policy: AppLockPolicy,
     authorized_at_monotonic_ms: u64,
     private_vault: Option<PrivateVault<RedbVerifiedBackend>>,
+    private_drafts: Option<PrivateDraftStore>,
 }
 
 impl SecureIdentitySession {
     pub fn open(
         material: SecurityBootstrapMaterial,
         private_vault_path: &Path,
+        private_draft_path: &Path,
         authorized_at_monotonic_ms: u64,
         policy: AppLockPolicy,
     ) -> Result<Self, MobileCoreError> {
@@ -197,10 +202,12 @@ impl SecureIdentitySession {
         }
         let mut vault_key = [0u8; 32];
         vault_key.copy_from_slice(material.range(VAULT_RANGE));
+        let private_draft_key = PrivateDraftKey::derive(&vault_key);
         let backend = RedbVerifiedBackend::open(private_vault_path).map_err(|error| {
             MobileCoreError::Security(format!("cannot open encrypted private vault: {error}"))
         })?;
         let private_vault = PrivateVault::new(backend, VaultKey::from_bytes(vault_key));
+        let private_drafts = PrivateDraftStore::open(private_draft_path, private_draft_key)?;
         Ok(Self {
             material: Some(material),
             public,
@@ -208,6 +215,7 @@ impl SecureIdentitySession {
             policy,
             authorized_at_monotonic_ms,
             private_vault: Some(private_vault),
+            private_drafts: Some(private_drafts),
         })
     }
 
@@ -224,7 +232,34 @@ impl SecureIdentitySession {
     }
 
     pub fn private_vault_ready(&self) -> bool {
-        self.private_vault.is_some() && self.state == SecuritySessionState::Unlocked
+        self.private_vault.is_some()
+            && self.private_drafts.is_some()
+            && self.state == SecuritySessionState::Unlocked
+    }
+
+    pub fn save_raw_text_draft(
+        &self,
+        content_language: &str,
+        content_utf8: &[u8],
+        now_monotonic_ms: u64,
+    ) -> Result<RawDraftReceipt, MobileCoreError> {
+        if !self.session_is_eligible(now_monotonic_ms) {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_drafts
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .save_text(content_language, content_utf8, now_monotonic_ms)
+    }
+
+    pub fn raw_draft_count(&self) -> Result<u64, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_drafts
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .count()
     }
 
     pub fn session_is_eligible(&self, now_monotonic_ms: u64) -> bool {
@@ -267,6 +302,7 @@ impl SecureIdentitySession {
 
     pub fn lock(&mut self) {
         self.private_vault = None;
+        self.private_drafts = None;
         self.material = None;
         self.state = SecuritySessionState::Locked;
         self.authorized_at_monotonic_ms = 0;
@@ -298,12 +334,17 @@ mod tests {
         let mut session = SecureIdentitySession::open(
             material(),
             &directory.path().join("private-vault.redb"),
+            &directory.path().join("private-drafts.redb"),
             100,
             AppLockPolicy::default(),
         )
         .unwrap();
         assert!(session.public_identities().domains_are_independent());
         assert!(session.private_vault_ready());
+        let draft = session
+            .save_raw_text_draft("en", b"private thought", 101)
+            .unwrap();
+        assert_eq!(draft.total_drafts, 1);
         for domain in [
             IdentityDomain::TransportNode,
             IdentityDomain::FeedEvent,

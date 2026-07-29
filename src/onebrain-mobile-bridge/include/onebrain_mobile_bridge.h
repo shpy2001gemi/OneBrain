@@ -18,7 +18,7 @@
 /**
  * Stable ABI revision understood by the current Swift/Kotlin adapters.
  */
-#define OB_MOBILE_BRIDGE_ABI_VERSION 3
+#define OB_MOBILE_BRIDGE_ABI_VERSION 5
 
 #define OB_MOBILE_RUNTIME_OK 0
 
@@ -31,6 +31,10 @@
 #define OB_MOBILE_RUNTIME_NOT_OPEN 4
 
 #define OB_MOBILE_RUNTIME_INVALID_SECURITY_MATERIAL 5
+
+#define OB_MOBILE_RUNTIME_INVALID_DRAFT 6
+
+#define OB_MOBILE_RUNTIME_INVALID_ONBOARDING_CURSOR 7
 
 typedef struct ObMobileRuntimeSnapshot {
   uint32_t status_code;
@@ -52,7 +56,20 @@ typedef struct ObMobileRuntimeSnapshot {
   uint8_t identity_domains_separated;
   uint8_t privacy_defaults_fail_safe;
   uint8_t redacted_history_ready;
+  uint64_t encrypted_raw_draft_count;
+  uint32_t onboarding_cursor;
 } ObMobileRuntimeSnapshot;
+
+typedef struct ObMobileRawDraftReceipt {
+  uint32_t status_code;
+  uint8_t draft_ref[39];
+  uint32_t draft_ref_len;
+  uint8_t content_language[36];
+  uint32_t content_language_len;
+  uint64_t content_bytes;
+  uint64_t saved_at_monotonic_ms;
+  uint64_t total_drafts;
+} ObMobileRawDraftReceipt;
 
 /**
  * Return the stable native-to-Rust ABI revision.
@@ -121,6 +138,27 @@ uint32_t ob_mobile_runtime_graceful_stop(void);
  * lifecycle callback for correctness.
  */
 uint32_t ob_mobile_runtime_lock_private_node(void);
+
+/**
+ * Persist bounded UTF-8 text as an encrypted `PrivateLocal` raw draft.
+ *
+ * The returned reference is opaque. No filesystem path, database handle,
+ * encryption key or plaintext content is returned.
+ *
+ * # Safety
+ *
+ * Both pointers must reference their declared readable byte lengths for the
+ * duration of this call.
+ */
+struct ObMobileRawDraftReceipt ob_mobile_runtime_save_raw_text_draft_utf8(const uint8_t *content_language,
+                                                                          size_t content_language_len,
+                                                                          const uint8_t *content_utf8,
+                                                                          size_t content_len);
+
+/**
+ * Persist a bounded onboarding resume cursor in the Rust bootstrap store.
+ */
+uint32_t ob_mobile_runtime_set_onboarding_cursor(uint32_t cursor_code);
 
 #endif  /* ONEBRAIN_MOBILE_BRIDGE_H */
 

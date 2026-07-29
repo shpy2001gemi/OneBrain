@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise MOB-03 secure process-death recovery on an Android emulator."""
+"""Exercise MOB-04 secure process-death recovery on an Android emulator."""
 
 from __future__ import annotations
 
@@ -34,7 +34,9 @@ RUNTIME_PATTERN = re.compile(
     r"vault=(?P<vault>true|false) "
     r"domains=(?P<domains>true|false) "
     r"privacy=(?P<privacy>true|false) "
-    r"history=(?P<history>true|false)"
+    r"history=(?P<history>true|false) "
+    r"drafts=(?P<drafts>\d+) "
+    r"onboarding=(?P<onboarding>\d+)"
 )
 
 
@@ -75,6 +77,8 @@ def read_runtime_log(adb: str, device: str) -> dict[str, object] | None:
         "identity_domains_separated": values["domains"] == "true",
         "privacy_defaults_fail_safe": values["privacy"] == "true",
         "redacted_history_ready": values["history"] == "true",
+        "encrypted_raw_draft_count": int(values["drafts"]),
+        "onboarding_cursor": int(values["onboarding"]),
     }
 
 
@@ -90,7 +94,7 @@ def wait_for_runtime(adb: str, device: str, timeout_seconds: float) -> dict[str,
 
 def assert_common(snapshot: dict[str, object]) -> None:
     expected = {
-        "profile": "MOB-03/1",
+        "profile": "MOB-04/1",
         "phase": "Active",
         "active_grants": 1,
         "bootstrap_store_opened": True,
@@ -106,6 +110,7 @@ def assert_common(snapshot: dict[str, object]) -> None:
         "identity_domains_separated": True,
         "privacy_defaults_fail_safe": True,
         "redacted_history_ready": True,
+        "onboarding_cursor": 0,
     }
     mismatches = {
         key: {"expected": value, "actual": snapshot.get(key)}

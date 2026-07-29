@@ -2,8 +2,8 @@
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
   "authority_set_sha256": "b9f374909c83c6dc3785871da172bffbaf666468fe42cd7afb7f069952aeb375",
-  "phase": "foundation",
-  "work_package": "MOB-03",
+  "phase": "feature",
+  "work_package": "MOB-04",
   "acknowledged_required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -24,6 +24,8 @@
     "MOB-FND-005",
     "MOB-ONB-001",
     "MOB-ONB-003",
+    "MOB-ONB-004",
+    "MOB-ONB-005",
     "MOB-SEC-001",
     "MOB-SEC-002",
     "MOB-SEC-003",
@@ -34,14 +36,42 @@
     "MOB-DAT-007",
     "MOB-DAT-008",
     "MOB-DAT-009",
+    "MOB-HOM-001",
+    "MOB-HOM-002",
+    "MOB-HOM-003",
+    "MOB-HOM-004",
+    "MOB-HOM-005",
+    "MOB-CAP-001",
+    "MOB-CAP-006",
+    "MOB-CAP-007",
+    "MOB-LIB-001",
+    "MOB-LIB-002",
+    "MOB-LIB-003",
     "MOB-SCR-ENT-001",
     "MOB-SCR-ONB-001",
+    "MOB-SCR-ONB-002",
+    "MOB-SCR-ONB-003",
+    "MOB-SCR-ONB-004",
+    "MOB-SCR-ONB-005",
+    "MOB-SCR-HOM-001",
+    "MOB-SCR-LIB-001",
+    "MOB-SCR-CAP-001",
+    "MOB-SCR-CAP-002",
+    "MOB-SCR-AI-001",
+    "MOB-SCR-SET-001",
+    "OBM-CMP-NAV-001",
     "OBM-CMP-NAV-002",
     "OBM-CMP-ACT-001",
     "OBM-CMP-STA-001",
     "OBM-CMP-STA-002",
     "OBM-PAT-001",
-    "OBM-PAT-002"
+    "OBM-PAT-002",
+    "OBM-PAT-003",
+    "OBM-PAT-004",
+    "OBM-PAT-006",
+    "OBM-PAT-009",
+    "OBM-PAT-010",
+    "OBM-PAT-012"
   ],
   "evidence": [
     {
@@ -198,9 +228,84 @@
       "id": "MOB-03-VIRTUAL-DEVICE-STRATEGY",
       "path": "src/onebrain-mobile/compliance/mob03_validation_strategy_v1.json",
       "proves": "Owner-approved emulator/simulator-first MOB-03 validation records physical backup, biometric, protected-data and iOS orphan-Keychain tests as deferred."
+    },
+    {
+      "id": "MOB-04-ENCRYPTED-RAW-DRAFTS",
+      "path": "src/onebrain-mobile-core/src/draft.rs",
+      "proves": "Rust stores bounded text sources only as authenticated XChaCha20-Poly1305 PrivateLocal records and returns an opaque draft reference plus bounded receipt."
+    },
+    {
+      "id": "MOB-04-DURABLE-ONBOARDING",
+      "path": "src/onebrain-mobile-core/tests/runtime_profile.rs",
+      "proves": "Rust tests advance the bounded onboarding state machine, reopen the exact cursor after an unclean process loss and reject regression after Limited-shell completion."
+    },
+    {
+      "id": "MOB-04-DURABLE-LOCALE",
+      "path": "src/onebrain-mobile/lib/app/locale_controller.dart",
+      "proves": "The non-authoritative English/Vietnamese UI choice is restored and persisted through the maintained shared_preferences async adapter, independently of canonical content bytes."
+    },
+    {
+      "id": "MOB-04-TYPED-HOST-ABI",
+      "path": "src/onebrain-mobile/pigeons/mobile_host_api.dart",
+      "proves": "ABI 5 exposes typed onboarding cursor and private-draft commands through generated Dart, Kotlin and Swift without paths, keys, database handles or plaintext reads crossing into Flutter."
+    },
+    {
+      "id": "MOB-04-LIMITED-SHELL",
+      "path": "src/onebrain-mobile/lib/ui/screens/home_screen.dart",
+      "proves": "The shared five-destination shell truthfully exposes encrypted raw capture, required Init, draft count and independent BootstrapOnly operation facts without claiming ReadyOffline."
+    },
+    {
+      "id": "MOB-04-CAPTURE-WIDGET-JOURNEY",
+      "path": "src/onebrain-mobile/test/widget_test.dart",
+      "proves": "The English onboarding-to-Limited journey saves an encrypted draft receipt; shared components also reflow without exceptions at 320 logical pixels and 200 percent text."
+    },
+    {
+      "id": "MOB-04-DESIGN-GOLDENS",
+      "path": "src/onebrain-mobile/test/golden_test.dart",
+      "proves": "Eleven deterministic goldens cover the owner-approved design modes plus Limited Home and private text capture through shared tokens and components."
+    },
+    {
+      "id": "MOB-04-ANDROID-NATIVE-INTEGRATION",
+      "path": "src/onebrain-mobile/integration_test/native_host_bridge_test.dart",
+      "proves": "Android 16 exercises ABI 5, the protected Rust runtime, onboarding cursor, encrypted draft receipt/count and bounded native operation events."
+    },
+    {
+      "id": "MOB-04-ANDROID-PROCESS-RECOVERY",
+      "path": "src/onebrain-mobile/compliance/reports/mob04_android_runtime_recovery.json",
+      "proves": "Android 16 clean launch and force-stop relaunch preserve the BootstrapOnly onboarding cursor, reopen protected storage and advance the fenced process generation."
+    },
+    {
+      "id": "MOB-04-UNEXPECTED-RESTORE",
+      "path": "src/onebrain-mobile/compliance/reports/mob04_android_install_binding_fail_closed.json",
+      "proves": "Android 16 still rejects authority and encrypted-draft residue when the exact no-backup install marker is missing."
+    },
+    {
+      "id": "MOB-04-BOOTSTRAP-SOURCE-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob04_bootstrap_source_isolation.json",
+      "proves": "Static scanning finds no transport reference in the BootstrapOnly Dart, Kotlin, Swift, bridge or Rust private-shell sources."
+    },
+    {
+      "id": "MOB-04-RUST-DEPENDENCY-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob04_rust_dependency_isolation.json",
+      "proves": "The current Rust mobile core graph still excludes network, node runtime, Ollama and async transport packages."
+    },
+    {
+      "id": "MOB-04-ANDROID-RELEASE-PERMISSIONS",
+      "path": "src/onebrain-mobile/compliance/reports/mob04_android_release_permissions.json",
+      "proves": "The MOB-04 BootstrapOnly Android release has no INTERNET, Wi-Fi, nearby, Bluetooth or network-state capability."
+    },
+    {
+      "id": "MOB-04-ANDROID-RELEASE-INVENTORY",
+      "path": "src/onebrain-mobile/compliance/reports/mob04_android_release_package_inventory.json",
+      "proves": "The arm64/x86_64 release APK contains no Registry release, database, index, model, archive or other prohibited initial payload."
+    },
+    {
+      "id": "MOB-04-VIRTUAL-DEVICE-STRATEGY",
+      "path": "src/onebrain-mobile/compliance/mob04_validation_strategy_v1.json",
+      "proves": "The owner-approved emulator/simulator-first scope names implemented MOB-04 behavior, remaining share/backup work and deferred physical-device gates without a completion claim."
     }
   ],
   "deviations": [],
   "last_reviewed": "2026-07-30",
-  "notes": "MOB-03 layers platform-protected installation material, exact nonportable authority binding, independent typed signer domains, ku-core encrypted private vault integration, fail-safe privacy defaults, bounded redacted security history and the OBARV001 encrypted archive foundation over the MOB-02 runtime. Android 16 emulator evidence covers Keystore-backed force-stop recovery and injected missing-marker rejection. iOS remains a simulator compile gate; physical backup, credential/biometric, protected-data and orphan-Keychain validation is deferred by owner and remains required before MOB-03 release exit. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding, recovery-UI or product-readiness claim."
+  "notes": "MOB-04 is in progress. The current feature slice adds the English/Vietnamese Limited shell, a Rust-owned durable onboarding cursor, encrypted bounded PrivateLocal text drafts, shared adaptive navigation, Registry-gated disabled states and accessibility/golden coverage over the MOB-03 protected runtime. Android 16 emulator evidence covers ABI 5 integration, Keystore-backed force-stop recovery and injected missing-marker rejection. Share-intent encrypted spools, system-picker media staging, user-selected encrypted backup/export destinations and the full Limited/Degraded/Safe matrix remain open. iOS and all physical-device validation remain gated. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
 }

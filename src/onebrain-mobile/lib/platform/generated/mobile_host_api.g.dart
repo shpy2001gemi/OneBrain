@@ -97,6 +97,15 @@ int _deepHash(Object? value) {
 }
 
 
+enum HostOnboardingCursor {
+  welcome,
+  preflight,
+  identity,
+  security,
+  initHandoff,
+  limitedHome,
+}
+
 enum HostOperationEventKind {
   started,
   cancelled,
@@ -199,6 +208,8 @@ class HostRuntimeSnapshot {
     required this.identityDomainsSeparated,
     required this.privacyDefaultsFailSafe,
     required this.redactedHistoryReady,
+    required this.encryptedRawDraftCount,
+    required this.onboardingCursor,
   });
 
   String profileVersion;
@@ -239,6 +250,10 @@ class HostRuntimeSnapshot {
 
   bool redactedHistoryReady;
 
+  int encryptedRawDraftCount;
+
+  HostOnboardingCursor onboardingCursor;
+
   List<Object?> _toList() {
     return <Object?>[
       profileVersion,
@@ -260,6 +275,8 @@ class HostRuntimeSnapshot {
       identityDomainsSeparated,
       privacyDefaultsFailSafe,
       redactedHistoryReady,
+      encryptedRawDraftCount,
+      onboardingCursor,
     ];
   }
 
@@ -288,6 +305,8 @@ class HostRuntimeSnapshot {
       identityDomainsSeparated: result[16]! as bool,
       privacyDefaultsFailSafe: result[17]! as bool,
       redactedHistoryReady: result[18]! as bool,
+      encryptedRawDraftCount: result[19]! as int,
+      onboardingCursor: result[20]! as HostOnboardingCursor,
     );
   }
 
@@ -300,7 +319,7 @@ class HostRuntimeSnapshot {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(profileVersion, other.profileVersion) && _deepEquals(processGeneration, other.processGeneration) && _deepEquals(activationPhase, other.activationPhase) && _deepEquals(activeGrantCount, other.activeGrantCount) && _deepEquals(recoveredUncleanStart, other.recoveredUncleanStart) && _deepEquals(bootstrapStoreOpened, other.bootstrapStoreOpened) && _deepEquals(registryState, other.registryState) && _deepEquals(localKqlFixtureVerified, other.localKqlFixtureVerified) && _deepEquals(privatePlannerVerified, other.privatePlannerVerified) && _deepEquals(noLlmProvider, other.noLlmProvider) && _deepEquals(staleCallbackRejected, other.staleCallbackRejected) && _deepEquals(secureProfileActive, other.secureProfileActive) && _deepEquals(installationBindingVerified, other.installationBindingVerified) && _deepEquals(installationCreated, other.installationCreated) && _deepEquals(securitySessionUnlocked, other.securitySessionUnlocked) && _deepEquals(privateVaultReady, other.privateVaultReady) && _deepEquals(identityDomainsSeparated, other.identityDomainsSeparated) && _deepEquals(privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) && _deepEquals(redactedHistoryReady, other.redactedHistoryReady);
+    return _deepEquals(profileVersion, other.profileVersion) && _deepEquals(processGeneration, other.processGeneration) && _deepEquals(activationPhase, other.activationPhase) && _deepEquals(activeGrantCount, other.activeGrantCount) && _deepEquals(recoveredUncleanStart, other.recoveredUncleanStart) && _deepEquals(bootstrapStoreOpened, other.bootstrapStoreOpened) && _deepEquals(registryState, other.registryState) && _deepEquals(localKqlFixtureVerified, other.localKqlFixtureVerified) && _deepEquals(privatePlannerVerified, other.privatePlannerVerified) && _deepEquals(noLlmProvider, other.noLlmProvider) && _deepEquals(staleCallbackRejected, other.staleCallbackRejected) && _deepEquals(secureProfileActive, other.secureProfileActive) && _deepEquals(installationBindingVerified, other.installationBindingVerified) && _deepEquals(installationCreated, other.installationCreated) && _deepEquals(securitySessionUnlocked, other.securitySessionUnlocked) && _deepEquals(privateVaultReady, other.privateVaultReady) && _deepEquals(identityDomainsSeparated, other.identityDomainsSeparated) && _deepEquals(privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) && _deepEquals(redactedHistoryReady, other.redactedHistoryReady) && _deepEquals(encryptedRawDraftCount, other.encryptedRawDraftCount) && _deepEquals(onboardingCursor, other.onboardingCursor);
   }
 
   @override
@@ -309,7 +328,67 @@ class HostRuntimeSnapshot {
 
   @override
   String toString() {
-    return 'HostRuntimeSnapshot(profileVersion: $profileVersion, processGeneration: $processGeneration, activationPhase: $activationPhase, activeGrantCount: $activeGrantCount, recoveredUncleanStart: $recoveredUncleanStart, bootstrapStoreOpened: $bootstrapStoreOpened, registryState: $registryState, localKqlFixtureVerified: $localKqlFixtureVerified, privatePlannerVerified: $privatePlannerVerified, noLlmProvider: $noLlmProvider, staleCallbackRejected: $staleCallbackRejected, secureProfileActive: $secureProfileActive, installationBindingVerified: $installationBindingVerified, installationCreated: $installationCreated, securitySessionUnlocked: $securitySessionUnlocked, privateVaultReady: $privateVaultReady, identityDomainsSeparated: $identityDomainsSeparated, privacyDefaultsFailSafe: $privacyDefaultsFailSafe, redactedHistoryReady: $redactedHistoryReady)';
+    return 'HostRuntimeSnapshot(profileVersion: $profileVersion, processGeneration: $processGeneration, activationPhase: $activationPhase, activeGrantCount: $activeGrantCount, recoveredUncleanStart: $recoveredUncleanStart, bootstrapStoreOpened: $bootstrapStoreOpened, registryState: $registryState, localKqlFixtureVerified: $localKqlFixtureVerified, privatePlannerVerified: $privatePlannerVerified, noLlmProvider: $noLlmProvider, staleCallbackRejected: $staleCallbackRejected, secureProfileActive: $secureProfileActive, installationBindingVerified: $installationBindingVerified, installationCreated: $installationCreated, securitySessionUnlocked: $securitySessionUnlocked, privateVaultReady: $privateVaultReady, identityDomainsSeparated: $identityDomainsSeparated, privacyDefaultsFailSafe: $privacyDefaultsFailSafe, redactedHistoryReady: $redactedHistoryReady, encryptedRawDraftCount: $encryptedRawDraftCount, onboardingCursor: $onboardingCursor)';
+  }
+}
+
+class HostRawDraftReceipt {
+  HostRawDraftReceipt({
+    required this.draftRef,
+    required this.contentLanguage,
+    required this.contentBytes,
+    required this.totalDrafts,
+  });
+
+  String draftRef;
+
+  String contentLanguage;
+
+  int contentBytes;
+
+  int totalDrafts;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      draftRef,
+      contentLanguage,
+      contentBytes,
+      totalDrafts,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static HostRawDraftReceipt decode(Object result) {
+    result as List<Object?>;
+    return HostRawDraftReceipt(
+      draftRef: result[0]! as String,
+      contentLanguage: result[1]! as String,
+      contentBytes: result[2]! as int,
+      totalDrafts: result[3]! as int,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! HostRawDraftReceipt || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(draftRef, other.draftRef) && _deepEquals(contentLanguage, other.contentLanguage) && _deepEquals(contentBytes, other.contentBytes) && _deepEquals(totalDrafts, other.totalDrafts);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'HostRawDraftReceipt(draftRef: $draftRef, contentLanguage: $contentLanguage, contentBytes: $contentBytes, totalDrafts: $totalDrafts)';
   }
 }
 
@@ -376,17 +455,23 @@ class _PigeonCodec extends StandardMessageCodec {
     if (value is int) {
       buffer.putUint8(4);
       buffer.putInt64(value);
-    }    else if (value is HostOperationEventKind) {
+    }    else if (value is HostOnboardingCursor) {
       buffer.putUint8(129);
       writeValue(buffer, value.index);
-    }    else if (value is HostBootstrapSnapshot) {
+    }    else if (value is HostOperationEventKind) {
       buffer.putUint8(130);
-      writeValue(buffer, value.encode());
-    }    else if (value is HostRuntimeSnapshot) {
+      writeValue(buffer, value.index);
+    }    else if (value is HostBootstrapSnapshot) {
       buffer.putUint8(131);
       writeValue(buffer, value.encode());
-    }    else if (value is HostOperationEvent) {
+    }    else if (value is HostRuntimeSnapshot) {
       buffer.putUint8(132);
+      writeValue(buffer, value.encode());
+    }    else if (value is HostRawDraftReceipt) {
+      buffer.putUint8(133);
+      writeValue(buffer, value.encode());
+    }    else if (value is HostOperationEvent) {
+      buffer.putUint8(134);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -398,12 +483,17 @@ class _PigeonCodec extends StandardMessageCodec {
     switch (type) {
       case 129:
         final value = readValue(buffer) as int?;
-        return value == null ? null : HostOperationEventKind.values[value];
+        return value == null ? null : HostOnboardingCursor.values[value];
       case 130:
-        return HostBootstrapSnapshot.decode(readValue(buffer)!);
+        final value = readValue(buffer) as int?;
+        return value == null ? null : HostOperationEventKind.values[value];
       case 131:
-        return HostRuntimeSnapshot.decode(readValue(buffer)!);
+        return HostBootstrapSnapshot.decode(readValue(buffer)!);
       case 132:
+        return HostRuntimeSnapshot.decode(readValue(buffer)!);
+      case 133:
+        return HostRawDraftReceipt.decode(readValue(buffer)!);
+      case 134:
         return HostOperationEvent.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -462,6 +552,44 @@ class MobileHostApi {
     )
     ;
     return pigeonVar_replyValue! as HostRuntimeSnapshot;
+  }
+
+  Future<HostRawDraftReceipt> saveRawTextDraft(String contentLanguage, String content) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.saveRawTextDraft$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[contentLanguage, content]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as HostRawDraftReceipt;
+  }
+
+  Future<bool> setOnboardingCursor(HostOnboardingCursor cursor) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.setOnboardingCursor$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[cursor]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as bool;
   }
 
   Future<String> startFeasibilityOperation(int delayMilliseconds) async {

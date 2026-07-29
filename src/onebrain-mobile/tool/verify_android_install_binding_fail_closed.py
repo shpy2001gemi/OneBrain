@@ -62,7 +62,7 @@ def main() -> int:
     wait_for_log(
         arguments.adb,
         arguments.device,
-        "profile=MOB-03/1",
+        "profile=MOB-04/1",
         arguments.timeout_seconds,
     )
 
@@ -76,7 +76,7 @@ def main() -> int:
         REJECTION,
         arguments.timeout_seconds,
     )
-    if "profile=MOB-03/1" in output:
+    if "profile=MOB-04/1" in output:
         raise RuntimeError("unbound authority unexpectedly produced a successful runtime snapshot")
 
     report = {

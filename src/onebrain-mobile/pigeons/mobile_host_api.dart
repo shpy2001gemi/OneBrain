@@ -34,6 +34,15 @@ class HostBootstrapSnapshot {
   bool rustRoundTripVerified;
 }
 
+enum HostOnboardingCursor {
+  welcome,
+  preflight,
+  identity,
+  security,
+  initHandoff,
+  limitedHome,
+}
+
 class HostRuntimeSnapshot {
   HostRuntimeSnapshot({
     required this.profileVersion,
@@ -55,6 +64,8 @@ class HostRuntimeSnapshot {
     required this.identityDomainsSeparated,
     required this.privacyDefaultsFailSafe,
     required this.redactedHistoryReady,
+    required this.encryptedRawDraftCount,
+    required this.onboardingCursor,
   });
 
   String profileVersion;
@@ -76,6 +87,22 @@ class HostRuntimeSnapshot {
   bool identityDomainsSeparated;
   bool privacyDefaultsFailSafe;
   bool redactedHistoryReady;
+  int encryptedRawDraftCount;
+  HostOnboardingCursor onboardingCursor;
+}
+
+class HostRawDraftReceipt {
+  HostRawDraftReceipt({
+    required this.draftRef,
+    required this.contentLanguage,
+    required this.contentBytes,
+    required this.totalDrafts,
+  });
+
+  String draftRef;
+  String contentLanguage;
+  int contentBytes;
+  int totalDrafts;
 }
 
 enum HostOperationEventKind { started, cancelled, completed }
@@ -99,6 +126,12 @@ abstract class MobileHostApi {
 
   @async
   HostRuntimeSnapshot inspectRuntimeProfile();
+
+  @async
+  HostRawDraftReceipt saveRawTextDraft(String contentLanguage, String content);
+
+  @async
+  bool setOnboardingCursor(HostOnboardingCursor cursor);
 
   @async
   String startFeasibilityOperation(int delayMilliseconds);

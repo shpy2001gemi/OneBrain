@@ -7,6 +7,7 @@
 mod activation;
 mod archive;
 mod bootstrap;
+mod draft;
 mod error;
 mod facade;
 mod local_kql;
@@ -23,10 +24,11 @@ pub use archive::{
     EncryptedArchiveInspection, EncryptedArchivePayload, RecoveryKey, MOBILE_ARCHIVE_VERSION,
 };
 pub use bootstrap::{
-    BootstrapStore, InstallationAuthorityRecord, PrivacyPolicyRecord, ProcessGenerationRecord,
-    ProcessLifecycle, ProcessStart, RegistryChunkRecord, RegistryOperationRecord,
-    SecurityHistoryRecord, TransferLandingRecord,
+    BootstrapStore, InstallationAuthorityRecord, OnboardingCursor, PrivacyPolicyRecord,
+    ProcessGenerationRecord, ProcessLifecycle, ProcessStart, RegistryChunkRecord,
+    RegistryOperationRecord, SecurityHistoryRecord, TransferLandingRecord,
 };
+pub use draft::{PrivateDraftKey, PrivateDraftStore, RawDraftReceipt};
 pub use error::MobileCoreError;
 pub use facade::{MobileRuntimeFacade, MobileRuntimeSnapshot};
 pub use local_kql::{run_signed_local_kql_smoke, LocalKqlSmoke};

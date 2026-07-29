@@ -1,6 +1,6 @@
 use crate::MobileCoreError;
 
-pub const MOBILE_RUNTIME_PROFILE_VERSION: &str = "MOB-03/1";
+pub const MOBILE_RUNTIME_PROFILE_VERSION: &str = "MOB-04/1";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MobileFeatureFlags {

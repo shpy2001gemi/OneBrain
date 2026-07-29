@@ -197,8 +197,24 @@ class WelcomeScreen extends ConsumerWidget {
             SizedBox(height: context.spacing.twoXl),
             ObmButton(
               label: strings.continueAction,
-              onPressed: null,
-              disabledReason: strings.notImplementedBody,
+              onPressed: () async {
+                try {
+                  await ref
+                      .read(mobileHostGatewayProvider)
+                      .setOnboardingCursor(MobileOnboardingCursor.preflight);
+                  if (context.mounted) {
+                    context.go('/onboarding/preflight');
+                  }
+                } on Object {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(strings.onboardingProgressSaveError),
+                      ),
+                    );
+                  }
+                }
+              },
             ),
             SizedBox(height: context.spacing.sm),
             ObmButton(

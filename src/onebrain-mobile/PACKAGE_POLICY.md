@@ -13,6 +13,7 @@ policy boundaries and shared presentation; it does not clone package behavior.
 | `flutter_riverpod` | 3.3.2 | dependency injection and asynchronous presentation-state projection |
 | `pigeon` | 27.3.0, `flutter.dev` | generated typed Dart/Kotlin/Swift host contract, events and bounded errors |
 | `flutter_localizations` + `intl` | Flutter SDK / 0.20.2 | generated English/Vietnamese localization and platform formatting |
+| `shared_preferences` | 2.5.5, `flutter.dev` | non-authoritative durable UI locale preference through the current async API |
 | `integration_test` | Flutter SDK 3.41.5 | official on-device Flutter test harness for the generated native bridge |
 | Android SDK / AndroidX via Flutter | SDK 36 | native lifecycle and platform integration; no custom scheduler/network stack |
 | Apple UIKit/Foundation via Flutter | platform SDK | native lifecycle and bounded host integration; compile requires macOS/Xcode |
@@ -24,6 +25,7 @@ policy boundaries and shared presentation; it does not clone package behavior.
 | Android Keystore / Apple Keychain | platform SDK | non-exportable wrapping/protected-item custody; no custom key store |
 | `ku-core::PrivateVault` + `redb` | workspace / 2.6.3 | validated XChaCha20-Poly1305 private vault over an atomic persistent backend |
 | `chacha20poly1305` + `zeroize` + `getrandom` | 0.11.0 / 1.9.0 / 0.3.4 | chunked portable archive AEAD, key cleanup and OS entropy |
+| `blake3` pure Rust backend | 1.8.5 | portable archive/draft commitments without a mismatched native NEON object in iOS cross-builds |
 | existing `ku-core` + `ku-kql` crates | workspace | canonical KU types and local parser/executor reuse without `ku-ai`, Ollama or a transport stack |
 | Google Fonts assets | pinned commits and SHA-256 in `assets/font_asset_manifest_v1.json` | offline Nunito Sans, Roboto Mono and Material Symbols Rounded assets under their upstream licenses |
 
@@ -45,6 +47,9 @@ contracts. These widgets wrap Material 3 controls:
 - `ObmStatusBadge` — `OBM-CMP-STA-001`.
 - `ObmIcon` — the only Flutter feature-facing gateway to the pinned rounded
   symbol family.
+- `ObmAppShell`, `ObmOnboardingFrame`, `ObmScopeBanner` and `ObmActionCard` —
+  shared adaptive shell, step, scope and feature-action patterns used by the
+  MOB-04 screens.
 
 A wrapper exists to centralize semantic tokens, typed variants and
 accessibility—not to reimplement Flutter controls. A new screen-local copy is

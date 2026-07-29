@@ -184,6 +184,15 @@ private func nilOrValue<T>(_ value: Any?) -> T? {
 }
 
 
+enum HostOnboardingCursor: Int, CaseIterable {
+  case welcome = 0
+  case preflight = 1
+  case identity = 2
+  case security = 3
+  case initHandoff = 4
+  case limitedHome = 5
+}
+
 enum HostOperationEventKind: Int, CaseIterable {
   case started = 0
   case cancelled = 1
@@ -276,6 +285,8 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
   var identityDomainsSeparated: Bool
   var privacyDefaultsFailSafe: Bool
   var redactedHistoryReady: Bool
+  var encryptedRawDraftCount: Int64
+  var onboardingCursor: HostOnboardingCursor
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -299,6 +310,8 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
     let identityDomainsSeparated = pigeonVar_list[16] as! Bool
     let privacyDefaultsFailSafe = pigeonVar_list[17] as! Bool
     let redactedHistoryReady = pigeonVar_list[18] as! Bool
+    let encryptedRawDraftCount = pigeonVar_list[19] as! Int64
+    let onboardingCursor = pigeonVar_list[20] as! HostOnboardingCursor
 
     return HostRuntimeSnapshot(
       profileVersion: profileVersion,
@@ -319,7 +332,9 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
       privateVaultReady: privateVaultReady,
       identityDomainsSeparated: identityDomainsSeparated,
       privacyDefaultsFailSafe: privacyDefaultsFailSafe,
-      redactedHistoryReady: redactedHistoryReady
+      redactedHistoryReady: redactedHistoryReady,
+      encryptedRawDraftCount: encryptedRawDraftCount,
+      onboardingCursor: onboardingCursor
     )
   }
   func toList() -> [Any?] {
@@ -343,13 +358,15 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
       identityDomainsSeparated,
       privacyDefaultsFailSafe,
       redactedHistoryReady,
+      encryptedRawDraftCount,
+      onboardingCursor,
     ]
   }
   static func == (lhs: HostRuntimeSnapshot, rhs: HostRuntimeSnapshot) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return MobileHostApiPigeonInternal.deepEquals(lhs.profileVersion, rhs.profileVersion) && MobileHostApiPigeonInternal.deepEquals(lhs.processGeneration, rhs.processGeneration) && MobileHostApiPigeonInternal.deepEquals(lhs.activationPhase, rhs.activationPhase) && MobileHostApiPigeonInternal.deepEquals(lhs.activeGrantCount, rhs.activeGrantCount) && MobileHostApiPigeonInternal.deepEquals(lhs.recoveredUncleanStart, rhs.recoveredUncleanStart) && MobileHostApiPigeonInternal.deepEquals(lhs.bootstrapStoreOpened, rhs.bootstrapStoreOpened) && MobileHostApiPigeonInternal.deepEquals(lhs.registryState, rhs.registryState) && MobileHostApiPigeonInternal.deepEquals(lhs.localKqlFixtureVerified, rhs.localKqlFixtureVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.privatePlannerVerified, rhs.privatePlannerVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.noLlmProvider, rhs.noLlmProvider) && MobileHostApiPigeonInternal.deepEquals(lhs.staleCallbackRejected, rhs.staleCallbackRejected) && MobileHostApiPigeonInternal.deepEquals(lhs.secureProfileActive, rhs.secureProfileActive) && MobileHostApiPigeonInternal.deepEquals(lhs.installationBindingVerified, rhs.installationBindingVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.installationCreated, rhs.installationCreated) && MobileHostApiPigeonInternal.deepEquals(lhs.securitySessionUnlocked, rhs.securitySessionUnlocked) && MobileHostApiPigeonInternal.deepEquals(lhs.privateVaultReady, rhs.privateVaultReady) && MobileHostApiPigeonInternal.deepEquals(lhs.identityDomainsSeparated, rhs.identityDomainsSeparated) && MobileHostApiPigeonInternal.deepEquals(lhs.privacyDefaultsFailSafe, rhs.privacyDefaultsFailSafe) && MobileHostApiPigeonInternal.deepEquals(lhs.redactedHistoryReady, rhs.redactedHistoryReady)
+    return MobileHostApiPigeonInternal.deepEquals(lhs.profileVersion, rhs.profileVersion) && MobileHostApiPigeonInternal.deepEquals(lhs.processGeneration, rhs.processGeneration) && MobileHostApiPigeonInternal.deepEquals(lhs.activationPhase, rhs.activationPhase) && MobileHostApiPigeonInternal.deepEquals(lhs.activeGrantCount, rhs.activeGrantCount) && MobileHostApiPigeonInternal.deepEquals(lhs.recoveredUncleanStart, rhs.recoveredUncleanStart) && MobileHostApiPigeonInternal.deepEquals(lhs.bootstrapStoreOpened, rhs.bootstrapStoreOpened) && MobileHostApiPigeonInternal.deepEquals(lhs.registryState, rhs.registryState) && MobileHostApiPigeonInternal.deepEquals(lhs.localKqlFixtureVerified, rhs.localKqlFixtureVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.privatePlannerVerified, rhs.privatePlannerVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.noLlmProvider, rhs.noLlmProvider) && MobileHostApiPigeonInternal.deepEquals(lhs.staleCallbackRejected, rhs.staleCallbackRejected) && MobileHostApiPigeonInternal.deepEquals(lhs.secureProfileActive, rhs.secureProfileActive) && MobileHostApiPigeonInternal.deepEquals(lhs.installationBindingVerified, rhs.installationBindingVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.installationCreated, rhs.installationCreated) && MobileHostApiPigeonInternal.deepEquals(lhs.securitySessionUnlocked, rhs.securitySessionUnlocked) && MobileHostApiPigeonInternal.deepEquals(lhs.privateVaultReady, rhs.privateVaultReady) && MobileHostApiPigeonInternal.deepEquals(lhs.identityDomainsSeparated, rhs.identityDomainsSeparated) && MobileHostApiPigeonInternal.deepEquals(lhs.privacyDefaultsFailSafe, rhs.privacyDefaultsFailSafe) && MobileHostApiPigeonInternal.deepEquals(lhs.redactedHistoryReady, rhs.redactedHistoryReady) && MobileHostApiPigeonInternal.deepEquals(lhs.encryptedRawDraftCount, rhs.encryptedRawDraftCount) && MobileHostApiPigeonInternal.deepEquals(lhs.onboardingCursor, rhs.onboardingCursor)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -373,10 +390,62 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
     MobileHostApiPigeonInternal.deepHash(value: identityDomainsSeparated, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: privacyDefaultsFailSafe, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: redactedHistoryReady, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: encryptedRawDraftCount, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: onboardingCursor, hasher: &hasher)
   }
 
   public var description: String {
-    return "HostRuntimeSnapshot(profileVersion: \(String(describing: profileVersion)), processGeneration: \(String(describing: processGeneration)), activationPhase: \(String(describing: activationPhase)), activeGrantCount: \(String(describing: activeGrantCount)), recoveredUncleanStart: \(String(describing: recoveredUncleanStart)), bootstrapStoreOpened: \(String(describing: bootstrapStoreOpened)), registryState: \(String(describing: registryState)), localKqlFixtureVerified: \(String(describing: localKqlFixtureVerified)), privatePlannerVerified: \(String(describing: privatePlannerVerified)), noLlmProvider: \(String(describing: noLlmProvider)), staleCallbackRejected: \(String(describing: staleCallbackRejected)), secureProfileActive: \(String(describing: secureProfileActive)), installationBindingVerified: \(String(describing: installationBindingVerified)), installationCreated: \(String(describing: installationCreated)), securitySessionUnlocked: \(String(describing: securitySessionUnlocked)), privateVaultReady: \(String(describing: privateVaultReady)), identityDomainsSeparated: \(String(describing: identityDomainsSeparated)), privacyDefaultsFailSafe: \(String(describing: privacyDefaultsFailSafe)), redactedHistoryReady: \(String(describing: redactedHistoryReady)))"
+    return "HostRuntimeSnapshot(profileVersion: \(String(describing: profileVersion)), processGeneration: \(String(describing: processGeneration)), activationPhase: \(String(describing: activationPhase)), activeGrantCount: \(String(describing: activeGrantCount)), recoveredUncleanStart: \(String(describing: recoveredUncleanStart)), bootstrapStoreOpened: \(String(describing: bootstrapStoreOpened)), registryState: \(String(describing: registryState)), localKqlFixtureVerified: \(String(describing: localKqlFixtureVerified)), privatePlannerVerified: \(String(describing: privatePlannerVerified)), noLlmProvider: \(String(describing: noLlmProvider)), staleCallbackRejected: \(String(describing: staleCallbackRejected)), secureProfileActive: \(String(describing: secureProfileActive)), installationBindingVerified: \(String(describing: installationBindingVerified)), installationCreated: \(String(describing: installationCreated)), securitySessionUnlocked: \(String(describing: securitySessionUnlocked)), privateVaultReady: \(String(describing: privateVaultReady)), identityDomainsSeparated: \(String(describing: identityDomainsSeparated)), privacyDefaultsFailSafe: \(String(describing: privacyDefaultsFailSafe)), redactedHistoryReady: \(String(describing: redactedHistoryReady)), encryptedRawDraftCount: \(String(describing: encryptedRawDraftCount)), onboardingCursor: \(String(describing: onboardingCursor)))"
+  }
+}
+
+/// Generated class from Pigeon that represents data sent in messages.
+struct HostRawDraftReceipt: Hashable, CustomStringConvertible {
+  var draftRef: String
+  var contentLanguage: String
+  var contentBytes: Int64
+  var totalDrafts: Int64
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> HostRawDraftReceipt? {
+    let draftRef = pigeonVar_list[0] as! String
+    let contentLanguage = pigeonVar_list[1] as! String
+    let contentBytes = pigeonVar_list[2] as! Int64
+    let totalDrafts = pigeonVar_list[3] as! Int64
+
+    return HostRawDraftReceipt(
+      draftRef: draftRef,
+      contentLanguage: contentLanguage,
+      contentBytes: contentBytes,
+      totalDrafts: totalDrafts
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      draftRef,
+      contentLanguage,
+      contentBytes,
+      totalDrafts,
+    ]
+  }
+  static func == (lhs: HostRawDraftReceipt, rhs: HostRawDraftReceipt) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MobileHostApiPigeonInternal.deepEquals(lhs.draftRef, rhs.draftRef) && MobileHostApiPigeonInternal.deepEquals(lhs.contentLanguage, rhs.contentLanguage) && MobileHostApiPigeonInternal.deepEquals(lhs.contentBytes, rhs.contentBytes) && MobileHostApiPigeonInternal.deepEquals(lhs.totalDrafts, rhs.totalDrafts)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("HostRawDraftReceipt")
+    MobileHostApiPigeonInternal.deepHash(value: draftRef, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: contentLanguage, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: contentBytes, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: totalDrafts, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "HostRawDraftReceipt(draftRef: \(String(describing: draftRef)), contentLanguage: \(String(describing: contentLanguage)), contentBytes: \(String(describing: contentBytes)), totalDrafts: \(String(describing: totalDrafts)))"
   }
 }
 
@@ -431,14 +500,22 @@ private class MobileHostApiPigeonCodecReader: FlutterStandardReader {
     case 129:
       let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
       if let enumResultAsInt = enumResultAsInt {
-        return HostOperationEventKind(rawValue: enumResultAsInt)
+        return HostOnboardingCursor(rawValue: enumResultAsInt)
       }
       return nil
     case 130:
-      return HostBootstrapSnapshot.fromList(self.readValue() as! [Any?])
+      let enumResultAsInt: Int? = nilOrValue(self.readValue() as! Int?)
+      if let enumResultAsInt = enumResultAsInt {
+        return HostOperationEventKind(rawValue: enumResultAsInt)
+      }
+      return nil
     case 131:
-      return HostRuntimeSnapshot.fromList(self.readValue() as! [Any?])
+      return HostBootstrapSnapshot.fromList(self.readValue() as! [Any?])
     case 132:
+      return HostRuntimeSnapshot.fromList(self.readValue() as! [Any?])
+    case 133:
+      return HostRawDraftReceipt.fromList(self.readValue() as! [Any?])
+    case 134:
       return HostOperationEvent.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -448,17 +525,23 @@ private class MobileHostApiPigeonCodecReader: FlutterStandardReader {
 
 private class MobileHostApiPigeonCodecWriter: FlutterStandardWriter {
   override func writeValue(_ value: Any) {
-    if let value = value as? HostOperationEventKind {
+    if let value = value as? HostOnboardingCursor {
       super.writeByte(129)
       super.writeValue(value.rawValue)
-    } else if let value = value as? HostBootstrapSnapshot {
+    } else if let value = value as? HostOperationEventKind {
       super.writeByte(130)
-      super.writeValue(value.toList())
-    } else if let value = value as? HostRuntimeSnapshot {
+      super.writeValue(value.rawValue)
+    } else if let value = value as? HostBootstrapSnapshot {
       super.writeByte(131)
       super.writeValue(value.toList())
-    } else if let value = value as? HostOperationEvent {
+    } else if let value = value as? HostRuntimeSnapshot {
       super.writeByte(132)
+      super.writeValue(value.toList())
+    } else if let value = value as? HostRawDraftReceipt {
+      super.writeByte(133)
+      super.writeValue(value.toList())
+    } else if let value = value as? HostOperationEvent {
+      super.writeByte(134)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -487,6 +570,8 @@ var mobileHostApiPigeonMethodCodec = FlutterStandardMethodCodec(readerWriter: Mo
 protocol MobileHostApi {
   func inspectBootstrapHost(completion: @escaping (Result<HostBootstrapSnapshot, Error>) -> Void)
   func inspectRuntimeProfile(completion: @escaping (Result<HostRuntimeSnapshot, Error>) -> Void)
+  func saveRawTextDraft(contentLanguage: String, content: String, completion: @escaping (Result<HostRawDraftReceipt, Error>) -> Void)
+  func setOnboardingCursor(cursor: HostOnboardingCursor, completion: @escaping (Result<Bool, Error>) -> Void)
   func startFeasibilityOperation(delayMilliseconds: Int64, completion: @escaping (Result<String, Error>) -> Void)
   func cancelFeasibilityOperation(operationId: String, completion: @escaping (Result<Bool, Error>) -> Void)
 }
@@ -526,6 +611,41 @@ class MobileHostApiSetup {
       }
     } else {
       inspectRuntimeProfileChannel.setMessageHandler(nil)
+    }
+    let saveRawTextDraftChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.saveRawTextDraft\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      saveRawTextDraftChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let contentLanguageArg = args[0] as! String
+        let contentArg = args[1] as! String
+        api.saveRawTextDraft(contentLanguage: contentLanguageArg, content: contentArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      saveRawTextDraftChannel.setMessageHandler(nil)
+    }
+    let setOnboardingCursorChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.setOnboardingCursor\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      setOnboardingCursorChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let cursorArg = args[0] as! HostOnboardingCursor
+        api.setOnboardingCursor(cursor: cursorArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      setOnboardingCursorChannel.setMessageHandler(nil)
     }
     let startFeasibilityOperationChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.startFeasibilityOperation\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

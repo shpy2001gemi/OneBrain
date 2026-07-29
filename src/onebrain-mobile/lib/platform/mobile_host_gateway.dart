@@ -2,6 +2,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'generated/mobile_host_api.g.dart';
 
+enum MobileOnboardingCursor {
+  welcome('/onboarding/welcome'),
+  preflight('/onboarding/preflight'),
+  identity('/onboarding/identity'),
+  security('/onboarding/security'),
+  initHandoff('/onboarding/init-handoff'),
+  limitedHome('/home');
+
+  const MobileOnboardingCursor(this.location);
+
+  final String location;
+}
+
 class MobileHostSnapshot {
   const MobileHostSnapshot({
     required this.platform,
@@ -43,6 +56,8 @@ class MobileRuntimeSnapshot {
     required this.identityDomainsSeparated,
     required this.privacyDefaultsFailSafe,
     required this.redactedHistoryReady,
+    required this.encryptedRawDraftCount,
+    required this.onboardingCursor,
   });
 
   final String profileVersion;
@@ -64,12 +79,35 @@ class MobileRuntimeSnapshot {
   final bool identityDomainsSeparated;
   final bool privacyDefaultsFailSafe;
   final bool redactedHistoryReady;
+  final int encryptedRawDraftCount;
+  final MobileOnboardingCursor onboardingCursor;
+}
+
+class MobileRawDraftReceipt {
+  const MobileRawDraftReceipt({
+    required this.draftRef,
+    required this.contentLanguage,
+    required this.contentBytes,
+    required this.totalDrafts,
+  });
+
+  final String draftRef;
+  final String contentLanguage;
+  final int contentBytes;
+  final int totalDrafts;
 }
 
 abstract interface class MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost();
 
   Future<MobileRuntimeSnapshot> inspectRuntimeProfile();
+
+  Future<MobileRawDraftReceipt> saveRawTextDraft({
+    required String contentLanguage,
+    required String content,
+  });
+
+  Future<void> setOnboardingCursor(MobileOnboardingCursor cursor);
 
   Future<String> startFeasibilityOperation(Duration delay);
 
@@ -123,6 +161,33 @@ class PigeonMobileHostGateway implements MobileHostGateway {
       identityDomainsSeparated: snapshot.identityDomainsSeparated,
       privacyDefaultsFailSafe: snapshot.privacyDefaultsFailSafe,
       redactedHistoryReady: snapshot.redactedHistoryReady,
+      encryptedRawDraftCount: snapshot.encryptedRawDraftCount,
+      onboardingCursor:
+          MobileOnboardingCursor.values[snapshot.onboardingCursor.index],
+    );
+  }
+
+  @override
+  Future<void> setOnboardingCursor(MobileOnboardingCursor cursor) async {
+    final saved = await _api.setOnboardingCursor(
+      HostOnboardingCursor.values[cursor.index],
+    );
+    if (!saved) {
+      throw StateError('Native host rejected the onboarding cursor');
+    }
+  }
+
+  @override
+  Future<MobileRawDraftReceipt> saveRawTextDraft({
+    required String contentLanguage,
+    required String content,
+  }) async {
+    final receipt = await _api.saveRawTextDraft(contentLanguage, content);
+    return MobileRawDraftReceipt(
+      draftRef: receipt.draftRef,
+      contentLanguage: receipt.contentLanguage,
+      contentBytes: receipt.contentBytes,
+      totalDrafts: receipt.totalDrafts,
     );
   }
 

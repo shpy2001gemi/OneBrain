@@ -192,6 +192,21 @@ class FlutterError (
   val details: Any? = null
 ) : RuntimeException()
 
+enum class HostOnboardingCursor(val raw: Int) {
+  WELCOME(0),
+  PREFLIGHT(1),
+  IDENTITY(2),
+  SECURITY(3),
+  INIT_HANDOFF(4),
+  LIMITED_HOME(5);
+
+  companion object {
+    fun ofRaw(raw: Int): HostOnboardingCursor? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
 enum class HostOperationEventKind(val raw: Int) {
   STARTED(0),
   CANCELLED(1),
@@ -285,7 +300,9 @@ data class HostRuntimeSnapshot (
   val privateVaultReady: Boolean,
   val identityDomainsSeparated: Boolean,
   val privacyDefaultsFailSafe: Boolean,
-  val redactedHistoryReady: Boolean
+  val redactedHistoryReady: Boolean,
+  val encryptedRawDraftCount: Long,
+  val onboardingCursor: HostOnboardingCursor
 )
  {
   companion object {
@@ -309,7 +326,9 @@ data class HostRuntimeSnapshot (
       val identityDomainsSeparated = pigeonVar_list[16] as Boolean
       val privacyDefaultsFailSafe = pigeonVar_list[17] as Boolean
       val redactedHistoryReady = pigeonVar_list[18] as Boolean
-      return HostRuntimeSnapshot(profileVersion, processGeneration, activationPhase, activeGrantCount, recoveredUncleanStart, bootstrapStoreOpened, registryState, localKqlFixtureVerified, privatePlannerVerified, noLlmProvider, staleCallbackRejected, secureProfileActive, installationBindingVerified, installationCreated, securitySessionUnlocked, privateVaultReady, identityDomainsSeparated, privacyDefaultsFailSafe, redactedHistoryReady)
+      val encryptedRawDraftCount = pigeonVar_list[19] as Long
+      val onboardingCursor = pigeonVar_list[20] as HostOnboardingCursor
+      return HostRuntimeSnapshot(profileVersion, processGeneration, activationPhase, activeGrantCount, recoveredUncleanStart, bootstrapStoreOpened, registryState, localKqlFixtureVerified, privatePlannerVerified, noLlmProvider, staleCallbackRejected, secureProfileActive, installationBindingVerified, installationCreated, securitySessionUnlocked, privateVaultReady, identityDomainsSeparated, privacyDefaultsFailSafe, redactedHistoryReady, encryptedRawDraftCount, onboardingCursor)
     }
   }
   fun toList(): List<Any?> {
@@ -333,6 +352,8 @@ data class HostRuntimeSnapshot (
       identityDomainsSeparated,
       privacyDefaultsFailSafe,
       redactedHistoryReady,
+      encryptedRawDraftCount,
+      onboardingCursor,
     )
   }
   override fun equals(other: Any?): Boolean {
@@ -343,7 +364,7 @@ data class HostRuntimeSnapshot (
       return true
     }
     val other = other as HostRuntimeSnapshot
-    return MobileHostApiPigeonUtils.deepEquals(this.profileVersion, other.profileVersion) && MobileHostApiPigeonUtils.deepEquals(this.processGeneration, other.processGeneration) && MobileHostApiPigeonUtils.deepEquals(this.activationPhase, other.activationPhase) && MobileHostApiPigeonUtils.deepEquals(this.activeGrantCount, other.activeGrantCount) && MobileHostApiPigeonUtils.deepEquals(this.recoveredUncleanStart, other.recoveredUncleanStart) && MobileHostApiPigeonUtils.deepEquals(this.bootstrapStoreOpened, other.bootstrapStoreOpened) && MobileHostApiPigeonUtils.deepEquals(this.registryState, other.registryState) && MobileHostApiPigeonUtils.deepEquals(this.localKqlFixtureVerified, other.localKqlFixtureVerified) && MobileHostApiPigeonUtils.deepEquals(this.privatePlannerVerified, other.privatePlannerVerified) && MobileHostApiPigeonUtils.deepEquals(this.noLlmProvider, other.noLlmProvider) && MobileHostApiPigeonUtils.deepEquals(this.staleCallbackRejected, other.staleCallbackRejected) && MobileHostApiPigeonUtils.deepEquals(this.secureProfileActive, other.secureProfileActive) && MobileHostApiPigeonUtils.deepEquals(this.installationBindingVerified, other.installationBindingVerified) && MobileHostApiPigeonUtils.deepEquals(this.installationCreated, other.installationCreated) && MobileHostApiPigeonUtils.deepEquals(this.securitySessionUnlocked, other.securitySessionUnlocked) && MobileHostApiPigeonUtils.deepEquals(this.privateVaultReady, other.privateVaultReady) && MobileHostApiPigeonUtils.deepEquals(this.identityDomainsSeparated, other.identityDomainsSeparated) && MobileHostApiPigeonUtils.deepEquals(this.privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) && MobileHostApiPigeonUtils.deepEquals(this.redactedHistoryReady, other.redactedHistoryReady)
+    return MobileHostApiPigeonUtils.deepEquals(this.profileVersion, other.profileVersion) && MobileHostApiPigeonUtils.deepEquals(this.processGeneration, other.processGeneration) && MobileHostApiPigeonUtils.deepEquals(this.activationPhase, other.activationPhase) && MobileHostApiPigeonUtils.deepEquals(this.activeGrantCount, other.activeGrantCount) && MobileHostApiPigeonUtils.deepEquals(this.recoveredUncleanStart, other.recoveredUncleanStart) && MobileHostApiPigeonUtils.deepEquals(this.bootstrapStoreOpened, other.bootstrapStoreOpened) && MobileHostApiPigeonUtils.deepEquals(this.registryState, other.registryState) && MobileHostApiPigeonUtils.deepEquals(this.localKqlFixtureVerified, other.localKqlFixtureVerified) && MobileHostApiPigeonUtils.deepEquals(this.privatePlannerVerified, other.privatePlannerVerified) && MobileHostApiPigeonUtils.deepEquals(this.noLlmProvider, other.noLlmProvider) && MobileHostApiPigeonUtils.deepEquals(this.staleCallbackRejected, other.staleCallbackRejected) && MobileHostApiPigeonUtils.deepEquals(this.secureProfileActive, other.secureProfileActive) && MobileHostApiPigeonUtils.deepEquals(this.installationBindingVerified, other.installationBindingVerified) && MobileHostApiPigeonUtils.deepEquals(this.installationCreated, other.installationCreated) && MobileHostApiPigeonUtils.deepEquals(this.securitySessionUnlocked, other.securitySessionUnlocked) && MobileHostApiPigeonUtils.deepEquals(this.privateVaultReady, other.privateVaultReady) && MobileHostApiPigeonUtils.deepEquals(this.identityDomainsSeparated, other.identityDomainsSeparated) && MobileHostApiPigeonUtils.deepEquals(this.privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) && MobileHostApiPigeonUtils.deepEquals(this.redactedHistoryReady, other.redactedHistoryReady) && MobileHostApiPigeonUtils.deepEquals(this.encryptedRawDraftCount, other.encryptedRawDraftCount) && MobileHostApiPigeonUtils.deepEquals(this.onboardingCursor, other.onboardingCursor)
   }
 
   override fun hashCode(): Int {
@@ -367,10 +388,61 @@ data class HostRuntimeSnapshot (
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.identityDomainsSeparated)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.privacyDefaultsFailSafe)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.redactedHistoryReady)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.encryptedRawDraftCount)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.onboardingCursor)
     return result
   }
   override fun toString(): String {
-    return "HostRuntimeSnapshot(profileVersion=$profileVersion, processGeneration=$processGeneration, activationPhase=$activationPhase, activeGrantCount=$activeGrantCount, recoveredUncleanStart=$recoveredUncleanStart, bootstrapStoreOpened=$bootstrapStoreOpened, registryState=$registryState, localKqlFixtureVerified=$localKqlFixtureVerified, privatePlannerVerified=$privatePlannerVerified, noLlmProvider=$noLlmProvider, staleCallbackRejected=$staleCallbackRejected, secureProfileActive=$secureProfileActive, installationBindingVerified=$installationBindingVerified, installationCreated=$installationCreated, securitySessionUnlocked=$securitySessionUnlocked, privateVaultReady=$privateVaultReady, identityDomainsSeparated=$identityDomainsSeparated, privacyDefaultsFailSafe=$privacyDefaultsFailSafe, redactedHistoryReady=$redactedHistoryReady)"
+    return "HostRuntimeSnapshot(profileVersion=$profileVersion, processGeneration=$processGeneration, activationPhase=$activationPhase, activeGrantCount=$activeGrantCount, recoveredUncleanStart=$recoveredUncleanStart, bootstrapStoreOpened=$bootstrapStoreOpened, registryState=$registryState, localKqlFixtureVerified=$localKqlFixtureVerified, privatePlannerVerified=$privatePlannerVerified, noLlmProvider=$noLlmProvider, staleCallbackRejected=$staleCallbackRejected, secureProfileActive=$secureProfileActive, installationBindingVerified=$installationBindingVerified, installationCreated=$installationCreated, securitySessionUnlocked=$securitySessionUnlocked, privateVaultReady=$privateVaultReady, identityDomainsSeparated=$identityDomainsSeparated, privacyDefaultsFailSafe=$privacyDefaultsFailSafe, redactedHistoryReady=$redactedHistoryReady, encryptedRawDraftCount=$encryptedRawDraftCount, onboardingCursor=$onboardingCursor)"
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class HostRawDraftReceipt (
+  val draftRef: String,
+  val contentLanguage: String,
+  val contentBytes: Long,
+  val totalDrafts: Long
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): HostRawDraftReceipt {
+      val draftRef = pigeonVar_list[0] as String
+      val contentLanguage = pigeonVar_list[1] as String
+      val contentBytes = pigeonVar_list[2] as Long
+      val totalDrafts = pigeonVar_list[3] as Long
+      return HostRawDraftReceipt(draftRef, contentLanguage, contentBytes, totalDrafts)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      draftRef,
+      contentLanguage,
+      contentBytes,
+      totalDrafts,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as HostRawDraftReceipt
+    return MobileHostApiPigeonUtils.deepEquals(this.draftRef, other.draftRef) && MobileHostApiPigeonUtils.deepEquals(this.contentLanguage, other.contentLanguage) && MobileHostApiPigeonUtils.deepEquals(this.contentBytes, other.contentBytes) && MobileHostApiPigeonUtils.deepEquals(this.totalDrafts, other.totalDrafts)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.draftRef)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.contentLanguage)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.contentBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.totalDrafts)
+    return result
+  }
+  override fun toString(): String {
+    return "HostRawDraftReceipt(draftRef=$draftRef, contentLanguage=$contentLanguage, contentBytes=$contentBytes, totalDrafts=$totalDrafts)"
   }
 }
 
@@ -423,20 +495,30 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
     return when (type) {
       129.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          HostOperationEventKind.ofRaw(it.toInt())
+          HostOnboardingCursor.ofRaw(it.toInt())
         }
       }
       130.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          HostBootstrapSnapshot.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          HostOperationEventKind.ofRaw(it.toInt())
         }
       }
       131.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostRuntimeSnapshot.fromList(it)
+          HostBootstrapSnapshot.fromList(it)
         }
       }
       132.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          HostRuntimeSnapshot.fromList(it)
+        }
+      }
+      133.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          HostRawDraftReceipt.fromList(it)
+        }
+      }
+      134.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           HostOperationEvent.fromList(it)
         }
@@ -446,20 +528,28 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
   }
   override fun writeValue(stream: ByteArrayOutputStream, value: Any?)   {
     when (value) {
-      is HostOperationEventKind -> {
+      is HostOnboardingCursor -> {
         stream.write(129)
         writeValue(stream, value.raw.toLong())
       }
-      is HostBootstrapSnapshot -> {
+      is HostOperationEventKind -> {
         stream.write(130)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw.toLong())
       }
-      is HostRuntimeSnapshot -> {
+      is HostBootstrapSnapshot -> {
         stream.write(131)
         writeValue(stream, value.toList())
       }
-      is HostOperationEvent -> {
+      is HostRuntimeSnapshot -> {
         stream.write(132)
+        writeValue(stream, value.toList())
+      }
+      is HostRawDraftReceipt -> {
+        stream.write(133)
+        writeValue(stream, value.toList())
+      }
+      is HostOperationEvent -> {
+        stream.write(134)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -474,6 +564,8 @@ val MobileHostApiPigeonMethodCodec = StandardMethodCodec(MobileHostApiPigeonCode
 interface MobileHostApi {
   fun inspectBootstrapHost(callback: (Result<HostBootstrapSnapshot>) -> Unit)
   fun inspectRuntimeProfile(callback: (Result<HostRuntimeSnapshot>) -> Unit)
+  fun saveRawTextDraft(contentLanguage: String, content: String, callback: (Result<HostRawDraftReceipt>) -> Unit)
+  fun setOnboardingCursor(cursor: HostOnboardingCursor, callback: (Result<Boolean>) -> Unit)
   fun startFeasibilityOperation(delayMilliseconds: Long, callback: (Result<String>) -> Unit)
   fun cancelFeasibilityOperation(operationId: String, callback: (Result<Boolean>) -> Unit)
 
@@ -509,6 +601,47 @@ interface MobileHostApi {
         if (api != null) {
           channel.setMessageHandler { _, reply ->
             api.inspectRuntimeProfile{ result: Result<HostRuntimeSnapshot> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.saveRawTextDraft$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val contentLanguageArg = args[0] as String
+            val contentArg = args[1] as String
+            api.saveRawTextDraft(contentLanguageArg, contentArg) { result: Result<HostRawDraftReceipt> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.setOnboardingCursor$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val cursorArg = args[0] as HostOnboardingCursor
+            api.setOnboardingCursor(cursorArg) { result: Result<Boolean> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MobileHostApiPigeonUtils.wrapError(error))

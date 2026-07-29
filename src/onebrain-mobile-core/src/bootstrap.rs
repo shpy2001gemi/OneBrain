@@ -21,11 +21,50 @@ const INSTALLATION_AUTHORITY: TableDefinition<&str, &[u8]> =
 const PRIVACY_POLICY: TableDefinition<&str, &[u8]> = TableDefinition::new("privacy_policy");
 const SECURITY_HISTORY: TableDefinition<u64, &[u8]> = TableDefinition::new("security_history");
 const SECURITY_METADATA: TableDefinition<&str, &[u8]> = TableDefinition::new("security_metadata");
+const ONBOARDING_STATE: TableDefinition<&str, &[u8]> = TableDefinition::new("onboarding_state");
 const CURRENT_PROCESS_KEY: &str = "current";
 const CURRENT_INSTALLATION_KEY: &str = "current";
 const CURRENT_PRIVACY_POLICY_KEY: &str = "current";
 const NEXT_SECURITY_SEQUENCE_KEY: &str = "next_sequence";
+const CURRENT_ONBOARDING_KEY: &str = "current";
 const MAX_SECURITY_HISTORY_RECORDS: u64 = 512;
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OnboardingCursor {
+    #[default]
+    Welcome,
+    Preflight,
+    Identity,
+    Security,
+    InitHandoff,
+    LimitedHome,
+}
+
+impl OnboardingCursor {
+    pub const fn code(self) -> u32 {
+        match self {
+            Self::Welcome => 0,
+            Self::Preflight => 1,
+            Self::Identity => 2,
+            Self::Security => 3,
+            Self::InitHandoff => 4,
+            Self::LimitedHome => 5,
+        }
+    }
+
+    pub const fn from_code(code: u32) -> Option<Self> {
+        match code {
+            0 => Some(Self::Welcome),
+            1 => Some(Self::Preflight),
+            2 => Some(Self::Identity),
+            3 => Some(Self::Security),
+            4 => Some(Self::InitHandoff),
+            5 => Some(Self::LimitedHome),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -150,6 +189,7 @@ impl BootstrapStore {
             let _ = write.open_table(PRIVACY_POLICY)?;
             let _ = write.open_table(SECURITY_HISTORY)?;
             let _ = write.open_table(SECURITY_METADATA)?;
+            let _ = write.open_table(ONBOARDING_STATE)?;
         }
         write.commit()?;
         Ok(Self {
@@ -265,6 +305,33 @@ impl BootstrapStore {
             .map(|value| decode(value.value()))
             .transpose()?
             .unwrap_or_default())
+    }
+
+    pub fn onboarding_cursor(&self) -> Result<OnboardingCursor, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(ONBOARDING_STATE)?;
+        Ok(table
+            .get(CURRENT_ONBOARDING_KEY)?
+            .map(|value| decode(value.value()))
+            .transpose()?
+            .unwrap_or_default())
+    }
+
+    pub fn set_onboarding_cursor(&self, next: OnboardingCursor) -> Result<(), MobileCoreError> {
+        let current = self.onboarding_cursor()?;
+        if !valid_onboarding_transition(current, next) {
+            return Err(MobileCoreError::InvalidArgument(
+                "onboarding cursor transition is not allowed".into(),
+            ));
+        }
+        let bytes = encode(&next)?;
+        let write = self.database.begin_write()?;
+        {
+            let mut table = write.open_table(ONBOARDING_STATE)?;
+            table.insert(CURRENT_ONBOARDING_KEY, bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
     }
 
     pub fn replace_privacy_policy(
@@ -635,6 +702,27 @@ fn ensure_generation(current: u64, received: u64) -> Result<(), MobileCoreError>
     } else {
         Err(MobileCoreError::StaleGeneration { received, current })
     }
+}
+
+const fn valid_onboarding_transition(current: OnboardingCursor, next: OnboardingCursor) -> bool {
+    matches!(
+        (current, next),
+        (OnboardingCursor::Welcome, OnboardingCursor::Welcome)
+            | (OnboardingCursor::Welcome, OnboardingCursor::Preflight)
+            | (OnboardingCursor::Preflight, OnboardingCursor::Welcome)
+            | (OnboardingCursor::Preflight, OnboardingCursor::Preflight)
+            | (OnboardingCursor::Preflight, OnboardingCursor::Identity)
+            | (OnboardingCursor::Identity, OnboardingCursor::Preflight)
+            | (OnboardingCursor::Identity, OnboardingCursor::Identity)
+            | (OnboardingCursor::Identity, OnboardingCursor::Security)
+            | (OnboardingCursor::Security, OnboardingCursor::Identity)
+            | (OnboardingCursor::Security, OnboardingCursor::Security)
+            | (OnboardingCursor::Security, OnboardingCursor::InitHandoff)
+            | (OnboardingCursor::InitHandoff, OnboardingCursor::Security)
+            | (OnboardingCursor::InitHandoff, OnboardingCursor::InitHandoff)
+            | (OnboardingCursor::InitHandoff, OnboardingCursor::LimitedHome)
+            | (OnboardingCursor::LimitedHome, OnboardingCursor::LimitedHome)
+    )
 }
 
 fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, MobileCoreError> {

@@ -31,6 +31,15 @@ internal data class RustRuntimeFacts(
     val identityDomainsSeparated: Boolean,
     val privacyDefaultsFailSafe: Boolean,
     val redactedHistoryReady: Boolean,
+    val encryptedRawDraftCount: Long,
+    val onboardingCursor: Int,
+)
+
+internal data class RustRawDraftReceipt(
+    val draftRef: String,
+    val contentLanguage: String,
+    val contentBytes: Long,
+    val totalDrafts: Long,
 )
 
 internal object RustMobileBridge {
@@ -69,7 +78,7 @@ internal object RustMobileBridge {
             "Rust mobile runtime failed to open with status $statusCode"
         }
         return RustRuntimeFacts(
-            profileVersion = "MOB-03/1",
+            profileVersion = "MOB-04/1",
             processGeneration = nativeRuntimeProcessGeneration(),
             activationPhase =
                 when (nativeRuntimeActivationPhase()) {
@@ -100,6 +109,46 @@ internal object RustMobileBridge {
             identityDomainsSeparated = nativeRuntimeIdentityDomainsSeparated(),
             privacyDefaultsFailSafe = nativeRuntimePrivacyDefaultsFailSafe(),
             redactedHistoryReady = nativeRuntimeRedactedHistoryReady(),
+            encryptedRawDraftCount = nativeRuntimeEncryptedRawDraftCount(),
+            onboardingCursor = nativeRuntimeOnboardingCursor(),
+        )
+    }
+
+    fun setOnboardingCursor(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        cursor: Int,
+    ): Boolean {
+        check(loadFailure == null) {
+            "Rust mobile bridge is unavailable: ${loadFailure?.message}"
+        }
+        check(nativeRuntimeOpenSecure(dataRoot, securityMaterial) == 0) {
+            "Rust mobile runtime rejected the protected session"
+        }
+        return nativeRuntimeSetOnboardingCursor(cursor) == 0
+    }
+
+    fun saveRawTextDraft(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        contentLanguage: String,
+        content: String,
+    ): RustRawDraftReceipt {
+        check(loadFailure == null) {
+            "Rust mobile bridge is unavailable: ${loadFailure?.message}"
+        }
+        check(nativeRuntimeOpenSecure(dataRoot, securityMaterial) == 0) {
+            "Rust mobile runtime rejected the protected session"
+        }
+        val draftRef = nativeRuntimeSaveRawTextDraft(contentLanguage, content)
+        check(draftRef.isNotEmpty()) {
+            "Rust mobile runtime rejected the private raw draft"
+        }
+        return RustRawDraftReceipt(
+            draftRef = draftRef,
+            contentLanguage = contentLanguage.lowercase(),
+            contentBytes = content.toByteArray(Charsets.UTF_8).size.toLong(),
+            totalDrafts = nativeRuntimeEncryptedRawDraftCount(),
         )
     }
 
@@ -125,11 +174,22 @@ internal object RustMobileBridge {
 
     @JvmStatic private external fun nativeRuntimeLock(): Int
 
+    @JvmStatic private external fun nativeRuntimeSaveRawTextDraft(
+        contentLanguage: String,
+        content: String,
+    ): String
+
     @JvmStatic private external fun nativeRuntimeProcessGeneration(): Long
 
     @JvmStatic private external fun nativeRuntimeActivationPhase(): Int
 
     @JvmStatic private external fun nativeRuntimeActiveGrantCount(): Int
+
+    @JvmStatic private external fun nativeRuntimeEncryptedRawDraftCount(): Long
+
+    @JvmStatic private external fun nativeRuntimeOnboardingCursor(): Int
+
+    @JvmStatic private external fun nativeRuntimeSetOnboardingCursor(cursor: Int): Int
 
     @JvmStatic private external fun nativeRuntimeRecoveredUncleanStart(): Boolean
 

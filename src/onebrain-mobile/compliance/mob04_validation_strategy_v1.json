@@ -1,0 +1,43 @@
+{
+  "format": "onebrain.mobile.validation-strategy/1",
+  "work_package": "MOB-04",
+  "decision_date": "2026-07-30",
+  "decision_owner": "repository owner",
+  "strategy": "virtual-device-first",
+  "automated_targets": [
+    "Android 16 x86_64 emulator native bridge and lifecycle recovery",
+    "iOS simulator and device-target compile in CI",
+    "Windows Rust encrypted-draft and onboarding-cursor tests",
+    "Windows Flutter widget, accessibility and golden tests"
+  ],
+  "implemented_scope": [
+    "English and Vietnamese onboarding plus required-data handoff",
+    "durable Rust-owned onboarding resume cursor",
+    "honest BootstrapOnly Limited shell",
+    "encrypted bounded PrivateLocal text drafts",
+    "adaptive five-destination shell and Registry-gated disabled routes",
+    "runtime, storage and no-LLM status surfaces"
+  ],
+  "remaining_mob04_scope": [
+    "encrypted iOS share-extension and Android share-intent spool ingestion",
+    "system-picker media staging",
+    "user-selected encrypted backup and export destination workflow",
+    "full Limited, Degraded and Safe shell state matrix"
+  ],
+  "physical_device_validation": {
+    "android_accessibility_and_lifecycle": "deferred_by_owner",
+    "android_share_uri_grants": "deferred_by_owner",
+    "ios_share_extension_and_protected_data": "deferred_by_owner",
+    "ios_accessibility_and_lifecycle": "deferred_by_owner"
+  },
+  "claims": {
+    "physical_device_validated": false,
+    "mob04_complete": false,
+    "mob04_physical_exit_closed": false,
+    "ready_offline": false,
+    "registry_init_enabled": false,
+    "network_lane_enabled": false,
+    "llm_lane_enabled": false
+  },
+  "notes": "Virtual gates prove the implemented private Limited slice only. Registry-dependent validation/search/KQL routes, share/media intake and backup/export destination workflows remain gated; MOB-GATE-OFFLINE-MVP can close only after MOB-05 first activation."
+}

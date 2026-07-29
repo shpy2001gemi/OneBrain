@@ -13,11 +13,13 @@ import org.onebrain.onebrain_mobile.generated.HostBootstrapSnapshot
 import org.onebrain.onebrain_mobile.generated.HostOperationEvent
 import org.onebrain.onebrain_mobile.generated.HostOperationEventKind
 import org.onebrain.onebrain_mobile.generated.HostOperationEventsStreamHandler
+import org.onebrain.onebrain_mobile.generated.HostOnboardingCursor
 import org.onebrain.onebrain_mobile.generated.HostRuntimeSnapshot
+import org.onebrain.onebrain_mobile.generated.HostRawDraftReceipt
 import org.onebrain.onebrain_mobile.generated.MobileHostApi
 import org.onebrain.onebrain_mobile.generated.PigeonEventSink
 
-private const val HOST_API_VERSION = "3"
+private const val HOST_API_VERSION = "5"
 private const val MAX_FEASIBILITY_DELAY_MILLIS = 30_000L
 private const val RUNTIME_LOG_TAG = "OneBrainMobileRuntime"
 
@@ -124,7 +126,9 @@ private class AndroidMobileHost(
                             "vault=${rust.privateVaultReady} " +
                             "domains=${rust.identityDomainsSeparated} " +
                             "privacy=${rust.privacyDefaultsFailSafe} " +
-                            "history=${rust.redactedHistoryReady}",
+                            "history=${rust.redactedHistoryReady} " +
+                            "drafts=${rust.encryptedRawDraftCount} " +
+                            "onboarding=${rust.onboardingCursor}",
                     )
                     HostRuntimeSnapshot(
                         profileVersion = rust.profileVersion,
@@ -146,6 +150,10 @@ private class AndroidMobileHost(
                         identityDomainsSeparated = rust.identityDomainsSeparated,
                         privacyDefaultsFailSafe = rust.privacyDefaultsFailSafe,
                         redactedHistoryReady = rust.redactedHistoryReady,
+                        encryptedRawDraftCount = rust.encryptedRawDraftCount,
+                        onboardingCursor =
+                            HostOnboardingCursor.ofRaw(rust.onboardingCursor)
+                                ?: HostOnboardingCursor.WELCOME,
                     )
                 }.fold(
                     onSuccess = { Result.success(it) },
@@ -158,6 +166,79 @@ private class AndroidMobileHost(
                             FlutterError(
                                 code = "RUNTIME_OPEN_FAILED",
                                 message = it.message ?: "Rust mobile runtime failed to open",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    override fun saveRawTextDraft(
+        contentLanguage: String,
+        content: String,
+        callback: (Result<HostRawDraftReceipt>) -> Unit,
+    ) {
+        runtimeExecutor.execute {
+            val result =
+                runCatching {
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    val receipt =
+                        try {
+                            RustMobileBridge.saveRawTextDraft(
+                                dataRoot,
+                                securityMaterial,
+                                contentLanguage,
+                                content,
+                            )
+                        } finally {
+                            securityMaterial.fill(0)
+                        }
+                    HostRawDraftReceipt(
+                        draftRef = receipt.draftRef,
+                        contentLanguage = receipt.contentLanguage,
+                        contentBytes = receipt.contentBytes,
+                        totalDrafts = receipt.totalDrafts,
+                    )
+                }.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = {
+                        Result.failure(
+                            FlutterError(
+                                code = "RAW_DRAFT_SAVE_FAILED",
+                                message = "Private draft could not be saved",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    override fun setOnboardingCursor(
+        cursor: HostOnboardingCursor,
+        callback: (Result<Boolean>) -> Unit,
+    ) {
+        runtimeExecutor.execute {
+            val result =
+                runCatching {
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    try {
+                        RustMobileBridge.setOnboardingCursor(
+                            dataRoot,
+                            securityMaterial,
+                            cursor.raw,
+                        )
+                    } finally {
+                        securityMaterial.fill(0)
+                    }
+                }.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = {
+                        Result.failure(
+                            FlutterError(
+                                code = "ONBOARDING_CURSOR_SAVE_FAILED",
+                                message = "Onboarding progress could not be saved",
                             ),
                         )
                     },

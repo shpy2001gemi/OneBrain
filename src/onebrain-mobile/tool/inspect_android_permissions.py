@@ -77,7 +77,7 @@ def inspect(apk: Path) -> dict[str, object]:
     return {
         "format": "onebrain.mobile.android-permissions/1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "scope": "MOB-03 BootstrapOnly protected Android release",
+        "scope": "MOB-04 BootstrapOnly private-shell Android release",
         "package": apk.name,
         "package_bytes": apk.stat().st_size,
         "package_sha256": _sha256(apk),

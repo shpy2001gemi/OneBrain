@@ -18,14 +18,17 @@ class _EntryScreenState extends ConsumerState<EntryScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      var location = MobileOnboardingCursor.welcome.location;
       try {
         await ref.read(bootstrapHostSnapshotProvider.future);
+        final runtime = await ref.read(mobileRuntimeSnapshotProvider.future);
+        location = runtime.onboardingCursor.location;
       } on Object {
         // The typed host state remains visible as unavailable on the next
         // screen. Entry resolution does not invent product readiness.
       }
       if (mounted) {
-        context.go('/onboarding/welcome');
+        context.go(location);
       }
     });
   }

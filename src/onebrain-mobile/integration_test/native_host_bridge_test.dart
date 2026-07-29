@@ -8,20 +8,20 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'MOB-03 typed host bridge exposes protected runtime and bounded operations',
+    'MOB-04 host bridge saves encrypted Limited-mode drafts and bounded operations',
     (tester) async {
       final gateway = PigeonMobileHostGateway();
       final events = gateway.observeFeasibilityOperations().asBroadcastStream();
 
       final snapshot = await gateway.inspectBootstrapHost();
-      expect(snapshot.apiVersion, '3');
+      expect(snapshot.apiVersion, '5');
       expect(snapshot.registryRequestIssued, isFalse);
       expect(snapshot.rustCoreLinked, isTrue);
-      expect(snapshot.rustAbiVersion, 3);
+      expect(snapshot.rustAbiVersion, 5);
       expect(snapshot.rustRoundTripVerified, isTrue);
 
       final runtime = await gateway.inspectRuntimeProfile();
-      expect(runtime.profileVersion, 'MOB-03/1');
+      expect(runtime.profileVersion, 'MOB-04/1');
       expect(runtime.processGeneration, greaterThanOrEqualTo(1));
       expect(runtime.activationPhase, 'Active');
       expect(runtime.activeGrantCount, 1);
@@ -38,6 +38,24 @@ void main() {
       expect(runtime.identityDomainsSeparated, isTrue);
       expect(runtime.privacyDefaultsFailSafe, isTrue);
       expect(runtime.redactedHistoryReady, isTrue);
+      expect(runtime.encryptedRawDraftCount, greaterThanOrEqualTo(0));
+      await gateway.setOnboardingCursor(runtime.onboardingCursor);
+      expect(
+        (await gateway.inspectRuntimeProfile()).onboardingCursor,
+        runtime.onboardingCursor,
+      );
+
+      const draftText = 'virtual-device private draft';
+      final draft = await gateway.saveRawTextDraft(
+        contentLanguage: 'en',
+        content: draftText,
+      );
+      expect(draft.draftRef, matches(RegExp(r'^draft_[0-9a-f]{32}$')));
+      expect(draft.contentLanguage, 'en');
+      expect(draft.contentBytes, draftText.length);
+      expect(draft.totalDrafts, runtime.encryptedRawDraftCount + 1);
+      final afterDraft = await gateway.inspectRuntimeProfile();
+      expect(afterDraft.encryptedRawDraftCount, draft.totalDrafts);
 
       final startedForCancellation = events
           .firstWhere((event) => event.kind == HostOperationEventKind.started)

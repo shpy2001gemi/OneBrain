@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:onebrain_mobile/app/locale_controller.dart';
 import 'package:onebrain_mobile/app/onebrain_app.dart';
 import 'package:onebrain_mobile/design/onebrain_theme.dart';
 import 'package:onebrain_mobile/design/onebrain_theme_extensions.dart';
@@ -16,7 +17,7 @@ void main() {
 
     expect(find.text('Grow ideas on your own node'), findsOneWidget);
     expect(find.textContaining('Android test host ready'), findsOneWidget);
-    expect(find.text('Rust bridge 0.1.0-test · ABI 3'), findsOneWidget);
+    expect(find.text('Rust bridge 0.1.0-test · ABI 5'), findsOneWidget);
     expect(find.text('Typed round trip verified'), findsOneWidget);
     expect(
       find.text(
@@ -45,6 +46,48 @@ void main() {
     expect(find.text('Chưa bắt đầu Registry Init'), findsOneWidget);
   });
 
+  testWidgets(
+    'MOB-04 onboarding reaches Limited shell and saves encrypted raw draft',
+    (tester) async {
+      Future<void> tapVisible(String label) async {
+        final target = find.text(label);
+        await tester.ensureVisible(target);
+        await tester.pumpAndSettle();
+        await tester.tap(target);
+        await tester.pumpAndSettle();
+      }
+
+      await tester.pumpWidget(_testApp());
+      await tester.pumpAndSettle();
+
+      await tapVisible('Continue to device preflight');
+      expect(find.text('Check the foundations'), findsOneWidget);
+      await tapVisible('Next');
+      expect(find.text('This installation is its own node'), findsOneWidget);
+      await tapVisible('Next');
+      expect(find.text('Private by default'), findsOneWidget);
+      await tapVisible('Next');
+      expect(
+        find.text('Add required Concept data after launch'),
+        findsOneWidget,
+      );
+      await tapVisible('Open required-data Init');
+      expect(find.text('Required Concept data'), findsWidgets);
+      await tapVisible('Use Limited mode for now');
+      expect(find.text('A bright place for private ideas'), findsOneWidget);
+      expect(find.text('Limited mode'), findsOneWidget);
+      await tapVisible('Capture text');
+      expect(find.text('Private text draft'), findsOneWidget);
+      await tester.enterText(
+        find.byType(TextField),
+        'A private virtual-device idea',
+      );
+      await tapVisible('Save private draft');
+      expect(find.text('Saved on this device'), findsOneWidget);
+      expect(find.textContaining('1 draft'), findsOneWidget);
+    },
+  );
+
   testWidgets('shared components reflow at 200 percent text scale', (
     tester,
   ) async {
@@ -67,6 +110,38 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Limited shell reflows at 320 pixels and 200 percent text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    Future<void> tapVisible(String label) async {
+      final target = find.text(label);
+      await tester.ensureVisible(target);
+      await tester.pumpAndSettle();
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+    await tapVisible('Continue to device preflight');
+    await tapVisible('Next');
+    await tapVisible('Next');
+    await tapVisible('Next');
+    await tapVisible('Use Limited mode for now');
+
+    expect(find.text('Limited mode'), findsOneWidget);
+    expect(find.text('Home'), findsWidgets);
+    expect(find.text('Capture'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   test('theme projects generated token extensions', () {
     final theme = OneBrainTheme.light;
 
@@ -77,6 +152,27 @@ void main() {
     expect(theme.extension<OneBrainDataStyle>(), isNotNull);
     expect(theme.extension<OneBrainLayout>(), isNotNull);
   });
+
+  test(
+    'locale preference restores and persists through the package adapter',
+    () async {
+      final store = _MemoryLocalePreferenceStore('vi');
+      final container = ProviderContainer(
+        overrides: [localePreferenceStoreProvider.overrideWithValue(store)],
+      );
+      addTearDown(container.dispose);
+
+      expect(container.read(localeControllerProvider), isNull);
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(localeControllerProvider), const Locale('vi'));
+
+      container
+          .read(localeControllerProvider.notifier)
+          .select(const Locale('en'));
+      await Future<void>.delayed(Duration.zero);
+      expect(store.languageCode, 'en');
+    },
+  );
 
   testWidgets('reduced motion resolves all semantic durations to zero', (
     tester,
@@ -120,18 +216,18 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
       const MobileHostSnapshot(
         platform: 'Android test',
-        apiVersion: '3',
+        apiVersion: '5',
         registryRequestIssued: false,
         rustCoreLinked: true,
         rustCoreVersion: '0.1.0-test',
-        rustAbiVersion: 3,
+        rustAbiVersion: 5,
         rustRoundTripVerified: true,
       );
 
   @override
   Future<MobileRuntimeSnapshot> inspectRuntimeProfile() async =>
       const MobileRuntimeSnapshot(
-        profileVersion: 'MOB-03/1',
+        profileVersion: 'MOB-04/1',
         processGeneration: 1,
         activationPhase: 'Active',
         activeGrantCount: 1,
@@ -150,7 +246,23 @@ class _FakeMobileHostGateway implements MobileHostGateway {
         identityDomainsSeparated: true,
         privacyDefaultsFailSafe: true,
         redactedHistoryReady: true,
+        encryptedRawDraftCount: 0,
+        onboardingCursor: MobileOnboardingCursor.welcome,
       );
+
+  @override
+  Future<void> setOnboardingCursor(MobileOnboardingCursor cursor) async {}
+
+  @override
+  Future<MobileRawDraftReceipt> saveRawTextDraft({
+    required String contentLanguage,
+    required String content,
+  }) async => MobileRawDraftReceipt(
+    draftRef: 'draft_00000000000000000000000000000000',
+    contentLanguage: contentLanguage,
+    contentBytes: content.length,
+    totalDrafts: 1,
+  );
 
   @override
   Future<String> startFeasibilityOperation(Duration delay) async =>
@@ -162,4 +274,18 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   @override
   Stream<HostOperationEvent> observeFeasibilityOperations() =>
       const Stream.empty();
+}
+
+class _MemoryLocalePreferenceStore implements LocalePreferenceStore {
+  _MemoryLocalePreferenceStore(this.languageCode);
+
+  String? languageCode;
+
+  @override
+  Future<String?> readLanguageCode() async => languageCode;
+
+  @override
+  Future<void> writeLanguageCode(String languageCode) async {
+    this.languageCode = languageCode;
+  }
 }

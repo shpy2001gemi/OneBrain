@@ -2,7 +2,7 @@
 
 > OneBrain Mobile — autonomous iOS and Android node.
 >
-> Status: **MOB-03 protected-node foundation in progress; production capability and
+> Status: **MOB-04 private Limited shell in progress; production capability and
 > `ReadyOffline` are not claimed**
 
 ## Target
@@ -56,21 +56,23 @@ The checked-in app now includes:
 - Android/iOS Flutter scaffolds;
 - generated semantic tokens and Material 3 theme extensions;
 - shared catalog widgets instead of screen-local controls;
-- generated English/Vietnamese localization;
+- generated English/Vietnamese localization with a package-backed durable UI
+  preference;
 - pinned offline Nunito Sans, Roboto Mono and Material Symbols Rounded assets
   with license/hash verification;
-- `go_router` entry/onboarding routes;
+- `go_router` entry/onboarding and five-destination adaptive shell routes;
 - Riverpod-owned async presentation state;
 - one Pigeon schema that generates Dart, Kotlin and Swift host APIs with an
   async capability call, bounded feasibility operation, event stream and
   cancellation.
 
 The native snapshot now crosses the generated Pigeon API, Swift/Kotlin host,
-the Rust C ABI/JNI bridge and `onebrain-mobile-core`. ABI revision `3` adds a
+the Rust C ABI/JNI bridge and `onebrain-mobile-core`. ABI revision `5` adds a
 platform-protected installation session, exact epoch/nonce authority binding,
-three independent signer domains, an encrypted private vault, fail-safe privacy
-defaults and redacted history to the bounded `BootstrapOnly` MOB-02 runtime.
-It still reports that no Registry request has been issued.
+three independent signer domains, an encrypted private vault, encrypted
+Limited-mode raw drafts and a durable onboarding resume cursor to the bounded
+`BootstrapOnly` runtime. It still reports that no Registry request has been
+issued.
 
 See [`PACKAGE_POLICY.md`](./PACKAGE_POLICY.md) for the package-first and
 shared-widget contract, and [`RUST_BRIDGE.md`](./RUST_BRIDGE.md) for ABI,
@@ -78,9 +80,9 @@ thread-ownership, build and fallback details.
 
 The current automated evidence additionally covers:
 
-- nine Windows goldens spanning light/dark, high contrast, English/Vietnamese,
-  200% text, reduced motion, compact/large/expanded layouts and the MOB-03
-  runtime status card;
+- eleven Windows goldens spanning light/dark, high contrast,
+  English/Vietnamese, 200% text, reduced motion, compact/large/expanded
+  layouts, the runtime status card, Limited Home and private text capture;
 - Android 16 integration of async `started`, `cancelled` and `completed`
   events, idempotent cancellation, and the bounded `HOST_INVALID_DELAY` error;
 - a release APK without Registry/model payloads and without Android network
@@ -105,9 +107,26 @@ adapters, no-backup install markers, fail-closed injected restore residue,
 independent Node/feed/Actor signer domains, `ku-core` encrypted-vault reuse and
 the chunked/versioned `OBARV001` encrypted archive foundation.
 
+MOB-04 virtual evidence additionally covers:
+
+- English/Vietnamese onboarding through required-data handoff and the honest
+  `BootstrapOnly` Limited shell;
+- a Rust/redb onboarding cursor that resumes after process death and refuses
+  to regress after completion;
+- bounded UTF-8 text capture into an XChaCha20-Poly1305 encrypted
+  `PrivateLocal` draft store, with only an opaque receipt returned to Dart;
+- shared adaptive Home/Library/Capture/Assistant/Settings navigation,
+  Registry-gated disabled states, runtime/storage facts and no-LLM behavior;
+- Android 16 ABI 5 integration, force-stop recovery, fail-closed missing-marker
+  injection, 320 px/200% text reflow and deterministic UI goldens.
+
+Share-intent encrypted spool ingestion and user-selected encrypted
+backup/export destinations remain explicit MOB-04 work; the current disabled
+cards do not claim those workflows are implemented.
+
 Physical Android/iOS validation is intentionally deferred by the owner while
 emulator/simulator development continues. This does not close the physical
-MOB-01/MOB-02/MOB-03 release gates.
+MOB-01/MOB-02/MOB-03/MOB-04 release gates.
 
 ## Generate and test
 
@@ -134,6 +153,9 @@ flutter test --exclude-tags golden
 flutter test test/golden_test.dart
 flutter build apk --debug
 flutter test integration_test/native_host_bridge_test.dart -d emulator-5554
+# The integration target replaces app-debug.apk; rebuild the application APK
+# before standalone ADB lifecycle scripts.
+flutter build apk --debug
 python tool/verify_android_runtime_recovery.py \
   build/app/outputs/flutter-apk/app-debug.apk
 python tool/build_rust_android.py --release

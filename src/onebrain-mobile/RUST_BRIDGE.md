@@ -1,4 +1,4 @@
-# MOB-03 protected mobile runtime bridge
+# MOB-04 private mobile runtime bridge
 
 This slice proves the bounded production topology without claiming that the
 mobile runtime is ready:
@@ -16,7 +16,8 @@ The bridge owns no product policy. `onebrain-mobile-core` owns the bounded
 `bootstrap.redb` operational ledger, process-generation lifecycle, execution
 grants, callback commit fence, deterministic local KQL, LocalOnly private
 planning, exact installation binding, independent typed signer domains,
-encrypted private-vault session and portable encrypted-archive profile.
+  encrypted private-vault session, encrypted raw-draft store, durable
+  onboarding cursor and portable encrypted-archive profile.
 Registry network transfer, product tools, seeding and all LLM providers remain
 unavailable until their implementation packages and gates exist.
 
@@ -39,9 +40,10 @@ handling, NDK linker discovery, or C declaration generation.
 
 ## ABI and thread ownership
 
-- ABI revision `3` adds a fixed-layout protected-runtime snapshot, a
-  native-owned secure-open call and explicit private-session lock while
-  retaining bounded primitive facts and the deterministic nonce round trip.
+- ABI revision `5` adds a fixed-layout protected-runtime snapshot,
+  native-owned secure-open and private-draft calls, a durable onboarding cursor
+  command and explicit private-session lock while retaining bounded primitive
+  facts and the deterministic nonce round trip.
 - Returned version text points to immutable process-lifetime storage and is
   never freed by native code.
 - Kotlin and Swift open the runtime on a dedicated serial native queue and
@@ -69,6 +71,9 @@ cargo install cbindgen --version 0.29.4 --locked
 python tool/generate_rust_bridge_header.py
 python tool/build_rust_android.py
 python tool/verify_mobile_rust_dependency_graph.py
+flutter build apk --debug
+flutter test integration_test/native_host_bridge_test.dart -d emulator-5554
+# Rebuild because integration_test replaces app-debug.apk with its test target.
 flutter build apk --debug
 python tool/verify_android_runtime_recovery.py \
   build/app/outputs/flutter-apk/app-debug.apk

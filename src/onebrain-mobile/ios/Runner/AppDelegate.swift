@@ -3,7 +3,7 @@ import Flutter
 import Security
 import UIKit
 
-private let hostApiVersion = "3"
+private let hostApiVersion = "5"
 private let maxFeasibilityDelayMilliseconds: Int64 = 30_000
 private let rustRoundTripNonce: UInt64 = 0x4F_42_4D_30_31
 private let securityMaterialBytes = 192
@@ -38,6 +38,9 @@ private final class IOSSecurityMaterialStore {
       )
         || FileManager.default.fileExists(
           atPath: dataRoot.appendingPathComponent("private-vault.redb").path
+        )
+        || FileManager.default.fileExists(
+          atPath: dataRoot.appendingPathComponent("private-drafts.redb").path
         )
       {
         throw IOSSecurityMaterialError.unexpectedRestore(
@@ -274,7 +277,7 @@ private final class IOSMobileHost: MobileHostApi {
         activationPhase = "Unknown"
       }
       let snapshot = HostRuntimeSnapshot(
-        profileVersion: "MOB-03/1",
+        profileVersion: "MOB-04/1",
         processGeneration: Int64(runtime.process_generation),
         activationPhase: activationPhase,
         activeGrantCount: Int64(runtime.active_grant_count),
@@ -293,10 +296,196 @@ private final class IOSMobileHost: MobileHostApi {
         privateVaultReady: runtime.private_vault_ready != 0,
         identityDomainsSeparated: runtime.identity_domains_separated != 0,
         privacyDefaultsFailSafe: runtime.privacy_defaults_fail_safe != 0,
-        redactedHistoryReady: runtime.redacted_history_ready != 0
+        redactedHistoryReady: runtime.redacted_history_ready != 0,
+        encryptedRawDraftCount: Int64(runtime.encrypted_raw_draft_count),
+        onboardingCursor:
+          HostOnboardingCursor(rawValue: Int(runtime.onboarding_cursor)) ?? .welcome
       )
       DispatchQueue.main.async {
         completion(.success(snapshot))
+      }
+    }
+  }
+
+  func saveRawTextDraft(
+    contentLanguage: String,
+    content: String,
+    completion: @escaping (Result<HostRawDraftReceipt, Error>) -> Void
+  ) {
+    guard let dataRoot, let securityMaterialStore else {
+      completion(
+        .failure(
+          PigeonError(
+            code: "RUNTIME_PATH_UNAVAILABLE",
+            message: "Application Support storage is unavailable",
+            details: nil
+          )
+        )
+      )
+      return
+    }
+    runtimeQueue.async {
+      var securityMaterial: Data
+      do {
+        securityMaterial = try securityMaterialStore.loadOrCreate()
+      } catch {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "SECURE_MATERIAL_UNAVAILABLE",
+                message: "Protected installation material is unavailable",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      defer {
+        securityMaterial.resetBytes(in: 0..<securityMaterial.count)
+      }
+      let pathBytes = Array(dataRoot.utf8)
+      let runtime = pathBytes.withUnsafeBufferPointer { bytes in
+        securityMaterial.withUnsafeBytes { material in
+          ob_mobile_runtime_open_secure_utf8(
+            bytes.baseAddress,
+            bytes.count,
+            material.bindMemory(to: UInt8.self).baseAddress,
+            material.count
+          )
+        }
+      }
+      guard runtime.status_code == 0 else {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "RUNTIME_OPEN_FAILED",
+                message: "Protected runtime session is unavailable",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      let languageBytes = Array(contentLanguage.utf8)
+      let contentBytes = Array(content.utf8)
+      let receipt = languageBytes.withUnsafeBufferPointer { language in
+        contentBytes.withUnsafeBufferPointer { text in
+          ob_mobile_runtime_save_raw_text_draft_utf8(
+            language.baseAddress,
+            language.count,
+            text.baseAddress,
+            text.count
+          )
+        }
+      }
+      guard receipt.status_code == 0 else {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "RAW_DRAFT_SAVE_FAILED",
+                message: "Private draft could not be saved",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      let draftRef = withUnsafeBytes(of: receipt.draft_ref) { bytes in
+        String(
+          decoding: bytes.prefix(Int(receipt.draft_ref_len)),
+          as: UTF8.self
+        )
+      }
+      let language = withUnsafeBytes(of: receipt.content_language) { bytes in
+        String(
+          decoding: bytes.prefix(Int(receipt.content_language_len)),
+          as: UTF8.self
+        )
+      }
+      let result = HostRawDraftReceipt(
+        draftRef: draftRef,
+        contentLanguage: language,
+        contentBytes: Int64(receipt.content_bytes),
+        totalDrafts: Int64(receipt.total_drafts)
+      )
+      DispatchQueue.main.async {
+        completion(.success(result))
+      }
+    }
+  }
+
+  func setOnboardingCursor(
+    cursor: HostOnboardingCursor,
+    completion: @escaping (Result<Bool, Error>) -> Void
+  ) {
+    guard let dataRoot, let securityMaterialStore else {
+      completion(
+        .failure(
+          PigeonError(
+            code: "RUNTIME_PATH_UNAVAILABLE",
+            message: "Application Support storage is unavailable",
+            details: nil
+          )
+        )
+      )
+      return
+    }
+    runtimeQueue.async {
+      var securityMaterial: Data
+      do {
+        securityMaterial = try securityMaterialStore.loadOrCreate()
+      } catch {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "SECURE_MATERIAL_UNAVAILABLE",
+                message: "Protected installation material is unavailable",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      defer {
+        securityMaterial.resetBytes(in: 0..<securityMaterial.count)
+      }
+      let pathBytes = Array(dataRoot.utf8)
+      let runtime = pathBytes.withUnsafeBufferPointer { bytes in
+        securityMaterial.withUnsafeBytes { material in
+          ob_mobile_runtime_open_secure_utf8(
+            bytes.baseAddress,
+            bytes.count,
+            material.bindMemory(to: UInt8.self).baseAddress,
+            material.count
+          )
+        }
+      }
+      guard runtime.status_code == 0 else {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "RUNTIME_OPEN_FAILED",
+                message: "Protected runtime session is unavailable",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      let saved =
+        ob_mobile_runtime_set_onboarding_cursor(UInt32(cursor.rawValue)) == 0
+      DispatchQueue.main.async {
+        completion(.success(saved))
       }
     }
   }

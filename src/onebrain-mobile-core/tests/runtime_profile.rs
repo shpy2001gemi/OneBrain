@@ -1,8 +1,8 @@
 use onebrain_mobile_core::{
     run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, BootstrapStore,
     ExecutionGrant, ExecutionGrantKind, MobileCoreError, MobileFeatureFlags, MobileRuntimeFacade,
-    NetworkScope, RegistryChunkRecord, RegistryOperationRecord, ResourceBudgets, RuntimeServices,
-    SecurityBootstrapMaterial, SecuritySessionState, TransferLandingRecord,
+    NetworkScope, OnboardingCursor, RegistryChunkRecord, RegistryOperationRecord, ResourceBudgets,
+    RuntimeServices, SecurityBootstrapMaterial, SecuritySessionState, TransferLandingRecord,
     SECURITY_BOOTSTRAP_MATERIAL_BYTES,
 };
 use tempfile::tempdir;
@@ -20,7 +20,7 @@ fn bootstrap_profile_uses_no_model_or_network_and_runs_signed_local_kql() {
     .unwrap();
     let snapshot = facade.snapshot();
 
-    assert_eq!(snapshot.profile_version, "MOB-03/1");
+    assert_eq!(snapshot.profile_version, "MOB-04/1");
     assert_eq!(snapshot.process_generation, 1);
     assert_eq!(snapshot.activation_phase, ActivationPhase::Active);
     assert_eq!(snapshot.active_grant_count, 1);
@@ -114,6 +114,56 @@ fn matching_platform_material_reopens_but_injected_restore_binding_fails_closed(
             AppLockPolicy::default(),
         ),
         Err(MobileCoreError::UnexpectedRestore(_))
+    ));
+}
+
+#[test]
+fn onboarding_cursor_resumes_after_kill_and_completion_cannot_regress() {
+    let directory = tempdir().unwrap();
+    let first = MobileRuntimeFacade::open_secured(
+        RuntimeServices::bootstrap_only(directory.path()),
+        MobileFeatureFlags::default(),
+        ResourceBudgets::default(),
+        secure_material(0),
+        AppLockPolicy::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        first.snapshot().onboarding_cursor,
+        OnboardingCursor::Welcome
+    );
+    first
+        .set_onboarding_cursor(OnboardingCursor::Preflight)
+        .unwrap();
+    first
+        .set_onboarding_cursor(OnboardingCursor::Identity)
+        .unwrap();
+    drop(first);
+
+    let recovered = MobileRuntimeFacade::open_secured(
+        RuntimeServices::bootstrap_only(directory.path()),
+        MobileFeatureFlags::default(),
+        ResourceBudgets::default(),
+        secure_material(0),
+        AppLockPolicy::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        recovered.snapshot().onboarding_cursor,
+        OnboardingCursor::Identity
+    );
+    recovered
+        .set_onboarding_cursor(OnboardingCursor::Security)
+        .unwrap();
+    recovered
+        .set_onboarding_cursor(OnboardingCursor::InitHandoff)
+        .unwrap();
+    recovered
+        .set_onboarding_cursor(OnboardingCursor::LimitedHome)
+        .unwrap();
+    assert!(matches!(
+        recovered.set_onboarding_cursor(OnboardingCursor::Welcome),
+        Err(MobileCoreError::InvalidArgument(_))
     ));
 }
 
