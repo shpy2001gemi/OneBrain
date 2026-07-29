@@ -3,3 +3,8 @@ src/fuzz/corpus/** -text
 
 # Shell entrypoints are downloaded and executed directly on Linux.
 *.sh text eol=lf
+
+# Third-party mobile assets are pinned and verified byte-for-byte.
+src/onebrain-mobile/assets/fonts/*.ttf -text
+src/onebrain-mobile/assets/licenses/*.txt -text
+src/onebrain-mobile/test/goldens/*.png -text
