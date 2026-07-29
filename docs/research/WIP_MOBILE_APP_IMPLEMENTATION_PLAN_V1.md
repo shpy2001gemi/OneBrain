@@ -21,6 +21,9 @@
 > [`MOBILE_APP_FEATURE_TREE_V1.md`](../features/mobile/MOBILE_APP_FEATURE_TREE_V1.md),
 > [`MOBILE_APP_FEATURE_DETAILS_V1.md`](../features/mobile/MOBILE_APP_FEATURE_DETAILS_V1.md),
 > and [`MOBILE_APP_SITEMAP_V1.md`](../features/mobile/MOBILE_APP_SITEMAP_V1.md).
+>
+> Mobile visual system, components and screen patterns:
+> [`MOBILE_DESIGN_SYSTEM_V1.md`](../design/mobile/MOBILE_DESIGN_SYSTEM_V1.md).
 
 ---
 
@@ -1626,6 +1629,8 @@ Deliver:
 - ADR: recovery scheme;
 - ADR: unbundled post-launch Init, Registry trust/channel envelope,
   `bootstrap.redb` ownership and immutable A/B mobile delivery;
+- owner-reviewed mobile visual direction, semantic design tokens, component
+  catalog and 112-screen pattern mapping;
 - source-of-truth precedence over stale P10/UI feature documents.
 
 Exit:
@@ -1647,12 +1652,17 @@ Deliver:
 - package/install-mode inventory proving zero Registry artifacts/chunks;
 - BootstrapOnly/Init shell plus wire capture proving no Registry request before
   explicit `init_begin`;
+- deterministic generation of Flutter theme constants from
+  `mobile_design_tokens_v1.json`, Material 3 `ThemeData`/OneBrain
+  `ThemeExtension` projection and a catalog-component gallery;
 - CI compile jobs.
 
 Exit:
 
 - physical-device launch on both platforms;
 - no undefined ABI/thread ownership;
+- token generation is reproducible and the component gallery passes light,
+  dark, vi/en, 200% text and reduced-motion goldens;
 - documented fallback if the selected bridge fails.
 
 ### MOB-02 — Mobile runtime profile
@@ -1714,6 +1724,8 @@ Exit:
 
 Deliver:
 
+- implement the V1 catalog components and primary shell/screen patterns without
+  raw per-feature color/spacing/radius/motion literals;
 - vi/en onboarding, required-data handoff and Limited Init shell;
 - text capture/share sheet and encrypted raw draft available in Limited mode;
 - validation, preview and save foundations behind the active-Registry
@@ -1728,6 +1740,8 @@ Exit:
 
 - Limited shell correctly captures encrypted raw drafts and exposes
   Init/Operations/storage/diagnostics when the Registry is absent;
+- Home/Library/Capture/Assistant/Settings and Limited/Degraded/Safe shells use
+  the same token/component/pattern contract on iOS and Android;
 - Registry-independent behavior works with LLM and node-network lanes disabled;
 - this package does **not** close `MOB-GATE-OFFLINE-MVP`; the complete
   airplane-mode capture/save/search/KQL/backup exit runs after MOB-05 first
@@ -1868,6 +1882,8 @@ Deliver:
   already required by MOB-05);
 - native configuration scanner that rejects Registry delivery through PAD/iOS
   Managed Background Assets and verifies OS-backup exclusions;
+- design-token/profile drift check plus required light/dark/high-contrast,
+  vi/en/pseudo-locale, 200%-text and compact/tablet golden inventory;
 - Registry origin/trust-profile app-update/key-compromise/CDN-or-store outage
   runbook and privacy-safe transfer telemetry;
 - crash symbolication with privacy-safe telemetry;
@@ -1899,7 +1915,7 @@ Exit:
 | Lifecycle | no-callback kill, background expiry, suspension, Stop/force-quit, reboot/update |
 | Resource | peak RSS, storage, cold start, thermal, energy per task/session |
 | Network | presence TTL, bounded admission, replay, path change, partition, duplicate, revocation |
-| UX | airplane mode, no-LLM mode, permission denial, vi/en, accessibility |
+| UX | design-token literal/drift check; catalog component semantics; 112-screen pattern mapping; light/dark/high-contrast; compact/tablet; airplane/no-LLM; permission denial; vi/en/pseudo-locale/RTL smoke; 200% text; TalkBack/VoiceOver; reduced motion |
 | Release | signed artifact, SBOM/license, staged rollout, rollback |
 
 CI minimum:

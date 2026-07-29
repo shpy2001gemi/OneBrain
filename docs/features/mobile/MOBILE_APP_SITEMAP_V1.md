@@ -9,6 +9,10 @@
 >
 > Feature contracts:
 > [`MOBILE_APP_FEATURE_DETAILS_V1.md`](./MOBILE_APP_FEATURE_DETAILS_V1.md)
+>
+> Visual system and screen composition:
+> [`MOBILE_DESIGN_SYSTEM_V1.md`](../../design/mobile/MOBILE_DESIGN_SYSTEM_V1.md)
+> and [`MOBILE_SCREEN_PATTERNS_V1.md`](../../design/mobile/MOBILE_SCREEN_PATTERNS_V1.md)
 
 ## 0. Scope and authority
 

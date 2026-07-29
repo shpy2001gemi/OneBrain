@@ -11,6 +11,9 @@
 >
 > Screen and navigation map:
 > [`MOBILE_APP_SITEMAP_V1.md`](./MOBILE_APP_SITEMAP_V1.md)
+>
+> Visual system:
+> [`MOBILE_DESIGN_SYSTEM_V1.md`](../../design/mobile/MOBILE_DESIGN_SYSTEM_V1.md)
 
 ## 0. Authority and interpretation
 

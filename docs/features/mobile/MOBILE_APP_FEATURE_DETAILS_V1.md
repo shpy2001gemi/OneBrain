@@ -9,6 +9,10 @@
 >
 > Screen hierarchy and routes:
 > [`MOBILE_APP_SITEMAP_V1.md`](./MOBILE_APP_SITEMAP_V1.md)
+>
+> Visual system and component contracts:
+> [`MOBILE_DESIGN_SYSTEM_V1.md`](../../design/mobile/MOBILE_DESIGN_SYSTEM_V1.md)
+> and [`MOBILE_COMPONENT_CATALOG_V1.md`](../../design/mobile/MOBILE_COMPONENT_CATALOG_V1.md)
 
 ## 0. Reading this catalog
 
