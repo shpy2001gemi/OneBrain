@@ -18,7 +18,7 @@
 /**
  * Stable ABI revision understood by the current Swift/Kotlin adapters.
  */
-#define OB_MOBILE_BRIDGE_ABI_VERSION 2
+#define OB_MOBILE_BRIDGE_ABI_VERSION 3
 
 #define OB_MOBILE_RUNTIME_OK 0
 
@@ -29,6 +29,8 @@
 #define OB_MOBILE_RUNTIME_LOCK_POISONED 3
 
 #define OB_MOBILE_RUNTIME_NOT_OPEN 4
+
+#define OB_MOBILE_RUNTIME_INVALID_SECURITY_MATERIAL 5
 
 typedef struct ObMobileRuntimeSnapshot {
   uint32_t status_code;
@@ -42,6 +44,14 @@ typedef struct ObMobileRuntimeSnapshot {
   uint8_t private_planner_verified;
   uint8_t no_llm_provider;
   uint8_t stale_callback_rejected;
+  uint8_t secure_profile_active;
+  uint8_t installation_binding_verified;
+  uint8_t installation_created;
+  uint8_t security_session_unlocked;
+  uint8_t private_vault_ready;
+  uint8_t identity_domains_separated;
+  uint8_t privacy_defaults_fail_safe;
+  uint8_t redacted_history_ready;
 } ObMobileRuntimeSnapshot;
 
 /**
@@ -81,6 +91,22 @@ uint64_t ob_mobile_bridge_round_trip(uint64_t nonce);
 struct ObMobileRuntimeSnapshot ob_mobile_runtime_open_utf8(const uint8_t *path, size_t path_len);
 
 /**
+ * Open the process-wide runtime with native-protected installation material.
+ *
+ * The native caller must zeroize its temporary plaintext buffer immediately
+ * after this function returns. The material never crosses the Dart bridge.
+ *
+ * # Safety
+ *
+ * Both pointers must reference their declared readable byte lengths for the
+ * duration of this call.
+ */
+struct ObMobileRuntimeSnapshot ob_mobile_runtime_open_secure_utf8(const uint8_t *path,
+                                                                  size_t path_len,
+                                                                  const uint8_t *security_material,
+                                                                  size_t security_material_len);
+
+/**
  * Inspect the process-wide runtime without reopening its database.
  */
 struct ObMobileRuntimeSnapshot ob_mobile_runtime_snapshot(void);
@@ -89,6 +115,12 @@ struct ObMobileRuntimeSnapshot ob_mobile_runtime_snapshot(void);
  * Quiesce the current process generation.
  */
 uint32_t ob_mobile_runtime_graceful_stop(void);
+
+/**
+ * Lock and zeroize the current private-node session without relying on a
+ * lifecycle callback for correctness.
+ */
+uint32_t ob_mobile_runtime_lock_private_node(void);
 
 #endif  /* ONEBRAIN_MOBILE_BRIDGE_H */
 

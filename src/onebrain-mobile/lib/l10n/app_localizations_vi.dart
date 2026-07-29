@@ -108,7 +108,7 @@ class AppLocalizationsVi extends AppLocalizations {
     int grantCount,
     String registryState,
   ) {
-    return 'Hồ sơ $profileVersion · thế hệ $generation · $phase với $grantCount quyền thực thi đang hoạt động. Trạng thái Registry: $registryState.';
+    return 'Hồ sơ $profileVersion · thế hệ $generation · $phase với $grantCount quyền thực thi đang hoạt động. Trạng thái Registry: $registryState. Danh tính gắn với thiết bị và vault mã hóa đang hoạt động.';
   }
 
   @override
@@ -118,7 +118,7 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get mobileRuntimeVerified =>
-      'Đã xác minh KQL cục bộ có chữ ký, planner riêng tư và hàng rào callback';
+      'Đã xác minh danh tính được bảo vệ, vault mã hóa và runtime cục bộ';
 
   @override
   String get mobileRuntimeNotVerified => 'Chưa hoàn tất xác minh hồ sơ runtime';

@@ -108,7 +108,7 @@ class AppLocalizationsEn extends AppLocalizations {
     int grantCount,
     String registryState,
   ) {
-    return 'Profile $profileVersion · generation $generation · $phase with $grantCount active grant(s). Registry state: $registryState.';
+    return 'Profile $profileVersion · generation $generation · $phase with $grantCount active grant(s). Registry state: $registryState. Device-bound identity and encrypted vault are active.';
   }
 
   @override
@@ -118,7 +118,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get mobileRuntimeVerified =>
-      'Signed local KQL, private planner and callback fence verified';
+      'Protected identity, encrypted vault and local runtime verified';
 
   @override
   String get mobileRuntimeNotVerified =>

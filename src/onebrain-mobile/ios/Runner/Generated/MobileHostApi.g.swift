@@ -268,6 +268,14 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
   var privatePlannerVerified: Bool
   var noLlmProvider: Bool
   var staleCallbackRejected: Bool
+  var secureProfileActive: Bool
+  var installationBindingVerified: Bool
+  var installationCreated: Bool
+  var securitySessionUnlocked: Bool
+  var privateVaultReady: Bool
+  var identityDomainsSeparated: Bool
+  var privacyDefaultsFailSafe: Bool
+  var redactedHistoryReady: Bool
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -283,6 +291,14 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
     let privatePlannerVerified = pigeonVar_list[8] as! Bool
     let noLlmProvider = pigeonVar_list[9] as! Bool
     let staleCallbackRejected = pigeonVar_list[10] as! Bool
+    let secureProfileActive = pigeonVar_list[11] as! Bool
+    let installationBindingVerified = pigeonVar_list[12] as! Bool
+    let installationCreated = pigeonVar_list[13] as! Bool
+    let securitySessionUnlocked = pigeonVar_list[14] as! Bool
+    let privateVaultReady = pigeonVar_list[15] as! Bool
+    let identityDomainsSeparated = pigeonVar_list[16] as! Bool
+    let privacyDefaultsFailSafe = pigeonVar_list[17] as! Bool
+    let redactedHistoryReady = pigeonVar_list[18] as! Bool
 
     return HostRuntimeSnapshot(
       profileVersion: profileVersion,
@@ -295,7 +311,15 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
       localKqlFixtureVerified: localKqlFixtureVerified,
       privatePlannerVerified: privatePlannerVerified,
       noLlmProvider: noLlmProvider,
-      staleCallbackRejected: staleCallbackRejected
+      staleCallbackRejected: staleCallbackRejected,
+      secureProfileActive: secureProfileActive,
+      installationBindingVerified: installationBindingVerified,
+      installationCreated: installationCreated,
+      securitySessionUnlocked: securitySessionUnlocked,
+      privateVaultReady: privateVaultReady,
+      identityDomainsSeparated: identityDomainsSeparated,
+      privacyDefaultsFailSafe: privacyDefaultsFailSafe,
+      redactedHistoryReady: redactedHistoryReady
     )
   }
   func toList() -> [Any?] {
@@ -311,13 +335,21 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
       privatePlannerVerified,
       noLlmProvider,
       staleCallbackRejected,
+      secureProfileActive,
+      installationBindingVerified,
+      installationCreated,
+      securitySessionUnlocked,
+      privateVaultReady,
+      identityDomainsSeparated,
+      privacyDefaultsFailSafe,
+      redactedHistoryReady,
     ]
   }
   static func == (lhs: HostRuntimeSnapshot, rhs: HostRuntimeSnapshot) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return MobileHostApiPigeonInternal.deepEquals(lhs.profileVersion, rhs.profileVersion) && MobileHostApiPigeonInternal.deepEquals(lhs.processGeneration, rhs.processGeneration) && MobileHostApiPigeonInternal.deepEquals(lhs.activationPhase, rhs.activationPhase) && MobileHostApiPigeonInternal.deepEquals(lhs.activeGrantCount, rhs.activeGrantCount) && MobileHostApiPigeonInternal.deepEquals(lhs.recoveredUncleanStart, rhs.recoveredUncleanStart) && MobileHostApiPigeonInternal.deepEquals(lhs.bootstrapStoreOpened, rhs.bootstrapStoreOpened) && MobileHostApiPigeonInternal.deepEquals(lhs.registryState, rhs.registryState) && MobileHostApiPigeonInternal.deepEquals(lhs.localKqlFixtureVerified, rhs.localKqlFixtureVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.privatePlannerVerified, rhs.privatePlannerVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.noLlmProvider, rhs.noLlmProvider) && MobileHostApiPigeonInternal.deepEquals(lhs.staleCallbackRejected, rhs.staleCallbackRejected)
+    return MobileHostApiPigeonInternal.deepEquals(lhs.profileVersion, rhs.profileVersion) && MobileHostApiPigeonInternal.deepEquals(lhs.processGeneration, rhs.processGeneration) && MobileHostApiPigeonInternal.deepEquals(lhs.activationPhase, rhs.activationPhase) && MobileHostApiPigeonInternal.deepEquals(lhs.activeGrantCount, rhs.activeGrantCount) && MobileHostApiPigeonInternal.deepEquals(lhs.recoveredUncleanStart, rhs.recoveredUncleanStart) && MobileHostApiPigeonInternal.deepEquals(lhs.bootstrapStoreOpened, rhs.bootstrapStoreOpened) && MobileHostApiPigeonInternal.deepEquals(lhs.registryState, rhs.registryState) && MobileHostApiPigeonInternal.deepEquals(lhs.localKqlFixtureVerified, rhs.localKqlFixtureVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.privatePlannerVerified, rhs.privatePlannerVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.noLlmProvider, rhs.noLlmProvider) && MobileHostApiPigeonInternal.deepEquals(lhs.staleCallbackRejected, rhs.staleCallbackRejected) && MobileHostApiPigeonInternal.deepEquals(lhs.secureProfileActive, rhs.secureProfileActive) && MobileHostApiPigeonInternal.deepEquals(lhs.installationBindingVerified, rhs.installationBindingVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.installationCreated, rhs.installationCreated) && MobileHostApiPigeonInternal.deepEquals(lhs.securitySessionUnlocked, rhs.securitySessionUnlocked) && MobileHostApiPigeonInternal.deepEquals(lhs.privateVaultReady, rhs.privateVaultReady) && MobileHostApiPigeonInternal.deepEquals(lhs.identityDomainsSeparated, rhs.identityDomainsSeparated) && MobileHostApiPigeonInternal.deepEquals(lhs.privacyDefaultsFailSafe, rhs.privacyDefaultsFailSafe) && MobileHostApiPigeonInternal.deepEquals(lhs.redactedHistoryReady, rhs.redactedHistoryReady)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -333,10 +365,18 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
     MobileHostApiPigeonInternal.deepHash(value: privatePlannerVerified, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: noLlmProvider, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: staleCallbackRejected, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: secureProfileActive, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: installationBindingVerified, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: installationCreated, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: securitySessionUnlocked, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: privateVaultReady, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: identityDomainsSeparated, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: privacyDefaultsFailSafe, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: redactedHistoryReady, hasher: &hasher)
   }
 
   public var description: String {
-    return "HostRuntimeSnapshot(profileVersion: \(String(describing: profileVersion)), processGeneration: \(String(describing: processGeneration)), activationPhase: \(String(describing: activationPhase)), activeGrantCount: \(String(describing: activeGrantCount)), recoveredUncleanStart: \(String(describing: recoveredUncleanStart)), bootstrapStoreOpened: \(String(describing: bootstrapStoreOpened)), registryState: \(String(describing: registryState)), localKqlFixtureVerified: \(String(describing: localKqlFixtureVerified)), privatePlannerVerified: \(String(describing: privatePlannerVerified)), noLlmProvider: \(String(describing: noLlmProvider)), staleCallbackRejected: \(String(describing: staleCallbackRejected)))"
+    return "HostRuntimeSnapshot(profileVersion: \(String(describing: profileVersion)), processGeneration: \(String(describing: processGeneration)), activationPhase: \(String(describing: activationPhase)), activeGrantCount: \(String(describing: activeGrantCount)), recoveredUncleanStart: \(String(describing: recoveredUncleanStart)), bootstrapStoreOpened: \(String(describing: bootstrapStoreOpened)), registryState: \(String(describing: registryState)), localKqlFixtureVerified: \(String(describing: localKqlFixtureVerified)), privatePlannerVerified: \(String(describing: privatePlannerVerified)), noLlmProvider: \(String(describing: noLlmProvider)), staleCallbackRejected: \(String(describing: staleCallbackRejected)), secureProfileActive: \(String(describing: secureProfileActive)), installationBindingVerified: \(String(describing: installationBindingVerified)), installationCreated: \(String(describing: installationCreated)), securitySessionUnlocked: \(String(describing: securitySessionUnlocked)), privateVaultReady: \(String(describing: privateVaultReady)), identityDomainsSeparated: \(String(describing: identityDomainsSeparated)), privacyDefaultsFailSafe: \(String(describing: privacyDefaultsFailSafe)), redactedHistoryReady: \(String(describing: redactedHistoryReady)))"
   }
 }
 

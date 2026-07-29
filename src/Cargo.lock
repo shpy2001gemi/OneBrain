@@ -3316,13 +3316,17 @@ version = "0.1.0"
 dependencies = [
  "jni 0.22.4",
  "onebrain-mobile-core",
+ "zeroize",
 ]
 
 [[package]]
 name = "onebrain-mobile-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
+ "blake3",
+ "chacha20poly1305",
  "ed25519-dalek",
+ "getrandom 0.3.4",
  "hex",
  "ku-core",
  "ku-kql",
@@ -3331,6 +3335,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
+ "zeroize",
 ]
 
 [[package]]

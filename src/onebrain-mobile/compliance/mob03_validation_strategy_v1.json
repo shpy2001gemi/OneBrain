@@ -1,0 +1,29 @@
+{
+  "format": "onebrain.mobile.validation-strategy/1",
+  "work_package": "MOB-03",
+  "decision_date": "2026-07-30",
+  "decision_owner": "repository owner",
+  "strategy": "virtual-device-first",
+  "automated_targets": [
+    "Android 16 x86_64 emulator with Android Keystore",
+    "iOS simulator compile with Keychain and backup-exclusion code",
+    "Windows Rust archive, identity, vault and fail-closed tests",
+    "Windows Flutter widget, accessibility and golden tests"
+  ],
+  "physical_device_validation": {
+    "android_backup_restore": "deferred_by_owner",
+    "android_biometric_and_credential": "deferred_by_owner",
+    "ios_backup_restore": "deferred_by_owner",
+    "ios_uninstall_reinstall_keychain_orphan": "deferred_by_owner",
+    "ios_protected_data_before_first_unlock": "deferred_by_owner"
+  },
+  "claims": {
+    "physical_device_validated": false,
+    "mob03_physical_exit_closed": false,
+    "ready_offline": false,
+    "registry_init_enabled": false,
+    "network_lane_enabled": false,
+    "recovery_ui_released": false
+  },
+  "notes": "Virtual gates prove the protected-material adapter shape, exact install binding, encrypted private vault, typed signer separation, redacted history, fail-safe privacy defaults and encrypted versioned archive. Physical OS backup inspection, credential/biometric behavior and iOS orphan-Keychain rotation remain mandatory before release."
+}

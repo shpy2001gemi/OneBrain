@@ -35,6 +35,14 @@ class MobileRuntimeSnapshot {
     required this.privatePlannerVerified,
     required this.noLlmProvider,
     required this.staleCallbackRejected,
+    required this.secureProfileActive,
+    required this.installationBindingVerified,
+    required this.installationCreated,
+    required this.securitySessionUnlocked,
+    required this.privateVaultReady,
+    required this.identityDomainsSeparated,
+    required this.privacyDefaultsFailSafe,
+    required this.redactedHistoryReady,
   });
 
   final String profileVersion;
@@ -48,6 +56,14 @@ class MobileRuntimeSnapshot {
   final bool privatePlannerVerified;
   final bool noLlmProvider;
   final bool staleCallbackRejected;
+  final bool secureProfileActive;
+  final bool installationBindingVerified;
+  final bool installationCreated;
+  final bool securitySessionUnlocked;
+  final bool privateVaultReady;
+  final bool identityDomainsSeparated;
+  final bool privacyDefaultsFailSafe;
+  final bool redactedHistoryReady;
 }
 
 abstract interface class MobileHostGateway {
@@ -99,6 +115,14 @@ class PigeonMobileHostGateway implements MobileHostGateway {
       privatePlannerVerified: snapshot.privatePlannerVerified,
       noLlmProvider: snapshot.noLlmProvider,
       staleCallbackRejected: snapshot.staleCallbackRejected,
+      secureProfileActive: snapshot.secureProfileActive,
+      installationBindingVerified: snapshot.installationBindingVerified,
+      installationCreated: snapshot.installationCreated,
+      securitySessionUnlocked: snapshot.securitySessionUnlocked,
+      privateVaultReady: snapshot.privateVaultReady,
+      identityDomainsSeparated: snapshot.identityDomainsSeparated,
+      privacyDefaultsFailSafe: snapshot.privacyDefaultsFailSafe,
+      redactedHistoryReady: snapshot.redactedHistoryReady,
     );
   }
 

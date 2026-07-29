@@ -33,6 +33,7 @@ pub trait TelemetryService: Send + Sync {
 
 pub trait RuntimePathService: Send + Sync {
     fn bootstrap_database_path(&self) -> PathBuf;
+    fn private_vault_database_path(&self) -> PathBuf;
 }
 
 pub trait BootstrapStorageService: Send + Sync {
@@ -130,6 +131,10 @@ impl FixedRuntimePaths {
 impl RuntimePathService for FixedRuntimePaths {
     fn bootstrap_database_path(&self) -> PathBuf {
         self.root.join("bootstrap.redb")
+    }
+
+    fn private_vault_database_path(&self) -> PathBuf {
+        self.root.join("private-vault.redb")
     }
 }
 

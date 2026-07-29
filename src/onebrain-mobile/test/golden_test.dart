@@ -71,7 +71,7 @@ void main() {
     ),
   ];
 
-  group('MOB-02 design-system golden matrix', () {
+  group('MOB-03 design-system golden matrix', () {
     for (final goldenCase in cases) {
       testWidgets(goldenCase.name, (tester) async {
         await _pumpGolden(tester, goldenCase);
@@ -176,18 +176,18 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
       const MobileHostSnapshot(
         platform: 'Android test',
-        apiVersion: '2',
+        apiVersion: '3',
         registryRequestIssued: false,
         rustCoreLinked: true,
         rustCoreVersion: '0.1.0-test',
-        rustAbiVersion: 2,
+        rustAbiVersion: 3,
         rustRoundTripVerified: true,
       );
 
   @override
   Future<MobileRuntimeSnapshot> inspectRuntimeProfile() async =>
       const MobileRuntimeSnapshot(
-        profileVersion: 'MOB-02/1',
+        profileVersion: 'MOB-03/1',
         processGeneration: 1,
         activationPhase: 'Active',
         activeGrantCount: 1,
@@ -198,6 +198,14 @@ class _FakeMobileHostGateway implements MobileHostGateway {
         privatePlannerVerified: true,
         noLlmProvider: true,
         staleCallbackRejected: true,
+        secureProfileActive: true,
+        installationBindingVerified: true,
+        installationCreated: true,
+        securitySessionUnlocked: true,
+        privateVaultReady: true,
+        identityDomainsSeparated: true,
+        privacyDefaultsFailSafe: true,
+        redactedHistoryReady: true,
       );
 
   @override

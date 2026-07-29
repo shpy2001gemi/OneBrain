@@ -21,6 +21,9 @@ policy boundaries and shared presentation; it does not clone package behavior.
 | `cbindgen` | 0.29.4 | checked-in Swift-facing C header generated from Rust exports |
 | `redb` | 2.6.3 | ACID bootstrap process/operation/chunk/transfer state without a C toolchain |
 | `ed25519-dalek` | 2.2.0 | signed deterministic local KQL fixture verification |
+| Android Keystore / Apple Keychain | platform SDK | non-exportable wrapping/protected-item custody; no custom key store |
+| `ku-core::PrivateVault` + `redb` | workspace / 2.6.3 | validated XChaCha20-Poly1305 private vault over an atomic persistent backend |
+| `chacha20poly1305` + `zeroize` + `getrandom` | 0.11.0 / 1.9.0 / 0.3.4 | chunked portable archive AEAD, key cleanup and OS entropy |
 | existing `ku-core` + `ku-kql` crates | workspace | canonical KU types and local parser/executor reuse without `ku-ai`, Ollama or a transport stack |
 | Google Fonts assets | pinned commits and SHA-256 in `assets/font_asset_manifest_v1.json` | offline Nunito Sans, Roboto Mono and Material Symbols Rounded assets under their upstream licenses |
 

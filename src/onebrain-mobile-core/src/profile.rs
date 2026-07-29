@@ -1,6 +1,6 @@
 use crate::MobileCoreError;
 
-pub const MOBILE_RUNTIME_PROFILE_VERSION: &str = "MOB-02/1";
+pub const MOBILE_RUNTIME_PROFILE_VERSION: &str = "MOB-03/1";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MobileFeatureFlags {
@@ -33,7 +33,7 @@ impl MobileFeatureFlags {
     pub fn validate_bootstrap_only(&self) -> Result<(), MobileCoreError> {
         if !self.local_kql {
             return Err(MobileCoreError::InvalidArgument(
-                "MOB-02 requires the deterministic local KQL lane".into(),
+                "the mobile BootstrapOnly profile requires the deterministic local KQL lane".into(),
             ));
         }
         if self.local_llm
@@ -45,7 +45,7 @@ impl MobileFeatureFlags {
             || self.push_notifications
         {
             return Err(MobileCoreError::InvalidArgument(
-                "MOB-02 BootstrapOnly profile cannot enable model, network, seeding, publish or push lanes"
+                "the mobile BootstrapOnly profile cannot enable model, network, seeding, publish or push lanes"
                     .into(),
             ));
         }

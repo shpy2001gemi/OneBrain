@@ -2,7 +2,7 @@
 
 > OneBrain Mobile — autonomous iOS and Android node.
 >
-> Status: **MOB-02 runtime profile build in progress; production capability and
+> Status: **MOB-03 protected-node foundation in progress; production capability and
 > `ReadyOffline` are not claimed**
 
 ## Target
@@ -66,11 +66,11 @@ The checked-in app now includes:
   cancellation.
 
 The native snapshot now crosses the generated Pigeon API, Swift/Kotlin host,
-the Rust C ABI/JNI bridge and `onebrain-mobile-core`. ABI revision `2` reports a
-bounded `BootstrapOnly` runtime profile with a process generation, foreground
-execution grant, redb bootstrap store, signed local KQL/LocalOnly private
-planning smokes and stale-callback fence. It still reports that no Registry
-request has been issued.
+the Rust C ABI/JNI bridge and `onebrain-mobile-core`. ABI revision `3` adds a
+platform-protected installation session, exact epoch/nonce authority binding,
+three independent signer domains, an encrypted private vault, fail-safe privacy
+defaults and redacted history to the bounded `BootstrapOnly` MOB-02 runtime.
+It still reports that no Registry request has been issued.
 
 See [`PACKAGE_POLICY.md`](./PACKAGE_POLICY.md) for the package-first and
 shared-widget contract, and [`RUST_BRIDGE.md`](./RUST_BRIDGE.md) for ABI,
@@ -79,7 +79,7 @@ thread-ownership, build and fallback details.
 The current automated evidence additionally covers:
 
 - nine Windows goldens spanning light/dark, high contrast, English/Vietnamese,
-  200% text, reduced motion, compact/large/expanded layouts and the MOB-02
+  200% text, reduced motion, compact/large/expanded layouts and the MOB-03
   runtime status card;
 - Android 16 integration of async `started`, `cancelled` and `completed`
   events, idempotent cancellation, and the bounded `HOST_INVALID_DELAY` error;
@@ -100,9 +100,14 @@ MOB-02 virtual-device evidence additionally covers:
   `reqwest` and Tokio;
 - Android runtime execution off the UI thread and iOS simulator compilation.
 
+MOB-03 virtual evidence additionally covers Android Keystore and iOS Keychain
+adapters, no-backup install markers, fail-closed injected restore residue,
+independent Node/feed/Actor signer domains, `ku-core` encrypted-vault reuse and
+the chunked/versioned `OBARV001` encrypted archive foundation.
+
 Physical Android/iOS validation is intentionally deferred by the owner while
-emulator/simulator development continues. This does not close MOB-01 or MOB-02
-exit gates.
+emulator/simulator development continues. This does not close the physical
+MOB-01/MOB-02/MOB-03 release gates.
 
 ## Generate and test
 

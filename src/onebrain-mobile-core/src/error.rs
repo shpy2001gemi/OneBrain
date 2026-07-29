@@ -20,6 +20,14 @@ pub enum MobileCoreError {
     SignedFixture(String),
     #[error("local KQL smoke failed: {0}")]
     LocalKql(String),
+    #[error("mobile security state rejected: {0}")]
+    Security(String),
+    #[error("unexpected or unbound restored mobile authority: {0}")]
+    UnexpectedRestore(String),
+    #[error("encrypted mobile archive rejected: {0}")]
+    Archive(String),
+    #[error("the private mobile node is locked")]
+    Locked,
     #[error("the runtime generation has already been quiesced")]
     AlreadyQuiesced,
 }

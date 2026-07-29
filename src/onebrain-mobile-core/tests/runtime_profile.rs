@@ -1,8 +1,9 @@
 use onebrain_mobile_core::{
-    run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, BootstrapStore, ExecutionGrant,
-    ExecutionGrantKind, MobileCoreError, MobileFeatureFlags, MobileRuntimeFacade, NetworkScope,
-    RegistryChunkRecord, RegistryOperationRecord, ResourceBudgets, RuntimeServices,
-    TransferLandingRecord,
+    run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, BootstrapStore,
+    ExecutionGrant, ExecutionGrantKind, MobileCoreError, MobileFeatureFlags, MobileRuntimeFacade,
+    NetworkScope, RegistryChunkRecord, RegistryOperationRecord, ResourceBudgets, RuntimeServices,
+    SecurityBootstrapMaterial, SecuritySessionState, TransferLandingRecord,
+    SECURITY_BOOTSTRAP_MATERIAL_BYTES,
 };
 use tempfile::tempdir;
 
@@ -19,7 +20,7 @@ fn bootstrap_profile_uses_no_model_or_network_and_runs_signed_local_kql() {
     .unwrap();
     let snapshot = facade.snapshot();
 
-    assert_eq!(snapshot.profile_version, "MOB-02/1");
+    assert_eq!(snapshot.profile_version, "MOB-03/1");
     assert_eq!(snapshot.process_generation, 1);
     assert_eq!(snapshot.activation_phase, ActivationPhase::Active);
     assert_eq!(snapshot.active_grant_count, 1);
@@ -35,6 +36,85 @@ fn bootstrap_profile_uses_no_model_or_network_and_runs_signed_local_kql() {
     assert!(!snapshot.connectivity_online);
     assert!(!snapshot.background_scheduler_available);
     assert!(snapshot.stale_callback_rejected);
+}
+
+#[test]
+fn secured_profile_binds_installation_opens_vault_and_locks_without_exposing_signers() {
+    let directory = tempdir().unwrap();
+    let mut facade = MobileRuntimeFacade::open_secured(
+        RuntimeServices::bootstrap_only(directory.path()),
+        MobileFeatureFlags::default(),
+        ResourceBudgets::default(),
+        secure_material(0),
+        AppLockPolicy::default(),
+    )
+    .unwrap();
+    let snapshot = facade.snapshot();
+    assert!(snapshot.secure_profile_active);
+    assert!(snapshot.installation_binding_verified);
+    assert!(snapshot.installation_created);
+    assert_eq!(
+        snapshot.security_session_state,
+        SecuritySessionState::Unlocked
+    );
+    assert!(snapshot.private_vault_ready);
+    assert!(snapshot.identity_domains_separated);
+    assert!(snapshot.privacy_defaults_fail_safe);
+    assert!(snapshot.redacted_history_ready);
+    assert!(snapshot.signer_available);
+
+    facade.lock_private_node().unwrap();
+    let locked = facade.snapshot();
+    assert_eq!(locked.security_session_state, SecuritySessionState::Locked);
+    assert!(!locked.private_vault_ready);
+    assert!(!locked.signer_available);
+    facade.graceful_stop().unwrap();
+    drop(facade);
+
+    let store = BootstrapStore::open(&directory.path().join("bootstrap.redb")).unwrap();
+    let history = store.recent_security_history(8).unwrap();
+    assert_eq!(history[0].event_code, "SECURE_SESSION_LOCKED");
+    assert!(history
+        .iter()
+        .all(|record| !record.event_code.contains("secret")));
+}
+
+#[test]
+fn matching_platform_material_reopens_but_injected_restore_binding_fails_closed() {
+    let directory = tempdir().unwrap();
+    let mut first = MobileRuntimeFacade::open_secured(
+        RuntimeServices::bootstrap_only(directory.path()),
+        MobileFeatureFlags::default(),
+        ResourceBudgets::default(),
+        secure_material(0),
+        AppLockPolicy::default(),
+    )
+    .unwrap();
+    first.graceful_stop().unwrap();
+    drop(first);
+
+    let mut reopened = MobileRuntimeFacade::open_secured(
+        RuntimeServices::bootstrap_only(directory.path()),
+        MobileFeatureFlags::default(),
+        ResourceBudgets::default(),
+        secure_material(0),
+        AppLockPolicy::default(),
+    )
+    .unwrap();
+    assert!(!reopened.snapshot().installation_created);
+    reopened.graceful_stop().unwrap();
+    drop(reopened);
+
+    assert!(matches!(
+        MobileRuntimeFacade::open_secured(
+            RuntimeServices::bootstrap_only(directory.path()),
+            MobileFeatureFlags::default(),
+            ResourceBudgets::default(),
+            secure_material(11),
+            AppLockPolicy::default(),
+        ),
+        Err(MobileCoreError::UnexpectedRestore(_))
+    ));
 }
 
 #[test]
@@ -276,4 +356,12 @@ fn signed_fixture_executes_within_result_budget() {
     assert!(smoke.query_scope_local);
     assert_eq!(smoke.rows, 1);
     assert!(smoke.private_planner_verified);
+}
+
+fn secure_material(offset: u8) -> SecurityBootstrapMaterial {
+    let mut bytes = [0u8; SECURITY_BOOTSTRAP_MATERIAL_BYTES];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::try_from((index + usize::from(offset)) % 251 + 1).unwrap();
+    }
+    SecurityBootstrapMaterial::from_bytes(&bytes).unwrap()
 }

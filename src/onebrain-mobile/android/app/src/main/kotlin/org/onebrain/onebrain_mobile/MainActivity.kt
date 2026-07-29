@@ -17,7 +17,7 @@ import org.onebrain.onebrain_mobile.generated.HostRuntimeSnapshot
 import org.onebrain.onebrain_mobile.generated.MobileHostApi
 import org.onebrain.onebrain_mobile.generated.PigeonEventSink
 
-private const val HOST_API_VERSION = "2"
+private const val HOST_API_VERSION = "3"
 private const val MAX_FEASIBILITY_DELAY_MILLIS = 30_000L
 private const val RUNTIME_LOG_TAG = "OneBrainMobileRuntime"
 
@@ -28,10 +28,20 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         hostEvents = AndroidHostEvents()
-        hostApi = AndroidMobileHost(applicationContext.noBackupFilesDir.absolutePath, hostEvents)
+        hostApi =
+            AndroidMobileHost(
+                applicationContext.noBackupFilesDir.absolutePath,
+                SecurityMaterialStore(applicationContext),
+                hostEvents,
+            )
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MobileHostApi.setUp(messenger, hostApi)
         HostOperationEventsStreamHandler.register(messenger, hostEvents)
+    }
+
+    override fun onStop() {
+        hostApi.lockPrivateNode()
+        super.onStop()
     }
 }
 
@@ -53,6 +63,7 @@ private class AndroidHostEvents : HostOperationEventsStreamHandler() {
 
 private class AndroidMobileHost(
     private val dataRoot: String,
+    private val securityMaterialStore: SecurityMaterialStore,
     private val events: AndroidHostEvents,
 ) : MobileHostApi {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -87,7 +98,13 @@ private class AndroidMobileHost(
         runtimeExecutor.execute {
             val result =
                 runCatching {
-                    val rust = RustMobileBridge.inspectRuntime(dataRoot)
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    val rust =
+                        try {
+                            RustMobileBridge.inspectRuntime(dataRoot, securityMaterial)
+                        } finally {
+                            securityMaterial.fill(0)
+                        }
                     Log.i(
                         RUNTIME_LOG_TAG,
                         "profile=${rust.profileVersion} " +
@@ -100,7 +117,14 @@ private class AndroidMobileHost(
                             "kql=${rust.localKqlFixtureVerified} " +
                             "planner=${rust.privatePlannerVerified} " +
                             "noLlm=${rust.noLlmProvider} " +
-                            "staleFence=${rust.staleCallbackRejected}",
+                            "staleFence=${rust.staleCallbackRejected} " +
+                            "secure=${rust.secureProfileActive} " +
+                            "binding=${rust.installationBindingVerified} " +
+                            "unlocked=${rust.securitySessionUnlocked} " +
+                            "vault=${rust.privateVaultReady} " +
+                            "domains=${rust.identityDomainsSeparated} " +
+                            "privacy=${rust.privacyDefaultsFailSafe} " +
+                            "history=${rust.redactedHistoryReady}",
                     )
                     HostRuntimeSnapshot(
                         profileVersion = rust.profileVersion,
@@ -114,10 +138,22 @@ private class AndroidMobileHost(
                         privatePlannerVerified = rust.privatePlannerVerified,
                         noLlmProvider = rust.noLlmProvider,
                         staleCallbackRejected = rust.staleCallbackRejected,
+                        secureProfileActive = rust.secureProfileActive,
+                        installationBindingVerified = rust.installationBindingVerified,
+                        installationCreated = rust.installationCreated,
+                        securitySessionUnlocked = rust.securitySessionUnlocked,
+                        privateVaultReady = rust.privateVaultReady,
+                        identityDomainsSeparated = rust.identityDomainsSeparated,
+                        privacyDefaultsFailSafe = rust.privacyDefaultsFailSafe,
+                        redactedHistoryReady = rust.redactedHistoryReady,
                     )
                 }.fold(
                     onSuccess = { Result.success(it) },
                     onFailure = {
+                        Log.w(
+                            RUNTIME_LOG_TAG,
+                            "secure runtime open rejected",
+                        )
                         Result.failure(
                             FlutterError(
                                 code = "RUNTIME_OPEN_FAILED",
@@ -127,6 +163,12 @@ private class AndroidMobileHost(
                     },
                 )
             mainHandler.post { callback(result) }
+        }
+    }
+
+    fun lockPrivateNode() {
+        runtimeExecutor.execute {
+            RustMobileBridge.lockRuntime()
         }
     }
 

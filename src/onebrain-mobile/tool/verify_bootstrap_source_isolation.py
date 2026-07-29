@@ -74,7 +74,7 @@ def verify() -> dict[str, object]:
     return {
         "format": "onebrain.mobile.bootstrap-source-isolation/1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "scope": "MOB-02 BootstrapOnly app, Rust bridge and autonomous mobile core",
+        "scope": "MOB-03 BootstrapOnly app, Rust bridge and protected mobile core",
         "files_scanned": counts,
         "forbidden_transport_reference_count": len(violations),
         "violations": violations,

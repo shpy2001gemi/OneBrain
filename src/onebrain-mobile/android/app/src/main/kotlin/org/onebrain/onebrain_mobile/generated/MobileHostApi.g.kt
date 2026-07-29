@@ -277,7 +277,15 @@ data class HostRuntimeSnapshot (
   val localKqlFixtureVerified: Boolean,
   val privatePlannerVerified: Boolean,
   val noLlmProvider: Boolean,
-  val staleCallbackRejected: Boolean
+  val staleCallbackRejected: Boolean,
+  val secureProfileActive: Boolean,
+  val installationBindingVerified: Boolean,
+  val installationCreated: Boolean,
+  val securitySessionUnlocked: Boolean,
+  val privateVaultReady: Boolean,
+  val identityDomainsSeparated: Boolean,
+  val privacyDefaultsFailSafe: Boolean,
+  val redactedHistoryReady: Boolean
 )
  {
   companion object {
@@ -293,7 +301,15 @@ data class HostRuntimeSnapshot (
       val privatePlannerVerified = pigeonVar_list[8] as Boolean
       val noLlmProvider = pigeonVar_list[9] as Boolean
       val staleCallbackRejected = pigeonVar_list[10] as Boolean
-      return HostRuntimeSnapshot(profileVersion, processGeneration, activationPhase, activeGrantCount, recoveredUncleanStart, bootstrapStoreOpened, registryState, localKqlFixtureVerified, privatePlannerVerified, noLlmProvider, staleCallbackRejected)
+      val secureProfileActive = pigeonVar_list[11] as Boolean
+      val installationBindingVerified = pigeonVar_list[12] as Boolean
+      val installationCreated = pigeonVar_list[13] as Boolean
+      val securitySessionUnlocked = pigeonVar_list[14] as Boolean
+      val privateVaultReady = pigeonVar_list[15] as Boolean
+      val identityDomainsSeparated = pigeonVar_list[16] as Boolean
+      val privacyDefaultsFailSafe = pigeonVar_list[17] as Boolean
+      val redactedHistoryReady = pigeonVar_list[18] as Boolean
+      return HostRuntimeSnapshot(profileVersion, processGeneration, activationPhase, activeGrantCount, recoveredUncleanStart, bootstrapStoreOpened, registryState, localKqlFixtureVerified, privatePlannerVerified, noLlmProvider, staleCallbackRejected, secureProfileActive, installationBindingVerified, installationCreated, securitySessionUnlocked, privateVaultReady, identityDomainsSeparated, privacyDefaultsFailSafe, redactedHistoryReady)
     }
   }
   fun toList(): List<Any?> {
@@ -309,6 +325,14 @@ data class HostRuntimeSnapshot (
       privatePlannerVerified,
       noLlmProvider,
       staleCallbackRejected,
+      secureProfileActive,
+      installationBindingVerified,
+      installationCreated,
+      securitySessionUnlocked,
+      privateVaultReady,
+      identityDomainsSeparated,
+      privacyDefaultsFailSafe,
+      redactedHistoryReady,
     )
   }
   override fun equals(other: Any?): Boolean {
@@ -319,7 +343,7 @@ data class HostRuntimeSnapshot (
       return true
     }
     val other = other as HostRuntimeSnapshot
-    return MobileHostApiPigeonUtils.deepEquals(this.profileVersion, other.profileVersion) && MobileHostApiPigeonUtils.deepEquals(this.processGeneration, other.processGeneration) && MobileHostApiPigeonUtils.deepEquals(this.activationPhase, other.activationPhase) && MobileHostApiPigeonUtils.deepEquals(this.activeGrantCount, other.activeGrantCount) && MobileHostApiPigeonUtils.deepEquals(this.recoveredUncleanStart, other.recoveredUncleanStart) && MobileHostApiPigeonUtils.deepEquals(this.bootstrapStoreOpened, other.bootstrapStoreOpened) && MobileHostApiPigeonUtils.deepEquals(this.registryState, other.registryState) && MobileHostApiPigeonUtils.deepEquals(this.localKqlFixtureVerified, other.localKqlFixtureVerified) && MobileHostApiPigeonUtils.deepEquals(this.privatePlannerVerified, other.privatePlannerVerified) && MobileHostApiPigeonUtils.deepEquals(this.noLlmProvider, other.noLlmProvider) && MobileHostApiPigeonUtils.deepEquals(this.staleCallbackRejected, other.staleCallbackRejected)
+    return MobileHostApiPigeonUtils.deepEquals(this.profileVersion, other.profileVersion) && MobileHostApiPigeonUtils.deepEquals(this.processGeneration, other.processGeneration) && MobileHostApiPigeonUtils.deepEquals(this.activationPhase, other.activationPhase) && MobileHostApiPigeonUtils.deepEquals(this.activeGrantCount, other.activeGrantCount) && MobileHostApiPigeonUtils.deepEquals(this.recoveredUncleanStart, other.recoveredUncleanStart) && MobileHostApiPigeonUtils.deepEquals(this.bootstrapStoreOpened, other.bootstrapStoreOpened) && MobileHostApiPigeonUtils.deepEquals(this.registryState, other.registryState) && MobileHostApiPigeonUtils.deepEquals(this.localKqlFixtureVerified, other.localKqlFixtureVerified) && MobileHostApiPigeonUtils.deepEquals(this.privatePlannerVerified, other.privatePlannerVerified) && MobileHostApiPigeonUtils.deepEquals(this.noLlmProvider, other.noLlmProvider) && MobileHostApiPigeonUtils.deepEquals(this.staleCallbackRejected, other.staleCallbackRejected) && MobileHostApiPigeonUtils.deepEquals(this.secureProfileActive, other.secureProfileActive) && MobileHostApiPigeonUtils.deepEquals(this.installationBindingVerified, other.installationBindingVerified) && MobileHostApiPigeonUtils.deepEquals(this.installationCreated, other.installationCreated) && MobileHostApiPigeonUtils.deepEquals(this.securitySessionUnlocked, other.securitySessionUnlocked) && MobileHostApiPigeonUtils.deepEquals(this.privateVaultReady, other.privateVaultReady) && MobileHostApiPigeonUtils.deepEquals(this.identityDomainsSeparated, other.identityDomainsSeparated) && MobileHostApiPigeonUtils.deepEquals(this.privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) && MobileHostApiPigeonUtils.deepEquals(this.redactedHistoryReady, other.redactedHistoryReady)
   }
 
   override fun hashCode(): Int {
@@ -335,10 +359,18 @@ data class HostRuntimeSnapshot (
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.privatePlannerVerified)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.noLlmProvider)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.staleCallbackRejected)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.secureProfileActive)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.installationBindingVerified)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.installationCreated)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.securitySessionUnlocked)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.privateVaultReady)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.identityDomainsSeparated)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.privacyDefaultsFailSafe)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.redactedHistoryReady)
     return result
   }
   override fun toString(): String {
-    return "HostRuntimeSnapshot(profileVersion=$profileVersion, processGeneration=$processGeneration, activationPhase=$activationPhase, activeGrantCount=$activeGrantCount, recoveredUncleanStart=$recoveredUncleanStart, bootstrapStoreOpened=$bootstrapStoreOpened, registryState=$registryState, localKqlFixtureVerified=$localKqlFixtureVerified, privatePlannerVerified=$privatePlannerVerified, noLlmProvider=$noLlmProvider, staleCallbackRejected=$staleCallbackRejected)"
+    return "HostRuntimeSnapshot(profileVersion=$profileVersion, processGeneration=$processGeneration, activationPhase=$activationPhase, activeGrantCount=$activeGrantCount, recoveredUncleanStart=$recoveredUncleanStart, bootstrapStoreOpened=$bootstrapStoreOpened, registryState=$registryState, localKqlFixtureVerified=$localKqlFixtureVerified, privatePlannerVerified=$privatePlannerVerified, noLlmProvider=$noLlmProvider, staleCallbackRejected=$staleCallbackRejected, secureProfileActive=$secureProfileActive, installationBindingVerified=$installationBindingVerified, installationCreated=$installationCreated, securitySessionUnlocked=$securitySessionUnlocked, privateVaultReady=$privateVaultReady, identityDomainsSeparated=$identityDomainsSeparated, privacyDefaultsFailSafe=$privacyDefaultsFailSafe, redactedHistoryReady=$redactedHistoryReady)"
   }
 }
 

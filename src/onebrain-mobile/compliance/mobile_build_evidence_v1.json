@@ -3,7 +3,7 @@
   "contract_id": "onebrain-mobile-owner-approved-v1",
   "authority_set_sha256": "b9f374909c83c6dc3785871da172bffbaf666468fe42cd7afb7f069952aeb375",
   "phase": "foundation",
-  "work_package": "MOB-02",
+  "work_package": "MOB-03",
   "acknowledged_required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -23,6 +23,17 @@
     "MOB-FND-004",
     "MOB-FND-005",
     "MOB-ONB-001",
+    "MOB-ONB-003",
+    "MOB-SEC-001",
+    "MOB-SEC-002",
+    "MOB-SEC-003",
+    "MOB-SEC-004",
+    "MOB-SEC-005",
+    "MOB-SEC-006",
+    "MOB-DAT-006",
+    "MOB-DAT-007",
+    "MOB-DAT-008",
+    "MOB-DAT-009",
     "MOB-SCR-ENT-001",
     "MOB-SCR-ONB-001",
     "OBM-CMP-NAV-002",
@@ -132,9 +143,64 @@
       "id": "MOB-02-VIRTUAL-DEVICE-STRATEGY",
       "path": "src/onebrain-mobile/compliance/mob02_validation_strategy_v1.json",
       "proves": "Owner-approved emulator/simulator-first validation is recorded without claiming physical-device validation, MOB-01 exit, ReadyOffline or Registry Init."
+    },
+    {
+      "id": "MOB-03-SECURITY-CORE",
+      "path": "src/onebrain-mobile-core/src/security.rs",
+      "proves": "Zeroizing platform material binds a nonportable epoch and nonce, opens the ku-core encrypted vault, derives independent Node/feed/Actor public domains and exposes only domain-separated typed signing."
+    },
+    {
+      "id": "MOB-03-ENCRYPTED-ARCHIVE",
+      "path": "src/onebrain-mobile-core/src/archive.rs",
+      "proves": "The new OBARV001 portable path has an encrypted versioned manifest, independently authenticated chunks, length/digest binding and fail-closed wrong-key, corrupt, truncated and downgrade tests."
+    },
+    {
+      "id": "MOB-03-ANDROID-KEYSTORE",
+      "path": "src/onebrain-mobile/android/app/src/main/kotlin/org/onebrain/onebrain_mobile/SecurityMaterialStore.kt",
+      "proves": "Android creates random installation material, protects it with a non-exportable Android Keystore AES-GCM key, persists only in no-backup storage and retires orphan keys on a clean install."
+    },
+    {
+      "id": "MOB-03-IOS-KEYCHAIN",
+      "path": "src/onebrain-mobile/ios/Runner/AppDelegate.swift",
+      "proves": "iOS uses a when-unlocked, this-device-only Keychain item, a paired excluded marker, explicit orphan-item retirement and recursive Application Support backup exclusion."
+    },
+    {
+      "id": "MOB-03-ANDROID-BACKUP-EXCLUSIONS",
+      "path": "src/onebrain-mobile/android/app/src/main/res/xml/data_extraction_rules.xml",
+      "proves": "Cloud backup and device transfer explicitly exclude root, file, database, preferences, external and device-protected domains; the application also disables OS backup."
+    },
+    {
+      "id": "MOB-03-ANDROID-SECURE-RECOVERY",
+      "path": "src/onebrain-mobile/compliance/reports/mob03_android_secure_recovery.json",
+      "proves": "Android 16 Keystore material, exact Rust binding, private vault, redacted history and signer-domain facts survive a force-stop and advance the process generation without enabling model or network lanes."
+    },
+    {
+      "id": "MOB-03-ANDROID-RELEASE-INVENTORY",
+      "path": "src/onebrain-mobile/compliance/reports/mob03_android_release_package_inventory.json",
+      "proves": "The protected arm64/x86_64 release APK contains no Registry, model, database, archive or other prohibited bootstrap payload."
+    },
+    {
+      "id": "MOB-03-ANDROID-RELEASE-PERMISSIONS",
+      "path": "src/onebrain-mobile/compliance/reports/mob03_android_release_permissions.json",
+      "proves": "The protected Android release still has no INTERNET, Wi-Fi, nearby, Bluetooth or network-state capability."
+    },
+    {
+      "id": "MOB-03-UNEXPECTED-RESTORE",
+      "path": "src/onebrain-mobile/compliance/reports/mob03_android_install_binding_fail_closed.json",
+      "proves": "Removing the exact no-backup install marker while retaining authority bytes yields a redacted fail-closed rejection and no runtime snapshot."
+    },
+    {
+      "id": "MOB-03-SECURITY-REVIEW",
+      "path": "src/onebrain-mobile/compliance/MOB03_SECURITY_REVIEW_V1.md",
+      "proves": "Threat boundaries, custody, restore behavior, archive construction, logs, backup exclusions and explicitly deferred physical gates are reviewed without a release-readiness claim."
+    },
+    {
+      "id": "MOB-03-VIRTUAL-DEVICE-STRATEGY",
+      "path": "src/onebrain-mobile/compliance/mob03_validation_strategy_v1.json",
+      "proves": "Owner-approved emulator/simulator-first MOB-03 validation records physical backup, biometric, protected-data and iOS orphan-Keychain tests as deferred."
     }
   ],
   "deviations": [],
   "last_reviewed": "2026-07-30",
-  "notes": "MOB-02 adds a thin autonomous Rust mobile core, RuntimeServices injection, bounded feature/resource profile, redb bootstrap operation/chunk/transfer ledger, one-writer process generations, execution grants, callback commit fencing, signed local KQL plus LocalOnly private-planning smokes and an ABI 2 typed runtime snapshot. Android 16 emulator evidence covers force-stop recovery; iOS remains a simulator compile gate. By owner decision, physical Android and iOS validation is deferred and remains required before MOB-01/MOB-02 exit claims. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
+  "notes": "MOB-03 layers platform-protected installation material, exact nonportable authority binding, independent typed signer domains, ku-core encrypted private vault integration, fail-safe privacy defaults, bounded redacted security history and the OBARV001 encrypted archive foundation over the MOB-02 runtime. Android 16 emulator evidence covers Keystore-backed force-stop recovery and injected missing-marker rejection. iOS remains a simulator compile gate; physical backup, credential/biometric, protected-data and orphan-Keychain validation is deferred by owner and remains required before MOB-03 release exit. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding, recovery-UI or product-readiness claim."
 }

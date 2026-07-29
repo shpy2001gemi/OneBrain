@@ -8,20 +8,20 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'MOB-02 typed host bridge exposes runtime and keeps bounded operations',
+    'MOB-03 typed host bridge exposes protected runtime and bounded operations',
     (tester) async {
       final gateway = PigeonMobileHostGateway();
       final events = gateway.observeFeasibilityOperations().asBroadcastStream();
 
       final snapshot = await gateway.inspectBootstrapHost();
-      expect(snapshot.apiVersion, '2');
+      expect(snapshot.apiVersion, '3');
       expect(snapshot.registryRequestIssued, isFalse);
       expect(snapshot.rustCoreLinked, isTrue);
-      expect(snapshot.rustAbiVersion, 2);
+      expect(snapshot.rustAbiVersion, 3);
       expect(snapshot.rustRoundTripVerified, isTrue);
 
       final runtime = await gateway.inspectRuntimeProfile();
-      expect(runtime.profileVersion, 'MOB-02/1');
+      expect(runtime.profileVersion, 'MOB-03/1');
       expect(runtime.processGeneration, greaterThanOrEqualTo(1));
       expect(runtime.activationPhase, 'Active');
       expect(runtime.activeGrantCount, 1);
@@ -31,6 +31,13 @@ void main() {
       expect(runtime.privatePlannerVerified, isTrue);
       expect(runtime.noLlmProvider, isTrue);
       expect(runtime.staleCallbackRejected, isTrue);
+      expect(runtime.secureProfileActive, isTrue);
+      expect(runtime.installationBindingVerified, isTrue);
+      expect(runtime.securitySessionUnlocked, isTrue);
+      expect(runtime.privateVaultReady, isTrue);
+      expect(runtime.identityDomainsSeparated, isTrue);
+      expect(runtime.privacyDefaultsFailSafe, isTrue);
+      expect(runtime.redactedHistoryReady, isTrue);
 
       final startedForCancellation = events
           .firstWhere((event) => event.kind == HostOperationEventKind.started)

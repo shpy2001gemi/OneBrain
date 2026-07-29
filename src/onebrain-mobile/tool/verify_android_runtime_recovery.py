@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise MOB-02 process-death recovery on an Android emulator."""
+"""Exercise MOB-03 secure process-death recovery on an Android emulator."""
 
 from __future__ import annotations
 
@@ -27,7 +27,14 @@ RUNTIME_PATTERN = re.compile(
     r"kql=(?P<kql>true|false) "
     r"planner=(?P<planner>true|false) "
     r"noLlm=(?P<no_llm>true|false) "
-    r"staleFence=(?P<stale_fence>true|false)"
+    r"staleFence=(?P<stale_fence>true|false) "
+    r"secure=(?P<secure>true|false) "
+    r"binding=(?P<binding>true|false) "
+    r"unlocked=(?P<unlocked>true|false) "
+    r"vault=(?P<vault>true|false) "
+    r"domains=(?P<domains>true|false) "
+    r"privacy=(?P<privacy>true|false) "
+    r"history=(?P<history>true|false)"
 )
 
 
@@ -61,6 +68,13 @@ def read_runtime_log(adb: str, device: str) -> dict[str, object] | None:
         "private_planner_verified": values["planner"] == "true",
         "no_llm_provider": values["no_llm"] == "true",
         "stale_callback_rejected": values["stale_fence"] == "true",
+        "secure_profile_active": values["secure"] == "true",
+        "installation_binding_verified": values["binding"] == "true",
+        "security_session_unlocked": values["unlocked"] == "true",
+        "private_vault_ready": values["vault"] == "true",
+        "identity_domains_separated": values["domains"] == "true",
+        "privacy_defaults_fail_safe": values["privacy"] == "true",
+        "redacted_history_ready": values["history"] == "true",
     }
 
 
@@ -76,7 +90,7 @@ def wait_for_runtime(adb: str, device: str, timeout_seconds: float) -> dict[str,
 
 def assert_common(snapshot: dict[str, object]) -> None:
     expected = {
-        "profile": "MOB-02/1",
+        "profile": "MOB-03/1",
         "phase": "Active",
         "active_grants": 1,
         "bootstrap_store_opened": True,
@@ -85,6 +99,13 @@ def assert_common(snapshot: dict[str, object]) -> None:
         "private_planner_verified": True,
         "no_llm_provider": True,
         "stale_callback_rejected": True,
+        "secure_profile_active": True,
+        "installation_binding_verified": True,
+        "security_session_unlocked": True,
+        "private_vault_ready": True,
+        "identity_domains_separated": True,
+        "privacy_defaults_fail_safe": True,
+        "redacted_history_ready": True,
     }
     mismatches = {
         key: {"expected": value, "actual": snapshot.get(key)}

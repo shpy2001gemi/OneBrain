@@ -163,7 +163,14 @@ class WelcomeScreen extends ConsumerWidget {
                     snapshot.localKqlFixtureVerified &&
                     snapshot.privatePlannerVerified &&
                     snapshot.noLlmProvider &&
-                    snapshot.staleCallbackRejected;
+                    snapshot.staleCallbackRejected &&
+                    snapshot.secureProfileActive &&
+                    snapshot.installationBindingVerified &&
+                    snapshot.securitySessionUnlocked &&
+                    snapshot.privateVaultReady &&
+                    snapshot.identityDomainsSeparated &&
+                    snapshot.privacyDefaultsFailSafe &&
+                    snapshot.redactedHistoryReady;
                 return ObmNodeFactCard(
                   title: strings.mobileRuntimeTitle,
                   body: snapshot.recoveredUncleanStart

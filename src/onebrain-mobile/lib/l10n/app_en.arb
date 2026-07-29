@@ -39,7 +39,7 @@
   "mobileRuntimeTitle": "Mobile runtime profile",
   "mobileRuntimeLoading": "Opening the local BootstrapOnly runtime…",
   "mobileRuntimeUnavailable": "The local runtime could not open. No offline readiness is claimed.",
-  "mobileRuntimeReady": "Profile {profileVersion} · generation {generation} · {phase} with {grantCount} active grant(s). Registry state: {registryState}.",
+  "mobileRuntimeReady": "Profile {profileVersion} · generation {generation} · {phase} with {grantCount} active grant(s). Registry state: {registryState}. Device-bound identity and encrypted vault are active.",
   "@mobileRuntimeReady": {
     "placeholders": {
       "profileVersion": {"type": "String"},
@@ -55,7 +55,7 @@
       "generation": {"type": "int"}
     }
   },
-  "mobileRuntimeVerified": "Signed local KQL, private planner and callback fence verified",
+  "mobileRuntimeVerified": "Protected identity, encrypted vault and local runtime verified",
   "mobileRuntimeNotVerified": "Runtime profile verification incomplete",
   "continueAction": "Continue to device preflight",
   "galleryAction": "View shared components",

@@ -263,7 +263,7 @@ abstract class AppLocalizations {
   /// No description provided for @mobileRuntimeReady.
   ///
   /// In en, this message translates to:
-  /// **'Profile {profileVersion} · generation {generation} · {phase} with {grantCount} active grant(s). Registry state: {registryState}.'**
+  /// **'Profile {profileVersion} · generation {generation} · {phase} with {grantCount} active grant(s). Registry state: {registryState}. Device-bound identity and encrypted vault are active.'**
   String mobileRuntimeReady(
     String profileVersion,
     int generation,
@@ -281,7 +281,7 @@ abstract class AppLocalizations {
   /// No description provided for @mobileRuntimeVerified.
   ///
   /// In en, this message translates to:
-  /// **'Signed local KQL, private planner and callback fence verified'**
+  /// **'Protected identity, encrypted vault and local runtime verified'**
   String get mobileRuntimeVerified;
 
   /// No description provided for @mobileRuntimeNotVerified.

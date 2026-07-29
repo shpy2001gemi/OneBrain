@@ -47,6 +47,14 @@ class HostRuntimeSnapshot {
     required this.privatePlannerVerified,
     required this.noLlmProvider,
     required this.staleCallbackRejected,
+    required this.secureProfileActive,
+    required this.installationBindingVerified,
+    required this.installationCreated,
+    required this.securitySessionUnlocked,
+    required this.privateVaultReady,
+    required this.identityDomainsSeparated,
+    required this.privacyDefaultsFailSafe,
+    required this.redactedHistoryReady,
   });
 
   String profileVersion;
@@ -60,6 +68,14 @@ class HostRuntimeSnapshot {
   bool privatePlannerVerified;
   bool noLlmProvider;
   bool staleCallbackRejected;
+  bool secureProfileActive;
+  bool installationBindingVerified;
+  bool installationCreated;
+  bool securitySessionUnlocked;
+  bool privateVaultReady;
+  bool identityDomainsSeparated;
+  bool privacyDefaultsFailSafe;
+  bool redactedHistoryReady;
 }
 
 enum HostOperationEventKind { started, cancelled, completed }

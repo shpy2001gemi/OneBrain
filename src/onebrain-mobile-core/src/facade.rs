@@ -1,7 +1,8 @@
 use crate::{
-    run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, ExecutionGrant,
+    run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, ExecutionGrant,
     ExecutionGrantKind, MobileCoreError, MobileFeatureFlags, NetworkScope, ResourceBudgets,
-    RuntimeServices, TransferLandingRecord, MOBILE_RUNTIME_PROFILE_VERSION,
+    RuntimeServices, SecureIdentitySession, SecurityBootstrapMaterial, SecuritySessionState,
+    TransferLandingRecord, MOBILE_RUNTIME_PROFILE_VERSION,
 };
 
 const FOREGROUND_GRANT_ID: &str = "native.foreground";
@@ -26,6 +27,14 @@ pub struct MobileRuntimeSnapshot {
     pub connectivity_online: bool,
     pub background_scheduler_available: bool,
     pub stale_callback_rejected: bool,
+    pub secure_profile_active: bool,
+    pub installation_binding_verified: bool,
+    pub installation_created: bool,
+    pub security_session_state: SecuritySessionState,
+    pub private_vault_ready: bool,
+    pub identity_domains_separated: bool,
+    pub privacy_defaults_fail_safe: bool,
+    pub redacted_history_ready: bool,
 }
 
 pub struct MobileRuntimeFacade {
@@ -39,6 +48,9 @@ pub struct MobileRuntimeFacade {
     private_planner_verified: bool,
     local_kql_rows: usize,
     stale_callback_rejected: bool,
+    secure_identity: Option<SecureIdentitySession>,
+    installation_binding_verified: bool,
+    installation_created: bool,
     quiesced: bool,
 }
 
@@ -47,6 +59,25 @@ impl MobileRuntimeFacade {
         services: RuntimeServices,
         flags: MobileFeatureFlags,
         budgets: ResourceBudgets,
+    ) -> Result<Self, MobileCoreError> {
+        Self::open_internal(services, flags, budgets, None)
+    }
+
+    pub fn open_secured(
+        services: RuntimeServices,
+        flags: MobileFeatureFlags,
+        budgets: ResourceBudgets,
+        material: SecurityBootstrapMaterial,
+        lock_policy: AppLockPolicy,
+    ) -> Result<Self, MobileCoreError> {
+        Self::open_internal(services, flags, budgets, Some((material, lock_policy)))
+    }
+
+    fn open_internal(
+        services: RuntimeServices,
+        flags: MobileFeatureFlags,
+        budgets: ResourceBudgets,
+        security: Option<(SecurityBootstrapMaterial, AppLockPolicy)>,
     ) -> Result<Self, MobileCoreError> {
         flags.validate_bootstrap_only()?;
         budgets.validate()?;
@@ -63,6 +94,21 @@ impl MobileRuntimeFacade {
         let path = services.paths.bootstrap_database_path();
         let store = services.storage.open(&path)?;
         let now = services.clock.monotonic_millis();
+        let (secure_identity, installation_binding_verified, installation_created) =
+            if let Some((material, policy)) = security {
+                let authority = material.installation_authority();
+                let vault_path = services.paths.private_vault_database_path();
+                let session = SecureIdentitySession::open(material, &vault_path, now, policy)?;
+                let created = store.bind_installation_authority(&authority)?;
+                (Some(session), true, created)
+            } else {
+                if store.installation_authority()?.is_some() {
+                    return Err(MobileCoreError::UnexpectedRestore(
+                        "secured authority cannot be opened by an unsecured runtime".into(),
+                    ));
+                }
+                (None, false, false)
+            };
         let process = store.start_process(now)?;
         let mut arbiter = ActivationArbiter::starting(process.generation, &budgets);
         arbiter.register_grant(
@@ -78,6 +124,16 @@ impl MobileRuntimeFacade {
         )?;
         let kql = run_signed_local_kql_smoke(&budgets)?;
         let stale_callback_rejected = verify_callback_fence(&store, process.generation, &budgets)?;
+        if secure_identity.is_some() {
+            store.replace_privacy_policy(&store.privacy_policy()?)?;
+            store.append_security_history(
+                process.generation,
+                now,
+                "SECURE_SESSION_OPENED",
+                "PRIVATE_NODE",
+                true,
+            )?;
+        }
         services.telemetry.record("mobile_runtime_started");
         Ok(Self {
             services,
@@ -90,6 +146,9 @@ impl MobileRuntimeFacade {
             private_planner_verified: kql.private_planner_verified,
             local_kql_rows: kql.rows,
             stale_callback_rejected,
+            secure_identity,
+            installation_binding_verified,
+            installation_created,
             quiesced: false,
         })
     }
@@ -108,13 +167,40 @@ impl MobileRuntimeFacade {
             local_kql_rows: self.local_kql_rows,
             llm_provider_id: self.services.llm.provider_id(),
             llm_available: self.services.llm.is_available(),
-            signer_available: self.services.signer.is_available(),
+            signer_available: self.secure_identity.as_ref().is_some_and(|session| {
+                session.session_is_eligible(self.services.clock.monotonic_millis())
+            }) || self.services.signer.is_available(),
             connectivity_online: self.services.connectivity.is_online(),
             background_scheduler_available: self
                 .services
                 .scheduler
                 .background_execution_available(),
             stale_callback_rejected: self.stale_callback_rejected,
+            secure_profile_active: self.secure_identity.is_some(),
+            installation_binding_verified: self.installation_binding_verified,
+            installation_created: self.installation_created,
+            security_session_state: self
+                .secure_identity
+                .as_ref()
+                .map_or(SecuritySessionState::Locked, SecureIdentitySession::state),
+            private_vault_ready: self
+                .secure_identity
+                .as_ref()
+                .is_some_and(SecureIdentitySession::private_vault_ready),
+            identity_domains_separated: self
+                .secure_identity
+                .as_ref()
+                .is_some_and(|session| session.public_identities().domains_are_independent()),
+            privacy_defaults_fail_safe: self.store.privacy_policy().is_ok_and(|policy| {
+                policy.private_local_default
+                    && policy.private_shared_requires_confirmation
+                    && policy.public_candidate_requires_confirmation
+                    && policy.public_accepted_requires_confirmation
+            }),
+            redacted_history_ready: self
+                .store
+                .recent_security_history(1)
+                .is_ok_and(|records| self.secure_identity.is_none() || !records.is_empty()),
         }
     }
 
@@ -126,9 +212,73 @@ impl MobileRuntimeFacade {
         &self.budgets
     }
 
+    pub fn lock_private_node(&mut self) -> Result<(), MobileCoreError> {
+        let Some(session) = self.secure_identity.as_mut() else {
+            return Err(MobileCoreError::Security(
+                "the runtime has no platform-protected identity session".into(),
+            ));
+        };
+        if session.state() == SecuritySessionState::Locked {
+            return Ok(());
+        }
+        session.lock();
+        self.store.append_security_history(
+            self.arbiter.process_generation(),
+            self.services.clock.monotonic_millis(),
+            "SECURE_SESSION_LOCKED",
+            "PRIVATE_NODE",
+            true,
+        )?;
+        self.services.telemetry.record("mobile_private_node_locked");
+        Ok(())
+    }
+
+    pub fn unlock_private_node(
+        &mut self,
+        material: SecurityBootstrapMaterial,
+        lock_policy: AppLockPolicy,
+    ) -> Result<(), MobileCoreError> {
+        let authority = material.installation_authority();
+        self.store.bind_installation_authority(&authority)?;
+        if self
+            .secure_identity
+            .as_ref()
+            .is_some_and(|session| session.state() == SecuritySessionState::Unlocked)
+        {
+            return Ok(());
+        }
+        if !self.installation_binding_verified || self.secure_identity.is_none() {
+            return Err(MobileCoreError::UnexpectedRestore(
+                "an unsecured runtime cannot adopt protected identity material in-process".into(),
+            ));
+        }
+        let now = self.services.clock.monotonic_millis();
+        let vault_path = self.services.paths.private_vault_database_path();
+        self.secure_identity = Some(SecureIdentitySession::open(
+            material,
+            &vault_path,
+            now,
+            lock_policy,
+        )?);
+        self.store.append_security_history(
+            self.arbiter.process_generation(),
+            now,
+            "SECURE_SESSION_REOPENED",
+            "PRIVATE_NODE",
+            true,
+        )?;
+        self.services
+            .telemetry
+            .record("mobile_private_node_unlocked");
+        Ok(())
+    }
+
     pub fn graceful_stop(&mut self) -> Result<(), MobileCoreError> {
         if self.quiesced {
             return Err(MobileCoreError::AlreadyQuiesced);
+        }
+        if self.secure_identity.is_some() {
+            self.lock_private_node()?;
         }
         self.arbiter.revoke_grant(FOREGROUND_GRANT_ID);
         self.store.quiesce_process(

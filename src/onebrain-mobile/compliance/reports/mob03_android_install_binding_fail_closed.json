@@ -1,0 +1,11 @@
+{
+  "device": "emulator-5554",
+  "format": "onebrain.mobile.install-binding-fail-closed/1",
+  "generated_at": "2026-07-29T17:40:53.199027+00:00",
+  "injection": "removed exact no-backup install marker while authority remained",
+  "package": "org.onebrain.onebrain_mobile",
+  "physical_device_claimed": false,
+  "redacted_rejection_observed": true,
+  "result": "passed",
+  "runtime_snapshot_after_injection": false
+}

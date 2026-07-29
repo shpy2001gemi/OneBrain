@@ -191,6 +191,14 @@ class HostRuntimeSnapshot {
     required this.privatePlannerVerified,
     required this.noLlmProvider,
     required this.staleCallbackRejected,
+    required this.secureProfileActive,
+    required this.installationBindingVerified,
+    required this.installationCreated,
+    required this.securitySessionUnlocked,
+    required this.privateVaultReady,
+    required this.identityDomainsSeparated,
+    required this.privacyDefaultsFailSafe,
+    required this.redactedHistoryReady,
   });
 
   String profileVersion;
@@ -215,6 +223,22 @@ class HostRuntimeSnapshot {
 
   bool staleCallbackRejected;
 
+  bool secureProfileActive;
+
+  bool installationBindingVerified;
+
+  bool installationCreated;
+
+  bool securitySessionUnlocked;
+
+  bool privateVaultReady;
+
+  bool identityDomainsSeparated;
+
+  bool privacyDefaultsFailSafe;
+
+  bool redactedHistoryReady;
+
   List<Object?> _toList() {
     return <Object?>[
       profileVersion,
@@ -228,6 +252,14 @@ class HostRuntimeSnapshot {
       privatePlannerVerified,
       noLlmProvider,
       staleCallbackRejected,
+      secureProfileActive,
+      installationBindingVerified,
+      installationCreated,
+      securitySessionUnlocked,
+      privateVaultReady,
+      identityDomainsSeparated,
+      privacyDefaultsFailSafe,
+      redactedHistoryReady,
     ];
   }
 
@@ -248,6 +280,14 @@ class HostRuntimeSnapshot {
       privatePlannerVerified: result[8]! as bool,
       noLlmProvider: result[9]! as bool,
       staleCallbackRejected: result[10]! as bool,
+      secureProfileActive: result[11]! as bool,
+      installationBindingVerified: result[12]! as bool,
+      installationCreated: result[13]! as bool,
+      securitySessionUnlocked: result[14]! as bool,
+      privateVaultReady: result[15]! as bool,
+      identityDomainsSeparated: result[16]! as bool,
+      privacyDefaultsFailSafe: result[17]! as bool,
+      redactedHistoryReady: result[18]! as bool,
     );
   }
 
@@ -260,7 +300,7 @@ class HostRuntimeSnapshot {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(profileVersion, other.profileVersion) && _deepEquals(processGeneration, other.processGeneration) && _deepEquals(activationPhase, other.activationPhase) && _deepEquals(activeGrantCount, other.activeGrantCount) && _deepEquals(recoveredUncleanStart, other.recoveredUncleanStart) && _deepEquals(bootstrapStoreOpened, other.bootstrapStoreOpened) && _deepEquals(registryState, other.registryState) && _deepEquals(localKqlFixtureVerified, other.localKqlFixtureVerified) && _deepEquals(privatePlannerVerified, other.privatePlannerVerified) && _deepEquals(noLlmProvider, other.noLlmProvider) && _deepEquals(staleCallbackRejected, other.staleCallbackRejected);
+    return _deepEquals(profileVersion, other.profileVersion) && _deepEquals(processGeneration, other.processGeneration) && _deepEquals(activationPhase, other.activationPhase) && _deepEquals(activeGrantCount, other.activeGrantCount) && _deepEquals(recoveredUncleanStart, other.recoveredUncleanStart) && _deepEquals(bootstrapStoreOpened, other.bootstrapStoreOpened) && _deepEquals(registryState, other.registryState) && _deepEquals(localKqlFixtureVerified, other.localKqlFixtureVerified) && _deepEquals(privatePlannerVerified, other.privatePlannerVerified) && _deepEquals(noLlmProvider, other.noLlmProvider) && _deepEquals(staleCallbackRejected, other.staleCallbackRejected) && _deepEquals(secureProfileActive, other.secureProfileActive) && _deepEquals(installationBindingVerified, other.installationBindingVerified) && _deepEquals(installationCreated, other.installationCreated) && _deepEquals(securitySessionUnlocked, other.securitySessionUnlocked) && _deepEquals(privateVaultReady, other.privateVaultReady) && _deepEquals(identityDomainsSeparated, other.identityDomainsSeparated) && _deepEquals(privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) && _deepEquals(redactedHistoryReady, other.redactedHistoryReady);
   }
 
   @override
@@ -269,7 +309,7 @@ class HostRuntimeSnapshot {
 
   @override
   String toString() {
-    return 'HostRuntimeSnapshot(profileVersion: $profileVersion, processGeneration: $processGeneration, activationPhase: $activationPhase, activeGrantCount: $activeGrantCount, recoveredUncleanStart: $recoveredUncleanStart, bootstrapStoreOpened: $bootstrapStoreOpened, registryState: $registryState, localKqlFixtureVerified: $localKqlFixtureVerified, privatePlannerVerified: $privatePlannerVerified, noLlmProvider: $noLlmProvider, staleCallbackRejected: $staleCallbackRejected)';
+    return 'HostRuntimeSnapshot(profileVersion: $profileVersion, processGeneration: $processGeneration, activationPhase: $activationPhase, activeGrantCount: $activeGrantCount, recoveredUncleanStart: $recoveredUncleanStart, bootstrapStoreOpened: $bootstrapStoreOpened, registryState: $registryState, localKqlFixtureVerified: $localKqlFixtureVerified, privatePlannerVerified: $privatePlannerVerified, noLlmProvider: $noLlmProvider, staleCallbackRejected: $staleCallbackRejected, secureProfileActive: $secureProfileActive, installationBindingVerified: $installationBindingVerified, installationCreated: $installationCreated, securitySessionUnlocked: $securitySessionUnlocked, privateVaultReady: $privateVaultReady, identityDomainsSeparated: $identityDomainsSeparated, privacyDefaultsFailSafe: $privacyDefaultsFailSafe, redactedHistoryReady: $redactedHistoryReady)';
   }
 }
 

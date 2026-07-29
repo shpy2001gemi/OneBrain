@@ -12,18 +12,19 @@ use std::{
 };
 
 use onebrain_mobile_core::{
-    ActivationPhase, MobileFeatureFlags, MobileRuntimeFacade, MobileRuntimeSnapshot,
-    ResourceBudgets, RuntimeServices,
+    ActivationPhase, AppLockPolicy, MobileFeatureFlags, MobileRuntimeFacade, MobileRuntimeSnapshot,
+    ResourceBudgets, RuntimeServices, SecurityBootstrapMaterial, SecuritySessionState,
 };
 
 /// Stable ABI revision understood by the current Swift/Kotlin adapters.
-pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 2;
+pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 3;
 
 pub const OB_MOBILE_RUNTIME_OK: u32 = 0;
 pub const OB_MOBILE_RUNTIME_INVALID_PATH: u32 = 1;
 pub const OB_MOBILE_RUNTIME_CORE_ERROR: u32 = 2;
 pub const OB_MOBILE_RUNTIME_LOCK_POISONED: u32 = 3;
 pub const OB_MOBILE_RUNTIME_NOT_OPEN: u32 = 4;
+pub const OB_MOBILE_RUNTIME_INVALID_SECURITY_MATERIAL: u32 = 5;
 
 const CORE_VERSION: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
@@ -43,6 +44,14 @@ pub struct ObMobileRuntimeSnapshot {
     pub private_planner_verified: u8,
     pub no_llm_provider: u8,
     pub stale_callback_rejected: u8,
+    pub secure_profile_active: u8,
+    pub installation_binding_verified: u8,
+    pub installation_created: u8,
+    pub security_session_unlocked: u8,
+    pub private_vault_ready: u8,
+    pub identity_domains_separated: u8,
+    pub privacy_defaults_fail_safe: u8,
+    pub redacted_history_ready: u8,
 }
 
 impl ObMobileRuntimeSnapshot {
@@ -59,6 +68,14 @@ impl ObMobileRuntimeSnapshot {
             private_planner_verified: 0,
             no_llm_provider: 0,
             stale_callback_rejected: 0,
+            secure_profile_active: 0,
+            installation_binding_verified: 0,
+            installation_created: 0,
+            security_session_unlocked: 0,
+            private_vault_ready: 0,
+            identity_domains_separated: 0,
+            privacy_defaults_fail_safe: 0,
+            redacted_history_ready: 0,
         }
     }
 
@@ -77,6 +94,16 @@ impl ObMobileRuntimeSnapshot {
                 snapshot.llm_provider_id == "none" && !snapshot.llm_available,
             ),
             stale_callback_rejected: bool_byte(snapshot.stale_callback_rejected),
+            secure_profile_active: bool_byte(snapshot.secure_profile_active),
+            installation_binding_verified: bool_byte(snapshot.installation_binding_verified),
+            installation_created: bool_byte(snapshot.installation_created),
+            security_session_unlocked: bool_byte(
+                snapshot.security_session_state == SecuritySessionState::Unlocked,
+            ),
+            private_vault_ready: bool_byte(snapshot.private_vault_ready),
+            identity_domains_separated: bool_byte(snapshot.identity_domains_separated),
+            privacy_defaults_fail_safe: bool_byte(snapshot.privacy_defaults_fail_safe),
+            redacted_history_ready: bool_byte(snapshot.redacted_history_ready),
         }
     }
 }
@@ -125,12 +152,44 @@ pub unsafe extern "C" fn ob_mobile_runtime_open_utf8(
     if path.is_null() || path_len == 0 || path_len > 32_768 {
         return ObMobileRuntimeSnapshot::error(OB_MOBILE_RUNTIME_INVALID_PATH);
     }
-    let bytes = unsafe { slice::from_raw_parts(path, path_len) };
-    let path = match str::from_utf8(bytes) {
-        Ok(path) if !path.is_empty() => PathBuf::from(path),
-        _ => return ObMobileRuntimeSnapshot::error(OB_MOBILE_RUNTIME_INVALID_PATH),
+    let path = match unsafe { parse_path(path, path_len) } {
+        Ok(path) => path,
+        Err(snapshot) => return snapshot,
     };
     open_runtime(path)
+}
+
+/// Open the process-wide runtime with native-protected installation material.
+///
+/// The native caller must zeroize its temporary plaintext buffer immediately
+/// after this function returns. The material never crosses the Dart bridge.
+///
+/// # Safety
+///
+/// Both pointers must reference their declared readable byte lengths for the
+/// duration of this call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_open_secure_utf8(
+    path: *const u8,
+    path_len: usize,
+    security_material: *const u8,
+    security_material_len: usize,
+) -> ObMobileRuntimeSnapshot {
+    let path = match unsafe { parse_path(path, path_len) } {
+        Ok(path) => path,
+        Err(snapshot) => return snapshot,
+    };
+    if security_material.is_null() {
+        return ObMobileRuntimeSnapshot::error(OB_MOBILE_RUNTIME_INVALID_SECURITY_MATERIAL);
+    }
+    let material_bytes = unsafe { slice::from_raw_parts(security_material, security_material_len) };
+    let material = match SecurityBootstrapMaterial::from_bytes(material_bytes) {
+        Ok(material) => material,
+        Err(_) => {
+            return ObMobileRuntimeSnapshot::error(OB_MOBILE_RUNTIME_INVALID_SECURITY_MATERIAL);
+        }
+    };
+    open_runtime_secured(path, material)
 }
 
 /// Inspect the process-wide runtime without reopening its database.
@@ -156,6 +215,24 @@ pub extern "C" fn ob_mobile_runtime_graceful_stop() -> u32 {
     }
 }
 
+/// Lock and zeroize the current private-node session without relying on a
+/// lifecycle callback for correctness.
+#[unsafe(no_mangle)]
+pub extern "C" fn ob_mobile_runtime_lock_private_node() -> u32 {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return OB_MOBILE_RUNTIME_LOCK_POISONED,
+    };
+    let Some(facade) = guard.as_mut() else {
+        return OB_MOBILE_RUNTIME_NOT_OPEN;
+    };
+    match facade.lock_private_node() {
+        Ok(()) => OB_MOBILE_RUNTIME_OK,
+        Err(_) => OB_MOBILE_RUNTIME_CORE_ERROR,
+    }
+}
+
 fn open_runtime(data_root: PathBuf) -> ObMobileRuntimeSnapshot {
     let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
     let mut guard = match runtime.lock() {
@@ -176,6 +253,52 @@ fn open_runtime(data_root: PathBuf) -> ObMobileRuntimeSnapshot {
             snapshot
         }
         Err(_) => ObMobileRuntimeSnapshot::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn open_runtime_secured(
+    data_root: PathBuf,
+    material: SecurityBootstrapMaterial,
+) -> ObMobileRuntimeSnapshot {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return ObMobileRuntimeSnapshot::error(OB_MOBILE_RUNTIME_LOCK_POISONED),
+    };
+    if let Some(facade) = guard.as_mut() {
+        return match facade.unlock_private_node(material, AppLockPolicy::default()) {
+            Ok(()) => ObMobileRuntimeSnapshot::from_core(facade.snapshot()),
+            Err(_) => ObMobileRuntimeSnapshot::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+        };
+    }
+    match MobileRuntimeFacade::open_secured(
+        RuntimeServices::bootstrap_only(data_root),
+        MobileFeatureFlags::default(),
+        ResourceBudgets::default(),
+        material,
+        AppLockPolicy::default(),
+    ) {
+        Ok(facade) => {
+            let snapshot = ObMobileRuntimeSnapshot::from_core(facade.snapshot());
+            *guard = Some(facade);
+            snapshot
+        }
+        Err(_) => ObMobileRuntimeSnapshot::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+unsafe fn parse_path(path: *const u8, path_len: usize) -> Result<PathBuf, ObMobileRuntimeSnapshot> {
+    if path.is_null() || path_len == 0 || path_len > 32_768 {
+        return Err(ObMobileRuntimeSnapshot::error(
+            OB_MOBILE_RUNTIME_INVALID_PATH,
+        ));
+    }
+    let bytes = unsafe { slice::from_raw_parts(path, path_len) };
+    match str::from_utf8(bytes) {
+        Ok(path) if !path.is_empty() => Ok(PathBuf::from(path)),
+        _ => Err(ObMobileRuntimeSnapshot::error(
+            OB_MOBILE_RUNTIME_INVALID_PATH,
+        )),
     }
 }
 
@@ -213,15 +336,18 @@ mod android {
     use jni::{
         errors::ThrowRuntimeExAndDefault,
         jni_mangle,
-        objects::{JClass, JString},
+        objects::{JByteArray, JClass, JString},
         sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE},
         EnvUnowned,
     };
 
     use super::{
         ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
-        ob_mobile_bridge_round_trip, open_runtime, runtime_snapshot, CORE_VERSION,
+        ob_mobile_bridge_round_trip, ob_mobile_runtime_lock_private_node, open_runtime,
+        open_runtime_secured, runtime_snapshot, CORE_VERSION,
     };
+    use onebrain_mobile_core::SecurityBootstrapMaterial;
+    use zeroize::Zeroize;
 
     #[jni_mangle("org.onebrain.onebrain_mobile.RustMobileBridge", "nativeAbiVersion")]
     pub fn native_abi_version(_env: EnvUnowned<'_>, _class: JClass<'_>) -> jint {
@@ -267,6 +393,34 @@ mod android {
             .with_env(|env| data_root.try_to_string(env))
             .resolve::<ThrowRuntimeExAndDefault>();
         open_runtime(path.into()).status_code as jint
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeOpenSecure"
+    )]
+    pub fn native_runtime_open_secure<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        data_root: JString<'caller>,
+        security_material: JByteArray<'caller>,
+    ) -> jint {
+        let path = unowned_env
+            .with_env(|env| data_root.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let mut material_bytes = unowned_env
+            .with_env(|env| env.convert_byte_array(&security_material))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let result = SecurityBootstrapMaterial::from_bytes(&material_bytes)
+            .map(|material| open_runtime_secured(path.into(), material).status_code as jint)
+            .unwrap_or(super::OB_MOBILE_RUNTIME_INVALID_SECURITY_MATERIAL as jint);
+        material_bytes.zeroize();
+        result
+    }
+
+    #[jni_mangle("org.onebrain.onebrain_mobile.RustMobileBridge", "nativeRuntimeLock")]
+    pub fn native_runtime_lock(_env: EnvUnowned<'_>, _class: JClass<'_>) -> jint {
+        ob_mobile_runtime_lock_private_node() as jint
     }
 
     #[jni_mangle(
@@ -341,6 +495,46 @@ mod android {
         "nativeRuntimeStaleCallbackRejected",
         stale_callback_rejected
     );
+    boolean_runtime_getter!(
+        native_runtime_secure_profile_active,
+        "nativeRuntimeSecureProfileActive",
+        secure_profile_active
+    );
+    boolean_runtime_getter!(
+        native_runtime_installation_binding_verified,
+        "nativeRuntimeInstallationBindingVerified",
+        installation_binding_verified
+    );
+    boolean_runtime_getter!(
+        native_runtime_installation_created,
+        "nativeRuntimeInstallationCreated",
+        installation_created
+    );
+    boolean_runtime_getter!(
+        native_runtime_security_session_unlocked,
+        "nativeRuntimeSecuritySessionUnlocked",
+        security_session_unlocked
+    );
+    boolean_runtime_getter!(
+        native_runtime_private_vault_ready,
+        "nativeRuntimePrivateVaultReady",
+        private_vault_ready
+    );
+    boolean_runtime_getter!(
+        native_runtime_identity_domains_separated,
+        "nativeRuntimeIdentityDomainsSeparated",
+        identity_domains_separated
+    );
+    boolean_runtime_getter!(
+        native_runtime_privacy_defaults_fail_safe,
+        "nativeRuntimePrivacyDefaultsFailSafe",
+        privacy_defaults_fail_safe
+    );
+    boolean_runtime_getter!(
+        native_runtime_redacted_history_ready,
+        "nativeRuntimeRedactedHistoryReady",
+        redacted_history_ready
+    );
 }
 
 #[cfg(test)]
@@ -351,7 +545,7 @@ mod tests {
 
     #[test]
     fn abi_and_version_are_bounded_and_stable() {
-        assert_eq!(ob_mobile_bridge_abi_version(), 2);
+        assert_eq!(ob_mobile_bridge_abi_version(), 3);
         let version = unsafe { CStr::from_ptr(ob_mobile_bridge_core_version()) };
         assert_eq!(version.to_str().expect("version UTF-8"), "0.1.0");
         assert!(version.to_bytes().len() <= 32);

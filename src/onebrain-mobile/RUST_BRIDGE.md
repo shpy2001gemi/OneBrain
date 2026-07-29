@@ -1,4 +1,4 @@
-# MOB-02 mobile runtime bridge
+# MOB-03 protected mobile runtime bridge
 
 This slice proves the bounded production topology without claiming that the
 mobile runtime is ready:
@@ -14,11 +14,11 @@ Flutter typed intent
 
 The bridge owns no product policy. `onebrain-mobile-core` owns the bounded
 `bootstrap.redb` operational ledger, process-generation lifecycle, execution
-grants, callback commit fence, deterministic local KQL and LocalOnly private
-planning smokes. Registry
-network transfer, identity provisioning, signing, product tools, seeding and
-all LLM providers remain unavailable until their implementation packages and
-gates exist.
+grants, callback commit fence, deterministic local KQL, LocalOnly private
+planning, exact installation binding, independent typed signer domains,
+encrypted private-vault session and portable encrypted-archive profile.
+Registry network transfer, product tools, seeding and all LLM providers remain
+unavailable until their implementation packages and gates exist.
 
 ## Package-first toolchain
 
@@ -30,22 +30,26 @@ gates exist.
 | Swift to Rust | `cbindgen` | `0.29.4` | Generate the checked-in C header from Rust exports |
 | Bootstrap state | `redb` | `2.6.3` | Pure-Rust ACID process, operation, chunk and transfer ledger |
 | Fixture signatures | `ed25519-dalek` | `2.2.0` | Verify the pinned local KQL smoke fixture |
+| Private vault and archive AEAD | existing `ku-core` vault + `chacha20poly1305` | workspace / `0.11.0` | Reuse validated private storage and authenticated chunk encryption |
+| Secret cleanup | `zeroize` | `1.9.0` | Erase temporary native/Rust key buffers |
+| OS entropy | `getrandom` | `0.3.4` | Recovery/archive nonce generation |
 
 Application code does not recreate channel serialization, JNI environment
 handling, NDK linker discovery, or C declaration generation.
 
 ## ABI and thread ownership
 
-- ABI revision `2` adds a fixed-layout runtime snapshot and native-owned path
-  open call while retaining bounded primitive facts and the deterministic
-  nonce round trip.
+- ABI revision `3` adds a fixed-layout protected-runtime snapshot, a
+  native-owned secure-open call and explicit private-session lock while
+  retaining bounded primitive facts and the deterministic nonce round trip.
 - Returned version text points to immutable process-lifetime storage and is
   never freed by native code.
 - Kotlin and Swift open the runtime on a dedicated serial native queue and
   deliver Pigeon completion on the platform main thread, so redb recovery and
   local KQL do not block Flutter/UI work.
 - Platform paths never cross into Dart. Repeated opens in one process return
-  the existing runtime generation.
+  the existing runtime generation; protected material travels native-to-Rust
+  only and is zeroized after open.
 - Long-running work enters the Rust facade with a bounded execution grant,
   deadline and cancellation. The current foreground grant has no network
   scope.
@@ -67,6 +71,8 @@ python tool/build_rust_android.py
 python tool/verify_mobile_rust_dependency_graph.py
 flutter build apk --debug
 python tool/verify_android_runtime_recovery.py \
+  build/app/outputs/flutter-apk/app-debug.apk
+python tool/verify_android_install_binding_fail_closed.py \
   build/app/outputs/flutter-apk/app-debug.apk
 ```
 

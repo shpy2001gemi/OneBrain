@@ -1,9 +1,164 @@
+import CryptoKit
 import Flutter
+import Security
 import UIKit
 
-private let hostApiVersion = "2"
+private let hostApiVersion = "3"
 private let maxFeasibilityDelayMilliseconds: Int64 = 30_000
 private let rustRoundTripNonce: UInt64 = 0x4F_42_4D_30_31
+private let securityMaterialBytes = 192
+private let securityKeychainService = "org.onebrain.mobile.install-material.v1"
+private let securityKeychainAccount = "current-installation"
+private let securityMarkerMagic = Data("OBMARK01".utf8)
+private let securityMarkerContext = Data("onebrain:mobile:install-marker:1\0".utf8)
+
+private enum IOSSecurityMaterialError: Error {
+  case unexpectedRestore(String)
+  case protectedDataUnavailable
+  case storage(String)
+}
+
+private final class IOSSecurityMaterialStore {
+  private let dataRoot: URL
+  private let marker: URL
+
+  init(dataRoot: URL) {
+    self.dataRoot = dataRoot
+    marker = dataRoot
+      .appendingPathComponent("security", isDirectory: true)
+      .appendingPathComponent("install-marker.v1", isDirectory: false)
+  }
+
+  func loadOrCreate() throws -> Data {
+    let markerExists = FileManager.default.fileExists(atPath: marker.path)
+    let keychainMaterial = try readKeychainMaterial()
+    if !markerExists {
+      if FileManager.default.fileExists(
+        atPath: dataRoot.appendingPathComponent("bootstrap.redb").path
+      )
+        || FileManager.default.fileExists(
+          atPath: dataRoot.appendingPathComponent("private-vault.redb").path
+        )
+      {
+        throw IOSSecurityMaterialError.unexpectedRestore(
+          "authority bytes exist without the excluded install marker"
+        )
+      }
+      if keychainMaterial != nil {
+        try deleteKeychainMaterial()
+      }
+      return try createInstallation()
+    }
+    guard let material = keychainMaterial else {
+      throw IOSSecurityMaterialError.unexpectedRestore(
+        "install marker exists without its this-device-only protected item"
+      )
+    }
+    guard material.count == securityMaterialBytes else {
+      throw IOSSecurityMaterialError.unexpectedRestore(
+        "protected item has an invalid length"
+      )
+    }
+    let storedMarker = try Data(contentsOf: marker)
+    guard storedMarker == markerBytes(material) else {
+      throw IOSSecurityMaterialError.unexpectedRestore(
+        "install marker does not bind the protected item"
+      )
+    }
+    return material
+  }
+
+  private func createInstallation() throws -> Data {
+    let securityDirectory = marker.deletingLastPathComponent()
+    try FileManager.default.createDirectory(
+      at: securityDirectory,
+      withIntermediateDirectories: true
+    )
+    var material = Data(count: securityMaterialBytes)
+    let randomStatus = material.withUnsafeMutableBytes { bytes in
+      SecRandomCopyBytes(kSecRandomDefault, securityMaterialBytes, bytes.baseAddress!)
+    }
+    guard randomStatus == errSecSuccess else {
+      material.resetBytes(in: 0..<material.count)
+      throw IOSSecurityMaterialError.storage(
+        "SecRandomCopyBytes failed with status \(randomStatus)"
+      )
+    }
+    do {
+      try writeKeychainMaterial(material)
+      try markerBytes(material).write(to: marker, options: [.atomic, .completeFileProtection])
+      return material
+    } catch {
+      material.resetBytes(in: 0..<material.count)
+      try? deleteKeychainMaterial()
+      try? FileManager.default.removeItem(at: marker)
+      throw error
+    }
+  }
+
+  private func readKeychainMaterial() throws -> Data? {
+    let query: [CFString: Any] = [
+      kSecClass: kSecClassGenericPassword,
+      kSecAttrService: securityKeychainService,
+      kSecAttrAccount: securityKeychainAccount,
+      kSecReturnData: true,
+      kSecMatchLimit: kSecMatchLimitOne,
+    ]
+    var result: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    switch status {
+    case errSecSuccess:
+      return result as? Data
+    case errSecItemNotFound:
+      return nil
+    case errSecInteractionNotAllowed:
+      throw IOSSecurityMaterialError.protectedDataUnavailable
+    default:
+      throw IOSSecurityMaterialError.storage(
+        "Keychain read failed with status \(status)"
+      )
+    }
+  }
+
+  private func writeKeychainMaterial(_ material: Data) throws {
+    let attributes: [CFString: Any] = [
+      kSecClass: kSecClassGenericPassword,
+      kSecAttrService: securityKeychainService,
+      kSecAttrAccount: securityKeychainAccount,
+      kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+      kSecValueData: material,
+    ]
+    let status = SecItemAdd(attributes as CFDictionary, nil)
+    guard status == errSecSuccess else {
+      throw IOSSecurityMaterialError.storage(
+        "Keychain create failed with status \(status)"
+      )
+    }
+  }
+
+  private func deleteKeychainMaterial() throws {
+    let query: [CFString: Any] = [
+      kSecClass: kSecClassGenericPassword,
+      kSecAttrService: securityKeychainService,
+      kSecAttrAccount: securityKeychainAccount,
+    ]
+    let status = SecItemDelete(query as CFDictionary)
+    guard status == errSecSuccess || status == errSecItemNotFound else {
+      throw IOSSecurityMaterialError.storage(
+        "Keychain retirement failed with status \(status)"
+      )
+    }
+  }
+
+  private func markerBytes(_ material: Data) -> Data {
+    var input = Data()
+    input.append(securityMarkerContext)
+    input.append(material)
+    var marker = securityMarkerMagic
+    marker.append(contentsOf: SHA256.hash(data: input))
+    return marker
+  }
+}
 
 private final class MobileHostEventStream: HostOperationEventsStreamHandler {
   private var sink: PigeonEventSink<HostOperationEvent>?
@@ -27,21 +182,27 @@ private final class MobileHostEventStream: HostOperationEventsStreamHandler {
 private final class IOSMobileHost: MobileHostApi {
   private let events: MobileHostEventStream
   private let dataRoot: String?
+  private let securityMaterialStore: IOSSecurityMaterialStore?
   private let runtimeQueue = DispatchQueue(
     label: "org.onebrain.mobile.runtime",
     qos: .userInitiated
   )
   private var pending: [String: DispatchWorkItem] = [:]
 
-  init(events: MobileHostEventStream, dataRoot: String?) {
+  init(
+    events: MobileHostEventStream,
+    dataRoot: String?,
+    securityMaterialStore: IOSSecurityMaterialStore?
+  ) {
     self.events = events
     self.dataRoot = dataRoot
+    self.securityMaterialStore = securityMaterialStore
   }
 
   func inspectRuntimeProfile(
     completion: @escaping (Result<HostRuntimeSnapshot, Error>) -> Void
   ) {
-    guard let dataRoot else {
+    guard let dataRoot, let securityMaterialStore else {
       completion(
         .failure(
           PigeonError(
@@ -54,9 +215,36 @@ private final class IOSMobileHost: MobileHostApi {
       return
     }
     runtimeQueue.async {
+      var securityMaterial: Data
+      do {
+        securityMaterial = try securityMaterialStore.loadOrCreate()
+      } catch {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "SECURE_MATERIAL_UNAVAILABLE",
+                message: "Protected installation material is unavailable",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      defer {
+        securityMaterial.resetBytes(in: 0..<securityMaterial.count)
+      }
       let pathBytes = Array(dataRoot.utf8)
       let runtime = pathBytes.withUnsafeBufferPointer { bytes in
-        ob_mobile_runtime_open_utf8(bytes.baseAddress, bytes.count)
+        securityMaterial.withUnsafeBytes { material in
+          ob_mobile_runtime_open_secure_utf8(
+            bytes.baseAddress,
+            bytes.count,
+            material.bindMemory(to: UInt8.self).baseAddress,
+            material.count
+          )
+        }
       }
       guard runtime.status_code == 0 else {
         DispatchQueue.main.async {
@@ -86,7 +274,7 @@ private final class IOSMobileHost: MobileHostApi {
         activationPhase = "Unknown"
       }
       let snapshot = HostRuntimeSnapshot(
-        profileVersion: "MOB-02/1",
+        profileVersion: "MOB-03/1",
         processGeneration: Int64(runtime.process_generation),
         activationPhase: activationPhase,
         activeGrantCount: Int64(runtime.active_grant_count),
@@ -97,11 +285,25 @@ private final class IOSMobileHost: MobileHostApi {
         localKqlFixtureVerified: runtime.local_kql_fixture_verified != 0,
         privatePlannerVerified: runtime.private_planner_verified != 0,
         noLlmProvider: runtime.no_llm_provider != 0,
-        staleCallbackRejected: runtime.stale_callback_rejected != 0
+        staleCallbackRejected: runtime.stale_callback_rejected != 0,
+        secureProfileActive: runtime.secure_profile_active != 0,
+        installationBindingVerified: runtime.installation_binding_verified != 0,
+        installationCreated: runtime.installation_created != 0,
+        securitySessionUnlocked: runtime.security_session_unlocked != 0,
+        privateVaultReady: runtime.private_vault_ready != 0,
+        identityDomainsSeparated: runtime.identity_domains_separated != 0,
+        privacyDefaultsFailSafe: runtime.privacy_defaults_fail_safe != 0,
+        redactedHistoryReady: runtime.redacted_history_ready != 0
       )
       DispatchQueue.main.async {
         completion(.success(snapshot))
       }
+    }
+  }
+
+  func lockPrivateNode() {
+    runtimeQueue.async {
+      _ = ob_mobile_runtime_lock_private_node()
     }
   }
 
@@ -202,11 +404,21 @@ private final class IOSMobileHost: MobileHostApi {
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
+  override func applicationDidEnterBackground(_ application: UIApplication) {
+    mobileHost?.lockPrivateNode()
+    super.applicationDidEnterBackground(application)
+  }
+
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     let messenger = engineBridge.applicationRegistrar.messenger()
     let events = MobileHostEventStream()
-    let host = IOSMobileHost(events: events, dataRoot: Self.prepareRuntimeDataRoot())
+    let root = Self.prepareRuntimeDataRoot()
+    let host = IOSMobileHost(
+      events: events,
+      dataRoot: root?.path,
+      securityMaterialStore: root.map { IOSSecurityMaterialStore(dataRoot: $0) }
+    )
     HostOperationEventsStreamHandler.register(
       with: messenger,
       streamHandler: events
@@ -216,7 +428,7 @@ private final class IOSMobileHost: MobileHostApi {
     mobileHost = host
   }
 
-  private static func prepareRuntimeDataRoot() -> String? {
+  private static func prepareRuntimeDataRoot() -> URL? {
     guard
       let applicationSupport = try? FileManager.default.url(
         for: .applicationSupportDirectory,
@@ -236,7 +448,11 @@ private final class IOSMobileHost: MobileHostApi {
         at: root,
         withIntermediateDirectories: true
       )
-      return root.path
+      var excludedRoot = root
+      var values = URLResourceValues()
+      values.isExcludedFromBackup = true
+      try excludedRoot.setResourceValues(values)
+      return excludedRoot
     } catch {
       return nil
     }

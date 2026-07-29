@@ -16,11 +16,11 @@ void main() {
 
     expect(find.text('Grow ideas on your own node'), findsOneWidget);
     expect(find.textContaining('Android test host ready'), findsOneWidget);
-    expect(find.text('Rust bridge 0.1.0-test · ABI 2'), findsOneWidget);
+    expect(find.text('Rust bridge 0.1.0-test · ABI 3'), findsOneWidget);
     expect(find.text('Typed round trip verified'), findsOneWidget);
     expect(
       find.text(
-        'Signed local KQL, private planner and callback fence verified',
+        'Protected identity, encrypted vault and local runtime verified',
       ),
       findsOneWidget,
     );
@@ -120,18 +120,18 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
       const MobileHostSnapshot(
         platform: 'Android test',
-        apiVersion: '2',
+        apiVersion: '3',
         registryRequestIssued: false,
         rustCoreLinked: true,
         rustCoreVersion: '0.1.0-test',
-        rustAbiVersion: 2,
+        rustAbiVersion: 3,
         rustRoundTripVerified: true,
       );
 
   @override
   Future<MobileRuntimeSnapshot> inspectRuntimeProfile() async =>
       const MobileRuntimeSnapshot(
-        profileVersion: 'MOB-02/1',
+        profileVersion: 'MOB-03/1',
         processGeneration: 1,
         activationPhase: 'Active',
         activeGrantCount: 1,
@@ -142,6 +142,14 @@ class _FakeMobileHostGateway implements MobileHostGateway {
         privatePlannerVerified: true,
         noLlmProvider: true,
         staleCallbackRejected: true,
+        secureProfileActive: true,
+        installationBindingVerified: true,
+        installationCreated: true,
+        securitySessionUnlocked: true,
+        privateVaultReady: true,
+        identityDomainsSeparated: true,
+        privacyDefaultsFailSafe: true,
+        redactedHistoryReady: true,
       );
 
   @override

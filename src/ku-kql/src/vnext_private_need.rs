@@ -6,13 +6,16 @@
 
 use std::collections::BTreeSet;
 
+#[cfg(feature = "storage")]
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+#[cfg(feature = "storage")]
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
+#[cfg(feature = "storage")]
+use ku_core::foundation::dr_m5_failpoint;
 use ku_core::foundation::{
-    decode_canonical, dr_m5_failpoint, encode_canonical, CanonicalError, CanonicalValue,
-    ConceptCcid, DisclosureClass, EventCid, LiteralValue, ObjectReference, ReceptorDefinition,
-    ResourceProfile, SemanticError, SemanticFrameSet, StatementFrame, StatementId,
-    StatementQualifiers, TermRef,
+    decode_canonical, encode_canonical, CanonicalError, CanonicalValue, ConceptCcid,
+    DisclosureClass, EventCid, LiteralValue, ObjectReference, ReceptorDefinition, ResourceProfile,
+    SemanticError, SemanticFrameSet, StatementFrame, StatementId, StatementQualifiers, TermRef,
 };
 use zeroize::Zeroize;
 
@@ -21,9 +24,10 @@ use crate::vnext_matcher::MatcherMetricConcepts;
 use crate::vnext_query::{KnowledgeNeedIr, QueryContractError, QueryDefinition};
 use crate::vnext_reunion::LocalNeedTarget;
 use crate::vnext_standing_need::{
-    StandingNeed, StandingNeedError, StandingNeedId, StandingNeedState, StandingNeedWriteOutcome,
-    MAX_STANDING_NEEDS,
+    StandingNeed, StandingNeedError, StandingNeedId, StandingNeedState,
 };
+#[cfg(feature = "storage")]
+use crate::vnext_standing_need::{StandingNeedWriteOutcome, MAX_STANDING_NEEDS};
 
 pub const PRIVATE_NEED_PROFILE_MAJOR: u64 = 1;
 pub const PRIVATE_NEED_PROFILE_MINOR: u64 = 0;
@@ -255,6 +259,7 @@ pub struct PrivateNeedRecord {
 }
 
 impl PrivateNeedRecord {
+    #[cfg(feature = "storage")]
     fn from_bundle(bundle: PrivateNeedBundle) -> Result<Self, PrivateNeedError> {
         let id = bundle.validate()?;
         let lifecycle = match bundle.target.need.state {
@@ -270,6 +275,7 @@ impl PrivateNeedRecord {
         })
     }
 
+    #[cfg(feature = "storage")]
     fn tombstone(id: StandingNeedId, generation: u64, lifecycle: PrivateNeedLifecycle) -> Self {
         debug_assert!(lifecycle.is_terminal());
         Self {
@@ -284,6 +290,7 @@ impl PrivateNeedRecord {
         self.lifecycle.is_terminal()
     }
 
+    #[cfg(feature = "storage")]
     fn validate(&self) -> Result<(), PrivateNeedError> {
         if self.id.as_bytes() == &[0; 32] || (self.lifecycle.is_terminal() && self.generation == 0)
         {
@@ -312,6 +319,7 @@ impl PrivateNeedRecord {
         Ok(())
     }
 
+    #[cfg(feature = "storage")]
     fn canonical_bytes(&self) -> Result<Vec<u8>, PrivateNeedError> {
         self.validate()?;
         let mut fields = vec![
@@ -343,6 +351,7 @@ impl PrivateNeedRecord {
         Ok(bytes)
     }
 
+    #[cfg(feature = "storage")]
     fn decode(bytes: &[u8]) -> Result<Self, PrivateNeedError> {
         if bytes.len() > MAX_PRIVATE_NEED_PLAINTEXT_BYTES {
             return Err(PrivateNeedError::Limit);
@@ -491,12 +500,14 @@ pub fn adapt_local_intent(
     Ok(bundle)
 }
 
+#[cfg(feature = "storage")]
 struct LocalNeedCipher {
     aead: XChaCha20Poly1305,
     nonce_key: [u8; 32],
     index_key: [u8; 32],
 }
 
+#[cfg(feature = "storage")]
 impl LocalNeedCipher {
     fn new(key: LocalNeedVaultKey) -> Self {
         let aead = XChaCha20Poly1305::new((&key.0).into());
@@ -558,6 +569,7 @@ impl LocalNeedCipher {
     }
 }
 
+#[cfg(feature = "storage")]
 impl Drop for LocalNeedCipher {
     fn drop(&mut self) {
         self.nonce_key.zeroize();
@@ -565,6 +577,7 @@ impl Drop for LocalNeedCipher {
     }
 }
 
+#[cfg(feature = "storage")]
 fn private_need_aad(storage_key: [u8; 32]) -> Vec<u8> {
     let mut aad = b"onebrain:vnext:private-need-vault:1\0".to_vec();
     aad.extend_from_slice(&storage_key);

@@ -23,6 +23,14 @@ internal data class RustRuntimeFacts(
     val privatePlannerVerified: Boolean,
     val noLlmProvider: Boolean,
     val staleCallbackRejected: Boolean,
+    val secureProfileActive: Boolean,
+    val installationBindingVerified: Boolean,
+    val installationCreated: Boolean,
+    val securitySessionUnlocked: Boolean,
+    val privateVaultReady: Boolean,
+    val identityDomainsSeparated: Boolean,
+    val privacyDefaultsFailSafe: Boolean,
+    val redactedHistoryReady: Boolean,
 )
 
 internal object RustMobileBridge {
@@ -49,16 +57,19 @@ internal object RustMobileBridge {
         )
     }
 
-    fun inspectRuntime(dataRoot: String): RustRuntimeFacts {
+    fun inspectRuntime(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+    ): RustRuntimeFacts {
         check(loadFailure == null) {
             "Rust mobile bridge is unavailable: ${loadFailure?.message}"
         }
-        val statusCode = nativeRuntimeOpen(dataRoot)
+        val statusCode = nativeRuntimeOpenSecure(dataRoot, securityMaterial)
         check(statusCode == 0) {
             "Rust mobile runtime failed to open with status $statusCode"
         }
         return RustRuntimeFacts(
-            profileVersion = "MOB-02/1",
+            profileVersion = "MOB-03/1",
             processGeneration = nativeRuntimeProcessGeneration(),
             activationPhase =
                 when (nativeRuntimeActivationPhase()) {
@@ -81,7 +92,22 @@ internal object RustMobileBridge {
             privatePlannerVerified = nativeRuntimePrivatePlannerVerified(),
             noLlmProvider = nativeRuntimeNoLlmProvider(),
             staleCallbackRejected = nativeRuntimeStaleCallbackRejected(),
+            secureProfileActive = nativeRuntimeSecureProfileActive(),
+            installationBindingVerified = nativeRuntimeInstallationBindingVerified(),
+            installationCreated = nativeRuntimeInstallationCreated(),
+            securitySessionUnlocked = nativeRuntimeSecuritySessionUnlocked(),
+            privateVaultReady = nativeRuntimePrivateVaultReady(),
+            identityDomainsSeparated = nativeRuntimeIdentityDomainsSeparated(),
+            privacyDefaultsFailSafe = nativeRuntimePrivacyDefaultsFailSafe(),
+            redactedHistoryReady = nativeRuntimeRedactedHistoryReady(),
         )
+    }
+
+    fun lockRuntime(): Boolean {
+        if (loadFailure != null) {
+            return false
+        }
+        return nativeRuntimeLock() == 0
     }
 
     @JvmStatic private external fun nativeAbiVersion(): Int
@@ -92,7 +118,12 @@ internal object RustMobileBridge {
 
     @JvmStatic private external fun nativeRoundTrip(nonce: Long): Long
 
-    @JvmStatic private external fun nativeRuntimeOpen(dataRoot: String): Int
+    @JvmStatic private external fun nativeRuntimeOpenSecure(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+    ): Int
+
+    @JvmStatic private external fun nativeRuntimeLock(): Int
 
     @JvmStatic private external fun nativeRuntimeProcessGeneration(): Long
 
@@ -113,4 +144,20 @@ internal object RustMobileBridge {
     @JvmStatic private external fun nativeRuntimeNoLlmProvider(): Boolean
 
     @JvmStatic private external fun nativeRuntimeStaleCallbackRejected(): Boolean
+
+    @JvmStatic private external fun nativeRuntimeSecureProfileActive(): Boolean
+
+    @JvmStatic private external fun nativeRuntimeInstallationBindingVerified(): Boolean
+
+    @JvmStatic private external fun nativeRuntimeInstallationCreated(): Boolean
+
+    @JvmStatic private external fun nativeRuntimeSecuritySessionUnlocked(): Boolean
+
+    @JvmStatic private external fun nativeRuntimePrivateVaultReady(): Boolean
+
+    @JvmStatic private external fun nativeRuntimeIdentityDomainsSeparated(): Boolean
+
+    @JvmStatic private external fun nativeRuntimePrivacyDefaultsFailSafe(): Boolean
+
+    @JvmStatic private external fun nativeRuntimeRedactedHistoryReady(): Boolean
 }

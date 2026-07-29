@@ -16,7 +16,16 @@ const REGISTRY_CHUNKS: TableDefinition<&str, &[u8]> = TableDefinition::new("regi
 const TRANSFER_LANDING: TableDefinition<&str, &[u8]> = TableDefinition::new("transfer_landing");
 const BOOTSTRAP_OPERATION_IDS: TableDefinition<&str, &[u8]> =
     TableDefinition::new("bootstrap_op_ids");
+const INSTALLATION_AUTHORITY: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("installation_authority");
+const PRIVACY_POLICY: TableDefinition<&str, &[u8]> = TableDefinition::new("privacy_policy");
+const SECURITY_HISTORY: TableDefinition<u64, &[u8]> = TableDefinition::new("security_history");
+const SECURITY_METADATA: TableDefinition<&str, &[u8]> = TableDefinition::new("security_metadata");
 const CURRENT_PROCESS_KEY: &str = "current";
+const CURRENT_INSTALLATION_KEY: &str = "current";
+const CURRENT_PRIVACY_POLICY_KEY: &str = "current";
+const NEXT_SECURITY_SEQUENCE_KEY: &str = "next_sequence";
+const MAX_SECURITY_HISTORY_RECORDS: u64 = 512;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -69,6 +78,51 @@ pub struct TransferLandingRecord {
     pub landed: bool,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InstallationAuthorityRecord {
+    pub profile_version: u32,
+    pub installation_epoch: String,
+    pub installation_instance_nonce: String,
+    pub binding_digest: String,
+    pub node_id: String,
+    pub feed_id: String,
+    pub actor_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PrivacyPolicyRecord {
+    pub generation: u64,
+    pub private_local_default: bool,
+    pub private_shared_requires_confirmation: bool,
+    pub public_candidate_requires_confirmation: bool,
+    pub public_accepted_requires_confirmation: bool,
+}
+
+impl Default for PrivacyPolicyRecord {
+    fn default() -> Self {
+        Self {
+            generation: 1,
+            private_local_default: true,
+            private_shared_requires_confirmation: true,
+            public_candidate_requires_confirmation: true,
+            public_accepted_requires_confirmation: true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecurityHistoryRecord {
+    pub sequence: u64,
+    pub process_generation: u64,
+    pub monotonic_ms: u64,
+    pub event_code: String,
+    pub scope_code: String,
+    pub succeeded: bool,
+}
+
 pub struct BootstrapStore {
     database: Database,
     path: PathBuf,
@@ -92,6 +146,10 @@ impl BootstrapStore {
             let _ = write.open_table(REGISTRY_CHUNKS)?;
             let _ = write.open_table(TRANSFER_LANDING)?;
             let _ = write.open_table(BOOTSTRAP_OPERATION_IDS)?;
+            let _ = write.open_table(INSTALLATION_AUTHORITY)?;
+            let _ = write.open_table(PRIVACY_POLICY)?;
+            let _ = write.open_table(SECURITY_HISTORY)?;
+            let _ = write.open_table(SECURITY_METADATA)?;
         }
         write.commit()?;
         Ok(Self {
@@ -153,6 +211,153 @@ impl BootstrapStore {
             .get(CURRENT_PROCESS_KEY)?
             .map(|value| decode(value.value()))
             .transpose()
+    }
+
+    pub fn bind_installation_authority(
+        &self,
+        authority: &InstallationAuthorityRecord,
+    ) -> Result<bool, MobileCoreError> {
+        validate_installation_authority(authority)?;
+        let write = self.database.begin_write()?;
+        let created;
+        {
+            let mut table = write.open_table(INSTALLATION_AUTHORITY)?;
+            let current = table
+                .get(CURRENT_INSTALLATION_KEY)?
+                .map(|value| decode::<InstallationAuthorityRecord>(value.value()))
+                .transpose()?;
+            match current {
+                Some(current) if current == *authority => {
+                    created = false;
+                }
+                Some(_) => {
+                    return Err(MobileCoreError::UnexpectedRestore(
+                        "installation epoch, nonce, seal or signer authority does not match".into(),
+                    ));
+                }
+                None => {
+                    let bytes = encode(authority)?;
+                    table.insert(CURRENT_INSTALLATION_KEY, bytes.as_slice())?;
+                    created = true;
+                }
+            }
+        }
+        write.commit()?;
+        Ok(created)
+    }
+
+    pub fn installation_authority(
+        &self,
+    ) -> Result<Option<InstallationAuthorityRecord>, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(INSTALLATION_AUTHORITY)?;
+        table
+            .get(CURRENT_INSTALLATION_KEY)?
+            .map(|value| decode(value.value()))
+            .transpose()
+    }
+
+    pub fn privacy_policy(&self) -> Result<PrivacyPolicyRecord, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(PRIVACY_POLICY)?;
+        Ok(table
+            .get(CURRENT_PRIVACY_POLICY_KEY)?
+            .map(|value| decode(value.value()))
+            .transpose()?
+            .unwrap_or_default())
+    }
+
+    pub fn replace_privacy_policy(
+        &self,
+        policy: &PrivacyPolicyRecord,
+    ) -> Result<(), MobileCoreError> {
+        if !policy.private_local_default
+            || !policy.private_shared_requires_confirmation
+            || !policy.public_candidate_requires_confirmation
+            || !policy.public_accepted_requires_confirmation
+        {
+            return Err(MobileCoreError::Security(
+                "MOB-03 foundation only accepts fail-safe privacy defaults".into(),
+            ));
+        }
+        let current = self.privacy_policy()?;
+        if policy.generation < current.generation {
+            return Err(MobileCoreError::Security(
+                "privacy policy generation cannot roll back".into(),
+            ));
+        }
+        let bytes = encode(policy)?;
+        let write = self.database.begin_write()?;
+        {
+            let mut table = write.open_table(PRIVACY_POLICY)?;
+            table.insert(CURRENT_PRIVACY_POLICY_KEY, bytes.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    pub fn append_security_history(
+        &self,
+        process_generation: u64,
+        monotonic_ms: u64,
+        event_code: &str,
+        scope_code: &str,
+        succeeded: bool,
+    ) -> Result<SecurityHistoryRecord, MobileCoreError> {
+        validate_audit_code("event_code", event_code)?;
+        validate_audit_code("scope_code", scope_code)?;
+        let write = self.database.begin_write()?;
+        let record;
+        {
+            let mut metadata = write.open_table(SECURITY_METADATA)?;
+            let sequence = metadata
+                .get(NEXT_SECURITY_SEQUENCE_KEY)?
+                .map(|value| decode::<u64>(value.value()))
+                .transpose()?
+                .unwrap_or(1);
+            if sequence == u64::MAX {
+                return Err(MobileCoreError::Security(
+                    "security history sequence exhausted".into(),
+                ));
+            }
+            record = SecurityHistoryRecord {
+                sequence,
+                process_generation,
+                monotonic_ms,
+                event_code: event_code.to_owned(),
+                scope_code: scope_code.to_owned(),
+                succeeded,
+            };
+            let bytes = encode(&record)?;
+            let mut history = write.open_table(SECURITY_HISTORY)?;
+            history.insert(sequence, bytes.as_slice())?;
+            if sequence > MAX_SECURITY_HISTORY_RECORDS {
+                history.remove(sequence - MAX_SECURITY_HISTORY_RECORDS)?;
+            }
+            let next = encode(&sequence.saturating_add(1))?;
+            metadata.insert(NEXT_SECURITY_SEQUENCE_KEY, next.as_slice())?;
+        }
+        write.commit()?;
+        Ok(record)
+    }
+
+    pub fn recent_security_history(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<SecurityHistoryRecord>, MobileCoreError> {
+        if limit == 0 || limit > MAX_SECURITY_HISTORY_RECORDS as usize {
+            return Err(MobileCoreError::BudgetExceeded(
+                "security history page must contain 1..=512 records".into(),
+            ));
+        }
+        let read = self.database.begin_read()?;
+        let table = read.open_table(SECURITY_HISTORY)?;
+        let mut records = Vec::with_capacity(limit);
+        for entry in table.iter()?.rev().take(limit) {
+            let (_, value) = entry?;
+            records.push(decode(value.value())?);
+        }
+        Ok(records)
     }
 
     pub fn quiesce_process(
@@ -458,6 +663,56 @@ fn validate_hash(value: &str) -> Result<(), MobileCoreError> {
         return Err(MobileCoreError::InvalidArgument(
             "expected_hash must be a 32-byte lowercase or uppercase hex digest".into(),
         ));
+    }
+    Ok(())
+}
+
+fn validate_installation_authority(
+    authority: &InstallationAuthorityRecord,
+) -> Result<(), MobileCoreError> {
+    if authority.profile_version != 1 {
+        return Err(MobileCoreError::Security(
+            "unsupported installation authority profile".into(),
+        ));
+    }
+    for (name, value) in [
+        ("installation_epoch", &authority.installation_epoch),
+        (
+            "installation_instance_nonce",
+            &authority.installation_instance_nonce,
+        ),
+        ("binding_digest", &authority.binding_digest),
+        ("node_id", &authority.node_id),
+        ("feed_id", &authority.feed_id),
+        ("actor_id", &authority.actor_id),
+    ] {
+        if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(MobileCoreError::Security(format!(
+                "{name} must be a 32-byte hex value"
+            )));
+        }
+    }
+    if authority.node_id == authority.feed_id
+        || authority.node_id == authority.actor_id
+        || authority.feed_id == authority.actor_id
+    {
+        return Err(MobileCoreError::Security(
+            "public signer domains must be independent".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_audit_code(name: &str, value: &str) -> Result<(), MobileCoreError> {
+    if value.is_empty()
+        || value.len() > 64
+        || !value.bytes().all(|byte| {
+            byte.is_ascii_uppercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'.' | b'-')
+        })
+    {
+        return Err(MobileCoreError::Security(format!(
+            "{name} must be bounded uppercase ASCII"
+        )));
     }
     Ok(())
 }
