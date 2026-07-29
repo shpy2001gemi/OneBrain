@@ -1,6 +1,6 @@
 # WIP Mobile App Analysis and Implementation Plan V1.1
 
-> Status: **DRAFT / decision proposal**
+> Status: **OWNER-APPROVED DIRECTION / implementation pending**
 >
 > Snapshot: **2026-07-29 (Asia/Saigon)**
 >
@@ -16,6 +16,11 @@
 > Detailed component, database, AI, localization, notification, media, P2P,
 > security, and lifecycle design:
 > [`WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md`](./WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md).
+>
+> Mobile product decomposition:
+> [`MOBILE_APP_FEATURE_TREE_V1.md`](../features/mobile/MOBILE_APP_FEATURE_TREE_V1.md),
+> [`MOBILE_APP_FEATURE_DETAILS_V1.md`](../features/mobile/MOBILE_APP_FEATURE_DETAILS_V1.md),
+> and [`MOBILE_APP_SITEMAP_V1.md`](../features/mobile/MOBILE_APP_SITEMAP_V1.md).
 
 ---
 
@@ -436,6 +441,12 @@ To avoid coupling mobile progress to P5, define:
   companion mode.
 
 ### 5.2 Feature matrix
+
+This table is the release-level summary. Stable feature IDs and per-feature
+contracts live in
+[`MOBILE_APP_FEATURE_TREE_V1.md`](../features/mobile/MOBILE_APP_FEATURE_TREE_V1.md)
+and
+[`MOBILE_APP_FEATURE_DETAILS_V1.md`](../features/mobile/MOBILE_APP_FEATURE_DETAILS_V1.md).
 
 | Capability | Private Offline MVP | Networked Beta | Later / blocked |
 |---|---:|---:|---|
@@ -1215,6 +1226,10 @@ peer. “Same LAN” and “same user” do not themselves authorize data disclo
 ---
 
 ## 10. UI information architecture
+
+The stable screen IDs, route safety rules, locked/degraded states and adaptive
+phone/tablet hierarchy are defined in
+[`MOBILE_APP_SITEMAP_V1.md`](../features/mobile/MOBILE_APP_SITEMAP_V1.md).
 
 ### Private Offline MVP navigation
 

@@ -1,0 +1,406 @@
+# OneBrain Mobile App Feature Details V1
+
+> Status: **Target product specification — not implementation evidence**
+>
+> Snapshot: **2026-07-29 (Asia/Saigon)**
+>
+> Feature IDs and delivery lanes:
+> [`MOBILE_APP_FEATURE_TREE_V1.md`](./MOBILE_APP_FEATURE_TREE_V1.md)
+>
+> Screen hierarchy and routes:
+> [`MOBILE_APP_SITEMAP_V1.md`](./MOBILE_APP_SITEMAP_V1.md)
+
+## 0. Reading this catalog
+
+This catalog defines the user-visible and correctness contract for every
+feature in the mobile tree. It does not replace protocol, architecture, privacy,
+store-policy, or release gates.
+
+For each feature:
+
+- **contract** is the outcome the product may claim;
+- **durable result** names state that must survive process death;
+- **interruption rule** defines kill/offline/denied behavior;
+- **acceptance** is the minimum evidence before the feature is labelled ready;
+- **lane/gate** comes from the feature tree and cannot be bypassed by UI work.
+
+An implementation issue should reference one feature ID, one or more screen
+IDs, typed commands/queries, durable tables/artifacts, and test IDs.
+
+## 1. Global feature contract
+
+### 1.1 Common states
+
+Every feature that performs work exposes only applicable states from this set:
+
+```text
+Unavailable(reason)
+Eligible
+Preparing
+WaitingForUser
+Running(progress_scope)
+Paused(reason)
+PendingExternal
+Succeeded(receipt_scope)
+Degraded(reason, retained_capabilities)
+Failed(stable_error, retry_class)
+Cancelled
+```
+
+`Succeeded` means the named finite operation succeeded. It never means
+network-wide completion, truth, delivery, adoption, benefit, or custody.
+
+### 1.2 Required alternate paths
+
+Every feature detail must specify:
+
+- offline behavior;
+- LLM-disabled behavior;
+- locked/protected-data-unavailable behavior;
+- permission-denied behavior where a native capability is involved;
+- app-killed and resume behavior;
+- low-storage, memory, thermal, and constrained-network behavior where relevant;
+- accessibility and English/Vietnamese presentation;
+- stale deep-link/notification behavior.
+
+### 1.3 Authority firewall
+
+Presentation code may request typed commands and render typed queries. It does
+not:
+
+- open or write `redb`;
+- sign arbitrary bytes;
+- mutate canonical data;
+- execute provider-native tools;
+- convert a local save into Public Use;
+- infer truth, benefit, reward, delivery, network completeness, or custody;
+- treat a notification/deep link as trusted authority.
+
+## 2. Detailed feature catalog
+
+### 2.0 Mobile node foundation — `MOB-FND`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-FND-001` | Activate one Rust mobile core generation from foreground or bounded native background grants. The arbiter owns the grant set and one storage writer. | Process generation, active-grant set and unclean-start evidence. Last-grant expiry drains best-effort; abrupt kill requires no callback. | Flutter-absent background entry, stale callback fencing, grant replacement and repeated kill/relaunch on physical devices. | T0, `CORE` |
+| `MOB-FND-002` | Resolve `bootstrap.redb` and `ACTIVE_DATASET`, recover operations, then open one verified dataset generation. No automatic reset on corruption. | Dataset switch journal, domain operation journals, idempotency receipts and safe-mode state. | Kill/ENOSPC/fsync fault at every DB/file/pointer boundary; previous or one fully valid next state survives. | T0, `CORE` |
+| `MOB-FND-003` | Expose bounded typed commands, queries and sequence-numbered streams through Flutter → NativeHost → stable Rust ABI/JNI. | Command/query generation and durable receipt where applicable; streams are hints. | ABI drift, bounds, cancellation, sequence-gap refetch, Dart engine absent and no raw pointer/path/secret crossing FFI. | T0, `CORE` |
+| `MOB-FND-004` | Admit each job against foreground/deadline, storage, RAM, battery, thermal, network, roaming, user policy and platform execution facts. | Evaluated resource snapshot, decision and checkpointed durable job. | Policy/resource changes mid-batch, deadline expiry, memory warning, low disk, Data Saver/Low Power and no idle polling/keepalive. | T0, `CORE` |
+| `MOB-FND-005` | Keep cloud AI, system/local model, push, network, discovery, Public Use and seeding lanes independently compiled/requested/active/default-off/kill-switchable. | Feature generation and rollback receipt; disabled lanes preserve local storage/KQL. | Stale-generation fence, immediate admission stop, in-flight bounded drain and rollback without deleting canonical/private state. | T0 |
+
+### 2.1 Onboarding and capability qualification — `MOB-ONB`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-ONB-001` | Show product boundary, choose effective UI locale, and explain that this installation is its own node. No blanket permission prompts. | Locale preference and onboarding cursor. Resume the same step after kill; changing locale never changes content/canonical bytes. | Fresh install completes in English and Vietnamese; long text, RTL-safe layout, screen reader and process-kill resume pass. | T1 |
+| `MOB-ONB-002` | Inspect OS/runtime, architecture, protected-data state, exact available storage, registry peak requirement, and optional AI capabilities. Present supported, optional, and unavailable capabilities separately. | Signed/typed capability snapshot with observation time; re-evaluate after OS/app update. No marketing capability becomes a guarantee. | Physical iOS/Android evidence; exact byte math; low-space and unsupported-device paths explain retained capabilities. | T1, `CORE` |
+| `MOB-ONB-003` | Create a new transport NodeID and independent typed signer domains for this installation, or enter an explicit restore/import route. Never require desktop pairing. | Atomic identity/vault creation receipt and onboarding operation ID. Partial creation resumes or rolls back without a compatibility plaintext key. | Kill/fault at each key/file/DB boundary; Node/feed/Actor separation test; no key in Dart/logs. | T1, `CORE` |
+| `MOB-ONB-004` | Download or discover all artifacts for one exact Concept Registry release, verify publisher/signature/hash/format/query smoke, then activate as one generation. | Resumable chunk ledger, verification receipt and active release pointer. App may show provisioning but not `Ready` before exact activation. | Current 2.056 GiB query-ready release provisions on both platforms; corrupt/mixed/low-space/kill/rollback tests pass. | T1, `REGISTRY` |
+| `MOB-ONB-005` | Present independent readiness facts for node data, registry, recovery, AI, notifications, and network. Optional AI/notification setup is skippable; before `NETWORKED-BETA`, network is a non-actionable disabled/unavailable fact with no setup route. | Onboarding completion receipt plus unresolved recommendation list; skipping is not an error. | Airplane-mode completion with no model; no false “fully ready/online” badge; AI/notification setup remains accessible in Settings while network setup is absent before its gate. | T1 |
+
+### 2.2 Identity, lock, recovery, and privacy — `MOB-SEC`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-SEC-001` | Lock/unlock the private node using app policy and platform credential/biometric gates. Explain `ProtectedDataUnavailable` separately from a wrong credential. | Lock policy and bounded key-session receipt; plaintext keys are never durable. Background/kill zeroizes sessions and requires fresh eligibility. | Wrong credential, biometric unavailable/cancelled, reboot-before-first-unlock, memory warning and process-kill tests. | T1 |
+| `MOB-SEC-002` | Show transport NodeID, feed and Actor authority domains, public identifiers, readiness and typed failure without exposing private material. | Public identity metadata and signer health evidence only. | UI never labels Node authentication as feed/Actor authority; signer mismatch/unavailable fails closed. | T1 |
+| `MOB-SEC-003` | Create an encrypted, versioned recovery package; require the user to verify that the selected recovery method can be reopened before calling it configured. | Authenticated recovery manifest and verification receipt; recovery secret is never logged, copied to notification, or included in generic OS backup. | Wrong secret, corrupt/truncated package, downgrade and no-network restore-inspection tests. | T1, `RECOVERY` |
+| `MOB-SEC-004` | Offer explicit `ReplaceEmptyInstallation` or exceptional old-device retirement/key-rotation flow. Never silently clone Node/feed identity. Ordinary `ImportDataKeepCurrentIdentity` is owned by `MOB-DAT-007` and does not require this feature. | Typed identity-recovery operation, selected mode, retirement/rotation records and generation activation receipt. | Duplicate-identity simulation, non-empty replace rejection, partial restore, old-device retirement and rollback tests. | T1, `RECOVERY` |
+| `MOB-SEC-005` | Let users inspect/change privacy defaults for `PrivateLocal`, `PrivateShared`, `PublicCandidate`, and `PublicAccepted` transitions. | Versioned policy and audit entry; existing canonical disclosure does not silently change. | Every outbound AI/network/media flow resolves an explicit privacy class and destination. | T1 |
+| `MOB-SEC-006` | Show redacted history for unlock, recovery, signer use, Public Use, cloud disclosure, peer enrollment/revocation, and sensitive settings. | Bounded privacy-safe receipts; secrets/content/raw private IDs are excluded. | Retention limits, pagination, export review and locked-state redaction tests. | T1 |
+| `MOB-SEC-007` | After release/security review, erase selected local domains or the entire installation through a typed destructive flow with exact scope, backup warning, re-authentication and final confirmation. It is never callable by an LLM/notification/deep link. | Root-journaled erase/crypto-erase receipt and tombstone/retirement work required by each identity/data domain. | Wrong scope, cancellation before commit, interruption after commit, retained OS backup, peer/identity retirement and no “global delete” wording. | T3 |
+
+### 2.3 Home and node overview — `MOB-HOM`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-HOM-001` | Show separate cards for node data, runtime grant, Concept Registry, LLM route, network presence, sync scope, seeding, and storage. | `NodeSnapshot` is queryable; UI event streams are refetch hints only. | Stale event gap refetch, locked/degraded states, and no single ambiguous “Online” status. | T1 |
+| `MOB-HOM-002` | Start text, clipboard, camera, picker, audio, import, search, or Assistant actions according to current capability. | Typed route intent only; no side effect before the destination validates inputs/permission. | Disabled actions show exact reason; capture works without network/LLM. | T1 |
+| `MOB-HOM-003` | Continue recent private items, drafts, interrupted imports, and explicit user work. | Recency is a rebuildable private projection; authoritative draft/import remains elsewhere. | Locked privacy, empty state, bounded list and kill-resume tests. | T1 |
+| `MOB-HOM-004` | Summarize durable approvals, notification intents, failed jobs, and operations needing user action. | Counts derive from durable inbox/jobs, never OS delivery state alone. | Notification denied/omitted still exposes all decisions; dedupe and stale-action tests. | T1 |
+| `MOB-HOM-005` | Show actionable low-storage, registry/model update, backup and recovery notices with exact local impact. | Notice references a typed current operation/policy state. | No alarm from stale snapshot; dismissing presentation does not discard required work. | T1 |
+| `MOB-HOM-006` | When Networked Beta is active, show scoped network, reconciliation, carrier and seed notices without implying global completeness. | Notice references the exact network feature, observation interval and durable work item. | Entire feature is absent before the composite gate; stale reachability and disabled optional carrier/custody lanes are stated exactly. | T2, `NETWORKED-BETA` |
+
+### 2.4 Capture and ingestion — `MOB-CAP`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-CAP-001` | Capture bounded text/clipboard input into a private draft with explicit content language. | Encrypted draft plus operation receipt; clipboard is not retained after bounded intake unless saved. | Airplane/no-LLM path, Unicode/large-input bounds, cancel and process-kill resume. | T1 |
+| `MOB-CAP-002` | Receive an iOS share-extension or Android share-intent spool, show source/type/size, then import after unlock. | Encrypted landing spool and idempotent ingestion receipt. Extension never receives vault/signer keys. | Stale URI, duplicate callback, locked core, unsupported type, low disk and malicious metadata tests. | T1 |
+| `MOB-CAP-003` | Select photo/document/audio/video through system pickers and stream it into bounded staging. | Picker handle is transient; resulting source uses encrypted local storage and full-length/hash evidence. | Revoked grant, mismatched MIME/extension, huge file, archive/path attack and kill tests. | T1 |
+| `MOB-CAP-004` | Capture camera input and optionally run OCR after contextual permission. Preserve raw original; OCR is editable derived text with provenance. | `OwnedOriginal`, OCR candidate, model/tool/version and link in private vault. | Permission denial leaves text/picker capture; poor OCR never overwrites source; energy/thermal bounds. | T1 Optional |
+| `MOB-CAP-005` | Record bounded voice/audio and optionally transcribe through a qualified local/system speech-recognition service. Remote raw-audio transcription is outside V1 and requires a separate ADR, gate and feature ID. | Owned audio source, derived transcript, speech provider/revision/language provenance. | Permission/interruption/call/route loss, no-service fallback, language/quality, privacy, energy and max-duration tests; assert no raw-audio network route. | T1 Optional, `SPEECH` |
+| `MOB-CAP-006` | Treat every raw source as encrypted `PrivateLocal`; allow strip/transcode/redact only into a new representation. | Original and derived representation have distinct IDs, keys, salt and provenance. | No plaintext scan outside vault/approved spool; original cannot enter seed/share by existence alone. | T1, `MEDIA` |
+| `MOB-CAP-007` | Run deterministic parsing and optional LLM candidate generation, show validation/unknowns/provenance, allow edit, then explicitly save locally. | Candidate is quarantine/draft state; save has idempotent durable receipt. Cancellation or model failure preserves the source/draft. | LLM disabled, malformed proposal, stale catalog, duplicate save and kill-after-commit tests. | T1 |
+
+### 2.5 Library, search, and local KQL — `MOB-LIB`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-LIB-001` | Browse local private/public items with cursor pagination and explicit scope. | Query generation and cursor; list is a projection and may be rebuilt. | Large dataset, process restart, deleted/retained branch and screen-reader list tests. | T1 |
+| `MOB-LIB-002` | Search private local text, public labels, CCIDs and the active Concept Registry release. | Search profile/version and named source coverage in each result page. | Vietnamese diacritics/folding, exact CCID, locale fallback, bounded latency/RAM and stale-index rebuild. | T1 |
+| `MOB-LIB-003` | Edit/run local KQL only, with syntax help, deadline/budget and typed results. Running it does not contact peers or create a StandingNeed. | Optional private query history, exact local scope/frontier and terminal reason. | Network blocked, cancellation, budget/deadline, malformed query and zero-result wording tests. | T1 |
+| `MOB-LIB-004` | Filter/sort by local state, type, date, language, disclosure, tags, source and availability facts without changing canonical meaning. | Versioned query/view definition; OS locale collation is not canonical ordering. | Filter combination bounds, locale switch and unavailable index behavior. | T1 |
+| `MOB-LIB-005` | Display source, validation profile, disclosure, branch, local scope, frontier and limitations next to results. | Provenance references authoritative records; no inferred truth score. | Conflict/unknown/unresolved states remain visible; no “global/no knowledge exists” wording. | T1 |
+| `MOB-LIB-006` | Explore a bounded 2D neighborhood from local graph projections; selecting an edge opens its evidence/detail. | View parameters only; graph navigation never creates a relationship. | Node/edge cap, reduced motion, accessible list alternative, projection-degraded fallback. | T1 Optional |
+| `MOB-LIB-007` | Optionally embed/rerank only the selected local scope with a qualified on-device model; keyword, label and local KQL remain the deterministic fallback. | Versioned local embedding projection with source frontier/model release and no canonical effect. | Model absent/update/OOM, Vietnamese/mixed-language quality, stale embedding rebuild, private-at-rest and result-equivalence fallback. | T1 Optional, `AI` |
+
+### 2.6 Knowledge detail and explicit authority transitions — `MOB-KNO`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-KNO-001` | Render one item with content, language, source, provenance, disclosure, validation evidence, media and current local resolution. | Detail query includes generation; raw private content requires unlock. | Missing dependency, quarantined/corrupt object, conflict branch and offline media states. | T1 |
+| `MOB-KNO-002` | Edit a local draft by creating a new revision; never rewrite immutable canonical bytes. Validate before save. | New encrypted draft/revision and parent lineage. | Concurrent edit, stale expected generation, cancel, crash and validation-error recovery. | T1 |
+| `MOB-KNO-003` | Organize locally with tags/collections and create typed relationship proposals. A proposal is not an active canonical edge. | Private organization state or quarantined `BindingProposal` with provenance. | Removing local organization does not delete canonical objects; LLM proposals cannot auto-materialize. | T1 |
+| `MOB-KNO-004` | Inspect Assembly, Receptor, Discover, Proposal, Mapping and Resolution as separate read-only stages with exact identity, scope and next valid action. A future stage mutation requires a new feature ID. | Stage view references exact revision, placement, policy and assessed frontier. | No materialize/adopt side effect from view; unknown/violated constraints and relative resolution wording. | T1 |
+| `MOB-KNO-005` | Inspect local concurrent branches, revisions and missing dependencies without choosing a silent winner. | Branch-preserving local records; inspection never rewrites immutable revision history. | Stale branch and missing dependency shown as unknown/deferred; no network reconciliation path is reachable. | T1 |
+| `MOB-KNO-006` | Prepare an exact Public Use intent showing canonical preview, target, recipient NodeID, selector, namespace, Public disclosure, idempotency identity, expiry and consequences. | Private prepared intent and receipt commitment; no publication yet. | Wrong target/disclosure, excessive/expired TTL, re-prepare receipt rotation, locked/background rejection. | T2, `NETWORKED-BETA` |
+| `MOB-KNO-007` | Require fresh re-authorization and exact confirmation; publish once, then show pending/deferred outbox status without claiming delivery/adoption. | Atomic publication/feed transition/consumed intent and idempotent retry receipt. | Forged/swapped/stale receipt, signer mismatch, kill/reopen and duplicate-confirm tests. | T2, `NETWORKED-BETA` |
+| `MOB-KNO-008` | Inspect reconciliation conflicts created by approved T2 selectors/frontiers and explicitly create a new resolution event when authorized. | Branch-preserving records and explicit resolution event, never arrival-order overwrite. | Partition/reunion vectors, disabled-gate absence, stale frontier, no silent winner and kill-safe idempotent resolution. | T2, `NETWORKED-BETA` |
+
+### 2.7 Assistant, providers, and deterministic tools — `MOB-AI`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-AI-001` | Offer deterministic search, query planning, capture assistance and status without any generative provider. | Local typed plan/result; no provider dependency. | Entire T1 journey passes with network and all models disabled. | T1 |
+| `MOB-AI-002` | Provide bounded Assistant threads; user selects/removes local context and can cancel streaming. Responses are not canonical records. | Encrypted local thread, provider identity, prompt package and candidate provenance according to retention policy. | Context/token bounds, cancel, partial stream, kill and private-history lock tests. | T1 Optional |
+| `MOB-AI-003` | Show selected mode (`Local only`, `Smart; ask before cloud`, explicit remote), route identity, availability reason and limitations. | Versioned preference; each turn records local release, system qualification or remote route release ID. | System/provider update quarantine, unavailable locale and no silent fallback. | T1 |
+| `MOB-AI-004` | Preview the exact local context classes selected for inference and any local tool-result return to a remote provider. | Disclosure decision, destination, purpose, data classes, retention/cost policy and expiry. | Denial/minimization, conversation route switch and result-disclosure tests. | T1 |
+| `MOB-AI-005` | Use Apple/Android system AI only when device, OS, task, input-language/script and output-locale qualification pass. | Observed system qualification ID and OS/provider fingerprint. | Top-foreground/platform limits, OS model change, unsupported locale and quota behavior on physical devices. | T1 Optional, `AI` |
+| `MOB-AI-006` | Run a signed app-managed local model through the selected portable runtime within memory/thermal/deadline policy. | Exact model release/profile activation and per-turn audit. Model/KV state is ephemeral. | Vietnamese/mixed-language structured evaluation, OOM, unload, tamper, background and cancellation tests. | T1 Optional, `AI` |
+| `MOB-AI-007` | Send minimized context to an explicitly selected gateway/custom provider only after provider-neutral task × input-language × output-locale qualification; show endpoint/region, data class, cost and retention posture. | Immutable `RemoteRouteRelease`, AI qualification ID and disclosure audit; vendor secret is not embedded in app. | Quality/structured-output threshold, network loss, alias change, revoked route, billing/error and no-training/retention capability versioning. | T1 Optional, `AI/CLOUD` |
+| `MOB-AI-008` | Treat structured output/tool calls as untrusted proposals; Rust resolves schema/catalog, policy, authority, budget, consent and idempotency before deterministic execution. Show receipt and optional redacted result. | Trusted Rust proposal envelope, permit/nonce, execution journal and tool receipt. | Unknown/stale/malformed/replayed proposal, prompt injection, kill at effect boundary and provider built-in bypass tests. | T1 |
+
+### 2.8 Media ownership, viewing, and transfer — `MOB-MED`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-MED-001` | Import attachment bytes as `OwnedOriginal`, stream/hash/encrypt into packs, activate files before committing local reference. | StagedVerified → FilesActivated → ReferenceCommitted → Complete; owned hold blocks GC. | Multi-GB stream, duplicate root, ENOSPC/fsync/kill, unsupported type and unattached-original retention. | T1, `MEDIA` |
+| `MOB-MED-002` | Decode/play only verified pieces; support image/document/audio/video and progressive verified ranges. | Playback position may be cosmetic; piece verification/catalog is durable. | Bad proof/index/final length, malicious media, range seek, app background and no whole-file RAM load. | T1, `MEDIA` |
+| `MOB-MED-003` | Show manifest body ID, storage class, local verified bytes, pin/ownership and disclosure without exposing private inner metadata. | Query over logical catalog and physical hold ledger. | Locked redaction, catalog/pack reconcile and no availability-as-custody label. | T1, `MEDIA` |
+| `MOB-MED-004` | Derive a reviewed share representation with metadata stripping/transcode/redaction, fresh key/salt and separate recipient access grants. | New encrypted representation, provenance, manifest and access/revocation records. Original is unchanged. | Nonce/key reuse, unauthorized recipient, creator-linkage policy and exact preview tests. | T2, `NETWORKED-BETA/MEDIA` |
+| `MOB-MED-005` | Fetch missing pieces/ranges from bounded provider choices, verify before activation, checkpoint and resume across path/process changes. | Missing-piece bitmap, provider/session checkpoint, verified immutable packs. | Replay/duplicate/corrupt/reordered piece, network switch, carrier batch and process-kill tests. | T2, `NETWORKED-BETA/MEDIA` |
+| `MOB-MED-006` | Display recent provider observations, local TTL and probe limits without presenting a sampled set as complete. Custody commitments are absent until the separate custody ADR/gate passes. | Local observation age and immutable provider/retirement records; signed custody records only on the gated custody view. | Lease replay, reboot/clock rollback expiry, probe-does-not-create-custody and complete absence of custody claims before its gate. | T2, `NETWORKED-BETA`; `CUSTODY` for custody views |
+| `MOB-MED-007` | Let users pin/unpin owned media and reclaim eligible local derived/cache representations. Owned originals and active backup/rollback holds are ineligible. | Local policy/hold update and recoverable GC operation. | Concurrent reference/GC, rollback generation, backup epoch, trash recovery and exact freed-byte reporting. | T1, `MEDIA` |
+| `MOB-MED-008` | Let users pin/unpin verified remote media and reclaim eligible `SeedCache`/remote cache while preserving active access/custody holds. | Network-aware policy/hold update and recoverable GC operation. | Disabled-gate absence, active transfer/custody race, remote reference, retry and exact freed-byte reporting. | T2, `NETWORKED-BETA/MEDIA` |
+
+### 2.9 Network, reconciliation, availability, and seeding — `MOB-NET`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-NET-001` | Show `Standalone`, `ComponentReachable`, or `PathLimited` as local derived reachability with interval, peer/carrier limitations and pending work. | `ReachabilityView` and current network policy; no canonical island identity. | Airplane/VPN/path change, stale observation and no network-wide completeness claim. | T2, `NETWORKED-BETA` |
+| `MOB-NET-002` | Enroll an ordinary peer using a signed/expiring/replay-safe invitation and exact capability disclosure. Same user/LAN is not authority. | Peer identity, authorized scopes, key epoch and enrollment receipt. | Forged/expired/replayed QR, wrong NodeID, locked state and cancellation tests. | T2, `NETWORKED-BETA` |
+| `MOB-NET-003` | Inspect peer scopes, recent sessions/routes and revoke future authorization. Do not present raw address as identity. | Revocation/key-state record and durable route cleanup work. | Existing session fence, offline revocation queue, stale route and re-enrollment tests. | T2, `NETWORKED-BETA` |
+| `MOB-NET-004` | Run outbound-first bounded reconciliation for approved selectors/frontiers; preserve branches and resume tokens. | Durable intents/cursors/checkpoints and exact scoped terminal reason. | Duplicate/replay, partition/reunion, peer loss, process kill and no “fully synced” wording. | T2, `NETWORKED-BETA` |
+| `MOB-NET-005` | Show per-selector/frontier pending, last assessed, limitations, conflicts and retry state. | Queryable sync journal; presentation events are hints. | Stale cursor, unknown peer coverage, partial/budget/deadline outcomes and branch conflicts. | T2, `NETWORKED-BETA` |
+| `MOB-NET-006` | In a future M6 lane, prepare only a bounded sanitized network-fetch/discovery proposal; never send raw KQL/private NeedIR. | Local proposal/consent state; no send/materialize/adopt side effect. | Hidden/disabled before both gates; RouteMinimal privacy and zero-result scope tests after authorization. | BLOCKED, `NETWORKED-BETA/M6` |
+| `MOB-NET-007` | Start a foreground authenticated direct-peer session with visible limits and stop control. | Session operation ID and checkpoints; socket is ephemeral. | No-callback kill, app-owned graceful stop, network change, deadline and Android/iOS policy matrix. | T2, `NETWORKED-BETA` |
+| `MOB-NET-008` | Configure Off, Smart, Manual, and Android-only finite Aggressive seed sessions with network/charging/thermal/byte/time limits. | Policy plus per-session budget/checkpoint; no idle keepalive. | FGS quota/Task Manager Stop/UIDT pause, iOS foreground restriction, caps and restart tests. | T2, `NETWORKED-BETA/MEDIA` |
+| `MOB-NET-009` | After the carrier ADR/gate passes, show carrier/SeedInbox as an optional ciphertext mailbox/transfer path, not authority or custody. Batch HTTPS containers/ranges and verify pieces locally. | Mailbox cursor, opaque hint dedupe and signed transport receipt. | Feature absent before its gate; carrier compromise, omitted push, duplicate batch, ciphertext privacy, retention and direct-path fallback. | T2 Optional, `NETWORKED-BETA/MEDIA/CARRIER` |
+| `MOB-NET-010` | Discover peers on the local network only in an explicit permitted foreground window; Internet peer routes remain usable when LAN access is denied. | Ephemeral discovery observations and approved enrollment proposal only; discovery grants no trust. | iOS Bonjour/multicast declarations, Android local-network permission, denial, malicious advertisements and app-background stop. | T2 Optional, `NETWORKED-BETA` |
+
+### 2.10 Notifications and durable activity — `MOB-NTF`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-NTF-001` | Provide the authoritative in-app inbox for approvals, jobs, reminders, security notices and failures. | Durable intent and observable-state receipt; OS notification is only presentation. | Permission denied, push omitted, dedupe, stale action, pagination and locked preview tests. | T1 |
+| `MOB-NTF-002` | Schedule/submit local job, reminder, security and progress notifications using localized native-safe keys. | `scheduled`, `submitted`, `active_observed`, `interacted`, `cancelled`, `permission_denied`, `platform_error`, or `delivery_unknown`. | Never record `delivered` from API success; boot/timezone/exact-alarm and category registration tests. | T1 |
+| `MOB-NTF-003` | Manage contextual permission, generic/detailed preview, categories/channels, quiet hours and digest preferences. | Rust policy plus native registration ledger; channel importance remains user-owned. | Android denial/Task Manager visibility, iOS hidden preview, locale change and channel-version migration. | T1 |
+| `MOB-NTF-004` | Allow only reversible/idempotent actions such as pause/cancel queued transfer/retry. Validate current intent, nonce and expiry after unlock where needed. | Consumed action nonce and command receipt. | Forged/replayed/stale action and prohibition of publish/delete/sign/grant/restore from notification. | T1 |
+| `MOB-NTF-005` | After the push-broker ADR/gate passes, optionally register an opaque APNs/FCM route for coarse mailbox-generation hints. Payload contains no product intent, content, message key or private identifier. | Revocable installation route, token TTL/last-seen and hint dedupe. | Feature absent before its gate; token rotate/uninstall/invalid response, normal-priority delay, opt-out and metadata-retention review. | T2 Optional, `NETWORKED-BETA/PUSH` |
+
+### 2.11 Concept Registry, storage, and portability — `MOB-DAT`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-DAT-001` | Show exact active Concept Registry release, three artifact lengths/hashes, signer, schema/runtime range and local verification receipt. | Release manifest and activation receipt; advisory timestamps are not authenticity. | Mismatch/corruption/revocation and degraded private-node behavior. | T1, `REGISTRY` |
+| `MOB-DAT-002` | Preflight exact peak space, download/resume, verify, query-smoke, stage and atomically activate one release. | Chunk ledger, immutable release directory, generation-fenced `ACTIVE` pointer. | Store pack/CDN path change, ENOSPC, kill/reboot and current release physical-device provision. | T1, `REGISTRY` |
+| `MOB-DAT-003` | Roll back/repair a corrupt or unhealthy registry without deleting a live mmap generation. | Active/previous generation and reader holds through health window. | Old reader during swap, pointer fsync/rename failure and corrupt active-release recovery. | T1, `REGISTRY` |
+| `MOB-DAT-004` | Show protected, registry, models, owned/pinned/cache media, staging, rollback and reclaimable bytes; explain exact operation peak. Before `CUSTODY`, any unknown safety hold is included only in protected/non-reclaimable bytes and is not labelled as custody. | Catalog counters plus bounded physical audit receipt. | Filesystem drift, allocation overhead, multi-GB preflight, opaque-hold preservation and no custody claim before its gate. | T1 |
+| `MOB-DAT-005` | Offer only eligible cleanup with predicted impact and explicit confirmation for user-selected model/release removal. | Recoverable GC/delete operation and freed-byte receipt. | Owned original/custody/backup/rollback hold exclusion; crash/trash reconciliation. | T1 |
+| `MOB-DAT-006` | Create/inspect a new vault-encrypted, versioned backup at a logical multi-DB cut, including all transitive inputs needed by resumable sagas. | Backup epoch, database/frontier manifest, chunk/root hashes and media GC holds until verified. | Pending saga, wrong key, corrupt/truncated archive, interruption, no plaintext outside vault/envelope and no legacy plaintext API. | T1, `ARCHIVE` |
+| `MOB-DAT-007` | Restore/import encrypted archive data into a new dataset generation, validate all domains/holds and atomically switch. `ImportDataKeepCurrentIdentity` is the archive path; `ReplaceEmptyInstallation` and any identity recovery are absent until `RECOVERY` also passes. | New verified dataset, explicit mode, switch receipt and retained rollback generation. | N-1/bridge/pre-write rollback, post-switch mutation and media-hold tests; identity modes are inaccessible before their separate gate. | T1, `ARCHIVE`; `RECOVERY` for identity recovery |
+| `MOB-DAT-008` | Export a user-reviewed scope through a versioned vault-encrypted portable package without implying desktop ownership or live replication. V1 exposes no plaintext private export. | Encrypted export manifest/provenance and operation receipt. | Scope preview, cancel/resume, wrong key, no secret/provider credential leak and no legacy/plaintext private path. | T1, `ARCHIVE` |
+| `MOB-DAT-009` | In a later lane, migrate an autonomous node to another device through encrypted packages and an explicit identity retirement/rotation mode. | Migration manifest, target verification, source-retirement decision and operation receipt. | Target capacity, app-version compatibility, duplicate identity, interrupted handoff and source-retirement recovery. | T3 |
+
+### 2.12 Model management — `MOB-MOD`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-MOD-001` | Scan system-model eligibility and portable runtime/device resources without downloading a model. | Capability snapshot with OS/runtime/device class and qualification freshness. | OS update, no accelerator, low RAM/storage and provider-disabled behavior. | T1 |
+| `MOB-MOD-002` | List signed app model profiles, observed system qualifications and immutable remote route releases with task/language limitations. | Catalog manifests only; untrusted community URL is never an install source. | License/region/age/policy and unsupported-locale labels. | T1 |
+| `MOB-MOD-003` | Download a selected app model from an approved store pack or signed OneBrain host; verify all artifacts and smoke before activation. | Resumable download, release manifest, verification receipt and immutable generation. | Tamper, pack-path change, low disk, kill, incompatible runtime and license gate. | T1 Optional, `AI` |
+| `MOB-MOD-004` | Activate a provider route only for qualified task/input-language/output-locale classes; show exact route each turn. Remote activation additionally requires the cloud disclosure/route gate. | Active profile pointer and route qualification/audit ID. | Model/system/cloud alias update, prompt incompatibility, remote route without both gates and no silent cloud route. | T1 Optional, `AI`; plus `CLOUD` for remote |
+| `MOB-MOD-005` | Roll back/delete app-managed releases when not active/in use and after exact storage impact. System models are OS-owned. | Release state, reader/session hold and recoverable delete receipt. | Active inference, Play-pack rollback limitation, old reader and interrupted delete. | T1 Optional, `AI` |
+| `MOB-MOD-006` | Show measured quality/resource evidence by device, task and language class: TTFT, speed, RSS, energy/thermal, structured/tool accuracy and limitations. | Signed evaluation digest and observed device result; not a truth/reward score. | Vietnamese/mixed/unknown language, system drift and remote route revision coverage. | T1 Optional, `AI` |
+
+### 2.13 Settings, diagnostics, language, and accessibility — `MOB-SYS`
+
+| ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
+|---|---|---|---|---|
+| `MOB-SYS-001` | Configure UI locale, content language, query fallback, Concept label locale, notification locale and requested LLM output independently. | Canonical BCP-47 preferences and versioned normalization profile for derived search only. | Runtime locale switch, Vietnamese/English completeness, mixed language and no canonical byte rewrite. | T1 |
+| `MOB-SYS-002` | Support screen readers, text scaling, contrast, reduced motion, touch targets and non-visual graph/status alternatives. | Accessibility preferences where applicable; OS preference remains authoritative. | Automated semantics plus physical-device dynamic type, TalkBack and VoiceOver review. | T1 |
+| `MOB-SYS-003` | Show camera, microphone, photo/document picker, notification, local-network and biometric capability/permission independently; request in context. | Native permission observation and last rationale; not a canonical grant. | Revocation while absent, denial fallback, iOS LAN declarations and Android target-SDK behavior. | T1 |
+| `MOB-SYS-004` | Configure local import, registry/model update and maintenance-job constraints for charging, battery, thermal, quiet hours and caps. | Versioned local-job policy; each admitted job records the evaluated snapshot. | Policy change mid-job, Low Power, BGTask/worker expiry and cap enforcement with every network lane disabled. | T1 |
+| `MOB-SYS-005` | Inspect privacy-safe health and explicitly export bounded diagnostics after reviewing included fields. | Redacted diagnostics archive with manifest and retention. | No content/prompt/tool args/key/token/private filename; locked-state and truncation tests. | T1 |
+| `MOB-SYS-006` | Provide the T0 mechanism that exposes compiled/requested/active/kill-switch states and safe mode independently for operator-approved lanes. Normal users cannot bypass rollout authority. | Durable feature flag generation and rollback receipt. | Default-off future lanes, stale generation fence, rollback and no effect on local KQL/storage. | T0 |
+| `MOB-SYS-007` | Show app/core/schema/registry/model/prompt/route release IDs, licenses, privacy/support links and device-local support bundle entry. | Read-only build/release metadata. | Offline availability, third-party/model license coverage and no secret identifiers. | T1 |
+| `MOB-SYS-008` | Configure T2 transfer, reconciliation and seeding constraints for Wi-Fi/metered/roaming, charging, battery, thermal, quiet hours, byte/time caps and foreground-only modes. | Versioned network-job policy; each admitted job records the evaluated snapshot and governing gate generation. | Entire feature absent before Networked Beta; Data Saver/Low Power, FGS/UIDT/BGTask expiry, policy change and cap enforcement. | T2, `NETWORKED-BETA` |
+
+## 3. Primary journey contracts
+
+### `MOB-JRN-001` — First private/offline readiness
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant UI as Mobile UI
+    participant Core as Rust mobile core
+    participant Host as Native host
+
+    U->>UI: choose locale and start
+    UI->>Host: inspect device/storage capabilities
+    Host-->>UI: typed capability snapshot
+    U->>UI: create node or explicit restore
+    UI->>Core: provision identity and private stores
+    Core-->>UI: durable provision receipt
+    UI->>Core: provision exact registry release
+    Core-->>UI: verified active release receipt
+    UI-->>U: ReadyOffline; optional AI/network remain separate
+```
+
+Exit: capture, library and local KQL work in airplane mode with all LLM and
+network flags disabled.
+
+### `MOB-JRN-002` — Private capture
+
+```text
+source
+  -> encrypted PrivateLocal staging
+  -> deterministic extraction
+  -> optional qualified LLM candidate
+  -> validation + editable preview
+  -> explicit Save locally
+  -> durable private receipt
+```
+
+Cancel/model failure preserves or discards only according to the user's draft
+choice. It never publishes or seeds raw input.
+
+### `MOB-JRN-003` — Local recall
+
+```text
+local scope + query
+  -> keyword/Concept Registry/local KQL
+  -> bounded result page + coverage/frontier
+  -> detail/provenance/neighborhood
+```
+
+An empty page reports the assessed local scope only.
+
+### `MOB-JRN-004` — Assistant and deterministic tool
+
+```text
+request
+  -> provider/disclosure gate
+  -> inference candidate
+  -> Rust proposal envelope
+  -> schema/policy/authority/budget checks
+  -> user approval when required
+  -> deterministic handler
+  -> durable tool receipt
+  -> optional separately disclosed result to LLM
+```
+
+Interrupted inference can be discarded. An executed effect is reconciled by its
+operation/idempotency receipt and is never blindly repeated.
+
+### `MOB-JRN-005` — Media share and retrieval
+
+```text
+OwnedOriginal
+  -> reviewed derived ShareRepresentation
+  -> fresh encryption key/salt
+  -> manifest body + access grants
+  -> explicit network/access policy
+  -> bounded verified piece transfer
+```
+
+The original remains protected. Provider observations do not become custody.
+A custody-obligation branch is absent until `MOB-GATE-CUSTODY` passes; opaque
+safety holds may still block GC without being exposed as a custody product
+claim.
+
+### `MOB-JRN-006` — Public Use
+
+```text
+local item
+  -> exact intent preview
+  -> prepare private receipt
+  -> fresh re-authorization
+  -> exact confirm
+  -> one signed publication
+  -> pending/deferred scoped outbox status
+```
+
+There is no background, notification, assistant, or deep-link shortcut around
+prepare and confirm.
+
+### `MOB-JRN-007` — Backup and restore
+
+```text
+single-writer logical cut
+  -> encrypted archive + transitive inputs
+  -> root verification
+  -> new restore dataset generation
+  -> identity-mode confirmation
+  -> validation + media holds
+  -> atomic ACTIVE_DATASET switch
+```
+
+Failure leaves the previous active generation and its holds intact.
+
+### `MOB-JRN-008` — Network reconciliation and bounded seeding
+
+```text
+eligible execution grant + policy snapshot
+  -> authenticated outbound session
+  -> bounded selector/piece batch
+  -> durable checkpoint
+  -> local scoped receipt
+  -> disconnect
+```
+
+Abrupt process death stops renewal; it does not erase pending durable work or
+prove a peer/content is absent.
+
+## 4. Feature-to-data ownership
+
+| Feature modules | Primary authoritative owner | Rebuildable/supporting state |
+|---|---|---|
+| `FND` | `bootstrap.redb`, active dataset domains and operation journals | process/runtime observations |
+| `ONB`, `SEC` | typed signer custody, `private_vault.redb`, bootstrap dataset journal | onboarding/readiness projection |
+| `HOM` | queried domain stores and durable jobs | recent/attention projections |
+| `CAP` | private vault, operation journal, physical media ledger | OCR/transcript/candidate projections |
+| `LIB`, `KNO` | canonical public store and private vault | public/private search and graph projections |
+| `AI`, `MOD` | signed model/route releases, disclosure/tool journals | ephemeral sessions/KV, bounded thread projections |
+| `MED` | private vault, media catalog, bootstrap physical holds and immutable packs | thumbnails/playback cache |
+| `NET` | network work store, canonical provider/retire records | sampled reachability/provider view |
+| `NTF` | notification intents/receipts and durable inbox | native scheduling ledger |
+| `DAT` | dataset generations, backup/restore manifests and release pointers | size/audit projections |
+| `SYS` | Rust policy and signed build/release metadata | native permission/resource observations |
+
+## 5. Definition of ready
+
+A feature may move from target specification to release-ready only when:
+
+1. its entry gate is closed with linked evidence;
+2. feature, screen, DTO, storage and tests share the same stable ID mapping;
+3. main, alternate, interrupted, permission-denied, offline and degraded paths
+   are implemented;
+4. privacy/authority review finds no hidden disclosure or side-effect path;
+5. English/Vietnamese, accessibility and native lifecycle tests pass;
+6. physical-device resource evidence is within the approved budget;
+7. default-off/kill-switch/rollback behavior is proven where applicable;
+8. product wording states exact scope/frontier/limitation and avoids global
+   truth, completion, delivery, availability, benefit or custody claims.

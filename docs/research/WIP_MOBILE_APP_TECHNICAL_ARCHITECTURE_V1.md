@@ -1,6 +1,6 @@
 # WIP Mobile App Technical Architecture V1.0
 
-> Status: **DRAFT / implementation architecture proposal**
+> Status: **OWNER-APPROVED TARGET ARCHITECTURE / implementation pending**
 >
 > Snapshot: **2026-07-29 (Asia/Saigon)**
 >
@@ -10,6 +10,11 @@
 >
 > Product and sequencing plan:
 > [`WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md`](./WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md)
+>
+> Product feature and navigation specifications:
+> [`MOBILE_APP_FEATURE_TREE_V1.md`](../features/mobile/MOBILE_APP_FEATURE_TREE_V1.md),
+> [`MOBILE_APP_FEATURE_DETAILS_V1.md`](../features/mobile/MOBILE_APP_FEATURE_DETAILS_V1.md),
+> and [`MOBILE_APP_SITEMAP_V1.md`](../features/mobile/MOBILE_APP_SITEMAP_V1.md).
 >
 > Runtime authority: when this document conflicts with
 > [`WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md`](./WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md),
