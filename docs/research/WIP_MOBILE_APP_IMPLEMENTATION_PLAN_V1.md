@@ -12,6 +12,10 @@
 > [`WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md`](./WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md),
 > the distributed-runtime plan wins. This document does not authorize M6, M7,
 > OBT/wallet mutation, or a P5 production rollout.
+>
+> Detailed component, database, AI, localization, notification, media, P2P,
+> security, and lifecycle design:
+> [`WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md`](./WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md).
 
 ---
 
@@ -35,7 +39,8 @@ The product architecture is:
 - Rust owns identity, signing, canonical validation, local storage, KQL,
   proposal quarantine, materialization, consent, tool policy/execution, and
   network state.
-- Flutter owns the mobile UI and invokes a narrow typed Rust facade through FFI.
+- Flutter owns the mobile UI and invokes a narrow native host; that host and
+  OS background entry points activate the same typed Rust facade.
 - LLM inference is provider-neutral: it may run locally on the phone or through
   an explicitly configured cloud service. It is not tied to Ollama.
 - The LLM can produce text, structured output, or tool-call proposals. OneBrain
@@ -52,7 +57,8 @@ The product architecture is:
 
 ### Recommended UI stack
 
-Use **Flutter + Rust FFI** as the baseline, subject to a compile/lifecycle spike.
+Use **Flutter + Swift/Kotlin NativeHost + Rust core** as the baseline, subject
+to a compile/lifecycle spike.
 
 Reasons:
 
@@ -62,8 +68,9 @@ Reasons:
    scheduling, push/local notifications, and native LLM adapters.
 3. The current React/Tauri desktop shell is desktop-shaped and is not a mobile
    application entry point.
-4. Flutter can call a C-compatible Rust boundary directly. The official Flutter
-   workflow now supports native-code packages and generated bindings.
+4. Flutter can use a generated Pigeon API to the native host, while Swift/Kotlin
+   calls a stable C ABI/JNI Rust boundary. This also works when an OS background
+   callback runs without a Flutter engine.
 
 React Native is not recommended: there is no React Native code, no Rust bridge,
 and it would add another native-module architecture without a repository
@@ -265,10 +272,11 @@ These invariants belong in Rust tests and FFI contract tests, not only UI copy.
 flowchart TB
     subgraph APP["OneBrain Mobile"]
         UI["Flutter UI\ncapture · browse · KQL · consent · node status"]
-        PS["Platform services\nKeychain/Keystore · lifecycle · scheduler\ncamera · speech · notifications · connectivity"]
-        FFI["Generated typed FFI\nbounded commands · cancellation · event stream"]
+        PS["NativeHost + ExecutionGrantBroker\nKeychain/Keystore · lifecycle · scheduler\ncamera · speech · notifications · connectivity"]
+        FFI["Generated Pigeon API + stable Rust ABI\nbounded commands · cancellation · event stream"]
 
         subgraph RUST["Autonomous Rust Mobile Node"]
+            ACT["ActivationArbiter\none generation · one writer · recovery fence"]
             FACADE["MobileRuntimeFacade"]
             CORE["Node core\nidentity · canonical validation · Vault/storage · KQL\nquarantine · materialization · network state"]
             TOOLS["Deterministic ToolOrchestrator\ncatalog · schema · policy · consent · execution · audit"]
@@ -288,8 +296,9 @@ flowchart TB
 
     UI --> FFI
     UI --> PS
-    FFI --> FACADE
-    PS --> FACADE
+    FFI --> PS
+    PS --> ACT
+    ACT --> FACADE
     FACADE --> CORE
     FACADE --> TOOLS
     FACADE --> POLICY
@@ -372,6 +381,11 @@ different claims.
 Do not expose the complete `OneBrainNode` across FFI. Introduce a narrow
 `MobileRuntimeFacade` in a thin `onebrain-mobile-core` with:
 
+- a production topology of Flutter -> generated Pigeon API -> Swift/Kotlin
+  `NativeHost` -> stable C ABI/JNI -> Rust;
+- the same native-to-Rust activation path for BGTask, background transfer,
+  Worker/Service, share inbox, and notification callbacks when Dart is absent;
+- one generation-fenced `ActivationArbiter` and one database writer;
 - versioned generated request/response DTOs;
 - opaque handles instead of raw Rust pointers;
 - bounded lists, strings, blobs, and pagination;
@@ -933,6 +947,11 @@ ExecutionLease {
 
 One activation arbiter owns the database writer/runtime. A stale callback from
 an earlier process generation cannot commit into the current generation.
+It owns a set of grants keyed by ID: backgrounding removes the foreground grant
+but does not cancel a still-valid narrower OS transfer/processing grant.
+Draining starts only when the last applicable grant ends or a safety fence
+revokes all work; a new valid grant before teardown may resume through the same
+generation fence.
 
 ### 8.2 Durable state and abrupt death
 
@@ -985,7 +1004,10 @@ Timers and push notifications are wake hints, never the only record of work.
 On iOS, `BGProcessingTask` is system-scheduled and can be interrupted.
 `BGContinuedProcessingTask` is for a user-started job with a completion goal, not
 an infinite peer daemon. Background `URLSession` can continue HTTP(S) artifact
-transfer outside the app process; it does not carry custom QUIC/OBP traffic.
+transfer outside the app process; its delegate must durably move the ephemeral
+download file into a ciphertext/signed-artifact landing inbox before returning,
+then defer protected import until unlock. It does not carry custom QUIC/OBP
+traffic.
 Background push can be throttled/coalesced and is only a wake hint.
 
 On Android:
@@ -995,6 +1017,9 @@ On Android:
 - Android 15+ limits background `dataSync`/`mediaProcessing` FGS time; the
   `dataSync` allowance is an aggregate six hours per 24 hours for the app;
 - the user can stop an FGS/app from Task Manager without a cleanup callback;
+  this does not by itself cancel already scheduled jobs/alarms;
+- a user-stopped UIDT may kill the process without `onStopJob` and must remain
+  `paused_by_user` until a new foreground user action resubmits it;
 - WorkManager/JobScheduler and long-running workers remain quota- and
   constraint-governed;
 - `dataSync` is valid only during real transfer/reconciliation;
@@ -1016,6 +1041,9 @@ The node is autonomous but connectivity is intermittent:
 - treat `{NodeID, endpoint, connectivity_epoch, expires_at, source}` as a route;
   an IP address/socket is never identity;
 - publish presence only for a live network lease with a short TTL;
+- replay of an exact `LeaseCID` never renews observer-local age; renewal
+  reserves/persists a strictly higher generation and valid key-state frontier,
+  while retirement persists an exact non-regressing floor before publish;
 - on Wi-Fi/cellular/VPN/path change, increment the connectivity epoch, fence old
   sockets, reconnect and resume from the durable journal;
 - use direct connectivity first and a bounded opaque relay only if the approved
@@ -1088,14 +1116,25 @@ unbounded RAM, radio, or concurrency.
 ### 9.1 Key custody
 
 Maintain protocol-compatible Ed25519 signing domains through typed signer
-interfaces.
+interfaces:
+
+- transport NodeID uses `SessionIdentitySigner` for session authentication
+  only;
+- each namespace FeedID/generation uses a separate `FeedEventSigner` for event
+  authorship and eligible provider records;
+- Actor-root custody is a separate delegation/recovery authority and is never
+  loaded merely to run network transport.
+
+The NodeID, feed, and Actor-root signer are never the same key. Transport
+authentication grants no feed/Actor/publish/tool authority.
 
 Do not claim that every Secure Enclave/StrongBox directly stores an Ed25519 key:
 hardware key stores support a platform/device-dependent algorithm set. A safe
-portable design is:
+portable design for **each software-backed domain independently** is:
 
-1. generate the protocol Ed25519 secret locally;
-2. encrypt it with a random wrapping key;
+1. generate that domain's protocol Ed25519 signing seed locally and derive only
+   its matching public identity;
+2. encrypt it with a domain-specific random wrapping key;
 3. protect the wrapping key or protected item through Keychain/Android Keystore;
 4. require device credential/biometric policy for sensitive use;
 5. expose only typed signing operations to Rust/domain callers;
@@ -1104,6 +1143,15 @@ portable design is:
 
 Biometrics gate local key use; they are not OneBrain identity, global authority,
 or traditional server login.
+
+If the transport signer is unavailable, the first release does not authenticate
+background P2P. If the exact feed signer/key-state is unavailable, it does not
+sign a provider claim. An OS daemon may finish a ciphertext transfer, but
+import/acknowledgement waits for unlock. Any future background credential must
+be separately generated, expiring, revocable and valid under an explicit
+delegation protocol; it remains limited to transport/availability—never Public
+Use, tools, adoption or authority grants. Share/notification extensions never
+receive any Node/feed/Actor signing seed or vault master key.
 
 NodeID, ActorID and FeedID remain separate. A desktop node has no parent,
 hosting, recovery, inference, or authority privilege over a mobile node merely
