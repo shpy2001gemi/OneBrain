@@ -39,6 +39,12 @@ defined in §8.
    the whole app with an error screen.
 9. There is no Wallet/OBT, global feed, trending, active distributed KQL, or
    always-on-node route before its upstream authority exists.
+10. **My** and **Received** are origin/acquisition views over the same immutable
+    KU and media identities. They are not competing truth classes, and a
+    sender peer is not presented as the author.
+11. A logical path marked **design-reserved** is documentation for a future
+    gated flow. It must not be registered, deep-linked, notified, or exposed in
+    consumer navigation before the named gate closes.
 
 ## 2. Adaptive navigation model
 
@@ -114,8 +120,8 @@ flowchart TB
     Shell["Main shell"]
 
     Shell --> Home["Home<br/>MOB-HOM"]
-    Shell --> Library["Library<br/>MOB-LIB / KNO / MED"]
-    Shell --> Capture["Capture<br/>MOB-CAP"]
+    Shell --> Library["Library<br/>MOB-LIB / KNO / MED / FID / MAT"]
+    Shell --> Capture["Capture<br/>MOB-CAP / ENC"]
     Shell --> Assistant["Assistant<br/>MOB-AI / MOD"]
     Shell --> Settings["Settings<br/>MOB-SEC / DAT / MOD / NET / NTF / SYS"]
 
@@ -124,16 +130,31 @@ flowchart TB
     Home --> Inbox["Durable inbox"]
     Home --> Recent["Recent and drafts"]
 
-    Library --> Knowledge["My knowledge"]
+    Library --> Knowledge["Knowledge"]
+    Knowledge --> MyKU["My / local-created KU"]
+    Knowledge --> ReceivedKU["Received KU"]
+    MyKU --> KUDetail["Canonical KU detail<br/>MOB-SCR-KNO-001"]
+    ReceivedKU --> KUDetail
+    KUDetail --> Encoding["Encoding and private Save evidence"]
+    KUDetail --> Fidelity["Fidelity portfolio"]
+    Fidelity --> VerifyRequests["Verifier requests<br/>design-reserved"]
+    KUDetail -->|"eligible local KU only"| Publish["Generic KU publication<br/>design-reserved"]
+    Knowledge --> Needs["Private matching targets"]
+    Knowledge --> Matches["Quarantined matches"]
     Library --> Concepts["Concept Registry"]
     Library --> Media["Media"]
+    Media --> MyMedia["My media"]
+    Media --> ReceivedMedia["Received media"]
+    MyMedia --> MediaDetail["Canonical media detail"]
+    ReceivedMedia --> MediaDetail
     Library --> Search["Local search"]
     Library --> KQL["Local KQL"]
     Library --> Graph["Local neighborhood"]
-
     Capture --> Source["Source chooser"]
     Capture --> Composer["Composer/import"]
     Capture --> Review["Candidate review"]
+    Capture --> Encode["Encode and validate KU"]
+    Capture --> Save["Explicit private save"]
 
     Assistant --> Threads["Threads"]
     Assistant --> Conversation["Conversation"]
@@ -184,23 +205,27 @@ flowchart TB
 
 | Screen ID | Logical path | Responsibility | Feature mapping |
 |---|---|---|---|
-| `MOB-SCR-LIB-001` | `/library` | Segmented local scopes: Knowledge, Concepts, Media | `MOB-LIB-001`, `MOB-DAT-001`, `MOB-MED-003` |
+| `MOB-SCR-LIB-001` | `/library` | Three phone-safe groups: Knowledge (My/Local, Received, gated Needs/Matches), Media (My, Received), and Concepts; search/KQL/graph remain contextual actions and every group states its current local/network boundary | `MOB-LIB-001/008/009`, `MOB-DAT-001`, `MOB-MED-003/009`, `MOB-MAT-001/004` |
 | `MOB-SCR-LIB-002` | `/library/search` | Local keyword/label/CCID search, filter, scope and limitations | `MOB-LIB-002/004/005/007` |
 | `MOB-SCR-LIB-003` | `/library/kql` | Local KQL editor, syntax help, history and bounded results | `MOB-LIB-003/005` |
 | `MOB-SCR-LIB-004` | `/library/graph/:local_ref` | Small 2D neighborhood plus accessible list alternative | `MOB-LIB-006` |
 | `MOB-SCR-LIB-005` | `/library/concepts` | Browse labels/languages from one active registry release | `MOB-LIB-002`, `MOB-DAT-001` |
 | `MOB-SCR-LIB-006` | `/library/concepts/:ccid` | Concept labels, language fallback, relationships and release provenance | `MOB-LIB-002/005`, `MOB-SYS-001` |
-| `MOB-SCR-KNO-001` | `/library/knowledge/:local_ref` | Knowledge content, source, provenance, branches, disclosure, media and workflow | `MOB-KNO-001/004/005` |
+| `MOB-SCR-LIB-007` | `/library/my-ku` | My/local-created origin shelf; “authored by me” requires future qualifying `AuthorshipEvidence`, while generic Feed references are insufficient and author otherwise remains unresolved | `MOB-LIB-008` |
+| `MOB-SCR-LIB-008` | `/library/received-ku` | Accepted Received KU shelf; author requires qualifying future `AuthorshipEvidence` and otherwise remains unresolved, while source peer, selector, acquisition and retention are separate facets | `MOB-LIB-009` |
+| `MOB-SCR-KNO-001` | `/library/knowledge/:local_ref` | Canonical detail for either My or Received KU: content, source, qualifying future `AuthorshipEvidence` or unresolved author separately from source-peer provenance, fidelity, branches, disclosure, retention, media and workflow; gated “match this KU” creates a private target, never a network query | `MOB-KNO-001/004/005`, `MOB-LIB-008..010`, `MOB-MED-009`, `MOB-MAT-001` |
 | `MOB-SCR-KNO-002` | `/library/knowledge/:local_ref/edit` | New local draft revision and validation | `MOB-KNO-002` |
 | `MOB-SCR-KNO-003` | `/library/knowledge/:local_ref/organize` | Tags, collections and relationship proposal editing | `MOB-KNO-003` |
 | `MOB-SCR-KNO-004` | `/library/knowledge/:local_ref/workflow` | Six-stage read-only workflow inspection; later gated actions | `MOB-KNO-004` |
 | `MOB-SCR-KNO-005` | `/library/knowledge/:local_ref/conflicts` | Local branch inspection; gated reconciliation-conflict resolution when T2 is active | `MOB-KNO-005/008` |
-| `MOB-SCR-KNO-006` | `/public-use/prepare/:local_ref` | Exact Public Use preview and prepare step | `MOB-KNO-006` |
-| `MOB-SCR-KNO-007` | `/public-use/confirm/:opaque_intent_ref` | Re-authenticate, exact confirm/cancel and publication/outbox status | `MOB-KNO-007` |
-| `MOB-SCR-MED-001` | `/library/media/:local_manifest_ref` | Verified viewer/player with local availability and source class | `MOB-MED-001..003/005` |
+| `MOB-SCR-KNO-006` | `/public-use/prepare/:local_ref` | Exact Public `UseEvidence` preview and prepare step; never substitutes for generic KU publication | `MOB-KNO-006` |
+| `MOB-SCR-KNO-007` | `/public-use/confirm/:opaque_intent_ref` | Re-authenticate, exact Public `UseEvidence` confirm/cancel and publication/outbox status | `MOB-KNO-007` |
+| `MOB-SCR-MED-001` | `/library/media/:local_manifest_ref` | Canonical verified viewer/player for My or Received media with local availability, source class and KU/direct-share provenance | `MOB-MED-001..003/005/009/010` |
 | `MOB-SCR-MED-002` | `/library/media/:local_manifest_ref/info` | Manifest/root, verified bytes and local ownership/pin/cache; gated remote provider/custody sections | `MOB-MED-003/006..008` |
 | `MOB-SCR-MED-003` | `/library/media/:local_manifest_ref/share` | Redact/transcode preview, recipient policy and access grants | `MOB-MED-004` |
-| `MOB-SCR-MED-004` | `/library/media/:local_manifest_ref/transfer` | Missing pieces, provider sample, progress, resume and failure evidence | `MOB-MED-005/006` |
+| `MOB-SCR-MED-004` | `/library/media/:local_manifest_ref/transfer` | Missing pieces, provider sample, progress, resume and failure evidence for explicit received-media download/stream/view | `MOB-MED-005/006/010` |
+| `MOB-SCR-MED-005` | `/library/my-media` | Local media shelf separated by `OwnedOriginal`, private attachment, pinned and cache retention facts | `MOB-MED-001/003/007` |
+| `MOB-SCR-MED-006` | `/library/received-media` | Received KU/direct-share media shelf with `ReferenceOnly`/partial/complete availability and explicit download/stream/view actions | `MOB-MED-002/005/008..010` |
 
 ### 5.4 Capture
 
@@ -208,14 +233,73 @@ flowchart TB
 |---|---|---|---|
 | `MOB-SCR-CAP-001` | `/capture` | Source chooser: text, clipboard, share, photo/video/document/audio picker, camera, audio/voice | `MOB-HOM-002`, `MOB-CAP-001..005` |
 | `MOB-SCR-CAP-002` | `/capture/text` | Text/clipboard composer, language and draft controls | `MOB-CAP-001/007` |
-| `MOB-SCR-CAP-003` | `/capture/share/:spool_ref` | Inspect encrypted share spool before import | `MOB-CAP-002/006` |
+| `MOB-SCR-CAP-003` | `/capture/spools/:spool_ref` | Inspect encrypted share spool before import | `MOB-CAP-002/006` |
 | `MOB-SCR-CAP-004` | `/capture/import` | Picker/import selection, exact type/size and staging progress | `MOB-CAP-003/006`, `MOB-MED-001` |
 | `MOB-SCR-CAP-005` | `/capture/camera` | Camera capture, permission and optional OCR review | `MOB-CAP-004/006` |
 | `MOB-SCR-CAP-006` | `/capture/audio` | Voice/audio recording, permission and optional transcription | `MOB-CAP-005/006` |
-| `MOB-SCR-CAP-007` | `/capture/:operation_ref/review` | Source/candidate/provenance/unknowns; edit and explicit local save | `MOB-CAP-007`, `MOB-KNO-002/003` |
-| `MOB-SCR-CAP-008` | `/capture/:operation_ref/result` | Durable local receipt, retained original and next local actions | `MOB-CAP-006/007`, `MOB-MED-001` |
+| `MOB-SCR-CAP-007` | `/capture/operations/:operation_ref/review` | Exact source, candidate, provenance and unknowns; edit, save only the source/draft, or enter deterministic KU Encode | `MOB-CAP-007`, `MOB-ENC-001/002`, `MOB-KNO-002/003` |
+| `MOB-SCR-CAP-008` | `/capture/operations/:operation_ref/result` | Ephemeral operation outcome/router: show draft/import outcome, or after private KU Save immediately resolve the returned object into its persistent canonical encoding/detail route; it is not a second KU receipt store | `MOB-CAP-006/007`, `MOB-MED-001` |
 
-### 5.5 Assistant, context, tools, and model route
+### 5.5 Self-encode and generic KU publication
+
+`MOB-SCR-ENC-001..003` are T1 routes after `MOB-GATE-KU-ENCODE`.
+`MOB-SCR-PUB-001..003` are design-reserved and must not be registered before
+`MOB-GATE-KU-PUBLISH`; Public `UseEvidence` routes do not satisfy that gate.
+
+| Screen ID | Logical path | Responsibility | Feature mapping |
+|---|---|---|---|
+| `MOB-SCR-ENC-001` | `/capture/operations/:operation_ref/encode` | Select deterministic/rule or qualified optional LLM route; bind one exact `LOCAL_ONLY` source, profile and provenance | `MOB-ENC-001` |
+| `MOB-SCR-ENC-002` | `/capture/operations/:operation_ref/encoding-review` | Review resolved CCIDs, source spans, genes, roles/order, values, units, conditions, unknowns and exact validation result; only a complete candidate exposes the explicit `Save Private KU` command | `MOB-ENC-002/003` |
+| `MOB-SCR-ENC-003` | `/library/knowledge/:local_ref/encoding` | Read-only private Save receipt, immutable bytes/CID, local revisions, alternate encodings, qualifying future `AuthorshipEvidence` or unresolved author, and local fidelity evidence | `MOB-ENC-003/004`, `MOB-FID-001/007/008` |
+| `MOB-SCR-PUB-001` | `/knowledge-publication/prepare/:local_ref` | **Design-reserved:** preview one exact generic Public KU representation, source/media disclosure, Feed, namespace, rights and permanence | `MOB-ENC-005` |
+| `MOB-SCR-PUB-002` | `/knowledge-publication/confirm/:opaque_intent_ref` | **Design-reserved:** fresh re-authorization and exact sign/confirm/cancel; no background or notification confirmation | `MOB-ENC-006` |
+| `MOB-SCR-PUB-003` | `/knowledge-publication/status/:local_operation_ref` | **Design-reserved:** local commit and pending/deferred outbox state without claiming delivery, adoption, truth or availability | `MOB-ENC-006` |
+
+The publication entry appears only when the future profile proves the exact
+object and authority eligible. Whether a Received KU may be re-announced or
+referenced as the same bytes, must use a new envelope, or requires a derived
+object is an open `MOB-GATE-KU-PUBLISH` ADR decision. No variant is exposed
+before that gate.
+
+### 5.6 Encoding-fidelity evidence and blind verification
+
+The portfolio screen is T1 after `MOB-GATE-FIDELITY`. Remote job/request
+screens are design-reserved and must not be registered before
+`MOB-GATE-VERIFIER-EXCHANGE`.
+
+| Screen ID | Logical path | Responsibility | Feature mapping |
+|---|---|---|---|
+| `MOB-SCR-FID-001` | `/library/knowledge/:local_ref/fidelity` | Publisher and external-blind attempts/attestations, alternate encodings, correlation groups, frontier and `SELF_ATTESTED`/`PARTIALLY_CORROBORATED`/`FIDELITY_CORROBORATED_RELATIVE` assessment | `MOB-FID-001/007/008` |
+| `MOB-SCR-FID-002` | `/library/knowledge/:local_ref/fidelity/requests/create` | **Design-reserved:** prepare an external-blind task and exact revocable raw-source permit, disclosure, byte/work/TTL and retention bounds | `MOB-FID-002` |
+| `MOB-SCR-FID-003` | `/fidelity/jobs` | **Design-reserved:** verifier Offered, Active, Return pending and History scopes with eligibility, resource and disclosure facts | `MOB-FID-003/009` |
+| `MOB-SCR-FID-004` | `/fidelity/jobs/:local_job_ref` | **Design-reserved:** one durable verifier job, permit, deadline, checkpoints and pause/cancel state | `MOB-FID-002/003/009` |
+| `MOB-SCR-FID-005` | `/fidelity/jobs/:local_job_ref/source` | **Design-reserved:** encrypted exact-source download, source-commitment verification and retention status | `MOB-FID-004` |
+| `MOB-SCR-FID-006` | `/fidelity/jobs/:local_job_ref/workspace` | **Design-reserved:** bounded external-blind encode with target absent from the workflow transcript, plus durable output commitment before reveal | `MOB-FID-005` |
+| `MOB-SCR-FID-007` | `/fidelity/jobs/:local_job_ref/checks` | **Design-reserved:** post-commit target reveal and exact source/gene/concept/extended fidelity checks | `MOB-FID-006` |
+| `MOB-SCR-FID-008` | `/fidelity/jobs/:local_job_ref/attest` | **Design-reserved:** review/sign categorical fidelity attestation, return receipt and permitted cleanup | `MOB-FID-006/009` |
+| `MOB-SCR-FID-009` | `/library/knowledge/:local_ref/fidelity/requests` | **Design-reserved:** publisher-side campaign/task list with offered, accepted, expired, revoked and attestation pending/returned states | `MOB-FID-002/006/009` |
+| `MOB-SCR-FID-010` | `/library/knowledge/:local_ref/fidelity/requests/tasks/:local_task_ref` | **Design-reserved:** one exact offer/permit lifecycle, source-access validity, return status, future-access revoke and honest cleanup limits | `MOB-FID-002/006/009` |
+
+After process death, a verifier route is re-resolved from durable state rather
+than its previous widget:
+
+```text
+Offered
+  -> Accepted
+  -> SourceDownloading
+  -> SourceVerified
+  -> BlindWork
+  -> AttemptCommitted
+  -> TargetRevealed
+  -> AttestationSigned
+  -> ReturnPending
+  -> Returned
+```
+
+Expiry, rejection, revocation, resource pause and cleanup are typed branches;
+none may skip `AttemptCommitted` before `TargetRevealed`.
+
+### 5.7 Assistant, context, tools, and model route
 
 | Screen ID | Logical path | Responsibility | Feature mapping |
 |---|---|---|---|
@@ -227,7 +311,7 @@ flowchart TB
 | `MOB-SCR-AI-006` | `/assistant/tool/:operation_ref` | Tool running/unknown/reconciled receipt and bounded result | `MOB-AI-008`, `MOB-NTF-001` |
 | `MOB-SCR-AI-007` | `/assistant/provider` | Quick route selection and qualification reason; links to full model settings | `MOB-AI-003/005/006/007`, `MOB-MOD-004/006` |
 
-### 5.6 Settings index and identity/security
+### 5.8 Settings index and identity/security
 
 | Screen ID | Logical path | Responsibility | Feature mapping |
 |---|---|---|---|
@@ -239,7 +323,7 @@ flowchart TB
 | `MOB-SCR-SEC-005` | `/settings/security/history` | Redacted sensitive-operation history | `MOB-SEC-006` |
 | `MOB-SCR-SEC-006` | `/settings/erase` | Release-gated typed local erase/reset flow | `MOB-SEC-007` |
 
-### 5.7 Registry, storage, backup, restore, and export
+### 5.9 Registry, storage, backup, restore, and export
 
 | Screen ID | Logical path | Responsibility | Feature mapping |
 |---|---|---|---|
@@ -252,7 +336,7 @@ flowchart TB
 | `MOB-SCR-DAT-007` | `/settings/export` | Select reviewed scope and create a vault-encrypted portable export; no plaintext private export | `MOB-DAT-008` |
 | `MOB-SCR-DAT-008` | `/settings/migration` | T3 encrypted device migration, target verification and source identity retirement decision | `MOB-DAT-009`, `MOB-SEC-004` |
 
-### 5.8 AI providers and models
+### 5.10 AI providers and models
 
 | Screen ID | Logical path | Responsibility | Feature mapping |
 |---|---|---|---|
@@ -260,7 +344,7 @@ flowchart TB
 | `MOB-SCR-MOD-002` | `/settings/ai/models` | Signed profile catalog, installed releases, size/license and actions | `MOB-MOD-002/003/005/006` |
 | `MOB-SCR-MOD-003` | `/settings/ai/models/:release_ref` | Exact artifact, download/verify/activate/rollback/delete and evaluation evidence | `MOB-MOD-003..006` |
 
-### 5.9 Network, peers, reconciliation, and seeding
+### 5.11 Network, peers, reconciliation, and seeding
 
 These screens are absent from consumer navigation until
 `MOB-GATE-NETWORKED-BETA` passes. The carrier screen additionally requires
@@ -282,7 +366,23 @@ may show a non-actionable gate status.
 before M6. This is its explicit internal/blocked sitemap mapping for navigation
 acceptance; it must not be confused with LAN peer discovery.
 
-### 5.10 Notifications, language, permissions, lifecycle, and diagnostics
+### 5.12 Passive one-hop OBP matching
+
+These routes are absent until `MOB-GATE-NETWORKED-BETA` and
+`MOB-GATE-OBP-MATCH` pass. They consume already reconciled, validated public
+OBP deltas and match them locally against private targets. They do not expose
+NeedIR/raw KQL/StandingNeed IDs, issue active distributed queries, or require
+M6.
+
+| Screen ID | Logical path | Responsibility | Feature mapping |
+|---|---|---|---|
+| `MOB-SCR-MAT-001` | `/library/needs` | Private matching-target shelf with active/paused/retired lifecycle and exact local scope | `MOB-MAT-001` |
+| `MOB-SCR-MAT-002` | `/library/needs/create` | Create a private target from the current KU/Receptor/Assembly or author a StandingNeed, with constraints, local selector, budget and retention | `MOB-MAT-001` |
+| `MOB-SCR-MAT-003` | `/library/needs/items/:local_need_ref` | Inspect/pause/resume/retire one private target and its frontier-relative results | `MOB-MAT-001/002` |
+| `MOB-SCR-MAT-004` | `/library/matches` | Quarantined passive-match inbox; no auto-materialize, adopt, publish or tool action | `MOB-MAT-002/004` |
+| `MOB-SCR-MAT-005` | `/library/matches/:local_proposal_ref` | Author only from qualifying future `AuthorshipEvidence`, otherwise unresolved, separately from authenticated responder/source-peer and frontier provenance, score/check vector, coverage limitations and local retain/dismiss/re-evaluate | `MOB-MAT-003/004` |
+
+### 5.13 Notifications, language, permissions, lifecycle, and diagnostics
 
 | Screen ID | Logical path | Responsibility | Feature mapping |
 |---|---|---|---|
@@ -345,7 +445,9 @@ The following never run as a lightweight one-tap background action:
 - registry/model capacity preflight and activation;
 - cloud context or tool-result disclosure;
 - tool proposal confirmation for a risk-gated effect;
-- exact Public Use prepare and confirm;
+- exact Public UseEvidence prepare and confirm;
+- exact generic KU publication prepare and confirm, after its separate gate;
+- blind-verifier source disclosure/permit, target reveal and attestation;
 - peer enrollment/revocation;
 - bounded seed-session start;
 - media share representation/access grants;
@@ -354,6 +456,105 @@ The following never run as a lightweight one-tap background action:
 
 Only one blocking flow is active at a time. A second request is queued as an
 opaque durable intent or rejected with a typed reason; modals are not stacked.
+
+### 7.3 Canonical KU journeys
+
+#### `MOB-JRN-009` — Self-encode, save, and gated publication
+
+```text
+Capture/import exact local source
+  -> candidate review
+  -> deterministic encode + profile validation
+  -> explicit immutable private Save
+  -> My KU detail + encoding/fidelity portfolio
+  -> [only after KU-PUBLISH] prepare exact public representation
+  -> fresh confirm/sign
+  -> durable publication status
+  -> [separate VERIFIER-EXCHANGE gate + source consent]
+     optional Request verification campaign
+```
+
+Save remains fully offline. It never implies publication, seeding, Public
+`UseEvidence`, adoption, Mapping materialization, or truth.
+
+#### `MOB-JRN-010` — External-blind encoding-fidelity job
+
+```text
+Publisher prepares exact source permit and task
+  -> verifier explicitly accepts disclosed work
+  -> encrypted raw source download + commitment check
+  -> external-blind encode with target omitted from the task/transcript
+  -> durable output commit
+  -> target reveal + exact checks
+  -> signed categorical attestation
+  -> publisher portfolio reduction at a named frontier
+  -> source permit expiry/revoke and bounded cleanup
+```
+
+This entire cross-node journey is absent until
+`MOB-GATE-VERIFIER-EXCHANGE`. A hard mismatch is fidelity evidence, not a
+vote, truth judgment, winner, deletion request, publication veto or reward.
+For an already published KU, the screen must also state that transcript order
+does not prove the verifier could not have learned the target elsewhere.
+
+#### `MOB-JRN-011` — My/Received KU and media
+
+```text
+Library
+  -> My KU OR Received KU
+  -> canonical KU detail
+  -> provenance + fidelity + media references
+  -> media availability
+  -> explicit verified download/stream/view
+  -> optional PinnedRemote retention
+```
+
+The author, authenticated sender peer, acquisition path, local retention and
+semantic state remain separate facts. A received KU can be readable while its
+media remains `ReferenceOnly`.
+
+Direct private media share, which does not invent a KU relationship, uses its
+own gated branch:
+
+```text
+admitted private ShareRepresentation + access grant
+  -> manifest/grant validation
+  -> Received Media
+  -> canonical media detail
+  -> explicit verified download/stream/view
+  -> optional PinnedRemote retention
+```
+
+#### `MOB-JRN-012` — Passive one-hop OBP match
+
+```text
+Create private target from a local KU/Receptor or StandingNeed
+  -> validated public OBP delta arrives by reconciliation
+  -> local private reunion join
+  -> quarantined BindingProposal
+  -> match explanation + scoped coverage
+  -> local retain/dismiss/re-evaluate
+```
+
+No private target or query leaves the vault, and no match action is executable.
+Active network discovery remains `MOB-NET-006`, absent before M6.
+
+### 7.4 Journey-to-screen traceability
+
+| Journey | Primary screen flow | Required gate boundary |
+|---|---|---|
+| `MOB-JRN-001` | `MOB-SCR-ONB-001..006` → `MOB-SCR-HOM-001` | `CORE`, `ARCHIVE`, `REGISTRY`, `OFFLINE-MVP` |
+| `MOB-JRN-002` | `MOB-SCR-CAP-001..008` | T1; `MEDIA`, `SPEECH`, `AI/CLOUD` only by selected route |
+| `MOB-JRN-003` | `MOB-SCR-LIB-001..006` → `MOB-SCR-KNO-001` | T1 local scope; `AI` only for optional rerank |
+| `MOB-JRN-004` | `MOB-SCR-AI-001..006` | deterministic T1 baseline; `AI/CLOUD` only by selected provider |
+| `MOB-JRN-005` | `MOB-SCR-MED-001..004` | `MEDIA`; network share/retrieval also requires `NETWORKED-BETA` |
+| `MOB-JRN-006` | `MOB-SCR-KNO-006..007` | `NETWORKED-BETA`; Public UseEvidence only |
+| `MOB-JRN-007` | `MOB-SCR-DAT-005..006`, recovery via `MOB-SCR-ENT-004/005` | `ARCHIVE`; identity recovery also requires `RECOVERY` |
+| `MOB-JRN-008` | `MOB-SCR-NET-001/005/006` → `MOB-SCR-OPS-001/002` | `NETWORKED-BETA`; seeding also requires `MEDIA` |
+| `MOB-JRN-009` | `MOB-SCR-CAP-007` → `MOB-SCR-ENC-001..003` → optional `MOB-SCR-PUB-001..003` | `KU-ENCODE`; publication separately requires `NETWORKED-BETA/KU-PUBLISH` |
+| `MOB-JRN-010` | publisher `MOB-SCR-FID-001/002/009/010`; verifier `MOB-SCR-FID-003..008` | local portfolio `FIDELITY`; cross-node work `NETWORKED-BETA/VERIFIER-EXCHANGE` |
+| `MOB-JRN-011` | `MOB-SCR-LIB-007/008` → `MOB-SCR-KNO-001` → `MOB-SCR-MED-001/004..006` | My/local T1; Received requires `NETWORKED-BETA`, remote media also `MEDIA` |
+| `MOB-JRN-012` | `MOB-SCR-MAT-001..005` | `NETWORKED-BETA/OBP-MATCH`; never M6 active discovery |
 
 ## 8. Deep links, share intents, notifications, and widgets
 
@@ -371,8 +572,9 @@ untrusted route/source
   -> explicit typed command if the user chooses
 ```
 
-Opening a route never performs Public Use, tool execution, peer enrollment,
-restore, erase, revoke, media disclosure, or canonical mutation.
+Opening a route never performs Public UseEvidence or generic KU publication,
+verifier-job acceptance/attestation, match disposition, tool execution, peer
+enrollment, restore, erase, revoke, media disclosure, or canonical mutation.
 
 ### 8.2 External route registry
 
@@ -390,8 +592,13 @@ Operation, activity-intent, Assistant-thread and private item references are
 app-internal routes only; they are never registered as external URL schemes.
 Public-object retrieval/adoption links are not registered in V1. Adding them
 requires a separate receive/import feature ID, read-only preview screen,
-privacy model and release gate; Public Use publication does not grant that
+privacy model and release gate; Public UseEvidence publication does not grant that
 authority.
+
+Notifications may open fixed Activity or a re-resolved internal detail after
+unlock. They may never accept verifier work, reveal a target, sign an
+attestation, publish a KU/UseEvidence, retain/dismiss a match, download media,
+or grant raw-source access.
 
 External URLs never contain:
 
@@ -399,7 +606,7 @@ External URLs never contain:
 - a product intent, operation or Assistant session identifier;
 - raw KQL or private context;
 - a Node/feed/Actor private key or recovery material;
-- a bearer token, recipient media key, tool nonce, or Public Use receipt;
+- a bearer token, recipient media key, tool nonce, or Public UseEvidence receipt;
 - a private filename/title/notification message argument.
 
 ## 9. State-specific sitemap behavior
@@ -411,7 +618,7 @@ External URLs never contain:
 | `ProtectedDataUnavailable` | explanation and retry after device unlock | no vault/signer loop or background auth |
 | `Provisioning` | raw encrypted private draft only, Operations, storage, diagnostics, onboarding registry | no Concept validation/materialization until registry activation; not `Ready` |
 | `Recovering` | recovery progress, cancel only when safe, diagnostics | no new mutation admission |
-| `ReadyOffline` | Home, Capture, Library, deterministic Assistant, Settings | network facts say disabled/unreachable, not error |
+| `ReadyOffline` | Home, Capture, self-encode/private Save, My KU/media, cached Received KU/media/fidelity/matches, deterministic Assistant, Settings | network facts say disabled/unreachable, not error; cached remote-origin data keeps its last observed provenance/availability |
 | `ModelUnavailable` | all core local features | Assistant/provider screens explain exact reason/fallback |
 | `NetworkUnavailable` | all private/offline features | outbound work remains pending within policy |
 | `RegistryDegraded` | private knowledge/detail/export/repair | Concept lookup/search shows named release limitation |
@@ -428,6 +635,9 @@ External URLs never contain:
 | Enabled but temporarily unavailable | screen remains with exact reason and retained capabilities |
 | Kill-switched | stop new admission, show typed operator/policy state, preserve durable local work |
 | Optional ADR gate not closed | carrier, push or custody consumer sections are absent; base T2 remains independently evaluable |
+| `KU-PUBLISH` not closed | generic-publication actions and `MOB-SCR-PUB-*` routes are absent; private encode/Save and Public UseEvidence remain distinct |
+| `VERIFIER-EXCHANGE` not closed | remote fidelity request/job/source/reveal/attest routes are absent; local publisher attempts, alternates and assessments remain usable |
+| `OBP-MATCH` not closed | private target and match-inbox routes are absent; ordinary reconciliation remains independently evaluable |
 | T3 not opened | later feature and route are absent from consumer navigation |
 | Blocked by M6/M7 | no consumer route, badge, placeholder value or simulated feature |
 
@@ -443,10 +653,21 @@ claim.
 - Each tab restores its bounded back stack without treating UI state as durable
   operation truth.
 - Network/AI/notification permission denial leaves private offline flows usable.
+- T1 self-encode/private Save survives airplane mode and process death; no
+  publish action exists until the generic KU publication gate closes.
+- My/Received shelves preserve authorship, sender, acquisition, retention and
+  semantic-state facets, and both resolve to the same canonical detail route.
+- Received media never decodes an unverified byte; `ReferenceOnly`, partial,
+  verified, pinned and provider-observed states are distinguishable.
+- Blind verification enforces commit-before-reveal, exact source permits,
+  categorical attestations and honest cleanup/retention wording.
+- Passive OBP matching sends no private target/query over the wire and exposes
+  only non-executable quarantined proposals; active discovery remains absent
+  before M6.
 - No screen or action bypasses proposal, disclosure, consent, signer, durable
   receipt, or rollout gates.
 - English/Vietnamese labels, text scaling, VoiceOver/TalkBack, reduced motion
   and non-visual graph/status alternatives pass.
 - Error and empty states state the exact local/selector/frontier boundary.
 - Wallet/OBT, global feed/trending, active distributed KQL and automatic Public
-  Use remain absent until separately authorized.
+  UseEvidence remain absent until separately authorized.

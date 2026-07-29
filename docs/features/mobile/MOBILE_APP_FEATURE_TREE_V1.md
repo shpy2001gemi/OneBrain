@@ -77,6 +77,10 @@ marked retired.
 `Optional` means the product remains usable without that device capability or
 provider. It does not weaken safety or offline acceptance.
 
+`BLOCKED → T2` or `BLOCKED → T3` records the intended lane after a currently
+missing authority/profile gate closes. It is not permission to expose a
+placeholder consumer action before that gate.
+
 The lane names describe the capability environment, while named gates define
 release ordering. A `T1` feature is offline-capable but is not automatically a
 prerequisite of the exact `MOB-GATE-OFFLINE-MVP` journey. In particular,
@@ -96,6 +100,8 @@ all required unless the annotation explicitly says “by route”.
 | `MOB-GATE-RECOVERY` | typed identity recovery/migration, wrong-key and duplicate-identity drills |
 | `MOB-GATE-REGISTRY` | exact signed release, capacity preflight, mmap query, A/B activation and rollback |
 | `MOB-GATE-OFFLINE-MVP` | capture/save/search/local KQL/backup journey passes in airplane mode with every LLM/network lane disabled |
+| `MOB-GATE-KU-ENCODE` | exact `LOCAL_ONLY` source intake, resolved CCIDs/source spans, deterministic canonical encode/validation, verified private storage, idempotency and kill recovery; no network or LLM required |
+| `MOB-GATE-FIDELITY` | protocol `FID-001/002/003` publisher-attempt, external-blind commit/reveal and categorical evidence contracts, alternate preservation and frontier-relative reducer; no cross-node source exchange |
 | `MOB-GATE-AI` | exact model/system/route qualification, applicable license, task × input-language × output-locale and structured-output evaluation; app-managed local routes also require device/resource evidence |
 | `MOB-GATE-SPEECH` | local/system speech-recognition contract, permission/privacy boundary, model/OS qualification, language quality and resource/energy budget |
 | `MOB-GATE-CLOUD` | explicit disclosure, immutable remote route release, cost/retention/region policy |
@@ -104,6 +110,9 @@ all required unless the annotation explicitly says “by route”.
 | `MOB-GATE-PEER` | peer enrollment, authorization, revocation, replay and route-change protocol |
 | `MOB-GATE-STORE` | App Store/Play background-mode and foreground-service policy review |
 | `MOB-GATE-NETWORKED-BETA` | composite gate: `CORE`, `RECOVERY`, `REGISTRY`, `OFFLINE-MVP`, `P5`, `PEER`, `STORE`, privacy wire capture and mobile multi-device canary all pass |
+| `MOB-GATE-KU-PUBLISH` | new generic Public Knowledge publication ADR/profile: reviewed public representation, exact KU `AuthorshipEvidence` predicate/event binding, Feed/Actor authority, namespace/disclosure, prepare/confirm, durable outbox, rollback and no reuse of Public UseEvidence consent |
+| `MOB-GATE-VERIFIER-EXCHANGE` | new cross-node fidelity profile plus completed `RUN-003` or a narrower verifier-only remote-task substrate: signed Offer/Permit/task, exact source-access grant, encrypted bounded source transfer, sandbox/budgets, blind transcript, signed attestation return, replay/revocation/retention and mobile security/canary/store-policy evidence |
+| `MOB-GATE-OBP-MATCH` | M3 passive reunion evidence: authenticated OBP-RP receipt, validated Public Affordance/Receptor admission, private local delta join, restart dedupe, scoped coverage and proposal-only output |
 | `MOB-GATE-CARRIER` | architecture ADR 5 is closed with exact carrier discovery, trust, deployment, mailbox and privacy evidence |
 | `MOB-GATE-PUSH` | architecture ADR 9 is closed for push-broker retention/cost, opaque payloads, token lifecycle and omitted/throttled delivery |
 | `MOB-GATE-CUSTODY` | architecture ADR 10 is closed with signed custody obligations, thresholds, renewal/expiry and GC invariants |
@@ -118,10 +127,15 @@ flowchart LR
     ARCHIVE["Encrypted archive correctness<br/>MOB-GATE-ARCHIVE"]
     OFFLINE["T1 Private Offline MVP<br/>MOB-GATE-OFFLINE-MVP"]
     REG["Exact Concept Registry release<br/>MOB-GATE-REGISTRY"]
+    ENC["Local KU encode/save<br/>MOB-GATE-KU-ENCODE"]
+    FID["Local fidelity evidence<br/>MOB-GATE-FIDELITY"]
     REC["Recovery external-beta gate<br/>MOB-GATE-RECOVERY"]
     AI["Optional AI lanes<br/>MOB-GATE-AI<br/>+ CLOUD for remote"]
     MEDIA["Media local correctness<br/>MOB-GATE-MEDIA"]
     NET["T2 Networked Mobile Beta<br/>MOB-GATE-NETWORKED-BETA"]
+    PUB["Generic Public KU publication<br/>MOB-GATE-KU-PUBLISH"]
+    VERIFY["Cross-node blind verifier<br/>MOB-GATE-VERIFIER-EXCHANGE"]
+    MATCH["Passive one-hop reunion match<br/>MOB-GATE-OBP-MATCH"]
     CARRIER["Optional carrier lane<br/>MOB-GATE-CARRIER"]
     PUSH["Optional push hints<br/>MOB-GATE-PUSH"]
     CUSTODY["Optional custody UI/protocol<br/>MOB-GATE-CUSTODY"]
@@ -131,11 +145,21 @@ flowchart LR
     CORE --> OFFLINE
     ARCHIVE --> OFFLINE
     REG --> OFFLINE
+    CORE --> ENC
+    REG --> ENC
+    ENC --> OFFLINE
+    ENC --> FID
     OFFLINE --> AI
     OFFLINE --> MEDIA
     OFFLINE --> NET
     REC --> NET
     MEDIA --> NET
+    ENC --> PUB
+    NET --> PUB
+    FID --> VERIFY
+    MEDIA --> VERIFY
+    NET --> VERIFY
+    NET --> MATCH
     NET --> CARRIER
     NET --> PUSH
     NET --> CUSTODY
@@ -188,7 +212,7 @@ MOB-SEC-006  Security, authority and sensitive-operation history    [T1]
 MOB-SEC-007  Release-gated local erase/reset with recovery warning  [T3]
 ```
 
-Node transport, feed authorship, Actor root, and media representation keys are
+Node transport, Feed-event authorship, Actor root, and media representation keys are
 separate authority domains. A biometric is a local key-use gate, not OneBrain
 identity or remote login.
 
@@ -214,14 +238,59 @@ MOB-CAP-003  Photo, video, document and audio picker ingestion       [T1]
 MOB-CAP-004  Camera capture and OCR                                 [T1 Optional]
 MOB-CAP-005  Voice/audio capture and local/system transcription     [T1 Optional, SPEECH]
 MOB-CAP-006  Encrypted PrivateLocal source and original preservation [T1, MEDIA]
-MOB-CAP-007  Rule/AI candidate review, edit, save and resume receipt [T1]
+MOB-CAP-007  Rule/AI candidate review, edit, draft-save and resume   [T1]
 ```
 
 Every source enters `PrivateLocal`. OCR, transcription, metadata stripping,
 transcoding, and AI extraction create derived candidates; they do not overwrite
 the owned original or publish it.
 
-### 4.5 Library, search, and local KQL — `MOB-LIB`
+### 4.5 Self-encoding, private save, and KU publication — `MOB-ENC`
+
+```text
+MOB-ENC-001  Create encoding draft from one exact local source       [T1, REGISTRY/KU-ENCODE; AI plus CLOUD only for chosen LLM route]
+MOB-ENC-002  Deterministic KU/Receptor encode and validation         [T1, KU-ENCODE]
+MOB-ENC-003  Explicit immutable private KU save                      [T1, KU-ENCODE]
+MOB-ENC-004  Local revisions and alternate encodings                 [T1, KU-ENCODE]
+MOB-ENC-005  Prepare generic Public KU publication                   [BLOCKED → T2, NETWORKED-BETA/KU-PUBLISH]
+MOB-ENC-006  Confirm/sign Public KU and inspect outbox                [BLOCKED → T2, NETWORKED-BETA/KU-PUBLISH]
+```
+
+Local save, generic KU publication, Public UseEvidence, Mapping
+materialization, and Mapping adoption are five different authority
+transitions. `MOB-ENC-005/006` remain unavailable until a generic KU
+publication profile exists; the frozen Public UseEvidence receipt cannot be
+reused.
+
+### 4.6 Encoding-fidelity evidence and external blind verification — `MOB-FID`
+
+```text
+MOB-FID-001  Publisher encoding-attempt record                       [T1, FIDELITY]
+MOB-FID-002  Prepare blind verifier task and exact source grant      [BLOCKED → T3, NETWORKED-BETA/VERIFIER-EXCHANGE]
+MOB-FID-003  Verifier task inbox and accept/reject                   [BLOCKED → T3, NETWORKED-BETA/VERIFIER-EXCHANGE]
+MOB-FID-004  Download authorized exact raw source                    [BLOCKED → T3, NETWORKED-BETA/VERIFIER-EXCHANGE]
+MOB-FID-005  Blind encode and durable output commitment              [BLOCKED → T3, NETWORKED-BETA/VERIFIER-EXCHANGE; AI for model-backed route]
+MOB-FID-006  Reveal, exact fidelity checks and signed attestation    [BLOCKED → T3, NETWORKED-BETA/VERIFIER-EXCHANGE]
+MOB-FID-007  Fidelity portfolio and frontier-relative assessment     [T1, FIDELITY]
+MOB-FID-008  Immutable alternate-encoding preservation               [T1, FIDELITY]
+MOB-FID-009  Source-grant revoke/expiry and verifier cleanup         [BLOCKED → T3, NETWORKED-BETA/VERIFIER-EXCHANGE]
+```
+
+The current FID profiles are local coordinator contracts. They do not define
+cross-node raw-source exchange. A verifier feature therefore remains blocked
+until `MOB-GATE-VERIFIER-EXCHANGE` closes. Default `FidelityPolicy/1` requires
+a publisher attempt plus at least two external blind attempts in at least two
+evidenced-distinct policy group keys derived jointly over administrative
+principal and pipeline/model lineage; different NodeIDs alone do not create
+groups.
+
+Fidelity is representation-to-source evidence, never a truth vote, winner
+consensus, reward, or deletion rule. Legacy `RAW/SELF/PART/FULL` statuses are
+not mobile product states. Commit-before-reveal proves ordering and binding
+inside the named transcript; it does not prove that an external environment
+could not have learned an already published target elsewhere.
+
+### 4.7 Library, search, and local KQL — `MOB-LIB`
 
 ```text
 MOB-LIB-001  Paginated local library browse                         [T1]
@@ -231,12 +300,24 @@ MOB-LIB-004  Local scope, filter, sort and language controls        [T1]
 MOB-LIB-005  Provenance, coverage and limitation display            [T1]
 MOB-LIB-006  Small 2D local neighborhood view                       [T1 Optional]
 MOB-LIB-007  Capability-gated local semantic rerank/search          [T1 Optional, AI]
+MOB-LIB-008  My/local-created KU scope                               [T1]
+MOB-LIB-009  Received validated KU scope/inbox                       [T2, NETWORKED-BETA]
+MOB-LIB-010  Received KU detail and local retention actions          [T2, NETWORKED-BETA]
 ```
 
 A zero-result view says that no match was found in the named local scope and
 frontier. It never claims network-wide absence.
 
-### 4.6 Knowledge detail and explicit authority transitions — `MOB-KNO`
+`My` and `Received` are origin facets, not exclusive truth classes. The same
+CID may be authored by the local Feed and observed through multiple peers.
+Authorship, acquisition path, retention class, and semantic state remain
+independent. A generic Feed event proves event authorship, not authorship of
+every referenced KU. Until a frozen `AuthorshipEvidence` predicate defines the
+required event type, exact object binding and Feed/Actor authority under
+`MOB-GATE-KU-PUBLISH`, KU author remains unresolved and local origin is shown
+separately.
+
+### 4.8 Knowledge detail and explicit authority transitions — `MOB-KNO`
 
 ```text
 MOB-KNO-001  Knowledge item detail and source provenance            [T1]
@@ -245,16 +326,16 @@ MOB-KNO-003  Tags, collections and typed relationship proposals    [T1]
 MOB-KNO-004  Assembly → Receptor → Discover → Proposal → Mapping
              → Resolution workflow inspection                      [T1]
 MOB-KNO-005  Local branch and revision inspection                   [T1]
-MOB-KNO-006  Prepare exact Public Use intent                        [T2, NETWORKED-BETA]
-MOB-KNO-007  Confirm/cancel and inspect Public Use publication      [T2, NETWORKED-BETA]
+MOB-KNO-006  Prepare exact Public UseEvidence intent                [T2, NETWORKED-BETA]
+MOB-KNO-007  Confirm/cancel Public UseEvidence publication          [T2, NETWORKED-BETA]
 MOB-KNO-008  Reconciliation-conflict inspection and resolution      [T2, NETWORKED-BETA]
 ```
 
 Retrieval, ranking, model output, validation, materialization, publication, and
 adoption are different states. No background job, deep link, notification, or
-LLM suggestion confirms Public Use.
+LLM suggestion confirms Public UseEvidence.
 
-### 4.7 Assistant, LLM providers, and deterministic tools — `MOB-AI`
+### 4.9 Assistant, LLM providers, and deterministic tools — `MOB-AI`
 
 ```text
 MOB-AI-001   No-LLM deterministic assistant baseline               [T1]
@@ -271,7 +352,7 @@ Provider-native tools are proposal codecs only. If a provider SDK cannot route
 the entire proposal through Rust policy and consent before execution, that tool
 is not registered.
 
-### 4.8 Media ownership, viewing, and transfer — `MOB-MED`
+### 4.10 Media ownership, viewing, and transfer — `MOB-MED`
 
 ```text
 MOB-MED-001  Attach and protect OwnedOriginal media                 [T1, MEDIA]
@@ -282,6 +363,8 @@ MOB-MED-005  Piece/range fetch, verification and resume             [T2, NETWORK
 MOB-MED-006  Provider observations and scoped availability display  [T2, NETWORKED-BETA; CUSTODY for custody views]
 MOB-MED-007  Pin/unpin owned media and reclaim local derived cache   [T1, MEDIA]
 MOB-MED-008  Pin/unpin remote media and reclaim SeedCache            [T2, NETWORKED-BETA/MEDIA]
+MOB-MED-009  Received media reference and availability detail        [T2, NETWORKED-BETA/MEDIA]
+MOB-MED-010  User-initiated received-media download/stream/view      [T2, NETWORKED-BETA/MEDIA]
 ```
 
 The UI always distinguishes `OwnedOriginal`, `PinnedRemote`, and `SeedCache`.
@@ -289,7 +372,7 @@ It exposes a `CustodyReplica` label or controls only after `MOB-GATE-CUSTODY`;
 before then, unknown safety holds remain non-evictable but are not presented as
 a custody capability. It never offers automatic deletion of an owned original.
 
-### 4.9 Network, reconciliation, availability, and seeding — `MOB-NET`
+### 4.11 Network, reconciliation, availability, and seeding — `MOB-NET`
 
 ```text
 MOB-NET-001  Scoped reachability and network-state overview         [T2, NETWORKED-BETA]
@@ -307,7 +390,25 @@ MOB-NET-010  Permission-gated foreground LAN discovery              [T2 Optional
 `Aggressive` is an Android-only finite, user-visible session where current
 platform policy permits. iOS has no generic always-on P2P serving mode.
 
-### 4.10 Notifications and durable activity — `MOB-NTF`
+### 4.12 Passive OBP reunion matching — `MOB-MAT`
+
+```text
+MOB-MAT-001  Private KU/StandingNeed matching-target lifecycle       [T2, NETWORKED-BETA/OBP-MATCH]
+MOB-MAT-002  Passive local match after validated OBP receipt         [T2, NETWORKED-BETA/OBP-MATCH]
+MOB-MAT-003  Exact match explanation and scoped coverage             [T2, NETWORKED-BETA/OBP-MATCH]
+MOB-MAT-004  Quarantined proposal review, retain and dismiss         [T2, NETWORKED-BETA/OBP-MATCH]
+```
+
+“OBP match” is product shorthand. OBP-RP reconciles validated public records;
+the exact typed match runs locally against the private target and emits a
+private, non-executable `BindingProposal`. No raw KQL, NeedIR, StandingNeedID,
+Receptor/Assembly identity, or private goal context is sent.
+
+This passive M3 reunion path is separate from `MOB-NET-006`. Active
+Need-derived network fetch/discovery, RouteNeedSketch, provider search, or
+remote watch remains blocked by M6.
+
+### 4.13 Notifications and durable activity — `MOB-NTF`
 
 ```text
 MOB-NTF-001  Durable in-app activity and approvals inbox            [T1]
@@ -320,7 +421,7 @@ MOB-NTF-005  Optional opaque APNs/FCM wake-hint route                [T2 Optiona
 Submission to an OS notification API is not proof of delivery. Push wake hints
 contain no product content and are never the only record of pending work.
 
-### 4.11 Concept Registry, storage, and portability — `MOB-DAT`
+### 4.14 Concept Registry, storage, and portability — `MOB-DAT`
 
 ```text
 MOB-DAT-001  Exact Concept Registry release/status inspection       [T1, REGISTRY]
@@ -338,7 +439,7 @@ The initial query-ready registry boundary is the exact signed release
 containing `concepts.obr`, CCID index, label index, and its release/verification
 metadata. Transport splitting does not create a reduced semantic tier.
 
-### 4.12 Model management — `MOB-MOD`
+### 4.15 Model management — `MOB-MOD`
 
 ```text
 MOB-MOD-001  Device AI/runtime capability scan                      [T1]
@@ -353,7 +454,7 @@ A model name or marketing language list is not sufficient qualification.
 Routing uses an exact local model release ID, system qualification ID, or
 remote route release ID.
 
-### 4.13 Settings, diagnostics, language, and accessibility — `MOB-SYS`
+### 4.16 Settings, diagnostics, language, and accessibility — `MOB-SYS`
 
 ```text
 MOB-SYS-001  UI/content/query/LLM language settings                 [T1]
@@ -378,14 +479,16 @@ The following are not hidden backlog features in T1/T2:
 |---|---|---|
 | Wallet, balance, staking, rewards, OBT history | `BLOCKED` | `MOB-GATE-M7`; no simulated economic UI |
 | Active distributed KQL or network-wide search | `BLOCKED` | `MOB-GATE-M6`; private NeedIR cannot leave the node |
+| Generic Public KU prepare/confirm | `BLOCKED → T2` | `MOB-GATE-KU-PUBLISH`; Public UseEvidence is not a substitute |
+| Cross-node raw-source blind verifier exchange | `BLOCKED → T3` | `MOB-GATE-VERIFIER-EXCHANGE`; current FID workflow is local only |
 | Global feed, trending, global result/provider count | Not in scope | no scoped completeness/authority semantics |
-| Automatic/background Public Use | Forbidden | exact prepare/confirm and fresh authority required |
+| Automatic/background Public UseEvidence | Forbidden | exact prepare/confirm and fresh authority required |
 | Automatic model tool execution | Forbidden | Rust `ToolOrchestrator` is the only execution boundary |
 | Always-on iOS node or immortal Android service | Impossible promise | OS-governed finite execution grants |
 | Desktop pairing as a prerequisite | Forbidden architecture | mobile is an independent node |
 | Silent local-to-cloud AI fallback | Forbidden | disclosure/provider consent is explicit |
 | Treating availability as custody | Forbidden semantics | store, availability observation and custody are distinct |
-| Raw private source sharing | Forbidden | create a reviewed share representation first |
+| Unscoped/ordinary raw private source sharing | Forbidden | create a reviewed share representation or use the separately gated exact verifier permit; raw source is never ordinary OBP inventory |
 
 ## 6. Module summary
 
@@ -396,16 +499,19 @@ The following are not hidden backlog features in T1/T2:
 | `MOB-SEC` | 7 | Onboarding / Settings | T1 |
 | `MOB-HOM` | 6 | Home | T1 |
 | `MOB-CAP` | 7 | Capture | T1 |
-| `MOB-LIB` | 7 | Library | T1 |
+| `MOB-ENC` | 6 | Capture / KU detail | T1 |
+| `MOB-FID` | 9 | Activity / KU detail | T1 |
+| `MOB-LIB` | 10 | Library | T1 |
 | `MOB-KNO` | 8 | Library / Detail | T1 |
 | `MOB-AI` | 8 | Assistant | T1 optional |
-| `MOB-MED` | 8 | Detail / Media | T1 |
+| `MOB-MED` | 10 | Detail / Media | T1 |
 | `MOB-NET` | 10 | Home / Settings | T2 |
+| `MOB-MAT` | 4 | Library / Matches | T2 |
 | `MOB-NTF` | 5 | Activity / Settings | T1 |
 | `MOB-DAT` | 9 | Settings | T1 |
 | `MOB-MOD` | 6 | Assistant / Settings | T1 optional |
 | `MOB-SYS` | 8 | Settings | T1 |
-| **Total** | **99** | five primary destinations | |
+| **Total** | **123** | five primary destinations | |
 
 ## 7. Cross-cutting acceptance
 

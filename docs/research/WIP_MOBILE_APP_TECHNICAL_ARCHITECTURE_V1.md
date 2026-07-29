@@ -95,24 +95,39 @@ The mobile node should expose these product modules without requiring a desktop:
    - text, clipboard, share-sheet input, photos, documents, audio, and video;
    - private by default;
    - deterministic metadata extraction remains available with no LLM.
-2. **Recall and explore**
+2. **Encode, preserve, and publish**
+   - derive a deterministic KU/Receptor candidate from one exact local source;
+   - explicitly save immutable validated bytes in the private vault;
+   - preserve revisions, alternate encodings and local fidelity evidence;
+   - prepare/sign a generic Public KU only after its separate publication
+     profile and gate exist; local Save never implies publish.
+3. **Recall and explore**
    - local KQL, concept lookup, graph traversal, full-text/label search;
    - offline access to the complete initial Concept Registry;
-   - provenance and disclosure state visible in results.
-3. **Organize and materialize**
-   - draft, review, quarantine, adopt, relate, tag, and correct;
-   - canonical validation and signing in Rust;
-   - no model assertion is automatically promoted to truth.
-4. **AI assistance**
+   - My/Received KU and media views with evidenced-or-unresolved author,
+     sender, acquisition, retention, fidelity, availability and disclosure
+     shown as separate facts.
+4. **Organize, match, and inspect workflow**
+   - draft, review, quarantine, relate, tag, and correct;
+   - inspect Assembly → Receptor → Discover → Proposal → Mapping → Resolution
+     as read-only stages with the next authority boundary named;
+   - match validated public OBP deltas locally against private targets and
+     produce non-executable quarantined proposals;
+   - no model assertion is automatically promoted to truth, and Mapping
+     materialization/adoption requires future feature IDs rather than a hidden
+     action on these screens.
+5. **AI assistance**
    - summarize, extract, classify, propose links, converse, and propose tools;
    - local device model, app-managed local model, or explicit remote service;
    - useful non-AI fallback for every core flow.
-5. **Network participation**
+6. **Network participation**
    - reconcile canonical records;
+   - participate in separately gated external-blind encoding-fidelity work
+     using exact revocable source permits and bounded encrypted transfer;
    - fetch and serve media pieces;
    - advertise truthful, expiring availability;
    - queue outbound work while unreachable.
-6. **Operations**
+7. **Operations**
    - identity/recovery, encrypted export/import, storage management;
    - model and registry management;
    - node, network, sync, seed, privacy, and energy status.
@@ -126,6 +141,9 @@ The mobile node should expose these product modules without requiring a desktop:
 - loading a 2 GB registry or a complete media file into RAM;
 - downloading arbitrary model conversions from untrusted community URLs;
 - treating push delivery, a relay, or a cloud LLM as authority;
+- placing verifier raw sources in ordinary OBP inventory, treating verifier
+  count as consensus/truth, or equating different NodeIDs with independence;
+- using Public `UseEvidence` as a substitute for generic KU publication;
 - rewarding replicas or integrating OBT before the distributed-runtime plan
   authorizes those systems.
 
@@ -543,7 +561,8 @@ Authoritative, validated, non-secret protocol state:
 | `quarantine` | invalid/colliding bytes and stable reason codes |
 | `feed_inceptions` | branch-preserving FeedID index |
 | `key_state` | deterministic key-state reduction inputs/receipts |
-| `materialization_state` | adoption/materialization references, never LLM claims |
+| `materialization_state` | read/imported adoption/materialization references for workflow inspection, never LLM claims; this mobile feature baseline exposes no mutation command |
+| `fidelity_evidence_index` | CID/type/policy references over `PUBLIC` or `ROUTE_MINIMAL` fidelity records whose sole canonical bytes remain in `accepted_records`; `NEGOTIATED_ENCRYPTED`/private evidence remains in the vault and none is a truth vote |
 | `canonical_change_log` | commit sequence to mutation descriptor, committed with the canonical write |
 | `canonical_op_ids` | idempotency evidence for cross-store operations |
 
@@ -562,8 +581,15 @@ Authoritative private data, encrypted values, and blinded lookup keys:
 | `key_envelopes` | wrapped content keys and key epochs |
 | `private_idempotency` | replay-safe private mutations |
 | `private_change_log` | encrypted incremental projection/backup frontier |
+| `source_artifacts` | exact encrypted `LOCAL_ONLY` capture/import bytes, commitments, rights and provenance |
+| `encoding_workspaces` | drafts, validation reports, private saved-object bindings and revision/alternate lineage |
+| `private_origin` | encrypted local creation/import/derivation/source observations plus optional qualifying authorship-evidence references; absence is not stored as authoritative “unresolved” state |
 | `private_projections` | encrypted private KU/read-model values |
 | `private_search_index` | blinded/keyed private lookup index |
+| `private_matching` | private targets, target indexes, reunion cursors and quarantined `BindingProposal` state |
+| `private_fidelity` | encrypted attempts, evidence bindings, attestations and frontier-relative assessments whose source/disclosure is not public |
+| `source_access_grants` | prepared/active/revoked verifier permits and encrypted policy/recipient bindings |
+| `verifier_source_vault` | isolated temporary raw-source metadata/key envelopes and retention/cleanup holds; bulk ciphertext stays in the private object/file store |
 | `private_media_map` | `(blinded local CID, representation/policy/recipient-set digest)` to encrypted distribution reference |
 | `recovery_state` | encrypted recovery metadata, never plaintext seed |
 
@@ -585,6 +611,9 @@ Durable network protocol work:
 | `seed_sessions` | byte/piece/time budgets and checkpoints |
 | `piece_receipts` | protocol/storage receipt, not authority or reward |
 | `carrier_mailbox` | encrypted mailbox cursors and dedupe IDs |
+| `verifier_exchange` | offer/permit/task, encrypted source-transfer and attestation-return journals; payload content remains in the vault/file store |
+| `obp_receipt_frontiers` | accepted public selector/frontier observations used to trigger restart-safe passive local matching |
+| `object_source_observations` | authenticated responder/peer, selector, route and acquisition observations for accepted public objects; sensitive fields are encrypted/vault-referenced and never become authorship |
 
 Payload-heavy media pieces do not live in this database.
 
@@ -603,6 +632,8 @@ Rebuildable **public-only** or explicitly migration-transitional views:
 | `index_concept` / `index_ccid` / `index_trust` | KQL indexes |
 | `edges_out` / `edges_in` / related graph indexes | graph traversal |
 | `search_index` | public labels/text search projection |
+| `author_projection` | future qualifying `AuthorshipEvidence` references only after its predicate is frozen; generic Feed events are insufficient, source peer/acquisition is joined from network/vault state, and missing evidence derives unresolved |
+| `fidelity_assessment` | deterministic frontier-relative assessment and evidenced correlation groups over immutable public evidence only; private assessments remain in the vault |
 | `projection_cursor` | vector frontier: canonical sequence, registry generation, schema/normalizer generation |
 | `projection_failures` | stable failure evidence for repair |
 
@@ -625,6 +656,7 @@ Metadata only:
 | `storage_policy` | owned/pinned/seed-cache/custody class and retention |
 | `quota_reservations` | exact bytes reserved for import/download/update |
 | `download_sessions` | missing-piece bitmap and priority |
+| `ku_media_refs` | public KU-to-`MediaManifestBodyCid` references and public-safe local availability projection only; private KU/media relations use blinded vault keys/encrypted refs and join at query time |
 | `availability_leases` | local published lease state |
 | `media_gc_queue` | recoverable two-phase deletion |
 | `media_op_ids` | import/fetch/delete idempotency |
@@ -643,6 +675,10 @@ Mobile process and product operations:
 | `notification_intents` | generic message key/args or encrypted/vault reference |
 | `notification_receipts` | observable platform submit/active/interaction/cancel state |
 | `llm_audit` | redacted local release, system qualification, or remote-route release plus prompt/disclosure/usage metadata |
+| `encode_sessions` | durable stage/checkpoint/receipt IDs for draft, validate, private Save and alternate/revision operations |
+| `publication_intents` | opaque generic-KU or Public-Use intent state; exact private preview lives in the vault |
+| `fidelity_jobs` | publisher/verifier job state, commit-before-reveal checkpoint and cleanup schedule; raw source never lives here |
+| `reunion_jobs` | public-frontier trigger and opaque private matcher reference; no private target/query plaintext |
 | `resource_samples` | bounded battery/network/thermal/storage metrics |
 | `ffi_idempotency` | command replay protection |
 
@@ -825,7 +861,7 @@ revocable, expiring background credential. A transport credential requires an
 explicit delegated-session protocol because changing the current
 `SessionIdentitySigner` changes NodeID; a provider credential requires an exact
 authorized feed/key-state path. Neither can publish/adopt KU state, perform
-Public Use, grant authority, execute tools, access Actor-root authority, or
+Public UseEvidence, grant authority, execute tools, access Actor-root authority, or
 unwrap another signer. This is a protocol ADR and key-rotation feature, not an
 implicit reuse of the NodeID/feed key.
 
@@ -1051,6 +1087,202 @@ clear downtime and backup requirements; never silently mutate in place.
 
 ---
 
+## 5A. KU lifecycle, fidelity verification, and passive OBP matching
+
+### 5A.1 Self-encode and private Save
+
+The offline baseline is an exact object pipeline, not a chat transcript:
+
+```text
+SourceArtifact(LOCAL_ONLY)
+  -> ObservationEvent
+  -> ReceptorEncodingDraft
+  -> deterministic Local Receptor Encoder
+  -> Complete candidate + canonical validation
+  -> explicit Save
+  -> verified encrypted immutable KU/Receptor bytes + provenance
+```
+
+If a required source span, CCID, gene, role/direction/order, instruction,
+value/unit, condition, limitation or profile field cannot be resolved, the
+result is `Incomplete`. It remains a draft and receives no fabricated canonical
+bytes or CID.
+
+The deterministic/rule route must work in airplane mode with no model. A local,
+system, app-managed or remote LLM may propose structured fields only after the
+provider/disclosure gate; deterministic code still resolves, encodes, validates
+and commits. Process death resumes from the durable `encode_sessions` journal,
+not an in-memory model session.
+
+Private Save creates an immutable object and idempotent receipt. A correction,
+revision or different valid encoding creates a new object with lineage; it
+never overwrites the old bytes or silently elects a winner. Save grants no
+publication, seeding, Public `UseEvidence`, adoption, Mapping materialization,
+tool or truth authority. It records source/derivation provenance but does not
+establish authorship. A generic signed Feed event proves event authorship only;
+KU author stays unresolved until a future frozen `AuthorshipEvidence` predicate
+validates the required event/profile, exact object binding and Feed/Actor
+authority.
+
+### 5A.2 Generic KU publication is a separate gated protocol
+
+The existing Public Use profile publishes Public `UseEvidence`; it is not a
+generic KU-publication contract. `MOB-ENC-005/006` and every
+`/knowledge-publication/*` consumer route remain absent until
+`MOB-GATE-KU-PUBLISH` closes with a frozen publication profile.
+
+That profile must define at least:
+
+- exact public KU/envelope, Feed transition and `AuthorshipEvidence` predicate
+  that cannot treat arbitrary payload references as KU authorship;
+- namespace, selector, signing authority and idempotency identity;
+- reviewed public source representation or explicit source-unavailable
+  disclosure; verifier-only raw-source access belongs to the separately gated
+  verifier-exchange profile;
+- media representation, rights, disclosure, revocation limits and permanence;
+- prepare/preview, fresh confirm/sign, durable outbox and rollback behavior;
+- explicit non-claims for delivery, availability, adoption, truth and reward.
+
+Only foreground user confirmation may consume a prepared intent. An LLM,
+notification, background scheduler, share intent, local Save or verifier result
+cannot publish.
+
+### 5A.3 External-blind encoding-fidelity verification
+
+Fidelity evidence concerns whether an encoding is consistent with one exact
+source under one named policy. It is not consensus about truth.
+
+```text
+Publisher EncodingAttempt
+  -> signed Offer + exact revocable SourcePermit
+  -> verifier accepts disclosed bounded work
+  -> encrypted raw-source transfer + source-commitment verification
+  -> EncodingAttempt(ExternalBlind), target omitted from the transcript
+  -> durable output commitment
+  -> target reveal
+  -> exact source/gene/concept/extended checks
+  -> signed EncodingFidelityAttestation
+  -> deterministic FidelityAssessment at a named frontier
+```
+
+The first cross-node profile is blocked by
+`MOB-GATE-VERIFIER-EXCHANGE` and targets T3. Existing FID object/reducer
+contracts do not authorize source distribution. The gate also requires
+completed `RUN-003` or an explicitly narrower verifier-only remote-task
+substrate with equivalent Offer/Permit attenuation, encrypted task transport,
+sandbox/budget enforcement, signed-result quarantine, replay/revocation tests
+and a mobile multi-node security/canary; a paper exchange profile alone cannot
+open the feature.
+
+The exchange profile must enforce:
+
+- raw source is never normal OBP inventory, public DHT content, a media seed
+  assignment, or a cloud-LLM side channel;
+- an exact purpose-bound permit binds source commitment, recipient/capability,
+  rights, maximum bytes/work, TTL, retention and no onward delegation;
+- transfer is encrypted, bounded, resumable and commitment-verified before
+  decode; temporary plaintext never enters public projections, logs or
+  notification payloads;
+- the typed request and workflow transcript omit the candidate until complete
+  output and execution provenance are durably committed;
+- attestation is categorical:
+  `CONSISTENT_WITH_SOURCE`, `HARD_ENCODING_MISMATCH`, `UNRESOLVED`, or
+  `NOT_APPLICABLE`;
+- a hard mismatch preserves both encodings and cannot delete, block
+  publication/query/use, choose a winner, assert truth, or issue reward/OBT;
+- revoke/expiry fences future access and triggers bounded local cleanup, while
+  honestly avoiding a promise to erase bytes already lawfully received.
+
+Commit-before-reveal proves ordering and binding inside this workflow only. It
+does not prove that an external environment leaked no target information. In
+particular, when a KU is already published, an eligible verifier may have
+learned it through another route; the attempt and UI must retain this
+limitation rather than claim cognitive independence.
+
+Default `FidelityPolicy/1` requires a publisher attempt, at least two external
+blind attempts and at least two evidenced-distinct policy group keys derived
+jointly over administrative principal and pipeline/model lineage. Different
+NodeIDs alone do not prove distinct groups. Assessments are frontier-relative
+`SELF_ATTESTED`, `PARTIALLY_CORROBORATED`, or
+`FIDELITY_CORROBORATED_RELATIVE`, never “independent”, “true”, “false”,
+“final”, or “globally verified” without supporting protocol semantics.
+
+Mobile execution follows the durable-work rule:
+
+- offer acceptance and raw-source disclosure always require foreground user
+  action;
+- source download may use OS background transfer and resume after kill;
+- blind encoding checkpoints before yielding and runs only inside current
+  thermal, battery, memory, storage and deadline budgets;
+- Android may use a user-visible finite foreground service only for eligible
+  active work; iOS uses foreground time or eligible system scheduling and never
+  promises completion while suspended;
+- no verifier role requires an idle socket, permanent keepalive, or 24/7
+  seeding.
+
+### 5A.4 My, Received, and media are orthogonal facets
+
+One KU can be authored locally, observed from several peers, imported during
+recovery, retained locally and later republished under separately authorized
+semantics. Therefore there is no mutable canonical `owned` or `received` flag.
+
+| Facet | Example values |
+|---|---|
+| KU authorship | qualifying future `AuthorshipEvidence` binding to local/external authority, otherwise unresolved; generic Feed event references are insufficient |
+| Acquisition | capture, import, reconciliation, verifier work, derivation |
+| Observed source | authenticated peer/bridge/carrier observations; never substituted for author |
+| Retention/storage class | `OwnedOriginal`, private attachment, `PinnedRemote`, `SeedCache`, gated `CustodyReplica` |
+| Local availability | `ReferenceOnly`, partial verified pieces, complete verified representation |
+| Semantic state | draft, accepted object, quarantined proposal, materialized/adopted state |
+
+My/Received shelves are rebuildable query-time joins across future qualifying
+authorship projection, network source observations and private
+local-origin/retention state. They resolve to one canonical KU detail, whose
+accepted bytes remain immutable; generic Feed references or missing qualifying
+evidence never become inferred authorship.
+
+A received KU may reference a `MediaManifestBodyCid` while the mobile node has
+zero pieces. Media retrieval remains a separate user-initiated lane:
+
+```text
+ReferenceOnly
+  -> manifest/access preflight
+  -> bounded piece/range fetch
+  -> hash/Merkle verification
+  -> progressive decode of verified ranges
+  -> optional PinnedRemote retention
+```
+
+Downloading or viewing media does not create authorship, adoption, Public
+`UseEvidence`, generic KU publication, custody, or a truth claim.
+
+### 5A.5 Passive one-hop OBP reunion matching
+
+The T2 match is passive and local:
+
+```text
+authenticated OBP reconciliation
+  -> canonical validation/admission of permitted public Affordance/Receptor bytes
+  -> public change-log/frontier trigger
+  -> private local target index JOIN received public delta
+  -> private quarantined BindingProposal(executable=false)
+  -> local explanation/review
+```
+
+The user can create the target directly from one local KU/Receptor/Assembly or
+author a StandingNeed. The full NeedIR, raw KQL, private object identity and
+StandingNeed ID never leave `private_vault.redb`. OBP transports validated
+bytes; it does not perform semantic matching. Restart dedupe binds the public
+frontier, target identity and matcher/rule version, and the UI reports
+`PARTIAL` or `PATH_LIMITED` coverage rather than global completeness.
+
+This flow requires `MOB-GATE-OBP-MATCH` plus Networked Beta but not M6. Active
+distributed fetch/discovery remains `MOB-NET-006`, absent before M6. A match
+cannot materialize a Mapping, adopt, publish, call a tool, notify another node
+or spend/reward anything.
+
+---
+
 ## 6. AI architecture
 
 ### 6.1 Boundary
@@ -1065,8 +1297,11 @@ Feature request
   -> untrusted candidate
   -> schema and policy validation
   -> optional ToolOrchestrator
-  -> deterministic result/materialization path
+  -> deterministic result/candidate/private-save path
 ```
+
+Mapping materialization/adoption remains a future separately identified and
+gated product action; it is not an implicit continuation of an AI proposal.
 
 The LLM never receives:
 
@@ -2290,9 +2525,9 @@ An LLM route, tool proposal, notification, sync selector, media manifest, and
 backup each carry a privacy class. Conversion between classes is an explicit
 policy transition with consent and audit.
 
-### 11.3 Public Use
+### 11.3 Public UseEvidence
 
-Public Use requires:
+Public UseEvidence requires:
 
 - foreground unlocked session;
 - exact candidate preview;
@@ -2565,6 +2800,41 @@ separate rollout authority.
   process/release generation is still alive;
 - projection rebuild matches canonical coverage.
 
+### 16.2A KU lifecycle, fidelity, and matching
+
+- deterministic self-encode/private Save succeeds in airplane mode without an
+  LLM, survives kill at every stage and emits no CID for an `Incomplete`
+  candidate;
+- Save, generic KU publication and Public `UseEvidence` use distinct commands,
+  intents, signer policy, receipts and route gates; none can substitute for
+  another;
+- a revision or hard fidelity mismatch preserves immutable alternates and
+  lineage without overwrite, winner selection, deletion or truth promotion;
+- generic KU publication routes/actions are absent until
+  `MOB-GATE-KU-PUBLISH`, and a successful local commit never claims remote
+  delivery, availability or adoption;
+- external-blind verification proves target-field absence from the typed
+  request/API/transcript before durable output commitment, source-permit
+  bounds, encrypted resumable transfer, exact commitment verification,
+  categorical attestation and kill/restart recovery without claiming absence
+  of out-of-band leakage;
+- correlation tests show that many NodeIDs with the same jointly derived
+  administrative-principal + pipeline/model-lineage key remain one policy
+  group and cannot satisfy the distinct-group threshold;
+- raw verifier sources never appear in OBP inventory, public indexes, ordinary
+  media seeding, logs, diagnostics, push payloads or plaintext temporary stores;
+- My/Received views reconstruct evidenced-or-unresolved authorship, sender
+  observation, acquisition, retention, availability and semantic state
+  independently, including unsigned object, sender-not-author and
+  same-CID/multiple-source cases;
+- a received KU remains readable with `ReferenceOnly` media; received media is
+  verified before decode and can resume after process death;
+- passive OBP matching emits only private `executable=false` quarantined
+  proposals, sends no private target/query identifier, deduplicates after
+  restart and reports frontier-relative coverage;
+- no T2 passive match route activates `MOB-NET-006` active discovery or implies
+  M6 authority.
+
 ### 16.3 AI/tools
 
 - local-only mode passes with network blocked;
@@ -2633,6 +2903,16 @@ separate rollout authority.
 11. Whether a future scoped background transport/availability credential is
     worth its attack surface; the first release requires each exact typed
     signer/protected-data grant and never substitutes a generic root key.
+12. Generic Public KU publication profile: exact object/envelope, Feed and
+    namespace transition, exact `AuthorshipEvidence` predicate/event binding,
+    source/media disclosure, rights, prepare/confirm, outbox/rollback and
+    compatibility with private-saved KU.
+13. Cross-node verifier exchange profile: Offer/Permit/task wire objects,
+    source rights and recipient binding, encrypted chunk/manifest format,
+    commit-before-reveal transcript, revocation, retention and cleanup.
+14. Exact public object set and versioned matcher contract admitted to passive
+    mobile OBP reunion matching, including inverse joins, cursor coverage and
+    migration behavior.
 
 ---
 

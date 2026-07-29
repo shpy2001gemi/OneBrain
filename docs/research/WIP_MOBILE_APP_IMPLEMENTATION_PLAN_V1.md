@@ -42,8 +42,9 @@ The product architecture is:
   desktop state.
 - The phone remains useful with no network and no generative model.
 - Rust owns identity, signing, canonical validation, local storage, KQL,
-  proposal quarantine, materialization, consent, tool policy/execution, and
-  network state.
+  proposal quarantine, read-only workflow projections, consent, tool
+  policy/execution, and network state. Mapping materialization/adoption is not
+  exposed until future feature IDs and gates exist.
 - Flutter owns the mobile UI and invokes a narrow native host; that host and
   OS background entry points activate the same typed Rust facade.
 - LLM inference is provider-neutral: it may run locally on the phone or through
@@ -196,7 +197,7 @@ The older P10 documents also contain statements that cannot be carried forward:
 | `ku-core` storage and vault | Medium, requires device testing | Encrypted local state and integrity |
 | `ku-kql` | High with mobile budgets | Offline local queries |
 | `onebrain-node::vnext_companion` | High | Reuse its private offline planning logic; the historical module name does not define a desktop relationship |
-| `onebrain-node::vnext_local_runtime` | High | Quarantined proposal and explicit materialization |
+| `onebrain-node::vnext_local_runtime` | High for read/quarantine paths | Reuse quarantined proposals and workflow evidence; do not expose its materialization command until a future mobile feature/gate |
 | `vnext_product_runtime` / network runtime | Medium | Reuse lifecycle, outbox, reconciliation patterns |
 | `ku-ai::vnext_executor` | High | Typed budgets, deadlines, cancellation, provenance |
 | `ku-ai::vnext_model_recall` | High | Symbolic validity firewall |
@@ -264,7 +265,8 @@ preserve the following:
 11. No global flooding is introduced.
 12. Wallet/OBT semantics remain unchanged before M7.
 13. Network matches enter as non-executable quarantined proposals.
-14. Public Use requires prepare, exact intent display, and explicit confirmation.
+14. Public UseEvidence requires prepare, exact intent display, and explicit
+    confirmation.
 15. LLM output is untrusted candidate data, never authority.
 
 These invariants belong in Rust tests and FFI contract tests, not only UI copy.
@@ -283,7 +285,7 @@ flowchart TB
         subgraph RUST["Autonomous Rust Mobile Node"]
             ACT["ActivationArbiter\none generation · one writer · recovery fence"]
             FACADE["MobileRuntimeFacade"]
-            CORE["Node core\nidentity · canonical validation · Vault/storage · KQL\nquarantine · materialization · network state"]
+            CORE["Node core\nidentity · canonical validation · Vault/storage · KQL\nquarantine · workflow inspection · network state"]
             TOOLS["Deterministic ToolOrchestrator\ncatalog · schema · policy · consent · execution · audit"]
             POLICY["Admission controller\nfeature flags · budgets · privacy · energy · telemetry"]
             AIX["Typed LLM coordinator\ntext/structured/tool proposals only"]
@@ -343,8 +345,10 @@ For a structured candidate, Rust:
 2. applies canonical and symbolic invariants;
 3. records provenance without treating it as truth;
 4. shows a preview;
-5. requires explicit user authority for materialization;
-6. separately prepares and confirms any Public Use.
+5. requires explicit user authority for private KU Save;
+6. exposes no Mapping materialization/adoption command in this feature
+   baseline; and
+7. separately prepares and confirms any Public UseEvidence.
 
 For a tool proposal, the deterministic `ToolOrchestrator`:
 
@@ -411,7 +415,8 @@ Representative command groups:
 ```text
 runtime.start / runtime.stop / runtime.status
 identity.create / identity.unlock / identity.sign_typed
-knowledge.capture_draft / knowledge.validate / knowledge.materialize
+knowledge.capture_draft / knowledge.validate / knowledge.save_private
+knowledge.workflow_get
 knowledge.list / knowledge.get / knowledge.search_local / kql.execute_local
 llm.providers / llm.run_typed / llm.cancel
 tool.catalog / tool.preview / tool.confirm / tool.cancel
@@ -423,7 +428,7 @@ sync.status / sync.reconcile / sync.pause
 backup.create / backup.inspect / backup.restore
 ```
 
-Network, cloud-LLM, recovery, and Public Use commands only appear after their own
+Network, cloud-LLM, recovery, and Public UseEvidence commands only appear after their own
 protocol, disclosure, and release gates pass.
 
 ---
@@ -460,7 +465,11 @@ and
 | Local browse, detail, filters | Yes | Yes | |
 | Keyword search and local KQL | Yes | Yes | |
 | Small 2D neighborhood view | Optional | Yes | No 3D graph in MVP |
-| Rule-based encode/candidate preview | Yes | Yes | |
+| Exact-source deterministic KU encode/candidate preview | Yes | Yes | Optional qualified LLM may propose fields; deterministic validation remains authoritative |
+| Explicit immutable private KU Save, revisions and alternates | Yes | Yes | Save never means publish, seed, adopt or Public UseEvidence |
+| Local publisher attempt and fidelity portfolio | Yes | Yes | Frontier-relative evidence, not truth or consensus |
+| Generic Public KU prepare/confirm | No | After `MOB-GATE-KU-PUBLISH` | BLOCKED pending a separate publication profile; Public UseEvidence is not a substitute |
+| External-blind raw-source verifier exchange | No | No | BLOCKED → T3 by `MOB-GATE-VERIFIER-EXCHANGE`; requires completed `RUN-003` or a narrower equivalent verifier-task substrate, exact permit, encrypted source transfer and commit-before-reveal |
 | Optional local structured LLM | Capability-gated | Yes | Never required |
 | Optional cloud LLM | Explicit opt-in | Yes | Exact data/cost/retention disclosure; no silent fallback |
 | Local semantic search | Capability/model-gated | Yes | |
@@ -469,12 +478,16 @@ and
 | Full Concept Registry provision/status/update | Required | Required | Multiple transport artifacts are one atomic logical release |
 | Encrypted export/backup/restore | Required | Required | New vault-encrypted/versioned archive; never the legacy plaintext path |
 | Runtime, storage, LLM and sync status | Yes | Yes | |
+| My/local-created KU and media shelves | Yes | Yes | Local origin is separate; author requires a future frozen exact `AuthorshipEvidence` predicate, while generic Feed references/source observations never infer author or mutable `owned` truth |
+| Received KU shelf and canonical detail | Cached only | Yes | Accepted validated bytes; author is unresolved without future qualifying `AuthorshipEvidence` and never inferred from sender peer |
+| Received-KU media availability/download/stream/view | Cached verified bytes only | After `NETWORKED-BETA/MEDIA` | `ReferenceOnly` is valid; verify before decode |
 | Authenticated peer enrollment | No | After node protocol | Peer is another node, not a required desktop host |
 | Incremental reconciliation | No | Yes after protocol | Store-carry-forward, durable and conflict-preserving |
 | User-visible P2P node session | No | Feature-gated | OS lease, P5 and mobile canary required |
-| One-hop discovery | No | Feature-gated | Quarantined results only |
+| Passive one-hop OBP reunion match | No | After `MOB-GATE-OBP-MATCH` | Local private join over received validated public deltas; quarantined non-executable proposals only |
+| Active one-hop fetch/discovery | No | No | `MOB-NET-006`; blocked by M6 |
 | Active distributed KQL | No | No | Blocked by M6 |
-| Auto-publish/background Public Use | Never | Never | Explicit prepare/confirm only |
+| Auto-publish/background Public UseEvidence | Never | Never | Explicit prepare/confirm only |
 | Social feed/trending/global completeness | No | No | Requires separate semantics |
 | Production wallet/reward/OBT | No | No | Blocked until M7; hide simulated values |
 
@@ -488,11 +501,12 @@ Share/text/photo/voice
   -> rule/model candidate
   -> Rust validation
   -> editable preview
-  -> explicit Save locally
-  -> encrypted storage
+  -> explicit encrypted source/draft Save
+     OR continue to Journey E self-encode
 ```
 
-No network is needed, and saving locally does not imply publication.
+No network is needed. This capture journey does not commit a KU, and saving a
+source/draft never implies publication.
 
 #### Journey B: local recall
 
@@ -506,11 +520,11 @@ Need/search text
 
 A zero result is worded as “No matching item in the searched local scope”.
 
-#### Journey C: explicit Public Use
+#### Journey C: explicit Public UseEvidence
 
 ```text
 User selects a local item
-  -> prepare exact Public Use intent
+  -> prepare exact Public UseEvidence intent
   -> display target, payload class, scope, expiry and consequences
   -> biometric/app re-authorization if policy requires
   -> explicit Confirm
@@ -519,7 +533,7 @@ User selects a local item
 ```
 
 The app never converts a local save, share-sheet import, notification action, or
-LLM suggestion into Public Use automatically.
+LLM suggestion into Public UseEvidence automatically.
 
 #### Journey D: LLM proposes, OneBrain executes
 
@@ -538,6 +552,75 @@ User asks in Assistant
 The same policy is applied whether a provider supports native function calling
 or only grammar/schema-constrained JSON. Provider convenience APIs never become
 OneBrain authority.
+
+#### Journey E: self-encode, save, and gated generic publication
+
+```text
+Exact LOCAL_ONLY source
+  -> deterministic/rule or optional qualified-LLM candidate
+  -> resolve and validate KU/Receptor profile
+  -> explicit immutable private Save
+  -> My KU + local fidelity portfolio
+  -> [only after KU-PUBLISH] prepare exact public representation
+  -> foreground confirm/sign
+  -> durable outbox status
+  -> [separate VERIFIER-EXCHANGE gate + source consent]
+     optional external verification campaign
+```
+
+An incomplete candidate receives no fabricated CID. Private Save and generic
+publication are separate durable commands; Public `UseEvidence` cannot stand in
+for the latter. Publication alone never grants raw-source access or dispatches
+verifier work.
+
+#### Journey F: external-blind encoding-fidelity verification
+
+```text
+Publisher prepares exact source permit and bounded task
+  -> verifier explicitly accepts
+  -> encrypted raw source download + commitment verification
+  -> external-blind encode with target omitted from the workflow transcript
+  -> durable output commit
+  -> target reveal and named checks
+  -> categorical signed attestation
+  -> frontier-relative publisher assessment
+  -> expiry/revoke and bounded cleanup
+```
+
+This journey is design-only until `MOB-GATE-VERIFIER-EXCHANGE`. It never
+turns verifier count into truth, a publication veto, winner selection or OBT.
+Mobile jobs checkpoint and resume after kill; they require no idle socket or
+always-on foreground service. If the KU was already published, transcript
+ordering does not prove that the verifier could not have learned the target
+through another route, and the assessment must retain that limitation.
+
+#### Journey G: My/Received KU and media
+
+```text
+Library -> My KU OR Received KU
+  -> one canonical KU detail
+  -> evidenced/unresolved author + observed sender + acquisition + fidelity
+  -> media manifest availability
+  -> explicit verified download/stream/view
+  -> optional PinnedRemote retention
+```
+
+Received KU can be available while media is `ReferenceOnly`. Viewing or
+retaining does not create authorship, adoption or publication.
+
+#### Journey H: passive OBP reunion match
+
+```text
+Private local KU/Receptor target or StandingNeed
+  + validated public delta received through OBP reconciliation
+  -> local bounded reunion join
+  -> private quarantined BindingProposal(executable=false)
+  -> explanation and scoped coverage
+  -> local retain/dismiss/re-evaluate
+```
+
+No NeedIR/raw KQL/private target identifier leaves the vault. This passive T2
+flow does not authorize `MOB-NET-006` active discovery or M6.
 
 ---
 
@@ -660,7 +743,7 @@ discarded and regenerated; side effects use their own durable journal.
 | `DERIVE_LOCAL` | construct draft/query plan/sort | May run automatically; output remains candidate data |
 | `MUTATE_LOCAL_REVERSIBLE` | save draft, change a reversible preference | Preview or explicit user policy; audit and idempotency required |
 | `DISCLOSE_OR_NETWORK` | cloud context, send peer envelope, fetch remote URL | Exact destination/data-class disclosure and scoped consent |
-| `PUBLIC_OR_SIGNED` | Public Use or typed signature | Dedicated non-LLM prepare/confirm flow with re-authorization |
+| `PUBLIC_OR_SIGNED` | Public UseEvidence or typed signature | Dedicated non-LLM prepare/confirm flow with re-authorization |
 | `FORBIDDEN_TO_LLM` | private-key export, raw DB/SQL, shell/code execution, arbitrary publish, authority grants, destructive erase | Never placed in the LLM catalog |
 
 A local tool result can still be private. Returning `local_search` results to a
@@ -1265,7 +1348,7 @@ Reuse:
 - color/type tokens after accessibility review;
 - API/domain types through code generation;
 - empty/loading/error/degraded semantics;
-- exact Public Use confirmation concepts.
+- exact Public UseEvidence confirmation concepts.
 
 Redesign for mobile:
 
@@ -1585,7 +1668,8 @@ Recommended next implementation slice:
    recovery;
 9. run the local LLM bake-off and cloud disclosure spike separately from the
    product MVP;
-10. keep network/Public Use flags absent or forced off in the first spike.
+10. keep network/Public UseEvidence flags absent or forced off in the first
+    spike.
 
 This slice produces evidence about the hardest unknowns without coupling mobile
 progress to completion of the 72-hour distributed-runtime run.
