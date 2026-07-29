@@ -28,7 +28,7 @@ pub use bootstrap::{
     ProcessGenerationRecord, ProcessLifecycle, ProcessStart, RegistryChunkRecord,
     RegistryOperationRecord, SecurityHistoryRecord, TransferLandingRecord,
 };
-pub use draft::{PrivateDraftKey, PrivateDraftStore, RawDraftReceipt};
+pub use draft::{PrivateDraftKey, PrivateDraftStore, RawDraftReceipt, ShareSpoolSummary};
 pub use error::MobileCoreError;
 pub use facade::{MobileRuntimeFacade, MobileRuntimeSnapshot};
 pub use local_kql::{run_signed_local_kql_smoke, LocalKqlSmoke};

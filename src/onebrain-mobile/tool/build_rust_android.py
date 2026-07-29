@@ -12,7 +12,7 @@ from pathlib import Path
 MOBILE_ROOT = Path(__file__).resolve().parents[1]
 RUST_WORKSPACE = MOBILE_ROOT.parent
 OUTPUT = MOBILE_ROOT / "android" / "app" / "src" / "main" / "jniLibs"
-TARGETS = ("arm64-v8a", "x86_64")
+TARGETS = ("armeabi-v7a", "arm64-v8a", "x86_64")
 BRIDGE_LIBRARY = "libonebrain_mobile_bridge.so"
 
 

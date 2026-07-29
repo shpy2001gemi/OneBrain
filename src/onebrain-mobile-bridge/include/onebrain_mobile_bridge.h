@@ -18,7 +18,7 @@
 /**
  * Stable ABI revision understood by the current Swift/Kotlin adapters.
  */
-#define OB_MOBILE_BRIDGE_ABI_VERSION 5
+#define OB_MOBILE_BRIDGE_ABI_VERSION 6
 
 #define OB_MOBILE_RUNTIME_OK 0
 
@@ -35,6 +35,10 @@
 #define OB_MOBILE_RUNTIME_INVALID_DRAFT 6
 
 #define OB_MOBILE_RUNTIME_INVALID_ONBOARDING_CURSOR 7
+
+#define OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL 8
+
+#define OB_MOBILE_RUNTIME_SHARE_SPOOL_NOT_FOUND 9
 
 typedef struct ObMobileRuntimeSnapshot {
   uint32_t status_code;
@@ -57,6 +61,7 @@ typedef struct ObMobileRuntimeSnapshot {
   uint8_t privacy_defaults_fail_safe;
   uint8_t redacted_history_ready;
   uint64_t encrypted_raw_draft_count;
+  uint64_t pending_share_spool_count;
   uint32_t onboarding_cursor;
 } ObMobileRuntimeSnapshot;
 
@@ -70,6 +75,16 @@ typedef struct ObMobileRawDraftReceipt {
   uint64_t saved_at_monotonic_ms;
   uint64_t total_drafts;
 } ObMobileRawDraftReceipt;
+
+typedef struct ObMobileShareSpoolSummary {
+  uint32_t status_code;
+  uint8_t spool_ref[39];
+  uint32_t spool_ref_len;
+  uint8_t mime_type[64];
+  uint32_t mime_type_len;
+  uint64_t content_bytes;
+  uint64_t received_at_monotonic_ms;
+} ObMobileShareSpoolSummary;
 
 /**
  * Return the stable native-to-Rust ABI revision.
@@ -154,6 +169,40 @@ struct ObMobileRawDraftReceipt ob_mobile_runtime_save_raw_text_draft_utf8(const 
                                                                           size_t content_language_len,
                                                                           const uint8_t *content_utf8,
                                                                           size_t content_len);
+
+/**
+ * Land a bounded native share callback into the encrypted private spool.
+ *
+ * This native-only entry point is not exposed to Dart. The callback token is
+ * used solely for idempotency and the returned spool reference is opaque.
+ *
+ * # Safety
+ *
+ * Every pointer must reference its declared readable byte length.
+ */
+struct ObMobileShareSpoolSummary ob_mobile_runtime_enqueue_shared_text_utf8(const uint8_t *callback_token,
+                                                                            size_t callback_token_len,
+                                                                            const uint8_t *mime_type,
+                                                                            size_t mime_type_len,
+                                                                            const uint8_t *content_utf8,
+                                                                            size_t content_len);
+
+/**
+ * Return one pending encrypted share spool by stable sorted index.
+ */
+struct ObMobileShareSpoolSummary ob_mobile_runtime_pending_share_spool_at(size_t index);
+
+/**
+ * Import a pending `text/plain` spool into an encrypted raw draft.
+ *
+ * # Safety
+ *
+ * Both pointers must reference their declared readable byte lengths.
+ */
+struct ObMobileRawDraftReceipt ob_mobile_runtime_import_shared_text_utf8(const uint8_t *spool_ref,
+                                                                         size_t spool_ref_len,
+                                                                         const uint8_t *content_language,
+                                                                         size_t content_language_len);
 
 /**
  * Persist a bounded onboarding resume cursor in the Rust bootstrap store.

@@ -36,6 +36,7 @@ RUNTIME_PATTERN = re.compile(
     r"privacy=(?P<privacy>true|false) "
     r"history=(?P<history>true|false) "
     r"drafts=(?P<drafts>\d+) "
+    r"shareSpools=(?P<share_spools>\d+) "
     r"onboarding=(?P<onboarding>\d+)"
 )
 
@@ -78,6 +79,7 @@ def read_runtime_log(adb: str, device: str) -> dict[str, object] | None:
         "privacy_defaults_fail_safe": values["privacy"] == "true",
         "redacted_history_ready": values["history"] == "true",
         "encrypted_raw_draft_count": int(values["drafts"]),
+        "pending_share_spool_count": int(values["share_spools"]),
         "onboarding_cursor": int(values["onboarding"]),
     }
 
@@ -94,7 +96,7 @@ def wait_for_runtime(adb: str, device: str, timeout_seconds: float) -> dict[str,
 
 def assert_common(snapshot: dict[str, object]) -> None:
     expected = {
-        "profile": "MOB-04/1",
+        "profile": "MOB-04/2",
         "phase": "Active",
         "active_grants": 1,
         "bootstrap_store_opened": True,

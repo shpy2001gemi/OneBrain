@@ -79,6 +79,11 @@ void main() {
       size: Size(430, 932),
       textCapture: true,
     ),
+    const _GoldenCase(
+      name: 'share_spool_compact_light_en',
+      size: Size(360, 800),
+      shareSpool: true,
+    ),
   ];
 
   group('MOB-04 design-system golden matrix', () {
@@ -119,7 +124,21 @@ Future<void> _pumpGolden(WidgetTester tester, _GoldenCase goldenCase) async {
     ProviderScope(
       overrides: [
         mobileHostGatewayProvider.overrideWithValue(
-          const _FakeMobileHostGateway(),
+          _FakeMobileHostGateway(
+            onboardingCursor: goldenCase.shareSpool
+                ? MobileOnboardingCursor.limitedHome
+                : MobileOnboardingCursor.welcome,
+            pendingSpools: goldenCase.shareSpool
+                ? const [
+                    MobileShareSpoolSummary(
+                      spoolRef: 'spool_00000000000000000000000000000000',
+                      mimeType: 'text/plain',
+                      contentBytes: 41,
+                      receivedAtMonotonicMillis: 7,
+                    ),
+                  ]
+                : const [],
+          ),
         ),
       ],
       child: const RepaintBoundary(
@@ -208,6 +227,7 @@ class _GoldenCase {
     this.runtime = false,
     this.home = false,
     this.textCapture = false,
+    this.shareSpool = false,
   });
 
   final String name;
@@ -221,27 +241,34 @@ class _GoldenCase {
   final bool runtime;
   final bool home;
   final bool textCapture;
+  final bool shareSpool;
 }
 
 class _FakeMobileHostGateway implements MobileHostGateway {
-  const _FakeMobileHostGateway();
+  const _FakeMobileHostGateway({
+    required this.onboardingCursor,
+    required this.pendingSpools,
+  });
+
+  final MobileOnboardingCursor onboardingCursor;
+  final List<MobileShareSpoolSummary> pendingSpools;
 
   @override
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
       const MobileHostSnapshot(
         platform: 'Android test',
-        apiVersion: '5',
+        apiVersion: '6',
         registryRequestIssued: false,
         rustCoreLinked: true,
         rustCoreVersion: '0.1.0-test',
-        rustAbiVersion: 5,
+        rustAbiVersion: 6,
         rustRoundTripVerified: true,
       );
 
   @override
   Future<MobileRuntimeSnapshot> inspectRuntimeProfile() async =>
-      const MobileRuntimeSnapshot(
-        profileVersion: 'MOB-04/1',
+      MobileRuntimeSnapshot(
+        profileVersion: 'MOB-04/2',
         processGeneration: 1,
         activationPhase: 'Active',
         activeGrantCount: 1,
@@ -261,7 +288,8 @@ class _FakeMobileHostGateway implements MobileHostGateway {
         privacyDefaultsFailSafe: true,
         redactedHistoryReady: true,
         encryptedRawDraftCount: 0,
-        onboardingCursor: MobileOnboardingCursor.welcome,
+        pendingShareSpoolCount: pendingSpools.length,
+        onboardingCursor: onboardingCursor,
       );
 
   @override
@@ -277,6 +305,17 @@ class _FakeMobileHostGateway implements MobileHostGateway {
     contentBytes: content.length,
     totalDrafts: 1,
   );
+
+  @override
+  Future<List<MobileShareSpoolSummary>> inspectPendingShareSpools() async =>
+      pendingSpools;
+
+  @override
+  Future<MobileRawDraftReceipt> importSharedText({
+    required String spoolRef,
+    required String contentLanguage,
+  }) async =>
+      saveRawTextDraft(contentLanguage: contentLanguage, content: 'shared');
 
   @override
   Future<String> startFeasibilityOperation(Duration delay) async =>

@@ -32,6 +32,7 @@ internal data class RustRuntimeFacts(
     val privacyDefaultsFailSafe: Boolean,
     val redactedHistoryReady: Boolean,
     val encryptedRawDraftCount: Long,
+    val pendingShareSpoolCount: Long,
     val onboardingCursor: Int,
 )
 
@@ -40,6 +41,13 @@ internal data class RustRawDraftReceipt(
     val contentLanguage: String,
     val contentBytes: Long,
     val totalDrafts: Long,
+)
+
+internal data class RustShareSpoolSummary(
+    val spoolRef: String,
+    val mimeType: String,
+    val contentBytes: Long,
+    val receivedAtMonotonicMillis: Long,
 )
 
 internal object RustMobileBridge {
@@ -78,7 +86,7 @@ internal object RustMobileBridge {
             "Rust mobile runtime failed to open with status $statusCode"
         }
         return RustRuntimeFacts(
-            profileVersion = "MOB-04/1",
+            profileVersion = "MOB-04/2",
             processGeneration = nativeRuntimeProcessGeneration(),
             activationPhase =
                 when (nativeRuntimeActivationPhase()) {
@@ -110,6 +118,7 @@ internal object RustMobileBridge {
             privacyDefaultsFailSafe = nativeRuntimePrivacyDefaultsFailSafe(),
             redactedHistoryReady = nativeRuntimeRedactedHistoryReady(),
             encryptedRawDraftCount = nativeRuntimeEncryptedRawDraftCount(),
+            pendingShareSpoolCount = nativeRuntimePendingShareSpoolCount(),
             onboardingCursor = nativeRuntimeOnboardingCursor(),
         )
     }
@@ -152,6 +161,80 @@ internal object RustMobileBridge {
         )
     }
 
+    fun enqueueSharedText(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        callbackToken: String,
+        mimeType: String,
+        content: String,
+    ): String {
+        check(loadFailure == null) {
+            "Rust mobile bridge is unavailable: ${loadFailure?.message}"
+        }
+        check(nativeRuntimeOpenSecure(dataRoot, securityMaterial) == 0) {
+            "Rust mobile runtime rejected the protected session"
+        }
+        return nativeRuntimeEnqueueSharedText(callbackToken, mimeType, content).also {
+            check(it.isNotEmpty()) {
+                "Rust mobile runtime rejected the private share spool"
+            }
+        }
+    }
+
+    fun pendingShareSpools(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+    ): List<RustShareSpoolSummary> {
+        check(loadFailure == null) {
+            "Rust mobile bridge is unavailable: ${loadFailure?.message}"
+        }
+        check(nativeRuntimeOpenSecure(dataRoot, securityMaterial) == 0) {
+            "Rust mobile runtime rejected the protected session"
+        }
+        val count = nativeRuntimePendingShareSpoolCount().coerceIn(0, 64).toInt()
+        return (0 until count).map { index ->
+            val fields = nativeRuntimePendingShareSpoolEntry(index).split('|')
+            check(fields.size == 4) {
+                "Rust mobile runtime returned an invalid share spool entry"
+            }
+            RustShareSpoolSummary(
+                spoolRef = fields[0],
+                mimeType = fields[1],
+                contentBytes = fields[2].toLong(),
+                receivedAtMonotonicMillis = fields[3].toLong(),
+            )
+        }
+    }
+
+    fun importSharedText(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        spoolRef: String,
+        contentLanguage: String,
+    ): RustRawDraftReceipt {
+        check(loadFailure == null) {
+            "Rust mobile bridge is unavailable: ${loadFailure?.message}"
+        }
+        check(nativeRuntimeOpenSecure(dataRoot, securityMaterial) == 0) {
+            "Rust mobile runtime rejected the protected session"
+        }
+        val contentBytes =
+            pendingShareSpools(dataRoot, securityMaterial)
+                .firstOrNull { it.spoolRef == spoolRef }
+                ?.contentBytes
+                ?: 0
+        val draftRef = nativeRuntimeImportSharedText(spoolRef, contentLanguage)
+        check(draftRef.isNotEmpty()) {
+            "Rust mobile runtime rejected the private share import"
+        }
+        return RustRawDraftReceipt(
+            draftRef = draftRef,
+            contentLanguage = contentLanguage.lowercase(),
+            contentBytes = contentBytes,
+            totalDrafts = nativeRuntimeEncryptedRawDraftCount(),
+        )
+    }
+
     fun lockRuntime(): Boolean {
         if (loadFailure != null) {
             return false
@@ -179,6 +262,19 @@ internal object RustMobileBridge {
         content: String,
     ): String
 
+    @JvmStatic private external fun nativeRuntimeEnqueueSharedText(
+        callbackToken: String,
+        mimeType: String,
+        content: String,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimePendingShareSpoolEntry(index: Int): String
+
+    @JvmStatic private external fun nativeRuntimeImportSharedText(
+        spoolRef: String,
+        contentLanguage: String,
+    ): String
+
     @JvmStatic private external fun nativeRuntimeProcessGeneration(): Long
 
     @JvmStatic private external fun nativeRuntimeActivationPhase(): Int
@@ -186,6 +282,8 @@ internal object RustMobileBridge {
     @JvmStatic private external fun nativeRuntimeActiveGrantCount(): Int
 
     @JvmStatic private external fun nativeRuntimeEncryptedRawDraftCount(): Long
+
+    @JvmStatic private external fun nativeRuntimePendingShareSpoolCount(): Long
 
     @JvmStatic private external fun nativeRuntimeOnboardingCursor(): Int
 

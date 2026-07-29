@@ -18,7 +18,7 @@ policy boundaries and shared presentation; it does not clone package behavior.
 | Android SDK / AndroidX via Flutter | SDK 36 | native lifecycle and platform integration; no custom scheduler/network stack |
 | Apple UIKit/Foundation via Flutter | platform SDK | native lifecycle and bounded host integration; compile requires macOS/Xcode |
 | `jni` | 0.22.4 | FFI-safe Android JNI environment and native-method name generation |
-| `cargo-ndk` | 4.1.2 | Android NDK discovery, target setup and standard `jniLibs` output |
+| `cargo-ndk` | 4.1.2 | Android NDK discovery, target setup and standard `jniLibs` output for every Flutter-packaged ABI |
 | `cbindgen` | 0.29.4 | checked-in Swift-facing C header generated from Rust exports |
 | `redb` | 2.6.3 | ACID bootstrap process/operation/chunk/transfer state without a C toolchain |
 | `ed25519-dalek` | 2.2.0 | signed deterministic local KQL fixture verification |
@@ -28,6 +28,14 @@ policy boundaries and shared presentation; it does not clone package behavior.
 | `blake3` pure Rust backend | 1.8.5 | portable archive/draft commitments without a mismatched native NEON object in iOS cross-builds |
 | existing `ku-core` + `ku-kql` crates | workspace | canonical KU types and local parser/executor reuse without `ku-ai`, Ollama or a transport stack |
 | Google Fonts assets | pinned commits and SHA-256 in `assets/font_asset_manifest_v1.json` | offline Nunito Sans, Roboto Mono and Material Symbols Rounded assets under their upstream licenses |
+
+Android `ACTION_SEND` and the iOS share-extension API remain native callback
+surfaces because Flutter share-receive packages expose payload/file paths to
+Dart and do not provide OneBrain's encrypted, idempotent landing journal.
+`receive_sharing_intent` 1.9.0 was evaluated for callback coverage, but it
+cannot own canonical intake under the no-path/no-plaintext Dart boundary.
+Native code performs only bounded callback extraction; Rust owns encryption,
+deduplication, inspection metadata and transactional import.
 
 The Riverpod version is pinned to the newest stable release compatible with
 the repository's Dart 3.11.3 toolchain. Package upgrades are reviewed and

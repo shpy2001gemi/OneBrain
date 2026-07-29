@@ -1,0 +1,14 @@
+{
+  "cold_start_spool_landed": true,
+  "device": "emulator-5554",
+  "format": "onebrain.mobile.android-share-intent/1",
+  "generated_at": "2026-07-29T19:39:40.896727+00:00",
+  "mime_type": "text/plain",
+  "package": "org.onebrain.onebrain_mobile",
+  "physical_device_claimed": false,
+  "plaintext_absent_from_runtime_log": true,
+  "result": "passed",
+  "rust_import_idempotent": true,
+  "survived_force_stop": true,
+  "unsupported_mime_rejected": true
+}

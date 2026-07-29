@@ -23,6 +23,10 @@ class _EntryScreenState extends ConsumerState<EntryScreen> {
         await ref.read(bootstrapHostSnapshotProvider.future);
         final runtime = await ref.read(mobileRuntimeSnapshotProvider.future);
         location = runtime.onboardingCursor.location;
+        if (location == MobileOnboardingCursor.limitedHome.location &&
+            runtime.pendingShareSpoolCount > 0) {
+          location = '/capture/spools';
+        }
       } on Object {
         // The typed host state remains visible as unavailable on the next
         // screen. Entry resolution does not invent product readiness.

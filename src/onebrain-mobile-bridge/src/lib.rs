@@ -18,7 +18,7 @@ use onebrain_mobile_core::{
 };
 
 /// Stable ABI revision understood by the current Swift/Kotlin adapters.
-pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 5;
+pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 6;
 
 pub const OB_MOBILE_RUNTIME_OK: u32 = 0;
 pub const OB_MOBILE_RUNTIME_INVALID_PATH: u32 = 1;
@@ -28,6 +28,8 @@ pub const OB_MOBILE_RUNTIME_NOT_OPEN: u32 = 4;
 pub const OB_MOBILE_RUNTIME_INVALID_SECURITY_MATERIAL: u32 = 5;
 pub const OB_MOBILE_RUNTIME_INVALID_DRAFT: u32 = 6;
 pub const OB_MOBILE_RUNTIME_INVALID_ONBOARDING_CURSOR: u32 = 7;
+pub const OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL: u32 = 8;
+pub const OB_MOBILE_RUNTIME_SHARE_SPOOL_NOT_FOUND: u32 = 9;
 
 const CORE_VERSION: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
@@ -56,6 +58,7 @@ pub struct ObMobileRuntimeSnapshot {
     pub privacy_defaults_fail_safe: u8,
     pub redacted_history_ready: u8,
     pub encrypted_raw_draft_count: u64,
+    pub pending_share_spool_count: u64,
     pub onboarding_cursor: u32,
 }
 
@@ -82,6 +85,7 @@ impl ObMobileRuntimeSnapshot {
             privacy_defaults_fail_safe: 0,
             redacted_history_ready: 0,
             encrypted_raw_draft_count: 0,
+            pending_share_spool_count: 0,
             onboarding_cursor: 0,
         }
     }
@@ -112,8 +116,48 @@ impl ObMobileRuntimeSnapshot {
             privacy_defaults_fail_safe: bool_byte(snapshot.privacy_defaults_fail_safe),
             redacted_history_ready: bool_byte(snapshot.redacted_history_ready),
             encrypted_raw_draft_count: snapshot.encrypted_raw_draft_count,
+            pending_share_spool_count: snapshot.pending_share_spool_count,
             onboarding_cursor: snapshot.onboarding_cursor.code(),
         }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ObMobileShareSpoolSummary {
+    pub status_code: u32,
+    pub spool_ref: [u8; 39],
+    pub spool_ref_len: u32,
+    pub mime_type: [u8; 64],
+    pub mime_type_len: u32,
+    pub content_bytes: u64,
+    pub received_at_monotonic_ms: u64,
+}
+
+impl ObMobileShareSpoolSummary {
+    const fn error(status_code: u32) -> Self {
+        Self {
+            status_code,
+            spool_ref: [0; 39],
+            spool_ref_len: 0,
+            mime_type: [0; 64],
+            mime_type_len: 0,
+            content_bytes: 0,
+            received_at_monotonic_ms: 0,
+        }
+    }
+
+    fn from_core(summary: onebrain_mobile_core::ShareSpoolSummary) -> Self {
+        let mut bridged = Self::error(OB_MOBILE_RUNTIME_OK);
+        let spool_ref = summary.spool_ref.as_bytes();
+        let mime_type = summary.mime_type.as_bytes();
+        bridged.spool_ref[..spool_ref.len()].copy_from_slice(spool_ref);
+        bridged.spool_ref_len = u32::try_from(spool_ref.len()).unwrap_or(0);
+        bridged.mime_type[..mime_type.len()].copy_from_slice(mime_type);
+        bridged.mime_type_len = u32::try_from(mime_type.len()).unwrap_or(0);
+        bridged.content_bytes = summary.content_bytes;
+        bridged.received_at_monotonic_ms = summary.received_at_monotonic_ms;
+        bridged
     }
 }
 
@@ -318,6 +362,101 @@ pub unsafe extern "C" fn ob_mobile_runtime_save_raw_text_draft_utf8(
     save_raw_text_draft(language, content)
 }
 
+/// Land a bounded native share callback into the encrypted private spool.
+///
+/// This native-only entry point is not exposed to Dart. The callback token is
+/// used solely for idempotency and the returned spool reference is opaque.
+///
+/// # Safety
+///
+/// Every pointer must reference its declared readable byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_enqueue_shared_text_utf8(
+    callback_token: *const u8,
+    callback_token_len: usize,
+    mime_type: *const u8,
+    mime_type_len: usize,
+    content_utf8: *const u8,
+    content_len: usize,
+) -> ObMobileShareSpoolSummary {
+    if callback_token.is_null()
+        || mime_type.is_null()
+        || content_utf8.is_null()
+        || callback_token_len == 0
+        || callback_token_len > 96
+        || mime_type_len == 0
+        || mime_type_len > 63
+        || content_len == 0
+        || content_len > 512 * 1024
+    {
+        return ObMobileShareSpoolSummary::error(OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL);
+    }
+    let callback_token = match str::from_utf8(unsafe {
+        slice::from_raw_parts(callback_token, callback_token_len)
+    }) {
+        Ok(value) => value,
+        Err(_) => {
+            return ObMobileShareSpoolSummary::error(OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL);
+        }
+    };
+    let mime_type = match str::from_utf8(unsafe { slice::from_raw_parts(mime_type, mime_type_len) })
+    {
+        Ok(value) => value,
+        Err(_) => {
+            return ObMobileShareSpoolSummary::error(OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL);
+        }
+    };
+    let content = unsafe { slice::from_raw_parts(content_utf8, content_len) };
+    enqueue_shared_text(callback_token, mime_type, content)
+}
+
+/// Return one pending encrypted share spool by stable sorted index.
+#[unsafe(no_mangle)]
+pub extern "C" fn ob_mobile_runtime_pending_share_spool_at(
+    index: usize,
+) -> ObMobileShareSpoolSummary {
+    pending_share_spool_at(index)
+}
+
+/// Import a pending `text/plain` spool into an encrypted raw draft.
+///
+/// # Safety
+///
+/// Both pointers must reference their declared readable byte lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_import_shared_text_utf8(
+    spool_ref: *const u8,
+    spool_ref_len: usize,
+    content_language: *const u8,
+    content_language_len: usize,
+) -> ObMobileRawDraftReceipt {
+    if spool_ref.is_null()
+        || content_language.is_null()
+        || spool_ref_len == 0
+        || spool_ref_len > 38
+        || content_language_len == 0
+        || content_language_len > 35
+    {
+        return ObMobileRawDraftReceipt::error(OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL);
+    }
+    let spool_ref = match str::from_utf8(unsafe { slice::from_raw_parts(spool_ref, spool_ref_len) })
+    {
+        Ok(value) => value,
+        Err(_) => {
+            return ObMobileRawDraftReceipt::error(OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL);
+        }
+    };
+    let language = match str::from_utf8(unsafe {
+        slice::from_raw_parts(content_language, content_language_len)
+    }) {
+        Ok(value) => value,
+        Err(_) => {
+            return ObMobileRawDraftReceipt::error(OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL);
+        }
+    };
+    import_shared_text(spool_ref, language)
+}
+
 /// Persist a bounded onboarding resume cursor in the Rust bootstrap store.
 #[unsafe(no_mangle)]
 pub extern "C" fn ob_mobile_runtime_set_onboarding_cursor(cursor_code: u32) -> u32 {
@@ -425,6 +564,67 @@ fn save_raw_text_draft(content_language: &str, content_utf8: &[u8]) -> ObMobileR
     }
 }
 
+fn enqueue_shared_text(
+    callback_token: &str,
+    mime_type: &str,
+    content_utf8: &[u8],
+) -> ObMobileShareSpoolSummary {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileShareSpoolSummary::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_mut() else {
+        return ObMobileShareSpoolSummary::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.enqueue_shared_text(callback_token, mime_type, content_utf8) {
+        Ok(receipt) => ObMobileShareSpoolSummary::from_core(receipt),
+        Err(_) => ObMobileShareSpoolSummary::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn pending_share_spool_at(index: usize) -> ObMobileShareSpoolSummary {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileShareSpoolSummary::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileShareSpoolSummary::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.pending_share_spools(index.saturating_add(1)) {
+        Ok(spools) => spools
+            .into_iter()
+            .nth(index)
+            .map(ObMobileShareSpoolSummary::from_core)
+            .unwrap_or_else(|| {
+                ObMobileShareSpoolSummary::error(OB_MOBILE_RUNTIME_SHARE_SPOOL_NOT_FOUND)
+            }),
+        Err(_) => ObMobileShareSpoolSummary::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn import_shared_text(spool_ref: &str, content_language: &str) -> ObMobileRawDraftReceipt {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRawDraftReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_mut() else {
+        return ObMobileRawDraftReceipt::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.import_shared_text(spool_ref, content_language) {
+        Ok(receipt) => ObMobileRawDraftReceipt::from_core(receipt),
+        Err(_) => ObMobileRawDraftReceipt::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
 fn set_onboarding_cursor(cursor: OnboardingCursor) -> u32 {
     let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
     let guard = match runtime.lock() {
@@ -468,10 +668,11 @@ mod android {
     };
 
     use super::{
-        ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
-        ob_mobile_bridge_round_trip, ob_mobile_runtime_lock_private_node,
-        ob_mobile_runtime_set_onboarding_cursor, open_runtime, open_runtime_secured,
-        runtime_snapshot, save_raw_text_draft, CORE_VERSION,
+        enqueue_shared_text, import_shared_text, ob_mobile_bridge_abi_version,
+        ob_mobile_bridge_registry_request_issued, ob_mobile_bridge_round_trip,
+        ob_mobile_runtime_lock_private_node, ob_mobile_runtime_set_onboarding_cursor, open_runtime,
+        open_runtime_secured, pending_share_spool_at, runtime_snapshot, save_raw_text_draft,
+        CORE_VERSION,
     };
     use onebrain_mobile_core::SecurityBootstrapMaterial;
     use zeroize::Zeroize;
@@ -579,6 +780,97 @@ mod android {
 
     #[jni_mangle(
         "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeEnqueueSharedText"
+    )]
+    pub fn native_runtime_enqueue_shared_text<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        callback_token: JString<'caller>,
+        mime_type: JString<'caller>,
+        content: JString<'caller>,
+    ) -> JString<'caller> {
+        let token = unowned_env
+            .with_env(|env| callback_token.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let mime = unowned_env
+            .with_env(|env| mime_type.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let text = unowned_env
+            .with_env(|env| content.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let receipt = enqueue_shared_text(&token, &mime, text.as_bytes());
+        let spool_ref = if receipt.status_code == super::OB_MOBILE_RUNTIME_OK {
+            std::str::from_utf8(&receipt.spool_ref[..receipt.spool_ref_len as usize]).unwrap_or("")
+        } else {
+            ""
+        };
+        unowned_env
+            .with_env(|env| JString::from_str(env, spool_ref))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimePendingShareSpoolEntry"
+    )]
+    pub fn native_runtime_pending_share_spool_entry<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        index: jint,
+    ) -> JString<'caller> {
+        let encoded = if index < 0 {
+            String::new()
+        } else {
+            let summary = pending_share_spool_at(index as usize);
+            if summary.status_code == super::OB_MOBILE_RUNTIME_OK {
+                let spool_ref =
+                    std::str::from_utf8(&summary.spool_ref[..summary.spool_ref_len as usize])
+                        .unwrap_or("");
+                let mime_type =
+                    std::str::from_utf8(&summary.mime_type[..summary.mime_type_len as usize])
+                        .unwrap_or("");
+                format!(
+                    "{spool_ref}|{mime_type}|{}|{}",
+                    summary.content_bytes, summary.received_at_monotonic_ms
+                )
+            } else {
+                String::new()
+            }
+        };
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeImportSharedText"
+    )]
+    pub fn native_runtime_import_shared_text<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        spool_ref: JString<'caller>,
+        content_language: JString<'caller>,
+    ) -> JString<'caller> {
+        let reference = unowned_env
+            .with_env(|env| spool_ref.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let language = unowned_env
+            .with_env(|env| content_language.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let receipt = import_shared_text(&reference, &language);
+        let draft_ref = if receipt.status_code == super::OB_MOBILE_RUNTIME_OK {
+            std::str::from_utf8(&receipt.draft_ref[..receipt.draft_ref_len as usize]).unwrap_or("")
+        } else {
+            ""
+        };
+        unowned_env
+            .with_env(|env| JString::from_str(env, draft_ref))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
         "nativeRuntimeSetOnboardingCursor"
     )]
     pub fn native_runtime_set_onboarding_cursor(
@@ -625,6 +917,17 @@ mod android {
         _class: JClass<'_>,
     ) -> jlong {
         runtime_snapshot().encrypted_raw_draft_count as jlong
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimePendingShareSpoolCount"
+    )]
+    pub fn native_runtime_pending_share_spool_count(
+        _env: EnvUnowned<'_>,
+        _class: JClass<'_>,
+    ) -> jlong {
+        runtime_snapshot().pending_share_spool_count as jlong
     }
 
     #[jni_mangle(
@@ -733,7 +1036,7 @@ mod tests {
 
     #[test]
     fn abi_and_version_are_bounded_and_stable() {
-        assert_eq!(ob_mobile_bridge_abi_version(), 5);
+        assert_eq!(ob_mobile_bridge_abi_version(), 6);
         let version = unsafe { CStr::from_ptr(ob_mobile_bridge_core_version()) };
         assert_eq!(version.to_str().expect("version UTF-8"), "0.1.0");
         assert!(version.to_bytes().len() <= 32);

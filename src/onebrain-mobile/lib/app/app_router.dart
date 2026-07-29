@@ -10,6 +10,7 @@ import '../ui/screens/init_screen.dart';
 import '../ui/screens/library_screen.dart';
 import '../ui/screens/onboarding_screen.dart';
 import '../ui/screens/settings_screen.dart';
+import '../ui/screens/share_spools_screen.dart';
 import '../ui/screens/text_capture_screen.dart';
 import '../ui/screens/welcome_screen.dart';
 
@@ -75,6 +76,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/capture/text',
         name: 'capture-text',
         builder: (context, state) => const TextCaptureScreen(),
+      ),
+      GoRoute(
+        path: '/capture/spools',
+        name: 'capture-share-spools',
+        builder: (context, state) => const ShareSpoolsScreen(),
       ),
       GoRoute(
         path: '/assistant',

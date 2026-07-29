@@ -3,12 +3,12 @@
   "android_build_tools": "36.0.0",
   "forbidden_bootstrap_network_permissions": [],
   "format": "onebrain.mobile.android-permissions/1",
-  "generated_at": "2026-07-29T18:59:09.206898+00:00",
+  "generated_at": "2026-07-29T19:31:03.280934+00:00",
   "limitations": "This proves the packaged Android release lacks OS network permissions. It does not replace later explicit-Init transport tests or physical-device packet capture.",
   "network_capability_present": false,
   "package": "app-release.apk",
-  "package_bytes": 47709656,
-  "package_sha256": "f46f7662b6559b400c1b701878193df728d4c1a64b37c97b48828030bae270f5",
+  "package_bytes": 63773468,
+  "package_sha256": "00fcb196df7828a36feb1b067d6cf9954a707e219a3866e8e824aed9bc5a05c3",
   "permissions": [
     "org.onebrain.onebrain_mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
   ],

@@ -15,11 +15,12 @@
     "durable Rust-owned onboarding resume cursor",
     "honest BootstrapOnly Limited shell",
     "encrypted bounded PrivateLocal text drafts",
+    "Android text/plain share-intent cold-start landing, encrypted spool inspection and idempotent draft import",
     "adaptive five-destination shell and Registry-gated disabled routes",
     "runtime, storage and no-LLM status surfaces"
   ],
   "remaining_mob04_scope": [
-    "encrypted iOS share-extension and Android share-intent spool ingestion",
+    "encrypted iOS share-extension landing",
     "system-picker media staging",
     "user-selected encrypted backup and export destination workflow",
     "full Limited, Degraded and Safe shell state matrix"
@@ -39,5 +40,5 @@
     "network_lane_enabled": false,
     "llm_lane_enabled": false
   },
-  "notes": "Virtual gates prove the implemented private Limited slice only. Registry-dependent validation/search/KQL routes, share/media intake and backup/export destination workflows remain gated; MOB-GATE-OFFLINE-MVP can close only after MOB-05 first activation."
+  "notes": "Virtual gates prove the implemented private Limited slice and Android text/plain share-intent path only. iOS extension landing, Registry-dependent validation/search/KQL routes, media intake and backup/export destination workflows remain gated; MOB-GATE-OFFLINE-MVP can close only after MOB-05 first activation."
 }

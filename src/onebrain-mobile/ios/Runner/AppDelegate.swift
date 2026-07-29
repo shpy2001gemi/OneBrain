@@ -3,7 +3,7 @@ import Flutter
 import Security
 import UIKit
 
-private let hostApiVersion = "5"
+private let hostApiVersion = "6"
 private let maxFeasibilityDelayMilliseconds: Int64 = 30_000
 private let rustRoundTripNonce: UInt64 = 0x4F_42_4D_30_31
 private let securityMaterialBytes = 192
@@ -277,7 +277,7 @@ private final class IOSMobileHost: MobileHostApi {
         activationPhase = "Unknown"
       }
       let snapshot = HostRuntimeSnapshot(
-        profileVersion: "MOB-04/1",
+        profileVersion: "MOB-04/2",
         processGeneration: Int64(runtime.process_generation),
         activationPhase: activationPhase,
         activeGrantCount: Int64(runtime.active_grant_count),
@@ -298,6 +298,7 @@ private final class IOSMobileHost: MobileHostApi {
         privacyDefaultsFailSafe: runtime.privacy_defaults_fail_safe != 0,
         redactedHistoryReady: runtime.redacted_history_ready != 0,
         encryptedRawDraftCount: Int64(runtime.encrypted_raw_draft_count),
+        pendingShareSpoolCount: Int64(runtime.pending_share_spool_count),
         onboardingCursor:
           HostOnboardingCursor(rawValue: Int(runtime.onboarding_cursor)) ?? .welcome
       )
@@ -389,6 +390,227 @@ private final class IOSMobileHost: MobileHostApi {
               PigeonError(
                 code: "RAW_DRAFT_SAVE_FAILED",
                 message: "Private draft could not be saved",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      let draftRef = withUnsafeBytes(of: receipt.draft_ref) { bytes in
+        String(
+          decoding: bytes.prefix(Int(receipt.draft_ref_len)),
+          as: UTF8.self
+        )
+      }
+      let language = withUnsafeBytes(of: receipt.content_language) { bytes in
+        String(
+          decoding: bytes.prefix(Int(receipt.content_language_len)),
+          as: UTF8.self
+        )
+      }
+      let result = HostRawDraftReceipt(
+        draftRef: draftRef,
+        contentLanguage: language,
+        contentBytes: Int64(receipt.content_bytes),
+        totalDrafts: Int64(receipt.total_drafts)
+      )
+      DispatchQueue.main.async {
+        completion(.success(result))
+      }
+    }
+  }
+
+  func inspectPendingShareSpools(
+    completion: @escaping (Result<[HostShareSpoolSummary], Error>) -> Void
+  ) {
+    guard let dataRoot, let securityMaterialStore else {
+      completion(
+        .failure(
+          PigeonError(
+            code: "RUNTIME_PATH_UNAVAILABLE",
+            message: "Application Support storage is unavailable",
+            details: nil
+          )
+        )
+      )
+      return
+    }
+    runtimeQueue.async {
+      var securityMaterial: Data
+      do {
+        securityMaterial = try securityMaterialStore.loadOrCreate()
+      } catch {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "SECURE_MATERIAL_UNAVAILABLE",
+                message: "Protected installation material is unavailable",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      defer {
+        securityMaterial.resetBytes(in: 0..<securityMaterial.count)
+      }
+      let pathBytes = Array(dataRoot.utf8)
+      let runtime = pathBytes.withUnsafeBufferPointer { bytes in
+        securityMaterial.withUnsafeBytes { material in
+          ob_mobile_runtime_open_secure_utf8(
+            bytes.baseAddress,
+            bytes.count,
+            material.bindMemory(to: UInt8.self).baseAddress,
+            material.count
+          )
+        }
+      }
+      guard runtime.status_code == 0 else {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "RUNTIME_OPEN_FAILED",
+                message: "Protected runtime session is unavailable",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      let count = min(Int(runtime.pending_share_spool_count), 64)
+      var summaries: [HostShareSpoolSummary] = []
+      summaries.reserveCapacity(count)
+      for index in 0..<count {
+        let summary = ob_mobile_runtime_pending_share_spool_at(index)
+        guard summary.status_code == 0 else {
+          DispatchQueue.main.async {
+            completion(
+              .failure(
+                PigeonError(
+                  code: "SHARE_SPOOL_INSPECT_FAILED",
+                  message: "Private share spool could not be inspected",
+                  details: nil
+                )
+              )
+            )
+          }
+          return
+        }
+        let spoolRef = withUnsafeBytes(of: summary.spool_ref) { bytes in
+          String(
+            decoding: bytes.prefix(Int(summary.spool_ref_len)),
+            as: UTF8.self
+          )
+        }
+        let mimeType = withUnsafeBytes(of: summary.mime_type) { bytes in
+          String(
+            decoding: bytes.prefix(Int(summary.mime_type_len)),
+            as: UTF8.self
+          )
+        }
+        summaries.append(
+          HostShareSpoolSummary(
+            spoolRef: spoolRef,
+            mimeType: mimeType,
+            contentBytes: Int64(summary.content_bytes),
+            receivedAtMonotonicMillis:
+              Int64(summary.received_at_monotonic_ms)
+          )
+        )
+      }
+      DispatchQueue.main.async {
+        completion(.success(summaries))
+      }
+    }
+  }
+
+  func importSharedText(
+    spoolRef: String,
+    contentLanguage: String,
+    completion: @escaping (Result<HostRawDraftReceipt, Error>) -> Void
+  ) {
+    guard let dataRoot, let securityMaterialStore else {
+      completion(
+        .failure(
+          PigeonError(
+            code: "RUNTIME_PATH_UNAVAILABLE",
+            message: "Application Support storage is unavailable",
+            details: nil
+          )
+        )
+      )
+      return
+    }
+    runtimeQueue.async {
+      var securityMaterial: Data
+      do {
+        securityMaterial = try securityMaterialStore.loadOrCreate()
+      } catch {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "SECURE_MATERIAL_UNAVAILABLE",
+                message: "Protected installation material is unavailable",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      defer {
+        securityMaterial.resetBytes(in: 0..<securityMaterial.count)
+      }
+      let pathBytes = Array(dataRoot.utf8)
+      let runtime = pathBytes.withUnsafeBufferPointer { bytes in
+        securityMaterial.withUnsafeBytes { material in
+          ob_mobile_runtime_open_secure_utf8(
+            bytes.baseAddress,
+            bytes.count,
+            material.bindMemory(to: UInt8.self).baseAddress,
+            material.count
+          )
+        }
+      }
+      guard runtime.status_code == 0 else {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "RUNTIME_OPEN_FAILED",
+                message: "Protected runtime session is unavailable",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      let spoolBytes = Array(spoolRef.utf8)
+      let languageBytes = Array(contentLanguage.utf8)
+      let receipt = spoolBytes.withUnsafeBufferPointer { spool in
+        languageBytes.withUnsafeBufferPointer { language in
+          ob_mobile_runtime_import_shared_text_utf8(
+            spool.baseAddress,
+            spool.count,
+            language.baseAddress,
+            language.count
+          )
+        }
+      }
+      guard receipt.status_code == 0 else {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "SHARE_SPOOL_IMPORT_FAILED",
+                message: "Shared text could not be imported",
                 details: nil
               )
             )

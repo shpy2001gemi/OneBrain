@@ -43,6 +43,8 @@ def scan_package(package: Path) -> dict[str, object]:
     maximum_asset_bytes = int(guards["maximum_unlisted_asset_bytes"])
     violations: list[str] = []
     entries: list[dict[str, object]] = []
+    android_runtime_abis: set[str] = set()
+    android_bridge_abis: set[str] = set()
 
     with zipfile.ZipFile(package) as archive:
         for info in archive.infolist():
@@ -57,6 +59,19 @@ def scan_package(package: Path) -> dict[str, object]:
                     "compressed_bytes": info.compress_size,
                 }
             )
+            path_parts = normalized.split("/")
+            if (
+                len(path_parts) == 3
+                and path_parts[0] == "lib"
+                and path_parts[2] in {"libflutter.so", "libapp.so"}
+            ):
+                android_runtime_abis.add(path_parts[1])
+            if (
+                len(path_parts) == 3
+                and path_parts[0] == "lib"
+                and path_parts[2] == "libonebrain_mobile_bridge.so"
+            ):
+                android_bridge_abis.add(path_parts[1])
             if basename in forbidden_names or normalized.endswith(
                 forbidden_suffixes
             ):
@@ -76,6 +91,11 @@ def scan_package(package: Path) -> dict[str, object]:
                     f"UNLISTED_LARGE_ASSET:{info.filename}:{info.file_size}"
                 )
 
+    for abi in sorted(android_runtime_abis - android_bridge_abis):
+        violations.append(f"MISSING_RUST_BRIDGE_FOR_ANDROID_ABI:{abi}")
+    for abi in sorted(android_bridge_abis - android_runtime_abis):
+        violations.append(f"UNBOUND_RUST_BRIDGE_ANDROID_ABI:{abi}")
+
     largest = sorted(
         entries,
         key=lambda entry: int(entry["uncompressed_bytes"]),
@@ -88,6 +108,8 @@ def scan_package(package: Path) -> dict[str, object]:
         "package_bytes": package.stat().st_size,
         "package_sha256": _sha256(package),
         "entry_count": len(entries),
+        "android_runtime_abis": sorted(android_runtime_abis),
+        "android_rust_bridge_abis": sorted(android_bridge_abis),
         "forbidden_payload_count": len(violations),
         "violations": sorted(set(violations)),
         "largest_entries": largest,

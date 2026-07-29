@@ -6,7 +6,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     InstallationAuthorityRecord, MobileCoreError, PrivateDraftKey, PrivateDraftStore,
-    RawDraftReceipt,
+    RawDraftReceipt, ShareSpoolSummary,
 };
 
 pub const SECURITY_BOOTSTRAP_MATERIAL_BYTES: usize = 192;
@@ -260,6 +260,60 @@ impl SecureIdentitySession {
             .as_ref()
             .ok_or(MobileCoreError::Locked)?
             .count()
+    }
+
+    pub fn enqueue_shared_text(
+        &self,
+        callback_token: &str,
+        mime_type: &str,
+        content_utf8: &[u8],
+        now_monotonic_ms: u64,
+    ) -> Result<ShareSpoolSummary, MobileCoreError> {
+        if !self.session_is_eligible(now_monotonic_ms) {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_drafts
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .enqueue_shared_text(callback_token, mime_type, content_utf8, now_monotonic_ms)
+    }
+
+    pub fn pending_share_spools(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ShareSpoolSummary>, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_drafts
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .pending_share_spools(limit)
+    }
+
+    pub fn pending_share_spool_count(&self) -> Result<u64, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_drafts
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .pending_share_spool_count()
+    }
+
+    pub fn import_shared_text(
+        &self,
+        spool_ref: &str,
+        content_language: &str,
+        now_monotonic_ms: u64,
+    ) -> Result<RawDraftReceipt, MobileCoreError> {
+        if !self.session_is_eligible(now_monotonic_ms) {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_drafts
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .import_shared_text(spool_ref, content_language, now_monotonic_ms)
     }
 
     pub fn session_is_eligible(&self, now_monotonic_ms: u64) -> bool {

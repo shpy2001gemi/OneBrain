@@ -67,12 +67,12 @@ The checked-in app now includes:
   cancellation.
 
 The native snapshot now crosses the generated Pigeon API, Swift/Kotlin host,
-the Rust C ABI/JNI bridge and `onebrain-mobile-core`. ABI revision `5` adds a
+the Rust C ABI/JNI bridge and `onebrain-mobile-core`. ABI revision `6` adds a
 platform-protected installation session, exact epoch/nonce authority binding,
 three independent signer domains, an encrypted private vault, encrypted
 Limited-mode raw drafts and a durable onboarding resume cursor to the bounded
-`BootstrapOnly` runtime. It still reports that no Registry request has been
-issued.
+`BootstrapOnly` runtime, plus opaque encrypted share-spool inspection and
+idempotent import. It still reports that no Registry request has been issued.
 
 See [`PACKAGE_POLICY.md`](./PACKAGE_POLICY.md) for the package-first and
 shared-widget contract, and [`RUST_BRIDGE.md`](./RUST_BRIDGE.md) for ABI,
@@ -80,7 +80,7 @@ thread-ownership, build and fallback details.
 
 The current automated evidence additionally covers:
 
-- eleven Windows goldens spanning light/dark, high contrast,
+- twelve Windows goldens spanning light/dark, high contrast,
   English/Vietnamese, 200% text, reduced motion, compact/large/expanded
   layouts, the runtime status card, Limited Home and private text capture;
 - Android 16 integration of async `started`, `cancelled` and `completed`
@@ -117,12 +117,16 @@ MOB-04 virtual evidence additionally covers:
   `PrivateLocal` draft store, with only an opaque receipt returned to Dart;
 - shared adaptive Home/Library/Capture/Assistant/Settings navigation,
   Registry-gated disabled states, runtime/storage facts and no-LLM behavior;
-- Android 16 ABI 5 integration, force-stop recovery, fail-closed missing-marker
+- Android 16 ABI 6 integration, force-stop recovery, fail-closed missing-marker
   injection, 320 px/200% text reflow and deterministic UI goldens.
+- Android `text/plain` share intents land on cold start, survive force-stop,
+  expose only opaque metadata to Flutter and import idempotently into an
+  encrypted raw draft.
 
-Share-intent encrypted spool ingestion and user-selected encrypted
-backup/export destinations remain explicit MOB-04 work; the current disabled
-cards do not claim those workflows are implemented.
+iOS share-extension landing, system-picker media staging and user-selected
+encrypted backup/export destinations remain explicit MOB-04 work. Android
+share-intent support does not imply file/media intake or iOS extension
+readiness.
 
 Physical Android/iOS validation is intentionally deferred by the owner while
 emulator/simulator development continues. This does not close the physical

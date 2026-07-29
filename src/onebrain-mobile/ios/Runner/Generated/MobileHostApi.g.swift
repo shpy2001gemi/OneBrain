@@ -286,6 +286,7 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
   var privacyDefaultsFailSafe: Bool
   var redactedHistoryReady: Bool
   var encryptedRawDraftCount: Int64
+  var pendingShareSpoolCount: Int64
   var onboardingCursor: HostOnboardingCursor
 
 
@@ -311,7 +312,8 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
     let privacyDefaultsFailSafe = pigeonVar_list[17] as! Bool
     let redactedHistoryReady = pigeonVar_list[18] as! Bool
     let encryptedRawDraftCount = pigeonVar_list[19] as! Int64
-    let onboardingCursor = pigeonVar_list[20] as! HostOnboardingCursor
+    let pendingShareSpoolCount = pigeonVar_list[20] as! Int64
+    let onboardingCursor = pigeonVar_list[21] as! HostOnboardingCursor
 
     return HostRuntimeSnapshot(
       profileVersion: profileVersion,
@@ -334,6 +336,7 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
       privacyDefaultsFailSafe: privacyDefaultsFailSafe,
       redactedHistoryReady: redactedHistoryReady,
       encryptedRawDraftCount: encryptedRawDraftCount,
+      pendingShareSpoolCount: pendingShareSpoolCount,
       onboardingCursor: onboardingCursor
     )
   }
@@ -359,6 +362,7 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
       privacyDefaultsFailSafe,
       redactedHistoryReady,
       encryptedRawDraftCount,
+      pendingShareSpoolCount,
       onboardingCursor,
     ]
   }
@@ -366,7 +370,7 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return MobileHostApiPigeonInternal.deepEquals(lhs.profileVersion, rhs.profileVersion) && MobileHostApiPigeonInternal.deepEquals(lhs.processGeneration, rhs.processGeneration) && MobileHostApiPigeonInternal.deepEquals(lhs.activationPhase, rhs.activationPhase) && MobileHostApiPigeonInternal.deepEquals(lhs.activeGrantCount, rhs.activeGrantCount) && MobileHostApiPigeonInternal.deepEquals(lhs.recoveredUncleanStart, rhs.recoveredUncleanStart) && MobileHostApiPigeonInternal.deepEquals(lhs.bootstrapStoreOpened, rhs.bootstrapStoreOpened) && MobileHostApiPigeonInternal.deepEquals(lhs.registryState, rhs.registryState) && MobileHostApiPigeonInternal.deepEquals(lhs.localKqlFixtureVerified, rhs.localKqlFixtureVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.privatePlannerVerified, rhs.privatePlannerVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.noLlmProvider, rhs.noLlmProvider) && MobileHostApiPigeonInternal.deepEquals(lhs.staleCallbackRejected, rhs.staleCallbackRejected) && MobileHostApiPigeonInternal.deepEquals(lhs.secureProfileActive, rhs.secureProfileActive) && MobileHostApiPigeonInternal.deepEquals(lhs.installationBindingVerified, rhs.installationBindingVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.installationCreated, rhs.installationCreated) && MobileHostApiPigeonInternal.deepEquals(lhs.securitySessionUnlocked, rhs.securitySessionUnlocked) && MobileHostApiPigeonInternal.deepEquals(lhs.privateVaultReady, rhs.privateVaultReady) && MobileHostApiPigeonInternal.deepEquals(lhs.identityDomainsSeparated, rhs.identityDomainsSeparated) && MobileHostApiPigeonInternal.deepEquals(lhs.privacyDefaultsFailSafe, rhs.privacyDefaultsFailSafe) && MobileHostApiPigeonInternal.deepEquals(lhs.redactedHistoryReady, rhs.redactedHistoryReady) && MobileHostApiPigeonInternal.deepEquals(lhs.encryptedRawDraftCount, rhs.encryptedRawDraftCount) && MobileHostApiPigeonInternal.deepEquals(lhs.onboardingCursor, rhs.onboardingCursor)
+    return MobileHostApiPigeonInternal.deepEquals(lhs.profileVersion, rhs.profileVersion) && MobileHostApiPigeonInternal.deepEquals(lhs.processGeneration, rhs.processGeneration) && MobileHostApiPigeonInternal.deepEquals(lhs.activationPhase, rhs.activationPhase) && MobileHostApiPigeonInternal.deepEquals(lhs.activeGrantCount, rhs.activeGrantCount) && MobileHostApiPigeonInternal.deepEquals(lhs.recoveredUncleanStart, rhs.recoveredUncleanStart) && MobileHostApiPigeonInternal.deepEquals(lhs.bootstrapStoreOpened, rhs.bootstrapStoreOpened) && MobileHostApiPigeonInternal.deepEquals(lhs.registryState, rhs.registryState) && MobileHostApiPigeonInternal.deepEquals(lhs.localKqlFixtureVerified, rhs.localKqlFixtureVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.privatePlannerVerified, rhs.privatePlannerVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.noLlmProvider, rhs.noLlmProvider) && MobileHostApiPigeonInternal.deepEquals(lhs.staleCallbackRejected, rhs.staleCallbackRejected) && MobileHostApiPigeonInternal.deepEquals(lhs.secureProfileActive, rhs.secureProfileActive) && MobileHostApiPigeonInternal.deepEquals(lhs.installationBindingVerified, rhs.installationBindingVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.installationCreated, rhs.installationCreated) && MobileHostApiPigeonInternal.deepEquals(lhs.securitySessionUnlocked, rhs.securitySessionUnlocked) && MobileHostApiPigeonInternal.deepEquals(lhs.privateVaultReady, rhs.privateVaultReady) && MobileHostApiPigeonInternal.deepEquals(lhs.identityDomainsSeparated, rhs.identityDomainsSeparated) && MobileHostApiPigeonInternal.deepEquals(lhs.privacyDefaultsFailSafe, rhs.privacyDefaultsFailSafe) && MobileHostApiPigeonInternal.deepEquals(lhs.redactedHistoryReady, rhs.redactedHistoryReady) && MobileHostApiPigeonInternal.deepEquals(lhs.encryptedRawDraftCount, rhs.encryptedRawDraftCount) && MobileHostApiPigeonInternal.deepEquals(lhs.pendingShareSpoolCount, rhs.pendingShareSpoolCount) && MobileHostApiPigeonInternal.deepEquals(lhs.onboardingCursor, rhs.onboardingCursor)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -391,11 +395,12 @@ struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
     MobileHostApiPigeonInternal.deepHash(value: privacyDefaultsFailSafe, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: redactedHistoryReady, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: encryptedRawDraftCount, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: pendingShareSpoolCount, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: onboardingCursor, hasher: &hasher)
   }
 
   public var description: String {
-    return "HostRuntimeSnapshot(profileVersion: \(String(describing: profileVersion)), processGeneration: \(String(describing: processGeneration)), activationPhase: \(String(describing: activationPhase)), activeGrantCount: \(String(describing: activeGrantCount)), recoveredUncleanStart: \(String(describing: recoveredUncleanStart)), bootstrapStoreOpened: \(String(describing: bootstrapStoreOpened)), registryState: \(String(describing: registryState)), localKqlFixtureVerified: \(String(describing: localKqlFixtureVerified)), privatePlannerVerified: \(String(describing: privatePlannerVerified)), noLlmProvider: \(String(describing: noLlmProvider)), staleCallbackRejected: \(String(describing: staleCallbackRejected)), secureProfileActive: \(String(describing: secureProfileActive)), installationBindingVerified: \(String(describing: installationBindingVerified)), installationCreated: \(String(describing: installationCreated)), securitySessionUnlocked: \(String(describing: securitySessionUnlocked)), privateVaultReady: \(String(describing: privateVaultReady)), identityDomainsSeparated: \(String(describing: identityDomainsSeparated)), privacyDefaultsFailSafe: \(String(describing: privacyDefaultsFailSafe)), redactedHistoryReady: \(String(describing: redactedHistoryReady)), encryptedRawDraftCount: \(String(describing: encryptedRawDraftCount)), onboardingCursor: \(String(describing: onboardingCursor)))"
+    return "HostRuntimeSnapshot(profileVersion: \(String(describing: profileVersion)), processGeneration: \(String(describing: processGeneration)), activationPhase: \(String(describing: activationPhase)), activeGrantCount: \(String(describing: activeGrantCount)), recoveredUncleanStart: \(String(describing: recoveredUncleanStart)), bootstrapStoreOpened: \(String(describing: bootstrapStoreOpened)), registryState: \(String(describing: registryState)), localKqlFixtureVerified: \(String(describing: localKqlFixtureVerified)), privatePlannerVerified: \(String(describing: privatePlannerVerified)), noLlmProvider: \(String(describing: noLlmProvider)), staleCallbackRejected: \(String(describing: staleCallbackRejected)), secureProfileActive: \(String(describing: secureProfileActive)), installationBindingVerified: \(String(describing: installationBindingVerified)), installationCreated: \(String(describing: installationCreated)), securitySessionUnlocked: \(String(describing: securitySessionUnlocked)), privateVaultReady: \(String(describing: privateVaultReady)), identityDomainsSeparated: \(String(describing: identityDomainsSeparated)), privacyDefaultsFailSafe: \(String(describing: privacyDefaultsFailSafe)), redactedHistoryReady: \(String(describing: redactedHistoryReady)), encryptedRawDraftCount: \(String(describing: encryptedRawDraftCount)), pendingShareSpoolCount: \(String(describing: pendingShareSpoolCount)), onboardingCursor: \(String(describing: onboardingCursor)))"
   }
 }
 
@@ -446,6 +451,56 @@ struct HostRawDraftReceipt: Hashable, CustomStringConvertible {
 
   public var description: String {
     return "HostRawDraftReceipt(draftRef: \(String(describing: draftRef)), contentLanguage: \(String(describing: contentLanguage)), contentBytes: \(String(describing: contentBytes)), totalDrafts: \(String(describing: totalDrafts)))"
+  }
+}
+
+/// Generated class from Pigeon that represents data sent in messages.
+struct HostShareSpoolSummary: Hashable, CustomStringConvertible {
+  var spoolRef: String
+  var mimeType: String
+  var contentBytes: Int64
+  var receivedAtMonotonicMillis: Int64
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> HostShareSpoolSummary? {
+    let spoolRef = pigeonVar_list[0] as! String
+    let mimeType = pigeonVar_list[1] as! String
+    let contentBytes = pigeonVar_list[2] as! Int64
+    let receivedAtMonotonicMillis = pigeonVar_list[3] as! Int64
+
+    return HostShareSpoolSummary(
+      spoolRef: spoolRef,
+      mimeType: mimeType,
+      contentBytes: contentBytes,
+      receivedAtMonotonicMillis: receivedAtMonotonicMillis
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      spoolRef,
+      mimeType,
+      contentBytes,
+      receivedAtMonotonicMillis,
+    ]
+  }
+  static func == (lhs: HostShareSpoolSummary, rhs: HostShareSpoolSummary) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MobileHostApiPigeonInternal.deepEquals(lhs.spoolRef, rhs.spoolRef) && MobileHostApiPigeonInternal.deepEquals(lhs.mimeType, rhs.mimeType) && MobileHostApiPigeonInternal.deepEquals(lhs.contentBytes, rhs.contentBytes) && MobileHostApiPigeonInternal.deepEquals(lhs.receivedAtMonotonicMillis, rhs.receivedAtMonotonicMillis)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("HostShareSpoolSummary")
+    MobileHostApiPigeonInternal.deepHash(value: spoolRef, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: mimeType, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: contentBytes, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: receivedAtMonotonicMillis, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "HostShareSpoolSummary(spoolRef: \(String(describing: spoolRef)), mimeType: \(String(describing: mimeType)), contentBytes: \(String(describing: contentBytes)), receivedAtMonotonicMillis: \(String(describing: receivedAtMonotonicMillis)))"
   }
 }
 
@@ -516,6 +571,8 @@ private class MobileHostApiPigeonCodecReader: FlutterStandardReader {
     case 133:
       return HostRawDraftReceipt.fromList(self.readValue() as! [Any?])
     case 134:
+      return HostShareSpoolSummary.fromList(self.readValue() as! [Any?])
+    case 135:
       return HostOperationEvent.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -540,8 +597,11 @@ private class MobileHostApiPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? HostRawDraftReceipt {
       super.writeByte(133)
       super.writeValue(value.toList())
-    } else if let value = value as? HostOperationEvent {
+    } else if let value = value as? HostShareSpoolSummary {
       super.writeByte(134)
+      super.writeValue(value.toList())
+    } else if let value = value as? HostOperationEvent {
+      super.writeByte(135)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -571,6 +631,8 @@ protocol MobileHostApi {
   func inspectBootstrapHost(completion: @escaping (Result<HostBootstrapSnapshot, Error>) -> Void)
   func inspectRuntimeProfile(completion: @escaping (Result<HostRuntimeSnapshot, Error>) -> Void)
   func saveRawTextDraft(contentLanguage: String, content: String, completion: @escaping (Result<HostRawDraftReceipt, Error>) -> Void)
+  func inspectPendingShareSpools(completion: @escaping (Result<[HostShareSpoolSummary], Error>) -> Void)
+  func importSharedText(spoolRef: String, contentLanguage: String, completion: @escaping (Result<HostRawDraftReceipt, Error>) -> Void)
   func setOnboardingCursor(cursor: HostOnboardingCursor, completion: @escaping (Result<Bool, Error>) -> Void)
   func startFeasibilityOperation(delayMilliseconds: Int64, completion: @escaping (Result<String, Error>) -> Void)
   func cancelFeasibilityOperation(operationId: String, completion: @escaping (Result<Bool, Error>) -> Void)
@@ -629,6 +691,39 @@ class MobileHostApiSetup {
       }
     } else {
       saveRawTextDraftChannel.setMessageHandler(nil)
+    }
+    let inspectPendingShareSpoolsChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectPendingShareSpools\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      inspectPendingShareSpoolsChannel.setMessageHandler { _, reply in
+        api.inspectPendingShareSpools { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      inspectPendingShareSpoolsChannel.setMessageHandler(nil)
+    }
+    let importSharedTextChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.importSharedText\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      importSharedTextChannel.setMessageHandler { message, reply in
+        let args = message as! [Any?]
+        let spoolRefArg = args[0] as! String
+        let contentLanguageArg = args[1] as! String
+        api.importSharedText(spoolRef: spoolRefArg, contentLanguage: contentLanguageArg) { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      importSharedTextChannel.setMessageHandler(nil)
     }
     let setOnboardingCursorChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.setOnboardingCursor\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

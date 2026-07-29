@@ -57,6 +57,7 @@ class MobileRuntimeSnapshot {
     required this.privacyDefaultsFailSafe,
     required this.redactedHistoryReady,
     required this.encryptedRawDraftCount,
+    required this.pendingShareSpoolCount,
     required this.onboardingCursor,
   });
 
@@ -80,6 +81,7 @@ class MobileRuntimeSnapshot {
   final bool privacyDefaultsFailSafe;
   final bool redactedHistoryReady;
   final int encryptedRawDraftCount;
+  final int pendingShareSpoolCount;
   final MobileOnboardingCursor onboardingCursor;
 }
 
@@ -97,6 +99,20 @@ class MobileRawDraftReceipt {
   final int totalDrafts;
 }
 
+class MobileShareSpoolSummary {
+  const MobileShareSpoolSummary({
+    required this.spoolRef,
+    required this.mimeType,
+    required this.contentBytes,
+    required this.receivedAtMonotonicMillis,
+  });
+
+  final String spoolRef;
+  final String mimeType;
+  final int contentBytes;
+  final int receivedAtMonotonicMillis;
+}
+
 abstract interface class MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost();
 
@@ -105,6 +121,13 @@ abstract interface class MobileHostGateway {
   Future<MobileRawDraftReceipt> saveRawTextDraft({
     required String contentLanguage,
     required String content,
+  });
+
+  Future<List<MobileShareSpoolSummary>> inspectPendingShareSpools();
+
+  Future<MobileRawDraftReceipt> importSharedText({
+    required String spoolRef,
+    required String contentLanguage,
   });
 
   Future<void> setOnboardingCursor(MobileOnboardingCursor cursor);
@@ -162,8 +185,38 @@ class PigeonMobileHostGateway implements MobileHostGateway {
       privacyDefaultsFailSafe: snapshot.privacyDefaultsFailSafe,
       redactedHistoryReady: snapshot.redactedHistoryReady,
       encryptedRawDraftCount: snapshot.encryptedRawDraftCount,
+      pendingShareSpoolCount: snapshot.pendingShareSpoolCount,
       onboardingCursor:
           MobileOnboardingCursor.values[snapshot.onboardingCursor.index],
+    );
+  }
+
+  @override
+  Future<List<MobileShareSpoolSummary>> inspectPendingShareSpools() async {
+    final spools = await _api.inspectPendingShareSpools();
+    return spools
+        .map(
+          (spool) => MobileShareSpoolSummary(
+            spoolRef: spool.spoolRef,
+            mimeType: spool.mimeType,
+            contentBytes: spool.contentBytes,
+            receivedAtMonotonicMillis: spool.receivedAtMonotonicMillis,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  @override
+  Future<MobileRawDraftReceipt> importSharedText({
+    required String spoolRef,
+    required String contentLanguage,
+  }) async {
+    final receipt = await _api.importSharedText(spoolRef, contentLanguage);
+    return MobileRawDraftReceipt(
+      draftRef: receipt.draftRef,
+      contentLanguage: receipt.contentLanguage,
+      contentBytes: receipt.contentBytes,
+      totalDrafts: receipt.totalDrafts,
     );
   }
 
@@ -214,3 +267,8 @@ final bootstrapHostSnapshotProvider = FutureProvider<MobileHostSnapshot>(
 final mobileRuntimeSnapshotProvider = FutureProvider<MobileRuntimeSnapshot>(
   (ref) => ref.watch(mobileHostGatewayProvider).inspectRuntimeProfile(),
 );
+
+final pendingShareSpoolsProvider =
+    FutureProvider<List<MobileShareSpoolSummary>>(
+      (ref) => ref.watch(mobileHostGatewayProvider).inspectPendingShareSpools(),
+    );

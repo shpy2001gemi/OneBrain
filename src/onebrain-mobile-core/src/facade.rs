@@ -2,7 +2,7 @@ use crate::{
     run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, ExecutionGrant,
     ExecutionGrantKind, MobileCoreError, MobileFeatureFlags, NetworkScope, OnboardingCursor,
     RawDraftReceipt, ResourceBudgets, RuntimeServices, SecureIdentitySession,
-    SecurityBootstrapMaterial, SecuritySessionState, TransferLandingRecord,
+    SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary, TransferLandingRecord,
     MOBILE_RUNTIME_PROFILE_VERSION,
 };
 
@@ -37,6 +37,7 @@ pub struct MobileRuntimeSnapshot {
     pub privacy_defaults_fail_safe: bool,
     pub redacted_history_ready: bool,
     pub encrypted_raw_draft_count: u64,
+    pub pending_share_spool_count: u64,
     pub onboarding_cursor: OnboardingCursor,
 }
 
@@ -211,6 +212,11 @@ impl MobileRuntimeFacade {
                 .as_ref()
                 .and_then(|session| session.raw_draft_count().ok())
                 .unwrap_or(0),
+            pending_share_spool_count: self
+                .secure_identity
+                .as_ref()
+                .and_then(|session| session.pending_share_spool_count().ok())
+                .unwrap_or(0),
             onboarding_cursor: self.store.onboarding_cursor().unwrap_or_default(),
         }
     }
@@ -268,6 +274,63 @@ impl MobileRuntimeFacade {
             true,
         )?;
         self.services.telemetry.record("mobile_raw_draft_saved");
+        Ok(receipt)
+    }
+
+    pub fn enqueue_shared_text(
+        &mut self,
+        callback_token: &str,
+        mime_type: &str,
+        content_utf8: &[u8],
+    ) -> Result<ShareSpoolSummary, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        let receipt = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .enqueue_shared_text(callback_token, mime_type, content_utf8, now)?;
+        self.store.append_security_history(
+            self.arbiter.process_generation(),
+            now,
+            "PRIVATE_SHARE_SPOOL_LANDED",
+            "CAPTURE",
+            true,
+        )?;
+        self.services.telemetry.record("mobile_share_spool_landed");
+        Ok(receipt)
+    }
+
+    pub fn pending_share_spools(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ShareSpoolSummary>, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .pending_share_spools(limit)
+    }
+
+    pub fn import_shared_text(
+        &mut self,
+        spool_ref: &str,
+        content_language: &str,
+    ) -> Result<RawDraftReceipt, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        let receipt = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .import_shared_text(spool_ref, content_language, now)?;
+        self.store.append_security_history(
+            self.arbiter.process_generation(),
+            now,
+            "PRIVATE_SHARE_SPOOL_IMPORTED",
+            "CAPTURE",
+            true,
+        )?;
+        self.services
+            .telemetry
+            .record("mobile_share_spool_imported");
         Ok(receipt)
     }
 

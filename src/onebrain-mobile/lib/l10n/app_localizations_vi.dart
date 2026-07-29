@@ -403,7 +403,45 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get shareCaptureBody =>
-      'Ranh giới share-spool mã hóa có kiểu đã được dành chỗ; bản build này không nhận payload share chưa bảo vệ.';
+      'Văn bản được chia sẻ từ ứng dụng khác sẽ vào spool riêng tư đã mã hóa. Hãy xem loại và kích thước trước khi nhập thành draft.';
+
+  @override
+  String get shareSpoolTitle => 'Nội dung chia sẻ vào OneBrain';
+
+  @override
+  String get shareSpoolBody =>
+      'Nội dung đến luôn được mã hóa và giữ riêng tư. Mở màn hình này không tự nhập, encode, publish hay gửi dữ liệu.';
+
+  @override
+  String get shareSpoolEmptyTitle => 'Không có nội dung chia sẻ đang chờ';
+
+  @override
+  String get shareSpoolEmptyBody =>
+      'Dùng chức năng Chia sẻ trong ứng dụng khác và chọn OneBrain. Lát cắt nền tảng này hỗ trợ văn bản thuần.';
+
+  @override
+  String get shareSpoolItemTitle => 'Văn bản chia sẻ riêng tư';
+
+  @override
+  String shareSpoolItemBody(String mimeType, int bytes) {
+    return '$mimeType · $bytes byte';
+  }
+
+  @override
+  String get shareSpoolImportAction => 'Nhập thành draft riêng tư';
+
+  @override
+  String shareSpoolImported(String draftRef) {
+    return 'Đã nhập văn bản chia sẻ vào draft mã hóa $draftRef.';
+  }
+
+  @override
+  String get shareSpoolLoadError =>
+      'Không thể kiểm tra nội dung chia sẻ đang chờ.';
+
+  @override
+  String get shareSpoolImportError =>
+      'Không thể nhập văn bản chia sẻ. Nội dung vẫn được giữ an toàn trong hàng chờ.';
 
   @override
   String get fileCaptureTitle => 'Ảnh, video, tài liệu hoặc audio';

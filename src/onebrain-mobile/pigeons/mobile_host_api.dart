@@ -65,6 +65,7 @@ class HostRuntimeSnapshot {
     required this.privacyDefaultsFailSafe,
     required this.redactedHistoryReady,
     required this.encryptedRawDraftCount,
+    required this.pendingShareSpoolCount,
     required this.onboardingCursor,
   });
 
@@ -88,6 +89,7 @@ class HostRuntimeSnapshot {
   bool privacyDefaultsFailSafe;
   bool redactedHistoryReady;
   int encryptedRawDraftCount;
+  int pendingShareSpoolCount;
   HostOnboardingCursor onboardingCursor;
 }
 
@@ -103,6 +105,20 @@ class HostRawDraftReceipt {
   String contentLanguage;
   int contentBytes;
   int totalDrafts;
+}
+
+class HostShareSpoolSummary {
+  HostShareSpoolSummary({
+    required this.spoolRef,
+    required this.mimeType,
+    required this.contentBytes,
+    required this.receivedAtMonotonicMillis,
+  });
+
+  String spoolRef;
+  String mimeType;
+  int contentBytes;
+  int receivedAtMonotonicMillis;
 }
 
 enum HostOperationEventKind { started, cancelled, completed }
@@ -129,6 +145,12 @@ abstract class MobileHostApi {
 
   @async
   HostRawDraftReceipt saveRawTextDraft(String contentLanguage, String content);
+
+  @async
+  List<HostShareSpoolSummary> inspectPendingShareSpools();
+
+  @async
+  HostRawDraftReceipt importSharedText(String spoolRef, String contentLanguage);
 
   @async
   bool setOnboardingCursor(HostOnboardingCursor cursor);

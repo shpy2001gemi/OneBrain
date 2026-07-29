@@ -1,5 +1,6 @@
 package org.onebrain.onebrain_mobile
 
+import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -18,10 +19,13 @@ import org.onebrain.onebrain_mobile.generated.HostRuntimeSnapshot
 import org.onebrain.onebrain_mobile.generated.HostRawDraftReceipt
 import org.onebrain.onebrain_mobile.generated.MobileHostApi
 import org.onebrain.onebrain_mobile.generated.PigeonEventSink
+import org.onebrain.onebrain_mobile.generated.HostShareSpoolSummary
 
-private const val HOST_API_VERSION = "5"
+private const val HOST_API_VERSION = "6"
 private const val MAX_FEASIBILITY_DELAY_MILLIS = 30_000L
 private const val RUNTIME_LOG_TAG = "OneBrainMobileRuntime"
+private const val SHARE_CALLBACK_TOKEN =
+    "org.onebrain.onebrain_mobile.extra.SHARE_CALLBACK_TOKEN"
 
 class MainActivity : FlutterActivity() {
     private lateinit var hostApi: AndroidMobileHost
@@ -39,6 +43,15 @@ class MainActivity : FlutterActivity() {
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MobileHostApi.setUp(messenger, hostApi)
         HostOperationEventsStreamHandler.register(messenger, hostEvents)
+        hostApi.acceptShareIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (::hostApi.isInitialized) {
+            hostApi.acceptShareIntent(intent)
+        }
     }
 
     override fun onStop() {
@@ -74,6 +87,45 @@ private class AndroidMobileHost(
             Thread(runnable, "onebrain-mobile-runtime")
         }
     private val pending = mutableMapOf<String, Runnable>()
+
+    fun acceptShareIntent(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND) {
+            return
+        }
+        val mimeType = intent.type?.lowercase() ?: return
+        val content = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString() ?: return
+        val callbackToken =
+            intent.getStringExtra(SHARE_CALLBACK_TOKEN)
+                ?: "android:${UUID.randomUUID()}".also {
+                    intent.putExtra(SHARE_CALLBACK_TOKEN, it)
+                }
+        runtimeExecutor.execute {
+            runCatching {
+                val securityMaterial = securityMaterialStore.loadOrCreate()
+                try {
+                    RustMobileBridge.enqueueSharedText(
+                        dataRoot,
+                        securityMaterial,
+                        callbackToken,
+                        mimeType,
+                        content,
+                    )
+                } finally {
+                    securityMaterial.fill(0)
+                }
+            }.onSuccess { spoolRef ->
+                Log.i(
+                    RUNTIME_LOG_TAG,
+                    "share_spool_landed ref=${spoolRef.take(14)} type=$mimeType",
+                )
+            }.onFailure {
+                Log.w(
+                    RUNTIME_LOG_TAG,
+                    "share_spool_rejected",
+                )
+            }
+        }
+    }
 
     override fun inspectBootstrapHost(
         callback: (Result<HostBootstrapSnapshot>) -> Unit,
@@ -128,6 +180,7 @@ private class AndroidMobileHost(
                             "privacy=${rust.privacyDefaultsFailSafe} " +
                             "history=${rust.redactedHistoryReady} " +
                             "drafts=${rust.encryptedRawDraftCount} " +
+                            "shareSpools=${rust.pendingShareSpoolCount} " +
                             "onboarding=${rust.onboardingCursor}",
                     )
                     HostRuntimeSnapshot(
@@ -151,6 +204,7 @@ private class AndroidMobileHost(
                         privacyDefaultsFailSafe = rust.privacyDefaultsFailSafe,
                         redactedHistoryReady = rust.redactedHistoryReady,
                         encryptedRawDraftCount = rust.encryptedRawDraftCount,
+                        pendingShareSpoolCount = rust.pendingShareSpoolCount,
                         onboardingCursor =
                             HostOnboardingCursor.ofRaw(rust.onboardingCursor)
                                 ?: HostOnboardingCursor.WELCOME,
@@ -207,6 +261,84 @@ private class AndroidMobileHost(
                             FlutterError(
                                 code = "RAW_DRAFT_SAVE_FAILED",
                                 message = "Private draft could not be saved",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    override fun inspectPendingShareSpools(
+        callback: (Result<List<HostShareSpoolSummary>>) -> Unit,
+    ) {
+        runtimeExecutor.execute {
+            val result =
+                runCatching {
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    try {
+                        RustMobileBridge
+                            .pendingShareSpools(dataRoot, securityMaterial)
+                            .map { spool ->
+                                HostShareSpoolSummary(
+                                    spoolRef = spool.spoolRef,
+                                    mimeType = spool.mimeType,
+                                    contentBytes = spool.contentBytes,
+                                    receivedAtMonotonicMillis =
+                                        spool.receivedAtMonotonicMillis,
+                                )
+                            }
+                    } finally {
+                        securityMaterial.fill(0)
+                    }
+                }.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = {
+                        Result.failure(
+                            FlutterError(
+                                code = "SHARE_SPOOL_INSPECT_FAILED",
+                                message = "Private share spool could not be inspected",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    override fun importSharedText(
+        spoolRef: String,
+        contentLanguage: String,
+        callback: (Result<HostRawDraftReceipt>) -> Unit,
+    ) {
+        runtimeExecutor.execute {
+            val result =
+                runCatching {
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    val receipt =
+                        try {
+                            RustMobileBridge.importSharedText(
+                                dataRoot,
+                                securityMaterial,
+                                spoolRef,
+                                contentLanguage,
+                            )
+                        } finally {
+                            securityMaterial.fill(0)
+                        }
+                    HostRawDraftReceipt(
+                        draftRef = receipt.draftRef,
+                        contentLanguage = receipt.contentLanguage,
+                        contentBytes = receipt.contentBytes,
+                        totalDrafts = receipt.totalDrafts,
+                    )
+                }.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = {
+                        Result.failure(
+                            FlutterError(
+                                code = "SHARE_SPOOL_IMPORT_FAILED",
+                                message = "Shared text could not be imported",
                             ),
                         )
                     },

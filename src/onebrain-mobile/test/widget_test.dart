@@ -17,7 +17,7 @@ void main() {
 
     expect(find.text('Grow ideas on your own node'), findsOneWidget);
     expect(find.textContaining('Android test host ready'), findsOneWidget);
-    expect(find.text('Rust bridge 0.1.0-test · ABI 5'), findsOneWidget);
+    expect(find.text('Rust bridge 0.1.0-test · ABI 6'), findsOneWidget);
     expect(find.text('Typed round trip verified'), findsOneWidget);
     expect(
       find.text(
@@ -142,6 +142,37 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'MOB-SCR-CAP-003 previews opaque encrypted share spool before import',
+    (tester) async {
+      await tester.pumpWidget(
+        _testApp(
+          gateway: const _FakeMobileHostGateway(
+            onboardingCursor: MobileOnboardingCursor.limitedHome,
+            pendingSpools: [
+              MobileShareSpoolSummary(
+                spoolRef: 'spool_00000000000000000000000000000000',
+                mimeType: 'text/plain',
+                contentBytes: 41,
+                receivedAtMonotonicMillis: 7,
+              ),
+            ],
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Shared into OneBrain'), findsWidgets);
+      expect(find.text('text/plain · 41 bytes'), findsOneWidget);
+      expect(find.text('Import as private draft'), findsOneWidget);
+      expect(find.textContaining('OneBrain emulator private'), findsNothing);
+
+      await tester.tap(find.text('Import as private draft'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Shared text was imported'), findsOneWidget);
+    },
+  );
+
   test('theme projects generated token extensions', () {
     final theme = OneBrainTheme.light;
 
@@ -202,32 +233,37 @@ void main() {
   });
 }
 
-Widget _testApp() => ProviderScope(
-  overrides: [
-    mobileHostGatewayProvider.overrideWithValue(const _FakeMobileHostGateway()),
-  ],
-  child: const OneBrainApp(),
-);
+Widget _testApp({MobileHostGateway gateway = const _FakeMobileHostGateway()}) =>
+    ProviderScope(
+      overrides: [mobileHostGatewayProvider.overrideWithValue(gateway)],
+      child: const OneBrainApp(),
+    );
 
 class _FakeMobileHostGateway implements MobileHostGateway {
-  const _FakeMobileHostGateway();
+  const _FakeMobileHostGateway({
+    this.onboardingCursor = MobileOnboardingCursor.welcome,
+    this.pendingSpools = const [],
+  });
+
+  final MobileOnboardingCursor onboardingCursor;
+  final List<MobileShareSpoolSummary> pendingSpools;
 
   @override
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
       const MobileHostSnapshot(
         platform: 'Android test',
-        apiVersion: '5',
+        apiVersion: '6',
         registryRequestIssued: false,
         rustCoreLinked: true,
         rustCoreVersion: '0.1.0-test',
-        rustAbiVersion: 5,
+        rustAbiVersion: 6,
         rustRoundTripVerified: true,
       );
 
   @override
   Future<MobileRuntimeSnapshot> inspectRuntimeProfile() async =>
-      const MobileRuntimeSnapshot(
-        profileVersion: 'MOB-04/1',
+      MobileRuntimeSnapshot(
+        profileVersion: 'MOB-04/2',
         processGeneration: 1,
         activationPhase: 'Active',
         activeGrantCount: 1,
@@ -247,7 +283,8 @@ class _FakeMobileHostGateway implements MobileHostGateway {
         privacyDefaultsFailSafe: true,
         redactedHistoryReady: true,
         encryptedRawDraftCount: 0,
-        onboardingCursor: MobileOnboardingCursor.welcome,
+        pendingShareSpoolCount: pendingSpools.length,
+        onboardingCursor: onboardingCursor,
       );
 
   @override
@@ -263,6 +300,17 @@ class _FakeMobileHostGateway implements MobileHostGateway {
     contentBytes: content.length,
     totalDrafts: 1,
   );
+
+  @override
+  Future<List<MobileShareSpoolSummary>> inspectPendingShareSpools() async =>
+      pendingSpools;
+
+  @override
+  Future<MobileRawDraftReceipt> importSharedText({
+    required String spoolRef,
+    required String contentLanguage,
+  }) async =>
+      saveRawTextDraft(contentLanguage: contentLanguage, content: 'shared');
 
   @override
   Future<String> startFeasibilityOperation(Duration delay) async =>

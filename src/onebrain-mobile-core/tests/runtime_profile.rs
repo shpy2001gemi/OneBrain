@@ -20,7 +20,7 @@ fn bootstrap_profile_uses_no_model_or_network_and_runs_signed_local_kql() {
     .unwrap();
     let snapshot = facade.snapshot();
 
-    assert_eq!(snapshot.profile_version, "MOB-04/1");
+    assert_eq!(snapshot.profile_version, "MOB-04/2");
     assert_eq!(snapshot.process_generation, 1);
     assert_eq!(snapshot.activation_phase, ActivationPhase::Active);
     assert_eq!(snapshot.active_grant_count, 1);

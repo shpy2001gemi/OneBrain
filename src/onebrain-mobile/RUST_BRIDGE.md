@@ -16,8 +16,8 @@ The bridge owns no product policy. `onebrain-mobile-core` owns the bounded
 `bootstrap.redb` operational ledger, process-generation lifecycle, execution
 grants, callback commit fence, deterministic local KQL, LocalOnly private
 planning, exact installation binding, independent typed signer domains,
-  encrypted private-vault session, encrypted raw-draft store, durable
-  onboarding cursor and portable encrypted-archive profile.
+encrypted private-vault session, encrypted raw-draft/share-spool store, durable
+onboarding cursor and portable encrypted-archive profile.
 Registry network transfer, product tools, seeding and all LLM providers remain
 unavailable until their implementation packages and gates exist.
 
@@ -40,10 +40,10 @@ handling, NDK linker discovery, or C declaration generation.
 
 ## ABI and thread ownership
 
-- ABI revision `5` adds a fixed-layout protected-runtime snapshot,
-  native-owned secure-open and private-draft calls, a durable onboarding cursor
-  command and explicit private-session lock while retaining bounded primitive
-  facts and the deterministic nonce round trip.
+- ABI revision `6` adds opaque encrypted share-spool summaries and idempotent
+  text import to the protected-runtime snapshot, native-owned secure-open and
+  private-draft calls, durable onboarding cursor and explicit private-session
+  lock. No share plaintext or filesystem path crosses to Dart.
 - Returned version text points to immutable process-lifetime storage and is
   never freed by native code.
 - Kotlin and Swift open the runtime on a dedicated serial native queue and
@@ -75,6 +75,8 @@ flutter build apk --debug
 flutter test integration_test/native_host_bridge_test.dart -d emulator-5554
 # Rebuild because integration_test replaces app-debug.apk with its test target.
 flutter build apk --debug
+python tool/verify_android_share_intent.py \
+  build/app/outputs/flutter-apk/app-debug.apk
 python tool/verify_android_runtime_recovery.py \
   build/app/outputs/flutter-apk/app-debug.apk
 python tool/verify_android_install_binding_fail_closed.py \
@@ -88,9 +90,11 @@ bash tool/build_rust_ios.sh
 flutter build ios --simulator --debug
 ```
 
-The Android script builds `arm64-v8a` and `x86_64`. The iOS script builds an
-arm64 device archive plus a universal arm64/x86_64 simulator archive. Generated
-binary artifacts are ignored; CI rebuilds them from source.
+The Android script builds `armeabi-v7a`, `arm64-v8a` and `x86_64` so every ABI
+packaged by Flutter carries the same Rust authority bridge. The package scanner
+fails closed on an ABI mismatch. The iOS script builds an arm64 device archive
+plus a universal arm64/x86_64 simulator archive. Generated binary artifacts are
+ignored; CI rebuilds them from source.
 
 ## Fallback
 

@@ -767,8 +767,68 @@ abstract class AppLocalizations {
   /// No description provided for @shareCaptureBody.
   ///
   /// In en, this message translates to:
-  /// **'The typed encrypted share-spool boundary is reserved; no unprotected share payload is accepted in this build.'**
+  /// **'Text shared from another app lands in an encrypted private spool. Review its type and size before importing it as a draft.'**
   String get shareCaptureBody;
+
+  /// No description provided for @shareSpoolTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared into OneBrain'**
+  String get shareSpoolTitle;
+
+  /// No description provided for @shareSpoolBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Incoming content stays encrypted and private. Opening this screen does not import, encode, publish or send anything.'**
+  String get shareSpoolBody;
+
+  /// No description provided for @shareSpoolEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No pending shared content'**
+  String get shareSpoolEmptyTitle;
+
+  /// No description provided for @shareSpoolEmptyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the system Share action in another app and choose OneBrain. Plain text is supported in this foundation slice.'**
+  String get shareSpoolEmptyBody;
+
+  /// No description provided for @shareSpoolItemTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Private shared text'**
+  String get shareSpoolItemTitle;
+
+  /// No description provided for @shareSpoolItemBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{mimeType} · {bytes} bytes'**
+  String shareSpoolItemBody(String mimeType, int bytes);
+
+  /// No description provided for @shareSpoolImportAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Import as private draft'**
+  String get shareSpoolImportAction;
+
+  /// No description provided for @shareSpoolImported.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared text was imported into encrypted draft {draftRef}.'**
+  String shareSpoolImported(String draftRef);
+
+  /// No description provided for @shareSpoolLoadError.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending shared content could not be inspected.'**
+  String get shareSpoolLoadError;
+
+  /// No description provided for @shareSpoolImportError.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared text could not be imported. It remains safely pending.'**
+  String get shareSpoolImportError;
 
   /// No description provided for @fileCaptureTitle.
   ///

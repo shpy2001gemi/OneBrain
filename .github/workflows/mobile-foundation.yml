@@ -46,7 +46,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          target: aarch64-linux-android,x86_64-linux-android
+          target: armv7-linux-androideabi,aarch64-linux-android,x86_64-linux-android
           cache: true
       - uses: subosito/flutter-action@v2
         with:
@@ -99,9 +99,10 @@ jobs:
       - name: Build Android debug APK
         run: flutter build apk --debug
       - name: Reject bundled Registry and model payloads
-        run: >-
-          python tool/scan_mobile_package.py
-          build/app/outputs/flutter-apk/app-debug.apk
+        run: |
+          python -m unittest tool.test_scan_mobile_package
+          python tool/scan_mobile_package.py \
+            build/app/outputs/flutter-apk/app-debug.apk
       - name: Enable KVM for Android integration tests
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
@@ -119,12 +120,14 @@ jobs:
           script: |
             flutter test integration_test/native_host_bridge_test.dart -d emulator-5554
             flutter build apk --debug
+            python tool/verify_android_share_intent.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554
+            flutter build apk --debug
             python tool/verify_android_runtime_recovery.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554
             python tool/verify_android_install_binding_fail_closed.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554
       - name: Build BootstrapOnly Android release APK
         run: |
           python tool/build_rust_android.py --release
-          flutter build apk --release --target-platform android-arm64,android-x64
+          flutter build apk --release --target-platform android-arm,android-arm64,android-x64
       - name: Prove release has no Registry payload or network capability
         run: |
           python tool/scan_mobile_package.py \

@@ -403,7 +403,45 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get shareCaptureBody =>
-      'The typed encrypted share-spool boundary is reserved; no unprotected share payload is accepted in this build.';
+      'Text shared from another app lands in an encrypted private spool. Review its type and size before importing it as a draft.';
+
+  @override
+  String get shareSpoolTitle => 'Shared into OneBrain';
+
+  @override
+  String get shareSpoolBody =>
+      'Incoming content stays encrypted and private. Opening this screen does not import, encode, publish or send anything.';
+
+  @override
+  String get shareSpoolEmptyTitle => 'No pending shared content';
+
+  @override
+  String get shareSpoolEmptyBody =>
+      'Use the system Share action in another app and choose OneBrain. Plain text is supported in this foundation slice.';
+
+  @override
+  String get shareSpoolItemTitle => 'Private shared text';
+
+  @override
+  String shareSpoolItemBody(String mimeType, int bytes) {
+    return '$mimeType · $bytes bytes';
+  }
+
+  @override
+  String get shareSpoolImportAction => 'Import as private draft';
+
+  @override
+  String shareSpoolImported(String draftRef) {
+    return 'Shared text was imported into encrypted draft $draftRef.';
+  }
+
+  @override
+  String get shareSpoolLoadError =>
+      'Pending shared content could not be inspected.';
+
+  @override
+  String get shareSpoolImportError =>
+      'Shared text could not be imported. It remains safely pending.';
 
   @override
   String get fileCaptureTitle => 'Photo, video, document or audio';
