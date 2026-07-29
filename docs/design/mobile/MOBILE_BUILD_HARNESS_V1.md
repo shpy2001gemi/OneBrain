@@ -21,7 +21,7 @@ current evidence phase and avoids several prohibited shortcuts.
 | Layer | File | Enforcement |
 |---|---|---|
 | Agent routing | [`AGENTS.md`](../../../AGENTS.md) and [`src/onebrain-mobile/AGENTS.md`](../../../src/onebrain-mobile/AGENTS.md) | requires full-document preflight, stable IDs and post-change validation |
-| Authority lock | [`mobile_build_contract_v1.json`](./mobile_build_contract_v1.json) | pins the canonical documents, headings, SHA-256 values, structure and source guards |
+| Authority lock | [`mobile_build_contract_v1.json`](./mobile_build_contract_v1.json) | pins the canonical documents, headings, UTF-8/LF-normalized SHA-256 values, structure and source guards |
 | Evidence lock | [`mobile_build_evidence_v1.json`](../../../src/onebrain-mobile/compliance/mobile_build_evidence_v1.json) | binds the current implementation phase to one reviewed authority-set digest |
 | Machine gate | [`validate_mobile_build_contracts.py`](../../../scripts/ci/validate_mobile_build_contracts.py) and CI | fails on authority drift, structural drift, token/contrast errors and prohibited source/package shortcuts |
 

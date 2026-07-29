@@ -81,11 +81,10 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def sha256_file(path: Path) -> str:
     try:
-        digest = hashlib.sha256()
-        with path.open("rb") as stream:
-            for block in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(block)
-        return digest.hexdigest()
+        # Authority sources are UTF-8 text. Hash their canonical LF form so a
+        # Git checkout has the same identity on Windows, macOS and Linux.
+        canonical = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     except OSError as error:
         raise MobileContractError(
             f"cannot hash {relative(path)}: {error}"

@@ -1,7 +1,7 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "6aed044e06f2636e11f53904c612fc39d5a8b0eb683ae08c96986edbfd4b942c",
+  "authority_set_sha256": "b9f374909c83c6dc3785871da172bffbaf666468fe42cd7afb7f069952aeb375",
   "phase": "foundation",
   "work_package": "MOB-01",
   "acknowledged_required_read_set": [
@@ -72,5 +72,5 @@
   ],
   "deviations": [],
   "last_reviewed": "2026-07-29",
-  "notes": "MOB-01 foundation now includes a bounded Rust C ABI/JNI feasibility bridge, Android arm64/x86_64 cross-compilation, generated cbindgen header, and runtime typed round-trip evidence. This phase makes no ReadyOffline, Registry, CORE-runtime, or product-readiness claim."
+  "notes": "MOB-01 foundation now includes a bounded Rust C ABI/JNI feasibility bridge, Android arm64/x86_64 cross-compilation, generated cbindgen header, and runtime typed round-trip evidence. Authority hashing is UTF-8/LF canonicalized so the same reviewed source validates on Windows, macOS and Linux. This phase makes no ReadyOffline, Registry, CORE-runtime, or product-readiness claim."
 }

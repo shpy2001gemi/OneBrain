@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import tempfile
 import unittest
+from pathlib import Path
 
 from scripts.ci.validate_mobile_build_contracts import (
     MANIFEST,
@@ -10,6 +13,7 @@ from scripts.ci.validate_mobile_build_contracts import (
     dart_source_violations,
     expand_screen_spec,
     read_json,
+    sha256_file,
     validate_authorities,
     validate_contract,
     validate_evidence,
@@ -32,6 +36,13 @@ class MobileBuildContractTests(unittest.TestCase):
         manifest["authorities"][0]["sha256"] = "0" * 64
         with self.assertRaisesRegex(MobileContractError, "authority hash drift"):
             validate_authorities(manifest)
+
+    def test_authority_hash_is_cross_platform_line_ending_stable(self) -> None:
+        expected = hashlib.sha256(b"first\nsecond\n").hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "authority.md"
+            path.write_bytes(b"first\r\nsecond\r\n")
+            self.assertEqual(sha256_file(path), expected)
 
     def test_evidence_must_acknowledge_authority_set(self) -> None:
         with self.assertRaisesRegex(
