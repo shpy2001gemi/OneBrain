@@ -1,0 +1,24 @@
+{
+  "format": "onebrain.mobile.build-evidence/1",
+  "contract_id": "onebrain-mobile-owner-approved-v1",
+  "authority_set_sha256": "6aed044e06f2636e11f53904c612fc39d5a8b0eb683ae08c96986edbfd4b942c",
+  "phase": "pre_scaffold",
+  "work_package": "MOB-00",
+  "acknowledged_required_read_set": [
+    "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
+    "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
+    "docs/features/mobile/MOBILE_APP_FEATURE_TREE_V1.md",
+    "docs/features/mobile/MOBILE_APP_FEATURE_DETAILS_V1.md",
+    "docs/features/mobile/MOBILE_APP_SITEMAP_V1.md",
+    "docs/design/mobile/MOBILE_DESIGN_SYSTEM_V1.md",
+    "docs/design/mobile/MOBILE_COMPONENT_CATALOG_V1.md",
+    "docs/design/mobile/MOBILE_SCREEN_PATTERNS_V1.md",
+    "docs/design/mobile/tokens/mobile_design_tokens_v1.json",
+    "docs/design/mobile/README.md"
+  ],
+  "affected_ids": [],
+  "evidence": [],
+  "deviations": [],
+  "last_reviewed": "2026-07-29",
+  "notes": "Compliance harness established; Flutter implementation has not started."
+}

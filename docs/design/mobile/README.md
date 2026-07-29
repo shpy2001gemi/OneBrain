@@ -15,6 +15,8 @@ contracts defined by the mobile architecture.
 
 | File | Purpose |
 |---|---|
+| [`MOBILE_BUILD_HARNESS_V1.md`](./MOBILE_BUILD_HARNESS_V1.md) | Mandatory agent, authority-manifest, evidence and CI gate for implementation |
+| [`mobile_build_contract_v1.json`](./mobile_build_contract_v1.json) | Hash-pinned authority set, structural expectations and source/package guards |
 | [`MOBILE_DESIGN_SYSTEM_V1.md`](./MOBILE_DESIGN_SYSTEM_V1.md) | Brand direction, foundations, accessibility and implementation rules |
 | [`MOBILE_COMPONENT_CATALOG_V1.md`](./MOBILE_COMPONENT_CATALOG_V1.md) | 62 stable component contracts, anatomy, variants, states and behavior |
 | [`MOBILE_SCREEN_PATTERNS_V1.md`](./MOBILE_SCREEN_PATTERNS_V1.md) | 13 reusable screen patterns/modifiers mapped to all 112 sitemap screens |

@@ -1,0 +1,190 @@
+{
+  "format": "onebrain.mobile.build-contract/1",
+  "version": "1.0.0",
+  "contract_id": "onebrain-mobile-owner-approved-v1",
+  "scope_root": "src/onebrain-mobile",
+  "authority_set_sha256": "6aed044e06f2636e11f53904c612fc39d5a8b0eb683ae08c96986edbfd4b942c",
+  "required_read_set": [
+    "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
+    "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
+    "docs/features/mobile/MOBILE_APP_FEATURE_TREE_V1.md",
+    "docs/features/mobile/MOBILE_APP_FEATURE_DETAILS_V1.md",
+    "docs/features/mobile/MOBILE_APP_SITEMAP_V1.md",
+    "docs/design/mobile/MOBILE_DESIGN_SYSTEM_V1.md",
+    "docs/design/mobile/MOBILE_COMPONENT_CATALOG_V1.md",
+    "docs/design/mobile/MOBILE_SCREEN_PATTERNS_V1.md",
+    "docs/design/mobile/tokens/mobile_design_tokens_v1.json",
+    "docs/design/mobile/README.md"
+  ],
+  "authorities": [
+    {
+      "role": "upstream_shared_runtime",
+      "path": "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md",
+      "heading": "# WIP — OneBrain Distributed Runtime Implementation Plan v2",
+      "sha256": "574473295c04a3cafa7847c18e2bcf2fb5f21838762a528b398febdbc90154bc"
+    },
+    {
+      "role": "mobile_technical_architecture",
+      "path": "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
+      "heading": "# WIP Mobile App Technical Architecture V1.1",
+      "sha256": "5dad95637e1e67b30809b9cfa1ef9cba3a5d30cc858ad6439dbd5896857c9910"
+    },
+    {
+      "role": "mobile_delivery_sequence",
+      "path": "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
+      "heading": "# WIP Mobile App Analysis and Implementation Plan V1.2",
+      "sha256": "9f119febba47f11401913145417f835486c8fa86cb7d7df2f1e9f06e76b4529b"
+    },
+    {
+      "role": "mobile_feature_inventory",
+      "path": "docs/features/mobile/MOBILE_APP_FEATURE_TREE_V1.md",
+      "heading": "# OneBrain Mobile App Feature Tree V1",
+      "sha256": "d72f8e67c4fa3def9b7fc1d22974e19d9ef00e435a85d86bb2f6aa38f18f18e9"
+    },
+    {
+      "role": "mobile_feature_contracts",
+      "path": "docs/features/mobile/MOBILE_APP_FEATURE_DETAILS_V1.md",
+      "heading": "# OneBrain Mobile App Feature Details V1",
+      "sha256": "426594ab946669e95121b59c4c8669827d0c98d51868680bb883b04b5fbfec8d"
+    },
+    {
+      "role": "mobile_information_architecture",
+      "path": "docs/features/mobile/MOBILE_APP_SITEMAP_V1.md",
+      "heading": "# OneBrain Mobile App Sitemap V1",
+      "sha256": "b904b71995cd1b35705c6e3feca283f70195cf3dd4c956a56c8b3731093046ed"
+    },
+    {
+      "role": "mobile_visual_foundations",
+      "path": "docs/design/mobile/MOBILE_DESIGN_SYSTEM_V1.md",
+      "heading": "# OneBrain Mobile Design System V1",
+      "sha256": "c7a2b863ebf3ec926476c1a5d88f9ba99101e9a62b248671444ad454e064fbbe"
+    },
+    {
+      "role": "mobile_component_contracts",
+      "path": "docs/design/mobile/MOBILE_COMPONENT_CATALOG_V1.md",
+      "heading": "# OneBrain Mobile Component Catalog V1",
+      "sha256": "e05ccc597b1106f1f266c9d93be288b61a0a9a45feb9ed26f287296eeef95f8a"
+    },
+    {
+      "role": "mobile_screen_composition",
+      "path": "docs/design/mobile/MOBILE_SCREEN_PATTERNS_V1.md",
+      "heading": "# OneBrain Mobile Screen Patterns V1",
+      "sha256": "15915028ca81c0d05becb4590e5fb1bdf42d6f3406ce611b884b13e6c32f92c0"
+    },
+    {
+      "role": "mobile_machine_design_tokens",
+      "path": "docs/design/mobile/tokens/mobile_design_tokens_v1.json",
+      "sha256": "455fcb4be1fcbd694dc1af2ef2ee1fb9a96adf4b69a3df1d5f2002b60f01e19b"
+    },
+    {
+      "role": "mobile_design_entrypoint",
+      "path": "docs/design/mobile/README.md",
+      "heading": "# OneBrain Mobile Design System",
+      "sha256": "506cee83d42c8ee8d38fe5c72f5fc102515fbc4324956f1702ac7f0aef91d7d2"
+    }
+  ],
+  "expected_structure": {
+    "features": 123,
+    "screens": 112,
+    "components": 62,
+    "patterns": 13,
+    "mapped_screens": 112
+  },
+  "design_tokens": {
+    "path": "docs/design/mobile/tokens/mobile_design_tokens_v1.json",
+    "format": "onebrain.mobile.design-tokens/1",
+    "version": "1.0.0",
+    "minimum_text_contrast": 4.5
+  },
+  "evidence": {
+    "path": "src/onebrain-mobile/compliance/mobile_build_evidence_v1.json",
+    "format": "onebrain.mobile.build-evidence/1",
+    "foundation_required_paths": [
+      "src/onebrain-mobile/lib/l10n/app_en.arb",
+      "src/onebrain-mobile/lib/l10n/app_vi.arb",
+      "src/onebrain-mobile/lib/design/generated/mobile_design_tokens.g.dart"
+    ]
+  },
+  "source_guards": {
+    "forbidden_dart_patterns": [
+      {
+        "id": "NO_DART_IO",
+        "pattern": "^\\s*import\\s+['\\\"]dart:io['\\\"]",
+        "allowed_prefixes": []
+      },
+      {
+        "id": "NO_DART_PRODUCT_DATABASE",
+        "pattern": "^\\s*import\\s+['\\\"]package:(?:sqflite|drift|isar|hive|realm|objectbox)(?:/|['\\\"])",
+        "allowed_prefixes": []
+      },
+      {
+        "id": "NO_DART_TRANSPORT",
+        "pattern": "^\\s*import\\s+['\\\"]package:(?:http|dio|web_socket_channel|grpc)(?:/|['\\\"])",
+        "allowed_prefixes": []
+      },
+      {
+        "id": "NO_DIRECT_DART_SOCKET",
+        "pattern": "\\b(?:HttpClient|WebSocket|RawSocket|Socket)\\s*\\(",
+        "allowed_prefixes": []
+      },
+      {
+        "id": "NO_DIRECT_DART_DATABASE_API",
+        "pattern": "\\b(?:openDatabase|NativeDatabase|Isar\\.open|Hive\\.openBox)\\s*\\(",
+        "allowed_prefixes": []
+      },
+      {
+        "id": "NO_RAW_FLUTTER_COLOR",
+        "pattern": "\\bColor\\s*\\(\\s*0x[0-9A-Fa-f]{8}\\s*\\)",
+        "allowed_prefixes": [
+          "src/onebrain-mobile/lib/design/generated/"
+        ]
+      },
+      {
+        "id": "NO_RAW_MATERIAL_COLOR",
+        "pattern": "\\bColors\\.[A-Za-z0-9_]+",
+        "allowed_prefixes": [
+          "src/onebrain-mobile/lib/design/generated/"
+        ]
+      }
+    ],
+    "forbidden_pubspec_dependencies": [
+      "sqflite",
+      "drift",
+      "isar",
+      "hive",
+      "realm",
+      "objectbox",
+      "http",
+      "dio",
+      "web_socket_channel",
+      "grpc"
+    ],
+    "package_roots": [
+      "src/onebrain-mobile/assets",
+      "src/onebrain-mobile/android/app/src/main/assets",
+      "src/onebrain-mobile/ios/Runner"
+    ],
+    "forbidden_packaged_names": [
+      "concepts.obr",
+      "concepts.obr.ccids.idx",
+      "concepts.obr.labels.idx",
+      "concepts.obr.manifest.json",
+      "concepts.obr.verification.json"
+    ],
+    "forbidden_packaged_suffixes": [
+      ".obr",
+      ".redb",
+      ".idx",
+      ".jsonl",
+      ".gguf",
+      ".onnx",
+      ".tflite",
+      ".mlmodel",
+      ".zst",
+      ".tar",
+      ".tar.gz",
+      ".zip"
+    ],
+    "maximum_unlisted_asset_bytes": 33554432
+  }
+}

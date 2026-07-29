@@ -24,6 +24,9 @@
 >
 > Mobile visual system, components and screen patterns:
 > [`MOBILE_DESIGN_SYSTEM_V1.md`](../design/mobile/MOBILE_DESIGN_SYSTEM_V1.md).
+>
+> Mandatory implementation compliance gate:
+> [`MOBILE_BUILD_HARNESS_V1.md`](../design/mobile/MOBILE_BUILD_HARNESS_V1.md).
 
 ---
 
@@ -1631,6 +1634,8 @@ Deliver:
   `bootstrap.redb` ownership and immutable A/B mobile delivery;
 - owner-reviewed mobile visual direction, semantic design tokens, component
   catalog and 112-screen pattern mapping;
+- hash-pinned mobile authority manifest, scoped agent instructions,
+  implementation-evidence state and CI compliance validator;
 - source-of-truth precedence over stale P10/UI feature documents.
 
 Exit:
@@ -1663,7 +1668,9 @@ Exit:
 - no undefined ABI/thread ownership;
 - token generation is reproducible and the component gallery passes light,
   dark, vi/en, 200% text and reduced-motion goldens;
-- documented fallback if the selected bridge fails.
+- documented fallback if the selected bridge fails;
+- the mobile compliance harness remains green and the evidence phase advances
+  from `pre_scaffold` to `foundation` before `pubspec.yaml` lands.
 
 ### MOB-02 — Mobile runtime profile
 

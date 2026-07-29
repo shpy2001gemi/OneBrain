@@ -1,0 +1,49 @@
+name: Mobile build contracts
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "AGENTS.md"
+      - "docs/design/mobile/**"
+      - "docs/features/mobile/**"
+      - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
+      - "docs/research/WIP_MOBILE_APP_*.md"
+      - "scripts/ci/*mobile_build_contracts.py"
+      - "src/onebrain-mobile/**"
+      - ".github/workflows/mobile-build-contracts.yml"
+  push:
+    paths:
+      - "AGENTS.md"
+      - "docs/design/mobile/**"
+      - "docs/features/mobile/**"
+      - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
+      - "docs/research/WIP_MOBILE_APP_*.md"
+      - "scripts/ci/*mobile_build_contracts.py"
+      - "src/onebrain-mobile/**"
+      - ".github/workflows/mobile-build-contracts.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-build-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compliance:
+    name: Authority, structure, design and source guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Validate mobile build contract
+        run: python scripts/ci/validate_mobile_build_contracts.py
+
+      - name: Test mobile build validator
+        run: python -m unittest scripts.ci.test_validate_mobile_build_contracts
