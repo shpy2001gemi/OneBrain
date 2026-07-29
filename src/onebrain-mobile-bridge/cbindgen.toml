@@ -25,4 +25,8 @@ include = [
   "ob_mobile_bridge_core_version",
   "ob_mobile_bridge_registry_request_issued",
   "ob_mobile_bridge_round_trip",
+  "ObMobileRuntimeSnapshot",
+  "ob_mobile_runtime_open_utf8",
+  "ob_mobile_runtime_snapshot",
+  "ob_mobile_runtime_graceful_stop",
 ]

@@ -1,0 +1,34 @@
+{
+  "after_force_stop": {
+    "active_grants": 1,
+    "bootstrap_store_opened": true,
+    "generation": 2,
+    "local_kql_fixture_verified": true,
+    "no_llm_provider": true,
+    "phase": "Active",
+    "private_planner_verified": true,
+    "profile": "MOB-02/1",
+    "recovered_unclean_start": true,
+    "registry_state": "BootstrapOnly",
+    "stale_callback_rejected": true
+  },
+  "device": "emulator-5554",
+  "first_launch": {
+    "active_grants": 1,
+    "bootstrap_store_opened": true,
+    "generation": 1,
+    "local_kql_fixture_verified": true,
+    "no_llm_provider": true,
+    "phase": "Active",
+    "private_planner_verified": true,
+    "profile": "MOB-02/1",
+    "recovered_unclean_start": false,
+    "registry_state": "BootstrapOnly",
+    "stale_callback_rejected": true
+  },
+  "format": "onebrain.mobile.android-runtime-recovery/1",
+  "generated_at": "2026-07-29T16:41:00.363055+00:00",
+  "package": "org.onebrain.onebrain_mobile",
+  "physical_device_claimed": false,
+  "result": "passed"
+}

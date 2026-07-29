@@ -22,8 +22,38 @@ class MobileHostSnapshot {
   final bool rustRoundTripVerified;
 }
 
+class MobileRuntimeSnapshot {
+  const MobileRuntimeSnapshot({
+    required this.profileVersion,
+    required this.processGeneration,
+    required this.activationPhase,
+    required this.activeGrantCount,
+    required this.recoveredUncleanStart,
+    required this.bootstrapStoreOpened,
+    required this.registryState,
+    required this.localKqlFixtureVerified,
+    required this.privatePlannerVerified,
+    required this.noLlmProvider,
+    required this.staleCallbackRejected,
+  });
+
+  final String profileVersion;
+  final int processGeneration;
+  final String activationPhase;
+  final int activeGrantCount;
+  final bool recoveredUncleanStart;
+  final bool bootstrapStoreOpened;
+  final String registryState;
+  final bool localKqlFixtureVerified;
+  final bool privatePlannerVerified;
+  final bool noLlmProvider;
+  final bool staleCallbackRejected;
+}
+
 abstract interface class MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost();
+
+  Future<MobileRuntimeSnapshot> inspectRuntimeProfile();
 
   Future<String> startFeasibilityOperation(Duration delay);
 
@@ -55,6 +85,24 @@ class PigeonMobileHostGateway implements MobileHostGateway {
   }
 
   @override
+  Future<MobileRuntimeSnapshot> inspectRuntimeProfile() async {
+    final snapshot = await _api.inspectRuntimeProfile();
+    return MobileRuntimeSnapshot(
+      profileVersion: snapshot.profileVersion,
+      processGeneration: snapshot.processGeneration,
+      activationPhase: snapshot.activationPhase,
+      activeGrantCount: snapshot.activeGrantCount,
+      recoveredUncleanStart: snapshot.recoveredUncleanStart,
+      bootstrapStoreOpened: snapshot.bootstrapStoreOpened,
+      registryState: snapshot.registryState,
+      localKqlFixtureVerified: snapshot.localKqlFixtureVerified,
+      privatePlannerVerified: snapshot.privatePlannerVerified,
+      noLlmProvider: snapshot.noLlmProvider,
+      staleCallbackRejected: snapshot.staleCallbackRejected,
+    );
+  }
+
+  @override
   Future<String> startFeasibilityOperation(Duration delay) =>
       _api.startFeasibilityOperation(delay.inMilliseconds);
 
@@ -72,4 +120,8 @@ final mobileHostGatewayProvider = Provider<MobileHostGateway>(
 
 final bootstrapHostSnapshotProvider = FutureProvider<MobileHostSnapshot>(
   (ref) => ref.watch(mobileHostGatewayProvider).inspectBootstrapHost(),
+);
+
+final mobileRuntimeSnapshotProvider = FutureProvider<MobileRuntimeSnapshot>(
+  (ref) => ref.watch(mobileHostGatewayProvider).inspectRuntimeProfile(),
 );

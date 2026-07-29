@@ -91,6 +91,40 @@ class AppLocalizationsEn extends AppLocalizations {
   String get rustBridgeNotVerified => 'Rust round trip unavailable';
 
   @override
+  String get mobileRuntimeTitle => 'Mobile runtime profile';
+
+  @override
+  String get mobileRuntimeLoading => 'Opening the local BootstrapOnly runtime…';
+
+  @override
+  String get mobileRuntimeUnavailable =>
+      'The local runtime could not open. No offline readiness is claimed.';
+
+  @override
+  String mobileRuntimeReady(
+    String profileVersion,
+    int generation,
+    String phase,
+    int grantCount,
+    String registryState,
+  ) {
+    return 'Profile $profileVersion · generation $generation · $phase with $grantCount active grant(s). Registry state: $registryState.';
+  }
+
+  @override
+  String mobileRuntimeRecovered(int generation) {
+    return 'Recovered generation $generation after the previous process ended without a quiesce callback. Stale callbacks remain fenced.';
+  }
+
+  @override
+  String get mobileRuntimeVerified =>
+      'Signed local KQL, private planner and callback fence verified';
+
+  @override
+  String get mobileRuntimeNotVerified =>
+      'Runtime profile verification incomplete';
+
+  @override
   String get continueAction => 'Continue to device preflight';
 
   @override

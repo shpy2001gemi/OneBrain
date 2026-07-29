@@ -13,6 +13,7 @@ MOBILE_ROOT = Path(__file__).resolve().parents[1]
 RUST_WORKSPACE = MOBILE_ROOT.parent
 OUTPUT = MOBILE_ROOT / "android" / "app" / "src" / "main" / "jniLibs"
 TARGETS = ("arm64-v8a", "x86_64")
+BRIDGE_LIBRARY = "libonebrain_mobile_bridge.so"
 
 
 def main() -> int:
@@ -33,6 +34,11 @@ def main() -> int:
         )
 
     selected_targets = arguments.target or list(TARGETS)
+    for target in selected_targets:
+        target_output = OUTPUT / target
+        if target_output.is_dir():
+            for library in target_output.glob("*.so"):
+                library.unlink()
     command = ["cargo", "ndk", "--platform", "24"]
     for target in selected_targets:
         command.extend(("-t", target))
@@ -50,6 +56,14 @@ def main() -> int:
     if arguments.release:
         command.append("--release")
     subprocess.run(command, cwd=RUST_WORKSPACE, check=True)
+    for target in selected_targets:
+        target_output = OUTPUT / target
+        bridge = target_output / BRIDGE_LIBRARY
+        if not bridge.is_file():
+            raise SystemExit(f"missing Android Rust bridge output: {bridge}")
+        for library in target_output.glob("*.so"):
+            if library.name != BRIDGE_LIBRARY:
+                library.unlink()
     return 0
 
 

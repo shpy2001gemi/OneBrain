@@ -3,7 +3,7 @@
   "contract_id": "onebrain-mobile-owner-approved-v1",
   "authority_set_sha256": "b9f374909c83c6dc3785871da172bffbaf666468fe42cd7afb7f069952aeb375",
   "phase": "foundation",
-  "work_package": "MOB-01",
+  "work_package": "MOB-02",
   "acknowledged_required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -17,7 +17,11 @@
     "docs/design/mobile/README.md"
   ],
   "affected_ids": [
+    "MOB-FND-001",
+    "MOB-FND-002",
     "MOB-FND-003",
+    "MOB-FND-004",
+    "MOB-FND-005",
     "MOB-ONB-001",
     "MOB-SCR-ENT-001",
     "MOB-SCR-ONB-001",
@@ -72,7 +76,7 @@
     {
       "id": "MOB-01-DESIGN-GOLDENS",
       "path": "src/onebrain-mobile/test/golden_test.dart",
-      "proves": "Eight checked-in design-system goldens cover light, dark, high contrast, English, Vietnamese, 200 percent text, reduced motion and compact, large and expanded layouts."
+      "proves": "Nine checked-in design-system goldens cover light, dark, high contrast, English, Vietnamese, 200 percent text, reduced motion, compact/large/expanded layouts and the MOB-02 runtime status card."
     },
     {
       "id": "MOB-01-OFFLINE-FONT-ASSETS",
@@ -85,9 +89,9 @@
       "proves": "Android 16 exercised the real Pigeon/Kotlin/JNI/Rust snapshot plus started, cancelled and completed events, idempotent cancellation and bounded HOST_INVALID_DELAY error."
     },
     {
-      "id": "MOB-01-BOOTSTRAP-SOURCE-ISOLATION",
+      "id": "MOB-02-BOOTSTRAP-SOURCE-ISOLATION",
       "path": "src/onebrain-mobile/compliance/reports/mob01_bootstrap_source_isolation.json",
-      "proves": "Static inspection found zero forbidden Dart, Kotlin, Swift or Rust transport references in the BootstrapOnly slice."
+      "proves": "Static inspection found zero forbidden Dart, Kotlin, Swift or Rust transport references across the BootstrapOnly app, bridge and mobile core."
     },
     {
       "id": "MOB-01-ANDROID-RELEASE-PERMISSIONS",
@@ -98,9 +102,39 @@
       "id": "MOB-01-ANDROID-RELEASE-INVENTORY",
       "path": "src/onebrain-mobile/compliance/reports/mob01_android_release_package_inventory.json",
       "proves": "The arm64/x86_64 release APK contains no prohibited Registry, database, index, model or archive payload."
+    },
+    {
+      "id": "MOB-02-RUNTIME-CORE-TESTS",
+      "path": "src/onebrain-mobile-core/tests/runtime_profile.rs",
+      "proves": "Rust tests exercise bounded activation grants, no-model/no-network defaults, signed local KQL and LocalOnly private planning, redb restart persistence, unclean-start detection, stable OS transfer reassociation and stale-generation callback rejection."
+    },
+    {
+      "id": "MOB-02-SIGNED-LOCAL-KQL-FIXTURE",
+      "path": "src/onebrain-mobile-core/fixtures/signed_local_kql_smoke_v1.json",
+      "proves": "A pinned Ed25519-signed test fixture executes through the local KQL parser/executor and a bounded LocalOnly private planner without a generative model or network."
+    },
+    {
+      "id": "MOB-02-RUST-DEPENDENCY-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob02_rust_dependency_isolation.json",
+      "proves": "The mobile core dependency graph contains no ku-ai, ku-net, onebrain-node, onebrain-protocol, Ollama, reqwest or Tokio package."
+    },
+    {
+      "id": "MOB-02-ANDROID-PROCESS-RECOVERY",
+      "path": "src/onebrain-mobile/compliance/reports/mob02_android_runtime_recovery.json",
+      "proves": "Android 16 emulator launch, force-stop and relaunch advanced process generation from one to two, detected the unclean start, reopened bootstrap.redb and reverified signed local KQL, private planning and the stale-callback fence."
+    },
+    {
+      "id": "MOB-02-TYPED-RUNTIME-SNAPSHOT",
+      "path": "src/onebrain-mobile/pigeons/mobile_host_api.dart",
+      "proves": "Generated Dart, Kotlin and Swift APIs expose only bounded runtime status fields; platform paths and database handles remain native-owned."
+    },
+    {
+      "id": "MOB-02-VIRTUAL-DEVICE-STRATEGY",
+      "path": "src/onebrain-mobile/compliance/mob02_validation_strategy_v1.json",
+      "proves": "Owner-approved emulator/simulator-first validation is recorded without claiming physical-device validation, MOB-01 exit, ReadyOffline or Registry Init."
     }
   ],
   "deviations": [],
-  "last_reviewed": "2026-07-29",
-  "notes": "MOB-01 foundation now includes a bounded Rust C ABI/JNI feasibility bridge, Android arm64/x86_64 cross-compilation, generated cbindgen header, runtime async/event/cancel/error evidence, pinned offline typography/icon assets, a multi-mode golden matrix, and BootstrapOnly source/package/permission isolation. Authority hashing is UTF-8/LF canonicalized so the same reviewed source validates on Windows, macOS and Linux. Physical Android and iOS device launch remain required before MOB-01 exit. This phase makes no ReadyOffline, Registry, CORE-runtime, or product-readiness claim."
+  "last_reviewed": "2026-07-30",
+  "notes": "MOB-02 adds a thin autonomous Rust mobile core, RuntimeServices injection, bounded feature/resource profile, redb bootstrap operation/chunk/transfer ledger, one-writer process generations, execution grants, callback commit fencing, signed local KQL plus LocalOnly private-planning smokes and an ABI 2 typed runtime snapshot. Android 16 emulator evidence covers force-stop recovery; iOS remains a simulator compile gate. By owner decision, physical Android and iOS validation is deferred and remains required before MOB-01/MOB-02 exit claims. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
 }

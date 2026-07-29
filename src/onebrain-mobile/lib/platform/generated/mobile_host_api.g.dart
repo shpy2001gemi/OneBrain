@@ -178,6 +178,101 @@ class HostBootstrapSnapshot {
   }
 }
 
+class HostRuntimeSnapshot {
+  HostRuntimeSnapshot({
+    required this.profileVersion,
+    required this.processGeneration,
+    required this.activationPhase,
+    required this.activeGrantCount,
+    required this.recoveredUncleanStart,
+    required this.bootstrapStoreOpened,
+    required this.registryState,
+    required this.localKqlFixtureVerified,
+    required this.privatePlannerVerified,
+    required this.noLlmProvider,
+    required this.staleCallbackRejected,
+  });
+
+  String profileVersion;
+
+  int processGeneration;
+
+  String activationPhase;
+
+  int activeGrantCount;
+
+  bool recoveredUncleanStart;
+
+  bool bootstrapStoreOpened;
+
+  String registryState;
+
+  bool localKqlFixtureVerified;
+
+  bool privatePlannerVerified;
+
+  bool noLlmProvider;
+
+  bool staleCallbackRejected;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      profileVersion,
+      processGeneration,
+      activationPhase,
+      activeGrantCount,
+      recoveredUncleanStart,
+      bootstrapStoreOpened,
+      registryState,
+      localKqlFixtureVerified,
+      privatePlannerVerified,
+      noLlmProvider,
+      staleCallbackRejected,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static HostRuntimeSnapshot decode(Object result) {
+    result as List<Object?>;
+    return HostRuntimeSnapshot(
+      profileVersion: result[0]! as String,
+      processGeneration: result[1]! as int,
+      activationPhase: result[2]! as String,
+      activeGrantCount: result[3]! as int,
+      recoveredUncleanStart: result[4]! as bool,
+      bootstrapStoreOpened: result[5]! as bool,
+      registryState: result[6]! as String,
+      localKqlFixtureVerified: result[7]! as bool,
+      privatePlannerVerified: result[8]! as bool,
+      noLlmProvider: result[9]! as bool,
+      staleCallbackRejected: result[10]! as bool,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! HostRuntimeSnapshot || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(profileVersion, other.profileVersion) && _deepEquals(processGeneration, other.processGeneration) && _deepEquals(activationPhase, other.activationPhase) && _deepEquals(activeGrantCount, other.activeGrantCount) && _deepEquals(recoveredUncleanStart, other.recoveredUncleanStart) && _deepEquals(bootstrapStoreOpened, other.bootstrapStoreOpened) && _deepEquals(registryState, other.registryState) && _deepEquals(localKqlFixtureVerified, other.localKqlFixtureVerified) && _deepEquals(privatePlannerVerified, other.privatePlannerVerified) && _deepEquals(noLlmProvider, other.noLlmProvider) && _deepEquals(staleCallbackRejected, other.staleCallbackRejected);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'HostRuntimeSnapshot(profileVersion: $profileVersion, processGeneration: $processGeneration, activationPhase: $activationPhase, activeGrantCount: $activeGrantCount, recoveredUncleanStart: $recoveredUncleanStart, bootstrapStoreOpened: $bootstrapStoreOpened, registryState: $registryState, localKqlFixtureVerified: $localKqlFixtureVerified, privatePlannerVerified: $privatePlannerVerified, noLlmProvider: $noLlmProvider, staleCallbackRejected: $staleCallbackRejected)';
+  }
+}
+
 class HostOperationEvent {
   HostOperationEvent({
     required this.operationId,
@@ -247,8 +342,11 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is HostBootstrapSnapshot) {
       buffer.putUint8(130);
       writeValue(buffer, value.encode());
-    }    else if (value is HostOperationEvent) {
+    }    else if (value is HostRuntimeSnapshot) {
       buffer.putUint8(131);
+      writeValue(buffer, value.encode());
+    }    else if (value is HostOperationEvent) {
+      buffer.putUint8(132);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -264,6 +362,8 @@ class _PigeonCodec extends StandardMessageCodec {
       case 130:
         return HostBootstrapSnapshot.decode(readValue(buffer)!);
       case 131:
+        return HostRuntimeSnapshot.decode(readValue(buffer)!);
+      case 132:
         return HostOperationEvent.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -303,6 +403,25 @@ class MobileHostApi {
     )
     ;
     return pigeonVar_replyValue! as HostBootstrapSnapshot;
+  }
+
+  Future<HostRuntimeSnapshot> inspectRuntimeProfile() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectRuntimeProfile$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as HostRuntimeSnapshot;
   }
 
   Future<String> startFeasibilityOperation(int delayMilliseconds) async {

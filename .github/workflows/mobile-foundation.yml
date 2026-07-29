@@ -9,14 +9,22 @@ on:
       - "docs/features/mobile/**"
       - "docs/research/WIP_MOBILE_APP_*.md"
       - "scripts/ci/validate_mobile_build_contracts.py"
+      - "src/Cargo.lock"
+      - "src/Cargo.toml"
       - "src/onebrain-mobile/**"
+      - "src/onebrain-mobile-bridge/**"
+      - "src/onebrain-mobile-core/**"
   push:
     branches:
       - "codex/mobile-*"
     paths:
       - ".gitattributes"
       - ".github/workflows/mobile-foundation.yml"
+      - "src/Cargo.lock"
+      - "src/Cargo.toml"
       - "src/onebrain-mobile/**"
+      - "src/onebrain-mobile-bridge/**"
+      - "src/onebrain-mobile-core/**"
   workflow_dispatch:
 
 permissions:
@@ -50,14 +58,18 @@ jobs:
       - name: Verify pinned font and rounded-icon assets
         run: python tool/verify_font_assets.py
       - name: Verify BootstrapOnly source isolation
-        run: python tool/verify_bootstrap_source_isolation.py
+        run: |
+          python tool/verify_bootstrap_source_isolation.py
+          python tool/verify_mobile_rust_dependency_graph.py
       - name: Install pinned Rust mobile build tools
         run: |
           cargo install cargo-ndk --version 4.1.2 --locked
           cargo install cbindgen --version 0.29.4 --locked
       - name: Test and cross-compile Rust bridge
         run: |
-          cargo test --manifest-path ../Cargo.toml -p onebrain-mobile-bridge
+          cargo test --manifest-path ../Cargo.toml \
+            -p onebrain-mobile-core \
+            -p onebrain-mobile-bridge
           python tool/build_rust_android.py
       - name: Verify generated Rust C header
         run: |
@@ -104,7 +116,12 @@ jobs:
           target: google_apis
           disable-animations: true
           working-directory: src/onebrain-mobile
-          script: flutter test integration_test/native_host_bridge_test.dart -d emulator-5554
+          script: |
+            flutter test integration_test/native_host_bridge_test.dart -d emulator-5554
+            flutter build apk --debug
+            python tool/verify_android_runtime_recovery.py \
+              build/app/outputs/flutter-apk/app-debug.apk \
+              --device emulator-5554
       - name: Build BootstrapOnly Android release APK
         run: |
           python tool/build_rust_android.py --release

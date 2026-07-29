@@ -34,6 +34,34 @@ class HostBootstrapSnapshot {
   bool rustRoundTripVerified;
 }
 
+class HostRuntimeSnapshot {
+  HostRuntimeSnapshot({
+    required this.profileVersion,
+    required this.processGeneration,
+    required this.activationPhase,
+    required this.activeGrantCount,
+    required this.recoveredUncleanStart,
+    required this.bootstrapStoreOpened,
+    required this.registryState,
+    required this.localKqlFixtureVerified,
+    required this.privatePlannerVerified,
+    required this.noLlmProvider,
+    required this.staleCallbackRejected,
+  });
+
+  String profileVersion;
+  int processGeneration;
+  String activationPhase;
+  int activeGrantCount;
+  bool recoveredUncleanStart;
+  bool bootstrapStoreOpened;
+  String registryState;
+  bool localKqlFixtureVerified;
+  bool privatePlannerVerified;
+  bool noLlmProvider;
+  bool staleCallbackRejected;
+}
+
 enum HostOperationEventKind { started, cancelled, completed }
 
 class HostOperationEvent {
@@ -52,6 +80,9 @@ class HostOperationEvent {
 abstract class MobileHostApi {
   @async
   HostBootstrapSnapshot inspectBootstrapHost();
+
+  @async
+  HostRuntimeSnapshot inspectRuntimeProfile();
 
   @async
   String startFeasibilityOperation(int delayMilliseconds);

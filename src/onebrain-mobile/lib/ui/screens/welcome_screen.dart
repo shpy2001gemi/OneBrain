@@ -18,6 +18,7 @@ class WelcomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final strings = AppLocalizations.of(context);
     final host = ref.watch(bootstrapHostSnapshotProvider);
+    final runtime = ref.watch(mobileRuntimeSnapshotProvider);
     return ObmScreenFrame(
       title: strings.appTitle,
       child: ConstrainedBox(
@@ -138,6 +139,51 @@ class WelcomeScreen extends ConsumerWidget {
                   statusLabel: verified
                       ? strings.rustBridgeVerified
                       : strings.rustBridgeNotVerified,
+                );
+              },
+            ),
+            SizedBox(height: context.spacing.md),
+            runtime.when(
+              loading: () => ObmNodeFactCard(
+                title: strings.mobileRuntimeTitle,
+                body: strings.mobileRuntimeLoading,
+                icon: ObmSymbol.memory,
+                tone: ObmStatusTone.waiting,
+              ),
+              error: (error, stackTrace) => ObmNodeFactCard(
+                title: strings.mobileRuntimeTitle,
+                body: strings.mobileRuntimeUnavailable,
+                icon: ObmSymbol.memory,
+                tone: ObmStatusTone.offlineUnavailable,
+              ),
+              data: (snapshot) {
+                final verified =
+                    snapshot.bootstrapStoreOpened &&
+                    snapshot.registryState == 'BootstrapOnly' &&
+                    snapshot.localKqlFixtureVerified &&
+                    snapshot.privatePlannerVerified &&
+                    snapshot.noLlmProvider &&
+                    snapshot.staleCallbackRejected;
+                return ObmNodeFactCard(
+                  title: strings.mobileRuntimeTitle,
+                  body: snapshot.recoveredUncleanStart
+                      ? strings.mobileRuntimeRecovered(
+                          snapshot.processGeneration,
+                        )
+                      : strings.mobileRuntimeReady(
+                          snapshot.profileVersion,
+                          snapshot.processGeneration,
+                          snapshot.activationPhase,
+                          snapshot.activeGrantCount,
+                          snapshot.registryState,
+                        ),
+                  icon: ObmSymbol.memory,
+                  tone: verified
+                      ? ObmStatusTone.ready
+                      : ObmStatusTone.offlineUnavailable,
+                  statusLabel: verified
+                      ? strings.mobileRuntimeVerified
+                      : strings.mobileRuntimeNotVerified,
                 );
               },
             ),

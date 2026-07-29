@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BRIDGE_ROOT = ROOT.parent / "onebrain-mobile-bridge"
+CORE_ROOT = ROOT.parent / "onebrain-mobile-core"
 RULES = {
     "dart": (
         r"""import\s+['"]dart:io['"]""",
@@ -48,6 +49,7 @@ def _sources() -> list[tuple[str, Path]]:
         ("swift", path) for path in (ROOT / "ios" / "Runner").rglob("*.swift")
     )
     sources.extend(("rust", path) for path in (BRIDGE_ROOT / "src").rglob("*.rs"))
+    sources.extend(("rust", path) for path in (CORE_ROOT / "src").rglob("*.rs"))
     return sorted(sources, key=lambda item: item[1].as_posix())
 
 
@@ -72,7 +74,7 @@ def verify() -> dict[str, object]:
     return {
         "format": "onebrain.mobile.bootstrap-source-isolation/1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "scope": "MOB-01 BootstrapOnly app and Rust feasibility bridge",
+        "scope": "MOB-02 BootstrapOnly app, Rust bridge and autonomous mobile core",
         "files_scanned": counts,
         "forbidden_transport_reference_count": len(violations),
         "violations": violations,

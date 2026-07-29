@@ -91,6 +91,39 @@ class AppLocalizationsVi extends AppLocalizations {
   String get rustBridgeNotVerified => 'Chưa xác minh được round trip Rust';
 
   @override
+  String get mobileRuntimeTitle => 'Hồ sơ runtime di động';
+
+  @override
+  String get mobileRuntimeLoading => 'Đang mở runtime BootstrapOnly cục bộ…';
+
+  @override
+  String get mobileRuntimeUnavailable =>
+      'Không thể mở runtime cục bộ. Chưa tuyên bố khả năng sẵn sàng ngoại tuyến.';
+
+  @override
+  String mobileRuntimeReady(
+    String profileVersion,
+    int generation,
+    String phase,
+    int grantCount,
+    String registryState,
+  ) {
+    return 'Hồ sơ $profileVersion · thế hệ $generation · $phase với $grantCount quyền thực thi đang hoạt động. Trạng thái Registry: $registryState.';
+  }
+
+  @override
+  String mobileRuntimeRecovered(int generation) {
+    return 'Đã phục hồi thế hệ $generation sau khi tiến trình trước kết thúc mà không có callback quiesce. Callback cũ vẫn bị chặn.';
+  }
+
+  @override
+  String get mobileRuntimeVerified =>
+      'Đã xác minh KQL cục bộ có chữ ký, planner riêng tư và hàng rào callback';
+
+  @override
+  String get mobileRuntimeNotVerified => 'Chưa hoàn tất xác minh hồ sơ runtime';
+
+  @override
   String get continueAction => 'Tiếp tục kiểm tra thiết bị';
 
   @override

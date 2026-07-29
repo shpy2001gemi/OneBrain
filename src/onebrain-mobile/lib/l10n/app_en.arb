@@ -36,6 +36,27 @@
   "rustBridgeUnavailable": "The Rust bridge is not linked in this build. No runtime readiness is claimed.",
   "rustBridgeVerified": "Typed round trip verified",
   "rustBridgeNotVerified": "Rust round trip unavailable",
+  "mobileRuntimeTitle": "Mobile runtime profile",
+  "mobileRuntimeLoading": "Opening the local BootstrapOnly runtime…",
+  "mobileRuntimeUnavailable": "The local runtime could not open. No offline readiness is claimed.",
+  "mobileRuntimeReady": "Profile {profileVersion} · generation {generation} · {phase} with {grantCount} active grant(s). Registry state: {registryState}.",
+  "@mobileRuntimeReady": {
+    "placeholders": {
+      "profileVersion": {"type": "String"},
+      "generation": {"type": "int"},
+      "phase": {"type": "String"},
+      "grantCount": {"type": "int"},
+      "registryState": {"type": "String"}
+    }
+  },
+  "mobileRuntimeRecovered": "Recovered generation {generation} after the previous process ended without a quiesce callback. Stale callbacks remain fenced.",
+  "@mobileRuntimeRecovered": {
+    "placeholders": {
+      "generation": {"type": "int"}
+    }
+  },
+  "mobileRuntimeVerified": "Signed local KQL, private planner and callback fence verified",
+  "mobileRuntimeNotVerified": "Runtime profile verification incomplete",
   "continueAction": "Continue to device preflight",
   "galleryAction": "View shared components",
   "galleryTitle": "Shared component gallery",

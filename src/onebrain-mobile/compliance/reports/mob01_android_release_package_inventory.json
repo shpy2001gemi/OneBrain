@@ -2,7 +2,7 @@
   "entry_count": 74,
   "forbidden_payload_count": 0,
   "format": "onebrain.mobile.package-inventory/1",
-  "generated_at": "2026-07-29T15:43:47.171509+00:00",
+  "generated_at": "2026-07-29T17:09:54.143791+00:00",
   "largest_entries": [
     {
       "compressed_bytes": 6567772,
@@ -30,24 +30,24 @@
       "uncompressed_bytes": 4850608
     },
     {
+      "compressed_bytes": 2216112,
+      "path": "lib/x86_64/libonebrain_mobile_bridge.so",
+      "uncompressed_bytes": 2216112
+    },
+    {
+      "compressed_bytes": 1920288,
+      "path": "lib/arm64-v8a/libonebrain_mobile_bridge.so",
+      "uncompressed_bytes": 1920288
+    },
+    {
       "compressed_bytes": 262131,
       "path": "assets/flutter_assets/assets/fonts/NunitoSans-Variable.ttf",
       "uncompressed_bytes": 571240
     },
     {
-      "compressed_bytes": 242221,
+      "compressed_bytes": 244511,
       "path": "classes.dex",
-      "uncompressed_bytes": 538472
-    },
-    {
-      "compressed_bytes": 535704,
-      "path": "lib/x86_64/libonebrain_mobile_bridge.so",
-      "uncompressed_bytes": 535704
-    },
-    {
-      "compressed_bytes": 483304,
-      "path": "lib/arm64-v8a/libonebrain_mobile_bridge.so",
-      "uncompressed_bytes": 483304
+      "uncompressed_bytes": 544396
     },
     {
       "compressed_bytes": 128960,
@@ -56,7 +56,7 @@
     }
   ],
   "package": "app-release.apk",
-  "package_bytes": 42154502,
-  "package_sha256": "d3288936f5740fb5f4064ce4619118b7eda95e5f5d1acdc2d30039240006f794",
+  "package_bytes": 45276702,
+  "package_sha256": "47031403aea199dc68d6fa557212d7c776efed1a7931cd9e63e48beaff68d9ff",
   "violations": []
 }

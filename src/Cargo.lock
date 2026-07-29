@@ -3315,6 +3315,22 @@ name = "onebrain-mobile-bridge"
 version = "0.1.0"
 dependencies = [
  "jni 0.22.4",
+ "onebrain-mobile-core",
+]
+
+[[package]]
+name = "onebrain-mobile-core"
+version = "0.2.0"
+dependencies = [
+ "ed25519-dalek",
+ "hex",
+ "ku-core",
+ "ku-kql",
+ "redb",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

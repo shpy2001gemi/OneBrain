@@ -242,6 +242,54 @@ abstract class AppLocalizations {
   /// **'Rust round trip unavailable'**
   String get rustBridgeNotVerified;
 
+  /// No description provided for @mobileRuntimeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Mobile runtime profile'**
+  String get mobileRuntimeTitle;
+
+  /// No description provided for @mobileRuntimeLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening the local BootstrapOnly runtime…'**
+  String get mobileRuntimeLoading;
+
+  /// No description provided for @mobileRuntimeUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The local runtime could not open. No offline readiness is claimed.'**
+  String get mobileRuntimeUnavailable;
+
+  /// No description provided for @mobileRuntimeReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Profile {profileVersion} · generation {generation} · {phase} with {grantCount} active grant(s). Registry state: {registryState}.'**
+  String mobileRuntimeReady(
+    String profileVersion,
+    int generation,
+    String phase,
+    int grantCount,
+    String registryState,
+  );
+
+  /// No description provided for @mobileRuntimeRecovered.
+  ///
+  /// In en, this message translates to:
+  /// **'Recovered generation {generation} after the previous process ended without a quiesce callback. Stale callbacks remain fenced.'**
+  String mobileRuntimeRecovered(int generation);
+
+  /// No description provided for @mobileRuntimeVerified.
+  ///
+  /// In en, this message translates to:
+  /// **'Signed local KQL, private planner and callback fence verified'**
+  String get mobileRuntimeVerified;
+
+  /// No description provided for @mobileRuntimeNotVerified.
+  ///
+  /// In en, this message translates to:
+  /// **'Runtime profile verification incomplete'**
+  String get mobileRuntimeNotVerified;
+
   /// No description provided for @continueAction.
   ///
   /// In en, this message translates to:

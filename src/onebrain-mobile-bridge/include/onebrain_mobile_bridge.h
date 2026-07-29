@@ -18,7 +18,31 @@
 /**
  * Stable ABI revision understood by the current Swift/Kotlin adapters.
  */
-#define OB_MOBILE_BRIDGE_ABI_VERSION 1
+#define OB_MOBILE_BRIDGE_ABI_VERSION 2
+
+#define OB_MOBILE_RUNTIME_OK 0
+
+#define OB_MOBILE_RUNTIME_INVALID_PATH 1
+
+#define OB_MOBILE_RUNTIME_CORE_ERROR 2
+
+#define OB_MOBILE_RUNTIME_LOCK_POISONED 3
+
+#define OB_MOBILE_RUNTIME_NOT_OPEN 4
+
+typedef struct ObMobileRuntimeSnapshot {
+  uint32_t status_code;
+  uint64_t process_generation;
+  uint32_t activation_phase;
+  uint32_t active_grant_count;
+  uint8_t recovered_unclean_start;
+  uint8_t bootstrap_store_opened;
+  uint8_t registry_bootstrap_only;
+  uint8_t local_kql_fixture_verified;
+  uint8_t private_planner_verified;
+  uint8_t no_llm_provider;
+  uint8_t stale_callback_rejected;
+} ObMobileRuntimeSnapshot;
 
 /**
  * Return the stable native-to-Rust ABI revision.
@@ -35,8 +59,7 @@ const char *ob_mobile_bridge_core_version(void);
 /**
  * Report whether this bootstrap-only bridge has requested Registry bytes.
  *
- * This is always false in MOB-01. Registry transfer authority is introduced
- * only behind the later explicit Init contract.
+ * Registry transfer authority remains disabled until the explicit Init slice.
  */
 uint8_t ob_mobile_bridge_registry_request_issued(void);
 
@@ -44,6 +67,28 @@ uint8_t ob_mobile_bridge_registry_request_issued(void);
  * Bounded deterministic call used to verify the complete generated call path.
  */
 uint64_t ob_mobile_bridge_round_trip(uint64_t nonce);
+
+/**
+ * Open the process-wide mobile runtime from a native-owned UTF-8 data root.
+ *
+ * Repeated calls in the same process return the existing generation.
+ *
+ * # Safety
+ *
+ * `path` must reference `path_len` readable bytes for the duration of this
+ * call. The bytes must form a non-empty UTF-8 path.
+ */
+struct ObMobileRuntimeSnapshot ob_mobile_runtime_open_utf8(const uint8_t *path, size_t path_len);
+
+/**
+ * Inspect the process-wide runtime without reopening its database.
+ */
+struct ObMobileRuntimeSnapshot ob_mobile_runtime_snapshot(void);
+
+/**
+ * Quiesce the current process generation.
+ */
+uint32_t ob_mobile_runtime_graceful_stop(void);
 
 #endif  /* ONEBRAIN_MOBILE_BRIDGE_H */
 

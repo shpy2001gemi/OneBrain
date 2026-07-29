@@ -53,6 +53,11 @@ void main() {
       reducedMotion: true,
     ),
     const _GoldenCase(
+      name: 'welcome_runtime_large_light_en',
+      size: Size(430, 932),
+      runtime: true,
+    ),
+    const _GoldenCase(
       name: 'gallery_large_light_en',
       size: Size(430, 932),
       gallery: true,
@@ -66,7 +71,7 @@ void main() {
     ),
   ];
 
-  group('MOB-01 design-system golden matrix', () {
+  group('MOB-02 design-system golden matrix', () {
     for (final goldenCase in cases) {
       testWidgets(goldenCase.name, (tester) async {
         await _pumpGolden(tester, goldenCase);
@@ -81,7 +86,7 @@ void main() {
   });
 }
 
-const _goldenBoundaryKey = ValueKey<String>('mob01-golden-boundary');
+const _goldenBoundaryKey = ValueKey<String>('mob02-golden-boundary');
 
 Future<void> _pumpGolden(WidgetTester tester, _GoldenCase goldenCase) async {
   tester.view.physicalSize = goldenCase.size;
@@ -128,6 +133,11 @@ Future<void> _pumpGolden(WidgetTester tester, _GoldenCase goldenCase) async {
     await tester.tap(galleryAction);
     await tester.pumpAndSettle();
   }
+
+  if (goldenCase.runtime) {
+    await tester.scrollUntilVisible(find.text('Mobile runtime profile'), 240);
+    await tester.pumpAndSettle();
+  }
 }
 
 Future<void> _loadFont(String family, String asset) async {
@@ -145,6 +155,7 @@ class _GoldenCase {
     this.textScale = 1,
     this.reducedMotion = false,
     this.gallery = false,
+    this.runtime = false,
   });
 
   final String name;
@@ -155,6 +166,7 @@ class _GoldenCase {
   final double textScale;
   final bool reducedMotion;
   final bool gallery;
+  final bool runtime;
 }
 
 class _FakeMobileHostGateway implements MobileHostGateway {
@@ -164,12 +176,28 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
       const MobileHostSnapshot(
         platform: 'Android test',
-        apiVersion: '1',
+        apiVersion: '2',
         registryRequestIssued: false,
         rustCoreLinked: true,
         rustCoreVersion: '0.1.0-test',
-        rustAbiVersion: 1,
+        rustAbiVersion: 2,
         rustRoundTripVerified: true,
+      );
+
+  @override
+  Future<MobileRuntimeSnapshot> inspectRuntimeProfile() async =>
+      const MobileRuntimeSnapshot(
+        profileVersion: 'MOB-02/1',
+        processGeneration: 1,
+        activationPhase: 'Active',
+        activeGrantCount: 1,
+        recoveredUncleanStart: false,
+        bootstrapStoreOpened: true,
+        registryState: 'BootstrapOnly',
+        localKqlFixtureVerified: true,
+        privatePlannerVerified: true,
+        noLlmProvider: true,
+        staleCallbackRejected: true,
       );
 
   @override

@@ -2,13 +2,13 @@
   "files_scanned": {
     "dart": 22,
     "kotlin": 3,
-    "rust": 1,
+    "rust": 9,
     "swift": 3
   },
   "forbidden_transport_reference_count": 0,
   "format": "onebrain.mobile.bootstrap-source-isolation/1",
-  "generated_at": "2026-07-29T15:45:09.344242+00:00",
+  "generated_at": "2026-07-29T17:11:33.628763+00:00",
   "limitations": "Static transport isolation complements the Android release permission proof. Later explicit Registry Init must replace this foundation gate with consent-bound transport and packet tests.",
-  "scope": "MOB-01 BootstrapOnly app and Rust feasibility bridge",
+  "scope": "MOB-02 BootstrapOnly app, Rust bridge and autonomous mobile core",
   "violations": []
 }

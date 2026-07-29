@@ -1,0 +1,25 @@
+{
+  "format": "onebrain.mobile.validation-strategy/1",
+  "work_package": "MOB-02",
+  "decision_date": "2026-07-29",
+  "decision_owner": "repository owner",
+  "strategy": "virtual-device-first",
+  "automated_targets": [
+    "Android 16 x86_64 emulator",
+    "iOS simulator compile",
+    "Windows Flutter widget and golden tests",
+    "host Rust unit and restart-persistence tests"
+  ],
+  "physical_device_validation": {
+    "android": "deferred_by_owner",
+    "ios": "deferred_by_owner"
+  },
+  "claims": {
+    "physical_device_validated": false,
+    "mob01_exit_closed": false,
+    "ready_offline": false,
+    "registry_init_enabled": false,
+    "network_lane_enabled": false
+  },
+  "notes": "Development continues on emulator and simulator gates. Physical Android and iOS launch, lifecycle, thermal, energy and network evidence remains mandatory before the corresponding release or work-package exit claim."
+}

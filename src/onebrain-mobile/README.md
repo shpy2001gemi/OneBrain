@@ -2,7 +2,7 @@
 
 > OneBrain Mobile — autonomous iOS and Android node.
 >
-> Status: **MOB-01 foundation build in progress; production capability and
+> Status: **MOB-02 runtime profile build in progress; production capability and
 > `ReadyOffline` are not claimed**
 
 ## Target
@@ -65,10 +65,12 @@ The checked-in app now includes:
   async capability call, bounded feasibility operation, event stream and
   cancellation.
 
-The native snapshot now crosses the generated Pigeon API, Swift/Kotlin host and
-the Rust C ABI/JNI bridge. It verifies ABI revision `1`, a deterministic typed
-round trip and that no Registry request has been issued. This is bridge
-evidence, not runtime or node readiness.
+The native snapshot now crosses the generated Pigeon API, Swift/Kotlin host,
+the Rust C ABI/JNI bridge and `onebrain-mobile-core`. ABI revision `2` reports a
+bounded `BootstrapOnly` runtime profile with a process generation, foreground
+execution grant, redb bootstrap store, signed local KQL/LocalOnly private
+planning smokes and stale-callback fence. It still reports that no Registry
+request has been issued.
 
 See [`PACKAGE_POLICY.md`](./PACKAGE_POLICY.md) for the package-first and
 shared-widget contract, and [`RUST_BRIDGE.md`](./RUST_BRIDGE.md) for ABI,
@@ -76,8 +78,9 @@ thread-ownership, build and fallback details.
 
 The current automated evidence additionally covers:
 
-- eight Windows goldens spanning light/dark, high contrast, English/Vietnamese,
-  200% text, reduced motion and compact/large/expanded layouts;
+- nine Windows goldens spanning light/dark, high contrast, English/Vietnamese,
+  200% text, reduced motion, compact/large/expanded layouts and the MOB-02
+  runtime status card;
 - Android 16 integration of async `started`, `cancelled` and `completed`
   events, idempotent cancellation, and the bounded `HOST_INVALID_DELAY` error;
 - a release APK without Registry/model payloads and without Android network
@@ -86,6 +89,20 @@ The current automated evidence additionally covers:
 
 These are MOB-01 feasibility gates. They do not authorize Registry Init,
 background seeding or a product network lane.
+
+MOB-02 virtual-device evidence additionally covers:
+
+- `RuntimeServices` injection with no signer, network, scheduler or LLM
+  availability in the default profile;
+- process-generation recovery across Android emulator force-stop and relaunch;
+- restart-stable Registry operation, chunk and OS-transfer landing identities;
+- dependency isolation from `ku-ai`, `ku-net`, `onebrain-node`, Ollama,
+  `reqwest` and Tokio;
+- Android runtime execution off the UI thread and iOS simulator compilation.
+
+Physical Android/iOS validation is intentionally deferred by the owner while
+emulator/simulator development continues. This does not close MOB-01 or MOB-02
+exit gates.
 
 ## Generate and test
 
@@ -97,6 +114,7 @@ cargo install cargo-ndk --version 4.1.2 --locked
 cargo install cbindgen --version 0.29.4 --locked
 python tool/generate_rust_bridge_header.py
 python tool/build_rust_android.py
+python tool/verify_mobile_rust_dependency_graph.py
 dart run tool/generate_design_tokens.dart
 dart run pigeon --input pigeons/mobile_host_api.dart
 python tool/normalize_generated_sources.py
@@ -111,6 +129,8 @@ flutter test --exclude-tags golden
 flutter test test/golden_test.dart
 flutter build apk --debug
 flutter test integration_test/native_host_bridge_test.dart -d emulator-5554
+python tool/verify_android_runtime_recovery.py \
+  build/app/outputs/flutter-apk/app-debug.apk
 python tool/build_rust_android.py --release
 flutter build apk --release --target-platform android-arm64,android-x64
 python tool/inspect_android_permissions.py build/app/outputs/flutter-apk/app-release.apk

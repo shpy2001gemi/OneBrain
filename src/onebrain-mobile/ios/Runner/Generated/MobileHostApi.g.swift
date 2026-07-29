@@ -256,6 +256,91 @@ struct HostBootstrapSnapshot: Hashable, CustomStringConvertible {
 }
 
 /// Generated class from Pigeon that represents data sent in messages.
+struct HostRuntimeSnapshot: Hashable, CustomStringConvertible {
+  var profileVersion: String
+  var processGeneration: Int64
+  var activationPhase: String
+  var activeGrantCount: Int64
+  var recoveredUncleanStart: Bool
+  var bootstrapStoreOpened: Bool
+  var registryState: String
+  var localKqlFixtureVerified: Bool
+  var privatePlannerVerified: Bool
+  var noLlmProvider: Bool
+  var staleCallbackRejected: Bool
+
+
+  // swift-format-ignore: AlwaysUseLowerCamelCase
+  static func fromList(_ pigeonVar_list: [Any?]) -> HostRuntimeSnapshot? {
+    let profileVersion = pigeonVar_list[0] as! String
+    let processGeneration = pigeonVar_list[1] as! Int64
+    let activationPhase = pigeonVar_list[2] as! String
+    let activeGrantCount = pigeonVar_list[3] as! Int64
+    let recoveredUncleanStart = pigeonVar_list[4] as! Bool
+    let bootstrapStoreOpened = pigeonVar_list[5] as! Bool
+    let registryState = pigeonVar_list[6] as! String
+    let localKqlFixtureVerified = pigeonVar_list[7] as! Bool
+    let privatePlannerVerified = pigeonVar_list[8] as! Bool
+    let noLlmProvider = pigeonVar_list[9] as! Bool
+    let staleCallbackRejected = pigeonVar_list[10] as! Bool
+
+    return HostRuntimeSnapshot(
+      profileVersion: profileVersion,
+      processGeneration: processGeneration,
+      activationPhase: activationPhase,
+      activeGrantCount: activeGrantCount,
+      recoveredUncleanStart: recoveredUncleanStart,
+      bootstrapStoreOpened: bootstrapStoreOpened,
+      registryState: registryState,
+      localKqlFixtureVerified: localKqlFixtureVerified,
+      privatePlannerVerified: privatePlannerVerified,
+      noLlmProvider: noLlmProvider,
+      staleCallbackRejected: staleCallbackRejected
+    )
+  }
+  func toList() -> [Any?] {
+    return [
+      profileVersion,
+      processGeneration,
+      activationPhase,
+      activeGrantCount,
+      recoveredUncleanStart,
+      bootstrapStoreOpened,
+      registryState,
+      localKqlFixtureVerified,
+      privatePlannerVerified,
+      noLlmProvider,
+      staleCallbackRejected,
+    ]
+  }
+  static func == (lhs: HostRuntimeSnapshot, rhs: HostRuntimeSnapshot) -> Bool {
+    if Swift.type(of: lhs) != Swift.type(of: rhs) {
+      return false
+    }
+    return MobileHostApiPigeonInternal.deepEquals(lhs.profileVersion, rhs.profileVersion) && MobileHostApiPigeonInternal.deepEquals(lhs.processGeneration, rhs.processGeneration) && MobileHostApiPigeonInternal.deepEquals(lhs.activationPhase, rhs.activationPhase) && MobileHostApiPigeonInternal.deepEquals(lhs.activeGrantCount, rhs.activeGrantCount) && MobileHostApiPigeonInternal.deepEquals(lhs.recoveredUncleanStart, rhs.recoveredUncleanStart) && MobileHostApiPigeonInternal.deepEquals(lhs.bootstrapStoreOpened, rhs.bootstrapStoreOpened) && MobileHostApiPigeonInternal.deepEquals(lhs.registryState, rhs.registryState) && MobileHostApiPigeonInternal.deepEquals(lhs.localKqlFixtureVerified, rhs.localKqlFixtureVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.privatePlannerVerified, rhs.privatePlannerVerified) && MobileHostApiPigeonInternal.deepEquals(lhs.noLlmProvider, rhs.noLlmProvider) && MobileHostApiPigeonInternal.deepEquals(lhs.staleCallbackRejected, rhs.staleCallbackRejected)
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine("HostRuntimeSnapshot")
+    MobileHostApiPigeonInternal.deepHash(value: profileVersion, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: processGeneration, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: activationPhase, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: activeGrantCount, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: recoveredUncleanStart, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: bootstrapStoreOpened, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: registryState, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: localKqlFixtureVerified, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: privatePlannerVerified, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: noLlmProvider, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: staleCallbackRejected, hasher: &hasher)
+  }
+
+  public var description: String {
+    return "HostRuntimeSnapshot(profileVersion: \(String(describing: profileVersion)), processGeneration: \(String(describing: processGeneration)), activationPhase: \(String(describing: activationPhase)), activeGrantCount: \(String(describing: activeGrantCount)), recoveredUncleanStart: \(String(describing: recoveredUncleanStart)), bootstrapStoreOpened: \(String(describing: bootstrapStoreOpened)), registryState: \(String(describing: registryState)), localKqlFixtureVerified: \(String(describing: localKqlFixtureVerified)), privatePlannerVerified: \(String(describing: privatePlannerVerified)), noLlmProvider: \(String(describing: noLlmProvider)), staleCallbackRejected: \(String(describing: staleCallbackRejected)))"
+  }
+}
+
+/// Generated class from Pigeon that represents data sent in messages.
 struct HostOperationEvent: Hashable, CustomStringConvertible {
   var operationId: String
   var kind: HostOperationEventKind
@@ -312,6 +397,8 @@ private class MobileHostApiPigeonCodecReader: FlutterStandardReader {
     case 130:
       return HostBootstrapSnapshot.fromList(self.readValue() as! [Any?])
     case 131:
+      return HostRuntimeSnapshot.fromList(self.readValue() as! [Any?])
+    case 132:
       return HostOperationEvent.fromList(self.readValue() as! [Any?])
     default:
       return super.readValue(ofType: type)
@@ -327,8 +414,11 @@ private class MobileHostApiPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? HostBootstrapSnapshot {
       super.writeByte(130)
       super.writeValue(value.toList())
-    } else if let value = value as? HostOperationEvent {
+    } else if let value = value as? HostRuntimeSnapshot {
       super.writeByte(131)
+      super.writeValue(value.toList())
+    } else if let value = value as? HostOperationEvent {
+      super.writeByte(132)
       super.writeValue(value.toList())
     } else {
       super.writeValue(value)
@@ -356,6 +446,7 @@ var mobileHostApiPigeonMethodCodec = FlutterStandardMethodCodec(readerWriter: Mo
 /// Generated protocol from Pigeon that represents a handler of messages from Flutter.
 protocol MobileHostApi {
   func inspectBootstrapHost(completion: @escaping (Result<HostBootstrapSnapshot, Error>) -> Void)
+  func inspectRuntimeProfile(completion: @escaping (Result<HostRuntimeSnapshot, Error>) -> Void)
   func startFeasibilityOperation(delayMilliseconds: Int64, completion: @escaping (Result<String, Error>) -> Void)
   func cancelFeasibilityOperation(operationId: String, completion: @escaping (Result<Bool, Error>) -> Void)
 }
@@ -380,6 +471,21 @@ class MobileHostApiSetup {
       }
     } else {
       inspectBootstrapHostChannel.setMessageHandler(nil)
+    }
+    let inspectRuntimeProfileChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectRuntimeProfile\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      inspectRuntimeProfileChannel.setMessageHandler { _, reply in
+        api.inspectRuntimeProfile { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      inspectRuntimeProfileChannel.setMessageHandler(nil)
     }
     let startFeasibilityOperationChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.startFeasibilityOperation\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

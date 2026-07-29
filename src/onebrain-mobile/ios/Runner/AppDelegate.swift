@@ -1,7 +1,7 @@
 import Flutter
 import UIKit
 
-private let hostApiVersion = "1"
+private let hostApiVersion = "2"
 private let maxFeasibilityDelayMilliseconds: Int64 = 30_000
 private let rustRoundTripNonce: UInt64 = 0x4F_42_4D_30_31
 
@@ -26,10 +26,83 @@ private final class MobileHostEventStream: HostOperationEventsStreamHandler {
 
 private final class IOSMobileHost: MobileHostApi {
   private let events: MobileHostEventStream
+  private let dataRoot: String?
+  private let runtimeQueue = DispatchQueue(
+    label: "org.onebrain.mobile.runtime",
+    qos: .userInitiated
+  )
   private var pending: [String: DispatchWorkItem] = [:]
 
-  init(events: MobileHostEventStream) {
+  init(events: MobileHostEventStream, dataRoot: String?) {
     self.events = events
+    self.dataRoot = dataRoot
+  }
+
+  func inspectRuntimeProfile(
+    completion: @escaping (Result<HostRuntimeSnapshot, Error>) -> Void
+  ) {
+    guard let dataRoot else {
+      completion(
+        .failure(
+          PigeonError(
+            code: "RUNTIME_PATH_UNAVAILABLE",
+            message: "Application Support storage is unavailable",
+            details: nil
+          )
+        )
+      )
+      return
+    }
+    runtimeQueue.async {
+      let pathBytes = Array(dataRoot.utf8)
+      let runtime = pathBytes.withUnsafeBufferPointer { bytes in
+        ob_mobile_runtime_open_utf8(bytes.baseAddress, bytes.count)
+      }
+      guard runtime.status_code == 0 else {
+        DispatchQueue.main.async {
+          completion(
+            .failure(
+              PigeonError(
+                code: "RUNTIME_OPEN_FAILED",
+                message: "Rust mobile runtime status \(runtime.status_code)",
+                details: nil
+              )
+            )
+          )
+        }
+        return
+      }
+      let activationPhase: String
+      switch runtime.activation_phase {
+      case 0:
+        activationPhase = "Dormant"
+      case 1:
+        activationPhase = "Starting"
+      case 2:
+        activationPhase = "Active"
+      case 3:
+        activationPhase = "Draining"
+      default:
+        activationPhase = "Unknown"
+      }
+      let snapshot = HostRuntimeSnapshot(
+        profileVersion: "MOB-02/1",
+        processGeneration: Int64(runtime.process_generation),
+        activationPhase: activationPhase,
+        activeGrantCount: Int64(runtime.active_grant_count),
+        recoveredUncleanStart: runtime.recovered_unclean_start != 0,
+        bootstrapStoreOpened: runtime.bootstrap_store_opened != 0,
+        registryState:
+          runtime.registry_bootstrap_only != 0 ? "BootstrapOnly" : "Unknown",
+        localKqlFixtureVerified: runtime.local_kql_fixture_verified != 0,
+        privatePlannerVerified: runtime.private_planner_verified != 0,
+        noLlmProvider: runtime.no_llm_provider != 0,
+        staleCallbackRejected: runtime.stale_callback_rejected != 0
+      )
+      DispatchQueue.main.async {
+        completion(.success(snapshot))
+      }
+    }
   }
 
   func inspectBootstrapHost(
@@ -133,7 +206,7 @@ private final class IOSMobileHost: MobileHostApi {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     let messenger = engineBridge.applicationRegistrar.messenger()
     let events = MobileHostEventStream()
-    let host = IOSMobileHost(events: events)
+    let host = IOSMobileHost(events: events, dataRoot: Self.prepareRuntimeDataRoot())
     HostOperationEventsStreamHandler.register(
       with: messenger,
       streamHandler: events
@@ -141,5 +214,31 @@ private final class IOSMobileHost: MobileHostApi {
     MobileHostApiSetup.setUp(binaryMessenger: messenger, api: host)
     mobileHostEvents = events
     mobileHost = host
+  }
+
+  private static func prepareRuntimeDataRoot() -> String? {
+    guard
+      let applicationSupport = try? FileManager.default.url(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask,
+        appropriateFor: nil,
+        create: true
+      )
+    else {
+      return nil
+    }
+    let root = applicationSupport.appendingPathComponent(
+      "OneBrainMobile",
+      isDirectory: true
+    )
+    do {
+      try FileManager.default.createDirectory(
+        at: root,
+        withIntermediateDirectories: true
+      )
+      return root.path
+    } catch {
+      return nil
+    }
   }
 }

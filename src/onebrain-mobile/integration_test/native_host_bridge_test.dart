@@ -8,17 +8,29 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-    'MOB-01 typed host bridge supports async events cancellation and errors',
+    'MOB-02 typed host bridge exposes runtime and keeps bounded operations',
     (tester) async {
       final gateway = PigeonMobileHostGateway();
       final events = gateway.observeFeasibilityOperations().asBroadcastStream();
 
       final snapshot = await gateway.inspectBootstrapHost();
-      expect(snapshot.apiVersion, '1');
+      expect(snapshot.apiVersion, '2');
       expect(snapshot.registryRequestIssued, isFalse);
       expect(snapshot.rustCoreLinked, isTrue);
-      expect(snapshot.rustAbiVersion, 1);
+      expect(snapshot.rustAbiVersion, 2);
       expect(snapshot.rustRoundTripVerified, isTrue);
+
+      final runtime = await gateway.inspectRuntimeProfile();
+      expect(runtime.profileVersion, 'MOB-02/1');
+      expect(runtime.processGeneration, greaterThanOrEqualTo(1));
+      expect(runtime.activationPhase, 'Active');
+      expect(runtime.activeGrantCount, 1);
+      expect(runtime.bootstrapStoreOpened, isTrue);
+      expect(runtime.registryState, 'BootstrapOnly');
+      expect(runtime.localKqlFixtureVerified, isTrue);
+      expect(runtime.privatePlannerVerified, isTrue);
+      expect(runtime.noLlmProvider, isTrue);
+      expect(runtime.staleCallbackRejected, isTrue);
 
       final startedForCancellation = events
           .firstWhere((event) => event.kind == HostOperationEventKind.started)

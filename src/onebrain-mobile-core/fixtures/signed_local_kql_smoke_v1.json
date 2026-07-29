@@ -1,0 +1,29 @@
+{
+  "format": "onebrain.mobile.kql-fixture/1",
+  "payload": {
+    "query": "FIND (k:KU) WHERE k.certainty > 5000 SCOPE LOCAL LIMIT 4",
+    "concept": 301,
+    "predicate": 500,
+    "object": 1042,
+    "certainty": 9000,
+    "trust_score": 7000,
+    "expected_rows": 1,
+    "private_planner": {
+      "run_id_byte": 5,
+      "work_id_byte": 6,
+      "receptor_byte": 1,
+      "desired_role_byte": 2,
+      "query_policy_byte": 3,
+      "exploration_policy_byte": 4,
+      "candidate_byte": 7,
+      "max_candidates": 4,
+      "max_validations": 4,
+      "max_proposals": 1,
+      "max_work_units": 8,
+      "expected_examined_channels": 1,
+      "expected_rejected_candidates": 1
+    }
+  },
+  "public_key_hex": "8b53097aa7971f186432e0cc3f2bc2c1b2b06b485a2807b9bf76737ba712c072",
+  "signature_hex": "68d3b2808bd93e782e9bd78d4807aea429bcfa9c21e225c914241c7071c2f1b74d82380a72eee176962308a43b9001a95bf9a2a0df10e863247890466f0b3900"
+}

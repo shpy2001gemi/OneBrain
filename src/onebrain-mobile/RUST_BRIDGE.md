@@ -1,4 +1,4 @@
-# MOB-01 Rust bridge
+# MOB-02 mobile runtime bridge
 
 This slice proves the bounded production topology without claiming that the
 mobile runtime is ready:
@@ -9,11 +9,16 @@ Flutter typed intent
   -> Swift/Kotlin NativeHost
   -> generated C header / jni-rs wrapper
   -> onebrain-mobile-bridge
+  -> onebrain-mobile-core
 ```
 
-The bridge owns no database, Registry transfer, identity, signing, tool,
-network, or LLM behavior. Those authorities remain unavailable until their
-implementation packages and gates exist.
+The bridge owns no product policy. `onebrain-mobile-core` owns the bounded
+`bootstrap.redb` operational ledger, process-generation lifecycle, execution
+grants, callback commit fence, deterministic local KQL and LocalOnly private
+planning smokes. Registry
+network transfer, identity provisioning, signing, product tools, seeding and
+all LLM providers remain unavailable until their implementation packages and
+gates exist.
 
 ## Package-first toolchain
 
@@ -23,21 +28,27 @@ implementation packages and gates exist.
 | Kotlin to Rust | `jni` crate | `0.22.4` | FFI-safe JNI environment and name mangling |
 | Android Rust build | `cargo-ndk` | `4.1.2` | NDK discovery, target configuration and `jniLibs` layout |
 | Swift to Rust | `cbindgen` | `0.29.4` | Generate the checked-in C header from Rust exports |
+| Bootstrap state | `redb` | `2.6.3` | Pure-Rust ACID process, operation, chunk and transfer ledger |
+| Fixture signatures | `ed25519-dalek` | `2.2.0` | Verify the pinned local KQL smoke fixture |
 
 Application code does not recreate channel serialization, JNI environment
 handling, NDK linker discovery, or C declaration generation.
 
 ## ABI and thread ownership
 
-- ABI revision `1` exposes only bounded primitive facts and a deterministic
+- ABI revision `2` adds a fixed-layout runtime snapshot and native-owned path
+  open call while retaining bounded primitive facts and the deterministic
   nonce round trip.
 - Returned version text points to immutable process-lifetime storage and is
   never freed by native code.
-- Pigeon host callbacks currently execute on the platform host path. MOB-01
-  Rust calls are constant-time and perform no I/O, locking, allocation across
-  ownership boundaries, or callback.
-- Long-running runtime work must later enter the Rust facade with request ID,
-  deadline and cancellation; it must never block the Flutter/UI thread.
+- Kotlin and Swift open the runtime on a dedicated serial native queue and
+  deliver Pigeon completion on the platform main thread, so redb recovery and
+  local KQL do not block Flutter/UI work.
+- Platform paths never cross into Dart. Repeated opens in one process return
+  the existing runtime generation.
+- Long-running work enters the Rust facade with a bounded execution grant,
+  deadline and cancellation. The current foreground grant has no network
+  scope.
 - Android uses the main app process and a package-provided FFI-safe JNI wrapper.
 - iOS links a static library and calls the same stable C symbols from Swift.
 - Missing Android libraries degrade to `rustCoreLinked=false`; the app does not
@@ -53,7 +64,10 @@ cargo install cargo-ndk --version 4.1.2 --locked
 cargo install cbindgen --version 0.29.4 --locked
 python tool/generate_rust_bridge_header.py
 python tool/build_rust_android.py
+python tool/verify_mobile_rust_dependency_graph.py
 flutter build apk --debug
+python tool/verify_android_runtime_recovery.py \
+  build/app/outputs/flutter-apk/app-debug.apk
 ```
 
 On macOS:

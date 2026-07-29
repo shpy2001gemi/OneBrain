@@ -266,6 +266,83 @@ data class HostBootstrapSnapshot (
 }
 
 /** Generated class from Pigeon that represents data sent in messages. */
+data class HostRuntimeSnapshot (
+  val profileVersion: String,
+  val processGeneration: Long,
+  val activationPhase: String,
+  val activeGrantCount: Long,
+  val recoveredUncleanStart: Boolean,
+  val bootstrapStoreOpened: Boolean,
+  val registryState: String,
+  val localKqlFixtureVerified: Boolean,
+  val privatePlannerVerified: Boolean,
+  val noLlmProvider: Boolean,
+  val staleCallbackRejected: Boolean
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): HostRuntimeSnapshot {
+      val profileVersion = pigeonVar_list[0] as String
+      val processGeneration = pigeonVar_list[1] as Long
+      val activationPhase = pigeonVar_list[2] as String
+      val activeGrantCount = pigeonVar_list[3] as Long
+      val recoveredUncleanStart = pigeonVar_list[4] as Boolean
+      val bootstrapStoreOpened = pigeonVar_list[5] as Boolean
+      val registryState = pigeonVar_list[6] as String
+      val localKqlFixtureVerified = pigeonVar_list[7] as Boolean
+      val privatePlannerVerified = pigeonVar_list[8] as Boolean
+      val noLlmProvider = pigeonVar_list[9] as Boolean
+      val staleCallbackRejected = pigeonVar_list[10] as Boolean
+      return HostRuntimeSnapshot(profileVersion, processGeneration, activationPhase, activeGrantCount, recoveredUncleanStart, bootstrapStoreOpened, registryState, localKqlFixtureVerified, privatePlannerVerified, noLlmProvider, staleCallbackRejected)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      profileVersion,
+      processGeneration,
+      activationPhase,
+      activeGrantCount,
+      recoveredUncleanStart,
+      bootstrapStoreOpened,
+      registryState,
+      localKqlFixtureVerified,
+      privatePlannerVerified,
+      noLlmProvider,
+      staleCallbackRejected,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as HostRuntimeSnapshot
+    return MobileHostApiPigeonUtils.deepEquals(this.profileVersion, other.profileVersion) && MobileHostApiPigeonUtils.deepEquals(this.processGeneration, other.processGeneration) && MobileHostApiPigeonUtils.deepEquals(this.activationPhase, other.activationPhase) && MobileHostApiPigeonUtils.deepEquals(this.activeGrantCount, other.activeGrantCount) && MobileHostApiPigeonUtils.deepEquals(this.recoveredUncleanStart, other.recoveredUncleanStart) && MobileHostApiPigeonUtils.deepEquals(this.bootstrapStoreOpened, other.bootstrapStoreOpened) && MobileHostApiPigeonUtils.deepEquals(this.registryState, other.registryState) && MobileHostApiPigeonUtils.deepEquals(this.localKqlFixtureVerified, other.localKqlFixtureVerified) && MobileHostApiPigeonUtils.deepEquals(this.privatePlannerVerified, other.privatePlannerVerified) && MobileHostApiPigeonUtils.deepEquals(this.noLlmProvider, other.noLlmProvider) && MobileHostApiPigeonUtils.deepEquals(this.staleCallbackRejected, other.staleCallbackRejected)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.profileVersion)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.processGeneration)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.activationPhase)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.activeGrantCount)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.recoveredUncleanStart)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.bootstrapStoreOpened)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.registryState)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.localKqlFixtureVerified)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.privatePlannerVerified)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.noLlmProvider)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.staleCallbackRejected)
+    return result
+  }
+  override fun toString(): String {
+    return "HostRuntimeSnapshot(profileVersion=$profileVersion, processGeneration=$processGeneration, activationPhase=$activationPhase, activeGrantCount=$activeGrantCount, recoveredUncleanStart=$recoveredUncleanStart, bootstrapStoreOpened=$bootstrapStoreOpened, registryState=$registryState, localKqlFixtureVerified=$localKqlFixtureVerified, privatePlannerVerified=$privatePlannerVerified, noLlmProvider=$noLlmProvider, staleCallbackRejected=$staleCallbackRejected)"
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
 data class HostOperationEvent (
   val operationId: String,
   val kind: HostOperationEventKind,
@@ -324,6 +401,11 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
       }
       131.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
+          HostRuntimeSnapshot.fromList(it)
+        }
+      }
+      132.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
           HostOperationEvent.fromList(it)
         }
       }
@@ -340,8 +422,12 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
         stream.write(130)
         writeValue(stream, value.toList())
       }
-      is HostOperationEvent -> {
+      is HostRuntimeSnapshot -> {
         stream.write(131)
+        writeValue(stream, value.toList())
+      }
+      is HostOperationEvent -> {
+        stream.write(132)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -355,6 +441,7 @@ val MobileHostApiPigeonMethodCodec = StandardMethodCodec(MobileHostApiPigeonCode
 /** Generated interface from Pigeon that represents a handler of messages from Flutter. */
 interface MobileHostApi {
   fun inspectBootstrapHost(callback: (Result<HostBootstrapSnapshot>) -> Unit)
+  fun inspectRuntimeProfile(callback: (Result<HostRuntimeSnapshot>) -> Unit)
   fun startFeasibilityOperation(delayMilliseconds: Long, callback: (Result<String>) -> Unit)
   fun cancelFeasibilityOperation(operationId: String, callback: (Result<Boolean>) -> Unit)
 
@@ -372,6 +459,24 @@ interface MobileHostApi {
         if (api != null) {
           channel.setMessageHandler { _, reply ->
             api.inspectBootstrapHost{ result: Result<HostBootstrapSnapshot> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectRuntimeProfile$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.inspectRuntimeProfile{ result: Result<HostRuntimeSnapshot> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MobileHostApiPigeonUtils.wrapError(error))
