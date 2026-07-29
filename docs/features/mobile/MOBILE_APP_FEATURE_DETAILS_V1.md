@@ -76,6 +76,70 @@ not:
 - infer truth, benefit, reward, delivery, network completeness, or custody;
 - treat a notification/deep link as trusted authority.
 
+### 1.4 First-launch Init operation and readiness profile
+
+The production executable contains code, locale/UI assets, schema support, the
+immutable V1 trust profile/channel floors and bounded bootstrap metadata only.
+Required large data is acquired after first launch through this durable profile:
+
+```text
+IntentRecorded
+  -> ResolvingHead
+  -> HeadVerified
+  -> ResolvingManifest
+  -> ManifestVerified
+  -> AwaitingExactConfirm
+  -> AdmissionPending
+  -> CapacityAdmitted
+  -> SchedulePrepared
+  -> TransferSubmitted
+  -> TransferAdopted
+  -> TransferQueued
+  -> Downloading
+  -> BytesComplete
+  -> WholeArtifactsVerified
+  -> QuerySmokePassed
+  -> DirectoryCommitted
+  -> PointerCommitted
+  -> HealthPending
+  -> Completed
+
+AwaitingExactConfirm -> DeferredByUser -> ResolvingHead
+Any nonterminal work state -> Waiting(reason, resume_state) -> resume_state
+Any pre-pointer state -> Failed(stable_class) or Cancelled
+HealthPending -> RollbackRequired -> FailedAfterCompensation
+```
+
+This is the Registry operation machine, not process lifecycle or product
+readiness. Here `healthy` means health-complete, compatible, non-revoked and
+bound to valid bootstrap authority. First Init begins while derived readiness
+is `BootstrapOnly` and a
+nonterminal first Init, including its no-fallback `HealthPending` candidate,
+projects `Provisioning(reason)`. An update begins and remains
+`ReadyOffline`, including `ReadyOffline(UpdateHealthPending)`, only while an
+eligible healthy, compatible, non-revoked previous release is the rollback
+guarantee. `Completed` triggers an independent
+readiness requery; it does not directly set readiness. Invalid/mixed authority
+or a revoked current release is `RegistryDegraded`; a compensated failed first
+activation returns to `BootstrapOnly` with a separate last-failure fact.
+
+`registry.init_defer(op_id, manifest_digest)` is durable only from
+`AwaitingExactConfirm`: it writes the Limited-mode receipt, schedules no large
+bytes and is neither Cancel nor Pause. Returning calls
+`registry.init_resume_deferred(op_id)`, re-resolves/revalidates the current
+signed target and requires a new confirmation; a changed digest is never
+inherited.
+
+`WaitingNetwork`, `WaitingUnmetered`, `WaitingCharging`, `WaitingBattery`,
+`WaitingThermal`, `WaitingStorage`, `PausedByUser`, `UserStoppedOSJob`,
+`ResumeRequiredAfterUnobservedStop`, `PausedByOSBudget`, and
+`ProtectedCallbackUnavailable` are durable pause reasons, not integrity
+failures. `RetryableTransport`,
+`SourceSuspect`, `IntegrityFailed`, `IncompatibleRelease`,
+`InsufficientStorage`, and `ActivationFailed` are stable failure classes.
+Only a signed manifest and exact artifact hashes authorize activation; a URL,
+mirror, ETag, store/CDN receipt, notification, or completed byte count does not.
+
 ## 2. Detailed feature catalog
 
 ### 2.0 Mobile node foundation — `MOB-FND`
@@ -83,9 +147,9 @@ not:
 | ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
 |---|---|---|---|---|
 | `MOB-FND-001` | Activate one Rust mobile core generation from foreground or bounded native background grants. The arbiter owns the grant set and one storage writer. | Process generation, active-grant set and unclean-start evidence. Last-grant expiry drains best-effort; abrupt kill requires no callback. | Flutter-absent background entry, stale callback fencing, grant replacement and repeated kill/relaunch on physical devices. | T0, `CORE` |
-| `MOB-FND-002` | Resolve `bootstrap.redb` and `ACTIVE_DATASET`, recover operations, then open one verified dataset generation. No automatic reset on corruption. | Dataset switch journal, domain operation journals, idempotency receipts and safe-mode state. | Kill/ENOSPC/fsync fault at every DB/file/pointer boundary; previous or one fully valid next state survives. | T0, `CORE` |
+| `MOB-FND-002` | Verify the nonportable sealed installation epoch plus its excluded/no-backup install marker, resolve `bootstrap.redb` and `ACTIVE_DATASET`, recover operations, then open one verified dataset generation. Generic OS restore is never authority and corruption never triggers automatic reset. A clean install never reuses an orphaned platform key that survived removal of the app container. | Installation epoch/instance nonce/seal/marker, dataset switch journal, domain operation journals, idempotency receipts and safe-mode state. Marker-only `Creating` genesis may resume only with its exact valid seal; authority with a missing/mismatched marker fails closed. | Kill/ENOSPC/fsync fault at every DB/file/pointer/genesis boundary plus injected OS-restored pointer/chunk bytes and same-device iOS uninstall/reinstall with a surviving Keychain item; previous or one fully valid next state survives, a clean install rotates key/epoch, and mismatches fail closed. | T0, `CORE` |
 | `MOB-FND-003` | Expose bounded typed commands, queries and sequence-numbered streams through Flutter → NativeHost → stable Rust ABI/JNI. | Command/query generation and durable receipt where applicable; streams are hints. | ABI drift, bounds, cancellation, sequence-gap refetch, Dart engine absent and no raw pointer/path/secret crossing FFI. | T0, `CORE` |
-| `MOB-FND-004` | Admit each job against foreground/deadline, storage, RAM, battery, thermal, network, roaming, user policy and platform execution facts. | Evaluated resource snapshot, decision and checkpointed durable job. | Policy/resource changes mid-batch, deadline expiry, memory warning, low disk, Data Saver/Low Power and no idle polling/keepalive. | T0, `CORE` |
+| `MOB-FND-004` | Admit each job, including first-launch Init, against foreground/deadline, storage, RAM, battery, thermal, network, roaming, user policy and platform execution facts. | Evaluated resource snapshot, decision and checkpointed durable job. | Policy/resource changes mid-batch, deadline expiry, memory warning, low disk, Data Saver/Low Power and no idle polling/keepalive. | T0, `CORE` |
 | `MOB-FND-005` | Keep cloud AI, system/local model, push, network, discovery, Public UseEvidence and seeding lanes independently compiled/requested/active/default-off/kill-switchable. | Feature generation and rollback receipt; disabled lanes preserve local storage/KQL. | Stale-generation fence, immediate admission stop, in-flight bounded drain and rollback without deleting canonical/private state. | T0 |
 
 ### 2.1 Onboarding and capability qualification — `MOB-ONB`
@@ -93,16 +157,16 @@ not:
 | ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
 |---|---|---|---|---|
 | `MOB-ONB-001` | Show product boundary, choose effective UI locale, and explain that this installation is its own node. No blanket permission prompts. | Locale preference and onboarding cursor. Resume the same step after kill; changing locale never changes content/canonical bytes. | Fresh install completes in English and Vietnamese; long text, RTL-safe layout, screen reader and process-kill resume pass. | T1 |
-| `MOB-ONB-002` | Inspect OS/runtime, architecture, protected-data state, exact available storage, registry peak requirement, and optional AI capabilities. Present supported, optional, and unavailable capabilities separately. | Signed/typed capability snapshot with observation time; re-evaluate after OS/app update. No marketing capability becomes a guarantee. | Physical iOS/Android evidence; exact byte math; low-space and unsupported-device paths explain retained capabilities. | T1, `CORE` |
+| `MOB-ONB-002` | Inspect OS/runtime, architecture, protected-data state, available storage, estimated Init peak, and optional AI capabilities before the large signed manifest is resolved. Present supported, optional, and unavailable capabilities separately; final Init admission uses current manifest/network/storage facts. | Signed/typed capability snapshot with observation time; re-evaluate after OS/app update. No marketing capability becomes a guarantee. | Physical iOS/Android evidence; estimate-versus-final byte math; low-space and unsupported-device paths explain retained capabilities. | T1, `CORE` |
 | `MOB-ONB-003` | Create a new transport NodeID and independent typed signer domains for this installation, or enter an explicit restore/import route. Never require desktop pairing. | Atomic identity/vault creation receipt and onboarding operation ID. Partial creation resumes or rolls back without a compatibility plaintext key. | Kill/fault at each key/file/DB boundary; Node/feed/Actor separation test; no key in Dart/logs. | T1, `CORE` |
-| `MOB-ONB-004` | Download or discover all artifacts for one exact Concept Registry release, verify publisher/signature/hash/format/query smoke, then activate as one generation. | Resumable chunk ledger, verification receipt and active release pointer. App may show provisioning but not `Ready` before exact activation. | Current 2.056 GiB query-ready release provisions on both platforms; corrupt/mixed/low-space/kill/rollback tests pass. | T1, `REGISTRY` |
-| `MOB-ONB-005` | Present independent readiness facts for node data, registry, recovery, AI, notifications, and network. Optional AI/notification setup is skippable; before `NETWORKED-BETA`, network is a non-actionable disabled/unavailable fact with no setup route. | Onboarding completion receipt plus unresolved recommendation list; skipping is not an error. | Airplane-mode completion with no model; no false “fully ready/online” badge; AI/notification setup remains accessible in Settings while network setup is absent before its gate. | T1 |
+| `MOB-ONB-004` | Hand first launch into the canonical Init feature, require explicit Begin Init before the small signed-manifest fetch, and disclose before Begin that accepting newer signed security metadata may advance the anti-downgrade high-water or fence an explicitly revoked local release, while it still cannot schedule large bytes. Then disclose the exact required release/bytes plus current network/energy policy and collect exact Confirm/Defer/override choices before observing `MOB-DAT-002`. The production app package and install-time asset packs contain none of the large Registry artifacts. | Onboarding cursor, selected Init policy, durable Limited-mode receipt projection, opaque `registry_operation_ref` and readiness projection only. The begin/defer/confirm state, chunk ledger, verification receipt and release pointer remain solely `MOB-DAT-002` authority; kill resumes by requerying that operation. | The current 2.056 GiB large-artifact transfer starts only after exact manifest/capacity/network consent, survives kill/offline/policy waits, and never exposes `ReadyOffline` before the operation is `Completed` and readiness independently re-derives a healthy active release. | T1, `REGISTRY` |
+| `MOB-ONB-005` | Present independent readiness facts for node data, Init/registry, recovery, AI, notifications, and network. Optional AI/notification setup is skippable; before `NETWORKED-BETA`, node networking is a non-actionable disabled/unavailable fact with no setup route. | Onboarding completion or limited-mode receipt plus unresolved recommendation list; skipping optional features is not an error, while deferring required Init cannot create `ReadyOffline`. | A fresh offline install remains `InitWaitingForNetwork`; after verified activation, readiness completes in airplane mode with no model. No false “fully ready/online” badge; the required artifact-transfer lane is never labelled P2P/node networking. | T1 |
 
 ### 2.2 Identity, lock, recovery, and privacy — `MOB-SEC`
 
 | ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
 |---|---|---|---|---|
-| `MOB-SEC-001` | Lock/unlock the private node using app policy and platform credential/biometric gates. Explain `ProtectedDataUnavailable` separately from a wrong credential. | Lock policy and bounded key-session receipt; plaintext keys are never durable. Background/kill zeroizes sessions and requires fresh eligibility. | Wrong credential, biometric unavailable/cancelled, reboot-before-first-unlock, memory warning and process-kill tests. | T1 |
+| `MOB-SEC-001` | Lock/unlock the private node using app policy and platform credential/biometric gates. Explain `ProtectedDataUnavailable` separately from a wrong credential. | Lock policy and bounded key-session receipt; plaintext keys are never durable. Background/kill zeroizes sessions and requires fresh eligibility. Device-bound seeds, key envelopes and wrapping metadata are excluded from generic OS backup/transfer; an iOS `ThisDeviceOnly` item is still treated as potentially surviving uninstall and is never reused without its current install marker. | Wrong credential, biometric unavailable/cancelled, reboot-before-first-unlock, memory warning, process-kill, physical OS-backup/restore exclusion and uninstall/reinstall orphan-key tests. | T1 |
 | `MOB-SEC-002` | Show transport NodeID, feed and Actor authority domains, public identifiers, readiness and typed failure without exposing private material. | Public identity metadata and signer health evidence only. | UI never labels Node authentication as feed/Actor authority; signer mismatch/unavailable fails closed. | T1 |
 | `MOB-SEC-003` | Create an encrypted, versioned recovery package; require the user to verify that the selected recovery method can be reopened before calling it configured. | Authenticated recovery manifest and verification receipt; recovery secret is never logged, copied to notification, or included in generic OS backup. | Wrong secret, corrupt/truncated package, downgrade and no-network restore-inspection tests. | T1, `RECOVERY` |
 | `MOB-SEC-004` | Offer explicit `ReplaceEmptyInstallation` or exceptional old-device retirement/key-rotation flow. Never silently clone Node/feed identity. Ordinary `ImportDataKeepCurrentIdentity` is owned by `MOB-DAT-007` and does not require this feature. | Typed identity-recovery operation, selected mode, retirement/rotation records and generation activation receipt. | Duplicate-identity simulation, non-empty replace rejection, partial restore, old-device retirement and rollback tests. | T1, `RECOVERY` |
@@ -114,7 +178,7 @@ not:
 
 | ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
 |---|---|---|---|---|
-| `MOB-HOM-001` | Show separate cards for node data, runtime grant, Concept Registry, LLM route, network presence, sync scope, seeding, and storage. | `NodeSnapshot` is queryable; UI event streams are refetch hints only. | Stale event gap refetch, locked/degraded states, and no single ambiguous “Online” status. | T1 |
+| `MOB-HOM-001` | Show separate cards for node data, required Init/Concept Registry, runtime grant, LLM route, network presence, sync scope, seeding, and storage. A missing release links to Init without calling the node ready. | `NodeSnapshot` is queryable; UI event streams are refetch hints only. | Stale event gap refetch, BootstrapOnly/Init waiting/locked/degraded states, and no single ambiguous “Online” status. | T1 |
 | `MOB-HOM-002` | Start text, clipboard, camera, picker, audio, import, search, or Assistant actions according to current capability. | Typed route intent only; no side effect before the destination validates inputs/permission. | Disabled actions show exact reason; capture works without network/LLM. | T1 |
 | `MOB-HOM-003` | Continue recent private items, drafts, interrupted imports, and explicit user work. | Recency is a rebuildable private projection; authoritative draft/import remains elsewhere. | Locked privacy, empty state, bounded list and kill-resume tests. | T1 |
 | `MOB-HOM-004` | Summarize durable approvals, notification intents, failed jobs, and operations needing user action. | Counts derive from durable inbox/jobs, never OS delivery state alone. | Notification denied/omitted still exposes all decisions; dedupe and stale-action tests. | T1 |
@@ -252,13 +316,13 @@ not:
 
 | ID | Product contract and main flow | Durable result / interruption rule | Acceptance | Lane / gate |
 |---|---|---|---|---|
-| `MOB-DAT-001` | Show exact active Concept Registry release, three artifact lengths/hashes, signer, schema/runtime range and local verification receipt. | Release manifest and activation receipt; advisory timestamps are not authenticity. | Mismatch/corruption/revocation and degraded private-node behavior. | T1, `REGISTRY` |
-| `MOB-DAT-002` | Preflight exact peak space, download/resume, verify, query-smoke, stage and atomically activate one release. | Chunk ledger, immutable release directory, generation-fenced `ACTIVE` pointer. | Store pack/CDN path change, ENOSPC, kill/reboot and current release physical-device provision. | T1, `REGISTRY` |
-| `MOB-DAT-003` | Roll back/repair a corrupt or unhealthy registry without deleting a live mmap generation. | Active/previous generation and reader holds through health window. | Old reader during swap, pointer fsync/rename failure and corrupt active-release recovery. | T1, `REGISTRY` |
-| `MOB-DAT-004` | Show protected, registry, models, owned/pinned/cache media, staging, rollback and reclaimable bytes; explain exact operation peak. Before `CUSTODY`, any unknown safety hold is included only in protected/non-reclaimable bytes and is not labelled as custody. | Catalog counters plus bounded physical audit receipt. | Filesystem drift, allocation overhead, multi-GB preflight, opaque-hold preservation and no custody claim before its gate. | T1 |
-| `MOB-DAT-005` | Offer only eligible cleanup with predicted impact and explicit confirmation for user-selected model/release removal. | Recoverable GC/delete operation and freed-byte receipt. | Owned original/custody/backup/rollback hold exclusion; crash/trash reconciliation. | T1 |
-| `MOB-DAT-006` | Create/inspect a new vault-encrypted, versioned backup at a logical multi-DB cut, including all transitive inputs needed by resumable sagas. | Backup epoch, database/frontier manifest, chunk/root hashes and media GC holds until verified. | Pending saga, wrong key, corrupt/truncated archive, interruption, no plaintext outside vault/envelope and no legacy plaintext API. | T1, `ARCHIVE` |
-| `MOB-DAT-007` | Restore/import encrypted archive data into a new dataset generation, validate all domains/holds and atomically switch. `ImportDataKeepCurrentIdentity` is the archive path; `ReplaceEmptyInstallation` and any identity recovery are absent until `RECOVERY` also passes. | New verified dataset, explicit mode, switch receipt and retained rollback generation. | N-1/bridge/pre-write rollback, post-switch mutation and media-hold tests; identity modes are inaccessible before their separate gate. | T1, `ARCHIVE`; `RECOVERY` for identity recovery |
+| `MOB-DAT-001` | Show required target, staged, active and previous Concept Registry releases, with each artifact length/hash, signer, schema/runtime range and local verification/activation receipt. A clean install with no operation is normally `BootstrapOnly`; a nonterminal first Init is `Provisioning(reason)`. | Signed target manifest plus device-local verification/activation receipts; advisory timestamps, URL, ETag and OS transfer receipts are not authenticity. | Absent, partial, mismatch, corruption, revocation, head/release replay and degraded private-node behavior. | T1, `REGISTRY` |
+| `MOB-DAT-002` | Solely own first-launch Init and later update execution: resolve/verify one signed manifest; atomically commit its exact record, `ManifestVerified`, head/release high-water and every revocation mutation; enforce durable Begin/Defer/exact Confirm, initial/remaining capacity and network policy, pre-submit schedule/adopt barrier, range/chunk resume, complete verification, format/mmap/query-smoke, final trust/compatibility fence, immutable activation, deterministic health and completion. Large artifacts never come from the app bundle or install-time packs. | Idempotent Init/update operation, authoritative revocation set, Limited-mode and OS-transfer adoption receipts, resumable chunk ledger, immutable release directory, separate verification/activation receipts and generation-fenced `bootstrap.redb.registry_active_state`. A process/OS kill needs no callback and cannot expose half-accepted revocation state. | Kill before/after manifest acceptance and OS submit/adopt, CDN/mirror/redirect/range change, Defer/changed manifest, metered/roaming override scope, progressive ENOSPC, corrupt/reordered/mixed chunks, app-update/revocation fence, reboot, health compensation and current release physical-device provision. | T1, `REGISTRY` |
+| `MOB-DAT-003` | Roll back/repair a corrupt or unhealthy registry without deleting a live mmap generation or private node data. On first Init there may be no rollback target: failed staging is quarantined/cleanable and the node remains `BootstrapOnly`. | Active/eligible previous generation and reader holds through deterministic health plus the separate post-completion rollback-retention window; revoked/failed staged state remains ineligible and separate from activation. | Old reader during swap, pointer fsync/rename failure, initial activation failure, revoked fallback rejection and corrupt active-release recovery. | T1, `REGISTRY` |
+| `MOB-DAT-004` | Show protected existing bytes, signed publisher floor, initial requirement, exact credited operation-bound progress, remaining incremental requirement, authoritative maximum, active/rollback registry, models, owned/pinned/cache media, immutable staging, transfer/copy peak, verification workspace, filesystem allocation overhead, OS safety reserve and reclaimable bytes. Before `CUSTODY`, any unknown safety hold is included only in protected/non-reclaimable bytes and is not labelled as custody. | Catalog counters plus bounded physical audit receipt and exact manifest/device-derived initial/remaining capacity plan. | Filesystem drift, no partial-progress double count, total-volume reserve basis, allocation overhead, multi-GB first-Init/update preflight, opaque-hold preservation and no custody claim before its gate. | T1 |
+| `MOB-DAT-005` | Offer only eligible cleanup with predicted impact and explicit confirmation for user-selected model/release removal. Partial failed/paused Init staging may be removed only after explaining that resume progress will be lost; active/required rollback generations remain protected. | Recoverable GC/delete operation and freed-byte receipt. | Owned original/custody/backup/active/rollback hold exclusion; partial-ledger invalidation and crash/trash reconciliation. | T1 |
+| `MOB-DAT-006` | Create/inspect a new vault-encrypted, versioned backup at a logical multi-DB cut, including all transitive saga inputs and the exact Registry profile/head/release high-water bindings needed for safe restore. | Backup epoch, database/frontier/high-water manifest with whole tuples and profile digest/generation, chunk/root hashes and media GC holds until verified; the source installation seal/key is never portable. | Pending saga, wrong key, corrupt/truncated archive, interruption, no plaintext outside vault/envelope, no generic-OS authority backup and no legacy plaintext API. | T1, `ARCHIVE` |
+| `MOB-DAT-007` | Restore/import encrypted archive data into a new local installation epoch and dataset generation. Per channel, select the complete archived or app-floor `(head_generation, head_digest)` tuple with the higher generation; separately select the complete publisher-global `(release_sequence, release_id, manifest_digest)` tuple with the higher sequence. Equal numbers require identical bindings, and an archived profile newer than the app yields `UpgradeRequiredForRegistryTrustProfile`; IDs/digests are never maximized independently. Then validate all domains/holds and atomically switch. `ImportDataKeepCurrentIdentity` is the archive path; `ReplaceEmptyInstallation` and any identity recovery are absent until `RECOVERY` also passes. | New sealed installation epoch, selected whole high-water bindings, current embedded profile binding, verified dataset, explicit mode, switch receipt and retained rollback generation. | N-1/bridge/pre-write rollback, restored-pointer/chunk rejection, equal-generation equivocation, newer-profile upgrade, high-water downgrade, post-switch mutation and media-hold tests; identity modes are inaccessible before their separate gate. | T1, `ARCHIVE`; `RECOVERY` for identity recovery |
 | `MOB-DAT-008` | Export a user-reviewed scope through a versioned vault-encrypted portable package without implying desktop ownership or live replication. V1 exposes no plaintext private export. | Encrypted export manifest/provenance and operation receipt. | Scope preview, cancel/resume, wrong key, no secret/provider credential leak and no legacy/plaintext private path. | T1, `ARCHIVE` |
 | `MOB-DAT-009` | In a later lane, migrate an autonomous node to another device through encrypted packages and an explicit identity retirement/rotation mode. | Migration manifest, target verification, source-retirement decision and operation receipt. | Target capacity, app-version compatibility, duplicate identity, interrupted handoff and source-retirement recovery. | T3 |
 
@@ -280,7 +344,7 @@ not:
 | `MOB-SYS-001` | Configure UI locale, content language, query fallback, Concept label locale, notification locale and requested LLM output independently. | Canonical BCP-47 preferences and versioned normalization profile for derived search only. | Runtime locale switch, Vietnamese/English completeness, mixed language and no canonical byte rewrite. | T1 |
 | `MOB-SYS-002` | Support screen readers, text scaling, contrast, reduced motion, touch targets and non-visual graph/status alternatives. | Accessibility preferences where applicable; OS preference remains authoritative. | Automated semantics plus physical-device dynamic type, TalkBack and VoiceOver review. | T1 |
 | `MOB-SYS-003` | Show camera, microphone, photo/document picker, notification, local-network and biometric capability/permission independently; request in context. | Native permission observation and last rationale; not a canonical grant. | Revocation while absent, denial fallback, iOS LAN declarations and Android target-SDK behavior. | T1 |
-| `MOB-SYS-004` | Configure local import, registry/model update and maintenance-job constraints for charging, battery, thermal, quiet hours and caps. | Versioned local-job policy; each admitted job records the evaluated snapshot. | Policy change mid-job, Low Power, BGTask/worker expiry and cap enforcement with every network lane disabled. | T1 |
+| `MOB-SYS-004` | Configure first-launch Init, local import, registry/model update and maintenance-job constraints for Wi-Fi/metered/roaming, charging, battery, thermal, quiet hours and byte/time caps. Init's signed HTTPS/OS artifact transport is available before `NETWORKED-BETA` but never enables peers, P2P, reconciliation or seeding. | Versioned local-job policy plus scoped one-time overrides; each admitted job records the evaluated snapshot. | Policy change mid-job, metered/roaming override isolation, Low Power, BGTask/worker expiry and cap enforcement with every node-network lane disabled. | T1 |
 | `MOB-SYS-005` | Inspect privacy-safe health and explicitly export bounded diagnostics after reviewing included fields. | Redacted diagnostics archive with manifest and retention. | No content/prompt/tool args/key/token/private filename; locked-state and truncation tests. | T1 |
 | `MOB-SYS-006` | Provide the T0 mechanism that exposes compiled/requested/active/kill-switch states and safe mode independently for operator-approved lanes. Normal users cannot bypass rollout authority. | Durable feature flag generation and rollback receipt. | Default-off future lanes, stale generation fence, rollback and no effect on local KQL/storage. | T0 |
 | `MOB-SYS-007` | Show app/core/schema/registry/model/prompt/route release IDs, licenses, privacy/support links and device-local support bundle entry. | Read-only build/release metadata. | Offline availability, third-party/model license coverage and no secret identifiers. | T1 |
@@ -303,13 +367,31 @@ sequenceDiagram
     U->>UI: create node or explicit restore
     UI->>Core: provision identity and private stores
     Core-->>UI: durable provision receipt
-    UI->>Core: provision exact registry release
-    Core-->>UI: verified active release receipt
-    UI-->>U: ReadyOffline; optional AI/network remain separate
+    U->>UI: explicit Begin Init
+    UI->>Core: registry.init_begin(channel)
+    Core-->>UI: manifest, bytes, network/energy facts
+    alt Defer from the exact plan
+        U->>UI: Defer
+        UI->>Core: registry.init_defer(op_id, manifest_digest)
+        Core-->>UI: durable Limited-mode receipt
+        UI-->>U: Limited Home; return to Init later
+    else Exact Confirm (start now or wait by policy)
+        U->>UI: confirm manifest digest, capacity, network and override
+        UI->>Core: registry.init_confirm(...)
+        Core->>Host: submit durable post-launch artifact transfer
+        Host-->>Core: landed ranges/chunks by stable transfer and operation IDs
+        Core->>Core: resume, verify all artifacts, query-smoke, atomic activate
+        Core-->>UI: operation HealthPending, then Completed + receipts
+        UI->>Core: independently query Registry readiness
+        Core-->>UI: ReadyOffline from healthy active release
+        UI-->>U: ONB-006 readiness; optional AI/network remain separate
+    end
 ```
 
 Exit: capture, library and local KQL work in airplane mode with all LLM and
-network flags disabled.
+node-network flags disabled. A clean install without artifact connectivity
+remains durably `InitWaitingForNetwork` in the Limited shell; this is not a
+failed node and is never labelled `ReadyOffline`.
 
 ### `MOB-JRN-002` — Private capture
 
@@ -508,7 +590,8 @@ fetch/discovery remains the separate M6-blocked lane.
 | Feature modules | Primary authoritative owner | Rebuildable/supporting state |
 |---|---|---|
 | `FND` | `bootstrap.redb`, active dataset domains and operation journals | process/runtime observations |
-| `ONB`, `SEC` | typed signer custody, `private_vault.redb`, bootstrap dataset journal | onboarding/readiness projection |
+| `ONB` | onboarding cursor, selected Init policy, opaque operation reference and readiness projection | screen progress derived from the owning operation |
+| `SEC` | typed signer custody and `private_vault.redb` security/recovery state | security/readiness projection |
 | `HOM` | queried domain stores and durable jobs | recent/attention projections |
 | `CAP` | private vault, operation journal, physical media ledger | OCR/transcript/candidate projections |
 | `ENC` | exact source artifacts, verified private/canonical objects, Feed/publication journal | encoding drafts, validation reports and authored-origin projections |
@@ -519,7 +602,7 @@ fetch/discovery remains the separate M6-blocked lane.
 | `NET` | network work store, canonical provider/retire records | sampled reachability/provider view |
 | `MAT` | private target/proposal vault plus validated public source observations | match explanation, scoped coverage and inbox projection |
 | `NTF` | notification intents/receipts and durable inbox | native scheduling ledger |
-| `DAT` | dataset generations, backup/restore manifests and release pointers | size/audit projections |
+| `DAT` | signed Init/update target manifests, Registry operation/chunk ledger, immutable staged/active/previous releases, verification receipts, dataset generations, backup/restore manifests and release pointers | size/audit/readiness projections |
 | `SYS` | Rust policy and signed build/release metadata | native permission/resource observations |
 
 ## 5. Definition of ready

@@ -40,6 +40,10 @@ OneBrain Mobile is an autonomous node with an intermittent process:
 
 - it owns its NodeID, typed signing domains, vault, local knowledge, journals,
   Concept Registry release, media, and network state;
+- its production APK/AAB/IPA is a bootstrap shell: large required data such as
+  `concepts.obr` and its indexes is not bundled or delivered install-time, but
+  is downloaded through the post-launch Init flow and activated only after
+  exact verification;
 - it works in airplane mode without an LLM;
 - device/system AI, app-managed local AI, and remote AI are replaceable LLM
   providers;
@@ -69,7 +73,7 @@ marked retired.
 | Lane | Meaning |
 |---|---|
 | `T0 Foundation` | Required technical/product foundation; may have no direct screen |
-| `T1 Private Offline MVP` | Works with network and all LLM providers disabled |
+| `T1 Private Offline MVP` | After required post-launch Init data is active, works with node-network participation and all LLM providers disabled |
 | `T2 Networked Mobile Beta` | Enabled only after its distributed/mobile release gates |
 | `T3 Later` | Valid direction, but not committed to the first two releases |
 | `BLOCKED` | Must not ship before the named upstream authority gate |
@@ -96,10 +100,10 @@ all required unless the annotation explicitly says “by route”.
 | Gate | Required evidence |
 |---|---|
 | `MOB-GATE-CORE` | Flutter/native/Rust bridge, one writer, lifecycle kill recovery, physical iOS/Android launch |
-| `MOB-GATE-ARCHIVE` | new vault-encrypted/versioned backup and staged data-restore path, wrong-key/corrupt/kill tests, with no legacy plaintext export |
+| `MOB-GATE-ARCHIVE` | new vault-encrypted/versioned backup and staged data-restore path, wrong-key/corrupt/kill tests, fresh local installation-epoch/marker binding, same-device iOS reinstall rotation, whole-tuple security-high-water selection and newer-profile upgrade handling, with no generic-OS authority restore or legacy plaintext export |
 | `MOB-GATE-RECOVERY` | typed identity recovery/migration, wrong-key and duplicate-identity drills |
-| `MOB-GATE-REGISTRY` | exact signed release, capacity preflight, mmap query, A/B activation and rollback |
-| `MOB-GATE-OFFLINE-MVP` | capture/save/search/local KQL/backup journey passes in airplane mode with every LLM/network lane disabled |
+| `MOB-GATE-REGISTRY` | post-launch Init proves embedded V1 trust-profile/fresh-install floors, exact channel/release/chunk wire golden/rejection vectors, per-channel plus publisher-global exact high-water, atomic manifest/high-water/revocation acceptance, signed-manifest resolution, durable Begin/Defer/Confirm, initial/remaining capacity and network consent, OS schedule prepare/adopt, resumable download, final trust/compatibility fence, full verification, mmap/query smoke, atomic activation, deterministic health completion and independent readiness requery on physical iOS/Android devices; clean-install failure compensates to `BootstrapOnly`, while update failure may preserve only an eligible healthy, compatible, non-revoked previous release; APK/AAB/IPA/install modes contain no Registry bytes and generic OS restore cannot restore OneBrain authority |
+| `MOB-GATE-OFFLINE-MVP` | after one exact Registry release is health-complete and readiness derives `ReadyOffline`, capture/save/search/local KQL/backup passes in airplane mode with every LLM/node-network lane disabled; a fresh offline install remains honestly `InitWaitingForNetwork`, never `ReadyOffline` |
 | `MOB-GATE-KU-ENCODE` | exact `LOCAL_ONLY` source intake, resolved CCIDs/source spans, deterministic canonical encode/validation, verified private storage, idempotency and kill recovery; no network or LLM required |
 | `MOB-GATE-FIDELITY` | protocol `FID-001/002/003` publisher-attempt, external-blind commit/reveal and categorical evidence contracts, alternate preservation and frontier-relative reducer; no cross-node source exchange |
 | `MOB-GATE-AI` | exact model/system/route qualification, applicable license, task × input-language × output-locale and structured-output evaluation; app-managed local routes also require device/resource evidence |
@@ -126,7 +130,7 @@ flowchart LR
     CORE["T0 mobile core<br/>MOB-GATE-CORE"]
     ARCHIVE["Encrypted archive correctness<br/>MOB-GATE-ARCHIVE"]
     OFFLINE["T1 Private Offline MVP<br/>MOB-GATE-OFFLINE-MVP"]
-    REG["Exact Concept Registry release<br/>MOB-GATE-REGISTRY"]
+    REG["Post-launch Init of exact Registry<br/>MOB-GATE-REGISTRY"]
     ENC["Local KU encode/save<br/>MOB-GATE-KU-ENCODE"]
     FID["Local fidelity evidence<br/>MOB-GATE-FIDELITY"]
     REC["Recovery external-beta gate<br/>MOB-GATE-RECOVERY"]
@@ -192,13 +196,18 @@ background callback, and no socket/model/task is an authoritative state owner.
 MOB-ONB-001  Welcome and effective UI locale                       [T1]
 MOB-ONB-002  Device, storage and runtime capability preflight      [T1, CORE]
 MOB-ONB-003  Create this installation's autonomous mobile node     [T1, CORE]
-MOB-ONB-004  Provision one exact Concept Registry release          [T1, REGISTRY]
+MOB-ONB-004  First-launch Init of one downloaded Registry release [T1, REGISTRY]
 MOB-ONB-005  Readiness summary and optional-feature education      [T1]
 ```
 
-Onboarding must lead to a useful private/offline node. Notification, cloud AI,
-local model, LAN, camera, microphone, and network participation permissions are
-requested later in context, not as a blanket first-run wall.
+Onboarding must lead to a useful private/offline node after Init. A fresh
+installation can create its node and retain encrypted raw drafts while Init is
+waiting, but it is not `ReadyOffline` until the complete required release passes
+the activation health gate, its operation is `Completed`, and readiness is
+independently re-derived. The HTTPS/OS artifact-transfer lane used by Init is
+distinct from node network participation. Notification, cloud AI, local model,
+LAN, camera, microphone, and P2P permissions are requested later in context,
+not as a blanket first-run wall.
 
 ### 4.2 Identity, lock, recovery, and privacy — `MOB-SEC`
 
@@ -425,7 +434,7 @@ contain no product content and are never the only record of pending work.
 
 ```text
 MOB-DAT-001  Exact Concept Registry release/status inspection       [T1, REGISTRY]
-MOB-DAT-002  Provision/update download, verify and activate         [T1, REGISTRY]
+MOB-DAT-002  Post-launch Init/update download, verify and activate [T1, REGISTRY]
 MOB-DAT-003  Registry rollback, corrupt-release repair and readers  [T1, REGISTRY]
 MOB-DAT-004  Storage breakdown, quota and exact capacity preflight  [T1]
 MOB-DAT-005  Eligible cache/model/release cleanup                   [T1]
@@ -437,7 +446,9 @@ MOB-DAT-009  Encrypted device-to-device migration                    [T3]
 
 The initial query-ready registry boundary is the exact signed release
 containing `concepts.obr`, CCID index, label index, and its release/verification
-metadata. Transport splitting does not create a reduced semantic tier.
+metadata. None of those large artifacts is part of the production app package
+or an install-time asset pack. Init obtains them only after the app has
+launched; transport splitting does not create a reduced semantic tier.
 
 ### 4.15 Model management — `MOB-MOD`
 
@@ -525,5 +536,7 @@ Every implemented feature must demonstrate:
 - loading, empty, error, degraded, interrupted, and resume states;
 - English/Vietnamese strings, long text, text scaling and screen-reader labels;
 - bounded input, output, time, memory, storage and network work;
+- a clean-install Init state and exact capability boundary before required
+  large data is active;
 - no claim of network-wide truth, completeness, delivery or availability;
 - feature ID to screen, command/query DTO, durable state and test traceability.

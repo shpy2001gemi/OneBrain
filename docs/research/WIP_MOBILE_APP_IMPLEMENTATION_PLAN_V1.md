@@ -1,11 +1,11 @@
-# WIP Mobile App Analysis and Implementation Plan V1.1
+# WIP Mobile App Analysis and Implementation Plan V1.2
 
 > Status: **OWNER-APPROVED DIRECTION / implementation pending**
 >
 > Snapshot: **2026-07-29 (Asia/Saigon)**
 >
 > Scope: iOS, Android, an autonomous OneBrain mobile node, local or cloud LLM
-> providers, deterministic tool execution, 2 GB+ initial concept data, and
+> providers, deterministic tool execution, 2 GB+ post-launch Init data, and
 > mobile process/network lifecycle.
 >
 > Runtime authority: when this document conflicts with
@@ -52,9 +52,11 @@ The product architecture is:
 - The LLM can produce text, structured output, or tool-call proposals. OneBrain
   code validates, authorizes, executes, and audits tools; the LLM never executes
   a tool directly.
-- The complete initial concept dataset may consume 2 GB or more. The design
-  optimizes integrity, delivery, atomic activation, update, and bounded RAM
-  access rather than reducing semantic coverage.
+- The production APK/AAB/IPA is a bootstrap shell. The complete initial Concept
+  Registry is downloaded only through the user-visible Init feature after
+  first launch and may consume 2 GB or more. The design optimizes integrity,
+  resumable delivery, atomic activation, update, and bounded RAM access rather
+  than reducing semantic coverage.
 - Android foreground services and iOS continued/background tasks may extend
   execution, but neither makes the process immortal. Every operation is
   resumable, checkpointed, idempotent, and safe after abrupt process death.
@@ -90,8 +92,9 @@ It is a complete logical node with a mobile-specific implementation profile:
 - its own NodeID/signing domains and protected key custody;
 - its own canonical data store, user knowledge, journal, outbox, cursors and
   conflict branches;
-- a complete versioned initial Concept Registry, even when it is packaged into
-  multiple transport files;
+- a complete versioned initial Concept Registry after post-launch Init; none of
+  its `.obr`/index bytes, compressed copies or chunks is bundled in the
+  executable or an automatic install-time/fast-follow/prefetch asset mode;
 - its own local KQL, mediator, tool registry and runtime policy;
 - its own P2P/network participation when the operating system grants runtime;
 - local and cloud LLM providers as replaceable inference dependencies;
@@ -232,7 +235,8 @@ features. Reuse the local modules through this narrower graph.
 8. There is no canonical generated Dart/FFI schema; TypeScript DTOs are mirrored
    manually.
 9. The complete Concept Registry artifact is approximately 2.2 GB before extra
-   runtime overhead. That footprint is accepted, but no mobile delivery,
+   runtime overhead. That post-launch footprint is accepted, but no bootstrap-
+   only package proof, explicit Init consent boundary, mobile delivery,
    free-space gate, signed verification, atomic activation, or rollback pipeline
    currently exists.
 10. Legacy `create_backup`/`restore_backup` ignores its password boundary, uses
@@ -439,8 +443,10 @@ protocol, disclosure, and release gates pass.
 
 To avoid coupling mobile progress to P5, define:
 
-- **Private Offline MVP**: useful personal knowledge capture and retrieval with
-  every network/public lane disabled.
+- **Private Offline MVP**: after one exact post-launch Init release is active,
+  useful personal knowledge capture and retrieval with every node-network/public
+  lane disabled. A clean offline install remains Limited/
+  `InitWaitingForNetwork`, not `ReadyOffline`.
 - **Networked Mobile Beta**: enables this node's bounded P2P/outbound network
   lane only after upstream and mobile-specific gates. It is not a desktop
   companion mode.
@@ -475,7 +481,7 @@ and
 | Local semantic search | Capability/model-gated | Yes | |
 | Full open-ended “second brain” chat | Limited | Limited | Broader only after evaluation |
 | Model status/download/delete/rollback | If portable model lane enabled | Yes | |
-| Full Concept Registry provision/status/update | Required | Required | Multiple transport artifacts are one atomic logical release |
+| Post-launch Init/full Concept Registry provision/status/update | Required before `ReadyOffline` | Required | Large bytes are absent from app/install-time packages; multiple transport artifacts are one atomic logical release |
 | Encrypted export/backup/restore | Required | Required | New vault-encrypted/versioned archive; never the legacy plaintext path |
 | Runtime, storage, LLM and sync status | Yes | Yes | |
 | My/local-created KU and media shelves | Yes | Yes | Local origin is separate; author requires a future frozen exact `AuthorshipEvidence` predicate, while generic Feed references/source observations never infer author or mutable `owned` truth |
@@ -906,10 +912,20 @@ workspace release is:
 | Three data artifacts | **2,207,555,050 (2.056 GiB)** |
 | Manifest + local verification metadata | 2,623 |
 
+The production app and its automatic install modes carry **zero bytes** from
+the three data artifacts, any compressed copy, or transport chunks. CI inspects
+the APK/AAB/IPA and install-time/fast-follow/prefetch/essential asset
+inventories. A clean-install filesystem contains no
+`registry/releases/<release_id>` directory. Only code, locales, schema readers,
+the immutable V1 Registry trust profile/channel floors and bounded bootstrap
+metadata ship with the app.
+
 Splitting these artifacts into store packs or resumable chunks is a transport
 decision only. It does not create a compact semantic profile. The node is not
-`READY` until the OBR, label index, CCID index and signed release envelope for
-one exact release have all verified. It never mixes file generations.
+`ReadyOffline` on first provision until the OBR, label index, CCID index and
+signed release envelope for one exact release have all verified, the activation
+health gate has completed, and readiness has been independently re-derived. It
+never mixes file generations.
 
 ### 7.2 Runtime access
 
@@ -923,8 +939,8 @@ materializes the registry and is incompatible with mobile RAM.
 - indexes are built off-device, never rebuilt on a phone;
 - query/result/page caches are explicitly bounded;
 - active mapped files are never truncated, overwritten, or deleted;
-- the old version is garbage-collected only after the health window and the last
-  reader release.
+- the old version is garbage-collected only after the separate post-completion
+  rollback-retention window and the last reader release.
 
 Accepting 2 GB+ on disk does not authorize eager heap loading or desktop
 concurrency defaults.
@@ -935,76 +951,276 @@ The current manifest has BLAKE3, sizes and license information but no publisher
 signature. `verification.json` is a host-local cache involving size/mtime; it is
 not publisher authenticity.
 
-Define two separate records:
+Freeze the exact V1 objects in architecture §5.0/§5.1 and their golden vectors:
 
-1. a canonical signed publisher release envelope containing release sequence,
-   key ID/signature, artifact hashes/CIDs/sizes, schema/index versions,
-   min/max runtime compatibility, source revision, license/SBOM/provenance,
-   rollback compatibility and Concept/CCID change summary;
-2. a device-local activation receipt created only after artifact verification
-   and open/index smoke checks.
+1. the embedded deterministic-CBOR `RegistryTrustProfile/1`, with role-separated
+   channel/release keys, exact keyset generation and per-channel
+   head/release/digest floors;
+2. the bounded RFC 8949 deterministic-CBOR manifest body with architecture
+   §5.1's exact integer keys, types, cardinalities, bounds, explicit nulls and
+   no defaults/unknown V1 keys; it has no `release_id` or signature and contains
+   exactly one OBR, label-index and CCID-index role with whole-file hashes and
+   ordered 8 MiB chunk-leaf tables;
+3. `manifest_digest = BLAKE3(domain_manifest || body_bytes)` and
+   `release_id = BLAKE3(domain_release || manifest_digest)`;
+4. chunk leaves hash `domain_chunk || role || index || exact_length || bytes`
+   and therefore do not depend on `release_id`; the signed body commits their
+   order without a circular identity;
+5. a detached Ed25519 publisher envelope over the exact domain-separated
+   release/digest/keyset/key-ID input;
+6. a bounded signed channel-head body/envelope with exact integer wire schema,
+   binding its channel/head/keyset generations, release sequence, exact
+   release/digest and runtime range;
+7. exact cross-field equality between channel head, release envelope and
+   recomputed manifest body, plus rejection golden vectors;
+8. a device-local immutable artifact-verification receipt written before
+   directory commit, plus a separate activation receipt written atomically with
+   the bootstrap pointer transaction after verification/open/index smoke.
 
-Pin a release root, support key rotation/revocation, and reject replay or
-downgrade. App Store, Play and CDN TLS are transport controls, not OneBrain
-release authority.
+Mirror URLs, redirects, ETags and OS transfer receipts are transport hints, not
+release identity.
+
+V1 accepts only role-correct keys and `keyset_generation=1` from the embedded
+trust profile. It has no remote keyset rotation/revocation or emergency fetched
+rollback; changing keys requires an app update and future profile version.
+`release_sequence` is publisher-global across channels. Durably store the
+highest exact `(release_sequence, release_id, manifest_digest)` binding and,
+per channel, `(highest_head_generation, accepted_head_digest)`. Equality is
+idempotent only for the identical binding; a lower generation or
+equal-generation equivocation fails closed. The signed head's release ID,
+manifest digest, release sequence, runtime range and keyset generation must
+exactly agree with the recomputed release envelope/body before those bindings
+advance atomically.
+
+Within V1, an app update may increase only the embedded
+`profile_generation`/channel floors while key arrays remain identical. Record
+the profile atomically, but apply a channel floor only when that channel is
+actually begun; an unselected channel does not advance publisher-global release
+high-water. Reject a lower profile generation or equal generation with
+different bytes. `trust_profile_digest` is the exact domain-separated BLAKE3 of
+the canonical profile bytes defined in architecture §5.0. A changed profile
+digest invalidates every unactivated exact confirmation and returns it to plan.
+
+The app-shipped channel floor supplies the same exact equality binding on a
+fresh install. It bounds rollback to the app build snapshot but cannot prove a
+mirror disclosed the newest later valid head. Reinstall without an
+authenticated OneBrain archive returns to that floor. Archive restore selects
+one complete `(head_generation, head_digest)` tuple independently per channel
+and one complete publisher-global
+`(release_sequence, release_id, manifest_digest)` tuple by the higher numeric
+generation/sequence; equal numbers require byte-identical bindings or fail as
+equivocation. It never maximizes IDs/digests independently. A newer archived
+`profile_generation` requires an app upgrade; equal profile generations require
+the same profile digest.
+
+Acceptance of a newly verified manifest is one bootstrap transaction containing
+the exact manifest record, operation transition to `ManifestVerified`, exact
+head/release high-water bindings, authoritative revocation-set additions and
+matching local release-catalog `Revoked` marks. Thus a kill observes none or all
+of the revocations. A revoked local release stops being
+query/rollback/fallback eligible, and a revoked current release projects
+`RegistryDegraded` until replacement. Local rollback never lowers high-water
+and may select only an already verified, compatible, non-revoked release. App
+Store, Play and CDN TLS are transport controls, not OneBrain release authority.
+The repository's unsigned JSON manifest may remain build provenance and its
+host-local `verification.json` remains a cache only; neither is mobile
+publisher or activation authority.
 
 ### 7.4 Provision and A/B activation
 
 ```text
-ABSENT -> DISCOVERED -> SPACE_RESERVED -> DOWNLOADING -> COMPLETE
-       -> VERIFYING -> READY -> ACTIVE
-                         \-> FAILED/CLEANABLE
+IntentRecorded
+  -> ResolvingHead
+  -> HeadVerified
+  -> ResolvingManifest
+  -> ManifestVerified
+  -> AwaitingExactConfirm
+  -> AdmissionPending
+  -> CapacityAdmitted
+  -> SchedulePrepared
+  -> TransferSubmitted
+  -> TransferAdopted
+  -> TransferQueued
+  -> Downloading
+  -> BytesComplete
+  -> WholeArtifactsVerified
+  -> QuerySmokePassed
+  -> DirectoryCommitted
+  -> PointerCommitted
+  -> HealthPending
+  -> Completed
+
+AwaitingExactConfirm -> DeferredByUser -> ResolvingHead
+Any nonterminal work state -> Waiting(reason, resume_state) -> resume_state
+Any pre-pointer state -> Failed(stable_class) or Cancelled
+HealthPending -> RollbackRequired -> FailedAfterCompensation
 ```
 
 For both first provision and update:
 
-1. reserve and report exact peak space before transfer;
-2. write immutable resumable chunks with a durable ledger;
-3. verify each chunk, then the complete signed release;
-4. open and probe all three artifacts and index headers;
-5. atomically commit `{previous, current, generation}` in one small durable
-   transaction;
-6. swap the in-process `Arc<RegistryGeneration>`;
-7. retain N-1 through a health window and roll back the pointer on failure.
+1. from visible Init, record idempotent `registry.init_begin(channel)` before
+   any Registry request; fetch only the bounded signed channel head/manifest,
+   using durable `Waiting(reason, resume_state)` if even this small resolution
+   is offline or OS-blocked. The Begin disclosure says accepted signed security
+   metadata may advance high-water/fence an explicitly revoked local release,
+   but cannot schedule large bytes;
+2. show the exact manifest digest, initial/remaining capacity terms, transport
+   and current network/energy facts. From `AwaitingExactConfirm`,
+   `registry.init_defer(op_id, manifest_digest)` durably writes the Limited-mode
+   receipt and schedules no large bytes; Resume re-resolves the head/manifest
+   and requires a new exact confirmation;
+3. only `registry.init_confirm(op_id, manifest_digest, policy, override)` enters
+   `AdmissionPending` and permits large transfer. Wait-by-policy/capacity is a
+   durable pre-download `Waiting` state;
+4. before the OS API call, persist `SchedulePrepared` with transfer nonce,
+   complete request fingerprint and Android's prechosen job ID; submit with that
+   nonce in iOS task description/Android namespace, then enumerate and
+   `TransferAdopted`. Kill-before-submit retries; kill-after-submit/before-bind
+   discovers and adopts the exact task rather than orphaning it;
+5. reserve/report remaining incremental space and write resumable ranges/chunks
+   into same-volume staging with a durable ledger;
+6. verify each chunk, stream-verify the complete signed release, then open and
+   probe all three artifact/index bindings;
+7. immediately before directory work, and again in the pointer transaction,
+   revalidate exact confirmed digest, current embedded trust profile,
+   head/release high-water, effective revocation, schema/runtime compatibility
+   and remaining capacity;
+8. journal `DirectoryPrepare`, write the artifact-verification receipt, fsync
+   every artifact/metadata file and staging directory, same-volume atomically
+   rename the immutable release directory and fsync both its source and
+   destination parent directories, or use the strongest platform equivalent;
+9. commit `DirectoryCommitted`; recovery re-verifies and reattaches, or later
+   reclaims, a non-active orphan left by kill after rename;
+10. atomically commit `{previous, current, activation_generation,
+    activation_receipt.health=Pending(REGISTRY_HEALTH_V1), PointerCommitted}` in
+    one `bootstrap.redb` transaction, then swap the in-process generation;
+11. run architecture §5.2's deterministic fresh-open/cross-index health suite.
+    A kill restarts the pure bounded suite. Success atomically records release
+    `Healthy`, receipt `Passed` and operation `Completed`; failure atomically
+    compensates to a still-eligible non-revoked fallback/none and records
+    `FailedAfterCompensation`;
+12. retain N-1 through a separate post-completion rollback/readers window.
 
 A kill at any chunk, verification step, pointer commit, runtime swap, or cleanup
-must leave either the old or new complete release active. An unclean restart
+must leave none/old or one new complete release active, never partial or mixed.
+An unclean restart
 reconciles receipts and pointers before admitting queries.
+
+This is an operation machine only. Derived readiness is the ordered total
+function defined by architecture §3.3/§5.2; `healthy` means health-complete,
+compatible, non-revoked and bound to valid bootstrap authority:
+
+1. invalid/mixed authority, a revoked current release, or a failed current
+   candidate before compensation is `RegistryDegraded(reason)`;
+2. a health-complete current release is `ReadyOffline`;
+3. a `HealthPending` current candidate is
+   `ReadyOffline(UpdateHealthPending)` only when an eligible healthy,
+   compatible, non-revoked previous release remains the rollback guarantee;
+   otherwise first provision remains `Provisioning(HealthPending)`;
+4. no current plus a nonterminal/paused first Init is
+   `Provisioning(reason)`, including `InitWaitingForNetwork`;
+5. no current and no historically completed activation is
+   `BootstrapOnly/AwaitingUserInit`, with any last failure shown separately;
+6. every other no-current/no-queryable state after prior success is
+   `RegistryDegraded(reason)`.
+
+First-activation health failure compensates the pointer to none and returns to
+the fifth case; update health failure compensates only to an eligible healthy,
+compatible, non-revoked previous release, or to none.
+Progress callbacks and notifications are hints; the bootstrap operation ledger
+is truth. First Init `Completed` triggers an independent readiness requery and
+never directly sets a product state. A later update retains the previous
+readiness guarantee throughout candidate evaluation only while that release
+remains eligible, healthy, compatible and non-revoked; otherwise readiness
+immediately re-derives `Provisioning` or `RegistryDegraded`.
+Cancellation is valid only before `PointerCommitted`; afterward the user must
+request a separate rollback pointer operation.
 
 ### 7.5 Storage admission
 
-Let `A` be the active release, `N` the next release, `C` any retained
-compressed/container copy, `W` verification workspace, `D` private node data
-plus model files, and `R` the OS safety reserve:
+Let `P` be the manifest's signed initial
+`publisher_min_additional_free_bytes`; `N/T/W/G` represent target allocation,
+transfer landing/unpack/copy peak, verification workspace and catalog growth;
+and `R` is the non-consumable OS safety reserve:
 
 ```text
-required_free_before_update >= N + C + W + R
-peak_total_storage          = A + N + C + W + D
+initial_required_free =
+  max(P, N_total_alloc + T_initial + W_initial + G_total + R)
+
+P_remaining = max(0, P - C_progress)
+
+remaining_required_free =
+  max(P_remaining, N_remaining_alloc + T_remaining + W_remaining + G_remaining + R)
 ```
 
-For the current registry, streaming immutable files directly to the next version
-gives `A + N = 4,415,110,100` bytes (about 4.11 GiB) before workspace, models,
-private data and reserve. Keeping another full archive while unpacking raises
-registry-only peak to about 6.17 GiB. Avoid that copy. The setup/update UI must
-show the exact calculation; a practical device gate may be 5.5-6 GiB free for
-streaming A/B and 7-8 GiB for archive/unpack, subject to measured release
-metadata.
+`C_progress` credits only still-present, exact operation/release-bound allocation
+that has passed its length/hash ledger and reduces remaining work; invalid,
+deleted, quarantined or wrong-generation bytes get no credit. Initial
+confirmation uses the first equation. Every resume, write and activation
+recomputes the remaining terms and uses the second equation against then-current
+free space; it never reapplies the full target after partial staging.
+A completed unverified OS landing may receive only `T`-component credit after
+exact nonce/length binding, never target `N` credit; disappearance or quarantine
+removes that credit.
+
+The active release and private/model data are already reflected in current free
+space; do not count them again as additional capacity. Direct range/chunk writes
+to same-volume staging keep `T` near bounded transfer concurrency and avoid a
+second full archive. The current 2.056 GiB target plus the provisional
+`R = max(1.5 GiB, 10% of total usable destination-volume capacity)` is only a
+roughly 3.6 GiB illustrative initial floor before the signed publisher floor,
+measured allocation, `T`, `W`, and `G`; it is never the admission value. The
+percentage never uses current free bytes, which would make admission
+self-referential.
+If a store/background-asset path requires a second expanded copy, add its exact
+pack/unpack peak and display that as a different plan. Recheck capacity before
+each write and activation. Insufficient A/B capacity pauses for cleanup/defer;
+V1 never mutates an active release in place.
 
 ### 7.6 Platform delivery
 
 | Platform | Bootstrap/update strategy |
 |---|---|
-| Android Play | Three Play Asset Delivery packs fit the current 1.5 GB-per-pack and 4 GB cumulative install-time limits. Activate only when all packs match the signed release. Store paths are re-resolved on every launch. |
-| Android independent update | Signed range/resumable CDN transfer through an appropriate user-initiated/OS-managed job when registry cadence must be independent of the AAB. Persist the chunk ledger because jobs/FGS can stop. |
-| iOS 26+ | Prefer managed/Apple-hosted Background Assets for an essential full release, with explicit A/B import or versioned pack strategy. Assets may update independently of the executable. |
-| iOS 16.4-25 | Use unmanaged/self-hosted Background Assets or background `URLSession` with range/resume and signed verification. |
+| Android normative | After visible Init confirmation, signed range/resumable HTTPS through the appropriate user-initiated/OS-managed transfer. Persist continuously because Task Manager/user Stop may kill without a callback; a user-stopped job requires explicit foreground Resume. |
+| Android Play boundary | Do not use Play Asset Delivery for Registry artifacts: even on-demand packs are part of the publishing AAB. Direct post-launch HTTPS keeps the strict clean-AAB invariant. |
+| iOS normative | Signed HTTPS through background `URLSession` after exact Init confirmation. Reassociate by pre-submit nonce/session task description independently of receiving process generation. Copy/clone the ephemeral daemon temp file into a destination-local partial, fsync and rename there; `T` budgets the full source/copy peak unless exact same-volume behavior is proved. User force-quit requires later foreground Resume. |
+| iOS Background Assets boundary | Do not use Managed Background Assets for Registry V1: system-managed pack updating must not transfer a new multi-gigabyte release before fresh exact confirmation. A future ADR may admit only immutable per-release pack IDs after proving rejection of unsolicited/outdated delivery and budgeting the full landing/copy peak. |
 
 The active app-controlled release belongs in durable application-support/internal
 storage, not cache or backup. Public registry bytes need authenticity/integrity,
 not per-file application encryption that defeats mmap; private node data and keys
 remain separately encrypted. Large transfers default to unmetered network,
 charging/battery-not-low and adequate thermal state, with exact user-visible
-override.
+one-operation override. This distribution lane works before Networked Beta and
+does not enable peers, P2P, reconciliation, seeding or LAN permission.
+
+Native packaging rules exclude the entire mutable OneBrain authority root from
+generic OS backup/restore: `bootstrap.redb`, private/dataset databases,
+Registry/model/media bytes and staging, operation/chunk/transfer receipts, key
+envelopes/wrapping metadata and spools. Use recursive
+`NSURLIsExcludedFromBackupKey` plus this-device-only key accessibility on iOS,
+and explicit `fullBackupContent`/`dataExtractionRules` exclusions for Android
+cloud/device transfer plus no-backup storage where applicable. The reviewed
+OneBrain vault-encrypted archive is the only portable restore path.
+
+A random `installation_epoch` plus `installation_instance_nonce`, sealed by a
+new nonportable platform key and paired with an excluded/no-backup install
+marker, binds every bootstrap pointer/receipt and dataset generation.
+`ThisDeviceOnly` is not assumed to erase an iOS Keychain item on uninstall.
+When both marker and authority root are absent, clean-install genesis retires
+any orphaned OneBrain Keychain item and always creates a new marker, key and
+epoch; a valid sealed `Creating` marker may resume only its matching
+crash-interrupted genesis. Authority bytes with a missing/mismatched marker or
+seal fail closed, invalidate pointer/chunk/transfer claims, quarantine unbound
+bytes and enter explicit recovery/fresh Init.
+
+Authenticated archive restore creates a new local epoch. For every channel and
+for the publisher-global release binding, it selects the complete archived or
+app-floor tuple having the higher generation/sequence; equality requires the
+same digest/ID binding. A newer archived trust-profile generation yields
+`UpgradeRequiredForRegistryTrustProfile`, while an equal generation requires
+the identical profile digest. No ID or digest participates in a bytewise
+“maximum.”
 
 Before networked beta, evidence must cover signed provenance, capacity pressure,
 interrupted first provision/update, corrupt/reordered chunks, cold/open query
@@ -1028,10 +1244,12 @@ The architecture separates:
 3. **Network presence lease** — a shorter, expiring statement that this node is
    currently reachable on a specific connectivity epoch.
 
-Every activation receives a bounded OS-derived lease:
+Every activation receives a bounded OS-derived execution grant, distinct from
+the network presence lease:
 
 ```text
-ExecutionLease {
+ExecutionGrant {
+  grant_id,
   cause, deadline, process_generation,
   foreground_visibility,
   network_constraints, energy_constraints,
@@ -1051,26 +1269,31 @@ generation fence.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Unprovisioned
-    Unprovisioned --> Provisioning
-    Provisioning --> Locked: full registry and vault ready
-    Locked --> Recovering: unlock or eligible activation
-    Recovering --> Ready
-
-    Ready --> ActiveLocal: UI or maintenance lease
-    ActiveLocal --> ActiveNetwork: network lease granted
-    ActiveNetwork --> Draining: lease expires, user stops, constraints change
-    ActiveLocal --> Draining: background, pressure, deadline
-    Draining --> Dormant: checkpoint complete
-
-    ActiveLocal --> Dormant: abrupt process death
-    ActiveNetwork --> Dormant: abrupt process death
-    Dormant --> Recovering: next activation
+    [*] --> Dormant
+    Dormant --> Starting: OS starts process with candidate grant
+    Starting --> Active: bootstrap recovered and a grant is valid
+    Starting --> Dormant: no valid grant, startup failure, or abrupt kill
+    Active --> Active: grant set/scope changes
+    Active --> Draining: last grant ends, pressure, deadline, or safety fence
+    Draining --> Active: a new valid grant arrives
+    Draining --> Dormant: checkpoint complete or abrupt death
+    Active --> Dormant: abrupt process death
 ```
 
 `OS_KILLED` is not a callback. The next launch detects a durable `STARTED` epoch
 without a matching `QUIESCED` record and performs recovery. Correctness must not
 depend on `onDestroy`, an expiration callback, or graceful shutdown.
+
+Lock/protected-data, safe mode, Registry readiness and Registry operation are
+separate `NodeSnapshot` projections that restrict the scope of `Active`.
+`Provisioning` can be waiting for network, unmetered access, charging, battery,
+thermal, storage, OS budget, protected callback availability, or explicit user
+resume while the process is `Dormant`. An active update does not remove
+`ReadyOffline` only while the old release remains eligible, healthy,
+compatible and non-revoked: before pointer commit it is current; during
+`HealthPending` it is the verified rollback guarantee. Accepted revocation or
+another eligibility loss re-derives the ordered degraded/provisioning state
+immediately.
 
 Startup recovery, in order:
 
@@ -1092,7 +1315,8 @@ Timers and push notifications are wake hints, never the only record of work.
 | Short completion/checkpoint | UIKit background execution grace | Lifecycle callback plus bounded worker/FGS drain |
 | Deferrable maintenance | `BGAppRefreshTask` / `BGProcessingTask`, scheduled and interruptible | WorkManager with charging/network/battery constraints |
 | User-started long operation | iOS 26+ `BGContinuedProcessingTask`, visible progress/Live Activity, cancellable and still terminable | User-initiated data transfer or correctly typed FGS with visible notification |
-| Large registry/model HTTP transfer | Background Assets/background `URLSession` | Play Asset Delivery, user-initiated transfer, DownloadManager/OS-managed transfer |
+| Required Registry Init transfer | background `URLSession`; no Managed Background Assets in V1 | UIDT, DownloadManager/OS-managed or constrained direct HTTPS; no PAD |
+| Optional model transfer | Background Assets/background `URLSession` where qualified | Play for On-device AI/PAD where eligible, user-initiated or OS-managed transfer |
 | Generic always-on P2P listener | **Not available** | No guarantee; only an opt-in, user-visible, policy-compliant bounded session |
 
 On iOS, `BGProcessingTask` is system-scheduled and can be interrupted.
@@ -1112,8 +1336,12 @@ On Android:
   `dataSync` allowance is an aggregate six hours per 24 hours for the app;
 - the user can stop an FGS/app from Task Manager without a cleanup callback;
   this does not by itself cancel already scheduled jobs/alarms;
-- a user-stopped UIDT may kill the process without `onStopJob` and must remain
-  `paused_by_user` until a new foreground user action resubmits it;
+- a UIDT Stop may kill the process without `onStopJob`. Reconcile the
+  `SchedulePrepared` app-chosen job ID against JobScheduler inventory and the
+  landing receipt: adopt an exact extant job; otherwise an incomplete missing
+  job becomes `ResumeRequiredAfterUnobservedStop`, refined to
+  `UserStoppedOSJob` only with positive platform evidence. Neither state is
+  resubmitted before a new foreground user action;
 - WorkManager/JobScheduler and long-running workers remain quota- and
   constraint-governed;
 - `dataSync` is valid only during real transfer/reconciliation;
@@ -1332,6 +1560,8 @@ production reward display.
 Prefer precise independent indicators:
 
 - `Node data: Provisioning / Ready / Locked / Recovering / Read-only`
+- `Required Init data: BootstrapOnly / Waiting <reason> / Downloading /
+  Verifying / Active / Degraded`
 - `Runtime: Dormant / Interactive / Background lease / Draining`
 - `LLM: None / System / Local / Cloud <provider> / Unavailable`
 - `Network presence: Unreachable / Interactive / Online session / Paused`
@@ -1364,6 +1594,26 @@ Redesign for mobile:
 
 ## 11. Work packages
 
+### 11.0 Dependency and claim matrix
+
+| Package | Depends on | May claim / unlock |
+|---|---|---|
+| `MOB-00` | current authority documents | frozen architecture/ADR decisions only |
+| `MOB-01` | `MOB-00` ownership/packaging decisions | compile/physical-launch/bootstrap-shell evidence; no product readiness |
+| `MOB-02` | `MOB-01` | minimum `CORE` activation arbiter plus runtime/storage/kill-recovery smoke, including root Registry ledger; no `ReadyOffline` |
+| `MOB-03` | `MOB-02` | protected autonomous node/vault/archive foundation |
+| `MOB-04` | `MOB-03` | Limited raw-draft UX and feature foundations; Concept-dependent routes remain disabled behind `REGISTRY` |
+| `MOB-05` | `MOB-00/01/02` plus required storage/key work from `MOB-03` | `MOB-GATE-REGISTRY`; then runs the full `MOB-04` airplane journey to close `MOB-GATE-OFFLINE-MVP` |
+| `MOB-06` | evaluated `MOB-04/05` baseline by selected route | optional AI/model/tool gates only |
+| `MOB-07` | `MOB-02/03`, integrated with each owning feature | extends the MOB-02 arbiter across lifecycle/media/energy adapters; no network authority |
+| `MOB-08` | its explicit entry gates plus stable Offline MVP | Networked Mobile Beta evidence |
+| `MOB-09` | continuous; final exit depends on every selected release package | signed/store/canary release evidence |
+
+`MOB-04` may compile and test validation, browse, search and KQL against signed
+fixtures while `MOB-05` is in progress. It may not expose or report those
+routes as functional on a clean device until one exact Registry release is
+active.
+
 ### MOB-00 — Authority and ADRs
 
 Deliver:
@@ -1374,7 +1624,8 @@ Deliver:
 - ADR: logical node, process activation and presence lease are distinct;
 - ADR: provider-neutral local/cloud LLM + deterministic ToolOrchestrator;
 - ADR: recovery scheme;
-- ADR: complete signed Concept Registry + A/B mobile delivery;
+- ADR: unbundled post-launch Init, Registry trust/channel envelope,
+  `bootstrap.redb` ownership and immutable A/B mobile delivery;
 - source-of-truth precedence over stale P10/UI feature documents.
 
 Exit:
@@ -1393,6 +1644,9 @@ Deliver:
 - Rust compile for Android arm64, iOS device and simulator;
 - async call, event stream, cancellation, and bounded error;
 - cold start and app-size baseline;
+- package/install-mode inventory proving zero Registry artifacts/chunks;
+- BootstrapOnly/Init shell plus wire capture proving no Registry request before
+  explicit `init_begin`;
 - CI compile jobs.
 
 Exit:
@@ -1409,13 +1663,20 @@ Deliver:
 - `RuntimeServices` injection for signer, storage, clock, LLM, connectivity,
   scheduler, telemetry and paths;
 - mobile feature flags and resource budgets;
+- minimum `CORE` activation arbiter: one-writer process generation, bounded
+  `ExecutionGrant` set, deadline/cancellation, and receiving-generation callback
+  commit fence;
+- bootstrap Registry operation/chunk/transfer ledger, stable OS-transfer
+  reassociation and native callback recovery without Flutter;
 - remove mandatory Ollama construction from the mobile dependency graph;
-- local KQL and private-planning/runtime smoke flow.
+- local KQL and private-planning/runtime smoke against a signed test fixture.
 
 Exit:
 
-- app works with no network and no generative model;
-- repeated start/stop and process-death recovery are clean.
+- runtime/storage smoke works with no network and no generative model; this is
+  not a product `ReadyOffline` claim;
+- repeated start/stop and process-death recovery are clean; stale callbacks
+  cannot commit into the current generation.
 
 ### MOB-03 — Secure identity and durable private storage
 
@@ -1428,49 +1689,102 @@ Deliver:
 - backup/restore with manifest, integrity and versioning;
 - a new vault-encrypted/versioned archive path; the legacy plaintext backup API
   is not exposed;
+- explicit native OS-backup exclusions for device-bound wrapping metadata,
+  signer seeds/key envelopes and recovery secrets; portability exists only
+  through the reviewed vault-encrypted archive;
+- nonportable sealed `installation_epoch`/`installation_instance_nonce`, paired
+  excluded install marker and clean-install key-rotation protocol for bootstrap
+  pointers, receipts and dataset generations, with fail-closed unexpected-
+  restore reconciliation;
 - redacted logs and privacy diagnostics.
 
 Exit:
 
 - security review;
 - kill/restart/update/rollback/corrupt-backup test;
-- no plaintext release seed or private key in Dart/logs.
+- no plaintext release seed or private key in Dart/logs;
+- physical backup/restore inspection proves the entire mutable authority root,
+  key material and wrapping metadata do not enter iOS backup or Android
+  cloud/device-transfer data; injected restore residue cannot activate a
+  pointer or verified-chunk claim;
+- same-device iOS uninstall/reinstall cannot reuse a surviving orphaned
+  Keychain item or old epoch; every marker/seal/authority mismatch fails closed.
 
-### MOB-04 — Private Offline MVP
+### MOB-04 — Private shell and Offline MVP feature foundations
 
 Deliver:
 
-- vi/en onboarding;
-- text capture and share sheet;
-- local draft, validation, preview and save;
-- library/browse/detail/search/local KQL;
+- vi/en onboarding, required-data handoff and Limited Init shell;
+- text capture/share sheet and encrypted raw draft available in Limited mode;
+- validation, preview and save foundations behind the active-Registry
+  precondition;
+- library/browse/detail/search/local KQL foundations and disabled-route states
+  behind the active-Registry precondition;
 - export/backup;
 - runtime/storage status;
 - accessibility baseline.
 
 Exit:
 
-- complete journey in airplane mode with LLM disabled;
-- no network socket is required;
+- Limited shell correctly captures encrypted raw drafts and exposes
+  Init/Operations/storage/diagnostics when the Registry is absent;
+- Registry-independent behavior works with LLM and node-network lanes disabled;
+- this package does **not** close `MOB-GATE-OFFLINE-MVP`; the complete
+  airplane-mode capture/save/search/KQL/backup exit runs after MOB-05 first
+  activation;
 - no simulated wallet/reward surface.
 
 ### MOB-05 — Complete registry provision and update
 
 Deliver:
 
-- signed publisher envelope and device activation receipt;
-- Android PAD and iOS Background Assets feasibility spikes;
+- reproducible clean-install proof with no Registry bytes in the app or
+  automatic install modes;
+- the architecture Slice-C package/install-mode CI scanner, rejecting every
+  Registry artifact, compressed copy, chunk and prohibited PAD/Background
+  Assets declaration before `MOB-GATE-REGISTRY` can close;
+- signed channel head, canonical publisher envelope, immutable V1 trust
+  profile/fresh-install floors, release revocation/high-water and approved
+  transport descriptors;
+- one atomic manifest-acceptance transaction for the validated manifest,
+  `ManifestVerified`, exact head/release bindings and every authoritative
+  revocation mutation;
+- explicit `init_begin` and exact-manifest/capacity/network `init_confirm`;
+- signed publisher envelope plus separate artifact-verification and device
+  activation receipts;
+- production Registry transfer adapters: Android UIDT/eligible OS-managed
+  signed HTTPS and iOS background `URLSession`, including foreground fallback,
+  stable-transfer/process-generation reassociation and user-stop/force-quit
+  semantics;
+- durable `SchedulePrepared -> TransferSubmitted -> TransferAdopted` barrier
+  with prechosen Android job ID/iOS task-description nonce and enumeration after
+  every submit crash window;
+- negative packaging/runtime proof that Android PAD and iOS Managed Background
+  Assets cannot deliver Registry V1 bytes;
 - resumable app-controlled/CDN fallback;
-- full-release space admission and exact storage UI;
+- initial-versus-remaining full-release space admission and exact storage UI;
 - immutable A/B activation, live-reader generation swap, rollback and GC;
+- post-pointer deterministic health suite, compensation receipt and ordered
+  total readiness requery;
 - mmap/index query benchmark and bounded page/cache policy.
 
 Exit:
 
-- one complete 2.2 GB-class release provisions and opens on both platforms;
+- one complete 2.2 GB-class release provisions post-launch from a clean install
+  and opens on both platforms;
 - mixed/corrupt/incompatible releases fail closed;
 - kill/disk-full/reboot/update/rollback matrix passes;
-- no eager full-registry heap load or deletion of a live mapped generation.
+- no eager full-registry heap load or deletion of a live mapped generation;
+- native backup/restore inspection proves Registry/staging bytes plus bootstrap
+  Registry pointer/chunk/transfer authority are excluded from iOS and Android
+  backup/device transfer, and injected residue fails the installation-epoch
+  seal;
+- first provision stays Limited through `HealthPending` and reaches
+  `ReadyOffline` only after `Completed` plus independent requery; update keeps
+  only an eligible healthy, compatible, non-revoked rollback guarantee and
+  otherwise projects the derived degraded/provisioning state.
+- the MOB-04 complete private journey then passes in airplane mode with LLM and
+  every node-network lane disabled, closing the offline gate.
 
 ### MOB-06 — LLM providers, tools and model supply chain
 
@@ -1493,15 +1807,18 @@ Exit:
 - no provider can execute, materialize, sign, publish, or silently disclose a
   local tool result.
 
-### MOB-07 — Activation, media, energy and background work
+### MOB-07 — Activation integration, media, energy and background work
 
 Deliver:
 
-- activation arbiter with process generation, deadline and cancellation;
+- extend and qualify MOB-02's minimum activation arbiter across media, model,
+  outbox and platform background adapters without creating a second arbiter;
 - unclean-epoch recovery and unknown-tool reconciliation;
 - camera OCR and voice capture behind permissions/capability checks;
-- iOS Background Tasks/continued-processing/background-transfer adapters;
-- Android WorkManager/user-initiated-transfer/FGS adapters with correct types;
+- non-Registry iOS Background Tasks/continued-processing adapters, reusing the
+  MOB-05 background-transfer binding where applicable;
+- non-Registry Android WorkManager/FGS adapters with correct types, reusing the
+  MOB-05 user-initiated-transfer binding where applicable;
 - bounded outbox maintenance, local notifications and connectivity callbacks;
 - thermal, low-power, memory-, disk- and metered-network policy;
 - zero-idle-polling/keepalive mobile profile.
@@ -1546,6 +1863,13 @@ Deliver:
 - signed builds and store metadata;
 - SBOM and third-party/model/registry license inventory;
 - database/registry/model/app migration matrix;
+- release package/install-mode scanner that rejects Registry artifacts,
+  compressed copies and chunks on every release build (reusing the scanner
+  already required by MOB-05);
+- native configuration scanner that rejects Registry delivery through PAD/iOS
+  Managed Background Assets and verifies OS-backup exclusions;
+- Registry origin/trust-profile app-update/key-compromise/CDN-or-store outage
+  runbook and privacy-safe transfer telemetry;
 - crash symbolication with privacy-safe telemetry;
 - staged rollout and rollback;
 - operator dashboard and incident runbook;
@@ -1568,7 +1892,7 @@ Exit:
 | Golden vectors | Same canonical IDs/signatures/codecs across desktop, iOS, Android |
 | Storage | kill during write, low disk, corrupt page/archive, migration, rollback |
 | Identity | platform key gate, wrong credential, revoked device, recovery |
-| Registry | full provision, A/B space pressure, signed verification, live mmap swap, rollback |
+| Registry Init | clean package; embedded trust/fresh floors; exact trust/channel/release/chunk vectors; per-channel and publisher-global lower/equal-equivocation replay; archive whole-tuple merge/profile-upgrade rules; atomic manifest/high-water/revocation acceptance under kill; no pre-Begin/pre-Confirm transfer; durable Defer and pre-download waits; full 2.056 GiB provision; initial/remaining capacity without progress double-count; iOS temp-copy peak; schedule prepare/submit/adopt kill windows; source/range/chunk faults; stable-transfer/process-generation reassociation; UIDT absent-job Resume inference; stop/kill/reboot; final app-update/high-water/revocation/compatibility fence; deterministic health success/compensation/readiness requery; A/B live mmap swap; eligible rollback/GC; whole-authority OS-restore exclusion, install-epoch mismatch and same-device iOS uninstall/reinstall key rotation |
 | LLM | schema/tool conformance, incomplete stream, provenance, model tamper, cancellation |
 | Tools | catalog/schema/permit/consent, idempotency, unknown outcome, result visibility |
 | Privacy | cloud disclosure gate; no raw private KQL/need/user identifiers on wire; redacted logs |
@@ -1584,6 +1908,9 @@ CI minimum:
 - Dart analyze/unit/widget tests;
 - generated FFI drift check;
 - canonical vector tests;
+- package/install-mode and native backup-rule scanners for Registry bytes,
+  prohibited asset-delivery declarations and whole-authority-root/key
+  exclusions;
 - Android emulator and iOS simulator smoke where supported;
 - scheduled physical-device lab runs for lifecycle, energy, thermal, camera,
   biometric/key storage and real model inference.
@@ -1607,6 +1934,7 @@ background, radio, thermal, or model performance.
 | Legacy plaintext/incomplete backup reaches mobile | Critical | Hide it; implement and drill a new encrypted versioned archive |
 | Model artifact tamper/license violation | High | Signed manifest, hashes, license gate, atomic activation |
 | OOM/thermal/battery regression | High | Capability router, unload/cancel, device budgets, measured gates |
+| Registry bytes silently bundled or auto-downloaded before Init | Critical | Package/install-mode scanner, clean-install filesystem/wire capture and explicit two-step consent |
 | Registry update peak exceeds free storage | High | Exact A/B capacity gate, direct chunk writes, N-1 GC/rollback |
 | Full registry is eager-loaded or active mmap overwritten | Critical | Indexed on-demand access, immutable generations, live-reader fencing |
 | FGS/background mode rejected or killed | High | Correct types/use cases, store review, resumable work, kill switches |
@@ -1625,7 +1953,8 @@ background, radio, thermal, or model performance.
 Owner direction resolved in this revision:
 
 1. mobile is an autonomous node, not a desktop replica/extension/companion;
-2. the complete initial Concept Registry may consume 2 GB or more;
+2. the executable is a bootstrap shell; the complete initial Concept Registry
+   is downloaded after first launch through Init and may consume 2 GB or more;
 3. LLM inference may be local or explicitly configured cloud;
 4. OneBrain deterministic logic, not the LLM/provider SDK, executes tools;
 5. node correctness must survive OS suspension and kill.
@@ -1659,13 +1988,15 @@ Recommended next implementation slice:
 2. update the mobile README and mark conflicting P10 sections as historical;
 3. scaffold the Flutter application and generated Rust FFI boundary;
 4. cross-compile the smallest reusable local runtime;
-5. prove storage open/write/restart and a typed local KQL call on both platforms;
-6. open the complete current registry through `IndexedConceptRegistry`, measure
-   RSS/page faults, and prove immutable A/B pointer recovery;
+5. prove storage open/write/restart, the minimum process-generation/callback
+   fence, and a typed local KQL call on both platforms;
+6. prove a clean bootstrap-only package, then run explicit post-launch Init for
+   the complete current registry through `IndexedConceptRegistry`, measure
+   RSS/page faults, and prove immutable first/A-B pointer recovery;
 7. implement a no-op `MobileLlmProvider` plus proposal-only
    `ToolOrchestrator` contract and kill-safe journal;
-8. prove activation generation, cancellation and no-callback process-death
-   recovery;
+8. extend activation-generation, cancellation and no-callback process-death
+   evidence across the selected platform background adapters;
 9. run the local LLM bake-off and cloud disclosure spike separately from the
    product MVP;
 10. keep network/Public UseEvidence flags absent or forced off in the first
@@ -1689,9 +2020,12 @@ Snapshot references used for mobile platform assumptions:
 - [Apple BGContinuedProcessingTask](https://developer.apple.com/documentation/backgroundtasks/bgcontinuedprocessingtask)
 - [Apple long-running background tasks](https://developer.apple.com/documentation/BackgroundTasks/performing-long-running-tasks-on-ios-and-ipados)
 - [Apple background downloads](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background)
+- [Apple managed asset-pack automatic-update behavior](https://developer.apple.com/documentation/backgroundassets/downloading-apple-hosted-asset-packs)
+- [Apple iCloud backup data policy](https://developer.apple.com/documentation/foundation/optimizing-your-app-s-data-for-icloud-backup)
 - [Android WorkManager](https://developer.android.com/develop/background-work/background-tasks/persistent)
 - [Android long-running workers](https://developer.android.com/develop/background-work/background-tasks/persistent/how-to/long-running)
 - [Android user-initiated data transfer](https://developer.android.com/develop/background-work/background-tasks/uidt)
+- [Android Auto Backup and data-extraction exclusions](https://developer.android.com/identity/data/autobackup)
 - [Android foreground-service restrictions](https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start)
 - [Android foreground-service types](https://developer.android.com/develop/background-work/services/fgs/service-types)
 - [Android foreground-service timeouts](https://developer.android.com/develop/background-work/services/fgs/timeout)
@@ -1715,5 +2049,6 @@ Snapshot references used for mobile platform assumptions:
 - [Gemini function-calling responsibility](https://ai.google.dev/gemini-api/docs/function-calling)
 - [ONNX Runtime Mobile](https://onnxruntime.ai/docs/tutorials/mobile/)
 - [Apple Keychain Services](https://developer.apple.com/documentation/security/keychain-services/)
+- [Apple DTS: keychain items and uninstall/reinstall behavior](https://developer.apple.com/forums/thread/36442)
 - [Apple Secure Enclave key constraints](https://developer.apple.com/documentation/Security/protecting-keys-with-the-secure-enclave)
 - [Android Keystore](https://developer.android.com/privacy-and-security/keystore)

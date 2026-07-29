@@ -45,6 +45,9 @@ defined in §8.
 11. A logical path marked **design-reserved** is documentation for a future
     gated flow. It must not be registered, deep-linked, notified, or exposed in
     consumer navigation before the named gate closes.
+12. The production app package contains no large Concept Registry artifacts.
+    First-launch Init is a canonical, resumable product flow; it is not P2P
+    enrollment or Networked Beta.
 
 ## 2. Adaptive navigation model
 
@@ -92,26 +95,56 @@ Bottom navigation
 flowchart TB
     Launch["App/OS callback/deep-link entry<br/>MOB-SCR-ENT-001"]
     Bootstrap["Resolve bootstrap ledger,<br/>dataset generation and pending route"]
-    State{"Current node state"}
+    State{"Resolve current state<br/>in numbered precedence"}
 
     Launch --> Bootstrap --> State
-    State -->|"first install"| Onboarding["Onboarding stack"]
-    State -->|"locked"| Locked["MOB-SCR-ENT-002<br/>Locked"]
-    State -->|"protected data unavailable"| Protected["MOB-SCR-ENT-003<br/>Protected data unavailable"]
-    State -->|"recovering/migrating"| Recovering["MOB-SCR-ENT-004<br/>Recovering"]
-    State -->|"safe/read-only"| Safe["MOB-SCR-ENT-005<br/>Safe mode"]
-    State -->|"registry provisioning"| Limited["Provisioning shell"]
-    State -->|"ready"| Main["Authenticated main shell"]
+    State -->|"1 protected data unavailable"| Protected["MOB-SCR-ENT-003<br/>Protected data unavailable"]
+    State -->|"2 locked / re-auth required"| Locked["MOB-SCR-ENT-002<br/>Locked"]
+    State -->|"3 recovering/migrating"| Recovering["MOB-SCR-ENT-004<br/>Recovering"]
+    State -->|"4 safe/read-only"| Safe["MOB-SCR-ENT-005<br/>Safe mode"]
+    State -->|"5 unfinished onboarding before<br/>required-data handoff"| Onboarding["Onboarding stack<br/>durable step cursor"]
+    State -->|"6 BootstrapOnly or Provisioning(*)<br/>after Init handoff"| Limited["Authenticated Limited shell<br/>MOB-SCR-HOM-001"]
+    State -->|"7 RegistryDegraded"| Degraded["Authenticated degraded shell<br/>Home status + Registry repair"]
+    State -->|"8 ReadyOffline* + unfinished ONB-006"| Onboarding
+    State -->|"9 ReadyOffline* + onboarding complete"| Main["Authenticated main shell"]
 
     Locked -->|"unlock succeeds"| Bootstrap
     Protected -->|"device unlock/data available"| Bootstrap
     Recovering -->|"verified recovery complete"| Bootstrap
     Safe -->|"repair/restore/rollback succeeds"| Bootstrap
-    Limited --> Main
+    Onboarding -->|"required-data handoff at ONB-005"| Init["MOB-SCR-INI-001/002<br/>Init hub / exact plan"]
+    Onboarding -->|"after derived ReadyOffline;<br/>ONB-006 completion receipt"| Bootstrap
+    Limited -->|"required-data card"| Init
+    Degraded -->|"inspect/repair/update/rollback"| RegistryRepair["MOB-SCR-DAT-001/002<br/>Registry status / update"]
+    RegistryRepair -->|"start/reuse exact operation"| RegistryOp["MOB-SCR-OPS-002<br/>Registry operation"]
+    RegistryRepair -->|"repair/rollback resolves"| Bootstrap
+    Init -->|"Defer from exact INI-002 plan"| Limited
+    Init -->|"exact Confirm"| RegistryOp
+    RegistryOp -->|"pause/wait; leave progress<br/>re-resolve readiness"| Bootstrap
+    RegistryOp -->|"operation terminal; re-resolve readiness"| Bootstrap
+    Limited -->|"operation completes or compensates;<br/>re-resolve"| Bootstrap
 ```
 
 The route resolver never renders a private title, filename, prompt, peer
 message or notification argument before the required unlock and local lookup.
+If the pending route requires Concept data while no release is active, it is
+retained opaquely through the lock/onboarding gates and redirected to Init only
+after authentication. It is re-resolved from current state only after operation
+`Completed` and readiness independently derives `ReadyOffline`; missing data
+never falls through to a partially functional Concept route. During a later
+Registry update, the current/previous release keeps the main shell
+`ReadyOffline` only while it remains eligible, healthy, compatible and
+non-revoked. If accepted revocation or another eligibility loss removes that
+guarantee, even a waiting update re-resolves the ordered readiness function and
+may route to Limited/`RegistryDegraded`.
+The resolver branches on the ordered derived-readiness function, never a list
+of operation phases: every first-Init substate from head resolution through
+`HealthPending`, including Defer/waits and compensated terminal failure, lands
+in the same honest Limited boundary after the Init handoff.
+`RegistryDegraded` is a distinct authenticated degraded shell, not SafeMode or
+an unhandled fallthrough: it keeps only the state-table capabilities below,
+surfaces Registry status/repair, and re-resolves after every update, rollback
+or repair transition.
 
 ## 4. Top-level sitemap
 
@@ -126,6 +159,7 @@ flowchart TB
     Shell --> Settings["Settings<br/>MOB-SEC / DAT / MOD / NET / NTF / SYS"]
 
     Home --> NodeStatus["Node status"]
+    Home --> InitHub["Required Init data<br/>MOB-SCR-INI-001"]
     Home --> Operations["Operations center"]
     Home --> Inbox["Durable inbox"]
     Home --> Recent["Recent and drafts"]
@@ -179,25 +213,27 @@ flowchart TB
 | `MOB-SCR-ENT-001` | `/entry` | Bootstrap/route resolver; no product content | `MOB-FND-001..003` |
 | `MOB-SCR-ENT-002` | `/locked` | App unlock, credential/biometric result, queued-route summary without private text | `MOB-SEC-001` |
 | `MOB-SCR-ENT-003` | `/protected-data` | Explain device unlock/protected-data requirement; no retry loop against vault | `MOB-SEC-001`, `MOB-FND-004` |
-| `MOB-SCR-ENT-004` | `/recovering` | Operation/generation recovery progress and typed failure | `MOB-FND-002`, `MOB-HOM-005` |
+| `MOB-SCR-ENT-004` | `/recovering` | Operation/generation recovery progress and typed failure, including interrupted Registry activation | `MOB-FND-002`, `MOB-HOM-005`, `MOB-DAT-002/003` |
 | `MOB-SCR-ENT-005` | `/safe-mode` | Read-only browse where safe, verified export/restore/rollback and diagnostics | `MOB-FND-002/005`, `MOB-DAT-003/006/007`, `MOB-SYS-005/006` |
 | `MOB-SCR-ENT-006` | `/unavailable` | Stale route, disabled lane, unsupported capability or expired intent with safe fallback | `MOB-FND-005`, `MOB-SYS-006`, `MOB-NTF-004` |
 | `MOB-SCR-ONB-001` | `/onboarding/welcome` | Welcome, English/Vietnamese locale, autonomous-node explanation | `MOB-ONB-001` |
-| `MOB-SCR-ONB-002` | `/onboarding/preflight` | Device/runtime/storage/registry peak and optional capability report | `MOB-ONB-002`, `MOB-MOD-001` |
+| `MOB-SCR-ONB-002` | `/onboarding/preflight` | Device/runtime/storage and estimated Init peak plus optional capability report; final signed-manifest admission occurs in Init plan | `MOB-ONB-002`, `MOB-MOD-001` |
 | `MOB-SCR-ONB-003` | `/onboarding/identity` | Create a new node or import encrypted data with the current identity; typed identity recovery appears only after `RECOVERY` | `MOB-ONB-003`, `MOB-SEC-002/004`, `MOB-DAT-007` |
 | `MOB-SCR-ONB-004` | `/onboarding/security` | App lock; recovery method setup/verification appears only after `RECOVERY`, otherwise show a non-blocking readiness recommendation | `MOB-SEC-001/003` |
-| `MOB-SCR-ONB-005` | `/onboarding/registry` | Provision progress, exact bytes, pause/resume and errors | `MOB-ONB-004`, `MOB-DAT-001/002` |
-| `MOB-SCR-ONB-006` | `/onboarding/readiness` | Independent readiness facts; optional AI/notification education; network is non-actionable and has no setup route before `NETWORKED-BETA` | `MOB-ONB-005`, `MOB-HOM-001` |
+| `MOB-SCR-ONB-005` | `/onboarding/init-handoff` | Explain required post-launch data, app-package boundary and Limited mode, then enter canonical Init; Defer is offered only after explicit Begin resolves the exact signed plan | `MOB-ONB-004/005`, `MOB-DAT-001` |
+| `MOB-SCR-ONB-006` | `/onboarding/readiness` | Independent readiness facts; `ReadyOffline` only after exact Init activation; optional AI/notification education; node network is non-actionable before `NETWORKED-BETA` | `MOB-ONB-005`, `MOB-HOM-001` |
+| `MOB-SCR-INI-001` | `/init` | Canonical Init hub: before explicit Begin, explain the data/Limited boundary, make no Registry request, and disclose that accepting newer signed security metadata may advance anti-downgrade high-water or fence an explicitly revoked local release even though no large bytes can yet be scheduled. Afterward show the signed target and exact downloaded/verified/active bytes, wait/failure reason, Resume or open exact plan. Back navigation to Limited neither confirms nor cancels an operation; durable Defer is selected on `INI-002` | `MOB-ONB-004/005`, `MOB-DAT-001/002`, `MOB-HOM-001/005` |
+| `MOB-SCR-INI-002` | `/init/registry/plan` | Exact artifacts, signed publisher floor, initial/remaining local allocation/transfer/workspace/catalog/reserve terms, authoritative maximum versus current free bytes, transport source, metered/roaming/power/thermal facts and explicit Start now, wait-by-policy, scoped override or durable pre-confirm Defer | `MOB-ONB-002/004`, `MOB-DAT-002/004`, `MOB-FND-004`, `MOB-SYS-004` |
 
 ### 5.2 Home, status, operations, and activity
 
 | Screen ID | Logical path | Responsibility | Feature mapping |
 |---|---|---|---|
-| `MOB-SCR-HOM-001` | `/home` | Quick capture, recents, drafts, attention and independent state cards | `MOB-HOM-001..006` |
-| `MOB-SCR-HOM-002` | `/home/status` | Node data, runtime grants, registry, LLM, network, sync, seed and storage facts | `MOB-HOM-001`, `MOB-FND-001/004` |
+| `MOB-SCR-HOM-001` | `/home` | Quick capture, recents, drafts, attention and independent state cards; Limited mode keeps a persistent required-Init card | `MOB-HOM-001..006`, `MOB-ONB-005` |
+| `MOB-SCR-HOM-002` | `/home/status` | Node data, Init/registry, runtime grants, LLM, network, sync, seed and storage facts | `MOB-HOM-001`, `MOB-FND-001/004`, `MOB-DAT-001` |
 | `MOB-SCR-HOM-003` | `/home/recent` | Bounded recent items, drafts and interrupted user work | `MOB-HOM-003` |
-| `MOB-SCR-OPS-001` | `/operations` | Registry/model/import/backup/sync/seed jobs with pause reason and receipt | `MOB-HOM-004/005`, `MOB-DAT-002/006/007`, `MOB-MOD-003`, `MOB-NET-004/008` |
-| `MOB-SCR-OPS-002` | `/operations/:local_operation_ref` | One operation timeline, retry class, checkpoints and safe actions | `MOB-FND-002/004`, owning feature |
+| `MOB-SCR-OPS-001` | `/operations` | InitialRegistryProvision, registry/model/import/backup/sync/seed jobs with pause reason and receipt | `MOB-HOM-004/005`, `MOB-DAT-002/006/007`, `MOB-MOD-003`, `MOB-NET-004/008` |
+| `MOB-SCR-OPS-002` | `/operations/:local_operation_ref` | One authoritative operation timeline, exact bytes, retry/wait class, checkpoints, signer/hash/activation receipt and safe actions | `MOB-FND-002/004`, owning feature |
 | `MOB-SCR-NTF-001` | `/activity` | Authoritative durable inbox for approvals, security, jobs and reminders | `MOB-NTF-001` |
 | `MOB-SCR-NTF-002` | `/activity/:opaque_intent_ref` | Resolve current intent; show detail and validated reversible actions | `MOB-NTF-001/004` |
 
@@ -226,6 +262,11 @@ flowchart TB
 | `MOB-SCR-MED-004` | `/library/media/:local_manifest_ref/transfer` | Missing pieces, provider sample, progress, resume and failure evidence for explicit received-media download/stream/view | `MOB-MED-005/006/010` |
 | `MOB-SCR-MED-005` | `/library/my-media` | Local media shelf separated by `OwnedOriginal`, private attachment, pinned and cache retention facts | `MOB-MED-001/003/007` |
 | `MOB-SCR-MED-006` | `/library/received-media` | Received KU/direct-share media shelf with `ReferenceOnly`/partial/complete availability and explicit download/stream/view actions | `MOB-MED-002/005/008..010` |
+
+When no Registry release is active, Concept browse, Concept-dependent search,
+local KQL/graph, deterministic KU Encode and CCID validation are redirected to
+the recoverable Init hub. Limited mode does not route them through generic
+`/unavailable` or execute them against partial files.
 
 ### 5.4 Capture
 
@@ -327,12 +368,12 @@ none may skip `AttemptCommitted` before `TargetRevealed`.
 
 | Screen ID | Logical path | Responsibility | Feature mapping |
 |---|---|---|---|
-| `MOB-SCR-DAT-001` | `/settings/registry` | Active/previous release, exact artifacts, verification and update action | `MOB-DAT-001..003` |
-| `MOB-SCR-DAT-002` | `/settings/registry/update` | Capacity preflight, transfer/verify/activate progress and rollback | `MOB-DAT-002/003` |
+| `MOB-SCR-DAT-001` | `/settings/registry` | Required target, staged, active/previous release, exact artifacts, verification and Init/update/repair actions | `MOB-DAT-001..003` |
+| `MOB-SCR-DAT-002` | `/settings/registry/update` | Reuse the Init plan/operation engine for capacity, transfer, verify, activate and rollback; the prior release remains queryable only while eligible, healthy, compatible and non-revoked, otherwise this route re-resolves the derived readiness state | `MOB-DAT-002/003/004` |
 | `MOB-SCR-DAT-003` | `/settings/storage` | Protected/registry/model/media/staging/rollback/reclaimable breakdown | `MOB-DAT-004` |
 | `MOB-SCR-DAT-004` | `/settings/storage/cleanup` | Eligible cleanup preview and recoverable operation | `MOB-DAT-005`, `MOB-MED-007` |
 | `MOB-SCR-DAT-005` | `/settings/backup` | Create and inspect vault-encrypted/versioned backup generations | `MOB-DAT-006` |
-| `MOB-SCR-DAT-006` | `/settings/restore` | Inspect encrypted archive and verify/stage/activate a current-identity data import; identity recovery mode appears only after `RECOVERY` | `MOB-DAT-007`, `MOB-SEC-004` |
+| `MOB-SCR-DAT-006` | `/settings/restore` | Inspect encrypted archive, show per-channel/global whole-binding high-water selection or `UpgradeRequiredForRegistryTrustProfile`, then verify/stage/activate a current-identity data import; identity recovery mode appears only after `RECOVERY` | `MOB-DAT-007`, `MOB-SEC-004` |
 | `MOB-SCR-DAT-007` | `/settings/export` | Select reviewed scope and create a vault-encrypted portable export; no plaintext private export | `MOB-DAT-008` |
 | `MOB-SCR-DAT-008` | `/settings/migration` | T3 encrypted device migration, target verification and source identity retirement decision | `MOB-DAT-009`, `MOB-SEC-004` |
 
@@ -400,12 +441,31 @@ M6.
 ```text
 Welcome / locale
   -> autonomous-node explanation
-  -> device and exact storage preflight
+  -> device and estimated storage preflight
   -> create node OR encrypted current-identity data import
   -> app lock [-> typed recovery setup when RECOVERY is available]
-  -> exact Concept Registry provision
-  -> readiness summary
+  -> required-data handoff
+  -> canonical Init hub
+  -> explicit Begin Init
+  -> signed manifest + exact capacity/network/energy plan
+  -> exact Confirm download
+  -> durable InitialRegistryProvision operation
+  -> resumable download + complete verification + query smoke
+  -> immutable stage + artifact-verification receipt
+  -> atomic pointer + separate activation receipt
+  -> HealthPending -> operation Completed
+  -> independent readiness requery
+  -> ONB-006 readiness summary
   -> main shell
+
+OR from the exact plan:
+
+  -> registry.init_defer(op_id, manifest_digest)
+  -> durable Limited-mode receipt; no large transfer scheduled
+  -> Limited Home
+  -> return to canonical Init later
+  -> registry.init_resume_deferred(op_id)
+  -> re-resolve/revalidate current signed target; confirm again
 ```
 
 Rules:
@@ -413,12 +473,26 @@ Rules:
 - The wizard is resumable by durable step ID.
 - It does not ask for camera, microphone, notification, LAN, or cloud access
   before the user selects a feature that needs it.
-- Registry provisioning may expose a limited shell for private capture,
-  Operations, storage and diagnostics, but the node is labelled
-  `Provisioning`, not `Ready`.
+- The production APK/AAB/IPA and install-time asset packs contain no
+  `concepts.obr`, CCID index or label index bytes. Init begins only after first
+  launch; its large artifact transfer begins only after exact
+  capacity/network policy review and confirmation.
+- Init may expose a Limited shell for encrypted raw capture/drafts, Home
+  status, Operations, storage/cleanup, diagnostics/about and safe Settings.
+  Concept/KQL/graph/KU-Encode routes stay blocked until exact activation.
+- Offline, low storage, metered policy, charging, battery, thermal and OS
+  budget constraints are typed waiting states. A user-paused transfer is not
+  silently resubmitted; Resume requires a foreground action.
+- Registry artifact HTTPS/OS transfer is required product-data distribution
+  under `REGISTRY`, not peer/P2P participation and not `NETWORKED-BETA`.
+- Initial activation failure leaves the node Limited with no active release;
+  update failure may keep only an eligible healthy, compatible, non-revoked
+  previous release; otherwise readiness re-derives `Provisioning` or
+  `RegistryDegraded`. No path mixes generations.
 - Optional model/provider setup is skippable and normally occurs from Assistant
   or Settings after the offline node works.
-- Offline MVP completion does not require the identity-recovery gate. Opting
+- Offline MVP completion starts after required Init activation and does not
+  require the identity-recovery gate. Opting
   into Networked Beta requires a verified typed recovery package first.
 - Network/seeding setup is absent until T2 gates are open and defaults Off.
 
@@ -442,7 +516,7 @@ The following never run as a lightweight one-tap background action:
 
 - unlock and sensitive re-authentication;
 - identity creation, recovery, replace/import and erase;
-- registry/model capacity preflight and activation;
+- first-launch Init and registry/model capacity preflight and activation;
 - cloud context or tool-result disclosure;
 - tool proposal confirmation for a risk-gated effect;
 - exact Public UseEvidence prepare and confirm;
@@ -543,7 +617,7 @@ Active network discovery remains `MOB-NET-006`, absent before M6.
 
 | Journey | Primary screen flow | Required gate boundary |
 |---|---|---|
-| `MOB-JRN-001` | `MOB-SCR-ONB-001..006` → `MOB-SCR-HOM-001` | `CORE`, `ARCHIVE`, `REGISTRY`, `OFFLINE-MVP` |
+| `MOB-JRN-001` | ready: `MOB-SCR-ONB-001..005` → `MOB-SCR-INI-001/002` → `MOB-SCR-OPS-002` → `MOB-SCR-ONB-006` → `MOB-SCR-HOM-001`; defer: `MOB-SCR-INI-002` → Limited `MOB-SCR-HOM-001` → `MOB-SCR-INI-001` later | `CORE`, `ARCHIVE`, `REGISTRY`, `OFFLINE-MVP` |
 | `MOB-JRN-002` | `MOB-SCR-CAP-001..008` | T1; `MEDIA`, `SPEECH`, `AI/CLOUD` only by selected route |
 | `MOB-JRN-003` | `MOB-SCR-LIB-001..006` → `MOB-SCR-KNO-001` | T1 local scope; `AI` only for optional rerank |
 | `MOB-JRN-004` | `MOB-SCR-AI-001..006` | deterministic T1 baseline; `AI/CLOUD` only by selected provider |
@@ -563,9 +637,11 @@ Active network discovery remains `MOB-NET-006`, absent before M6.
 ```text
 untrusted route/source
   -> parse version and enforce bounds
-  -> feature/rollout gate
   -> bootstrap and dataset recovery
-  -> unlock/re-authentication if required
+  -> protected-data + unlock/re-authentication gate; retain only opaque route
+  -> unfinished-onboarding cursor
+  -> required-Registry gate; retain route and open Init after authentication
+  -> feature/rollout gate
   -> resolve opaque local intent/reference
   -> query current state/generation
   -> open preview/detail
@@ -613,15 +689,16 @@ External URLs never contain:
 
 | State | Reachable areas | Restrictions and message |
 |---|---|---|
-| `FirstRun` | onboarding, support/about | no product data route before bootstrap |
+| `FirstRun` | onboarding, Init, support/about | executable is a bootstrap shell; no large required data is assumed present |
 | `Locked` | unlock, non-sensitive support, recovery entry | no private title/count/content |
 | `ProtectedDataUnavailable` | explanation and retry after device unlock | no vault/signer loop or background auth |
-| `Provisioning` | raw encrypted private draft only, Operations, storage, diagnostics, onboarding registry | no Concept validation/materialization until registry activation; not `Ready` |
+| `InitRequired/Paused` (no healthy active release) | Limited Home, encrypted raw draft, Init, Operations, storage/cleanup, diagnostics/about, safe Settings | exact reason and Resume/plan CTA; no Concept/KQL/graph/KU-Encode route and not `ReadyOffline` |
+| `InitialInitRunning/Waiting` (no healthy active release) | same Limited shell plus Init/Operations progress and safe Settings | covers every phase through first `HealthPending`; waits carry a durable resume state, no partial artifact is queryable, and completion triggers route/readiness re-resolution rather than an unconditional route to Main |
 | `Recovering` | recovery progress, cancel only when safe, diagnostics | no new mutation admission |
-| `ReadyOffline` | Home, Capture, self-encode/private Save, My KU/media, cached Received KU/media/fidelity/matches, deterministic Assistant, Settings | network facts say disabled/unreachable, not error; cached remote-origin data keeps its last observed provenance/availability |
+| `ReadyOffline` | Home, Capture, self-encode/private Save, My KU/media, cached Received KU/media/fidelity/matches, deterministic Assistant, Settings | network facts say disabled/unreachable, not error; cached remote-origin data keeps its last observed provenance/availability; a waiting/downloading update remains here only while the current/previous release is eligible, healthy, compatible and non-revoked, otherwise routing re-resolves from the derived state |
 | `ModelUnavailable` | all core local features | Assistant/provider screens explain exact reason/fallback |
 | `NetworkUnavailable` | all private/offline features | outbound work remains pending within policy |
-| `RegistryDegraded` | private knowledge/detail/export/repair | Concept lookup/search shows named release limitation |
+| `RegistryDegraded` | private knowledge/detail/export plus Registry repair/rollback/redownload | Concept lookup/search shows named release limitation; repair never resets private data |
 | `StoragePressureReadOnly` | browse, backup/export, cleanup, diagnostics | block new capture/import/download with exact required bytes |
 | `SafeMode` | safe read-only data, verified export/restore/rollback, diagnostics | no automatic reset or unsafe mutation |
 
@@ -653,6 +730,18 @@ claim.
 - Each tab restores its bounded back stack without treating UI state as durable
   operation truth.
 - Network/AI/notification permission denial leaves private offline flows usable.
+- A clean install never reports `ReadyOffline` until every large artifact of
+  one signed release passes exact verification, query smoke and atomic
+  activation, its health gate completes and readiness is independently
+  re-derived; APK/AAB/IPA/install-time packs provide none of those bytes.
+- Init does not start its multi-GB transfer before exact capacity and network
+  policy review, resumes correctly after kill/reboot/network change, and scopes
+  any metered/roaming override to the selected operation.
+- Initial activation failure stays Limited; an update keeps the previous
+  release active until atomic swap only while it remains eligible, healthy,
+  compatible and non-revoked. Accepted revocation or eligibility loss routes
+  through the derived degraded/provisioning state, and repair never deletes
+  private node data.
 - T1 self-encode/private Save survives airplane mode and process death; no
   publish action exists until the generic KU publication gate closes.
 - My/Received shelves preserve authorship, sender, acquisition, retention and
