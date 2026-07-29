@@ -118,34 +118,13 @@ jobs:
           disable-animations: true
           working-directory: src/onebrain-mobile
           script: |
-            if ! flutter test integration_test/native_host_bridge_test.dart -d emulator-5554; then
-              echo "::error title=MOB-04 native host bridge::gate failed"
-              exit 1
-            fi
-            if ! flutter build apk --debug; then
-              echo "::error title=MOB-04 rebuild after host integration::gate failed"
-              exit 1
-            fi
-            if ! python tool/verify_android_share_intent.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554; then
-              echo "::error title=MOB-04 Android share intent::gate failed"
-              exit 1
-            fi
-            if ! flutter build apk --debug; then
-              echo "::error title=MOB-04 rebuild after share integration::gate failed"
-              exit 1
-            fi
-            if ! python tool/verify_android_runtime_recovery.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554; then
-              echo "::error title=MOB-04 Android process recovery::gate failed"
-              exit 1
-            fi
-            if ! python tool/verify_android_install_binding_fail_closed.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554; then
-              echo "::error title=MOB-04 Android install binding::gate failed"
-              exit 1
-            fi
-            if ! python tool/verify_android_media_picker.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554; then
-              echo "::error title=MOB-04 Android media picker::gate failed"
-              exit 1
-            fi
+            flutter test integration_test/native_host_bridge_test.dart -d emulator-5554 || (echo "::error title=MOB-04 native host bridge::gate failed"; exit 1)
+            flutter build apk --debug || (echo "::error title=MOB-04 rebuild after host integration::gate failed"; exit 1)
+            python tool/verify_android_share_intent.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554 || (echo "::error title=MOB-04 Android share intent::gate failed"; exit 1)
+            flutter build apk --debug || (echo "::error title=MOB-04 rebuild after share integration::gate failed"; exit 1)
+            python tool/verify_android_runtime_recovery.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554 || (echo "::error title=MOB-04 Android process recovery::gate failed"; exit 1)
+            python tool/verify_android_install_binding_fail_closed.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554 || (echo "::error title=MOB-04 Android install binding::gate failed"; exit 1)
+            python tool/verify_android_media_picker.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554 || (echo "::error title=MOB-04 Android media picker::gate failed"; exit 1)
       - name: Build BootstrapOnly Android release APK
         run: |
           python tool/build_rust_android.py --release
