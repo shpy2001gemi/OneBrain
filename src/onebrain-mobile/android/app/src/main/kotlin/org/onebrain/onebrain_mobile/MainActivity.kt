@@ -1,0 +1,130 @@
+package org.onebrain.onebrain_mobile
+
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import java.util.UUID
+import org.onebrain.onebrain_mobile.generated.FlutterError
+import org.onebrain.onebrain_mobile.generated.HostBootstrapSnapshot
+import org.onebrain.onebrain_mobile.generated.HostOperationEvent
+import org.onebrain.onebrain_mobile.generated.HostOperationEventKind
+import org.onebrain.onebrain_mobile.generated.HostOperationEventsStreamHandler
+import org.onebrain.onebrain_mobile.generated.MobileHostApi
+import org.onebrain.onebrain_mobile.generated.PigeonEventSink
+
+private const val HOST_API_VERSION = "1"
+private const val MAX_FEASIBILITY_DELAY_MILLIS = 30_000L
+
+class MainActivity : FlutterActivity() {
+    private lateinit var hostApi: AndroidMobileHost
+    private lateinit var hostEvents: AndroidHostEvents
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        hostEvents = AndroidHostEvents()
+        hostApi = AndroidMobileHost(hostEvents)
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+        MobileHostApi.setUp(messenger, hostApi)
+        HostOperationEventsStreamHandler.register(messenger, hostEvents)
+    }
+}
+
+private class AndroidHostEvents : HostOperationEventsStreamHandler() {
+    private var sink: PigeonEventSink<HostOperationEvent>? = null
+
+    override fun onListen(p0: Any?, sink: PigeonEventSink<HostOperationEvent>) {
+        this.sink = sink
+    }
+
+    override fun onCancel(p0: Any?) {
+        sink = null
+    }
+
+    fun emit(event: HostOperationEvent) {
+        sink?.success(event)
+    }
+}
+
+private class AndroidMobileHost(
+    private val events: AndroidHostEvents,
+) : MobileHostApi {
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val pending = mutableMapOf<String, Runnable>()
+
+    override fun inspectBootstrapHost(
+        callback: (Result<HostBootstrapSnapshot>) -> Unit,
+    ) {
+        callback(
+            Result.success(
+                HostBootstrapSnapshot(
+                    platform = "Android ${Build.VERSION.RELEASE}",
+                    apiVersion = HOST_API_VERSION,
+                    registryRequestIssued = false,
+                    rustCoreLinked = false,
+                ),
+            ),
+        )
+    }
+
+    override fun startFeasibilityOperation(
+        delayMilliseconds: Long,
+        callback: (Result<String>) -> Unit,
+    ) {
+        if (delayMilliseconds !in 0..MAX_FEASIBILITY_DELAY_MILLIS) {
+            callback(
+                Result.failure(
+                    FlutterError(
+                        code = "HOST_INVALID_DELAY",
+                        message = "delayMilliseconds must be between 0 and 30000",
+                    ),
+                ),
+            )
+            return
+        }
+
+        val operationId = UUID.randomUUID().toString()
+        val completion = Runnable {
+            if (pending.remove(operationId) != null) {
+                events.emit(
+                    HostOperationEvent(
+                        operationId = operationId,
+                        kind = HostOperationEventKind.COMPLETED,
+                        code = "HOST_OPERATION_COMPLETED",
+                    ),
+                )
+            }
+        }
+        pending[operationId] = completion
+        events.emit(
+            HostOperationEvent(
+                operationId = operationId,
+                kind = HostOperationEventKind.STARTED,
+                code = "HOST_OPERATION_STARTED",
+            ),
+        )
+        mainHandler.postDelayed(completion, delayMilliseconds)
+        callback(Result.success(operationId))
+    }
+
+    override fun cancelFeasibilityOperation(
+        operationId: String,
+        callback: (Result<Boolean>) -> Unit,
+    ) {
+        val pendingOperation = pending.remove(operationId)
+        if (pendingOperation == null) {
+            callback(Result.success(false))
+            return
+        }
+        mainHandler.removeCallbacks(pendingOperation)
+        events.emit(
+            HostOperationEvent(
+                operationId = operationId,
+                kind = HostOperationEventKind.CANCELLED,
+                code = "HOST_OPERATION_CANCELLED",
+            ),
+        )
+        callback(Result.success(true))
+    }
+}

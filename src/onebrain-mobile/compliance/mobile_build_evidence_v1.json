@@ -2,8 +2,8 @@
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
   "authority_set_sha256": "6aed044e06f2636e11f53904c612fc39d5a8b0eb683ae08c96986edbfd4b942c",
-  "phase": "pre_scaffold",
-  "work_package": "MOB-00",
+  "phase": "foundation",
+  "work_package": "MOB-01",
   "acknowledged_required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -16,9 +16,46 @@
     "docs/design/mobile/tokens/mobile_design_tokens_v1.json",
     "docs/design/mobile/README.md"
   ],
-  "affected_ids": [],
-  "evidence": [],
+  "affected_ids": [
+    "MOB-FND-003",
+    "MOB-ONB-001",
+    "MOB-SCR-ENT-001",
+    "MOB-SCR-ONB-001",
+    "OBM-CMP-NAV-002",
+    "OBM-CMP-ACT-001",
+    "OBM-CMP-STA-001",
+    "OBM-CMP-STA-002",
+    "OBM-PAT-001",
+    "OBM-PAT-002"
+  ],
+  "evidence": [
+    {
+      "id": "MOB-01-FLUTTER-TESTS",
+      "path": "src/onebrain-mobile/test/widget_test.dart",
+      "proves": "Entry resolution, English/Vietnamese switching, shared component composition, generated theme extensions, and 200 percent text reflow."
+    },
+    {
+      "id": "MOB-01-TOKEN-GENERATION",
+      "path": "src/onebrain-mobile/tool/generate_design_tokens.dart",
+      "proves": "Deterministic projection from the pinned mobile design-token JSON into checked-in Dart constants."
+    },
+    {
+      "id": "MOB-01-PIGEON-CONTRACT",
+      "path": "src/onebrain-mobile/pigeons/mobile_host_api.dart",
+      "proves": "One schema generates typed Dart, Kotlin, and Swift async calls, bounded errors, cancellation, and an event stream."
+    },
+    {
+      "id": "MOB-01-ANDROID-PACKAGE-INVENTORY",
+      "path": "src/onebrain-mobile/compliance/reports/mob01_android_debug_package_inventory.json",
+      "proves": "The built Android debug APK contains no prohibited Registry, database, index, model, or archive payload."
+    },
+    {
+      "id": "MOB-01-ANDROID-EMULATOR-SMOKE",
+      "path": "src/onebrain-mobile/compliance/reports/mob01_android_emulator_semantics.xml",
+      "proves": "Android 16 launched the app and exposed the typed native-host API version in platform accessibility semantics."
+    }
+  ],
   "deviations": [],
   "last_reviewed": "2026-07-29",
-  "notes": "Compliance harness established; Flutter implementation has not started."
+  "notes": "MOB-01 foundation slice started: Flutter iOS/Android scaffold, generated design tokens, shared catalog widgets, en/vi bootstrap UI, and typed Pigeon native-host feasibility evidence. This phase makes no ReadyOffline or product-readiness claim."
 }

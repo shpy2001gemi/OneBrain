@@ -1,0 +1,112 @@
+// ignore: unused_import
+import 'package:intl/intl.dart' as intl;
+import 'app_localizations.dart';
+
+// ignore_for_file: type=lint
+
+/// The translations for Vietnamese (`vi`).
+class AppLocalizationsVi extends AppLocalizations {
+  AppLocalizationsVi([String locale = 'vi']) : super(locale);
+
+  @override
+  String get appTitle => 'OneBrain';
+
+  @override
+  String get bootstrapEyebrow => 'NODE DI ĐỘNG TỰ CHỦ';
+
+  @override
+  String get entryResolving => 'Đang mở node này…';
+
+  @override
+  String get welcomeTitle => 'Nuôi dưỡng ý tưởng trên node của bạn';
+
+  @override
+  String get welcomeBody =>
+      'Điện thoại này là một node OneBrain độc lập. Đây không phải ứng dụng đi kèm desktop và có thể giữ công việc riêng tư ngay trên thiết bị.';
+
+  @override
+  String get languageTitle => 'Chọn ngôn ngữ giao diện';
+
+  @override
+  String get languageEnglish => 'English';
+
+  @override
+  String get languageVietnamese => 'Tiếng Việt';
+
+  @override
+  String get nodeFactTitle => 'Ranh giới của node';
+
+  @override
+  String get nodeFactBody =>
+      'Flutter trình bày trạng thái có kiểu. Lớp native và Rust sở hữu tác vụ nền tảng, dữ liệu bền vững, chính sách, chữ ký và công cụ.';
+
+  @override
+  String get registryFactTitle => 'Dữ liệu tri thức bắt buộc';
+
+  @override
+  String get registryFactBody =>
+      'Concept Registry không được đóng gói trong ứng dụng. Luồng Init sau này chỉ tải dữ liệu sau khi người dùng xem kế hoạch và xác nhận rõ ràng.';
+
+  @override
+  String get requestFactTitle => 'Mạng trước Init';
+
+  @override
+  String get requestFactBody =>
+      'Màn hình khởi tạo này không gửi yêu cầu tải artifact Registry.';
+
+  @override
+  String get nativeHostTitle => 'Native host';
+
+  @override
+  String get nativeHostLoading => 'Đang kiểm tra host của thiết bị…';
+
+  @override
+  String nativeHostReady(String platform, String apiVersion) {
+    return 'Host $platform sẵn sàng · API $apiVersion';
+  }
+
+  @override
+  String get nativeHostUnavailable =>
+      'Native host không khả dụng trong môi trường này. Giao diện khởi tạo vẫn dùng được.';
+
+  @override
+  String get continueAction => 'Tiếp tục kiểm tra thiết bị';
+
+  @override
+  String get galleryAction => 'Xem component dùng chung';
+
+  @override
+  String get galleryTitle => 'Thư viện component dùng chung';
+
+  @override
+  String get galleryBody =>
+      'Các điều khiển này bọc primitive Material 3 và dùng lại semantic token của OneBrain.';
+
+  @override
+  String get primaryButton => 'Hành động chính';
+
+  @override
+  String get tonalButton => 'Hành động tonal';
+
+  @override
+  String get outlineButton => 'Hành động viền';
+
+  @override
+  String get statusReady => 'Giao diện khởi tạo sẵn sàng';
+
+  @override
+  String get statusWaiting => 'Chưa bắt đầu Registry Init';
+
+  @override
+  String get statusPrivate => 'Phạm vi riêng tư cục bộ';
+
+  @override
+  String get backAction => 'Quay lại';
+
+  @override
+  String get notImplementedTitle => 'Bước nền tảng tiếp theo';
+
+  @override
+  String get notImplementedBody =>
+      'Kiểm tra dung lượng thiết bị và kế hoạch Init có xác nhận chưa được mô phỏng trong lát cắt này.';
+}

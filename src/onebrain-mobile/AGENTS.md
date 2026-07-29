@@ -40,6 +40,15 @@ changing code. Record the current authority-set digest and work package in
 - UI uses generated semantic design tokens and catalog components. Raw
   per-screen colors, spacing, radius, motion, or one-off screen architecture are
   prohibited.
+- Prefer an actively maintained Flutter package, native SDK/API, AndroidX
+  library, Apple framework, or existing Rust crate when it already owns the
+  required behavior. Record why any custom replacement is necessary; do not
+  rebuild routing, typed platform channels, pickers, schedulers, media codecs,
+  cryptography, databases, or transport primitives in application code.
+- Feature screens compose the shared widgets under `lib/ui/shared/`. They do
+  not clone Material controls or create screen-local copies of a catalog
+  component. Shared widgets wrap maintained primitives and expose OneBrain
+  tokens, typed variants, semantics, and stable `OBM-CMP-*` contracts.
 - English and Vietnamese, accessibility, 200% text, reduced motion, compact
   phone, and adaptive tablet behavior are part of the feature—not polish added
   later.

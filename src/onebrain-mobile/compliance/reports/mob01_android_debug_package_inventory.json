@@ -1,0 +1,62 @@
+{
+  "entry_count": 147,
+  "forbidden_payload_count": 0,
+  "format": "onebrain.mobile.package-inventory/1",
+  "generated_at": "2026-07-29T14:28:01.456938+00:00",
+  "largest_entries": [
+    {
+      "compressed_bytes": 18949466,
+      "path": "assets/flutter_assets/kernel_blob.bin",
+      "uncompressed_bytes": 55178152
+    },
+    {
+      "compressed_bytes": 38359216,
+      "path": "lib/x86_64/libflutter.so",
+      "uncompressed_bytes": 38359216
+    },
+    {
+      "compressed_bytes": 37163552,
+      "path": "lib/arm64-v8a/libflutter.so",
+      "uncompressed_bytes": 37163552
+    },
+    {
+      "compressed_bytes": 31628228,
+      "path": "lib/armeabi-v7a/libflutter.so",
+      "uncompressed_bytes": 31628228
+    },
+    {
+      "compressed_bytes": 15254624,
+      "path": "lib/arm64-v8a/libVkLayer_khronos_validation.so",
+      "uncompressed_bytes": 15254624
+    },
+    {
+      "compressed_bytes": 4206792,
+      "path": "assets/flutter_assets/isolate_snapshot_data",
+      "uncompressed_bytes": 11028680
+    },
+    {
+      "compressed_bytes": 2747352,
+      "path": "classes.dex",
+      "uncompressed_bytes": 7062844
+    },
+    {
+      "compressed_bytes": 593046,
+      "path": "assets/flutter_assets/fonts/MaterialIcons-Regular.otf",
+      "uncompressed_bytes": 1645184
+    },
+    {
+      "compressed_bytes": 104276,
+      "path": "assets/flutter_assets/NOTICES.Z",
+      "uncompressed_bytes": 105640
+    },
+    {
+      "compressed_bytes": 59092,
+      "path": "resources.arsc",
+      "uncompressed_bytes": 59092
+    }
+  ],
+  "package": "app-debug.apk",
+  "package_bytes": 149238634,
+  "package_sha256": "41c455f795604495c9fe3f25c4a88111f0e7323b7631d0b086d7923287cedd1a",
+  "violations": []
+}

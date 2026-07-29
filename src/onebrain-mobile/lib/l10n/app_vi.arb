@@ -1,0 +1,40 @@
+{
+  "@@locale": "vi",
+  "appTitle": "OneBrain",
+  "bootstrapEyebrow": "NODE DI ĐỘNG TỰ CHỦ",
+  "entryResolving": "Đang mở node này…",
+  "welcomeTitle": "Nuôi dưỡng ý tưởng trên node của bạn",
+  "welcomeBody": "Điện thoại này là một node OneBrain độc lập. Đây không phải ứng dụng đi kèm desktop và có thể giữ công việc riêng tư ngay trên thiết bị.",
+  "languageTitle": "Chọn ngôn ngữ giao diện",
+  "languageEnglish": "English",
+  "languageVietnamese": "Tiếng Việt",
+  "nodeFactTitle": "Ranh giới của node",
+  "nodeFactBody": "Flutter trình bày trạng thái có kiểu. Lớp native và Rust sở hữu tác vụ nền tảng, dữ liệu bền vững, chính sách, chữ ký và công cụ.",
+  "registryFactTitle": "Dữ liệu tri thức bắt buộc",
+  "registryFactBody": "Concept Registry không được đóng gói trong ứng dụng. Luồng Init sau này chỉ tải dữ liệu sau khi người dùng xem kế hoạch và xác nhận rõ ràng.",
+  "requestFactTitle": "Mạng trước Init",
+  "requestFactBody": "Màn hình khởi tạo này không gửi yêu cầu tải artifact Registry.",
+  "nativeHostTitle": "Native host",
+  "nativeHostLoading": "Đang kiểm tra host của thiết bị…",
+  "nativeHostReady": "Host {platform} sẵn sàng · API {apiVersion}",
+  "@nativeHostReady": {
+    "placeholders": {
+      "platform": {"type": "String"},
+      "apiVersion": {"type": "String"}
+    }
+  },
+  "nativeHostUnavailable": "Native host không khả dụng trong môi trường này. Giao diện khởi tạo vẫn dùng được.",
+  "continueAction": "Tiếp tục kiểm tra thiết bị",
+  "galleryAction": "Xem component dùng chung",
+  "galleryTitle": "Thư viện component dùng chung",
+  "galleryBody": "Các điều khiển này bọc primitive Material 3 và dùng lại semantic token của OneBrain.",
+  "primaryButton": "Hành động chính",
+  "tonalButton": "Hành động tonal",
+  "outlineButton": "Hành động viền",
+  "statusReady": "Giao diện khởi tạo sẵn sàng",
+  "statusWaiting": "Chưa bắt đầu Registry Init",
+  "statusPrivate": "Phạm vi riêng tư cục bộ",
+  "backAction": "Quay lại",
+  "notImplementedTitle": "Bước nền tảng tiếp theo",
+  "notImplementedBody": "Kiểm tra dung lượng thiết bị và kế hoạch Init có xác nhận chưa được mô phỏng trong lát cắt này."
+}

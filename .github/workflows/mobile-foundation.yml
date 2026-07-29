@@ -1,0 +1,99 @@
+name: Mobile foundation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/mobile-foundation.yml"
+      - "docs/design/mobile/**"
+      - "docs/features/mobile/**"
+      - "docs/research/WIP_MOBILE_APP_*.md"
+      - "scripts/ci/validate_mobile_build_contracts.py"
+      - "src/onebrain-mobile/**"
+  push:
+    branches:
+      - "codex/mobile-*"
+    paths:
+      - ".github/workflows/mobile-foundation.yml"
+      - "src/onebrain-mobile/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-foundation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Flutter tests and Android debug package
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: src/onebrain-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.5"
+          channel: stable
+          cache: true
+      - name: Resolve packages
+        run: flutter pub get
+      - name: Verify generated design tokens
+        run: |
+          dart run tool/generate_design_tokens.dart
+          python tool/normalize_generated_sources.py
+          git diff --exit-code -- lib/design/generated/mobile_design_tokens.g.dart
+      - name: Verify generated typed host APIs
+        run: |
+          dart run pigeon --input pigeons/mobile_host_api.dart
+          python tool/normalize_generated_sources.py
+          git diff --exit-code -- \
+            lib/platform/generated/mobile_host_api.g.dart \
+            android/app/src/main/kotlin/org/onebrain/onebrain_mobile/generated/MobileHostApi.g.kt \
+            ios/Runner/Generated/MobileHostApi.g.swift
+      - name: Generate localization
+        run: |
+          flutter gen-l10n
+          git diff --exit-code -- lib/l10n/app_localizations*.dart
+      - name: Analyze
+        run: flutter analyze
+      - name: Test
+        run: flutter test
+      - name: Build Android debug APK
+        run: flutter build apk --debug
+      - name: Reject bundled Registry and model payloads
+        run: >-
+          python tool/scan_mobile_package.py
+          build/app/outputs/flutter-apk/app-debug.apk
+      - name: Validate owner-approved mobile contracts
+        working-directory: .
+        run: |
+          python scripts/ci/validate_mobile_build_contracts.py
+          python -m unittest scripts.ci.test_validate_mobile_build_contracts
+
+  ios:
+    name: iOS simulator compile
+    runs-on: macos-15
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: src/onebrain-mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.5"
+          channel: stable
+          cache: true
+      - name: Resolve packages
+        run: flutter pub get
+      - name: Generate localization and typed host APIs
+        run: |
+          flutter gen-l10n
+          dart run pigeon --input pigeons/mobile_host_api.dart
+          python tool/normalize_generated_sources.py
+      - name: Compile iOS simulator app
+        run: flutter build ios --simulator --debug

@@ -1,0 +1,40 @@
+{
+  "@@locale": "en",
+  "appTitle": "OneBrain",
+  "bootstrapEyebrow": "AUTONOMOUS MOBILE NODE",
+  "entryResolving": "Opening this node…",
+  "welcomeTitle": "Grow ideas on your own node",
+  "welcomeBody": "This phone is an independent OneBrain node. It is not a desktop companion and can keep private work local.",
+  "languageTitle": "Choose your interface language",
+  "languageEnglish": "English",
+  "languageVietnamese": "Tiếng Việt",
+  "nodeFactTitle": "Node boundary",
+  "nodeFactBody": "Flutter presents typed state. Native and Rust layers own platform work, durable data, policy, signing, and tools.",
+  "registryFactTitle": "Required knowledge data",
+  "registryFactBody": "Concept Registry data is not bundled in the app. A later Init flow downloads it only after an explicit plan and confirmation.",
+  "requestFactTitle": "Network before Init",
+  "requestFactBody": "No Registry artifact request is made from this bootstrap screen.",
+  "nativeHostTitle": "Native host",
+  "nativeHostLoading": "Inspecting the device host…",
+  "nativeHostReady": "{platform} host ready · API {apiVersion}",
+  "@nativeHostReady": {
+    "placeholders": {
+      "platform": {"type": "String"},
+      "apiVersion": {"type": "String"}
+    }
+  },
+  "nativeHostUnavailable": "Native host is unavailable in this environment. The bootstrap UI remains usable.",
+  "continueAction": "Continue to device preflight",
+  "galleryAction": "View shared components",
+  "galleryTitle": "Shared component gallery",
+  "galleryBody": "These controls wrap Material 3 primitives and reuse OneBrain semantic tokens.",
+  "primaryButton": "Primary action",
+  "tonalButton": "Tonal action",
+  "outlineButton": "Outline action",
+  "statusReady": "Bootstrap UI ready",
+  "statusWaiting": "Registry Init not started",
+  "statusPrivate": "Private local scope",
+  "backAction": "Back",
+  "notImplementedTitle": "Next foundation step",
+  "notImplementedBody": "Device storage preflight and explicit Init planning are intentionally not simulated in this slice."
+}
