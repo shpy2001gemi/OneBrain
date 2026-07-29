@@ -1,0 +1,47 @@
+{
+  "android_release": "16",
+  "build": "debug",
+  "component": "org.onebrain.onebrain_mobile/.MainActivity",
+  "device": "sdk_gphone64_x86_64",
+  "format": "onebrain.mobile.android-startup-baseline/1",
+  "generated_at": "2026-07-29T15:01:34.532341+00:00",
+  "limits": "Debug emulator feasibility baseline only; not a release SLO or physical-device launch claim.",
+  "sample_count": 5,
+  "samples": [
+    {
+      "activity": "org.onebrain.onebrain_mobile/.MainActivity",
+      "sample": 1,
+      "total_time_ms": 3862,
+      "wait_time_ms": 3865
+    },
+    {
+      "activity": "org.onebrain.onebrain_mobile/.MainActivity",
+      "sample": 2,
+      "total_time_ms": 3770,
+      "wait_time_ms": 3776
+    },
+    {
+      "activity": "org.onebrain.onebrain_mobile/.MainActivity",
+      "sample": 3,
+      "total_time_ms": 3256,
+      "wait_time_ms": 3258
+    },
+    {
+      "activity": "org.onebrain.onebrain_mobile/.MainActivity",
+      "sample": 4,
+      "total_time_ms": 3766,
+      "wait_time_ms": 3767
+    },
+    {
+      "activity": "org.onebrain.onebrain_mobile/.MainActivity",
+      "sample": 5,
+      "total_time_ms": 3779,
+      "wait_time_ms": 3785
+    }
+  ],
+  "total_time_ms": {
+    "maximum": 3862,
+    "median": 3770,
+    "minimum": 3256
+  }
+}

@@ -53,9 +53,24 @@
       "id": "MOB-01-ANDROID-EMULATOR-SMOKE",
       "path": "src/onebrain-mobile/compliance/reports/mob01_android_emulator_semantics.xml",
       "proves": "Android 16 launched the app and exposed the typed native-host API version in platform accessibility semantics."
+    },
+    {
+      "id": "MOB-01-RUST-ABI-HEADER",
+      "path": "src/onebrain-mobile-bridge/include/onebrain_mobile_bridge.h",
+      "proves": "Pinned cbindgen output exposes the bounded Swift-facing ABI revision, version, bootstrap Registry-request fact and deterministic round trip."
+    },
+    {
+      "id": "MOB-01-ANDROID-RUST-ROUND-TRIP",
+      "path": "src/onebrain-mobile/compliance/reports/mob01_android_emulator_rust_semantics.xml",
+      "proves": "Android 16 accessibility semantics observed Rust bridge 0.1.0, ABI revision 1 and a verified Pigeon-to-Kotlin-to-JNI-to-Rust round trip."
+    },
+    {
+      "id": "MOB-01-ANDROID-COLD-START",
+      "path": "src/onebrain-mobile/compliance/reports/mob01_android_debug_cold_start.json",
+      "proves": "ADB ActivityManager provided a repeatable five-sample Android 16 debug-emulator cold-start feasibility baseline, explicitly not a release SLO."
     }
   ],
   "deviations": [],
   "last_reviewed": "2026-07-29",
-  "notes": "MOB-01 foundation slice started: Flutter iOS/Android scaffold, generated design tokens, shared catalog widgets, en/vi bootstrap UI, and typed Pigeon native-host feasibility evidence. This phase makes no ReadyOffline or product-readiness claim."
+  "notes": "MOB-01 foundation now includes a bounded Rust C ABI/JNI feasibility bridge, Android arm64/x86_64 cross-compilation, generated cbindgen header, and runtime typed round-trip evidence. This phase makes no ReadyOffline, Registry, CORE-runtime, or product-readiness claim."
 }

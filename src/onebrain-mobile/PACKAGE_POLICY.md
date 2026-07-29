@@ -15,10 +15,16 @@ policy boundaries and shared presentation; it does not clone package behavior.
 | `flutter_localizations` + `intl` | Flutter SDK / 0.20.2 | generated English/Vietnamese localization and platform formatting |
 | Android SDK / AndroidX via Flutter | SDK 36 | native lifecycle and platform integration; no custom scheduler/network stack |
 | Apple UIKit/Foundation via Flutter | platform SDK | native lifecycle and bounded host integration; compile requires macOS/Xcode |
+| `jni` | 0.22.4 | FFI-safe Android JNI environment and native-method name generation |
+| `cargo-ndk` | 4.1.2 | Android NDK discovery, target setup and standard `jniLibs` output |
+| `cbindgen` | 0.29.4 | checked-in Swift-facing C header generated from Rust exports |
 
 The Riverpod version is pinned to the newest stable release compatible with
 the repository's Dart 3.11.3 toolchain. Package upgrades are reviewed and
 locked through `pubspec.lock`.
+
+The native package versions, ABI/thread ownership and fallback are documented
+in [`RUST_BRIDGE.md`](./RUST_BRIDGE.md).
 
 ## Shared-widget rule
 

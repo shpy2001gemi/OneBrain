@@ -103,6 +103,43 @@ class WelcomeScreen extends ConsumerWidget {
                     : ObmStatusTone.ready,
               ),
             ),
+            SizedBox(height: context.spacing.md),
+            host.when(
+              loading: () => ObmNodeFactCard(
+                title: strings.rustBridgeTitle,
+                body: strings.rustBridgeLoading,
+                icon: Icons.memory_outlined,
+                tone: ObmStatusTone.waiting,
+              ),
+              error: (error, stackTrace) => ObmNodeFactCard(
+                title: strings.rustBridgeTitle,
+                body: strings.rustBridgeUnavailable,
+                icon: Icons.memory_outlined,
+                tone: ObmStatusTone.offlineUnavailable,
+              ),
+              data: (snapshot) {
+                final verified =
+                    snapshot.rustCoreLinked &&
+                    snapshot.rustRoundTripVerified &&
+                    !snapshot.registryRequestIssued;
+                return ObmNodeFactCard(
+                  title: strings.rustBridgeTitle,
+                  body: snapshot.rustCoreLinked
+                      ? strings.rustBridgeReady(
+                          snapshot.rustCoreVersion,
+                          snapshot.rustAbiVersion,
+                        )
+                      : strings.rustBridgeUnavailable,
+                  icon: Icons.memory_outlined,
+                  tone: verified
+                      ? ObmStatusTone.ready
+                      : ObmStatusTone.offlineUnavailable,
+                  statusLabel: verified
+                      ? strings.rustBridgeVerified
+                      : strings.rustBridgeNotVerified,
+                );
+              },
+            ),
             SizedBox(height: context.spacing.twoXl),
             ObmButton(
               label: strings.continueAction,

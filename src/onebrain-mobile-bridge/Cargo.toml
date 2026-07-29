@@ -1,0 +1,16 @@
+[package]
+name = "onebrain-mobile-bridge"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Narrow stable C ABI and JNI feasibility bridge for OneBrain Mobile"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = { version = "0.22.4", default-features = false }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"

@@ -196,6 +196,9 @@ struct HostBootstrapSnapshot: Hashable, CustomStringConvertible {
   var apiVersion: String
   var registryRequestIssued: Bool
   var rustCoreLinked: Bool
+  var rustCoreVersion: String
+  var rustAbiVersion: Int64
+  var rustRoundTripVerified: Bool
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
@@ -204,12 +207,18 @@ struct HostBootstrapSnapshot: Hashable, CustomStringConvertible {
     let apiVersion = pigeonVar_list[1] as! String
     let registryRequestIssued = pigeonVar_list[2] as! Bool
     let rustCoreLinked = pigeonVar_list[3] as! Bool
+    let rustCoreVersion = pigeonVar_list[4] as! String
+    let rustAbiVersion = pigeonVar_list[5] as! Int64
+    let rustRoundTripVerified = pigeonVar_list[6] as! Bool
 
     return HostBootstrapSnapshot(
       platform: platform,
       apiVersion: apiVersion,
       registryRequestIssued: registryRequestIssued,
-      rustCoreLinked: rustCoreLinked
+      rustCoreLinked: rustCoreLinked,
+      rustCoreVersion: rustCoreVersion,
+      rustAbiVersion: rustAbiVersion,
+      rustRoundTripVerified: rustRoundTripVerified
     )
   }
   func toList() -> [Any?] {
@@ -218,13 +227,16 @@ struct HostBootstrapSnapshot: Hashable, CustomStringConvertible {
       apiVersion,
       registryRequestIssued,
       rustCoreLinked,
+      rustCoreVersion,
+      rustAbiVersion,
+      rustRoundTripVerified,
     ]
   }
   static func == (lhs: HostBootstrapSnapshot, rhs: HostBootstrapSnapshot) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return MobileHostApiPigeonInternal.deepEquals(lhs.platform, rhs.platform) && MobileHostApiPigeonInternal.deepEquals(lhs.apiVersion, rhs.apiVersion) && MobileHostApiPigeonInternal.deepEquals(lhs.registryRequestIssued, rhs.registryRequestIssued) && MobileHostApiPigeonInternal.deepEquals(lhs.rustCoreLinked, rhs.rustCoreLinked)
+    return MobileHostApiPigeonInternal.deepEquals(lhs.platform, rhs.platform) && MobileHostApiPigeonInternal.deepEquals(lhs.apiVersion, rhs.apiVersion) && MobileHostApiPigeonInternal.deepEquals(lhs.registryRequestIssued, rhs.registryRequestIssued) && MobileHostApiPigeonInternal.deepEquals(lhs.rustCoreLinked, rhs.rustCoreLinked) && MobileHostApiPigeonInternal.deepEquals(lhs.rustCoreVersion, rhs.rustCoreVersion) && MobileHostApiPigeonInternal.deepEquals(lhs.rustAbiVersion, rhs.rustAbiVersion) && MobileHostApiPigeonInternal.deepEquals(lhs.rustRoundTripVerified, rhs.rustRoundTripVerified)
   }
 
   func hash(into hasher: inout Hasher) {
@@ -233,10 +245,13 @@ struct HostBootstrapSnapshot: Hashable, CustomStringConvertible {
     MobileHostApiPigeonInternal.deepHash(value: apiVersion, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: registryRequestIssued, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: rustCoreLinked, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: rustCoreVersion, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: rustAbiVersion, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: rustRoundTripVerified, hasher: &hasher)
   }
 
   public var description: String {
-    return "HostBootstrapSnapshot(platform: \(String(describing: platform)), apiVersion: \(String(describing: apiVersion)), registryRequestIssued: \(String(describing: registryRequestIssued)), rustCoreLinked: \(String(describing: rustCoreLinked)))"
+    return "HostBootstrapSnapshot(platform: \(String(describing: platform)), apiVersion: \(String(describing: apiVersion)), registryRequestIssued: \(String(describing: registryRequestIssued)), rustCoreLinked: \(String(describing: rustCoreLinked)), rustCoreVersion: \(String(describing: rustCoreVersion)), rustAbiVersion: \(String(describing: rustAbiVersion)), rustRoundTripVerified: \(String(describing: rustRoundTripVerified)))"
   }
 }
 

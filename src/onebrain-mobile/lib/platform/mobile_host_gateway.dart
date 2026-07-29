@@ -8,12 +8,18 @@ class MobileHostSnapshot {
     required this.apiVersion,
     required this.registryRequestIssued,
     required this.rustCoreLinked,
+    required this.rustCoreVersion,
+    required this.rustAbiVersion,
+    required this.rustRoundTripVerified,
   });
 
   final String platform;
   final String apiVersion;
   final bool registryRequestIssued;
   final bool rustCoreLinked;
+  final String rustCoreVersion;
+  final int rustAbiVersion;
+  final bool rustRoundTripVerified;
 }
 
 abstract interface class MobileHostGateway {
@@ -42,6 +48,9 @@ class PigeonMobileHostGateway implements MobileHostGateway {
       apiVersion: snapshot.apiVersion,
       registryRequestIssued: snapshot.registryRequestIssued,
       rustCoreLinked: snapshot.rustCoreLinked,
+      rustCoreVersion: snapshot.rustCoreVersion,
+      rustAbiVersion: snapshot.rustAbiVersion,
+      rustRoundTripVerified: snapshot.rustRoundTripVerified,
     );
   }
 

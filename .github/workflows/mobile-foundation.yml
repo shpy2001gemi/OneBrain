@@ -33,7 +33,11 @@ jobs:
       run:
         working-directory: src/onebrain-mobile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-linux-android,x86_64-linux-android
+          cache: true
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.5"
@@ -41,6 +45,18 @@ jobs:
           cache: true
       - name: Resolve packages
         run: flutter pub get
+      - name: Install pinned Rust mobile build tools
+        run: |
+          cargo install cargo-ndk --version 4.1.2 --locked
+          cargo install cbindgen --version 0.29.4 --locked
+      - name: Test and cross-compile Rust bridge
+        run: |
+          cargo test --manifest-path ../Cargo.toml -p onebrain-mobile-bridge
+          python tool/build_rust_android.py
+      - name: Verify generated Rust C header
+        run: |
+          python tool/generate_rust_bridge_header.py
+          git diff --exit-code -- ../onebrain-mobile-bridge/include/onebrain_mobile_bridge.h
       - name: Verify generated design tokens
         run: |
           dart run tool/generate_design_tokens.dart
@@ -69,7 +85,7 @@ jobs:
           python tool/scan_mobile_package.py
           build/app/outputs/flutter-apk/app-debug.apk
       - name: Validate owner-approved mobile contracts
-        working-directory: .
+        working-directory: ${{ github.workspace }}
         run: |
           python scripts/ci/validate_mobile_build_contracts.py
           python -m unittest scripts.ci.test_validate_mobile_build_contracts
@@ -82,7 +98,11 @@ jobs:
       run:
         working-directory: src/onebrain-mobile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
+          cache: true
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.41.5"
@@ -90,6 +110,8 @@ jobs:
           cache: true
       - name: Resolve packages
         run: flutter pub get
+      - name: Build Rust bridge for iOS device and simulator
+        run: bash tool/build_rust_ios.sh
       - name: Generate localization and typed host APIs
         run: |
           flutter gen-l10n

@@ -1,13 +1,13 @@
 {
-  "entry_count": 147,
+  "entry_count": 149,
   "forbidden_payload_count": 0,
   "format": "onebrain.mobile.package-inventory/1",
-  "generated_at": "2026-07-29T14:28:01.456938+00:00",
+  "generated_at": "2026-07-29T14:55:26.784534+00:00",
   "largest_entries": [
     {
-      "compressed_bytes": 18949466,
+      "compressed_bytes": 18951499,
       "path": "assets/flutter_assets/kernel_blob.bin",
-      "uncompressed_bytes": 55178152
+      "uncompressed_bytes": 55187016
     },
     {
       "compressed_bytes": 38359216,
@@ -45,18 +45,18 @@
       "uncompressed_bytes": 1645184
     },
     {
-      "compressed_bytes": 104276,
-      "path": "assets/flutter_assets/NOTICES.Z",
-      "uncompressed_bytes": 105640
+      "compressed_bytes": 1005632,
+      "path": "lib/x86_64/libonebrain_mobile_bridge.so",
+      "uncompressed_bytes": 1005632
     },
     {
-      "compressed_bytes": 59092,
-      "path": "resources.arsc",
-      "uncompressed_bytes": 59092
+      "compressed_bytes": 857144,
+      "path": "lib/arm64-v8a/libonebrain_mobile_bridge.so",
+      "uncompressed_bytes": 857144
     }
   ],
   "package": "app-debug.apk",
-  "package_bytes": 149238634,
-  "package_sha256": "41c455f795604495c9fe3f25c4a88111f0e7323b7631d0b086d7923287cedd1a",
+  "package_bytes": 187602172,
+  "package_sha256": "597c70fa423d1afa8dd7ddc7fb92ac9ce9f7c77c6b86ea871a589ea82b550997",
   "violations": []
 }

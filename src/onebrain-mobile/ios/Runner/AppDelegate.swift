@@ -3,6 +3,7 @@ import UIKit
 
 private let hostApiVersion = "1"
 private let maxFeasibilityDelayMilliseconds: Int64 = 30_000
+private let rustRoundTripNonce: UInt64 = 0x4F_42_4D_30_31
 
 private final class MobileHostEventStream: HostOperationEventsStreamHandler {
   private var sink: PigeonEventSink<HostOperationEvent>?
@@ -34,13 +35,18 @@ private final class IOSMobileHost: MobileHostApi {
   func inspectBootstrapHost(
     completion: @escaping (Result<HostBootstrapSnapshot, Error>) -> Void
   ) {
+    let coreVersion = String(cString: ob_mobile_bridge_core_version())
     completion(
       .success(
         HostBootstrapSnapshot(
           platform: "iOS \(UIDevice.current.systemVersion)",
           apiVersion: hostApiVersion,
-          registryRequestIssued: false,
-          rustCoreLinked: false
+          registryRequestIssued: ob_mobile_bridge_registry_request_issued() != 0,
+          rustCoreLinked: true,
+          rustCoreVersion: coreVersion,
+          rustAbiVersion: Int64(ob_mobile_bridge_abi_version()),
+          rustRoundTripVerified:
+            ob_mobile_bridge_round_trip(rustRoundTripNonce) == rustRoundTripNonce
         )
       )
     )

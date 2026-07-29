@@ -24,6 +24,18 @@
     }
   },
   "nativeHostUnavailable": "Native host không khả dụng trong môi trường này. Giao diện khởi tạo vẫn dùng được.",
+  "rustBridgeTitle": "Cầu nối Rust",
+  "rustBridgeLoading": "Đang kiểm tra ranh giới native–Rust…",
+  "rustBridgeReady": "Cầu nối Rust {coreVersion} · ABI {abiVersion}",
+  "@rustBridgeReady": {
+    "placeholders": {
+      "coreVersion": {"type": "String"},
+      "abiVersion": {"type": "int"}
+    }
+  },
+  "rustBridgeUnavailable": "Cầu nối Rust chưa được liên kết trong bản build này. Không tuyên bố runtime sẵn sàng.",
+  "rustBridgeVerified": "Đã xác minh round trip có kiểu",
+  "rustBridgeNotVerified": "Chưa xác minh được round trip Rust",
   "continueAction": "Tiếp tục kiểm tra thiết bị",
   "galleryAction": "Xem component dùng chung",
   "galleryTitle": "Thư viện component dùng chung",

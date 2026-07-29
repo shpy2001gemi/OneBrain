@@ -70,6 +70,27 @@ class AppLocalizationsEn extends AppLocalizations {
       'Native host is unavailable in this environment. The bootstrap UI remains usable.';
 
   @override
+  String get rustBridgeTitle => 'Rust bridge';
+
+  @override
+  String get rustBridgeLoading => 'Checking the native-to-Rust boundary…';
+
+  @override
+  String rustBridgeReady(String coreVersion, int abiVersion) {
+    return 'Rust bridge $coreVersion · ABI $abiVersion';
+  }
+
+  @override
+  String get rustBridgeUnavailable =>
+      'The Rust bridge is not linked in this build. No runtime readiness is claimed.';
+
+  @override
+  String get rustBridgeVerified => 'Typed round trip verified';
+
+  @override
+  String get rustBridgeNotVerified => 'Rust round trip unavailable';
+
+  @override
   String get continueAction => 'Continue to device preflight';
 
   @override

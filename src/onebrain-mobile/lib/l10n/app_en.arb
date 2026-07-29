@@ -24,6 +24,18 @@
     }
   },
   "nativeHostUnavailable": "Native host is unavailable in this environment. The bootstrap UI remains usable.",
+  "rustBridgeTitle": "Rust bridge",
+  "rustBridgeLoading": "Checking the native-to-Rust boundary…",
+  "rustBridgeReady": "Rust bridge {coreVersion} · ABI {abiVersion}",
+  "@rustBridgeReady": {
+    "placeholders": {
+      "coreVersion": {"type": "String"},
+      "abiVersion": {"type": "int"}
+    }
+  },
+  "rustBridgeUnavailable": "The Rust bridge is not linked in this build. No runtime readiness is claimed.",
+  "rustBridgeVerified": "Typed round trip verified",
+  "rustBridgeNotVerified": "Rust round trip unavailable",
   "continueAction": "Continue to device preflight",
   "galleryAction": "View shared components",
   "galleryTitle": "Shared component gallery",

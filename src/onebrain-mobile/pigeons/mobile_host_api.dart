@@ -20,12 +20,18 @@ class HostBootstrapSnapshot {
     required this.apiVersion,
     required this.registryRequestIssued,
     required this.rustCoreLinked,
+    required this.rustCoreVersion,
+    required this.rustAbiVersion,
+    required this.rustRoundTripVerified,
   });
 
   String platform;
   String apiVersion;
   bool registryRequestIssued;
   bool rustCoreLinked;
+  String rustCoreVersion;
+  int rustAbiVersion;
+  bool rustRoundTripVerified;
 }
 
 enum HostOperationEventKind { started, cancelled, completed }

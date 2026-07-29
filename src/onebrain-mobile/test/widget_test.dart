@@ -16,6 +16,8 @@ void main() {
 
     expect(find.text('Grow ideas on your own node'), findsOneWidget);
     expect(find.textContaining('Android test host ready'), findsOneWidget);
+    expect(find.text('Rust bridge 0.1.0-test · ABI 1'), findsOneWidget);
+    expect(find.text('Typed round trip verified'), findsOneWidget);
     expect(
       find.text(
         'No Registry artifact request is made from this bootstrap screen.',
@@ -87,7 +89,10 @@ class _FakeMobileHostGateway implements MobileHostGateway {
         platform: 'Android test',
         apiVersion: '1',
         registryRequestIssued: false,
-        rustCoreLinked: false,
+        rustCoreLinked: true,
+        rustCoreVersion: '0.1.0-test',
+        rustAbiVersion: 1,
+        rustRoundTripVerified: true,
       );
 
   @override

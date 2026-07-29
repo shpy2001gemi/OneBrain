@@ -56,13 +56,17 @@ private class AndroidMobileHost(
     override fun inspectBootstrapHost(
         callback: (Result<HostBootstrapSnapshot>) -> Unit,
     ) {
+        val rust = RustMobileBridge.inspectBootstrap()
         callback(
             Result.success(
                 HostBootstrapSnapshot(
                     platform = "Android ${Build.VERSION.RELEASE}",
                     apiVersion = HOST_API_VERSION,
-                    registryRequestIssued = false,
-                    rustCoreLinked = false,
+                    registryRequestIssued = rust.registryRequestIssued,
+                    rustCoreLinked = rust.linked,
+                    rustCoreVersion = rust.coreVersion,
+                    rustAbiVersion = rust.abiVersion,
+                    rustRoundTripVerified = rust.roundTripVerified,
                 ),
             ),
         )

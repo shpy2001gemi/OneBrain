@@ -109,6 +109,9 @@ class HostBootstrapSnapshot {
     required this.apiVersion,
     required this.registryRequestIssued,
     required this.rustCoreLinked,
+    required this.rustCoreVersion,
+    required this.rustAbiVersion,
+    required this.rustRoundTripVerified,
   });
 
   String platform;
@@ -119,12 +122,21 @@ class HostBootstrapSnapshot {
 
   bool rustCoreLinked;
 
+  String rustCoreVersion;
+
+  int rustAbiVersion;
+
+  bool rustRoundTripVerified;
+
   List<Object?> _toList() {
     return <Object?>[
       platform,
       apiVersion,
       registryRequestIssued,
       rustCoreLinked,
+      rustCoreVersion,
+      rustAbiVersion,
+      rustRoundTripVerified,
     ];
   }
 
@@ -138,6 +150,9 @@ class HostBootstrapSnapshot {
       apiVersion: result[1]! as String,
       registryRequestIssued: result[2]! as bool,
       rustCoreLinked: result[3]! as bool,
+      rustCoreVersion: result[4]! as String,
+      rustAbiVersion: result[5]! as int,
+      rustRoundTripVerified: result[6]! as bool,
     );
   }
 
@@ -150,7 +165,7 @@ class HostBootstrapSnapshot {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(platform, other.platform) && _deepEquals(apiVersion, other.apiVersion) && _deepEquals(registryRequestIssued, other.registryRequestIssued) && _deepEquals(rustCoreLinked, other.rustCoreLinked);
+    return _deepEquals(platform, other.platform) && _deepEquals(apiVersion, other.apiVersion) && _deepEquals(registryRequestIssued, other.registryRequestIssued) && _deepEquals(rustCoreLinked, other.rustCoreLinked) && _deepEquals(rustCoreVersion, other.rustCoreVersion) && _deepEquals(rustAbiVersion, other.rustAbiVersion) && _deepEquals(rustRoundTripVerified, other.rustRoundTripVerified);
   }
 
   @override
@@ -159,7 +174,7 @@ class HostBootstrapSnapshot {
 
   @override
   String toString() {
-    return 'HostBootstrapSnapshot(platform: $platform, apiVersion: $apiVersion, registryRequestIssued: $registryRequestIssued, rustCoreLinked: $rustCoreLinked)';
+    return 'HostBootstrapSnapshot(platform: $platform, apiVersion: $apiVersion, registryRequestIssued: $registryRequestIssued, rustCoreLinked: $rustCoreLinked, rustCoreVersion: $rustCoreVersion, rustAbiVersion: $rustAbiVersion, rustRoundTripVerified: $rustRoundTripVerified)';
   }
 }
 

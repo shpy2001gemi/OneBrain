@@ -70,6 +70,27 @@ class AppLocalizationsVi extends AppLocalizations {
       'Native host không khả dụng trong môi trường này. Giao diện khởi tạo vẫn dùng được.';
 
   @override
+  String get rustBridgeTitle => 'Cầu nối Rust';
+
+  @override
+  String get rustBridgeLoading => 'Đang kiểm tra ranh giới native–Rust…';
+
+  @override
+  String rustBridgeReady(String coreVersion, int abiVersion) {
+    return 'Cầu nối Rust $coreVersion · ABI $abiVersion';
+  }
+
+  @override
+  String get rustBridgeUnavailable =>
+      'Cầu nối Rust chưa được liên kết trong bản build này. Không tuyên bố runtime sẵn sàng.';
+
+  @override
+  String get rustBridgeVerified => 'Đã xác minh round trip có kiểu';
+
+  @override
+  String get rustBridgeNotVerified => 'Chưa xác minh được round trip Rust';
+
+  @override
   String get continueAction => 'Tiếp tục kiểm tra thiết bị';
 
   @override

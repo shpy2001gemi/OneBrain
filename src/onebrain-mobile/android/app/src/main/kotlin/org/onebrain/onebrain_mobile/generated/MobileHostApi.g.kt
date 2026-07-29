@@ -209,7 +209,10 @@ data class HostBootstrapSnapshot (
   val platform: String,
   val apiVersion: String,
   val registryRequestIssued: Boolean,
-  val rustCoreLinked: Boolean
+  val rustCoreLinked: Boolean,
+  val rustCoreVersion: String,
+  val rustAbiVersion: Long,
+  val rustRoundTripVerified: Boolean
 )
  {
   companion object {
@@ -218,7 +221,10 @@ data class HostBootstrapSnapshot (
       val apiVersion = pigeonVar_list[1] as String
       val registryRequestIssued = pigeonVar_list[2] as Boolean
       val rustCoreLinked = pigeonVar_list[3] as Boolean
-      return HostBootstrapSnapshot(platform, apiVersion, registryRequestIssued, rustCoreLinked)
+      val rustCoreVersion = pigeonVar_list[4] as String
+      val rustAbiVersion = pigeonVar_list[5] as Long
+      val rustRoundTripVerified = pigeonVar_list[6] as Boolean
+      return HostBootstrapSnapshot(platform, apiVersion, registryRequestIssued, rustCoreLinked, rustCoreVersion, rustAbiVersion, rustRoundTripVerified)
     }
   }
   fun toList(): List<Any?> {
@@ -227,6 +233,9 @@ data class HostBootstrapSnapshot (
       apiVersion,
       registryRequestIssued,
       rustCoreLinked,
+      rustCoreVersion,
+      rustAbiVersion,
+      rustRoundTripVerified,
     )
   }
   override fun equals(other: Any?): Boolean {
@@ -237,7 +246,7 @@ data class HostBootstrapSnapshot (
       return true
     }
     val other = other as HostBootstrapSnapshot
-    return MobileHostApiPigeonUtils.deepEquals(this.platform, other.platform) && MobileHostApiPigeonUtils.deepEquals(this.apiVersion, other.apiVersion) && MobileHostApiPigeonUtils.deepEquals(this.registryRequestIssued, other.registryRequestIssued) && MobileHostApiPigeonUtils.deepEquals(this.rustCoreLinked, other.rustCoreLinked)
+    return MobileHostApiPigeonUtils.deepEquals(this.platform, other.platform) && MobileHostApiPigeonUtils.deepEquals(this.apiVersion, other.apiVersion) && MobileHostApiPigeonUtils.deepEquals(this.registryRequestIssued, other.registryRequestIssued) && MobileHostApiPigeonUtils.deepEquals(this.rustCoreLinked, other.rustCoreLinked) && MobileHostApiPigeonUtils.deepEquals(this.rustCoreVersion, other.rustCoreVersion) && MobileHostApiPigeonUtils.deepEquals(this.rustAbiVersion, other.rustAbiVersion) && MobileHostApiPigeonUtils.deepEquals(this.rustRoundTripVerified, other.rustRoundTripVerified)
   }
 
   override fun hashCode(): Int {
@@ -246,10 +255,13 @@ data class HostBootstrapSnapshot (
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.apiVersion)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.registryRequestIssued)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.rustCoreLinked)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.rustCoreVersion)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.rustAbiVersion)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.rustRoundTripVerified)
     return result
   }
   override fun toString(): String {
-    return "HostBootstrapSnapshot(platform=$platform, apiVersion=$apiVersion, registryRequestIssued=$registryRequestIssued, rustCoreLinked=$rustCoreLinked)"
+    return "HostBootstrapSnapshot(platform=$platform, apiVersion=$apiVersion, registryRequestIssued=$registryRequestIssued, rustCoreLinked=$rustCoreLinked, rustCoreVersion=$rustCoreVersion, rustAbiVersion=$rustAbiVersion, rustRoundTripVerified=$rustRoundTripVerified)"
   }
 }
 

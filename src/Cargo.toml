@@ -18,6 +18,7 @@ members = [
     "onebrain-cli",     # Interface: CLI REPL (Phase 0 ✅)
     "onebrain-api",     # Interface: Local REST + WebSocket API (Phase 1)
     "onebrain-desktop", # Interface: Tauri 2.x Desktop App (Phase 2)
+    "onebrain-mobile-bridge", # Narrow C ABI/JNI feasibility bridge for Flutter NativeHost
 
     # ── Server / Infrastructure ──
     "onebrain-seed",    # Seed node — cross-platform (Windows, Linux, Arduino...)

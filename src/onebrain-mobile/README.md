@@ -63,12 +63,14 @@ The checked-in app now includes:
   async capability call, bounded feasibility operation, event stream and
   cancellation.
 
-The native snapshot explicitly reports that no Registry request has been
-issued and that the Rust core is not linked yet. It is bootstrap evidence, not
-node readiness.
+The native snapshot now crosses the generated Pigeon API, Swift/Kotlin host and
+the Rust C ABI/JNI bridge. It verifies ABI revision `1`, a deterministic typed
+round trip and that no Registry request has been issued. This is bridge
+evidence, not runtime or node readiness.
 
 See [`PACKAGE_POLICY.md`](./PACKAGE_POLICY.md) for the package-first and
-shared-widget contract.
+shared-widget contract, and [`RUST_BRIDGE.md`](./RUST_BRIDGE.md) for ABI,
+thread-ownership, build and fallback details.
 
 ## Generate and test
 
@@ -76,6 +78,10 @@ From `src/onebrain-mobile`:
 
 ```text
 flutter pub get
+cargo install cargo-ndk --version 4.1.2 --locked
+cargo install cbindgen --version 0.29.4 --locked
+python tool/generate_rust_bridge_header.py
+python tool/build_rust_android.py
 dart run tool/generate_design_tokens.dart
 dart run pigeon --input pigeons/mobile_host_api.dart
 python tool/normalize_generated_sources.py
@@ -88,5 +94,5 @@ flutter test
 flutter build apk --debug
 ```
 
-iOS sources and the Xcode target are generated on Windows, but iOS compilation
-and physical-device launch require macOS/Xcode evidence before MOB-01 can exit.
+On macOS, run `bash tool/build_rust_ios.sh` before the Flutter iOS build. iOS
+physical-device launch still requires device evidence before MOB-01 can exit.

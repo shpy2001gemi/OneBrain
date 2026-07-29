@@ -206,6 +206,42 @@ abstract class AppLocalizations {
   /// **'Native host is unavailable in this environment. The bootstrap UI remains usable.'**
   String get nativeHostUnavailable;
 
+  /// No description provided for @rustBridgeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Rust bridge'**
+  String get rustBridgeTitle;
+
+  /// No description provided for @rustBridgeLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking the native-to-Rust boundary…'**
+  String get rustBridgeLoading;
+
+  /// No description provided for @rustBridgeReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Rust bridge {coreVersion} · ABI {abiVersion}'**
+  String rustBridgeReady(String coreVersion, int abiVersion);
+
+  /// No description provided for @rustBridgeUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The Rust bridge is not linked in this build. No runtime readiness is claimed.'**
+  String get rustBridgeUnavailable;
+
+  /// No description provided for @rustBridgeVerified.
+  ///
+  /// In en, this message translates to:
+  /// **'Typed round trip verified'**
+  String get rustBridgeVerified;
+
+  /// No description provided for @rustBridgeNotVerified.
+  ///
+  /// In en, this message translates to:
+  /// **'Rust round trip unavailable'**
+  String get rustBridgeNotVerified;
+
   /// No description provided for @continueAction.
   ///
   /// In en, this message translates to:

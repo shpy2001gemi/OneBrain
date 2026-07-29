@@ -1,0 +1,4 @@
+HEADER_SEARCH_PATHS = $(inherited) "$(SRCROOT)/../../onebrain-mobile-bridge/include"
+LIBRARY_SEARCH_PATHS[sdk=iphoneos*] = $(inherited) "$(SRCROOT)/RustBridge/device"
+LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*] = $(inherited) "$(SRCROOT)/RustBridge/simulator"
+OTHER_LDFLAGS = $(inherited) -lonebrain_mobile_bridge
