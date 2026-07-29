@@ -3,7 +3,7 @@ import Flutter
 import Security
 import UIKit
 
-private let hostApiVersion = "6"
+private let hostApiVersion = "7"
 private let maxFeasibilityDelayMilliseconds: Int64 = 30_000
 private let rustRoundTripNonce: UInt64 = 0x4F_42_4D_30_31
 private let securityMaterialBytes = 192
@@ -41,6 +41,12 @@ private final class IOSSecurityMaterialStore {
         )
         || FileManager.default.fileExists(
           atPath: dataRoot.appendingPathComponent("private-drafts.redb").path
+        )
+        || FileManager.default.fileExists(
+          atPath: dataRoot.appendingPathComponent("private-media-staging.redb").path
+        )
+        || FileManager.default.fileExists(
+          atPath: dataRoot.appendingPathComponent("media", isDirectory: true).path
         )
       {
         throw IOSSecurityMaterialError.unexpectedRestore(
@@ -277,7 +283,7 @@ private final class IOSMobileHost: MobileHostApi {
         activationPhase = "Unknown"
       }
       let snapshot = HostRuntimeSnapshot(
-        profileVersion: "MOB-04/2",
+        profileVersion: "MOB-04/3",
         processGeneration: Int64(runtime.process_generation),
         activationPhase: activationPhase,
         activeGrantCount: Int64(runtime.active_grant_count),
@@ -299,6 +305,7 @@ private final class IOSMobileHost: MobileHostApi {
         redactedHistoryReady: runtime.redacted_history_ready != 0,
         encryptedRawDraftCount: Int64(runtime.encrypted_raw_draft_count),
         pendingShareSpoolCount: Int64(runtime.pending_share_spool_count),
+        stagedVerifiedMediaCount: Int64(runtime.staged_verified_media_count),
         onboardingCursor:
           HostOnboardingCursor(rawValue: Int(runtime.onboarding_cursor)) ?? .welcome
       )
@@ -640,6 +647,21 @@ private final class IOSMobileHost: MobileHostApi {
         completion(.success(result))
       }
     }
+  }
+
+  func pickAndStagePrivateMedia(
+    mediaClass: HostMediaClass,
+    completion: @escaping (Result<HostMediaStageReceipt, Error>) -> Void
+  ) {
+    completion(
+      .failure(
+        PigeonError(
+          code: "IOS_MEDIA_PICKER_PENDING",
+          message: "The iOS document and photo picker adapter is not implemented in this slice",
+          details: nil
+        )
+      )
+    )
   }
 
   func setOnboardingCursor(

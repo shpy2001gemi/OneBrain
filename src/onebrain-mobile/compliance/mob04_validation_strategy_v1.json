@@ -16,18 +16,20 @@
     "honest BootstrapOnly Limited shell",
     "encrypted bounded PrivateLocal text drafts",
     "Android text/plain share-intent cold-start landing, encrypted spool inspection and idempotent draft import",
+    "Android system-picker image/video/audio/PDF selection with native-to-Rust encrypted staging, magic-byte verification and BLAKE3 receipt",
     "adaptive five-destination shell and Registry-gated disabled routes",
     "runtime, storage and no-LLM status surfaces"
   ],
   "remaining_mob04_scope": [
     "encrypted iOS share-extension landing",
-    "system-picker media staging",
+    "iOS system-picker media staging",
+    "full OwnedOriginal media pack activation, catalog/reference commit and retention lifecycle",
     "user-selected encrypted backup and export destination workflow",
     "full Limited, Degraded and Safe shell state matrix"
   ],
   "physical_device_validation": {
     "android_accessibility_and_lifecycle": "deferred_by_owner",
-    "android_share_uri_grants": "deferred_by_owner",
+    "android_share_and_picker_uri_grants": "deferred_by_owner",
     "ios_share_extension_and_protected_data": "deferred_by_owner",
     "ios_accessibility_and_lifecycle": "deferred_by_owner"
   },
@@ -40,5 +42,5 @@
     "network_lane_enabled": false,
     "llm_lane_enabled": false
   },
-  "notes": "Virtual gates prove the implemented private Limited slice and Android text/plain share-intent path only. iOS extension landing, Registry-dependent validation/search/KQL routes, media intake and backup/export destination workflows remain gated; MOB-GATE-OFFLINE-MVP can close only after MOB-05 first activation."
+  "notes": "Virtual gates prove the implemented private Limited slice, Android text/plain share-intent path and Android system-picker-to-encrypted-staging path. The media receipt is StagedVerified only, not OwnedOriginal or seedable. iOS extension/picker landing, Registry-dependent validation/search/KQL routes, full media activation and backup/export destination workflows remain gated; MOB-GATE-OFFLINE-MVP can close only after MOB-05 first activation."
 }

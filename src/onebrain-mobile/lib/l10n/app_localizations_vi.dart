@@ -448,7 +448,72 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get fileCaptureBody =>
-      'System picker và staging media đã xác minh sẽ đến cùng gói lifecycle media.';
+      'Chọn qua system picker. Native stream nguồn thẳng vào staging Rust mã hóa có giới hạn; path và byte nguồn không đi vào Flutter.';
+
+  @override
+  String get mediaImportTitle => 'Nhập media riêng tư';
+
+  @override
+  String get mediaImportBody =>
+      'Chọn một nguồn bằng system picker. OneBrain xác minh byte, mã hóa từng chunk và chỉ trả về tham chiếu cục bộ opaque.';
+
+  @override
+  String get mediaImportBoundaryTitle => 'Staging không phải publish';
+
+  @override
+  String get mediaImportBoundaryBody =>
+      'Stage đã xác minh vẫn là PrivateLocal. Nó chưa phải OwnedOriginal, đính kèm KU, object chia sẻ hay media pack có thể seed.';
+
+  @override
+  String get mediaPickImageTitle => 'Ảnh';
+
+  @override
+  String get mediaPickImageBody =>
+      'Chọn một ảnh. Loại thực được nhận diện từ byte thay vì tin tên file.';
+
+  @override
+  String get mediaPickVideoTitle => 'Video';
+
+  @override
+  String get mediaPickVideoBody =>
+      'Chọn một video để stream và mã hóa khi app ở foreground.';
+
+  @override
+  String get mediaPickAudioTitle => 'Audio';
+
+  @override
+  String get mediaPickAudioBody =>
+      'Chọn một nguồn audio qua picker của thiết bị.';
+
+  @override
+  String get mediaPickDocumentTitle => 'Tài liệu PDF';
+
+  @override
+  String get mediaPickDocumentBody =>
+      'Lát cắt nền tảng này nhận byte PDF đã xác minh và từ chối archive hay file giả dạng.';
+
+  @override
+  String get mediaPickAction => 'Chọn bằng system picker';
+
+  @override
+  String get mediaPickBusy => 'Đang mã hóa và xác minh trên thiết bị…';
+
+  @override
+  String get mediaStageReadyTitle => 'Đã xác minh stage mã hóa';
+
+  @override
+  String mediaStageReadyBody(
+    String mimeType,
+    int bytes,
+    String digestShort,
+    String sourceRef,
+  ) {
+    return '$mimeType · $bytes byte · BLAKE3 $digestShort. Nguồn opaque: $sourceRef.';
+  }
+
+  @override
+  String get mediaStageError =>
+      'Nguồn đã bị hủy, không đọc được, không hỗ trợ hoặc không khớp loại khai báo. Không giữ lại stage chưa xác minh.';
 
   @override
   String get textComposerTitle => 'Draft văn bản riêng tư';

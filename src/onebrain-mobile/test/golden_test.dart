@@ -84,6 +84,11 @@ void main() {
       size: Size(360, 800),
       shareSpool: true,
     ),
+    const _GoldenCase(
+      name: 'media_import_large_light_en',
+      size: Size(430, 932),
+      mediaImport: true,
+    ),
   ];
 
   group('MOB-04 design-system golden matrix', () {
@@ -168,7 +173,7 @@ Future<void> _pumpGolden(WidgetTester tester, _GoldenCase goldenCase) async {
     await tester.pumpAndSettle();
   }
 
-  if (goldenCase.home || goldenCase.textCapture) {
+  if (goldenCase.home || goldenCase.textCapture || goldenCase.mediaImport) {
     await _enterLimitedShell(tester, goldenCase.locale);
   }
 
@@ -177,6 +182,11 @@ Future<void> _pumpGolden(WidgetTester tester, _GoldenCase goldenCase) async {
         ? 'Ghi văn bản'
         : 'Capture text';
     await _tapVisible(tester, captureAction);
+  }
+
+  if (goldenCase.mediaImport) {
+    await _tapVisible(tester, 'Capture');
+    await _tapVisible(tester, 'Import private media');
   }
 }
 
@@ -228,6 +238,7 @@ class _GoldenCase {
     this.home = false,
     this.textCapture = false,
     this.shareSpool = false,
+    this.mediaImport = false,
   });
 
   final String name;
@@ -242,6 +253,7 @@ class _GoldenCase {
   final bool home;
   final bool textCapture;
   final bool shareSpool;
+  final bool mediaImport;
 }
 
 class _FakeMobileHostGateway implements MobileHostGateway {
@@ -257,18 +269,18 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
       const MobileHostSnapshot(
         platform: 'Android test',
-        apiVersion: '6',
+        apiVersion: '7',
         registryRequestIssued: false,
         rustCoreLinked: true,
         rustCoreVersion: '0.1.0-test',
-        rustAbiVersion: 6,
+        rustAbiVersion: 7,
         rustRoundTripVerified: true,
       );
 
   @override
   Future<MobileRuntimeSnapshot> inspectRuntimeProfile() async =>
       MobileRuntimeSnapshot(
-        profileVersion: 'MOB-04/2',
+        profileVersion: 'MOB-04/3',
         processGeneration: 1,
         activationPhase: 'Active',
         activeGrantCount: 1,
@@ -289,6 +301,7 @@ class _FakeMobileHostGateway implements MobileHostGateway {
         redactedHistoryReady: true,
         encryptedRawDraftCount: 0,
         pendingShareSpoolCount: pendingSpools.length,
+        stagedVerifiedMediaCount: 0,
         onboardingCursor: onboardingCursor,
       );
 
@@ -316,6 +329,19 @@ class _FakeMobileHostGateway implements MobileHostGateway {
     required String contentLanguage,
   }) async =>
       saveRawTextDraft(contentLanguage: contentLanguage, content: 'shared');
+
+  @override
+  Future<MobileMediaStageReceipt> pickAndStagePrivateMedia(
+    MobileMediaClass mediaClass,
+  ) async => MobileMediaStageReceipt(
+    sourceRef: 'source_00000000000000000000000000000000',
+    mediaClass: mediaClass,
+    mimeType: mediaClass == MobileMediaClass.document
+        ? 'application/pdf'
+        : '${mediaClass.name}/test',
+    contentBytes: 32,
+    blake3Digest: 'a' * 64,
+  );
 
   @override
   Future<String> startFeasibilityOperation(Duration delay) async =>

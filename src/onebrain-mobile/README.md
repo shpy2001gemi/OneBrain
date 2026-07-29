@@ -67,12 +67,14 @@ The checked-in app now includes:
   cancellation.
 
 The native snapshot now crosses the generated Pigeon API, Swift/Kotlin host,
-the Rust C ABI/JNI bridge and `onebrain-mobile-core`. ABI revision `6` adds a
+the Rust C ABI/JNI bridge and `onebrain-mobile-core`. ABI revision `7` includes a
 platform-protected installation session, exact epoch/nonce authority binding,
 three independent signer domains, an encrypted private vault, encrypted
 Limited-mode raw drafts and a durable onboarding resume cursor to the bounded
 `BootstrapOnly` runtime, plus opaque encrypted share-spool inspection and
-idempotent import. It still reports that no Registry request has been issued.
+idempotent import. It also adds Android system-picker streaming into encrypted
+Rust media staging with a verified MIME/length/BLAKE3 opaque receipt. It still
+reports that no Registry request has been issued.
 
 See [`PACKAGE_POLICY.md`](./PACKAGE_POLICY.md) for the package-first and
 shared-widget contract, and [`RUST_BRIDGE.md`](./RUST_BRIDGE.md) for ABI,
@@ -80,7 +82,7 @@ thread-ownership, build and fallback details.
 
 The current automated evidence additionally covers:
 
-- twelve Windows goldens spanning light/dark, high contrast,
+- thirteen Windows goldens spanning light/dark, high contrast,
   English/Vietnamese, 200% text, reduced motion, compact/large/expanded
   layouts, the runtime status card, Limited Home and private text capture;
 - Android 16 integration of async `started`, `cancelled` and `completed`
@@ -117,16 +119,20 @@ MOB-04 virtual evidence additionally covers:
   `PrivateLocal` draft store, with only an opaque receipt returned to Dart;
 - shared adaptive Home/Library/Capture/Assistant/Settings navigation,
   Registry-gated disabled states, runtime/storage facts and no-LLM behavior;
-- Android 16 ABI 6 integration, force-stop recovery, fail-closed missing-marker
+- Android 16 ABI 7 integration, force-stop recovery, fail-closed missing-marker
   injection, 320 px/200% text reflow and deterministic UI goldens.
 - Android `text/plain` share intents land on cold start, survive force-stop,
   expose only opaque metadata to Flutter and import idempotently into an
   encrypted raw draft.
+- Android `ACTION_OPEN_DOCUMENT` selects image/video/audio/PDF sources without
+  broad storage permission; native streams bounded chunks to Rust, which
+  encrypts, magic-byte checks, hashes, journals and recovers interrupted work.
+  The emulator picker test verifies a real PNG selection and force-stop reopen.
 
-iOS share-extension landing, system-picker media staging and user-selected
-encrypted backup/export destinations remain explicit MOB-04 work. Android
-share-intent support does not imply file/media intake or iOS extension
-readiness.
+iOS share-extension landing, iOS system-picker media staging, full
+`OwnedOriginal` pack activation/reference commit and user-selected encrypted
+backup/export destinations remain explicit MOB-04 work. Android share-intent
+and picker staging do not imply iOS extension or full media lifecycle readiness.
 
 Physical Android/iOS validation is intentionally deferred by the owner while
 emulator/simulator development continues. This does not close the physical
@@ -160,10 +166,16 @@ flutter test integration_test/native_host_bridge_test.dart -d emulator-5554
 # The integration target replaces app-debug.apk; rebuild the application APK
 # before standalone ADB lifecycle scripts.
 flutter build apk --debug
+python tool/verify_android_share_intent.py \
+  build/app/outputs/flutter-apk/app-debug.apk
 python tool/verify_android_runtime_recovery.py \
   build/app/outputs/flutter-apk/app-debug.apk
+python tool/verify_android_install_binding_fail_closed.py \
+  build/app/outputs/flutter-apk/app-debug.apk
+python tool/verify_android_media_picker.py \
+  build/app/outputs/flutter-apk/app-debug.apk
 python tool/build_rust_android.py --release
-flutter build apk --release --target-platform android-arm64,android-x64
+flutter build apk --release --target-platform android-arm,android-arm64,android-x64
 python tool/inspect_android_permissions.py build/app/outputs/flutter-apk/app-release.apk
 ```
 

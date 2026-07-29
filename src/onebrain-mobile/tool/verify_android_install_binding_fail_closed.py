@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -17,6 +18,22 @@ ACTIVITY = f"{PACKAGE}/.MainActivity"
 LOG_TAG = "OneBrainMobileRuntime"
 MARKER = "no_backup/security/install-marker.v1"
 REJECTION = "secure runtime open rejected"
+
+
+def resolve_adb(explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    discovered = shutil.which("adb")
+    if discovered:
+        return discovered
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        candidate = (
+            Path(local_app_data) / "Android" / "Sdk" / "platform-tools" / "adb.exe"
+        )
+        if candidate.is_file():
+            return str(candidate)
+    raise SystemExit("adb is required")
 
 
 def run(adb: str, device: str, *arguments: str) -> str:
@@ -45,12 +62,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("apk", type=Path)
     parser.add_argument("--device", default="emulator-5554")
-    parser.add_argument("--adb", default=shutil.which("adb"))
+    parser.add_argument("--adb")
     parser.add_argument("--report", type=Path)
     parser.add_argument("--timeout-seconds", type=float, default=30)
     arguments = parser.parse_args()
-    if not arguments.adb:
-        raise SystemExit("adb is required")
+    arguments.adb = resolve_adb(arguments.adb)
     apk = arguments.apk.resolve()
     if not apk.is_file():
         raise SystemExit(f"APK does not exist: {apk}")
@@ -62,7 +78,7 @@ def main() -> int:
     wait_for_log(
         arguments.adb,
         arguments.device,
-        "profile=MOB-04/2",
+        "profile=MOB-04/3",
         arguments.timeout_seconds,
     )
 
@@ -76,7 +92,7 @@ def main() -> int:
         REJECTION,
         arguments.timeout_seconds,
     )
-    if "profile=MOB-04/2" in output:
+    if "profile=MOB-04/3" in output:
         raise RuntimeError("unbound authority unexpectedly produced a successful runtime snapshot")
 
     report = {

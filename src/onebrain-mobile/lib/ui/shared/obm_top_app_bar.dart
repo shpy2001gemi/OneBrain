@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../design/generated/mobile_design_tokens.g.dart';
+import 'obm_icon.dart';
 
 class ObmTopAppBar extends StatelessWidget implements PreferredSizeWidget {
   const ObmTopAppBar({
@@ -20,6 +21,22 @@ class ObmTopAppBar extends StatelessWidget implements PreferredSizeWidget {
   );
 
   @override
-  Widget build(BuildContext context) =>
-      AppBar(title: Text(title), leading: leading, actions: actions);
+  Widget build(BuildContext context) {
+    final canPop = ModalRoute.of(context)?.canPop ?? false;
+    final resolvedLeading =
+        leading ??
+        (canPop
+            ? IconButton(
+                tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                onPressed: () => Navigator.maybePop(context),
+                icon: const ObmIcon(ObmSymbol.arrowBack),
+              )
+            : null);
+    return AppBar(
+      title: Text(title),
+      leading: resolvedLeading,
+      automaticallyImplyLeading: false,
+      actions: actions,
+    );
+  }
 }

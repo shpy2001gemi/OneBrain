@@ -12,6 +12,7 @@ blake3 = { version = "1", features = ["pure"] }
 chacha20poly1305 = "0.11"
 getrandom = "0.3"
 hex = "0.4"
+infer = "0.22.0"
 ku-core = { path = "../ku-core", default-features = false, features = ["persist"] }
 ku-kql = { path = "../ku-kql", default-features = false }
 redb = "2"

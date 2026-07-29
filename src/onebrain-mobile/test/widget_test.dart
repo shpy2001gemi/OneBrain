@@ -17,7 +17,7 @@ void main() {
 
     expect(find.text('Grow ideas on your own node'), findsOneWidget);
     expect(find.textContaining('Android test host ready'), findsOneWidget);
-    expect(find.text('Rust bridge 0.1.0-test · ABI 6'), findsOneWidget);
+    expect(find.text('Rust bridge 0.1.0-test · ABI 7'), findsOneWidget);
     expect(find.text('Typed round trip verified'), findsOneWidget);
     expect(
       find.text(
@@ -173,6 +173,41 @@ void main() {
     },
   );
 
+  testWidgets(
+    'MOB-SCR-CAP-004 stages picker media without exposing a path or source bytes',
+    (tester) async {
+      await tester.pumpWidget(
+        _testApp(
+          gateway: const _FakeMobileHostGateway(
+            onboardingCursor: MobileOnboardingCursor.limitedHome,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Capture'));
+      await tester.pumpAndSettle();
+      final importAction = find.text('Import private media');
+      await tester.ensureVisible(importAction);
+      await tester.tap(importAction);
+      await tester.pumpAndSettle();
+      expect(find.text('Staging is not publication'), findsOneWidget);
+      expect(find.textContaining('OwnedOriginal'), findsOneWidget);
+
+      final pickerActions = find.text('Choose with system picker');
+      await tester.ensureVisible(pickerActions.first);
+      await tester.tap(pickerActions.first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Encrypted stage verified'), findsOneWidget);
+      expect(
+        find.textContaining('source_00000000000000000000000000000000'),
+        findsOneWidget,
+      );
+      expect(find.textContaining(RegExp(r'[A-Z]:\\|content://|file://')), findsNothing);
+    },
+  );
+
   test('theme projects generated token extensions', () {
     final theme = OneBrainTheme.light;
 
@@ -252,18 +287,18 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
       const MobileHostSnapshot(
         platform: 'Android test',
-        apiVersion: '6',
+        apiVersion: '7',
         registryRequestIssued: false,
         rustCoreLinked: true,
         rustCoreVersion: '0.1.0-test',
-        rustAbiVersion: 6,
+        rustAbiVersion: 7,
         rustRoundTripVerified: true,
       );
 
   @override
   Future<MobileRuntimeSnapshot> inspectRuntimeProfile() async =>
       MobileRuntimeSnapshot(
-        profileVersion: 'MOB-04/2',
+        profileVersion: 'MOB-04/3',
         processGeneration: 1,
         activationPhase: 'Active',
         activeGrantCount: 1,
@@ -284,6 +319,7 @@ class _FakeMobileHostGateway implements MobileHostGateway {
         redactedHistoryReady: true,
         encryptedRawDraftCount: 0,
         pendingShareSpoolCount: pendingSpools.length,
+        stagedVerifiedMediaCount: 0,
         onboardingCursor: onboardingCursor,
       );
 
@@ -311,6 +347,19 @@ class _FakeMobileHostGateway implements MobileHostGateway {
     required String contentLanguage,
   }) async =>
       saveRawTextDraft(contentLanguage: contentLanguage, content: 'shared');
+
+  @override
+  Future<MobileMediaStageReceipt> pickAndStagePrivateMedia(
+    MobileMediaClass mediaClass,
+  ) async => MobileMediaStageReceipt(
+    sourceRef: 'source_00000000000000000000000000000000',
+    mediaClass: mediaClass,
+    mimeType: mediaClass == MobileMediaClass.document
+        ? 'application/pdf'
+        : '${mediaClass.name}/test',
+    contentBytes: 32,
+    blake3Digest: 'a' * 64,
+  );
 
   @override
   Future<String> startFeasibilityOperation(Duration delay) async =>

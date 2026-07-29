@@ -448,7 +448,72 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get fileCaptureBody =>
-      'System picker ingestion and verified media staging arrive with the media lifecycle package.';
+      'Choose through the system picker. Native streams the source directly into bounded encrypted Rust staging; no path or source bytes enter Flutter.';
+
+  @override
+  String get mediaImportTitle => 'Import private media';
+
+  @override
+  String get mediaImportBody =>
+      'Choose one source with the system picker. OneBrain verifies its bytes, encrypts every chunk and returns only an opaque local reference.';
+
+  @override
+  String get mediaImportBoundaryTitle => 'Staging is not publication';
+
+  @override
+  String get mediaImportBoundaryBody =>
+      'A verified stage remains PrivateLocal. It is not yet an OwnedOriginal, KU attachment, shared object or seedable media pack.';
+
+  @override
+  String get mediaPickImageTitle => 'Photo or image';
+
+  @override
+  String get mediaPickImageBody =>
+      'Select an image. Its actual type is detected from bytes rather than its filename.';
+
+  @override
+  String get mediaPickVideoTitle => 'Video';
+
+  @override
+  String get mediaPickVideoBody =>
+      'Select one video for foreground, encrypted streaming.';
+
+  @override
+  String get mediaPickAudioTitle => 'Audio';
+
+  @override
+  String get mediaPickAudioBody =>
+      'Select one audio source through the device picker.';
+
+  @override
+  String get mediaPickDocumentTitle => 'PDF document';
+
+  @override
+  String get mediaPickDocumentBody =>
+      'This foundation slice accepts verified PDF bytes and rejects archives or disguised files.';
+
+  @override
+  String get mediaPickAction => 'Choose with system picker';
+
+  @override
+  String get mediaPickBusy => 'Encrypting and verifying on this device…';
+
+  @override
+  String get mediaStageReadyTitle => 'Encrypted stage verified';
+
+  @override
+  String mediaStageReadyBody(
+    String mimeType,
+    int bytes,
+    String digestShort,
+    String sourceRef,
+  ) {
+    return '$mimeType · $bytes bytes · BLAKE3 $digestShort. Opaque source: $sourceRef.';
+  }
+
+  @override
+  String get mediaStageError =>
+      'The selected source was cancelled, unreadable, unsupported or did not match its claimed type. No unverified stage was kept.';
 
   @override
   String get textComposerTitle => 'Private text draft';

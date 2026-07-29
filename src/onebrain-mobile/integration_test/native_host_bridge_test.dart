@@ -14,14 +14,15 @@ void main() {
       final events = gateway.observeFeasibilityOperations().asBroadcastStream();
 
       final snapshot = await gateway.inspectBootstrapHost();
-      expect(snapshot.apiVersion, '6');
+      expect(snapshot.apiVersion, '7');
       expect(snapshot.registryRequestIssued, isFalse);
       expect(snapshot.rustCoreLinked, isTrue);
-      expect(snapshot.rustAbiVersion, 6);
+      expect(snapshot.rustAbiVersion, 7);
       expect(snapshot.rustRoundTripVerified, isTrue);
 
       final runtime = await gateway.inspectRuntimeProfile();
-      expect(runtime.profileVersion, 'MOB-04/2');
+      expect(runtime.profileVersion, 'MOB-04/3');
+      expect(runtime.stagedVerifiedMediaCount, greaterThanOrEqualTo(0));
       expect(runtime.pendingShareSpoolCount, greaterThanOrEqualTo(0));
       expect(runtime.processGeneration, greaterThanOrEqualTo(1));
       expect(runtime.activationPhase, 'Active');

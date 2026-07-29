@@ -58,6 +58,7 @@ class MobileRuntimeSnapshot {
     required this.redactedHistoryReady,
     required this.encryptedRawDraftCount,
     required this.pendingShareSpoolCount,
+    required this.stagedVerifiedMediaCount,
     required this.onboardingCursor,
   });
 
@@ -82,6 +83,7 @@ class MobileRuntimeSnapshot {
   final bool redactedHistoryReady;
   final int encryptedRawDraftCount;
   final int pendingShareSpoolCount;
+  final int stagedVerifiedMediaCount;
   final MobileOnboardingCursor onboardingCursor;
 }
 
@@ -113,6 +115,24 @@ class MobileShareSpoolSummary {
   final int receivedAtMonotonicMillis;
 }
 
+enum MobileMediaClass { image, video, audio, document }
+
+class MobileMediaStageReceipt {
+  const MobileMediaStageReceipt({
+    required this.sourceRef,
+    required this.mediaClass,
+    required this.mimeType,
+    required this.contentBytes,
+    required this.blake3Digest,
+  });
+
+  final String sourceRef;
+  final MobileMediaClass mediaClass;
+  final String mimeType;
+  final int contentBytes;
+  final String blake3Digest;
+}
+
 abstract interface class MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost();
 
@@ -129,6 +149,10 @@ abstract interface class MobileHostGateway {
     required String spoolRef,
     required String contentLanguage,
   });
+
+  Future<MobileMediaStageReceipt> pickAndStagePrivateMedia(
+    MobileMediaClass mediaClass,
+  );
 
   Future<void> setOnboardingCursor(MobileOnboardingCursor cursor);
 
@@ -186,8 +210,25 @@ class PigeonMobileHostGateway implements MobileHostGateway {
       redactedHistoryReady: snapshot.redactedHistoryReady,
       encryptedRawDraftCount: snapshot.encryptedRawDraftCount,
       pendingShareSpoolCount: snapshot.pendingShareSpoolCount,
+      stagedVerifiedMediaCount: snapshot.stagedVerifiedMediaCount,
       onboardingCursor:
           MobileOnboardingCursor.values[snapshot.onboardingCursor.index],
+    );
+  }
+
+  @override
+  Future<MobileMediaStageReceipt> pickAndStagePrivateMedia(
+    MobileMediaClass mediaClass,
+  ) async {
+    final receipt = await _api.pickAndStagePrivateMedia(
+      HostMediaClass.values[mediaClass.index],
+    );
+    return MobileMediaStageReceipt(
+      sourceRef: receipt.sourceRef,
+      mediaClass: MobileMediaClass.values[receipt.mediaClass.index],
+      mimeType: receipt.mimeType,
+      contentBytes: receipt.contentBytes,
+      blake3Digest: receipt.blake3Digest,
     );
   }
 

@@ -8,6 +8,7 @@ import '../ui/screens/entry_screen.dart';
 import '../ui/screens/home_screen.dart';
 import '../ui/screens/init_screen.dart';
 import '../ui/screens/library_screen.dart';
+import '../ui/screens/media_import_screen.dart';
 import '../ui/screens/onboarding_screen.dart';
 import '../ui/screens/settings_screen.dart';
 import '../ui/screens/share_spools_screen.dart';
@@ -81,6 +82,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/capture/spools',
         name: 'capture-share-spools',
         builder: (context, state) => const ShareSpoolsScreen(),
+      ),
+      GoRoute(
+        path: '/capture/import',
+        name: 'capture-media-import',
+        builder: (context, state) => const MediaImportScreen(),
       ),
       GoRoute(
         path: '/assistant',

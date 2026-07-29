@@ -18,7 +18,7 @@
 /**
  * Stable ABI revision understood by the current Swift/Kotlin adapters.
  */
-#define OB_MOBILE_BRIDGE_ABI_VERSION 6
+#define OB_MOBILE_BRIDGE_ABI_VERSION 7
 
 #define OB_MOBILE_RUNTIME_OK 0
 
@@ -39,6 +39,8 @@
 #define OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL 8
 
 #define OB_MOBILE_RUNTIME_SHARE_SPOOL_NOT_FOUND 9
+
+#define OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE 10
 
 typedef struct ObMobileRuntimeSnapshot {
   uint32_t status_code;
@@ -62,6 +64,7 @@ typedef struct ObMobileRuntimeSnapshot {
   uint8_t redacted_history_ready;
   uint64_t encrypted_raw_draft_count;
   uint64_t pending_share_spool_count;
+  uint64_t staged_verified_media_count;
   uint32_t onboarding_cursor;
 } ObMobileRuntimeSnapshot;
 
@@ -85,6 +88,19 @@ typedef struct ObMobileShareSpoolSummary {
   uint64_t content_bytes;
   uint64_t received_at_monotonic_ms;
 } ObMobileShareSpoolSummary;
+
+typedef struct ObMobileMediaStageReceipt {
+  uint32_t status_code;
+  uint8_t source_ref[40];
+  uint32_t source_ref_len;
+  uint8_t media_class[16];
+  uint32_t media_class_len;
+  uint8_t mime_type[128];
+  uint32_t mime_type_len;
+  uint64_t content_bytes;
+  uint8_t blake3_digest[64];
+  uint32_t blake3_digest_len;
+} ObMobileMediaStageReceipt;
 
 /**
  * Return the stable native-to-Rust ABI revision.
@@ -203,6 +219,51 @@ struct ObMobileRawDraftReceipt ob_mobile_runtime_import_shared_text_utf8(const u
                                                                          size_t spool_ref_len,
                                                                          const uint8_t *content_language,
                                                                          size_t content_language_len);
+
+/**
+ * Begin a native-owned system-picker stream into encrypted private staging.
+ *
+ * Neither a provider URI nor filesystem path enters this ABI.
+ *
+ * # Safety
+ *
+ * Both pointers must reference their declared readable byte lengths.
+ */
+struct ObMobileMediaStageReceipt ob_mobile_runtime_start_media_stage_utf8(const uint8_t *requested_class,
+                                                                          size_t requested_class_len,
+                                                                          const uint8_t *declared_mime_type,
+                                                                          size_t declared_mime_type_len);
+
+/**
+ * Append one bounded plaintext chunk; Rust encrypts and commits it before return.
+ *
+ * # Safety
+ *
+ * Both pointers must reference their declared readable byte lengths.
+ */
+uint32_t ob_mobile_runtime_append_media_stage(const uint8_t *source_ref,
+                                              size_t source_ref_len,
+                                              const uint8_t *chunk,
+                                              size_t chunk_len);
+
+/**
+ * Verify the complete encrypted stream and return its opaque source receipt.
+ *
+ * # Safety
+ *
+ * `source_ref` must reference its declared readable byte length.
+ */
+struct ObMobileMediaStageReceipt ob_mobile_runtime_finish_media_stage_utf8(const uint8_t *source_ref,
+                                                                           size_t source_ref_len);
+
+/**
+ * Mark a non-verified stream interrupted and remove its encrypted partial file.
+ *
+ * # Safety
+ *
+ * `source_ref` must reference its declared readable byte length.
+ */
+uint32_t ob_mobile_runtime_abort_media_stage_utf8(const uint8_t *source_ref, size_t source_ref_len);
 
 /**
  * Persist a bounded onboarding resume cursor in the Rust bootstrap store.

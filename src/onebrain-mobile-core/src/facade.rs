@@ -1,7 +1,7 @@
 use crate::{
     run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, ExecutionGrant,
-    ExecutionGrantKind, MobileCoreError, MobileFeatureFlags, NetworkScope, OnboardingCursor,
-    RawDraftReceipt, ResourceBudgets, RuntimeServices, SecureIdentitySession,
+    ExecutionGrantKind, MediaStageReceipt, MobileCoreError, MobileFeatureFlags, NetworkScope,
+    OnboardingCursor, RawDraftReceipt, ResourceBudgets, RuntimeServices, SecureIdentitySession,
     SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary, TransferLandingRecord,
     MOBILE_RUNTIME_PROFILE_VERSION,
 };
@@ -38,6 +38,7 @@ pub struct MobileRuntimeSnapshot {
     pub redacted_history_ready: bool,
     pub encrypted_raw_draft_count: u64,
     pub pending_share_spool_count: u64,
+    pub staged_verified_media_count: u64,
     pub onboarding_cursor: OnboardingCursor,
 }
 
@@ -103,8 +104,17 @@ impl MobileRuntimeFacade {
                 let authority = material.installation_authority();
                 let vault_path = services.paths.private_vault_database_path();
                 let draft_path = services.paths.private_draft_database_path();
-                let session =
-                    SecureIdentitySession::open(material, &vault_path, &draft_path, now, policy)?;
+                let media_database_path = services.paths.private_media_staging_database_path();
+                let media_root = services.paths.private_media_staging_root();
+                let session = SecureIdentitySession::open(
+                    material,
+                    &vault_path,
+                    &draft_path,
+                    &media_database_path,
+                    &media_root,
+                    now,
+                    policy,
+                )?;
                 let created = store.bind_installation_authority(&authority)?;
                 (Some(session), true, created)
             } else {
@@ -216,6 +226,11 @@ impl MobileRuntimeFacade {
                 .secure_identity
                 .as_ref()
                 .and_then(|session| session.pending_share_spool_count().ok())
+                .unwrap_or(0),
+            staged_verified_media_count: self
+                .secure_identity
+                .as_ref()
+                .and_then(|session| session.staged_verified_media_count().ok())
                 .unwrap_or(0),
             onboarding_cursor: self.store.onboarding_cursor().unwrap_or_default(),
         }
@@ -334,6 +349,73 @@ impl MobileRuntimeFacade {
         Ok(receipt)
     }
 
+    pub fn start_media_stage(
+        &mut self,
+        requested_class: &str,
+        declared_mime_type: &str,
+    ) -> Result<String, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        let source_ref = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .start_media_stage(requested_class, declared_mime_type, now)?;
+        self.store.append_security_history(
+            self.arbiter.process_generation(),
+            now,
+            "PRIVATE_MEDIA_STAGE_STARTED",
+            "CAPTURE",
+            true,
+        )?;
+        self.services.telemetry.record("mobile_media_stage_started");
+        Ok(source_ref)
+    }
+
+    pub fn append_media_stage(
+        &mut self,
+        source_ref: &str,
+        chunk: &[u8],
+    ) -> Result<(), MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .append_media_stage(source_ref, chunk, now)
+    }
+
+    pub fn finish_media_stage(
+        &mut self,
+        source_ref: &str,
+    ) -> Result<MediaStageReceipt, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        let receipt = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .finish_media_stage(source_ref, now)?;
+        self.store.append_security_history(
+            self.arbiter.process_generation(),
+            now,
+            "PRIVATE_MEDIA_STAGE_VERIFIED",
+            "CAPTURE",
+            true,
+        )?;
+        self.services
+            .telemetry
+            .record("mobile_media_stage_verified");
+        Ok(receipt)
+    }
+
+    pub fn abort_media_stage(&mut self, source_ref: &str) -> Result<(), MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .abort_media_stage(source_ref, now)?;
+        self.services.telemetry.record("mobile_media_stage_aborted");
+        Ok(())
+    }
+
     pub fn set_onboarding_cursor(&self, cursor: OnboardingCursor) -> Result<(), MobileCoreError> {
         self.store.set_onboarding_cursor(cursor)?;
         self.services
@@ -364,10 +446,14 @@ impl MobileRuntimeFacade {
         let now = self.services.clock.monotonic_millis();
         let vault_path = self.services.paths.private_vault_database_path();
         let draft_path = self.services.paths.private_draft_database_path();
+        let media_database_path = self.services.paths.private_media_staging_database_path();
+        let media_root = self.services.paths.private_media_staging_root();
         self.secure_identity = Some(SecureIdentitySession::open(
             material,
             &vault_path,
             &draft_path,
+            &media_database_path,
+            &media_root,
             now,
             lock_policy,
         )?);

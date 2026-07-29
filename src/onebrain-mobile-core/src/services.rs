@@ -35,6 +35,8 @@ pub trait RuntimePathService: Send + Sync {
     fn bootstrap_database_path(&self) -> PathBuf;
     fn private_vault_database_path(&self) -> PathBuf;
     fn private_draft_database_path(&self) -> PathBuf;
+    fn private_media_staging_database_path(&self) -> PathBuf;
+    fn private_media_staging_root(&self) -> PathBuf;
 }
 
 pub trait BootstrapStorageService: Send + Sync {
@@ -140,6 +142,14 @@ impl RuntimePathService for FixedRuntimePaths {
 
     fn private_draft_database_path(&self) -> PathBuf {
         self.root.join("private-drafts.redb")
+    }
+
+    fn private_media_staging_database_path(&self) -> PathBuf {
+        self.root.join("private-media-staging.redb")
+    }
+
+    fn private_media_staging_root(&self) -> PathBuf {
+        self.root.join("media").join("staging")
     }
 }
 

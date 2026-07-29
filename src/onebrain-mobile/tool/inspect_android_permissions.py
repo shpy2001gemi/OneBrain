@@ -40,8 +40,17 @@ def _find_aapt() -> Path:
     sdk_value = os.environ.get("ANDROID_HOME") or os.environ.get(
         "ANDROID_SDK_ROOT"
     )
+    if not sdk_value and os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            default_sdk = Path(local_app_data) / "Android" / "Sdk"
+            if default_sdk.is_dir():
+                sdk_value = str(default_sdk)
     if not sdk_value:
-        raise RuntimeError("ANDROID_HOME or ANDROID_SDK_ROOT is required")
+        raise RuntimeError(
+            "Android SDK not found via ANDROID_HOME, ANDROID_SDK_ROOT, "
+            "or the Windows user SDK location"
+        )
     build_tools = Path(sdk_value) / "build-tools"
     executable = "aapt.exe" if os.name == "nt" else "aapt"
     candidates = sorted(

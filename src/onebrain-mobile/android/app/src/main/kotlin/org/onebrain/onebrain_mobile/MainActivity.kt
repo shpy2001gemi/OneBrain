@@ -1,6 +1,9 @@
 package org.onebrain.onebrain_mobile
 
+import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -9,8 +12,11 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import org.onebrain.onebrain_mobile.generated.FlutterError
 import org.onebrain.onebrain_mobile.generated.HostBootstrapSnapshot
+import org.onebrain.onebrain_mobile.generated.HostMediaClass
+import org.onebrain.onebrain_mobile.generated.HostMediaStageReceipt
 import org.onebrain.onebrain_mobile.generated.HostOperationEvent
 import org.onebrain.onebrain_mobile.generated.HostOperationEventKind
 import org.onebrain.onebrain_mobile.generated.HostOperationEventsStreamHandler
@@ -21,8 +27,10 @@ import org.onebrain.onebrain_mobile.generated.MobileHostApi
 import org.onebrain.onebrain_mobile.generated.PigeonEventSink
 import org.onebrain.onebrain_mobile.generated.HostShareSpoolSummary
 
-private const val HOST_API_VERSION = "6"
+private const val HOST_API_VERSION = "7"
 private const val MAX_FEASIBILITY_DELAY_MILLIS = 30_000L
+private const val MEDIA_PICK_REQUEST_CODE = 7_104
+private const val MEDIA_STREAM_CHUNK_BYTES = 256 * 1024
 private const val RUNTIME_LOG_TAG = "OneBrainMobileRuntime"
 private const val SHARE_CALLBACK_TOKEN =
     "org.onebrain.onebrain_mobile.extra.SHARE_CALLBACK_TOKEN"
@@ -30,15 +38,18 @@ private const val SHARE_CALLBACK_TOKEN =
 class MainActivity : FlutterActivity() {
     private lateinit var hostApi: AndroidMobileHost
     private lateinit var hostEvents: AndroidHostEvents
+    private var pendingMediaPick: PendingMediaPick? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         hostEvents = AndroidHostEvents()
         hostApi =
             AndroidMobileHost(
+                applicationContext,
                 applicationContext.noBackupFilesDir.absolutePath,
                 SecurityMaterialStore(applicationContext),
                 hostEvents,
+                ::requestPrivateMediaPick,
             )
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MobileHostApi.setUp(messenger, hostApi)
@@ -54,11 +65,85 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (::hostApi.isInitialized) {
+            hostApi.allowForegroundMediaWork()
+        }
+    }
+
+    @Deprecated("Android system picker result is intentionally owned by the native host")
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?,
+    ) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != MEDIA_PICK_REQUEST_CODE) {
+            return
+        }
+        val pending = pendingMediaPick ?: return
+        pendingMediaPick = null
+        val uri = data?.data
+        if (resultCode != Activity.RESULT_OK || uri == null) {
+            pending.callback(
+                Result.failure(
+                    FlutterError(
+                        code = "MEDIA_PICK_CANCELLED",
+                        message = "No private media source was selected",
+                    ),
+                ),
+            )
+            return
+        }
+        hostApi.stagePickedMedia(uri, pending.mediaClass, pending.callback)
+    }
+
+    private fun requestPrivateMediaPick(
+        mediaClass: HostMediaClass,
+        callback: (Result<HostMediaStageReceipt>) -> Unit,
+    ) {
+        if (pendingMediaPick != null) {
+            callback(
+                Result.failure(
+                    FlutterError(
+                        code = "MEDIA_PICK_BUSY",
+                        message = "Another private media picker is active",
+                    ),
+                ),
+            )
+            return
+        }
+        pendingMediaPick = PendingMediaPick(mediaClass, callback)
+        val intent =
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                type =
+                    when (mediaClass) {
+                        HostMediaClass.IMAGE -> "image/*"
+                        HostMediaClass.VIDEO -> "video/*"
+                        HostMediaClass.AUDIO -> "audio/*"
+                        HostMediaClass.DOCUMENT -> "application/pdf"
+                    }
+            }
+        @Suppress("DEPRECATION")
+        startActivityForResult(intent, MEDIA_PICK_REQUEST_CODE)
+    }
+
     override fun onStop() {
-        hostApi.lockPrivateNode()
+        if (::hostApi.isInitialized) {
+            hostApi.stopForegroundMediaWork()
+            hostApi.lockPrivateNode()
+        }
         super.onStop()
     }
 }
+
+private data class PendingMediaPick(
+    val mediaClass: HostMediaClass,
+    val callback: (Result<HostMediaStageReceipt>) -> Unit,
+)
 
 private class AndroidHostEvents : HostOperationEventsStreamHandler() {
     private var sink: PigeonEventSink<HostOperationEvent>? = null
@@ -77,9 +162,12 @@ private class AndroidHostEvents : HostOperationEventsStreamHandler() {
 }
 
 private class AndroidMobileHost(
+    private val context: Context,
     private val dataRoot: String,
     private val securityMaterialStore: SecurityMaterialStore,
     private val events: AndroidHostEvents,
+    private val requestMediaPick:
+        (HostMediaClass, (Result<HostMediaStageReceipt>) -> Unit) -> Unit,
 ) : MobileHostApi {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val runtimeExecutor =
@@ -87,6 +175,7 @@ private class AndroidMobileHost(
             Thread(runnable, "onebrain-mobile-runtime")
         }
     private val pending = mutableMapOf<String, Runnable>()
+    private val foregroundMediaWorkAllowed = AtomicBoolean(true)
 
     fun acceptShareIntent(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) {
@@ -181,6 +270,7 @@ private class AndroidMobileHost(
                             "history=${rust.redactedHistoryReady} " +
                             "drafts=${rust.encryptedRawDraftCount} " +
                             "shareSpools=${rust.pendingShareSpoolCount} " +
+                            "stagedMedia=${rust.stagedVerifiedMediaCount} " +
                             "onboarding=${rust.onboardingCursor}",
                     )
                     HostRuntimeSnapshot(
@@ -205,6 +295,7 @@ private class AndroidMobileHost(
                         redactedHistoryReady = rust.redactedHistoryReady,
                         encryptedRawDraftCount = rust.encryptedRawDraftCount,
                         pendingShareSpoolCount = rust.pendingShareSpoolCount,
+                        stagedVerifiedMediaCount = rust.stagedVerifiedMediaCount,
                         onboardingCursor =
                             HostOnboardingCursor.ofRaw(rust.onboardingCursor)
                                 ?: HostOnboardingCursor.WELCOME,
@@ -347,6 +438,119 @@ private class AndroidMobileHost(
         }
     }
 
+    override fun pickAndStagePrivateMedia(
+        mediaClass: HostMediaClass,
+        callback: (Result<HostMediaStageReceipt>) -> Unit,
+    ) {
+        mainHandler.post {
+            requestMediaPick(mediaClass, callback)
+        }
+    }
+
+    fun stagePickedMedia(
+        uri: Uri,
+        mediaClass: HostMediaClass,
+        callback: (Result<HostMediaStageReceipt>) -> Unit,
+    ) {
+        runtimeExecutor.execute {
+            var sourceRef: String? = null
+            val result =
+                runCatching {
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    try {
+                        val declaredMimeType =
+                            context.contentResolver.getType(uri)?.lowercase()
+                                ?: "application/octet-stream"
+                        sourceRef =
+                            RustMobileBridge.startMediaStage(
+                                dataRoot,
+                                securityMaterial,
+                                mediaClass.name.lowercase(),
+                                declaredMimeType,
+                            )
+                        val buffer = ByteArray(MEDIA_STREAM_CHUNK_BYTES)
+                        try {
+                            context.contentResolver.openInputStream(uri).use { input ->
+                                checkNotNull(input) {
+                                    "Android content provider returned no readable media stream"
+                                }
+                                while (true) {
+                                    check(foregroundMediaWorkAllowed.get()) {
+                                        "Private media staging lost its foreground grant"
+                                    }
+                                    val read = input.read(buffer)
+                                    if (read < 0) {
+                                        break
+                                    }
+                                    check(foregroundMediaWorkAllowed.get()) {
+                                        "Private media staging lost its foreground grant"
+                                    }
+                                    if (read == 0) {
+                                        continue
+                                    }
+                                    val chunk =
+                                        if (read == buffer.size) {
+                                            buffer
+                                        } else {
+                                            buffer.copyOf(read)
+                                        }
+                                    try {
+                                        RustMobileBridge.appendMediaStage(sourceRef!!, chunk)
+                                    } finally {
+                                        if (chunk !== buffer) {
+                                            chunk.fill(0)
+                                        }
+                                    }
+                                }
+                            }
+                        } finally {
+                            buffer.fill(0)
+                        }
+                        val receipt = RustMobileBridge.finishMediaStage(sourceRef!!)
+                        HostMediaStageReceipt(
+                            sourceRef = receipt.sourceRef,
+                            mediaClass =
+                                HostMediaClass.ofRaw(
+                                    when (receipt.mediaClass) {
+                                        "image" -> 0
+                                        "video" -> 1
+                                        "audio" -> 2
+                                        "document" -> 3
+                                        else -> -1
+                                    },
+                                ) ?: error("Rust returned an invalid media class"),
+                            mimeType = receipt.mimeType,
+                            contentBytes = receipt.contentBytes,
+                            blake3Digest = receipt.blake3Digest,
+                        )
+                    } finally {
+                        securityMaterial.fill(0)
+                    }
+                }.fold(
+                    onSuccess = {
+                        Log.i(
+                            RUNTIME_LOG_TAG,
+                            "private_media_staged class=${mediaClass.name.lowercase()}",
+                        )
+                        Result.success(it)
+                    },
+                    onFailure = {
+                        sourceRef?.let { reference ->
+                            runCatching { RustMobileBridge.abortMediaStage(reference) }
+                        }
+                        Log.w(RUNTIME_LOG_TAG, "private_media_stage_rejected")
+                        Result.failure(
+                            FlutterError(
+                                code = "MEDIA_STAGE_FAILED",
+                                message = "Private media could not be verified and staged",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { callback(result) }
+        }
+    }
+
     override fun setOnboardingCursor(
         cursor: HostOnboardingCursor,
         callback: (Result<Boolean>) -> Unit,
@@ -383,6 +587,14 @@ private class AndroidMobileHost(
         runtimeExecutor.execute {
             RustMobileBridge.lockRuntime()
         }
+    }
+
+    fun allowForegroundMediaWork() {
+        foregroundMediaWorkAllowed.set(true)
+    }
+
+    fun stopForegroundMediaWork() {
+        foregroundMediaWorkAllowed.set(false)
     }
 
     override fun startFeasibilityOperation(

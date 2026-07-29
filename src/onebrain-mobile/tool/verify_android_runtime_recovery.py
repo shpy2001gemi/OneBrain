@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -37,8 +38,25 @@ RUNTIME_PATTERN = re.compile(
     r"history=(?P<history>true|false) "
     r"drafts=(?P<drafts>\d+) "
     r"shareSpools=(?P<share_spools>\d+) "
+    r"stagedMedia=(?P<staged_media>\d+) "
     r"onboarding=(?P<onboarding>\d+)"
 )
+
+
+def resolve_adb(explicit: str | None) -> str:
+    if explicit:
+        return explicit
+    discovered = shutil.which("adb")
+    if discovered:
+        return discovered
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        candidate = (
+            Path(local_app_data) / "Android" / "Sdk" / "platform-tools" / "adb.exe"
+        )
+        if candidate.is_file():
+            return str(candidate)
+    raise SystemExit("adb is required")
 
 
 def run(adb: str, device: str, *arguments: str) -> str:
@@ -80,6 +98,7 @@ def read_runtime_log(adb: str, device: str) -> dict[str, object] | None:
         "redacted_history_ready": values["history"] == "true",
         "encrypted_raw_draft_count": int(values["drafts"]),
         "pending_share_spool_count": int(values["share_spools"]),
+        "staged_verified_media_count": int(values["staged_media"]),
         "onboarding_cursor": int(values["onboarding"]),
     }
 
@@ -96,7 +115,7 @@ def wait_for_runtime(adb: str, device: str, timeout_seconds: float) -> dict[str,
 
 def assert_common(snapshot: dict[str, object]) -> None:
     expected = {
-        "profile": "MOB-04/2",
+        "profile": "MOB-04/3",
         "phase": "Active",
         "active_grants": 1,
         "bootstrap_store_opened": True,
@@ -127,12 +146,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("apk", type=Path)
     parser.add_argument("--device", default="emulator-5554")
-    parser.add_argument("--adb", default=shutil.which("adb"))
+    parser.add_argument("--adb")
     parser.add_argument("--report", type=Path)
     parser.add_argument("--timeout-seconds", type=float, default=30)
     arguments = parser.parse_args()
-    if not arguments.adb:
-        raise SystemExit("adb is required")
+    arguments.adb = resolve_adb(arguments.adb)
     apk = arguments.apk.resolve()
     if not apk.is_file():
         raise SystemExit(f"APK does not exist: {apk}")

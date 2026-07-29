@@ -839,8 +839,115 @@ abstract class AppLocalizations {
   /// No description provided for @fileCaptureBody.
   ///
   /// In en, this message translates to:
-  /// **'System picker ingestion and verified media staging arrive with the media lifecycle package.'**
+  /// **'Choose through the system picker. Native streams the source directly into bounded encrypted Rust staging; no path or source bytes enter Flutter.'**
   String get fileCaptureBody;
+
+  /// No description provided for @mediaImportTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Import private media'**
+  String get mediaImportTitle;
+
+  /// No description provided for @mediaImportBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose one source with the system picker. OneBrain verifies its bytes, encrypts every chunk and returns only an opaque local reference.'**
+  String get mediaImportBody;
+
+  /// No description provided for @mediaImportBoundaryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Staging is not publication'**
+  String get mediaImportBoundaryTitle;
+
+  /// No description provided for @mediaImportBoundaryBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A verified stage remains PrivateLocal. It is not yet an OwnedOriginal, KU attachment, shared object or seedable media pack.'**
+  String get mediaImportBoundaryBody;
+
+  /// No description provided for @mediaPickImageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo or image'**
+  String get mediaPickImageTitle;
+
+  /// No description provided for @mediaPickImageBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Select an image. Its actual type is detected from bytes rather than its filename.'**
+  String get mediaPickImageBody;
+
+  /// No description provided for @mediaPickVideoTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Video'**
+  String get mediaPickVideoTitle;
+
+  /// No description provided for @mediaPickVideoBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Select one video for foreground, encrypted streaming.'**
+  String get mediaPickVideoBody;
+
+  /// No description provided for @mediaPickAudioTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio'**
+  String get mediaPickAudioTitle;
+
+  /// No description provided for @mediaPickAudioBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Select one audio source through the device picker.'**
+  String get mediaPickAudioBody;
+
+  /// No description provided for @mediaPickDocumentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'PDF document'**
+  String get mediaPickDocumentTitle;
+
+  /// No description provided for @mediaPickDocumentBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This foundation slice accepts verified PDF bytes and rejects archives or disguised files.'**
+  String get mediaPickDocumentBody;
+
+  /// No description provided for @mediaPickAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose with system picker'**
+  String get mediaPickAction;
+
+  /// No description provided for @mediaPickBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypting and verifying on this device…'**
+  String get mediaPickBusy;
+
+  /// No description provided for @mediaStageReadyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypted stage verified'**
+  String get mediaStageReadyTitle;
+
+  /// No description provided for @mediaStageReadyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'{mimeType} · {bytes} bytes · BLAKE3 {digestShort}. Opaque source: {sourceRef}.'**
+  String mediaStageReadyBody(
+    String mimeType,
+    int bytes,
+    String digestShort,
+    String sourceRef,
+  );
+
+  /// No description provided for @mediaStageError.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected source was cancelled, unreadable, unsupported or did not match its claimed type. No unverified stage was kept.'**
+  String get mediaStageError;
 
   /// No description provided for @textComposerTitle.
   ///

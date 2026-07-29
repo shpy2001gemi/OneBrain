@@ -207,6 +207,19 @@ enum class HostOnboardingCursor(val raw: Int) {
   }
 }
 
+enum class HostMediaClass(val raw: Int) {
+  IMAGE(0),
+  VIDEO(1),
+  AUDIO(2),
+  DOCUMENT(3);
+
+  companion object {
+    fun ofRaw(raw: Int): HostMediaClass? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
 enum class HostOperationEventKind(val raw: Int) {
   STARTED(0),
   CANCELLED(1),
@@ -303,6 +316,7 @@ data class HostRuntimeSnapshot (
   val redactedHistoryReady: Boolean,
   val encryptedRawDraftCount: Long,
   val pendingShareSpoolCount: Long,
+  val stagedVerifiedMediaCount: Long,
   val onboardingCursor: HostOnboardingCursor
 )
  {
@@ -329,8 +343,9 @@ data class HostRuntimeSnapshot (
       val redactedHistoryReady = pigeonVar_list[18] as Boolean
       val encryptedRawDraftCount = pigeonVar_list[19] as Long
       val pendingShareSpoolCount = pigeonVar_list[20] as Long
-      val onboardingCursor = pigeonVar_list[21] as HostOnboardingCursor
-      return HostRuntimeSnapshot(profileVersion, processGeneration, activationPhase, activeGrantCount, recoveredUncleanStart, bootstrapStoreOpened, registryState, localKqlFixtureVerified, privatePlannerVerified, noLlmProvider, staleCallbackRejected, secureProfileActive, installationBindingVerified, installationCreated, securitySessionUnlocked, privateVaultReady, identityDomainsSeparated, privacyDefaultsFailSafe, redactedHistoryReady, encryptedRawDraftCount, pendingShareSpoolCount, onboardingCursor)
+      val stagedVerifiedMediaCount = pigeonVar_list[21] as Long
+      val onboardingCursor = pigeonVar_list[22] as HostOnboardingCursor
+      return HostRuntimeSnapshot(profileVersion, processGeneration, activationPhase, activeGrantCount, recoveredUncleanStart, bootstrapStoreOpened, registryState, localKqlFixtureVerified, privatePlannerVerified, noLlmProvider, staleCallbackRejected, secureProfileActive, installationBindingVerified, installationCreated, securitySessionUnlocked, privateVaultReady, identityDomainsSeparated, privacyDefaultsFailSafe, redactedHistoryReady, encryptedRawDraftCount, pendingShareSpoolCount, stagedVerifiedMediaCount, onboardingCursor)
     }
   }
   fun toList(): List<Any?> {
@@ -356,6 +371,7 @@ data class HostRuntimeSnapshot (
       redactedHistoryReady,
       encryptedRawDraftCount,
       pendingShareSpoolCount,
+      stagedVerifiedMediaCount,
       onboardingCursor,
     )
   }
@@ -367,7 +383,7 @@ data class HostRuntimeSnapshot (
       return true
     }
     val other = other as HostRuntimeSnapshot
-    return MobileHostApiPigeonUtils.deepEquals(this.profileVersion, other.profileVersion) && MobileHostApiPigeonUtils.deepEquals(this.processGeneration, other.processGeneration) && MobileHostApiPigeonUtils.deepEquals(this.activationPhase, other.activationPhase) && MobileHostApiPigeonUtils.deepEquals(this.activeGrantCount, other.activeGrantCount) && MobileHostApiPigeonUtils.deepEquals(this.recoveredUncleanStart, other.recoveredUncleanStart) && MobileHostApiPigeonUtils.deepEquals(this.bootstrapStoreOpened, other.bootstrapStoreOpened) && MobileHostApiPigeonUtils.deepEquals(this.registryState, other.registryState) && MobileHostApiPigeonUtils.deepEquals(this.localKqlFixtureVerified, other.localKqlFixtureVerified) && MobileHostApiPigeonUtils.deepEquals(this.privatePlannerVerified, other.privatePlannerVerified) && MobileHostApiPigeonUtils.deepEquals(this.noLlmProvider, other.noLlmProvider) && MobileHostApiPigeonUtils.deepEquals(this.staleCallbackRejected, other.staleCallbackRejected) && MobileHostApiPigeonUtils.deepEquals(this.secureProfileActive, other.secureProfileActive) && MobileHostApiPigeonUtils.deepEquals(this.installationBindingVerified, other.installationBindingVerified) && MobileHostApiPigeonUtils.deepEquals(this.installationCreated, other.installationCreated) && MobileHostApiPigeonUtils.deepEquals(this.securitySessionUnlocked, other.securitySessionUnlocked) && MobileHostApiPigeonUtils.deepEquals(this.privateVaultReady, other.privateVaultReady) && MobileHostApiPigeonUtils.deepEquals(this.identityDomainsSeparated, other.identityDomainsSeparated) && MobileHostApiPigeonUtils.deepEquals(this.privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) && MobileHostApiPigeonUtils.deepEquals(this.redactedHistoryReady, other.redactedHistoryReady) && MobileHostApiPigeonUtils.deepEquals(this.encryptedRawDraftCount, other.encryptedRawDraftCount) && MobileHostApiPigeonUtils.deepEquals(this.pendingShareSpoolCount, other.pendingShareSpoolCount) && MobileHostApiPigeonUtils.deepEquals(this.onboardingCursor, other.onboardingCursor)
+    return MobileHostApiPigeonUtils.deepEquals(this.profileVersion, other.profileVersion) && MobileHostApiPigeonUtils.deepEquals(this.processGeneration, other.processGeneration) && MobileHostApiPigeonUtils.deepEquals(this.activationPhase, other.activationPhase) && MobileHostApiPigeonUtils.deepEquals(this.activeGrantCount, other.activeGrantCount) && MobileHostApiPigeonUtils.deepEquals(this.recoveredUncleanStart, other.recoveredUncleanStart) && MobileHostApiPigeonUtils.deepEquals(this.bootstrapStoreOpened, other.bootstrapStoreOpened) && MobileHostApiPigeonUtils.deepEquals(this.registryState, other.registryState) && MobileHostApiPigeonUtils.deepEquals(this.localKqlFixtureVerified, other.localKqlFixtureVerified) && MobileHostApiPigeonUtils.deepEquals(this.privatePlannerVerified, other.privatePlannerVerified) && MobileHostApiPigeonUtils.deepEquals(this.noLlmProvider, other.noLlmProvider) && MobileHostApiPigeonUtils.deepEquals(this.staleCallbackRejected, other.staleCallbackRejected) && MobileHostApiPigeonUtils.deepEquals(this.secureProfileActive, other.secureProfileActive) && MobileHostApiPigeonUtils.deepEquals(this.installationBindingVerified, other.installationBindingVerified) && MobileHostApiPigeonUtils.deepEquals(this.installationCreated, other.installationCreated) && MobileHostApiPigeonUtils.deepEquals(this.securitySessionUnlocked, other.securitySessionUnlocked) && MobileHostApiPigeonUtils.deepEquals(this.privateVaultReady, other.privateVaultReady) && MobileHostApiPigeonUtils.deepEquals(this.identityDomainsSeparated, other.identityDomainsSeparated) && MobileHostApiPigeonUtils.deepEquals(this.privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) && MobileHostApiPigeonUtils.deepEquals(this.redactedHistoryReady, other.redactedHistoryReady) && MobileHostApiPigeonUtils.deepEquals(this.encryptedRawDraftCount, other.encryptedRawDraftCount) && MobileHostApiPigeonUtils.deepEquals(this.pendingShareSpoolCount, other.pendingShareSpoolCount) && MobileHostApiPigeonUtils.deepEquals(this.stagedVerifiedMediaCount, other.stagedVerifiedMediaCount) && MobileHostApiPigeonUtils.deepEquals(this.onboardingCursor, other.onboardingCursor)
   }
 
   override fun hashCode(): Int {
@@ -393,11 +409,12 @@ data class HostRuntimeSnapshot (
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.redactedHistoryReady)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.encryptedRawDraftCount)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.pendingShareSpoolCount)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.stagedVerifiedMediaCount)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.onboardingCursor)
     return result
   }
   override fun toString(): String {
-    return "HostRuntimeSnapshot(profileVersion=$profileVersion, processGeneration=$processGeneration, activationPhase=$activationPhase, activeGrantCount=$activeGrantCount, recoveredUncleanStart=$recoveredUncleanStart, bootstrapStoreOpened=$bootstrapStoreOpened, registryState=$registryState, localKqlFixtureVerified=$localKqlFixtureVerified, privatePlannerVerified=$privatePlannerVerified, noLlmProvider=$noLlmProvider, staleCallbackRejected=$staleCallbackRejected, secureProfileActive=$secureProfileActive, installationBindingVerified=$installationBindingVerified, installationCreated=$installationCreated, securitySessionUnlocked=$securitySessionUnlocked, privateVaultReady=$privateVaultReady, identityDomainsSeparated=$identityDomainsSeparated, privacyDefaultsFailSafe=$privacyDefaultsFailSafe, redactedHistoryReady=$redactedHistoryReady, encryptedRawDraftCount=$encryptedRawDraftCount, pendingShareSpoolCount=$pendingShareSpoolCount, onboardingCursor=$onboardingCursor)"
+    return "HostRuntimeSnapshot(profileVersion=$profileVersion, processGeneration=$processGeneration, activationPhase=$activationPhase, activeGrantCount=$activeGrantCount, recoveredUncleanStart=$recoveredUncleanStart, bootstrapStoreOpened=$bootstrapStoreOpened, registryState=$registryState, localKqlFixtureVerified=$localKqlFixtureVerified, privatePlannerVerified=$privatePlannerVerified, noLlmProvider=$noLlmProvider, staleCallbackRejected=$staleCallbackRejected, secureProfileActive=$secureProfileActive, installationBindingVerified=$installationBindingVerified, installationCreated=$installationCreated, securitySessionUnlocked=$securitySessionUnlocked, privateVaultReady=$privateVaultReady, identityDomainsSeparated=$identityDomainsSeparated, privacyDefaultsFailSafe=$privacyDefaultsFailSafe, redactedHistoryReady=$redactedHistoryReady, encryptedRawDraftCount=$encryptedRawDraftCount, pendingShareSpoolCount=$pendingShareSpoolCount, stagedVerifiedMediaCount=$stagedVerifiedMediaCount, onboardingCursor=$onboardingCursor)"
   }
 }
 
@@ -500,6 +517,59 @@ data class HostShareSpoolSummary (
 }
 
 /** Generated class from Pigeon that represents data sent in messages. */
+data class HostMediaStageReceipt (
+  val sourceRef: String,
+  val mediaClass: HostMediaClass,
+  val mimeType: String,
+  val contentBytes: Long,
+  val blake3Digest: String
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): HostMediaStageReceipt {
+      val sourceRef = pigeonVar_list[0] as String
+      val mediaClass = pigeonVar_list[1] as HostMediaClass
+      val mimeType = pigeonVar_list[2] as String
+      val contentBytes = pigeonVar_list[3] as Long
+      val blake3Digest = pigeonVar_list[4] as String
+      return HostMediaStageReceipt(sourceRef, mediaClass, mimeType, contentBytes, blake3Digest)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      sourceRef,
+      mediaClass,
+      mimeType,
+      contentBytes,
+      blake3Digest,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as HostMediaStageReceipt
+    return MobileHostApiPigeonUtils.deepEquals(this.sourceRef, other.sourceRef) && MobileHostApiPigeonUtils.deepEquals(this.mediaClass, other.mediaClass) && MobileHostApiPigeonUtils.deepEquals(this.mimeType, other.mimeType) && MobileHostApiPigeonUtils.deepEquals(this.contentBytes, other.contentBytes) && MobileHostApiPigeonUtils.deepEquals(this.blake3Digest, other.blake3Digest)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.sourceRef)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.mediaClass)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.mimeType)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.contentBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.blake3Digest)
+    return result
+  }
+  override fun toString(): String {
+    return "HostMediaStageReceipt(sourceRef=$sourceRef, mediaClass=$mediaClass, mimeType=$mimeType, contentBytes=$contentBytes, blake3Digest=$blake3Digest)"
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
 data class HostOperationEvent (
   val operationId: String,
   val kind: HostOperationEventKind,
@@ -553,30 +623,40 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
       }
       130.toByte() -> {
         return (readValue(buffer) as Long?)?.let {
-          HostOperationEventKind.ofRaw(it.toInt())
+          HostMediaClass.ofRaw(it.toInt())
         }
       }
       131.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          HostBootstrapSnapshot.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          HostOperationEventKind.ofRaw(it.toInt())
         }
       }
       132.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostRuntimeSnapshot.fromList(it)
+          HostBootstrapSnapshot.fromList(it)
         }
       }
       133.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostRawDraftReceipt.fromList(it)
+          HostRuntimeSnapshot.fromList(it)
         }
       }
       134.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostShareSpoolSummary.fromList(it)
+          HostRawDraftReceipt.fromList(it)
         }
       }
       135.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          HostShareSpoolSummary.fromList(it)
+        }
+      }
+      136.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          HostMediaStageReceipt.fromList(it)
+        }
+      }
+      137.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           HostOperationEvent.fromList(it)
         }
@@ -590,28 +670,36 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
         stream.write(129)
         writeValue(stream, value.raw.toLong())
       }
-      is HostOperationEventKind -> {
+      is HostMediaClass -> {
         stream.write(130)
         writeValue(stream, value.raw.toLong())
       }
-      is HostBootstrapSnapshot -> {
+      is HostOperationEventKind -> {
         stream.write(131)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw.toLong())
       }
-      is HostRuntimeSnapshot -> {
+      is HostBootstrapSnapshot -> {
         stream.write(132)
         writeValue(stream, value.toList())
       }
-      is HostRawDraftReceipt -> {
+      is HostRuntimeSnapshot -> {
         stream.write(133)
         writeValue(stream, value.toList())
       }
-      is HostShareSpoolSummary -> {
+      is HostRawDraftReceipt -> {
         stream.write(134)
         writeValue(stream, value.toList())
       }
-      is HostOperationEvent -> {
+      is HostShareSpoolSummary -> {
         stream.write(135)
+        writeValue(stream, value.toList())
+      }
+      is HostMediaStageReceipt -> {
+        stream.write(136)
+        writeValue(stream, value.toList())
+      }
+      is HostOperationEvent -> {
+        stream.write(137)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -629,6 +717,7 @@ interface MobileHostApi {
   fun saveRawTextDraft(contentLanguage: String, content: String, callback: (Result<HostRawDraftReceipt>) -> Unit)
   fun inspectPendingShareSpools(callback: (Result<List<HostShareSpoolSummary>>) -> Unit)
   fun importSharedText(spoolRef: String, contentLanguage: String, callback: (Result<HostRawDraftReceipt>) -> Unit)
+  fun pickAndStagePrivateMedia(mediaClass: HostMediaClass, callback: (Result<HostMediaStageReceipt>) -> Unit)
   fun setOnboardingCursor(cursor: HostOnboardingCursor, callback: (Result<Boolean>) -> Unit)
   fun startFeasibilityOperation(delayMilliseconds: Long, callback: (Result<String>) -> Unit)
   fun cancelFeasibilityOperation(operationId: String, callback: (Result<Boolean>) -> Unit)
@@ -725,6 +814,26 @@ interface MobileHostApi {
             val spoolRefArg = args[0] as String
             val contentLanguageArg = args[1] as String
             api.importSharedText(spoolRefArg, contentLanguageArg) { result: Result<HostRawDraftReceipt> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndStagePrivateMedia$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val mediaClassArg = args[0] as HostMediaClass
+            api.pickAndStagePrivateMedia(mediaClassArg) { result: Result<HostMediaStageReceipt> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MobileHostApiPigeonUtils.wrapError(error))

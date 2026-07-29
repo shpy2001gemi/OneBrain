@@ -106,6 +106,13 @@ enum HostOnboardingCursor {
   limitedHome,
 }
 
+enum HostMediaClass {
+  image,
+  video,
+  audio,
+  document,
+}
+
 enum HostOperationEventKind {
   started,
   cancelled,
@@ -210,6 +217,7 @@ class HostRuntimeSnapshot {
     required this.redactedHistoryReady,
     required this.encryptedRawDraftCount,
     required this.pendingShareSpoolCount,
+    required this.stagedVerifiedMediaCount,
     required this.onboardingCursor,
   });
 
@@ -255,6 +263,8 @@ class HostRuntimeSnapshot {
 
   int pendingShareSpoolCount;
 
+  int stagedVerifiedMediaCount;
+
   HostOnboardingCursor onboardingCursor;
 
   List<Object?> _toList() {
@@ -280,6 +290,7 @@ class HostRuntimeSnapshot {
       redactedHistoryReady,
       encryptedRawDraftCount,
       pendingShareSpoolCount,
+      stagedVerifiedMediaCount,
       onboardingCursor,
     ];
   }
@@ -311,7 +322,8 @@ class HostRuntimeSnapshot {
       redactedHistoryReady: result[18]! as bool,
       encryptedRawDraftCount: result[19]! as int,
       pendingShareSpoolCount: result[20]! as int,
-      onboardingCursor: result[21]! as HostOnboardingCursor,
+      stagedVerifiedMediaCount: result[21]! as int,
+      onboardingCursor: result[22]! as HostOnboardingCursor,
     );
   }
 
@@ -324,7 +336,7 @@ class HostRuntimeSnapshot {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(profileVersion, other.profileVersion) && _deepEquals(processGeneration, other.processGeneration) && _deepEquals(activationPhase, other.activationPhase) && _deepEquals(activeGrantCount, other.activeGrantCount) && _deepEquals(recoveredUncleanStart, other.recoveredUncleanStart) && _deepEquals(bootstrapStoreOpened, other.bootstrapStoreOpened) && _deepEquals(registryState, other.registryState) && _deepEquals(localKqlFixtureVerified, other.localKqlFixtureVerified) && _deepEquals(privatePlannerVerified, other.privatePlannerVerified) && _deepEquals(noLlmProvider, other.noLlmProvider) && _deepEquals(staleCallbackRejected, other.staleCallbackRejected) && _deepEquals(secureProfileActive, other.secureProfileActive) && _deepEquals(installationBindingVerified, other.installationBindingVerified) && _deepEquals(installationCreated, other.installationCreated) && _deepEquals(securitySessionUnlocked, other.securitySessionUnlocked) && _deepEquals(privateVaultReady, other.privateVaultReady) && _deepEquals(identityDomainsSeparated, other.identityDomainsSeparated) && _deepEquals(privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) && _deepEquals(redactedHistoryReady, other.redactedHistoryReady) && _deepEquals(encryptedRawDraftCount, other.encryptedRawDraftCount) && _deepEquals(pendingShareSpoolCount, other.pendingShareSpoolCount) && _deepEquals(onboardingCursor, other.onboardingCursor);
+    return _deepEquals(profileVersion, other.profileVersion) && _deepEquals(processGeneration, other.processGeneration) && _deepEquals(activationPhase, other.activationPhase) && _deepEquals(activeGrantCount, other.activeGrantCount) && _deepEquals(recoveredUncleanStart, other.recoveredUncleanStart) && _deepEquals(bootstrapStoreOpened, other.bootstrapStoreOpened) && _deepEquals(registryState, other.registryState) && _deepEquals(localKqlFixtureVerified, other.localKqlFixtureVerified) && _deepEquals(privatePlannerVerified, other.privatePlannerVerified) && _deepEquals(noLlmProvider, other.noLlmProvider) && _deepEquals(staleCallbackRejected, other.staleCallbackRejected) && _deepEquals(secureProfileActive, other.secureProfileActive) && _deepEquals(installationBindingVerified, other.installationBindingVerified) && _deepEquals(installationCreated, other.installationCreated) && _deepEquals(securitySessionUnlocked, other.securitySessionUnlocked) && _deepEquals(privateVaultReady, other.privateVaultReady) && _deepEquals(identityDomainsSeparated, other.identityDomainsSeparated) && _deepEquals(privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) && _deepEquals(redactedHistoryReady, other.redactedHistoryReady) && _deepEquals(encryptedRawDraftCount, other.encryptedRawDraftCount) && _deepEquals(pendingShareSpoolCount, other.pendingShareSpoolCount) && _deepEquals(stagedVerifiedMediaCount, other.stagedVerifiedMediaCount) && _deepEquals(onboardingCursor, other.onboardingCursor);
   }
 
   @override
@@ -333,7 +345,7 @@ class HostRuntimeSnapshot {
 
   @override
   String toString() {
-    return 'HostRuntimeSnapshot(profileVersion: $profileVersion, processGeneration: $processGeneration, activationPhase: $activationPhase, activeGrantCount: $activeGrantCount, recoveredUncleanStart: $recoveredUncleanStart, bootstrapStoreOpened: $bootstrapStoreOpened, registryState: $registryState, localKqlFixtureVerified: $localKqlFixtureVerified, privatePlannerVerified: $privatePlannerVerified, noLlmProvider: $noLlmProvider, staleCallbackRejected: $staleCallbackRejected, secureProfileActive: $secureProfileActive, installationBindingVerified: $installationBindingVerified, installationCreated: $installationCreated, securitySessionUnlocked: $securitySessionUnlocked, privateVaultReady: $privateVaultReady, identityDomainsSeparated: $identityDomainsSeparated, privacyDefaultsFailSafe: $privacyDefaultsFailSafe, redactedHistoryReady: $redactedHistoryReady, encryptedRawDraftCount: $encryptedRawDraftCount, pendingShareSpoolCount: $pendingShareSpoolCount, onboardingCursor: $onboardingCursor)';
+    return 'HostRuntimeSnapshot(profileVersion: $profileVersion, processGeneration: $processGeneration, activationPhase: $activationPhase, activeGrantCount: $activeGrantCount, recoveredUncleanStart: $recoveredUncleanStart, bootstrapStoreOpened: $bootstrapStoreOpened, registryState: $registryState, localKqlFixtureVerified: $localKqlFixtureVerified, privatePlannerVerified: $privatePlannerVerified, noLlmProvider: $noLlmProvider, staleCallbackRejected: $staleCallbackRejected, secureProfileActive: $secureProfileActive, installationBindingVerified: $installationBindingVerified, installationCreated: $installationCreated, securitySessionUnlocked: $securitySessionUnlocked, privateVaultReady: $privateVaultReady, identityDomainsSeparated: $identityDomainsSeparated, privacyDefaultsFailSafe: $privacyDefaultsFailSafe, redactedHistoryReady: $redactedHistoryReady, encryptedRawDraftCount: $encryptedRawDraftCount, pendingShareSpoolCount: $pendingShareSpoolCount, stagedVerifiedMediaCount: $stagedVerifiedMediaCount, onboardingCursor: $onboardingCursor)';
   }
 }
 
@@ -457,6 +469,71 @@ class HostShareSpoolSummary {
   }
 }
 
+class HostMediaStageReceipt {
+  HostMediaStageReceipt({
+    required this.sourceRef,
+    required this.mediaClass,
+    required this.mimeType,
+    required this.contentBytes,
+    required this.blake3Digest,
+  });
+
+  String sourceRef;
+
+  HostMediaClass mediaClass;
+
+  String mimeType;
+
+  int contentBytes;
+
+  String blake3Digest;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      sourceRef,
+      mediaClass,
+      mimeType,
+      contentBytes,
+      blake3Digest,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static HostMediaStageReceipt decode(Object result) {
+    result as List<Object?>;
+    return HostMediaStageReceipt(
+      sourceRef: result[0]! as String,
+      mediaClass: result[1]! as HostMediaClass,
+      mimeType: result[2]! as String,
+      contentBytes: result[3]! as int,
+      blake3Digest: result[4]! as String,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! HostMediaStageReceipt || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(sourceRef, other.sourceRef) && _deepEquals(mediaClass, other.mediaClass) && _deepEquals(mimeType, other.mimeType) && _deepEquals(contentBytes, other.contentBytes) && _deepEquals(blake3Digest, other.blake3Digest);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'HostMediaStageReceipt(sourceRef: $sourceRef, mediaClass: $mediaClass, mimeType: $mimeType, contentBytes: $contentBytes, blake3Digest: $blake3Digest)';
+  }
+}
+
 class HostOperationEvent {
   HostOperationEvent({
     required this.operationId,
@@ -523,23 +600,29 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is HostOnboardingCursor) {
       buffer.putUint8(129);
       writeValue(buffer, value.index);
-    }    else if (value is HostOperationEventKind) {
+    }    else if (value is HostMediaClass) {
       buffer.putUint8(130);
       writeValue(buffer, value.index);
-    }    else if (value is HostBootstrapSnapshot) {
+    }    else if (value is HostOperationEventKind) {
       buffer.putUint8(131);
-      writeValue(buffer, value.encode());
-    }    else if (value is HostRuntimeSnapshot) {
+      writeValue(buffer, value.index);
+    }    else if (value is HostBootstrapSnapshot) {
       buffer.putUint8(132);
       writeValue(buffer, value.encode());
-    }    else if (value is HostRawDraftReceipt) {
+    }    else if (value is HostRuntimeSnapshot) {
       buffer.putUint8(133);
       writeValue(buffer, value.encode());
-    }    else if (value is HostShareSpoolSummary) {
+    }    else if (value is HostRawDraftReceipt) {
       buffer.putUint8(134);
       writeValue(buffer, value.encode());
-    }    else if (value is HostOperationEvent) {
+    }    else if (value is HostShareSpoolSummary) {
       buffer.putUint8(135);
+      writeValue(buffer, value.encode());
+    }    else if (value is HostMediaStageReceipt) {
+      buffer.putUint8(136);
+      writeValue(buffer, value.encode());
+    }    else if (value is HostOperationEvent) {
+      buffer.putUint8(137);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -554,16 +637,21 @@ class _PigeonCodec extends StandardMessageCodec {
         return value == null ? null : HostOnboardingCursor.values[value];
       case 130:
         final value = readValue(buffer) as int?;
-        return value == null ? null : HostOperationEventKind.values[value];
+        return value == null ? null : HostMediaClass.values[value];
       case 131:
-        return HostBootstrapSnapshot.decode(readValue(buffer)!);
+        final value = readValue(buffer) as int?;
+        return value == null ? null : HostOperationEventKind.values[value];
       case 132:
-        return HostRuntimeSnapshot.decode(readValue(buffer)!);
+        return HostBootstrapSnapshot.decode(readValue(buffer)!);
       case 133:
-        return HostRawDraftReceipt.decode(readValue(buffer)!);
+        return HostRuntimeSnapshot.decode(readValue(buffer)!);
       case 134:
-        return HostShareSpoolSummary.decode(readValue(buffer)!);
+        return HostRawDraftReceipt.decode(readValue(buffer)!);
       case 135:
+        return HostShareSpoolSummary.decode(readValue(buffer)!);
+      case 136:
+        return HostMediaStageReceipt.decode(readValue(buffer)!);
+      case 137:
         return HostOperationEvent.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -679,6 +767,25 @@ class MobileHostApi {
     )
     ;
     return pigeonVar_replyValue! as HostRawDraftReceipt;
+  }
+
+  Future<HostMediaStageReceipt> pickAndStagePrivateMedia(HostMediaClass mediaClass) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndStagePrivateMedia$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[mediaClass]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as HostMediaStageReceipt;
   }
 
   Future<bool> setOnboardingCursor(HostOnboardingCursor cursor) async {

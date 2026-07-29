@@ -18,7 +18,7 @@ use onebrain_mobile_core::{
 };
 
 /// Stable ABI revision understood by the current Swift/Kotlin adapters.
-pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 6;
+pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 7;
 
 pub const OB_MOBILE_RUNTIME_OK: u32 = 0;
 pub const OB_MOBILE_RUNTIME_INVALID_PATH: u32 = 1;
@@ -30,6 +30,7 @@ pub const OB_MOBILE_RUNTIME_INVALID_DRAFT: u32 = 6;
 pub const OB_MOBILE_RUNTIME_INVALID_ONBOARDING_CURSOR: u32 = 7;
 pub const OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL: u32 = 8;
 pub const OB_MOBILE_RUNTIME_SHARE_SPOOL_NOT_FOUND: u32 = 9;
+pub const OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE: u32 = 10;
 
 const CORE_VERSION: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
@@ -59,6 +60,7 @@ pub struct ObMobileRuntimeSnapshot {
     pub redacted_history_ready: u8,
     pub encrypted_raw_draft_count: u64,
     pub pending_share_spool_count: u64,
+    pub staged_verified_media_count: u64,
     pub onboarding_cursor: u32,
 }
 
@@ -86,6 +88,7 @@ impl ObMobileRuntimeSnapshot {
             redacted_history_ready: 0,
             encrypted_raw_draft_count: 0,
             pending_share_spool_count: 0,
+            staged_verified_media_count: 0,
             onboarding_cursor: 0,
         }
     }
@@ -117,6 +120,7 @@ impl ObMobileRuntimeSnapshot {
             redacted_history_ready: bool_byte(snapshot.redacted_history_ready),
             encrypted_raw_draft_count: snapshot.encrypted_raw_draft_count,
             pending_share_spool_count: snapshot.pending_share_spool_count,
+            staged_verified_media_count: snapshot.staged_verified_media_count,
             onboarding_cursor: snapshot.onboarding_cursor.code(),
         }
     }
@@ -157,6 +161,64 @@ impl ObMobileShareSpoolSummary {
         bridged.mime_type_len = u32::try_from(mime_type.len()).unwrap_or(0);
         bridged.content_bytes = summary.content_bytes;
         bridged.received_at_monotonic_ms = summary.received_at_monotonic_ms;
+        bridged
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ObMobileMediaStageReceipt {
+    pub status_code: u32,
+    pub source_ref: [u8; 40],
+    pub source_ref_len: u32,
+    pub media_class: [u8; 16],
+    pub media_class_len: u32,
+    pub mime_type: [u8; 128],
+    pub mime_type_len: u32,
+    pub content_bytes: u64,
+    pub blake3_digest: [u8; 64],
+    pub blake3_digest_len: u32,
+}
+
+impl ObMobileMediaStageReceipt {
+    const fn error(status_code: u32) -> Self {
+        Self {
+            status_code,
+            source_ref: [0; 40],
+            source_ref_len: 0,
+            media_class: [0; 16],
+            media_class_len: 0,
+            mime_type: [0; 128],
+            mime_type_len: 0,
+            content_bytes: 0,
+            blake3_digest: [0; 64],
+            blake3_digest_len: 0,
+        }
+    }
+
+    fn started(source_ref: &str) -> Self {
+        let mut bridged = Self::error(OB_MOBILE_RUNTIME_OK);
+        let reference = source_ref.as_bytes();
+        bridged.source_ref[..reference.len()].copy_from_slice(reference);
+        bridged.source_ref_len = u32::try_from(reference.len()).unwrap_or(0);
+        bridged
+    }
+
+    fn from_core(receipt: onebrain_mobile_core::MediaStageReceipt) -> Self {
+        let mut bridged = Self::error(OB_MOBILE_RUNTIME_OK);
+        let source_ref = receipt.source_ref.as_bytes();
+        let media_class = receipt.media_class.as_bytes();
+        let mime_type = receipt.mime_type.as_bytes();
+        let digest = receipt.blake3_digest.as_bytes();
+        bridged.source_ref[..source_ref.len()].copy_from_slice(source_ref);
+        bridged.source_ref_len = u32::try_from(source_ref.len()).unwrap_or(0);
+        bridged.media_class[..media_class.len()].copy_from_slice(media_class);
+        bridged.media_class_len = u32::try_from(media_class.len()).unwrap_or(0);
+        bridged.mime_type[..mime_type.len()].copy_from_slice(mime_type);
+        bridged.mime_type_len = u32::try_from(mime_type.len()).unwrap_or(0);
+        bridged.content_bytes = receipt.content_bytes;
+        bridged.blake3_digest[..digest.len()].copy_from_slice(digest);
+        bridged.blake3_digest_len = u32::try_from(digest.len()).unwrap_or(0);
         bridged
     }
 }
@@ -457,6 +519,88 @@ pub unsafe extern "C" fn ob_mobile_runtime_import_shared_text_utf8(
     import_shared_text(spool_ref, language)
 }
 
+/// Begin a native-owned system-picker stream into encrypted private staging.
+///
+/// Neither a provider URI nor filesystem path enters this ABI.
+///
+/// # Safety
+///
+/// Both pointers must reference their declared readable byte lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_start_media_stage_utf8(
+    requested_class: *const u8,
+    requested_class_len: usize,
+    declared_mime_type: *const u8,
+    declared_mime_type_len: usize,
+) -> ObMobileMediaStageReceipt {
+    let Some(requested_class) =
+        (unsafe { parse_bounded_utf8(requested_class, requested_class_len, 15) })
+    else {
+        return ObMobileMediaStageReceipt::error(OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE);
+    };
+    let Some(declared_mime_type) =
+        (unsafe { parse_bounded_utf8(declared_mime_type, declared_mime_type_len, 127) })
+    else {
+        return ObMobileMediaStageReceipt::error(OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE);
+    };
+    start_media_stage(requested_class, declared_mime_type)
+}
+
+/// Append one bounded plaintext chunk; Rust encrypts and commits it before return.
+///
+/// # Safety
+///
+/// Both pointers must reference their declared readable byte lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_append_media_stage(
+    source_ref: *const u8,
+    source_ref_len: usize,
+    chunk: *const u8,
+    chunk_len: usize,
+) -> u32 {
+    let Some(source_ref) = (unsafe { parse_bounded_utf8(source_ref, source_ref_len, 39) }) else {
+        return OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE;
+    };
+    if chunk.is_null() || chunk_len == 0 || chunk_len > 256 * 1024 {
+        return OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE;
+    }
+    append_media_stage(source_ref, unsafe {
+        slice::from_raw_parts(chunk, chunk_len)
+    })
+}
+
+/// Verify the complete encrypted stream and return its opaque source receipt.
+///
+/// # Safety
+///
+/// `source_ref` must reference its declared readable byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_finish_media_stage_utf8(
+    source_ref: *const u8,
+    source_ref_len: usize,
+) -> ObMobileMediaStageReceipt {
+    let Some(source_ref) = (unsafe { parse_bounded_utf8(source_ref, source_ref_len, 39) }) else {
+        return ObMobileMediaStageReceipt::error(OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE);
+    };
+    finish_media_stage(source_ref)
+}
+
+/// Mark a non-verified stream interrupted and remove its encrypted partial file.
+///
+/// # Safety
+///
+/// `source_ref` must reference its declared readable byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_abort_media_stage_utf8(
+    source_ref: *const u8,
+    source_ref_len: usize,
+) -> u32 {
+    let Some(source_ref) = (unsafe { parse_bounded_utf8(source_ref, source_ref_len, 39) }) else {
+        return OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE;
+    };
+    abort_media_stage(source_ref)
+}
+
 /// Persist a bounded onboarding resume cursor in the Rust bootstrap store.
 #[unsafe(no_mangle)]
 pub extern "C" fn ob_mobile_runtime_set_onboarding_cursor(cursor_code: u32) -> u32 {
@@ -533,6 +677,17 @@ unsafe fn parse_path(path: *const u8, path_len: usize) -> Result<PathBuf, ObMobi
             OB_MOBILE_RUNTIME_INVALID_PATH,
         )),
     }
+}
+
+unsafe fn parse_bounded_utf8<'a>(
+    value: *const u8,
+    value_len: usize,
+    max_len: usize,
+) -> Option<&'a str> {
+    if value.is_null() || value_len == 0 || value_len > max_len {
+        return None;
+    }
+    str::from_utf8(unsafe { slice::from_raw_parts(value, value_len) }).ok()
 }
 
 fn runtime_snapshot() -> ObMobileRuntimeSnapshot {
@@ -625,6 +780,70 @@ fn import_shared_text(spool_ref: &str, content_language: &str) -> ObMobileRawDra
     }
 }
 
+fn start_media_stage(requested_class: &str, declared_mime_type: &str) -> ObMobileMediaStageReceipt {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileMediaStageReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_mut() else {
+        return ObMobileMediaStageReceipt::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.start_media_stage(requested_class, declared_mime_type) {
+        Ok(source_ref) => ObMobileMediaStageReceipt::started(&source_ref),
+        Err(_) => ObMobileMediaStageReceipt::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn append_media_stage(source_ref: &str, chunk: &[u8]) -> u32 {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return OB_MOBILE_RUNTIME_LOCK_POISONED,
+    };
+    let Some(facade) = guard.as_mut() else {
+        return OB_MOBILE_RUNTIME_NOT_OPEN;
+    };
+    match facade.append_media_stage(source_ref, chunk) {
+        Ok(()) => OB_MOBILE_RUNTIME_OK,
+        Err(_) => OB_MOBILE_RUNTIME_CORE_ERROR,
+    }
+}
+
+fn finish_media_stage(source_ref: &str) -> ObMobileMediaStageReceipt {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileMediaStageReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_mut() else {
+        return ObMobileMediaStageReceipt::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.finish_media_stage(source_ref) {
+        Ok(receipt) => ObMobileMediaStageReceipt::from_core(receipt),
+        Err(_) => ObMobileMediaStageReceipt::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn abort_media_stage(source_ref: &str) -> u32 {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return OB_MOBILE_RUNTIME_LOCK_POISONED,
+    };
+    let Some(facade) = guard.as_mut() else {
+        return OB_MOBILE_RUNTIME_NOT_OPEN;
+    };
+    match facade.abort_media_stage(source_ref) {
+        Ok(()) => OB_MOBILE_RUNTIME_OK,
+        Err(_) => OB_MOBILE_RUNTIME_CORE_ERROR,
+    }
+}
+
 fn set_onboarding_cursor(cursor: OnboardingCursor) -> u32 {
     let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
     let guard = match runtime.lock() {
@@ -668,10 +887,11 @@ mod android {
     };
 
     use super::{
-        enqueue_shared_text, import_shared_text, ob_mobile_bridge_abi_version,
-        ob_mobile_bridge_registry_request_issued, ob_mobile_bridge_round_trip,
-        ob_mobile_runtime_lock_private_node, ob_mobile_runtime_set_onboarding_cursor, open_runtime,
-        open_runtime_secured, pending_share_spool_at, runtime_snapshot, save_raw_text_draft,
+        abort_media_stage, append_media_stage, enqueue_shared_text, finish_media_stage,
+        import_shared_text, ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
+        ob_mobile_bridge_round_trip, ob_mobile_runtime_lock_private_node,
+        ob_mobile_runtime_set_onboarding_cursor, open_runtime, open_runtime_secured,
+        pending_share_spool_at, runtime_snapshot, save_raw_text_draft, start_media_stage,
         CORE_VERSION,
     };
     use onebrain_mobile_core::SecurityBootstrapMaterial;
@@ -871,6 +1091,108 @@ mod android {
 
     #[jni_mangle(
         "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeStartMediaStage"
+    )]
+    pub fn native_runtime_start_media_stage<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        requested_class: JString<'caller>,
+        declared_mime_type: JString<'caller>,
+    ) -> JString<'caller> {
+        let requested_class = unowned_env
+            .with_env(|env| requested_class.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let declared_mime_type = unowned_env
+            .with_env(|env| declared_mime_type.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let receipt = start_media_stage(&requested_class, &declared_mime_type);
+        let source_ref = if receipt.status_code == super::OB_MOBILE_RUNTIME_OK {
+            std::str::from_utf8(&receipt.source_ref[..receipt.source_ref_len as usize])
+                .unwrap_or("")
+        } else {
+            ""
+        };
+        unowned_env
+            .with_env(|env| JString::from_str(env, source_ref))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeAppendMediaStage"
+    )]
+    pub fn native_runtime_append_media_stage<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        source_ref: JString<'caller>,
+        chunk: JByteArray<'caller>,
+    ) -> jint {
+        let source_ref = unowned_env
+            .with_env(|env| source_ref.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let mut bytes = unowned_env
+            .with_env(|env| env.convert_byte_array(&chunk))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let status = append_media_stage(&source_ref, &bytes);
+        bytes.zeroize();
+        status as jint
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeFinishMediaStage"
+    )]
+    pub fn native_runtime_finish_media_stage<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        source_ref: JString<'caller>,
+    ) -> JString<'caller> {
+        let source_ref = unowned_env
+            .with_env(|env| source_ref.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let receipt = finish_media_stage(&source_ref);
+        let encoded = if receipt.status_code == super::OB_MOBILE_RUNTIME_OK {
+            let source_ref =
+                std::str::from_utf8(&receipt.source_ref[..receipt.source_ref_len as usize])
+                    .unwrap_or("");
+            let media_class =
+                std::str::from_utf8(&receipt.media_class[..receipt.media_class_len as usize])
+                    .unwrap_or("");
+            let mime_type =
+                std::str::from_utf8(&receipt.mime_type[..receipt.mime_type_len as usize])
+                    .unwrap_or("");
+            let digest =
+                std::str::from_utf8(&receipt.blake3_digest[..receipt.blake3_digest_len as usize])
+                    .unwrap_or("");
+            format!(
+                "{source_ref}|{media_class}|{mime_type}|{}|{digest}",
+                receipt.content_bytes
+            )
+        } else {
+            String::new()
+        };
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeAbortMediaStage"
+    )]
+    pub fn native_runtime_abort_media_stage<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        source_ref: JString<'caller>,
+    ) -> jint {
+        let source_ref = unowned_env
+            .with_env(|env| source_ref.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        abort_media_stage(&source_ref) as jint
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
         "nativeRuntimeSetOnboardingCursor"
     )]
     pub fn native_runtime_set_onboarding_cursor(
@@ -928,6 +1250,17 @@ mod android {
         _class: JClass<'_>,
     ) -> jlong {
         runtime_snapshot().pending_share_spool_count as jlong
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeStagedVerifiedMediaCount"
+    )]
+    pub fn native_runtime_staged_verified_media_count(
+        _env: EnvUnowned<'_>,
+        _class: JClass<'_>,
+    ) -> jlong {
+        runtime_snapshot().staged_verified_media_count as jlong
     }
 
     #[jni_mangle(
@@ -1036,7 +1369,7 @@ mod tests {
 
     #[test]
     fn abi_and_version_are_bounded_and_stable() {
-        assert_eq!(ob_mobile_bridge_abi_version(), 6);
+        assert_eq!(ob_mobile_bridge_abi_version(), 7);
         let version = unsafe { CStr::from_ptr(ob_mobile_bridge_core_version()) };
         assert_eq!(version.to_str().expect("version UTF-8"), "0.1.0");
         assert!(version.to_bytes().len() <= 32);

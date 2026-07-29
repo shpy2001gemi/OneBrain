@@ -43,8 +43,10 @@
     "MOB-HOM-005",
     "MOB-CAP-001",
     "MOB-CAP-002",
+    "MOB-CAP-003",
     "MOB-CAP-006",
     "MOB-CAP-007",
+    "MOB-MED-001",
     "MOB-LIB-001",
     "MOB-LIB-002",
     "MOB-LIB-003",
@@ -59,6 +61,7 @@
     "MOB-SCR-CAP-001",
     "MOB-SCR-CAP-002",
     "MOB-SCR-CAP-003",
+    "MOB-SCR-CAP-004",
     "MOB-SCR-AI-001",
     "MOB-SCR-SET-001",
     "OBM-CMP-NAV-001",
@@ -249,7 +252,7 @@
     {
       "id": "MOB-04-TYPED-HOST-ABI",
       "path": "src/onebrain-mobile/pigeons/mobile_host_api.dart",
-      "proves": "ABI 6 exposes typed onboarding, private-draft, opaque share-spool inspection and idempotent import commands through generated Dart, Kotlin and Swift without paths, keys, database handles or plaintext reads crossing into Flutter."
+      "proves": "ABI 7 exposes typed onboarding, private-draft, opaque share-spool commands and a typed media-picker request/opaque verified-stage receipt through generated Dart, Kotlin and Swift without paths, keys, database handles, picker URIs or source bytes crossing into Flutter."
     },
     {
       "id": "MOB-04-LIMITED-SHELL",
@@ -264,12 +267,12 @@
     {
       "id": "MOB-04-DESIGN-GOLDENS",
       "path": "src/onebrain-mobile/test/golden_test.dart",
-      "proves": "Twelve deterministic goldens cover the owner-approved design modes plus Limited Home, private text capture and encrypted share-spool preview through shared tokens and components."
+      "proves": "Thirteen deterministic goldens cover the owner-approved design modes plus Limited Home, private text capture, encrypted share-spool preview and system-picker media import through shared tokens and components."
     },
     {
       "id": "MOB-04-ANDROID-NATIVE-INTEGRATION",
       "path": "src/onebrain-mobile/integration_test/native_host_bridge_test.dart",
-      "proves": "Android 16 exercises ABI 6, the protected Rust runtime, onboarding cursor, encrypted draft/share-spool counts and bounded native operation events."
+      "proves": "Android 16 exercises ABI 7, the protected Rust runtime, onboarding cursor, encrypted draft/share-spool/verified-media counts and bounded native operation events."
     },
     {
       "id": "MOB-04-ANDROID-SHARE-INTENT",
@@ -280,6 +283,16 @@
       "id": "MOB-04-SHARE-SPOOL-TRANSACTION",
       "path": "src/onebrain-mobile-core/src/draft.rs",
       "proves": "Rust bounds and authenticates text/plain share spools, deduplicates native callback tokens, returns only opaque summaries and atomically binds one consumed spool to one encrypted draft."
+    },
+    {
+      "id": "MOB-04-ENCRYPTED-MEDIA-STAGING",
+      "path": "src/onebrain-mobile-core/src/media_staging.rs",
+      "proves": "Rust journals opaque media stages, encrypts independently authenticated 256 KiB chunks, enforces an 8 GiB source budget, detects type from bytes, computes a full BLAKE3 digest, rejects archives/disguised MIME and removes interrupted partial stages during reopen."
+    },
+    {
+      "id": "MOB-04-ANDROID-MEDIA-PICKER",
+      "path": "src/onebrain-mobile/compliance/reports/mob04_android_media_picker.json",
+      "proves": "Android 16 exercises the real ACTION_OPEN_DOCUMENT picker, native-owned URI streaming, Rust encryption/magic-byte/BLAKE3 verification, redacted logs and verified-stage reopen after force-stop without claiming physical-device validation."
     },
     {
       "id": "MOB-04-ANDROID-PROCESS-RECOVERY",
@@ -319,5 +332,5 @@
   ],
   "deviations": [],
   "last_reviewed": "2026-07-30",
-  "notes": "MOB-04 is in progress. The current feature slice adds the English/Vietnamese Limited shell, a Rust-owned durable onboarding cursor, encrypted bounded PrivateLocal text drafts, shared adaptive navigation, Registry-gated disabled states and accessibility/golden coverage over the MOB-03 protected runtime. Android 16 emulator evidence covers ABI 6 integration, Keystore-backed force-stop recovery, injected missing-marker rejection and cold-start text/plain share intents that persist as encrypted opaque spools before idempotent draft import. iOS share-extension landing, system-picker media staging, user-selected encrypted backup/export destinations and the full Limited/Degraded/Safe matrix remain open. iOS and all physical-device validation remain gated. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
+  "notes": "MOB-04 is in progress. The current feature slice adds the English/Vietnamese Limited shell, a Rust-owned durable onboarding cursor, encrypted bounded PrivateLocal text drafts, shared adaptive navigation, Registry-gated disabled states and accessibility/golden coverage over the MOB-03 protected runtime. Android 16 emulator evidence covers ABI 7 integration, Keystore-backed force-stop recovery, injected missing-marker rejection, cold-start text/plain share spools with idempotent draft import, and ACTION_OPEN_DOCUMENT media streamed native-to-Rust into encrypted StagedVerified storage. The stage is not yet OwnedOriginal, a KU attachment, shared, published or seedable. iOS share-extension/picker landing, full media activation/reference commit, user-selected encrypted backup/export destinations and the full Limited/Degraded/Safe matrix remain open. iOS and all physical-device validation remain gated. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
 }

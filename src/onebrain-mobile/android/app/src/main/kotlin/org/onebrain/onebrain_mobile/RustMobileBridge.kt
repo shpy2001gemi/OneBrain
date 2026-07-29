@@ -33,6 +33,7 @@ internal data class RustRuntimeFacts(
     val redactedHistoryReady: Boolean,
     val encryptedRawDraftCount: Long,
     val pendingShareSpoolCount: Long,
+    val stagedVerifiedMediaCount: Long,
     val onboardingCursor: Int,
 )
 
@@ -48,6 +49,14 @@ internal data class RustShareSpoolSummary(
     val mimeType: String,
     val contentBytes: Long,
     val receivedAtMonotonicMillis: Long,
+)
+
+internal data class RustMediaStageReceipt(
+    val sourceRef: String,
+    val mediaClass: String,
+    val mimeType: String,
+    val contentBytes: Long,
+    val blake3Digest: String,
 )
 
 internal object RustMobileBridge {
@@ -86,7 +95,7 @@ internal object RustMobileBridge {
             "Rust mobile runtime failed to open with status $statusCode"
         }
         return RustRuntimeFacts(
-            profileVersion = "MOB-04/2",
+            profileVersion = "MOB-04/3",
             processGeneration = nativeRuntimeProcessGeneration(),
             activationPhase =
                 when (nativeRuntimeActivationPhase()) {
@@ -119,6 +128,7 @@ internal object RustMobileBridge {
             redactedHistoryReady = nativeRuntimeRedactedHistoryReady(),
             encryptedRawDraftCount = nativeRuntimeEncryptedRawDraftCount(),
             pendingShareSpoolCount = nativeRuntimePendingShareSpoolCount(),
+            stagedVerifiedMediaCount = nativeRuntimeStagedVerifiedMediaCount(),
             onboardingCursor = nativeRuntimeOnboardingCursor(),
         )
     }
@@ -235,6 +245,54 @@ internal object RustMobileBridge {
         )
     }
 
+    fun startMediaStage(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        mediaClass: String,
+        declaredMimeType: String,
+    ): String {
+        check(loadFailure == null) {
+            "Rust mobile bridge is unavailable: ${loadFailure?.message}"
+        }
+        check(nativeRuntimeOpenSecure(dataRoot, securityMaterial) == 0) {
+            "Rust mobile runtime rejected the protected session"
+        }
+        return nativeRuntimeStartMediaStage(mediaClass, declaredMimeType).also {
+            check(it.isNotEmpty()) {
+                "Rust mobile runtime rejected the private media stage"
+            }
+        }
+    }
+
+    fun appendMediaStage(
+        sourceRef: String,
+        chunk: ByteArray,
+    ) {
+        check(nativeRuntimeAppendMediaStage(sourceRef, chunk) == 0) {
+            "Rust mobile runtime rejected a private media chunk"
+        }
+    }
+
+    fun finishMediaStage(sourceRef: String): RustMediaStageReceipt {
+        val fields = nativeRuntimeFinishMediaStage(sourceRef).split('|')
+        check(fields.size == 5) {
+            "Rust mobile runtime rejected the completed media stage"
+        }
+        return RustMediaStageReceipt(
+            sourceRef = fields[0],
+            mediaClass = fields[1],
+            mimeType = fields[2],
+            contentBytes = fields[3].toLong(),
+            blake3Digest = fields[4],
+        )
+    }
+
+    fun abortMediaStage(sourceRef: String) {
+        check(nativeRuntimeAbortMediaStage(sourceRef) == 0) {
+            "Rust mobile runtime could not abort the private media stage"
+        }
+    }
+
     fun lockRuntime(): Boolean {
         if (loadFailure != null) {
             return false
@@ -275,6 +333,20 @@ internal object RustMobileBridge {
         contentLanguage: String,
     ): String
 
+    @JvmStatic private external fun nativeRuntimeStartMediaStage(
+        mediaClass: String,
+        declaredMimeType: String,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimeAppendMediaStage(
+        sourceRef: String,
+        chunk: ByteArray,
+    ): Int
+
+    @JvmStatic private external fun nativeRuntimeFinishMediaStage(sourceRef: String): String
+
+    @JvmStatic private external fun nativeRuntimeAbortMediaStage(sourceRef: String): Int
+
     @JvmStatic private external fun nativeRuntimeProcessGeneration(): Long
 
     @JvmStatic private external fun nativeRuntimeActivationPhase(): Int
@@ -284,6 +356,8 @@ internal object RustMobileBridge {
     @JvmStatic private external fun nativeRuntimeEncryptedRawDraftCount(): Long
 
     @JvmStatic private external fun nativeRuntimePendingShareSpoolCount(): Long
+
+    @JvmStatic private external fun nativeRuntimeStagedVerifiedMediaCount(): Long
 
     @JvmStatic private external fun nativeRuntimeOnboardingCursor(): Int
 

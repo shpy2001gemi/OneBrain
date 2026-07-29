@@ -66,6 +66,7 @@ class HostRuntimeSnapshot {
     required this.redactedHistoryReady,
     required this.encryptedRawDraftCount,
     required this.pendingShareSpoolCount,
+    required this.stagedVerifiedMediaCount,
     required this.onboardingCursor,
   });
 
@@ -90,6 +91,7 @@ class HostRuntimeSnapshot {
   bool redactedHistoryReady;
   int encryptedRawDraftCount;
   int pendingShareSpoolCount;
+  int stagedVerifiedMediaCount;
   HostOnboardingCursor onboardingCursor;
 }
 
@@ -119,6 +121,24 @@ class HostShareSpoolSummary {
   String mimeType;
   int contentBytes;
   int receivedAtMonotonicMillis;
+}
+
+enum HostMediaClass { image, video, audio, document }
+
+class HostMediaStageReceipt {
+  HostMediaStageReceipt({
+    required this.sourceRef,
+    required this.mediaClass,
+    required this.mimeType,
+    required this.contentBytes,
+    required this.blake3Digest,
+  });
+
+  String sourceRef;
+  HostMediaClass mediaClass;
+  String mimeType;
+  int contentBytes;
+  String blake3Digest;
 }
 
 enum HostOperationEventKind { started, cancelled, completed }
@@ -151,6 +171,9 @@ abstract class MobileHostApi {
 
   @async
   HostRawDraftReceipt importSharedText(String spoolRef, String contentLanguage);
+
+  @async
+  HostMediaStageReceipt pickAndStagePrivateMedia(HostMediaClass mediaClass);
 
   @async
   bool setOnboardingCursor(HostOnboardingCursor cursor);

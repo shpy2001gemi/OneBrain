@@ -69,6 +69,12 @@ internal class SecurityMaterialStore(context: Context) {
         check(!File(root, "private-drafts.redb").exists()) {
             "UNEXPECTED_RESTORE: private drafts exist without an install marker"
         }
+        check(!File(root, "private-media-staging.redb").exists()) {
+            "UNEXPECTED_RESTORE: media staging metadata exists without an install marker"
+        }
+        check(!File(root, "media").exists()) {
+            "UNEXPECTED_RESTORE: encrypted media bytes exist without an install marker"
+        }
     }
 
     private fun retireOrphanedWrappingKey() {

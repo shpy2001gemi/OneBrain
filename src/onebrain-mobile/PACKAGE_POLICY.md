@@ -26,6 +26,7 @@ policy boundaries and shared presentation; it does not clone package behavior.
 | `ku-core::PrivateVault` + `redb` | workspace / 2.6.3 | validated XChaCha20-Poly1305 private vault over an atomic persistent backend |
 | `chacha20poly1305` + `zeroize` + `getrandom` | 0.11.0 / 1.9.0 / 0.3.4 | chunked portable archive AEAD, key cleanup and OS entropy |
 | `blake3` pure Rust backend | 1.8.5 | portable archive/draft commitments without a mismatched native NEON object in iOS cross-builds |
+| `infer` | 0.22.0 | magic-byte media classification in Rust without trusting picker filenames, extensions or provider MIME claims |
 | existing `ku-core` + `ku-kql` crates | workspace | canonical KU types and local parser/executor reuse without `ku-ai`, Ollama or a transport stack |
 | Google Fonts assets | pinned commits and SHA-256 in `assets/font_asset_manifest_v1.json` | offline Nunito Sans, Roboto Mono and Material Symbols Rounded assets under their upstream licenses |
 
@@ -36,6 +37,17 @@ Dart and do not provide OneBrain's encrypted, idempotent landing journal.
 cannot own canonical intake under the no-path/no-plaintext Dart boundary.
 Native code performs only bounded callback extraction; Rust owns encryption,
 deduplication, inspection metadata and transactional import.
+
+Android media intake uses the platform `ACTION_OPEN_DOCUMENT` picker. The
+native host consumes its transient URI immediately and streams 256 KiB chunks
+to Rust; the URI, display name, path and bytes never enter Dart. Flutter picker
+packages that return `XFile`, path or URI objects to Dart were intentionally not
+adopted because that API shape violates the authority boundary. Rust uses the
+maintained `infer` crate for byte-signature detection rather than rebuilding a
+media signature catalog. The current document lane accepts verified PDF bytes;
+archives and disguised MIME claims fail closed. This slice does not start a
+foreground service: leaving the foreground revokes the native media-work flag,
+aborts the stream and lets Rust remove the partial stage.
 
 The Riverpod version is pinned to the newest stable release compatible with
 the repository's Dart 3.11.3 toolchain. Package upgrades are reviewed and

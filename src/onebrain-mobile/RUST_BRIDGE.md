@@ -18,7 +18,9 @@ grants, callback commit fence, deterministic local KQL, LocalOnly private
 planning, exact installation binding, independent typed signer domains,
 encrypted private-vault session, encrypted raw-draft/share-spool store, durable
 onboarding cursor and portable encrypted-archive profile.
-Registry network transfer, product tools, seeding and all LLM providers remain
+The Android system-picker lane additionally streams native-owned provider
+content into Rust-owned encrypted media staging without exposing URI/path or
+source bytes to Dart. Registry network transfer, product tools, seeding and all LLM providers remain
 unavailable until their implementation packages and gates exist.
 
 ## Package-first toolchain
@@ -34,13 +36,18 @@ unavailable until their implementation packages and gates exist.
 | Private vault and archive AEAD | existing `ku-core` vault + `chacha20poly1305` | workspace / `0.11.0` | Reuse validated private storage and authenticated chunk encryption |
 | Secret cleanup | `zeroize` | `1.9.0` | Erase temporary native/Rust key buffers |
 | OS entropy | `getrandom` | `0.3.4` | Recovery/archive nonce generation |
+| Media magic-byte classification | `infer` | `0.22.0` | Verify selected bytes without trusting filename/extension/provider MIME |
 
 Application code does not recreate channel serialization, JNI environment
 handling, NDK linker discovery, or C declaration generation.
 
 ## ABI and thread ownership
 
-- ABI revision `6` adds opaque encrypted share-spool summaries and idempotent
+- ABI revision `7` includes the opaque encrypted share-spool commands from ABI
+  6 and adds bounded native-to-Rust media-stage start/append/finish/abort plus a
+  verified-stage count. The completed receipt contains only source ref, media
+  class, verified MIME, byte count and BLAKE3 digest. ABI 6 added opaque
+  encrypted share-spool summaries and idempotent
   text import to the protected-runtime snapshot, native-owned secure-open and
   private-draft calls, durable onboarding cursor and explicit private-session
   lock. No share plaintext or filesystem path crosses to Dart.
@@ -80,6 +87,8 @@ python tool/verify_android_share_intent.py \
 python tool/verify_android_runtime_recovery.py \
   build/app/outputs/flutter-apk/app-debug.apk
 python tool/verify_android_install_binding_fail_closed.py \
+  build/app/outputs/flutter-apk/app-debug.apk
+python tool/verify_android_media_picker.py \
   build/app/outputs/flutter-apk/app-debug.apk
 ```
 

@@ -5,8 +5,8 @@ use ku_core::foundation::{PrivateVault, RedbVerifiedBackend, VaultKey};
 use zeroize::Zeroizing;
 
 use crate::{
-    InstallationAuthorityRecord, MobileCoreError, PrivateDraftKey, PrivateDraftStore,
-    RawDraftReceipt, ShareSpoolSummary,
+    InstallationAuthorityRecord, MediaStageReceipt, MediaStagingKey, MediaStagingStore,
+    MobileCoreError, PrivateDraftKey, PrivateDraftStore, RawDraftReceipt, ShareSpoolSummary,
 };
 
 pub const SECURITY_BOOTSTRAP_MATERIAL_BYTES: usize = 192;
@@ -176,6 +176,7 @@ pub struct SecureIdentitySession {
     authorized_at_monotonic_ms: u64,
     private_vault: Option<PrivateVault<RedbVerifiedBackend>>,
     private_drafts: Option<PrivateDraftStore>,
+    private_media_staging: Option<MediaStagingStore>,
 }
 
 impl SecureIdentitySession {
@@ -183,6 +184,8 @@ impl SecureIdentitySession {
         material: SecurityBootstrapMaterial,
         private_vault_path: &Path,
         private_draft_path: &Path,
+        private_media_staging_database_path: &Path,
+        private_media_staging_root: &Path,
         authorized_at_monotonic_ms: u64,
         policy: AppLockPolicy,
     ) -> Result<Self, MobileCoreError> {
@@ -203,11 +206,17 @@ impl SecureIdentitySession {
         let mut vault_key = [0u8; 32];
         vault_key.copy_from_slice(material.range(VAULT_RANGE));
         let private_draft_key = PrivateDraftKey::derive(&vault_key);
+        let private_media_staging_key = MediaStagingKey::derive(&vault_key);
         let backend = RedbVerifiedBackend::open(private_vault_path).map_err(|error| {
             MobileCoreError::Security(format!("cannot open encrypted private vault: {error}"))
         })?;
         let private_vault = PrivateVault::new(backend, VaultKey::from_bytes(vault_key));
         let private_drafts = PrivateDraftStore::open(private_draft_path, private_draft_key)?;
+        let private_media_staging = MediaStagingStore::open(
+            private_media_staging_database_path,
+            private_media_staging_root,
+            private_media_staging_key,
+        )?;
         Ok(Self {
             material: Some(material),
             public,
@@ -216,6 +225,7 @@ impl SecureIdentitySession {
             authorized_at_monotonic_ms,
             private_vault: Some(private_vault),
             private_drafts: Some(private_drafts),
+            private_media_staging: Some(private_media_staging),
         })
     }
 
@@ -234,6 +244,7 @@ impl SecureIdentitySession {
     pub fn private_vault_ready(&self) -> bool {
         self.private_vault.is_some()
             && self.private_drafts.is_some()
+            && self.private_media_staging.is_some()
             && self.state == SecuritySessionState::Unlocked
     }
 
@@ -316,6 +327,74 @@ impl SecureIdentitySession {
             .import_shared_text(spool_ref, content_language, now_monotonic_ms)
     }
 
+    pub fn start_media_stage(
+        &self,
+        requested_class: &str,
+        declared_mime_type: &str,
+        now_monotonic_ms: u64,
+    ) -> Result<String, MobileCoreError> {
+        if !self.session_is_eligible(now_monotonic_ms) {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_media_staging
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .start(requested_class, declared_mime_type, now_monotonic_ms)
+    }
+
+    pub fn append_media_stage(
+        &self,
+        source_ref: &str,
+        chunk: &[u8],
+        now_monotonic_ms: u64,
+    ) -> Result<(), MobileCoreError> {
+        if !self.session_is_eligible(now_monotonic_ms) {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_media_staging
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .append(source_ref, chunk)
+    }
+
+    pub fn finish_media_stage(
+        &self,
+        source_ref: &str,
+        now_monotonic_ms: u64,
+    ) -> Result<MediaStageReceipt, MobileCoreError> {
+        if !self.session_is_eligible(now_monotonic_ms) {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_media_staging
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .finish(source_ref)
+    }
+
+    pub fn abort_media_stage(
+        &self,
+        source_ref: &str,
+        now_monotonic_ms: u64,
+    ) -> Result<(), MobileCoreError> {
+        if !self.session_is_eligible(now_monotonic_ms) {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_media_staging
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .abort(source_ref)
+    }
+
+    pub fn staged_verified_media_count(&self) -> Result<u64, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_media_staging
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .staged_verified_count()
+    }
+
     pub fn session_is_eligible(&self, now_monotonic_ms: u64) -> bool {
         self.state == SecuritySessionState::Unlocked
             && now_monotonic_ms.saturating_sub(self.authorized_at_monotonic_ms)
@@ -357,6 +436,7 @@ impl SecureIdentitySession {
     pub fn lock(&mut self) {
         self.private_vault = None;
         self.private_drafts = None;
+        self.private_media_staging = None;
         self.material = None;
         self.state = SecuritySessionState::Locked;
         self.authorized_at_monotonic_ms = 0;
@@ -389,6 +469,8 @@ mod tests {
             material(),
             &directory.path().join("private-vault.redb"),
             &directory.path().join("private-drafts.redb"),
+            &directory.path().join("private-media-staging.redb"),
+            &directory.path().join("media").join("staging"),
             100,
             AppLockPolicy::default(),
         )

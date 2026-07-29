@@ -124,6 +124,7 @@ jobs:
             flutter build apk --debug
             python tool/verify_android_runtime_recovery.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554
             python tool/verify_android_install_binding_fail_closed.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554
+            python tool/verify_android_media_picker.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554
       - name: Build BootstrapOnly Android release APK
         run: |
           python tool/build_rust_android.py --release
