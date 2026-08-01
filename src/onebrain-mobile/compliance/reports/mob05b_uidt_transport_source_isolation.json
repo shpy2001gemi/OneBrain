@@ -1,0 +1,14 @@
+{
+  "files_scanned": {
+    "dart": 40,
+    "kotlin": 6,
+    "rust": 14,
+    "swift": 3
+  },
+  "forbidden_transport_reference_count": 0,
+  "format": "onebrain.mobile.bootstrap-source-isolation/1",
+  "generated_at": "2026-08-01T23:03:49.070671+00:00",
+  "limitations": "The Android UIDT JobScheduler adapter is intentionally present, but no Kotlin/Swift/Rust HTTP or socket implementation exists. The next MOB-05B slice must add approved signed HTTPS landing/range and iOS background-URLSession with packet and recovery tests.",
+  "scope": "MOB-05B signed admission, durable barrier and Android UIDT scheduler/adoption before byte transport execution",
+  "violations": []
+}

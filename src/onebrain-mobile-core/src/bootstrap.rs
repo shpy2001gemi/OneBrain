@@ -1461,6 +1461,8 @@ impl BootstrapStore {
                 }
                 RegistryTransferScheduleState::TransferSubmitted
                     if schedule.os_transfer_id.as_deref() == Some(os_transfer_id) => {}
+                RegistryTransferScheduleState::TransferAdopted
+                    if schedule.os_transfer_id.as_deref() == Some(os_transfer_id) => {}
                 _ => {
                     return Err(registry_admission(
                         "Registry transfer submit receipt is stale or mismatched",
@@ -1585,6 +1587,44 @@ impl BootstrapStore {
         let table = read.open_table(REGISTRY_TRANSFER_SCHEDULES)?;
         table
             .get(transfer_nonce)?
+            .map(|value| decode(value.value()))
+            .transpose()
+    }
+
+    pub fn registry_transfer_schedule_for_channel(
+        &self,
+        channel_id: &str,
+    ) -> Result<Option<RegistryTransferScheduleRecord>, MobileCoreError> {
+        require_bounded("channel_id", channel_id, 64)?;
+        let read = self.database.begin_read()?;
+        let intents = read.open_table(REGISTRY_CHANNEL_INTENTS)?;
+        let Some(operation_id) = intents
+            .get(channel_id)?
+            .map(|value| decode::<String>(value.value()))
+            .transpose()?
+        else {
+            return Ok(None);
+        };
+        drop(intents);
+
+        let operations = read.open_table(REGISTRY_OPERATIONS)?;
+        let Some(operation) = operations
+            .get(operation_id.as_str())?
+            .map(|value| decode::<RegistryOperationRecord>(value.value()))
+            .transpose()?
+        else {
+            return Err(MobileCoreError::Storage(
+                "Registry channel intent lost its operation record".into(),
+            ));
+        };
+        drop(operations);
+        let Some(transfer_nonce) = operation.active_transfer_nonce else {
+            return Ok(None);
+        };
+
+        let schedules = read.open_table(REGISTRY_TRANSFER_SCHEDULES)?;
+        schedules
+            .get(transfer_nonce.as_str())?
             .map(|value| decode(value.value()))
             .transpose()
     }

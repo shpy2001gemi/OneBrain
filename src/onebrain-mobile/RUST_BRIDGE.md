@@ -20,12 +20,17 @@ encrypted private-vault session, encrypted raw-draft/share-spool store, durable
 onboarding cursor and portable encrypted-archive profile.
 The Android system-picker lane additionally streams native-owned provider
 content into Rust-owned encrypted media staging without exposing URI/path or
-source bytes to Dart. ABI 9 adds the Rust-owned Registry
+source bytes to Dart. ABI 9 added the Rust-owned Registry
 `SchedulePrepared -> TransferSubmitted -> TransferAdopted` barrier, stable
 request/descriptor fingerprints, Android job ID, process-generation receipts
-and conservative stop recovery. Actual Registry network transfer, product
-tools, seeding and all LLM providers remain unavailable until their transport
-authority and implementation gates exist.
+and conservative stop recovery. ABI 10 adds a bounded channel-to-active-transfer
+lookup so native startup, JobService and notification callbacks can reconcile
+JobScheduler inventory without Flutter. Android 14+ now has a namespaced,
+persisted UIDT submission/adoption adapter with exact primitive extras,
+estimated bytes, OS constraints, visible bilingual notification and explicit
+Stop receipt. It deliberately has no HTTP/socket byte executor or production
+transport descriptor. Product tools, seeding and all LLM providers remain
+unavailable until their authority and implementation gates exist.
 
 ## Package-first toolchain
 
@@ -47,8 +52,10 @@ handling, NDK linker discovery, or C declaration generation.
 
 ## ABI and thread ownership
 
-- ABI revision `9` preserves ABI 8 signed Registry Init admission and adds
-  bounded native-only prepare, submit, adopt and missing-task recovery calls.
+- ABI revision `10` preserves ABI 9 transfer-barrier calls and adds bounded
+  active-schedule lookup for native-only platform inventory recovery. ABI 9
+  preserved ABI 8 signed Registry Init admission and added bounded native-only
+  prepare, submit, adopt and missing-task recovery calls.
   No URL, filesystem path, credential or OS handle crosses into Dart. ABI 7
   includes the opaque encrypted share-spool commands from ABI 6 and adds
   bounded native-to-Rust media-stage start/append/finish/abort plus a
@@ -96,6 +103,8 @@ python tool/verify_android_runtime_recovery.py \
 python tool/verify_android_install_binding_fail_closed.py \
   build/app/outputs/flutter-apk/app-debug.apk
 python tool/verify_android_media_picker.py \
+  build/app/outputs/flutter-apk/app-debug.apk
+python tool/verify_android_registry_uidt.py \
   build/app/outputs/flutter-apk/app-debug.apk
 ```
 

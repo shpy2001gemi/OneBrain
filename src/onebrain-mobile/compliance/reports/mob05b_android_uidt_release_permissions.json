@@ -1,0 +1,29 @@
+{
+  "aapt": "aapt.exe",
+  "android_build_tools": "36.0.0",
+  "debug_probe_receiver_declared": false,
+  "forbidden_bootstrap_network_permissions": [],
+  "format": "onebrain.mobile.android-permissions/1",
+  "generated_at": "2026-08-01T23:03:48.798320+00:00",
+  "internet_permission_present": false,
+  "limitations": "ACCESS_NETWORK_STATE permits JobScheduler constraint evaluation; it does not open a socket. This proves the release declares the UIDT scheduler permissions but still lacks INTERNET. It does not replace HTTPS landing, packet, full-size, or physical-device tests.",
+  "missing_uidt_permissions": [],
+  "network_capability_present": false,
+  "package": "app-release.apk",
+  "package_bytes": 65773468,
+  "package_sha256": "8f5feddcd054548edd40a3952e7f70aba0d736fd392a5ab66e21fd927021310f",
+  "permissions": [
+    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.RECEIVE_BOOT_COMPLETED",
+    "android.permission.RUN_USER_INITIATED_JOBS",
+    "org.onebrain.onebrain_mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+  ],
+  "required_uidt_permissions": [
+    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.RECEIVE_BOOT_COMPLETED",
+    "android.permission.RUN_USER_INITIATED_JOBS"
+  ],
+  "scope": "MOB-05B Android UIDT scheduler/adoption boundary before byte transport execution",
+  "uidt_control_receiver_declared": true,
+  "uidt_service_declared": true
+}

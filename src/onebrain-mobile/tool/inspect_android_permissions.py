@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report whether the pre-platform-execution Android release can open a network."""
+"""Audit the Android UIDT scheduler boundary before byte transport is enabled."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from pathlib import Path
 
 
 FORBIDDEN_BOOTSTRAP_PERMISSIONS = {
-    "android.permission.ACCESS_NETWORK_STATE",
     "android.permission.ACCESS_WIFI_STATE",
     "android.permission.BLUETOOTH_ADVERTISE",
     "android.permission.BLUETOOTH_CONNECT",
@@ -26,6 +25,16 @@ FORBIDDEN_BOOTSTRAP_PERMISSIONS = {
     "android.permission.INTERNET",
     "android.permission.NEARBY_WIFI_DEVICES",
 }
+REQUIRED_UIDT_PERMISSIONS = {
+    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.RECEIVE_BOOT_COMPLETED",
+    "android.permission.RUN_USER_INITIATED_JOBS",
+}
+UIDT_SERVICE = "org.onebrain.onebrain_mobile.RegistryTransferJobService"
+UIDT_CONTROL_RECEIVER = (
+    "org.onebrain.onebrain_mobile.RegistryTransferControlReceiver"
+)
+DEBUG_PROBE_RECEIVER = "org.onebrain.onebrain_mobile.RegistryUidtProbeReceiver"
 
 
 def _sha256(path: Path) -> str:
@@ -83,10 +92,18 @@ def inspect(apk: Path) -> dict[str, object]:
     forbidden = sorted(
         set(permissions).intersection(FORBIDDEN_BOOTSTRAP_PERMISSIONS)
     )
+    manifest = subprocess.run(
+        [str(aapt), "dump", "xmltree", str(apk), "AndroidManifest.xml"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    ).stdout
+    missing_uidt = sorted(REQUIRED_UIDT_PERMISSIONS.difference(permissions))
     return {
         "format": "onebrain.mobile.android-permissions/1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "scope": "MOB-05B root-barrier Android release before platform transfer execution",
+        "scope": "MOB-05B Android UIDT scheduler/adoption boundary before byte transport execution",
         "package": apk.name,
         "package_bytes": apk.stat().st_size,
         "package_sha256": _sha256(apk),
@@ -94,11 +111,18 @@ def inspect(apk: Path) -> dict[str, object]:
         "android_build_tools": aapt.parent.name,
         "permissions": permissions,
         "forbidden_bootstrap_network_permissions": forbidden,
-        "network_capability_present": bool(forbidden),
+        "required_uidt_permissions": sorted(REQUIRED_UIDT_PERMISSIONS),
+        "missing_uidt_permissions": missing_uidt,
+        "internet_permission_present": "android.permission.INTERNET" in permissions,
+        "network_capability_present": "android.permission.INTERNET" in permissions,
+        "uidt_service_declared": UIDT_SERVICE in manifest,
+        "uidt_control_receiver_declared": UIDT_CONTROL_RECEIVER in manifest,
+        "debug_probe_receiver_declared": DEBUG_PROBE_RECEIVER in manifest,
         "limitations": (
-            "This proves the packaged root-barrier release still lacks OS "
-            "network permissions. It does not replace the next explicit-Init "
-            "platform transport tests or physical-device packet capture."
+            "ACCESS_NETWORK_STATE permits JobScheduler constraint evaluation; "
+            "it does not open a socket. This proves the release declares the "
+            "UIDT scheduler permissions but still lacks INTERNET. It does not "
+            "replace HTTPS landing, packet, full-size, or physical-device tests."
         ),
     }
 
@@ -114,10 +138,16 @@ def main() -> int:
         arguments.report.parent.mkdir(parents=True, exist_ok=True)
         arguments.report.write_text(rendered, encoding="utf-8")
     print(rendered, end="")
-    if report["network_capability_present"]:
-        print("bootstrap Android network capability: FAIL", file=sys.stderr)
+    if (
+        report["network_capability_present"]
+        or report["missing_uidt_permissions"]
+        or not report["uidt_service_declared"]
+        or not report["uidt_control_receiver_declared"]
+        or report["debug_probe_receiver_declared"]
+    ):
+        print("Android UIDT permission boundary: FAIL", file=sys.stderr)
         return 1
-    print("bootstrap Android network capability: PASS")
+    print("Android UIDT permission boundary: PASS")
     return 0
 
 

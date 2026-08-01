@@ -11,7 +11,7 @@ void main() {
       final gateway = PigeonMobileHostGateway();
       final host = await gateway.inspectBootstrapHost();
       expect(host.apiVersion, '8');
-      expect(host.rustAbiVersion, 9);
+      expect(host.rustAbiVersion, 10);
 
       final availability = await gateway.inspectRegistryInitAvailability();
       expect(availability.available, isTrue);

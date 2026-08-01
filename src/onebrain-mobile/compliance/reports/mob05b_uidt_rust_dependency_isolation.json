@@ -1,0 +1,16 @@
+{
+  "forbidden_packages": [
+    "ku-ai",
+    "ku-net",
+    "ollama",
+    "onebrain-node",
+    "onebrain-protocol",
+    "reqwest",
+    "tokio"
+  ],
+  "format": "onebrain.mobile.rust-dependency-isolation/1",
+  "package_count": 74,
+  "result": "passed",
+  "root_package": "onebrain-mobile-core",
+  "violations": []
+}

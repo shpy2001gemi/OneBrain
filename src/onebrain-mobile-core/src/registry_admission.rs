@@ -1727,6 +1727,12 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
+            store
+                .registry_transfer_schedule_for_channel("stable")
+                .unwrap(),
+            Some(prepared.clone())
+        );
+        assert_eq!(
             prepared.state,
             RegistryTransferScheduleState::SchedulePrepared
         );
@@ -1801,6 +1807,16 @@ mod tests {
                 &budgets,
             )
             .unwrap();
+        assert_eq!(
+            recovered
+                .mark_registry_transfer_submitted(
+                    &prepared.transfer_nonce,
+                    "android-job-1",
+                    &budgets,
+                )
+                .unwrap(),
+            adopted
+        );
         assert_eq!(
             adopted.state,
             RegistryTransferScheduleState::TransferAdopted

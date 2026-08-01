@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove the MOB-05B root-barrier slice has no concrete mobile transport."""
+"""Prove MOB-05B UIDT scheduling still has no concrete byte transport."""
 
 from __future__ import annotations
 
@@ -75,17 +75,17 @@ def verify() -> dict[str, object]:
         "format": "onebrain.mobile.bootstrap-source-isolation/1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "scope": (
-            "MOB-05B signed admission and durable transfer-barrier core before "
-            "platform transport execution"
+            "MOB-05B signed admission, durable barrier and Android UIDT "
+            "scheduler/adoption before byte transport execution"
         ),
         "files_scanned": counts,
         "forbidden_transport_reference_count": len(violations),
         "violations": violations,
         "limitations": (
-            "Static transport isolation complements the Android release "
-            "permission proof. The next MOB-05B slice must replace this "
-            "pre-execution gate with real UIDT/background-URLSession, packet, "
-            "landing and scheduler-recovery tests."
+            "The Android UIDT JobScheduler adapter is intentionally present, "
+            "but no Kotlin/Swift/Rust HTTP or socket implementation exists. "
+            "The next MOB-05B slice must add approved signed HTTPS landing/range "
+            "and iOS background-URLSession with packet and recovery tests."
         ),
     }
 

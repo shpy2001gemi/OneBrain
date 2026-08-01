@@ -111,6 +111,7 @@ internal data class RustRegistryTransferSchedule(
 )
 
 internal object RustMobileBridge {
+    private const val NO_ACTIVE_REGISTRY_TRANSFER_STATUS = 12
     private val loadFailure =
         runCatching { System.loadLibrary(RUST_LIBRARY_NAME) }.exceptionOrNull()
 
@@ -312,6 +313,19 @@ internal object RustMobileBridge {
                 positiveUserStopEvidence,
             ),
         )
+    }
+
+    fun registryTransferScheduleForChannel(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        channelId: String,
+    ): RustRegistryTransferSchedule? {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        val encoded = nativeRuntimeRegistryTransferScheduleForChannel(channelId)
+        if (encoded == "ERR:$NO_ACTIVE_REGISTRY_TRANSFER_STATUS") {
+            return null
+        }
+        return decodeRegistryTransferSchedule(encoded)
     }
 
     private fun ensureSecureRuntime(
@@ -654,6 +668,10 @@ internal object RustMobileBridge {
     @JvmStatic private external fun nativeRuntimeRecordRegistryTransferMissing(
         transferNonce: String,
         positiveUserStopEvidence: Boolean,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimeRegistryTransferScheduleForChannel(
+        channelId: String,
     ): String
 
     @JvmStatic private external fun nativeRuntimeSaveRawTextDraft(

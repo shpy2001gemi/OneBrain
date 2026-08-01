@@ -4,4 +4,13 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <application>
+        <receiver
+            android:name=".RegistryUidtProbeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.onebrain.onebrain_mobile.debug.REGISTRY_UIDT_PROBE" />
+            </intent-filter>
+        </receiver>
+    </application>
 </manifest>

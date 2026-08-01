@@ -1,0 +1,27 @@
+{
+  "crash_window": "scheduled_before_rust_submit_bind",
+  "device": "emulator-5554",
+  "expected_total_bytes": 6144,
+  "format": "onebrain.mobile.android-registry-uidt-emulator/1",
+  "job_id": 13521780,
+  "limitations": [
+    "charging was forced false so the barrier probe remained pending and transferred no bytes",
+    "the signed debug fixture is 6 KiB; the real 2.2 GB-class estimate and transfer remain an explicit qualification gate",
+    "the debug-only descriptor is a digest fixture, not a URL or production transport authority",
+    "this does not qualify HTTPS range landing, full-size transfer, Task Manager Stop, Doze, thermal pressure, reboot, or a physical device"
+  ],
+  "recovery": {
+    "job_id": 13521780,
+    "matching_job_count": 1,
+    "rust_state": 2,
+    "status": "ADOPTED",
+    "transfer_nonce": "registry_transfer_005e610e88736cb8bedb85aa14d71d9db78ee997dae8b202"
+  },
+  "result": "passed",
+  "stop": {
+    "job_id": 13521780,
+    "rust_state": 4,
+    "status": "USER_STOPPED"
+  },
+  "transfer_nonce_prefix": "registry_transfer_005e610e"
+}

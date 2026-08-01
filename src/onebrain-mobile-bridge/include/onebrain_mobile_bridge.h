@@ -18,7 +18,7 @@
 /**
  * Stable ABI revision understood by the current Swift/Kotlin adapters.
  */
-#define OB_MOBILE_BRIDGE_ABI_VERSION 9
+#define OB_MOBILE_BRIDGE_ABI_VERSION 10
 
 #define OB_MOBILE_RUNTIME_OK 0
 
@@ -43,6 +43,8 @@
 #define OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE 10
 
 #define OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT 11
+
+#define OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_TRANSFER 12
 
 typedef struct ObMobileRegistryPlan {
   uint32_t status_code;
@@ -295,6 +297,18 @@ struct ObMobileRegistryTransferSchedule ob_mobile_runtime_adopt_registry_transfe
 struct ObMobileRegistryTransferSchedule ob_mobile_runtime_record_registry_transfer_missing_utf8(const uint8_t *transfer_nonce,
                                                                                                 size_t transfer_nonce_len,
                                                                                                 uint8_t positive_user_stop_evidence);
+
+/**
+ * Resolve the channel's one durable active Registry transfer for native
+ * scheduler reconciliation. No platform path or transport descriptor bytes
+ * cross this ABI.
+ *
+ * # Safety
+ *
+ * `channel_id` must reference its declared readable UTF-8 byte length.
+ */
+struct ObMobileRegistryTransferSchedule ob_mobile_runtime_registry_transfer_schedule_for_channel_utf8(const uint8_t *channel_id,
+                                                                                                      size_t channel_id_len);
 
 /**
  * Bounded deterministic call used to verify the complete generated call path.

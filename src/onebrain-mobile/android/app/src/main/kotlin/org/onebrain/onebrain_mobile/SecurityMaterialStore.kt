@@ -29,6 +29,8 @@ internal class SecurityMaterialStore(context: Context) {
     private val markerFile = File(securityDirectory, "install-marker.v1")
     private val keyStore = KeyStore.getInstance(ANDROID_KEY_STORE).apply { load(null) }
 
+    fun hasExistingInstallationState(): Boolean = markerFile.exists() || envelopeFile.exists()
+
     @Synchronized
     fun loadOrCreate(): ByteArray {
         val markerExists = markerFile.isFile

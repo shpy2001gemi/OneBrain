@@ -1,8 +1,8 @@
 # WIP Mobile App Analysis and Implementation Plan V1.3
 
-> Status: **ACTIVE IMPLEMENTATION / MOB-05A TYPED ADMISSION IMPLEMENTED / MOB-05B NEXT CRITICAL PATH**
+> Status: **ACTIVE IMPLEMENTATION / MOB-05A ADMISSION + MOB-05B ANDROID UIDT BARRIER IMPLEMENTED / BYTE TRANSPORT NEXT**
 >
-> Snapshot: **2026-08-01 (Asia/Saigon)**
+> Snapshot: **2026-08-02 (Asia/Saigon)**
 >
 > Scope: iOS, Android, an autonomous OneBrain mobile node, local or cloud LLM
 > providers, deterministic tool execution, 2 GB+ post-launch Init data, and
@@ -142,7 +142,7 @@ target document does not close a work-package exit by itself.
 | Runtime profile | One-writer process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL fixture, private planner, kill/restart recovery and no-network/no-model default | Full platform/background adapter matrix and physical-device lifecycle evidence |
 | Security/private storage | Android Keystore, iOS Keychain adapter, installation binding, encrypted vault/archive, backup exclusions, fail-closed unexpected-restore tests | Physical backup/restore inspection, biometric/protected-data matrices and complete user recovery UX |
 | Limited private shell | vi/en onboarding, adaptive shared shell, encrypted text capture, Android share spool, Limited status, media import and My Media OwnedOriginal shelf | Canonical KU encode/preview/private Save, complete Library/search/KQL/backup journeys and all remaining screens |
-| Registry Init | BootstrapOnly package proof and source isolation exist | Complete signed post-launch Registry provision/update, 2.2 GB-class transfer, A/B activation, health, rollback and `ReadyOffline` |
+| Registry Init | Signed admission, durable transfer ledger, ABI-10 native recovery and Android 14+ UIDT schedule/kill/adopt/user-stop emulator proof; release still excludes Registry bytes, `INTERNET`, trust profile and descriptor | Owner-issued trust/descriptor, HTTPS landing/range/chunk transfer, iOS background `URLSession`, 2.2 GB qualification, A/B activation, health, rollback and `ReadyOffline` |
 | AI/tools | No-LLM baseline, signed local KQL fixture and proposal-only private-planner feasibility | Provider contract implementation, deterministic ToolOrchestrator journal, local runtime bake-off, system providers, cloud disclosure and model supply chain |
 | Media | Android picker streams to bounded encrypted Rust staging; verified bytes activate as deduplicated `OwnedOriginal` with an owned hold and force-stop recovery | Final piece/pack and manifest layout, viewer, derived share representation, received media, range verification, ENOSPC/large-file matrix and GC |
 | Networking/seeding | No network authority is present in the BootstrapOnly app | P5 and Registry entry gates, peer authorization, reconciliation, provider leases, opportunistic seed policy and multi-device canary |
@@ -1665,7 +1665,7 @@ Status vocabulary:
 | `MOB-02` | **Partial** | Thin mobile crates, process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL/private planner, Android kill recovery | Broader platform lifecycle qualification and any remaining runtime-service adapters; no `ReadyOffline` claim |
 | `MOB-03` | **Partial** | Platform custody adapters, installation binding, encrypted vault/archive, exclusions, corruption and unexpected-restore tests | Physical backup/restore, iOS orphan-Keychain, protected-data/biometric and full recovery UX evidence |
 | `MOB-04` | **Partial** | vi/en Limited shell, onboarding, encrypted raw drafts, Android share spool, status surfaces, system-picker import and My Media shelf | Canonical KU encode/preview/private Save, complete Library/My KU/Received shelves, local search/KQL and export/backup journeys |
-| `MOB-05` | **Partial — MOB-05A admission and MOB-05B root barrier implemented** | Deterministic signed channel/release verification, atomic manifest/high-water/revocation acceptance, exact target-filesystem capacity policy, durable Begin/Defer/re-review/Confirm, ABI 9 native-only prepare/submit/adopt/stop recovery, shared INI-001/002 review UI and Android 16 emulator integration; debug fixture is excluded from release | Embed an owner-issued production trust profile and approved transport descriptors; finish Android UIDT/iOS background `URLSession`, landing/range resume and live policy in MOB-05B; complete MOB-05C A/B activation/health/rollback/GC; qualify the real 2.2 GB-class release on target filesystems and close airplane-mode exits |
+| `MOB-05` | **Partial — MOB-05A admission plus MOB-05B Android UIDT scheduler/adoption implemented** | Deterministic signed admission and capacity, ABI-10 native-only barrier lookup, namespaced/persisted Android 14+ UIDT scheduling, process-kill inventory adoption, positive user-stop receipt, bilingual notification, release package/permission isolation and Android 16 emulator proof; debug fixture is excluded from release | Embed owner-issued production trust and approved transport descriptors; add signed HTTPS landing/range/chunk bytes and live policy, finish iOS background `URLSession`, then MOB-05C activation/health/rollback/GC and real 2.2 GB qualification |
 | `MOB-06` | **Partial contract/fixture only** | No-LLM behavior, signed KQL fixture and private proposal feasibility | Provider adapters, deterministic tool execution journal, local-runtime bake-off, cloud disclosure and signed model lifecycle |
 | `MOB-07` | **Partial — current evidence package** | Activation recovery foundations plus Android encrypted media staging/OwnedOriginal activation, catalog query and force-stop recovery | Piece/pack media contract, viewers/received media, camera/OCR/voice, background adapters, notifications/outbox, energy policy and physical matrices |
 | `MOB-08` | **Blocked** | No production network authority in the app | P5, Registry, peer protocol and stable Offline MVP entry gates; then enrollment, reconciliation, seeding/presence and multi-host canary |
@@ -1844,6 +1844,24 @@ Swift C header can call this barrier without Flutter. This checkpoint adds no
 URL, network permission, OS scheduler submission, byte transfer or production
 transport authority, so transport remains hard-disabled and no MOB-05 exit is
 satisfied.
+
+Implementation checkpoint (2026-08-02): ABI 10 and the Android UIDT
+scheduler/adoption slice are executable on an Android 16 emulator. Kotlin uses
+the platform `JobScheduler` API directly because Android exposes no Jetpack
+UIDT wrapper: a dedicated namespace persists only bounded primitive
+operation/release/manifest/trust/request/descriptor-digest bindings, the
+prechosen Rust job ID, exact signed-manifest byte estimate and evaluated
+network/charging/battery/storage constraints. Native startup and JobService
+callbacks enumerate that namespace and resolve the channel's active schedule
+from Rust without Flutter. The emulator gate schedules while Rust remains
+`SchedulePrepared`, kills the app process, proves the OS job remains, adopts
+exactly one match after restart, and records positive user Stop separately.
+The release manifest contains the non-exported JobService/control receiver and
+required scheduler/state permissions, excludes the debug probe and still has
+no `INTERNET`; source scanning finds no HTTP/socket implementation. The probe
+uses a 6 KiB signed debug manifest and transfers no bytes, so approved HTTPS
+landing/range, Task Manager Stop, reboot/Doze/thermal, iOS, physical device and
+the real 2.2 GB-class qualification remain open. No MOB-05 exit is satisfied.
 
 Deliver:
 
@@ -2107,13 +2125,14 @@ qualification integration at `d9270f7`:
    exercised against the isolated signed development fixture; replace the
    unavailable production trust source only with owner-issued authority and
    physical/full-size qualification evidence.
-2. **MOB-05B — durable platform transfer (root barrier implemented; platform
-   execution open):** keep the ABI-9 prepare/submit/adopt/stop recovery contract
-   and bind Android UIDT/eligible managed HTTPS plus iOS background
-   `URLSession` to it, including actual scheduler enumeration, landing/range
-   resume, live policy, user stop, force-quit and native callback recovery
-   without Flutter. Production remains unavailable until owner-issued trust and
-   approved transport descriptors exist.
+2. **MOB-05B — durable platform transfer (Android scheduler/adoption
+   implemented; byte execution and iOS open):** keep the ABI-10
+   prepare/submit/adopt/stop plus active-schedule lookup contract and the
+   Android UIDT namespace/recovery adapter. Add owner-approved signed HTTPS
+   landing/range/chunk execution and live policy, then bind iOS background
+   `URLSession` with force-quit/native callback recovery without Flutter.
+   Production remains unavailable until owner-issued trust and approved
+   transport descriptors exist.
 3. **MOB-05C — full activation:** provision the real 2.2 GB-class Registry,
    verify immutable chunks/indexes, perform A/B pointer activation, independent
    post-pointer health, compensation/rollback and safe GC; then measure mmap,

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "contract_id": "onebrain-mobile-owner-approved-v1",
   "scope_root": "src/onebrain-mobile",
-  "authority_set_sha256": "3b27a538848903e03fcc84ea553f961b2b3a1af732056d25121b582e52356db8",
+  "authority_set_sha256": "8d95de752366e12bdaf530d11a9a5c694a56f9e64e3be56638fd5e3cbbd271f6",
   "required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -33,7 +33,7 @@
       "role": "mobile_delivery_sequence",
       "path": "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
       "heading": "# WIP Mobile App Analysis and Implementation Plan V1.3",
-      "sha256": "50a63f99594ef81a25f4c9d52021f4843671bd5ecdac440f51b5224d764a707c"
+      "sha256": "ac28933ef7616ce47eca6e33f732d13c48dcd25613edf5bcac354d442380a7e3"
     },
     {
       "role": "mobile_feature_inventory",

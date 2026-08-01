@@ -60,6 +60,7 @@ class MainActivity : FlutterActivity() {
         MobileHostApi.setUp(messenger, hostApi)
         HostOperationEventsStreamHandler.register(messenger, hostEvents)
         hostApi.acceptShareIntent(intent)
+        RegistryUidtStartupReconciler.reconcileOnce(applicationContext)
     }
 
     override fun onNewIntent(intent: Intent) {

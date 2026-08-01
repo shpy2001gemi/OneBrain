@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="registry_transfer_channel_name">Dữ liệu Khái niệm</string>
+    <string name="registry_transfer_channel_description">Tiến trình hiển thị cho lượt tải Concept Registry bạn đã bắt đầu</string>
+    <string name="registry_transfer_notification_title">Đang chuẩn bị dữ liệu Khái niệm</string>
+    <string name="registry_transfer_notification_preparing">Đang kiểm tra lượt tải có chữ ký %1$s</string>
+    <string name="registry_transfer_notification_stop">Dừng</string>
+</resources>

@@ -25,7 +25,7 @@ use onebrain_mobile_core::{
 };
 
 /// Stable ABI revision understood by the current Swift/Kotlin adapters.
-pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 9;
+pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 10;
 
 pub const OB_MOBILE_RUNTIME_OK: u32 = 0;
 pub const OB_MOBILE_RUNTIME_INVALID_PATH: u32 = 1;
@@ -39,6 +39,7 @@ pub const OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL: u32 = 8;
 pub const OB_MOBILE_RUNTIME_SHARE_SPOOL_NOT_FOUND: u32 = 9;
 pub const OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE: u32 = 10;
 pub const OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT: u32 = 11;
+pub const OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_TRANSFER: u32 = 12;
 
 const CORE_VERSION: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
@@ -780,6 +781,24 @@ pub unsafe extern "C" fn ob_mobile_runtime_record_registry_transfer_missing_utf8
     record_registry_transfer_missing(transfer_nonce, positive_user_stop_evidence != 0)
 }
 
+/// Resolve the channel's one durable active Registry transfer for native
+/// scheduler reconciliation. No platform path or transport descriptor bytes
+/// cross this ABI.
+///
+/// # Safety
+///
+/// `channel_id` must reference its declared readable UTF-8 byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_registry_transfer_schedule_for_channel_utf8(
+    channel_id: *const u8,
+    channel_id_len: usize,
+) -> ObMobileRegistryTransferSchedule {
+    let Some(channel_id) = (unsafe { parse_bounded_utf8(channel_id, channel_id_len, 64) }) else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    registry_transfer_schedule_for_channel(channel_id)
+}
+
 /// Bounded deterministic call used to verify the complete generated call path.
 #[unsafe(no_mangle)]
 pub extern "C" fn ob_mobile_bridge_round_trip(nonce: u64) -> u64 {
@@ -1373,6 +1392,24 @@ fn record_registry_transfer_missing(
     }
 }
 
+fn registry_transfer_schedule_for_channel(channel_id: &str) -> ObMobileRegistryTransferSchedule {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_LOCK_POISONED),
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.registry_transfer_schedule_for_channel(channel_id) {
+        Ok(Some(schedule)) => ObMobileRegistryTransferSchedule::from_core(schedule),
+        Ok(None) => {
+            ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_TRANSFER)
+        }
+        Err(_) => ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
 fn runtime_snapshot() -> ObMobileRuntimeSnapshot {
     let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
     let guard = match runtime.lock() {
@@ -1698,7 +1735,8 @@ mod android {
         ob_mobile_runtime_set_onboarding_cursor, open_runtime, open_runtime_secured, owned_media,
         owned_media_count, pending_share_spool_at, prepare_registry_init,
         prepare_registry_transfer_schedule, record_registry_transfer_missing,
-        registry_network_policy, registry_transfer_platform, runtime_snapshot, save_raw_text_draft,
+        registry_network_policy, registry_transfer_platform,
+        registry_transfer_schedule_for_channel, runtime_snapshot, save_raw_text_draft,
         start_media_stage, ObMobileRegistryPlan, ObMobileRegistryTransferSchedule, CORE_VERSION,
         OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT, OB_MOBILE_RUNTIME_OK,
     };
@@ -2038,6 +2076,25 @@ mod android {
             &transfer_nonce,
             positive_user_stop_evidence != JNI_FALSE,
         ));
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeRegistryTransferScheduleForChannel"
+    )]
+    pub fn native_runtime_registry_transfer_schedule_for_channel<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        channel_id: JString<'caller>,
+    ) -> JString<'caller> {
+        let channel_id = unowned_env
+            .with_env(|env| channel_id.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let encoded =
+            encode_registry_transfer_schedule(&registry_transfer_schedule_for_channel(&channel_id));
         unowned_env
             .with_env(|env| JString::from_str(env, &encoded))
             .resolve::<ThrowRuntimeExAndDefault>()
@@ -2569,7 +2626,7 @@ mod tests {
 
     #[test]
     fn abi_and_version_are_bounded_and_stable() {
-        assert_eq!(ob_mobile_bridge_abi_version(), 9);
+        assert_eq!(ob_mobile_bridge_abi_version(), 10);
         let version = unsafe { CStr::from_ptr(ob_mobile_bridge_core_version()) };
         assert_eq!(version.to_str().expect("version UTF-8"), "0.1.0");
         assert!(version.to_bytes().len() <= 32);

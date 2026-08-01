@@ -17,7 +17,7 @@ void main() {
       expect(snapshot.apiVersion, '8');
       expect(snapshot.registryRequestIssued, isFalse);
       expect(snapshot.rustCoreLinked, isTrue);
-      expect(snapshot.rustAbiVersion, 9);
+      expect(snapshot.rustAbiVersion, 10);
       expect(snapshot.rustRoundTripVerified, isTrue);
 
       final runtime = await gateway.inspectRuntimeProfile();

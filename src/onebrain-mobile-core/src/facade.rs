@@ -647,6 +647,14 @@ impl MobileRuntimeFacade {
         )
     }
 
+    pub fn registry_transfer_schedule_for_channel(
+        &self,
+        channel_id: &str,
+    ) -> Result<Option<RegistryTransferScheduleRecord>, MobileCoreError> {
+        self.store
+            .registry_transfer_schedule_for_channel(channel_id)
+    }
+
     pub fn unlock_private_node(
         &mut self,
         material: SecurityBootstrapMaterial,

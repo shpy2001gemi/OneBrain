@@ -1,7 +1,7 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "3b27a538848903e03fcc84ea553f961b2b3a1af732056d25121b582e52356db8",
+  "authority_set_sha256": "8d95de752366e12bdaf530d11a9a5c694a56f9e64e3be56638fd5e3cbbd271f6",
   "phase": "feature",
   "work_package": "MOB-05",
   "acknowledged_required_read_set": [
@@ -282,7 +282,7 @@
     {
       "id": "MOB-04-TYPED-HOST-ABI",
       "path": "src/onebrain-mobile/pigeons/mobile_host_api.dart",
-      "proves": "ABI 9 preserves typed onboarding, private-draft, opaque share-spool commands, typed media-picker receipts and Registry Init intents while adding native-only Registry transfer-barrier receipts; paths, keys, database handles, picker URIs, source bytes, transfer handles and transport descriptors still do not cross into Flutter."
+      "proves": "ABI 10 preserves typed onboarding, private-draft, opaque share-spool commands, typed media-picker receipts and Registry Init intents while keeping Registry transfer/recovery receipts native-only; paths, keys, database handles, picker URIs, source bytes, transfer handles and transport descriptors still do not cross into Flutter."
     },
     {
       "id": "MOB-04-LIMITED-SHELL",
@@ -302,7 +302,7 @@
     {
       "id": "MOB-04-ANDROID-NATIVE-INTEGRATION",
       "path": "src/onebrain-mobile/integration_test/native_host_bridge_test.dart",
-      "proves": "Android 16 exercises ABI 9, the protected Rust runtime, onboarding cursor, encrypted draft/share-spool/verified-media counts and bounded native operation events."
+      "proves": "Android 16 exercises ABI 10, the protected Rust runtime, onboarding cursor, encrypted draft/share-spool/verified-media counts and bounded native operation events."
     },
     {
       "id": "MOB-04-ANDROID-SHARE-INTENT",
@@ -457,7 +457,7 @@
     {
       "id": "MOB-05B-NATIVE-ONLY-ABI",
       "path": "src/onebrain-mobile-bridge/include/onebrain_mobile_bridge.h",
-      "proves": "Generated ABI 9 exposes bounded prepare, submit, adopt and missing-task recovery to Swift/Kotlin without placing any URL, credential, filesystem path, database handle, transport descriptor bytes or OS transfer handle in the Pigeon/Dart contract."
+      "proves": "Generated ABI 10 preserves bounded prepare, submit, adopt and missing-task recovery and adds channel-scoped active-schedule lookup for Swift/Kotlin startup reconciliation without placing any URL, credential, filesystem path, database handle, transport descriptor bytes or OS transfer handle in the Pigeon/Dart contract."
     },
     {
       "id": "MOB-05B-ANDROID-ABI-INTEGRATION",
@@ -483,9 +483,44 @@
       "id": "MOB-05B-RUST-DEPENDENCY-ISOLATION",
       "path": "src/onebrain-mobile/compliance/reports/mob05b_rust_dependency_isolation.json",
       "proves": "The mobile core remains independent of desktop/node protocol, concrete LLM, Tokio and HTTP transport crates while owning the canonical durable transfer state machine."
+    },
+    {
+      "id": "MOB-05B-ANDROID-UIDT-SCHEDULER",
+      "path": "src/onebrain-mobile/android/app/src/main/kotlin/org/onebrain/onebrain_mobile/RegistryUidtScheduler.kt",
+      "proves": "Android 14+ uses the platform JobScheduler UIDT API in a dedicated namespace with the Rust-prechosen job ID, persisted bounded primitive bindings, exact manifest byte estimate and typed network/charging/battery/storage constraints. Native startup enumerates and adopts or conservatively marks a missing submitted job without Flutter, URL, credential or byte-transport authority."
+    },
+    {
+      "id": "MOB-05B-ANDROID-UIDT-SERVICE",
+      "path": "src/onebrain-mobile/android/app/src/main/kotlin/org/onebrain/onebrain_mobile/RegistryTransferJobService.kt",
+      "proves": "The non-exported JobService posts its required bilingual visible notification immediately, reconciles the exact Rust schedule off the main thread, never treats the OS grant as always-live, and records a notification Stop as positive user-stop evidence. No HTTP/socket executor exists in this slice."
+    },
+    {
+      "id": "MOB-05B-ANDROID-UIDT-EMULATOR",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_android_uidt_emulator.json",
+      "proves": "Android 16 schedules a real persisted UIDT job while Rust remains SchedulePrepared, retains the exact job across process kill, adopts exactly one nonce/fingerprint/job-ID match after restart and records positive user Stop separately. Charging is forced false and the 6 KiB signed debug fixture transfers no bytes; this is scheduler/adoption evidence, not full-size transport evidence."
+    },
+    {
+      "id": "MOB-05B-ANDROID-UIDT-RELEASE-BOUNDARY",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_android_uidt_release_permissions.json",
+      "proves": "The release declares UIDT, reboot-persistence and network-state permissions plus the non-exported JobService/control receiver, excludes the exported debug probe and still lacks INTERNET or other byte/network-control permissions."
+    },
+    {
+      "id": "MOB-05B-ANDROID-UIDT-RELEASE-INVENTORY",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_android_uidt_release_package_inventory.json",
+      "proves": "The ABI-10 optimized release APK has matching armeabi-v7a/arm64-v8a/x86_64 Rust bridges and zero packaged Registry, index, database, model, archive or other prohibited initial payloads."
+    },
+    {
+      "id": "MOB-05B-UIDT-BYTE-TRANSPORT-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_uidt_transport_source_isolation.json",
+      "proves": "Static scanning confirms the Android JobScheduler adapter is present while Dart, Kotlin, Swift and Rust still contain no concrete HTTP/socket implementation; signed HTTPS landing/range and iOS background URLSession remain open."
+    },
+    {
+      "id": "MOB-05B-UIDT-RUST-DEPENDENCY-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_uidt_rust_dependency_isolation.json",
+      "proves": "The ABI-10 mobile core still owns canonical reconciliation without importing desktop/node protocol, concrete LLM, Tokio or HTTP transport crates."
     }
   ],
   "deviations": [],
   "last_reviewed": "2026-08-02",
-  "notes": "MOB-05A admission and the first MOB-05B root-ledger barrier are active. Rust owns deterministic signed Registry trust/admission, rollback high-water, durable Begin/Defer/re-review/Confirm, exact capacity policy and atomic SchedulePrepared/TransferSubmitted/TransferAdopted plus stop-recovery state. ABI 9 exposes the transfer barrier only to Swift/Kotlin; Flutter still receives no transfer handle or transport authority. Android 16 emulator evidence covers the rebuilt ABI and existing signed admission path. The signed development fixture remains debug-only and transport-disabled; release builds contain neither it nor an owner-issued production trust profile or approved transport descriptors and therefore fail safe as unavailable. MOB-05B still must add real Android UIDT/iOS background URLSession submission/enumeration, signed HTTPS landing/range resume and live policy; MOB-05C must qualify and activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. The abandoned 72-hour P5 run, multi-host canary, full-size target-filesystem qualification, physical-device gates and MOB-08 remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding, ReadyOffline or product-readiness claim is made."
+  "notes": "MOB-05A admission, the MOB-05B Rust root barrier and Android UIDT scheduler/adoption slice are active. ABI 10 lets Swift/Kotlin query the channel's durable active schedule; Flutter still receives no scheduler handle, URL or transport authority. Android 16 emulator evidence covers real namespaced/persisted UIDT schedule, process-kill inventory survival, exactly-one adoption and positive user Stop using the 6 KiB signed debug fixture with charging forced false and no bytes transferred. The release contains the non-exported JobService/control receiver and required UIDT/state permissions, excludes the debug probe and Registry/model data, and still has no INTERNET, production trust profile or approved transport descriptor. MOB-05B still must add owner-approved signed HTTPS landing/range/chunk bytes, live policy and iOS background URLSession; MOB-05C must qualify and activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. Task Manager Stop, reboot/Doze/thermal, full-size target-filesystem, physical-device, fresh 72-hour P5, multi-host canary and MOB-08 gates remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding, ReadyOffline or product-readiness claim is made."
 }
