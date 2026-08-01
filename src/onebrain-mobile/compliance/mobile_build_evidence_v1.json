@@ -1,7 +1,7 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "b90093013e7cf87549bada2f8045ad7d7bd388a30e072b3c2a2592bee58c2114",
+  "authority_set_sha256": "961058da1752cd020235ece5636f73892567cda5cfeaa59812835375339a2896",
   "phase": "feature",
   "work_package": "MOB-00",
   "acknowledged_required_read_set": [
@@ -91,7 +91,7 @@
     {
       "id": "MOB-00-P5-AUTHORITY-INTEGRATION",
       "path": "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
-      "proves": "The mobile authority set explicitly accepts shared P5 and Concept Registry foundations through bb7cfa7 without claiming the abandoned 72-hour run, multi-host canary, full-size Registry qualification or production rollout gates are complete."
+      "proves": "The mobile authority set explicitly accepts shared P5 and Concept Registry foundations plus bounded truncated-index/disk-shortage failure qualification through cbe5495 and merge d9270f7 without claiming the abandoned 72-hour run, multi-host canary, full-size target-filesystem Registry qualification or production rollout gates are complete."
     },
     {
       "id": "MOB-01-FLUTTER-TESTS",
@@ -376,5 +376,5 @@
   ],
   "deviations": [],
   "last_reviewed": "2026-08-01",
-  "notes": "MOB-00 authority maintenance integrates shared P5 and Concept Registry work through bb7cfa7 into the mobile branch at merge d860999. Semantic review accepts the signed-release, atomic-activation, CCID-stability and bounded resource-qualification foundations while preserving every production fence: the 72-hour run was abandoned after about 51 hours 30 minutes, multi-host canary, full-size Registry qualification and operator rollout remain open, and MOB-08 stays blocked. MOB-05 Registry Init is the next critical path; MOB-04, MOB-06, MOB-07 and MOB-09 remain partial. Existing MOB-07 Android emulator evidence still covers encrypted OwnedOriginal activation and typed recovery but does not close MOB-GATE-MEDIA or any physical-device gate. The app remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
+  "notes": "MOB-00 authority maintenance integrates shared P5 and Concept Registry work through cbe5495 into the mobile branch at merge d9270f7. Semantic review accepts the signed-release, atomic-activation, CCID-stability and bounded truncated-index/disk-shortage qualification foundations while preserving every production fence: the 72-hour run was abandoned after about 51 hours 30 minutes, multi-host canary, full-size target-filesystem Registry qualification and operator rollout remain open, and MOB-08 stays blocked. MOB-05 Registry Init is the next critical path; MOB-04, MOB-06, MOB-07 and MOB-09 remain partial. Existing MOB-07 Android emulator evidence still covers encrypted OwnedOriginal activation and typed recovery but does not close MOB-GATE-MEDIA or any physical-device gate. The app remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
 }

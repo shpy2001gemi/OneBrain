@@ -129,7 +129,7 @@ target document does not close a work-package exit by itself.
 | P5-01 | Three logical nodes on one host passed preflight | Not a production mobile/network canary |
 | P5-02-P5-06 | Fault, restore, rollback, default-off, dashboard preflight passed | Good operational contract for future mobile lanes |
 | P5 production | **Open** | 72-hour run, multi-host canary, and operator-approved rollout remain |
-| Concept Registry operations | Signed-release, atomic-activation, CCID-stability and resource-qualification foundations implemented | Reuse the contracts, but full-size storage/resource and quarterly operational exits remain open |
+| Concept Registry operations | Signed-release, atomic-activation, CCID-stability, bounded resource and truncated-index/disk-shortage qualification foundations implemented | Reuse the contracts, but full-size storage/resource, target-filesystem and quarterly operational exits remain open |
 | M6A/M6B | Not authorized yet | No active distributed KQL in mobile MVP |
 | M7/OBT | Not started | No production wallet, rewards, or economic balance in mobile |
 
@@ -149,8 +149,9 @@ target document does not close a work-package exit by itself.
 
 Current branch evidence:
 
-- branch `codex/mobile-autonomous-node` includes mobile commit `87e1195`, P5/
-  Concept Registry commit `bb7cfa7`, and clean integration merge `d860999`;
+- branch `codex/mobile-autonomous-node` includes mobile authority commit
+  `24c25a1`, the prior P5/Concept Registry integration `d860999`, and Registry
+  failure qualification through `cbe5495` via clean merge `d9270f7`;
 - `Mobile foundation` run `30690349111` passed Android, iOS simulator and
   Windows golden jobs;
 - `Mobile build contracts` run `30690349095` passed;
@@ -163,9 +164,9 @@ Current branch evidence:
 
 Evidence snapshot:
 
-- Remote `codex/p5-canary-preflight` is at `bb7cfa7`; remote `main` remains at
+- Remote `codex/p5-canary-preflight` is at `cbe5495`; remote `main` remains at
   `1055db8` in this snapshot.
-- [P5 CI run 30696476221](https://github.com/shpy2001gemi/OneBrain/actions/runs/30696476221)
+- [P5 CI run 30701845332](https://github.com/shpy2001gemi/OneBrain/actions/runs/30701845332)
   passed 5/5 jobs.
 - [Pre-release 72-hour run 30382763222](https://github.com/shpy2001gemi/OneBrain/actions/runs/30382763222)
   was abandoned after about 51 hours 30 minutes when the self-hosted runner
@@ -176,8 +177,9 @@ Evidence snapshot:
 
 ### Distributed-runtime evidence still to resolve
 
-P5 and Concept Registry preflight code through `bb7cfa7` is now integrated into
-the mobile branch, but this does not close P5 production. The abandoned
+P5 and Concept Registry preflight code through `cbe5495`, including bounded
+truncated-index and disk-shortage failure qualification, is now integrated into
+the mobile branch at `d9270f7`. This does not close P5 production. The abandoned
 `main@1055db8` run cannot be carried as a completed 72-hour artifact. Before a
 production rollout, run a fresh pinned 72-hour profile on the selected release
 artifact, complete the multi-host canary, close the remaining full-size Concept
@@ -1656,14 +1658,14 @@ Status vocabulary:
   named entry gates close;
 - **Continuous**: release work accumulates but its final exit remains open.
 
-| Package | Status after P5 integration (`d860999`) | Evidence already present | Remaining package exit |
+| Package | Status after Registry-failure integration (`d9270f7`) | Evidence already present | Remaining package exit |
 |---|---|---|---|
 | `MOB-00` | **Baseline established / continuous** | Owner-approved architecture, feature tree/details, sitemap, design system, component/pattern catalogs, authority manifest/validator, and reviewed P5/Concept Registry integration | Maintain authority hashes and resolve any future semantic conflict through owner review |
 | `MOB-01` | **Partial** | Flutter/native/Rust scaffold, generated bridge/tokens/localization, Android builds/package scans, iOS simulator compile, golden matrix and CI | Physical-device launch on both platforms, final ABI/thread audit and signed package baselines |
 | `MOB-02` | **Partial** | Thin mobile crates, process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL/private planner, Android kill recovery | Broader platform lifecycle qualification and any remaining runtime-service adapters; no `ReadyOffline` claim |
 | `MOB-03` | **Partial** | Platform custody adapters, installation binding, encrypted vault/archive, exclusions, corruption and unexpected-restore tests | Physical backup/restore, iOS orphan-Keychain, protected-data/biometric and full recovery UX evidence |
 | `MOB-04` | **Partial** | vi/en Limited shell, onboarding, encrypted raw drafts, Android share spool, status surfaces, system-picker import and My Media shelf | Canonical KU encode/preview/private Save, complete Library/My KU/Received shelves, local search/KQL and export/backup journeys |
-| `MOB-05` | **Not started — next critical path** | BootstrapOnly packaging/source isolation, root operation ledger, shared signed-release/atomic-activation foundation, CCID gate and resource harness are prerequisites already present | Complete the mobile channel/admission and transfer adapters, A/B health/rollback/GC, 2.2 GB-class device qualification and airplane-mode exits |
+| `MOB-05` | **Not started — next critical path** | BootstrapOnly packaging/source isolation, root operation ledger, shared signed-release/atomic-activation foundation, CCID gate and bounded truncated-index/disk-shortage harness are prerequisites already present | Complete the mobile channel/admission and transfer adapters, A/B health/rollback/GC, 2.2 GB-class device/target-filesystem qualification and airplane-mode exits |
 | `MOB-06` | **Partial contract/fixture only** | No-LLM behavior, signed KQL fixture and private proposal feasibility | Provider adapters, deterministic tool execution journal, local-runtime bake-off, cloud disclosure and signed model lifecycle |
 | `MOB-07` | **Partial — current evidence package** | Activation recovery foundations plus Android encrypted media staging/OwnedOriginal activation, catalog query and force-stop recovery | Piece/pack media contract, viewers/received media, camera/OCR/voice, background adapters, notifications/outbox, energy policy and physical matrices |
 | `MOB-08` | **Blocked** | No production network authority in the app | P5, Registry, peer protocol and stable Offline MVP entry gates; then enrollment, reconciliation, seeding/presence and multi-host canary |
@@ -2074,8 +2076,8 @@ plan. None of the remaining decisions authorizes a distributed production lane.
 
 ## 15. Updated execution sequence
 
-Recommended implementation order after P5/Concept Registry integration at
-`d860999`:
+Recommended implementation order after P5/Concept Registry failure-
+qualification integration at `d9270f7`:
 
 1. **MOB-05A — Registry trust and admission:** implement the signed channel
    head/publisher envelope, manifest acceptance transaction, revocation/high-
