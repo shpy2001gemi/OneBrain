@@ -2465,10 +2465,33 @@ Registry operations không phụ thuộc bằng chứng soak:
    hoặc một transport content-addressed chunks được đặc tả riêng.
 
 Local evidence cho foundation batch: 5 release tests, 10 registry runtime tests
-và 8 machine-profile mutation tests đều xanh; full vNext contract validator
+và 9 machine-profile mutation tests đều xanh; full vNext contract validator
 xanh với 426 local links.
 
-Lane Section 11 chưa được tuyên bố hoàn tất. Tám gate tiếp theo vẫn mở: CCID
-stability/diff, cold cache, low RAM, SSD, HDD, truncated index, disk shortage và
-quarterly build/update/rollback dry-run. Production canary vẫn bị chặn bởi các
-gate này và bằng chứng soak/canary bên ngoài hợp lệ.
+Remote evidence: GitHub Actions run `30694310694` cho commit `8d8291a` xanh đủ
+5/5 jobs (`foundation-contract`, Linux default, Linux real-QUIC, Windows smoke
+và macOS ARM64 smoke) trong 12 phút 21 giây.
+
+### 2026-08-01 — Concept Registry CCID stability/diff gate
+
+1. Thêm report profile `onebrain/ccid-stability-diff/1`, so sánh stable source
+   identity từ đúng old/new builder input với CCID thực sự được stream từ hai
+   OBR tương ứng; manifest/OBR hash và entry count phải khớp trước qualification.
+2. Join production-size dùng temporary disk-backed SQLite thay vì giữ registry
+   trong RAM; operator có thể chỉ định `--work-dir` trên volume đủ dung lượng.
+3. Gate fail khi không có stable identity giao nhau, bất kỳ stable identity nào
+   đổi CCID, hoặc old/new release có CCID collision. Input/OBR mismatch,
+   duplicate identity, truncated/corrupt/trailing-byte OBR fail trước report.
+4. JSON evidence được ghi atomically, gồm exact input/OBR/manifest hashes,
+   builder/dedup identity, source snapshots, old/new-only counts và bounded
+   samples để điều tra sai lệch.
+
+Local evidence: 7 CCID stability tests xanh; khi chạy chung với builder/index
+fixture có 9 tests xanh. Machine-profile mutation suite có 9 tests xanh; full
+vNext contract validator tiếp tục xanh với 595 normative lines và 426 local
+links.
+
+Lane Section 11 chưa được tuyên bố hoàn tất. Bảy gate tiếp theo vẫn mở: cold
+cache, low RAM, SSD, HDD, truncated index, disk shortage và quarterly
+build/update/rollback dry-run. Production canary vẫn bị chặn bởi các gate này
+và bằng chứng soak/canary bên ngoài hợp lệ.

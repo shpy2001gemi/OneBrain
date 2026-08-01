@@ -2,7 +2,7 @@
 
 > **Plan lane:** Section 11 — Concept Registry operations
 >
-> **Status:** Signed release and atomic activation foundation implemented; resource and recurring qualification gates remain open
+> **Status:** Signed release, atomic activation, and bounded CCID stability gate implemented; resource and recurring qualification gates remain open
 >
 > **Machine contract:** [`concept-registry-operations-v1.json`](../../../src/test-vectors/vnext/concept-registry-operations-v1.json)
 
@@ -64,15 +64,37 @@ The private key file is created with create-new semantics and mode `0600` on
 Unix. It is never printed by the CLI. The public key is safe to place in node
 configuration.
 
-## 5. Distribution boundary and remaining gates
+## 5. CCID stability gate
+
+Compare two exact builder inputs against the CCIDs actually stored in their
+corresponding OBR artifacts:
+
+```text
+python scripts/concept_registry/ccid_stability_diff.py --old-input OLD_INPUT.jsonl --old-obr OLD.concepts.obr --old-manifest OLD.concepts.obr.manifest.json --new-input NEW_INPUT.jsonl --new-obr NEW.concepts.obr --new-manifest NEW.concepts.obr.manifest.json --work-dir WORK_DIRECTORY --output ccid-stability-report.json
+```
+
+The gate validates both manifests and streams both OBR files. It reconstructs
+the stable numeric or string source identity from each exact builder input and
+checks that it matches the adjacent OBR entry before persisting the identity and
+actual OBR CCID into a temporary SQLite database. The disk-backed join keeps
+memory bounded at production registry size.
+
+Qualification requires at least one stable identity shared by both releases,
+no changed CCID for a shared identity, and no CCID collision within either
+release. The deterministic JSON report also records old-only/new-only counts,
+bounded failure samples, exact input/OBR/manifest hashes, builder/dedup versions,
+and source snapshot identities. Invalid, truncated, mismatched, duplicate, or
+trailing-byte input fails before a report can qualify.
+
+## 6. Distribution boundary and remaining gates
 
 The signed distribution value is
 `MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP`. The large registry artifact is outside
 the OBP gossip lane; distribution uses a mirror, offline media, or a separately
 specified content-addressed chunk transport.
 
-This foundation does not claim full Section 11 qualification. The next work
-packages produce the CCID stability/diff report, cold-cache and constrained
-resource profiles, truncated-index and disk-shortage drills, and the quarterly
+This foundation does not claim full Section 11 qualification. The remaining
+work packages produce cold-cache and constrained resource profiles,
+truncated-index and disk-shortage drills, and the quarterly
 build/update/rollback dry-run. Production canary remains blocked until those
 gates and the external canary evidence are complete.

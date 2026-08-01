@@ -19,7 +19,7 @@ class ConceptRegistryOperationsContractTests(unittest.TestCase):
     def test_frozen_profile_is_accepted(self) -> None:
         self.assertEqual(
             validate_concept_registry_operations(frozen_profile()),
-            (5, 5, 8, 8),
+            (5, 5, 8, 7),
         )
 
     def test_artifact_cannot_be_removed(self) -> None:
@@ -56,6 +56,12 @@ class ConceptRegistryOperationsContractTests(unittest.TestCase):
         profile = copy.deepcopy(frozen_profile())
         profile["distribution"]["obp_artifact_gossip"] = True
         with self.assertRaisesRegex(ContractError, "distribution"):
+            validate_concept_registry_operations(profile)
+
+    def test_ccid_diff_must_compare_actual_obr_ccids(self) -> None:
+        profile = copy.deepcopy(frozen_profile())
+        profile["ccid_stability_diff"]["compares_actual_obr_ccids"] = False
+        with self.assertRaisesRegex(ContractError, "CCID stability"):
             validate_concept_registry_operations(profile)
 
     def test_remaining_resource_gates_cannot_be_hidden(self) -> None:

@@ -54,6 +54,20 @@
     "obp_artifact_gossip": false,
     "allowed": ["content-addressed-chunks", "mirrors", "offline-media"]
   },
+  "ccid_stability_diff": {
+    "profile": "onebrain/ccid-stability-diff/1",
+    "algorithm": "actual-obr-ccid-by-stable-source-identity-v1",
+    "compares_actual_obr_ccids": true,
+    "stable_identity_source": "exact-builder-input-jsonl",
+    "join": "disk-backed-sqlite",
+    "memory_bounded": true,
+    "exit_oracles": [
+      "has_stable_source_identity_overlap",
+      "all_stable_source_identities_keep_ccid",
+      "old_release_has_no_ccid_collision",
+      "new_release_has_no_ccid_collision"
+    ]
+  },
   "implemented_failure_drills": [
     "wrong-signer",
     "invalid-signature",
@@ -65,7 +79,6 @@
     "production-required-missing-active-release"
   ],
   "remaining_qualification_gates": [
-    "ccid-stability-diff-report",
     "cold-cache-profile",
     "low-ram-profile",
     "ssd-profile",

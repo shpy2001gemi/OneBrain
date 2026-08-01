@@ -3324,11 +3324,36 @@ def validate_concept_registry_operations(
     }:
         raise ContractError("Concept Registry distribution boundary drift")
 
+    ccid_diff = profile.get("ccid_stability_diff")
+    if not isinstance(ccid_diff, dict) or ccid_diff != {
+        "profile": "onebrain/ccid-stability-diff/1",
+        "algorithm": "actual-obr-ccid-by-stable-source-identity-v1",
+        "compares_actual_obr_ccids": True,
+        "stable_identity_source": "exact-builder-input-jsonl",
+        "join": "disk-backed-sqlite",
+        "memory_bounded": True,
+        "exit_oracles": [
+            "has_stable_source_identity_overlap",
+            "all_stable_source_identities_keep_ccid",
+            "old_release_has_no_ccid_collision",
+            "new_release_has_no_ccid_collision",
+        ],
+    }:
+        raise ContractError("Concept Registry CCID stability contract drift")
+
     drills = profile.get("implemented_failure_drills")
     remaining = profile.get("remaining_qualification_gates")
     if not isinstance(drills, list) or len(drills) != 8:
         raise ContractError("Concept Registry implemented failure drills drift")
-    if not isinstance(remaining, list) or len(remaining) != 8:
+    if remaining != [
+        "cold-cache-profile",
+        "low-ram-profile",
+        "ssd-profile",
+        "hdd-profile",
+        "truncated-index-profile",
+        "disk-shortage-profile",
+        "quarterly-build-update-rollback-dry-run",
+    ]:
         raise ContractError("Concept Registry remaining qualification gates drift")
 
     release_source = read(ROOT / "src/ku-core/src/concept_registry_release.rs")
@@ -3359,9 +3384,26 @@ def validate_concept_registry_operations(
                 f"Concept Registry runtime evidence missing: {needle}"
             )
 
+    ccid_diff_source = read(
+        ROOT / "scripts/concept_registry/ccid_stability_diff.py"
+    )
+    for needle in [
+        'PROFILE = "onebrain/ccid-stability-diff/1"',
+        'ALGORITHM = "actual-obr-ccid-by-stable-source-identity-v1"',
+        "def _ingest_pair(",
+        "sqlite3.connect(database_path)",
+        "WHERE old.ccid != new.ccid",
+        "stable_count > 0",
+    ]:
+        if needle not in ccid_diff_source:
+            raise ContractError(
+                f"Concept Registry CCID stability evidence missing: {needle}"
+            )
+
     workflow = read(VNEXT_FOUNDATION_WORKFLOW)
     for needle in [
         "python -m unittest scripts.ci.test_validate_concept_registry_operations",
+        "python -m unittest scripts.concept_registry.test_ccid_stability_diff",
         "Concept Registry signed release and atomic activation",
         "--example concept_registry_release",
     ]:
