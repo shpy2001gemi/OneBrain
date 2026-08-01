@@ -3247,6 +3247,16 @@ def validate_concept_registry_operations(
         "exact_file_set": True,
     }:
         raise ContractError("Concept Registry release package security drift")
+    if release.get("capacity_preflight") != {
+        "filesystem": "releases-directory-filesystem",
+        "before_staging": True,
+        "source_bytes": "exact-five-source-artifact-lengths",
+        "metadata_reserve_bytes": 4_194_304,
+        "safety_margin_bytes": 67_108_864,
+        "insufficient_space_error": "InsufficientSpace",
+        "no_staging_or_state_side_effect": True,
+    }:
+        raise ContractError("Concept Registry capacity preflight drift")
 
     provenance = profile.get("provenance")
     expected_sources = ["chebi", "geonames", "ncbi", "wikidata", "wordnet"]
@@ -3386,9 +3396,34 @@ def validate_concept_registry_operations(
     }:
         raise ContractError("Concept Registry resource qualification contract drift")
 
+    failure_qualification = profile.get("failure_qualification")
+    if not isinstance(failure_qualification, dict) or failure_qualification != {
+        "profile": "onebrain/concept-registry-failure-qualification/1",
+        "implemented_profiles": ["truncated-index", "disk-shortage"],
+        "truncated_artifacts": [
+            "concepts.obr.labels.idx",
+            "concepts.obr.ccids.idx",
+        ],
+        "disk_capacity_source": "filesystem-containing-releases-directory",
+        "fault_injection_scope": "concept-registry-failure-harness-feature-only",
+        "evidence_publication": "atomic-json-rename",
+        "active_release_preserved": True,
+        "full_registry_evidence_required": True,
+        "production_qualified_by_ci_fixture": False,
+        "exit_oracles": [
+            "truncated_label_index_rejected",
+            "truncated_ccid_index_rejected",
+            "disk_shortage_rejected_before_publication",
+            "disk_shortage_left_no_final_release",
+            "disk_shortage_left_no_staging_directory",
+            "active_release_survived_every_failure",
+        ],
+    }:
+        raise ContractError("Concept Registry failure qualification contract drift")
+
     drills = profile.get("implemented_failure_drills")
     remaining = profile.get("remaining_qualification_gates")
-    if not isinstance(drills, list) or len(drills) != 8:
+    if not isinstance(drills, list) or len(drills) != 11:
         raise ContractError("Concept Registry implemented failure drills drift")
     if remaining != [
         "cold-cache-profile",
@@ -3405,11 +3440,14 @@ def validate_concept_registry_operations(
     for needle in [
         'pub const CONCEPT_REGISTRY_RELEASE_PROFILE: &str = "onebrain/concept-registry-release/1"',
         "pub fn package_concept_registry_release(",
+        "pub fn concept_registry_release_capacity(",
         "pub fn verify_concept_registry_release(",
         "pub fn activate_concept_registry_release(",
         "pub fn rollback_concept_registry_release(",
         'distribution: "MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP".to_owned()',
         "load_and_validate_manifest_uncached",
+        "ConceptRegistryReleaseError::InsufficientSpace",
+        "StagingDirectoryGuard::new",
     ]:
         if needle not in release_source:
             raise ContractError(
@@ -3427,6 +3465,22 @@ def validate_concept_registry_operations(
         if needle not in runtime_source:
             raise ContractError(
                 f"Concept Registry runtime evidence missing: {needle}"
+            )
+
+    failure_source = read(
+        ROOT / "src/ku-core/examples/concept_registry_failure_qualification.rs"
+    )
+    for needle in [
+        'const PROFILE: &str = "onebrain/concept-registry-failure-qualification/1"',
+        "package_concept_registry_release_with_capacity_for_drill",
+        '"concepts.obr.labels.idx"',
+        '"concepts.obr.ccids.idx"',
+        '"production_qualified": false',
+        "write_report_atomic",
+    ]:
+        if needle not in failure_source:
+            raise ContractError(
+                f"Concept Registry failure qualification evidence missing: {needle}"
             )
 
     ccid_diff_source = read(
@@ -3484,7 +3538,9 @@ def validate_concept_registry_operations(
         "python -m unittest scripts.ci.test_validate_concept_registry_operations",
         "python -m unittest scripts.concept_registry.test_ccid_stability_diff",
         "python -m unittest scripts.concept_registry.test_resource_qualification",
+        "python -m unittest scripts.concept_registry.test_failure_qualification",
         "--example registry_probe",
+        "--example concept_registry_failure_qualification",
         "Concept Registry signed release and atomic activation",
         "--example concept_registry_release",
     ]:

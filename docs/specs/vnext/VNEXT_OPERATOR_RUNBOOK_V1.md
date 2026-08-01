@@ -63,6 +63,16 @@ dashboard checks. Stop the runtime cleanly before a real backup and use new
 empty source, archive and restore directories. A restore error is fail-closed:
 retain the archive and investigate it instead of partially reusing the target.
 
+Before packaging a Concept Registry release, run the `capacity` operator
+command against the exact OBR/SBOM and target registry root. The result must be
+`sufficient=true`; do not bypass its exact source-byte requirement, 4 MiB
+metadata reserve or 64 MiB safety margin. For release qualification, run the
+feature-gated `concept_registry_failure_qualification` executable in a scratch
+directory. Both truncated indexes must fail verification and activation, and
+the simulated disk-shortage path must leave no final/staging release or state
+change. Retain the atomic JSON report. A CI fixture proves only the mechanism;
+production still requires the full-size artifact on the declared filesystem.
+
 Provision, firewall, foreground/background operation and removal of that
 runner follow the
 [Portable Linux Soak Runner Guide](../../operations/ONEBRAIN_SOAK_RUNNER_GUIDE_V1.md).

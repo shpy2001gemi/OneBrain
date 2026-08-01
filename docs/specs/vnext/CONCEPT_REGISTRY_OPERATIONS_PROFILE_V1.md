@@ -2,7 +2,7 @@
 
 > **Plan lane:** Section 11 — Concept Registry operations
 >
-> **Status:** Signed release, atomic activation, bounded CCID stability gate, and cold-cache/low-RAM qualification harness implemented; full-size resource and recurring qualification evidence remains open
+> **Status:** Signed release, atomic activation, bounded CCID stability, resource harness, and truncated-index/disk-shortage failure harness implemented; full-size storage/resource and recurring qualification evidence remains open
 >
 > **Machine contract:** [`concept-registry-operations-v1.json`](../../../src/test-vectors/vnext/concept-registry-operations-v1.json)
 
@@ -51,6 +51,7 @@ Run the portable operator CLI from `src/`:
 cargo run --locked -p ku-core --example concept_registry_release -- keygen PRIVATE_KEY_FILE PUBLIC_KEY_FILE
 cargo run --locked -p ku-core --example concept_registry_release -- package REGISTRY_ROOT RELEASE_ID OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE
 cargo run --locked -p ku-core --example concept_registry_release -- verify RELEASE_DIR PUBLIC_KEY_FILE
+cargo run --locked -p ku-core --example concept_registry_release -- capacity REGISTRY_ROOT OBR_PATH SPDX_SBOM_PATH
 cargo run --locked -p ku-core --example concept_registry_release -- activate REGISTRY_ROOT RELEASE_ID PUBLIC_KEY_FILE
 cargo run --locked -p ku-core --example concept_registry_release -- status REGISTRY_ROOT PUBLIC_KEY_FILE
 cargo run --locked -p ku-core --example concept_registry_release -- rollback REGISTRY_ROOT PUBLIC_KEY_FILE
@@ -120,15 +121,47 @@ oracles. That CI result is not a substitute for reports against the full-size
 registry on the declared production host; `full_registry_evidence_required`
 therefore remains true.
 
-## 7. Distribution boundary and remaining gates
+## 7. Truncated-index and disk-shortage qualification harness
+
+Every package operation measures free bytes on the filesystem containing the
+`releases` directory before it creates staging. Admission requires the exact
+five source-artifact lengths, a 4 MiB signed-metadata reserve, and a 64 MiB
+safety margin. Insufficient capacity returns a typed `InsufficientSpace` error
+before a staging directory, final release, or activation-state record exists.
+An ordinary copy/write error after admission is also contained by the unique
+staging guard and cannot publish or activate a partial release.
+
+Run the isolated failure harness with the exact candidate inputs. It creates a
+temporary registry under `WORK_DIR`, never mutates the source artifacts, and
+atomically writes one bounded JSON report:
+
+```text
+cargo run --release --locked -p ku-core --features concept-registry-failure-harness --example concept_registry_failure_qualification -- WORK_DIR OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE OUTPUT_JSON
+```
+
+The harness packages and activates a stable release, then independently
+truncates the candidate label and CCID indexes. Uncached signature/artifact
+verification and activation must both reject each mutation while the stable
+generation remains active. The disk-shortage drill supplies zero available
+bytes through a feature-gated override that can only reduce measured capacity;
+normal production builds have no override. It must leave no final release,
+staging directory, or state mutation.
+
+The report binds all exact input hashes, measured capacity, typed errors and six
+exit oracles. CI executes a small fixture to freeze the mechanism, but always
+records `production_qualified=false`. Closing the production gates still
+requires the full-size Registry on the declared target filesystem and storage
+profile.
+
+## 8. Distribution boundary and remaining gates
 
 The signed distribution value is
 `MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP`. The large registry artifact is outside
 the OBP gossip lane; distribution uses a mirror, offline media, or a separately
 specified content-addressed chunk transport.
 
-This foundation does not claim full Section 11 qualification. The remaining
-work packages produce cold-cache and constrained resource profiles,
-truncated-index and disk-shortage drills, and the quarterly
-build/update/rollback dry-run. Production canary remains blocked until those
-gates and the external canary evidence are complete.
+This foundation does not claim full Section 11 qualification. Full-size cold-
+cache, constrained-resource, SSD/HDD, truncated-index and disk-shortage reports
+plus the quarterly build/update/rollback dry-run remain required. Production
+canary remains blocked until those gates and the external canary evidence are
+complete.

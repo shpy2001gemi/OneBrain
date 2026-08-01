@@ -159,6 +159,11 @@ jobs:
           cargo build --locked --manifest-path src/Cargo.toml -p ku-core --example registry_probe
           ONEBRAIN_REGISTRY_PROBE=src/target/debug/examples/registry_probe \
             python -m unittest scripts.concept_registry.test_resource_qualification
+          cargo build --locked --manifest-path src/Cargo.toml -p ku-core \
+            --features concept-registry-failure-harness \
+            --example concept_registry_failure_qualification
+          ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION=src/target/debug/examples/concept_registry_failure_qualification \
+            python -m unittest scripts.concept_registry.test_failure_qualification
 
       - name: Concept Registry signed release and atomic activation
         working-directory: src

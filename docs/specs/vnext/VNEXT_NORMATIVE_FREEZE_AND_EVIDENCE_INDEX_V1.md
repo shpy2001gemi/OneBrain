@@ -56,6 +56,7 @@ The semantic guardrails are indexed in the [Normative Vocabulary](NORMATIVE_VOCA
 | optimized soak and release qualification | [M5-07 soak/release profile](SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1.md) |
 | single-host three-node real-QUIC canary preflight | [P5 canary preflight profile](P5_CANARY_PREFLIGHT_PROFILE_V1.md) |
 | signer/disk/slow-peer drills, backup/restore, rollback and operator dashboard | [P5 operations preflight profile](P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md) |
+| signed Registry release, capacity admission, truncated-index and disk-shortage qualification | [Concept Registry operations profile](CONCEPT_REGISTRY_OPERATIONS_PROFILE_V1.md) |
 | operator-visible scope and consent | [Scoped Runtime Status](SCOPED_RUNTIME_STATUS_PROFILE_V1.md) |
 | migration and legacy preservation | [Migration profile](ADDITIVE_MIGRATION_STORAGE_PROFILE_V1.md), [backfill profile](LEGACY_DATA_BACKFILL_PROFILE_V1.md), [operator guide](VNEXT_MIGRATION_AND_ROLLBACK_GUIDE_V1.md) |
 | interoperable independent implementations | [Interoperability Profile](VNEXT_INTEROPERABILITY_PROFILE_V1.md) |

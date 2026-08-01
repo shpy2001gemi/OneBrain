@@ -2517,3 +2517,34 @@ trong 1.163 ms, peak RSS 7.544.832 bytes, p95 445 µs cho bốn external labels.
 Vì Windows run này không có targeted page-cache eviction hoặc hard memory
 enforcement nên chỉ dùng để hiệu chỉnh budget, không được ghi nhận là hai gate
 production đã xanh.
+
+### 2026-08-01 — Truncated-index/disk-shortage qualification harness
+
+1. Release packaging đo free bytes trên đúng filesystem chứa `releases` trước
+   khi tạo staging. Required capacity gồm exact length của năm source artifact,
+   4 MiB metadata reserve và 64 MiB safety margin; thiếu dung lượng trả typed
+   `InsufficientSpace` trước mọi staging/final/state side effect.
+2. Staging có guard cleanup cho lỗi copy/write sau admission. Publication vẫn
+   là unique staging rồi atomic rename; process crash có thể để lại staging
+   inert nhưng không thể đổi active generation.
+3. Thêm `capacity` operator command và executable
+   `concept_registry_failure_qualification` chỉ bật bằng feature cô lập. Fault
+   override chỉ có thể hạ free-space thực đo, không thể nâng nó để bypass
+   production admission.
+4. Harness package một stable và một candidate release từ exact input, activate
+   stable, rồi lần lượt truncate label index và CCID index. Cả uncached verify
+   lẫn activation phải fail trong khi stable generation giữ nguyên.
+5. Disk-shortage drill hạ available bytes về `0`; report chỉ đạt khi không có
+   final release, staging directory hay state mutation. JSON evidence bind exact
+   input hashes, measured capacity, typed errors và sáu exit oracle, rồi được
+   ghi atomically.
+
+Local evidence: 7 Concept Registry release tests xanh; compiled failure
+qualification fixture 1/1 xanh; machine-contract mutation suite 13/13 xanh;
+full vNext validator xanh với 11 implemented failure drill, 7 production gate
+còn mở và 427 local links.
+
+CI fixture luôn giữ `production_qualified=false` và
+`full_registry_evidence_required=true`. Truncated-index và disk-shortage chỉ
+được đóng ở production sau report full-size trên target filesystem/storage đã
+khai báo; cold-cache, low-RAM, SSD, HDD và quarterly dry-run cũng vẫn mở.

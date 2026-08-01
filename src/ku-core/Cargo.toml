@@ -11,6 +11,13 @@ default = []
 persist = ["dep:redb"]
 # Test-only process-kill synchronization. Production builds leave every hook a no-op.
 dr-m5-crash-harness = []
+# Operator/CI-only deterministic capacity fault injection. Normal release builds
+# can measure real free space but cannot override it.
+concept-registry-failure-harness = []
+
+[[example]]
+name = "concept_registry_failure_qualification"
+required-features = ["concept-registry-failure-harness"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -25,6 +32,7 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }  # Ed25519 signature
 unicode-normalization = "0.1" # vNext canonical NormalizedText validation (reject, never rewrite)
 chacha20poly1305 = "0.11" # vNext Private Vault XChaCha20-Poly1305 AEAD
 zeroize = "1"            # erase caller-supplied vault key material on drop
+fs2 = "0.4"               # cross-platform free-space preflight for atomic releases
 
 # Persistent storage (pure Rust, ACID) — behind 'persist' feature
 redb = { version = "2", optional = true }
