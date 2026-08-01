@@ -66,8 +66,11 @@ def adb(adb_path: str, device: str, *arguments: str) -> str:
 
 
 def picker_node(adb_path: str, device: str) -> tuple[int, int] | None:
-    adb(adb_path, device, "shell", "uiautomator", "dump", "/sdcard/window.xml")
-    xml = adb(adb_path, device, "exec-out", "cat", "/sdcard/window.xml")
+    try:
+        adb(adb_path, device, "shell", "uiautomator", "dump", "/sdcard/window.xml")
+        xml = adb(adb_path, device, "exec-out", "cat", "/sdcard/window.xml")
+    except subprocess.CalledProcessError:
+        return None
     try:
         root = ET.fromstring(xml)
     except ET.ParseError:
@@ -83,6 +86,16 @@ def picker_node(adb_path: str, device: str) -> tuple[int, int] | None:
             left, top, right, bottom = (int(value) for value in match.groups())
             return ((left + right) // 2, (top + bottom) // 2)
     return None
+
+
+def diagnostic_tail(output: str) -> str:
+    redacted = output.replace(PICKER_FILE, "[REDACTED_FILE]")
+    redacted = re.sub(r"(?:content|file)://\S+", "[REDACTED_URI]", redacted)
+    redacted = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", redacted)
+    lines = [line.strip() for line in redacted.splitlines() if line.strip()]
+    if not lines:
+        return "no diagnostic output"
+    return " | ".join(lines[-8:])[-2000:]
 
 
 def wait_and_select_picker(
@@ -199,12 +212,18 @@ def main() -> int:
             arguments.timeout_seconds,
         )
         output, _ = process.communicate(timeout=arguments.timeout_seconds * 3)
-    except BaseException:
+    except BaseException as error:
         process.kill()
         output, _ = process.communicate()
-        raise RuntimeError(f"media picker integration failed:\n{output}")
+        detail = str(error).splitlines()[0] if str(error) else type(error).__name__
+        raise RuntimeError(
+            f"media picker coordination failed: {detail}; {diagnostic_tail(output)}"
+        ) from error
     if process.returncode != 0:
-        raise RuntimeError(f"media picker integration failed:\n{output}")
+        raise RuntimeError(
+            "media picker Flutter drive failed "
+            f"with exit code {process.returncode}: {diagnostic_tail(output)}"
+        )
 
     print("harness-stage|verify-redacted-import-log", flush=True)
     log = wait_for_log(
