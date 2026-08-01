@@ -98,15 +98,38 @@ def diagnostic_tail(output: str) -> str:
     return " | ".join(lines[-8:])[-2000:]
 
 
+def app_is_resumed(adb_path: str, device: str) -> bool:
+    try:
+        activities = adb(
+            adb_path,
+            device,
+            "shell",
+            "dumpsys",
+            "activity",
+            "activities",
+        )
+    except subprocess.CalledProcessError:
+        return False
+    return any(
+        "topResumedActivity=" in line and PACKAGE in line
+        for line in activities.splitlines()
+    )
+
+
 def wait_and_select_picker(
     adb_path: str,
     device: str,
     timeout_seconds: float,
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
+    last_tap = 0.0
+    selection_attempted = False
     while time.monotonic() < deadline:
+        if selection_attempted and app_is_resumed(adb_path, device):
+            return
         location = picker_node(adb_path, device)
-        if location is not None:
+        now = time.monotonic()
+        if location is not None and now - last_tap >= 1.0:
             adb(
                 adb_path,
                 device,
@@ -116,8 +139,11 @@ def wait_and_select_picker(
                 str(location[0]),
                 str(location[1]),
             )
-            return
+            selection_attempted = True
+            last_tap = now
         time.sleep(0.5)
+    if selection_attempted:
+        raise RuntimeError("system picker did not return the selected PNG to the app")
     raise RuntimeError("system picker did not expose the prepared PNG")
 
 
