@@ -15,6 +15,10 @@ dr-m5-crash-harness = []
 # can measure real free space but cannot override it.
 concept-registry-failure-harness = []
 
+[[example]]
+name = "concept_registry_failure_qualification"
+required-features = ["concept-registry-failure-harness"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"    # JSON for AI tool-calling interface
