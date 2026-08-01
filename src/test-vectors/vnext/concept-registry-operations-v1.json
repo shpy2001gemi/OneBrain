@@ -15,7 +15,16 @@
     "verification_stamp": "release.stamp.json",
     "signature": "Ed25519",
     "hash": "BLAKE3",
-    "exact_file_set": true
+    "exact_file_set": true,
+    "capacity_preflight": {
+      "filesystem": "releases-directory-filesystem",
+      "before_staging": true,
+      "source_bytes": "exact-five-source-artifact-lengths",
+      "metadata_reserve_bytes": 4194304,
+      "safety_margin_bytes": 67108864,
+      "insufficient_space_error": "InsufficientSpace",
+      "no_staging_or_state_side_effect": true
+    }
   },
   "provenance": {
     "required_sources": ["chebi", "geonames", "ncbi", "wikidata", "wordnet"],
@@ -110,6 +119,28 @@
     "ci_scope": "small-fixture-contract-only",
     "full_registry_evidence_required": true
   },
+  "failure_qualification": {
+    "profile": "onebrain/concept-registry-failure-qualification/1",
+    "implemented_profiles": ["truncated-index", "disk-shortage"],
+    "truncated_artifacts": [
+      "concepts.obr.labels.idx",
+      "concepts.obr.ccids.idx"
+    ],
+    "disk_capacity_source": "filesystem-containing-releases-directory",
+    "fault_injection_scope": "concept-registry-failure-harness-feature-only",
+    "evidence_publication": "atomic-json-rename",
+    "active_release_preserved": true,
+    "full_registry_evidence_required": true,
+    "production_qualified_by_ci_fixture": false,
+    "exit_oracles": [
+      "truncated_label_index_rejected",
+      "truncated_ccid_index_rejected",
+      "disk_shortage_rejected_before_publication",
+      "disk_shortage_left_no_final_release",
+      "disk_shortage_left_no_staging_directory",
+      "active_release_survived_every_failure"
+    ]
+  },
   "implemented_failure_drills": [
     "wrong-signer",
     "invalid-signature",
@@ -118,7 +149,10 @@
     "missing-stamp",
     "interrupted-staging",
     "truncated-activation-state",
-    "production-required-missing-active-release"
+    "production-required-missing-active-release",
+    "truncated-label-index-before-activation",
+    "truncated-ccid-index-before-activation",
+    "disk-shortage-before-staging"
   ],
   "remaining_qualification_gates": [
     "cold-cache-profile",

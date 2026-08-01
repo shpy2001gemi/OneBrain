@@ -126,11 +126,14 @@ pub use concept_registry_manifest::{
     ConceptRegistryIndexManifest, ConceptRegistryManifest, ConceptRegistryManifestError,
     ConceptRegistrySourceManifest, ObrHeaderMetadata, CONCEPT_REGISTRY_MANIFEST_VERSION,
 };
+#[cfg(feature = "concept-registry-failure-harness")]
+pub use concept_registry_release::package_concept_registry_release_with_capacity_for_drill;
 pub use concept_registry_release::{
-    activate_concept_registry_release, latest_concept_registry_state,
-    package_concept_registry_release, parse_concept_registry_verifying_key,
-    resolve_active_concept_registry_release, rollback_concept_registry_release,
-    verify_concept_registry_release, ActiveConceptRegistryRelease, ConceptRegistryReleaseArtifact,
+    activate_concept_registry_release, concept_registry_release_capacity,
+    latest_concept_registry_state, package_concept_registry_release,
+    parse_concept_registry_verifying_key, resolve_active_concept_registry_release,
+    rollback_concept_registry_release, verify_concept_registry_release,
+    ActiveConceptRegistryRelease, ConceptRegistryReleaseArtifact, ConceptRegistryReleaseCapacity,
     ConceptRegistryReleaseError, ConceptRegistryReleasePackageInput, ConceptRegistryReleaseSource,
     ConceptRegistryReleaseStamp, ConceptRegistryReleaseState, CONCEPT_REGISTRY_RELEASE_PROFILE,
 };

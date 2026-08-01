@@ -19,7 +19,7 @@ class ConceptRegistryOperationsContractTests(unittest.TestCase):
     def test_frozen_profile_is_accepted(self) -> None:
         self.assertEqual(
             validate_concept_registry_operations(frozen_profile()),
-            (5, 5, 8, 7),
+            (5, 5, 11, 7),
         )
 
     def test_artifact_cannot_be_removed(self) -> None:
@@ -68,6 +68,24 @@ class ConceptRegistryOperationsContractTests(unittest.TestCase):
         profile = copy.deepcopy(frozen_profile())
         profile["resource_qualification"]["full_registry_evidence_required"] = False
         with self.assertRaisesRegex(ContractError, "resource qualification"):
+            validate_concept_registry_operations(profile)
+
+    def test_capacity_check_cannot_move_after_staging(self) -> None:
+        profile = copy.deepcopy(frozen_profile())
+        profile["release_package"]["capacity_preflight"]["before_staging"] = False
+        with self.assertRaisesRegex(ContractError, "capacity preflight"):
+            validate_concept_registry_operations(profile)
+
+    def test_failure_fixture_cannot_claim_production_qualification(self) -> None:
+        profile = copy.deepcopy(frozen_profile())
+        profile["failure_qualification"]["production_qualified_by_ci_fixture"] = True
+        with self.assertRaisesRegex(ContractError, "failure qualification"):
+            validate_concept_registry_operations(profile)
+
+    def test_capacity_fault_injection_must_remain_feature_gated(self) -> None:
+        profile = copy.deepcopy(frozen_profile())
+        profile["failure_qualification"]["fault_injection_scope"] = "production-api"
+        with self.assertRaisesRegex(ContractError, "failure qualification"):
             validate_concept_registry_operations(profile)
 
     def test_remaining_resource_gates_cannot_be_hidden(self) -> None:

@@ -8,10 +8,11 @@ use std::path::{Path, PathBuf};
 
 use ed25519_dalek::SigningKey;
 use ku_core::{
-    activate_concept_registry_release, package_concept_registry_release,
-    parse_concept_registry_verifying_key, resolve_active_concept_registry_release,
-    rollback_concept_registry_release, verify_concept_registry_release,
-    ConceptRegistryReleasePackageInput, ConceptRegistryReleaseSource,
+    activate_concept_registry_release, concept_registry_release_capacity,
+    package_concept_registry_release, parse_concept_registry_verifying_key,
+    resolve_active_concept_registry_release, rollback_concept_registry_release,
+    verify_concept_registry_release, ConceptRegistryReleasePackageInput,
+    ConceptRegistryReleaseSource,
 };
 use rand::rngs::OsRng;
 
@@ -69,6 +70,15 @@ fn run() -> Result<(), Box<dyn Error>> {
             let public_key = read_public_key(&public_key_path)?;
             let stamp = verify_concept_registry_release(&release_dir, &public_key)?;
             println!("{}", serde_json::to_string_pretty(&stamp)?);
+        }
+        "capacity" => {
+            let registry_root = required_path(&mut args, "REGISTRY_ROOT")?;
+            let obr_path = required_path(&mut args, "OBR_PATH")?;
+            let sbom_path = required_path(&mut args, "SPDX_SBOM_PATH")?;
+            no_more_args(args)?;
+            let capacity =
+                concept_registry_release_capacity(&obr_path, &sbom_path, &registry_root)?;
+            println!("{}", serde_json::to_string_pretty(&capacity)?);
         }
         "activate" => {
             let registry_root = required_path(&mut args, "REGISTRY_ROOT")?;
@@ -196,5 +206,5 @@ fn write_secret_key(path: &Path, value: &str) -> Result<(), Box<dyn Error>> {
 }
 
 fn usage() -> &'static str {
-    "usage:\n  concept_registry_release keygen PRIVATE_KEY_FILE PUBLIC_KEY_FILE\n  concept_registry_release package REGISTRY_ROOT RELEASE_ID OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE\n  concept_registry_release verify RELEASE_DIR PUBLIC_KEY_FILE\n  concept_registry_release activate REGISTRY_ROOT RELEASE_ID PUBLIC_KEY_FILE\n  concept_registry_release rollback REGISTRY_ROOT PUBLIC_KEY_FILE\n  concept_registry_release status REGISTRY_ROOT PUBLIC_KEY_FILE"
+    "usage:\n  concept_registry_release keygen PRIVATE_KEY_FILE PUBLIC_KEY_FILE\n  concept_registry_release package REGISTRY_ROOT RELEASE_ID OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE\n  concept_registry_release verify RELEASE_DIR PUBLIC_KEY_FILE\n  concept_registry_release capacity REGISTRY_ROOT OBR_PATH SPDX_SBOM_PATH\n  concept_registry_release activate REGISTRY_ROOT RELEASE_ID PUBLIC_KEY_FILE\n  concept_registry_release rollback REGISTRY_ROOT PUBLIC_KEY_FILE\n  concept_registry_release status REGISTRY_ROOT PUBLIC_KEY_FILE"
 }

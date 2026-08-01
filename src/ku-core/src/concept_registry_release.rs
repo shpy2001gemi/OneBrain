@@ -31,6 +31,7 @@ pub const RELEASE_OBR_FILE: &str = "concepts.obr";
 const MAX_RELEASE_STAMP_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_STATE_BYTES: u64 = 64 * 1024;
 const MAX_SBOM_BYTES: u64 = 64 * 1024 * 1024;
+const RELEASE_STAGING_SAFETY_MARGIN_BYTES: u64 = 64 * 1024 * 1024;
 const SIGNATURE_DOMAIN: &[u8] = b"onebrain:concept-registry-release-stamp:1\0";
 const ARTIFACT_ROOT_DOMAIN: &[u8] = b"onebrain:concept-registry-artifacts:1\0";
 const SOURCE_ROOT_DOMAIN: &[u8] = b"onebrain:concept-registry-sources:1\0";
@@ -84,6 +85,16 @@ pub struct ConceptRegistryReleasePackageInput {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConceptRegistryReleaseCapacity {
+    pub source_bytes: u64,
+    pub metadata_reserve_bytes: u64,
+    pub safety_margin_bytes: u64,
+    pub required_bytes: u64,
+    pub available_bytes: u64,
+    pub sufficient: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConceptRegistryReleaseState {
     pub profile: String,
     pub generation: u64,
@@ -110,16 +121,88 @@ pub fn package_concept_registry_release(
     input: ConceptRegistryReleasePackageInput,
     signing_key: &SigningKey,
 ) -> Result<ConceptRegistryReleaseStamp, ConceptRegistryReleaseError> {
+    package_concept_registry_release_with_space_probe(
+        obr_path,
+        sbom_path,
+        registry_root,
+        input,
+        signing_key,
+        |path| fs2::available_space(path),
+    )
+}
+
+/// Calculate the exact staging admission requirement against the filesystem
+/// that will contain the immutable release directory.
+pub fn concept_registry_release_capacity(
+    obr_path: &Path,
+    sbom_path: &Path,
+    registry_root: &Path,
+) -> Result<ConceptRegistryReleaseCapacity, ConceptRegistryReleaseError> {
+    validate_regular_file(sbom_path, "SPDX SBOM")?;
+    validate_spdx_sbom(sbom_path)?;
+    let source_artifacts = release_source_artifacts(obr_path, sbom_path);
+    for (_, source, target_name) in &source_artifacts {
+        validate_regular_file(source, target_name)?;
+    }
+    let releases_dir = registry_root.join("releases");
+    fs::create_dir_all(&releases_dir)?;
+    release_capacity(&source_artifacts, fs2::available_space(&releases_dir)?)
+}
+
+/// Deterministic disk-shortage injection for the isolated qualification
+/// executable. Production builds cannot override measured free space.
+#[cfg(feature = "concept-registry-failure-harness")]
+pub fn package_concept_registry_release_with_capacity_for_drill(
+    obr_path: &Path,
+    sbom_path: &Path,
+    registry_root: &Path,
+    input: ConceptRegistryReleasePackageInput,
+    signing_key: &SigningKey,
+    available_space_bytes: u64,
+) -> Result<ConceptRegistryReleaseStamp, ConceptRegistryReleaseError> {
+    package_concept_registry_release_with_space_probe(
+        obr_path,
+        sbom_path,
+        registry_root,
+        input,
+        signing_key,
+        |path| Ok(fs2::available_space(path)?.min(available_space_bytes)),
+    )
+}
+
+fn package_concept_registry_release_with_space_probe<F>(
+    obr_path: &Path,
+    sbom_path: &Path,
+    registry_root: &Path,
+    input: ConceptRegistryReleasePackageInput,
+    signing_key: &SigningKey,
+    space_probe: F,
+) -> Result<ConceptRegistryReleaseStamp, ConceptRegistryReleaseError>
+where
+    F: FnOnce(&Path) -> std::io::Result<u64>,
+{
     validate_release_id(&input.release_id)?;
     validate_sources_shape(&input.sources)?;
     validate_regular_file(sbom_path, "SPDX SBOM")?;
     validate_spdx_sbom(sbom_path)?;
+
+    let source_artifacts = release_source_artifacts(obr_path, sbom_path);
+    for (_, source, target_name) in &source_artifacts {
+        validate_regular_file(source, target_name)?;
+    }
 
     let releases_dir = registry_root.join("releases");
     fs::create_dir_all(&releases_dir)?;
     let final_dir = releases_dir.join(&input.release_id);
     if final_dir.exists() {
         return Err(ConceptRegistryReleaseError::ReleaseExists(input.release_id));
+    }
+    let capacity = release_capacity(&source_artifacts, space_probe(&releases_dir)?)?;
+    if !capacity.sufficient {
+        return Err(ConceptRegistryReleaseError::InsufficientSpace {
+            required: capacity.required_bytes,
+            available: capacity.available_bytes,
+        });
     }
     let staging_dir = releases_dir.join(format!(
         ".{}.staging-{}-{}",
@@ -128,38 +211,18 @@ pub fn package_concept_registry_release(
         unix_nanos()?
     ));
     fs::create_dir(&staging_dir)?;
-
-    let source_artifacts = [
-        ("OBR", obr_path.to_path_buf(), "concepts.obr"),
-        (
-            "LABEL_INDEX",
-            append_suffix(obr_path, ".labels.idx"),
-            "concepts.obr.labels.idx",
-        ),
-        (
-            "CCID_INDEX",
-            append_suffix(obr_path, ".ccids.idx"),
-            "concepts.obr.ccids.idx",
-        ),
-        (
-            "MANIFEST",
-            append_suffix(obr_path, ".manifest.json"),
-            "concepts.obr.manifest.json",
-        ),
-        ("SPDX_SBOM", sbom_path.to_path_buf(), RELEASE_SBOM_FILE),
-    ];
+    let mut staging = StagingDirectoryGuard::new(staging_dir);
     for (_, source, target_name) in &source_artifacts {
-        validate_regular_file(source, target_name)?;
-        copy_file_sync(source, &staging_dir.join(target_name))?;
+        copy_file_sync(source, &staging.path().join(target_name))?;
     }
 
     let artifacts = source_artifacts
         .iter()
         .map(|(role, _, target_name)| {
-            artifact_metadata(role, target_name, &staging_dir.join(target_name))
+            artifact_metadata(role, target_name, &staging.path().join(target_name))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let manifest = validate_packaged_registry(&staging_dir)?;
+    let manifest = validate_packaged_registry(staging.path())?;
     validate_sources_against_manifest(&input.sources, &manifest)?;
 
     let mut stamp = ConceptRegistryReleaseStamp {
@@ -177,14 +240,15 @@ pub fn package_concept_registry_release(
     };
     let message = release_signature_message(&stamp)?;
     stamp.signature = encode_hex(&signing_key.sign(&message).to_bytes());
-    write_new_json_sync(&staging_dir.join(RELEASE_STAMP_FILE), &stamp)?;
+    write_new_json_sync(&staging.path().join(RELEASE_STAMP_FILE), &stamp)?;
 
     verify_concept_registry_release_inner(
-        &staging_dir,
+        staging.path(),
         &input.release_id,
         &signing_key.verifying_key(),
     )?;
-    fs::rename(&staging_dir, &final_dir)?;
+    fs::rename(staging.path(), &final_dir)?;
+    staging.disarm();
     sync_directory(&releases_dir)?;
     verify_concept_registry_release(&final_dir, &signing_key.verifying_key())
 }
@@ -715,6 +779,85 @@ fn validate_lower_hex(
     Ok(())
 }
 
+type ReleaseSourceArtifacts = [(&'static str, PathBuf, &'static str); 5];
+
+fn release_source_artifacts(obr_path: &Path, sbom_path: &Path) -> ReleaseSourceArtifacts {
+    [
+        ("OBR", obr_path.to_path_buf(), RELEASE_OBR_FILE),
+        (
+            "LABEL_INDEX",
+            append_suffix(obr_path, ".labels.idx"),
+            "concepts.obr.labels.idx",
+        ),
+        (
+            "CCID_INDEX",
+            append_suffix(obr_path, ".ccids.idx"),
+            "concepts.obr.ccids.idx",
+        ),
+        (
+            "MANIFEST",
+            append_suffix(obr_path, ".manifest.json"),
+            "concepts.obr.manifest.json",
+        ),
+        ("SPDX_SBOM", sbom_path.to_path_buf(), RELEASE_SBOM_FILE),
+    ]
+}
+
+fn release_capacity(
+    source_artifacts: &ReleaseSourceArtifacts,
+    available_bytes: u64,
+) -> Result<ConceptRegistryReleaseCapacity, ConceptRegistryReleaseError> {
+    let source_bytes = source_artifacts
+        .iter()
+        .try_fold(0u64, |total, (_, path, _)| {
+            total.checked_add(fs::metadata(path)?.len()).ok_or_else(|| {
+                ConceptRegistryReleaseError::InvalidField("release capacity overflow".to_owned())
+            })
+        })?;
+    let metadata_reserve_bytes = MAX_RELEASE_STAMP_BYTES;
+    let required_bytes = source_bytes
+        .checked_add(metadata_reserve_bytes)
+        .and_then(|value| value.checked_add(RELEASE_STAGING_SAFETY_MARGIN_BYTES))
+        .ok_or_else(|| {
+            ConceptRegistryReleaseError::InvalidField("release capacity overflow".to_owned())
+        })?;
+    Ok(ConceptRegistryReleaseCapacity {
+        source_bytes,
+        metadata_reserve_bytes,
+        safety_margin_bytes: RELEASE_STAGING_SAFETY_MARGIN_BYTES,
+        required_bytes,
+        available_bytes,
+        sufficient: available_bytes >= required_bytes,
+    })
+}
+
+struct StagingDirectoryGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl StagingDirectoryGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for StagingDirectoryGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
+
 fn copy_file_sync(source: &Path, target: &Path) -> Result<(), ConceptRegistryReleaseError> {
     fs::copy(source, target)?;
     OpenOptions::new().write(true).open(target)?.sync_all()?;
@@ -833,6 +976,10 @@ pub enum ConceptRegistryReleaseError {
         path: PathBuf,
         length: u64,
     },
+    InsufficientSpace {
+        required: u64,
+        available: u64,
+    },
     ReleaseExists(String),
     ReleaseDirectoryMismatch {
         expected: String,
@@ -863,6 +1010,7 @@ impl fmt::Display for ConceptRegistryReleaseError {
             Self::InvalidField(field) => write!(formatter, "invalid registry release field: {field}"),
             Self::UnsupportedEntry(path) => write!(formatter, "unsupported registry release entry: {}", path.display()),
             Self::TooLarge { path, length } => write!(formatter, "registry release metadata is too large: {} ({length} bytes)", path.display()),
+            Self::InsufficientSpace { required, available } => write!(formatter, "insufficient registry release staging space: required={required}, available={available}"),
             Self::ReleaseExists(release) => write!(formatter, "registry release already exists: {release}"),
             Self::ReleaseDirectoryMismatch { expected, actual } => write!(formatter, "registry release directory mismatch: expected={expected}, stamp={actual}"),
             Self::ArtifactMismatch { artifact, expected, actual } => write!(formatter, "registry release artifact mismatch for {artifact}: expected={expected}, actual={actual}"),
@@ -1182,5 +1330,85 @@ mod tests {
             activate_concept_registry_release(&registry, "../escape", &key.verifying_key()),
             Err(ConceptRegistryReleaseError::InvalidField(_))
         ));
+    }
+
+    #[test]
+    fn truncated_indexes_fail_before_activation_and_preserve_active_release() {
+        let directory = tempfile::tempdir().unwrap();
+        let registry = directory.path().join("registry");
+        let key = SigningKey::from_bytes(&[13; 32]);
+        package(
+            &directory.path().join("fixture-stable"),
+            &registry,
+            "registry-stable",
+            1,
+            &key,
+        );
+        package(
+            &directory.path().join("fixture-candidate"),
+            &registry,
+            "registry-candidate",
+            2,
+            &key,
+        );
+        activate_concept_registry_release(&registry, "registry-stable", &key.verifying_key())
+            .unwrap();
+
+        for name in ["concepts.obr.labels.idx", "concepts.obr.ccids.idx"] {
+            let path = registry.join("releases/registry-candidate").join(name);
+            let original = fs::read(&path).unwrap();
+            fs::write(&path, &original[..original.len() / 2]).unwrap();
+            assert!(matches!(
+                verify_concept_registry_release(
+                    &registry.join("releases/registry-candidate"),
+                    &key.verifying_key()
+                ),
+                Err(ConceptRegistryReleaseError::ArtifactMismatch { .. })
+            ));
+            assert!(matches!(
+                activate_concept_registry_release(
+                    &registry,
+                    "registry-candidate",
+                    &key.verifying_key()
+                ),
+                Err(ConceptRegistryReleaseError::ArtifactMismatch { .. })
+            ));
+            let active =
+                resolve_active_concept_registry_release(&registry, &key.verifying_key()).unwrap();
+            assert_eq!(active.release_id, "registry-stable");
+            assert_eq!(active.generation, 1);
+            fs::write(path, original).unwrap();
+        }
+    }
+
+    #[test]
+    fn disk_shortage_fails_before_staging_or_state_side_effects() {
+        let directory = tempfile::tempdir().unwrap();
+        let registry = directory.path().join("registry");
+        let key = SigningKey::from_bytes(&[14; 32]);
+        let (obr, sbom) = write_fixture(&directory.path().join("fixture"), 1);
+        let error = package_concept_registry_release_with_space_probe(
+            &obr,
+            &sbom,
+            &registry,
+            ConceptRegistryReleasePackageInput {
+                release_id: "registry-no-space".to_owned(),
+                sources: sources(),
+            },
+            &key,
+            |_| Ok(0),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            ConceptRegistryReleaseError::InsufficientSpace {
+                required,
+                available: 0
+            } if required > RELEASE_STAGING_SAFETY_MARGIN_BYTES
+        ));
+        let releases = registry.join("releases");
+        assert!(releases.is_dir());
+        assert_eq!(fs::read_dir(releases).unwrap().count(), 0);
+        assert!(latest_concept_registry_state(&registry).unwrap().is_none());
     }
 }
