@@ -31,4 +31,5 @@ redb = { version = "2", optional = true }
 
 [dev-dependencies]
 rand = "0.8"          # For generating test signing keys
+tempfile = "3"        # Isolated release-package and activation tests
 # criterion = "0.5"  # for benchmarks later

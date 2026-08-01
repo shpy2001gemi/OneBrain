@@ -2441,3 +2441,34 @@ Local evidence:
 
 Các gate còn mở không bị che bởi preflight này: artifact 72 giờ đã pin,
 multi-host production canary và operator-approved production rollout.
+
+### 2026-08-01 — Concept Registry signed release và atomic activation foundation
+
+Sau khi run `pre-release-72h` bị abandon do mất kết nối ở mốc 51 giờ 30 phút,
+không chạy lại ngay. Nhánh `codex/p5-canary-preflight` tiếp tục phần Concept
+Registry operations không phụ thuộc bằng chứng soak:
+
+1. Đóng gói đúng năm payload OBR/label index/CCID index/manifest/SPDX SBOM
+   trong release directory duy nhất; `release.stamp.json` ký Ed25519 toàn bộ
+   artifact root, source root, builder/dedup identity và chính sách phân phối.
+2. Source provenance giữ snapshot ID/URI/license cùng BLAKE3 snapshot và
+   download cho đúng năm nguồn; verify dùng đường uncached và exact file set.
+3. Publish qua unique staging rồi atomic rename, không ghi đè release đã tồn
+   tại. Activation/rollback append generation mới, giữ old/new cùng tồn tại và
+   bỏ qua state mới nhất bị truncated/corrupt.
+4. Node có thể chọn active signed release bằng root + pinned public key; status
+   nêu `release_id`/`release_generation`. `required` mode fail closed trước
+   subsystem side effect và không fallback v1.
+5. Thêm offline operator CLI cho keygen/package/verify/activate/status/rollback,
+   machine contract, mutation validator và GitHub Actions acceptance gate.
+6. Chính sách ký ghi rõ OBR không đi qua OBP gossip; chỉ mirror, offline media
+   hoặc một transport content-addressed chunks được đặc tả riêng.
+
+Local evidence cho foundation batch: 5 release tests, 10 registry runtime tests
+và 8 machine-profile mutation tests đều xanh; full vNext contract validator
+xanh với 426 local links.
+
+Lane Section 11 chưa được tuyên bố hoàn tất. Tám gate tiếp theo vẫn mở: CCID
+stability/diff, cold cache, low RAM, SSD, HDD, truncated index, disk shortage và
+quarterly build/update/rollback dry-run. Production canary vẫn bị chặn bởi các
+gate này và bằng chứng soak/canary bên ngoài hợp lệ.

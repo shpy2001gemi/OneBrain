@@ -50,6 +50,16 @@ enum Commands {
         /// Maximum resolved labels retained by the bounded registry cache.
         #[arg(long, default_value_t = 4096)]
         concept_registry_cache_capacity: usize,
+        /// Root containing signed immutable registry releases and activation state.
+        #[arg(
+            long,
+            requires = "concept_registry_release_public_key",
+            conflicts_with = "concept_registry"
+        )]
+        concept_registry_release_root: Option<PathBuf>,
+        /// Pinned Ed25519 release signer public key (64 lowercase hex digits).
+        #[arg(long, requires = "concept_registry_release_root")]
+        concept_registry_release_public_key: Option<String>,
         #[arg(long, value_delimiter = ',')]
         seeds: Vec<SocketAddr>,
 
@@ -105,6 +115,8 @@ async fn main() {
             concept_registry,
             concept_registry_mode,
             concept_registry_cache_capacity,
+            concept_registry_release_root,
+            concept_registry_release_public_key,
             seeds,
             api,
             api_port,
@@ -156,6 +168,8 @@ async fn main() {
                 concept_registry_path: concept_registry,
                 concept_registry_mode,
                 concept_registry_cache_capacity,
+                concept_registry_release_root,
+                concept_registry_release_public_key,
                 vnext: vnext_config,
             };
             std::fs::create_dir_all(&config.data_dir).expect("Failed to create data directory");
@@ -169,7 +183,11 @@ async fn main() {
             println!("  Data:     {}", config.data_dir.display());
             println!("  Ollama:   {}", config.ollama_url);
             println!("  Model:    {}", config.model);
-            println!("  Registry: {}", config.obr_path().display());
+            if let Some(root) = &config.concept_registry_release_root {
+                println!("  Registry releases: {}", root.display());
+            } else {
+                println!("  Registry: {}", config.obr_path().display());
+            }
             println!("  Policy:   {}", config.concept_registry_mode);
             println!("  Seeds:    {:?}", config.seeds);
             if api {

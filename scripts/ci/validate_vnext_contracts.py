@@ -60,6 +60,9 @@ P5_CANARY_PREFLIGHT_PROFILE = (
 P5_OPERATIONS_PREFLIGHT_PROFILE = (
     ROOT / "src/test-vectors/vnext/p5-operations-preflight-v1.json"
 )
+CONCEPT_REGISTRY_OPERATIONS_PROFILE = (
+    ROOT / "src/test-vectors/vnext/concept-registry-operations-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -3198,6 +3201,183 @@ def validate_vnext_p5_operations_preflight(
     )
 
 
+def validate_concept_registry_operations(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(CONCEPT_REGISTRY_OPERATIONS_PROFILE))
+        except (OSError, json.JSONDecodeError) as error:
+            raise ContractError(
+                f"invalid Concept Registry operations profile JSON: {error}"
+            ) from error
+
+    if (
+        profile.get("format") != "onebrain/concept-registry-operations/1"
+        or profile.get("profile_id") != "CONCEPT_REGISTRY_OPERATIONS_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("Concept Registry operations profile identity drift")
+
+    release = profile.get("release_package")
+    expected_artifacts = [
+        ["OBR", "concepts.obr"],
+        ["LABEL_INDEX", "concepts.obr.labels.idx"],
+        ["CCID_INDEX", "concepts.obr.ccids.idx"],
+        ["MANIFEST", "concepts.obr.manifest.json"],
+        ["SPDX_SBOM", "sbom.spdx.json"],
+    ]
+    if not isinstance(release, dict):
+        raise ContractError("Concept Registry release package contract missing")
+    if release.get("artifacts") != expected_artifacts:
+        raise ContractError("Concept Registry exact artifact set drift")
+    if {
+        "publication": release.get("publication"),
+        "overwrite_existing_release": release.get("overwrite_existing_release"),
+        "verification_stamp": release.get("verification_stamp"),
+        "signature": release.get("signature"),
+        "hash": release.get("hash"),
+        "exact_file_set": release.get("exact_file_set"),
+    } != {
+        "publication": "unique-staging-then-atomic-rename",
+        "overwrite_existing_release": False,
+        "verification_stamp": "release.stamp.json",
+        "signature": "Ed25519",
+        "hash": "BLAKE3",
+        "exact_file_set": True,
+    }:
+        raise ContractError("Concept Registry release package security drift")
+
+    provenance = profile.get("provenance")
+    expected_sources = ["chebi", "geonames", "ncbi", "wikidata", "wordnet"]
+    expected_source_fields = [
+        "snapshot_id",
+        "source_uri",
+        "license",
+        "snapshot_blake3",
+        "download_blake3",
+    ]
+    if not isinstance(provenance, dict):
+        raise ContractError("Concept Registry provenance contract missing")
+    if provenance.get("required_sources") != expected_sources:
+        raise ContractError("Concept Registry source set drift")
+    if provenance.get("required_source_fields") != expected_source_fields:
+        raise ContractError("Concept Registry source provenance drift")
+    if provenance.get("signed_fields") != [
+        "builder_version",
+        "dedup_policy_version",
+        "artifact_root",
+        "source_root",
+        "distribution",
+    ]:
+        raise ContractError("Concept Registry signed provenance drift")
+
+    activation = profile.get("activation")
+    if not isinstance(activation, dict):
+        raise ContractError("Concept Registry activation contract missing")
+    if {
+        "publication": activation.get("publication"),
+        "old_new_coexist": activation.get("old_new_coexist"),
+        "rollback": activation.get("rollback"),
+        "ignore_invalid_or_truncated_newest_state": activation.get(
+            "ignore_invalid_or_truncated_newest_state"
+        ),
+        "interrupted_staging_preserves_active": activation.get(
+            "interrupted_staging_preserves_active"
+        ),
+    } != {
+        "publication": "append-only-create-new",
+        "old_new_coexist": True,
+        "rollback": "append-previous-as-new-generation",
+        "ignore_invalid_or_truncated_newest_state": True,
+        "interrupted_staging_preserves_active": True,
+    }:
+        raise ContractError("Concept Registry activation/rollback drift")
+
+    runtime = profile.get("runtime")
+    if not isinstance(runtime, dict) or {
+        "verify_signature_and_all_artifact_hashes_before_open": runtime.get(
+            "verify_signature_and_all_artifact_hashes_before_open"
+        ),
+        "signed_release_verification_cache": runtime.get(
+            "signed_release_verification_cache"
+        ),
+        "required_mode_fallback": runtime.get("required_mode_fallback"),
+        "status_fields": runtime.get("status_fields"),
+    } != {
+        "verify_signature_and_all_artifact_hashes_before_open": True,
+        "signed_release_verification_cache": False,
+        "required_mode_fallback": False,
+        "status_fields": ["release_id", "release_generation"],
+    }:
+        raise ContractError("Concept Registry runtime fail-closed policy drift")
+
+    distribution = profile.get("distribution")
+    if not isinstance(distribution, dict) or {
+        "policy": distribution.get("policy"),
+        "obp_artifact_gossip": distribution.get("obp_artifact_gossip"),
+        "allowed": distribution.get("allowed"),
+    } != {
+        "policy": "MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP",
+        "obp_artifact_gossip": False,
+        "allowed": ["content-addressed-chunks", "mirrors", "offline-media"],
+    }:
+        raise ContractError("Concept Registry distribution boundary drift")
+
+    drills = profile.get("implemented_failure_drills")
+    remaining = profile.get("remaining_qualification_gates")
+    if not isinstance(drills, list) or len(drills) != 8:
+        raise ContractError("Concept Registry implemented failure drills drift")
+    if not isinstance(remaining, list) or len(remaining) != 8:
+        raise ContractError("Concept Registry remaining qualification gates drift")
+
+    release_source = read(ROOT / "src/ku-core/src/concept_registry_release.rs")
+    for needle in [
+        'pub const CONCEPT_REGISTRY_RELEASE_PROFILE: &str = "onebrain/concept-registry-release/1"',
+        "pub fn package_concept_registry_release(",
+        "pub fn verify_concept_registry_release(",
+        "pub fn activate_concept_registry_release(",
+        "pub fn rollback_concept_registry_release(",
+        'distribution: "MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP".to_owned()',
+        "load_and_validate_manifest_uncached",
+    ]:
+        if needle not in release_source:
+            raise ContractError(
+                f"Concept Registry release implementation evidence missing: {needle}"
+            )
+
+    runtime_source = read(ROOT / "src/onebrain-node/src/concept_registry_runtime.rs")
+    for needle in [
+        "resolve_active_concept_registry_release",
+        "pub release_id: Option<String>",
+        "pub release_generation: Option<u64>",
+        "required_mode_loads_only_the_verified_active_release_without_cache_mutation",
+        "required_release_mode_never_falls_back_when_activation_is_missing",
+    ]:
+        if needle not in runtime_source:
+            raise ContractError(
+                f"Concept Registry runtime evidence missing: {needle}"
+            )
+
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    for needle in [
+        "python -m unittest scripts.ci.test_validate_concept_registry_operations",
+        "Concept Registry signed release and atomic activation",
+        "--example concept_registry_release",
+    ]:
+        if needle not in workflow:
+            raise ContractError(
+                f"Concept Registry CI acceptance gate missing: {needle}"
+            )
+
+    spec = read(VNEXT / "CONCEPT_REGISTRY_OPERATIONS_PROFILE_V1.md")
+    if "concept-registry-operations-v1.json" not in spec:
+        raise ContractError(
+            "Concept Registry normative profile is not linked to machine contract"
+        )
+    return (len(expected_artifacts), len(expected_sources), len(drills), len(remaining))
+
+
 def validate_markdown_links() -> int:
     files = sorted(VNEXT.rglob("*.md")) + [PLAN]
     checked = 0
@@ -3351,6 +3531,12 @@ def main() -> int:
             p5_incident_codes,
             p5_external_gates,
         ) = validate_vnext_p5_operations_preflight()
+        (
+            registry_release_artifacts,
+            registry_sources,
+            registry_failure_drills,
+            registry_remaining_gates,
+        ) = validate_concept_registry_operations()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -3394,6 +3580,8 @@ def main() -> int:
         f"{p5_rollout_lanes} P5-04 lanes/{p5_feature_flags} P5-05 default-off flags/"
         f"{p5_dashboard_signals} P5-06 signals/{p5_incident_codes} incident codes/"
         f"{p5_external_gates} external gates, "
+        f"{registry_release_artifacts} registry artifacts/{registry_sources} sources/"
+        f"{registry_failure_drills} failure drills/{registry_remaining_gates} remaining gates, "
         f"{links} local links"
     )
     return 0

@@ -22,6 +22,7 @@ pub mod ccid; // ★ v7 NEW: Content-Addressed Concept Identity (128-bit BLAKE3)
 pub mod concept_dict; // ★ v6 NEW: ConceptDict for name ↔ ID lookup
 pub mod concept_registry; // ★ v7 NEW: Offline concept name → CCID lookup (200MB registry)
 pub mod concept_registry_manifest;
+pub mod concept_registry_release;
 pub mod core_dna;
 pub mod crdt;
 pub mod decoder;
@@ -119,10 +120,19 @@ pub use concept_registry::{
     ResolvedConcept,
 };
 pub use concept_registry_manifest::{
-    load_and_validate_manifest, manifest_path as concept_registry_manifest_path,
+    load_and_validate_manifest, load_and_validate_manifest_uncached,
+    manifest_path as concept_registry_manifest_path,
     verification_stamp_path as concept_registry_verification_stamp_path,
     ConceptRegistryIndexManifest, ConceptRegistryManifest, ConceptRegistryManifestError,
     ConceptRegistrySourceManifest, ObrHeaderMetadata, CONCEPT_REGISTRY_MANIFEST_VERSION,
+};
+pub use concept_registry_release::{
+    activate_concept_registry_release, latest_concept_registry_state,
+    package_concept_registry_release, parse_concept_registry_verifying_key,
+    resolve_active_concept_registry_release, rollback_concept_registry_release,
+    verify_concept_registry_release, ActiveConceptRegistryRelease, ConceptRegistryReleaseArtifact,
+    ConceptRegistryReleaseError, ConceptRegistryReleasePackageInput, ConceptRegistryReleaseSource,
+    ConceptRegistryReleaseStamp, ConceptRegistryReleaseState, CONCEPT_REGISTRY_RELEASE_PROFILE,
 };
 pub use indexed_concept_registry::{IndexedConceptRegistry, IndexedRegistryError};
 

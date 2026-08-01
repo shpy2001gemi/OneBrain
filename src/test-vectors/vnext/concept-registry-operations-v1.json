@@ -1,0 +1,77 @@
+{
+  "format": "onebrain/concept-registry-operations/1",
+  "profile_id": "CONCEPT_REGISTRY_OPERATIONS_PROFILE_V1",
+  "version": 1,
+  "release_package": {
+    "publication": "unique-staging-then-atomic-rename",
+    "overwrite_existing_release": false,
+    "artifacts": [
+      ["OBR", "concepts.obr"],
+      ["LABEL_INDEX", "concepts.obr.labels.idx"],
+      ["CCID_INDEX", "concepts.obr.ccids.idx"],
+      ["MANIFEST", "concepts.obr.manifest.json"],
+      ["SPDX_SBOM", "sbom.spdx.json"]
+    ],
+    "verification_stamp": "release.stamp.json",
+    "signature": "Ed25519",
+    "hash": "BLAKE3",
+    "exact_file_set": true
+  },
+  "provenance": {
+    "required_sources": ["chebi", "geonames", "ncbi", "wikidata", "wordnet"],
+    "required_source_fields": [
+      "snapshot_id",
+      "source_uri",
+      "license",
+      "snapshot_blake3",
+      "download_blake3"
+    ],
+    "signed_fields": [
+      "builder_version",
+      "dedup_policy_version",
+      "artifact_root",
+      "source_root",
+      "distribution"
+    ]
+  },
+  "activation": {
+    "release_layout": "releases/<release-id>",
+    "state_layout": "state/state-<20-digit-generation>.json",
+    "publication": "append-only-create-new",
+    "old_new_coexist": true,
+    "rollback": "append-previous-as-new-generation",
+    "ignore_invalid_or_truncated_newest_state": true,
+    "interrupted_staging_preserves_active": true
+  },
+  "runtime": {
+    "verify_signature_and_all_artifact_hashes_before_open": true,
+    "signed_release_verification_cache": false,
+    "required_mode_fallback": false,
+    "status_fields": ["release_id", "release_generation"]
+  },
+  "distribution": {
+    "policy": "MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP",
+    "obp_artifact_gossip": false,
+    "allowed": ["content-addressed-chunks", "mirrors", "offline-media"]
+  },
+  "implemented_failure_drills": [
+    "wrong-signer",
+    "invalid-signature",
+    "artifact-corruption",
+    "release-directory-identity-mismatch",
+    "missing-stamp",
+    "interrupted-staging",
+    "truncated-activation-state",
+    "production-required-missing-active-release"
+  ],
+  "remaining_qualification_gates": [
+    "ccid-stability-diff-report",
+    "cold-cache-profile",
+    "low-ram-profile",
+    "ssd-profile",
+    "hdd-profile",
+    "truncated-index-profile",
+    "disk-shortage-profile",
+    "quarterly-build-update-rollback-dry-run"
+  ]
+}

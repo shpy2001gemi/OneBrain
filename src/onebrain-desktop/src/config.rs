@@ -33,6 +33,12 @@ pub struct DesktopConfig {
     /// Maximum number of label resolutions retained in memory.
     #[serde(default = "default_registry_cache_capacity")]
     pub concept_registry_cache_capacity: usize,
+    /// Root containing signed immutable registry releases and activation state.
+    #[serde(default)]
+    pub concept_registry_release_root: Option<PathBuf>,
+    /// Pinned Ed25519 release-signing public key (64 lowercase hex digits).
+    #[serde(default)]
+    pub concept_registry_release_public_key: Option<String>,
     /// Whether to start the P2P network automatically on launch.
     pub auto_start: bool,
     /// Set to `true` after the first-run wizard completes.
@@ -89,6 +95,8 @@ impl DesktopConfig {
             concept_registry_path: self.concept_registry_path.clone(),
             concept_registry_mode: self.concept_registry_mode,
             concept_registry_cache_capacity: self.concept_registry_cache_capacity,
+            concept_registry_release_root: self.concept_registry_release_root.clone(),
+            concept_registry_release_public_key: self.concept_registry_release_public_key.clone(),
             vnext: Default::default(),
         }
     }
@@ -112,6 +120,8 @@ impl Default for DesktopConfig {
             concept_registry_path: None,
             concept_registry_mode: ConceptRegistryMode::Optional,
             concept_registry_cache_capacity: default_registry_cache_capacity(),
+            concept_registry_release_root: None,
+            concept_registry_release_public_key: None,
             auto_start: true,
             first_run_done: false,
         }

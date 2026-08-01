@@ -160,6 +160,24 @@ pub fn load_and_validate_manifest(
     obr_path: &Path,
     header: ObrHeaderMetadata,
 ) -> Result<ConceptRegistryManifest, ConceptRegistryManifestError> {
+    load_and_validate_manifest_inner(obr_path, header, true)
+}
+
+/// Validate every registry artifact from bytes without consulting or writing
+/// the local verification cache. Release packaging uses this path so an
+/// unsigned, mutable cache file can never authorize an immutable release.
+pub fn load_and_validate_manifest_uncached(
+    obr_path: &Path,
+    header: ObrHeaderMetadata,
+) -> Result<ConceptRegistryManifest, ConceptRegistryManifestError> {
+    load_and_validate_manifest_inner(obr_path, header, false)
+}
+
+fn load_and_validate_manifest_inner(
+    obr_path: &Path,
+    header: ObrHeaderMetadata,
+    allow_verification_cache: bool,
+) -> Result<ConceptRegistryManifest, ConceptRegistryManifestError> {
     let path = manifest_path(obr_path);
     let metadata = std::fs::metadata(&path).map_err(ConceptRegistryManifestError::Io)?;
     if metadata.len() > MAX_MANIFEST_BYTES {
@@ -172,7 +190,9 @@ pub fn load_and_validate_manifest(
     validate_manifest_shape(&manifest, header)?;
     let obr_metadata = std::fs::metadata(obr_path).map_err(ConceptRegistryManifestError::Io)?;
     let modified_ns = modified_ns(&obr_metadata)?;
-    if verification_stamp_matches(obr_path, &manifest, obr_metadata.len(), modified_ns) {
+    if allow_verification_cache
+        && verification_stamp_matches(obr_path, &manifest, obr_metadata.len(), modified_ns)
+    {
         return Ok(manifest);
     }
 
@@ -190,7 +210,9 @@ pub fn load_and_validate_manifest(
         &manifest.label_index,
     )?;
     validate_sidecar_checksum(obr_path, ".ccids.idx", "CCID index", &manifest.ccid_index)?;
-    let _ = write_verification_stamp(obr_path, &manifest, obr_metadata.len(), modified_ns);
+    if allow_verification_cache {
+        let _ = write_verification_stamp(obr_path, &manifest, obr_metadata.len(), modified_ns);
+    }
     Ok(manifest)
 }
 
