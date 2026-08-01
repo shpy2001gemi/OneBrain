@@ -138,7 +138,7 @@ def main() -> int:
     parser.add_argument("--adb")
     parser.add_argument("--flutter", default=shutil.which("flutter"))
     parser.add_argument("--report", type=Path)
-    parser.add_argument("--timeout-seconds", type=float, default=60)
+    parser.add_argument("--timeout-seconds", type=float, default=120)
     arguments = parser.parse_args()
     adb_path = resolve_adb(arguments.adb)
     if not arguments.flutter:
@@ -148,6 +148,7 @@ def main() -> int:
         raise SystemExit(f"APK does not exist: {apk}")
     mobile_root = Path(__file__).resolve().parents[1]
 
+    print("harness-stage|install-and-clear", flush=True)
     adb(adb_path, arguments.device, "install", "-r", "-t", str(apk))
     adb(adb_path, arguments.device, "shell", "pm", "clear", PACKAGE)
     with tempfile.TemporaryDirectory(prefix="onebrain-media-picker-") as temp:
@@ -173,6 +174,7 @@ def main() -> int:
     )
     adb(adb_path, arguments.device, "logcat", "-c")
 
+    print("harness-stage|picker-import", flush=True)
     process = subprocess.Popen(
         [
             arguments.flutter,
@@ -204,6 +206,7 @@ def main() -> int:
     if process.returncode != 0:
         raise RuntimeError(f"media picker integration failed:\n{output}")
 
+    print("harness-stage|verify-redacted-import-log", flush=True)
     log = wait_for_log(
         adb_path,
         arguments.device,
@@ -213,7 +216,9 @@ def main() -> int:
     if PICKER_FILE in log or "content://" in log or "file://" in log:
         raise RuntimeError("picker filename or URI leaked into runtime logs")
 
+    print("harness-stage|force-stop", flush=True)
     adb(adb_path, arguments.device, "shell", "am", "force-stop", PACKAGE)
+    print("harness-stage|typed-catalog-recovery", flush=True)
     recovery = run(
         [
             arguments.flutter,
@@ -256,4 +261,17 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception as error:
+        first_line = str(error).splitlines()[0] if str(error) else type(error).__name__
+        annotation = (
+            first_line.replace("%", "%25")
+            .replace("\r", "%0D")
+            .replace("\n", "%0A")
+        )
+        print(
+            f"::error title=MOB-07 Android OwnedOriginal media harness::{annotation}",
+            flush=True,
+        )
+        raise
