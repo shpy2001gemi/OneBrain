@@ -232,6 +232,30 @@ enum class HostOperationEventKind(val raw: Int) {
   }
 }
 
+enum class HostRegistryTrustMode(val raw: Int) {
+  UNAVAILABLE(0),
+  DEVELOPMENT_FIXTURE(1),
+  PRODUCTION(2);
+
+  companion object {
+    fun ofRaw(raw: Int): HostRegistryTrustMode? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
+enum class HostRegistryNetworkPolicy(val raw: Int) {
+  WIFI_ONLY(0),
+  UNMETERED(1),
+  ANY_NETWORK(2);
+
+  companion object {
+    fun ofRaw(raw: Int): HostRegistryNetworkPolicy? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
 /** Generated class from Pigeon that represents data sent in messages. */
 data class HostBootstrapSnapshot (
   val platform: String,
@@ -582,6 +606,176 @@ data class HostOwnedMediaSummary (
 }
 
 /** Generated class from Pigeon that represents data sent in messages. */
+data class HostRegistryInitAvailability (
+  val available: Boolean,
+  val trustMode: HostRegistryTrustMode,
+  val channelId: String,
+  val reasonCode: String,
+  val transportEnabled: Boolean
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): HostRegistryInitAvailability {
+      val available = pigeonVar_list[0] as Boolean
+      val trustMode = pigeonVar_list[1] as HostRegistryTrustMode
+      val channelId = pigeonVar_list[2] as String
+      val reasonCode = pigeonVar_list[3] as String
+      val transportEnabled = pigeonVar_list[4] as Boolean
+      return HostRegistryInitAvailability(available, trustMode, channelId, reasonCode, transportEnabled)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      available,
+      trustMode,
+      channelId,
+      reasonCode,
+      transportEnabled,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as HostRegistryInitAvailability
+    return MobileHostApiPigeonUtils.deepEquals(this.available, other.available) && MobileHostApiPigeonUtils.deepEquals(this.trustMode, other.trustMode) && MobileHostApiPigeonUtils.deepEquals(this.channelId, other.channelId) && MobileHostApiPigeonUtils.deepEquals(this.reasonCode, other.reasonCode) && MobileHostApiPigeonUtils.deepEquals(this.transportEnabled, other.transportEnabled)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.available)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.trustMode)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.channelId)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.reasonCode)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.transportEnabled)
+    return result
+  }
+  override fun toString(): String {
+    return "HostRegistryInitAvailability(available=$available, trustMode=$trustMode, channelId=$channelId, reasonCode=$reasonCode, transportEnabled=$transportEnabled)"
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
+data class HostRegistryInitPlan (
+  val operationId: String,
+  val stateCode: Long,
+  val channelId: String,
+  val releaseId: String,
+  val manifestDigest: String,
+  val trustProfileDigest: String,
+  val headGeneration: Long,
+  val releaseSequence: Long,
+  val publisherMinAdditionalFreeBytes: Long,
+  val artifactTotalBytes: Long,
+  val targetTotalAllocBytes: Long,
+  val transferInitialBytes: Long,
+  val verificationWorkspaceBytes: Long,
+  val catalogGrowthBytes: Long,
+  val safetyReserveBytes: Long,
+  val destinationTotalUsableBytes: Long,
+  val measuredFreeBytes: Long,
+  val initialRequiredFreeBytes: Long,
+  val admitted: Boolean,
+  val transportEnabled: Boolean,
+  val trustMode: HostRegistryTrustMode
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): HostRegistryInitPlan {
+      val operationId = pigeonVar_list[0] as String
+      val stateCode = pigeonVar_list[1] as Long
+      val channelId = pigeonVar_list[2] as String
+      val releaseId = pigeonVar_list[3] as String
+      val manifestDigest = pigeonVar_list[4] as String
+      val trustProfileDigest = pigeonVar_list[5] as String
+      val headGeneration = pigeonVar_list[6] as Long
+      val releaseSequence = pigeonVar_list[7] as Long
+      val publisherMinAdditionalFreeBytes = pigeonVar_list[8] as Long
+      val artifactTotalBytes = pigeonVar_list[9] as Long
+      val targetTotalAllocBytes = pigeonVar_list[10] as Long
+      val transferInitialBytes = pigeonVar_list[11] as Long
+      val verificationWorkspaceBytes = pigeonVar_list[12] as Long
+      val catalogGrowthBytes = pigeonVar_list[13] as Long
+      val safetyReserveBytes = pigeonVar_list[14] as Long
+      val destinationTotalUsableBytes = pigeonVar_list[15] as Long
+      val measuredFreeBytes = pigeonVar_list[16] as Long
+      val initialRequiredFreeBytes = pigeonVar_list[17] as Long
+      val admitted = pigeonVar_list[18] as Boolean
+      val transportEnabled = pigeonVar_list[19] as Boolean
+      val trustMode = pigeonVar_list[20] as HostRegistryTrustMode
+      return HostRegistryInitPlan(operationId, stateCode, channelId, releaseId, manifestDigest, trustProfileDigest, headGeneration, releaseSequence, publisherMinAdditionalFreeBytes, artifactTotalBytes, targetTotalAllocBytes, transferInitialBytes, verificationWorkspaceBytes, catalogGrowthBytes, safetyReserveBytes, destinationTotalUsableBytes, measuredFreeBytes, initialRequiredFreeBytes, admitted, transportEnabled, trustMode)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      operationId,
+      stateCode,
+      channelId,
+      releaseId,
+      manifestDigest,
+      trustProfileDigest,
+      headGeneration,
+      releaseSequence,
+      publisherMinAdditionalFreeBytes,
+      artifactTotalBytes,
+      targetTotalAllocBytes,
+      transferInitialBytes,
+      verificationWorkspaceBytes,
+      catalogGrowthBytes,
+      safetyReserveBytes,
+      destinationTotalUsableBytes,
+      measuredFreeBytes,
+      initialRequiredFreeBytes,
+      admitted,
+      transportEnabled,
+      trustMode,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as HostRegistryInitPlan
+    return MobileHostApiPigeonUtils.deepEquals(this.operationId, other.operationId) && MobileHostApiPigeonUtils.deepEquals(this.stateCode, other.stateCode) && MobileHostApiPigeonUtils.deepEquals(this.channelId, other.channelId) && MobileHostApiPigeonUtils.deepEquals(this.releaseId, other.releaseId) && MobileHostApiPigeonUtils.deepEquals(this.manifestDigest, other.manifestDigest) && MobileHostApiPigeonUtils.deepEquals(this.trustProfileDigest, other.trustProfileDigest) && MobileHostApiPigeonUtils.deepEquals(this.headGeneration, other.headGeneration) && MobileHostApiPigeonUtils.deepEquals(this.releaseSequence, other.releaseSequence) && MobileHostApiPigeonUtils.deepEquals(this.publisherMinAdditionalFreeBytes, other.publisherMinAdditionalFreeBytes) && MobileHostApiPigeonUtils.deepEquals(this.artifactTotalBytes, other.artifactTotalBytes) && MobileHostApiPigeonUtils.deepEquals(this.targetTotalAllocBytes, other.targetTotalAllocBytes) && MobileHostApiPigeonUtils.deepEquals(this.transferInitialBytes, other.transferInitialBytes) && MobileHostApiPigeonUtils.deepEquals(this.verificationWorkspaceBytes, other.verificationWorkspaceBytes) && MobileHostApiPigeonUtils.deepEquals(this.catalogGrowthBytes, other.catalogGrowthBytes) && MobileHostApiPigeonUtils.deepEquals(this.safetyReserveBytes, other.safetyReserveBytes) && MobileHostApiPigeonUtils.deepEquals(this.destinationTotalUsableBytes, other.destinationTotalUsableBytes) && MobileHostApiPigeonUtils.deepEquals(this.measuredFreeBytes, other.measuredFreeBytes) && MobileHostApiPigeonUtils.deepEquals(this.initialRequiredFreeBytes, other.initialRequiredFreeBytes) && MobileHostApiPigeonUtils.deepEquals(this.admitted, other.admitted) && MobileHostApiPigeonUtils.deepEquals(this.transportEnabled, other.transportEnabled) && MobileHostApiPigeonUtils.deepEquals(this.trustMode, other.trustMode)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.operationId)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.stateCode)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.channelId)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.releaseId)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.manifestDigest)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.trustProfileDigest)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.headGeneration)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.releaseSequence)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.publisherMinAdditionalFreeBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.artifactTotalBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.targetTotalAllocBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.transferInitialBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.verificationWorkspaceBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.catalogGrowthBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.safetyReserveBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.destinationTotalUsableBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.measuredFreeBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.initialRequiredFreeBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.admitted)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.transportEnabled)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.trustMode)
+    return result
+  }
+  override fun toString(): String {
+    return "HostRegistryInitPlan(operationId=$operationId, stateCode=$stateCode, channelId=$channelId, releaseId=$releaseId, manifestDigest=$manifestDigest, trustProfileDigest=$trustProfileDigest, headGeneration=$headGeneration, releaseSequence=$releaseSequence, publisherMinAdditionalFreeBytes=$publisherMinAdditionalFreeBytes, artifactTotalBytes=$artifactTotalBytes, targetTotalAllocBytes=$targetTotalAllocBytes, transferInitialBytes=$transferInitialBytes, verificationWorkspaceBytes=$verificationWorkspaceBytes, catalogGrowthBytes=$catalogGrowthBytes, safetyReserveBytes=$safetyReserveBytes, destinationTotalUsableBytes=$destinationTotalUsableBytes, measuredFreeBytes=$measuredFreeBytes, initialRequiredFreeBytes=$initialRequiredFreeBytes, admitted=$admitted, transportEnabled=$transportEnabled, trustMode=$trustMode)"
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
 data class HostOperationEvent (
   val operationId: String,
   val kind: HostOperationEventKind,
@@ -644,31 +838,51 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
         }
       }
       132.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          HostBootstrapSnapshot.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          HostRegistryTrustMode.ofRaw(it.toInt())
         }
       }
       133.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          HostRuntimeSnapshot.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          HostRegistryNetworkPolicy.ofRaw(it.toInt())
         }
       }
       134.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostRawDraftReceipt.fromList(it)
+          HostBootstrapSnapshot.fromList(it)
         }
       }
       135.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostShareSpoolSummary.fromList(it)
+          HostRuntimeSnapshot.fromList(it)
         }
       }
       136.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostOwnedMediaSummary.fromList(it)
+          HostRawDraftReceipt.fromList(it)
         }
       }
       137.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          HostShareSpoolSummary.fromList(it)
+        }
+      }
+      138.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          HostOwnedMediaSummary.fromList(it)
+        }
+      }
+      139.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          HostRegistryInitAvailability.fromList(it)
+        }
+      }
+      140.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          HostRegistryInitPlan.fromList(it)
+        }
+      }
+      141.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           HostOperationEvent.fromList(it)
         }
@@ -690,28 +904,44 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
         stream.write(131)
         writeValue(stream, value.raw.toLong())
       }
-      is HostBootstrapSnapshot -> {
+      is HostRegistryTrustMode -> {
         stream.write(132)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw.toLong())
       }
-      is HostRuntimeSnapshot -> {
+      is HostRegistryNetworkPolicy -> {
         stream.write(133)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw.toLong())
       }
-      is HostRawDraftReceipt -> {
+      is HostBootstrapSnapshot -> {
         stream.write(134)
         writeValue(stream, value.toList())
       }
-      is HostShareSpoolSummary -> {
+      is HostRuntimeSnapshot -> {
         stream.write(135)
         writeValue(stream, value.toList())
       }
-      is HostOwnedMediaSummary -> {
+      is HostRawDraftReceipt -> {
         stream.write(136)
         writeValue(stream, value.toList())
       }
-      is HostOperationEvent -> {
+      is HostShareSpoolSummary -> {
         stream.write(137)
+        writeValue(stream, value.toList())
+      }
+      is HostOwnedMediaSummary -> {
+        stream.write(138)
+        writeValue(stream, value.toList())
+      }
+      is HostRegistryInitAvailability -> {
+        stream.write(139)
+        writeValue(stream, value.toList())
+      }
+      is HostRegistryInitPlan -> {
+        stream.write(140)
+        writeValue(stream, value.toList())
+      }
+      is HostOperationEvent -> {
+        stream.write(141)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -726,6 +956,10 @@ val MobileHostApiPigeonMethodCodec = StandardMethodCodec(MobileHostApiPigeonCode
 interface MobileHostApi {
   fun inspectBootstrapHost(callback: (Result<HostBootstrapSnapshot>) -> Unit)
   fun inspectRuntimeProfile(callback: (Result<HostRuntimeSnapshot>) -> Unit)
+  fun inspectRegistryInitAvailability(callback: (Result<HostRegistryInitAvailability>) -> Unit)
+  fun beginRegistryInit(channelId: String, callback: (Result<HostRegistryInitPlan>) -> Unit)
+  fun deferRegistryInit(operationId: String, manifestDigest: String, callback: (Result<Boolean>) -> Unit)
+  fun confirmRegistryInit(operationId: String, manifestDigest: String, networkPolicy: HostRegistryNetworkPolicy, oneTimeNetworkOverride: Boolean, callback: (Result<HostRegistryInitPlan>) -> Unit)
   fun saveRawTextDraft(contentLanguage: String, content: String, callback: (Result<HostRawDraftReceipt>) -> Unit)
   fun inspectPendingShareSpools(callback: (Result<List<HostShareSpoolSummary>>) -> Unit)
   fun importSharedText(spoolRef: String, contentLanguage: String, callback: (Result<HostRawDraftReceipt>) -> Unit)
@@ -767,6 +1001,88 @@ interface MobileHostApi {
         if (api != null) {
           channel.setMessageHandler { _, reply ->
             api.inspectRuntimeProfile{ result: Result<HostRuntimeSnapshot> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectRegistryInitAvailability$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.inspectRegistryInitAvailability{ result: Result<HostRegistryInitAvailability> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.beginRegistryInit$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val channelIdArg = args[0] as String
+            api.beginRegistryInit(channelIdArg) { result: Result<HostRegistryInitPlan> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.deferRegistryInit$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val operationIdArg = args[0] as String
+            val manifestDigestArg = args[1] as String
+            api.deferRegistryInit(operationIdArg, manifestDigestArg) { result: Result<Boolean> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.confirmRegistryInit$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val operationIdArg = args[0] as String
+            val manifestDigestArg = args[1] as String
+            val networkPolicyArg = args[2] as HostRegistryNetworkPolicy
+            val oneTimeNetworkOverrideArg = args[3] as Boolean
+            api.confirmRegistryInit(operationIdArg, manifestDigestArg, networkPolicyArg, oneTimeNetworkOverrideArg) { result: Result<HostRegistryInitPlan> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MobileHostApiPigeonUtils.wrapError(error))

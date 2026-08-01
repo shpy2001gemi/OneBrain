@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.StatFs
 import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -23,11 +24,15 @@ import org.onebrain.onebrain_mobile.generated.HostOperationEventsStreamHandler
 import org.onebrain.onebrain_mobile.generated.HostOnboardingCursor
 import org.onebrain.onebrain_mobile.generated.HostRuntimeSnapshot
 import org.onebrain.onebrain_mobile.generated.HostRawDraftReceipt
+import org.onebrain.onebrain_mobile.generated.HostRegistryInitAvailability
+import org.onebrain.onebrain_mobile.generated.HostRegistryInitPlan
+import org.onebrain.onebrain_mobile.generated.HostRegistryNetworkPolicy
+import org.onebrain.onebrain_mobile.generated.HostRegistryTrustMode
 import org.onebrain.onebrain_mobile.generated.MobileHostApi
 import org.onebrain.onebrain_mobile.generated.PigeonEventSink
 import org.onebrain.onebrain_mobile.generated.HostShareSpoolSummary
 
-private const val HOST_API_VERSION = "7"
+private const val HOST_API_VERSION = "8"
 private const val MAX_FEASIBILITY_DELAY_MILLIS = 30_000L
 private const val MEDIA_PICK_REQUEST_CODE = 7_104
 private const val MEDIA_STREAM_CHUNK_BYTES = 256 * 1024
@@ -145,6 +150,18 @@ private data class PendingMediaPick(
     val callback: (Result<HostOwnedMediaSummary>) -> Unit,
 )
 
+private data class RegistryDevelopmentFixture(
+    val trustProfile: ByteArray,
+    val channelHead: ByteArray,
+    val release: ByteArray,
+)
+
+private data class RegistryStorageFacts(
+    val allocationUnitBytes: Long,
+    val totalUsableBytes: Long,
+    val measuredFreeBytes: Long,
+)
+
 private fun RustOwnedMediaSummary.toHostOwnedMedia() =
     HostOwnedMediaSummary(
         mediaRef = mediaRef,
@@ -164,6 +181,31 @@ private fun RustOwnedMediaSummary.toHostOwnedMedia() =
         storageClass = storageClass,
         ownedHold = ownedHold,
         importState = importState,
+    )
+
+private fun RustRegistryInitPlan.toHostRegistryPlan() =
+    HostRegistryInitPlan(
+        operationId = operationId,
+        stateCode = stateCode.toLong(),
+        channelId = channelId,
+        releaseId = releaseId,
+        manifestDigest = manifestDigest,
+        trustProfileDigest = trustProfileDigest,
+        headGeneration = headGeneration,
+        releaseSequence = releaseSequence,
+        publisherMinAdditionalFreeBytes = publisherMinAdditionalFreeBytes,
+        artifactTotalBytes = artifactTotalBytes,
+        targetTotalAllocBytes = targetTotalAllocBytes,
+        transferInitialBytes = transferInitialBytes,
+        verificationWorkspaceBytes = verificationWorkspaceBytes,
+        catalogGrowthBytes = catalogGrowthBytes,
+        safetyReserveBytes = safetyReserveBytes,
+        destinationTotalUsableBytes = destinationTotalUsableBytes,
+        measuredFreeBytes = measuredFreeBytes,
+        initialRequiredFreeBytes = initialRequiredFreeBytes,
+        admitted = admitted,
+        transportEnabled = false,
+        trustMode = HostRegistryTrustMode.DEVELOPMENT_FIXTURE,
     )
 
 private class AndroidHostEvents : HostOperationEventsStreamHandler() {
@@ -197,6 +239,185 @@ private class AndroidMobileHost(
         }
     private val pending = mutableMapOf<String, Runnable>()
     private val foregroundMediaWorkAllowed = AtomicBoolean(true)
+
+    override fun inspectRegistryInitAvailability(
+        callback: (Result<HostRegistryInitAvailability>) -> Unit,
+    ) {
+        runtimeExecutor.execute {
+            val rust = RustMobileBridge.inspectBootstrap()
+            val fixture = loadRegistryDevelopmentFixture()
+            val available = rust.linked && rust.abiVersion >= 8 && fixture != null
+            val reason =
+                when {
+                    !rust.linked -> "RUST_BRIDGE_UNAVAILABLE"
+                    rust.abiVersion < 8 -> "REGISTRY_ABI_UNAVAILABLE"
+                    fixture == null -> "PRODUCTION_TRUST_PROFILE_UNAVAILABLE"
+                    else -> "DEVELOPMENT_FIXTURE_READY"
+                }
+            val availability =
+                HostRegistryInitAvailability(
+                    available = available,
+                    trustMode =
+                        if (available) {
+                            HostRegistryTrustMode.DEVELOPMENT_FIXTURE
+                        } else {
+                            HostRegistryTrustMode.UNAVAILABLE
+                        },
+                    channelId = "stable",
+                    reasonCode = reason,
+                    transportEnabled = false,
+                )
+            mainHandler.post { callback(Result.success(availability)) }
+        }
+    }
+
+    override fun beginRegistryInit(
+        channelId: String,
+        callback: (Result<HostRegistryInitPlan>) -> Unit,
+    ) {
+        runtimeExecutor.execute {
+            val result =
+                runCatching {
+                    check(channelId == "stable") { "Unsupported Registry channel" }
+                    val fixture = checkNotNull(loadRegistryDevelopmentFixture()) {
+                        "No signed Registry trust source is available"
+                    }
+                    val storage = registryStorageFacts()
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    try {
+                        RustMobileBridge.prepareRegistryInit(
+                            dataRoot = dataRoot,
+                            securityMaterial = securityMaterial,
+                            channelId = channelId,
+                            trustProfile = fixture.trustProfile,
+                            channelHead = fixture.channelHead,
+                            release = fixture.release,
+                            allocationUnitBytes = storage.allocationUnitBytes,
+                            destinationTotalUsableBytes = storage.totalUsableBytes,
+                            measuredFreeBytes = storage.measuredFreeBytes,
+                        ).toHostRegistryPlan()
+                    } finally {
+                        securityMaterial.fill(0)
+                    }
+                }.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = {
+                        Result.failure(
+                            FlutterError(
+                                code = "REGISTRY_INIT_PLAN_FAILED",
+                                message = it.message ?: "Signed Registry Init plan was rejected",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    override fun deferRegistryInit(
+        operationId: String,
+        manifestDigest: String,
+        callback: (Result<Boolean>) -> Unit,
+    ) {
+        runtimeExecutor.execute {
+            val result =
+                runCatching {
+                    check(RustMobileBridge.deferRegistryInit(operationId, manifestDigest)) {
+                        "Rust rejected the exact Init defer receipt"
+                    }
+                    true
+                }.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = {
+                        Result.failure(
+                            FlutterError(
+                                code = "REGISTRY_INIT_DEFER_FAILED",
+                                message = it.message ?: "Init could not enter Limited mode",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    override fun confirmRegistryInit(
+        operationId: String,
+        manifestDigest: String,
+        networkPolicy: HostRegistryNetworkPolicy,
+        oneTimeNetworkOverride: Boolean,
+        callback: (Result<HostRegistryInitPlan>) -> Unit,
+    ) {
+        runtimeExecutor.execute {
+            val result =
+                runCatching {
+                    check(
+                        !oneTimeNetworkOverride ||
+                            networkPolicy == HostRegistryNetworkPolicy.ANY_NETWORK,
+                    ) { "One-time Registry override requires Any network policy" }
+                    val fixture = checkNotNull(loadRegistryDevelopmentFixture()) {
+                        "No signed Registry trust source is available"
+                    }
+                    val storage = registryStorageFacts()
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    try {
+                        RustMobileBridge.confirmRegistryInit(
+                            dataRoot = dataRoot,
+                            securityMaterial = securityMaterial,
+                            operationId = operationId,
+                            manifestDigest = manifestDigest,
+                            trustProfile = fixture.trustProfile,
+                            networkPolicyCode = networkPolicy.raw,
+                            oneTimeNetworkOverride = oneTimeNetworkOverride,
+                            allocationUnitBytes = storage.allocationUnitBytes,
+                            destinationTotalUsableBytes = storage.totalUsableBytes,
+                            measuredFreeBytes = storage.measuredFreeBytes,
+                        ).toHostRegistryPlan()
+                    } finally {
+                        securityMaterial.fill(0)
+                    }
+                }.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = {
+                        Result.failure(
+                            FlutterError(
+                                code = "REGISTRY_INIT_CONFIRM_FAILED",
+                                message = it.message ?: "Exact Registry Init confirmation failed",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    private fun registryStorageFacts(): RegistryStorageFacts {
+        val stats = StatFs(dataRoot)
+        return RegistryStorageFacts(
+            allocationUnitBytes = stats.blockSizeLong,
+            totalUsableBytes = stats.totalBytes,
+            measuredFreeBytes = stats.availableBytes,
+        )
+    }
+
+    private fun loadRegistryDevelopmentFixture(): RegistryDevelopmentFixture? =
+        runCatching {
+            RegistryDevelopmentFixture(
+                trustProfile = readHexAsset("mob05a/registry_trust_profile.cbor.hex"),
+                channelHead = readHexAsset("mob05a/registry_channel_head.cbor.hex"),
+                release = readHexAsset("mob05a/registry_release.cbor.hex"),
+            )
+        }.getOrNull()
+
+    private fun readHexAsset(name: String): ByteArray {
+        val value = context.assets.open(name).bufferedReader().use { it.readText() }.trim()
+        require(value.isNotEmpty() && value.length % 2 == 0 && value.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) {
+            "Invalid development Registry fixture"
+        }
+        return ByteArray(value.length / 2) { index ->
+            value.substring(index * 2, index * 2 + 2).toInt(16).toByte()
+        }
+    }
 
     fun acceptShareIntent(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) {

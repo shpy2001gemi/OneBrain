@@ -527,7 +527,7 @@ abstract class AppLocalizations {
   /// No description provided for @initBody.
   ///
   /// In en, this message translates to:
-  /// **'No Registry request has been made. MOB-05 will resolve the signed target and show exact bytes, capacity, network and energy facts before any large transfer.'**
+  /// **'Resolve the signed target and review exact storage and network facts before any large transfer.'**
   String get initBody;
 
   /// No description provided for @initBoundaryTitle.
@@ -551,8 +551,236 @@ abstract class AppLocalizations {
   /// No description provided for @initUnavailableReason.
   ///
   /// In en, this message translates to:
-  /// **'Signed Registry planning and transfer are not active in this build.'**
+  /// **'No approved production Registry trust profile is available in this build.'**
   String get initUnavailableReason;
+
+  /// No description provided for @initDevelopmentFixtureTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Development fixture'**
+  String get initDevelopmentFixtureTitle;
+
+  /// No description provided for @initDevelopmentFixtureBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This emulator-only signed fixture tests admission. It is not production Concept data and cannot start a transfer.'**
+  String get initDevelopmentFixtureBody;
+
+  /// No description provided for @initPlanTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Exact Init plan'**
+  String get initPlanTitle;
+
+  /// No description provided for @initPlanSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'The target and publisher floor are signed. Storage facts come from the destination filesystem.'**
+  String get initPlanSubtitle;
+
+  /// No description provided for @initChannelLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Channel'**
+  String get initChannelLabel;
+
+  /// No description provided for @initReleaseLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Release'**
+  String get initReleaseLabel;
+
+  /// No description provided for @initManifestLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Manifest'**
+  String get initManifestLabel;
+
+  /// No description provided for @initHeadGenerationLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Head generation'**
+  String get initHeadGenerationLabel;
+
+  /// No description provided for @initReleaseSequenceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Release sequence'**
+  String get initReleaseSequenceLabel;
+
+  /// No description provided for @initPublisherFloorLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Publisher floor (P)'**
+  String get initPublisherFloorLabel;
+
+  /// No description provided for @initArtifactBytesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Signed artifacts'**
+  String get initArtifactBytesLabel;
+
+  /// No description provided for @initTargetAllocationLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Target allocation (N)'**
+  String get initTargetAllocationLabel;
+
+  /// No description provided for @initTransferPeakLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer peak (T)'**
+  String get initTransferPeakLabel;
+
+  /// No description provided for @initVerificationWorkspaceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Verification workspace (W)'**
+  String get initVerificationWorkspaceLabel;
+
+  /// No description provided for @initCatalogGrowthLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Catalog growth (G)'**
+  String get initCatalogGrowthLabel;
+
+  /// No description provided for @initSafetyReserveLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Safety reserve (R)'**
+  String get initSafetyReserveLabel;
+
+  /// No description provided for @initResourceFactsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Destination storage facts'**
+  String get initResourceFactsTitle;
+
+  /// No description provided for @initAvailableBytesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Available now'**
+  String get initAvailableBytesLabel;
+
+  /// No description provided for @initRequiredBytesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Required before start'**
+  String get initRequiredBytesLabel;
+
+  /// No description provided for @initVolumeCapacityLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Volume capacity'**
+  String get initVolumeCapacityLabel;
+
+  /// No description provided for @initCapacityReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Capacity check passed'**
+  String get initCapacityReady;
+
+  /// No description provided for @initCapacityInsufficient.
+  ///
+  /// In en, this message translates to:
+  /// **'More free space is required'**
+  String get initCapacityInsufficient;
+
+  /// No description provided for @initNetworkPolicyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Network policy'**
+  String get initNetworkPolicyTitle;
+
+  /// No description provided for @initWifiOnlyPolicy.
+  ///
+  /// In en, this message translates to:
+  /// **'Wi-Fi only'**
+  String get initWifiOnlyPolicy;
+
+  /// No description provided for @initUnmeteredPolicy.
+  ///
+  /// In en, this message translates to:
+  /// **'Unmetered'**
+  String get initUnmeteredPolicy;
+
+  /// No description provided for @initAnyNetworkPolicy.
+  ///
+  /// In en, this message translates to:
+  /// **'Any network'**
+  String get initAnyNetworkPolicy;
+
+  /// No description provided for @initOneTimeOverrideLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow this Init once on the selected network policy'**
+  String get initOneTimeOverrideLabel;
+
+  /// No description provided for @initDeferAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Defer and use Limited mode'**
+  String get initDeferAction;
+
+  /// No description provided for @initConfirmAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm exact plan'**
+  String get initConfirmAction;
+
+  /// No description provided for @initPlanError.
+  ///
+  /// In en, this message translates to:
+  /// **'The signed Init plan could not be prepared. No transfer was started.'**
+  String get initPlanError;
+
+  /// No description provided for @initErrorTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Init needs attention'**
+  String get initErrorTitle;
+
+  /// No description provided for @initDeferError.
+  ///
+  /// In en, this message translates to:
+  /// **'Limited-mode receipt could not be saved.'**
+  String get initDeferError;
+
+  /// No description provided for @initConfirmError.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirmation failed during the live capacity recheck. No transfer was started.'**
+  String get initConfirmError;
+
+  /// No description provided for @initAdmittedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Capacity admitted'**
+  String get initAdmittedTitle;
+
+  /// No description provided for @initAdmittedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Rust bound the exact manifest, trust profile, storage plan and network policy. Transfer remains disabled in MOB-05A.'**
+  String get initAdmittedBody;
+
+  /// No description provided for @initWaitingStorageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for storage'**
+  String get initWaitingStorageTitle;
+
+  /// No description provided for @initWaitingStorageBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The exact plan is durable, but current free space is below the required amount. No bytes were scheduled.'**
+  String get initWaitingStorageBody;
+
+  /// No description provided for @initTransportGated.
+  ///
+  /// In en, this message translates to:
+  /// **'Transfer is not enabled in this build slice.'**
+  String get initTransportGated;
 
   /// No description provided for @homeTitle.
   ///

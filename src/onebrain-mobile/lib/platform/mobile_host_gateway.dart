@@ -117,6 +117,74 @@ class MobileShareSpoolSummary {
 
 enum MobileMediaClass { image, video, audio, document }
 
+enum MobileRegistryTrustMode { unavailable, developmentFixture, production }
+
+enum MobileRegistryNetworkPolicy { wifiOnly, unmetered, anyNetwork }
+
+class MobileRegistryInitAvailability {
+  const MobileRegistryInitAvailability({
+    required this.available,
+    required this.trustMode,
+    required this.channelId,
+    required this.reasonCode,
+    required this.transportEnabled,
+  });
+
+  final bool available;
+  final MobileRegistryTrustMode trustMode;
+  final String channelId;
+  final String reasonCode;
+  final bool transportEnabled;
+}
+
+class MobileRegistryInitPlan {
+  const MobileRegistryInitPlan({
+    required this.operationId,
+    required this.stateCode,
+    required this.channelId,
+    required this.releaseId,
+    required this.manifestDigest,
+    required this.trustProfileDigest,
+    required this.headGeneration,
+    required this.releaseSequence,
+    required this.publisherMinAdditionalFreeBytes,
+    required this.artifactTotalBytes,
+    required this.targetTotalAllocBytes,
+    required this.transferInitialBytes,
+    required this.verificationWorkspaceBytes,
+    required this.catalogGrowthBytes,
+    required this.safetyReserveBytes,
+    required this.destinationTotalUsableBytes,
+    required this.measuredFreeBytes,
+    required this.initialRequiredFreeBytes,
+    required this.admitted,
+    required this.transportEnabled,
+    required this.trustMode,
+  });
+
+  final String operationId;
+  final int stateCode;
+  final String channelId;
+  final String releaseId;
+  final String manifestDigest;
+  final String trustProfileDigest;
+  final int headGeneration;
+  final int releaseSequence;
+  final int publisherMinAdditionalFreeBytes;
+  final int artifactTotalBytes;
+  final int targetTotalAllocBytes;
+  final int transferInitialBytes;
+  final int verificationWorkspaceBytes;
+  final int catalogGrowthBytes;
+  final int safetyReserveBytes;
+  final int destinationTotalUsableBytes;
+  final int measuredFreeBytes;
+  final int initialRequiredFreeBytes;
+  final bool admitted;
+  final bool transportEnabled;
+  final MobileRegistryTrustMode trustMode;
+}
+
 class MobileOwnedMediaSummary {
   const MobileOwnedMediaSummary({
     required this.mediaRef,
@@ -143,6 +211,22 @@ abstract interface class MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost();
 
   Future<MobileRuntimeSnapshot> inspectRuntimeProfile();
+
+  Future<MobileRegistryInitAvailability> inspectRegistryInitAvailability();
+
+  Future<MobileRegistryInitPlan> beginRegistryInit(String channelId);
+
+  Future<void> deferRegistryInit({
+    required String operationId,
+    required String manifestDigest,
+  });
+
+  Future<MobileRegistryInitPlan> confirmRegistryInit({
+    required String operationId,
+    required String manifestDigest,
+    required MobileRegistryNetworkPolicy networkPolicy,
+    required bool oneTimeNetworkOverride,
+  });
 
   Future<MobileRawDraftReceipt> saveRawTextDraft({
     required String contentLanguage,
@@ -223,6 +307,74 @@ class PigeonMobileHostGateway implements MobileHostGateway {
           MobileOnboardingCursor.values[snapshot.onboardingCursor.index],
     );
   }
+
+  @override
+  Future<MobileRegistryInitAvailability>
+  inspectRegistryInitAvailability() async {
+    final availability = await _api.inspectRegistryInitAvailability();
+    return MobileRegistryInitAvailability(
+      available: availability.available,
+      trustMode: MobileRegistryTrustMode.values[availability.trustMode.index],
+      channelId: availability.channelId,
+      reasonCode: availability.reasonCode,
+      transportEnabled: availability.transportEnabled,
+    );
+  }
+
+  @override
+  Future<MobileRegistryInitPlan> beginRegistryInit(String channelId) async =>
+      _registryPlanFromHost(await _api.beginRegistryInit(channelId));
+
+  @override
+  Future<void> deferRegistryInit({
+    required String operationId,
+    required String manifestDigest,
+  }) async {
+    final saved = await _api.deferRegistryInit(operationId, manifestDigest);
+    if (!saved) {
+      throw StateError('Native host rejected the exact Init defer receipt');
+    }
+  }
+
+  @override
+  Future<MobileRegistryInitPlan> confirmRegistryInit({
+    required String operationId,
+    required String manifestDigest,
+    required MobileRegistryNetworkPolicy networkPolicy,
+    required bool oneTimeNetworkOverride,
+  }) async => _registryPlanFromHost(
+    await _api.confirmRegistryInit(
+      operationId,
+      manifestDigest,
+      HostRegistryNetworkPolicy.values[networkPolicy.index],
+      oneTimeNetworkOverride,
+    ),
+  );
+
+  MobileRegistryInitPlan _registryPlanFromHost(HostRegistryInitPlan plan) =>
+      MobileRegistryInitPlan(
+        operationId: plan.operationId,
+        stateCode: plan.stateCode,
+        channelId: plan.channelId,
+        releaseId: plan.releaseId,
+        manifestDigest: plan.manifestDigest,
+        trustProfileDigest: plan.trustProfileDigest,
+        headGeneration: plan.headGeneration,
+        releaseSequence: plan.releaseSequence,
+        publisherMinAdditionalFreeBytes: plan.publisherMinAdditionalFreeBytes,
+        artifactTotalBytes: plan.artifactTotalBytes,
+        targetTotalAllocBytes: plan.targetTotalAllocBytes,
+        transferInitialBytes: plan.transferInitialBytes,
+        verificationWorkspaceBytes: plan.verificationWorkspaceBytes,
+        catalogGrowthBytes: plan.catalogGrowthBytes,
+        safetyReserveBytes: plan.safetyReserveBytes,
+        destinationTotalUsableBytes: plan.destinationTotalUsableBytes,
+        measuredFreeBytes: plan.measuredFreeBytes,
+        initialRequiredFreeBytes: plan.initialRequiredFreeBytes,
+        admitted: plan.admitted,
+        transportEnabled: plan.transportEnabled,
+        trustMode: MobileRegistryTrustMode.values[plan.trustMode.index],
+      );
 
   @override
   Future<MobileOwnedMediaSummary> pickAndImportOwnedMedia(
@@ -329,6 +481,13 @@ final bootstrapHostSnapshotProvider = FutureProvider<MobileHostSnapshot>(
 final mobileRuntimeSnapshotProvider = FutureProvider<MobileRuntimeSnapshot>(
   (ref) => ref.watch(mobileHostGatewayProvider).inspectRuntimeProfile(),
 );
+
+final registryInitAvailabilityProvider =
+    FutureProvider<MobileRegistryInitAvailability>(
+      (ref) => ref
+          .watch(mobileHostGatewayProvider)
+          .inspectRegistryInitAvailability(),
+    );
 
 final pendingShareSpoolsProvider =
     FutureProvider<List<MobileShareSpoolSummary>>(

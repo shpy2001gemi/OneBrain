@@ -1,6 +1,6 @@
 # WIP Mobile App Analysis and Implementation Plan V1.3
 
-> Status: **ACTIVE IMPLEMENTATION / P5 PREFLIGHT INTEGRATED / MOB-05 NEXT CRITICAL PATH**
+> Status: **ACTIVE IMPLEMENTATION / MOB-05A TYPED ADMISSION IMPLEMENTED / MOB-05B NEXT CRITICAL PATH**
 >
 > Snapshot: **2026-08-01 (Asia/Saigon)**
 >
@@ -1658,14 +1658,14 @@ Status vocabulary:
   named entry gates close;
 - **Continuous**: release work accumulates but its final exit remains open.
 
-| Package | Status after Registry-failure integration (`d9270f7`) | Evidence already present | Remaining package exit |
+| Package | Current implementation status | Evidence already present | Remaining package exit |
 |---|---|---|---|
 | `MOB-00` | **Baseline established / continuous** | Owner-approved architecture, feature tree/details, sitemap, design system, component/pattern catalogs, authority manifest/validator, and reviewed P5/Concept Registry integration | Maintain authority hashes and resolve any future semantic conflict through owner review |
 | `MOB-01` | **Partial** | Flutter/native/Rust scaffold, generated bridge/tokens/localization, Android builds/package scans, iOS simulator compile, golden matrix and CI | Physical-device launch on both platforms, final ABI/thread audit and signed package baselines |
 | `MOB-02` | **Partial** | Thin mobile crates, process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL/private planner, Android kill recovery | Broader platform lifecycle qualification and any remaining runtime-service adapters; no `ReadyOffline` claim |
 | `MOB-03` | **Partial** | Platform custody adapters, installation binding, encrypted vault/archive, exclusions, corruption and unexpected-restore tests | Physical backup/restore, iOS orphan-Keychain, protected-data/biometric and full recovery UX evidence |
 | `MOB-04` | **Partial** | vi/en Limited shell, onboarding, encrypted raw drafts, Android share spool, status surfaces, system-picker import and My Media shelf | Canonical KU encode/preview/private Save, complete Library/My KU/Received shelves, local search/KQL and export/backup journeys |
-| `MOB-05` | **Not started — next critical path** | BootstrapOnly packaging/source isolation, root operation ledger, shared signed-release/atomic-activation foundation, CCID gate and bounded truncated-index/disk-shortage harness are prerequisites already present | Complete the mobile channel/admission and transfer adapters, A/B health/rollback/GC, 2.2 GB-class device/target-filesystem qualification and airplane-mode exits |
+| `MOB-05` | **Partial — MOB-05A typed admission implemented** | Deterministic signed channel/release verification, atomic manifest/high-water/revocation acceptance, exact target-filesystem capacity policy, durable Begin/Defer/re-review/Confirm, ABI 8, shared INI-001/002 review UI and Android 16 emulator integration; debug fixture is excluded from release | Embed an owner-issued production trust profile; complete MOB-05B transfer and MOB-05C A/B activation/health/rollback/GC; qualify the real 2.2 GB-class release on target filesystems and close airplane-mode exits |
 | `MOB-06` | **Partial contract/fixture only** | No-LLM behavior, signed KQL fixture and private proposal feasibility | Provider adapters, deterministic tool execution journal, local-runtime bake-off, cloud disclosure and signed model lifecycle |
 | `MOB-07` | **Partial — current evidence package** | Activation recovery foundations plus Android encrypted media staging/OwnedOriginal activation, catalog query and force-stop recovery | Piece/pack media contract, viewers/received media, camera/OCR/voice, background adapters, notifications/outbox, energy policy and physical matrices |
 | `MOB-08` | **Blocked** | No production network authority in the app | P5, Registry, peer protocol and stable Offline MVP entry gates; then enrollment, reconciliation, seeding/presence and multi-host canary |
@@ -1823,6 +1823,12 @@ Exit:
 - no simulated wallet/reward surface.
 
 ### MOB-05 — Complete registry provision and update
+
+Implementation checkpoint (2026-08-01): MOB-05A trust/admission is executable
+through ABI 8 and `MOB-SCR-INI-001/002` on Android emulator. The signed fixture
+is confined to the debug source set and transport is hard-disabled; production
+builds contain no fixture or owner-issued trust profile and therefore report
+Init unavailable. This checkpoint does not satisfy any MOB-05 exit below.
 
 Deliver:
 
@@ -2079,10 +2085,13 @@ plan. None of the remaining decisions authorizes a distributed production lane.
 Recommended implementation order after P5/Concept Registry failure-
 qualification integration at `d9270f7`:
 
-1. **MOB-05A — Registry trust and admission:** implement the signed channel
-   head/publisher envelope, manifest acceptance transaction, revocation/high-
-   water policy, exact capacity/network disclosure and explicit
-   `init_begin`/`init_confirm`, initially against a small signed fixture.
+1. **MOB-05A — Registry trust and admission (implemented, package exit still
+   open):** maintain the signed channel head/publisher envelope, manifest
+   acceptance transaction, revocation/high-water policy, exact
+   capacity/network disclosure and explicit `init_begin`/`init_confirm` now
+   exercised against the isolated signed development fixture; replace the
+   unavailable production trust source only with owner-issued authority and
+   physical/full-size qualification evidence.
 2. **MOB-05B — durable platform transfer:** bind Android UIDT/eligible managed
    HTTPS and iOS background `URLSession` to the existing root ledger, including
    prepare/submit/adopt crash windows, resume, user stop, force-quit and native

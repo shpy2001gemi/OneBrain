@@ -8,6 +8,7 @@ import 'package:onebrain_mobile/design/onebrain_theme_extensions.dart';
 import 'package:onebrain_mobile/l10n/app_localizations.dart';
 import 'package:onebrain_mobile/platform/generated/mobile_host_api.g.dart';
 import 'package:onebrain_mobile/platform/mobile_host_gateway.dart';
+import 'package:onebrain_mobile/ui/screens/init_screen.dart';
 import 'package:onebrain_mobile/ui/screens/my_media_screen.dart';
 
 void main() {
@@ -56,7 +57,7 @@ void main() {
 
     expect(find.text('Grow ideas on your own node'), findsOneWidget);
     expect(find.textContaining('Android test host ready'), findsOneWidget);
-    expect(find.text('Rust bridge 0.1.0-test · ABI 7'), findsOneWidget);
+    expect(find.text('Rust bridge 0.1.0-test · ABI 8'), findsOneWidget);
     expect(find.text('Typed round trip verified'), findsOneWidget);
     expect(
       find.text(
@@ -126,6 +127,76 @@ void main() {
       expect(find.textContaining('1 draft'), findsOneWidget);
     },
   );
+
+  testWidgets('MOB-SCR-INI-001/002 reviews and confirms the typed exact plan', (
+    tester,
+  ) async {
+    Future<void> tapVisible(String label) async {
+      final target = find.text(label);
+      await tester.ensureVisible(target);
+      await tester.pumpAndSettle();
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+    }
+
+    await tester.pumpWidget(
+      _testApp(gateway: const _RegistryInitFakeGateway()),
+    );
+    await tester.pumpAndSettle();
+    await tapVisible('Continue to device preflight');
+    await tapVisible('Next');
+    await tapVisible('Next');
+    await tapVisible('Next');
+    await tapVisible('Open required-data Init');
+
+    expect(find.text('Development fixture'), findsOneWidget);
+    await tapVisible('Begin Init');
+    expect(find.byKey(const Key('init_exact_plan')), findsOneWidget);
+    expect(find.text('Publisher floor (P)'), findsOneWidget);
+    expect(find.text('1.86 GiB'), findsWidgets);
+
+    await tapVisible('Confirm exact plan');
+    expect(find.text('Capacity admitted'), findsOneWidget);
+    expect(
+      find.text('Transfer is not enabled in this build slice.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('MOB-SCR-INI-002 reflows at 320 pixels and 200 percent text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          mobileHostGatewayProvider.overrideWithValue(
+            const _RegistryInitFakeGateway(),
+          ),
+        ],
+        child: MaterialApp(
+          theme: OneBrainTheme.light,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const InitScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final begin = find.byKey(const Key('init_begin_action'));
+    await tester.ensureVisible(begin);
+    await tester.tap(begin);
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('init_exact_plan')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('shared components reflow at 200 percent text scale', (
     tester,
@@ -328,11 +399,11 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
       const MobileHostSnapshot(
         platform: 'Android test',
-        apiVersion: '7',
+        apiVersion: '8',
         registryRequestIssued: false,
         rustCoreLinked: true,
         rustCoreVersion: '0.1.0-test',
-        rustAbiVersion: 7,
+        rustAbiVersion: 8,
         rustRoundTripVerified: true,
       );
 
@@ -363,6 +434,35 @@ class _FakeMobileHostGateway implements MobileHostGateway {
         stagedVerifiedMediaCount: 0,
         onboardingCursor: onboardingCursor,
       );
+
+  @override
+  Future<MobileRegistryInitAvailability>
+  inspectRegistryInitAvailability() async =>
+      const MobileRegistryInitAvailability(
+        available: false,
+        trustMode: MobileRegistryTrustMode.unavailable,
+        channelId: 'stable',
+        reasonCode: 'TEST_UNAVAILABLE',
+        transportEnabled: false,
+      );
+
+  @override
+  Future<MobileRegistryInitPlan> beginRegistryInit(String channelId) =>
+      throw UnsupportedError('Registry Init is unavailable in this fake');
+
+  @override
+  Future<void> deferRegistryInit({
+    required String operationId,
+    required String manifestDigest,
+  }) => throw UnsupportedError('Registry Init is unavailable in this fake');
+
+  @override
+  Future<MobileRegistryInitPlan> confirmRegistryInit({
+    required String operationId,
+    required String manifestDigest,
+    required MobileRegistryNetworkPolicy networkPolicy,
+    required bool oneTimeNetworkOverride,
+  }) => throw UnsupportedError('Registry Init is unavailable in this fake');
 
   @override
   Future<void> setOnboardingCursor(MobileOnboardingCursor cursor) async {}
@@ -418,6 +518,64 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   @override
   Stream<HostOperationEvent> observeFeasibilityOperations() =>
       const Stream.empty();
+}
+
+class _RegistryInitFakeGateway extends _FakeMobileHostGateway {
+  const _RegistryInitFakeGateway();
+
+  @override
+  Future<MobileRegistryInitAvailability>
+  inspectRegistryInitAvailability() async =>
+      const MobileRegistryInitAvailability(
+        available: true,
+        trustMode: MobileRegistryTrustMode.developmentFixture,
+        channelId: 'stable',
+        reasonCode: 'DEVELOPMENT_FIXTURE_READY',
+        transportEnabled: false,
+      );
+
+  @override
+  Future<MobileRegistryInitPlan> beginRegistryInit(String channelId) async =>
+      _plan(stateCode: 5);
+
+  @override
+  Future<void> deferRegistryInit({
+    required String operationId,
+    required String manifestDigest,
+  }) async {}
+
+  @override
+  Future<MobileRegistryInitPlan> confirmRegistryInit({
+    required String operationId,
+    required String manifestDigest,
+    required MobileRegistryNetworkPolicy networkPolicy,
+    required bool oneTimeNetworkOverride,
+  }) async => _plan(stateCode: 8);
+
+  MobileRegistryInitPlan _plan({required int stateCode}) =>
+      MobileRegistryInitPlan(
+        operationId: 'registry-init-00000000000000000000000000000000',
+        stateCode: stateCode,
+        channelId: 'stable',
+        releaseId: 'a' * 64,
+        manifestDigest: 'b' * 64,
+        trustProfileDigest: 'c' * 64,
+        headGeneration: 1,
+        releaseSequence: 1,
+        publisherMinAdditionalFreeBytes: 2000000000,
+        artifactTotalBytes: 6144,
+        targetTotalAllocBytes: 12288,
+        transferInitialBytes: 6144,
+        verificationWorkspaceBytes: 67108864,
+        catalogGrowthBytes: 8388608,
+        safetyReserveBytes: 1610612736,
+        destinationTotalUsableBytes: 10000000000,
+        measuredFreeBytes: 5000000000,
+        initialRequiredFreeBytes: 2000000000,
+        admitted: true,
+        transportEnabled: false,
+        trustMode: MobileRegistryTrustMode.developmentFixture,
+      );
 }
 
 class _MemoryLocalePreferenceStore implements LocalePreferenceStore {

@@ -310,11 +310,11 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
       const MobileHostSnapshot(
         platform: 'Android test',
-        apiVersion: '7',
+        apiVersion: '8',
         registryRequestIssued: false,
         rustCoreLinked: true,
         rustCoreVersion: '0.1.0-test',
-        rustAbiVersion: 7,
+        rustAbiVersion: 8,
         rustRoundTripVerified: true,
       );
 
@@ -345,6 +345,35 @@ class _FakeMobileHostGateway implements MobileHostGateway {
         stagedVerifiedMediaCount: 0,
         onboardingCursor: onboardingCursor,
       );
+
+  @override
+  Future<MobileRegistryInitAvailability>
+  inspectRegistryInitAvailability() async =>
+      const MobileRegistryInitAvailability(
+        available: false,
+        trustMode: MobileRegistryTrustMode.unavailable,
+        channelId: 'stable',
+        reasonCode: 'TEST_UNAVAILABLE',
+        transportEnabled: false,
+      );
+
+  @override
+  Future<MobileRegistryInitPlan> beginRegistryInit(String channelId) =>
+      throw UnsupportedError('Registry Init is unavailable in this fake');
+
+  @override
+  Future<void> deferRegistryInit({
+    required String operationId,
+    required String manifestDigest,
+  }) => throw UnsupportedError('Registry Init is unavailable in this fake');
+
+  @override
+  Future<MobileRegistryInitPlan> confirmRegistryInit({
+    required String operationId,
+    required String manifestDigest,
+    required MobileRegistryNetworkPolicy networkPolicy,
+    required bool oneTimeNetworkOverride,
+  }) => throw UnsupportedError('Registry Init is unavailable in this fake');
 
   @override
   Future<void> setOnboardingCursor(MobileOnboardingCursor cursor) async {}

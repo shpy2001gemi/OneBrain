@@ -1,7 +1,9 @@
 use crate::{
     run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, ExecutionGrant,
     ExecutionGrantKind, MediaStageReceipt, MobileCoreError, MobileFeatureFlags, NetworkScope,
-    OnboardingCursor, OwnedMediaSummary, RawDraftReceipt, ResourceBudgets, RuntimeServices,
+    OnboardingCursor, OwnedMediaSummary, RawDraftReceipt, RegistryCapacityPlan,
+    RegistryLimitedReceipt, RegistryNetworkPolicy, RegistryOperationRecord, RegistryOperationState,
+    RegistryReleaseCatalogRecord, RegistryTrustProfile, ResourceBudgets, RuntimeServices,
     SecureIdentitySession, SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary,
     TransferLandingRecord, MOBILE_RUNTIME_PROFILE_VERSION,
 };
@@ -9,6 +11,17 @@ use crate::{
 const FOREGROUND_GRANT_ID: &str = "native.foreground";
 const CALLBACK_FENCE_PROBE_NONCE: &str = "mob02.callback-fence.probe";
 const PROBE_HASH: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+const REGISTRY_DIRECT_TRANSFER_WINDOW_BYTES: u64 = 8_388_608;
+const REGISTRY_VERIFICATION_WORKSPACE_BYTES: u64 = 64 * 1024 * 1024;
+const REGISTRY_CATALOG_GROWTH_BYTES: u64 = 8 * 1024 * 1024;
+const REGISTRY_MINIMUM_SAFETY_RESERVE_BYTES: u64 = 1_610_612_736;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegistryInitPlan {
+    pub operation: RegistryOperationRecord,
+    pub release: RegistryReleaseCatalogRecord,
+    pub capacity: RegistryCapacityPlan,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MobileRuntimeSnapshot {
@@ -460,6 +473,117 @@ impl MobileRuntimeFacade {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn prepare_signed_registry_init(
+        &self,
+        channel_id: &str,
+        trust_profile_cbor: &[u8],
+        channel_head_envelope_cbor: &[u8],
+        release_envelope_cbor: &[u8],
+        allocation_unit_bytes: u64,
+        destination_total_usable_bytes: u64,
+        measured_free_bytes: u64,
+    ) -> Result<RegistryInitPlan, MobileCoreError> {
+        let profile = RegistryTrustProfile::from_canonical_cbor(trust_profile_cbor)?;
+        let mut operation = self
+            .store
+            .begin_registry_init(channel_id, &profile, &self.budgets)?;
+        if operation.state == RegistryOperationState::DeferredByUser {
+            operation = self
+                .store
+                .resume_deferred_registry_init(&operation.operation_id)?;
+        }
+        let release = self.store.verify_and_accept_registry_target(
+            &operation.operation_id,
+            &profile,
+            channel_id,
+            channel_head_envelope_cbor,
+            release_envelope_cbor,
+        )?;
+        operation = self
+            .store
+            .registry_operation(&operation.operation_id)?
+            .ok_or_else(|| {
+                MobileCoreError::Storage("Registry Init operation disappeared".into())
+            })?;
+        if operation.state == RegistryOperationState::ManifestVerified {
+            operation = self
+                .store
+                .await_registry_exact_confirmation(&operation.operation_id)?;
+        }
+        let capacity = operation
+            .capacity_plan
+            .clone()
+            .unwrap_or(registry_initial_capacity_plan(
+                &release,
+                allocation_unit_bytes,
+                destination_total_usable_bytes,
+                measured_free_bytes,
+            )?);
+        Ok(RegistryInitPlan {
+            operation,
+            release,
+            capacity,
+        })
+    }
+
+    pub fn defer_registry_init(
+        &self,
+        operation_id: &str,
+        manifest_digest: &str,
+    ) -> Result<RegistryLimitedReceipt, MobileCoreError> {
+        self.store
+            .defer_registry_init(operation_id, manifest_digest)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn confirm_signed_registry_init(
+        &self,
+        operation_id: &str,
+        manifest_digest: &str,
+        trust_profile_cbor: &[u8],
+        network_policy: RegistryNetworkPolicy,
+        one_time_network_override: bool,
+        allocation_unit_bytes: u64,
+        destination_total_usable_bytes: u64,
+        measured_free_bytes: u64,
+    ) -> Result<RegistryInitPlan, MobileCoreError> {
+        let profile = RegistryTrustProfile::from_canonical_cbor(trust_profile_cbor)?;
+        let existing = self
+            .store
+            .registry_operation(operation_id)?
+            .ok_or_else(|| {
+                MobileCoreError::RegistryAdmission("unknown Registry Init operation".into())
+            })?;
+        let release = self
+            .store
+            .registry_release_catalog(&existing.release_id)?
+            .ok_or_else(|| {
+                MobileCoreError::RegistryAdmission(
+                    "verified Registry release lost its durable catalog".into(),
+                )
+            })?;
+        let capacity = registry_initial_capacity_plan(
+            &release,
+            allocation_unit_bytes,
+            destination_total_usable_bytes,
+            measured_free_bytes,
+        )?;
+        let operation = self.store.confirm_registry_init(
+            operation_id,
+            manifest_digest,
+            &profile,
+            network_policy,
+            one_time_network_override,
+            capacity.clone(),
+        )?;
+        Ok(RegistryInitPlan {
+            operation,
+            release,
+            capacity,
+        })
+    }
+
     pub fn unlock_private_node(
         &mut self,
         material: SecurityBootstrapMaterial,
@@ -523,6 +647,29 @@ impl MobileRuntimeFacade {
         self.quiesced = true;
         Ok(())
     }
+}
+
+fn registry_initial_capacity_plan(
+    release: &RegistryReleaseCatalogRecord,
+    allocation_unit_bytes: u64,
+    destination_total_usable_bytes: u64,
+    measured_free_bytes: u64,
+) -> Result<RegistryCapacityPlan, MobileCoreError> {
+    let target_total_alloc_bytes = release.target_total_alloc_bytes(allocation_unit_bytes)?;
+    let safety_reserve_bytes =
+        REGISTRY_MINIMUM_SAFETY_RESERVE_BYTES.max(destination_total_usable_bytes.div_ceil(10));
+    RegistryCapacityPlan::exact_initial(
+        release.publisher_min_additional_free_bytes,
+        target_total_alloc_bytes,
+        release
+            .artifact_total_bytes
+            .min(REGISTRY_DIRECT_TRANSFER_WINDOW_BYTES),
+        REGISTRY_VERIFICATION_WORKSPACE_BYTES,
+        REGISTRY_CATALOG_GROWTH_BYTES,
+        safety_reserve_bytes,
+        destination_total_usable_bytes,
+        measured_free_bytes,
+    )
 }
 
 fn verify_callback_fence(

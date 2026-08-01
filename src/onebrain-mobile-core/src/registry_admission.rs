@@ -346,6 +346,49 @@ impl RegistryCapacityPlan {
     }
 }
 
+impl RegistryReleaseCatalogRecord {
+    /// Return the exact target allocation for the verified manifest on a
+    /// filesystem with the supplied allocation unit.
+    pub fn target_total_alloc_bytes(
+        &self,
+        allocation_unit_bytes: u64,
+    ) -> Result<u64, MobileCoreError> {
+        if allocation_unit_bytes == 0 || allocation_unit_bytes > 1024 * 1024 {
+            return Err(registry_admission(
+                "filesystem allocation unit must be in 1..=1048576 bytes",
+            ));
+        }
+        let manifest = parse_manifest_body(&self.manifest_body_cbor)?;
+        let exact_artifact_total =
+            manifest
+                .artifacts
+                .iter()
+                .try_fold(0u64, |total, artifact| {
+                    total.checked_add(artifact.final_length).ok_or_else(|| {
+                        registry_admission("verified Registry artifact total overflow")
+                    })
+                })?;
+        if exact_artifact_total != self.artifact_total_bytes {
+            return Err(registry_admission(
+                "verified Registry catalog artifact total is inconsistent",
+            ));
+        }
+        manifest.artifacts.iter().try_fold(0u64, |total, artifact| {
+            let blocks = artifact
+                .final_length
+                .checked_add(allocation_unit_bytes - 1)
+                .ok_or_else(|| registry_admission("Registry allocation rounding overflow"))?
+                / allocation_unit_bytes;
+            let allocated = blocks
+                .checked_mul(allocation_unit_bytes)
+                .ok_or_else(|| registry_admission("Registry allocation size overflow"))?;
+            total
+                .checked_add(allocated)
+                .ok_or_else(|| registry_admission("Registry allocation total overflow"))
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RegistryReleaseState {
@@ -1531,6 +1574,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(accepted.state, RegistryReleaseState::ManifestVerified);
+        assert_eq!(accepted.target_total_alloc_bytes(4096).unwrap(), 12_288);
         assert_eq!(
             store
                 .registry_operation(&operation.operation_id)
@@ -1820,6 +1864,17 @@ mod tests {
                 RegistryNetworkPolicy::Unmetered,
                 false,
                 forged,
+            ),
+            Err(MobileCoreError::RegistryAdmission(_))
+        ));
+        assert!(matches!(
+            store.confirm_registry_init(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                &authority.profile,
+                RegistryNetworkPolicy::Unmetered,
+                true,
+                generous_plan(&authority.floor_target),
             ),
             Err(MobileCoreError::RegistryAdmission(_))
         ));

@@ -1,7 +1,7 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "961058da1752cd020235ece5636f73892567cda5cfeaa59812835375339a2896",
+  "authority_set_sha256": "5d72f2cb68f57ca08aca77528011bf4c5b72b91650d208485bb1104291a61830",
   "phase": "feature",
   "work_package": "MOB-05",
   "acknowledged_required_read_set": [
@@ -280,7 +280,7 @@
     {
       "id": "MOB-04-TYPED-HOST-ABI",
       "path": "src/onebrain-mobile/pigeons/mobile_host_api.dart",
-      "proves": "ABI 7 exposes typed onboarding, private-draft, opaque share-spool commands and a typed media-picker request/opaque verified-stage receipt through generated Dart, Kotlin and Swift without paths, keys, database handles, picker URIs or source bytes crossing into Flutter."
+      "proves": "ABI 8 preserves typed onboarding, private-draft, opaque share-spool commands and typed media-picker receipts while adding Registry Init intents; paths, keys, database handles, picker URIs and source bytes still do not cross into Flutter."
     },
     {
       "id": "MOB-04-LIMITED-SHELL",
@@ -300,7 +300,7 @@
     {
       "id": "MOB-04-ANDROID-NATIVE-INTEGRATION",
       "path": "src/onebrain-mobile/integration_test/native_host_bridge_test.dart",
-      "proves": "Android 16 exercises ABI 7, the protected Rust runtime, onboarding cursor, encrypted draft/share-spool/verified-media counts and bounded native operation events."
+      "proves": "Android 16 exercises ABI 8, the protected Rust runtime, onboarding cursor, encrypted draft/share-spool/verified-media counts and bounded native operation events."
     },
     {
       "id": "MOB-04-ANDROID-SHARE-INTENT",
@@ -416,9 +416,34 @@
       "id": "MOB-05A-RUST-DEPENDENCY-ISOLATION",
       "path": "src/onebrain-mobile/compliance/reports/mob05a_rust_dependency_isolation.json",
       "proves": "The MOB-05A Rust graph uses existing CBOR and Unicode packages while still excluding ku-net, node/protocol runtime, concrete LLM, async runtime and HTTP transport crates."
+    },
+    {
+      "id": "MOB-05A-TYPED-REGISTRY-ABI",
+      "path": "src/onebrain-mobile/pigeons/mobile_host_api.dart",
+      "proves": "ABI 8 generates typed Dart, Kotlin and Swift availability, Begin, Defer and Confirm calls plus exact signed-target and P/N/T/W/G/R capacity facts; Flutter never receives a filesystem path, trust byte array, transfer handle or database authority."
+    },
+    {
+      "id": "MOB-05A-EXACT-REVIEW-UI",
+      "path": "src/onebrain-mobile/lib/ui/shared/obm_registry_plan.dart",
+      "proves": "Shared OBM-CMP-OPS-002, OBM-CMP-OPS-003 and OBM-CMP-ACT-003 widgets implement MOB-SCR-INI-001/002 exact review, resource facts and explicit Defer/Confirm transitions in English and Vietnamese without claiming the data is present or transferring."
+    },
+    {
+      "id": "MOB-05A-ANDROID-REGISTRY-INTEGRATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob05a_android_registry_init_integration.json",
+      "proves": "Android 16 x86_64 emulator runs the real Pigeon/Kotlin/JNI/Rust path through signed metadata verification, exact filesystem facts, durable Defer/re-review and capacity admission while transport remains disabled."
+    },
+    {
+      "id": "MOB-05A-DEBUG-FIXTURE-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob05a_android_release_fixture_isolation.json",
+      "proves": "The precomputed public development fixture is confined to the Android debug source set; the three-ABI release APK contains none of its trust, channel-head or release-envelope entries and embeds no production trust profile."
+    },
+    {
+      "id": "MOB-05A-ANDROID-RELEASE-INVENTORY",
+      "path": "src/onebrain-mobile/compliance/reports/mob05a_android_release_package_inventory.json",
+      "proves": "The ABI-8 armeabi-v7a/arm64-v8a/x86_64 release APK has a matching Rust bridge for every Flutter runtime ABI and zero prohibited Registry, model, database, archive or other initial data payloads."
     }
   ],
   "deviations": [],
   "last_reviewed": "2026-08-01",
-  "notes": "MOB-05A is active. The first Rust-core slice implements exact signed Registry trust parsing, role-separated envelope verification, durable init intent, atomic manifest/high-water/revocation acceptance, Defer/re-resolve, exact capacity/network confirmation and a hard no-transfer-before-admission fence against small signed fixtures. It does not yet embed an owner-issued production trust profile, expose the flow through ABI 8/UI, request Registry network data, schedule platform transfer, download large artifacts, activate a release or claim ReadyOffline; those remain the next MOB-05A/MOB-05B/MOB-05C slices. Shared P5 and Concept Registry foundations remain integrated through cbe5495/d9270f7, while the abandoned 72-hour run, multi-host canary, full-size target-filesystem qualification, physical-device gates and MOB-08 are still open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding or product-readiness claim is made."
+  "notes": "MOB-05A is active. Rust now owns deterministic signed Registry trust/admission, rollback high-water, durable Begin/Defer/re-review/Confirm and exact target-filesystem capacity policy. ABI 8 and MOB-SCR-INI-001/002 expose typed availability and exact review through shared widgets; Android 16 emulator evidence covers the real generated/native/Rust path. The signed development fixture is debug-source-set-only, clearly labelled and transport-disabled; release builds contain neither it nor an owner-issued production trust profile and therefore fail safe as unavailable. MOB-05B still must add consent-bound platform transfer, live network/power policy and kill-safe scheduling; MOB-05C must qualify and activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. The abandoned 72-hour P5 run, multi-host canary, full-size target-filesystem qualification, physical-device gates and MOB-08 remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding, ReadyOffline or product-readiness claim is made."
 }

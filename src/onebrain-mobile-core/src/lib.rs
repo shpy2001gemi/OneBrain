@@ -33,7 +33,7 @@ pub use bootstrap::{
 };
 pub use draft::{PrivateDraftKey, PrivateDraftStore, RawDraftReceipt, ShareSpoolSummary};
 pub use error::MobileCoreError;
-pub use facade::{MobileRuntimeFacade, MobileRuntimeSnapshot};
+pub use facade::{MobileRuntimeFacade, MobileRuntimeSnapshot, RegistryInitPlan};
 pub use local_kql::{run_signed_local_kql_smoke, LocalKqlSmoke};
 pub use media_staging::{
     MediaStageReceipt, MediaStageState, MediaStagingKey, MediaStagingStore, OwnedMediaSummary,

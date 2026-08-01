@@ -8,19 +8,22 @@ use std::{
     ffi::c_char,
     path::PathBuf,
     slice, str,
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex, OnceLock,
+    },
 };
 
 #[cfg(target_os = "android")]
 use onebrain_mobile_core::OwnedMediaSummary;
 use onebrain_mobile_core::{
     ActivationPhase, AppLockPolicy, MobileFeatureFlags, MobileRuntimeFacade, MobileRuntimeSnapshot,
-    OnboardingCursor, ResourceBudgets, RuntimeServices, SecurityBootstrapMaterial,
-    SecuritySessionState,
+    OnboardingCursor, RegistryInitPlan, RegistryNetworkPolicy, RegistryOperationState,
+    ResourceBudgets, RuntimeServices, SecurityBootstrapMaterial, SecuritySessionState,
 };
 
 /// Stable ABI revision understood by the current Swift/Kotlin adapters.
-pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 7;
+pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 8;
 
 pub const OB_MOBILE_RUNTIME_OK: u32 = 0;
 pub const OB_MOBILE_RUNTIME_INVALID_PATH: u32 = 1;
@@ -33,10 +36,107 @@ pub const OB_MOBILE_RUNTIME_INVALID_ONBOARDING_CURSOR: u32 = 7;
 pub const OB_MOBILE_RUNTIME_INVALID_SHARE_SPOOL: u32 = 8;
 pub const OB_MOBILE_RUNTIME_SHARE_SPOOL_NOT_FOUND: u32 = 9;
 pub const OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE: u32 = 10;
+pub const OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT: u32 = 11;
 
 const CORE_VERSION: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
 static RUNTIME: OnceLock<Mutex<Option<MobileRuntimeFacade>>> = OnceLock::new();
+static REGISTRY_REQUEST_ISSUED: AtomicBool = AtomicBool::new(false);
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ObMobileRegistryPlan {
+    pub status_code: u32,
+    pub operation_id: [u8; 129],
+    pub operation_id_len: u32,
+    pub state_code: u32,
+    pub channel_id: [u8; 65],
+    pub channel_id_len: u32,
+    pub release_id: [u8; 65],
+    pub release_id_len: u32,
+    pub manifest_digest: [u8; 65],
+    pub manifest_digest_len: u32,
+    pub trust_profile_digest: [u8; 65],
+    pub trust_profile_digest_len: u32,
+    pub head_generation: u64,
+    pub release_sequence: u64,
+    pub publisher_min_additional_free_bytes: u64,
+    pub artifact_total_bytes: u64,
+    pub target_total_alloc_bytes: u64,
+    pub transfer_initial_bytes: u64,
+    pub verification_workspace_bytes: u64,
+    pub catalog_growth_bytes: u64,
+    pub safety_reserve_bytes: u64,
+    pub destination_total_usable_bytes: u64,
+    pub measured_free_bytes: u64,
+    pub initial_required_free_bytes: u64,
+    pub admitted: u8,
+}
+
+impl ObMobileRegistryPlan {
+    const fn error(status_code: u32) -> Self {
+        Self {
+            status_code,
+            operation_id: [0; 129],
+            operation_id_len: 0,
+            state_code: 0,
+            channel_id: [0; 65],
+            channel_id_len: 0,
+            release_id: [0; 65],
+            release_id_len: 0,
+            manifest_digest: [0; 65],
+            manifest_digest_len: 0,
+            trust_profile_digest: [0; 65],
+            trust_profile_digest_len: 0,
+            head_generation: 0,
+            release_sequence: 0,
+            publisher_min_additional_free_bytes: 0,
+            artifact_total_bytes: 0,
+            target_total_alloc_bytes: 0,
+            transfer_initial_bytes: 0,
+            verification_workspace_bytes: 0,
+            catalog_growth_bytes: 0,
+            safety_reserve_bytes: 0,
+            destination_total_usable_bytes: 0,
+            measured_free_bytes: 0,
+            initial_required_free_bytes: 0,
+            admitted: 0,
+        }
+    }
+
+    fn from_core(plan: RegistryInitPlan) -> Self {
+        let mut bridged = Self::error(OB_MOBILE_RUNTIME_OK);
+        bridged.operation_id_len =
+            copy_utf8(&mut bridged.operation_id, &plan.operation.operation_id);
+        bridged.state_code = registry_state_code(plan.operation.state);
+        bridged.channel_id_len = copy_utf8(
+            &mut bridged.channel_id,
+            plan.operation.channel_id.as_deref().unwrap_or(""),
+        );
+        bridged.release_id_len = copy_utf8(&mut bridged.release_id, &plan.release.release_id);
+        bridged.manifest_digest_len =
+            copy_utf8(&mut bridged.manifest_digest, &plan.release.manifest_digest);
+        bridged.trust_profile_digest_len = copy_utf8(
+            &mut bridged.trust_profile_digest,
+            &plan.release.trust_profile_digest,
+        );
+        bridged.head_generation = plan.operation.head_generation.unwrap_or(0);
+        bridged.release_sequence = plan.release.release_sequence;
+        bridged.publisher_min_additional_free_bytes =
+            plan.capacity.publisher_min_additional_free_bytes;
+        bridged.artifact_total_bytes = plan.release.artifact_total_bytes;
+        bridged.target_total_alloc_bytes = plan.capacity.target_total_alloc_bytes;
+        bridged.transfer_initial_bytes = plan.capacity.transfer_initial_bytes;
+        bridged.verification_workspace_bytes = plan.capacity.verification_workspace_bytes;
+        bridged.catalog_growth_bytes = plan.capacity.catalog_growth_bytes;
+        bridged.safety_reserve_bytes = plan.capacity.safety_reserve_bytes;
+        bridged.destination_total_usable_bytes = plan.capacity.destination_total_usable_bytes;
+        bridged.measured_free_bytes = plan.capacity.measured_free_bytes;
+        bridged.initial_required_free_bytes = plan.capacity.initial_required_free_bytes;
+        bridged.admitted = bool_byte(plan.capacity.admitted());
+        bridged
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -286,7 +386,137 @@ pub extern "C" fn ob_mobile_bridge_core_version() -> *const c_char {
 /// Registry transfer authority remains disabled until the explicit Init slice.
 #[unsafe(no_mangle)]
 pub extern "C" fn ob_mobile_bridge_registry_request_issued() -> u8 {
-    0
+    bool_byte(REGISTRY_REQUEST_ISSUED.load(Ordering::Acquire))
+}
+
+/// Resolve and verify signed Registry metadata, then return an exact local
+/// capacity plan. This does not submit or transfer any Registry artifact.
+///
+/// # Safety
+///
+/// Every pointer must reference its declared readable byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_prepare_registry_init_signed(
+    channel_id: *const u8,
+    channel_id_len: usize,
+    trust_profile_cbor: *const u8,
+    trust_profile_cbor_len: usize,
+    channel_head_envelope_cbor: *const u8,
+    channel_head_envelope_cbor_len: usize,
+    release_envelope_cbor: *const u8,
+    release_envelope_cbor_len: usize,
+    allocation_unit_bytes: u64,
+    destination_total_usable_bytes: u64,
+    measured_free_bytes: u64,
+) -> ObMobileRegistryPlan {
+    let Some(channel_id) = (unsafe { parse_bounded_utf8(channel_id, channel_id_len, 64) }) else {
+        return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(trust_profile) =
+        (unsafe { parse_bounded_bytes(trust_profile_cbor, trust_profile_cbor_len, 64 * 1024) })
+    else {
+        return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(channel_head) = (unsafe {
+        parse_bounded_bytes(
+            channel_head_envelope_cbor,
+            channel_head_envelope_cbor_len,
+            64 * 1024,
+        )
+    }) else {
+        return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(release) = (unsafe {
+        parse_bounded_bytes(
+            release_envelope_cbor,
+            release_envelope_cbor_len,
+            1024 * 1024 + 1024,
+        )
+    }) else {
+        return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    prepare_registry_init(
+        channel_id,
+        trust_profile,
+        channel_head,
+        release,
+        allocation_unit_bytes,
+        destination_total_usable_bytes,
+        measured_free_bytes,
+    )
+}
+
+/// Persist a Limited-mode receipt bound to the exact reviewed manifest.
+///
+/// # Safety
+///
+/// Both pointers must reference their declared readable UTF-8 byte lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_defer_registry_init_utf8(
+    operation_id: *const u8,
+    operation_id_len: usize,
+    manifest_digest: *const u8,
+    manifest_digest_len: usize,
+) -> u32 {
+    let Some(operation_id) = (unsafe { parse_bounded_utf8(operation_id, operation_id_len, 128) })
+    else {
+        return OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT;
+    };
+    let Some(manifest_digest) =
+        (unsafe { parse_bounded_utf8(manifest_digest, manifest_digest_len, 64) })
+    else {
+        return OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT;
+    };
+    defer_registry_init(operation_id, manifest_digest)
+}
+
+/// Recheck native storage facts and bind exact user confirmation in Rust.
+/// This admits capacity only; transfer submission remains a later slice.
+///
+/// # Safety
+///
+/// Every pointer must reference its declared readable byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_confirm_registry_init_signed(
+    operation_id: *const u8,
+    operation_id_len: usize,
+    manifest_digest: *const u8,
+    manifest_digest_len: usize,
+    trust_profile_cbor: *const u8,
+    trust_profile_cbor_len: usize,
+    network_policy_code: u32,
+    one_time_network_override: u8,
+    allocation_unit_bytes: u64,
+    destination_total_usable_bytes: u64,
+    measured_free_bytes: u64,
+) -> ObMobileRegistryPlan {
+    let Some(operation_id) = (unsafe { parse_bounded_utf8(operation_id, operation_id_len, 128) })
+    else {
+        return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(manifest_digest) =
+        (unsafe { parse_bounded_utf8(manifest_digest, manifest_digest_len, 64) })
+    else {
+        return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(trust_profile) =
+        (unsafe { parse_bounded_bytes(trust_profile_cbor, trust_profile_cbor_len, 64 * 1024) })
+    else {
+        return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(network_policy) = registry_network_policy(network_policy_code) else {
+        return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    confirm_registry_init(
+        operation_id,
+        manifest_digest,
+        trust_profile,
+        network_policy,
+        one_time_network_override != 0,
+        allocation_unit_bytes,
+        destination_total_usable_bytes,
+        measured_free_bytes,
+    )
 }
 
 /// Bounded deterministic call used to verify the complete generated call path.
@@ -692,6 +922,101 @@ unsafe fn parse_bounded_utf8<'a>(
     str::from_utf8(unsafe { slice::from_raw_parts(value, value_len) }).ok()
 }
 
+unsafe fn parse_bounded_bytes<'a>(
+    value: *const u8,
+    value_len: usize,
+    max_len: usize,
+) -> Option<&'a [u8]> {
+    if value.is_null() || value_len == 0 || value_len > max_len {
+        return None;
+    }
+    Some(unsafe { slice::from_raw_parts(value, value_len) })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn prepare_registry_init(
+    channel_id: &str,
+    trust_profile_cbor: &[u8],
+    channel_head_envelope_cbor: &[u8],
+    release_envelope_cbor: &[u8],
+    allocation_unit_bytes: u64,
+    destination_total_usable_bytes: u64,
+    measured_free_bytes: u64,
+) -> ObMobileRegistryPlan {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_LOCK_POISONED),
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.prepare_signed_registry_init(
+        channel_id,
+        trust_profile_cbor,
+        channel_head_envelope_cbor,
+        release_envelope_cbor,
+        allocation_unit_bytes,
+        destination_total_usable_bytes,
+        measured_free_bytes,
+    ) {
+        Ok(plan) => {
+            REGISTRY_REQUEST_ISSUED.store(true, Ordering::Release);
+            ObMobileRegistryPlan::from_core(plan)
+        }
+        Err(_) => ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn defer_registry_init(operation_id: &str, manifest_digest: &str) -> u32 {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return OB_MOBILE_RUNTIME_LOCK_POISONED,
+    };
+    let Some(facade) = guard.as_ref() else {
+        return OB_MOBILE_RUNTIME_NOT_OPEN;
+    };
+    match facade.defer_registry_init(operation_id, manifest_digest) {
+        Ok(_) => OB_MOBILE_RUNTIME_OK,
+        Err(_) => OB_MOBILE_RUNTIME_CORE_ERROR,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn confirm_registry_init(
+    operation_id: &str,
+    manifest_digest: &str,
+    trust_profile_cbor: &[u8],
+    network_policy: RegistryNetworkPolicy,
+    one_time_network_override: bool,
+    allocation_unit_bytes: u64,
+    destination_total_usable_bytes: u64,
+    measured_free_bytes: u64,
+) -> ObMobileRegistryPlan {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_LOCK_POISONED),
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.confirm_signed_registry_init(
+        operation_id,
+        manifest_digest,
+        trust_profile_cbor,
+        network_policy,
+        one_time_network_override,
+        allocation_unit_bytes,
+        destination_total_usable_bytes,
+        measured_free_bytes,
+    ) {
+        Ok(plan) => ObMobileRegistryPlan::from_core(plan),
+        Err(_) => ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
 fn runtime_snapshot() -> ObMobileRuntimeSnapshot {
     let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
     let guard = match runtime.lock() {
@@ -917,6 +1242,51 @@ const fn bool_byte(value: bool) -> u8 {
     }
 }
 
+fn copy_utf8<const N: usize>(destination: &mut [u8; N], value: &str) -> u32 {
+    let bytes = value.as_bytes();
+    let length = bytes.len().min(N.saturating_sub(1));
+    destination[..length].copy_from_slice(&bytes[..length]);
+    u32::try_from(length).unwrap_or(0)
+}
+
+const fn registry_network_policy(code: u32) -> Option<RegistryNetworkPolicy> {
+    match code {
+        0 => Some(RegistryNetworkPolicy::WifiOnly),
+        1 => Some(RegistryNetworkPolicy::Unmetered),
+        2 => Some(RegistryNetworkPolicy::AnyNetwork),
+        _ => None,
+    }
+}
+
+const fn registry_state_code(state: RegistryOperationState) -> u32 {
+    match state {
+        RegistryOperationState::IntentRecorded => 0,
+        RegistryOperationState::ResolvingHead => 1,
+        RegistryOperationState::HeadVerified => 2,
+        RegistryOperationState::ResolvingManifest => 3,
+        RegistryOperationState::ManifestVerified => 4,
+        RegistryOperationState::AwaitingExactConfirm => 5,
+        RegistryOperationState::DeferredByUser => 6,
+        RegistryOperationState::AdmissionPending => 7,
+        RegistryOperationState::CapacityAdmitted => 8,
+        RegistryOperationState::SchedulePrepared => 9,
+        RegistryOperationState::TransferSubmitted => 10,
+        RegistryOperationState::TransferAdopted => 11,
+        RegistryOperationState::TransferQueued => 12,
+        RegistryOperationState::Downloading => 13,
+        RegistryOperationState::BytesComplete => 14,
+        RegistryOperationState::WholeArtifactsVerified => 15,
+        RegistryOperationState::QuerySmokePassed => 16,
+        RegistryOperationState::DirectoryCommitted => 17,
+        RegistryOperationState::PointerCommitted => 18,
+        RegistryOperationState::HealthPending => 19,
+        RegistryOperationState::Completed => 20,
+        RegistryOperationState::Waiting => 21,
+        RegistryOperationState::Failed => 22,
+        RegistryOperationState::Cancelled => 23,
+    }
+}
+
 const fn activation_phase_code(phase: ActivationPhase) -> u32 {
     match phase {
         ActivationPhase::Dormant => 0,
@@ -937,13 +1307,14 @@ mod android {
     };
 
     use super::{
-        abort_media_stage, append_media_stage, encode_owned_media, enqueue_shared_text,
-        finish_media_stage, finish_owned_media_import, import_shared_text,
-        ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
+        abort_media_stage, append_media_stage, confirm_registry_init, defer_registry_init,
+        encode_owned_media, enqueue_shared_text, finish_media_stage, finish_owned_media_import,
+        import_shared_text, ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
         ob_mobile_bridge_round_trip, ob_mobile_runtime_lock_private_node,
         ob_mobile_runtime_set_onboarding_cursor, open_runtime, open_runtime_secured, owned_media,
-        owned_media_count, pending_share_spool_at, runtime_snapshot, save_raw_text_draft,
-        start_media_stage, CORE_VERSION,
+        owned_media_count, pending_share_spool_at, prepare_registry_init, registry_network_policy,
+        runtime_snapshot, save_raw_text_draft, start_media_stage, ObMobileRegistryPlan,
+        CORE_VERSION, OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT, OB_MOBILE_RUNTIME_OK,
     };
     use onebrain_mobile_core::SecurityBootstrapMaterial;
     use zeroize::Zeroize;
@@ -1020,6 +1391,128 @@ mod android {
     #[jni_mangle("org.onebrain.onebrain_mobile.RustMobileBridge", "nativeRuntimeLock")]
     pub fn native_runtime_lock(_env: EnvUnowned<'_>, _class: JClass<'_>) -> jint {
         ob_mobile_runtime_lock_private_node() as jint
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimePrepareRegistryInit"
+    )]
+    #[allow(clippy::too_many_arguments)]
+    pub fn native_runtime_prepare_registry_init<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        channel_id: JString<'caller>,
+        trust_profile: JByteArray<'caller>,
+        channel_head: JByteArray<'caller>,
+        release: JByteArray<'caller>,
+        allocation_unit_bytes: jlong,
+        destination_total_usable_bytes: jlong,
+        measured_free_bytes: jlong,
+    ) -> JString<'caller> {
+        let channel_id = unowned_env
+            .with_env(|env| channel_id.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let trust_profile = unowned_env
+            .with_env(|env| env.convert_byte_array(&trust_profile))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let channel_head = unowned_env
+            .with_env(|env| env.convert_byte_array(&channel_head))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let release = unowned_env
+            .with_env(|env| env.convert_byte_array(&release))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let plan = if allocation_unit_bytes <= 0
+            || destination_total_usable_bytes <= 0
+            || measured_free_bytes < 0
+        {
+            ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT)
+        } else {
+            prepare_registry_init(
+                &channel_id,
+                &trust_profile,
+                &channel_head,
+                &release,
+                allocation_unit_bytes as u64,
+                destination_total_usable_bytes as u64,
+                measured_free_bytes as u64,
+            )
+        };
+        let encoded = encode_registry_plan(&plan);
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeDeferRegistryInit"
+    )]
+    pub fn native_runtime_defer_registry_init<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        operation_id: JString<'caller>,
+        manifest_digest: JString<'caller>,
+    ) -> jint {
+        let operation_id = unowned_env
+            .with_env(|env| operation_id.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let manifest_digest = unowned_env
+            .with_env(|env| manifest_digest.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        defer_registry_init(&operation_id, &manifest_digest) as jint
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeConfirmRegistryInit"
+    )]
+    #[allow(clippy::too_many_arguments)]
+    pub fn native_runtime_confirm_registry_init<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        operation_id: JString<'caller>,
+        manifest_digest: JString<'caller>,
+        trust_profile: JByteArray<'caller>,
+        network_policy_code: jint,
+        one_time_network_override: jboolean,
+        allocation_unit_bytes: jlong,
+        destination_total_usable_bytes: jlong,
+        measured_free_bytes: jlong,
+    ) -> JString<'caller> {
+        let operation_id = unowned_env
+            .with_env(|env| operation_id.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let manifest_digest = unowned_env
+            .with_env(|env| manifest_digest.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let trust_profile = unowned_env
+            .with_env(|env| env.convert_byte_array(&trust_profile))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let plan = registry_network_policy(network_policy_code as u32)
+            .filter(|_| {
+                allocation_unit_bytes > 0
+                    && destination_total_usable_bytes > 0
+                    && measured_free_bytes >= 0
+            })
+            .map_or_else(
+                || ObMobileRegistryPlan::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT),
+                |network_policy| {
+                    confirm_registry_init(
+                        &operation_id,
+                        &manifest_digest,
+                        &trust_profile,
+                        network_policy,
+                        one_time_network_override != JNI_FALSE,
+                        allocation_unit_bytes as u64,
+                        destination_total_usable_bytes as u64,
+                        measured_free_bytes as u64,
+                    )
+                },
+            );
+        let encoded = encode_registry_plan(&plan);
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
     }
 
     #[jni_mangle(
@@ -1459,6 +1952,42 @@ mod android {
         "nativeRuntimeRedactedHistoryReady",
         redacted_history_ready
     );
+
+    fn encode_registry_plan(plan: &ObMobileRegistryPlan) -> String {
+        if plan.status_code != OB_MOBILE_RUNTIME_OK {
+            return format!("ERR:{}", plan.status_code);
+        }
+        let operation_id =
+            std::str::from_utf8(&plan.operation_id[..plan.operation_id_len as usize]).unwrap_or("");
+        let channel_id =
+            std::str::from_utf8(&plan.channel_id[..plan.channel_id_len as usize]).unwrap_or("");
+        let release_id =
+            std::str::from_utf8(&plan.release_id[..plan.release_id_len as usize]).unwrap_or("");
+        let manifest_digest =
+            std::str::from_utf8(&plan.manifest_digest[..plan.manifest_digest_len as usize])
+                .unwrap_or("");
+        let trust_profile_digest = std::str::from_utf8(
+            &plan.trust_profile_digest[..plan.trust_profile_digest_len as usize],
+        )
+        .unwrap_or("");
+        format!(
+            "{operation_id}|{}|{channel_id}|{release_id}|{manifest_digest}|{trust_profile_digest}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            plan.state_code,
+            plan.head_generation,
+            plan.release_sequence,
+            plan.publisher_min_additional_free_bytes,
+            plan.artifact_total_bytes,
+            plan.target_total_alloc_bytes,
+            plan.transfer_initial_bytes,
+            plan.verification_workspace_bytes,
+            plan.catalog_growth_bytes,
+            plan.safety_reserve_bytes,
+            plan.destination_total_usable_bytes,
+            plan.measured_free_bytes,
+            plan.initial_required_free_bytes,
+            plan.admitted,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -1469,7 +1998,7 @@ mod tests {
 
     #[test]
     fn abi_and_version_are_bounded_and_stable() {
-        assert_eq!(ob_mobile_bridge_abi_version(), 7);
+        assert_eq!(ob_mobile_bridge_abi_version(), 8);
         let version = unsafe { CStr::from_ptr(ob_mobile_bridge_core_version()) };
         assert_eq!(version.to_str().expect("version UTF-8"), "0.1.0");
         assert!(version.to_bytes().len() <= 32);

@@ -3,7 +3,7 @@ import Flutter
 import Security
 import UIKit
 
-private let hostApiVersion = "7"
+private let hostApiVersion = "8"
 private let maxFeasibilityDelayMilliseconds: Int64 = 30_000
 private let rustRoundTripNonce: UInt64 = 0x4F_42_4D_30_31
 private let securityMaterialBytes = 192
@@ -206,6 +206,55 @@ private final class IOSMobileHost: MobileHostApi {
     self.events = events
     self.dataRoot = dataRoot
     self.securityMaterialStore = securityMaterialStore
+  }
+
+  func inspectRegistryInitAvailability(
+    completion: @escaping (Result<HostRegistryInitAvailability, Error>) -> Void
+  ) {
+    completion(
+      .success(
+        HostRegistryInitAvailability(
+          available: false,
+          trustMode: .unavailable,
+          channelId: "stable",
+          reasonCode: "PRODUCTION_TRUST_PROFILE_UNAVAILABLE",
+          transportEnabled: false
+        )
+      )
+    )
+  }
+
+  func beginRegistryInit(
+    channelId: String,
+    completion: @escaping (Result<HostRegistryInitPlan, Error>) -> Void
+  ) {
+    completion(.failure(registryTrustUnavailableError()))
+  }
+
+  func deferRegistryInit(
+    operationId: String,
+    manifestDigest: String,
+    completion: @escaping (Result<Bool, Error>) -> Void
+  ) {
+    completion(.failure(registryTrustUnavailableError()))
+  }
+
+  func confirmRegistryInit(
+    operationId: String,
+    manifestDigest: String,
+    networkPolicy: HostRegistryNetworkPolicy,
+    oneTimeNetworkOverride: Bool,
+    completion: @escaping (Result<HostRegistryInitPlan, Error>) -> Void
+  ) {
+    completion(.failure(registryTrustUnavailableError()))
+  }
+
+  private func registryTrustUnavailableError() -> PigeonError {
+    PigeonError(
+      code: "REGISTRY_TRUST_UNAVAILABLE",
+      message: "No production Registry trust profile is embedded in this build",
+      details: nil
+    )
   }
 
   func inspectRuntimeProfile(

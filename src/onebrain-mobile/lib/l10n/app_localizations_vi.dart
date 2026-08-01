@@ -258,7 +258,7 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get initBody =>
-      'Chưa có yêu cầu Registry nào được gửi. MOB-05 sẽ phân giải target đã ký và hiển thị byte, dung lượng, mạng và năng lượng chính xác trước khi tải lớn.';
+      'Phân giải target đã ký và xem chính xác dung lượng, mạng trước khi bắt đầu bất kỳ lượt tải lớn nào.';
 
   @override
   String get initBoundaryTitle => 'Tải sau khi app chạy';
@@ -272,7 +272,129 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get initUnavailableReason =>
-      'Kế hoạch và truyền tải Registry đã ký chưa hoạt động trong bản build này.';
+      'Bản build này chưa có trust profile Registry production đã được phê duyệt.';
+
+  @override
+  String get initDevelopmentFixtureTitle => 'Fixture phát triển';
+
+  @override
+  String get initDevelopmentFixtureBody =>
+      'Fixture đã ký này chỉ dùng trên emulator để test admission. Đây không phải dữ liệu Concept production và không thể bắt đầu truyền tải.';
+
+  @override
+  String get initPlanTitle => 'Kế hoạch Init chính xác';
+
+  @override
+  String get initPlanSubtitle =>
+      'Target và publisher floor đã được ký. Thông tin lưu trữ đến từ filesystem đích.';
+
+  @override
+  String get initChannelLabel => 'Kênh';
+
+  @override
+  String get initReleaseLabel => 'Bản phát hành';
+
+  @override
+  String get initManifestLabel => 'Manifest';
+
+  @override
+  String get initHeadGenerationLabel => 'Thế hệ head';
+
+  @override
+  String get initReleaseSequenceLabel => 'Thứ tự bản phát hành';
+
+  @override
+  String get initPublisherFloorLabel => 'Ngưỡng publisher (P)';
+
+  @override
+  String get initArtifactBytesLabel => 'Artifact đã ký';
+
+  @override
+  String get initTargetAllocationLabel => 'Cấp phát target (N)';
+
+  @override
+  String get initTransferPeakLabel => 'Đỉnh truyền tải (T)';
+
+  @override
+  String get initVerificationWorkspaceLabel => 'Vùng xác minh (W)';
+
+  @override
+  String get initCatalogGrowthLabel => 'Tăng trưởng catalog (G)';
+
+  @override
+  String get initSafetyReserveLabel => 'Dự phòng an toàn (R)';
+
+  @override
+  String get initResourceFactsTitle => 'Thông tin bộ nhớ đích';
+
+  @override
+  String get initAvailableBytesLabel => 'Đang khả dụng';
+
+  @override
+  String get initRequiredBytesLabel => 'Cần trước khi bắt đầu';
+
+  @override
+  String get initVolumeCapacityLabel => 'Dung lượng volume';
+
+  @override
+  String get initCapacityReady => 'Đã đạt kiểm tra dung lượng';
+
+  @override
+  String get initCapacityInsufficient => 'Cần giải phóng thêm dung lượng';
+
+  @override
+  String get initNetworkPolicyTitle => 'Chính sách mạng';
+
+  @override
+  String get initWifiOnlyPolicy => 'Chỉ Wi-Fi';
+
+  @override
+  String get initUnmeteredPolicy => 'Mạng không tính dung lượng';
+
+  @override
+  String get initAnyNetworkPolicy => 'Mọi mạng';
+
+  @override
+  String get initOneTimeOverrideLabel =>
+      'Cho phép riêng lượt Init này theo chính sách mạng đã chọn';
+
+  @override
+  String get initDeferAction => 'Để sau và dùng chế độ Giới hạn';
+
+  @override
+  String get initConfirmAction => 'Xác nhận kế hoạch chính xác';
+
+  @override
+  String get initPlanError =>
+      'Không thể chuẩn bị kế hoạch Init đã ký. Chưa bắt đầu truyền tải.';
+
+  @override
+  String get initErrorTitle => 'Init cần được xử lý';
+
+  @override
+  String get initDeferError => 'Không thể lưu receipt cho chế độ Giới hạn.';
+
+  @override
+  String get initConfirmError =>
+      'Xác nhận thất bại khi kiểm tra lại dung lượng thực tế. Chưa bắt đầu truyền tải.';
+
+  @override
+  String get initAdmittedTitle => 'Đã admission dung lượng';
+
+  @override
+  String get initAdmittedBody =>
+      'Rust đã ràng buộc manifest, trust profile, kế hoạch lưu trữ và chính sách mạng chính xác. Truyền tải vẫn tắt trong MOB-05A.';
+
+  @override
+  String get initWaitingStorageTitle => 'Đang chờ dung lượng';
+
+  @override
+  String get initWaitingStorageBody =>
+      'Kế hoạch chính xác đã được lưu bền vững, nhưng dung lượng trống hiện thấp hơn mức cần thiết. Chưa có byte nào được lên lịch.';
+
+  @override
+  String get initTransportGated =>
+      'Truyền tải chưa được bật trong lát cắt build này.';
 
   @override
   String get homeTitle => 'Trang chủ';

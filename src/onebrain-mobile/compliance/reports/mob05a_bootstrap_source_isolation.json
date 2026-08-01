@@ -1,13 +1,13 @@
 {
   "files_scanned": {
-    "dart": 39,
+    "dart": 40,
     "kotlin": 4,
     "rust": 14,
     "swift": 3
   },
   "forbidden_transport_reference_count": 0,
   "format": "onebrain.mobile.bootstrap-source-isolation/1",
-  "generated_at": "2026-08-01T15:48:46.674057+00:00",
+  "generated_at": "2026-08-01T16:38:34.481400+00:00",
   "limitations": "Static transport isolation complements the Android release permission proof. MOB-05B consent-bound Registry transport must replace this foundation gate with packet and scheduler tests.",
   "scope": "MOB-05A BootstrapOnly app, signed trust/admission core and Limited shell",
   "violations": []

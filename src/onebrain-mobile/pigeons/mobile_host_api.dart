@@ -149,6 +149,74 @@ class HostOwnedMediaSummary {
 
 enum HostOperationEventKind { started, cancelled, completed }
 
+enum HostRegistryTrustMode { unavailable, developmentFixture, production }
+
+enum HostRegistryNetworkPolicy { wifiOnly, unmetered, anyNetwork }
+
+class HostRegistryInitAvailability {
+  HostRegistryInitAvailability({
+    required this.available,
+    required this.trustMode,
+    required this.channelId,
+    required this.reasonCode,
+    required this.transportEnabled,
+  });
+
+  bool available;
+  HostRegistryTrustMode trustMode;
+  String channelId;
+  String reasonCode;
+  bool transportEnabled;
+}
+
+class HostRegistryInitPlan {
+  HostRegistryInitPlan({
+    required this.operationId,
+    required this.stateCode,
+    required this.channelId,
+    required this.releaseId,
+    required this.manifestDigest,
+    required this.trustProfileDigest,
+    required this.headGeneration,
+    required this.releaseSequence,
+    required this.publisherMinAdditionalFreeBytes,
+    required this.artifactTotalBytes,
+    required this.targetTotalAllocBytes,
+    required this.transferInitialBytes,
+    required this.verificationWorkspaceBytes,
+    required this.catalogGrowthBytes,
+    required this.safetyReserveBytes,
+    required this.destinationTotalUsableBytes,
+    required this.measuredFreeBytes,
+    required this.initialRequiredFreeBytes,
+    required this.admitted,
+    required this.transportEnabled,
+    required this.trustMode,
+  });
+
+  String operationId;
+  int stateCode;
+  String channelId;
+  String releaseId;
+  String manifestDigest;
+  String trustProfileDigest;
+  int headGeneration;
+  int releaseSequence;
+  int publisherMinAdditionalFreeBytes;
+  int artifactTotalBytes;
+  int targetTotalAllocBytes;
+  int transferInitialBytes;
+  int verificationWorkspaceBytes;
+  int catalogGrowthBytes;
+  int safetyReserveBytes;
+  int destinationTotalUsableBytes;
+  int measuredFreeBytes;
+  int initialRequiredFreeBytes;
+  bool admitted;
+  bool transportEnabled;
+  HostRegistryTrustMode trustMode;
+}
+
 class HostOperationEvent {
   HostOperationEvent({
     required this.operationId,
@@ -168,6 +236,23 @@ abstract class MobileHostApi {
 
   @async
   HostRuntimeSnapshot inspectRuntimeProfile();
+
+  @async
+  HostRegistryInitAvailability inspectRegistryInitAvailability();
+
+  @async
+  HostRegistryInitPlan beginRegistryInit(String channelId);
+
+  @async
+  bool deferRegistryInit(String operationId, String manifestDigest);
+
+  @async
+  HostRegistryInitPlan confirmRegistryInit(
+    String operationId,
+    String manifestDigest,
+    HostRegistryNetworkPolicy networkPolicy,
+    bool oneTimeNetworkOverride,
+  );
 
   @async
   HostRawDraftReceipt saveRawTextDraft(String contentLanguage, String content);

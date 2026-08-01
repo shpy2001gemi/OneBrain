@@ -258,7 +258,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get initBody =>
-      'No Registry request has been made. MOB-05 will resolve the signed target and show exact bytes, capacity, network and energy facts before any large transfer.';
+      'Resolve the signed target and review exact storage and network facts before any large transfer.';
 
   @override
   String get initBoundaryTitle => 'Post-launch download';
@@ -272,7 +272,129 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get initUnavailableReason =>
-      'Signed Registry planning and transfer are not active in this build.';
+      'No approved production Registry trust profile is available in this build.';
+
+  @override
+  String get initDevelopmentFixtureTitle => 'Development fixture';
+
+  @override
+  String get initDevelopmentFixtureBody =>
+      'This emulator-only signed fixture tests admission. It is not production Concept data and cannot start a transfer.';
+
+  @override
+  String get initPlanTitle => 'Exact Init plan';
+
+  @override
+  String get initPlanSubtitle =>
+      'The target and publisher floor are signed. Storage facts come from the destination filesystem.';
+
+  @override
+  String get initChannelLabel => 'Channel';
+
+  @override
+  String get initReleaseLabel => 'Release';
+
+  @override
+  String get initManifestLabel => 'Manifest';
+
+  @override
+  String get initHeadGenerationLabel => 'Head generation';
+
+  @override
+  String get initReleaseSequenceLabel => 'Release sequence';
+
+  @override
+  String get initPublisherFloorLabel => 'Publisher floor (P)';
+
+  @override
+  String get initArtifactBytesLabel => 'Signed artifacts';
+
+  @override
+  String get initTargetAllocationLabel => 'Target allocation (N)';
+
+  @override
+  String get initTransferPeakLabel => 'Transfer peak (T)';
+
+  @override
+  String get initVerificationWorkspaceLabel => 'Verification workspace (W)';
+
+  @override
+  String get initCatalogGrowthLabel => 'Catalog growth (G)';
+
+  @override
+  String get initSafetyReserveLabel => 'Safety reserve (R)';
+
+  @override
+  String get initResourceFactsTitle => 'Destination storage facts';
+
+  @override
+  String get initAvailableBytesLabel => 'Available now';
+
+  @override
+  String get initRequiredBytesLabel => 'Required before start';
+
+  @override
+  String get initVolumeCapacityLabel => 'Volume capacity';
+
+  @override
+  String get initCapacityReady => 'Capacity check passed';
+
+  @override
+  String get initCapacityInsufficient => 'More free space is required';
+
+  @override
+  String get initNetworkPolicyTitle => 'Network policy';
+
+  @override
+  String get initWifiOnlyPolicy => 'Wi-Fi only';
+
+  @override
+  String get initUnmeteredPolicy => 'Unmetered';
+
+  @override
+  String get initAnyNetworkPolicy => 'Any network';
+
+  @override
+  String get initOneTimeOverrideLabel =>
+      'Allow this Init once on the selected network policy';
+
+  @override
+  String get initDeferAction => 'Defer and use Limited mode';
+
+  @override
+  String get initConfirmAction => 'Confirm exact plan';
+
+  @override
+  String get initPlanError =>
+      'The signed Init plan could not be prepared. No transfer was started.';
+
+  @override
+  String get initErrorTitle => 'Init needs attention';
+
+  @override
+  String get initDeferError => 'Limited-mode receipt could not be saved.';
+
+  @override
+  String get initConfirmError =>
+      'Confirmation failed during the live capacity recheck. No transfer was started.';
+
+  @override
+  String get initAdmittedTitle => 'Capacity admitted';
+
+  @override
+  String get initAdmittedBody =>
+      'Rust bound the exact manifest, trust profile, storage plan and network policy. Transfer remains disabled in MOB-05A.';
+
+  @override
+  String get initWaitingStorageTitle => 'Waiting for storage';
+
+  @override
+  String get initWaitingStorageBody =>
+      'The exact plan is durable, but current free space is below the required amount. No bytes were scheduled.';
+
+  @override
+  String get initTransportGated =>
+      'Transfer is not enabled in this build slice.';
 
   @override
   String get homeTitle => 'Home';

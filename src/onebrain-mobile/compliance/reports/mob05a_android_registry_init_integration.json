@@ -1,0 +1,17 @@
+{
+  "format": "onebrain.mobile.android-registry-init-integration/1",
+  "generated_at": "2026-08-01T16:34:00Z",
+  "device": "emulator-5554",
+  "platform": "Android 16 API 36 x86_64",
+  "command": "flutter test integration_test/registry_init_bridge_test.dart -d emulator-5554",
+  "assertions": [
+    "Pigeon host API and Rust bridge both report ABI 8",
+    "debug-only canonical CBOR trust profile, channel head and release envelope verify in Rust",
+    "exact publisher, artifact, allocation, transfer, workspace, catalog, reserve and native volume facts cross the typed host boundary",
+    "Defer persists an exact Limited receipt and the next Begin requires exact review again",
+    "Confirm binds the exact manifest, trust profile, storage plan and unmetered network policy",
+    "transportEnabled remains false and no Registry artifact transfer is submitted"
+  ],
+  "physical_device_claimed": false,
+  "result": "passed"
+}

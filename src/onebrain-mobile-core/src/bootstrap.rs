@@ -1039,6 +1039,11 @@ impl BootstrapStore {
     ) -> Result<RegistryOperationRecord, MobileCoreError> {
         validate_hash(manifest_digest)?;
         capacity_plan.validate_exact()?;
+        if one_time_network_override && network_policy != RegistryNetworkPolicy::AnyNetwork {
+            return Err(registry_admission(
+                "one-time Registry network override requires AnyNetwork policy",
+            ));
+        }
         let write = self.database.begin_write()?;
         let result;
         {

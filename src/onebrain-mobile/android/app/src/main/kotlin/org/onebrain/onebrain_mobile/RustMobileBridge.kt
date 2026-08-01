@@ -70,6 +70,28 @@ internal data class RustOwnedMediaSummary(
     val importState: String,
 )
 
+internal data class RustRegistryInitPlan(
+    val operationId: String,
+    val stateCode: Int,
+    val channelId: String,
+    val releaseId: String,
+    val manifestDigest: String,
+    val trustProfileDigest: String,
+    val headGeneration: Long,
+    val releaseSequence: Long,
+    val publisherMinAdditionalFreeBytes: Long,
+    val artifactTotalBytes: Long,
+    val targetTotalAllocBytes: Long,
+    val transferInitialBytes: Long,
+    val verificationWorkspaceBytes: Long,
+    val catalogGrowthBytes: Long,
+    val safetyReserveBytes: Long,
+    val destinationTotalUsableBytes: Long,
+    val measuredFreeBytes: Long,
+    val initialRequiredFreeBytes: Long,
+    val admitted: Boolean,
+)
+
 internal object RustMobileBridge {
     private val loadFailure =
         runCatching { System.loadLibrary(RUST_LIBRARY_NAME) }.exceptionOrNull()
@@ -141,6 +163,106 @@ internal object RustMobileBridge {
             pendingShareSpoolCount = nativeRuntimePendingShareSpoolCount(),
             stagedVerifiedMediaCount = nativeRuntimeStagedVerifiedMediaCount(),
             onboardingCursor = nativeRuntimeOnboardingCursor(),
+        )
+    }
+
+    fun prepareRegistryInit(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        channelId: String,
+        trustProfile: ByteArray,
+        channelHead: ByteArray,
+        release: ByteArray,
+        allocationUnitBytes: Long,
+        destinationTotalUsableBytes: Long,
+        measuredFreeBytes: Long,
+    ): RustRegistryInitPlan {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return decodeRegistryPlan(
+            nativeRuntimePrepareRegistryInit(
+                channelId,
+                trustProfile,
+                channelHead,
+                release,
+                allocationUnitBytes,
+                destinationTotalUsableBytes,
+                measuredFreeBytes,
+            ),
+        )
+    }
+
+    fun deferRegistryInit(
+        operationId: String,
+        manifestDigest: String,
+    ): Boolean = nativeRuntimeDeferRegistryInit(operationId, manifestDigest) == 0
+
+    fun confirmRegistryInit(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        operationId: String,
+        manifestDigest: String,
+        trustProfile: ByteArray,
+        networkPolicyCode: Int,
+        oneTimeNetworkOverride: Boolean,
+        allocationUnitBytes: Long,
+        destinationTotalUsableBytes: Long,
+        measuredFreeBytes: Long,
+    ): RustRegistryInitPlan {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return decodeRegistryPlan(
+            nativeRuntimeConfirmRegistryInit(
+                operationId,
+                manifestDigest,
+                trustProfile,
+                networkPolicyCode,
+                oneTimeNetworkOverride,
+                allocationUnitBytes,
+                destinationTotalUsableBytes,
+                measuredFreeBytes,
+            ),
+        )
+    }
+
+    private fun ensureSecureRuntime(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+    ) {
+        check(loadFailure == null) {
+            "Rust mobile bridge is unavailable: ${loadFailure?.message}"
+        }
+        check(nativeRuntimeOpenSecure(dataRoot, securityMaterial) == 0) {
+            "Rust mobile runtime rejected the protected session"
+        }
+    }
+
+    private fun decodeRegistryPlan(encoded: String): RustRegistryInitPlan {
+        check(!encoded.startsWith("ERR:")) {
+            "Rust Registry Init rejected the operation (${encoded.removePrefix("ERR:")})"
+        }
+        val fields = encoded.split('|')
+        check(fields.size == 19) {
+            "Rust mobile runtime returned an invalid Registry Init plan"
+        }
+        return RustRegistryInitPlan(
+            operationId = fields[0],
+            stateCode = fields[1].toInt(),
+            channelId = fields[2],
+            releaseId = fields[3],
+            manifestDigest = fields[4],
+            trustProfileDigest = fields[5],
+            headGeneration = fields[6].toLong(),
+            releaseSequence = fields[7].toLong(),
+            publisherMinAdditionalFreeBytes = fields[8].toLong(),
+            artifactTotalBytes = fields[9].toLong(),
+            targetTotalAllocBytes = fields[10].toLong(),
+            transferInitialBytes = fields[11].toLong(),
+            verificationWorkspaceBytes = fields[12].toLong(),
+            catalogGrowthBytes = fields[13].toLong(),
+            safetyReserveBytes = fields[14].toLong(),
+            destinationTotalUsableBytes = fields[15].toLong(),
+            measuredFreeBytes = fields[16].toLong(),
+            initialRequiredFreeBytes = fields[17].toLong(),
+            admitted = fields[18] == "1",
         )
     }
 
@@ -361,6 +483,32 @@ internal object RustMobileBridge {
     ): Int
 
     @JvmStatic private external fun nativeRuntimeLock(): Int
+
+    @JvmStatic private external fun nativeRuntimePrepareRegistryInit(
+        channelId: String,
+        trustProfile: ByteArray,
+        channelHead: ByteArray,
+        release: ByteArray,
+        allocationUnitBytes: Long,
+        destinationTotalUsableBytes: Long,
+        measuredFreeBytes: Long,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimeDeferRegistryInit(
+        operationId: String,
+        manifestDigest: String,
+    ): Int
+
+    @JvmStatic private external fun nativeRuntimeConfirmRegistryInit(
+        operationId: String,
+        manifestDigest: String,
+        trustProfile: ByteArray,
+        networkPolicyCode: Int,
+        oneTimeNetworkOverride: Boolean,
+        allocationUnitBytes: Long,
+        destinationTotalUsableBytes: Long,
+        measuredFreeBytes: Long,
+    ): String
 
     @JvmStatic private external fun nativeRuntimeSaveRawTextDraft(
         contentLanguage: String,

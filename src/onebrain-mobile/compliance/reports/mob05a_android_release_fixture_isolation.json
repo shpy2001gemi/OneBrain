@@ -1,0 +1,16 @@
+{
+  "format": "onebrain.mobile.android-registry-fixture-isolation/1",
+  "generated_at": "2026-08-01T16:46:55Z",
+  "package": "app-release.apk",
+  "package_sha256": "eb90a639dbcdff43109953193907297c456f5d91d516dbd12bc6c357ee629846",
+  "debug_source_set": "android/app/src/debug/assets/mob05a",
+  "forbidden_release_entry_patterns": [
+    "mob05a",
+    "registry_trust_profile.cbor.hex",
+    "registry_channel_head.cbor.hex",
+    "registry_release.cbor.hex"
+  ],
+  "matching_release_entries": [],
+  "production_trust_profile_embedded": false,
+  "result": "passed"
+}

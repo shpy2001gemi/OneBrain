@@ -18,7 +18,7 @@
 /**
  * Stable ABI revision understood by the current Swift/Kotlin adapters.
  */
-#define OB_MOBILE_BRIDGE_ABI_VERSION 7
+#define OB_MOBILE_BRIDGE_ABI_VERSION 8
 
 #define OB_MOBILE_RUNTIME_OK 0
 
@@ -41,6 +41,36 @@
 #define OB_MOBILE_RUNTIME_SHARE_SPOOL_NOT_FOUND 9
 
 #define OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE 10
+
+#define OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT 11
+
+typedef struct ObMobileRegistryPlan {
+  uint32_t status_code;
+  uint8_t operation_id[129];
+  uint32_t operation_id_len;
+  uint32_t state_code;
+  uint8_t channel_id[65];
+  uint32_t channel_id_len;
+  uint8_t release_id[65];
+  uint32_t release_id_len;
+  uint8_t manifest_digest[65];
+  uint32_t manifest_digest_len;
+  uint8_t trust_profile_digest[65];
+  uint32_t trust_profile_digest_len;
+  uint64_t head_generation;
+  uint64_t release_sequence;
+  uint64_t publisher_min_additional_free_bytes;
+  uint64_t artifact_total_bytes;
+  uint64_t target_total_alloc_bytes;
+  uint64_t transfer_initial_bytes;
+  uint64_t verification_workspace_bytes;
+  uint64_t catalog_growth_bytes;
+  uint64_t safety_reserve_bytes;
+  uint64_t destination_total_usable_bytes;
+  uint64_t measured_free_bytes;
+  uint64_t initial_required_free_bytes;
+  uint8_t admitted;
+} ObMobileRegistryPlan;
 
 typedef struct ObMobileRuntimeSnapshot {
   uint32_t status_code;
@@ -120,6 +150,58 @@ const char *ob_mobile_bridge_core_version(void);
  * Registry transfer authority remains disabled until the explicit Init slice.
  */
 uint8_t ob_mobile_bridge_registry_request_issued(void);
+
+/**
+ * Resolve and verify signed Registry metadata, then return an exact local
+ * capacity plan. This does not submit or transfer any Registry artifact.
+ *
+ * # Safety
+ *
+ * Every pointer must reference its declared readable byte length.
+ */
+struct ObMobileRegistryPlan ob_mobile_runtime_prepare_registry_init_signed(const uint8_t *channel_id,
+                                                                           size_t channel_id_len,
+                                                                           const uint8_t *trust_profile_cbor,
+                                                                           size_t trust_profile_cbor_len,
+                                                                           const uint8_t *channel_head_envelope_cbor,
+                                                                           size_t channel_head_envelope_cbor_len,
+                                                                           const uint8_t *release_envelope_cbor,
+                                                                           size_t release_envelope_cbor_len,
+                                                                           uint64_t allocation_unit_bytes,
+                                                                           uint64_t destination_total_usable_bytes,
+                                                                           uint64_t measured_free_bytes);
+
+/**
+ * Persist a Limited-mode receipt bound to the exact reviewed manifest.
+ *
+ * # Safety
+ *
+ * Both pointers must reference their declared readable UTF-8 byte lengths.
+ */
+uint32_t ob_mobile_runtime_defer_registry_init_utf8(const uint8_t *operation_id,
+                                                    size_t operation_id_len,
+                                                    const uint8_t *manifest_digest,
+                                                    size_t manifest_digest_len);
+
+/**
+ * Recheck native storage facts and bind exact user confirmation in Rust.
+ * This admits capacity only; transfer submission remains a later slice.
+ *
+ * # Safety
+ *
+ * Every pointer must reference its declared readable byte length.
+ */
+struct ObMobileRegistryPlan ob_mobile_runtime_confirm_registry_init_signed(const uint8_t *operation_id,
+                                                                           size_t operation_id_len,
+                                                                           const uint8_t *manifest_digest,
+                                                                           size_t manifest_digest_len,
+                                                                           const uint8_t *trust_profile_cbor,
+                                                                           size_t trust_profile_cbor_len,
+                                                                           uint32_t network_policy_code,
+                                                                           uint8_t one_time_network_override,
+                                                                           uint64_t allocation_unit_bytes,
+                                                                           uint64_t destination_total_usable_bytes,
+                                                                           uint64_t measured_free_bytes);
 
 /**
  * Bounded deterministic call used to verify the complete generated call path.
