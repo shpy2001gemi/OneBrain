@@ -1,0 +1,16 @@
+{
+  "device": "emulator-5554",
+  "files_activated_before_reference_commit": true,
+  "format": "onebrain.mobile.android-owned-media/1",
+  "generated_at": "2026-08-01T05:33:20.115962+00:00",
+  "magic_byte_mime_verified": true,
+  "native_streamed_without_dart_path": true,
+  "owned_hold_verified": true,
+  "package": "org.onebrain.onebrain_mobile",
+  "physical_device_claimed": false,
+  "result": "passed",
+  "runtime_log_redacted": true,
+  "rust_chunk_encryption_and_full_length_verified": true,
+  "system_picker_exercised": true,
+  "typed_catalog_recovery_after_force_stop": true
+}

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../design/onebrain_theme_extensions.dart';
 import '../../l10n/app_localizations.dart';
@@ -62,7 +63,9 @@ class LibraryScreen extends StatelessWidget {
             title: strings.mediaLibraryTitle,
             body: strings.mediaLibraryBody,
             icon: ObmSymbol.folder,
-            tone: ObmStatusTone.offlineUnavailable,
+            tone: ObmStatusTone.ready,
+            actionLabel: strings.mediaLibraryTitle,
+            onPressed: () => context.push('/library/my-media'),
           ),
           SizedBox(height: context.spacing.md),
           ObmActionCard(

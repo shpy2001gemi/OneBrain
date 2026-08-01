@@ -33,7 +33,9 @@ pub use draft::{PrivateDraftKey, PrivateDraftStore, RawDraftReceipt, ShareSpoolS
 pub use error::MobileCoreError;
 pub use facade::{MobileRuntimeFacade, MobileRuntimeSnapshot};
 pub use local_kql::{run_signed_local_kql_smoke, LocalKqlSmoke};
-pub use media_staging::{MediaStageReceipt, MediaStageState, MediaStagingKey, MediaStagingStore};
+pub use media_staging::{
+    MediaStageReceipt, MediaStageState, MediaStagingKey, MediaStagingStore, OwnedMediaSummary,
+};
 pub use profile::{MobileFeatureFlags, ResourceBudgets, MOBILE_RUNTIME_PROFILE_VERSION};
 pub use security::{
     AppLockPolicy, DomainSignature, IdentityDomain, MobileIdentityPublic, SecureIdentitySession,

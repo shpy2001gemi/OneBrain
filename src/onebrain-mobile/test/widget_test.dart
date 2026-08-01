@@ -5,10 +5,49 @@ import 'package:onebrain_mobile/app/locale_controller.dart';
 import 'package:onebrain_mobile/app/onebrain_app.dart';
 import 'package:onebrain_mobile/design/onebrain_theme.dart';
 import 'package:onebrain_mobile/design/onebrain_theme_extensions.dart';
+import 'package:onebrain_mobile/l10n/app_localizations.dart';
 import 'package:onebrain_mobile/platform/generated/mobile_host_api.g.dart';
 import 'package:onebrain_mobile/platform/mobile_host_gateway.dart';
+import 'package:onebrain_mobile/ui/screens/my_media_screen.dart';
 
 void main() {
+  testWidgets('MOB-SCR-MED-005 shows exact OwnedOriginal facts', (
+    tester,
+  ) async {
+    final media = MobileOwnedMediaSummary(
+      mediaRef: 'media_${'a' * 64}',
+      mediaClass: MobileMediaClass.image,
+      mimeType: 'image/png',
+      contentBytes: 1024,
+      verifiedBytes: 1024,
+      storageClass: 'OwnedOriginal',
+      ownedHold: true,
+      importState: 'Complete',
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          mobileHostGatewayProvider.overrideWithValue(
+            _FakeMobileHostGateway(ownedMedia: [media]),
+          ),
+        ],
+        child: MaterialApp(
+          theme: OneBrainTheme.light,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: const MyMediaScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('My media'), findsWidgets);
+    expect(find.text('OwnedOriginal'), findsOneWidget);
+    expect(find.text('Protected by owned hold'), findsOneWidget);
+    expect(find.text('1024 of 1024 bytes verified locally'), findsOneWidget);
+    expect(find.text(media.mediaRef), findsOneWidget);
+  });
+
   testWidgets('MOB-SCR-ENT-001 resolves to the English welcome screen', (
     tester,
   ) async {
@@ -174,7 +213,7 @@ void main() {
   );
 
   testWidgets(
-    'MOB-SCR-CAP-004 stages picker media without exposing a path or source bytes',
+    'MOB-SCR-CAP-004 imports OwnedOriginal without exposing path or source bytes',
     (tester) async {
       await tester.pumpWidget(
         _testApp(
@@ -191,7 +230,7 @@ void main() {
       await tester.ensureVisible(importAction);
       await tester.tap(importAction);
       await tester.pumpAndSettle();
-      expect(find.text('Staging is not publication'), findsOneWidget);
+      expect(find.text('Owned is not shared'), findsOneWidget);
       expect(find.textContaining('OwnedOriginal'), findsOneWidget);
 
       final pickerActions = find.text('Choose with system picker');
@@ -199,12 +238,12 @@ void main() {
       await tester.tap(pickerActions.first);
       await tester.pumpAndSettle();
 
-      expect(find.text('Encrypted stage verified'), findsOneWidget);
+      expect(find.text('Owned original protected'), findsOneWidget);
+      expect(find.textContaining('media_${'a' * 64}'), findsOneWidget);
       expect(
-        find.textContaining('source_00000000000000000000000000000000'),
-        findsOneWidget,
+        find.textContaining(RegExp(r'[A-Z]:\\|content://|file://')),
+        findsNothing,
       );
-      expect(find.textContaining(RegExp(r'[A-Z]:\\|content://|file://')), findsNothing);
     },
   );
 
@@ -278,10 +317,12 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   const _FakeMobileHostGateway({
     this.onboardingCursor = MobileOnboardingCursor.welcome,
     this.pendingSpools = const [],
+    this.ownedMedia = const [],
   });
 
   final MobileOnboardingCursor onboardingCursor;
   final List<MobileShareSpoolSummary> pendingSpools;
+  final List<MobileOwnedMediaSummary> ownedMedia;
 
   @override
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
@@ -349,17 +390,23 @@ class _FakeMobileHostGateway implements MobileHostGateway {
       saveRawTextDraft(contentLanguage: contentLanguage, content: 'shared');
 
   @override
-  Future<MobileMediaStageReceipt> pickAndStagePrivateMedia(
+  Future<MobileOwnedMediaSummary> pickAndImportOwnedMedia(
     MobileMediaClass mediaClass,
-  ) async => MobileMediaStageReceipt(
-    sourceRef: 'source_00000000000000000000000000000000',
+  ) async => MobileOwnedMediaSummary(
+    mediaRef: 'media_${'a' * 64}',
     mediaClass: mediaClass,
     mimeType: mediaClass == MobileMediaClass.document
         ? 'application/pdf'
         : '${mediaClass.name}/test',
     contentBytes: 32,
-    blake3Digest: 'a' * 64,
+    verifiedBytes: 32,
+    storageClass: 'OwnedOriginal',
+    ownedHold: true,
+    importState: 'Complete',
   );
+
+  @override
+  Future<List<MobileOwnedMediaSummary>> inspectOwnedMedia() async => ownedMedia;
 
   @override
   Future<String> startFeasibilityOperation(Duration delay) async =>

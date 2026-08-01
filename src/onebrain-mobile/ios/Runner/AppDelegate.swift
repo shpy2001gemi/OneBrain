@@ -649,15 +649,29 @@ private final class IOSMobileHost: MobileHostApi {
     }
   }
 
-  func pickAndStagePrivateMedia(
+  func pickAndImportOwnedMedia(
     mediaClass: HostMediaClass,
-    completion: @escaping (Result<HostMediaStageReceipt, Error>) -> Void
+    completion: @escaping (Result<HostOwnedMediaSummary, Error>) -> Void
   ) {
     completion(
       .failure(
         PigeonError(
           code: "IOS_MEDIA_PICKER_PENDING",
           message: "The iOS document and photo picker adapter is not implemented in this slice",
+          details: nil
+        )
+      )
+    )
+  }
+
+  func inspectOwnedMedia(
+    completion: @escaping (Result<[HostOwnedMediaSummary], Error>) -> Void
+  ) {
+    completion(
+      .failure(
+        PigeonError(
+          code: "IOS_MEDIA_CATALOG_PENDING",
+          message: "The iOS OwnedOriginal catalog adapter is not implemented in this slice",
           details: nil
         )
       )

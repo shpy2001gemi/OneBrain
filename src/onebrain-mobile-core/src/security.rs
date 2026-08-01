@@ -6,7 +6,8 @@ use zeroize::Zeroizing;
 
 use crate::{
     InstallationAuthorityRecord, MediaStageReceipt, MediaStagingKey, MediaStagingStore,
-    MobileCoreError, PrivateDraftKey, PrivateDraftStore, RawDraftReceipt, ShareSpoolSummary,
+    MobileCoreError, OwnedMediaSummary, PrivateDraftKey, PrivateDraftStore, RawDraftReceipt,
+    ShareSpoolSummary,
 };
 
 pub const SECURITY_BOOTSTRAP_MATERIAL_BYTES: usize = 192;
@@ -369,6 +370,40 @@ impl SecureIdentitySession {
             .as_ref()
             .ok_or(MobileCoreError::Locked)?
             .finish(source_ref)
+    }
+
+    pub fn finish_owned_media_import(
+        &self,
+        source_ref: &str,
+        now_monotonic_ms: u64,
+    ) -> Result<OwnedMediaSummary, MobileCoreError> {
+        if !self.session_is_eligible(now_monotonic_ms) {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_media_staging
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .finish_owned_original(source_ref)
+    }
+
+    pub fn owned_media(&self, limit: usize) -> Result<Vec<OwnedMediaSummary>, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_media_staging
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .owned_media(limit)
+    }
+
+    pub fn owned_media_count(&self) -> Result<u64, MobileCoreError> {
+        if self.state != SecuritySessionState::Unlocked {
+            return Err(MobileCoreError::Locked);
+        }
+        self.private_media_staging
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .owned_media_count()
     }
 
     pub fn abort_media_stage(

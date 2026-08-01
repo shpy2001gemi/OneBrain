@@ -59,6 +59,17 @@ internal data class RustMediaStageReceipt(
     val blake3Digest: String,
 )
 
+internal data class RustOwnedMediaSummary(
+    val mediaRef: String,
+    val mediaClass: String,
+    val mimeType: String,
+    val contentBytes: Long,
+    val verifiedBytes: Long,
+    val storageClass: String,
+    val ownedHold: Boolean,
+    val importState: String,
+)
+
 internal object RustMobileBridge {
     private val loadFailure =
         runCatching { System.loadLibrary(RUST_LIBRARY_NAME) }.exceptionOrNull()
@@ -287,6 +298,42 @@ internal object RustMobileBridge {
         )
     }
 
+    fun finishOwnedMediaImport(sourceRef: String): RustOwnedMediaSummary =
+        decodeOwnedMedia(nativeRuntimeFinishOwnedMediaImport(sourceRef))
+
+    fun ownedMedia(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+    ): List<RustOwnedMediaSummary> {
+        check(loadFailure == null) {
+            "Rust mobile bridge is unavailable: ${loadFailure?.message}"
+        }
+        check(nativeRuntimeOpenSecure(dataRoot, securityMaterial) == 0) {
+            "Rust mobile runtime rejected the protected session"
+        }
+        val count = nativeRuntimeOwnedMediaCount().coerceIn(0, 100).toInt()
+        return (0 until count).map { index ->
+            decodeOwnedMedia(nativeRuntimeOwnedMediaEntry(index))
+        }
+    }
+
+    private fun decodeOwnedMedia(encoded: String): RustOwnedMediaSummary {
+        val fields = encoded.split('|')
+        check(fields.size == 8) {
+            "Rust mobile runtime returned an invalid OwnedOriginal entry"
+        }
+        return RustOwnedMediaSummary(
+            mediaRef = fields[0],
+            mediaClass = fields[1],
+            mimeType = fields[2],
+            contentBytes = fields[3].toLong(),
+            verifiedBytes = fields[4].toLong(),
+            storageClass = fields[5],
+            ownedHold = fields[6] == "1",
+            importState = fields[7],
+        )
+    }
+
     fun abortMediaStage(sourceRef: String) {
         check(nativeRuntimeAbortMediaStage(sourceRef) == 0) {
             "Rust mobile runtime could not abort the private media stage"
@@ -344,6 +391,12 @@ internal object RustMobileBridge {
     ): Int
 
     @JvmStatic private external fun nativeRuntimeFinishMediaStage(sourceRef: String): String
+
+    @JvmStatic private external fun nativeRuntimeFinishOwnedMediaImport(sourceRef: String): String
+
+    @JvmStatic private external fun nativeRuntimeOwnedMediaCount(): Long
+
+    @JvmStatic private external fun nativeRuntimeOwnedMediaEntry(index: Int): String
 
     @JvmStatic private external fun nativeRuntimeAbortMediaStage(sourceRef: String): Int
 

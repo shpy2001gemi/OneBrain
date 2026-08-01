@@ -5,25 +5,37 @@ import 'package:onebrain_mobile/platform/mobile_host_gateway.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('MOB-CAP-003 stages one Android system-picker image', (
+  testWidgets('MOB-MED-001 imports one Android picker image as OwnedOriginal', (
     tester,
   ) async {
     final gateway = PigeonMobileHostGateway();
     final before = await gateway.inspectRuntimeProfile();
+    final shelfBefore = await gateway.inspectOwnedMedia();
 
-    final receipt = await gateway.pickAndStagePrivateMedia(
+    final receipt = await gateway.pickAndImportOwnedMedia(
       MobileMediaClass.image,
     );
-    expect(receipt.sourceRef, matches(RegExp(r'^source_[0-9a-f]{32}$')));
+    expect(receipt.mediaRef, matches(RegExp(r'^media_[0-9a-f]{64}$')));
     expect(receipt.mediaClass, MobileMediaClass.image);
     expect(receipt.mimeType, 'image/png');
     expect(receipt.contentBytes, greaterThan(0));
-    expect(receipt.blake3Digest, matches(RegExp(r'^[0-9a-f]{64}$')));
+    expect(receipt.verifiedBytes, receipt.contentBytes);
+    expect(receipt.storageClass, 'OwnedOriginal');
+    expect(receipt.ownedHold, isTrue);
+    expect(receipt.importState, 'Complete');
 
     final after = await gateway.inspectRuntimeProfile();
+    expect(after.stagedVerifiedMediaCount, before.stagedVerifiedMediaCount);
+    final shelfAfter = await gateway.inspectOwnedMedia();
+    expect(shelfAfter.length, greaterThanOrEqualTo(shelfBefore.length));
     expect(
-      after.stagedVerifiedMediaCount,
-      before.stagedVerifiedMediaCount + 1,
+      shelfAfter.any(
+        (entry) =>
+            entry.mediaRef == receipt.mediaRef &&
+            entry.storageClass == 'OwnedOriginal' &&
+            entry.ownedHold,
+      ),
+      isTrue,
     );
   });
 }

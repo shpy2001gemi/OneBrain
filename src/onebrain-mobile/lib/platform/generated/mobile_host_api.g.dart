@@ -469,16 +469,19 @@ class HostShareSpoolSummary {
   }
 }
 
-class HostMediaStageReceipt {
-  HostMediaStageReceipt({
-    required this.sourceRef,
+class HostOwnedMediaSummary {
+  HostOwnedMediaSummary({
+    required this.mediaRef,
     required this.mediaClass,
     required this.mimeType,
     required this.contentBytes,
-    required this.blake3Digest,
+    required this.verifiedBytes,
+    required this.storageClass,
+    required this.ownedHold,
+    required this.importState,
   });
 
-  String sourceRef;
+  String mediaRef;
 
   HostMediaClass mediaClass;
 
@@ -486,42 +489,54 @@ class HostMediaStageReceipt {
 
   int contentBytes;
 
-  String blake3Digest;
+  int verifiedBytes;
+
+  String storageClass;
+
+  bool ownedHold;
+
+  String importState;
 
   List<Object?> _toList() {
     return <Object?>[
-      sourceRef,
+      mediaRef,
       mediaClass,
       mimeType,
       contentBytes,
-      blake3Digest,
+      verifiedBytes,
+      storageClass,
+      ownedHold,
+      importState,
     ];
   }
 
   Object encode() {
     return _toList();  }
 
-  static HostMediaStageReceipt decode(Object result) {
+  static HostOwnedMediaSummary decode(Object result) {
     result as List<Object?>;
-    return HostMediaStageReceipt(
-      sourceRef: result[0]! as String,
+    return HostOwnedMediaSummary(
+      mediaRef: result[0]! as String,
       mediaClass: result[1]! as HostMediaClass,
       mimeType: result[2]! as String,
       contentBytes: result[3]! as int,
-      blake3Digest: result[4]! as String,
+      verifiedBytes: result[4]! as int,
+      storageClass: result[5]! as String,
+      ownedHold: result[6]! as bool,
+      importState: result[7]! as String,
     );
   }
 
   @override
   // ignore: avoid_equals_and_hash_code_on_mutable_classes
   bool operator ==(Object other) {
-    if (other is! HostMediaStageReceipt || other.runtimeType != runtimeType) {
+    if (other is! HostOwnedMediaSummary || other.runtimeType != runtimeType) {
       return false;
     }
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(sourceRef, other.sourceRef) && _deepEquals(mediaClass, other.mediaClass) && _deepEquals(mimeType, other.mimeType) && _deepEquals(contentBytes, other.contentBytes) && _deepEquals(blake3Digest, other.blake3Digest);
+    return _deepEquals(mediaRef, other.mediaRef) && _deepEquals(mediaClass, other.mediaClass) && _deepEquals(mimeType, other.mimeType) && _deepEquals(contentBytes, other.contentBytes) && _deepEquals(verifiedBytes, other.verifiedBytes) && _deepEquals(storageClass, other.storageClass) && _deepEquals(ownedHold, other.ownedHold) && _deepEquals(importState, other.importState);
   }
 
   @override
@@ -530,7 +545,7 @@ class HostMediaStageReceipt {
 
   @override
   String toString() {
-    return 'HostMediaStageReceipt(sourceRef: $sourceRef, mediaClass: $mediaClass, mimeType: $mimeType, contentBytes: $contentBytes, blake3Digest: $blake3Digest)';
+    return 'HostOwnedMediaSummary(mediaRef: $mediaRef, mediaClass: $mediaClass, mimeType: $mimeType, contentBytes: $contentBytes, verifiedBytes: $verifiedBytes, storageClass: $storageClass, ownedHold: $ownedHold, importState: $importState)';
   }
 }
 
@@ -618,7 +633,7 @@ class _PigeonCodec extends StandardMessageCodec {
     }    else if (value is HostShareSpoolSummary) {
       buffer.putUint8(135);
       writeValue(buffer, value.encode());
-    }    else if (value is HostMediaStageReceipt) {
+    }    else if (value is HostOwnedMediaSummary) {
       buffer.putUint8(136);
       writeValue(buffer, value.encode());
     }    else if (value is HostOperationEvent) {
@@ -650,7 +665,7 @@ class _PigeonCodec extends StandardMessageCodec {
       case 135:
         return HostShareSpoolSummary.decode(readValue(buffer)!);
       case 136:
-        return HostMediaStageReceipt.decode(readValue(buffer)!);
+        return HostOwnedMediaSummary.decode(readValue(buffer)!);
       case 137:
         return HostOperationEvent.decode(readValue(buffer)!);
       default:
@@ -769,8 +784,8 @@ class MobileHostApi {
     return pigeonVar_replyValue! as HostRawDraftReceipt;
   }
 
-  Future<HostMediaStageReceipt> pickAndStagePrivateMedia(HostMediaClass mediaClass) async {
-    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndStagePrivateMedia$pigeonVar_messageChannelSuffix';
+  Future<HostOwnedMediaSummary> pickAndImportOwnedMedia(HostMediaClass mediaClass) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndImportOwnedMedia$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -785,7 +800,26 @@ class MobileHostApi {
         isNullValid: false,
     )
     ;
-    return pigeonVar_replyValue! as HostMediaStageReceipt;
+    return pigeonVar_replyValue! as HostOwnedMediaSummary;
+  }
+
+  Future<List<HostOwnedMediaSummary>> inspectOwnedMedia() async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectOwnedMedia$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
+      pigeonVar_channelName,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
+    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(null);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return (pigeonVar_replyValue! as List<Object?>).cast<HostOwnedMediaSummary>();
   }
 
   Future<bool> setOnboardingCursor(HostOnboardingCursor cursor) async {

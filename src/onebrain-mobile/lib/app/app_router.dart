@@ -9,6 +9,7 @@ import '../ui/screens/home_screen.dart';
 import '../ui/screens/init_screen.dart';
 import '../ui/screens/library_screen.dart';
 import '../ui/screens/media_import_screen.dart';
+import '../ui/screens/my_media_screen.dart';
 import '../ui/screens/onboarding_screen.dart';
 import '../ui/screens/settings_screen.dart';
 import '../ui/screens/share_spools_screen.dart';
@@ -67,6 +68,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/library',
         name: 'library',
         builder: (context, state) => const LibraryScreen(),
+      ),
+      GoRoute(
+        path: '/library/my-media',
+        name: 'library-my-media',
+        builder: (context, state) => const MyMediaScreen(),
       ),
       GoRoute(
         path: '/capture',

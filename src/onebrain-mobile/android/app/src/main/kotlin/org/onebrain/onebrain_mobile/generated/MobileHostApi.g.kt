@@ -517,31 +517,40 @@ data class HostShareSpoolSummary (
 }
 
 /** Generated class from Pigeon that represents data sent in messages. */
-data class HostMediaStageReceipt (
-  val sourceRef: String,
+data class HostOwnedMediaSummary (
+  val mediaRef: String,
   val mediaClass: HostMediaClass,
   val mimeType: String,
   val contentBytes: Long,
-  val blake3Digest: String
+  val verifiedBytes: Long,
+  val storageClass: String,
+  val ownedHold: Boolean,
+  val importState: String
 )
  {
   companion object {
-    fun fromList(pigeonVar_list: List<Any?>): HostMediaStageReceipt {
-      val sourceRef = pigeonVar_list[0] as String
+    fun fromList(pigeonVar_list: List<Any?>): HostOwnedMediaSummary {
+      val mediaRef = pigeonVar_list[0] as String
       val mediaClass = pigeonVar_list[1] as HostMediaClass
       val mimeType = pigeonVar_list[2] as String
       val contentBytes = pigeonVar_list[3] as Long
-      val blake3Digest = pigeonVar_list[4] as String
-      return HostMediaStageReceipt(sourceRef, mediaClass, mimeType, contentBytes, blake3Digest)
+      val verifiedBytes = pigeonVar_list[4] as Long
+      val storageClass = pigeonVar_list[5] as String
+      val ownedHold = pigeonVar_list[6] as Boolean
+      val importState = pigeonVar_list[7] as String
+      return HostOwnedMediaSummary(mediaRef, mediaClass, mimeType, contentBytes, verifiedBytes, storageClass, ownedHold, importState)
     }
   }
   fun toList(): List<Any?> {
     return listOf(
-      sourceRef,
+      mediaRef,
       mediaClass,
       mimeType,
       contentBytes,
-      blake3Digest,
+      verifiedBytes,
+      storageClass,
+      ownedHold,
+      importState,
     )
   }
   override fun equals(other: Any?): Boolean {
@@ -551,21 +560,24 @@ data class HostMediaStageReceipt (
     if (this === other) {
       return true
     }
-    val other = other as HostMediaStageReceipt
-    return MobileHostApiPigeonUtils.deepEquals(this.sourceRef, other.sourceRef) && MobileHostApiPigeonUtils.deepEquals(this.mediaClass, other.mediaClass) && MobileHostApiPigeonUtils.deepEquals(this.mimeType, other.mimeType) && MobileHostApiPigeonUtils.deepEquals(this.contentBytes, other.contentBytes) && MobileHostApiPigeonUtils.deepEquals(this.blake3Digest, other.blake3Digest)
+    val other = other as HostOwnedMediaSummary
+    return MobileHostApiPigeonUtils.deepEquals(this.mediaRef, other.mediaRef) && MobileHostApiPigeonUtils.deepEquals(this.mediaClass, other.mediaClass) && MobileHostApiPigeonUtils.deepEquals(this.mimeType, other.mimeType) && MobileHostApiPigeonUtils.deepEquals(this.contentBytes, other.contentBytes) && MobileHostApiPigeonUtils.deepEquals(this.verifiedBytes, other.verifiedBytes) && MobileHostApiPigeonUtils.deepEquals(this.storageClass, other.storageClass) && MobileHostApiPigeonUtils.deepEquals(this.ownedHold, other.ownedHold) && MobileHostApiPigeonUtils.deepEquals(this.importState, other.importState)
   }
 
   override fun hashCode(): Int {
     var result = javaClass.hashCode()
-    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.sourceRef)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.mediaRef)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.mediaClass)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.mimeType)
     result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.contentBytes)
-    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.blake3Digest)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.verifiedBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.storageClass)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.ownedHold)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.importState)
     return result
   }
   override fun toString(): String {
-    return "HostMediaStageReceipt(sourceRef=$sourceRef, mediaClass=$mediaClass, mimeType=$mimeType, contentBytes=$contentBytes, blake3Digest=$blake3Digest)"
+    return "HostOwnedMediaSummary(mediaRef=$mediaRef, mediaClass=$mediaClass, mimeType=$mimeType, contentBytes=$contentBytes, verifiedBytes=$verifiedBytes, storageClass=$storageClass, ownedHold=$ownedHold, importState=$importState)"
   }
 }
 
@@ -653,7 +665,7 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
       }
       136.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostMediaStageReceipt.fromList(it)
+          HostOwnedMediaSummary.fromList(it)
         }
       }
       137.toByte() -> {
@@ -694,7 +706,7 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
         stream.write(135)
         writeValue(stream, value.toList())
       }
-      is HostMediaStageReceipt -> {
+      is HostOwnedMediaSummary -> {
         stream.write(136)
         writeValue(stream, value.toList())
       }
@@ -717,7 +729,8 @@ interface MobileHostApi {
   fun saveRawTextDraft(contentLanguage: String, content: String, callback: (Result<HostRawDraftReceipt>) -> Unit)
   fun inspectPendingShareSpools(callback: (Result<List<HostShareSpoolSummary>>) -> Unit)
   fun importSharedText(spoolRef: String, contentLanguage: String, callback: (Result<HostRawDraftReceipt>) -> Unit)
-  fun pickAndStagePrivateMedia(mediaClass: HostMediaClass, callback: (Result<HostMediaStageReceipt>) -> Unit)
+  fun pickAndImportOwnedMedia(mediaClass: HostMediaClass, callback: (Result<HostOwnedMediaSummary>) -> Unit)
+  fun inspectOwnedMedia(callback: (Result<List<HostOwnedMediaSummary>>) -> Unit)
   fun setOnboardingCursor(cursor: HostOnboardingCursor, callback: (Result<Boolean>) -> Unit)
   fun startFeasibilityOperation(delayMilliseconds: Long, callback: (Result<String>) -> Unit)
   fun cancelFeasibilityOperation(operationId: String, callback: (Result<Boolean>) -> Unit)
@@ -828,12 +841,30 @@ interface MobileHostApi {
         }
       }
       run {
-        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndStagePrivateMedia$separatedMessageChannelSuffix", codec)
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndImportOwnedMedia$separatedMessageChannelSuffix", codec)
         if (api != null) {
           channel.setMessageHandler { message, reply ->
             val args = message as List<Any?>
             val mediaClassArg = args[0] as HostMediaClass
-            api.pickAndStagePrivateMedia(mediaClassArg) { result: Result<HostMediaStageReceipt> ->
+            api.pickAndImportOwnedMedia(mediaClassArg) { result: Result<HostOwnedMediaSummary> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectOwnedMedia$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            api.inspectOwnedMedia{ result: Result<List<HostOwnedMediaSummary>> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MobileHostApiPigeonUtils.wrapError(error))

@@ -367,7 +367,70 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get mediaLibraryBody =>
-      'Owned originals and derived media will use verified encrypted storage. Media ingestion is not active in this slice.';
+      'Browse encrypted originals owned by this node. Private ownership does not make media shared or seedable.';
+
+  @override
+  String get myMediaShelfBody =>
+      'This bounded shelf is read from the Rust-owned encrypted catalog. Each entry shows verified local bytes and its exact retention class.';
+
+  @override
+  String get myMediaPrivateTitle => 'Owned here, not published';
+
+  @override
+  String get myMediaPrivateBody =>
+      'OwnedOriginal keeps a durable hold against local garbage collection. It is still PrivateLocal and has no share representation, access grant or seed eligibility.';
+
+  @override
+  String get myMediaLoadingTitle => 'Opening encrypted media catalog';
+
+  @override
+  String get myMediaLoadingBody =>
+      'The native host is querying bounded metadata; no media bytes or storage paths enter Flutter.';
+
+  @override
+  String get myMediaLoadError =>
+      'The encrypted media catalog could not be inspected. No ownership or availability claim was inferred.';
+
+  @override
+  String get myMediaEmptyTitle => 'No owned media yet';
+
+  @override
+  String get myMediaEmptyBody =>
+      'Import a photo, PDF, audio file or video through the system picker. OneBrain will verify and activate it before adding this shelf reference.';
+
+  @override
+  String myMediaItemTitle(String mediaClass) {
+    return 'Owned $mediaClass';
+  }
+
+  @override
+  String myMediaVerifiedBytes(int verifiedBytes, int contentBytes) {
+    return '$verifiedBytes of $contentBytes bytes verified locally';
+  }
+
+  @override
+  String get storageClassOwnedOriginal => 'OwnedOriginal';
+
+  @override
+  String get mediaOwnedHoldProtected => 'Protected by owned hold';
+
+  @override
+  String get mediaOwnedHoldMissing => 'Owned hold missing';
+
+  @override
+  String get mediaClassImage => 'image';
+
+  @override
+  String get mediaClassVideo => 'video';
+
+  @override
+  String get mediaClassAudio => 'audio';
+
+  @override
+  String get mediaClassDocument => 'document';
+
+  @override
+  String get retryAction => 'Try again';
 
   @override
   String get conceptsTitle => 'Concepts, search and KQL';
@@ -455,14 +518,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get mediaImportBody =>
-      'Choose one source with the system picker. OneBrain verifies its bytes, encrypts every chunk and returns only an opaque local reference.';
+      'Choose one source with the system picker. OneBrain streams, verifies and encrypts it, activates immutable local bytes, then commits an OwnedOriginal reference.';
 
   @override
-  String get mediaImportBoundaryTitle => 'Staging is not publication';
+  String get mediaImportBoundaryTitle => 'Owned is not shared';
 
   @override
   String get mediaImportBoundaryBody =>
-      'A verified stage remains PrivateLocal. It is not yet an OwnedOriginal, KU attachment, shared object or seedable media pack.';
+      'The committed original remains PrivateLocal. Import does not attach it to a KU, derive a share representation, publish it or make it seedable.';
 
   @override
   String get mediaPickImageTitle => 'Photo or image';
@@ -496,24 +559,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mediaPickAction => 'Choose with system picker';
 
   @override
-  String get mediaPickBusy => 'Encrypting and verifying on this device…';
+  String get mediaPickBusy =>
+      'Encrypting, verifying and activating on this device…';
 
   @override
-  String get mediaStageReadyTitle => 'Encrypted stage verified';
+  String get mediaStageReadyTitle => 'Owned original protected';
 
   @override
   String mediaStageReadyBody(
     String mimeType,
     int bytes,
-    String digestShort,
-    String sourceRef,
+    String storageClass,
+    String mediaRef,
   ) {
-    return '$mimeType · $bytes bytes · BLAKE3 $digestShort. Opaque source: $sourceRef.';
+    return '$mimeType · $bytes verified bytes · $storageClass. Opaque media reference: $mediaRef.';
   }
 
   @override
   String get mediaStageError =>
-      'The selected source was cancelled, unreadable, unsupported or did not match its claimed type. No unverified stage was kept.';
+      'The selected source was cancelled, unreadable, unsupported or did not match its claimed type. No unverified catalog reference was kept.';
 
   @override
   String get textComposerTitle => 'Private text draft';

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive Android's real document picker and verify encrypted Rust staging."""
+"""Drive Android's picker and verify durable Rust OwnedOriginal import."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from pathlib import Path
 
 
 PACKAGE = "org.onebrain.onebrain_mobile"
-ACTIVITY = f"{PACKAGE}/.MainActivity"
 PICKER_FILE = "onebrain-picker-private-test.png"
 PNG_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNg"
@@ -208,35 +207,43 @@ def main() -> int:
     log = wait_for_log(
         adb_path,
         arguments.device,
-        "private_media_staged class=image",
+        "owned_original_media_imported class=image",
         arguments.timeout_seconds,
     )
     if PICKER_FILE in log or "content://" in log or "file://" in log:
         raise RuntimeError("picker filename or URI leaked into runtime logs")
 
     adb(adb_path, arguments.device, "shell", "am", "force-stop", PACKAGE)
-    adb(adb_path, arguments.device, "logcat", "-c")
-    adb(adb_path, arguments.device, "shell", "am", "start", "-W", "-n", ACTIVITY)
-    recovery_log = wait_for_log(
-        adb_path,
-        arguments.device,
-        "stagedMedia=1",
-        arguments.timeout_seconds,
+    recovery = run(
+        [
+            arguments.flutter,
+            "drive",
+            "--driver=test_driver/integration_test.dart",
+            "--target=integration_test/owned_media_recovery_test.dart",
+            "-d",
+            arguments.device,
+        ],
+        cwd=mobile_root,
+        check=False,
+        timeout=arguments.timeout_seconds * 4,
     )
-    if "profile=MOB-04/3" not in recovery_log:
-        raise RuntimeError("verified stage did not reopen under MOB-04/3")
+    recovery_output = recovery.stdout + recovery.stderr
+    if recovery.returncode != 0 or "All tests passed" not in recovery_output:
+        raise RuntimeError(f"OwnedOriginal recovery integration failed:\n{recovery_output}")
 
     report = {
-        "format": "onebrain.mobile.android-media-picker/1",
+        "format": "onebrain.mobile.android-owned-media/1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "device": arguments.device,
         "package": PACKAGE,
         "system_picker_exercised": True,
         "native_streamed_without_dart_path": True,
-        "rust_chunk_encryption_and_blake3_verified": True,
+        "rust_chunk_encryption_and_full_length_verified": True,
         "magic_byte_mime_verified": True,
         "runtime_log_redacted": True,
-        "verified_stage_survived_force_stop": True,
+        "files_activated_before_reference_commit": True,
+        "owned_hold_verified": True,
+        "typed_catalog_recovery_after_force_stop": True,
         "physical_device_claimed": False,
         "result": "passed",
     }

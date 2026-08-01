@@ -707,8 +707,116 @@ abstract class AppLocalizations {
   /// No description provided for @mediaLibraryBody.
   ///
   /// In en, this message translates to:
-  /// **'Owned originals and derived media will use verified encrypted storage. Media ingestion is not active in this slice.'**
+  /// **'Browse encrypted originals owned by this node. Private ownership does not make media shared or seedable.'**
   String get mediaLibraryBody;
+
+  /// No description provided for @myMediaShelfBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This bounded shelf is read from the Rust-owned encrypted catalog. Each entry shows verified local bytes and its exact retention class.'**
+  String get myMediaShelfBody;
+
+  /// No description provided for @myMediaPrivateTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Owned here, not published'**
+  String get myMediaPrivateTitle;
+
+  /// No description provided for @myMediaPrivateBody.
+  ///
+  /// In en, this message translates to:
+  /// **'OwnedOriginal keeps a durable hold against local garbage collection. It is still PrivateLocal and has no share representation, access grant or seed eligibility.'**
+  String get myMediaPrivateBody;
+
+  /// No description provided for @myMediaLoadingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening encrypted media catalog'**
+  String get myMediaLoadingTitle;
+
+  /// No description provided for @myMediaLoadingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The native host is querying bounded metadata; no media bytes or storage paths enter Flutter.'**
+  String get myMediaLoadingBody;
+
+  /// No description provided for @myMediaLoadError.
+  ///
+  /// In en, this message translates to:
+  /// **'The encrypted media catalog could not be inspected. No ownership or availability claim was inferred.'**
+  String get myMediaLoadError;
+
+  /// No description provided for @myMediaEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No owned media yet'**
+  String get myMediaEmptyTitle;
+
+  /// No description provided for @myMediaEmptyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Import a photo, PDF, audio file or video through the system picker. OneBrain will verify and activate it before adding this shelf reference.'**
+  String get myMediaEmptyBody;
+
+  /// No description provided for @myMediaItemTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Owned {mediaClass}'**
+  String myMediaItemTitle(String mediaClass);
+
+  /// No description provided for @myMediaVerifiedBytes.
+  ///
+  /// In en, this message translates to:
+  /// **'{verifiedBytes} of {contentBytes} bytes verified locally'**
+  String myMediaVerifiedBytes(int verifiedBytes, int contentBytes);
+
+  /// No description provided for @storageClassOwnedOriginal.
+  ///
+  /// In en, this message translates to:
+  /// **'OwnedOriginal'**
+  String get storageClassOwnedOriginal;
+
+  /// No description provided for @mediaOwnedHoldProtected.
+  ///
+  /// In en, this message translates to:
+  /// **'Protected by owned hold'**
+  String get mediaOwnedHoldProtected;
+
+  /// No description provided for @mediaOwnedHoldMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'Owned hold missing'**
+  String get mediaOwnedHoldMissing;
+
+  /// No description provided for @mediaClassImage.
+  ///
+  /// In en, this message translates to:
+  /// **'image'**
+  String get mediaClassImage;
+
+  /// No description provided for @mediaClassVideo.
+  ///
+  /// In en, this message translates to:
+  /// **'video'**
+  String get mediaClassVideo;
+
+  /// No description provided for @mediaClassAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'audio'**
+  String get mediaClassAudio;
+
+  /// No description provided for @mediaClassDocument.
+  ///
+  /// In en, this message translates to:
+  /// **'document'**
+  String get mediaClassDocument;
+
+  /// No description provided for @retryAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get retryAction;
 
   /// No description provided for @conceptsTitle.
   ///
@@ -851,19 +959,19 @@ abstract class AppLocalizations {
   /// No description provided for @mediaImportBody.
   ///
   /// In en, this message translates to:
-  /// **'Choose one source with the system picker. OneBrain verifies its bytes, encrypts every chunk and returns only an opaque local reference.'**
+  /// **'Choose one source with the system picker. OneBrain streams, verifies and encrypts it, activates immutable local bytes, then commits an OwnedOriginal reference.'**
   String get mediaImportBody;
 
   /// No description provided for @mediaImportBoundaryTitle.
   ///
   /// In en, this message translates to:
-  /// **'Staging is not publication'**
+  /// **'Owned is not shared'**
   String get mediaImportBoundaryTitle;
 
   /// No description provided for @mediaImportBoundaryBody.
   ///
   /// In en, this message translates to:
-  /// **'A verified stage remains PrivateLocal. It is not yet an OwnedOriginal, KU attachment, shared object or seedable media pack.'**
+  /// **'The committed original remains PrivateLocal. Import does not attach it to a KU, derive a share representation, publish it or make it seedable.'**
   String get mediaImportBoundaryBody;
 
   /// No description provided for @mediaPickImageTitle.
@@ -923,30 +1031,30 @@ abstract class AppLocalizations {
   /// No description provided for @mediaPickBusy.
   ///
   /// In en, this message translates to:
-  /// **'Encrypting and verifying on this device…'**
+  /// **'Encrypting, verifying and activating on this device…'**
   String get mediaPickBusy;
 
   /// No description provided for @mediaStageReadyTitle.
   ///
   /// In en, this message translates to:
-  /// **'Encrypted stage verified'**
+  /// **'Owned original protected'**
   String get mediaStageReadyTitle;
 
   /// No description provided for @mediaStageReadyBody.
   ///
   /// In en, this message translates to:
-  /// **'{mimeType} · {bytes} bytes · BLAKE3 {digestShort}. Opaque source: {sourceRef}.'**
+  /// **'{mimeType} · {bytes} verified bytes · {storageClass}. Opaque media reference: {mediaRef}.'**
   String mediaStageReadyBody(
     String mimeType,
     int bytes,
-    String digestShort,
-    String sourceRef,
+    String storageClass,
+    String mediaRef,
   );
 
   /// No description provided for @mediaStageError.
   ///
   /// In en, this message translates to:
-  /// **'The selected source was cancelled, unreadable, unsupported or did not match its claimed type. No unverified stage was kept.'**
+  /// **'The selected source was cancelled, unreadable, unsupported or did not match its claimed type. No unverified catalog reference was kept.'**
   String get mediaStageError;
 
   /// No description provided for @textComposerTitle.

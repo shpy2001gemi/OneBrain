@@ -11,6 +11,8 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
+#[cfg(target_os = "android")]
+use onebrain_mobile_core::OwnedMediaSummary;
 use onebrain_mobile_core::{
     ActivationPhase, AppLockPolicy, MobileFeatureFlags, MobileRuntimeFacade, MobileRuntimeSnapshot,
     OnboardingCursor, ResourceBudgets, RuntimeServices, SecurityBootstrapMaterial,
@@ -829,6 +831,54 @@ fn finish_media_stage(source_ref: &str) -> ObMobileMediaStageReceipt {
     }
 }
 
+#[cfg(target_os = "android")]
+fn finish_owned_media_import(source_ref: &str) -> Option<OwnedMediaSummary> {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let mut guard = runtime.lock().ok()?;
+    guard.as_mut()?.finish_owned_media_import(source_ref).ok()
+}
+
+#[cfg(target_os = "android")]
+fn owned_media(index: usize) -> Option<OwnedMediaSummary> {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = runtime.lock().ok()?;
+    guard
+        .as_ref()?
+        .owned_media(100)
+        .ok()?
+        .into_iter()
+        .nth(index)
+}
+
+#[cfg(target_os = "android")]
+fn owned_media_count() -> u64 {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    runtime
+        .lock()
+        .ok()
+        .and_then(|guard| {
+            guard
+                .as_ref()
+                .map(|facade| facade.snapshot().owned_original_media_count)
+        })
+        .unwrap_or(0)
+}
+
+#[cfg(target_os = "android")]
+fn encode_owned_media(summary: &OwnedMediaSummary) -> String {
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}|{}",
+        summary.media_ref,
+        summary.media_class,
+        summary.mime_type,
+        summary.content_bytes,
+        summary.verified_bytes,
+        summary.storage_class,
+        u8::from(summary.owned_hold),
+        summary.import_state,
+    )
+}
+
 fn abort_media_stage(source_ref: &str) -> u32 {
     let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
     let mut guard = match runtime.lock() {
@@ -887,12 +937,13 @@ mod android {
     };
 
     use super::{
-        abort_media_stage, append_media_stage, enqueue_shared_text, finish_media_stage,
-        import_shared_text, ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
+        abort_media_stage, append_media_stage, encode_owned_media, enqueue_shared_text,
+        finish_media_stage, finish_owned_media_import, import_shared_text,
+        ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
         ob_mobile_bridge_round_trip, ob_mobile_runtime_lock_private_node,
-        ob_mobile_runtime_set_onboarding_cursor, open_runtime, open_runtime_secured,
-        pending_share_spool_at, runtime_snapshot, save_raw_text_draft, start_media_stage,
-        CORE_VERSION,
+        ob_mobile_runtime_set_onboarding_cursor, open_runtime, open_runtime_secured, owned_media,
+        owned_media_count, pending_share_spool_at, runtime_snapshot, save_raw_text_draft,
+        start_media_stage, CORE_VERSION,
     };
     use onebrain_mobile_core::SecurityBootstrapMaterial;
     use zeroize::Zeroize;
@@ -1171,6 +1222,55 @@ mod android {
         } else {
             String::new()
         };
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeFinishOwnedMediaImport"
+    )]
+    pub fn native_runtime_finish_owned_media_import<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        source_ref: JString<'caller>,
+    ) -> JString<'caller> {
+        let source_ref = unowned_env
+            .with_env(|env| source_ref.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let encoded = finish_owned_media_import(&source_ref)
+            .as_ref()
+            .map(encode_owned_media)
+            .unwrap_or_default();
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeOwnedMediaCount"
+    )]
+    pub fn native_runtime_owned_media_count(_env: EnvUnowned<'_>, _class: JClass<'_>) -> jlong {
+        owned_media_count() as jlong
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeOwnedMediaEntry"
+    )]
+    pub fn native_runtime_owned_media_entry<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        index: jint,
+    ) -> JString<'caller> {
+        let encoded = usize::try_from(index)
+            .ok()
+            .and_then(owned_media)
+            .as_ref()
+            .map(encode_owned_media)
+            .unwrap_or_default();
         unowned_env
             .with_env(|env| JString::from_str(env, &encoded))
             .resolve::<ThrowRuntimeExAndDefault>()

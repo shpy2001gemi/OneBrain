@@ -125,20 +125,26 @@ class HostShareSpoolSummary {
 
 enum HostMediaClass { image, video, audio, document }
 
-class HostMediaStageReceipt {
-  HostMediaStageReceipt({
-    required this.sourceRef,
+class HostOwnedMediaSummary {
+  HostOwnedMediaSummary({
+    required this.mediaRef,
     required this.mediaClass,
     required this.mimeType,
     required this.contentBytes,
-    required this.blake3Digest,
+    required this.verifiedBytes,
+    required this.storageClass,
+    required this.ownedHold,
+    required this.importState,
   });
 
-  String sourceRef;
+  String mediaRef;
   HostMediaClass mediaClass;
   String mimeType;
   int contentBytes;
-  String blake3Digest;
+  int verifiedBytes;
+  String storageClass;
+  bool ownedHold;
+  String importState;
 }
 
 enum HostOperationEventKind { started, cancelled, completed }
@@ -173,7 +179,10 @@ abstract class MobileHostApi {
   HostRawDraftReceipt importSharedText(String spoolRef, String contentLanguage);
 
   @async
-  HostMediaStageReceipt pickAndStagePrivateMedia(HostMediaClass mediaClass);
+  HostOwnedMediaSummary pickAndImportOwnedMedia(HostMediaClass mediaClass);
+
+  @async
+  List<HostOwnedMediaSummary> inspectOwnedMedia();
 
   @async
   bool setOnboardingCursor(HostOnboardingCursor cursor);

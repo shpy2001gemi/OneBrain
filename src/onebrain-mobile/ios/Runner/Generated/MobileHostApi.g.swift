@@ -517,57 +517,72 @@ struct HostShareSpoolSummary: Hashable, CustomStringConvertible {
 }
 
 /// Generated class from Pigeon that represents data sent in messages.
-struct HostMediaStageReceipt: Hashable, CustomStringConvertible {
-  var sourceRef: String
+struct HostOwnedMediaSummary: Hashable, CustomStringConvertible {
+  var mediaRef: String
   var mediaClass: HostMediaClass
   var mimeType: String
   var contentBytes: Int64
-  var blake3Digest: String
+  var verifiedBytes: Int64
+  var storageClass: String
+  var ownedHold: Bool
+  var importState: String
 
 
   // swift-format-ignore: AlwaysUseLowerCamelCase
-  static func fromList(_ pigeonVar_list: [Any?]) -> HostMediaStageReceipt? {
-    let sourceRef = pigeonVar_list[0] as! String
+  static func fromList(_ pigeonVar_list: [Any?]) -> HostOwnedMediaSummary? {
+    let mediaRef = pigeonVar_list[0] as! String
     let mediaClass = pigeonVar_list[1] as! HostMediaClass
     let mimeType = pigeonVar_list[2] as! String
     let contentBytes = pigeonVar_list[3] as! Int64
-    let blake3Digest = pigeonVar_list[4] as! String
+    let verifiedBytes = pigeonVar_list[4] as! Int64
+    let storageClass = pigeonVar_list[5] as! String
+    let ownedHold = pigeonVar_list[6] as! Bool
+    let importState = pigeonVar_list[7] as! String
 
-    return HostMediaStageReceipt(
-      sourceRef: sourceRef,
+    return HostOwnedMediaSummary(
+      mediaRef: mediaRef,
       mediaClass: mediaClass,
       mimeType: mimeType,
       contentBytes: contentBytes,
-      blake3Digest: blake3Digest
+      verifiedBytes: verifiedBytes,
+      storageClass: storageClass,
+      ownedHold: ownedHold,
+      importState: importState
     )
   }
   func toList() -> [Any?] {
     return [
-      sourceRef,
+      mediaRef,
       mediaClass,
       mimeType,
       contentBytes,
-      blake3Digest,
+      verifiedBytes,
+      storageClass,
+      ownedHold,
+      importState,
     ]
   }
-  static func == (lhs: HostMediaStageReceipt, rhs: HostMediaStageReceipt) -> Bool {
+  static func == (lhs: HostOwnedMediaSummary, rhs: HostOwnedMediaSummary) -> Bool {
     if Swift.type(of: lhs) != Swift.type(of: rhs) {
       return false
     }
-    return MobileHostApiPigeonInternal.deepEquals(lhs.sourceRef, rhs.sourceRef) && MobileHostApiPigeonInternal.deepEquals(lhs.mediaClass, rhs.mediaClass) && MobileHostApiPigeonInternal.deepEquals(lhs.mimeType, rhs.mimeType) && MobileHostApiPigeonInternal.deepEquals(lhs.contentBytes, rhs.contentBytes) && MobileHostApiPigeonInternal.deepEquals(lhs.blake3Digest, rhs.blake3Digest)
+    return MobileHostApiPigeonInternal.deepEquals(lhs.mediaRef, rhs.mediaRef) && MobileHostApiPigeonInternal.deepEquals(lhs.mediaClass, rhs.mediaClass) && MobileHostApiPigeonInternal.deepEquals(lhs.mimeType, rhs.mimeType) && MobileHostApiPigeonInternal.deepEquals(lhs.contentBytes, rhs.contentBytes) && MobileHostApiPigeonInternal.deepEquals(lhs.verifiedBytes, rhs.verifiedBytes) && MobileHostApiPigeonInternal.deepEquals(lhs.storageClass, rhs.storageClass) && MobileHostApiPigeonInternal.deepEquals(lhs.ownedHold, rhs.ownedHold) && MobileHostApiPigeonInternal.deepEquals(lhs.importState, rhs.importState)
   }
 
   func hash(into hasher: inout Hasher) {
-    hasher.combine("HostMediaStageReceipt")
-    MobileHostApiPigeonInternal.deepHash(value: sourceRef, hasher: &hasher)
+    hasher.combine("HostOwnedMediaSummary")
+    MobileHostApiPigeonInternal.deepHash(value: mediaRef, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: mediaClass, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: mimeType, hasher: &hasher)
     MobileHostApiPigeonInternal.deepHash(value: contentBytes, hasher: &hasher)
-    MobileHostApiPigeonInternal.deepHash(value: blake3Digest, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: verifiedBytes, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: storageClass, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: ownedHold, hasher: &hasher)
+    MobileHostApiPigeonInternal.deepHash(value: importState, hasher: &hasher)
   }
 
   public var description: String {
-    return "HostMediaStageReceipt(sourceRef: \(String(describing: sourceRef)), mediaClass: \(String(describing: mediaClass)), mimeType: \(String(describing: mimeType)), contentBytes: \(String(describing: contentBytes)), blake3Digest: \(String(describing: blake3Digest)))"
+    return "HostOwnedMediaSummary(mediaRef: \(String(describing: mediaRef)), mediaClass: \(String(describing: mediaClass)), mimeType: \(String(describing: mimeType)), contentBytes: \(String(describing: contentBytes)), verifiedBytes: \(String(describing: verifiedBytes)), storageClass: \(String(describing: storageClass)), ownedHold: \(String(describing: ownedHold)), importState: \(String(describing: importState)))"
   }
 }
 
@@ -646,7 +661,7 @@ private class MobileHostApiPigeonCodecReader: FlutterStandardReader {
     case 135:
       return HostShareSpoolSummary.fromList(self.readValue() as! [Any?])
     case 136:
-      return HostMediaStageReceipt.fromList(self.readValue() as! [Any?])
+      return HostOwnedMediaSummary.fromList(self.readValue() as! [Any?])
     case 137:
       return HostOperationEvent.fromList(self.readValue() as! [Any?])
     default:
@@ -678,7 +693,7 @@ private class MobileHostApiPigeonCodecWriter: FlutterStandardWriter {
     } else if let value = value as? HostShareSpoolSummary {
       super.writeByte(135)
       super.writeValue(value.toList())
-    } else if let value = value as? HostMediaStageReceipt {
+    } else if let value = value as? HostOwnedMediaSummary {
       super.writeByte(136)
       super.writeValue(value.toList())
     } else if let value = value as? HostOperationEvent {
@@ -714,7 +729,8 @@ protocol MobileHostApi {
   func saveRawTextDraft(contentLanguage: String, content: String, completion: @escaping (Result<HostRawDraftReceipt, Error>) -> Void)
   func inspectPendingShareSpools(completion: @escaping (Result<[HostShareSpoolSummary], Error>) -> Void)
   func importSharedText(spoolRef: String, contentLanguage: String, completion: @escaping (Result<HostRawDraftReceipt, Error>) -> Void)
-  func pickAndStagePrivateMedia(mediaClass: HostMediaClass, completion: @escaping (Result<HostMediaStageReceipt, Error>) -> Void)
+  func pickAndImportOwnedMedia(mediaClass: HostMediaClass, completion: @escaping (Result<HostOwnedMediaSummary, Error>) -> Void)
+  func inspectOwnedMedia(completion: @escaping (Result<[HostOwnedMediaSummary], Error>) -> Void)
   func setOnboardingCursor(cursor: HostOnboardingCursor, completion: @escaping (Result<Bool, Error>) -> Void)
   func startFeasibilityOperation(delayMilliseconds: Int64, completion: @escaping (Result<String, Error>) -> Void)
   func cancelFeasibilityOperation(operationId: String, completion: @escaping (Result<Bool, Error>) -> Void)
@@ -807,12 +823,12 @@ class MobileHostApiSetup {
     } else {
       importSharedTextChannel.setMessageHandler(nil)
     }
-    let pickAndStagePrivateMediaChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndStagePrivateMedia\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    let pickAndImportOwnedMediaChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndImportOwnedMedia\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {
-      pickAndStagePrivateMediaChannel.setMessageHandler { message, reply in
+      pickAndImportOwnedMediaChannel.setMessageHandler { message, reply in
         let args = message as! [Any?]
         let mediaClassArg = args[0] as! HostMediaClass
-        api.pickAndStagePrivateMedia(mediaClass: mediaClassArg) { result in
+        api.pickAndImportOwnedMedia(mediaClass: mediaClassArg) { result in
           switch result {
           case .success(let res):
             reply(wrapResult(res))
@@ -822,7 +838,22 @@ class MobileHostApiSetup {
         }
       }
     } else {
-      pickAndStagePrivateMediaChannel.setMessageHandler(nil)
+      pickAndImportOwnedMediaChannel.setMessageHandler(nil)
+    }
+    let inspectOwnedMediaChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectOwnedMedia\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
+    if let api = api {
+      inspectOwnedMediaChannel.setMessageHandler { _, reply in
+        api.inspectOwnedMedia { result in
+          switch result {
+          case .success(let res):
+            reply(wrapResult(res))
+          case .failure(let error):
+            reply(wrapError(error))
+          }
+        }
+      }
+    } else {
+      inspectOwnedMediaChannel.setMessageHandler(nil)
     }
     let setOnboardingCursorChannel = FlutterBasicMessageChannel(name: "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.setOnboardingCursor\(channelSuffix)", binaryMessenger: binaryMessenger, codec: codec)
     if let api = api {

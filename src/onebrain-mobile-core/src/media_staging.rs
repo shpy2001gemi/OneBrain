@@ -16,7 +16,10 @@ use zeroize::Zeroizing;
 use crate::MobileCoreError;
 
 const MEDIA_STAGES: TableDefinition<&str, &[u8]> = TableDefinition::new("private_media_stages");
+const OWNED_MEDIA: TableDefinition<&str, &[u8]> = TableDefinition::new("private_owned_media");
+const OWNED_HOLDS: TableDefinition<&str, u8> = TableDefinition::new("private_owned_media_holds");
 const METADATA_AAD_CONTEXT: &[u8] = b"onebrain:mobile:private-media-stage-metadata:1\0";
+const OWNED_AAD_CONTEXT: &[u8] = b"onebrain:mobile:private-owned-media-metadata:1\0";
 const CHUNK_AAD_CONTEXT: &[u8] = b"onebrain:mobile:private-media-stage-chunk:1\0";
 const FILE_MAGIC: &[u8; 8] = b"OBMSTG1\0";
 const FORMAT_VERSION: u8 = 1;
@@ -28,14 +31,23 @@ const MAX_ACTIVE_STAGES: usize = 4;
 const MAX_DECLARED_MIME_BYTES: usize = 127;
 const SNIFF_PREFIX_BYTES: usize = 32 * 1024;
 
-pub struct MediaStagingKey(Zeroizing<[u8; 32]>);
+pub struct MediaStagingKey {
+    encryption: Zeroizing<[u8; 32]>,
+    local_reference: Zeroizing<[u8; 32]>,
+}
 
 impl MediaStagingKey {
     pub fn derive(vault_key: &[u8; 32]) -> Self {
-        Self(Zeroizing::new(blake3::derive_key(
-            "onebrain:mobile:private-media-staging-key:1",
-            vault_key,
-        )))
+        Self {
+            encryption: Zeroizing::new(blake3::derive_key(
+                "onebrain:mobile:private-media-staging-key:1",
+                vault_key,
+            )),
+            local_reference: Zeroizing::new(blake3::derive_key(
+                "onebrain:mobile:private-media-local-reference-key:1",
+                vault_key,
+            )),
+        }
     }
 }
 
@@ -50,6 +62,9 @@ impl fmt::Debug for MediaStagingKey {
 pub enum MediaStageState {
     Receiving,
     StagedVerified,
+    FilesActivated,
+    ReferenceCommitted,
+    Complete,
     Interrupted,
     Rejected,
 }
@@ -68,6 +83,12 @@ struct MediaStageRecord {
     committed_file_bytes: u64,
     detected_mime_type: Option<String>,
     blake3_digest: Option<String>,
+    #[serde(default)]
+    commit_requested: bool,
+    #[serde(default)]
+    media_ref: Option<String>,
+    #[serde(default)]
+    encrypted_pack_root: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -80,10 +101,38 @@ pub struct MediaStageReceipt {
     pub state: MediaStageState,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct OwnedMediaRecord {
+    format_version: u8,
+    media_ref: String,
+    source_ref: String,
+    media_class: String,
+    mime_type: String,
+    content_bytes: u64,
+    verified_bytes: u64,
+    encrypted_pack_root: String,
+    created_at_monotonic_ms: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OwnedMediaSummary {
+    pub media_ref: String,
+    pub media_class: String,
+    pub mime_type: String,
+    pub content_bytes: u64,
+    pub verified_bytes: u64,
+    pub storage_class: &'static str,
+    pub owned_hold: bool,
+    pub import_state: &'static str,
+}
+
 pub struct MediaStagingStore {
     database: Database,
-    root: PathBuf,
+    staging_root: PathBuf,
+    active_root: PathBuf,
     cipher: XChaCha20Poly1305,
+    local_reference_key: Zeroizing<[u8; 32]>,
 }
 
 impl MediaStagingStore {
@@ -96,18 +145,29 @@ impl MediaStagingStore {
             create_dir_all(parent)?;
         }
         create_dir_all(root)?;
+        let active_root = root
+            .parent()
+            .ok_or_else(|| {
+                MobileCoreError::Storage("private media staging root has no parent".into())
+            })?
+            .join("objects");
+        create_dir_all(&active_root)?;
         let database = Database::create(database_path)?;
         let write = database.begin_write()?;
         {
             write.open_table(MEDIA_STAGES)?;
+            write.open_table(OWNED_MEDIA)?;
+            write.open_table(OWNED_HOLDS)?;
         }
         write.commit()?;
         let store = Self {
             database,
-            root: root.to_path_buf(),
-            cipher: XChaCha20Poly1305::new((&*key.0).into()),
+            staging_root: root.to_path_buf(),
+            active_root,
+            cipher: XChaCha20Poly1305::new((&*key.encryption).into()),
+            local_reference_key: key.local_reference,
         };
-        store.recover_interrupted_stages()?;
+        store.recover_operations()?;
         Ok(store)
     }
 
@@ -149,6 +209,9 @@ impl MediaStagingStore {
             committed_file_bytes: FILE_MAGIC.len() as u64,
             detected_mime_type: None,
             blake3_digest: None,
+            commit_requested: false,
+            media_ref: None,
+            encrypted_pack_root: None,
         };
         if let Err(error) = self.write_record(&record) {
             let _ = fs::remove_file(path);
@@ -281,14 +344,97 @@ impl MediaStagingStore {
         receipt_from_record(&record)
     }
 
+    pub fn finish_owned_original(
+        &self,
+        source_ref: &str,
+    ) -> Result<OwnedMediaSummary, MobileCoreError> {
+        if let Some(record) = self.read_record(source_ref)? {
+            if record.commit_requested
+                && matches!(
+                    record.state,
+                    MediaStageState::StagedVerified
+                        | MediaStageState::FilesActivated
+                        | MediaStageState::ReferenceCommitted
+                        | MediaStageState::Complete
+                )
+            {
+                return self.resume_owned_import(source_ref);
+            }
+        }
+        self.finish(source_ref)?;
+        let mut record = self.read_record(source_ref)?.ok_or_else(|| {
+            MobileCoreError::InvalidArgument("private media stage does not exist".into())
+        })?;
+        if record.state == MediaStageState::Complete {
+            return self.owned_summary_for_stage(&record);
+        }
+        if record.state != MediaStageState::StagedVerified {
+            return Err(MobileCoreError::InvalidArgument(
+                "private media source is not ready for OwnedOriginal activation".into(),
+            ));
+        }
+        if record.media_ref.is_none() {
+            let digest = record.blake3_digest.as_deref().ok_or_else(|| {
+                MobileCoreError::Security("verified media stage lost its digest binding".into())
+            })?;
+            record.media_ref = Some(self.media_ref_from_digest(digest)?);
+        }
+        record.commit_requested = true;
+        self.write_record(&record)?;
+        self.resume_owned_import(source_ref)
+    }
+
+    pub fn owned_media(&self, limit: usize) -> Result<Vec<OwnedMediaSummary>, MobileCoreError> {
+        let limit = limit.min(100);
+        let read = self.database.begin_read()?;
+        let table = read.open_table(OWNED_MEDIA)?;
+        let holds = read.open_table(OWNED_HOLDS)?;
+        let mut summaries = Vec::new();
+        for entry in table.iter()? {
+            if summaries.len() >= limit {
+                break;
+            }
+            let (media_ref, sealed) = entry?;
+            let record = self.open_owned_record(media_ref.value(), sealed.value())?;
+            if !self.active_path(&record.media_ref).is_file() {
+                return Err(MobileCoreError::Security(
+                    "OwnedOriginal catalog points to a missing encrypted pack".into(),
+                ));
+            }
+            summaries.push(owned_summary(
+                &record,
+                holds.get(record.encrypted_pack_root.as_str())?.is_some(),
+            ));
+        }
+        summaries.sort_by(|left, right| right.media_ref.cmp(&left.media_ref));
+        Ok(summaries)
+    }
+
+    pub fn owned_media_count(&self) -> Result<u64, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(OWNED_MEDIA)?;
+        let mut count = 0u64;
+        for entry in table.iter()? {
+            entry?;
+            count = count.saturating_add(1);
+        }
+        Ok(count)
+    }
+
     pub fn abort(&self, source_ref: &str) -> Result<(), MobileCoreError> {
         validate_source_ref(source_ref)?;
         let Some(mut record) = self.read_record(source_ref)? else {
             return Ok(());
         };
-        if record.state == MediaStageState::StagedVerified {
+        if matches!(
+            record.state,
+            MediaStageState::StagedVerified
+                | MediaStageState::FilesActivated
+                | MediaStageState::ReferenceCommitted
+                | MediaStageState::Complete
+        ) {
             return Err(MobileCoreError::InvalidArgument(
-                "verified private media stage cannot be aborted".into(),
+                "verified or committed private media cannot be aborted".into(),
             ));
         }
         record.state = MediaStageState::Interrupted;
@@ -331,15 +477,25 @@ impl MediaStagingStore {
         Ok(count)
     }
 
-    fn recover_interrupted_stages(&self) -> Result<(), MobileCoreError> {
+    fn recover_operations(&self) -> Result<(), MobileCoreError> {
         let read = self.database.begin_read()?;
         let table = read.open_table(MEDIA_STAGES)?;
         let mut interrupted = Vec::new();
+        let mut resumable = Vec::new();
         for entry in table.iter()? {
             let (reference, sealed) = entry?;
             let record = self.open_record(reference.value(), sealed.value())?;
             if record.state == MediaStageState::Receiving {
                 interrupted.push(record);
+            } else if record.commit_requested
+                && matches!(
+                    record.state,
+                    MediaStageState::StagedVerified
+                        | MediaStageState::FilesActivated
+                        | MediaStageState::ReferenceCommitted
+                )
+            {
+                resumable.push(record.source_ref);
             }
         }
         drop(table);
@@ -352,7 +508,208 @@ impl MediaStagingStore {
             record.committed_file_bytes = 0;
             self.write_record(&record)?;
         }
+        for source_ref in resumable {
+            self.resume_owned_import(&source_ref)?;
+        }
         Ok(())
+    }
+
+    fn resume_owned_import(&self, source_ref: &str) -> Result<OwnedMediaSummary, MobileCoreError> {
+        loop {
+            let mut record = self.read_record(source_ref)?.ok_or_else(|| {
+                MobileCoreError::InvalidArgument("private media stage does not exist".into())
+            })?;
+            match record.state {
+                MediaStageState::StagedVerified => {
+                    if !record.commit_requested {
+                        return Err(MobileCoreError::InvalidArgument(
+                            "OwnedOriginal activation was not requested".into(),
+                        ));
+                    }
+                    let media_ref = record.media_ref.clone().ok_or_else(|| {
+                        MobileCoreError::Security(
+                            "OwnedOriginal operation lost its local reference".into(),
+                        )
+                    })?;
+                    if let Some(existing) = self.read_owned_record(&media_ref)? {
+                        let active_path = self.active_path(&media_ref);
+                        if !active_path.is_file() {
+                            return Err(MobileCoreError::Security(
+                                "OwnedOriginal catalog points to a missing encrypted pack".into(),
+                            ));
+                        }
+                        if hash_file(&active_path)? != existing.encrypted_pack_root {
+                            return Err(MobileCoreError::Security(
+                                "OwnedOriginal catalog points to a corrupt encrypted pack".into(),
+                            ));
+                        }
+                        remove_file_if_present(&self.stage_path(source_ref))?;
+                        record.encrypted_pack_root = Some(existing.encrypted_pack_root);
+                        record.state = MediaStageState::FilesActivated;
+                        self.write_record(&record)?;
+                        continue;
+                    }
+
+                    let stage_path = self.stage_path(source_ref);
+                    let active_path = self.active_path(&media_ref);
+                    match (stage_path.is_file(), active_path.is_file()) {
+                        (true, false) => {
+                            fs::rename(&stage_path, &active_path).map_err(|error| {
+                                storage_error("cannot activate encrypted OwnedOriginal pack", error)
+                            })?;
+                            sync_file(&active_path)?;
+                            sync_directory(&self.staging_root)?;
+                            sync_directory(&self.active_root)?;
+                        }
+                        (false, true) => {}
+                        (true, true) => {
+                            return Err(MobileCoreError::Security(
+                                "OwnedOriginal activation found conflicting stage and active packs"
+                                    .into(),
+                            ));
+                        }
+                        (false, false) => {
+                            return Err(MobileCoreError::Security(
+                                "OwnedOriginal activation lost both staged and active bytes".into(),
+                            ));
+                        }
+                    }
+                    record.encrypted_pack_root = Some(hash_file(&active_path)?);
+                    record.state = MediaStageState::FilesActivated;
+                    self.write_record(&record)?;
+                }
+                MediaStageState::FilesActivated => {
+                    self.commit_owned_reference(&mut record)?;
+                }
+                MediaStageState::ReferenceCommitted => {
+                    record.state = MediaStageState::Complete;
+                    self.write_record(&record)?;
+                }
+                MediaStageState::Complete => return self.owned_summary_for_stage(&record),
+                _ => {
+                    return Err(MobileCoreError::InvalidArgument(
+                        "private media source cannot be committed as OwnedOriginal".into(),
+                    ));
+                }
+            }
+        }
+    }
+
+    fn commit_owned_reference(&self, record: &mut MediaStageRecord) -> Result<(), MobileCoreError> {
+        let media_ref = record.media_ref.clone().ok_or_else(|| {
+            MobileCoreError::Security("OwnedOriginal operation lost its local reference".into())
+        })?;
+        let encrypted_pack_root = record.encrypted_pack_root.clone().ok_or_else(|| {
+            MobileCoreError::Security("OwnedOriginal operation lost its encrypted pack root".into())
+        })?;
+        if !self.active_path(&media_ref).is_file() {
+            return Err(MobileCoreError::Security(
+                "OwnedOriginal activation lost its encrypted pack".into(),
+            ));
+        }
+        let owned = OwnedMediaRecord {
+            format_version: FORMAT_VERSION,
+            media_ref: media_ref.clone(),
+            source_ref: record.source_ref.clone(),
+            media_class: record.requested_class.clone(),
+            mime_type: record.detected_mime_type.clone().ok_or_else(|| {
+                MobileCoreError::Security("OwnedOriginal operation lost its MIME binding".into())
+            })?,
+            content_bytes: record.committed_plaintext_bytes,
+            verified_bytes: record.committed_plaintext_bytes,
+            encrypted_pack_root: encrypted_pack_root.clone(),
+            created_at_monotonic_ms: record.created_at_monotonic_ms,
+        };
+        let sealed_owned = self.seal_owned_record(&owned)?;
+        record.state = MediaStageState::ReferenceCommitted;
+        let sealed_stage = self.seal_metadata(&record.source_ref, &serde_json::to_vec(record)?)?;
+
+        let write = self.database.begin_write()?;
+        {
+            let mut catalog = write.open_table(OWNED_MEDIA)?;
+            if catalog.get(media_ref.as_str())?.is_none() {
+                catalog.insert(media_ref.as_str(), sealed_owned.as_slice())?;
+            }
+            let mut holds = write.open_table(OWNED_HOLDS)?;
+            holds.insert(encrypted_pack_root.as_str(), 1)?;
+            let mut stages = write.open_table(MEDIA_STAGES)?;
+            stages.insert(record.source_ref.as_str(), sealed_stage.as_slice())?;
+        }
+        write.commit()?;
+        Ok(())
+    }
+
+    fn owned_summary_for_stage(
+        &self,
+        record: &MediaStageRecord,
+    ) -> Result<OwnedMediaSummary, MobileCoreError> {
+        let media_ref = record.media_ref.as_deref().ok_or_else(|| {
+            MobileCoreError::Security("completed OwnedOriginal lost its local reference".into())
+        })?;
+        let owned = self.read_owned_record(media_ref)?.ok_or_else(|| {
+            MobileCoreError::Security("completed OwnedOriginal lost its catalog reference".into())
+        })?;
+        if !self.active_path(media_ref).is_file() {
+            return Err(MobileCoreError::Security(
+                "completed OwnedOriginal lost its encrypted pack".into(),
+            ));
+        }
+        let read = self.database.begin_read()?;
+        let holds = read.open_table(OWNED_HOLDS)?;
+        let held = holds.get(owned.encrypted_pack_root.as_str())?.is_some();
+        if !held {
+            return Err(MobileCoreError::Security(
+                "completed OwnedOriginal lost its physical hold".into(),
+            ));
+        }
+        Ok(owned_summary(&owned, true))
+    }
+
+    fn media_ref_from_digest(&self, digest: &str) -> Result<String, MobileCoreError> {
+        let bytes = hex::decode(digest).map_err(|_| {
+            MobileCoreError::Security("verified media digest is not canonical hex".into())
+        })?;
+        if bytes.len() != 32 {
+            return Err(MobileCoreError::Security(
+                "verified media digest has the wrong length".into(),
+            ));
+        }
+        Ok(format!(
+            "media_{}",
+            blake3::keyed_hash(&self.local_reference_key, &bytes).to_hex()
+        ))
+    }
+
+    fn read_owned_record(
+        &self,
+        media_ref: &str,
+    ) -> Result<Option<OwnedMediaRecord>, MobileCoreError> {
+        validate_media_ref(media_ref)?;
+        let read = self.database.begin_read()?;
+        let table = read.open_table(OWNED_MEDIA)?;
+        let Some(sealed) = table.get(media_ref)? else {
+            return Ok(None);
+        };
+        self.open_owned_record(media_ref, sealed.value()).map(Some)
+    }
+
+    fn open_owned_record(
+        &self,
+        media_ref: &str,
+        sealed: &[u8],
+    ) -> Result<OwnedMediaRecord, MobileCoreError> {
+        let plaintext = self.open_envelope(sealed, &owned_aad(media_ref))?;
+        let record: OwnedMediaRecord = serde_json::from_slice(&plaintext)?;
+        if record.format_version != FORMAT_VERSION || record.media_ref != media_ref {
+            return Err(MobileCoreError::Security(
+                "OwnedOriginal metadata binding is invalid".into(),
+            ));
+        }
+        Ok(record)
+    }
+
+    fn seal_owned_record(&self, record: &OwnedMediaRecord) -> Result<Vec<u8>, MobileCoreError> {
+        self.seal_envelope(&serde_json::to_vec(record)?, &owned_aad(&record.media_ref))
     }
 
     fn verify_stage(&self, record: &MediaStageRecord) -> Result<(String, String), MobileCoreError> {
@@ -381,7 +738,7 @@ impl MediaStagingStore {
             file.read_exact(&mut length_bytes)
                 .map_err(|error| storage_error("cannot read media chunk length", error))?;
             let ciphertext_len = u32::from_le_bytes(length_bytes) as usize;
-            if ciphertext_len < 16 || ciphertext_len > MAX_CHUNK_BYTES + 16 {
+            if !(16..=MAX_CHUNK_BYTES + 16).contains(&ciphertext_len) {
                 return Err(MobileCoreError::Security(
                     "encrypted media chunk length is invalid".into(),
                 ));
@@ -465,26 +822,7 @@ impl MediaStagingStore {
         source_ref: &str,
         sealed: &[u8],
     ) -> Result<MediaStageRecord, MobileCoreError> {
-        if sealed.len() < 1 + NONCE_BYTES + 16 || sealed[0] != FORMAT_VERSION {
-            return Err(MobileCoreError::Security(
-                "private media metadata envelope is invalid".into(),
-            ));
-        }
-        let nonce = XNonce::try_from(&sealed[1..1 + NONCE_BYTES])
-            .map_err(|_| MobileCoreError::Security("media metadata nonce is invalid".into()))?;
-        let plaintext = Zeroizing::new(
-            self.cipher
-                .decrypt(
-                    &nonce,
-                    Payload {
-                        msg: &sealed[1 + NONCE_BYTES..],
-                        aad: &metadata_aad(source_ref),
-                    },
-                )
-                .map_err(|_| {
-                    MobileCoreError::Security("private media metadata authentication failed".into())
-                })?,
-        );
+        let plaintext = self.open_envelope(sealed, &metadata_aad(source_ref))?;
         let record: MediaStageRecord = serde_json::from_slice(&plaintext)?;
         if record.format_version != FORMAT_VERSION || record.source_ref != source_ref {
             return Err(MobileCoreError::Security(
@@ -499,6 +837,36 @@ impl MediaStagingStore {
         source_ref: &str,
         plaintext: &[u8],
     ) -> Result<Vec<u8>, MobileCoreError> {
+        self.seal_envelope(plaintext, &metadata_aad(source_ref))
+    }
+
+    fn open_envelope(
+        &self,
+        sealed: &[u8],
+        aad: &[u8],
+    ) -> Result<Zeroizing<Vec<u8>>, MobileCoreError> {
+        if sealed.len() < 1 + NONCE_BYTES + 16 || sealed[0] != FORMAT_VERSION {
+            return Err(MobileCoreError::Security(
+                "private media metadata envelope is invalid".into(),
+            ));
+        }
+        let nonce = XNonce::try_from(&sealed[1..1 + NONCE_BYTES])
+            .map_err(|_| MobileCoreError::Security("media metadata nonce is invalid".into()))?;
+        self.cipher
+            .decrypt(
+                &nonce,
+                Payload {
+                    msg: &sealed[1 + NONCE_BYTES..],
+                    aad,
+                },
+            )
+            .map(Zeroizing::new)
+            .map_err(|_| {
+                MobileCoreError::Security("private media metadata authentication failed".into())
+            })
+    }
+
+    fn seal_envelope(&self, plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>, MobileCoreError> {
         let mut nonce_bytes = [0u8; NONCE_BYTES];
         getrandom::fill(&mut nonce_bytes)
             .map_err(|_| MobileCoreError::Security("media nonce CSPRNG unavailable".into()))?;
@@ -508,7 +876,7 @@ impl MediaStagingStore {
                 &XNonce::from(nonce_bytes),
                 Payload {
                     msg: plaintext,
-                    aad: &metadata_aad(source_ref),
+                    aad,
                 },
             )
             .map_err(|_| MobileCoreError::Security("cannot seal media metadata".into()))?;
@@ -520,7 +888,11 @@ impl MediaStagingStore {
     }
 
     fn stage_path(&self, source_ref: &str) -> PathBuf {
-        self.root.join(format!("{source_ref}.obmstg"))
+        self.staging_root.join(format!("{source_ref}.obmstg"))
+    }
+
+    fn active_path(&self, media_ref: &str) -> PathBuf {
+        self.active_root.join(format!("{media_ref}.obmpack"))
     }
 }
 
@@ -537,6 +909,19 @@ fn receipt_from_record(record: &MediaStageRecord) -> Result<MediaStageReceipt, M
         })?,
         state: record.state,
     })
+}
+
+fn owned_summary(record: &OwnedMediaRecord, owned_hold: bool) -> OwnedMediaSummary {
+    OwnedMediaSummary {
+        media_ref: record.media_ref.clone(),
+        media_class: record.media_class.clone(),
+        mime_type: record.mime_type.clone(),
+        content_bytes: record.content_bytes,
+        verified_bytes: record.verified_bytes,
+        storage_class: "OwnedOriginal",
+        owned_hold,
+        import_state: "Complete",
+    }
 }
 
 fn validate_requested_class(value: &str) -> Result<(), MobileCoreError> {
@@ -576,6 +961,24 @@ fn validate_source_ref(value: &str) -> Result<(), MobileCoreError> {
     {
         return Err(MobileCoreError::InvalidArgument(
             "private media source reference is invalid".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_media_ref(value: &str) -> Result<(), MobileCoreError> {
+    let Some(hex_value) = value.strip_prefix("media_") else {
+        return Err(MobileCoreError::InvalidArgument(
+            "private media reference is invalid".into(),
+        ));
+    };
+    if hex_value.len() != 64
+        || !hex_value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(MobileCoreError::InvalidArgument(
+            "private media reference is invalid".into(),
         ));
     }
     Ok(())
@@ -624,6 +1027,13 @@ fn metadata_aad(source_ref: &str) -> Vec<u8> {
     aad
 }
 
+fn owned_aad(media_ref: &str) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(OWNED_AAD_CONTEXT.len() + media_ref.len());
+    aad.extend_from_slice(OWNED_AAD_CONTEXT);
+    aad.extend_from_slice(media_ref.as_bytes());
+    aad
+}
+
 fn chunk_aad(source_ref: &str, chunk_index: u64) -> Vec<u8> {
     let mut aad =
         Vec::with_capacity(CHUNK_AAD_CONTEXT.len() + source_ref.len() + std::mem::size_of::<u64>());
@@ -636,6 +1046,44 @@ fn chunk_aad(source_ref: &str, chunk_index: u64) -> Vec<u8> {
 fn create_dir_all(path: &Path) -> Result<(), MobileCoreError> {
     fs::create_dir_all(path)
         .map_err(|error| storage_error("cannot create private media directory", error))
+}
+
+fn hash_file(path: &Path) -> Result<String, MobileCoreError> {
+    let mut file = fs::File::open(path)
+        .map_err(|error| storage_error("cannot open active encrypted media pack", error))?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buffer = vec![0u8; MAX_CHUNK_BYTES];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| storage_error("cannot hash active encrypted media pack", error))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
+}
+
+fn sync_file(path: &Path) -> Result<(), MobileCoreError> {
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .and_then(|file| file.sync_all())
+        .map_err(|error| storage_error("cannot sync active encrypted media pack", error))
+}
+
+#[cfg(unix)]
+fn sync_directory(path: &Path) -> Result<(), MobileCoreError> {
+    fs::File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| storage_error("cannot sync private media directory", error))
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<(), MobileCoreError> {
+    Ok(())
 }
 
 fn remove_file_if_present(path: &Path) -> Result<(), MobileCoreError> {
@@ -691,6 +1139,125 @@ mod tests {
             blake3::hash(PNG_BYTES).to_hex().to_string()
         );
         assert_eq!(store.staged_verified_count().expect("count"), 1);
+    }
+
+    #[test]
+    fn activates_owned_original_before_reference_commit_and_keeps_owned_hold() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = open_store(root.path());
+        let source_ref = store.start("image", "image/png", 12).expect("start stage");
+        store.append(&source_ref, PNG_BYTES).expect("append");
+
+        let owned = store
+            .finish_owned_original(&source_ref)
+            .expect("commit OwnedOriginal");
+        assert!(owned.media_ref.starts_with("media_"));
+        assert_eq!(owned.storage_class, "OwnedOriginal");
+        assert_eq!(owned.import_state, "Complete");
+        assert!(owned.owned_hold);
+        assert_eq!(owned.verified_bytes, PNG_BYTES.len() as u64);
+        assert!(!store.stage_path(&source_ref).exists());
+        assert!(store.active_path(&owned.media_ref).is_file());
+        assert_eq!(store.staged_verified_count().expect("staged count"), 0);
+        assert_eq!(store.owned_media_count().expect("owned count"), 1);
+
+        drop(store);
+        let reopened = open_store(root.path());
+        assert_eq!(reopened.owned_media(10).expect("owned shelf"), vec![owned]);
+    }
+
+    #[test]
+    fn duplicate_owned_original_reuses_active_pack_and_catalog_reference() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = open_store(root.path());
+        let first_ref = store.start("image", "image/png", 12).expect("first start");
+        store.append(&first_ref, PNG_BYTES).expect("first append");
+        let first = store
+            .finish_owned_original(&first_ref)
+            .expect("first commit");
+
+        let duplicate_ref = store
+            .start("image", "image/png", 13)
+            .expect("duplicate start");
+        store
+            .append(&duplicate_ref, PNG_BYTES)
+            .expect("duplicate append");
+        let duplicate = store
+            .finish_owned_original(&duplicate_ref)
+            .expect("duplicate commit");
+
+        assert_eq!(duplicate.media_ref, first.media_ref);
+        assert_eq!(store.owned_media_count().expect("owned count"), 1);
+        assert!(!store.stage_path(&duplicate_ref).exists());
+    }
+
+    #[test]
+    fn recovers_kill_after_files_activation_before_reference_commit() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let (source_ref, media_ref) = {
+            let store = open_store(root.path());
+            let source_ref = store.start("image", "image/png", 12).expect("start stage");
+            store.append(&source_ref, PNG_BYTES).expect("append");
+            store.finish(&source_ref).expect("verify stage");
+            let mut record = store
+                .read_record(&source_ref)
+                .expect("read stage")
+                .expect("stage record");
+            let media_ref = store
+                .media_ref_from_digest(record.blake3_digest.as_deref().expect("digest"))
+                .expect("derive reference");
+            record.commit_requested = true;
+            record.media_ref = Some(media_ref.clone());
+            fs::rename(store.stage_path(&source_ref), store.active_path(&media_ref))
+                .expect("activate pack");
+            record.encrypted_pack_root =
+                Some(hash_file(&store.active_path(&media_ref)).expect("hash pack"));
+            record.state = MediaStageState::FilesActivated;
+            store.write_record(&record).expect("persist activation");
+            (source_ref, media_ref)
+        };
+
+        let recovered = open_store(root.path());
+        let record = recovered
+            .read_record(&source_ref)
+            .expect("read recovered stage")
+            .expect("recovered record");
+        assert_eq!(record.state, MediaStageState::Complete);
+        let shelf = recovered.owned_media(10).expect("owned shelf");
+        assert_eq!(shelf.len(), 1);
+        assert_eq!(shelf[0].media_ref, media_ref);
+        assert!(shelf[0].owned_hold);
+    }
+
+    #[test]
+    fn retries_files_activated_reference_commit_without_reopening_runtime() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let store = open_store(root.path());
+        let source_ref = store.start("image", "image/png", 12).expect("start stage");
+        store.append(&source_ref, PNG_BYTES).expect("append");
+        store.finish(&source_ref).expect("verify stage");
+        let mut record = store
+            .read_record(&source_ref)
+            .expect("read stage")
+            .expect("stage record");
+        let media_ref = store
+            .media_ref_from_digest(record.blake3_digest.as_deref().expect("digest"))
+            .expect("derive reference");
+        record.commit_requested = true;
+        record.media_ref = Some(media_ref.clone());
+        fs::rename(store.stage_path(&source_ref), store.active_path(&media_ref))
+            .expect("activate pack");
+        record.encrypted_pack_root =
+            Some(hash_file(&store.active_path(&media_ref)).expect("hash pack"));
+        record.state = MediaStageState::FilesActivated;
+        store.write_record(&record).expect("persist activation");
+
+        let owned = store
+            .finish_owned_original(&source_ref)
+            .expect("retry reference commit");
+        assert_eq!(owned.media_ref, media_ref);
+        assert_eq!(owned.import_state, "Complete");
+        assert!(owned.owned_hold);
     }
 
     #[test]

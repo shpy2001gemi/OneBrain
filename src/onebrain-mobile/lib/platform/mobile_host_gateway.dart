@@ -117,20 +117,26 @@ class MobileShareSpoolSummary {
 
 enum MobileMediaClass { image, video, audio, document }
 
-class MobileMediaStageReceipt {
-  const MobileMediaStageReceipt({
-    required this.sourceRef,
+class MobileOwnedMediaSummary {
+  const MobileOwnedMediaSummary({
+    required this.mediaRef,
     required this.mediaClass,
     required this.mimeType,
     required this.contentBytes,
-    required this.blake3Digest,
+    required this.verifiedBytes,
+    required this.storageClass,
+    required this.ownedHold,
+    required this.importState,
   });
 
-  final String sourceRef;
+  final String mediaRef;
   final MobileMediaClass mediaClass;
   final String mimeType;
   final int contentBytes;
-  final String blake3Digest;
+  final int verifiedBytes;
+  final String storageClass;
+  final bool ownedHold;
+  final String importState;
 }
 
 abstract interface class MobileHostGateway {
@@ -150,9 +156,11 @@ abstract interface class MobileHostGateway {
     required String contentLanguage,
   });
 
-  Future<MobileMediaStageReceipt> pickAndStagePrivateMedia(
+  Future<MobileOwnedMediaSummary> pickAndImportOwnedMedia(
     MobileMediaClass mediaClass,
   );
+
+  Future<List<MobileOwnedMediaSummary>> inspectOwnedMedia();
 
   Future<void> setOnboardingCursor(MobileOnboardingCursor cursor);
 
@@ -217,18 +225,31 @@ class PigeonMobileHostGateway implements MobileHostGateway {
   }
 
   @override
-  Future<MobileMediaStageReceipt> pickAndStagePrivateMedia(
+  Future<MobileOwnedMediaSummary> pickAndImportOwnedMedia(
     MobileMediaClass mediaClass,
   ) async {
-    final receipt = await _api.pickAndStagePrivateMedia(
+    final receipt = await _api.pickAndImportOwnedMedia(
       HostMediaClass.values[mediaClass.index],
     );
-    return MobileMediaStageReceipt(
-      sourceRef: receipt.sourceRef,
+    return _ownedMediaFromHost(receipt);
+  }
+
+  @override
+  Future<List<MobileOwnedMediaSummary>> inspectOwnedMedia() async {
+    final entries = await _api.inspectOwnedMedia();
+    return entries.map(_ownedMediaFromHost).toList(growable: false);
+  }
+
+  MobileOwnedMediaSummary _ownedMediaFromHost(HostOwnedMediaSummary receipt) {
+    return MobileOwnedMediaSummary(
+      mediaRef: receipt.mediaRef,
       mediaClass: MobileMediaClass.values[receipt.mediaClass.index],
       mimeType: receipt.mimeType,
       contentBytes: receipt.contentBytes,
-      blake3Digest: receipt.blake3Digest,
+      verifiedBytes: receipt.verifiedBytes,
+      storageClass: receipt.storageClass,
+      ownedHold: receipt.ownedHold,
+      importState: receipt.importState,
     );
   }
 
@@ -313,3 +334,7 @@ final pendingShareSpoolsProvider =
     FutureProvider<List<MobileShareSpoolSummary>>(
       (ref) => ref.watch(mobileHostGatewayProvider).inspectPendingShareSpools(),
     );
+
+final ownedMediaProvider = FutureProvider<List<MobileOwnedMediaSummary>>(
+  (ref) => ref.watch(mobileHostGatewayProvider).inspectOwnedMedia(),
+);

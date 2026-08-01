@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import org.onebrain.onebrain_mobile.generated.FlutterError
 import org.onebrain.onebrain_mobile.generated.HostBootstrapSnapshot
 import org.onebrain.onebrain_mobile.generated.HostMediaClass
-import org.onebrain.onebrain_mobile.generated.HostMediaStageReceipt
+import org.onebrain.onebrain_mobile.generated.HostOwnedMediaSummary
 import org.onebrain.onebrain_mobile.generated.HostOperationEvent
 import org.onebrain.onebrain_mobile.generated.HostOperationEventKind
 import org.onebrain.onebrain_mobile.generated.HostOperationEventsStreamHandler
@@ -101,7 +101,7 @@ class MainActivity : FlutterActivity() {
 
     private fun requestPrivateMediaPick(
         mediaClass: HostMediaClass,
-        callback: (Result<HostMediaStageReceipt>) -> Unit,
+        callback: (Result<HostOwnedMediaSummary>) -> Unit,
     ) {
         if (pendingMediaPick != null) {
             callback(
@@ -142,8 +142,29 @@ class MainActivity : FlutterActivity() {
 
 private data class PendingMediaPick(
     val mediaClass: HostMediaClass,
-    val callback: (Result<HostMediaStageReceipt>) -> Unit,
+    val callback: (Result<HostOwnedMediaSummary>) -> Unit,
 )
+
+private fun RustOwnedMediaSummary.toHostOwnedMedia() =
+    HostOwnedMediaSummary(
+        mediaRef = mediaRef,
+        mediaClass =
+            HostMediaClass.ofRaw(
+                when (mediaClass) {
+                    "image" -> 0
+                    "video" -> 1
+                    "audio" -> 2
+                    "document" -> 3
+                    else -> -1
+                },
+            ) ?: error("Rust returned an invalid media class"),
+        mimeType = mimeType,
+        contentBytes = contentBytes,
+        verifiedBytes = verifiedBytes,
+        storageClass = storageClass,
+        ownedHold = ownedHold,
+        importState = importState,
+    )
 
 private class AndroidHostEvents : HostOperationEventsStreamHandler() {
     private var sink: PigeonEventSink<HostOperationEvent>? = null
@@ -167,7 +188,7 @@ private class AndroidMobileHost(
     private val securityMaterialStore: SecurityMaterialStore,
     private val events: AndroidHostEvents,
     private val requestMediaPick:
-        (HostMediaClass, (Result<HostMediaStageReceipt>) -> Unit) -> Unit,
+        (HostMediaClass, (Result<HostOwnedMediaSummary>) -> Unit) -> Unit,
 ) : MobileHostApi {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val runtimeExecutor =
@@ -438,9 +459,9 @@ private class AndroidMobileHost(
         }
     }
 
-    override fun pickAndStagePrivateMedia(
+    override fun pickAndImportOwnedMedia(
         mediaClass: HostMediaClass,
-        callback: (Result<HostMediaStageReceipt>) -> Unit,
+        callback: (Result<HostOwnedMediaSummary>) -> Unit,
     ) {
         mainHandler.post {
             requestMediaPick(mediaClass, callback)
@@ -450,7 +471,7 @@ private class AndroidMobileHost(
     fun stagePickedMedia(
         uri: Uri,
         mediaClass: HostMediaClass,
-        callback: (Result<HostMediaStageReceipt>) -> Unit,
+        callback: (Result<HostOwnedMediaSummary>) -> Unit,
     ) {
         runtimeExecutor.execute {
             var sourceRef: String? = null
@@ -506,23 +527,7 @@ private class AndroidMobileHost(
                         } finally {
                             buffer.fill(0)
                         }
-                        val receipt = RustMobileBridge.finishMediaStage(sourceRef!!)
-                        HostMediaStageReceipt(
-                            sourceRef = receipt.sourceRef,
-                            mediaClass =
-                                HostMediaClass.ofRaw(
-                                    when (receipt.mediaClass) {
-                                        "image" -> 0
-                                        "video" -> 1
-                                        "audio" -> 2
-                                        "document" -> 3
-                                        else -> -1
-                                    },
-                                ) ?: error("Rust returned an invalid media class"),
-                            mimeType = receipt.mimeType,
-                            contentBytes = receipt.contentBytes,
-                            blake3Digest = receipt.blake3Digest,
-                        )
+                        RustMobileBridge.finishOwnedMediaImport(sourceRef!!).toHostOwnedMedia()
                     } finally {
                         securityMaterial.fill(0)
                     }
@@ -530,7 +535,7 @@ private class AndroidMobileHost(
                     onSuccess = {
                         Log.i(
                             RUNTIME_LOG_TAG,
-                            "private_media_staged class=${mediaClass.name.lowercase()}",
+                            "owned_original_media_imported class=${mediaClass.name.lowercase()}",
                         )
                         Result.success(it)
                     },
@@ -543,6 +548,33 @@ private class AndroidMobileHost(
                             FlutterError(
                                 code = "MEDIA_STAGE_FAILED",
                                 message = "Private media could not be verified and staged",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { callback(result) }
+        }
+    }
+
+    override fun inspectOwnedMedia(callback: (Result<List<HostOwnedMediaSummary>>) -> Unit) {
+        runtimeExecutor.execute {
+            val result =
+                runCatching {
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    try {
+                        RustMobileBridge.ownedMedia(dataRoot, securityMaterial).map {
+                            it.toHostOwnedMedia()
+                        }
+                    } finally {
+                        securityMaterial.fill(0)
+                    }
+                }.fold(
+                    onSuccess = { Result.success(it) },
+                    onFailure = {
+                        Result.failure(
+                            FlutterError(
+                                code = "OWNED_MEDIA_INSPECTION_FAILED",
+                                message = "Owned media could not be inspected",
                             ),
                         )
                     },

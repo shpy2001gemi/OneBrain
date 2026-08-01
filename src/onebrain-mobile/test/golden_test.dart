@@ -89,6 +89,11 @@ void main() {
       size: Size(430, 932),
       mediaImport: true,
     ),
+    const _GoldenCase(
+      name: 'my_media_large_light_en',
+      size: Size(430, 932),
+      myMedia: true,
+    ),
   ];
 
   group('MOB-04 design-system golden matrix', () {
@@ -143,6 +148,20 @@ Future<void> _pumpGolden(WidgetTester tester, _GoldenCase goldenCase) async {
                     ),
                   ]
                 : const [],
+            ownedMedia: goldenCase.myMedia
+                ? [
+                    MobileOwnedMediaSummary(
+                      mediaRef: 'media_${'a' * 64}',
+                      mediaClass: MobileMediaClass.image,
+                      mimeType: 'image/png',
+                      contentBytes: 2048,
+                      verifiedBytes: 2048,
+                      storageClass: 'OwnedOriginal',
+                      ownedHold: true,
+                      importState: 'Complete',
+                    ),
+                  ]
+                : const [],
           ),
         ),
       ],
@@ -173,7 +192,10 @@ Future<void> _pumpGolden(WidgetTester tester, _GoldenCase goldenCase) async {
     await tester.pumpAndSettle();
   }
 
-  if (goldenCase.home || goldenCase.textCapture || goldenCase.mediaImport) {
+  if (goldenCase.home ||
+      goldenCase.textCapture ||
+      goldenCase.mediaImport ||
+      goldenCase.myMedia) {
     await _enterLimitedShell(tester, goldenCase.locale);
   }
 
@@ -187,6 +209,21 @@ Future<void> _pumpGolden(WidgetTester tester, _GoldenCase goldenCase) async {
   if (goldenCase.mediaImport) {
     await _tapVisible(tester, 'Capture');
     await _tapVisible(tester, 'Import private media');
+  }
+
+  if (goldenCase.myMedia) {
+    final libraryDestination = find.descendant(
+      of: find.byType(NavigationBar),
+      matching: find.text('Library'),
+    );
+    await tester.tap(libraryDestination);
+    await tester.pumpAndSettle();
+
+    final myMediaAction = find.widgetWithText(FilledButton, 'My media');
+    await tester.ensureVisible(myMediaAction);
+    await tester.pumpAndSettle();
+    await tester.tap(myMediaAction);
+    await tester.pumpAndSettle();
   }
 }
 
@@ -239,6 +276,7 @@ class _GoldenCase {
     this.textCapture = false,
     this.shareSpool = false,
     this.mediaImport = false,
+    this.myMedia = false,
   });
 
   final String name;
@@ -254,16 +292,19 @@ class _GoldenCase {
   final bool textCapture;
   final bool shareSpool;
   final bool mediaImport;
+  final bool myMedia;
 }
 
 class _FakeMobileHostGateway implements MobileHostGateway {
   const _FakeMobileHostGateway({
     required this.onboardingCursor,
     required this.pendingSpools,
+    required this.ownedMedia,
   });
 
   final MobileOnboardingCursor onboardingCursor;
   final List<MobileShareSpoolSummary> pendingSpools;
+  final List<MobileOwnedMediaSummary> ownedMedia;
 
   @override
   Future<MobileHostSnapshot> inspectBootstrapHost() async =>
@@ -331,17 +372,23 @@ class _FakeMobileHostGateway implements MobileHostGateway {
       saveRawTextDraft(contentLanguage: contentLanguage, content: 'shared');
 
   @override
-  Future<MobileMediaStageReceipt> pickAndStagePrivateMedia(
+  Future<MobileOwnedMediaSummary> pickAndImportOwnedMedia(
     MobileMediaClass mediaClass,
-  ) async => MobileMediaStageReceipt(
-    sourceRef: 'source_00000000000000000000000000000000',
+  ) async => MobileOwnedMediaSummary(
+    mediaRef: 'media_${'a' * 64}',
     mediaClass: mediaClass,
     mimeType: mediaClass == MobileMediaClass.document
         ? 'application/pdf'
         : '${mediaClass.name}/test',
     contentBytes: 32,
-    blake3Digest: 'a' * 64,
+    verifiedBytes: 32,
+    storageClass: 'OwnedOriginal',
+    ownedHold: true,
+    importState: 'Complete',
   );
+
+  @override
+  Future<List<MobileOwnedMediaSummary>> inspectOwnedMedia() async => ownedMedia;
 
   @override
   Future<String> startFeasibilityOperation(Duration delay) async =>

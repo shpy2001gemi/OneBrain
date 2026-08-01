@@ -1,9 +1,9 @@
 use crate::{
     run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, ExecutionGrant,
     ExecutionGrantKind, MediaStageReceipt, MobileCoreError, MobileFeatureFlags, NetworkScope,
-    OnboardingCursor, RawDraftReceipt, ResourceBudgets, RuntimeServices, SecureIdentitySession,
-    SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary, TransferLandingRecord,
-    MOBILE_RUNTIME_PROFILE_VERSION,
+    OnboardingCursor, OwnedMediaSummary, RawDraftReceipt, ResourceBudgets, RuntimeServices,
+    SecureIdentitySession, SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary,
+    TransferLandingRecord, MOBILE_RUNTIME_PROFILE_VERSION,
 };
 
 const FOREGROUND_GRANT_ID: &str = "native.foreground";
@@ -39,6 +39,7 @@ pub struct MobileRuntimeSnapshot {
     pub encrypted_raw_draft_count: u64,
     pub pending_share_spool_count: u64,
     pub staged_verified_media_count: u64,
+    pub owned_original_media_count: u64,
     pub onboarding_cursor: OnboardingCursor,
 }
 
@@ -232,6 +233,11 @@ impl MobileRuntimeFacade {
                 .as_ref()
                 .and_then(|session| session.staged_verified_media_count().ok())
                 .unwrap_or(0),
+            owned_original_media_count: self
+                .secure_identity
+                .as_ref()
+                .and_then(|session| session.owned_media_count().ok())
+                .unwrap_or(0),
             onboarding_cursor: self.store.onboarding_cursor().unwrap_or_default(),
         }
     }
@@ -404,6 +410,36 @@ impl MobileRuntimeFacade {
             .telemetry
             .record("mobile_media_stage_verified");
         Ok(receipt)
+    }
+
+    pub fn finish_owned_media_import(
+        &mut self,
+        source_ref: &str,
+    ) -> Result<OwnedMediaSummary, MobileCoreError> {
+        let now = self.services.clock.monotonic_millis();
+        let receipt = self
+            .secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .finish_owned_media_import(source_ref, now)?;
+        self.store.append_security_history(
+            self.arbiter.process_generation(),
+            now,
+            "OWNED_ORIGINAL_MEDIA_COMMITTED",
+            "MEDIA",
+            true,
+        )?;
+        self.services
+            .telemetry
+            .record("mobile_owned_original_committed");
+        Ok(receipt)
+    }
+
+    pub fn owned_media(&self, limit: usize) -> Result<Vec<OwnedMediaSummary>, MobileCoreError> {
+        self.secure_identity
+            .as_ref()
+            .ok_or(MobileCoreError::Locked)?
+            .owned_media(limit)
     }
 
     pub fn abort_media_stage(&mut self, source_ref: &str) -> Result<(), MobileCoreError> {

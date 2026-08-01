@@ -3,7 +3,7 @@
   "contract_id": "onebrain-mobile-owner-approved-v1",
   "authority_set_sha256": "b9f374909c83c6dc3785871da172bffbaf666468fe42cd7afb7f069952aeb375",
   "phase": "feature",
-  "work_package": "MOB-04",
+  "work_package": "MOB-07",
   "acknowledged_required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -47,6 +47,7 @@
     "MOB-CAP-006",
     "MOB-CAP-007",
     "MOB-MED-001",
+    "MOB-MED-003",
     "MOB-LIB-001",
     "MOB-LIB-002",
     "MOB-LIB-003",
@@ -62,11 +63,18 @@
     "MOB-SCR-CAP-002",
     "MOB-SCR-CAP-003",
     "MOB-SCR-CAP-004",
+    "MOB-SCR-CAP-008",
+    "MOB-SCR-MED-005",
     "MOB-SCR-AI-001",
     "MOB-SCR-SET-001",
     "OBM-CMP-NAV-001",
     "OBM-CMP-NAV-002",
     "OBM-CMP-ACT-001",
+    "OBM-CMP-DAT-003",
+    "OBM-CMP-DAT-005",
+    "OBM-CMP-DAT-007",
+    "OBM-CMP-DAT-008",
+    "OBM-CMP-MED-003",
     "OBM-CMP-STA-001",
     "OBM-CMP-STA-002",
     "OBM-PAT-001",
@@ -74,6 +82,7 @@
     "OBM-PAT-003",
     "OBM-PAT-004",
     "OBM-PAT-006",
+    "OBM-PAT-008",
     "OBM-PAT-009",
     "OBM-PAT-010",
     "OBM-PAT-012"
@@ -267,7 +276,7 @@
     {
       "id": "MOB-04-DESIGN-GOLDENS",
       "path": "src/onebrain-mobile/test/golden_test.dart",
-      "proves": "Thirteen deterministic goldens cover the owner-approved design modes plus Limited Home, private text capture, encrypted share-spool preview and system-picker media import through shared tokens and components."
+      "proves": "Fourteen deterministic goldens cover the owner-approved design modes plus Limited Home, private text capture, encrypted share-spool preview, system-picker media import and the OwnedOriginal shelf through shared tokens and components."
     },
     {
       "id": "MOB-04-ANDROID-NATIVE-INTEGRATION",
@@ -328,9 +337,34 @@
       "id": "MOB-04-VIRTUAL-DEVICE-STRATEGY",
       "path": "src/onebrain-mobile/compliance/mob04_validation_strategy_v1.json",
       "proves": "The owner-approved emulator/simulator-first scope names implemented MOB-04 behavior, remaining share/backup work and deferred physical-device gates without a completion claim."
+    },
+    {
+      "id": "MOB-07-OWNED-ORIGINAL-TRANSACTION",
+      "path": "src/onebrain-mobile-core/src/media_staging.rs",
+      "proves": "Rust advances verified private media through StagedVerified, FilesActivated, ReferenceCommitted and Complete; the catalog reference and encrypted-pack owned hold commit in one redb transaction, same-content imports deduplicate through a vault-derived opaque reference, and restart tests resume after files activation."
+    },
+    {
+      "id": "MOB-07-TYPED-OWNED-MEDIA-CATALOG",
+      "path": "src/onebrain-mobile/pigeons/mobile_host_api.dart",
+      "proves": "Generated Dart, Kotlin and Swift contracts expose a bounded OwnedOriginal summary and catalog query without picker URI, filesystem path, key, plaintext bytes, private content digest or database handle crossing into Flutter."
+    },
+    {
+      "id": "MOB-07-MY-MEDIA-SHELF",
+      "path": "src/onebrain-mobile/lib/ui/screens/my_media_screen.dart",
+      "proves": "MOB-SCR-MED-005 renders English/Vietnamese bounded OwnedOriginal facts through the shared OBM-CMP-DAT-003 media card and states explicitly that local ownership is neither publication nor seed eligibility."
+    },
+    {
+      "id": "MOB-07-ANDROID-OWNED-MEDIA",
+      "path": "src/onebrain-mobile/compliance/reports/mob07_android_owned_media.json",
+      "proves": "Android 16 emulator evidence exercises ACTION_OPEN_DOCUMENT, native-to-Rust bounded streaming, magic-byte and full-length verification, immutable activation, owned hold, typed catalog query and force-stop recovery without claiming physical-device validation."
+    },
+    {
+      "id": "MOB-07-OWNED-MEDIA-RECOVERY-TEST",
+      "path": "src/onebrain-mobile/integration_test/owned_media_recovery_test.dart",
+      "proves": "After Android force-stop, the typed Pigeon/Rust path observes an unclean generation and reopens only Complete OwnedOriginal entries whose verified byte count equals content length and whose owned hold remains active."
     }
   ],
   "deviations": [],
-  "last_reviewed": "2026-07-30",
-  "notes": "MOB-04 is in progress. The current feature slice adds the English/Vietnamese Limited shell, a Rust-owned durable onboarding cursor, encrypted bounded PrivateLocal text drafts, shared adaptive navigation, Registry-gated disabled states and accessibility/golden coverage over the MOB-03 protected runtime. Android 16 emulator evidence covers ABI 7 integration, Keystore-backed force-stop recovery, injected missing-marker rejection, cold-start text/plain share spools with idempotent draft import, and ACTION_OPEN_DOCUMENT media streamed native-to-Rust into encrypted StagedVerified storage. The stage is not yet OwnedOriginal, a KU attachment, shared, published or seedable. iOS share-extension/picker landing, full media activation/reference commit, user-selected encrypted backup/export destinations and the full Limited/Degraded/Safe matrix remain open. iOS and all physical-device validation remain gated. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
+  "last_reviewed": "2026-08-01",
+  "notes": "MOB-07 is in progress under the owner-approved emulator-first scope. This slice promotes a verified Android picker source into a locally encrypted OwnedOriginal, activates immutable bytes before an atomic catalog-reference plus owned-hold commit, deduplicates same-content imports through a vault-derived opaque reference, resumes incomplete commit states after process death, and exposes a bilingual My Media shelf through shared design-system components. Android 16 emulator evidence covers the real picker and typed force-stop recovery. It does not close MOB-GATE-MEDIA: final logical-piece/physical-pack layout, exact MediaManifestBodyCid display, multi-GB and ENOSPC fault matrices, verified viewers, derived share representations, access grants, received media, download/range verification, GC and physical-device validation remain open. OwnedOriginal remains PrivateLocal and is not a KU attachment, share object, publication, provider lease or seed-eligible representation. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
 }

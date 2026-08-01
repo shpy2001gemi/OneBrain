@@ -367,7 +367,70 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get mediaLibraryBody =>
-      'Bản gốc sở hữu và media dẫn xuất sẽ dùng kho mã hóa đã xác minh. Ingestion media chưa active trong lát cắt này.';
+      'Duyệt các bản gốc mã hóa do node này sở hữu. Quyền sở hữu riêng tư không tự làm media được chia sẻ hay có thể seed.';
+
+  @override
+  String get myMediaShelfBody =>
+      'Kệ có giới hạn này đọc từ catalog mã hóa do Rust sở hữu. Mỗi mục hiển thị byte cục bộ đã xác minh và đúng lớp lưu giữ.';
+
+  @override
+  String get myMediaPrivateTitle => 'Sở hữu tại đây, chưa publish';
+
+  @override
+  String get myMediaPrivateBody =>
+      'OwnedOriginal giữ một hold bền vững chống thu hồi cục bộ. Media vẫn là PrivateLocal, chưa có share representation, access grant hay điều kiện seed.';
+
+  @override
+  String get myMediaLoadingTitle => 'Đang mở catalog media mã hóa';
+
+  @override
+  String get myMediaLoadingBody =>
+      'Native host đang truy vấn metadata có giới hạn; byte media và đường dẫn lưu trữ không đi vào Flutter.';
+
+  @override
+  String get myMediaLoadError =>
+      'Không thể kiểm tra catalog media mã hóa. Ứng dụng không suy diễn quyền sở hữu hay tính sẵn sàng.';
+
+  @override
+  String get myMediaEmptyTitle => 'Chưa có media sở hữu';
+
+  @override
+  String get myMediaEmptyBody =>
+      'Nhập ảnh, PDF, audio hoặc video qua system picker. OneBrain sẽ xác minh và activate trước khi thêm tham chiếu vào kệ này.';
+
+  @override
+  String myMediaItemTitle(String mediaClass) {
+    return '$mediaClass sở hữu';
+  }
+
+  @override
+  String myMediaVerifiedBytes(int verifiedBytes, int contentBytes) {
+    return 'Đã xác minh cục bộ $verifiedBytes/$contentBytes byte';
+  }
+
+  @override
+  String get storageClassOwnedOriginal => 'OwnedOriginal';
+
+  @override
+  String get mediaOwnedHoldProtected => 'Được bảo vệ bởi owned hold';
+
+  @override
+  String get mediaOwnedHoldMissing => 'Thiếu owned hold';
+
+  @override
+  String get mediaClassImage => 'Ảnh';
+
+  @override
+  String get mediaClassVideo => 'Video';
+
+  @override
+  String get mediaClassAudio => 'Audio';
+
+  @override
+  String get mediaClassDocument => 'Tài liệu';
+
+  @override
+  String get retryAction => 'Thử lại';
 
   @override
   String get conceptsTitle => 'Concept, tìm kiếm và KQL';
@@ -455,14 +518,14 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get mediaImportBody =>
-      'Chọn một nguồn bằng system picker. OneBrain xác minh byte, mã hóa từng chunk và chỉ trả về tham chiếu cục bộ opaque.';
+      'Chọn một nguồn bằng system picker. OneBrain stream, xác minh và mã hóa, activate byte cục bộ bất biến rồi commit tham chiếu OwnedOriginal.';
 
   @override
-  String get mediaImportBoundaryTitle => 'Staging không phải publish';
+  String get mediaImportBoundaryTitle => 'Sở hữu không có nghĩa là chia sẻ';
 
   @override
   String get mediaImportBoundaryBody =>
-      'Stage đã xác minh vẫn là PrivateLocal. Nó chưa phải OwnedOriginal, đính kèm KU, object chia sẻ hay media pack có thể seed.';
+      'Bản gốc đã commit vẫn là PrivateLocal. Import không đính kèm vào KU, tạo share representation, publish hay cho phép seed.';
 
   @override
   String get mediaPickImageTitle => 'Ảnh';
@@ -496,24 +559,25 @@ class AppLocalizationsVi extends AppLocalizations {
   String get mediaPickAction => 'Chọn bằng system picker';
 
   @override
-  String get mediaPickBusy => 'Đang mã hóa và xác minh trên thiết bị…';
+  String get mediaPickBusy =>
+      'Đang mã hóa, xác minh và activate trên thiết bị…';
 
   @override
-  String get mediaStageReadyTitle => 'Đã xác minh stage mã hóa';
+  String get mediaStageReadyTitle => 'Đã bảo vệ bản gốc sở hữu';
 
   @override
   String mediaStageReadyBody(
     String mimeType,
     int bytes,
-    String digestShort,
-    String sourceRef,
+    String storageClass,
+    String mediaRef,
   ) {
-    return '$mimeType · $bytes byte · BLAKE3 $digestShort. Nguồn opaque: $sourceRef.';
+    return '$mimeType · $bytes byte đã xác minh · $storageClass. Tham chiếu media opaque: $mediaRef.';
   }
 
   @override
   String get mediaStageError =>
-      'Nguồn đã bị hủy, không đọc được, không hỗ trợ hoặc không khớp loại khai báo. Không giữ lại stage chưa xác minh.';
+      'Nguồn đã bị hủy, không đọc được, không hỗ trợ hoặc không khớp loại khai báo. Không giữ lại tham chiếu catalog chưa xác minh.';
 
   @override
   String get textComposerTitle => 'Draft văn bản riêng tư';

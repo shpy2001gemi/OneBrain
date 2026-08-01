@@ -19,7 +19,7 @@ class MediaImportScreen extends ConsumerStatefulWidget {
 
 class _MediaImportScreenState extends ConsumerState<MediaImportScreen> {
   MobileMediaClass? _busyClass;
-  MobileMediaStageReceipt? _receipt;
+  MobileOwnedMediaSummary? _receipt;
   bool _failed = false;
 
   Future<void> _pick(MobileMediaClass mediaClass) async {
@@ -33,12 +33,13 @@ class _MediaImportScreenState extends ConsumerState<MediaImportScreen> {
     try {
       final receipt = await ref
           .read(mobileHostGatewayProvider)
-          .pickAndStagePrivateMedia(mediaClass);
+          .pickAndImportOwnedMedia(mediaClass);
       if (!mounted) {
         return;
       }
       setState(() => _receipt = receipt);
       ref.invalidate(mobileRuntimeSnapshotProvider);
+      ref.invalidate(ownedMediaProvider);
     } on Object {
       if (!mounted) {
         return;
@@ -97,8 +98,8 @@ class _MediaImportScreenState extends ConsumerState<MediaImportScreen> {
                 body: strings.mediaStageReadyBody(
                   receipt.mimeType,
                   receipt.contentBytes,
-                  receipt.blake3Digest.substring(0, 12),
-                  receipt.sourceRef,
+                  receipt.storageClass,
+                  receipt.mediaRef,
                 ),
                 icon: ObmSymbol.checkCircle,
                 tone: ObmStatusTone.ready,
