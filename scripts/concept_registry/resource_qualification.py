@@ -419,7 +419,11 @@ def run_qualification(
     max_ready_ms = int(budget["max_ready_ms"])
     max_p95_us = int(budget["max_p95_us"])
     max_peak_rss_bytes = int(budget["max_peak_rss_bytes"])
-    address_space_limit_bytes = budget["address_space_limit_bytes"]
+    address_space_limit_bytes = (
+        budget["address_space_limit_bytes"]
+        if qualification_profile == "low-ram"
+        else None
+    )
     for name, value in {"timeout_seconds": timeout_seconds}.items():
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise QualificationError(f"{name} must be a positive integer")
@@ -430,10 +434,6 @@ def run_qualification(
             raise QualificationError(
                 "address-space limit cannot be smaller than the peak RSS budget"
             )
-    elif address_space_limit_bytes is not None:
-        raise QualificationError(
-            "address-space limit is only valid for the low-ram profile"
-        )
 
     artifacts = _artifact_evidence(probe_path, obr_path, labels_path)
     if qualification_profile == "cold-cache":

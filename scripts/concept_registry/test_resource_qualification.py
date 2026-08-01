@@ -110,6 +110,27 @@ class ResourceQualificationTests(unittest.TestCase):
         with self.assertRaisesRegex(QualificationError, "does not allow"):
             resolve_budget("low-ram", "cold-cache-production-v1")
 
+    def test_shared_ci_budget_does_not_apply_low_ram_limit_to_cold_cache(self) -> None:
+        execution = _valid_execution()
+        with patch(
+            "resource_qualification._artifact_evidence", return_value={}
+        ), patch(
+            "resource_qualification.prepare_cold_cache",
+            return_value={"request_completed": True},
+        ), patch("resource_qualification.execute_probe", return_value=execution) as probe:
+            report = run_qualification(
+                "cold-cache",
+                Path("probe"),
+                Path("fixture.obr"),
+                Path("labels.txt"),
+                "auto",
+                "ci-small-fixture-v1",
+                30,
+            )
+        self.assertTrue(report["qualified"])
+        self.assertIsNone(report["memory_enforcement"]["address_space_limit_bytes"])
+        self.assertIsNone(probe.call_args.args[-1])
+
     @unittest.skipUnless(
         os.environ.get("ONEBRAIN_REGISTRY_PROBE"),
         "set ONEBRAIN_REGISTRY_PROBE to run the compiled-probe integration",
