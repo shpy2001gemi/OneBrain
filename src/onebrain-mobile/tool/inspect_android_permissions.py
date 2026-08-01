@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed when a bootstrap-only Android release can open a network."""
+"""Report whether the pre-platform-execution Android release can open a network."""
 
 from __future__ import annotations
 
@@ -86,7 +86,7 @@ def inspect(apk: Path) -> dict[str, object]:
     return {
         "format": "onebrain.mobile.android-permissions/1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "scope": "MOB-04 BootstrapOnly private-shell Android release",
+        "scope": "MOB-05B root-barrier Android release before platform transfer execution",
         "package": apk.name,
         "package_bytes": apk.stat().st_size,
         "package_sha256": _sha256(apk),
@@ -96,9 +96,9 @@ def inspect(apk: Path) -> dict[str, object]:
         "forbidden_bootstrap_network_permissions": forbidden,
         "network_capability_present": bool(forbidden),
         "limitations": (
-            "This proves the packaged Android release lacks OS network "
-            "permissions. It does not replace later explicit-Init transport "
-            "tests or physical-device packet capture."
+            "This proves the packaged root-barrier release still lacks OS "
+            "network permissions. It does not replace the next explicit-Init "
+            "platform transport tests or physical-device packet capture."
         ),
     }
 

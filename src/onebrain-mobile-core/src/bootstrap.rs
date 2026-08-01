@@ -23,6 +23,8 @@ const REGISTRY_OPERATIONS: TableDefinition<&str, &[u8]> =
     TableDefinition::new("registry_operations");
 const REGISTRY_CHUNKS: TableDefinition<&str, &[u8]> = TableDefinition::new("registry_chunks");
 const TRANSFER_LANDING: TableDefinition<&str, &[u8]> = TableDefinition::new("transfer_landing");
+const REGISTRY_TRANSFER_SCHEDULES: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("registry_transfer_schedules");
 const BOOTSTRAP_OPERATION_IDS: TableDefinition<&str, &[u8]> =
     TableDefinition::new("bootstrap_op_ids");
 const INSTALLATION_AUTHORITY: TableDefinition<&str, &[u8]> =
@@ -141,6 +143,8 @@ pub struct RegistryOperationRecord {
     pub waiting_reason: Option<RegistryWaitingReason>,
     #[serde(default)]
     pub resume_state: Option<RegistryOperationState>,
+    #[serde(default)]
+    pub active_transfer_nonce: Option<String>,
 }
 
 impl RegistryOperationRecord {
@@ -162,6 +166,7 @@ impl RegistryOperationRecord {
             one_time_network_override: false,
             waiting_reason: None,
             resume_state: None,
+            active_transfer_nonce: None,
         }
     }
 }
@@ -204,6 +209,44 @@ pub struct TransferLandingRecord {
     pub receiving_process_generation: Option<u64>,
     pub app_assigned_callback_sequence: Option<u64>,
     pub landed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistryTransferPlatform {
+    AndroidUidt,
+    IosBackgroundUrlSession,
+    ForegroundHttps,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistryTransferScheduleState {
+    SchedulePrepared,
+    TransferSubmitted,
+    TransferAdopted,
+    ResumeRequiredAfterUnobservedStop,
+    UserStoppedOsJob,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegistryTransferScheduleRecord {
+    pub transfer_nonce: String,
+    pub operation_id: String,
+    pub release_id: String,
+    pub manifest_digest: String,
+    pub trust_profile_digest: String,
+    pub request_fingerprint: String,
+    pub transport_descriptor_digest: String,
+    pub expected_total_bytes: u64,
+    pub platform: RegistryTransferPlatform,
+    pub android_job_id: Option<u32>,
+    pub os_transfer_id: Option<String>,
+    pub state: RegistryTransferScheduleState,
+    pub prepared_process_generation: u64,
+    pub submitted_process_generation: Option<u64>,
+    pub adopted_process_generation: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -273,6 +316,7 @@ impl BootstrapStore {
             let _ = write.open_table(REGISTRY_OPERATIONS)?;
             let _ = write.open_table(REGISTRY_CHUNKS)?;
             let _ = write.open_table(TRANSFER_LANDING)?;
+            let _ = write.open_table(REGISTRY_TRANSFER_SCHEDULES)?;
             let _ = write.open_table(BOOTSTRAP_OPERATION_IDS)?;
             let _ = write.open_table(INSTALLATION_AUTHORITY)?;
             let _ = write.open_table(PRIVACY_POLICY)?;
@@ -1195,6 +1239,356 @@ impl BootstrapStore {
         Ok(count)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn prepare_registry_transfer_schedule(
+        &self,
+        operation_id: &str,
+        manifest_digest: &str,
+        platform: RegistryTransferPlatform,
+        request_fingerprint: &str,
+        transport_descriptor_digest: &str,
+        expected_total_bytes: u64,
+        foreground_user_resume: bool,
+        budgets: &ResourceBudgets,
+    ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
+        require_bounded("operation_id", operation_id, budgets.max_operation_id_bytes)?;
+        validate_hash(manifest_digest)?;
+        validate_hash(request_fingerprint)?;
+        validate_hash(transport_descriptor_digest)?;
+        if expected_total_bytes == 0 {
+            return Err(registry_admission(
+                "Registry transfer schedule must bind non-zero exact bytes",
+            ));
+        }
+
+        let operation_snapshot = self
+            .registry_operation(operation_id)?
+            .ok_or_else(|| registry_admission("unknown Registry Init operation"))?;
+        if matches!(
+            operation_snapshot.state,
+            RegistryOperationState::SchedulePrepared
+                | RegistryOperationState::TransferSubmitted
+                | RegistryOperationState::TransferAdopted
+        ) {
+            let active_nonce = operation_snapshot
+                .active_transfer_nonce
+                .as_deref()
+                .ok_or_else(|| registry_admission("active Registry transfer lost its nonce"))?;
+            let schedule = self
+                .registry_transfer_schedule(active_nonce)?
+                .ok_or_else(|| registry_admission("active Registry transfer lost its schedule"))?;
+            if registry_transfer_request_matches(
+                &schedule,
+                operation_id,
+                manifest_digest,
+                platform,
+                request_fingerprint,
+                transport_descriptor_digest,
+                expected_total_bytes,
+            ) {
+                return Ok(schedule);
+            }
+            return Err(registry_admission(
+                "an active Registry transfer cannot be rebound to another request",
+            ));
+        }
+
+        let mut random_nonce = [0u8; 24];
+        getrandom::fill(&mut random_nonce).map_err(|_| {
+            MobileCoreError::Security("Registry transfer nonce CSPRNG unavailable".into())
+        })?;
+        let transfer_nonce = format!("registry_transfer_{}", hex::encode(random_nonce));
+        require_bounded(
+            "transfer_nonce",
+            &transfer_nonce,
+            budgets.max_transfer_nonce_bytes,
+        )?;
+
+        let write = self.database.begin_write()?;
+        let result;
+        {
+            let process_table = write.open_table(PROCESS_GENERATIONS)?;
+            let process_generation = required_current_process(&process_table)?.generation;
+            drop(process_table);
+
+            let mut operations = write.open_table(REGISTRY_OPERATIONS)?;
+            let existing = operations
+                .get(operation_id)?
+                .ok_or_else(|| registry_admission("unknown Registry Init operation"))?;
+            let mut operation: RegistryOperationRecord = decode(existing.value())?;
+            drop(existing);
+
+            let is_foreground_resume = operation.state == RegistryOperationState::Waiting
+                && matches!(
+                    operation.waiting_reason,
+                    Some(
+                        RegistryWaitingReason::ResumeRequiredAfterUnobservedStop
+                            | RegistryWaitingReason::UserStoppedOsJob
+                    )
+                );
+            if is_foreground_resume && !foreground_user_resume {
+                return Err(registry_admission(
+                    "a stopped Registry transfer requires an explicit foreground Resume",
+                ));
+            }
+
+            let mut schedules = write.open_table(REGISTRY_TRANSFER_SCHEDULES)?;
+
+            if operation.state != RegistryOperationState::CapacityAdmitted && !is_foreground_resume
+            {
+                return Err(registry_admission(
+                    "Registry transfer scheduling requires exact admitted capacity",
+                ));
+            }
+            if operation.confirmed_manifest_digest.as_deref() != Some(manifest_digest)
+                || operation
+                    .capacity_plan
+                    .as_ref()
+                    .is_none_or(|plan| !plan.admitted())
+            {
+                return Err(registry_admission(
+                    "Registry transfer schedule is not bound to the admitted exact plan",
+                ));
+            }
+
+            let catalog = write.open_table(REGISTRY_RELEASE_CATALOG)?;
+            let release = catalog
+                .get(operation.release_id.as_str())?
+                .map(|value| decode::<RegistryReleaseCatalogRecord>(value.value()))
+                .transpose()?
+                .ok_or_else(|| registry_admission("verified release lost its catalog record"))?;
+            if release.state == RegistryReleaseState::Revoked
+                || release.manifest_digest != manifest_digest
+                || release.trust_profile_digest
+                    != operation
+                        .confirmed_trust_profile_digest
+                        .clone()
+                        .ok_or_else(|| registry_admission("missing confirmed trust binding"))?
+                || release.artifact_total_bytes != expected_total_bytes
+            {
+                return Err(registry_admission(
+                    "Registry transfer schedule does not match the eligible signed release",
+                ));
+            }
+            drop(catalog);
+
+            let android_job_id = match platform {
+                RegistryTransferPlatform::AndroidUidt => Some(android_registry_job_id(
+                    operation_id,
+                    operation.release_id.as_str(),
+                    request_fingerprint,
+                    transfer_nonce.as_str(),
+                )),
+                RegistryTransferPlatform::IosBackgroundUrlSession
+                | RegistryTransferPlatform::ForegroundHttps => None,
+            };
+            let mut platform_id_collision = false;
+            if let Some(job_id) = android_job_id {
+                for entry in schedules.iter()? {
+                    let (_, value) = entry?;
+                    let existing: RegistryTransferScheduleRecord = decode(value.value())?;
+                    if existing.android_job_id == Some(job_id) {
+                        platform_id_collision = true;
+                        break;
+                    }
+                }
+            }
+            if schedules.get(transfer_nonce.as_str())?.is_some() || platform_id_collision {
+                return Err(MobileCoreError::Security(
+                    "Registry transfer nonce or platform job ID collided".into(),
+                ));
+            }
+
+            let schedule = RegistryTransferScheduleRecord {
+                transfer_nonce: transfer_nonce.clone(),
+                operation_id: operation_id.to_owned(),
+                release_id: operation.release_id.clone(),
+                manifest_digest: manifest_digest.to_owned(),
+                trust_profile_digest: release.trust_profile_digest,
+                request_fingerprint: request_fingerprint.to_owned(),
+                transport_descriptor_digest: transport_descriptor_digest.to_owned(),
+                expected_total_bytes,
+                platform,
+                android_job_id,
+                os_transfer_id: None,
+                state: RegistryTransferScheduleState::SchedulePrepared,
+                prepared_process_generation: process_generation,
+                submitted_process_generation: None,
+                adopted_process_generation: None,
+            };
+            let bytes = encode(&schedule)?;
+            schedules.insert(transfer_nonce.as_str(), bytes.as_slice())?;
+            drop(schedules);
+
+            operation.active_transfer_nonce = Some(transfer_nonce);
+            operation.state = RegistryOperationState::SchedulePrepared;
+            operation.waiting_reason = None;
+            operation.resume_state = None;
+            let bytes = encode(&operation)?;
+            operations.insert(operation_id, bytes.as_slice())?;
+            result = schedule;
+        }
+        write.commit()?;
+        Ok(result)
+    }
+
+    pub fn mark_registry_transfer_submitted(
+        &self,
+        transfer_nonce: &str,
+        os_transfer_id: &str,
+        budgets: &ResourceBudgets,
+    ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
+        require_bounded(
+            "transfer_nonce",
+            transfer_nonce,
+            budgets.max_transfer_nonce_bytes,
+        )?;
+        require_bounded(
+            "os_transfer_id",
+            os_transfer_id,
+            budgets.max_os_transfer_id_bytes,
+        )?;
+        self.update_registry_transfer_schedule(transfer_nonce, |operation, schedule, generation| {
+            if operation.active_transfer_nonce.as_deref() != Some(transfer_nonce) {
+                return Err(registry_admission("Registry transfer is no longer active"));
+            }
+            match schedule.state {
+                RegistryTransferScheduleState::SchedulePrepared => {
+                    schedule.os_transfer_id = Some(os_transfer_id.to_owned());
+                    schedule.state = RegistryTransferScheduleState::TransferSubmitted;
+                    schedule.submitted_process_generation = Some(generation);
+                    operation.state = RegistryOperationState::TransferSubmitted;
+                }
+                RegistryTransferScheduleState::TransferSubmitted
+                    if schedule.os_transfer_id.as_deref() == Some(os_transfer_id) => {}
+                _ => {
+                    return Err(registry_admission(
+                        "Registry transfer submit receipt is stale or mismatched",
+                    ));
+                }
+            }
+            Ok(())
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn adopt_registry_transfer(
+        &self,
+        transfer_nonce: &str,
+        os_transfer_id: &str,
+        observed_request_fingerprint: &str,
+        observed_android_job_id: Option<u32>,
+        matching_task_count: u32,
+        budgets: &ResourceBudgets,
+    ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
+        require_bounded(
+            "transfer_nonce",
+            transfer_nonce,
+            budgets.max_transfer_nonce_bytes,
+        )?;
+        require_bounded(
+            "os_transfer_id",
+            os_transfer_id,
+            budgets.max_os_transfer_id_bytes,
+        )?;
+        validate_hash(observed_request_fingerprint)?;
+        if matching_task_count != 1 {
+            return Err(registry_admission(
+                "Registry transfer adoption requires exactly one matching platform task",
+            ));
+        }
+        self.update_registry_transfer_schedule(transfer_nonce, |operation, schedule, generation| {
+            if operation.active_transfer_nonce.as_deref() != Some(transfer_nonce)
+                || schedule.request_fingerprint != observed_request_fingerprint
+                || schedule.android_job_id != observed_android_job_id
+            {
+                return Err(registry_admission(
+                    "platform transfer inventory does not match the durable request",
+                ));
+            }
+            match schedule.state {
+                RegistryTransferScheduleState::SchedulePrepared => {
+                    schedule.os_transfer_id = Some(os_transfer_id.to_owned());
+                    schedule.submitted_process_generation = Some(generation);
+                }
+                RegistryTransferScheduleState::TransferSubmitted
+                    if schedule.os_transfer_id.as_deref() == Some(os_transfer_id) => {}
+                RegistryTransferScheduleState::TransferAdopted
+                    if schedule.os_transfer_id.as_deref() == Some(os_transfer_id) =>
+                {
+                    return Ok(());
+                }
+                _ => {
+                    return Err(registry_admission(
+                        "Registry transfer task cannot be adopted from its current state",
+                    ));
+                }
+            }
+            schedule.state = RegistryTransferScheduleState::TransferAdopted;
+            schedule.adopted_process_generation = Some(generation);
+            operation.state = RegistryOperationState::TransferAdopted;
+            Ok(())
+        })
+    }
+
+    pub fn record_registry_transfer_missing(
+        &self,
+        transfer_nonce: &str,
+        positive_user_stop_evidence: bool,
+        budgets: &ResourceBudgets,
+    ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
+        require_bounded(
+            "transfer_nonce",
+            transfer_nonce,
+            budgets.max_transfer_nonce_bytes,
+        )?;
+        self.update_registry_transfer_schedule(transfer_nonce, |operation, schedule, _| {
+            if operation.active_transfer_nonce.as_deref() != Some(transfer_nonce) {
+                return Err(registry_admission("Registry transfer is no longer active"));
+            }
+            if schedule.state == RegistryTransferScheduleState::SchedulePrepared {
+                return Ok(());
+            }
+            if !matches!(
+                schedule.state,
+                RegistryTransferScheduleState::TransferSubmitted
+                    | RegistryTransferScheduleState::TransferAdopted
+            ) {
+                return Err(registry_admission(
+                    "missing-task recovery is invalid for this Registry transfer",
+                ));
+            }
+            let (schedule_state, reason) = if positive_user_stop_evidence {
+                (
+                    RegistryTransferScheduleState::UserStoppedOsJob,
+                    RegistryWaitingReason::UserStoppedOsJob,
+                )
+            } else {
+                (
+                    RegistryTransferScheduleState::ResumeRequiredAfterUnobservedStop,
+                    RegistryWaitingReason::ResumeRequiredAfterUnobservedStop,
+                )
+            };
+            schedule.state = schedule_state;
+            operation.state = RegistryOperationState::Waiting;
+            operation.waiting_reason = Some(reason);
+            operation.resume_state = Some(RegistryOperationState::SchedulePrepared);
+            Ok(())
+        })
+    }
+
+    pub fn registry_transfer_schedule(
+        &self,
+        transfer_nonce: &str,
+    ) -> Result<Option<RegistryTransferScheduleRecord>, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(REGISTRY_TRANSFER_SCHEDULES)?;
+        table
+            .get(transfer_nonce)?
+            .map(|value| decode(value.value()))
+            .transpose()
+    }
+
     pub fn registry_operation(
         &self,
         operation_id: &str,
@@ -1433,6 +1827,49 @@ impl BootstrapStore {
         Ok(updated)
     }
 
+    fn update_registry_transfer_schedule(
+        &self,
+        transfer_nonce: &str,
+        update: impl FnOnce(
+            &mut RegistryOperationRecord,
+            &mut RegistryTransferScheduleRecord,
+            u64,
+        ) -> Result<(), MobileCoreError>,
+    ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
+        let write = self.database.begin_write()?;
+        let updated;
+        {
+            let process_table = write.open_table(PROCESS_GENERATIONS)?;
+            let process_generation = required_current_process(&process_table)?.generation;
+            drop(process_table);
+
+            let mut schedules = write.open_table(REGISTRY_TRANSFER_SCHEDULES)?;
+            let existing = schedules
+                .get(transfer_nonce)?
+                .ok_or_else(|| MobileCoreError::UnknownTransfer(transfer_nonce.to_owned()))?;
+            let mut schedule: RegistryTransferScheduleRecord = decode(existing.value())?;
+            drop(existing);
+
+            let mut operations = write.open_table(REGISTRY_OPERATIONS)?;
+            let existing = operations
+                .get(schedule.operation_id.as_str())?
+                .ok_or_else(|| registry_admission("Registry transfer lost its operation"))?;
+            let mut operation: RegistryOperationRecord = decode(existing.value())?;
+            drop(existing);
+
+            update(&mut operation, &mut schedule, process_generation)?;
+            let operation_bytes = encode(&operation)?;
+            operations.insert(schedule.operation_id.as_str(), operation_bytes.as_slice())?;
+            drop(operations);
+
+            let schedule_bytes = encode(&schedule)?;
+            schedules.insert(transfer_nonce, schedule_bytes.as_slice())?;
+            updated = schedule;
+        }
+        write.commit()?;
+        Ok(updated)
+    }
+
     fn update_transfer(
         &self,
         transfer_nonce: &str,
@@ -1534,6 +1971,47 @@ fn validate_hash(value: &str) -> Result<(), MobileCoreError> {
         ));
     }
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn registry_transfer_request_matches(
+    schedule: &RegistryTransferScheduleRecord,
+    operation_id: &str,
+    manifest_digest: &str,
+    platform: RegistryTransferPlatform,
+    request_fingerprint: &str,
+    transport_descriptor_digest: &str,
+    expected_total_bytes: u64,
+) -> bool {
+    schedule.operation_id == operation_id
+        && schedule.manifest_digest == manifest_digest
+        && schedule.platform == platform
+        && schedule.request_fingerprint == request_fingerprint
+        && schedule.transport_descriptor_digest == transport_descriptor_digest
+        && schedule.expected_total_bytes == expected_total_bytes
+}
+
+fn android_registry_job_id(
+    operation_id: &str,
+    release_id: &str,
+    request_fingerprint: &str,
+    transfer_nonce: &str,
+) -> u32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"onebrain:android-registry-uidt-job-id:1\0");
+    for value in [
+        operation_id.as_bytes(),
+        release_id.as_bytes(),
+        request_fingerprint.as_bytes(),
+        transfer_nonce.as_bytes(),
+    ] {
+        hasher.update(&(value.len() as u64).to_le_bytes());
+        hasher.update(value);
+    }
+    let digest = hasher.finalize();
+    let mut raw = [0u8; 4];
+    raw.copy_from_slice(&digest.as_bytes()[..4]);
+    (u32::from_le_bytes(raw) & 0x7fff_ffff).max(1)
 }
 
 fn validate_installation_authority(

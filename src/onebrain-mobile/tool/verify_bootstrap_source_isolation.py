@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prove the MOB-05A trust/admission slice has no mobile transport implementation."""
+"""Prove the MOB-05B root-barrier slice has no concrete mobile transport."""
 
 from __future__ import annotations
 
@@ -74,14 +74,18 @@ def verify() -> dict[str, object]:
     return {
         "format": "onebrain.mobile.bootstrap-source-isolation/1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "scope": "MOB-05A BootstrapOnly app, signed trust/admission core and Limited shell",
+        "scope": (
+            "MOB-05B signed admission and durable transfer-barrier core before "
+            "platform transport execution"
+        ),
         "files_scanned": counts,
         "forbidden_transport_reference_count": len(violations),
         "violations": violations,
         "limitations": (
             "Static transport isolation complements the Android release "
-            "permission proof. MOB-05B consent-bound Registry transport must "
-            "replace this foundation gate with packet and scheduler tests."
+            "permission proof. The next MOB-05B slice must replace this "
+            "pre-execution gate with real UIDT/background-URLSession, packet, "
+            "landing and scheduler-recovery tests."
         ),
     }
 

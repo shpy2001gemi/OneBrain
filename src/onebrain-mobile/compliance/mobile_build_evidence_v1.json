@@ -1,7 +1,7 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "5d72f2cb68f57ca08aca77528011bf4c5b72b91650d208485bb1104291a61830",
+  "authority_set_sha256": "3b27a538848903e03fcc84ea553f961b2b3a1af732056d25121b582e52356db8",
   "phase": "feature",
   "work_package": "MOB-05",
   "acknowledged_required_read_set": [
@@ -63,6 +63,7 @@
     "MOB-SCR-ONB-005",
     "MOB-SCR-INI-001",
     "MOB-SCR-INI-002",
+    "MOB-SCR-OPS-001",
     "MOB-SCR-OPS-002",
     "MOB-SCR-HOM-001",
     "MOB-SCR-LIB-001",
@@ -83,6 +84,7 @@
     "OBM-CMP-DAT-007",
     "OBM-CMP-DAT-008",
     "OBM-CMP-MED-003",
+    "OBM-CMP-OPS-001",
     "OBM-CMP-OPS-002",
     "OBM-CMP-OPS-003",
     "OBM-CMP-OPS-004",
@@ -280,7 +282,7 @@
     {
       "id": "MOB-04-TYPED-HOST-ABI",
       "path": "src/onebrain-mobile/pigeons/mobile_host_api.dart",
-      "proves": "ABI 8 preserves typed onboarding, private-draft, opaque share-spool commands and typed media-picker receipts while adding Registry Init intents; paths, keys, database handles, picker URIs and source bytes still do not cross into Flutter."
+      "proves": "ABI 9 preserves typed onboarding, private-draft, opaque share-spool commands, typed media-picker receipts and Registry Init intents while adding native-only Registry transfer-barrier receipts; paths, keys, database handles, picker URIs, source bytes, transfer handles and transport descriptors still do not cross into Flutter."
     },
     {
       "id": "MOB-04-LIMITED-SHELL",
@@ -300,7 +302,7 @@
     {
       "id": "MOB-04-ANDROID-NATIVE-INTEGRATION",
       "path": "src/onebrain-mobile/integration_test/native_host_bridge_test.dart",
-      "proves": "Android 16 exercises ABI 8, the protected Rust runtime, onboarding cursor, encrypted draft/share-spool/verified-media counts and bounded native operation events."
+      "proves": "Android 16 exercises ABI 9, the protected Rust runtime, onboarding cursor, encrypted draft/share-spool/verified-media counts and bounded native operation events."
     },
     {
       "id": "MOB-04-ANDROID-SHARE-INTENT",
@@ -441,9 +443,49 @@
       "id": "MOB-05A-ANDROID-RELEASE-INVENTORY",
       "path": "src/onebrain-mobile/compliance/reports/mob05a_android_release_package_inventory.json",
       "proves": "The ABI-8 armeabi-v7a/arm64-v8a/x86_64 release APK has a matching Rust bridge for every Flutter runtime ABI and zero prohibited Registry, model, database, archive or other initial data payloads."
+    },
+    {
+      "id": "MOB-05B-DURABLE-TRANSFER-BARRIER",
+      "path": "src/onebrain-mobile-core/src/bootstrap.rs",
+      "proves": "Rust atomically binds a CSPRNG transfer nonce, exact operation/release/manifest/trust/byte tuple, complete request and approved-descriptor fingerprints, platform kind, prechosen Android job ID and process-generation receipts across SchedulePrepared, TransferSubmitted and TransferAdopted. Prepared-before-submit is retryable; a missing submitted/adopted task becomes conservative foreground-Resume-required state, and positive user-stop evidence remains distinct."
+    },
+    {
+      "id": "MOB-05B-TRANSFER-CRASH-WINDOW-TESTS",
+      "path": "src/onebrain-mobile-core/src/registry_admission.rs",
+      "proves": "Rust tests cover idempotent prepare, request-rebind rejection, durable submit/reopen/adopt, exactly-one-task adoption, adoption directly from the post-OS-submit/pre-DB-bind crash window, unobserved stop, positive user stop and fresh nonce/job ID after explicit foreground Resume."
+    },
+    {
+      "id": "MOB-05B-NATIVE-ONLY-ABI",
+      "path": "src/onebrain-mobile-bridge/include/onebrain_mobile_bridge.h",
+      "proves": "Generated ABI 9 exposes bounded prepare, submit, adopt and missing-task recovery to Swift/Kotlin without placing any URL, credential, filesystem path, database handle, transport descriptor bytes or OS transfer handle in the Pigeon/Dart contract."
+    },
+    {
+      "id": "MOB-05B-ANDROID-ABI-INTEGRATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_android_bridge_abi_integration.json",
+      "proves": "Android 16 loads the rebuilt three-architecture ABI 9 bridge and preserves the real signed Init admission path. This evidence intentionally does not claim an Android UIDT submission, iOS background URLSession, network permission or Registry byte transfer."
+    },
+    {
+      "id": "MOB-05B-ANDROID-RELEASE-INVENTORY",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_android_release_package_inventory.json",
+      "proves": "The optimized ABI-9 release APK contains matching armeabi-v7a, arm64-v8a and x86_64 Rust bridges and zero packaged Registry, index, database, model, archive or other prohibited initial payloads."
+    },
+    {
+      "id": "MOB-05B-PRE-EXECUTION-PERMISSIONS",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_android_release_permissions.json",
+      "proves": "The root-barrier release still has no INTERNET, Wi-Fi, nearby, Bluetooth or network-state permission, proving ABI 9 did not silently enable transport before an approved descriptor and real platform-adapter slice."
+    },
+    {
+      "id": "MOB-05B-PRE-EXECUTION-SOURCE-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_bootstrap_source_isolation.json",
+      "proves": "Static scanning finds no concrete Dart, Kotlin, Swift or Rust socket/HTTP implementation in the admission plus durable root-barrier slice; real UIDT/background-URLSession evidence remains explicitly open."
+    },
+    {
+      "id": "MOB-05B-RUST-DEPENDENCY-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_rust_dependency_isolation.json",
+      "proves": "The mobile core remains independent of desktop/node protocol, concrete LLM, Tokio and HTTP transport crates while owning the canonical durable transfer state machine."
     }
   ],
   "deviations": [],
-  "last_reviewed": "2026-08-01",
-  "notes": "MOB-05A is active. Rust now owns deterministic signed Registry trust/admission, rollback high-water, durable Begin/Defer/re-review/Confirm and exact target-filesystem capacity policy. ABI 8 and MOB-SCR-INI-001/002 expose typed availability and exact review through shared widgets; Android 16 emulator evidence covers the real generated/native/Rust path. The signed development fixture is debug-source-set-only, clearly labelled and transport-disabled; release builds contain neither it nor an owner-issued production trust profile and therefore fail safe as unavailable. MOB-05B still must add consent-bound platform transfer, live network/power policy and kill-safe scheduling; MOB-05C must qualify and activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. The abandoned 72-hour P5 run, multi-host canary, full-size target-filesystem qualification, physical-device gates and MOB-08 remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding, ReadyOffline or product-readiness claim is made."
+  "last_reviewed": "2026-08-02",
+  "notes": "MOB-05A admission and the first MOB-05B root-ledger barrier are active. Rust owns deterministic signed Registry trust/admission, rollback high-water, durable Begin/Defer/re-review/Confirm, exact capacity policy and atomic SchedulePrepared/TransferSubmitted/TransferAdopted plus stop-recovery state. ABI 9 exposes the transfer barrier only to Swift/Kotlin; Flutter still receives no transfer handle or transport authority. Android 16 emulator evidence covers the rebuilt ABI and existing signed admission path. The signed development fixture remains debug-only and transport-disabled; release builds contain neither it nor an owner-issued production trust profile or approved transport descriptors and therefore fail safe as unavailable. MOB-05B still must add real Android UIDT/iOS background URLSession submission/enumeration, signed HTTPS landing/range resume and live policy; MOB-05C must qualify and activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. The abandoned 72-hour P5 run, multi-host canary, full-size target-filesystem qualification, physical-device gates and MOB-08 remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding, ReadyOffline or product-readiness claim is made."
 }

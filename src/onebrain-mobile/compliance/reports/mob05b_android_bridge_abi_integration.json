@@ -1,0 +1,23 @@
+{
+  "format": "onebrain.mobile.android-registry-transfer-barrier-integration/1",
+  "generated_at": "2026-08-02T00:29:03+07:00",
+  "device": "Android 16 API 36 x86_64 emulator (emulator-5554)",
+  "commands": [
+    "python tool/build_rust_android.py",
+    "flutter test integration_test/native_host_bridge_test.dart -d emulator-5554",
+    "flutter test integration_test/registry_init_bridge_test.dart -d emulator-5554"
+  ],
+  "result": "passed",
+  "observations": [
+    "all three Android Flutter ABIs were rebuilt from the ABI 9 Rust bridge",
+    "Android 16 loaded ABI 9 through the real Pigeon/Kotlin/JNI/Rust path",
+    "signed debug Registry metadata still reaches exact capacity admission",
+    "the native-only ABI exposes bounded prepare, submitted, adopted and missing-task recovery receipts without a Dart transfer handle"
+  ],
+  "limitations": [
+    "the Rust crash-window state machine is exercised by Rust tests, not yet by a real Android JobScheduler UIDT submission",
+    "no URL, INTERNET permission, approved production transport descriptor or Registry artifact transfer is enabled",
+    "iOS symbols are generated in the C header but were not compiled on Windows",
+    "emulator evidence does not replace physical-device kill, Task Manager Stop, Doze, metered, thermal or multi-gigabyte qualification"
+  ]
+}

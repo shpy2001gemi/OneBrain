@@ -18,7 +18,7 @@
 /**
  * Stable ABI revision understood by the current Swift/Kotlin adapters.
  */
-#define OB_MOBILE_BRIDGE_ABI_VERSION 8
+#define OB_MOBILE_BRIDGE_ABI_VERSION 9
 
 #define OB_MOBILE_RUNTIME_OK 0
 
@@ -71,6 +71,36 @@ typedef struct ObMobileRegistryPlan {
   uint64_t initial_required_free_bytes;
   uint8_t admitted;
 } ObMobileRegistryPlan;
+
+typedef struct ObMobileRegistryTransferSchedule {
+  uint32_t status_code;
+  uint8_t transfer_nonce[129];
+  uint32_t transfer_nonce_len;
+  uint8_t operation_id[129];
+  uint32_t operation_id_len;
+  uint8_t release_id[65];
+  uint32_t release_id_len;
+  uint8_t manifest_digest[65];
+  uint32_t manifest_digest_len;
+  uint8_t trust_profile_digest[65];
+  uint32_t trust_profile_digest_len;
+  uint8_t request_fingerprint[65];
+  uint32_t request_fingerprint_len;
+  uint8_t transport_descriptor_digest[65];
+  uint32_t transport_descriptor_digest_len;
+  uint8_t os_transfer_id[257];
+  uint32_t os_transfer_id_len;
+  uint64_t expected_total_bytes;
+  uint32_t platform_code;
+  uint32_t android_job_id;
+  uint8_t has_android_job_id;
+  uint32_t state_code;
+  uint64_t prepared_process_generation;
+  uint64_t submitted_process_generation;
+  uint8_t has_submitted_process_generation;
+  uint64_t adopted_process_generation;
+  uint8_t has_adopted_process_generation;
+} ObMobileRegistryTransferSchedule;
 
 typedef struct ObMobileRuntimeSnapshot {
   uint32_t status_code;
@@ -145,9 +175,9 @@ uint32_t ob_mobile_bridge_abi_version(void);
 const char *ob_mobile_bridge_core_version(void);
 
 /**
- * Report whether this bootstrap-only bridge has requested Registry bytes.
+ * Report whether explicit Init has requested signed Registry metadata.
  *
- * Registry transfer authority remains disabled until the explicit Init slice.
+ * This fact does not mean a large artifact transfer was scheduled.
  */
 uint8_t ob_mobile_bridge_registry_request_issued(void);
 
@@ -185,7 +215,8 @@ uint32_t ob_mobile_runtime_defer_registry_init_utf8(const uint8_t *operation_id,
 
 /**
  * Recheck native storage facts and bind exact user confirmation in Rust.
- * This admits capacity only; transfer submission remains a later slice.
+ * This admits capacity only; native must prepare the durable barrier before a
+ * separately authorized platform scheduler submission.
  *
  * # Safety
  *
@@ -202,6 +233,68 @@ struct ObMobileRegistryPlan ob_mobile_runtime_confirm_registry_init_signed(const
                                                                            uint64_t allocation_unit_bytes,
                                                                            uint64_t destination_total_usable_bytes,
                                                                            uint64_t measured_free_bytes);
+
+/**
+ * Persist the exact pre-scheduler Registry transfer barrier. The request and
+ * approved transport descriptor arrive only as already verified digests; no
+ * URL, path, credential, or transport handle crosses this ABI.
+ *
+ * # Safety
+ *
+ * Every pointer must reference its declared readable UTF-8 byte length.
+ */
+struct ObMobileRegistryTransferSchedule ob_mobile_runtime_prepare_registry_transfer_schedule_utf8(const uint8_t *operation_id,
+                                                                                                  size_t operation_id_len,
+                                                                                                  const uint8_t *manifest_digest,
+                                                                                                  size_t manifest_digest_len,
+                                                                                                  uint32_t platform_code,
+                                                                                                  const uint8_t *request_fingerprint,
+                                                                                                  size_t request_fingerprint_len,
+                                                                                                  const uint8_t *transport_descriptor_digest,
+                                                                                                  size_t transport_descriptor_digest_len,
+                                                                                                  uint64_t expected_total_bytes,
+                                                                                                  uint8_t foreground_user_resume);
+
+/**
+ * Record the platform scheduler's durable submit receipt.
+ *
+ * # Safety
+ *
+ * Both pointers must reference their declared readable UTF-8 byte lengths.
+ */
+struct ObMobileRegistryTransferSchedule ob_mobile_runtime_mark_registry_transfer_submitted_utf8(const uint8_t *transfer_nonce,
+                                                                                                size_t transfer_nonce_len,
+                                                                                                const uint8_t *os_transfer_id,
+                                                                                                size_t os_transfer_id_len);
+
+/**
+ * Adopt exactly one enumerated platform task after any submit crash window.
+ *
+ * # Safety
+ *
+ * Every pointer must reference its declared readable UTF-8 byte length.
+ */
+struct ObMobileRegistryTransferSchedule ob_mobile_runtime_adopt_registry_transfer_utf8(const uint8_t *transfer_nonce,
+                                                                                       size_t transfer_nonce_len,
+                                                                                       const uint8_t *os_transfer_id,
+                                                                                       size_t os_transfer_id_len,
+                                                                                       const uint8_t *observed_request_fingerprint,
+                                                                                       size_t observed_request_fingerprint_len,
+                                                                                       uint32_t observed_android_job_id,
+                                                                                       uint8_t has_observed_android_job_id,
+                                                                                       uint32_t matching_task_count);
+
+/**
+ * Reconcile an incomplete submitted/adopted transfer whose platform task and
+ * terminal landing receipt are both absent.
+ *
+ * # Safety
+ *
+ * `transfer_nonce` must reference its declared readable UTF-8 byte length.
+ */
+struct ObMobileRegistryTransferSchedule ob_mobile_runtime_record_registry_transfer_missing_utf8(const uint8_t *transfer_nonce,
+                                                                                                size_t transfer_nonce_len,
+                                                                                                uint8_t positive_user_stop_evidence);
 
 /**
  * Bounded deterministic call used to verify the complete generated call path.

@@ -261,6 +261,8 @@ pub enum RegistryWaitingReason {
     Storage,
     OsBudget,
     ProtectedData,
+    ResumeRequiredAfterUnobservedStop,
+    UserStoppedOsJob,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1277,8 +1279,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        BootstrapStore, RegistryOperationState, RegistryReleaseState, ResourceBudgets,
-        TransferLandingRecord,
+        BootstrapStore, RegistryOperationState, RegistryReleaseState, RegistryTransferPlatform,
+        RegistryTransferScheduleState, ResourceBudgets, TransferLandingRecord,
     };
 
     const CHANNEL_KEY_ID: &str = "channel-v1";
@@ -1668,6 +1670,225 @@ mod tests {
                 .unwrap()
                 .head_digest,
             hex::encode(authority.floor_target.head_digest)
+        );
+    }
+
+    #[test]
+    fn durable_platform_transfer_barrier_survives_submit_and_adopt_crash_windows() {
+        const REQUEST_FINGERPRINT: &str =
+            "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+        const DESCRIPTOR_DIGEST: &str =
+            "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef";
+        const OTHER_FINGERPRINT: &str =
+            "1212121212121212121212121212121212121212121212121212121212121212";
+
+        let authority = SignedFixtureAuthority::new();
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("bootstrap.redb");
+        let budgets = ResourceBudgets::default();
+        let store = BootstrapStore::open(&path).unwrap();
+        let process = store.start_process(1).unwrap();
+        let operation = store
+            .begin_registry_init("stable", &authority.profile, &budgets)
+            .unwrap();
+        store
+            .verify_and_accept_registry_target(
+                &operation.operation_id,
+                &authority.profile,
+                "stable",
+                &authority.floor_target.channel_envelope,
+                &authority.floor_target.release_envelope,
+            )
+            .unwrap();
+        store
+            .await_registry_exact_confirmation(&operation.operation_id)
+            .unwrap();
+        store
+            .confirm_registry_init(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                &authority.profile,
+                RegistryNetworkPolicy::Unmetered,
+                false,
+                generous_plan(&authority.floor_target),
+            )
+            .unwrap();
+
+        let prepared = store
+            .prepare_registry_transfer_schedule(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                RegistryTransferPlatform::AndroidUidt,
+                REQUEST_FINGERPRINT,
+                DESCRIPTOR_DIGEST,
+                authority.floor_target.artifact_total_bytes,
+                false,
+                &budgets,
+            )
+            .unwrap();
+        assert_eq!(
+            prepared.state,
+            RegistryTransferScheduleState::SchedulePrepared
+        );
+        assert_eq!(prepared.prepared_process_generation, process.generation);
+        assert!(prepared.android_job_id.is_some_and(|job_id| job_id > 0));
+        assert_eq!(
+            store
+                .registry_operation(&operation.operation_id)
+                .unwrap()
+                .unwrap()
+                .state,
+            RegistryOperationState::SchedulePrepared
+        );
+
+        let replay = store
+            .prepare_registry_transfer_schedule(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                RegistryTransferPlatform::AndroidUidt,
+                REQUEST_FINGERPRINT,
+                DESCRIPTOR_DIGEST,
+                authority.floor_target.artifact_total_bytes,
+                false,
+                &budgets,
+            )
+            .unwrap();
+        assert_eq!(replay, prepared);
+        assert!(matches!(
+            store.prepare_registry_transfer_schedule(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                RegistryTransferPlatform::AndroidUidt,
+                OTHER_FINGERPRINT,
+                DESCRIPTOR_DIGEST,
+                authority.floor_target.artifact_total_bytes,
+                false,
+                &budgets,
+            ),
+            Err(MobileCoreError::RegistryAdmission(_))
+        ));
+
+        let submitted = store
+            .mark_registry_transfer_submitted(&prepared.transfer_nonce, "android-job-1", &budgets)
+            .unwrap();
+        assert_eq!(
+            submitted.state,
+            RegistryTransferScheduleState::TransferSubmitted
+        );
+        drop(store);
+
+        let recovered = BootstrapStore::open(&path).unwrap();
+        let recovered_process = recovered.start_process(2).unwrap();
+        assert!(recovered_process.recovered_unclean_start);
+        assert!(matches!(
+            recovered.adopt_registry_transfer(
+                &prepared.transfer_nonce,
+                "android-job-1",
+                REQUEST_FINGERPRINT,
+                prepared.android_job_id,
+                2,
+                &budgets,
+            ),
+            Err(MobileCoreError::RegistryAdmission(_))
+        ));
+        let adopted = recovered
+            .adopt_registry_transfer(
+                &prepared.transfer_nonce,
+                "android-job-1",
+                REQUEST_FINGERPRINT,
+                prepared.android_job_id,
+                1,
+                &budgets,
+            )
+            .unwrap();
+        assert_eq!(
+            adopted.state,
+            RegistryTransferScheduleState::TransferAdopted
+        );
+        assert_eq!(
+            adopted.adopted_process_generation,
+            Some(recovered_process.generation)
+        );
+
+        let stopped = recovered
+            .record_registry_transfer_missing(&prepared.transfer_nonce, false, &budgets)
+            .unwrap();
+        assert_eq!(
+            stopped.state,
+            RegistryTransferScheduleState::ResumeRequiredAfterUnobservedStop
+        );
+        let waiting = recovered
+            .registry_operation(&operation.operation_id)
+            .unwrap()
+            .unwrap();
+        assert_eq!(waiting.state, RegistryOperationState::Waiting);
+        assert_eq!(
+            waiting.waiting_reason,
+            Some(RegistryWaitingReason::ResumeRequiredAfterUnobservedStop)
+        );
+        assert!(matches!(
+            recovered.prepare_registry_transfer_schedule(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                RegistryTransferPlatform::AndroidUidt,
+                REQUEST_FINGERPRINT,
+                DESCRIPTOR_DIGEST,
+                authority.floor_target.artifact_total_bytes,
+                false,
+                &budgets,
+            ),
+            Err(MobileCoreError::RegistryAdmission(_))
+        ));
+
+        let resumed = recovered
+            .prepare_registry_transfer_schedule(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                RegistryTransferPlatform::AndroidUidt,
+                REQUEST_FINGERPRINT,
+                DESCRIPTOR_DIGEST,
+                authority.floor_target.artifact_total_bytes,
+                true,
+                &budgets,
+            )
+            .unwrap();
+        assert_ne!(resumed.transfer_nonce, prepared.transfer_nonce);
+        assert_ne!(resumed.android_job_id, prepared.android_job_id);
+        assert_eq!(
+            recovered
+                .record_registry_transfer_missing(&resumed.transfer_nonce, false, &budgets)
+                .unwrap()
+                .state,
+            RegistryTransferScheduleState::SchedulePrepared
+        );
+        let adopted_from_submit_crash = recovered
+            .adopt_registry_transfer(
+                &resumed.transfer_nonce,
+                "android-job-2",
+                REQUEST_FINGERPRINT,
+                resumed.android_job_id,
+                1,
+                &budgets,
+            )
+            .unwrap();
+        assert_eq!(
+            adopted_from_submit_crash.state,
+            RegistryTransferScheduleState::TransferAdopted
+        );
+        let user_stopped = recovered
+            .record_registry_transfer_missing(&resumed.transfer_nonce, true, &budgets)
+            .unwrap();
+        assert_eq!(
+            user_stopped.state,
+            RegistryTransferScheduleState::UserStoppedOsJob
+        );
+        assert_eq!(
+            recovered
+                .registry_operation(&operation.operation_id)
+                .unwrap()
+                .unwrap()
+                .waiting_reason,
+            Some(RegistryWaitingReason::UserStoppedOsJob)
         );
     }
 

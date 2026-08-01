@@ -1,9 +1,9 @@
 //! Autonomous mobile runtime profile for OneBrain.
 //!
-//! MOB-05A deliberately contains no transport stack and no concrete LLM
-//! backend. It owns bounded bootstrap operational state, activation grants,
-//! process-generation fencing, signed Registry trust/admission and a signed
-//! local KQL smoke.
+//! The MOB-05B foundation deliberately contains no arbitrary transport stack
+//! and no concrete LLM backend. It owns bounded bootstrap operational state,
+//! activation grants, process-generation fencing, signed Registry admission,
+//! the durable platform-transfer barrier and a signed local KQL smoke.
 
 mod activation;
 mod archive;
@@ -29,7 +29,8 @@ pub use archive::{
 pub use bootstrap::{
     BootstrapStore, InstallationAuthorityRecord, OnboardingCursor, PrivacyPolicyRecord,
     ProcessGenerationRecord, ProcessLifecycle, ProcessStart, RegistryChunkRecord,
-    RegistryOperationRecord, SecurityHistoryRecord, TransferLandingRecord,
+    RegistryOperationRecord, RegistryTransferPlatform, RegistryTransferScheduleRecord,
+    RegistryTransferScheduleState, SecurityHistoryRecord, TransferLandingRecord,
 };
 pub use draft::{PrivateDraftKey, PrivateDraftStore, RawDraftReceipt, ShareSpoolSummary};
 pub use error::MobileCoreError;

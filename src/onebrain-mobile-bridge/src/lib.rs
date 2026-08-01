@@ -2,7 +2,8 @@
 //!
 //! Native code owns platform paths and execution opportunities. Rust owns the
 //! runtime singleton, bootstrap database, activation grants, local KQL smoke
-//! and callback-generation fence. No path or database handle crosses to Dart.
+//! callback-generation fence, signed Registry admission and durable transfer
+//! barrier. No path, database handle or transport authority crosses to Dart.
 
 use std::{
     ffi::c_char,
@@ -19,11 +20,12 @@ use onebrain_mobile_core::OwnedMediaSummary;
 use onebrain_mobile_core::{
     ActivationPhase, AppLockPolicy, MobileFeatureFlags, MobileRuntimeFacade, MobileRuntimeSnapshot,
     OnboardingCursor, RegistryInitPlan, RegistryNetworkPolicy, RegistryOperationState,
+    RegistryTransferPlatform, RegistryTransferScheduleRecord, RegistryTransferScheduleState,
     ResourceBudgets, RuntimeServices, SecurityBootstrapMaterial, SecuritySessionState,
 };
 
 /// Stable ABI revision understood by the current Swift/Kotlin adapters.
-pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 8;
+pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 9;
 
 pub const OB_MOBILE_RUNTIME_OK: u32 = 0;
 pub const OB_MOBILE_RUNTIME_INVALID_PATH: u32 = 1;
@@ -71,6 +73,114 @@ pub struct ObMobileRegistryPlan {
     pub measured_free_bytes: u64,
     pub initial_required_free_bytes: u64,
     pub admitted: u8,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ObMobileRegistryTransferSchedule {
+    pub status_code: u32,
+    pub transfer_nonce: [u8; 129],
+    pub transfer_nonce_len: u32,
+    pub operation_id: [u8; 129],
+    pub operation_id_len: u32,
+    pub release_id: [u8; 65],
+    pub release_id_len: u32,
+    pub manifest_digest: [u8; 65],
+    pub manifest_digest_len: u32,
+    pub trust_profile_digest: [u8; 65],
+    pub trust_profile_digest_len: u32,
+    pub request_fingerprint: [u8; 65],
+    pub request_fingerprint_len: u32,
+    pub transport_descriptor_digest: [u8; 65],
+    pub transport_descriptor_digest_len: u32,
+    pub os_transfer_id: [u8; 257],
+    pub os_transfer_id_len: u32,
+    pub expected_total_bytes: u64,
+    pub platform_code: u32,
+    pub android_job_id: u32,
+    pub has_android_job_id: u8,
+    pub state_code: u32,
+    pub prepared_process_generation: u64,
+    pub submitted_process_generation: u64,
+    pub has_submitted_process_generation: u8,
+    pub adopted_process_generation: u64,
+    pub has_adopted_process_generation: u8,
+}
+
+impl ObMobileRegistryTransferSchedule {
+    const fn error(status_code: u32) -> Self {
+        Self {
+            status_code,
+            transfer_nonce: [0; 129],
+            transfer_nonce_len: 0,
+            operation_id: [0; 129],
+            operation_id_len: 0,
+            release_id: [0; 65],
+            release_id_len: 0,
+            manifest_digest: [0; 65],
+            manifest_digest_len: 0,
+            trust_profile_digest: [0; 65],
+            trust_profile_digest_len: 0,
+            request_fingerprint: [0; 65],
+            request_fingerprint_len: 0,
+            transport_descriptor_digest: [0; 65],
+            transport_descriptor_digest_len: 0,
+            os_transfer_id: [0; 257],
+            os_transfer_id_len: 0,
+            expected_total_bytes: 0,
+            platform_code: 0,
+            android_job_id: 0,
+            has_android_job_id: 0,
+            state_code: 0,
+            prepared_process_generation: 0,
+            submitted_process_generation: 0,
+            has_submitted_process_generation: 0,
+            adopted_process_generation: 0,
+            has_adopted_process_generation: 0,
+        }
+    }
+
+    fn from_core(schedule: RegistryTransferScheduleRecord) -> Self {
+        let mut bridged = Self::error(OB_MOBILE_RUNTIME_OK);
+        bridged.transfer_nonce_len =
+            copy_utf8(&mut bridged.transfer_nonce, &schedule.transfer_nonce);
+        bridged.operation_id_len = copy_utf8(&mut bridged.operation_id, &schedule.operation_id);
+        bridged.release_id_len = copy_utf8(&mut bridged.release_id, &schedule.release_id);
+        bridged.manifest_digest_len =
+            copy_utf8(&mut bridged.manifest_digest, &schedule.manifest_digest);
+        bridged.trust_profile_digest_len = copy_utf8(
+            &mut bridged.trust_profile_digest,
+            &schedule.trust_profile_digest,
+        );
+        bridged.request_fingerprint_len = copy_utf8(
+            &mut bridged.request_fingerprint,
+            &schedule.request_fingerprint,
+        );
+        bridged.transport_descriptor_digest_len = copy_utf8(
+            &mut bridged.transport_descriptor_digest,
+            &schedule.transport_descriptor_digest,
+        );
+        if let Some(os_transfer_id) = schedule.os_transfer_id.as_deref() {
+            bridged.os_transfer_id_len = copy_utf8(&mut bridged.os_transfer_id, os_transfer_id);
+        }
+        bridged.expected_total_bytes = schedule.expected_total_bytes;
+        bridged.platform_code = registry_transfer_platform_code(schedule.platform);
+        if let Some(job_id) = schedule.android_job_id {
+            bridged.android_job_id = job_id;
+            bridged.has_android_job_id = 1;
+        }
+        bridged.state_code = registry_transfer_schedule_state_code(schedule.state);
+        bridged.prepared_process_generation = schedule.prepared_process_generation;
+        if let Some(generation) = schedule.submitted_process_generation {
+            bridged.submitted_process_generation = generation;
+            bridged.has_submitted_process_generation = 1;
+        }
+        if let Some(generation) = schedule.adopted_process_generation {
+            bridged.adopted_process_generation = generation;
+            bridged.has_adopted_process_generation = 1;
+        }
+        bridged
+    }
 }
 
 impl ObMobileRegistryPlan {
@@ -381,9 +491,9 @@ pub extern "C" fn ob_mobile_bridge_core_version() -> *const c_char {
     CORE_VERSION.as_ptr().cast()
 }
 
-/// Report whether this bootstrap-only bridge has requested Registry bytes.
+/// Report whether explicit Init has requested signed Registry metadata.
 ///
-/// Registry transfer authority remains disabled until the explicit Init slice.
+/// This fact does not mean a large artifact transfer was scheduled.
 #[unsafe(no_mangle)]
 pub extern "C" fn ob_mobile_bridge_registry_request_issued() -> u8 {
     bool_byte(REGISTRY_REQUEST_ISSUED.load(Ordering::Acquire))
@@ -471,7 +581,8 @@ pub unsafe extern "C" fn ob_mobile_runtime_defer_registry_init_utf8(
 }
 
 /// Recheck native storage facts and bind exact user confirmation in Rust.
-/// This admits capacity only; transfer submission remains a later slice.
+/// This admits capacity only; native must prepare the durable barrier before a
+/// separately authorized platform scheduler submission.
 ///
 /// # Safety
 ///
@@ -517,6 +628,156 @@ pub unsafe extern "C" fn ob_mobile_runtime_confirm_registry_init_signed(
         destination_total_usable_bytes,
         measured_free_bytes,
     )
+}
+
+/// Persist the exact pre-scheduler Registry transfer barrier. The request and
+/// approved transport descriptor arrive only as already verified digests; no
+/// URL, path, credential, or transport handle crosses this ABI.
+///
+/// # Safety
+///
+/// Every pointer must reference its declared readable UTF-8 byte length.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn ob_mobile_runtime_prepare_registry_transfer_schedule_utf8(
+    operation_id: *const u8,
+    operation_id_len: usize,
+    manifest_digest: *const u8,
+    manifest_digest_len: usize,
+    platform_code: u32,
+    request_fingerprint: *const u8,
+    request_fingerprint_len: usize,
+    transport_descriptor_digest: *const u8,
+    transport_descriptor_digest_len: usize,
+    expected_total_bytes: u64,
+    foreground_user_resume: u8,
+) -> ObMobileRegistryTransferSchedule {
+    let Some(operation_id) = (unsafe { parse_bounded_utf8(operation_id, operation_id_len, 128) })
+    else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(manifest_digest) =
+        (unsafe { parse_bounded_utf8(manifest_digest, manifest_digest_len, 64) })
+    else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(platform) = registry_transfer_platform(platform_code) else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(request_fingerprint) =
+        (unsafe { parse_bounded_utf8(request_fingerprint, request_fingerprint_len, 64) })
+    else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(transport_descriptor_digest) = (unsafe {
+        parse_bounded_utf8(
+            transport_descriptor_digest,
+            transport_descriptor_digest_len,
+            64,
+        )
+    }) else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    prepare_registry_transfer_schedule(
+        operation_id,
+        manifest_digest,
+        platform,
+        request_fingerprint,
+        transport_descriptor_digest,
+        expected_total_bytes,
+        foreground_user_resume != 0,
+    )
+}
+
+/// Record the platform scheduler's durable submit receipt.
+///
+/// # Safety
+///
+/// Both pointers must reference their declared readable UTF-8 byte lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_mark_registry_transfer_submitted_utf8(
+    transfer_nonce: *const u8,
+    transfer_nonce_len: usize,
+    os_transfer_id: *const u8,
+    os_transfer_id_len: usize,
+) -> ObMobileRegistryTransferSchedule {
+    let Some(transfer_nonce) =
+        (unsafe { parse_bounded_utf8(transfer_nonce, transfer_nonce_len, 128) })
+    else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(os_transfer_id) =
+        (unsafe { parse_bounded_utf8(os_transfer_id, os_transfer_id_len, 256) })
+    else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    mark_registry_transfer_submitted(transfer_nonce, os_transfer_id)
+}
+
+/// Adopt exactly one enumerated platform task after any submit crash window.
+///
+/// # Safety
+///
+/// Every pointer must reference its declared readable UTF-8 byte length.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn ob_mobile_runtime_adopt_registry_transfer_utf8(
+    transfer_nonce: *const u8,
+    transfer_nonce_len: usize,
+    os_transfer_id: *const u8,
+    os_transfer_id_len: usize,
+    observed_request_fingerprint: *const u8,
+    observed_request_fingerprint_len: usize,
+    observed_android_job_id: u32,
+    has_observed_android_job_id: u8,
+    matching_task_count: u32,
+) -> ObMobileRegistryTransferSchedule {
+    let Some(transfer_nonce) =
+        (unsafe { parse_bounded_utf8(transfer_nonce, transfer_nonce_len, 128) })
+    else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(os_transfer_id) =
+        (unsafe { parse_bounded_utf8(os_transfer_id, os_transfer_id_len, 256) })
+    else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(observed_request_fingerprint) = (unsafe {
+        parse_bounded_utf8(
+            observed_request_fingerprint,
+            observed_request_fingerprint_len,
+            64,
+        )
+    }) else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    adopt_registry_transfer(
+        transfer_nonce,
+        os_transfer_id,
+        observed_request_fingerprint,
+        (has_observed_android_job_id != 0).then_some(observed_android_job_id),
+        matching_task_count,
+    )
+}
+
+/// Reconcile an incomplete submitted/adopted transfer whose platform task and
+/// terminal landing receipt are both absent.
+///
+/// # Safety
+///
+/// `transfer_nonce` must reference its declared readable UTF-8 byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_record_registry_transfer_missing_utf8(
+    transfer_nonce: *const u8,
+    transfer_nonce_len: usize,
+    positive_user_stop_evidence: u8,
+) -> ObMobileRegistryTransferSchedule {
+    let Some(transfer_nonce) =
+        (unsafe { parse_bounded_utf8(transfer_nonce, transfer_nonce_len, 128) })
+    else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    record_registry_transfer_missing(transfer_nonce, positive_user_stop_evidence != 0)
 }
 
 /// Bounded deterministic call used to verify the complete generated call path.
@@ -1017,6 +1278,101 @@ fn confirm_registry_init(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn prepare_registry_transfer_schedule(
+    operation_id: &str,
+    manifest_digest: &str,
+    platform: RegistryTransferPlatform,
+    request_fingerprint: &str,
+    transport_descriptor_digest: &str,
+    expected_total_bytes: u64,
+    foreground_user_resume: bool,
+) -> ObMobileRegistryTransferSchedule {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_LOCK_POISONED),
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.prepare_registry_transfer_schedule(
+        operation_id,
+        manifest_digest,
+        platform,
+        request_fingerprint,
+        transport_descriptor_digest,
+        expected_total_bytes,
+        foreground_user_resume,
+    ) {
+        Ok(schedule) => ObMobileRegistryTransferSchedule::from_core(schedule),
+        Err(_) => ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn mark_registry_transfer_submitted(
+    transfer_nonce: &str,
+    os_transfer_id: &str,
+) -> ObMobileRegistryTransferSchedule {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_LOCK_POISONED),
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.mark_registry_transfer_submitted(transfer_nonce, os_transfer_id) {
+        Ok(schedule) => ObMobileRegistryTransferSchedule::from_core(schedule),
+        Err(_) => ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn adopt_registry_transfer(
+    transfer_nonce: &str,
+    os_transfer_id: &str,
+    observed_request_fingerprint: &str,
+    observed_android_job_id: Option<u32>,
+    matching_task_count: u32,
+) -> ObMobileRegistryTransferSchedule {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_LOCK_POISONED),
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.adopt_registry_transfer(
+        transfer_nonce,
+        os_transfer_id,
+        observed_request_fingerprint,
+        observed_android_job_id,
+        matching_task_count,
+    ) {
+        Ok(schedule) => ObMobileRegistryTransferSchedule::from_core(schedule),
+        Err(_) => ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn record_registry_transfer_missing(
+    transfer_nonce: &str,
+    positive_user_stop_evidence: bool,
+) -> ObMobileRegistryTransferSchedule {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_LOCK_POISONED),
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.record_registry_transfer_missing(transfer_nonce, positive_user_stop_evidence) {
+        Ok(schedule) => ObMobileRegistryTransferSchedule::from_core(schedule),
+        Err(_) => ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
 fn runtime_snapshot() -> ObMobileRuntimeSnapshot {
     let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
     let guard = match runtime.lock() {
@@ -1258,6 +1614,33 @@ const fn registry_network_policy(code: u32) -> Option<RegistryNetworkPolicy> {
     }
 }
 
+const fn registry_transfer_platform(code: u32) -> Option<RegistryTransferPlatform> {
+    match code {
+        0 => Some(RegistryTransferPlatform::AndroidUidt),
+        1 => Some(RegistryTransferPlatform::IosBackgroundUrlSession),
+        2 => Some(RegistryTransferPlatform::ForegroundHttps),
+        _ => None,
+    }
+}
+
+const fn registry_transfer_platform_code(platform: RegistryTransferPlatform) -> u32 {
+    match platform {
+        RegistryTransferPlatform::AndroidUidt => 0,
+        RegistryTransferPlatform::IosBackgroundUrlSession => 1,
+        RegistryTransferPlatform::ForegroundHttps => 2,
+    }
+}
+
+const fn registry_transfer_schedule_state_code(state: RegistryTransferScheduleState) -> u32 {
+    match state {
+        RegistryTransferScheduleState::SchedulePrepared => 0,
+        RegistryTransferScheduleState::TransferSubmitted => 1,
+        RegistryTransferScheduleState::TransferAdopted => 2,
+        RegistryTransferScheduleState::ResumeRequiredAfterUnobservedStop => 3,
+        RegistryTransferScheduleState::UserStoppedOsJob => 4,
+    }
+}
+
 const fn registry_state_code(state: RegistryOperationState) -> u32 {
     match state {
         RegistryOperationState::IntentRecorded => 0,
@@ -1307,14 +1690,17 @@ mod android {
     };
 
     use super::{
-        abort_media_stage, append_media_stage, confirm_registry_init, defer_registry_init,
-        encode_owned_media, enqueue_shared_text, finish_media_stage, finish_owned_media_import,
-        import_shared_text, ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
+        abort_media_stage, adopt_registry_transfer, append_media_stage, confirm_registry_init,
+        defer_registry_init, encode_owned_media, enqueue_shared_text, finish_media_stage,
+        finish_owned_media_import, import_shared_text, mark_registry_transfer_submitted,
+        ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
         ob_mobile_bridge_round_trip, ob_mobile_runtime_lock_private_node,
         ob_mobile_runtime_set_onboarding_cursor, open_runtime, open_runtime_secured, owned_media,
-        owned_media_count, pending_share_spool_at, prepare_registry_init, registry_network_policy,
-        runtime_snapshot, save_raw_text_draft, start_media_stage, ObMobileRegistryPlan,
-        CORE_VERSION, OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT, OB_MOBILE_RUNTIME_OK,
+        owned_media_count, pending_share_spool_at, prepare_registry_init,
+        prepare_registry_transfer_schedule, record_registry_transfer_missing,
+        registry_network_policy, registry_transfer_platform, runtime_snapshot, save_raw_text_draft,
+        start_media_stage, ObMobileRegistryPlan, ObMobileRegistryTransferSchedule, CORE_VERSION,
+        OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT, OB_MOBILE_RUNTIME_OK,
     };
     use onebrain_mobile_core::SecurityBootstrapMaterial;
     use zeroize::Zeroize;
@@ -1510,6 +1896,148 @@ mod android {
                 },
             );
         let encoded = encode_registry_plan(&plan);
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimePrepareRegistryTransferSchedule"
+    )]
+    #[allow(clippy::too_many_arguments)]
+    pub fn native_runtime_prepare_registry_transfer_schedule<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        operation_id: JString<'caller>,
+        manifest_digest: JString<'caller>,
+        platform_code: jint,
+        request_fingerprint: JString<'caller>,
+        transport_descriptor_digest: JString<'caller>,
+        expected_total_bytes: jlong,
+        foreground_user_resume: jboolean,
+    ) -> JString<'caller> {
+        let operation_id = unowned_env
+            .with_env(|env| operation_id.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let manifest_digest = unowned_env
+            .with_env(|env| manifest_digest.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let request_fingerprint = unowned_env
+            .with_env(|env| request_fingerprint.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let transport_descriptor_digest = unowned_env
+            .with_env(|env| transport_descriptor_digest.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let schedule = registry_transfer_platform(platform_code as u32)
+            .filter(|_| expected_total_bytes > 0)
+            .map_or_else(
+                || ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT),
+                |platform| {
+                    prepare_registry_transfer_schedule(
+                        &operation_id,
+                        &manifest_digest,
+                        platform,
+                        &request_fingerprint,
+                        &transport_descriptor_digest,
+                        expected_total_bytes as u64,
+                        foreground_user_resume != JNI_FALSE,
+                    )
+                },
+            );
+        let encoded = encode_registry_transfer_schedule(&schedule);
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeMarkRegistryTransferSubmitted"
+    )]
+    pub fn native_runtime_mark_registry_transfer_submitted<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        transfer_nonce: JString<'caller>,
+        os_transfer_id: JString<'caller>,
+    ) -> JString<'caller> {
+        let transfer_nonce = unowned_env
+            .with_env(|env| transfer_nonce.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let os_transfer_id = unowned_env
+            .with_env(|env| os_transfer_id.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let encoded = encode_registry_transfer_schedule(&mark_registry_transfer_submitted(
+            &transfer_nonce,
+            &os_transfer_id,
+        ));
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeAdoptRegistryTransfer"
+    )]
+    #[allow(clippy::too_many_arguments)]
+    pub fn native_runtime_adopt_registry_transfer<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        transfer_nonce: JString<'caller>,
+        os_transfer_id: JString<'caller>,
+        observed_request_fingerprint: JString<'caller>,
+        observed_android_job_id: jlong,
+        matching_task_count: jint,
+    ) -> JString<'caller> {
+        let transfer_nonce = unowned_env
+            .with_env(|env| transfer_nonce.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let os_transfer_id = unowned_env
+            .with_env(|env| os_transfer_id.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let observed_request_fingerprint = unowned_env
+            .with_env(|env| observed_request_fingerprint.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let observed_android_job_id = if observed_android_job_id < 0 {
+            None
+        } else {
+            u32::try_from(observed_android_job_id).ok()
+        };
+        let schedule = if matching_task_count < 0 {
+            ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT)
+        } else {
+            adopt_registry_transfer(
+                &transfer_nonce,
+                &os_transfer_id,
+                &observed_request_fingerprint,
+                observed_android_job_id,
+                matching_task_count as u32,
+            )
+        };
+        let encoded = encode_registry_transfer_schedule(&schedule);
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeRecordRegistryTransferMissing"
+    )]
+    pub fn native_runtime_record_registry_transfer_missing<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        transfer_nonce: JString<'caller>,
+        positive_user_stop_evidence: jboolean,
+    ) -> JString<'caller> {
+        let transfer_nonce = unowned_env
+            .with_env(|env| transfer_nonce.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let encoded = encode_registry_transfer_schedule(&record_registry_transfer_missing(
+            &transfer_nonce,
+            positive_user_stop_evidence != JNI_FALSE,
+        ));
         unowned_env
             .with_env(|env| JString::from_str(env, &encoded))
             .resolve::<ThrowRuntimeExAndDefault>()
@@ -1988,6 +2516,49 @@ mod android {
             plan.admitted,
         )
     }
+
+    fn encode_registry_transfer_schedule(schedule: &ObMobileRegistryTransferSchedule) -> String {
+        if schedule.status_code != OB_MOBILE_RUNTIME_OK {
+            return format!("ERR:{}", schedule.status_code);
+        }
+        let transfer_nonce =
+            encoded_utf8_field(&schedule.transfer_nonce, schedule.transfer_nonce_len);
+        let operation_id = encoded_utf8_field(&schedule.operation_id, schedule.operation_id_len);
+        let release_id = encoded_utf8_field(&schedule.release_id, schedule.release_id_len);
+        let manifest_digest =
+            encoded_utf8_field(&schedule.manifest_digest, schedule.manifest_digest_len);
+        let trust_profile_digest = encoded_utf8_field(
+            &schedule.trust_profile_digest,
+            schedule.trust_profile_digest_len,
+        );
+        let request_fingerprint = encoded_utf8_field(
+            &schedule.request_fingerprint,
+            schedule.request_fingerprint_len,
+        );
+        let transport_descriptor_digest = encoded_utf8_field(
+            &schedule.transport_descriptor_digest,
+            schedule.transport_descriptor_digest_len,
+        );
+        let os_transfer_id =
+            encoded_utf8_field(&schedule.os_transfer_id, schedule.os_transfer_id_len);
+        format!(
+            "{transfer_nonce}|{operation_id}|{release_id}|{manifest_digest}|{trust_profile_digest}|{request_fingerprint}|{transport_descriptor_digest}|{}|{}|{}|{}|{os_transfer_id}|{}|{}|{}|{}|{}|{}",
+            schedule.expected_total_bytes,
+            schedule.platform_code,
+            schedule.android_job_id,
+            schedule.has_android_job_id,
+            schedule.state_code,
+            schedule.prepared_process_generation,
+            schedule.submitted_process_generation,
+            schedule.has_submitted_process_generation,
+            schedule.adopted_process_generation,
+            schedule.has_adopted_process_generation,
+        )
+    }
+
+    fn encoded_utf8_field(bytes: &[u8], length: u32) -> &str {
+        std::str::from_utf8(&bytes[..length as usize]).unwrap_or("")
+    }
 }
 
 #[cfg(test)]
@@ -1998,10 +2569,42 @@ mod tests {
 
     #[test]
     fn abi_and_version_are_bounded_and_stable() {
-        assert_eq!(ob_mobile_bridge_abi_version(), 8);
+        assert_eq!(ob_mobile_bridge_abi_version(), 9);
         let version = unsafe { CStr::from_ptr(ob_mobile_bridge_core_version()) };
         assert_eq!(version.to_str().expect("version UTF-8"), "0.1.0");
         assert!(version.to_bytes().len() <= 32);
+    }
+
+    #[test]
+    fn registry_transfer_schedule_has_bounded_stable_abi_fields() {
+        let record = RegistryTransferScheduleRecord {
+            transfer_nonce: "registry_transfer_001122".into(),
+            operation_id: "registry.init.stable.1".into(),
+            release_id: "aa".repeat(32),
+            manifest_digest: "bb".repeat(32),
+            trust_profile_digest: "cc".repeat(32),
+            request_fingerprint: "dd".repeat(32),
+            transport_descriptor_digest: "ee".repeat(32),
+            expected_total_bytes: 2_207_418_368,
+            platform: RegistryTransferPlatform::AndroidUidt,
+            android_job_id: Some(42),
+            os_transfer_id: Some("android-job:42".into()),
+            state: RegistryTransferScheduleState::TransferAdopted,
+            prepared_process_generation: 7,
+            submitted_process_generation: Some(7),
+            adopted_process_generation: Some(8),
+        };
+        let bridged = ObMobileRegistryTransferSchedule::from_core(record);
+        assert_eq!(bridged.status_code, OB_MOBILE_RUNTIME_OK);
+        assert_eq!(bridged.platform_code, 0);
+        assert_eq!(bridged.android_job_id, 42);
+        assert_eq!(bridged.has_android_job_id, 1);
+        assert_eq!(bridged.state_code, 2);
+        assert_eq!(bridged.prepared_process_generation, 7);
+        assert_eq!(bridged.submitted_process_generation, 7);
+        assert_eq!(bridged.has_submitted_process_generation, 1);
+        assert_eq!(bridged.adopted_process_generation, 8);
+        assert_eq!(bridged.has_adopted_process_generation, 1);
     }
 
     #[test]

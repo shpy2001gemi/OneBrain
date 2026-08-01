@@ -3,9 +3,10 @@ use crate::{
     ExecutionGrantKind, MediaStageReceipt, MobileCoreError, MobileFeatureFlags, NetworkScope,
     OnboardingCursor, OwnedMediaSummary, RawDraftReceipt, RegistryCapacityPlan,
     RegistryLimitedReceipt, RegistryNetworkPolicy, RegistryOperationRecord, RegistryOperationState,
-    RegistryReleaseCatalogRecord, RegistryTrustProfile, ResourceBudgets, RuntimeServices,
-    SecureIdentitySession, SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary,
-    TransferLandingRecord, MOBILE_RUNTIME_PROFILE_VERSION,
+    RegistryReleaseCatalogRecord, RegistryTransferPlatform, RegistryTransferScheduleRecord,
+    RegistryTrustProfile, ResourceBudgets, RuntimeServices, SecureIdentitySession,
+    SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary, TransferLandingRecord,
+    MOBILE_RUNTIME_PROFILE_VERSION,
 };
 
 const FOREGROUND_GRANT_ID: &str = "native.foreground";
@@ -582,6 +583,68 @@ impl MobileRuntimeFacade {
             release,
             capacity,
         })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn prepare_registry_transfer_schedule(
+        &self,
+        operation_id: &str,
+        manifest_digest: &str,
+        platform: RegistryTransferPlatform,
+        request_fingerprint: &str,
+        transport_descriptor_digest: &str,
+        expected_total_bytes: u64,
+        foreground_user_resume: bool,
+    ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
+        self.store.prepare_registry_transfer_schedule(
+            operation_id,
+            manifest_digest,
+            platform,
+            request_fingerprint,
+            transport_descriptor_digest,
+            expected_total_bytes,
+            foreground_user_resume,
+            &self.budgets,
+        )
+    }
+
+    pub fn mark_registry_transfer_submitted(
+        &self,
+        transfer_nonce: &str,
+        os_transfer_id: &str,
+    ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
+        self.store
+            .mark_registry_transfer_submitted(transfer_nonce, os_transfer_id, &self.budgets)
+    }
+
+    pub fn adopt_registry_transfer(
+        &self,
+        transfer_nonce: &str,
+        os_transfer_id: &str,
+        observed_request_fingerprint: &str,
+        observed_android_job_id: Option<u32>,
+        matching_task_count: u32,
+    ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
+        self.store.adopt_registry_transfer(
+            transfer_nonce,
+            os_transfer_id,
+            observed_request_fingerprint,
+            observed_android_job_id,
+            matching_task_count,
+            &self.budgets,
+        )
+    }
+
+    pub fn record_registry_transfer_missing(
+        &self,
+        transfer_nonce: &str,
+        positive_user_stop_evidence: bool,
+    ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
+        self.store.record_registry_transfer_missing(
+            transfer_nonce,
+            positive_user_stop_evidence,
+            &self.budgets,
+        )
     }
 
     pub fn unlock_private_node(

@@ -1,0 +1,72 @@
+{
+  "android_runtime_abis": [
+    "arm64-v8a",
+    "armeabi-v7a",
+    "x86_64"
+  ],
+  "android_rust_bridge_abis": [
+    "arm64-v8a",
+    "armeabi-v7a",
+    "x86_64"
+  ],
+  "entry_count": 390,
+  "forbidden_payload_count": 0,
+  "format": "onebrain.mobile.package-inventory/1",
+  "generated_at": "2026-08-01T17:31:06.731127+00:00",
+  "largest_entries": [
+    {
+      "compressed_bytes": 6567772,
+      "path": "assets/flutter_assets/assets/fonts/MaterialSymbolsRounded-Variable.ttf",
+      "uncompressed_bytes": 15073992
+    },
+    {
+      "compressed_bytes": 12564656,
+      "path": "lib/x86_64/libflutter.so",
+      "uncompressed_bytes": 12564656
+    },
+    {
+      "compressed_bytes": 11317824,
+      "path": "lib/arm64-v8a/libflutter.so",
+      "uncompressed_bytes": 11317824
+    },
+    {
+      "compressed_bytes": 8276468,
+      "path": "lib/armeabi-v7a/libflutter.so",
+      "uncompressed_bytes": 8276468
+    },
+    {
+      "compressed_bytes": 6423132,
+      "path": "lib/armeabi-v7a/libapp.so",
+      "uncompressed_bytes": 6423132
+    },
+    {
+      "compressed_bytes": 5964720,
+      "path": "lib/x86_64/libapp.so",
+      "uncompressed_bytes": 5964720
+    },
+    {
+      "compressed_bytes": 5833648,
+      "path": "lib/arm64-v8a/libapp.so",
+      "uncompressed_bytes": 5833648
+    },
+    {
+      "compressed_bytes": 3023824,
+      "path": "lib/x86_64/libonebrain_mobile_bridge.so",
+      "uncompressed_bytes": 3023824
+    },
+    {
+      "compressed_bytes": 2629984,
+      "path": "lib/arm64-v8a/libonebrain_mobile_bridge.so",
+      "uncompressed_bytes": 2629984
+    },
+    {
+      "compressed_bytes": 1635192,
+      "path": "lib/armeabi-v7a/libonebrain_mobile_bridge.so",
+      "uncompressed_bytes": 1635192
+    }
+  ],
+  "package": "app-release.apk",
+  "package_bytes": 65732084,
+  "package_sha256": "4bb48df24152ce158b61271e29a8bfded2bd98c4e031a7ba0d9b8237ecdcc613",
+  "violations": []
+}

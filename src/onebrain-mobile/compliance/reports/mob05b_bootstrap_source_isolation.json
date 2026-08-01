@@ -1,0 +1,14 @@
+{
+  "files_scanned": {
+    "dart": 40,
+    "kotlin": 4,
+    "rust": 14,
+    "swift": 3
+  },
+  "forbidden_transport_reference_count": 0,
+  "format": "onebrain.mobile.bootstrap-source-isolation/1",
+  "generated_at": "2026-08-01T17:31:37.394842+00:00",
+  "limitations": "Static transport isolation complements the Android release permission proof. The next MOB-05B slice must replace this pre-execution gate with real UIDT/background-URLSession, packet, landing and scheduler-recovery tests.",
+  "scope": "MOB-05B signed admission and durable transfer-barrier core before platform transport execution",
+  "violations": []
+}

@@ -92,6 +92,24 @@ internal data class RustRegistryInitPlan(
     val admitted: Boolean,
 )
 
+internal data class RustRegistryTransferSchedule(
+    val transferNonce: String,
+    val operationId: String,
+    val releaseId: String,
+    val manifestDigest: String,
+    val trustProfileDigest: String,
+    val requestFingerprint: String,
+    val transportDescriptorDigest: String,
+    val expectedTotalBytes: Long,
+    val platformCode: Int,
+    val androidJobId: Int?,
+    val osTransferId: String?,
+    val stateCode: Int,
+    val preparedProcessGeneration: Long,
+    val submittedProcessGeneration: Long?,
+    val adoptedProcessGeneration: Long?,
+)
+
 internal object RustMobileBridge {
     private val loadFailure =
         runCatching { System.loadLibrary(RUST_LIBRARY_NAME) }.exceptionOrNull()
@@ -223,6 +241,79 @@ internal object RustMobileBridge {
         )
     }
 
+    fun prepareRegistryTransferSchedule(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        operationId: String,
+        manifestDigest: String,
+        platformCode: Int,
+        requestFingerprint: String,
+        transportDescriptorDigest: String,
+        expectedTotalBytes: Long,
+        foregroundUserResume: Boolean,
+    ): RustRegistryTransferSchedule {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return decodeRegistryTransferSchedule(
+            nativeRuntimePrepareRegistryTransferSchedule(
+                operationId,
+                manifestDigest,
+                platformCode,
+                requestFingerprint,
+                transportDescriptorDigest,
+                expectedTotalBytes,
+                foregroundUserResume,
+            ),
+        )
+    }
+
+    fun markRegistryTransferSubmitted(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        transferNonce: String,
+        osTransferId: String,
+    ): RustRegistryTransferSchedule {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return decodeRegistryTransferSchedule(
+            nativeRuntimeMarkRegistryTransferSubmitted(transferNonce, osTransferId),
+        )
+    }
+
+    fun adoptRegistryTransfer(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        transferNonce: String,
+        osTransferId: String,
+        observedRequestFingerprint: String,
+        observedAndroidJobId: Int?,
+        matchingTaskCount: Int,
+    ): RustRegistryTransferSchedule {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return decodeRegistryTransferSchedule(
+            nativeRuntimeAdoptRegistryTransfer(
+                transferNonce,
+                osTransferId,
+                observedRequestFingerprint,
+                observedAndroidJobId?.toLong() ?: -1L,
+                matchingTaskCount,
+            ),
+        )
+    }
+
+    fun recordRegistryTransferMissing(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        transferNonce: String,
+        positiveUserStopEvidence: Boolean,
+    ): RustRegistryTransferSchedule {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return decodeRegistryTransferSchedule(
+            nativeRuntimeRecordRegistryTransferMissing(
+                transferNonce,
+                positiveUserStopEvidence,
+            ),
+        )
+    }
+
     private fun ensureSecureRuntime(
         dataRoot: String,
         securityMaterial: ByteArray,
@@ -263,6 +354,33 @@ internal object RustMobileBridge {
             measuredFreeBytes = fields[16].toLong(),
             initialRequiredFreeBytes = fields[17].toLong(),
             admitted = fields[18] == "1",
+        )
+    }
+
+    private fun decodeRegistryTransferSchedule(encoded: String): RustRegistryTransferSchedule {
+        check(!encoded.startsWith("ERR:")) {
+            "Rust Registry transfer barrier rejected the operation (${encoded.removePrefix("ERR:")})"
+        }
+        val fields = encoded.split('|')
+        check(fields.size == 18) {
+            "Rust mobile runtime returned an invalid Registry transfer schedule"
+        }
+        return RustRegistryTransferSchedule(
+            transferNonce = fields[0],
+            operationId = fields[1],
+            releaseId = fields[2],
+            manifestDigest = fields[3],
+            trustProfileDigest = fields[4],
+            requestFingerprint = fields[5],
+            transportDescriptorDigest = fields[6],
+            expectedTotalBytes = fields[7].toLong(),
+            platformCode = fields[8].toInt(),
+            androidJobId = fields[9].toInt().takeIf { fields[10] == "1" },
+            osTransferId = fields[11].ifEmpty { null },
+            stateCode = fields[12].toInt(),
+            preparedProcessGeneration = fields[13].toLong(),
+            submittedProcessGeneration = fields[14].toLong().takeIf { fields[15] == "1" },
+            adoptedProcessGeneration = fields[16].toLong().takeIf { fields[17] == "1" },
         )
     }
 
@@ -508,6 +626,34 @@ internal object RustMobileBridge {
         allocationUnitBytes: Long,
         destinationTotalUsableBytes: Long,
         measuredFreeBytes: Long,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimePrepareRegistryTransferSchedule(
+        operationId: String,
+        manifestDigest: String,
+        platformCode: Int,
+        requestFingerprint: String,
+        transportDescriptorDigest: String,
+        expectedTotalBytes: Long,
+        foregroundUserResume: Boolean,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimeMarkRegistryTransferSubmitted(
+        transferNonce: String,
+        osTransferId: String,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimeAdoptRegistryTransfer(
+        transferNonce: String,
+        osTransferId: String,
+        observedRequestFingerprint: String,
+        observedAndroidJobId: Long,
+        matchingTaskCount: Int,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimeRecordRegistryTransferMissing(
+        transferNonce: String,
+        positiveUserStopEvidence: Boolean,
     ): String
 
     @JvmStatic private external fun nativeRuntimeSaveRawTextDraft(

@@ -1,4 +1,4 @@
-# MOB-04 private mobile runtime bridge
+# MOB-05B mobile runtime and durable transfer bridge
 
 This slice proves the bounded production topology without claiming that the
 mobile runtime is ready:
@@ -20,8 +20,12 @@ encrypted private-vault session, encrypted raw-draft/share-spool store, durable
 onboarding cursor and portable encrypted-archive profile.
 The Android system-picker lane additionally streams native-owned provider
 content into Rust-owned encrypted media staging without exposing URI/path or
-source bytes to Dart. Registry network transfer, product tools, seeding and all LLM providers remain
-unavailable until their implementation packages and gates exist.
+source bytes to Dart. ABI 9 adds the Rust-owned Registry
+`SchedulePrepared -> TransferSubmitted -> TransferAdopted` barrier, stable
+request/descriptor fingerprints, Android job ID, process-generation receipts
+and conservative stop recovery. Actual Registry network transfer, product
+tools, seeding and all LLM providers remain unavailable until their transport
+authority and implementation gates exist.
 
 ## Package-first toolchain
 
@@ -43,8 +47,11 @@ handling, NDK linker discovery, or C declaration generation.
 
 ## ABI and thread ownership
 
-- ABI revision `7` includes the opaque encrypted share-spool commands from ABI
-  6 and adds bounded native-to-Rust media-stage start/append/finish/abort plus a
+- ABI revision `9` preserves ABI 8 signed Registry Init admission and adds
+  bounded native-only prepare, submit, adopt and missing-task recovery calls.
+  No URL, filesystem path, credential or OS handle crosses into Dart. ABI 7
+  includes the opaque encrypted share-spool commands from ABI 6 and adds
+  bounded native-to-Rust media-stage start/append/finish/abort plus a
   verified-stage count. The completed receipt contains only source ref, media
   class, verified MIME, byte count and BLAKE3 digest. ABI 6 added opaque
   encrypted share-spool summaries and idempotent
