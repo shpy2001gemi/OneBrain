@@ -99,7 +99,7 @@ def main() -> int:
     parser.add_argument("--adb")
     parser.add_argument("--flutter", default=shutil.which("flutter"))
     parser.add_argument("--report", type=Path)
-    parser.add_argument("--timeout-seconds", type=float, default=30)
+    parser.add_argument("--timeout-seconds", type=float, default=90)
     arguments = parser.parse_args()
     adb_path = resolve_adb(arguments.adb)
     if not arguments.flutter:
@@ -205,4 +205,17 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except Exception as error:
+        first_line = str(error).splitlines()[0] if str(error) else type(error).__name__
+        annotation = (
+            first_line.replace("%", "%25")
+            .replace("\r", "%0D")
+            .replace("\n", "%0A")
+        )
+        print(
+            f"::error title=MOB-04 Android share intent harness::{annotation}",
+            flush=True,
+        )
+        raise
