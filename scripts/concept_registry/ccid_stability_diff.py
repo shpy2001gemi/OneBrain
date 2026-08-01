@@ -118,6 +118,28 @@ def _read_manifest(path: Path, obr_path: Path) -> dict[str, Any]:
         or entry_count < 0
     ):
         raise StabilityError(f"manifest entry_count is invalid: {path}")
+    label_count = manifest.get("label_count")
+    if (
+        isinstance(label_count, bool)
+        or not isinstance(label_count, int)
+        or label_count < 0
+    ):
+        raise StabilityError(f"manifest label_count is invalid: {path}")
+    for field in ("builder_version", "dedup_policy_version"):
+        value = manifest.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise StabilityError(f"manifest {field} is invalid: {path}")
+    sources = manifest.get("sources")
+    if not isinstance(sources, dict) or set(sources) != set(SOURCE_NAMES.values()):
+        raise StabilityError(f"manifest sources are invalid: {path}")
+    for name, source in sources.items():
+        if not isinstance(source, dict):
+            raise StabilityError(f"manifest source {name} is invalid: {path}")
+        snapshot_id = source.get("snapshot_id")
+        if not isinstance(snapshot_id, str) or not snapshot_id.strip():
+            raise StabilityError(
+                f"manifest source {name} snapshot_id is invalid: {path}"
+            )
     return manifest
 
 
@@ -144,10 +166,11 @@ def _ingest_pair(
     input_path: Path,
     obr_path: Path,
     expected_entries: int,
+    expected_labels: int,
 ) -> int:
     inserted = 0
     with input_path.open("rb") as source, obr_path.open("rb") as obr:
-        magic, version, entry_count, _label_count, reserved = HEADER.unpack(
+        magic, version, entry_count, label_count, reserved = HEADER.unpack(
             _read_exact(obr, HEADER.size, "header")
         )
         if magic != OBR_MAGIC or version != OBR_VERSION or reserved != b"\x00" * 8:
@@ -156,6 +179,11 @@ def _ingest_pair(
             raise StabilityError(
                 f"OBR/manifest entry count mismatch for {side}: "
                 f"{entry_count} != {expected_entries}"
+            )
+        if label_count != expected_labels:
+            raise StabilityError(
+                f"OBR/manifest label count mismatch for {side}: "
+                f"{label_count} != {expected_labels}"
             )
 
         line_number = 0
@@ -300,6 +328,7 @@ def generate_report(
                 old_input,
                 old_obr,
                 int(old_manifest["entry_count"]),
+                int(old_manifest["label_count"]),
             )
             new_count = _ingest_pair(
                 connection,
@@ -307,6 +336,7 @@ def generate_report(
                 new_input,
                 new_obr,
                 int(new_manifest["entry_count"]),
+                int(new_manifest["label_count"]),
             )
             stable_count = _scalar(
                 connection,
@@ -407,9 +437,7 @@ def generate_report(
         manifest: dict[str, Any],
         count: int,
     ) -> dict[str, object]:
-        sources = manifest.get("sources")
-        if not isinstance(sources, dict):
-            raise StabilityError(f"manifest sources are invalid: {manifest_path}")
+        sources = manifest["sources"]
         return {
             "input_path": str(input_path),
             "input_blake3": _blake3_file(input_path),
@@ -418,12 +446,11 @@ def generate_report(
             "manifest_path": str(manifest_path),
             "manifest_blake3": _blake3_file(manifest_path),
             "entry_count": count,
-            "builder_version": manifest.get("builder_version"),
-            "dedup_policy_version": manifest.get("dedup_policy_version"),
+            "builder_version": manifest["builder_version"],
+            "dedup_policy_version": manifest["dedup_policy_version"],
             "source_snapshots": {
-                name: source.get("snapshot_id")
+                name: source["snapshot_id"]
                 for name, source in sorted(sources.items())
-                if isinstance(source, dict)
             },
         }
     return {

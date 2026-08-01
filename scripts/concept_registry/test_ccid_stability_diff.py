@@ -184,6 +184,22 @@ class CcidStabilityDiffTests(unittest.TestCase):
             with self.assertRaisesRegex(StabilityError, "identity mismatch"):
                 generate_report(*old, *new)
 
+    def test_incomplete_manifest_source_snapshots_fail_explicitly(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            records = [_record(SOURCE_WIKIDATA, 42, "Douglas Adams")]
+            old = self._build(root, "old", records)
+            new = self._build(root, "new", records)
+            manifest = json.loads(new[2].read_text(encoding="utf-8"))
+            manifest["sources"].pop("wordnet")
+            new[2].write_text(
+                json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(StabilityError, "sources are invalid"):
+                generate_report(*old, *new)
+
     def test_truncated_obr_fails_before_report_qualification(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

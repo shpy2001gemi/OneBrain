@@ -2486,8 +2486,8 @@ và macOS ARM64 smoke) trong 12 phút 21 giây.
    builder/dedup identity, source snapshots, old/new-only counts và bounded
    samples để điều tra sai lệch.
 
-Local evidence: 7 CCID stability tests xanh; khi chạy chung với builder/index
-fixture có 9 tests xanh. Machine-profile mutation suite có 9 tests xanh; full
+Local evidence: 8 CCID stability tests xanh; khi chạy chung với builder/index
+fixture có 10 tests xanh. Machine-profile mutation suite có 9 tests xanh; full
 vNext contract validator tiếp tục xanh với 595 normative lines và 426 local
 links.
 
