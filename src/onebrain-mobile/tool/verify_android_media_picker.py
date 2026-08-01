@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,6 +24,12 @@ PNG_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNg"
     "YAAAAAMAASsJTYQAAAAASUVORK5CYII="
 )
+
+
+@dataclass(frozen=True)
+class PickerControls:
+    file_location: tuple[int, int] | None
+    confirmation_location: tuple[int, int] | None
 
 
 def run(
@@ -65,27 +72,67 @@ def adb(adb_path: str, device: str, *arguments: str) -> str:
     return completed.stdout + completed.stderr
 
 
-def picker_node(adb_path: str, device: str) -> tuple[int, int] | None:
+def node_center(node: ET.Element) -> tuple[int, int] | None:
+    bounds = node.attrib.get("bounds", "")
+    match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+    if not match:
+        return None
+    left, top, right, bottom = (int(value) for value in match.groups())
+    return ((left + right) // 2, (top + bottom) // 2)
+
+
+def picker_controls(adb_path: str, device: str) -> PickerControls:
     try:
         adb(adb_path, device, "shell", "uiautomator", "dump", "/sdcard/window.xml")
         xml = adb(adb_path, device, "exec-out", "cat", "/sdcard/window.xml")
     except subprocess.CalledProcessError:
-        return None
+        return PickerControls(None, None)
     try:
         root = ET.fromstring(xml)
     except ET.ParseError:
-        return None
+        return PickerControls(None, None)
+    file_location = None
+    confirmation_location = None
     for node in root.iter("node"):
         text = node.attrib.get("text", "")
         description = node.attrib.get("content-desc", "")
-        if text != PICKER_FILE and not description.startswith(f"{PICKER_FILE},"):
-            continue
-        bounds = node.attrib.get("bounds", "")
-        match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
-        if match:
+        if text == PICKER_FILE or description.startswith(f"{PICKER_FILE},"):
+            bounds = node.attrib.get("bounds", "")
+            match = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+            if not match:
+                continue
             left, top, right, bottom = (int(value) for value in match.groups())
-            return ((left + right) // 2, (top + bottom) // 2)
-    return None
+            # DocumentsUI overlays a preview affordance over the upper-right of
+            # image tiles. Use the lower-left quadrant so the harness selects
+            # the document instead of opening that preview on narrow runners.
+            file_location = (
+                left + (right - left) // 4,
+                top + ((bottom - top) * 3) // 4,
+            )
+            continue
+        label = (text or description).strip().casefold()
+        resource_id = node.attrib.get("resource-id", "").casefold()
+        is_confirmation = label in {
+            "add",
+            "choose",
+            "done",
+            "open",
+            "select",
+            "use this photo",
+        } or resource_id.endswith(
+            (
+                ":id/action_menu_select",
+                ":id/button_add",
+                ":id/picker_action_button",
+            )
+        )
+        if (
+            is_confirmation
+            and node.attrib.get("clickable") == "true"
+            and node.attrib.get("enabled") == "true"
+        ):
+            confirmation_location = node_center(node)
+    return PickerControls(file_location, confirmation_location)
 
 
 def diagnostic_tail(output: str) -> str:
@@ -124,11 +171,21 @@ def wait_and_select_picker(
     deadline = time.monotonic() + timeout_seconds
     last_tap = 0.0
     selection_attempted = False
+    confirmation_attempted = False
     while time.monotonic() < deadline:
-        if selection_attempted and app_is_resumed(adb_path, device):
+        if (selection_attempted or confirmation_attempted) and app_is_resumed(
+            adb_path, device
+        ):
             return
-        location = picker_node(adb_path, device)
+        controls = picker_controls(adb_path, device)
         now = time.monotonic()
+        location = None
+        if not selection_attempted and controls.file_location is not None:
+            location = controls.file_location
+            selection_attempted = True
+        elif controls.confirmation_location is not None:
+            location = controls.confirmation_location
+            confirmation_attempted = True
         if location is not None and now - last_tap >= 1.0:
             adb(
                 adb_path,
@@ -139,9 +196,10 @@ def wait_and_select_picker(
                 str(location[0]),
                 str(location[1]),
             )
-            selection_attempted = True
             last_tap = now
         time.sleep(0.5)
+    if confirmation_attempted:
+        raise RuntimeError("system picker confirmation did not return to the app")
     if selection_attempted:
         raise RuntimeError("system picker did not return the selected PNG to the app")
     raise RuntimeError("system picker did not expose the prepared PNG")

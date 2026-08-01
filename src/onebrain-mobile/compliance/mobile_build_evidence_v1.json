@@ -359,6 +359,11 @@
       "proves": "Android 16 emulator evidence exercises ACTION_OPEN_DOCUMENT, native-to-Rust bounded streaming, magic-byte and full-length verification, immutable activation, owned hold, typed catalog query and force-stop recovery without claiming physical-device validation."
     },
     {
+      "id": "MOB-07-ANDROID-PICKER-HARNESS-TESTS",
+      "path": "src/onebrain-mobile/tool/test_verify_android_media_picker.py",
+      "proves": "The Android evidence harness selects outside DocumentsUI's overlaid preview affordance, never toggles the source repeatedly and handles picker variants that require a separate confirmation action before app resume."
+    },
+    {
       "id": "MOB-07-OWNED-MEDIA-RECOVERY-TEST",
       "path": "src/onebrain-mobile/integration_test/owned_media_recovery_test.dart",
       "proves": "After Android force-stop, the typed Pigeon/Rust path observes an unclean generation and reopens only Complete OwnedOriginal entries whose verified byte count equals content length and whose owned hold remains active."
