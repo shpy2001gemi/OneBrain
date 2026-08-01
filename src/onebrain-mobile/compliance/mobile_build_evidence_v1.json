@@ -1,7 +1,7 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "b9f374909c83c6dc3785871da172bffbaf666468fe42cd7afb7f069952aeb375",
+  "authority_set_sha256": "b028776000f9deab77198b580d0a264d45f1fd2006a6a68e27b7b0618af875db",
   "phase": "feature",
   "work_package": "MOB-07",
   "acknowledged_required_read_set": [
@@ -371,5 +371,5 @@
   ],
   "deviations": [],
   "last_reviewed": "2026-08-01",
-  "notes": "MOB-07 is in progress under the owner-approved emulator-first scope. This slice promotes a verified Android picker source into a locally encrypted OwnedOriginal, activates immutable bytes before an atomic catalog-reference plus owned-hold commit, deduplicates same-content imports through a vault-derived opaque reference, resumes incomplete commit states after process death, and exposes a bilingual My Media shelf through shared design-system components. Android 16 emulator evidence covers the real picker and typed force-stop recovery. It does not close MOB-GATE-MEDIA: final logical-piece/physical-pack layout, exact MediaManifestBodyCid display, multi-GB and ENOSPC fault matrices, verified viewers, derived share representations, access grants, received media, download/range verification, GC and physical-device validation remain open. OwnedOriginal remains PrivateLocal and is not a KU attachment, share object, publication, provider lease or seed-eligible representation. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
+  "notes": "MOB-07 is in progress under the owner-approved emulator-first scope. The V1.3 implementation tracker was reviewed at cdeb80c: MOB-05 Registry Init is the next critical path, while MOB-04, MOB-06, MOB-07 and MOB-09 remain partial and MOB-08 remains blocked. This slice promotes a verified Android picker source into a locally encrypted OwnedOriginal, activates immutable bytes before an atomic catalog-reference plus owned-hold commit, deduplicates same-content imports through a vault-derived opaque reference, resumes incomplete commit states after process death, and exposes a bilingual My Media shelf through shared design-system components. Android 16 emulator evidence covers the real picker and typed force-stop recovery. It does not close MOB-GATE-MEDIA: final logical-piece/physical-pack layout, exact MediaManifestBodyCid display, multi-GB and ENOSPC fault matrices, verified viewers, derived share representations, access grants, received media, download/range verification, GC and physical-device validation remain open. OwnedOriginal remains PrivateLocal and is not a KU attachment, share object, publication, provider lease or seed-eligible representation. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
 }

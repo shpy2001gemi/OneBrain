@@ -1,8 +1,8 @@
-# WIP Mobile App Analysis and Implementation Plan V1.2
+# WIP Mobile App Analysis and Implementation Plan V1.3
 
-> Status: **OWNER-APPROVED DIRECTION / implementation pending**
+> Status: **ACTIVE IMPLEMENTATION / MOB-07 PARTIAL / MOB-05 NEXT CRITICAL PATH**
 >
-> Snapshot: **2026-07-29 (Asia/Saigon)**
+> Snapshot: **2026-08-01 (Asia/Saigon)**
 >
 > Scope: iOS, Android, an autonomous OneBrain mobile node, local or cloud LLM
 > providers, deterministic tool execution, 2 GB+ post-launch Init data, and
@@ -115,8 +115,9 @@ temporarily unreachable and remain the same node when its process restarts.
 
 ## 1. Current project status
 
-The attached screenshot is consistent with the repository and public CI state at
-the time of this snapshot.
+This snapshot separates implemented code, automated evidence, physical-device
+exit evidence, and future gated behavior. A compiled screen, fixture test, or
+target document does not close a work-package exit by itself.
 
 | Area | Current state | Mobile consequence |
 |---|---|---|
@@ -132,10 +133,35 @@ the time of this snapshot.
 | M6A/M6B | Not authorized yet | No active distributed KQL in mobile MVP |
 | M7/OBT | Not started | No production wallet, rewards, or economic balance in mobile |
 
+### 1.1 Mobile implementation snapshot
+
+| Area | Implemented/evidenced now | Still open |
+|---|---|---|
+| Authority and design contract | Hash-pinned architecture, implementation plan, 123 features, 112 screens, 62 shared components, 13 patterns, generated tokens, validator and subtree agent rules | Continuous authority maintenance and owner review when semantics change |
+| Flutter/native/Rust foundation | Flutter shell, generated Pigeon Dart/Kotlin/Swift API, Android JNI and iOS C ABI build, thin Rust mobile core/bridge, Android release package scans, iOS simulator compile and Windows goldens | Physical launch on both platforms and store-grade signed packages |
+| Runtime profile | One-writer process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL fixture, private planner, kill/restart recovery and no-network/no-model default | Full platform/background adapter matrix and physical-device lifecycle evidence |
+| Security/private storage | Android Keystore, iOS Keychain adapter, installation binding, encrypted vault/archive, backup exclusions, fail-closed unexpected-restore tests | Physical backup/restore inspection, biometric/protected-data matrices and complete user recovery UX |
+| Limited private shell | vi/en onboarding, adaptive shared shell, encrypted text capture, Android share spool, Limited status, media import and My Media OwnedOriginal shelf | Canonical KU encode/preview/private Save, complete Library/search/KQL/backup journeys and all remaining screens |
+| Registry Init | BootstrapOnly package proof and source isolation exist | Complete signed post-launch Registry provision/update, 2.2 GB-class transfer, A/B activation, health, rollback and `ReadyOffline` |
+| AI/tools | No-LLM baseline, signed local KQL fixture and proposal-only private-planner feasibility | Provider contract implementation, deterministic ToolOrchestrator journal, local runtime bake-off, system providers, cloud disclosure and model supply chain |
+| Media | Android picker streams to bounded encrypted Rust staging; verified bytes activate as deduplicated `OwnedOriginal` with an owned hold and force-stop recovery | Final piece/pack and manifest layout, viewer, derived share representation, received media, range verification, ENOSPC/large-file matrix and GC |
+| Networking/seeding | No network authority is present in the BootstrapOnly app | P5 and Registry entry gates, peer authorization, reconciliation, provider leases, opportunistic seed policy and multi-device canary |
+
+Current branch evidence:
+
+- branch `codex/mobile-autonomous-node` is at `cdeb80c`;
+- `Mobile foundation` run `30690349111` passed Android, iOS simulator and
+  Windows golden jobs;
+- `Mobile build contracts` run `30690349095` passed;
+- `vNext foundation contract` run `30690349100` passed;
+- the evidence manifest remains phase `feature`, work package `MOB-07`;
+- validation is emulator/simulator-first and does not claim physical-device
+  completion.
+
 Evidence snapshot:
 
-- Working tree was clean on `codex/p5-canary-preflight`.
-- Branch head: `2bb53a4`; `main`: `1055db8`.
+- Remote `codex/p5-canary-preflight` remains at `2bb53a4`; remote `main`
+  remains at `1055db8` in this snapshot.
 - [P5 CI run 30388449924](https://github.com/shpy2001gemi/OneBrain/actions/runs/30388449924)
   passed 5/5 jobs.
 - [Pre-release 72-hour run 30382763222](https://github.com/shpy2001gemi/OneBrain/actions/runs/30382763222)
@@ -143,7 +169,7 @@ Evidence snapshot:
 - [Nightly 24-hour run 30287048429](https://github.com/shpy2001gemi/OneBrain/actions/runs/30287048429)
   passed.
 
-### Evidence issue to resolve after the runner
+### Distributed-runtime evidence still to resolve
 
 The 72-hour run is executing on `main@1055db8`, while P5 operational preflight
 is on `2bb53a4`. Before calling P5 complete, an ADR must answer one of:
@@ -159,21 +185,18 @@ for any P5 exit criterion after a separate multi-host production canary.
 
 ## 2. Repository reality
 
-### 2.1 Mobile is a scaffold, not an application
+### 2.1 Mobile is now an implemented BootstrapOnly application
 
-[`src/onebrain-mobile/README.md`](../../src/onebrain-mobile/README.md) is the
-only mobile artifact. There is currently no:
+[`src/onebrain-mobile`](../../src/onebrain-mobile) now contains the Flutter
+application, Android and iOS hosts, generated Pigeon APIs, JNI/C ABI Rust
+bridge, shared token-driven UI, localization, integration tests, package
+scanners and compliance evidence. The workspace also contains the thin
+`onebrain-mobile-core` and `onebrain-mobile-bridge` crates.
 
-- `pubspec.yaml`;
-- Android or iOS project;
-- Dart source;
-- Swift/Kotlin platform plugin;
-- `flutter_rust_bridge`, C ABI, UniFFI, or JNI boundary;
-- mobile Rust target in CI;
-- emulator, simulator, or physical-device test;
-- mobile model runtime.
-
-The mobile README also links to a missing `docs/ARCHITECTURE.md`.
+This is not yet a complete product or a `ReadyOffline` node. The current binary
+is deliberately BootstrapOnly: it has no Registry/model payload and no network
+authority. Android emulator, iOS simulator compile and automated packaging
+evidence exist; physical-device exits remain open.
 
 ### 2.2 Existing documents conflict
 
@@ -222,35 +245,28 @@ runtime. Create a thin `onebrain-mobile-core` crate, or first split real
 `local-companion`, `legacy-runtime`, `ollama`, `storage-redb`, and `quic`
 features. Reuse the local modules through this narrower graph.
 
-### 2.4 Current blockers in code
+### 2.4 Current blockers remaining
 
-1. `OneBrainNode` still constructs/uses Ollama-shaped AI paths rather than
-   receiving all runtime services by dependency injection.
-2. `AiConfig` defaults to Ollama and the only real backend is Ollama.
-3. The model registry contains useful metadata but artifact SHA-256 fields are
-   empty and no complete signed download/activation pipeline exists.
-4. The current device-tier heuristic is desktop-oriented and does not model
-   thermal state, memory pressure, battery, low-power mode, model residency, or
-   mobile lifecycle.
-5. Current vNext default budgets include server-shaped values such as
-   512 MiB/1 GiB soft/hard storage pressure and large scan/session limits.
-6. The local API binds loopback with a bearer token and localhost CORS. An
-   autonomous mobile node must not route its own UI through that server, and the
-   server must not be repurposed as a cloud-LLM gateway.
-7. Some legacy API handlers hold a broad node lock across inference.
-8. There is no canonical generated Dart/FFI schema; TypeScript DTOs are mirrored
-   manually.
-9. The complete Concept Registry artifact is approximately 2.2 GB before extra
-   runtime overhead. That post-launch footprint is accepted, but no bootstrap-
-   only package proof, explicit Init consent boundary, mobile delivery,
-   free-space gate, signed verification, atomic activation, or rollback pipeline
-   currently exists.
-10. Legacy `create_backup`/`restore_backup` ignores its password boundary, uses
-    plaintext JSON, and does not contain a complete canonical KU archive. The P5
-    vNext backup drill is a different boundary and does not make this API safe.
-11. The API and Tauri event bridges can both drain a receiver. Mobile needs one
-    event owner and a sequence-aware fan-out/refetch contract so consumers do
-    not divide or lose events.
+1. `MOB-05` has not implemented the signed Registry channel head, acceptance
+   transaction, explicit capacity/network confirmation, platform transfer,
+   immutable A/B activation, health suite, rollback or 2.2 GB-class evidence.
+2. The canonical KU encoding/preview/private Save path is not connected to the
+   Limited capture shell. Generic publication remains separately gated.
+3. My KU, Received KU, Received Media, verified viewing/download and range
+   verification are not implemented; My Media currently covers local
+   `OwnedOriginal` summaries only.
+4. Media still lacks the final logical-piece/physical-pack manifest contract,
+   large-file/ENOSPC matrix, derived share representations, grants and GC.
+5. Mobile AI has no selected local runtime, production provider adapter,
+   ToolOrchestrator execution journal, signed model supply chain or disclosure-
+   safe cloud route. Ollama is not a mobile requirement or fallback.
+6. Thermal, low-power, metered-network, background scheduling, notifications,
+   outbox and zero-idle resource policies are not fully implemented or measured.
+7. Physical-device lifecycle, backup/restore, protected-data, energy and store-
+   policy evidence remains open across `MOB-01`, `MOB-03`, `MOB-05`, `MOB-07`
+   and `MOB-09`.
+8. Normal peer networking, seeding, verifier exchange and OBP match remain
+   absent behind their explicit upstream/mobile gates.
 
 ---
 
@@ -1620,6 +1636,47 @@ fixtures while `MOB-05` is in progress. It may not expose or report those
 routes as functional on a clean device until one exact Registry release is
 active.
 
+### 11.1 Implementation progress tracker
+
+Status vocabulary:
+
+- **Baseline established**: authority/design outcome exists and is maintained;
+- **Partial**: executable implementation evidence exists but package exit is
+  not closed;
+- **Not started**: no package-defining runtime path exists;
+- **Blocked**: implementation must not begin beyond isolated fixtures until the
+  named entry gates close;
+- **Continuous**: release work accumulates but its final exit remains open.
+
+| Package | Status at `cdeb80c` | Evidence already present | Remaining package exit |
+|---|---|---|---|
+| `MOB-00` | **Baseline established / continuous** | Owner-approved architecture, feature tree/details, sitemap, design system, component/pattern catalogs, authority manifest and validator | Maintain authority hashes and resolve any future semantic conflict through owner review |
+| `MOB-01` | **Partial** | Flutter/native/Rust scaffold, generated bridge/tokens/localization, Android builds/package scans, iOS simulator compile, golden matrix and CI | Physical-device launch on both platforms, final ABI/thread audit and signed package baselines |
+| `MOB-02` | **Partial** | Thin mobile crates, process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL/private planner, Android kill recovery | Broader platform lifecycle qualification and any remaining runtime-service adapters; no `ReadyOffline` claim |
+| `MOB-03` | **Partial** | Platform custody adapters, installation binding, encrypted vault/archive, exclusions, corruption and unexpected-restore tests | Physical backup/restore, iOS orphan-Keychain, protected-data/biometric and full recovery UX evidence |
+| `MOB-04` | **Partial** | vi/en Limited shell, onboarding, encrypted raw drafts, Android share spool, status surfaces, system-picker import and My Media shelf | Canonical KU encode/preview/private Save, complete Library/My KU/Received shelves, local search/KQL and export/backup journeys |
+| `MOB-05` | **Not started — next critical path** | BootstrapOnly packaging/source isolation and root operation ledger are prerequisites already present | Complete signed Registry Init/update, platform transfer, A/B activation, health/rollback/GC, 2.2 GB-class and airplane-mode exits |
+| `MOB-06` | **Partial contract/fixture only** | No-LLM behavior, signed KQL fixture and private proposal feasibility | Provider adapters, deterministic tool execution journal, local-runtime bake-off, cloud disclosure and signed model lifecycle |
+| `MOB-07` | **Partial — current evidence package** | Activation recovery foundations plus Android encrypted media staging/OwnedOriginal activation, catalog query and force-stop recovery | Piece/pack media contract, viewers/received media, camera/OCR/voice, background adapters, notifications/outbox, energy policy and physical matrices |
+| `MOB-08` | **Blocked** | No production network authority in the app | P5, Registry, peer protocol and stable Offline MVP entry gates; then enrollment, reconciliation, seeding/presence and multi-host canary |
+| `MOB-09` | **Continuous / partial** | CI, package isolation, Android release permission/inventory scans, iOS simulator compile and design goldens | Signed store builds, SBOM/licenses/migrations, physical beta, telemetry/symbolication, staged rollout, rollback and mobile soak |
+
+### 11.2 Gate and user-priority feature tracker
+
+| Gate/feature | Current status | Required next evidence |
+|---|---|---|
+| `MOB-GATE-REGISTRY` | **Open** | Clean-device explicit Init of one signed 2.2 GB-class release on Android and iOS with resume, A/B activation, health and rollback |
+| `MOB-GATE-OFFLINE-MVP` | **Open** | After Registry activation: airplane-mode capture -> canonical encode -> preview -> immutable private Save -> Library/search/KQL -> backup/restore |
+| Self-encode and private KU Save (`MOB-GATE-KU-ENCODE`) | **Open** | Connect raw drafts/media to deterministic canonical encoding, validation, exact preview, private Save, revision/alternate handling and My KU |
+| Generic KU publish (`MOB-GATE-KU-PUBLISH`) | **Blocked/design-only** | Freeze publication profile, exact intent/authority transition, disclosure, transport and confirmation evidence; Save must remain separate |
+| External-blind encode verification (`MOB-GATE-VERIFIER-EXCHANGE`) | **Blocked by upstream substrate** | Completed `RUN-003` or narrower verifier-task substrate, permits, encrypted raw-source transfer, independent re-encode comparison and commit-before-reveal |
+| My/Received KU and media | **Partial** | My Media OwnedOriginal base exists; add My KU, received validated KU/media, download/view, provenance, verification state and bounded local retention |
+| Media (`MOB-GATE-MEDIA`) | **Open** | Final piece/pack/manifest layout, multi-GB and ENOSPC faults, verified viewers, share representations, grants, received media, range verification and GC |
+| Passive OBP match (`MOB-GATE-OBP-MATCH`) | **Blocked/design-only** | Active Registry plus received validated public deltas, local private join, quarantined proposals and explicit non-executable review flow |
+| AI/tools (`MOB-GATE-AI`) | **Open/optional** | No-LLM remains valid; close only for selected providers after quality, RAM, energy, cancellation, tool-conformance and disclosure evidence |
+| Network/seeding (`MOB-GATE-NETWORKED-BETA`) | **Blocked** | P5/peer/Registry/Offline MVP gates, provider-lease semantics, intermittent mobile scheduling, privacy wire capture and two-device/multi-host canary |
+| Store release (`MOB-GATE-STORE`) | **Open** | Physical-device beta, signed packages, policy/privacy/license inventory, recovery/rollback and no open P0 data-loss/security issue |
+
 ### MOB-00 — Authority and ADRs
 
 Deliver:
@@ -1984,49 +2041,71 @@ Owner direction resolved in this revision:
 
 Remaining decisions:
 
-1. Accept Flutter + Rust FFI as the mobile baseline after MOB-01.
-2. Define minimum iOS/Android versions and supported device classes after the
+1. Define minimum iOS/Android versions and supported device classes after the
    toolchain, registry and LLM spikes.
-3. Select the recovery design; do not inherit the current placeholder.
-4. Select portable local LLM runtime(s) only after the bake-off.
-5. Select registry/model artifact hosting and independent release cadence.
-6. Select supported cloud trust modes: BYOK, broker and/or custom endpoint.
-7. Decide whether Android exposes a user-visible Online session and complete
+2. Complete owner review of the portable recovery/export user policy around the
+   implemented encrypted archive and platform-bound installation authority.
+3. Select portable local LLM runtime(s) only after the physical-device bake-off.
+4. Select Registry/model artifact hosting, signing operators and independent
+   release cadence.
+5. Select supported cloud trust modes: BYOK, broker and/or custom endpoint.
+6. Decide whether Android exposes a user-visible Online session and complete
    store-policy review; do not promise an iOS equivalent.
-8. Define peer-enrollment/revocation vocabulary and whether network features
+7. Define peer-enrollment/revocation vocabulary and whether network features
    appear in the first public beta.
+8. Freeze the generic KU publication profile and verifier-exchange substrate;
+   neither private Save nor Public UseEvidence substitutes for these decisions.
 9. Decide whether the 72-hour evidence can carry from `1055db8` to the P5
    artifact.
 
-None of these decisions requires waiting idly for the current runner. MOB-00 and
-MOB-01 can begin immediately without enabling a distributed production lane.
+Flutter + generated native host + Rust core is now the implemented baseline;
+reopening that stack decision requires a new owner-approved ADR and evidence
+plan. None of the remaining decisions authorizes a distributed production lane.
 
 ---
 
-## 15. Immediate next slice
+## 15. Updated execution sequence
 
-Recommended next implementation slice:
+Recommended implementation order after `cdeb80c`:
 
-1. approve MOB-00 architecture decisions;
-2. update the mobile README and mark conflicting P10 sections as historical;
-3. scaffold the Flutter application and generated Rust FFI boundary;
-4. cross-compile the smallest reusable local runtime;
-5. prove storage open/write/restart, the minimum process-generation/callback
-   fence, and a typed local KQL call on both platforms;
-6. prove a clean bootstrap-only package, then run explicit post-launch Init for
-   the complete current registry through `IndexedConceptRegistry`, measure
-   RSS/page faults, and prove immutable first/A-B pointer recovery;
-7. implement a no-op `MobileLlmProvider` plus proposal-only
-   `ToolOrchestrator` contract and kill-safe journal;
-8. extend activation-generation, cancellation and no-callback process-death
-   evidence across the selected platform background adapters;
-9. run the local LLM bake-off and cloud disclosure spike separately from the
-   product MVP;
-10. keep network/Public UseEvidence flags absent or forced off in the first
-    spike.
+1. **MOB-05A — Registry trust and admission:** implement the signed channel
+   head/publisher envelope, manifest acceptance transaction, revocation/high-
+   water policy, exact capacity/network disclosure and explicit
+   `init_begin`/`init_confirm`, initially against a small signed fixture.
+2. **MOB-05B — durable platform transfer:** bind Android UIDT/eligible managed
+   HTTPS and iOS background `URLSession` to the existing root ledger, including
+   prepare/submit/adopt crash windows, resume, user stop, force-quit and native
+   callback recovery without Flutter.
+3. **MOB-05C — full activation:** provision the real 2.2 GB-class Registry,
+   verify immutable chunks/indexes, perform A/B pointer activation, independent
+   post-pointer health, compensation/rollback and safe GC; then measure mmap,
+   RSS, page faults and query budgets.
+4. **MOB-04 completion — private knowledge journey:** connect capture to
+   deterministic canonical KU encode, exact preview and immutable private Save;
+   complete My KU/Library/search/local KQL/export/backup and close the airplane-
+   mode Offline MVP only after the Registry gate passes.
+5. **MOB-07 media/lifecycle continuation:** finalize piece/pack/manifest media
+   storage, large-file/ENOSPC recovery, viewers, received media and GC; add
+   bounded background/energy/notification adapters through the single existing
+   activation arbiter.
+6. **MOB-06 optional AI/tools:** implement the no-provider-safe contract and
+   deterministic ToolOrchestrator journal first, then run llama.cpp/LiteRT-LM
+   and device-system-provider bake-offs; add cloud routes only with explicit
+   disclosure and result-visibility gates.
+7. **Physical-device closure:** execute the deferred `MOB-01`, `MOB-03`,
+   `MOB-05` and `MOB-07` launch, backup/restore, protected-data, process-death,
+   background, thermal, memory and energy matrices on supported real devices.
+8. **Gated public/distributed features:** only after their individual gates,
+   implement generic KU publish, external-blind verifier exchange, passive OBP
+   match, peer reconciliation and mobile seeding. These are not implied by
+   private Save, OwnedOriginal storage or Public UseEvidence.
+9. **MOB-09 release:** signed store builds, SBOM/license/migration inventory,
+   external beta, staged rollout/rollback, operational runbooks and mobile soak.
 
-This slice produces evidence about the hardest unknowns without coupling mobile
-progress to completion of the 72-hour distributed-runtime run.
+Until `MOB-08` entry gates close, keep peer networking, seeding, generic KU
+publication, verifier exchange, OBP match and Public UseEvidence absent or
+forced off. The no-LLM offline path remains a release requirement, not a
+temporary fallback.
 
 ---
 
