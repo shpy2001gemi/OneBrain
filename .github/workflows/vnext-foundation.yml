@@ -134,6 +134,9 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_operational_compaction
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_mixed_rollback
           python -m unittest scripts.ci.test_validate_vnext_dr_m5_soak_release
+          python -m unittest scripts.ci.test_validate_vnext_p5_canary_preflight
+          python -m unittest scripts.ci.test_validate_vnext_p5_operations_preflight
+          python -m unittest scripts.ci.test_validate_concept_registry_operations
           python -m unittest scripts.ci.test_validate_vnext_soak_runner_kit
           python -m unittest scripts.ci.test_validate_vnext_macos_soak_runner_kit
           bash -n scripts/runner/onebrain-soak-runner.sh
@@ -152,6 +155,17 @@ jobs:
         run: |
           python -m pip install --requirement scripts/concept_registry/requirements.txt
           python -m unittest scripts/concept_registry/test_build_obr.py
+          python -m unittest scripts.concept_registry.test_ccid_stability_diff
+          cargo build --locked --manifest-path src/Cargo.toml -p ku-core --example registry_probe
+          ONEBRAIN_REGISTRY_PROBE=src/target/debug/examples/registry_probe \
+            python -m unittest scripts.concept_registry.test_resource_qualification
+
+      - name: Concept Registry signed release and atomic activation
+        working-directory: src
+        run: |
+          cargo check --locked -p ku-core --example concept_registry_release
+          cargo test --locked -p ku-core concept_registry_release -- --test-threads=1
+          cargo test --locked -p onebrain-node concept_registry_runtime --lib -- --test-threads=1
 
       - name: Check formatting of vNext-owned Rust files
         run: >-
@@ -195,6 +209,11 @@ jobs:
           ku-core/src/foundation/storage.rs
           ku-core/src/foundation/use_evidence.rs
           ku-core/src/foundation/vault.rs
+          ku-core/src/concept_registry_manifest.rs
+          ku-core/src/concept_registry_release.rs
+          ku-core/src/lib.rs
+          ku-core/examples/concept_registry_release.rs
+          ku-core/examples/registry_probe.rs
           ku-core/examples/foundation_vector_digests.rs
           ku-ai/src/vnext_manifest.rs
           ku-ai/src/vnext_executor.rs
@@ -236,6 +255,8 @@ jobs:
           ku-kql/src/vnext_standing_need.rs
           ku-kql/src/vnext_structural_signature.rs
           onebrain-node/src/vnext_config.rs
+          onebrain-node/src/config.rs
+          onebrain-node/src/concept_registry_runtime.rs
           onebrain-node/src/vnext_crash_harness.rs
           onebrain-node/src/vnext_distributed_kql.rs
           onebrain-node/src/vnext_distributed_pomv.rs
@@ -247,6 +268,8 @@ jobs:
           onebrain-node/src/vnext_record_provenance.rs
           onebrain-node/src/lib.rs
           onebrain-node/src/vnext_companion.rs
+          onebrain-node/src/vnext_canary_operations.rs
+          onebrain-node/src/vnext_p5_operations.rs
           onebrain-node/src/vnext_local_runtime.rs
           onebrain-node/src/vnext_legacy_migration.rs
           onebrain-node/src/vnext_m5_benchmark.rs
@@ -267,6 +290,8 @@ jobs:
           onebrain-node/examples/qa008_performance_report.rs
           onebrain-node/examples/dr_m5_fuzz_corpus_smoke.rs
           onebrain-node/examples/dr_m5_soak_release.rs
+          onebrain-node/examples/p5_canary_preflight.rs
+          onebrain-node/examples/p5_operations_preflight.rs
           onebrain-node/tests/anti_gravity_reunion.rs
           onebrain-api/src/handlers.rs
           onebrain-api/src/server.rs
@@ -693,6 +718,28 @@ jobs:
           --profile smoke
           --data-dir "${RUNNER_TEMP}/onebrain-m5-07-ci"
           --output "${RUNNER_TEMP}/onebrain-m5-07-ci-report.json"
+      - name: P5.1 three-node authenticated QUIC canary preflight
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-canary-harness
+          --lib p5_01_
+          -- --test-threads=1
+          && cargo run --locked --release -p onebrain-node
+          --features vnext-canary-harness
+          --example p5_canary_preflight --
+          --data-dir "${RUNNER_TEMP}/onebrain-p5-01-ci"
+          --output "${RUNNER_TEMP}/onebrain-p5-01-ci-report.json"
+      - name: P5.2-P5.6 operational fault backup rollback and dashboard preflight
+        run: >-
+          cargo test --locked -p onebrain-node
+          --features vnext-canary-harness
+          --lib vnext_p5_operations
+          -- --test-threads=1
+          && cargo run --locked --release -p onebrain-node
+          --features vnext-canary-harness
+          --example p5_operations_preflight --
+          --data-dir "${RUNNER_TEMP}/onebrain-p5-operations-ci"
+          --output "${RUNNER_TEMP}/onebrain-p5-operations-ci-report.json"
       - name: P3.1 authenticated REST API contract and real-runtime flow
         run: >-
           cargo test --locked -p onebrain-api

@@ -21,7 +21,7 @@ Normative precedence remains:
 
 ## 2. Machine-checked coverage
 
-The [normative coverage manifest](normative_coverage.json) maps all 111 current
+The [normative coverage manifest](normative_coverage.json) maps all 595 current
 uppercase requirement lines to an executable evidence needle or an explicit
 rationale. The dependency-free [contract validator](../../../scripts/ci/validate_vnext_contracts.py)
 also checks 99 unique task IDs, dependency cycles, 18 ADR mappings, 37 negative
@@ -54,6 +54,8 @@ The semantic guardrails are indexed in the [Normative Vocabulary](NORMATIVE_VOCA
 | 10k/100k logical-node simulation and 30B analytical bounds | [QA-007 scale profile](LOGICAL_NODE_SCALE_AND_ANALYTICAL_BOUND_PROFILE_V1.md) |
 | correctness-coupled performance budgets | [QA-008 performance profile](PERFORMANCE_REGRESSION_BUDGET_PROFILE_V1.md) |
 | optimized soak and release qualification | [M5-07 soak/release profile](SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1.md) |
+| single-host three-node real-QUIC canary preflight | [P5 canary preflight profile](P5_CANARY_PREFLIGHT_PROFILE_V1.md) |
+| signer/disk/slow-peer drills, backup/restore, rollback and operator dashboard | [P5 operations preflight profile](P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md) |
 | operator-visible scope and consent | [Scoped Runtime Status](SCOPED_RUNTIME_STATUS_PROFILE_V1.md) |
 | migration and legacy preservation | [Migration profile](ADDITIVE_MIGRATION_STORAGE_PROFILE_V1.md), [backfill profile](LEGACY_DATA_BACKFILL_PROFILE_V1.md), [operator guide](VNEXT_MIGRATION_AND_ROLLBACK_GUIDE_V1.md) |
 | interoperable independent implementations | [Interoperability Profile](VNEXT_INTEROPERABILITY_PROFILE_V1.md) |
@@ -87,6 +89,8 @@ cargo test -p onebrain-node run002_ --lib
 cargo test -p onebrain-node vnext_security_suite --lib
 cargo test -p onebrain-node qa007_ --lib
 cargo test -p onebrain-node qa008_ --lib
+cargo test -p onebrain-node --features vnext-canary-harness p5_01_ --lib
+cargo test -p onebrain-node --features vnext-canary-harness vnext_p5_operations --lib
 ```
 
 Successful execution establishes the scoped release evidence listed here. It

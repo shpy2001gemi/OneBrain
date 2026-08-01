@@ -1,0 +1,127 @@
+{
+  "format": "onebrain/p5-operations-preflight/1",
+  "profile_id": "P5_OPERATIONS_PREFLIGHT_PROFILE_V1",
+  "version": 1,
+  "scope": {
+    "host_count": 1,
+    "uses_authenticated_real_quic": true,
+    "consumes_pre_release_72h_evidence": false,
+    "multi_host_canary_qualifying": false,
+    "production_canary_qualifying": false
+  },
+  "p5_02_fault_drills": {
+    "faults": [
+      "session-signer-unavailable-before-durable-side-effect",
+      "storage-hard-watermark-rejects-payload",
+      "slow-authenticated-peer-does-not-block-healthy-peer"
+    ],
+    "exit_oracles": [
+      "zero-signer-outage-durable-files",
+      "rejected-storage-reason-visible",
+      "zero-durable-feed-branch-under-disk-pressure",
+      "healthy-peer-progress-within-5000ms",
+      "zero-active-session-after-quiescence",
+      "no-wallet-obt-authority-or-completion-amplification"
+    ]
+  },
+  "p5_03_backup_restore": {
+    "archive_profile": "onebrain/p5-offline-backup/1",
+    "required_durable_files": [
+      "vnext_identity.key",
+      "vnext_verified.redb",
+      "vnext_reconciliation.redb",
+      "vnext_inventory.redb",
+      "vnext_record_provenance.redb",
+      "vnext_outbox.redb",
+      "vnext_operational_compaction.redb"
+    ],
+    "integrity": [
+      "sorted-relative-path-manifest",
+      "per-file-length-and-blake3",
+      "domain-separated-aggregate-root",
+      "fsync-each-copied-file",
+      "reject-symlink-and-non-regular-entry",
+      "corruption-fails-before-restore-target-creation"
+    ],
+    "restore_oracles": [
+      "principal-preserved",
+      "one-raw-feed-branch-preserved",
+      "journal-bytes-preserved",
+      "pending-outbox-preserved",
+      "quarantine-and-provenance-preserved",
+      "operational-root-preserved"
+    ]
+  },
+  "p5_04_rollback_reenable": {
+    "lanes": [
+      "network",
+      "distributed_kql_one_hop",
+      "public_use_evidence_publish",
+      "distributed_pomv_view"
+    ],
+    "sequence": [
+      "run",
+      "atomic-rollback",
+      "network-fenced",
+      "shutdown",
+      "durable-state-inspection",
+      "restart-with-stale-enabled-config",
+      "explicit-reenable-each-lane",
+      "authenticated-real-quic-reconnect"
+    ],
+    "preserved": [
+      "principal",
+      "raw-feed",
+      "journal",
+      "pending-outbox",
+      "quarantine",
+      "operational-root"
+    ]
+  },
+  "p5_05_default_off_rollout": {
+    "default_feature_flag_count": 12,
+    "runtime_lane_count": 4,
+    "stale_config_may_enable": false,
+    "explicit_generation_advancing_reenable_required": true,
+    "default_config_effective_lanes_after_reopen": 0,
+    "local_kql_round_trip_with_network_off": true
+  },
+  "p5_06_operator_dashboard": {
+    "profile": "onebrain/p5-operator-dashboard/1",
+    "signals": [
+      "startup-phase-count",
+      "signer-health",
+      "registry-health",
+      "lane-generation-and-state",
+      "authenticated-route-and-session-count",
+      "journal-count",
+      "outbox-count-and-age",
+      "quarantine-and-provenance-count",
+      "storage-bytes-and-pressure",
+      "finite-incident-and-action-codes"
+    ],
+    "incident_codes": [
+      "SIGNER_UNAVAILABLE",
+      "REGISTRY_CORRUPT",
+      "STORAGE_SOFT_WATERMARK",
+      "STORAGE_REJECTED",
+      "PENDING_OUTBOX",
+      "RETRY_EXHAUSTED_OUTBOX",
+      "ACTIVE_JOURNAL",
+      "QUARANTINE_PRESENT",
+      "LANE_FENCED",
+      "ROLLBACK_ACTIVE"
+    ],
+    "privacy": {
+      "contains_node_id": false,
+      "contains_selector": false,
+      "contains_private_need": false,
+      "contains_free_form_label": false
+    }
+  },
+  "remaining_external_gates": [
+    "pinned-pre-release-72h-artifact",
+    "multi-host-production-canary",
+    "operator-approved-production-rollout"
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "format": "onebrain/p5-canary-preflight/1",
+  "profile_id": "P5_CANARY_PREFLIGHT_PROFILE_V1",
+  "version": 1,
+  "scope": {
+    "host_count": 1,
+    "logical_node_count": 3,
+    "transport": "authenticated-real-quic-loopback",
+    "production_canary_qualifying": false
+  },
+  "topology": {
+    "independent_durable_directories": 3,
+    "independent_principals": 3,
+    "ring_deliveries": 3,
+    "minimum_authenticated_route_observations": 6
+  },
+  "fault_drills": [
+    "old-route-partition",
+    "durable-node-restart",
+    "authenticated-route-address-change",
+    "reunion-idempotent-replay"
+  ],
+  "exit_oracles": [
+    "three-distinct-principals",
+    "durable-principal-survives-restart",
+    "route-generation-advances",
+    "replayed-feed-has-one-durable-branch",
+    "zero-active-session-after-quiescence",
+    "no-wallet-or-obt-side-effect",
+    "no-authority-or-network-completion-claim",
+    "nonempty-operator-directory-fails-closed"
+  ],
+  "production_gate": {
+    "requires_pre_release_72h": true,
+    "requires_multi_host_canary": true,
+    "preflight_can_open_release": false
+  }
+}

@@ -42,6 +42,7 @@ This directory owns the cross-crate contracts that must be stable before vNext r
 | `M5-02` | [Structured Observability Profile v1](STRUCTURED_OBSERVABILITY_PROFILE_V1.md) | Frozen | Fixed 22-code outcome inventory, bounded counters/gauges/histograms, durable outbox age, journal/reconciliation/PoMV/registry telemetry, privacy-safe structured logs, and scoped operator status. |
 | `M5-03` | [Real Redb Process Crash Harness v1](REAL_REDB_PROCESS_CRASH_HARNESS_V1.md) | Frozen | Default-off authenticated failpoints, 13 boundaries × 5 phases, fsynced-marker child kill, exact 11-field recovery oracle, idempotent replay and explicit storage-fault/corruption failure. |
 | `M5-05` | [Operational Compaction Profile v1](OPERATIONAL_COMPACTION_PROFILE_V1.md) | Frozen | Generation-fenced journal/outbox compaction, audit-before-delete tombstones, bounded quarantine/provenance overflow evidence, exact KQL/PoMV snapshots, 25 process-kill recoveries and measured Redb disk reclamation. |
+| `CR-OPS-01` | [Concept Registry Operations Profile v1](CONCEPT_REGISTRY_OPERATIONS_PROFILE_V1.md) | Foundation implemented | Signed exact-file releases with source/SBOM provenance, append-only atomic activation and rollback, required-mode fail-closed runtime selection, operator CLI and explicit remaining resource/quarterly qualification gates. |
 | `IDN-001` / `OBJ-001` / `OBJ-002` | [Identity and Knowledge Object Profile v1](IDENTITY_OBJECT_PROFILE_V1.md) | Complete | Full-width role IDs, CRDT dot/clock, schema registry and opaque-safe immutable object envelope. |
 | `IDN-002` / `EVT-001` | [Feed, Authority and Event Profile v1](FEED_EVENT_PROFILE_V1.md) | Complete | Namespace-private FeedInception, frontier-relative delegation/revocation decisions and signed causal event envelope. |
 | `OBS-001` / `OBS-002` | [Validated Storage Profile v1](VALIDATED_STORAGE_PROFILE_V1.md) | Complete | Validate-before-persist Public Store, XChaCha20-Poly1305 Private Vault, encrypted private quarantine and atomic memory/redb backends. |
@@ -128,12 +129,16 @@ This directory owns the cross-crate contracts that must be stable before vNext r
 - [Migration and Rollback Guide v1](VNEXT_MIGRATION_AND_ROLLBACK_GUIDE_V1.md)
 - [Normative Freeze and Evidence Index v1](VNEXT_NORMATIVE_FREEZE_AND_EVIDENCE_INDEX_V1.md)
 - [vNext Product Integration Profile v1](VNEXT_PRODUCT_INTEGRATION_PROFILE_V1.md)
+- [P5 Canary Preflight Profile v1](P5_CANARY_PREFLIGHT_PROFILE_V1.md)
+- [P5 Operations Preflight Profile v1](P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md)
 
 ## Executable foundation gate
 
 - [Frozen canonical vectors](../../../src/test-vectors/vnext/foundation/canonical-v1.json)
 - [Frozen identity/object vectors](../../../src/test-vectors/vnext/foundation/identity-object-v1.json)
 - [Frozen feed/event vectors](../../../src/test-vectors/vnext/foundation/feed-event-v1.json)
+- [Frozen P5 single-host canary preflight](../../../src/test-vectors/vnext/p5-canary-preflight-v1.json)
+- [Frozen P5 operational preflight](../../../src/test-vectors/vnext/p5-operations-preflight-v1.json)
 - [Frozen public knowledge exchange selector](../../../src/test-vectors/vnext/inventory/public-knowledge-exchange-v1.json)
 - [Reference Rust foundation](../../../src/ku-core/src/foundation)
 - [vNext contract validator](../../../scripts/ci/validate_vnext_contracts.py)

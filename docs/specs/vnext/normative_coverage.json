@@ -728,6 +728,48 @@
       "rationale": "One optimized harness measures real authenticated QUIC, fsync, RSS, disk, task count and durable incremental indexes across repeated slow/flood/partition cycles; frozen duration gates prevent smoke evidence from impersonating 24-hour or 72-hour qualification and expose finite rollback reasons."
     },
     {
+      "path": "docs/specs/vnext/P5_CANARY_PREFLIGHT_PROFILE_V1.md",
+      "expected_statement_lines": 8,
+      "evidence": [
+        {
+          "path": "src/onebrain-node/src/vnext_canary_operations.rs",
+          "needle": "p5_01_three_node_real_quic_partition_restart_route_change_reunion"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_canary_operations.rs",
+          "needle": "p5_01_nonempty_node_directory_fails_before_runtime_start"
+        },
+        {
+          "path": "src/test-vectors/vnext/p5-canary-preflight-v1.json",
+          "needle": "onebrain/p5-canary-preflight/1"
+        }
+      ],
+      "rationale": "The bounded single-host preflight proves independent principals, authenticated real-QUIC partition/restart/route replacement and idempotent reunion without claiming production qualification; the machine profile keeps the 72-hour and multi-host gates mandatory."
+    },
+    {
+      "path": "docs/specs/vnext/P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md",
+      "expected_statement_lines": 18,
+      "evidence": [
+        {
+          "path": "src/onebrain-node/src/vnext_p5_operations.rs",
+          "needle": "p5_02_through_p5_06_operational_preflight_passes_without_72h"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_p5_operations.rs",
+          "needle": "corrupt_archive_failed_before_restore"
+        },
+        {
+          "path": "src/onebrain-node/src/vnext_p5_operations.rs",
+          "needle": "local_kql_round_trip_with_network_off"
+        },
+        {
+          "path": "src/test-vectors/vnext/p5-operations-preflight-v1.json",
+          "needle": "onebrain/p5-operations-preflight/1"
+        }
+      ],
+      "rationale": "The single-host operational preflight exercises actual signer, storage, authenticated-QUIC, durable backup/restore, rollback and dashboard boundaries while its frozen scope forbids 72-hour, multi-host or production qualification claims."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [

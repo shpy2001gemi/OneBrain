@@ -28,6 +28,14 @@ cargo test -p onebrain-node qa008_ --lib
 cargo run --release -p onebrain-node --features vnext-soak-harness \
   --example dr_m5_soak_release -- --profile smoke \
   --output target/m5-07/soak-report.json
+cargo run --release -p onebrain-node --features vnext-canary-harness \
+  --example p5_canary_preflight -- \
+  --data-dir target/p5-01/operator-preflight \
+  --output target/p5-01/canary-preflight-report.json
+cargo run --release -p onebrain-node --features vnext-canary-harness \
+  --example p5_operations_preflight -- \
+  --data-dir target/p5-operations/operator-preflight \
+  --output target/p5-operations/preflight-report.json
 ```
 
 Record the code revision, configuration, platform and benchmark profile root.
@@ -40,6 +48,20 @@ workflow runs `nightly-24h` on a dedicated Linux runner labeled
 `onebrain-soak`. Before canary or release, manually run `pre-release-72h` on
 the same pinned runner class and retain its JSON artifact with commit SHA and
 workflow metadata. Any `rollback_reasons` entry blocks release.
+
+The P5 preflight creates three independent logical nodes on one host, exercises
+authenticated QUIC partition/restart/route-change/reunion, then writes a
+machine-readable report. Use a new empty `--data-dir` for each invocation. A
+green report is implementation evidence only: it deliberately cannot qualify
+the production canary or replace the pinned 72-hour and multi-host gates.
+
+The P5 operations preflight uses authenticated real QUIC to exercise signer
+outage, hard disk pressure and slow-peer isolation. It then performs an offline
+manifest-verified backup/restore, corrupt-archive rejection, durable rollback,
+explicit per-lane re-enable, default-off reopening and privacy-bounded operator
+dashboard checks. Stop the runtime cleanly before a real backup and use new
+empty source, archive and restore directories. A restore error is fail-closed:
+retain the archive and investigate it instead of partially reusing the target.
 
 Provision, firewall, foreground/background operation and removal of that
 runner follow the
@@ -113,6 +135,21 @@ it cannot promise removal from remote custody.
 Activate the GC kill switch immediately. Keep canonical payloads, checkpoint
 conflicts and protected anchors. Restore from exact archives, verify custody
 receipts and rebuild the derived view root before considering another dry run.
+
+### P5 operational dashboard
+
+Use only the finite incident/action fields in the dashboard for automation;
+human-readable text is explanatory. The first response for each incident is:
+
+| Incident | Initial operator response |
+|---|---|
+| `SIGNER_UNAVAILABLE` | keep local reads available and fence publication until signer health returns |
+| `REGISTRY_CORRUPT` | disable dependent lanes and restore only from a verified archive |
+| `STORAGE_SOFT_WATERMARK` / `STORAGE_REJECTED` | stop new writes, preserve evidence and recover bounded capacity |
+| `PENDING_OUTBOX` / `RETRY_EXHAUSTED_OUTBOX` | inspect the durable outbox and retry policy without deleting records |
+| `ACTIVE_JOURNAL` | inspect and reconcile the durable journal before lane enablement |
+| `QUARANTINE_PRESENT` | preserve quarantine/provenance evidence and isolate the affected lane |
+| `LANE_FENCED` / `ROLLBACK_ACTIVE` | keep the lane off until an explicit generation-advancing re-enable is approved |
 
 ### Fidelity dispute
 

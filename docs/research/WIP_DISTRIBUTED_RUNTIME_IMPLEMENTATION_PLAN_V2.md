@@ -2349,3 +2349,171 @@ nightly evidence hợp lệ nhưng đúng theo frozen profile vẫn giữ
 `pre_release_qualified=false`; M5-07 và DR-M5 chưa được chốt cho tới khi một
 artifact `pre-release-72h` trên `main` đạt đủ `259.200` monotonic giây và mọi
 oracle/budget trong cùng report.
+
+### 2026-07-29 — P5-01 single-host three-node canary preflight
+
+Trong lúc Mac mini M2 tiếp tục chạy `pre-release-72h` trên commit đã pin
+`1055db85e359d520d3ae30df97f52529b3d299e7`, nhánh độc lập
+`codex/p5-canary-preflight` bắt đầu phần việc P5 không làm thay đổi evidence của
+job dài:
+
+1. Đóng băng
+   [`P5_CANARY_PREFLIGHT_PROFILE_V1.md`](../specs/vnext/P5_CANARY_PREFLIGHT_PROFILE_V1.md)
+   và machine contract
+   [`p5-canary-preflight-v1.json`](../../src/test-vectors/vnext/p5-canary-preflight-v1.json).
+2. Thêm `vnext-canary-harness` và executable `p5_canary_preflight`, tạo ba
+   logical node có durable directory/principal độc lập trên một host.
+3. Qua authenticated real QUIC, harness gửi ba FeedInception theo vòng A→B→C→A,
+   giữ sáu authenticated route observations, chặn route UDP cũ khi B dừng, rồi
+   restart B từ cùng durable directory trên địa chỉ mới.
+4. Reunion replay giữ đúng một durable feed branch; route generation tăng,
+   principal B không đổi và toàn bộ session quiesce về `0`.
+5. Preflight fail closed nếu operator directory không rỗng, không xóa hoặc ghi
+   đè byte hiện hữu.
+
+Local optimized report:
+
+- `profile=onebrain/p5-canary-preflight/1`;
+- `node_count=3`, `distinct_principals=3`, `initial_ring_deliveries=3`;
+- `authenticated_route_observations=6`;
+- partition/restart/address-change/route-generation/replay oracle đều `true`;
+- durable branch trước restart và sau replay đều bằng `1`;
+- `active_sessions_after_quiescence=0`;
+- không wallet/OBT/authority/network-completion side effect;
+- `preflight_passed=true`, nhưng
+  `production_canary_qualified=false`.
+
+Local gates:
+
+- P5-01 Rust tests: 2/2 xanh;
+- P5-01 machine-profile mutation tests: 9/9 xanh;
+- full vNext contract validator: xanh, 577 normative lines và 419 local links;
+- optimized executable/report: xanh.
+
+Đây chỉ là preflight một host và chưa hoàn tất P5 production. Nhánh này không
+thay thế hoặc được tính vào run `pre-release-72h` đang chạy. Multi-host canary,
+signer/disk/slow-peer, backup/restore, rollback/re-enable và operator rollout
+gate vẫn còn mở; production release vẫn bắt buộc artifact 72 giờ hợp lệ trên
+commit được chọn.
+
+### 2026-07-29 — P5-02 đến P5-06 operational preflight
+
+Trong khi `pre-release-72h` tiếp tục chạy trên `main` tại commit đã pin
+`1055db85e359d520d3ae30df97f52529b3d299e7`, các phần P5 không phụ thuộc kết
+quả 72 giờ được thực hiện trên nhánh riêng `codex/p5-canary-preflight`:
+
+1. P5-02 dùng đúng runtime boundary để chứng minh signer outage fail-closed
+   trước durable side effect, hard disk watermark trả `REJECTED_STORAGE`, và
+   một slow authenticated peer không chặn healthy peer tiến triển qua real
+   QUIC.
+2. P5-03 tạo backup offline gồm bảy durable file với manifest path đã sort,
+   exact length/BLAKE3, aggregate root domain-separated và fsync. Restore xác
+   minh toàn archive trước khi tạo target; archive bị sửa một byte bị từ chối
+   fail-closed.
+3. P5-04 rollback nguyên tử bốn runtime lane, giữ principal/raw feed/journal/
+   pending outbox/quarantine/operational root. Restart với stale enabled config
+   không tự bật lane; từng lane chỉ trở lại sau explicit generation-advancing
+   re-enable, rồi authenticated real QUIC mới kết nối lại.
+4. P5-05 xác nhận cả 12 public feature flag mặc định tắt, bốn effective runtime
+   lane bằng `0` khi mở lại bằng default config, và local private KQL vẫn
+   canonical round-trip khi network off.
+5. P5-06 xuất dashboard machine-readable với signer/registry/lane/session/
+   journal/outbox/quarantine/storage signals, 10 incident code và finite
+   response action; snapshot không chứa NodeID, selector, private Need hoặc
+   free-form peer label.
+6. Đóng băng
+   [`P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md`](../specs/vnext/P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md),
+   machine contract
+   [`p5-operations-preflight-v1.json`](../../src/test-vectors/vnext/p5-operations-preflight-v1.json),
+   mutation validator, CI gate và operator runbook.
+
+Local evidence:
+
+- P5 Rust tests gồm P5-01 và P5-02..P5-06: 5/5 xanh;
+- P5 machine-profile mutation tests: 22/22 xanh;
+- full vNext contract validator: xanh, 595 normative lines và 424 local links;
+- release executable report: `preflight_passed=true`, ba fault drill đạt,
+  bảy durable file restore đúng, corrupt archive bị chặn, bốn lane rollback/
+  re-enable đúng, 12 flag default-off và dashboard privacy gate đạt;
+- report giữ `consumes_pre_release_72h_evidence=false`,
+  `multi_host_canary_qualified=false` và
+  `production_canary_qualified=false`.
+
+Các gate còn mở không bị che bởi preflight này: artifact 72 giờ đã pin,
+multi-host production canary và operator-approved production rollout.
+
+### 2026-08-01 — Concept Registry signed release và atomic activation foundation
+
+Sau khi run `pre-release-72h` bị abandon do mất kết nối ở mốc 51 giờ 30 phút,
+không chạy lại ngay. Nhánh `codex/p5-canary-preflight` tiếp tục phần Concept
+Registry operations không phụ thuộc bằng chứng soak:
+
+1. Đóng gói đúng năm payload OBR/label index/CCID index/manifest/SPDX SBOM
+   trong release directory duy nhất; `release.stamp.json` ký Ed25519 toàn bộ
+   artifact root, source root, builder/dedup identity và chính sách phân phối.
+2. Source provenance giữ snapshot ID/URI/license cùng BLAKE3 snapshot và
+   download cho đúng năm nguồn; verify dùng đường uncached và exact file set.
+3. Publish qua unique staging rồi atomic rename, không ghi đè release đã tồn
+   tại. Activation/rollback append generation mới, giữ old/new cùng tồn tại và
+   bỏ qua state mới nhất bị truncated/corrupt.
+4. Node có thể chọn active signed release bằng root + pinned public key; status
+   nêu `release_id`/`release_generation`. `required` mode fail closed trước
+   subsystem side effect và không fallback v1.
+5. Thêm offline operator CLI cho keygen/package/verify/activate/status/rollback,
+   machine contract, mutation validator và GitHub Actions acceptance gate.
+6. Chính sách ký ghi rõ OBR không đi qua OBP gossip; chỉ mirror, offline media
+   hoặc một transport content-addressed chunks được đặc tả riêng.
+
+Local evidence cho foundation batch: 5 release tests, 10 registry runtime tests
+và 9 machine-profile mutation tests đều xanh; full vNext contract validator
+xanh với 426 local links.
+
+Remote evidence: GitHub Actions run `30694310694` cho commit `8d8291a` xanh đủ
+5/5 jobs (`foundation-contract`, Linux default, Linux real-QUIC, Windows smoke
+và macOS ARM64 smoke) trong 12 phút 21 giây.
+
+### 2026-08-01 — Concept Registry CCID stability/diff gate
+
+1. Thêm report profile `onebrain/ccid-stability-diff/1`, so sánh stable source
+   identity từ đúng old/new builder input với CCID thực sự được stream từ hai
+   OBR tương ứng; manifest/OBR hash và entry count phải khớp trước qualification.
+2. Join production-size dùng temporary disk-backed SQLite thay vì giữ registry
+   trong RAM; operator có thể chỉ định `--work-dir` trên volume đủ dung lượng.
+3. Gate fail khi không có stable identity giao nhau, bất kỳ stable identity nào
+   đổi CCID, hoặc old/new release có CCID collision. Input/OBR mismatch,
+   duplicate identity, truncated/corrupt/trailing-byte OBR fail trước report.
+4. JSON evidence được ghi atomically, gồm exact input/OBR/manifest hashes,
+   builder/dedup identity, source snapshots, old/new-only counts và bounded
+   samples để điều tra sai lệch.
+
+Local evidence: 8 CCID stability tests xanh; khi chạy chung với builder/index
+fixture có 10 tests xanh. Machine-profile mutation suite có 9 tests xanh; full
+vNext contract validator tiếp tục xanh với 595 normative lines và 426 local
+links.
+
+Lane Section 11 chưa được tuyên bố hoàn tất. Bảy gate tiếp theo vẫn mở: cold
+cache, low RAM, SSD, HDD, truncated index, disk shortage và quarterly
+build/update/rollback dry-run. Production canary vẫn bị chặn bởi các gate này
+và bằng chứng soak/canary bên ngoài hợp lệ.
+
+### 2026-08-01 — Cold-cache/low-RAM qualification harness
+
+1. Mở rộng `registry_probe` bằng JSON profile cố định, uncached verification,
+   lookup cache capacity zero và bounded external labels file. Qualification
+   không được dùng `--sample` từ OBR vì thao tác đó làm ấm artifact trước đo.
+2. Cold-cache runner dùng targeted Linux `POSIX_FADV_DONTNEED` hoặc
+   `vmtouch -e`; low-RAM runner dùng hard Linux `RLIMIT_AS`. Host không hỗ trợ
+   enforcement phải fail explicit.
+3. Evidence ghi atomically exact artifact/labels hashes, host, budget profile,
+   peak RSS, ready/lookup latency, child exit và từng oracle. Budget production
+   được freeze; CLI không cho tự nhập ngưỡng tùy ý.
+4. CI fixture sẽ chạy cả cold-cache và low-RAM mechanism. Đây chỉ là contract
+   evidence; hai gate production vẫn mở cho tới khi có report full-size trên
+   host/storage được khai báo.
+
+Probe cục bộ trên OBR thật 1.306.104.050 bytes (15.929.874 entries,
+22.346.492 labels) với uncached verification và cache capacity zero hoàn tất
+trong 1.163 ms, peak RSS 7.544.832 bytes, p95 445 µs cho bốn external labels.
+Vì Windows run này không có targeted page-cache eviction hoặc hard memory
+enforcement nên chỉ dùng để hiệu chỉnh budget, không được ghi nhận là hai gate
+production đã xanh.

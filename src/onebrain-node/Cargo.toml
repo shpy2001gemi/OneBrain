@@ -17,6 +17,14 @@ required-features = ["vnext-chaos-harness"]
 name = "dr_m5_soak_release"
 required-features = ["vnext-soak-harness"]
 
+[[example]]
+name = "p5_canary_preflight"
+required-features = ["vnext-canary-harness"]
+
+[[example]]
+name = "p5_operations_preflight"
+required-features = ["vnext-canary-harness"]
+
 [features]
 default = []
 vnext-network-runtime = [
@@ -50,6 +58,7 @@ vnext-soak-harness = [
     "vnext-network-runtime",
     "ku-net/dr-m5-chaos-harness",
 ]
+vnext-canary-harness = ["vnext-network-runtime"]
 
 [dependencies]
 ku-core = { path = "../ku-core" }

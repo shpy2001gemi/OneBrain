@@ -5,7 +5,12 @@ use std::path::PathBuf;
 
 use ku_core::concept_registry::{ConceptLookup, ConceptRegistry, ObrLoadError};
 use ku_core::concept_registry_manifest::{
-    load_and_validate_manifest, ConceptRegistryManifest, ConceptRegistryManifestError,
+    load_and_validate_manifest, load_and_validate_manifest_uncached, ConceptRegistryManifest,
+    ConceptRegistryManifestError,
+};
+use ku_core::concept_registry_release::{
+    parse_concept_registry_verifying_key, resolve_active_concept_registry_release,
+    ConceptRegistryReleaseError,
 };
 use ku_core::indexed_concept_registry::{IndexedConceptRegistry, IndexedRegistryError};
 use serde::{Deserialize, Serialize};
@@ -56,6 +61,10 @@ pub struct ConceptRegistryStatus {
     pub built_at_utc: Option<String>,
     pub builder_version: Option<String>,
     pub source_snapshots: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub release_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub release_generation: Option<u64>,
     pub failure_kind: Option<ConceptRegistryFailureKind>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -69,14 +78,17 @@ pub(crate) struct LoadedConceptRegistry {
 pub(crate) fn initialize_concept_registry(
     config: &NodeConfig,
 ) -> Result<LoadedConceptRegistry, NodeError> {
-    let path = config.obr_path();
+    let configured_path = config
+        .concept_registry_release_root
+        .clone()
+        .unwrap_or_else(|| config.obr_path());
     if config.concept_registry_mode == ConceptRegistryMode::Disabled {
         return Ok(LoadedConceptRegistry {
             registry: None,
             status: ConceptRegistryStatus {
                 mode: config.concept_registry_mode,
                 state: ConceptRegistryRuntimeState::Disabled,
-                path,
+                path: configured_path,
                 encoder_version: 1,
                 backend: None,
                 cache_capacity: config.concept_registry_cache_capacity,
@@ -88,14 +100,25 @@ pub(crate) fn initialize_concept_registry(
                 built_at_utc: None,
                 builder_version: None,
                 source_snapshots: BTreeMap::new(),
+                release_id: None,
+                release_generation: None,
                 failure_kind: None,
                 error: None,
             },
         });
     }
 
-    match load_registry_artifact(&path, config.concept_registry_cache_capacity) {
-        Ok((registry, manifest, backend)) => {
+    let selected = select_registry_artifact(config);
+    let loaded = selected.and_then(|selected| {
+        load_registry_artifact(
+            &selected.path,
+            config.concept_registry_cache_capacity,
+            selected.release_id.is_none(),
+        )
+        .map(|(registry, manifest, backend)| (selected, registry, manifest, backend))
+    });
+    match loaded {
+        Ok((selected, registry, manifest, backend)) => {
             let source_snapshots = manifest
                 .sources
                 .iter()
@@ -104,7 +127,7 @@ pub(crate) fn initialize_concept_registry(
             let status = ConceptRegistryStatus {
                 mode: config.concept_registry_mode,
                 state: ConceptRegistryRuntimeState::Loaded,
-                path,
+                path: selected.path,
                 encoder_version: 2,
                 backend: Some(backend),
                 cache_capacity: config.concept_registry_cache_capacity,
@@ -116,6 +139,8 @@ pub(crate) fn initialize_concept_registry(
                 built_at_utc: Some(manifest.built_at_utc),
                 builder_version: Some(manifest.builder_version),
                 source_snapshots,
+                release_id: selected.release_id,
+                release_generation: selected.release_generation,
                 failure_kind: None,
                 error: None,
             };
@@ -127,7 +152,7 @@ pub(crate) fn initialize_concept_registry(
         Err(error) if config.concept_registry_mode == ConceptRegistryMode::Required => {
             Err(NodeError::Config(format!(
                 "required Concept Registry failed at {}: {error}",
-                path.display()
+                configured_path.display()
             )))
         }
         Err(error) => Ok(LoadedConceptRegistry {
@@ -135,7 +160,7 @@ pub(crate) fn initialize_concept_registry(
             status: ConceptRegistryStatus {
                 mode: config.concept_registry_mode,
                 state: ConceptRegistryRuntimeState::FallbackV1,
-                path,
+                path: configured_path,
                 encoder_version: 1,
                 backend: None,
                 cache_capacity: config.concept_registry_cache_capacity,
@@ -147,6 +172,8 @@ pub(crate) fn initialize_concept_registry(
                 built_at_utc: None,
                 builder_version: None,
                 source_snapshots: BTreeMap::new(),
+                release_id: None,
+                release_generation: None,
                 failure_kind: Some(error.kind()),
                 error: Some(error.to_string()),
             },
@@ -160,6 +187,7 @@ enum RegistryArtifactError {
     Manifest(ConceptRegistryManifestError),
     Index(IndexedRegistryError),
     ScalableIndexRequired(u64),
+    Release(ConceptRegistryReleaseError),
 }
 
 impl RegistryArtifactError {
@@ -205,6 +233,15 @@ impl RegistryArtifactError {
             ) => ConceptRegistryFailureKind::Corrupt,
             Self::Index(IndexedRegistryError::TooManyMatches(_))
             | Self::ScalableIndexRequired(_) => ConceptRegistryFailureKind::ResourceLimit,
+            Self::Release(ConceptRegistryReleaseError::Io(error))
+                if error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                ConceptRegistryFailureKind::Missing
+            }
+            Self::Release(ConceptRegistryReleaseError::TooLarge { .. }) => {
+                ConceptRegistryFailureKind::ResourceLimit
+            }
+            Self::Release(_) => ConceptRegistryFailureKind::Corrupt,
         }
     }
 }
@@ -219,6 +256,51 @@ impl std::fmt::Display for RegistryArtifactError {
                 formatter,
                 "registry is {bytes} bytes and requires .labels.idx and .ccids.idx sidecars"
             ),
+            Self::Release(error) => error.fmt(formatter),
+        }
+    }
+}
+
+struct SelectedRegistryArtifact {
+    path: PathBuf,
+    release_id: Option<String>,
+    release_generation: Option<u64>,
+}
+
+fn select_registry_artifact(
+    config: &NodeConfig,
+) -> Result<SelectedRegistryArtifact, RegistryArtifactError> {
+    match (
+        &config.concept_registry_release_root,
+        &config.concept_registry_release_public_key,
+    ) {
+        (None, None) => Ok(SelectedRegistryArtifact {
+            path: config.obr_path(),
+            release_id: None,
+            release_generation: None,
+        }),
+        (Some(_), None) | (None, Some(_)) => Err(RegistryArtifactError::Release(
+            ConceptRegistryReleaseError::InvalidField(
+                "release root and public key must be configured together".to_owned(),
+            ),
+        )),
+        (Some(root), Some(public_key)) => {
+            if config.concept_registry_path.is_some() {
+                return Err(RegistryArtifactError::Release(
+                    ConceptRegistryReleaseError::InvalidField(
+                        "concept_registry_path conflicts with release root".to_owned(),
+                    ),
+                ));
+            }
+            let verifying_key = parse_concept_registry_verifying_key(public_key)
+                .map_err(RegistryArtifactError::Release)?;
+            let active = resolve_active_concept_registry_release(root, &verifying_key)
+                .map_err(RegistryArtifactError::Release)?;
+            Ok(SelectedRegistryArtifact {
+                path: active.obr_path,
+                release_id: Some(active.release_id),
+                release_generation: Some(active.generation),
+            })
         }
     }
 }
@@ -226,6 +308,7 @@ impl std::fmt::Display for RegistryArtifactError {
 fn load_registry_artifact(
     path: &std::path::Path,
     cache_capacity: usize,
+    allow_verification_cache: bool,
 ) -> Result<
     (
         Box<dyn ConceptLookup>,
@@ -235,8 +318,12 @@ fn load_registry_artifact(
     RegistryArtifactError,
 > {
     let header = ConceptRegistry::inspect_obr(path).map_err(RegistryArtifactError::Obr)?;
-    let manifest =
-        load_and_validate_manifest(path, header).map_err(RegistryArtifactError::Manifest)?;
+    let manifest = if allow_verification_cache {
+        load_and_validate_manifest(path, header)
+    } else {
+        load_and_validate_manifest_uncached(path, header)
+    }
+    .map_err(RegistryArtifactError::Manifest)?;
     if IndexedConceptRegistry::indexes_exist(path) {
         let registry = IndexedConceptRegistry::open(path, &manifest, cache_capacity)
             .map_err(RegistryArtifactError::Index)?;
@@ -265,7 +352,17 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use ku_core::concept_registry_manifest::{manifest_path, ConceptRegistrySourceManifest};
+    use ed25519_dalek::SigningKey;
+    use ku_core::concept_registry_manifest::{
+        manifest_path, ConceptRegistryIndexManifest, ConceptRegistrySourceManifest,
+    };
+    use ku_core::indexed_concept_registry::{
+        CCID_INDEX_MAGIC, LABEL_INDEX_MAGIC, REGISTRY_INDEX_VERSION,
+    };
+    use ku_core::{
+        activate_concept_registry_release, package_concept_registry_release,
+        ConceptRegistryReleasePackageInput, ConceptRegistryReleaseSource,
+    };
 
     fn config(directory: &std::path::Path, mode: ConceptRegistryMode) -> NodeConfig {
         NodeConfig {
@@ -324,6 +421,93 @@ mod tests {
             serde_json::to_vec_pretty(&manifest).unwrap(),
         )
         .unwrap();
+    }
+
+    fn write_index(path: &std::path::Path, magic: [u8; 4], checksum: [u8; 32], key: [u8; 16]) {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&magic);
+        bytes.extend_from_slice(&REGISTRY_INDEX_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&1u64.to_le_bytes());
+        bytes.extend_from_slice(&checksum);
+        bytes.extend_from_slice(&[0u8; 16]);
+        bytes.extend_from_slice(&key);
+        bytes.extend_from_slice(&32u64.to_le_bytes());
+        fs::write(path, bytes).unwrap();
+    }
+
+    fn release_source(name: &str, marker: u8) -> ConceptRegistryReleaseSource {
+        let hash = |byte| blake3::hash(&[byte; 8]).to_hex().to_string();
+        ConceptRegistryReleaseSource {
+            name: name.to_owned(),
+            snapshot_id: format!("{name}-test-snapshot"),
+            source_uri: format!("https://example.test/{name}"),
+            license: "test-license".to_owned(),
+            snapshot_blake3: hash(marker),
+            download_blake3: hash(marker.wrapping_add(1)),
+        }
+    }
+
+    fn install_signed_release(root: &std::path::Path) -> SigningKey {
+        let source_dir = root.join("source");
+        let registry_root = root.join("registry");
+        fs::create_dir_all(&source_dir).unwrap();
+        let obr_path = source_dir.join("registry.obr");
+        write_tiny_obr(&obr_path);
+        let obr = fs::read(&obr_path).unwrap();
+        let checksum = *blake3::hash(&obr).as_bytes();
+        let label_key: [u8; 16] = blake3::hash(b"water").as_bytes()[..16].try_into().unwrap();
+        let ccid: [u8; 16] = [7; 16];
+        let label_path = IndexedConceptRegistry::label_index_path(&obr_path);
+        let ccid_path = IndexedConceptRegistry::ccid_index_path(&obr_path);
+        write_index(&label_path, LABEL_INDEX_MAGIC, checksum, label_key);
+        write_index(&ccid_path, CCID_INDEX_MAGIC, checksum, ccid);
+
+        let mut manifest: ConceptRegistryManifest =
+            serde_json::from_slice(&fs::read(manifest_path(&obr_path)).unwrap()).unwrap();
+        let index_manifest = |path: &std::path::Path| ConceptRegistryIndexManifest {
+            schema_version: 1,
+            record_size: 24,
+            record_count: 1,
+            blake3: blake3::hash(&fs::read(path).unwrap()).to_hex().to_string(),
+            file_size: fs::metadata(path).unwrap().len(),
+        };
+        manifest.label_index = Some(index_manifest(&label_path));
+        manifest.ccid_index = Some(index_manifest(&ccid_path));
+        fs::write(
+            manifest_path(&obr_path),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+        let sbom_path = source_dir.join("sbom.spdx.json");
+        fs::write(
+            &sbom_path,
+            br#"{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0"}"#,
+        )
+        .unwrap();
+        let sources = ["chebi", "geonames", "ncbi", "wikidata", "wordnet"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, name)| release_source(name, index as u8 + 1))
+            .collect();
+        let signing_key = SigningKey::from_bytes(&[0x42; 32]);
+        package_concept_registry_release(
+            &obr_path,
+            &sbom_path,
+            &registry_root,
+            ConceptRegistryReleasePackageInput {
+                release_id: "registry-v1".to_owned(),
+                sources,
+            },
+            &signing_key,
+        )
+        .unwrap();
+        activate_concept_registry_release(
+            &registry_root,
+            "registry-v1",
+            &signing_key.verifying_key(),
+        )
+        .unwrap();
+        signing_key
     }
 
     #[test]
@@ -441,5 +625,53 @@ mod tests {
             Some(ConceptRegistryFailureKind::Corrupt)
         );
         assert_eq!(loaded.status.state, ConceptRegistryRuntimeState::FallbackV1);
+    }
+
+    #[test]
+    fn required_mode_loads_only_the_verified_active_release_without_cache_mutation() {
+        let directory = tempfile::tempdir().unwrap();
+        let signing_key = install_signed_release(directory.path());
+        let mut config = config(directory.path(), ConceptRegistryMode::Required);
+        config.concept_registry_release_root = Some(directory.path().join("registry"));
+        config.concept_registry_release_public_key = Some(
+            signing_key
+                .verifying_key()
+                .as_bytes()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+        );
+
+        let loaded = initialize_concept_registry(&config).unwrap();
+        assert!(loaded.registry.is_some());
+        assert_eq!(loaded.status.state, ConceptRegistryRuntimeState::Loaded);
+        assert_eq!(loaded.status.release_id.as_deref(), Some("registry-v1"));
+        assert_eq!(loaded.status.release_generation, Some(1));
+        assert_eq!(
+            loaded.status.backend,
+            Some(ConceptRegistryBackendKind::IndexedOnDemand)
+        );
+        assert!(!loaded
+            .status
+            .path
+            .with_extension("obr.verification.json")
+            .exists());
+    }
+
+    #[test]
+    fn required_release_mode_never_falls_back_when_activation_is_missing() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = config(directory.path(), ConceptRegistryMode::Required);
+        config.concept_registry_release_root = Some(directory.path().join("registry"));
+        config.concept_registry_release_public_key = Some(
+            SigningKey::from_bytes(&[0x24; 32])
+                .verifying_key()
+                .as_bytes()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+        );
+        let error = initialize_concept_registry(&config).err().unwrap();
+        assert!(error.to_string().contains("no active registry release"));
     }
 }

@@ -78,6 +78,13 @@ pub struct NodeConfig {
     /// Maximum number of on-demand label resolutions retained in memory.
     #[serde(default = "default_concept_registry_cache_capacity")]
     pub concept_registry_cache_capacity: usize,
+    /// Root containing signed immutable Concept Registry releases and state.
+    /// When set, `concept_registry_path` must be absent.
+    #[serde(default)]
+    pub concept_registry_release_root: Option<PathBuf>,
+    /// Pinned Ed25519 release-signing public key as 64 lowercase hex digits.
+    #[serde(default)]
+    pub concept_registry_release_public_key: Option<String>,
     /// vNext features and independent emergency kill switches.
     #[serde(default)]
     pub vnext: VNextFeatureConfig,
@@ -144,6 +151,8 @@ impl Default for NodeConfig {
             concept_registry_path: None,
             concept_registry_mode: ConceptRegistryMode::Optional,
             concept_registry_cache_capacity: default_concept_registry_cache_capacity(),
+            concept_registry_release_root: None,
+            concept_registry_release_public_key: None,
             vnext: VNextFeatureConfig::default(),
         }
     }
