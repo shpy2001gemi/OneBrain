@@ -9,11 +9,12 @@ use crate::MobileCoreError;
 
 const TRUST_PROFILE_DOMAIN: &[u8] = b"onebrain:registry-trust-profile:1\0";
 const MANIFEST_BODY_DOMAIN: &[u8] = b"onebrain:concept-registry-manifest-body:1\0";
+pub(crate) const REGISTRY_CHUNK_DOMAIN: &[u8] = b"onebrain:concept-registry-chunk:1\0";
 const RELEASE_ID_DOMAIN: &[u8] = b"onebrain:concept-registry-release:1\0";
 const RELEASE_ENVELOPE_DOMAIN: &[u8] = b"onebrain:concept-registry-envelope:1\0";
 const CHANNEL_HEAD_BODY_DOMAIN: &[u8] = b"onebrain:concept-registry-channel-head-body:1\0";
 const CHANNEL_HEAD_ENVELOPE_DOMAIN: &[u8] = b"onebrain:concept-registry-channel-head:1\0";
-const FIXED_CHUNK_BYTES: u64 = 8_388_608;
+pub(crate) const FIXED_CHUNK_BYTES: u64 = 8_388_608;
 const MAX_TRUST_PROFILE_BYTES: usize = 64 * 1024;
 const MAX_CHANNEL_HEAD_BYTES: usize = 64 * 1024;
 const MAX_MANIFEST_BODY_BYTES: usize = 1024 * 1024;
@@ -451,6 +452,12 @@ struct RegistryManifestBody {
     supersedes_release: Option<[u8; 32]>,
     provenance: [[u8; 32]; 3],
     revoked_release_ids: Vec<[u8; 32]>,
+}
+
+pub(crate) fn verified_registry_artifacts(
+    manifest_body_cbor: &[u8],
+) -> Result<Vec<RegistryArtifact>, MobileCoreError> {
+    Ok(parse_manifest_body(manifest_body_cbor)?.artifacts)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1369,16 +1376,18 @@ mod tests {
             .into_iter()
             .enumerate()
             .map(|(role, length)| {
+                let role = role as u8;
+                let payload = fixture_chunk_bytes(role, length);
                 map(vec![
-                    unsigned_value(role as u64),
+                    unsigned_value(u64::from(role)),
                     unsigned_value(length),
-                    Value::Bytes([20 + role as u8; 32].to_vec()),
+                    Value::Bytes(blake3::hash(&payload).as_bytes().to_vec()),
                     Value::Array(vec![unsigned_value(1), unsigned_value(0)]),
                     unsigned_value(1),
                     Value::Array(vec![map(vec![
                         unsigned_value(0),
                         unsigned_value(length),
-                        Value::Bytes([40 + role as u8; 32].to_vec()),
+                        Value::Bytes(fixture_chunk_leaf(role, 0, &payload).to_vec()),
                     ])]),
                 ])
             })
@@ -1427,6 +1436,20 @@ mod tests {
             head_digest,
             artifact_total_bytes: 6144,
         }
+    }
+
+    fn fixture_chunk_bytes(role: u8, length: u64) -> Vec<u8> {
+        vec![0x41 + role; usize::try_from(length).unwrap()]
+    }
+
+    fn fixture_chunk_leaf(role: u8, index: u32, bytes: &[u8]) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(REGISTRY_CHUNK_DOMAIN);
+        hasher.update(&[role]);
+        hasher.update(&index.to_le_bytes());
+        hasher.update(&u32::try_from(bytes.len()).unwrap().to_le_bytes());
+        hasher.update(bytes);
+        *hasher.finalize().as_bytes()
     }
 
     fn sign_target(
@@ -1905,6 +1928,181 @@ mod tests {
                 .unwrap()
                 .waiting_reason,
             Some(RegistryWaitingReason::UserStoppedOsJob)
+        );
+    }
+
+    #[test]
+    fn signed_chunk_ledger_resumes_rehashes_and_closes_bytes_complete_atomically() {
+        const REQUEST_FINGERPRINT: &str =
+            "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+        const DESCRIPTOR_DIGEST: &str =
+            "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef";
+
+        let authority = SignedFixtureAuthority::new();
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("bootstrap.redb");
+        let budgets = ResourceBudgets::default();
+        let store = BootstrapStore::open(&path).unwrap();
+        store.start_process(1).unwrap();
+        let operation = store
+            .begin_registry_init("stable", &authority.profile, &budgets)
+            .unwrap();
+        store
+            .verify_and_accept_registry_target(
+                &operation.operation_id,
+                &authority.profile,
+                "stable",
+                &authority.floor_target.channel_envelope,
+                &authority.floor_target.release_envelope,
+            )
+            .unwrap();
+        store
+            .await_registry_exact_confirmation(&operation.operation_id)
+            .unwrap();
+        store
+            .confirm_registry_init(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                &authority.profile,
+                RegistryNetworkPolicy::Unmetered,
+                false,
+                generous_plan(&authority.floor_target),
+            )
+            .unwrap();
+        let schedule = store
+            .prepare_registry_transfer_schedule(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                RegistryTransferPlatform::AndroidUidt,
+                REQUEST_FINGERPRINT,
+                DESCRIPTOR_DIGEST,
+                authority.floor_target.artifact_total_bytes,
+                false,
+                &budgets,
+            )
+            .unwrap();
+        store
+            .mark_registry_transfer_submitted(
+                &schedule.transfer_nonce,
+                "android-byte-job",
+                &budgets,
+            )
+            .unwrap();
+        store
+            .adopt_registry_transfer(
+                &schedule.transfer_nonce,
+                "android-byte-job",
+                REQUEST_FINGERPRINT,
+                schedule.android_job_id,
+                1,
+                &budgets,
+            )
+            .unwrap();
+
+        let planned = store
+            .prepare_registry_chunk_ledger(&schedule.transfer_nonce, &budgets)
+            .unwrap();
+        assert_eq!(planned.total_chunks, 3);
+        assert_eq!(planned.expected_bytes, 6144);
+        assert_eq!(planned.verified_chunks, 0);
+        assert_eq!(
+            store
+                .registry_operation(&operation.operation_id)
+                .unwrap()
+                .unwrap()
+                .state,
+            RegistryOperationState::TransferQueued
+        );
+        assert!(store
+            .registry_chunk("another-transfer", 0, 0)
+            .unwrap()
+            .is_none());
+
+        let obr = fixture_chunk_bytes(0, 1024);
+        let mut interrupted = Cursor::new(&obr[..300]);
+        assert!(matches!(
+            store.land_registry_chunk(&schedule.transfer_nonce, 0, 0, 0, &mut interrupted),
+            Err(MobileCoreError::RegistryAdmission(_))
+        ));
+        assert_eq!(
+            store
+                .registry_chunk_resume_offset(&schedule.transfer_nonce, 0, 0)
+                .unwrap(),
+            300
+        );
+        drop(store);
+
+        let recovered = BootstrapStore::open(&path).unwrap();
+        recovered.start_process(2).unwrap();
+        let after_crash = recovered
+            .recover_registry_chunk_ledger(&schedule.transfer_nonce)
+            .unwrap();
+        assert_eq!(after_crash.verified_chunks, 0);
+        assert_eq!(
+            recovered
+                .registry_chunk(&schedule.transfer_nonce, 0, 0)
+                .unwrap()
+                .unwrap()
+                .state,
+            crate::RegistryChunkState::Receiving
+        );
+        let mut remainder = Cursor::new(&obr[300..]);
+        let obr_receipt = recovered
+            .land_registry_chunk(&schedule.transfer_nonce, 0, 0, 300, &mut remainder)
+            .unwrap();
+        assert_eq!(obr_receipt.state, crate::RegistryChunkState::Verified);
+
+        let labels = fixture_chunk_bytes(1, 2048);
+        let mut overlong_labels = labels.clone();
+        overlong_labels.push(0xff);
+        let mut overlong = Cursor::new(overlong_labels);
+        assert!(matches!(
+            recovered.land_registry_chunk(&schedule.transfer_nonce, 1, 0, 0, &mut overlong),
+            Err(MobileCoreError::RegistryAdmission(_))
+        ));
+        let mut corrupt = Cursor::new(vec![0u8; labels.len()]);
+        assert!(matches!(
+            recovered.land_registry_chunk(&schedule.transfer_nonce, 1, 0, 0, &mut corrupt),
+            Err(MobileCoreError::Security(_))
+        ));
+        assert_eq!(
+            recovered
+                .registry_chunk_resume_offset(&schedule.transfer_nonce, 1, 0)
+                .unwrap(),
+            0
+        );
+        let mut labels_source = Cursor::new(labels);
+        recovered
+            .land_registry_chunk(&schedule.transfer_nonce, 1, 0, 0, &mut labels_source)
+            .unwrap();
+
+        let ccids = fixture_chunk_bytes(2, 3072);
+        let (partial, verified) = recovered
+            .registry_chunk_test_paths(&schedule.transfer_nonce, 2, 0)
+            .unwrap();
+        std::fs::create_dir_all(partial.parent().unwrap()).unwrap();
+        let mut crash_window = std::fs::File::create(&partial).unwrap();
+        std::io::Write::write_all(&mut crash_window, &ccids).unwrap();
+        crash_window.sync_all().unwrap();
+        drop(crash_window);
+        std::fs::rename(&partial, &verified).unwrap();
+        drop(recovered);
+
+        let recovered_after_rename = BootstrapStore::open(&path).unwrap();
+        recovered_after_rename.start_process(3).unwrap();
+        let complete = recovered_after_rename
+            .recover_registry_chunk_ledger(&schedule.transfer_nonce)
+            .unwrap();
+        assert_eq!(complete.total_chunks, 3);
+        assert_eq!(complete.verified_chunks, 3);
+        assert_eq!(complete.verified_bytes, 6144);
+        assert_eq!(
+            recovered_after_rename
+                .registry_operation(&operation.operation_id)
+                .unwrap()
+                .unwrap()
+                .state,
+            RegistryOperationState::BytesComplete
         );
     }
 

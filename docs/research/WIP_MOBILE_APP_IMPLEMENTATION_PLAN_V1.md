@@ -1,6 +1,6 @@
 # WIP Mobile App Analysis and Implementation Plan V1.3
 
-> Status: **ACTIVE IMPLEMENTATION / MOB-05A ADMISSION + MOB-05B ANDROID UIDT BARRIER IMPLEMENTED / BYTE TRANSPORT NEXT**
+> Status: **ACTIVE IMPLEMENTATION / MOB-05A ADMISSION + MOB-05B UIDT AND VERIFIED BYTE-LANDING FOUNDATION IMPLEMENTED / PRODUCTION HTTPS NEXT**
 >
 > Snapshot: **2026-08-02 (Asia/Saigon)**
 >
@@ -1665,7 +1665,7 @@ Status vocabulary:
 | `MOB-02` | **Partial** | Thin mobile crates, process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL/private planner, Android kill recovery | Broader platform lifecycle qualification and any remaining runtime-service adapters; no `ReadyOffline` claim |
 | `MOB-03` | **Partial** | Platform custody adapters, installation binding, encrypted vault/archive, exclusions, corruption and unexpected-restore tests | Physical backup/restore, iOS orphan-Keychain, protected-data/biometric and full recovery UX evidence |
 | `MOB-04` | **Partial** | vi/en Limited shell, onboarding, encrypted raw drafts, Android share spool, status surfaces, system-picker import and My Media shelf | Canonical KU encode/preview/private Save, complete Library/My KU/Received shelves, local search/KQL and export/backup journeys |
-| `MOB-05` | **Partial — MOB-05A admission plus MOB-05B Android UIDT scheduler/adoption implemented** | Deterministic signed admission and capacity, ABI-10 native-only barrier lookup, namespaced/persisted Android 14+ UIDT scheduling, process-kill inventory adoption, positive user-stop receipt, bilingual notification, release package/permission isolation and Android 16 emulator proof; debug fixture is excluded from release | Embed owner-issued production trust and approved transport descriptors; add signed HTTPS landing/range/chunk bytes and live policy, finish iOS background `URLSession`, then MOB-05C activation/health/rollback/GC and real 2.2 GB qualification |
+| `MOB-05` | **Partial — MOB-05A admission plus MOB-05B Android UIDT and verified byte-landing foundation implemented** | Deterministic signed admission/capacity, ABI-10 native-only barrier lookup, Android 14+ UIDT scheduling/adoption, process-kill and user-stop receipts, plus a Rust manifest-derived exact chunk ledger with bounded same-volume landing, resume rehash, hash/length verification and `BytesComplete` crash recovery; no production transport authority is embedded | Embed owner-issued production trust and approved transport descriptors; connect signed HTTPS range bodies and live policy to the verified landing API, finish iOS background `URLSession`, then MOB-05C whole-artifact verification/activation/health/rollback/GC and real 2.2 GB qualification |
 | `MOB-06` | **Partial contract/fixture only** | No-LLM behavior, signed KQL fixture and private proposal feasibility | Provider adapters, deterministic tool execution journal, local-runtime bake-off, cloud disclosure and signed model lifecycle |
 | `MOB-07` | **Partial — current evidence package** | Activation recovery foundations plus Android encrypted media staging/OwnedOriginal activation, catalog query and force-stop recovery | Piece/pack media contract, viewers/received media, camera/OCR/voice, background adapters, notifications/outbox, energy policy and physical matrices |
 | `MOB-08` | **Blocked** | No production network authority in the app | P5, Registry, peer protocol and stable Offline MVP entry gates; then enrollment, reconciliation, seeding/presence and multi-host canary |
@@ -1862,6 +1862,23 @@ no `INTERNET`; source scanning finds no HTTP/socket implementation. The probe
 uses a 6 KiB signed debug manifest and transfers no bytes, so approved HTTPS
 landing/range, Task Manager Stop, reboot/Doze/thermal, iOS, physical device and
 the real 2.2 GB-class qualification remain open. No MOB-05 exit is satisfied.
+
+Implementation checkpoint (2026-08-02): the Rust verified byte-landing
+foundation is executable without adding a transport or network permission.
+Only an adopted active schedule may create a chunk ledger, and Rust derives
+every `(release_id, artifact_role, chunk_index, expected_hash,
+expected_length)` binding from the already accepted deterministic-CBOR signed
+manifest; caller-authored production landing rows are rejected. Each chunk is
+bounded by the signed fixed 8 MiB profile, written under the bootstrap volume,
+rehashes any durable partial prefix before resume, fsyncs bytes before rename,
+and commits `Verified` only after the domain-separated leaf and exact length
+match. Recovery covers partial-download continuation and the rename-before-DB
+commit window; the operation reaches `BytesComplete` only when every exact
+OBR/label-index/CCID-index chunk is verified. The debug fixture test also
+rejects wrong hashes and mixed transfer identities. This is a transport-neutral
+Rust foundation exposed through `MobileRuntimeFacade`; no URL, credential,
+`INTERNET` permission, owner-issued production descriptor, Android response
+body, iOS background task, whole-artifact receipt or activation claim is added.
 
 Deliver:
 
@@ -2125,14 +2142,16 @@ qualification integration at `d9270f7`:
    exercised against the isolated signed development fixture; replace the
    unavailable production trust source only with owner-issued authority and
    physical/full-size qualification evidence.
-2. **MOB-05B — durable platform transfer (Android scheduler/adoption
-   implemented; byte execution and iOS open):** keep the ABI-10
+2. **MOB-05B — durable platform transfer (Android scheduler/adoption and
+   Rust verified byte landing implemented; production transport and iOS
+   open):** keep the ABI-10
    prepare/submit/adopt/stop plus active-schedule lookup contract and the
-   Android UIDT namespace/recovery adapter. Add owner-approved signed HTTPS
-   landing/range/chunk execution and live policy, then bind iOS background
-   `URLSession` with force-quit/native callback recovery without Flutter.
-   Production remains unavailable until owner-issued trust and approved
-   transport descriptors exist.
+   Android UIDT namespace/recovery adapter. Feed owner-approved signed HTTPS
+   range responses through the manifest-derived Rust chunk ledger and its
+   resume/crash recovery, add live policy, then bind iOS background `URLSession`
+   with force-quit/native callback recovery without Flutter. Production remains
+   unavailable until owner-issued trust and approved transport descriptors
+   exist.
 3. **MOB-05C — full activation:** provision the real 2.2 GB-class Registry,
    verify immutable chunks/indexes, perform A/B pointer activation, independent
    post-pointer health, compensation/rollback and safe GC; then measure mmap,

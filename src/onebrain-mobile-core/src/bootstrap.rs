@@ -1,5 +1,6 @@
 use std::{
-    fs,
+    fs::{self, File, OpenOptions},
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -9,7 +10,8 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use crate::{
     registry_admission::{
         compare_bound_generation, compare_bound_release, registry_admission,
-        verify_registry_target, VerifiedRegistryTarget,
+        verified_registry_artifacts, verify_registry_target, VerifiedRegistryTarget,
+        FIXED_CHUNK_BYTES, REGISTRY_CHUNK_DOMAIN,
     },
     MobileCoreError, RegistryCapacityPlan, RegistryChannelHighWater, RegistryLimitedReceipt,
     RegistryNetworkPolicy, RegistryOperationState, RegistryReleaseCatalogRecord,
@@ -188,12 +190,34 @@ struct RegistryRevocationRecord {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct RegistryChunkRecord {
+    pub transfer_nonce: String,
     pub operation_id: String,
+    pub release_id: String,
+    pub artifact_role: u8,
     pub chunk_index: u32,
     pub expected_hash: String,
     pub expected_length: u64,
-    pub state: String,
+    pub state: RegistryChunkState,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistryChunkState {
+    Planned,
+    Receiving,
+    Verified,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegistryLandingProgress {
+    pub transfer_nonce: String,
+    pub total_chunks: u32,
+    pub verified_chunks: u32,
+    pub expected_bytes: u64,
+    pub verified_bytes: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1641,40 +1665,584 @@ impl BootstrapStore {
             .transpose()
     }
 
-    pub fn upsert_registry_chunk(
+    pub fn prepare_registry_chunk_ledger(
         &self,
-        record: &RegistryChunkRecord,
+        transfer_nonce: &str,
         budgets: &ResourceBudgets,
-    ) -> Result<(), MobileCoreError> {
+    ) -> Result<RegistryLandingProgress, MobileCoreError> {
         require_bounded(
-            "operation_id",
-            &record.operation_id,
-            budgets.max_operation_id_bytes,
+            "transfer_nonce",
+            transfer_nonce,
+            budgets.max_transfer_nonce_bytes,
         )?;
-        validate_hash(&record.expected_hash)?;
-        let key = chunk_key(&record.operation_id, record.chunk_index);
-        let bytes = encode(record)?;
         let write = self.database.begin_write()?;
         {
-            let mut table = write.open_table(REGISTRY_CHUNKS)?;
-            table.insert(key.as_str(), bytes.as_slice())?;
+            let schedules = write.open_table(REGISTRY_TRANSFER_SCHEDULES)?;
+            let schedule = schedules
+                .get(transfer_nonce)?
+                .map(|value| decode::<RegistryTransferScheduleRecord>(value.value()))
+                .transpose()?
+                .ok_or_else(|| MobileCoreError::UnknownTransfer(transfer_nonce.to_owned()))?;
+            if schedule.state != RegistryTransferScheduleState::TransferAdopted {
+                return Err(registry_admission(
+                    "Registry chunk ledger requires an adopted platform transfer",
+                ));
+            }
+            drop(schedules);
+
+            let mut operations = write.open_table(REGISTRY_OPERATIONS)?;
+            let existing = operations
+                .get(schedule.operation_id.as_str())?
+                .ok_or_else(|| registry_admission("Registry transfer lost its operation"))?;
+            let mut operation: RegistryOperationRecord = decode(existing.value())?;
+            drop(existing);
+            if operation.active_transfer_nonce.as_deref() != Some(transfer_nonce)
+                || operation.release_id != schedule.release_id
+                || operation.confirmed_manifest_digest.as_deref()
+                    != Some(schedule.manifest_digest.as_str())
+                || operation.confirmed_trust_profile_digest.as_deref()
+                    != Some(schedule.trust_profile_digest.as_str())
+                || !matches!(
+                    operation.state,
+                    RegistryOperationState::TransferAdopted
+                        | RegistryOperationState::TransferQueued
+                        | RegistryOperationState::Downloading
+                        | RegistryOperationState::BytesComplete
+                )
+            {
+                return Err(registry_admission(
+                    "Registry chunk ledger is not bound to the active exact operation",
+                ));
+            }
+
+            let catalog = write.open_table(REGISTRY_RELEASE_CATALOG)?;
+            let release = catalog
+                .get(schedule.release_id.as_str())?
+                .map(|value| decode::<RegistryReleaseCatalogRecord>(value.value()))
+                .transpose()?
+                .ok_or_else(|| registry_admission("Registry transfer lost its signed release"))?;
+            if release.state == RegistryReleaseState::Revoked
+                || release.manifest_digest != schedule.manifest_digest
+                || release.trust_profile_digest != schedule.trust_profile_digest
+                || release.artifact_total_bytes != schedule.expected_total_bytes
+            {
+                return Err(registry_admission(
+                    "Registry chunk ledger does not match the eligible signed release",
+                ));
+            }
+            let artifacts = verified_registry_artifacts(&release.manifest_body_cbor)?;
+            drop(catalog);
+
+            let expected_chunks = artifacts.iter().try_fold(0u32, |total, artifact| {
+                let count = u32::try_from(artifact.chunks.len())
+                    .map_err(|_| registry_admission("Registry chunk count exceeds u32"))?;
+                total
+                    .checked_add(count)
+                    .ok_or_else(|| registry_admission("Registry chunk count overflow"))
+            })?;
+            let mut chunks = write.open_table(REGISTRY_CHUNKS)?;
+            for artifact in artifacts {
+                for chunk in artifact.chunks {
+                    let record = RegistryChunkRecord {
+                        transfer_nonce: transfer_nonce.to_owned(),
+                        operation_id: schedule.operation_id.clone(),
+                        release_id: schedule.release_id.clone(),
+                        artifact_role: artifact.role,
+                        chunk_index: chunk.index,
+                        expected_hash: hex::encode(chunk.leaf_blake3),
+                        expected_length: u64::from(chunk.length),
+                        state: RegistryChunkState::Planned,
+                    };
+                    let key = chunk_key(transfer_nonce, artifact.role, chunk.index);
+                    let existing = chunks
+                        .get(key.as_str())?
+                        .map(|value| decode::<RegistryChunkRecord>(value.value()))
+                        .transpose()?;
+                    if let Some(existing) = existing {
+                        if registry_chunk_identity(&existing) != registry_chunk_identity(&record) {
+                            return Err(MobileCoreError::Security(
+                                "Registry chunk ledger contains a conflicting signed binding"
+                                    .into(),
+                            ));
+                        }
+                    } else {
+                        let bytes = encode(&record)?;
+                        chunks.insert(key.as_str(), bytes.as_slice())?;
+                    }
+                }
+            }
+            let mut observed_chunks = 0u32;
+            for entry in chunks.iter()? {
+                let (_, value) = entry?;
+                let record: RegistryChunkRecord = decode(value.value())?;
+                if record.transfer_nonce == transfer_nonce {
+                    observed_chunks = observed_chunks.checked_add(1).ok_or_else(|| {
+                        MobileCoreError::Security("Registry chunk ledger count overflow".into())
+                    })?;
+                }
+            }
+            if observed_chunks != expected_chunks {
+                return Err(MobileCoreError::Security(
+                    "Registry chunk ledger contains an unexpected chunk binding".into(),
+                ));
+            }
+            drop(chunks);
+
+            if operation.state == RegistryOperationState::TransferAdopted {
+                operation.state = RegistryOperationState::TransferQueued;
+                let bytes = encode(&operation)?;
+                operations.insert(schedule.operation_id.as_str(), bytes.as_slice())?;
+            }
         }
         write.commit()?;
-        Ok(())
+        self.registry_landing_progress(transfer_nonce)
     }
 
     pub fn registry_chunk(
         &self,
-        operation_id: &str,
+        transfer_nonce: &str,
+        artifact_role: u8,
         chunk_index: u32,
     ) -> Result<Option<RegistryChunkRecord>, MobileCoreError> {
-        let key = chunk_key(operation_id, chunk_index);
+        let key = chunk_key(transfer_nonce, artifact_role, chunk_index);
         let read = self.database.begin_read()?;
         let table = read.open_table(REGISTRY_CHUNKS)?;
         table
             .get(key.as_str())?
             .map(|value| decode(value.value()))
             .transpose()
+    }
+
+    pub fn registry_chunk_resume_offset(
+        &self,
+        transfer_nonce: &str,
+        artifact_role: u8,
+        chunk_index: u32,
+    ) -> Result<u64, MobileCoreError> {
+        let record = self
+            .registry_chunk(transfer_nonce, artifact_role, chunk_index)?
+            .ok_or_else(|| registry_admission("unknown Registry chunk binding"))?;
+        let paths = self.registry_chunk_paths(&record)?;
+        if paths.verified.exists() {
+            verify_registry_chunk_file(&paths.verified, &record)?;
+            if record.state != RegistryChunkState::Verified {
+                self.mark_registry_chunk_verified(&record)?;
+            }
+            return Ok(record.expected_length);
+        }
+        if record.state == RegistryChunkState::Verified {
+            return Err(MobileCoreError::Security(
+                "verified Registry chunk file is missing".into(),
+            ));
+        }
+        bounded_regular_file_length(&paths.partial, record.expected_length)
+    }
+
+    pub fn land_registry_chunk<R: Read>(
+        &self,
+        transfer_nonce: &str,
+        artifact_role: u8,
+        chunk_index: u32,
+        source_offset: u64,
+        source: &mut R,
+    ) -> Result<RegistryChunkRecord, MobileCoreError> {
+        let record = self
+            .registry_chunk(transfer_nonce, artifact_role, chunk_index)?
+            .ok_or_else(|| registry_admission("unknown Registry chunk binding"))?;
+        let paths = self.registry_chunk_paths(&record)?;
+        fs::create_dir_all(&paths.directory)
+            .map_err(|error| registry_io("create Registry landing directory", error))?;
+
+        if paths.verified.exists() {
+            verify_registry_chunk_file(&paths.verified, &record)?;
+            if record.state != RegistryChunkState::Verified {
+                return self.mark_registry_chunk_verified(&record);
+            }
+            return Ok(record);
+        }
+        if record.state == RegistryChunkState::Verified {
+            return Err(MobileCoreError::Security(
+                "verified Registry chunk file is missing".into(),
+            ));
+        }
+
+        let partial_length = bounded_regular_file_length(&paths.partial, record.expected_length)?;
+        if source_offset != partial_length {
+            return Err(registry_admission(format!(
+                "Registry chunk source offset {source_offset} does not match durable partial length {partial_length}",
+            )));
+        }
+        self.mark_registry_chunk_receiving(&record)?;
+
+        let (mut hasher, rehashed_length) = rehash_registry_chunk_prefix(&paths.partial, &record)?;
+        if rehashed_length != partial_length {
+            return Err(MobileCoreError::Security(
+                "Registry partial changed while resuming".into(),
+            ));
+        }
+        let mut output = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&paths.partial)
+            .map_err(|error| registry_io("open Registry partial chunk", error))?;
+        let remaining = record.expected_length - partial_length;
+        let copied = copy_exact_bounded(source, &mut output, &mut hasher, remaining)?;
+        output
+            .sync_all()
+            .map_err(|error| registry_io("sync Registry partial chunk", error))?;
+        drop(output);
+        if copied != remaining {
+            return Err(registry_admission(format!(
+                "Registry chunk source ended after {copied} of {remaining} remaining bytes",
+            )));
+        }
+        let mut extra = [0u8; 1];
+        if source
+            .read(&mut extra)
+            .map_err(|error| registry_io("read Registry chunk source tail", error))?
+            != 0
+        {
+            reset_registry_partial(&paths.partial)?;
+            self.reset_registry_chunk_planned(&record)?;
+            return Err(registry_admission(
+                "Registry chunk source exceeded the signed exact length",
+            ));
+        }
+        let observed_hash = hex::encode(hasher.finalize().as_bytes());
+        if observed_hash != record.expected_hash {
+            reset_registry_partial(&paths.partial)?;
+            self.reset_registry_chunk_planned(&record)?;
+            return Err(MobileCoreError::Security(
+                "Registry chunk leaf hash does not match the signed manifest".into(),
+            ));
+        }
+
+        fs::rename(&paths.partial, &paths.verified)
+            .map_err(|error| registry_io("commit Registry verified chunk", error))?;
+        sync_directory(&paths.directory)?;
+        self.mark_registry_chunk_verified(&record)
+    }
+
+    pub fn recover_registry_chunk_ledger(
+        &self,
+        transfer_nonce: &str,
+    ) -> Result<RegistryLandingProgress, MobileCoreError> {
+        let records = self.registry_chunks_for_transfer(transfer_nonce)?;
+        if records.is_empty() {
+            return Err(registry_admission("Registry chunk ledger is not prepared"));
+        }
+        for record in records {
+            let paths = self.registry_chunk_paths(&record)?;
+            if paths.verified.exists() {
+                verify_registry_chunk_file(&paths.verified, &record)?;
+                if record.state != RegistryChunkState::Verified {
+                    self.mark_registry_chunk_verified(&record)?;
+                }
+                continue;
+            }
+            if record.state == RegistryChunkState::Verified {
+                return Err(MobileCoreError::Security(
+                    "verified Registry chunk file is missing during recovery".into(),
+                ));
+            }
+            let partial_length =
+                bounded_regular_file_length(&paths.partial, record.expected_length)?;
+            if partial_length == record.expected_length {
+                if verify_registry_chunk_file(&paths.partial, &record).is_ok() {
+                    fs::rename(&paths.partial, &paths.verified).map_err(|error| {
+                        registry_io("recover complete Registry partial chunk", error)
+                    })?;
+                    sync_directory(&paths.directory)?;
+                    self.mark_registry_chunk_verified(&record)?;
+                } else {
+                    reset_registry_partial(&paths.partial)?;
+                    self.reset_registry_chunk_planned(&record)?;
+                }
+            } else if partial_length > 0 {
+                self.mark_registry_chunk_receiving(&record)?;
+            } else {
+                self.reset_registry_chunk_planned(&record)?;
+            }
+        }
+        self.registry_landing_progress(transfer_nonce)
+    }
+
+    pub fn registry_landing_progress(
+        &self,
+        transfer_nonce: &str,
+    ) -> Result<RegistryLandingProgress, MobileCoreError> {
+        let records = self.registry_chunks_for_transfer(transfer_nonce)?;
+        if records.is_empty() {
+            return Err(registry_admission("Registry chunk ledger is not prepared"));
+        }
+        let mut progress = RegistryLandingProgress {
+            transfer_nonce: transfer_nonce.to_owned(),
+            total_chunks: 0,
+            verified_chunks: 0,
+            expected_bytes: 0,
+            verified_bytes: 0,
+        };
+        for record in records {
+            progress.total_chunks = progress
+                .total_chunks
+                .checked_add(1)
+                .ok_or_else(|| MobileCoreError::Security("Registry chunk count overflow".into()))?;
+            progress.expected_bytes = progress
+                .expected_bytes
+                .checked_add(record.expected_length)
+                .ok_or_else(|| MobileCoreError::Security("Registry byte total overflow".into()))?;
+            if record.state == RegistryChunkState::Verified {
+                progress.verified_chunks =
+                    progress.verified_chunks.checked_add(1).ok_or_else(|| {
+                        MobileCoreError::Security("Registry verified count overflow".into())
+                    })?;
+                progress.verified_bytes = progress
+                    .verified_bytes
+                    .checked_add(record.expected_length)
+                    .ok_or_else(|| {
+                        MobileCoreError::Security("Registry verified bytes overflow".into())
+                    })?;
+            }
+        }
+        Ok(progress)
+    }
+
+    fn registry_chunks_for_transfer(
+        &self,
+        transfer_nonce: &str,
+    ) -> Result<Vec<RegistryChunkRecord>, MobileCoreError> {
+        let read = self.database.begin_read()?;
+        let table = read.open_table(REGISTRY_CHUNKS)?;
+        let mut records = Vec::new();
+        for entry in table.iter()? {
+            let (_, value) = entry?;
+            let record: RegistryChunkRecord = decode(value.value())?;
+            if record.transfer_nonce == transfer_nonce {
+                records.push(record);
+            }
+        }
+        records.sort_by_key(|record| (record.artifact_role, record.chunk_index));
+        Ok(records)
+    }
+
+    fn registry_chunk_paths(
+        &self,
+        record: &RegistryChunkRecord,
+    ) -> Result<RegistryChunkPaths, MobileCoreError> {
+        validate_hash(&record.release_id)?;
+        validate_hash(&record.expected_hash)?;
+        if record.artifact_role > 2
+            || record.expected_length == 0
+            || record.expected_length > FIXED_CHUNK_BYTES
+        {
+            return Err(MobileCoreError::Security(
+                "Registry chunk ledger contains an invalid role or length".into(),
+            ));
+        }
+        let root = self.path.parent().unwrap_or_else(|| Path::new("."));
+        let directory = root
+            .join("registry")
+            .join("landing")
+            .join(&record.release_id)
+            .join(format!("role-{}", record.artifact_role));
+        let stem = format!("chunk-{:010}", record.chunk_index);
+        Ok(RegistryChunkPaths {
+            partial: directory.join(format!("{stem}.partial")),
+            verified: directory.join(format!("{stem}.verified")),
+            directory,
+        })
+    }
+
+    fn mark_registry_chunk_receiving(
+        &self,
+        expected: &RegistryChunkRecord,
+    ) -> Result<RegistryChunkRecord, MobileCoreError> {
+        let write = self.database.begin_write()?;
+        let updated;
+        {
+            let key = chunk_key(
+                &expected.transfer_nonce,
+                expected.artifact_role,
+                expected.chunk_index,
+            );
+            let mut chunks = write.open_table(REGISTRY_CHUNKS)?;
+            let existing = chunks
+                .get(key.as_str())?
+                .ok_or_else(|| registry_admission("Registry chunk binding disappeared"))?;
+            let mut record: RegistryChunkRecord = decode(existing.value())?;
+            drop(existing);
+            if registry_chunk_identity(&record) != registry_chunk_identity(expected) {
+                return Err(MobileCoreError::Security(
+                    "Registry chunk binding changed before byte landing".into(),
+                ));
+            }
+            if record.state != RegistryChunkState::Verified {
+                record.state = RegistryChunkState::Receiving;
+                let bytes = encode(&record)?;
+                chunks.insert(key.as_str(), bytes.as_slice())?;
+            }
+            drop(chunks);
+
+            let mut operations = write.open_table(REGISTRY_OPERATIONS)?;
+            let existing = operations
+                .get(record.operation_id.as_str())?
+                .ok_or_else(|| registry_admission("Registry chunk lost its operation"))?;
+            let mut operation: RegistryOperationRecord = decode(existing.value())?;
+            drop(existing);
+            if operation.active_transfer_nonce.as_deref() != Some(record.transfer_nonce.as_str())
+                || !matches!(
+                    operation.state,
+                    RegistryOperationState::TransferQueued
+                        | RegistryOperationState::Downloading
+                        | RegistryOperationState::BytesComplete
+                )
+            {
+                return Err(registry_admission(
+                    "Registry chunk cannot receive bytes from the current operation state",
+                ));
+            }
+            if operation.state != RegistryOperationState::BytesComplete {
+                operation.state = RegistryOperationState::Downloading;
+                let bytes = encode(&operation)?;
+                operations.insert(record.operation_id.as_str(), bytes.as_slice())?;
+            }
+            drop(operations);
+            validate_registry_chunk_eligibility(&write, &record)?;
+            updated = record;
+        }
+        write.commit()?;
+        Ok(updated)
+    }
+
+    fn reset_registry_chunk_planned(
+        &self,
+        expected: &RegistryChunkRecord,
+    ) -> Result<RegistryChunkRecord, MobileCoreError> {
+        let write = self.database.begin_write()?;
+        let updated;
+        {
+            let key = chunk_key(
+                &expected.transfer_nonce,
+                expected.artifact_role,
+                expected.chunk_index,
+            );
+            let mut chunks = write.open_table(REGISTRY_CHUNKS)?;
+            let existing = chunks
+                .get(key.as_str())?
+                .ok_or_else(|| registry_admission("Registry chunk binding disappeared"))?;
+            let mut record: RegistryChunkRecord = decode(existing.value())?;
+            drop(existing);
+            if registry_chunk_identity(&record) != registry_chunk_identity(expected)
+                || record.state == RegistryChunkState::Verified
+            {
+                return Err(MobileCoreError::Security(
+                    "verified or rebound Registry chunk cannot be reset".into(),
+                ));
+            }
+            record.state = RegistryChunkState::Planned;
+            let bytes = encode(&record)?;
+            chunks.insert(key.as_str(), bytes.as_slice())?;
+            updated = record;
+        }
+        write.commit()?;
+        Ok(updated)
+    }
+
+    fn mark_registry_chunk_verified(
+        &self,
+        expected: &RegistryChunkRecord,
+    ) -> Result<RegistryChunkRecord, MobileCoreError> {
+        let write = self.database.begin_write()?;
+        let updated;
+        {
+            let key = chunk_key(
+                &expected.transfer_nonce,
+                expected.artifact_role,
+                expected.chunk_index,
+            );
+            let mut chunks = write.open_table(REGISTRY_CHUNKS)?;
+            let existing = chunks
+                .get(key.as_str())?
+                .ok_or_else(|| registry_admission("Registry chunk binding disappeared"))?;
+            let mut record: RegistryChunkRecord = decode(existing.value())?;
+            drop(existing);
+            if registry_chunk_identity(&record) != registry_chunk_identity(expected) {
+                return Err(MobileCoreError::Security(
+                    "Registry chunk binding changed before verification commit".into(),
+                ));
+            }
+            record.state = RegistryChunkState::Verified;
+            let bytes = encode(&record)?;
+            chunks.insert(key.as_str(), bytes.as_slice())?;
+
+            let mut total_chunks = 0u32;
+            let mut verified_chunks = 0u32;
+            for entry in chunks.iter()? {
+                let (_, value) = entry?;
+                let observed: RegistryChunkRecord = decode(value.value())?;
+                if observed.transfer_nonce == record.transfer_nonce {
+                    total_chunks = total_chunks.checked_add(1).ok_or_else(|| {
+                        MobileCoreError::Security("Registry chunk count overflow".into())
+                    })?;
+                    if observed.state == RegistryChunkState::Verified {
+                        verified_chunks = verified_chunks.checked_add(1).ok_or_else(|| {
+                            MobileCoreError::Security("Registry verified count overflow".into())
+                        })?;
+                    }
+                }
+            }
+            drop(chunks);
+            if total_chunks == 0 {
+                return Err(MobileCoreError::Security(
+                    "Registry verified an empty chunk ledger".into(),
+                ));
+            }
+
+            let mut operations = write.open_table(REGISTRY_OPERATIONS)?;
+            let existing = operations
+                .get(record.operation_id.as_str())?
+                .ok_or_else(|| registry_admission("Registry chunk lost its operation"))?;
+            let mut operation: RegistryOperationRecord = decode(existing.value())?;
+            drop(existing);
+            if operation.active_transfer_nonce.as_deref() != Some(record.transfer_nonce.as_str())
+                || !matches!(
+                    operation.state,
+                    RegistryOperationState::TransferQueued
+                        | RegistryOperationState::Downloading
+                        | RegistryOperationState::BytesComplete
+                )
+            {
+                return Err(registry_admission(
+                    "Registry verified bytes do not belong to the active operation",
+                ));
+            }
+            operation.state = if total_chunks == verified_chunks {
+                RegistryOperationState::BytesComplete
+            } else {
+                RegistryOperationState::Downloading
+            };
+            let bytes = encode(&operation)?;
+            operations.insert(record.operation_id.as_str(), bytes.as_slice())?;
+            drop(operations);
+            validate_registry_chunk_eligibility(&write, &record)?;
+            updated = record;
+        }
+        write.commit()?;
+        Ok(updated)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn registry_chunk_test_paths(
+        &self,
+        transfer_nonce: &str,
+        artifact_role: u8,
+        chunk_index: u32,
+    ) -> Result<(PathBuf, PathBuf), MobileCoreError> {
+        let record = self
+            .registry_chunk(transfer_nonce, artifact_role, chunk_index)?
+            .ok_or_else(|| registry_admission("unknown Registry chunk binding"))?;
+        let paths = self.registry_chunk_paths(&record)?;
+        Ok((paths.partial, paths.verified))
     }
 
     pub fn prepare_transfer(
@@ -1713,22 +2281,9 @@ impl BootstrapStore {
                 && record.artifact_role == CALLBACK_FENCE_PROBE_ROLE
                 && record.expected_length == 0;
             if !is_zero_byte_callback_probe {
-                let operations = write.open_table(REGISTRY_OPERATIONS)?;
-                let operation = operations
-                    .get(record.operation_id.as_str())?
-                    .map(|value| decode::<RegistryOperationRecord>(value.value()))
-                    .transpose()?
-                    .ok_or_else(|| {
-                        registry_admission("transfer has no durable Registry operation")
-                    })?;
-                if !operation.state.permits_transfer_preparation()
-                    || operation.release_id != record.release_id
-                {
-                    return Err(registry_admission(
-                        "large Registry transfer is forbidden before exact admission",
-                    ));
-                }
-                drop(operations);
+                return Err(registry_admission(
+                    "caller-authored Registry landing records are forbidden; prepare the signed chunk ledger",
+                ));
             }
             let mut table = write.open_table(TRANSFER_LANDING)?;
             let current = table
@@ -1979,8 +2534,205 @@ fn decode<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, MobileCoreError> {
     serde_json::from_slice(bytes).map_err(Into::into)
 }
 
-fn chunk_key(operation_id: &str, chunk_index: u32) -> String {
-    format!("{operation_id}/{chunk_index:010}")
+struct RegistryChunkPaths {
+    directory: PathBuf,
+    partial: PathBuf,
+    verified: PathBuf,
+}
+
+fn chunk_key(transfer_nonce: &str, artifact_role: u8, chunk_index: u32) -> String {
+    format!("{transfer_nonce}/{artifact_role}/{chunk_index:010}")
+}
+
+fn registry_chunk_identity(record: &RegistryChunkRecord) -> (&str, &str, &str, u8, u32, &str, u64) {
+    (
+        record.transfer_nonce.as_str(),
+        record.operation_id.as_str(),
+        record.release_id.as_str(),
+        record.artifact_role,
+        record.chunk_index,
+        record.expected_hash.as_str(),
+        record.expected_length,
+    )
+}
+
+fn validate_registry_chunk_eligibility(
+    write: &redb::WriteTransaction,
+    record: &RegistryChunkRecord,
+) -> Result<(), MobileCoreError> {
+    let schedules = write.open_table(REGISTRY_TRANSFER_SCHEDULES)?;
+    let schedule = schedules
+        .get(record.transfer_nonce.as_str())?
+        .map(|value| decode::<RegistryTransferScheduleRecord>(value.value()))
+        .transpose()?
+        .ok_or_else(|| registry_admission("Registry chunk lost its transfer schedule"))?;
+    if schedule.state != RegistryTransferScheduleState::TransferAdopted
+        || schedule.operation_id != record.operation_id
+        || schedule.release_id != record.release_id
+    {
+        return Err(registry_admission(
+            "Registry chunk transfer is no longer adopted or exact",
+        ));
+    }
+    drop(schedules);
+
+    let catalog = write.open_table(REGISTRY_RELEASE_CATALOG)?;
+    let release = catalog
+        .get(record.release_id.as_str())?
+        .map(|value| decode::<RegistryReleaseCatalogRecord>(value.value()))
+        .transpose()?
+        .ok_or_else(|| registry_admission("Registry chunk lost its signed release"))?;
+    if release.state == RegistryReleaseState::Revoked
+        || release.manifest_digest != schedule.manifest_digest
+        || release.trust_profile_digest != schedule.trust_profile_digest
+    {
+        return Err(registry_admission(
+            "revoked or rebound Registry bytes cannot be landed",
+        ));
+    }
+    Ok(())
+}
+
+fn registry_chunk_hasher(record: &RegistryChunkRecord) -> Result<blake3::Hasher, MobileCoreError> {
+    let exact_length = u32::try_from(record.expected_length).map_err(|_| {
+        MobileCoreError::Security("Registry chunk length exceeds the signed u32 profile".into())
+    })?;
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(REGISTRY_CHUNK_DOMAIN);
+    hasher.update(&[record.artifact_role]);
+    hasher.update(&record.chunk_index.to_le_bytes());
+    hasher.update(&exact_length.to_le_bytes());
+    Ok(hasher)
+}
+
+fn bounded_regular_file_length(path: &Path, maximum: u64) -> Result<u64, MobileCoreError> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(registry_io("inspect Registry chunk", error)),
+    };
+    if !metadata.file_type().is_file() {
+        return Err(MobileCoreError::Security(
+            "Registry chunk landing path is not a regular file".into(),
+        ));
+    }
+    if metadata.len() > maximum {
+        return Err(MobileCoreError::Security(
+            "Registry chunk landing exceeds the signed exact length".into(),
+        ));
+    }
+    Ok(metadata.len())
+}
+
+fn rehash_registry_chunk_prefix(
+    path: &Path,
+    record: &RegistryChunkRecord,
+) -> Result<(blake3::Hasher, u64), MobileCoreError> {
+    let mut hasher = registry_chunk_hasher(record)?;
+    let length = bounded_regular_file_length(path, record.expected_length)?;
+    if length == 0 {
+        return Ok((hasher, 0));
+    }
+    let mut file =
+        File::open(path).map_err(|error| registry_io("open Registry partial for rehash", error))?;
+    let mut observed = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| registry_io("rehash Registry partial", error))?;
+        if read == 0 {
+            break;
+        }
+        observed = observed
+            .checked_add(read as u64)
+            .ok_or_else(|| MobileCoreError::Security("Registry rehash length overflow".into()))?;
+        if observed > record.expected_length {
+            return Err(MobileCoreError::Security(
+                "Registry partial grew beyond the signed length".into(),
+            ));
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok((hasher, observed))
+}
+
+fn copy_exact_bounded<R: Read>(
+    source: &mut R,
+    output: &mut File,
+    hasher: &mut blake3::Hasher,
+    maximum: u64,
+) -> Result<u64, MobileCoreError> {
+    let mut copied = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    while copied < maximum {
+        let wanted = usize::try_from((maximum - copied).min(buffer.len() as u64))
+            .map_err(|_| MobileCoreError::Security("Registry read bound overflow".into()))?;
+        let read = source
+            .read(&mut buffer[..wanted])
+            .map_err(|error| registry_io("read Registry chunk source", error))?;
+        if read == 0 {
+            break;
+        }
+        output
+            .write_all(&buffer[..read])
+            .map_err(|error| registry_io("write Registry partial chunk", error))?;
+        hasher.update(&buffer[..read]);
+        copied = copied
+            .checked_add(read as u64)
+            .ok_or_else(|| MobileCoreError::Security("Registry copy length overflow".into()))?;
+    }
+    Ok(copied)
+}
+
+fn verify_registry_chunk_file(
+    path: &Path,
+    record: &RegistryChunkRecord,
+) -> Result<(), MobileCoreError> {
+    let length = bounded_regular_file_length(path, record.expected_length)?;
+    if length != record.expected_length {
+        return Err(MobileCoreError::Security(
+            "Registry chunk file length does not match the signed manifest".into(),
+        ));
+    }
+    let (hasher, observed) = rehash_registry_chunk_prefix(path, record)?;
+    if observed != record.expected_length
+        || hex::encode(hasher.finalize().as_bytes()) != record.expected_hash
+    {
+        return Err(MobileCoreError::Security(
+            "Registry chunk file hash does not match the signed manifest".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn reset_registry_partial(path: &Path) -> Result<(), MobileCoreError> {
+    match fs::remove_file(path) {
+        Ok(()) => {
+            if let Some(parent) = path.parent() {
+                sync_directory(parent)?;
+            }
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(registry_io("remove rejected Registry partial", error)),
+    }
+}
+
+#[cfg(unix)]
+fn sync_directory(path: &Path) -> Result<(), MobileCoreError> {
+    File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| registry_io("sync Registry landing directory", error))
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_path: &Path) -> Result<(), MobileCoreError> {
+    Ok(())
+}
+
+fn registry_io(context: &str, error: std::io::Error) -> MobileCoreError {
+    MobileCoreError::Storage(format!("{context}: {error}"))
 }
 
 fn channel_highwater_key(channel_id: &str) -> String {

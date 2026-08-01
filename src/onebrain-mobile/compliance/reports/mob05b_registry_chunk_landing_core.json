@@ -1,0 +1,33 @@
+{
+  "format": "onebrain.mobile.compliance-report/1",
+  "generated_at": "2026-08-02",
+  "work_package": "MOB-05B",
+  "scope": "transport-neutral Rust verified Registry chunk landing",
+  "results": {
+    "mobile_core_unit_tests": 27,
+    "mobile_core_integration_tests": 8,
+    "mobile_core_tests_passed": true,
+    "mobile_core_clippy_no_deps_deny_warnings": true,
+    "mobile_contract_validator_passed_after_authority_update": true
+  },
+  "verified_behaviors": [
+    "ledger rows are derived only from the accepted signed manifest and adopted active transfer",
+    "artifact roles 0, 1 and 2 retain exact signed chunk index, length and leaf hash bindings",
+    "landing uses a bounded 64 KiB copy buffer and the signed maximum 8 MiB chunk size",
+    "a durable partial prefix is rehashed before range resume",
+    "wrong length, extra bytes, wrong leaf hash and mixed transfer identity fail closed",
+    "bytes are synced before same-volume rename and the directory is synced where supported",
+    "rename-before-ledger-commit is recovered by exact rehash",
+    "BytesComplete is committed only after every manifest chunk is Verified"
+  ],
+  "commands": [
+    "cargo test --manifest-path src/onebrain-mobile-core/Cargo.toml",
+    "cargo clippy --manifest-path src/onebrain-mobile-core/Cargo.toml --all-targets --no-deps -- -D warnings"
+  ],
+  "limitations": [
+    "no production HTTPS URL, credential or approved transport descriptor is present",
+    "no Android response body or iOS URLSession is connected to this API yet",
+    "whole-artifact verification, immutable release assembly, activation, health, rollback and real 2.2 GB qualification remain open",
+    "workspace-wide dependency clippy remains red on pre-existing ku-core warnings and is not claimed by this report"
+  ]
+}

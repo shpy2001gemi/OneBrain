@@ -1,7 +1,7 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "8d95de752366e12bdaf530d11a9a5c694a56f9e64e3be56638fd5e3cbbd271f6",
+  "authority_set_sha256": "de485f5b2dcbb8204ccb56a071d10f7b8de43286e03ee9f198396521d9d5f846",
   "phase": "feature",
   "work_package": "MOB-05",
   "acknowledged_required_read_set": [
@@ -518,9 +518,19 @@
       "id": "MOB-05B-UIDT-RUST-DEPENDENCY-ISOLATION",
       "path": "src/onebrain-mobile/compliance/reports/mob05b_uidt_rust_dependency_isolation.json",
       "proves": "The ABI-10 mobile core still owns canonical reconciliation without importing desktop/node protocol, concrete LLM, Tokio or HTTP transport crates."
+    },
+    {
+      "id": "MOB-05B-SIGNED-CHUNK-LEDGER",
+      "path": "src/onebrain-mobile-core/src/bootstrap.rs",
+      "proves": "Only the adopted active transfer can atomically derive Registry chunk rows from the accepted signed manifest. Rust binds exact release, role, index, length and leaf hash; rejects caller-authored production landing rows; uses bounded same-volume partial files; rehashes before resume; fsyncs before rename; and reaches BytesComplete only after every exact row is Verified."
+    },
+    {
+      "id": "MOB-05B-BYTE-LANDING-RECOVERY-TESTS",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_registry_chunk_landing_core.json",
+      "proves": "The mobile-core suite covers interrupted partial resume across process death, prefix rehash, wrong-hash cleanup, mixed-transfer rejection and rename-before-ledger-commit recovery across OBR, label-index and CCID-index fixture roles; 27 unit plus 8 integration tests and package-local deny-warnings Clippy pass."
     }
   ],
   "deviations": [],
   "last_reviewed": "2026-08-02",
-  "notes": "MOB-05A admission, the MOB-05B Rust root barrier and Android UIDT scheduler/adoption slice are active. ABI 10 lets Swift/Kotlin query the channel's durable active schedule; Flutter still receives no scheduler handle, URL or transport authority. Android 16 emulator evidence covers real namespaced/persisted UIDT schedule, process-kill inventory survival, exactly-one adoption and positive user Stop using the 6 KiB signed debug fixture with charging forced false and no bytes transferred. The release contains the non-exported JobService/control receiver and required UIDT/state permissions, excludes the debug probe and Registry/model data, and still has no INTERNET, production trust profile or approved transport descriptor. MOB-05B still must add owner-approved signed HTTPS landing/range/chunk bytes, live policy and iOS background URLSession; MOB-05C must qualify and activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. Task Manager Stop, reboot/Doze/thermal, full-size target-filesystem, physical-device, fresh 72-hour P5, multi-host canary and MOB-08 gates remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding, ReadyOffline or product-readiness claim is made."
+  "notes": "MOB-05A admission, the MOB-05B Rust root barrier, Android UIDT scheduler/adoption and transport-neutral verified byte-landing foundation are active. ABI 10 lets Swift/Kotlin query the channel's durable active schedule; Flutter still receives no scheduler handle, URL or transport authority. Android 16 emulator evidence covers real namespaced/persisted UIDT schedule, process-kill inventory survival, exactly-one adoption and positive user Stop using the 6 KiB signed debug fixture. Rust now derives the exact chunk ledger from the accepted manifest, rehashes durable partials, rejects corrupt/mixed bytes and recovers rename-before-ledger-commit, but no Android/iOS response body is connected. The release still has no INTERNET, production trust profile or approved transport descriptor. MOB-05B must connect owner-approved signed HTTPS range responses and live policy and finish iOS background URLSession; MOB-05C must add whole-artifact receipts and qualify/activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. Task Manager Stop, reboot/Doze/thermal, full-size target-filesystem, physical-device, fresh 72-hour P5, multi-host canary and MOB-08 gates remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding, ReadyOffline or product-readiness claim is made."
 }

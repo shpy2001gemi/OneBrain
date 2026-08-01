@@ -1,12 +1,14 @@
+use std::io::Read;
+
 use crate::{
     run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, ExecutionGrant,
     ExecutionGrantKind, MediaStageReceipt, MobileCoreError, MobileFeatureFlags, NetworkScope,
     OnboardingCursor, OwnedMediaSummary, RawDraftReceipt, RegistryCapacityPlan,
-    RegistryLimitedReceipt, RegistryNetworkPolicy, RegistryOperationRecord, RegistryOperationState,
-    RegistryReleaseCatalogRecord, RegistryTransferPlatform, RegistryTransferScheduleRecord,
-    RegistryTrustProfile, ResourceBudgets, RuntimeServices, SecureIdentitySession,
-    SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary, TransferLandingRecord,
-    MOBILE_RUNTIME_PROFILE_VERSION,
+    RegistryChunkRecord, RegistryLandingProgress, RegistryLimitedReceipt, RegistryNetworkPolicy,
+    RegistryOperationRecord, RegistryOperationState, RegistryReleaseCatalogRecord,
+    RegistryTransferPlatform, RegistryTransferScheduleRecord, RegistryTrustProfile,
+    ResourceBudgets, RuntimeServices, SecureIdentitySession, SecurityBootstrapMaterial,
+    SecuritySessionState, ShareSpoolSummary, TransferLandingRecord, MOBILE_RUNTIME_PROFILE_VERSION,
 };
 
 const FOREGROUND_GRANT_ID: &str = "native.foreground";
@@ -653,6 +655,55 @@ impl MobileRuntimeFacade {
     ) -> Result<Option<RegistryTransferScheduleRecord>, MobileCoreError> {
         self.store
             .registry_transfer_schedule_for_channel(channel_id)
+    }
+
+    pub fn prepare_registry_chunk_ledger(
+        &self,
+        transfer_nonce: &str,
+    ) -> Result<RegistryLandingProgress, MobileCoreError> {
+        self.store
+            .prepare_registry_chunk_ledger(transfer_nonce, &self.budgets)
+    }
+
+    pub fn registry_chunk_resume_offset(
+        &self,
+        transfer_nonce: &str,
+        artifact_role: u8,
+        chunk_index: u32,
+    ) -> Result<u64, MobileCoreError> {
+        self.store
+            .registry_chunk_resume_offset(transfer_nonce, artifact_role, chunk_index)
+    }
+
+    pub fn land_registry_chunk<R: Read>(
+        &self,
+        transfer_nonce: &str,
+        artifact_role: u8,
+        chunk_index: u32,
+        source_offset: u64,
+        source: &mut R,
+    ) -> Result<RegistryChunkRecord, MobileCoreError> {
+        self.store.land_registry_chunk(
+            transfer_nonce,
+            artifact_role,
+            chunk_index,
+            source_offset,
+            source,
+        )
+    }
+
+    pub fn recover_registry_chunk_ledger(
+        &self,
+        transfer_nonce: &str,
+    ) -> Result<RegistryLandingProgress, MobileCoreError> {
+        self.store.recover_registry_chunk_ledger(transfer_nonce)
+    }
+
+    pub fn registry_landing_progress(
+        &self,
+        transfer_nonce: &str,
+    ) -> Result<RegistryLandingProgress, MobileCoreError> {
+        self.store.registry_landing_progress(transfer_nonce)
     }
 
     pub fn unlock_private_node(

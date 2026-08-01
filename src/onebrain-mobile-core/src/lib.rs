@@ -29,8 +29,9 @@ pub use archive::{
 pub use bootstrap::{
     BootstrapStore, InstallationAuthorityRecord, OnboardingCursor, PrivacyPolicyRecord,
     ProcessGenerationRecord, ProcessLifecycle, ProcessStart, RegistryChunkRecord,
-    RegistryOperationRecord, RegistryTransferPlatform, RegistryTransferScheduleRecord,
-    RegistryTransferScheduleState, SecurityHistoryRecord, TransferLandingRecord,
+    RegistryChunkState, RegistryLandingProgress, RegistryOperationRecord, RegistryTransferPlatform,
+    RegistryTransferScheduleRecord, RegistryTransferScheduleState, SecurityHistoryRecord,
+    TransferLandingRecord,
 };
 pub use draft::{PrivateDraftKey, PrivateDraftStore, RawDraftReceipt, ShareSpoolSummary};
 pub use error::MobileCoreError;
