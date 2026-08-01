@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "contract_id": "onebrain-mobile-owner-approved-v1",
   "scope_root": "src/onebrain-mobile",
-  "authority_set_sha256": "b028776000f9deab77198b580d0a264d45f1fd2006a6a68e27b7b0618af875db",
+  "authority_set_sha256": "b90093013e7cf87549bada2f8045ad7d7bd388a30e072b3c2a2592bee58c2114",
   "required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -21,7 +21,7 @@
       "role": "upstream_shared_runtime",
       "path": "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md",
       "heading": "# WIP — OneBrain Distributed Runtime Implementation Plan v2",
-      "sha256": "151c0f166fbf2cd93c335e2e0fdd83e53a44f92f4a4cb80de5cb48d4dea2ea1b"
+      "sha256": "636f9ad5bd5c19cabc161b93b1bd8c3272f4537f00123876bfc3db4691278c3c"
     },
     {
       "role": "mobile_technical_architecture",
@@ -33,7 +33,7 @@
       "role": "mobile_delivery_sequence",
       "path": "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
       "heading": "# WIP Mobile App Analysis and Implementation Plan V1.3",
-      "sha256": "9fd15a4819e72f1f4b954f831226b8b75f40e28cef2df0eb4f4ba9b2f08d1f12"
+      "sha256": "db2192cc0d5a18519026f30e1cd63f66555f16680c4e64c744c48cf324db8605"
     },
     {
       "role": "mobile_feature_inventory",

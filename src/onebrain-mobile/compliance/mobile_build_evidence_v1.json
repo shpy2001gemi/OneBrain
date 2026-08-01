@@ -1,9 +1,9 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "b028776000f9deab77198b580d0a264d45f1fd2006a6a68e27b7b0618af875db",
+  "authority_set_sha256": "b90093013e7cf87549bada2f8045ad7d7bd388a30e072b3c2a2592bee58c2114",
   "phase": "feature",
-  "work_package": "MOB-07",
+  "work_package": "MOB-00",
   "acknowledged_required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -88,6 +88,11 @@
     "OBM-PAT-012"
   ],
   "evidence": [
+    {
+      "id": "MOB-00-P5-AUTHORITY-INTEGRATION",
+      "path": "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
+      "proves": "The mobile authority set explicitly accepts shared P5 and Concept Registry foundations through bb7cfa7 without claiming the abandoned 72-hour run, multi-host canary, full-size Registry qualification or production rollout gates are complete."
+    },
     {
       "id": "MOB-01-FLUTTER-TESTS",
       "path": "src/onebrain-mobile/test/widget_test.dart",
@@ -371,5 +376,5 @@
   ],
   "deviations": [],
   "last_reviewed": "2026-08-01",
-  "notes": "MOB-07 is in progress under the owner-approved emulator-first scope. The V1.3 implementation tracker was reviewed at cdeb80c: MOB-05 Registry Init is the next critical path, while MOB-04, MOB-06, MOB-07 and MOB-09 remain partial and MOB-08 remains blocked. This slice promotes a verified Android picker source into a locally encrypted OwnedOriginal, activates immutable bytes before an atomic catalog-reference plus owned-hold commit, deduplicates same-content imports through a vault-derived opaque reference, resumes incomplete commit states after process death, and exposes a bilingual My Media shelf through shared design-system components. Android 16 emulator evidence covers the real picker and typed force-stop recovery. It does not close MOB-GATE-MEDIA: final logical-piece/physical-pack layout, exact MediaManifestBodyCid display, multi-GB and ENOSPC fault matrices, verified viewers, derived share representations, access grants, received media, download/range verification, GC and physical-device validation remain open. OwnedOriginal remains PrivateLocal and is not a KU attachment, share object, publication, provider lease or seed-eligible representation. This slice remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
+  "notes": "MOB-00 authority maintenance integrates shared P5 and Concept Registry work through bb7cfa7 into the mobile branch at merge d860999. Semantic review accepts the signed-release, atomic-activation, CCID-stability and bounded resource-qualification foundations while preserving every production fence: the 72-hour run was abandoned after about 51 hours 30 minutes, multi-host canary, full-size Registry qualification and operator rollout remain open, and MOB-08 stays blocked. MOB-05 Registry Init is the next critical path; MOB-04, MOB-06, MOB-07 and MOB-09 remain partial. Existing MOB-07 Android emulator evidence still covers encrypted OwnedOriginal activation and typed recovery but does not close MOB-GATE-MEDIA or any physical-device gate. The app remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
 }
