@@ -1,8 +1,9 @@
 //! Autonomous mobile runtime profile for OneBrain.
 //!
-//! MOB-02 deliberately contains no transport stack and no concrete LLM
+//! MOB-05A deliberately contains no transport stack and no concrete LLM
 //! backend. It owns bounded bootstrap operational state, activation grants,
-//! process-generation fencing and a signed local KQL smoke.
+//! process-generation fencing, signed Registry trust/admission and a signed
+//! local KQL smoke.
 
 mod activation;
 mod archive;
@@ -13,6 +14,7 @@ mod facade;
 mod local_kql;
 mod media_staging;
 mod profile;
+mod registry_admission;
 mod security;
 mod services;
 
@@ -37,6 +39,12 @@ pub use media_staging::{
     MediaStageReceipt, MediaStageState, MediaStagingKey, MediaStagingStore, OwnedMediaSummary,
 };
 pub use profile::{MobileFeatureFlags, ResourceBudgets, MOBILE_RUNTIME_PROFILE_VERSION};
+pub use registry_admission::{
+    RegistryArtifact, RegistryBootstrapFloor, RegistryCapacityPlan, RegistryChannelHighWater,
+    RegistryChunk, RegistryLimitedReceipt, RegistryNetworkPolicy, RegistryOperationState,
+    RegistryReleaseCatalogRecord, RegistryReleaseHighWater, RegistryReleaseState,
+    RegistryRuntimeRange, RegistryTrustKey, RegistryTrustProfile, RegistryWaitingReason,
+};
 pub use security::{
     AppLockPolicy, DomainSignature, IdentityDomain, MobileIdentityPublic, SecureIdentitySession,
     SecurityBootstrapMaterial, SecuritySessionState, SECURITY_BOOTSTRAP_MATERIAL_BYTES,

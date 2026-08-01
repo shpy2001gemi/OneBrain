@@ -18,6 +18,10 @@ pub enum MobileCoreError {
     UnknownTransfer(String),
     #[error("signed local KQL fixture is invalid: {0}")]
     SignedFixture(String),
+    #[error("signed Concept Registry authority rejected: {0}")]
+    RegistryTrust(String),
+    #[error("Concept Registry admission rejected: {0}")]
+    RegistryAdmission(String),
     #[error("local KQL smoke failed: {0}")]
     LocalKql(String),
     #[error("mobile security state rejected: {0}")]

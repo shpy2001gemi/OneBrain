@@ -1,13 +1,10 @@
 use onebrain_mobile_core::{
     run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, BootstrapStore,
     ExecutionGrant, ExecutionGrantKind, MobileCoreError, MobileFeatureFlags, MobileRuntimeFacade,
-    NetworkScope, OnboardingCursor, RegistryChunkRecord, RegistryOperationRecord, ResourceBudgets,
-    RuntimeServices, SecurityBootstrapMaterial, SecuritySessionState, TransferLandingRecord,
-    SECURITY_BOOTSTRAP_MATERIAL_BYTES,
+    NetworkScope, OnboardingCursor, ResourceBudgets, RuntimeServices, SecurityBootstrapMaterial,
+    SecuritySessionState, SECURITY_BOOTSTRAP_MATERIAL_BYTES,
 };
 use tempfile::tempdir;
-
-const TEST_HASH: &str = "abababababababababababababababababababababababababababababababab";
 
 #[test]
 fn bootstrap_profile_uses_no_model_or_network_and_runs_signed_local_kql() {
@@ -202,131 +199,6 @@ fn dropped_runtime_is_an_unclean_start_but_graceful_stop_is_not() {
     .unwrap();
     assert_eq!(clean.snapshot().process_generation, 3);
     assert!(!clean.snapshot().recovered_unclean_start);
-}
-
-#[test]
-fn registry_operation_chunk_and_transfer_identity_survive_restart() {
-    let directory = tempdir().unwrap();
-    let path = directory.path().join("bootstrap.redb");
-    let budgets = ResourceBudgets::default();
-    let store = BootstrapStore::open(&path).unwrap();
-    let first = store.start_process(10).unwrap();
-    store
-        .upsert_registry_operation(
-            &RegistryOperationRecord {
-                operation_id: "init-release-1".into(),
-                release_id: "concepts-2026-07".into(),
-                state: "prepared".into(),
-            },
-            &budgets,
-        )
-        .unwrap();
-    store
-        .upsert_registry_chunk(
-            &RegistryChunkRecord {
-                operation_id: "init-release-1".into(),
-                chunk_index: 7,
-                expected_hash: TEST_HASH.into(),
-                expected_length: 1_048_576,
-                state: "requested".into(),
-            },
-            &budgets,
-        )
-        .unwrap();
-    store
-        .prepare_transfer(
-            &TransferLandingRecord {
-                transfer_nonce: "nonce-stable-across-processes".into(),
-                operation_id: "init-release-1".into(),
-                release_id: "concepts-2026-07".into(),
-                artifact_role: "concepts_obr_chunk".into(),
-                chunk_index: 7,
-                expected_hash: TEST_HASH.into(),
-                expected_length: 1_048_576,
-                os_transfer_id: None,
-                receiving_process_generation: None,
-                app_assigned_callback_sequence: None,
-                landed: false,
-            },
-            &budgets,
-        )
-        .unwrap();
-    store
-        .bind_os_transfer(
-            "nonce-stable-across-processes",
-            "android-download-manager-42",
-            &budgets,
-        )
-        .unwrap();
-    drop(store);
-
-    let recovered = BootstrapStore::open(&path).unwrap();
-    let second = recovered.start_process(20).unwrap();
-    assert_eq!(second.generation, first.generation + 1);
-    assert!(second.recovered_unclean_start);
-    assert_eq!(
-        recovered
-            .registry_operation("init-release-1")
-            .unwrap()
-            .unwrap()
-            .release_id,
-        "concepts-2026-07"
-    );
-    assert_eq!(
-        recovered
-            .registry_chunk("init-release-1", 7)
-            .unwrap()
-            .unwrap()
-            .expected_length,
-        1_048_576
-    );
-    recovered
-        .prepare_transfer(
-            &TransferLandingRecord {
-                transfer_nonce: "nonce-stable-across-processes".into(),
-                operation_id: "init-release-1".into(),
-                release_id: "concepts-2026-07".into(),
-                artifact_role: "concepts_obr_chunk".into(),
-                chunk_index: 7,
-                expected_hash: TEST_HASH.into(),
-                expected_length: 1_048_576,
-                os_transfer_id: None,
-                receiving_process_generation: None,
-                app_assigned_callback_sequence: None,
-                landed: false,
-            },
-            &budgets,
-        )
-        .unwrap();
-    assert_eq!(
-        recovered
-            .transfer("nonce-stable-across-processes")
-            .unwrap()
-            .unwrap()
-            .os_transfer_id
-            .as_deref(),
-        Some("android-download-manager-42"),
-        "idempotent prepare must preserve OS transfer reassociation"
-    );
-    assert!(matches!(
-        recovered.claim_transfer_callback("nonce-stable-across-processes", first.generation, 1),
-        Err(MobileCoreError::StaleGeneration { .. })
-    ));
-    let claimed = recovered
-        .claim_transfer_callback("nonce-stable-across-processes", second.generation, 1)
-        .unwrap();
-    assert_eq!(
-        claimed.os_transfer_id.as_deref(),
-        Some("android-download-manager-42")
-    );
-    assert!(matches!(
-        recovered.claim_transfer_callback("nonce-stable-across-processes", second.generation, 1),
-        Err(MobileCoreError::StaleCallbackSequence { .. })
-    ));
-    let landed = recovered
-        .mark_transfer_landed("nonce-stable-across-processes", second.generation, 2)
-        .unwrap();
-    assert!(landed.landed);
 }
 
 #[test]

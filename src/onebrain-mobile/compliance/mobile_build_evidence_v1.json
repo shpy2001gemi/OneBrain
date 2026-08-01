@@ -3,7 +3,7 @@
   "contract_id": "onebrain-mobile-owner-approved-v1",
   "authority_set_sha256": "961058da1752cd020235ece5636f73892567cda5cfeaa59812835375339a2896",
   "phase": "feature",
-  "work_package": "MOB-00",
+  "work_package": "MOB-05",
   "acknowledged_required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -32,6 +32,9 @@
     "MOB-SEC-004",
     "MOB-SEC-005",
     "MOB-SEC-006",
+    "MOB-DAT-001",
+    "MOB-DAT-002",
+    "MOB-DAT-004",
     "MOB-DAT-006",
     "MOB-DAT-007",
     "MOB-DAT-008",
@@ -48,6 +51,7 @@
     "MOB-CAP-007",
     "MOB-MED-001",
     "MOB-MED-003",
+    "MOB-SYS-004",
     "MOB-LIB-001",
     "MOB-LIB-002",
     "MOB-LIB-003",
@@ -57,6 +61,9 @@
     "MOB-SCR-ONB-003",
     "MOB-SCR-ONB-004",
     "MOB-SCR-ONB-005",
+    "MOB-SCR-INI-001",
+    "MOB-SCR-INI-002",
+    "MOB-SCR-OPS-002",
     "MOB-SCR-HOM-001",
     "MOB-SCR-LIB-001",
     "MOB-SCR-CAP-001",
@@ -70,18 +77,25 @@
     "OBM-CMP-NAV-001",
     "OBM-CMP-NAV-002",
     "OBM-CMP-ACT-001",
+    "OBM-CMP-ACT-003",
     "OBM-CMP-DAT-003",
     "OBM-CMP-DAT-005",
     "OBM-CMP-DAT-007",
     "OBM-CMP-DAT-008",
     "OBM-CMP-MED-003",
+    "OBM-CMP-OPS-002",
+    "OBM-CMP-OPS-003",
+    "OBM-CMP-OPS-004",
     "OBM-CMP-STA-001",
     "OBM-CMP-STA-002",
+    "OBM-CMP-STA-004",
+    "OBM-CMP-FBK-005",
     "OBM-PAT-001",
     "OBM-PAT-002",
     "OBM-PAT-003",
     "OBM-PAT-004",
     "OBM-PAT-006",
+    "OBM-PAT-007",
     "OBM-PAT-008",
     "OBM-PAT-009",
     "OBM-PAT-010",
@@ -372,9 +386,39 @@
       "id": "MOB-07-OWNED-MEDIA-RECOVERY-TEST",
       "path": "src/onebrain-mobile/integration_test/owned_media_recovery_test.dart",
       "proves": "After Android force-stop, the typed Pigeon/Rust path observes an unclean generation and reopens only Complete OwnedOriginal entries whose verified byte count equals content length and whose owned hold remains active."
+    },
+    {
+      "id": "MOB-05-SIGNED-REGISTRY-TRUST",
+      "path": "src/onebrain-mobile-core/src/registry_admission.rs",
+      "proves": "Rust decodes only byte-identical RFC 8949 deterministic CBOR for the exact V1 trust-profile, channel-head and release-envelope schemas; recomputes domain-separated BLAKE3 bindings; validates artifact/chunk cardinality; and verifies channel/release signatures through separate embedded trust roles."
+    },
+    {
+      "id": "MOB-05-ATOMIC-MANIFEST-ACCEPTANCE",
+      "path": "src/onebrain-mobile-core/src/bootstrap.rs",
+      "proves": "One bootstrap.redb write transaction binds the accepted manifest, operation state, per-channel and publisher-global high-water records, authoritative revocations and matching catalog Revoked states, while exact equal bindings replay idempotently and lower/equivocating bindings fail closed."
+    },
+    {
+      "id": "MOB-05-EXACT-INIT-ADMISSION",
+      "path": "src/onebrain-mobile-core/src/bootstrap.rs",
+      "proves": "Typed init_begin, exact-confirm, Defer and re-resolve transitions bind the operation to the manifest and trust-profile digests, apply the signed publisher floor and conservative local capacity terms, persist storage waiting, and forbid a Registry transfer landing until a later durable SchedulePrepared state."
+    },
+    {
+      "id": "MOB-05-TRUST-ADMISSION-TESTS",
+      "path": "src/onebrain-mobile-core/src/registry_admission.rs",
+      "proves": "Executable small signed fixtures cover kill/reopen durability, no pre-confirm transfer, equal-sequence equivocation without partial revocation, role-substitution and non-canonical CBOR rejection, Defer/re-resolve reconfirmation, and insufficient-capacity waiting."
+    },
+    {
+      "id": "MOB-05A-BOOTSTRAP-SOURCE-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob05a_bootstrap_source_isolation.json",
+      "proves": "Static scanning of the MOB-05A app, native bridge and Rust trust/admission slice finds no transport implementation before the consent-bound MOB-05B work."
+    },
+    {
+      "id": "MOB-05A-RUST-DEPENDENCY-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob05a_rust_dependency_isolation.json",
+      "proves": "The MOB-05A Rust graph uses existing CBOR and Unicode packages while still excluding ku-net, node/protocol runtime, concrete LLM, async runtime and HTTP transport crates."
     }
   ],
   "deviations": [],
   "last_reviewed": "2026-08-01",
-  "notes": "MOB-00 authority maintenance integrates shared P5 and Concept Registry work through cbe5495 into the mobile branch at merge d9270f7. Semantic review accepts the signed-release, atomic-activation, CCID-stability and bounded truncated-index/disk-shortage qualification foundations while preserving every production fence: the 72-hour run was abandoned after about 51 hours 30 minutes, multi-host canary, full-size target-filesystem Registry qualification and operator rollout remain open, and MOB-08 stays blocked. MOB-05 Registry Init is the next critical path; MOB-04, MOB-06, MOB-07 and MOB-09 remain partial. Existing MOB-07 Android emulator evidence still covers encrypted OwnedOriginal activation and typed recovery but does not close MOB-GATE-MEDIA or any physical-device gate. The app remains BootstrapOnly and makes no ReadyOffline, Registry Init, network, LLM, public publish, seeding or product-readiness claim."
+  "notes": "MOB-05A is active. The first Rust-core slice implements exact signed Registry trust parsing, role-separated envelope verification, durable init intent, atomic manifest/high-water/revocation acceptance, Defer/re-resolve, exact capacity/network confirmation and a hard no-transfer-before-admission fence against small signed fixtures. It does not yet embed an owner-issued production trust profile, expose the flow through ABI 8/UI, request Registry network data, schedule platform transfer, download large artifacts, activate a release or claim ReadyOffline; those remain the next MOB-05A/MOB-05B/MOB-05C slices. Shared P5 and Concept Registry foundations remain integrated through cbe5495/d9270f7, while the abandoned 72-hour run, multi-host canary, full-size target-filesystem qualification, physical-device gates and MOB-08 are still open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding or product-readiness claim is made."
 }
