@@ -277,7 +277,7 @@
     {
       "id": "MOB-04-ANDROID-SHARE-INTENT",
       "path": "src/onebrain-mobile/compliance/reports/mob04_android_share_intent.json",
-      "proves": "Android 16 cold-start ACTION_SEND text lands in an encrypted Rust-owned spool without plaintext logging, survives force-stop and imports idempotently into one encrypted raw draft."
+      "proves": "Android 16 cold-start ACTION_SEND text lands in an encrypted Rust-owned spool without plaintext logging, survives force-stop, proves unclean-generation recovery through the typed Pigeon/Rust snapshot and imports idempotently into one encrypted raw draft."
     },
     {
       "id": "MOB-04-SHARE-SPOOL-TRANSACTION",

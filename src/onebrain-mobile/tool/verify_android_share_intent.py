@@ -18,17 +18,30 @@ ACTIVITY = f"{PACKAGE}/.MainActivity"
 SHARED_TEXT = "OneBrain emulator private shared idea"
 
 
-def run(command: list[str], cwd: Path | None = None) -> str:
+def run(
+    command: list[str],
+    cwd: Path | None = None,
+    *,
+    stage: str,
+    redactions: tuple[str, ...] = (),
+) -> str:
     completed = subprocess.run(
         command,
         cwd=cwd,
-        check=True,
+        check=False,
         capture_output=True,
         text=True,
         encoding="utf-8",
         errors="replace",
     )
-    return completed.stdout + completed.stderr
+    output = completed.stdout + completed.stderr
+    for value in redactions:
+        output = output.replace(value, "[REDACTED]")
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"{stage} failed with exit code {completed.returncode}\n{output}"
+        )
+    return output
 
 
 def resolve_adb(explicit: str | None) -> str:
@@ -48,7 +61,12 @@ def resolve_adb(explicit: str | None) -> str:
 
 
 def adb(adb_path: str, device: str, *arguments: str) -> str:
-    return run([adb_path, "-s", device, *arguments])
+    command_scope = ":".join(arguments[:2]) if arguments else "command"
+    return run(
+        [adb_path, "-s", device, *arguments],
+        stage=f"adb:{command_scope}",
+        redactions=(SHARED_TEXT, "unsupported-html-payload"),
+    )
 
 
 def wait_for_log(
@@ -91,9 +109,11 @@ def main() -> int:
         raise SystemExit(f"APK does not exist: {apk}")
     mobile_root = Path(__file__).resolve().parents[1]
 
+    print("harness-stage|install-and-clear", flush=True)
     adb(adb_path, arguments.device, "install", "-r", "-t", str(apk))
     adb(adb_path, arguments.device, "shell", "pm", "clear", PACKAGE)
     adb(adb_path, arguments.device, "logcat", "-c")
+    print("harness-stage|land-supported-share", flush=True)
     adb(
         adb_path,
         arguments.device,
@@ -119,6 +139,7 @@ def main() -> int:
     )
     if SHARED_TEXT in landed_log:
         raise RuntimeError("share plaintext leaked into runtime log")
+    print("harness-stage|reject-unsupported-share", flush=True)
     adb(
         adb_path,
         arguments.device,
@@ -143,18 +164,9 @@ def main() -> int:
         arguments.timeout_seconds,
     )
 
+    print("harness-stage|force-stop", flush=True)
     adb(adb_path, arguments.device, "shell", "am", "force-stop", PACKAGE)
-    adb(adb_path, arguments.device, "logcat", "-c")
-    adb(adb_path, arguments.device, "shell", "am", "start", "-W", "-n", ACTIVITY)
-    recovered_log = wait_for_log(
-        adb_path,
-        arguments.device,
-        "shareSpools=1",
-        arguments.timeout_seconds,
-    )
-    if "recovered=true" not in recovered_log:
-        raise RuntimeError("share spool restart did not recover an unclean generation")
-
+    print("harness-stage|typed-recovery-and-import", flush=True)
     integration_output = run(
         [
             arguments.flutter,
@@ -164,6 +176,7 @@ def main() -> int:
             arguments.device,
         ],
         cwd=mobile_root,
+        stage="flutter:share-intent-integration",
     )
     if "All tests passed!" not in integration_output:
         raise RuntimeError("share-intent integration test did not pass")
@@ -178,6 +191,7 @@ def main() -> int:
         "plaintext_absent_from_runtime_log": True,
         "unsupported_mime_rejected": True,
         "survived_force_stop": True,
+        "force_stop_recovery_via_typed_bridge": True,
         "rust_import_idempotent": True,
         "physical_device_claimed": False,
         "result": "passed",

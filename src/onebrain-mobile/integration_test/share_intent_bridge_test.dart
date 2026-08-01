@@ -10,6 +10,7 @@ void main() {
   ) async {
     final gateway = PigeonMobileHostGateway();
     final before = await gateway.inspectRuntimeProfile();
+    expect(before.recoveredUncleanStart, isTrue);
     expect(before.pendingShareSpoolCount, greaterThanOrEqualTo(1));
 
     final spools = await gateway.inspectPendingShareSpools();
