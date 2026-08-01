@@ -2,7 +2,7 @@
 
 > **Plan lane:** Section 11 — Concept Registry operations
 >
-> **Status:** Signed release, atomic activation, and bounded CCID stability gate implemented; resource and recurring qualification gates remain open
+> **Status:** Signed release, atomic activation, bounded CCID stability gate, and cold-cache/low-RAM qualification harness implemented; full-size resource and recurring qualification evidence remains open
 >
 > **Machine contract:** [`concept-registry-operations-v1.json`](../../../src/test-vectors/vnext/concept-registry-operations-v1.json)
 
@@ -86,7 +86,41 @@ bounded failure samples, exact input/OBR/manifest hashes, builder/dedup versions
 and source snapshot identities. Invalid, truncated, mismatched, duplicate, or
 trailing-byte input fails before a report can qualify.
 
-## 6. Distribution boundary and remaining gates
+## 6. Cold-cache and low-RAM qualification harness
+
+Build the frozen Rust probe first:
+
+```text
+cargo build --release --locked --manifest-path src/Cargo.toml -p ku-core --example registry_probe
+```
+
+Then run one of the fixed production budget profiles. The examples use the
+Unix probe path; append `.exe` on Windows:
+
+```text
+python scripts/concept_registry/resource_qualification.py --profile cold-cache --budget-profile cold-cache-production-v1 --probe src/target/release/examples/registry_probe --obr REGISTRY/concepts.obr --labels-file scripts/concept_registry/qualification-labels-v1.txt --cache-strategy auto --output EVIDENCE/cold-cache.json
+python scripts/concept_registry/resource_qualification.py --profile low-ram --budget-profile low-ram-production-v1 --probe src/target/release/examples/registry_probe --obr REGISTRY/concepts.obr --labels-file scripts/concept_registry/qualification-labels-v1.txt --output EVIDENCE/low-ram.json
+```
+
+Every run uses a fresh process, uncached artifact verification, application
+lookup cache capacity zero, and an external bounded labels file so selecting
+queries cannot warm the OBR. Cold-cache preparation either submits targeted
+`POSIX_FADV_DONTNEED` requests on Linux or invokes `vmtouch -e`. Low-RAM
+qualification applies Linux `RLIMIT_AS`; unsupported enforcement fails rather
+than silently degrading to observation-only mode.
+
+The harness samples peak RSS using `/proc/<pid>/status`, macOS `ps`, or Windows
+PSAPI and atomically writes artifact hashes, host identity, frozen budgets,
+probe output, latency/RSS metrics, and every exit oracle. At least one positive
+and one negative lookup must be observed. Arbitrary operator thresholds are not
+accepted by the qualifying CLI.
+
+CI runs both profiles against a small fixture to lock the mechanism and failure
+oracles. That CI result is not a substitute for reports against the full-size
+registry on the declared production host; `full_registry_evidence_required`
+therefore remains true.
+
+## 7. Distribution boundary and remaining gates
 
 The signed distribution value is
 `MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP`. The large registry artifact is outside

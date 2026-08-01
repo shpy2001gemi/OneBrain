@@ -156,6 +156,9 @@ jobs:
           python -m pip install --requirement scripts/concept_registry/requirements.txt
           python -m unittest scripts/concept_registry/test_build_obr.py
           python -m unittest scripts.concept_registry.test_ccid_stability_diff
+          cargo build --locked --manifest-path src/Cargo.toml -p ku-core --example registry_probe
+          ONEBRAIN_REGISTRY_PROBE=src/target/debug/examples/registry_probe \
+            python -m unittest scripts.concept_registry.test_resource_qualification
 
       - name: Concept Registry signed release and atomic activation
         working-directory: src
@@ -210,6 +213,7 @@ jobs:
           ku-core/src/concept_registry_release.rs
           ku-core/src/lib.rs
           ku-core/examples/concept_registry_release.rs
+          ku-core/examples/registry_probe.rs
           ku-core/examples/foundation_vector_digests.rs
           ku-ai/src/vnext_manifest.rs
           ku-ai/src/vnext_executor.rs

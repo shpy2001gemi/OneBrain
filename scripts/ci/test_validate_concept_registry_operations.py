@@ -64,6 +64,12 @@ class ConceptRegistryOperationsContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ContractError, "CCID stability"):
             validate_concept_registry_operations(profile)
 
+    def test_resource_fixture_cannot_replace_full_registry_evidence(self) -> None:
+        profile = copy.deepcopy(frozen_profile())
+        profile["resource_qualification"]["full_registry_evidence_required"] = False
+        with self.assertRaisesRegex(ContractError, "resource qualification"):
+            validate_concept_registry_operations(profile)
+
     def test_remaining_resource_gates_cannot_be_hidden(self) -> None:
         profile = copy.deepcopy(frozen_profile())
         profile["remaining_qualification_gates"].remove("low-ram-profile")

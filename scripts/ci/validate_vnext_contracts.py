@@ -3341,6 +3341,51 @@ def validate_concept_registry_operations(
     }:
         raise ContractError("Concept Registry CCID stability contract drift")
 
+    resource_qualification = profile.get("resource_qualification")
+    if not isinstance(resource_qualification, dict) or resource_qualification != {
+        "profile": "onebrain/concept-registry-resource-qualification/1",
+        "probe_profile": "onebrain/concept-registry-probe/1",
+        "implemented_profiles": ["cold-cache", "low-ram"],
+        "fresh_process": True,
+        "verification_cache": "uncached",
+        "lookup_cache_capacity": 0,
+        "labels_source": "external-bounded-file",
+        "evidence_publication": "atomic-json-replace",
+        "cold_cache_strategies": [
+            "linux-posix-fadvise-dontneed",
+            "vmtouch-evict",
+        ],
+        "low_ram_enforcement": ["linux-rlimit-as"],
+        "rss_collectors": [
+            "linux-proc-vmhwm",
+            "macos-ps-rss",
+            "windows-psapi-peak-working-set",
+        ],
+        "budget_profiles": {
+            "ci-small-fixture-v1": {
+                "max_ready_ms": 60_000,
+                "max_p95_us": 1_000_000,
+                "max_peak_rss_bytes": 268_435_456,
+                "address_space_limit_bytes": 536_870_912,
+            },
+            "cold-cache-production-v1": {
+                "max_ready_ms": 180_000,
+                "max_p95_us": 250_000,
+                "max_peak_rss_bytes": 536_870_912,
+                "address_space_limit_bytes": None,
+            },
+            "low-ram-production-v1": {
+                "max_ready_ms": 300_000,
+                "max_p95_us": 500_000,
+                "max_peak_rss_bytes": 268_435_456,
+                "address_space_limit_bytes": 3_221_225_472,
+            },
+        },
+        "ci_scope": "small-fixture-contract-only",
+        "full_registry_evidence_required": True,
+    }:
+        raise ContractError("Concept Registry resource qualification contract drift")
+
     drills = profile.get("implemented_failure_drills")
     remaining = profile.get("remaining_qualification_gates")
     if not isinstance(drills, list) or len(drills) != 8:
@@ -3400,10 +3445,46 @@ def validate_concept_registry_operations(
                 f"Concept Registry CCID stability evidence missing: {needle}"
             )
 
+    resource_source = read(
+        ROOT / "scripts/concept_registry/resource_qualification.py"
+    )
+    for needle in [
+        'PROFILE = "onebrain/concept-registry-resource-qualification/1"',
+        'PROBE_PROFILE = "onebrain/concept-registry-probe/1"',
+        '"cold-cache-production-v1"',
+        '"low-ram-production-v1"',
+        "os.posix_fadvise",
+        "resource.RLIMIT_AS",
+        "application_lookup_cache_is_disabled",
+        "targeted_cache_eviction_request_completed",
+        "hard_address_space_limit_applied",
+        "os.replace(temporary_path, path)",
+    ]:
+        if needle not in resource_source:
+            raise ContractError(
+                f"Concept Registry resource qualification evidence missing: {needle}"
+            )
+
+    probe_source = read(ROOT / "src/ku-core/examples/registry_probe.rs")
+    for needle in [
+        'const PROBE_PROFILE: &str = "onebrain/concept-registry-probe/1"',
+        "load_and_validate_manifest_uncached",
+        'value == "--labels-file"',
+        'value == "--cache-capacity"',
+        'value == "--verification-cache"',
+        "sampled_from_obr",
+    ]:
+        if needle not in probe_source:
+            raise ContractError(
+                f"Concept Registry resource probe evidence missing: {needle}"
+            )
+
     workflow = read(VNEXT_FOUNDATION_WORKFLOW)
     for needle in [
         "python -m unittest scripts.ci.test_validate_concept_registry_operations",
         "python -m unittest scripts.concept_registry.test_ccid_stability_diff",
+        "python -m unittest scripts.concept_registry.test_resource_qualification",
+        "--example registry_probe",
         "Concept Registry signed release and atomic activation",
         "--example concept_registry_release",
     ]:

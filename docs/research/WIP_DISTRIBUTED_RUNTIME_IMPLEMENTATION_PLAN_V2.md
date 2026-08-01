@@ -2495,3 +2495,25 @@ Lane Section 11 chưa được tuyên bố hoàn tất. Bảy gate tiếp theo v
 cache, low RAM, SSD, HDD, truncated index, disk shortage và quarterly
 build/update/rollback dry-run. Production canary vẫn bị chặn bởi các gate này
 và bằng chứng soak/canary bên ngoài hợp lệ.
+
+### 2026-08-01 — Cold-cache/low-RAM qualification harness
+
+1. Mở rộng `registry_probe` bằng JSON profile cố định, uncached verification,
+   lookup cache capacity zero và bounded external labels file. Qualification
+   không được dùng `--sample` từ OBR vì thao tác đó làm ấm artifact trước đo.
+2. Cold-cache runner dùng targeted Linux `POSIX_FADV_DONTNEED` hoặc
+   `vmtouch -e`; low-RAM runner dùng hard Linux `RLIMIT_AS`. Host không hỗ trợ
+   enforcement phải fail explicit.
+3. Evidence ghi atomically exact artifact/labels hashes, host, budget profile,
+   peak RSS, ready/lookup latency, child exit và từng oracle. Budget production
+   được freeze; CLI không cho tự nhập ngưỡng tùy ý.
+4. CI fixture sẽ chạy cả cold-cache và low-RAM mechanism. Đây chỉ là contract
+   evidence; hai gate production vẫn mở cho tới khi có report full-size trên
+   host/storage được khai báo.
+
+Probe cục bộ trên OBR thật 1.306.104.050 bytes (15.929.874 entries,
+22.346.492 labels) với uncached verification và cache capacity zero hoàn tất
+trong 1.163 ms, peak RSS 7.544.832 bytes, p95 445 µs cho bốn external labels.
+Vì Windows run này không có targeted page-cache eviction hoặc hard memory
+enforcement nên chỉ dùng để hiệu chỉnh budget, không được ghi nhận là hai gate
+production đã xanh.
