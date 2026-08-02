@@ -1,0 +1,47 @@
+{
+  "format": "onebrain.mobile.compliance-report/1",
+  "generated_at": "2026-08-02",
+  "work_package": "MOB-05B",
+  "scope": "decentralized Registry source-plan and independent OS-executor contract",
+  "results": {
+    "mobile_core_unit_tests": 28,
+    "mobile_core_integration_tests": 8,
+    "mobile_bridge_unit_tests": 7,
+    "rust_tests_passed": true,
+    "android_debug_kotlin_compiled": true,
+    "network_transport_source_isolation_passed": true,
+    "rust_dependency_isolation_passed": true,
+    "abi_revision": 12,
+    "android_persisted_job_contract_version": 2,
+    "android_rust_abis_built": [
+      "armeabi-v7a",
+      "arm64-v8a",
+      "x86_64"
+    ]
+  },
+  "verified_behaviors": [
+    "Registry schedules bind a canonical source-plan digest and explicit source kind independently from the OS executor",
+    "stable source-kind codes cover DirectPeer, CommunitySeed, CarrierPeer, HttpsMirror and LocalImport",
+    "stable executor codes cover AndroidUidt, IosBackgroundUrlSession and ForegroundNative without naming HTTPS as an executor",
+    "an active schedule rejects replay with a different source kind, source-plan digest, request fingerprint or executor",
+    "legacy ABI 9 through 11 schedule JSON migrates the old descriptor field to source-plan digest and foreground HTTPS execution to optional HttpsMirror plus ForegroundNative without granting content authority",
+    "Android persisted UIDT extras carry and validate the same source-plan digest and source-kind code",
+    "the C/JNI boundary exposes only bounded digests and codes and embeds no URL, path, credential, provider handle or central endpoint",
+    "HttpsMirror is one optional source kind and is not required Registry authority"
+  ],
+  "commands": [
+    "cargo test -p onebrain-mobile-core --locked",
+    "cargo test -p onebrain-mobile-bridge --locked",
+    "cargo clippy -p onebrain-mobile-core -p onebrain-mobile-bridge --all-targets --no-deps --locked -- -D warnings",
+    "python tool/generate_rust_bridge_header.py",
+    "android/gradlew.bat :app:compileDebugKotlin",
+    "python tool/verify_bootstrap_source_isolation.py",
+    "python tool/verify_mobile_rust_dependency_graph.py"
+  ],
+  "limitations": [
+    "this slice defines and tests the provider-neutral durable contract but implements no production provider response executor",
+    "direct-peer/community-seed and local-import byte adapters remain open and must be first-class before an optional HTTPS mirror/carrier fallback",
+    "iOS bounded direct/background execution and optional background URLSession execution remain open",
+    "no production trust profile, provider endpoint, INTERNET permission, full-size Registry qualification or ReadyOffline claim is present"
+  ]
+}

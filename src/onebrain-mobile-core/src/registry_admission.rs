@@ -1287,8 +1287,8 @@ mod tests {
     use super::*;
     use crate::{
         BootstrapStore, RegistryChunkWriteStart, RegistryOperationState, RegistryReleaseState,
-        RegistryTransferPlatform, RegistryTransferScheduleState, ResourceBudgets,
-        TransferLandingRecord,
+        RegistrySourceKind, RegistryTransferPlatform, RegistryTransferScheduleRecord,
+        RegistryTransferScheduleState, ResourceBudgets, TransferLandingRecord,
     };
 
     const CHANNEL_KEY_ID: &str = "channel-v1";
@@ -1701,7 +1701,7 @@ mod tests {
     fn durable_platform_transfer_barrier_survives_submit_and_adopt_crash_windows() {
         const REQUEST_FINGERPRINT: &str =
             "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
-        const DESCRIPTOR_DIGEST: &str =
+        const SOURCE_PLAN_DIGEST: &str =
             "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef";
         const OTHER_FINGERPRINT: &str =
             "1212121212121212121212121212121212121212121212121212121212121212";
@@ -1743,8 +1743,9 @@ mod tests {
                 &operation.operation_id,
                 &hex::encode(authority.floor_target.manifest_digest),
                 RegistryTransferPlatform::AndroidUidt,
+                RegistrySourceKind::LocalImport,
                 REQUEST_FINGERPRINT,
-                DESCRIPTOR_DIGEST,
+                SOURCE_PLAN_DIGEST,
                 authority.floor_target.artifact_total_bytes,
                 false,
                 &budgets,
@@ -1761,7 +1762,21 @@ mod tests {
             RegistryTransferScheduleState::SchedulePrepared
         );
         assert_eq!(prepared.prepared_process_generation, process.generation);
+        assert_eq!(prepared.source_kind, RegistrySourceKind::LocalImport);
+        assert_eq!(prepared.source_plan_digest, SOURCE_PLAN_DIGEST);
         assert!(prepared.android_job_id.is_some_and(|job_id| job_id > 0));
+        let mut legacy_json = serde_json::to_value(&prepared).unwrap();
+        let legacy_object = legacy_json.as_object_mut().unwrap();
+        let source_plan_digest = legacy_object.remove("source_plan_digest").unwrap();
+        legacy_object.insert("transport_descriptor_digest".into(), source_plan_digest);
+        legacy_object.remove("source_kind");
+        legacy_object.insert("platform".into(), serde_json::json!("foreground_https"));
+        let migrated: RegistryTransferScheduleRecord = serde_json::from_value(legacy_json).unwrap();
+        assert_eq!(migrated.source_kind, RegistrySourceKind::HttpsMirror);
+        assert_eq!(
+            migrated.platform,
+            RegistryTransferPlatform::ForegroundNative
+        );
         assert_eq!(
             store
                 .registry_operation(&operation.operation_id)
@@ -1776,8 +1791,9 @@ mod tests {
                 &operation.operation_id,
                 &hex::encode(authority.floor_target.manifest_digest),
                 RegistryTransferPlatform::AndroidUidt,
+                RegistrySourceKind::LocalImport,
                 REQUEST_FINGERPRINT,
-                DESCRIPTOR_DIGEST,
+                SOURCE_PLAN_DIGEST,
                 authority.floor_target.artifact_total_bytes,
                 false,
                 &budgets,
@@ -1789,8 +1805,23 @@ mod tests {
                 &operation.operation_id,
                 &hex::encode(authority.floor_target.manifest_digest),
                 RegistryTransferPlatform::AndroidUidt,
+                RegistrySourceKind::LocalImport,
                 OTHER_FINGERPRINT,
-                DESCRIPTOR_DIGEST,
+                SOURCE_PLAN_DIGEST,
+                authority.floor_target.artifact_total_bytes,
+                false,
+                &budgets,
+            ),
+            Err(MobileCoreError::RegistryAdmission(_))
+        ));
+        assert!(matches!(
+            store.prepare_registry_transfer_schedule(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                RegistryTransferPlatform::AndroidUidt,
+                RegistrySourceKind::HttpsMirror,
+                REQUEST_FINGERPRINT,
+                SOURCE_PLAN_DIGEST,
                 authority.floor_target.artifact_total_bytes,
                 false,
                 &budgets,
@@ -1871,8 +1902,9 @@ mod tests {
                 &operation.operation_id,
                 &hex::encode(authority.floor_target.manifest_digest),
                 RegistryTransferPlatform::AndroidUidt,
+                RegistrySourceKind::LocalImport,
                 REQUEST_FINGERPRINT,
-                DESCRIPTOR_DIGEST,
+                SOURCE_PLAN_DIGEST,
                 authority.floor_target.artifact_total_bytes,
                 false,
                 &budgets,
@@ -1885,8 +1917,9 @@ mod tests {
                 &operation.operation_id,
                 &hex::encode(authority.floor_target.manifest_digest),
                 RegistryTransferPlatform::AndroidUidt,
+                RegistrySourceKind::LocalImport,
                 REQUEST_FINGERPRINT,
-                DESCRIPTOR_DIGEST,
+                SOURCE_PLAN_DIGEST,
                 authority.floor_target.artifact_total_bytes,
                 true,
                 &budgets,
@@ -1936,7 +1969,7 @@ mod tests {
     fn signed_chunk_ledger_resumes_rehashes_and_closes_bytes_complete_atomically() {
         const REQUEST_FINGERPRINT: &str =
             "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
-        const DESCRIPTOR_DIGEST: &str =
+        const SOURCE_PLAN_DIGEST: &str =
             "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef";
 
         let authority = SignedFixtureAuthority::new();
@@ -1975,8 +2008,9 @@ mod tests {
                 &operation.operation_id,
                 &hex::encode(authority.floor_target.manifest_digest),
                 RegistryTransferPlatform::AndroidUidt,
+                RegistrySourceKind::LocalImport,
                 REQUEST_FINGERPRINT,
-                DESCRIPTOR_DIGEST,
+                SOURCE_PLAN_DIGEST,
                 authority.floor_target.artifact_total_bytes,
                 false,
                 &budgets,
@@ -2111,7 +2145,7 @@ mod tests {
     fn native_chunk_stream_checkpoints_resumes_and_rejects_invalid_finishes() {
         const REQUEST_FINGERPRINT: &str =
             "1212121212121212121212121212121212121212121212121212121212121212";
-        const DESCRIPTOR_DIGEST: &str =
+        const SOURCE_PLAN_DIGEST: &str =
             "3434343434343434343434343434343434343434343434343434343434343434";
 
         let authority = SignedFixtureAuthority::new();
@@ -2150,8 +2184,9 @@ mod tests {
                 &operation.operation_id,
                 &hex::encode(authority.floor_target.manifest_digest),
                 RegistryTransferPlatform::AndroidUidt,
+                RegistrySourceKind::LocalImport,
                 REQUEST_FINGERPRINT,
-                DESCRIPTOR_DIGEST,
+                SOURCE_PLAN_DIGEST,
                 authority.floor_target.artifact_total_bytes,
                 false,
                 &budgets,

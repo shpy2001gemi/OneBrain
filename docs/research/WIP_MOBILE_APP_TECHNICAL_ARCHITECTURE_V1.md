@@ -1,8 +1,8 @@
-# WIP Mobile App Technical Architecture V1.1
+# WIP Mobile App Technical Architecture V1.2
 
 > Status: **OWNER-APPROVED TARGET ARCHITECTURE / implementation pending**
 >
-> Snapshot: **2026-07-29 (Asia/Saigon)**
+> Snapshot: **2026-08-02 (Asia/Saigon)**
 >
 > Scope: iOS and Android autonomous OneBrain nodes, persistent data,
 > local/device/cloud LLM providers, deterministic tools, multilingual UX,
@@ -41,7 +41,7 @@ process**, not a desktop replica, extension, remote control, or companion.
 | Database | Keep `redb` for Rust-owned structured persistence; do not add SQLite as a second product source of truth |
 | Writes | One Rust storage actor owns all database writes; blocking `redb` work never runs on a Flutter/UI or async reactor thread |
 | Cross-store work | Durable operation journal plus idempotent state machines; never claim atomicity across multiple database files and filesystem pieces |
-| Concept data | Provision the complete query-ready Concept Registry through post-launch Init; no large Registry artifact is bundled in the APK/AAB/IPA or an install-time asset pack |
+| Concept data | Provision the complete query-ready Concept Registry through post-launch Init from a replaceable decentralized provider set; no large Registry artifact is bundled in the APK/AAB/IPA or an install-time asset pack |
 | AI | Provider-neutral LLM boundary. Prefer device system AI when it is actually available and evaluated; otherwise use an app-managed model or an explicitly selected remote provider |
 | Android local AI | Portable runtime is the baseline. Gemini Nano is an optional fast path, not the Vietnamese baseline |
 | iOS local AI | Apple `SystemLanguageModel` is the preferred fast path on eligible devices/locales; a portable runtime remains necessary |
@@ -92,13 +92,25 @@ Concept Registry release. Future required large components need their own
 typed signed manifest and readiness rule; they cannot be silently appended to
 the bootstrap package.
 
-This required artifact transport is not OneBrain node networking. V1 uses
-signed HTTPS/CDN/object storage through Android OS-managed transfer or iOS
-background `URLSession` while `NETWORKED-BETA`, peer discovery, reconciliation
-and seeding remain absent or disabled. A fresh offline install is valid in
-`InitWaitingForNetwork`/Limited state but is not `ReadyOffline`. Once Init
-activation succeeds, the normal private product works with all node-network and
-LLM lanes disabled.
+Registry distribution is a narrowly scoped bootstrap data lane, not normal
+OneBrain reconciliation, KU/media publication, peer enrollment or seeding.
+V1 resolves the same signed content-addressed release from a replaceable
+provider set: direct OneBrain peers/community seeds are the preferred network
+source, a user-selected local import is valid, and an HTTPS mirror or carrier
+peer is an optional availability path. No fixed OneBrain server, DNS name,
+TLS origin, source count or source order is authority.
+
+The source lane may operate before `NETWORKED-BETA`, but only for immutable
+public Registry head/manifest/chunk objects under `MOB-GATE-REGISTRY`. It cannot
+exchange user state, advertise ordinary inventory, reconcile selectors, seed
+KU/media or grant peer capability. Android UIDT and iOS background
+`URLSession` are execution/transfer opportunities, not source types. iOS may
+use `URLSession` only when the selected peer/carrier/mirror exposes an HTTPS
+representation; direct peer transfer otherwise runs during foreground or an
+eligible bounded background grant. A fresh offline install is valid in
+`InitWaitingForSource`/Limited state but is not `ReadyOffline`. Once Init
+activation succeeds, the normal private product works with all Registry-source,
+node-network and LLM lanes disabled.
 
 ### 0.3 Core correctness statement
 
@@ -224,7 +236,7 @@ flowchart TB
         Carrier["High-uptime carrier/cache peers"]
         Push["Optional APNs/FCM hint broker"]
         Cloud["Explicit cloud/custom LLM"]
-        Assets["Signed registry/model release hosts"]
+        Assets["Replaceable registry/model providers<br/>peers / local import / optional mirrors"]
     end
 
     Screens --> Bridge
@@ -451,7 +463,7 @@ valid bootstrap authority:
    guarantee; without such a previous release it is
    `Provisioning(HealthPending)`;
 4. no current release plus a nonterminal first Init is
-   `Provisioning(reason)`, including `InitWaitingForNetwork`;
+   `Provisioning(reason)`, including `InitWaitingForSource`;
 5. no current release and no release has ever completed its activation health
    gate is `BootstrapOnly/AwaitingUserInit`, retaining any last failure as a
    separate fact;
@@ -628,6 +640,8 @@ Bootstrap table families are deliberately small:
 | `registry_active_state` | current, previous, activation generation, deterministic health profile/state and eligible fallback |
 | `registry_activation_receipts` | operation/release, prior/current pointer, activation generation, commit frontier and health result |
 | `registry_operations` | first Init/update intent, exact confirmation, state, pause/failure class and idempotency |
+| `registry_source_plans` | canonical confirmed provider-set digest, exact target/policy binding and permitted failover scope; descriptors are routing metadata, never release authority |
+| `registry_source_observations` | bounded per-source attempts, byte/chunk outcomes, expiry and backoff; no provider score becomes truth, freshness or authority |
 | `registry_chunks` | expected and verified-written range/chunk ledger bound to release/artifact |
 | `registry_security_highwater` | per-channel `(channel_id, highest_head_generation, accepted_head_digest)`, publisher-global `(highest_release_sequence, accepted_release_id, accepted_manifest_digest)`, and embedded trust-profile digest/generation for replay, equal-generation equivocation and downgrade fencing |
 | `bootstrap_op_ids` | idempotency for pointer, hold, promotion, and GC transitions |
@@ -1193,9 +1207,10 @@ trust_profile_digest =
 
 A fresh install rejects a head/release below its channel floor; an equality is
 valid only for the exact embedded digest/ID binding. This bounds fresh-install
-replay to the app's build snapshot but cannot prove that the server revealed
-the newest later valid head. That withholding limitation is shown honestly
-rather than called freshness.
+replay to the app's build snapshot but cannot prove that the sampled provider
+set revealed the newest later valid head. Comparing independently discovered
+providers reduces a single-source withholding risk but never proves global
+freshness; that limitation is shown honestly.
 
 After first acceptance, `release_sequence` is publisher-global across all
 channels. The bootstrap ledger retains both its highest exact
@@ -1427,11 +1442,12 @@ trust-profile/body/envelope codecs and signatures require cross-language and
 cross-platform golden vectors,
 including rejection vectors for non-canonical encodings, extra/default fields,
 role/cardinality errors and every cross-field mismatch.
-Mirror/range URLs, redirects, ETags and OS transfer receipts are separate
-transport metadata and never alter `release_id` or prove authenticity. The
-existing repository `concepts.obr.manifest.json` may be referenced as build
-provenance, but it is not the mobile publisher envelope; host-local
-`verification.json` is never accepted as a device activation receipt.
+Provider descriptors, peer identities, URLs, redirects, ETags, local-import
+handles and OS transfer receipts are separate source/execution metadata and
+never alter `release_id` or prove authenticity. The existing repository
+`concepts.obr.manifest.json` may be referenced as build provenance, but it is
+not the mobile publisher envelope; host-local `verification.json` is never
+accepted as a device activation receipt.
 
 The immutable `artifact_verification.receipt` records:
 
@@ -1497,6 +1513,10 @@ Rules:
   confirmation; a changed digest is never inherited silently. A confirmed
   transfer uses the separate Pause/Resume commands instead of Defer;
 - range/resume downloads;
+- source selection and failover remain inside the exact confirmed
+  `RegistrySourcePlan`; changing provider does not change chunk identity, while
+  adding an unconfirmed provider or widening network/cost policy returns to
+  `AwaitingExactConfirm`;
 - verify chunks while downloading and whole artifacts before activation;
 - before calling an OS scheduler, one bootstrap transaction writes
   `SchedulePrepared` with a cryptographically random `transfer_nonce`, the
@@ -1612,26 +1632,74 @@ independent requery; an update remains ready through its previous fallback
 while the new candidate is `HealthPending` only when that fallback is eligible,
 healthy, compatible and non-revoked.
 
-### 5.3 Delivery
+### 5.3 Decentralized Registry providers and delivery
 
-Use a provider-neutral signed release manifest. All permitted delivery starts
-after first launch and the Init confirmation boundary:
+Use a provider-neutral signed release manifest and a source plan that is
+independent of the OS transfer executor. All permitted delivery starts after
+first launch and the Init confirmation boundary.
 
-- iOS background `URLSession` over signed HTTPS is the V1 Registry path.
-  Managed Background Assets is excluded from Registry V1 because system-managed
-  pack updating cannot be allowed to transfer a new multi-gigabyte release
-  outside a fresh exact confirmation. A future ADR may admit only immutable
-  per-release pack IDs after proving that unsolicited/outdated pack delivery is
-  rejected before byte admission;
-- Android direct app-controlled HTTPS through UIDT/OS-managed transfer; Registry
-  artifacts are not placed in Play Asset Delivery because even on-demand PAD
-  bytes remain part of the publishing AAB;
-- OneBrain CDN/object storage through OS background transfer;
-- enterprise/self-hosted release origin.
+`RegistrySourceDescriptor/1` is bounded, canonical and non-authoritative. It
+binds a stable local source ID, one source kind, supported transport profile,
+the exact release/manifest binding it claims to serve, endpoint or local-import
+handle metadata, expiry/freshness observation and optional authenticated-peer
+identity. Allowed V1 source kinds are:
 
-The transport host is not release authority. Signature and artifact hashes are
-authoritative. Store/CDN completion is only a byte-landing fact and must still
-pass OneBrain verification.
+1. `DIRECT_PEER` - an authenticated OneBrain node serving Registry chunks in
+   a foreground or bounded granted session;
+2. `COMMUNITY_SEED` - a high-uptime ordinary peer serving the same immutable
+   public objects, with no publisher or node authority;
+3. `CARRIER_PEER` - a replaceable peer/cache that may expose an HTTPS
+   representation suitable for OS-managed background transfer;
+4. `HTTPS_MIRROR` - an optional publisher/community/enterprise/self-hosted
+   mirror; TLS authenticates that connection only;
+5. `LOCAL_IMPORT` - a user-selected file/removable/local-share source that is
+   still verified through the same chunk and release contracts.
+
+An exact `RegistrySourcePlan/1` contains one or more sorted descriptors and is
+bound by `source_plan_digest` into `SchedulePrepared`. The confirmed plan shows
+source kinds, expected network/cost/power behavior and whether automatic
+failover is allowed. A chunk may come from a different descriptor in the same
+confirmed plan without changing its content identity. Adding a source outside
+that plan, widening metered/roaming policy or changing the exact target returns
+to plan review. Source failures affect only routing evidence; hash/signature or
+mixed-release failure quarantines the affected bytes and never penalizes or
+promotes semantic authority automatically.
+
+Source discovery is plural and replaceable:
+
+- known peer/community-seed hints retained from prior successful sessions;
+- foreground QR/manual descriptor import;
+- permission-gated LAN discovery;
+- bounded bootstrap/PEX/DHT hints after their exact transport profile passes;
+- optional HTTPS mirrors or carrier peers;
+- explicit local import.
+
+Bootstrap hints locate possible sources only. They are replaceable, may be
+stale, and cannot advance high-water, authorize a release or prove global
+freshness. A clean-device acceptance test must provision with every
+OneBrain-operated mirror domain blocked, using direct peer/community seed or
+local import. Another test must prove optional mirror/carrier failover. The app
+must never require one fixed hostname, service account or organization-operated
+endpoint.
+
+Execution is selected separately:
+
+- Android uses UIDT/eligible constrained work or a finite foreground grant for
+  either direct-peer or HTTP(S) byte streams. Registry artifacts are not placed
+  in Play Asset Delivery because even on-demand PAD bytes remain part of the
+  publishing AAB;
+- iOS uses foreground/bounded background work for direct peer transfer. A
+  selected carrier/mirror/community seed may expose HTTPS ranges so background
+  `URLSession` can continue while the app process is absent;
+- Managed Background Assets remains excluded from Registry V1 because
+  system-managed pack updating cannot transfer a new multi-gigabyte release
+  outside a fresh exact confirmation.
+
+The provider and executor are never release authority. Publisher signatures,
+the embedded trust profile, exact manifest binding and artifact/chunk hashes
+are authoritative. Peer authentication, TLS, local file selection and OS
+completion receipts prove only bounded source/landing facts and must still pass
+OneBrain verification.
 
 V1 excludes the entire mutable OneBrain authority root from generic OS
 backup/restore, not only the large bytes. This includes `bootstrap.redb`,
@@ -2965,7 +3033,7 @@ second authority.
 | Work | Foreground | Android background | iOS background |
 |---|---|---|---|
 | Short DB recovery | startup | bounded worker | launch/BG task opportunity |
-| Post-launch Registry Init/model download | visible progress | UIDT/OS-managed HTTPS or constrained work | Registry uses background `URLSession`; qualified optional models may use Background Assets or `URLSession` |
+| Post-launch Registry Init/model download | visible progress | UIDT/constrained or finite foreground executor over a confirmed direct-peer, local-import or optional HTTP(S) source | direct peer in foreground/bounded grant; background `URLSession` only for a confirmed peer/carrier/mirror HTTPS representation; qualified optional models may use Background Assets or `URLSession` |
 | P2P direct serving | yes | manual/visible FGS only | foreground only |
 | Outbound seed upload | yes | constrained worker/user transfer/FGS | background URLSession through HTTPS carrier |
 | Reconciliation | yes | bounded outbound batch | bounded task/carrier batch |
@@ -3317,6 +3385,9 @@ separate rollout authority.
   format/build pipeline;
 - explicit `init_begin`, durable pre-confirm Defer, re-resolve and
   exact-manifest/capacity/network `init_confirm` boundaries;
+- canonical `RegistrySourceDescriptor/1` and multi-source
+  `RegistrySourcePlan/1`, with direct peer/community seed and local import
+  independent of optional HTTPS mirror/carrier availability;
 - OS transfer prepare/submit/adopt barrier and range/resume download;
 - initial/remaining capacity admission without progress double-count;
 - mmap query adapter;
@@ -3399,9 +3470,13 @@ separate rollout authority.
 
 - clean APK/AAB/IPA and install-time/fast-follow/prefetch/essential asset
   inventories contain no Registry artifact bytes, compressed copies or chunks;
-- a fresh offline install remains Limited/`InitWaitingForNetwork`, while one
+- a fresh offline install remains Limited/`InitWaitingForSource`, while one
   exact activated release passes the complete private journey in airplane
   mode;
+- clean-device Init succeeds while every OneBrain-operated mirror domain is
+  blocked, using a direct peer/community seed or local import; optional
+  mirror/carrier failover also passes, and no single provider can block or
+  authorize activation;
 - wire capture proves no Registry request before `init_begin` and no large
   artifact request before exact `init_confirm`;
 - trust-profile, channel-head, manifest-body, release-envelope and 8 MiB
@@ -3542,9 +3617,11 @@ separate rollout authority.
 5. Exact carrier peer discovery/trust/deployment model.
 6. Whether a future iOS Registry release can safely use immutable per-release
    Managed Background Asset pack IDs without any unsolicited/system-managed
-   update before fresh exact consent. V1 is settled on signed HTTPS through
-   background `URLSession`; Android V1 is settled on direct signed HTTPS and
-   excludes Play Asset Delivery.
+   update before fresh exact consent. V1 excludes that mechanism; direct peers
+   run only in foreground/bounded grants, while background `URLSession` is an
+   optional executor for a confirmed peer/carrier/mirror HTTPS representation.
+   Android uses UIDT/constrained/finite foreground execution over the selected
+   provider and excludes Play Asset Delivery.
 7. Recovery UX and whether a second trusted device can assist without making
    the mobile node a replica.
 8. Which current KU bytes can be proven reconstructible before moving them to

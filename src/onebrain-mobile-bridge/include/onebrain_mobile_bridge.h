@@ -18,7 +18,7 @@
 /**
  * Stable ABI revision understood by the current Swift/Kotlin adapters.
  */
-#define OB_MOBILE_BRIDGE_ABI_VERSION 11
+#define OB_MOBILE_BRIDGE_ABI_VERSION 12
 
 #define OB_MOBILE_RUNTIME_OK 0
 
@@ -94,11 +94,12 @@ typedef struct ObMobileRegistryTransferSchedule {
   uint32_t trust_profile_digest_len;
   uint8_t request_fingerprint[65];
   uint32_t request_fingerprint_len;
-  uint8_t transport_descriptor_digest[65];
-  uint32_t transport_descriptor_digest_len;
+  uint8_t source_plan_digest[65];
+  uint32_t source_plan_digest_len;
   uint8_t os_transfer_id[257];
   uint32_t os_transfer_id_len;
   uint64_t expected_total_bytes;
+  uint32_t source_kind_code;
   uint32_t platform_code;
   uint32_t android_job_id;
   uint8_t has_android_job_id;
@@ -269,8 +270,9 @@ struct ObMobileRegistryPlan ob_mobile_runtime_confirm_registry_init_signed(const
 
 /**
  * Persist the exact pre-scheduler Registry transfer barrier. The request and
- * approved transport descriptor arrive only as already verified digests; no
- * URL, path, credential, or transport handle crosses this ABI.
+ * approved source plan arrive only as already verified digests; the selected
+ * source kind is independent of the OS executor. No URL, path, credential, or
+ * provider handle crosses this ABI.
  *
  * # Safety
  *
@@ -281,10 +283,11 @@ struct ObMobileRegistryTransferSchedule ob_mobile_runtime_prepare_registry_trans
                                                                                                   const uint8_t *manifest_digest,
                                                                                                   size_t manifest_digest_len,
                                                                                                   uint32_t platform_code,
+                                                                                                  uint32_t source_kind_code,
                                                                                                   const uint8_t *request_fingerprint,
                                                                                                   size_t request_fingerprint_len,
-                                                                                                  const uint8_t *transport_descriptor_digest,
-                                                                                                  size_t transport_descriptor_digest_len,
+                                                                                                  const uint8_t *source_plan_digest,
+                                                                                                  size_t source_plan_digest_len,
                                                                                                   uint64_t expected_total_bytes,
                                                                                                   uint8_t foreground_user_resume);
 

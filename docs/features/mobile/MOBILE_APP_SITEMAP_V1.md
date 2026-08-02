@@ -2,7 +2,7 @@
 
 > Status: **Target information architecture — not implementation evidence**
 >
-> Snapshot: **2026-07-29 (Asia/Saigon)**
+> Snapshot: **2026-08-02 (Asia/Saigon)**
 >
 > Feature tree:
 > [`MOBILE_APP_FEATURE_TREE_V1.md`](./MOBILE_APP_FEATURE_TREE_V1.md)
@@ -226,8 +226,8 @@ flowchart TB
 | `MOB-SCR-ONB-004` | `/onboarding/security` | App lock; recovery method setup/verification appears only after `RECOVERY`, otherwise show a non-blocking readiness recommendation | `MOB-SEC-001/003` |
 | `MOB-SCR-ONB-005` | `/onboarding/init-handoff` | Explain required post-launch data, app-package boundary and Limited mode, then enter canonical Init; Defer is offered only after explicit Begin resolves the exact signed plan | `MOB-ONB-004/005`, `MOB-DAT-001` |
 | `MOB-SCR-ONB-006` | `/onboarding/readiness` | Independent readiness facts; `ReadyOffline` only after exact Init activation; optional AI/notification education; node network is non-actionable before `NETWORKED-BETA` | `MOB-ONB-005`, `MOB-HOM-001` |
-| `MOB-SCR-INI-001` | `/init` | Canonical Init hub: before explicit Begin, explain the data/Limited boundary, make no Registry request, and disclose that accepting newer signed security metadata may advance anti-downgrade high-water or fence an explicitly revoked local release even though no large bytes can yet be scheduled. Afterward show the signed target and exact downloaded/verified/active bytes, wait/failure reason, Resume or open exact plan. Back navigation to Limited neither confirms nor cancels an operation; durable Defer is selected on `INI-002` | `MOB-ONB-004/005`, `MOB-DAT-001/002`, `MOB-HOM-001/005` |
-| `MOB-SCR-INI-002` | `/init/registry/plan` | Exact artifacts, signed publisher floor, initial/remaining local allocation/transfer/workspace/catalog/reserve terms, authoritative maximum versus current free bytes, transport source, metered/roaming/power/thermal facts and explicit Start now, wait-by-policy, scoped override or durable pre-confirm Defer | `MOB-ONB-002/004`, `MOB-DAT-002/004`, `MOB-FND-004`, `MOB-SYS-004` |
+| `MOB-SCR-INI-001` | `/init` | Canonical Init hub: before explicit Begin, explain the data/Limited boundary, make no Registry request, and disclose that accepting newer signed security metadata may advance anti-downgrade high-water or fence an explicitly revoked local release even though no large bytes can yet be scheduled. Afterward show the signed target, selected provider class, exact downloaded/verified/active bytes, wait/failure reason, Resume or open exact plan. Direct peer/community seed, local import and optional mirror are delivery sources, never Registry authority. Back navigation to Limited neither confirms nor cancels an operation; durable Defer is selected on `INI-002` | `MOB-ONB-004/005`, `MOB-DAT-001/002`, `MOB-HOM-001/005` |
+| `MOB-SCR-INI-002` | `/init/registry/plan` | Exact artifacts, signed publisher floor, canonical ordered provider set and source-plan digest, initial/remaining local allocation/transfer/workspace/catalog/reserve terms, authoritative maximum versus current free bytes, selected source kind versus OS executor, metered/roaming/power/thermal facts and explicit Start now, wait-by-policy, scoped override or durable pre-confirm Defer. The UI must not imply a required central endpoint | `MOB-ONB-002/004`, `MOB-DAT-002/004`, `MOB-FND-004`, `MOB-SYS-004` |
 
 ### 5.2 Home, status, operations, and activity
 
@@ -237,7 +237,7 @@ flowchart TB
 | `MOB-SCR-HOM-002` | `/home/status` | Node data, Init/registry, runtime grants, LLM, network, sync, seed and storage facts | `MOB-HOM-001`, `MOB-FND-001/004`, `MOB-DAT-001` |
 | `MOB-SCR-HOM-003` | `/home/recent` | Bounded recent items, drafts and interrupted user work | `MOB-HOM-003` |
 | `MOB-SCR-OPS-001` | `/operations` | InitialRegistryProvision, registry/model/import/backup/sync/seed jobs with pause reason and receipt | `MOB-HOM-004/005`, `MOB-DAT-002/006/007`, `MOB-MOD-003`, `MOB-NET-004/008` |
-| `MOB-SCR-OPS-002` | `/operations/:local_operation_ref` | One authoritative operation timeline, exact bytes, retry/wait class, checkpoints, signer/hash/activation receipt and safe actions | `MOB-FND-002/004`, owning feature |
+| `MOB-SCR-OPS-002` | `/operations/:local_operation_ref` | One authoritative operation timeline, exact bytes, selected source kind and independent executor, provider failover attempts, retry/wait class, checkpoints, signer/hash/activation receipt and safe actions | `MOB-FND-002/004`, owning feature |
 | `MOB-SCR-NTF-001` | `/activity` | Authoritative durable inbox for approvals, security, jobs and reminders | `MOB-NTF-001` |
 | `MOB-SCR-NTF-002` | `/activity/:opaque_intent_ref` | Resolve current intent; show detail and validated reversible actions | `MOB-NTF-001/004` |
 
@@ -372,8 +372,8 @@ none may skip `AttemptCommitted` before `TargetRevealed`.
 
 | Screen ID | Logical path | Responsibility | Feature mapping |
 |---|---|---|---|
-| `MOB-SCR-DAT-001` | `/settings/registry` | Required target, staged, active/previous release, exact artifacts, verification and Init/update/repair actions | `MOB-DAT-001..003` |
-| `MOB-SCR-DAT-002` | `/settings/registry/update` | Reuse the Init plan/operation engine for capacity, transfer, verify, activate and rollback; the prior release remains queryable only while eligible, healthy, compatible and non-revoked, otherwise this route re-resolves the derived readiness state | `MOB-DAT-002/003/004` |
+| `MOB-SCR-DAT-001` | `/settings/registry` | Required target, staged, active/previous release, exact artifacts, verification, current provider plan and Init/update/repair actions; provider identity is never shown as content authority | `MOB-DAT-001..003` |
+| `MOB-SCR-DAT-002` | `/settings/registry/update` | Reuse the Init plan/operation engine for capacity, multi-provider source selection/failover, transfer, verify, activate and rollback; direct peer/community seed and local import remain first-class while HTTPS is optional; the prior release remains queryable only while eligible, healthy, compatible and non-revoked, otherwise this route re-resolves the derived readiness state | `MOB-DAT-002/003/004` |
 | `MOB-SCR-DAT-003` | `/settings/storage` | Protected/registry/model/media/staging/rollback/reclaimable breakdown | `MOB-DAT-004` |
 | `MOB-SCR-DAT-004` | `/settings/storage/cleanup` | Eligible cleanup preview and recoverable operation | `MOB-DAT-005`, `MOB-MED-007` |
 | `MOB-SCR-DAT-005` | `/settings/backup` | Create and inspect vault-encrypted/versioned backup generations | `MOB-DAT-006` |
@@ -435,7 +435,7 @@ M6.
 | `MOB-SCR-SYS-001` | `/settings/language` | Independent UI/content/query/Concept/notification/LLM locale controls | `MOB-SYS-001` |
 | `MOB-SCR-SYS-002` | `/settings/accessibility` | Text, contrast, motion and accessibility support facts | `MOB-SYS-002` |
 | `MOB-SCR-SYS-003` | `/settings/permissions` | Current native capability/permission state and contextual action | `MOB-SYS-003` |
-| `MOB-SCR-SYS-004` | `/settings/background` | T1 local-job policy plus gated T2 transfer/reconciliation/seeding policy and current OS limitations | `MOB-SYS-004/008`, `MOB-NET-008` |
+| `MOB-SCR-SYS-004` | `/settings/background` | T1 local-job policy, including scoped Registry providers and independent OS executors, plus gated T2 reconciliation/seeding policy and current OS limitations | `MOB-SYS-004/008`, `MOB-NET-008` |
 | `MOB-SCR-SYS-005` | `/settings/diagnostics` | Health, release receipts and privacy-safe diagnostics preview/export | `MOB-SYS-005/007`, `MOB-HOM-001` |
 | `MOB-SCR-SYS-006` | `/settings/advanced` | Compiled/requested/active/kill-switch/safe-mode state; no raw DB editor | `MOB-SYS-006`, `MOB-FND-005` |
 | `MOB-SCR-SYS-007` | `/settings/about` | App/core/schema/registry/model/route IDs, licenses and support | `MOB-SYS-007` |
@@ -451,7 +451,7 @@ Welcome / locale
   -> required-data handoff
   -> canonical Init hub
   -> explicit Begin Init
-  -> signed manifest + exact capacity/network/energy plan
+  -> signed manifest + canonical provider/capacity/network/energy plan
   -> exact Confirm download
   -> durable InitialRegistryProvision operation
   -> resumable download + complete verification + query smoke
@@ -487,8 +487,11 @@ Rules:
 - Offline, low storage, metered policy, charging, battery, thermal and OS
   budget constraints are typed waiting states. A user-paused transfer is not
   silently resubmitted; Resume requires a foreground action.
-- Registry artifact HTTPS/OS transfer is required product-data distribution
-  under `REGISTRY`, not peer/P2P participation and not `NETWORKED-BETA`.
+- Registry artifact delivery is a narrowly scoped multi-provider distribution
+  lane under `REGISTRY`. It may use direct peers/community seeds, local import,
+  carrier peers or an optional HTTPS mirror, with source kind independent of OS
+  executor. It does not enable reconciliation, publication exchange, media/KU
+  seeding or the broader `NETWORKED-BETA` lane.
 - Initial activation failure leaves the node Limited with no active release;
   update failure may keep only an eligible healthy, compatible, non-revoked
   previous release; otherwise readiness re-derives `Provisioning` or

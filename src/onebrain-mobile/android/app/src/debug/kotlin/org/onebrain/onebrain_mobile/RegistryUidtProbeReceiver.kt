@@ -87,8 +87,9 @@ class RegistryUidtProbeReceiver : BroadcastReceiver() {
                     operationId = confirmed.operationId,
                     manifestDigest = confirmed.manifestDigest,
                     platformCode = 0,
+                    sourceKindCode = REGISTRY_SOURCE_LOCAL_IMPORT,
                     requestFingerprint = REQUEST_FINGERPRINT,
-                    transportDescriptorDigest = DEVELOPMENT_DESCRIPTOR_DIGEST,
+                    sourcePlanDigest = DEVELOPMENT_SOURCE_PLAN_DIGEST,
                     expectedTotalBytes = confirmed.artifactTotalBytes,
                     foregroundUserResume = false,
                 )
@@ -298,8 +299,9 @@ class RegistryUidtProbeReceiver : BroadcastReceiver() {
                 operationId = confirmed.operationId,
                 manifestDigest = confirmed.manifestDigest,
                 platformCode = 0,
+                sourceKindCode = REGISTRY_SOURCE_LOCAL_IMPORT,
                 requestFingerprint = REQUEST_FINGERPRINT,
-                transportDescriptorDigest = DEVELOPMENT_DESCRIPTOR_DIGEST,
+                sourcePlanDigest = DEVELOPMENT_SOURCE_PLAN_DIGEST,
                 expectedTotalBytes = confirmed.artifactTotalBytes,
                 foregroundUserResume = false,
             )
@@ -400,7 +402,7 @@ private const val REGISTRY_CHANNEL = "stable"
 private const val LOG_TAG = "OneBrainRegistryUidtProbe"
 private const val REQUEST_FINGERPRINT =
     "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
-private const val DEVELOPMENT_DESCRIPTOR_DIGEST =
+private const val DEVELOPMENT_SOURCE_PLAN_DIGEST =
     "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
 private const val FIXTURE_TOTAL_CHUNKS = 3
 private const val FIXTURE_TOTAL_BYTES = 6_144L

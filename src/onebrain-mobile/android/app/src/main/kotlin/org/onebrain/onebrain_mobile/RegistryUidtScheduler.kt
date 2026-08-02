@@ -36,7 +36,8 @@ internal data class RegistryUidtRequest(
     val manifestDigest: String,
     val trustProfileDigest: String,
     val requestFingerprint: String,
-    val transportDescriptorDigest: String,
+    val sourcePlanDigest: String,
+    val sourceKindCode: Int,
     val expectedTotalBytes: Long,
     val jobId: Int,
     val networkPolicy: RegistryUidtNetworkPolicy,
@@ -50,9 +51,10 @@ internal data class RegistryUidtRequest(
         require(trustProfileDigest.length == 64 && trustProfileDigest.all(::isLowerHex))
         require(requestFingerprint.length == 64 && requestFingerprint.all(::isLowerHex))
         require(
-            transportDescriptorDigest.length == 64 &&
-                transportDescriptorDigest.all(::isLowerHex),
+            sourcePlanDigest.length == 64 &&
+                sourcePlanDigest.all(::isLowerHex),
         )
+        require(sourceKindCode in REGISTRY_SOURCE_KIND_CODES)
         require(expectedTotalBytes > 0)
         require(jobId > 0)
     }
@@ -66,7 +68,8 @@ internal data class RegistryUidtRequest(
             schedule.manifestDigest == manifestDigest &&
             schedule.trustProfileDigest == trustProfileDigest &&
             schedule.requestFingerprint == requestFingerprint &&
-            schedule.transportDescriptorDigest == transportDescriptorDigest &&
+            schedule.sourcePlanDigest == sourcePlanDigest &&
+            schedule.sourceKindCode == sourceKindCode &&
             schedule.expectedTotalBytes == expectedTotalBytes
 
     fun toExtras(): PersistableBundle =
@@ -78,7 +81,8 @@ internal data class RegistryUidtRequest(
             putString(EXTRA_MANIFEST_DIGEST, manifestDigest)
             putString(EXTRA_TRUST_PROFILE_DIGEST, trustProfileDigest)
             putString(EXTRA_REQUEST_FINGERPRINT, requestFingerprint)
-            putString(EXTRA_TRANSPORT_DESCRIPTOR_DIGEST, transportDescriptorDigest)
+            putString(EXTRA_SOURCE_PLAN_DIGEST, sourcePlanDigest)
+            putInt(EXTRA_SOURCE_KIND, sourceKindCode)
             putLong(EXTRA_EXPECTED_TOTAL_BYTES, expectedTotalBytes)
             putInt(EXTRA_NETWORK_POLICY, networkPolicy.code)
             putBoolean(EXTRA_REQUIRES_CHARGING, requiresCharging)
@@ -98,7 +102,8 @@ internal data class RegistryUidtRequest(
                 manifestDigest = schedule.manifestDigest,
                 trustProfileDigest = schedule.trustProfileDigest,
                 requestFingerprint = schedule.requestFingerprint,
-                transportDescriptorDigest = schedule.transportDescriptorDigest,
+                sourcePlanDigest = schedule.sourcePlanDigest,
+                sourceKindCode = schedule.sourceKindCode,
                 expectedTotalBytes = schedule.expectedTotalBytes,
                 jobId = checkNotNull(schedule.androidJobId),
                 networkPolicy = networkPolicy,
@@ -123,8 +128,9 @@ internal data class RegistryUidtRequest(
                         checkNotNull(extras.getString(EXTRA_TRUST_PROFILE_DIGEST)),
                     requestFingerprint =
                         checkNotNull(extras.getString(EXTRA_REQUEST_FINGERPRINT)),
-                    transportDescriptorDigest =
-                        checkNotNull(extras.getString(EXTRA_TRANSPORT_DESCRIPTOR_DIGEST)),
+                    sourcePlanDigest =
+                        checkNotNull(extras.getString(EXTRA_SOURCE_PLAN_DIGEST)),
+                    sourceKindCode = extras.getInt(EXTRA_SOURCE_KIND, -1),
                     expectedTotalBytes = extras.getLong(EXTRA_EXPECTED_TOTAL_BYTES, -1),
                     jobId = jobId,
                     networkPolicy =
@@ -365,8 +371,10 @@ internal object RegistryUidtStartupReconciler {
     }
 }
 
-private const val CONTRACT_VERSION = 1
+private const val CONTRACT_VERSION = 2
 private const val ANDROID_UIDT_PLATFORM_CODE = 0
+internal const val REGISTRY_SOURCE_LOCAL_IMPORT = 4
+private val REGISTRY_SOURCE_KIND_CODES = 0..REGISTRY_SOURCE_LOCAL_IMPORT
 private const val SCHEDULE_PREPARED_STATE_CODE = 0
 private const val TRANSFER_SUBMITTED_STATE_CODE = 1
 private const val TRANSFER_ADOPTED_STATE_CODE = 2
@@ -379,7 +387,8 @@ private const val EXTRA_RELEASE_ID = "ob.registry.release_id"
 private const val EXTRA_MANIFEST_DIGEST = "ob.registry.manifest_digest"
 private const val EXTRA_TRUST_PROFILE_DIGEST = "ob.registry.trust_profile_digest"
 private const val EXTRA_REQUEST_FINGERPRINT = "ob.registry.request_fingerprint"
-private const val EXTRA_TRANSPORT_DESCRIPTOR_DIGEST = "ob.registry.transport_descriptor_digest"
+private const val EXTRA_SOURCE_PLAN_DIGEST = "ob.registry.source_plan_digest"
+private const val EXTRA_SOURCE_KIND = "ob.registry.source_kind"
 private const val EXTRA_EXPECTED_TOTAL_BYTES = "ob.registry.expected_total_bytes"
 private const val EXTRA_NETWORK_POLICY = "ob.registry.network_policy"
 private const val EXTRA_REQUIRES_CHARGING = "ob.registry.requires_charging"

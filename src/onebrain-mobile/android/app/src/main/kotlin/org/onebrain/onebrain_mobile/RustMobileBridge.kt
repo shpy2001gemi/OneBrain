@@ -99,8 +99,9 @@ internal data class RustRegistryTransferSchedule(
     val manifestDigest: String,
     val trustProfileDigest: String,
     val requestFingerprint: String,
-    val transportDescriptorDigest: String,
+    val sourcePlanDigest: String,
     val expectedTotalBytes: Long,
+    val sourceKindCode: Int,
     val platformCode: Int,
     val androidJobId: Int?,
     val osTransferId: String?,
@@ -268,8 +269,9 @@ internal object RustMobileBridge {
         operationId: String,
         manifestDigest: String,
         platformCode: Int,
+        sourceKindCode: Int,
         requestFingerprint: String,
-        transportDescriptorDigest: String,
+        sourcePlanDigest: String,
         expectedTotalBytes: Long,
         foregroundUserResume: Boolean,
     ): RustRegistryTransferSchedule {
@@ -279,8 +281,9 @@ internal object RustMobileBridge {
                 operationId,
                 manifestDigest,
                 platformCode,
+                sourceKindCode,
                 requestFingerprint,
-                transportDescriptorDigest,
+                sourcePlanDigest,
                 expectedTotalBytes,
                 foregroundUserResume,
             ),
@@ -460,7 +463,7 @@ internal object RustMobileBridge {
             "Rust Registry transfer barrier rejected the operation (${encoded.removePrefix("ERR:")})"
         }
         val fields = encoded.split('|')
-        check(fields.size == 18) {
+        check(fields.size == 19) {
             "Rust mobile runtime returned an invalid Registry transfer schedule"
         }
         return RustRegistryTransferSchedule(
@@ -470,15 +473,16 @@ internal object RustMobileBridge {
             manifestDigest = fields[3],
             trustProfileDigest = fields[4],
             requestFingerprint = fields[5],
-            transportDescriptorDigest = fields[6],
+            sourcePlanDigest = fields[6],
             expectedTotalBytes = fields[7].toLong(),
-            platformCode = fields[8].toInt(),
-            androidJobId = fields[9].toInt().takeIf { fields[10] == "1" },
-            osTransferId = fields[11].ifEmpty { null },
-            stateCode = fields[12].toInt(),
-            preparedProcessGeneration = fields[13].toLong(),
-            submittedProcessGeneration = fields[14].toLong().takeIf { fields[15] == "1" },
-            adoptedProcessGeneration = fields[16].toLong().takeIf { fields[17] == "1" },
+            sourceKindCode = fields[8].toInt(),
+            platformCode = fields[9].toInt(),
+            androidJobId = fields[10].toInt().takeIf { fields[11] == "1" },
+            osTransferId = fields[12].ifEmpty { null },
+            stateCode = fields[13].toInt(),
+            preparedProcessGeneration = fields[14].toLong(),
+            submittedProcessGeneration = fields[15].toLong().takeIf { fields[16] == "1" },
+            adoptedProcessGeneration = fields[17].toLong().takeIf { fields[18] == "1" },
         )
     }
 
@@ -768,8 +772,9 @@ internal object RustMobileBridge {
         operationId: String,
         manifestDigest: String,
         platformCode: Int,
+        sourceKindCode: Int,
         requestFingerprint: String,
-        transportDescriptorDigest: String,
+        sourcePlanDigest: String,
         expectedTotalBytes: Long,
         foregroundUserResume: Boolean,
     ): String

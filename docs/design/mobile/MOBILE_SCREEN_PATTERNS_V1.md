@@ -157,7 +157,9 @@ Anatomy:
 
 - verb-specific title;
 - current state → proposed state;
-- exact object, recipient/provider, bytes/cost/retention/permanence;
+- exact object, recipient/provider, bytes/cost/retention/permanence; Registry
+  Init additionally separates its non-authoritative provider source plan from
+  the OS executor and never implies a required central endpoint;
 - disclosure and consequence sections;
 - fresh-state/plan validity;
 - explicit secondary Cancel/Defer and primary named commit.
@@ -174,6 +176,8 @@ Anatomy:
 
 - operation name and scoped badge;
 - exact progress/bytes;
+- selected source kind, independent executor and bounded failover attempts when
+  the owning operation uses a provider plan;
 - durable step timeline;
 - current wait/pause/failure reason;
 - retained verified progress and resource facts;

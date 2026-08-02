@@ -76,7 +76,7 @@ def verify() -> dict[str, object]:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "scope": (
             "MOB-05B signed admission, durable barrier, Android UIDT and "
-            "native verified streaming before network response execution"
+            "native verified streaming before concrete provider response execution"
         ),
         "files_scanned": counts,
         "forbidden_transport_reference_count": len(violations),
@@ -84,8 +84,9 @@ def verify() -> dict[str, object]:
         "limitations": (
             "The Android UIDT adapter and native Rust byte stream are intentionally "
             "present, but no Kotlin/Swift/Rust HTTP or socket implementation exists. "
-            "The next MOB-05B slice must add approved signed HTTPS landing/range "
-            "and iOS background-URLSession with packet and recovery tests."
+            "The next MOB-05B slice must add direct-peer/community-seed and local-import "
+            "providers as first-class paths, optional HTTPS mirror/carrier execution, "
+            "and bounded iOS execution with packet and recovery tests."
         ),
     }
 

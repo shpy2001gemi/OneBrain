@@ -21,14 +21,14 @@ use onebrain_mobile_core::{
     ActivationPhase, AppLockPolicy, MobileFeatureFlags, MobileRuntimeFacade, MobileRuntimeSnapshot,
     OnboardingCursor, RegistryChunkRecord, RegistryChunkState, RegistryChunkWriteProgress,
     RegistryChunkWriteSession, RegistryChunkWriteStart, RegistryInitPlan, RegistryLandingProgress,
-    RegistryNetworkPolicy, RegistryOperationState, RegistryTransferPlatform,
+    RegistryNetworkPolicy, RegistryOperationState, RegistrySourceKind, RegistryTransferPlatform,
     RegistryTransferScheduleRecord, RegistryTransferScheduleState, ResourceBudgets,
     RuntimeServices, SecurityBootstrapMaterial, SecuritySessionState,
     REGISTRY_NATIVE_BLOCK_MAX_BYTES,
 };
 
 /// Stable ABI revision understood by the current Swift/Kotlin adapters.
-pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 11;
+pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 12;
 
 pub const OB_MOBILE_RUNTIME_OK: u32 = 0;
 pub const OB_MOBILE_RUNTIME_INVALID_PATH: u32 = 1;
@@ -205,11 +205,12 @@ pub struct ObMobileRegistryTransferSchedule {
     pub trust_profile_digest_len: u32,
     pub request_fingerprint: [u8; 65],
     pub request_fingerprint_len: u32,
-    pub transport_descriptor_digest: [u8; 65],
-    pub transport_descriptor_digest_len: u32,
+    pub source_plan_digest: [u8; 65],
+    pub source_plan_digest_len: u32,
     pub os_transfer_id: [u8; 257],
     pub os_transfer_id_len: u32,
     pub expected_total_bytes: u64,
+    pub source_kind_code: u32,
     pub platform_code: u32,
     pub android_job_id: u32,
     pub has_android_job_id: u8,
@@ -237,11 +238,12 @@ impl ObMobileRegistryTransferSchedule {
             trust_profile_digest_len: 0,
             request_fingerprint: [0; 65],
             request_fingerprint_len: 0,
-            transport_descriptor_digest: [0; 65],
-            transport_descriptor_digest_len: 0,
+            source_plan_digest: [0; 65],
+            source_plan_digest_len: 0,
             os_transfer_id: [0; 257],
             os_transfer_id_len: 0,
             expected_total_bytes: 0,
+            source_kind_code: 0,
             platform_code: 0,
             android_job_id: 0,
             has_android_job_id: 0,
@@ -270,14 +272,15 @@ impl ObMobileRegistryTransferSchedule {
             &mut bridged.request_fingerprint,
             &schedule.request_fingerprint,
         );
-        bridged.transport_descriptor_digest_len = copy_utf8(
-            &mut bridged.transport_descriptor_digest,
-            &schedule.transport_descriptor_digest,
+        bridged.source_plan_digest_len = copy_utf8(
+            &mut bridged.source_plan_digest,
+            &schedule.source_plan_digest,
         );
         if let Some(os_transfer_id) = schedule.os_transfer_id.as_deref() {
             bridged.os_transfer_id_len = copy_utf8(&mut bridged.os_transfer_id, os_transfer_id);
         }
         bridged.expected_total_bytes = schedule.expected_total_bytes;
+        bridged.source_kind_code = registry_source_kind_code(schedule.source_kind);
         bridged.platform_code = registry_transfer_platform_code(schedule.platform);
         if let Some(job_id) = schedule.android_job_id {
             bridged.android_job_id = job_id;
@@ -745,8 +748,9 @@ pub unsafe extern "C" fn ob_mobile_runtime_confirm_registry_init_signed(
 }
 
 /// Persist the exact pre-scheduler Registry transfer barrier. The request and
-/// approved transport descriptor arrive only as already verified digests; no
-/// URL, path, credential, or transport handle crosses this ABI.
+/// approved source plan arrive only as already verified digests; the selected
+/// source kind is independent of the OS executor. No URL, path, credential, or
+/// provider handle crosses this ABI.
 ///
 /// # Safety
 ///
@@ -759,10 +763,11 @@ pub unsafe extern "C" fn ob_mobile_runtime_prepare_registry_transfer_schedule_ut
     manifest_digest: *const u8,
     manifest_digest_len: usize,
     platform_code: u32,
+    source_kind_code: u32,
     request_fingerprint: *const u8,
     request_fingerprint_len: usize,
-    transport_descriptor_digest: *const u8,
-    transport_descriptor_digest_len: usize,
+    source_plan_digest: *const u8,
+    source_plan_digest_len: usize,
     expected_total_bytes: u64,
     foreground_user_resume: u8,
 ) -> ObMobileRegistryTransferSchedule {
@@ -778,26 +783,26 @@ pub unsafe extern "C" fn ob_mobile_runtime_prepare_registry_transfer_schedule_ut
     let Some(platform) = registry_transfer_platform(platform_code) else {
         return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
     };
+    let Some(source_kind) = registry_source_kind(source_kind_code) else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
     let Some(request_fingerprint) =
         (unsafe { parse_bounded_utf8(request_fingerprint, request_fingerprint_len, 64) })
     else {
         return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
     };
-    let Some(transport_descriptor_digest) = (unsafe {
-        parse_bounded_utf8(
-            transport_descriptor_digest,
-            transport_descriptor_digest_len,
-            64,
-        )
-    }) else {
+    let Some(source_plan_digest) =
+        (unsafe { parse_bounded_utf8(source_plan_digest, source_plan_digest_len, 64) })
+    else {
         return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
     };
     prepare_registry_transfer_schedule(
         operation_id,
         manifest_digest,
         platform,
+        source_kind,
         request_fingerprint,
-        transport_descriptor_digest,
+        source_plan_digest,
         expected_total_bytes,
         foreground_user_resume != 0,
     )
@@ -1551,8 +1556,9 @@ fn prepare_registry_transfer_schedule(
     operation_id: &str,
     manifest_digest: &str,
     platform: RegistryTransferPlatform,
+    source_kind: RegistrySourceKind,
     request_fingerprint: &str,
-    transport_descriptor_digest: &str,
+    source_plan_digest: &str,
     expected_total_bytes: u64,
     foreground_user_resume: bool,
 ) -> ObMobileRegistryTransferSchedule {
@@ -1568,8 +1574,9 @@ fn prepare_registry_transfer_schedule(
         operation_id,
         manifest_digest,
         platform,
+        source_kind,
         request_fingerprint,
-        transport_descriptor_digest,
+        source_plan_digest,
         expected_total_bytes,
         foreground_user_resume,
     ) {
@@ -2143,7 +2150,7 @@ const fn registry_transfer_platform(code: u32) -> Option<RegistryTransferPlatfor
     match code {
         0 => Some(RegistryTransferPlatform::AndroidUidt),
         1 => Some(RegistryTransferPlatform::IosBackgroundUrlSession),
-        2 => Some(RegistryTransferPlatform::ForegroundHttps),
+        2 => Some(RegistryTransferPlatform::ForegroundNative),
         _ => None,
     }
 }
@@ -2152,7 +2159,28 @@ const fn registry_transfer_platform_code(platform: RegistryTransferPlatform) -> 
     match platform {
         RegistryTransferPlatform::AndroidUidt => 0,
         RegistryTransferPlatform::IosBackgroundUrlSession => 1,
-        RegistryTransferPlatform::ForegroundHttps => 2,
+        RegistryTransferPlatform::ForegroundNative => 2,
+    }
+}
+
+const fn registry_source_kind(code: u32) -> Option<RegistrySourceKind> {
+    match code {
+        0 => Some(RegistrySourceKind::DirectPeer),
+        1 => Some(RegistrySourceKind::CommunitySeed),
+        2 => Some(RegistrySourceKind::CarrierPeer),
+        3 => Some(RegistrySourceKind::HttpsMirror),
+        4 => Some(RegistrySourceKind::LocalImport),
+        _ => None,
+    }
+}
+
+const fn registry_source_kind_code(source_kind: RegistrySourceKind) -> u32 {
+    match source_kind {
+        RegistrySourceKind::DirectPeer => 0,
+        RegistrySourceKind::CommunitySeed => 1,
+        RegistrySourceKind::CarrierPeer => 2,
+        RegistrySourceKind::HttpsMirror => 3,
+        RegistrySourceKind::LocalImport => 4,
     }
 }
 
@@ -2233,7 +2261,7 @@ mod android {
         open_runtime_secured, owned_media, owned_media_count, pending_share_spool_at,
         prepare_registry_chunk_ledger, prepare_registry_init, prepare_registry_transfer_schedule,
         record_registry_transfer_missing, recover_registry_chunk_ledger, registry_landing_progress,
-        registry_network_policy, registry_transfer_platform,
+        registry_network_policy, registry_source_kind, registry_transfer_platform,
         registry_transfer_schedule_for_channel, runtime_snapshot, save_raw_text_draft,
         start_media_stage, suspend_registry_chunk_write, ObMobileRegistryChunkWriteReceipt,
         ObMobileRegistryLandingProgress, ObMobileRegistryPlan, ObMobileRegistryTransferSchedule,
@@ -2451,8 +2479,9 @@ mod android {
         operation_id: JString<'caller>,
         manifest_digest: JString<'caller>,
         platform_code: jint,
+        source_kind_code: jint,
         request_fingerprint: JString<'caller>,
-        transport_descriptor_digest: JString<'caller>,
+        source_plan_digest: JString<'caller>,
         expected_total_bytes: jlong,
         foreground_user_resume: jboolean,
     ) -> JString<'caller> {
@@ -2465,20 +2494,22 @@ mod android {
         let request_fingerprint = unowned_env
             .with_env(|env| request_fingerprint.try_to_string(env))
             .resolve::<ThrowRuntimeExAndDefault>();
-        let transport_descriptor_digest = unowned_env
-            .with_env(|env| transport_descriptor_digest.try_to_string(env))
+        let source_plan_digest = unowned_env
+            .with_env(|env| source_plan_digest.try_to_string(env))
             .resolve::<ThrowRuntimeExAndDefault>();
         let schedule = registry_transfer_platform(platform_code as u32)
+            .zip(registry_source_kind(source_kind_code as u32))
             .filter(|_| expected_total_bytes > 0)
             .map_or_else(
                 || ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT),
-                |platform| {
+                |(platform, source_kind)| {
                     prepare_registry_transfer_schedule(
                         &operation_id,
                         &manifest_digest,
                         platform,
+                        source_kind,
                         &request_fingerprint,
-                        &transport_descriptor_digest,
+                        &source_plan_digest,
                         expected_total_bytes as u64,
                         foreground_user_resume != JNI_FALSE,
                     )
@@ -3254,15 +3285,16 @@ mod android {
             &schedule.request_fingerprint,
             schedule.request_fingerprint_len,
         );
-        let transport_descriptor_digest = encoded_utf8_field(
-            &schedule.transport_descriptor_digest,
-            schedule.transport_descriptor_digest_len,
+        let source_plan_digest = encoded_utf8_field(
+            &schedule.source_plan_digest,
+            schedule.source_plan_digest_len,
         );
         let os_transfer_id =
             encoded_utf8_field(&schedule.os_transfer_id, schedule.os_transfer_id_len);
         format!(
-            "{transfer_nonce}|{operation_id}|{release_id}|{manifest_digest}|{trust_profile_digest}|{request_fingerprint}|{transport_descriptor_digest}|{}|{}|{}|{}|{os_transfer_id}|{}|{}|{}|{}|{}|{}",
+            "{transfer_nonce}|{operation_id}|{release_id}|{manifest_digest}|{trust_profile_digest}|{request_fingerprint}|{source_plan_digest}|{}|{}|{}|{}|{}|{os_transfer_id}|{}|{}|{}|{}|{}|{}",
             schedule.expected_total_bytes,
+            schedule.source_kind_code,
             schedule.platform_code,
             schedule.android_job_id,
             schedule.has_android_job_id,
@@ -3322,7 +3354,7 @@ mod tests {
 
     #[test]
     fn abi_and_version_are_bounded_and_stable() {
-        assert_eq!(ob_mobile_bridge_abi_version(), 11);
+        assert_eq!(ob_mobile_bridge_abi_version(), 12);
         let version = unsafe { CStr::from_ptr(ob_mobile_bridge_core_version()) };
         assert_eq!(version.to_str().expect("version UTF-8"), "0.1.0");
         assert!(version.to_bytes().len() <= 32);
@@ -3337,8 +3369,9 @@ mod tests {
             manifest_digest: "bb".repeat(32),
             trust_profile_digest: "cc".repeat(32),
             request_fingerprint: "dd".repeat(32),
-            transport_descriptor_digest: "ee".repeat(32),
+            source_plan_digest: "ee".repeat(32),
             expected_total_bytes: 2_207_418_368,
+            source_kind: RegistrySourceKind::DirectPeer,
             platform: RegistryTransferPlatform::AndroidUidt,
             android_job_id: Some(42),
             os_transfer_id: Some("android-job:42".into()),
@@ -3349,6 +3382,7 @@ mod tests {
         };
         let bridged = ObMobileRegistryTransferSchedule::from_core(record);
         assert_eq!(bridged.status_code, OB_MOBILE_RUNTIME_OK);
+        assert_eq!(bridged.source_kind_code, 0);
         assert_eq!(bridged.platform_code, 0);
         assert_eq!(bridged.android_job_id, 42);
         assert_eq!(bridged.has_android_job_id, 1);

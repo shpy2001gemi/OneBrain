@@ -7,10 +7,10 @@ use crate::{
     RegistryChunkRecord, RegistryChunkWriteProgress, RegistryChunkWriteSession,
     RegistryChunkWriteStart, RegistryLandingProgress, RegistryLimitedReceipt,
     RegistryNetworkPolicy, RegistryOperationRecord, RegistryOperationState,
-    RegistryReleaseCatalogRecord, RegistryTransferPlatform, RegistryTransferScheduleRecord,
-    RegistryTrustProfile, ResourceBudgets, RuntimeServices, SecureIdentitySession,
-    SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary, TransferLandingRecord,
-    MOBILE_RUNTIME_PROFILE_VERSION,
+    RegistryReleaseCatalogRecord, RegistrySourceKind, RegistryTransferPlatform,
+    RegistryTransferScheduleRecord, RegistryTrustProfile, ResourceBudgets, RuntimeServices,
+    SecureIdentitySession, SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary,
+    TransferLandingRecord, MOBILE_RUNTIME_PROFILE_VERSION,
 };
 
 const FOREGROUND_GRANT_ID: &str = "native.foreground";
@@ -595,8 +595,9 @@ impl MobileRuntimeFacade {
         operation_id: &str,
         manifest_digest: &str,
         platform: RegistryTransferPlatform,
+        source_kind: RegistrySourceKind,
         request_fingerprint: &str,
-        transport_descriptor_digest: &str,
+        source_plan_digest: &str,
         expected_total_bytes: u64,
         foreground_user_resume: bool,
     ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
@@ -604,8 +605,9 @@ impl MobileRuntimeFacade {
             operation_id,
             manifest_digest,
             platform,
+            source_kind,
             request_fingerprint,
-            transport_descriptor_digest,
+            source_plan_digest,
             expected_total_bytes,
             foreground_user_resume,
             &self.budgets,

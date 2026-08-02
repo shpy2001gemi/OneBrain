@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "contract_id": "onebrain-mobile-owner-approved-v1",
   "scope_root": "src/onebrain-mobile",
-  "authority_set_sha256": "c424b47fcc597d8ba74c17ea9e851363e8492a52be686ca304fbee38d2ac5273",
+  "authority_set_sha256": "538add5f4b07be897bc1bd7aaea35585f1564f0f9f0848bd67d4fe433a27657c",
   "required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -26,32 +26,32 @@
     {
       "role": "mobile_technical_architecture",
       "path": "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
-      "heading": "# WIP Mobile App Technical Architecture V1.1",
-      "sha256": "5dad95637e1e67b30809b9cfa1ef9cba3a5d30cc858ad6439dbd5896857c9910"
+      "heading": "# WIP Mobile App Technical Architecture V1.2",
+      "sha256": "2b015aedb8e09f42f88cee145c6968569a246fe1ae31bb9a58157de1206a530a"
     },
     {
       "role": "mobile_delivery_sequence",
       "path": "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
-      "heading": "# WIP Mobile App Analysis and Implementation Plan V1.3",
-      "sha256": "649f81ac81cc394099bba4d07089fd2bcd079cb71067c5da2aca5d2debd13ad9"
+      "heading": "# WIP Mobile App Analysis and Implementation Plan V1.4",
+      "sha256": "268b8d36d44b7fd55809a0b1936787254e1a3046afa30ec60042cb134eff57eb"
     },
     {
       "role": "mobile_feature_inventory",
       "path": "docs/features/mobile/MOBILE_APP_FEATURE_TREE_V1.md",
       "heading": "# OneBrain Mobile App Feature Tree V1",
-      "sha256": "d72f8e67c4fa3def9b7fc1d22974e19d9ef00e435a85d86bb2f6aa38f18f18e9"
+      "sha256": "64c55213d00c5111a28b57efc05b46fce97f9018af8f205508e4f91132ad2578"
     },
     {
       "role": "mobile_feature_contracts",
       "path": "docs/features/mobile/MOBILE_APP_FEATURE_DETAILS_V1.md",
       "heading": "# OneBrain Mobile App Feature Details V1",
-      "sha256": "426594ab946669e95121b59c4c8669827d0c98d51868680bb883b04b5fbfec8d"
+      "sha256": "89b31f246042b0db435cc68fd6f5574d3dd95efd53c9cf71f5d1abc268061a33"
     },
     {
       "role": "mobile_information_architecture",
       "path": "docs/features/mobile/MOBILE_APP_SITEMAP_V1.md",
       "heading": "# OneBrain Mobile App Sitemap V1",
-      "sha256": "b904b71995cd1b35705c6e3feca283f70195cf3dd4c956a56c8b3731093046ed"
+      "sha256": "dddc11f195f7497d274c5f28779cde450f71e740f1a5a76091b042d1f50bf440"
     },
     {
       "role": "mobile_visual_foundations",
@@ -63,13 +63,13 @@
       "role": "mobile_component_contracts",
       "path": "docs/design/mobile/MOBILE_COMPONENT_CATALOG_V1.md",
       "heading": "# OneBrain Mobile Component Catalog V1",
-      "sha256": "e05ccc597b1106f1f266c9d93be288b61a0a9a45feb9ed26f287296eeef95f8a"
+      "sha256": "09a04897205cc21f8124932cb0d25413fc979badb14c09b7eb0a72c44fd01ceb"
     },
     {
       "role": "mobile_screen_composition",
       "path": "docs/design/mobile/MOBILE_SCREEN_PATTERNS_V1.md",
       "heading": "# OneBrain Mobile Screen Patterns V1",
-      "sha256": "15915028ca81c0d05becb4590e5fb1bdf42d6f3406ce611b884b13e6c32f92c0"
+      "sha256": "d93e56073424b10dcec1686293fe68a6cb8bfa7a86cbdc9fa72bd2de846c6977"
     },
     {
       "role": "mobile_machine_design_tokens",

@@ -2,7 +2,7 @@
 
 > Status: **Target product specification — not implementation evidence**
 >
-> Snapshot: **2026-07-29 (Asia/Saigon)**
+> Snapshot: **2026-08-02 (Asia/Saigon)**
 >
 > Scope: iOS and Android autonomous OneBrain nodes.
 >
@@ -105,8 +105,8 @@ all required unless the annotation explicitly says “by route”.
 | `MOB-GATE-CORE` | Flutter/native/Rust bridge, one writer, lifecycle kill recovery, physical iOS/Android launch |
 | `MOB-GATE-ARCHIVE` | new vault-encrypted/versioned backup and staged data-restore path, wrong-key/corrupt/kill tests, fresh local installation-epoch/marker binding, same-device iOS reinstall rotation, whole-tuple security-high-water selection and newer-profile upgrade handling, with no generic-OS authority restore or legacy plaintext export |
 | `MOB-GATE-RECOVERY` | typed identity recovery/migration, wrong-key and duplicate-identity drills |
-| `MOB-GATE-REGISTRY` | post-launch Init proves embedded V1 trust-profile/fresh-install floors, exact channel/release/chunk wire golden/rejection vectors, per-channel plus publisher-global exact high-water, atomic manifest/high-water/revocation acceptance, signed-manifest resolution, durable Begin/Defer/Confirm, initial/remaining capacity and network consent, OS schedule prepare/adopt, resumable download, final trust/compatibility fence, full verification, mmap/query smoke, atomic activation, deterministic health completion and independent readiness requery on physical iOS/Android devices; clean-install failure compensates to `BootstrapOnly`, while update failure may preserve only an eligible healthy, compatible, non-revoked previous release; APK/AAB/IPA/install modes contain no Registry bytes and generic OS restore cannot restore OneBrain authority |
-| `MOB-GATE-OFFLINE-MVP` | after one exact Registry release is health-complete and readiness derives `ReadyOffline`, capture/save/search/local KQL/backup passes in airplane mode with every LLM/node-network lane disabled; a fresh offline install remains honestly `InitWaitingForNetwork`, never `ReadyOffline` |
+| `MOB-GATE-REGISTRY` | post-launch Init proves embedded V1 trust-profile/fresh-install floors, exact channel/release/chunk wire golden/rejection vectors, per-channel plus publisher-global exact high-water, atomic manifest/high-water/revocation acceptance, signed-manifest resolution, durable Begin/Defer/Confirm, initial/remaining capacity and network consent, canonical multi-provider `RegistrySourcePlan`, source-kind/executor separation, OS schedule prepare/adopt, resumable download, deterministic provider failover, final trust/compatibility fence, full verification, mmap/query smoke, atomic activation, deterministic health completion and independent readiness requery on physical iOS/Android devices; clean-install failure compensates to `BootstrapOnly`, while update failure may preserve only an eligible healthy, compatible, non-revoked previous release; APK/AAB/IPA/install modes contain no Registry bytes, generic OS restore cannot restore OneBrain authority, and clean-device provisioning must pass through a direct peer/community seed or local import while every OneBrain-operated HTTPS mirror is blocked |
+| `MOB-GATE-OFFLINE-MVP` | after one exact Registry release is health-complete and readiness derives `ReadyOffline`, capture/save/search/local KQL/backup passes in airplane mode with every LLM/node-network lane disabled; a fresh install without any eligible Registry source remains honestly `InitWaitingForSource`, never `ReadyOffline` |
 | `MOB-GATE-KU-ENCODE` | exact `LOCAL_ONLY` source intake, resolved CCIDs/source spans, deterministic canonical encode/validation, verified private storage, idempotency and kill recovery; no network or LLM required |
 | `MOB-GATE-FIDELITY` | protocol `FID-001/002/003` publisher-attempt, external-blind commit/reveal and categorical evidence contracts, alternate preservation and frontier-relative reducer; no cross-node source exchange |
 | `MOB-GATE-AI` | exact model/system/route qualification, applicable license, task × input-language × output-locale and structured-output evaluation; app-managed local routes also require device/resource evidence |
@@ -207,10 +207,13 @@ Onboarding must lead to a useful private/offline node after Init. A fresh
 installation can create its node and retain encrypted raw drafts while Init is
 waiting, but it is not `ReadyOffline` until the complete required release passes
 the activation health gate, its operation is `Completed`, and readiness is
-independently re-derived. The HTTPS/OS artifact-transfer lane used by Init is
-distinct from node network participation. Notification, cloud AI, local model,
-LAN, camera, microphone, and P2P permissions are requested later in context,
-not as a blanket first-run wall.
+independently re-derived. The scoped Registry provider lane prefers direct
+OneBrain peers/community seeds, accepts user-selected local import, and may use
+an optional HTTPS mirror/carrier without treating it as authority. That lane is
+distinct from normal node reconciliation, publication, media seeding, and
+Networked Beta participation. Notification, cloud AI, local model, LAN, camera,
+microphone, and broader peer permissions are requested later in context, not as
+a blanket first-run wall.
 
 ### 4.2 Identity, lock, recovery, and privacy — `MOB-SEC`
 

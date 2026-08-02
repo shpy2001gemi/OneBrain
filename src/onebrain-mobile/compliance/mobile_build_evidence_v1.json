@@ -1,7 +1,7 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "c424b47fcc597d8ba74c17ea9e851363e8492a52be686ca304fbee38d2ac5273",
+  "authority_set_sha256": "538add5f4b07be897bc1bd7aaea35585f1564f0f9f0848bd67d4fe433a27657c",
   "phase": "feature",
   "work_package": "MOB-05",
   "acknowledged_required_read_set": [
@@ -65,6 +65,9 @@
     "MOB-SCR-INI-002",
     "MOB-SCR-OPS-001",
     "MOB-SCR-OPS-002",
+    "MOB-SCR-DAT-001",
+    "MOB-SCR-DAT-002",
+    "MOB-SCR-SYS-004",
     "MOB-SCR-HOM-001",
     "MOB-SCR-LIB-001",
     "MOB-SCR-CAP-001",
@@ -88,9 +91,12 @@
     "OBM-CMP-OPS-002",
     "OBM-CMP-OPS-003",
     "OBM-CMP-OPS-004",
+    "OBM-CMP-OPS-005",
     "OBM-CMP-STA-001",
     "OBM-CMP-STA-002",
+    "OBM-CMP-STA-003",
     "OBM-CMP-STA-004",
+    "OBM-CMP-STA-006",
     "OBM-CMP-FBK-005",
     "OBM-PAT-001",
     "OBM-PAT-002",
@@ -447,7 +453,7 @@
     {
       "id": "MOB-05B-DURABLE-TRANSFER-BARRIER",
       "path": "src/onebrain-mobile-core/src/bootstrap.rs",
-      "proves": "Rust atomically binds a CSPRNG transfer nonce, exact operation/release/manifest/trust/byte tuple, complete request and approved-descriptor fingerprints, platform kind, prechosen Android job ID and process-generation receipts across SchedulePrepared, TransferSubmitted and TransferAdopted. Prepared-before-submit is retryable; a missing submitted/adopted task becomes conservative foreground-Resume-required state, and positive user-stop evidence remains distinct."
+      "proves": "Rust atomically binds a CSPRNG transfer nonce, exact operation/release/manifest/trust/byte tuple, request fingerprint, canonical source-plan digest, explicit provider source kind, independent OS executor, prechosen Android job ID and process-generation receipts across SchedulePrepared, TransferSubmitted and TransferAdopted. An active schedule cannot be rebound to another provider plan, source kind, executor or request; missing submitted/adopted work becomes conservative foreground-Resume-required state and positive user-stop evidence remains distinct."
     },
     {
       "id": "MOB-05B-TRANSFER-CRASH-WINDOW-TESTS",
@@ -457,7 +463,12 @@
     {
       "id": "MOB-05B-NATIVE-ONLY-ABI",
       "path": "src/onebrain-mobile-bridge/include/onebrain_mobile_bridge.h",
-      "proves": "Generated ABI 11 preserves bounded prepare, submit, adopt, missing-task and channel-scoped active-schedule recovery, then adds manifest-derived native chunk prepare/recover/begin/append/checkpoint/finish/suspend receipts for Swift/Kotlin callbacks without placing any URL, credential, filesystem path, database handle, transport descriptor bytes or OS transfer handle in the Pigeon/Dart contract."
+      "proves": "Generated ABI 12 preserves bounded prepare, submit, adopt, missing-task and channel-scoped active-schedule recovery plus manifest-derived native chunk receipts. It binds one canonical source-plan digest and explicit source-kind code independently from the OS-executor code without placing any URL, provider handle, credential, filesystem path, database handle or OS transfer handle in the Pigeon/Dart contract."
+    },
+    {
+      "id": "MOB-05B-DECENTRALIZED-SOURCE-PLAN-CONTRACT",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_decentralized_source_plan_contract.json",
+      "proves": "ABI 12 and Android persisted-job contract version 2 distinguish DirectPeer, CommunitySeed, CarrierPeer, optional HttpsMirror and LocalImport from AndroidUidt, IosBackgroundUrlSession and ForegroundNative executors. Rust replay tests reject source-kind rebinding, Kotlin compiles, static isolation remains green and no central endpoint or production provider implementation is embedded."
     },
     {
       "id": "MOB-05B-ANDROID-ABI-INTEGRATION",
@@ -487,7 +498,7 @@
     {
       "id": "MOB-05B-ANDROID-UIDT-SCHEDULER",
       "path": "src/onebrain-mobile/android/app/src/main/kotlin/org/onebrain/onebrain_mobile/RegistryUidtScheduler.kt",
-      "proves": "Android 14+ uses the platform JobScheduler UIDT API in a dedicated namespace with the Rust-prechosen job ID, persisted bounded primitive bindings, exact manifest byte estimate and typed network/charging/battery/storage constraints. Native startup enumerates and adopts or conservatively marks a missing submitted job without Flutter, URL, credential or byte-transport authority."
+      "proves": "Android 14+ uses the platform JobScheduler UIDT API in a dedicated namespace with the Rust-prechosen job ID, persisted bounded source-plan digest/source-kind bindings, exact manifest byte estimate and typed network/charging/battery/storage constraints. Native startup enumerates and adopts or conservatively marks a missing submitted job without Flutter, URL, credential or byte-provider authority."
     },
     {
       "id": "MOB-05B-ANDROID-UIDT-SERVICE",
@@ -577,5 +588,5 @@
   ],
   "deviations": [],
   "last_reviewed": "2026-08-02",
-  "notes": "MOB-05A admission, the MOB-05B Rust root barrier, Android UIDT scheduler/adoption and ABI-11 transport-neutral native chunk stream are active. ABI 11 lets Swift/Kotlin recover the durable schedule and stream bounded OS-owned blocks into a manifest-derived Rust session with explicit written/durable progress; Flutter still receives no bytes, scheduler handle, path, URL or transport authority. Android 16 evidence separately covers real namespaced/persisted UIDT schedule inventory/adoption/user Stop and an isolated native callback checkpoint/process-death/resume/BytesComplete journey using the public 6 KiB signed fixture. The callback gate cancels its debug OS job before process death and does not replace UIDT reconciliation evidence. Rust rejects corrupt/mixed/overrun bytes and recovers durable partials, but no Android/iOS network response body is connected. The release still has no INTERNET, production trust profile or approved transport descriptor. MOB-05B must connect owner-approved signed HTTPS range responses and live policy and finish iOS background URLSession; MOB-05C must add whole-artifact receipts and qualify/activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. Task Manager Stop, reboot/Doze/thermal, full-size target-filesystem, physical-device, fresh 72-hour P5, multi-host canary and MOB-08 gates remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding, ReadyOffline or product-readiness claim is made."
+  "notes": "MOB-05A admission, the MOB-05B Rust root barrier, Android UIDT scheduler/adoption and ABI-12 provider-neutral native chunk stream are active. ABI 12 lets Swift/Kotlin recover the durable schedule and binds a canonical source-plan digest plus DirectPeer, CommunitySeed, CarrierPeer, optional HttpsMirror or LocalImport independently from AndroidUidt, IosBackgroundUrlSession or ForegroundNative execution; Flutter still receives no bytes, scheduler handle, path, URL or provider authority. Android 16 evidence separately covers real namespaced/persisted UIDT schedule inventory/adoption/user Stop and an isolated native callback checkpoint/process-death/resume/BytesComplete journey using the public 6 KiB signed fixture. Rust rejects corrupt/mixed/overrun bytes and source/executor rebinding and recovers durable partials, but no Android/iOS provider response body is connected. The release still has no INTERNET, production trust profile, provider endpoint or production source-plan descriptor. MOB-05B must implement direct-peer/community-seed and local-import adapters as first-class paths, optional HTTPS mirror/carrier fallback, live policy and bounded iOS execution; MOB-05C must add whole-artifact receipts and qualify/activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. Task Manager Stop, reboot/Doze/thermal, full-size target-filesystem, physical-device, fresh 72-hour P5, multi-host canary and MOB-08 gates remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, normal seeding, ReadyOffline or product-readiness claim is made."
 }

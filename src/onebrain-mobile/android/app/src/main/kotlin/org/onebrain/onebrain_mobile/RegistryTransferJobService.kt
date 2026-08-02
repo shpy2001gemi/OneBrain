@@ -55,9 +55,11 @@ internal class RegistryTransferJobService : JobService() {
                         "uidt_started job=${params.jobId} status=${result.status} " +
                             "matches=${result.matchingJobCount}",
                     )
-                    // MOB-05B intentionally has no URL/byte executor until an owner-issued
-                    // production transport descriptor exists. Finish promptly rather than
-                    // pretending that a foreground/UIDT grant is an always-live worker.
+                    // MOB-05B intentionally has no production provider adapter yet. The
+                    // source-plan contract permits direct peers, community seeds, local
+                    // import, carrier peers, and optional mirrors without embedding any
+                    // provider endpoint. Finish promptly instead of treating a UIDT grant
+                    // as an always-live worker.
                     jobFinished(params, false)
                 } catch (error: Throwable) {
                     Log.e(LOG_TAG, "uidt_failed job=${params.jobId}", error)

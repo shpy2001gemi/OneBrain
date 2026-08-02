@@ -1,6 +1,6 @@
-# WIP Mobile App Analysis and Implementation Plan V1.3
+# WIP Mobile App Analysis and Implementation Plan V1.4
 
-> Status: **ACTIVE IMPLEMENTATION / MOB-05A ADMISSION + MOB-05B ABI-11 NATIVE STREAM FOUNDATION IMPLEMENTED / PRODUCTION HTTPS NEXT**
+> Status: **ACTIVE IMPLEMENTATION / MOB-05A ADMISSION + MOB-05B ABI-12 SOURCE-PLAN CONTRACT IMPLEMENTED / PROVIDER ADAPTERS NEXT**
 >
 > Snapshot: **2026-08-02 (Asia/Saigon)**
 >
@@ -63,6 +63,9 @@ The product architecture is:
   first launch and may consume 2 GB or more. The design optimizes integrity,
   resumable delivery, atomic activation, update, and bounded RAM access rather
   than reducing semantic coverage.
+- Registry Init does not depend on one central server. It resolves the same
+  signed content-addressed release from direct peers/community seeds or local
+  import; HTTPS mirror/carrier delivery is optional and never authority.
 - Android foreground services and iOS continued/background tasks may extend
   execution, but neither makes the process immortal. Every operation is
   resumable, checkpointed, idempotent, and safe after abrupt process death.
@@ -142,7 +145,7 @@ target document does not close a work-package exit by itself.
 | Runtime profile | One-writer process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL fixture, private planner, kill/restart recovery and no-network/no-model default | Full platform/background adapter matrix and physical-device lifecycle evidence |
 | Security/private storage | Android Keystore, iOS Keychain adapter, installation binding, encrypted vault/archive, backup exclusions, fail-closed unexpected-restore tests | Physical backup/restore inspection, biometric/protected-data matrices and complete user recovery UX |
 | Limited private shell | vi/en onboarding, adaptive shared shell, encrypted text capture, Android share spool, Limited status, media import and My Media OwnedOriginal shelf | Canonical KU encode/preview/private Save, complete Library/search/KQL/backup journeys and all remaining screens |
-| Registry Init | Signed admission, durable transfer ledger, ABI-11 native recovery/streaming and Android 14+ UIDT schedule plus native checkpoint/kill/resume/`BytesComplete` emulator proof; release still excludes Registry bytes, `INTERNET`, trust profile and descriptor | Owner-issued trust/descriptor, HTTPS landing/range/chunk transfer, iOS background `URLSession`, 2.2 GB qualification, A/B activation, health, rollback and `ReadyOffline` |
+| Registry Init | Signed admission, durable transfer ledger, ABI-12 source-kind/executor separation, native recovery/streaming and Android 14+ UIDT schedule plus native checkpoint/kill/resume/`BytesComplete` emulator proof; release still excludes Registry bytes, `INTERNET`, production trust and concrete providers | Owner-issued trust plus canonical Registry source-plan descriptor/profile, direct-peer/community-seed and local-import provider adapters, optional HTTPS mirror/carrier adapter, iOS bounded direct/background execution, 2.2 GB qualification, A/B activation, health, rollback and `ReadyOffline` |
 | AI/tools | No-LLM baseline, signed local KQL fixture and proposal-only private-planner feasibility | Provider contract implementation, deterministic ToolOrchestrator journal, local runtime bake-off, system providers, cloud disclosure and model supply chain |
 | Media | Android picker streams to bounded encrypted Rust staging; verified bytes activate as deduplicated `OwnedOriginal` with an owned hold and force-stop recovery | Final piece/pack and manifest layout, viewer, derived share representation, received media, range verification, ENOSPC/large-file matrix and GC |
 | Networking/seeding | No network authority is present in the BootstrapOnly app | P5 and Registry entry gates, peer authorization, reconciliation, provider leases, opportunistic seed policy and multi-device canary |
@@ -259,7 +262,8 @@ features. Reuse the local modules through this narrower graph.
    activation/rollback, CCID stability and bounded resource-qualification
    foundations. `MOB-05` still has not implemented the mobile signed channel
    head/acceptance transaction, explicit capacity/network confirmation,
-   platform transfer, mobile A/B health/GC or 2.2 GB-class device evidence.
+   decentralized provider-plan execution, mobile A/B health/GC or 2.2 GB-class
+   device evidence.
 2. The canonical KU encoding/preview/private Save path is not connected to the
    Limited capture shell. Generic publication remains separately gated.
 3. My KU, Received KU, Received Media, verified viewing/download and range
@@ -478,7 +482,7 @@ To avoid coupling mobile progress to P5, define:
 - **Private Offline MVP**: after one exact post-launch Init release is active,
   useful personal knowledge capture and retrieval with every node-network/public
   lane disabled. A clean offline install remains Limited/
-  `InitWaitingForNetwork`, not `ReadyOffline`.
+  `InitWaitingForSource`, not `ReadyOffline`.
 - **Networked Mobile Beta**: enables this node's bounded P2P/outbound network
   lane only after upstream and mobile-specific gates. It is not a desktop
   companion mode.
@@ -1034,9 +1038,11 @@ the canonical profile bytes defined in architecture §5.0. A changed profile
 digest invalidates every unactivated exact confirmation and returns it to plan.
 
 The app-shipped channel floor supplies the same exact equality binding on a
-fresh install. It bounds rollback to the app build snapshot but cannot prove a
-mirror disclosed the newest later valid head. Reinstall without an
-authenticated OneBrain archive returns to that floor. Archive restore selects
+fresh install. It bounds rollback to the app build snapshot but cannot prove
+that the sampled provider set disclosed the newest later valid head. Comparing
+independently discovered sources reduces single-provider withholding but does
+not prove global freshness. Reinstall without an authenticated OneBrain archive
+returns to that floor. Archive restore selects
 one complete `(head_generation, head_digest)` tuple independently per channel
 and one complete publisher-global
 `(release_sequence, release_id, manifest_digest)` tuple by the higher numeric
@@ -1053,7 +1059,8 @@ of the revocations. A revoked local release stops being
 query/rollback/fallback eligible, and a revoked current release projects
 `RegistryDegraded` until replacement. Local rollback never lowers high-water
 and may select only an already verified, compatible, non-revoked release. App
-Store, Play and CDN TLS are transport controls, not OneBrain release authority.
+Peer authentication, local selection, Store/Play metadata and TLS are source or
+transport controls, not OneBrain release authority.
 The repository's unsigned JSON manifest may remain build provenance and its
 host-local `verification.json` remains a cache only; neither is mobile
 publisher or activation authority.
@@ -1150,7 +1157,7 @@ compatible, non-revoked and bound to valid bootstrap authority:
    compatible, non-revoked previous release remains the rollback guarantee;
    otherwise first provision remains `Provisioning(HealthPending)`;
 4. no current plus a nonterminal/paused first Init is
-   `Provisioning(reason)`, including `InitWaitingForNetwork`;
+   `Provisioning(reason)`, including `InitWaitingForSource`;
 5. no current and no historically completed activation is
    `BootstrapOnly/AwaitingUserInit`, with any last failure shown separately;
 6. every other no-current/no-queryable state after prior success is
@@ -1209,13 +1216,22 @@ pack/unpack peak and display that as a different plan. Recheck capacity before
 each write and activation. Insufficient A/B capacity pauses for cleanup/defer;
 V1 never mutates an active release in place.
 
-### 7.6 Platform delivery
+### 7.6 Decentralized provider plan and platform execution
 
-| Platform | Bootstrap/update strategy |
+The source and executor are independent. A canonical confirmed
+`RegistrySourcePlan/1` binds the exact release/manifest and a sorted bounded set
+of `DIRECT_PEER`, `COMMUNITY_SEED`, `CARRIER_PEER`, `HTTPS_MIRROR` and
+`LOCAL_IMPORT` descriptors. Direct peers/community seeds are the preferred
+network path; local import is a full offline-compatible source; carrier/mirror
+HTTPS is optional. No source identity, URL, TLS session, source count or OS
+receipt can authorize or change release bytes.
+
+| Platform/executor | Bootstrap/update strategy |
 |---|---|
-| Android normative | After visible Init confirmation, signed range/resumable HTTPS through the appropriate user-initiated/OS-managed transfer. Persist continuously because Task Manager/user Stop may kill without a callback; a user-stopped job requires explicit foreground Resume. |
-| Android Play boundary | Do not use Play Asset Delivery for Registry artifacts: even on-demand packs are part of the publishing AAB. Direct post-launch HTTPS keeps the strict clean-AAB invariant. |
-| iOS normative | Signed HTTPS through background `URLSession` after exact Init confirmation. Reassociate by pre-submit nonce/session task description independently of receiving process generation. Copy/clone the ephemeral daemon temp file into a destination-local partial, fsync and rename there; `T` budgets the full source/copy peak unless exact same-volume behavior is proved. User force-quit requires later foreground Resume. |
+| Android UIDT/constrained/foreground | After visible exact confirmation, execute the selected source plan through a user-initiated, constrained or finite foreground grant. The byte stream may come from direct peer, community seed, local import or optional HTTP(S) carrier/mirror. Persist continuously because Task Manager/user Stop may kill without a callback; a stopped job requires explicit foreground Resume. |
+| Android Play boundary | Do not use Play Asset Delivery for Registry artifacts: even on-demand packs are part of the publishing AAB. Post-launch provider execution preserves the strict clean-AAB invariant. |
+| iOS direct peer/local import | Run during foreground or an eligible bounded background grant, checkpoint every bounded batch and disconnect. No generic background QUIC serving or immortal peer session is claimed. |
+| iOS optional HTTPS executor | When a confirmed community seed/carrier/mirror exposes an HTTPS representation, background `URLSession` may continue the same source plan. Reassociate by pre-submit nonce/session task description independently of receiving process generation. Copy/clone the ephemeral daemon temp file into a destination-local partial, fsync and rename there; `T` budgets the full source/copy peak unless exact same-volume behavior is proved. User force-quit requires later foreground Resume. |
 | iOS Background Assets boundary | Do not use Managed Background Assets for Registry V1: system-managed pack updating must not transfer a new multi-gigabyte release before fresh exact confirmation. A future ADR may admit only immutable per-release pack IDs after proving rejection of unsolicited/outdated delivery and budgeting the full landing/copy peak. |
 
 The active app-controlled release belongs in durable application-support/internal
@@ -1223,8 +1239,12 @@ storage, not cache or backup. Public registry bytes need authenticity/integrity,
 not per-file application encryption that defeats mmap; private node data and keys
 remain separately encrypted. Large transfers default to unmetered network,
 charging/battery-not-low and adequate thermal state, with exact user-visible
-one-operation override. This distribution lane works before Networked Beta and
-does not enable peers, P2P, reconciliation, seeding or LAN permission.
+one-operation override. The Registry distribution lane works before Networked
+Beta but is restricted to immutable public Registry metadata/chunks. It does
+not enroll an ordinary peer, exchange user state, reconcile selectors,
+advertise KU/media inventory or enable seeding. Direct-peer source discovery
+through LAN still requires contextual LAN permission; denying it retains manual
+descriptor, local import and optional Internet-source paths.
 
 Native packaging rules exclude the entire mutable OneBrain authority root from
 generic OS backup/restore: `bootstrap.redb`, private/dataset databases,
@@ -1347,7 +1367,7 @@ Timers and push notifications are wake hints, never the only record of work.
 | Short completion/checkpoint | UIKit background execution grace | Lifecycle callback plus bounded worker/FGS drain |
 | Deferrable maintenance | `BGAppRefreshTask` / `BGProcessingTask`, scheduled and interruptible | WorkManager with charging/network/battery constraints |
 | User-started long operation | iOS 26+ `BGContinuedProcessingTask`, visible progress/Live Activity, cancellable and still terminable | User-initiated data transfer or correctly typed FGS with visible notification |
-| Required Registry Init transfer | background `URLSession`; no Managed Background Assets in V1 | UIDT, DownloadManager/OS-managed or constrained direct HTTPS; no PAD |
+| Required Registry Init transfer | direct peer/local import in foreground or bounded grant; optional confirmed peer/carrier/mirror HTTPS through background `URLSession`; no Managed Background Assets in V1 | UIDT/constrained/finite foreground executor over direct peer, community seed, local import or optional HTTP(S) carrier/mirror; no PAD |
 | Optional model transfer | Background Assets/background `URLSession` where qualified | Play for On-device AI/PAD where eligible, user-initiated or OS-managed transfer |
 | Generic always-on P2P listener | **Not available** | No guarantee; only an opt-in, user-visible, policy-compliant bounded session |
 
@@ -1665,7 +1685,7 @@ Status vocabulary:
 | `MOB-02` | **Partial** | Thin mobile crates, process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL/private planner, Android kill recovery | Broader platform lifecycle qualification and any remaining runtime-service adapters; no `ReadyOffline` claim |
 | `MOB-03` | **Partial** | Platform custody adapters, installation binding, encrypted vault/archive, exclusions, corruption and unexpected-restore tests | Physical backup/restore, iOS orphan-Keychain, protected-data/biometric and full recovery UX evidence |
 | `MOB-04` | **Partial** | vi/en Limited shell, onboarding, encrypted raw drafts, Android share spool, status surfaces, system-picker import and My Media shelf | Canonical KU encode/preview/private Save, complete Library/My KU/Received shelves, local search/KQL and export/backup journeys |
-| `MOB-05` | **Partial — MOB-05A admission plus MOB-05B Android UIDT and ABI-11 verified native streaming implemented** | Deterministic signed admission/capacity, ABI-11 native-only schedule lookup and bounded chunk-stream receipts, Android 14+ UIDT scheduling/adoption, process-kill and user-stop receipts, plus a Rust manifest-derived exact chunk ledger with 256 KiB native blocks, 4 MiB/explicit checkpoints, resume rehash, hash/length verification and `BytesComplete` crash recovery; no production transport authority is embedded | Embed owner-issued production trust and approved transport descriptors; connect signed HTTPS range bodies and live policy to the verified landing API, finish iOS background `URLSession`, then MOB-05C whole-artifact verification/activation/health/rollback/GC and real 2.2 GB qualification |
+| `MOB-05` | **Partial — MOB-05A admission plus MOB-05B Android UIDT, verified native streaming and ABI-12 provider-plan binding implemented** | Deterministic signed admission/capacity; ABI-12 schedules bind a canonical source-plan digest and one of direct peer/community seed/carrier peer/optional HTTPS mirror/local import independently from Android UIDT/iOS URLSession/foreground-native execution; Android 14+ UIDT scheduling/adoption, process-kill and user-stop receipts; plus a Rust manifest-derived exact chunk ledger with 256 KiB native blocks, 4 MiB/explicit checkpoints, resume rehash, hash/length verification and `BytesComplete` crash recovery. No provider endpoint or production source authority is embedded | Embed owner-issued production trust; implement canonical provider descriptors/plans and direct-peer/community-seed plus local-import byte adapters before optional HTTPS mirror/carrier fallback; finish iOS bounded direct/background execution, then MOB-05C whole-artifact verification/activation/health/rollback/GC and real 2.2 GB qualification |
 | `MOB-06` | **Partial contract/fixture only** | No-LLM behavior, signed KQL fixture and private proposal feasibility | Provider adapters, deterministic tool execution journal, local-runtime bake-off, cloud disclosure and signed model lifecycle |
 | `MOB-07` | **Partial — current evidence package** | Activation recovery foundations plus Android encrypted media staging/OwnedOriginal activation, catalog query and force-stop recovery | Piece/pack media contract, viewers/received media, camera/OCR/voice, background adapters, notifications/outbox, energy policy and physical matrices |
 | `MOB-08` | **Blocked** | No production network authority in the app | P5, Registry, peer protocol and stable Offline MVP entry gates; then enrollment, reconciliation, seeding/presence and multi-host canary |
@@ -1675,7 +1695,7 @@ Status vocabulary:
 
 | Gate/feature | Current status | Required next evidence |
 |---|---|---|
-| `MOB-GATE-REGISTRY` | **Open** | Clean-device explicit Init of one signed 2.2 GB-class release on Android and iOS with resume, A/B activation, health and rollback |
+| `MOB-GATE-REGISTRY` | **Open** | Clean-device explicit Init of one signed 2.2 GB-class release on Android and iOS with multi-provider resume, A/B activation, health and rollback; direct-peer/community-seed or local-import success while every OneBrain-operated mirror domain is blocked |
 | `MOB-GATE-OFFLINE-MVP` | **Open** | After Registry activation: airplane-mode capture -> canonical encode -> preview -> immutable private Save -> Library/search/KQL -> backup/restore |
 | Self-encode and private KU Save (`MOB-GATE-KU-ENCODE`) | **Open** | Connect raw drafts/media to deterministic canonical encoding, validation, exact preview, private Save, revision/alternate handling and My KU |
 | Generic KU publish (`MOB-GATE-KU-PUBLISH`) | **Blocked/design-only** | Freeze publication profile, exact intent/authority transition, disclosure, transport and confirmation evidence; Save must remain separate |
@@ -1859,8 +1879,9 @@ exactly one match after restart, and records positive user Stop separately.
 The release manifest contains the non-exported JobService/control receiver and
 required scheduler/state permissions, excludes the debug probe and still has
 no `INTERNET`; source scanning finds no HTTP/socket implementation. The probe
-uses a 6 KiB signed debug manifest and transfers no bytes, so approved HTTPS
-landing/range, Task Manager Stop, reboot/Doze/thermal, iOS, physical device and
+uses a 6 KiB signed debug manifest and transfers no bytes, so production
+direct-peer/local-import/optional-HTTPS provider execution, Task Manager Stop,
+reboot/Doze/thermal, iOS, physical device and
 the real 2.2 GB-class qualification remain open. No MOB-05 exit is satisfied.
 
 Implementation checkpoint (2026-08-02): the Rust verified byte-landing
@@ -1903,6 +1924,29 @@ the redacted catch/zeroize boundary. No production URL/descriptor, `INTERNET`,
 HTTP executor, iOS background transfer, full-size qualification or physical-
 device claim is added.
 
+Owner correction (2026-08-02): production Registry availability must not depend
+on a fixed OneBrain HTTPS/CDN service. The already implemented ABI-11 byte
+landing remains valid and transport-neutral. MOB-05B now separates a
+non-authoritative `RegistrySourcePlan` from its OS executor: direct
+peer/community seed is the preferred network path, local import is valid, and
+HTTPS is only an optional representation offered by a replaceable
+peer/carrier/mirror. Normal peer enrollment, reconciliation, KU/media inventory
+and seeding remain gated; this correction does not open `MOB-08`.
+
+Implementation checkpoint (2026-08-02): ABI 12 implements the owner correction
+at the durable boundary. Every prepared Registry schedule now binds a
+`source_plan_digest` and explicit source kind (`DirectPeer`, `CommunitySeed`,
+`CarrierPeer`, `HttpsMirror`, or `LocalImport`) independently from its OS
+executor (`AndroidUidt`, `IosBackgroundUrlSession`, or `ForegroundNative`). An
+active schedule cannot be replayed with another source kind, plan digest,
+request fingerprint or executor. Android persisted-job extras carry the same
+bindings under contract version 2, while C/JNI expose only bounded digests and
+codes—never a provider URL, path, credential or authority. Core/bridge tests and
+Android Kotlin compilation pass. This checkpoint defines the provider-neutral
+contract only; direct-peer/community-seed, local-import, optional mirror and iOS
+byte adapters remain open and no production transport or readiness claim is
+made.
+
 Deliver:
 
 - reproducible clean-install proof with no Registry bytes in the app or
@@ -1911,24 +1955,25 @@ Deliver:
   Registry artifact, compressed copy, chunk and prohibited PAD/Background
   Assets declaration before `MOB-GATE-REGISTRY` can close;
 - signed channel head, canonical publisher envelope, immutable V1 trust
-  profile/fresh-install floors, release revocation/high-water and approved
-  transport descriptors;
+  profile/fresh-install floors, release revocation/high-water and canonical
+  multi-provider Registry source plans;
 - one atomic manifest-acceptance transaction for the validated manifest,
   `ManifestVerified`, exact head/release bindings and every authoritative
   revocation mutation;
 - explicit `init_begin` and exact-manifest/capacity/network `init_confirm`;
 - signed publisher envelope plus separate artifact-verification and device
   activation receipts;
-- production Registry transfer adapters: Android UIDT/eligible OS-managed
-  signed HTTPS and iOS background `URLSession`, including foreground fallback,
-  stable-transfer/process-generation reassociation and user-stop/force-quit
-  semantics;
+- production Registry provider adapters: direct authenticated peer, community
+  seed and local import, plus optional HTTPS peer/carrier/mirror; Android
+  UIDT/constrained/finite foreground execution and iOS bounded direct transfer
+  plus optional background `URLSession`, including stable-transfer/process-
+  generation reassociation and user-stop/force-quit semantics;
 - durable `SchedulePrepared -> TransferSubmitted -> TransferAdopted` barrier
   with prechosen Android job ID/iOS task-description nonce and enumeration after
   every submit crash window;
 - negative packaging/runtime proof that Android PAD and iOS Managed Background
   Assets cannot deliver Registry V1 bytes;
-- resumable app-controlled/CDN fallback;
+- resumable multi-provider failover within one confirmed source-plan digest;
 - initial-versus-remaining full-release space admission and exact storage UI;
 - immutable A/B activation, live-reader generation swap, rollback and GC;
 - post-pointer deterministic health suite, compensation receipt and ordered
@@ -1939,6 +1984,9 @@ Exit:
 
 - one complete 2.2 GB-class release provisions post-launch from a clean install
   and opens on both platforms;
+- the same clean-device provision succeeds with every OneBrain-operated mirror
+  domain blocked by using a direct peer/community seed or local import; an
+  optional mirror/carrier outage cannot remove authority or corrupt progress;
 - mixed/corrupt/incompatible releases fail closed;
 - kill/disk-full/reboot/update/rollback matrix passes;
 - no eager full-registry heap load or deletion of a live mapped generation;
@@ -2037,8 +2085,9 @@ Deliver:
   Managed Background Assets and verifies OS-backup exclusions;
 - design-token/profile drift check plus required light/dark/high-contrast,
   vi/en/pseudo-locale, 200%-text and compact/tablet golden inventory;
-- Registry origin/trust-profile app-update/key-compromise/CDN-or-store outage
-  runbook and privacy-safe transfer telemetry;
+- Registry source-plan/trust-profile app-update/key-compromise/provider outage
+  runbook, including all OneBrain-operated mirrors unavailable, and privacy-safe
+  transfer telemetry;
 - crash symbolication with privacy-safe telemetry;
 - staged rollout and rollback;
 - operator dashboard and incident runbook;
@@ -2135,8 +2184,10 @@ Remaining decisions:
 2. Complete owner review of the portable recovery/export user policy around the
    implemented encrypted archive and platform-bound installation authority.
 3. Select portable local LLM runtime(s) only after the physical-device bake-off.
-4. Select Registry/model artifact hosting, signing operators and independent
-   release cadence.
+4. Freeze Registry source descriptor/discovery profiles and select signing
+   operators plus independent release cadence; model artifact hosting remains
+   a separate decision. Registry operation must not require one organization-
+   operated endpoint.
 5. Select supported cloud trust modes: BYOK, broker and/or custom endpoint.
 6. Decide whether Android exposes a user-visible Online session and complete
    store-policy review; do not promise an iOS equivalent.
@@ -2165,17 +2216,19 @@ qualification integration at `d9270f7`:
    exercised against the isolated signed development fixture; replace the
    unavailable production trust source only with owner-issued authority and
    physical/full-size qualification evidence.
-2. **MOB-05B — durable platform transfer (Android scheduler/adoption and
-   Rust ABI-11 verified native stream implemented; production transport and
-   iOS open):** keep the ABI-11
+2. **MOB-05B — durable multi-provider platform transfer (Android
+   scheduler/adoption and Rust ABI-11 verified native stream implemented;
+   production providers and iOS open):** keep the ABI-11
    prepare/submit/adopt/stop, active-schedule lookup and bounded native
    begin/append/checkpoint/suspend/finish contract plus the
-   Android UIDT namespace/recovery adapter. Feed owner-approved signed HTTPS
-   range responses through the manifest-derived Rust chunk ledger and its
-   resume/crash recovery, add live policy, then bind iOS background `URLSession`
-   with force-quit/native callback recovery without Flutter. Production remains
-   unavailable until owner-issued trust and approved transport descriptors
-   exist.
+   Android UIDT namespace/recovery adapter. First freeze and bind the canonical
+   Registry source-plan digest with source kind independent of executor. Feed
+   direct-peer/community-seed and local-import streams through the manifest-
+   derived Rust chunk ledger, add optional HTTPS peer/carrier/mirror failover
+   and live policy, then bind iOS bounded direct work plus optional background
+   `URLSession` with force-quit/native callback recovery without Flutter.
+   Production remains unavailable until owner-issued trust and approved source
+   descriptors exist.
 3. **MOB-05C — full activation:** provision the real 2.2 GB-class Registry,
    verify immutable chunks/indexes, perform A/B pointer activation, independent
    post-pointer health, compensation/rollback and safe GC; then measure mmap,

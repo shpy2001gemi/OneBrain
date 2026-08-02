@@ -285,7 +285,23 @@ pub struct TransferLandingRecord {
 pub enum RegistryTransferPlatform {
     AndroidUidt,
     IosBackgroundUrlSession,
-    ForegroundHttps,
+    #[serde(alias = "foreground_https")]
+    ForegroundNative,
+}
+
+/// The byte provider selected by the canonical Registry source plan.
+///
+/// This is deliberately independent from [`RegistryTransferPlatform`]: a
+/// direct peer, local import, or optional mirror can be executed under
+/// different foreground/background grants without changing content authority.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegistrySourceKind {
+    DirectPeer,
+    CommunitySeed,
+    CarrierPeer,
+    HttpsMirror,
+    LocalImport,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -307,8 +323,11 @@ pub struct RegistryTransferScheduleRecord {
     pub manifest_digest: String,
     pub trust_profile_digest: String,
     pub request_fingerprint: String,
-    pub transport_descriptor_digest: String,
+    #[serde(alias = "transport_descriptor_digest")]
+    pub source_plan_digest: String,
     pub expected_total_bytes: u64,
+    #[serde(default = "legacy_registry_source_kind")]
+    pub source_kind: RegistrySourceKind,
     pub platform: RegistryTransferPlatform,
     pub android_job_id: Option<u32>,
     pub os_transfer_id: Option<String>,
@@ -316,6 +335,14 @@ pub struct RegistryTransferScheduleRecord {
     pub prepared_process_generation: u64,
     pub submitted_process_generation: Option<u64>,
     pub adopted_process_generation: Option<u64>,
+}
+
+/// ABI 9-11 schedules predate an explicit source-kind field and were designed
+/// around an HTTPS descriptor. Reading them as an optional mirror preserves
+/// crash recovery without making that source content authority. Any new
+/// schedule or foreground rebind must carry the explicit ABI-12 source plan.
+const fn legacy_registry_source_kind() -> RegistrySourceKind {
+    RegistrySourceKind::HttpsMirror
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1314,8 +1341,9 @@ impl BootstrapStore {
         operation_id: &str,
         manifest_digest: &str,
         platform: RegistryTransferPlatform,
+        source_kind: RegistrySourceKind,
         request_fingerprint: &str,
-        transport_descriptor_digest: &str,
+        source_plan_digest: &str,
         expected_total_bytes: u64,
         foreground_user_resume: bool,
         budgets: &ResourceBudgets,
@@ -1323,7 +1351,7 @@ impl BootstrapStore {
         require_bounded("operation_id", operation_id, budgets.max_operation_id_bytes)?;
         validate_hash(manifest_digest)?;
         validate_hash(request_fingerprint)?;
-        validate_hash(transport_descriptor_digest)?;
+        validate_hash(source_plan_digest)?;
         if expected_total_bytes == 0 {
             return Err(registry_admission(
                 "Registry transfer schedule must bind non-zero exact bytes",
@@ -1351,8 +1379,9 @@ impl BootstrapStore {
                 operation_id,
                 manifest_digest,
                 platform,
+                source_kind,
                 request_fingerprint,
-                transport_descriptor_digest,
+                source_plan_digest,
                 expected_total_bytes,
             ) {
                 return Ok(schedule);
@@ -1449,7 +1478,7 @@ impl BootstrapStore {
                     transfer_nonce.as_str(),
                 )),
                 RegistryTransferPlatform::IosBackgroundUrlSession
-                | RegistryTransferPlatform::ForegroundHttps => None,
+                | RegistryTransferPlatform::ForegroundNative => None,
             };
             let mut platform_id_collision = false;
             if let Some(job_id) = android_job_id {
@@ -1475,8 +1504,9 @@ impl BootstrapStore {
                 manifest_digest: manifest_digest.to_owned(),
                 trust_profile_digest: release.trust_profile_digest,
                 request_fingerprint: request_fingerprint.to_owned(),
-                transport_descriptor_digest: transport_descriptor_digest.to_owned(),
+                source_plan_digest: source_plan_digest.to_owned(),
                 expected_total_bytes,
+                source_kind,
                 platform,
                 android_job_id,
                 os_transfer_id: None,
@@ -3009,15 +3039,17 @@ fn registry_transfer_request_matches(
     operation_id: &str,
     manifest_digest: &str,
     platform: RegistryTransferPlatform,
+    source_kind: RegistrySourceKind,
     request_fingerprint: &str,
-    transport_descriptor_digest: &str,
+    source_plan_digest: &str,
     expected_total_bytes: u64,
 ) -> bool {
     schedule.operation_id == operation_id
         && schedule.manifest_digest == manifest_digest
         && schedule.platform == platform
+        && schedule.source_kind == source_kind
         && schedule.request_fingerprint == request_fingerprint
-        && schedule.transport_descriptor_digest == transport_descriptor_digest
+        && schedule.source_plan_digest == source_plan_digest
         && schedule.expected_total_bytes == expected_total_bytes
 }
 
