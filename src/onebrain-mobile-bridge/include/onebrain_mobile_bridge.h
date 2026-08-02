@@ -18,7 +18,7 @@
 /**
  * Stable ABI revision understood by the current Swift/Kotlin adapters.
  */
-#define OB_MOBILE_BRIDGE_ABI_VERSION 10
+#define OB_MOBILE_BRIDGE_ABI_VERSION 11
 
 #define OB_MOBILE_RUNTIME_OK 0
 
@@ -45,6 +45,12 @@
 #define OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT 11
 
 #define OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_TRANSFER 12
+
+#define OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK 13
+
+#define OB_MOBILE_RUNTIME_REGISTRY_CHUNK_SESSION_BUSY 14
+
+#define OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_CHUNK_SESSION 15
 
 typedef struct ObMobileRegistryPlan {
   uint32_t status_code;
@@ -103,6 +109,31 @@ typedef struct ObMobileRegistryTransferSchedule {
   uint64_t adopted_process_generation;
   uint8_t has_adopted_process_generation;
 } ObMobileRegistryTransferSchedule;
+
+typedef struct ObMobileRegistryLandingProgress {
+  uint32_t status_code;
+  uint8_t transfer_nonce[129];
+  uint32_t transfer_nonce_len;
+  uint32_t total_chunks;
+  uint32_t verified_chunks;
+  uint64_t expected_bytes;
+  uint64_t verified_bytes;
+  uint8_t bytes_complete;
+} ObMobileRegistryLandingProgress;
+
+typedef struct ObMobileRegistryChunkWriteReceipt {
+  uint32_t status_code;
+  uint8_t transfer_nonce[129];
+  uint32_t transfer_nonce_len;
+  uint8_t release_id[65];
+  uint32_t release_id_len;
+  uint32_t artifact_role;
+  uint32_t chunk_index;
+  uint64_t expected_bytes;
+  uint64_t written_bytes;
+  uint64_t durable_bytes;
+  uint32_t state_code;
+} ObMobileRegistryChunkWriteReceipt;
 
 typedef struct ObMobileRuntimeSnapshot {
   uint32_t status_code;
@@ -309,6 +340,83 @@ struct ObMobileRegistryTransferSchedule ob_mobile_runtime_record_registry_transf
  */
 struct ObMobileRegistryTransferSchedule ob_mobile_runtime_registry_transfer_schedule_for_channel_utf8(const uint8_t *channel_id,
                                                                                                       size_t channel_id_len);
+
+/**
+ * Materialize the exact signed-manifest-derived chunk ledger for one adopted
+ * transfer. No caller-authored hash, length, URL, path, or transport handle is
+ * accepted.
+ *
+ * # Safety
+ *
+ * `transfer_nonce` must reference its declared readable UTF-8 byte length.
+ */
+struct ObMobileRegistryLandingProgress ob_mobile_runtime_prepare_registry_chunk_ledger_utf8(const uint8_t *transfer_nonce,
+                                                                                            size_t transfer_nonce_len);
+
+/**
+ * Reconcile partial/verified chunk files after process death and return the
+ * durable typed progress snapshot.
+ *
+ * # Safety
+ *
+ * `transfer_nonce` must reference its declared readable UTF-8 byte length.
+ */
+struct ObMobileRegistryLandingProgress ob_mobile_runtime_recover_registry_chunk_ledger_utf8(const uint8_t *transfer_nonce,
+                                                                                            size_t transfer_nonce_len);
+
+/**
+ * Query the authoritative verified-byte progress without opening a write
+ * session.
+ *
+ * # Safety
+ *
+ * `transfer_nonce` must reference its declared readable UTF-8 byte length.
+ */
+struct ObMobileRegistryLandingProgress ob_mobile_runtime_registry_landing_progress_utf8(const uint8_t *transfer_nonce,
+                                                                                        size_t transfer_nonce_len);
+
+/**
+ * Open the process-wide native-only write session for one exact signed chunk.
+ * The source offset must equal the partial length Rust rehashed from disk.
+ *
+ * # Safety
+ *
+ * `transfer_nonce` must reference its declared readable UTF-8 byte length.
+ */
+struct ObMobileRegistryChunkWriteReceipt ob_mobile_runtime_begin_registry_chunk_write_utf8(const uint8_t *transfer_nonce,
+                                                                                           size_t transfer_nonce_len,
+                                                                                           uint32_t artifact_role,
+                                                                                           uint32_t chunk_index,
+                                                                                           uint64_t source_offset);
+
+/**
+ * Append one bounded native block. At most one exact Registry chunk session
+ * exists in the process, so a callback cannot switch chunk identity between
+ * blocks.
+ *
+ * # Safety
+ *
+ * `block` must reference its declared readable byte length.
+ */
+struct ObMobileRegistryChunkWriteReceipt ob_mobile_runtime_append_registry_chunk_write(const uint8_t *block,
+                                                                                       size_t block_len);
+
+/**
+ * Force a durability checkpoint while keeping the exact session open.
+ */
+struct ObMobileRegistryChunkWriteReceipt ob_mobile_runtime_checkpoint_registry_chunk_write(void);
+
+/**
+ * Verify exact length/hash, fsync, same-volume rename and atomically advance
+ * the Rust chunk/operation ledger.
+ */
+struct ObMobileRegistryChunkWriteReceipt ob_mobile_runtime_finish_registry_chunk_write(void);
+
+/**
+ * Checkpoint and close the in-process session while preserving resumable
+ * partial bytes for the next process/OS grant.
+ */
+struct ObMobileRegistryChunkWriteReceipt ob_mobile_runtime_suspend_registry_chunk_write(void);
 
 /**
  * Bounded deterministic call used to verify the complete generated call path.

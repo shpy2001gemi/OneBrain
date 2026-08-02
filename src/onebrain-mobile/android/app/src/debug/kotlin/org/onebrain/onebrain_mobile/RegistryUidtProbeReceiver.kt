@@ -28,6 +28,8 @@ class RegistryUidtProbeReceiver : BroadcastReceiver() {
                     when (mode) {
                         MODE_SCHEDULE_ONLY -> scheduleOnly(context)
                         MODE_RECONCILE -> reconcile(context)
+                        MODE_LAND_PARTIAL -> landPartial(context)
+                        MODE_LAND_RESUME -> landResume(context)
                         MODE_STOP -> stop(context)
                         else -> error("Unsupported UIDT probe mode")
                     }
@@ -147,6 +149,197 @@ class RegistryUidtProbeReceiver : BroadcastReceiver() {
                 .put("job_id", schedule.androidJobId)
         }
 
+    private fun landPartial(context: Context): JSONObject =
+        withSecurityMaterial(context) { dataRoot, securityMaterial ->
+            val prepared = prepareDevelopmentTransfer(context, dataRoot, securityMaterial)
+            RegistryUidtScheduler.scheduleOnly(context, prepared.request)
+            val adopted =
+                checkNotNull(
+                    RegistryUidtScheduler
+                        .reconcileChannel(
+                            context = context,
+                            dataRoot = dataRoot,
+                            securityMaterial = securityMaterial,
+                            channelId = REGISTRY_CHANNEL,
+                        ).schedule,
+                )
+            check(adopted.stateCode == REGISTRY_TRANSFER_ADOPTED_STATE)
+            val landing =
+                RustMobileBridge.prepareRegistryChunkLedger(
+                    dataRoot,
+                    securityMaterial,
+                    adopted.transferNonce,
+                )
+            check(landing.totalChunks == FIXTURE_TOTAL_CHUNKS)
+            val chunk = fixtureChunkBytes(artifactRole = 0, length = 1_024)
+            RustMobileBridge.beginRegistryChunkWrite(
+                dataRoot = dataRoot,
+                securityMaterial = securityMaterial,
+                transferNonce = adopted.transferNonce,
+                artifactRole = 0,
+                chunkIndex = 0,
+                sourceOffset = 0,
+            )
+            RustMobileBridge.appendRegistryChunkWrite(chunk.copyOfRange(0, 123))
+            RustMobileBridge.appendRegistryChunkWrite(chunk.copyOfRange(123, PARTIAL_BYTES))
+            val suspended = RustMobileBridge.suspendRegistryChunkWrite()
+            check(suspended.writtenBytes == PARTIAL_BYTES.toLong())
+            check(suspended.durableBytes == PARTIAL_BYTES.toLong())
+            adopted.androidJobId?.let { RegistryUidtScheduler.cancel(context, it) }
+            JSONObject()
+                .put("status", "CHUNK_PARTIAL_DURABLE")
+                .put("transfer_nonce", adopted.transferNonce)
+                .put("job_id", adopted.androidJobId)
+                .put("total_chunks", landing.totalChunks)
+                .put("written_bytes", suspended.writtenBytes)
+                .put("durable_bytes", suspended.durableBytes)
+                .put("chunk_state", suspended.stateCode)
+        }
+
+    private fun landResume(context: Context): JSONObject =
+        withSecurityMaterial(context) { dataRoot, securityMaterial ->
+            val schedule =
+                checkNotNull(
+                    RustMobileBridge.registryTransferScheduleForChannel(
+                        dataRoot,
+                        securityMaterial,
+                        REGISTRY_CHANNEL,
+                    ),
+                )
+            check(schedule.stateCode == REGISTRY_TRANSFER_ADOPTED_STATE)
+            val recovered =
+                RustMobileBridge.recoverRegistryChunkLedger(
+                    dataRoot,
+                    securityMaterial,
+                    schedule.transferNonce,
+                )
+            check(recovered.totalChunks == FIXTURE_TOTAL_CHUNKS)
+            check(recovered.verifiedChunks == 0)
+            writeFixtureChunk(
+                dataRoot = dataRoot,
+                securityMaterial = securityMaterial,
+                transferNonce = schedule.transferNonce,
+                artifactRole = 0,
+                bytes = fixtureChunkBytes(artifactRole = 0, length = 1_024),
+                sourceOffset = PARTIAL_BYTES,
+            )
+            writeFixtureChunk(
+                dataRoot = dataRoot,
+                securityMaterial = securityMaterial,
+                transferNonce = schedule.transferNonce,
+                artifactRole = 1,
+                bytes = fixtureChunkBytes(artifactRole = 1, length = 2_048),
+                sourceOffset = 0,
+            )
+            writeFixtureChunk(
+                dataRoot = dataRoot,
+                securityMaterial = securityMaterial,
+                transferNonce = schedule.transferNonce,
+                artifactRole = 2,
+                bytes = fixtureChunkBytes(artifactRole = 2, length = 3_072),
+                sourceOffset = 0,
+            )
+            val complete =
+                RustMobileBridge.registryLandingProgress(
+                    dataRoot,
+                    securityMaterial,
+                    schedule.transferNonce,
+                )
+            check(complete.bytesComplete)
+            check(complete.verifiedChunks == FIXTURE_TOTAL_CHUNKS)
+            check(complete.verifiedBytes == FIXTURE_TOTAL_BYTES)
+            schedule.androidJobId?.let { RegistryUidtScheduler.cancel(context, it) }
+            JSONObject()
+                .put("status", "CHUNKS_VERIFIED")
+                .put("transfer_nonce", schedule.transferNonce)
+                .put("total_chunks", complete.totalChunks)
+                .put("verified_chunks", complete.verifiedChunks)
+                .put("expected_bytes", complete.expectedBytes)
+                .put("verified_bytes", complete.verifiedBytes)
+                .put("bytes_complete", complete.bytesComplete)
+        }
+
+    private fun prepareDevelopmentTransfer(
+        context: Context,
+        dataRoot: String,
+        securityMaterial: ByteArray,
+    ): PreparedDevelopmentTransfer {
+        val fixture = loadFixture(context)
+        val storage = StatFs(dataRoot)
+        val plan =
+            RustMobileBridge.prepareRegistryInit(
+                dataRoot = dataRoot,
+                securityMaterial = securityMaterial,
+                channelId = REGISTRY_CHANNEL,
+                trustProfile = fixture.trustProfile,
+                channelHead = fixture.channelHead,
+                release = fixture.release,
+                allocationUnitBytes = storage.blockSizeLong,
+                destinationTotalUsableBytes = storage.totalBytes,
+                measuredFreeBytes = storage.availableBytes,
+            )
+        val confirmed =
+            RustMobileBridge.confirmRegistryInit(
+                dataRoot = dataRoot,
+                securityMaterial = securityMaterial,
+                operationId = plan.operationId,
+                manifestDigest = plan.manifestDigest,
+                trustProfile = fixture.trustProfile,
+                networkPolicyCode = RegistryUidtNetworkPolicy.UNMETERED.code,
+                oneTimeNetworkOverride = false,
+                allocationUnitBytes = storage.blockSizeLong,
+                destinationTotalUsableBytes = storage.totalBytes,
+                measuredFreeBytes = storage.availableBytes,
+            )
+        val schedule =
+            RustMobileBridge.prepareRegistryTransferSchedule(
+                dataRoot = dataRoot,
+                securityMaterial = securityMaterial,
+                operationId = confirmed.operationId,
+                manifestDigest = confirmed.manifestDigest,
+                platformCode = 0,
+                requestFingerprint = REQUEST_FINGERPRINT,
+                transportDescriptorDigest = DEVELOPMENT_DESCRIPTOR_DIGEST,
+                expectedTotalBytes = confirmed.artifactTotalBytes,
+                foregroundUserResume = false,
+            )
+        return PreparedDevelopmentTransfer(
+            request =
+                RegistryUidtRequest.fromSchedule(
+                    schedule,
+                    RegistryUidtNetworkPolicy.UNMETERED,
+                    requiresCharging = true,
+                ),
+        )
+    }
+
+    private fun writeFixtureChunk(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        transferNonce: String,
+        artifactRole: Int,
+        bytes: ByteArray,
+        sourceOffset: Int,
+    ) {
+        RustMobileBridge.beginRegistryChunkWrite(
+            dataRoot = dataRoot,
+            securityMaterial = securityMaterial,
+            transferNonce = transferNonce,
+            artifactRole = artifactRole,
+            chunkIndex = 0,
+            sourceOffset = sourceOffset.toLong(),
+        )
+        var cursor = sourceOffset
+        while (cursor < bytes.size) {
+            val end = minOf(cursor + PROBE_BLOCK_BYTES, bytes.size)
+            RustMobileBridge.appendRegistryChunkWrite(bytes.copyOfRange(cursor, end))
+            cursor = end
+        }
+        val receipt = RustMobileBridge.finishRegistryChunkWrite()
+        check(receipt.stateCode == REGISTRY_CHUNK_VERIFIED_STATE)
+        check(receipt.writtenBytes == bytes.size.toLong())
+    }
+
     private fun <T> withSecurityMaterial(
         context: Context,
         block: (String, ByteArray) -> T,
@@ -191,11 +384,17 @@ private data class DevelopmentFixture(
     val release: ByteArray,
 )
 
+private data class PreparedDevelopmentTransfer(
+    val request: RegistryUidtRequest,
+)
+
 private const val ACTION_PROBE =
     "org.onebrain.onebrain_mobile.debug.REGISTRY_UIDT_PROBE"
 private const val EXTRA_MODE = "mode"
 private const val MODE_SCHEDULE_ONLY = "schedule_only"
 private const val MODE_RECONCILE = "reconcile"
+private const val MODE_LAND_PARTIAL = "land_partial"
+private const val MODE_LAND_RESUME = "land_resume"
 private const val MODE_STOP = "stop"
 private const val REGISTRY_CHANNEL = "stable"
 private const val LOG_TAG = "OneBrainRegistryUidtProbe"
@@ -203,6 +402,17 @@ private const val REQUEST_FINGERPRINT =
     "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
 private const val DEVELOPMENT_DESCRIPTOR_DIGEST =
     "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef"
+private const val FIXTURE_TOTAL_CHUNKS = 3
+private const val FIXTURE_TOTAL_BYTES = 6_144L
+private const val PARTIAL_BYTES = 300
+private const val PROBE_BLOCK_BYTES = 257
+private const val REGISTRY_CHUNK_VERIFIED_STATE = 2
+private const val REGISTRY_TRANSFER_ADOPTED_STATE = 2
+
+private fun fixtureChunkBytes(
+    artifactRole: Int,
+    length: Int,
+): ByteArray = ByteArray(length) { (0x41 + artifactRole).toByte() }
 
 private fun isHex(value: Char): Boolean =
     value in '0'..'9' || value.lowercaseChar() in 'a'..'f'

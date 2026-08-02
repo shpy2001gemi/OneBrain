@@ -19,13 +19,16 @@ use std::{
 use onebrain_mobile_core::OwnedMediaSummary;
 use onebrain_mobile_core::{
     ActivationPhase, AppLockPolicy, MobileFeatureFlags, MobileRuntimeFacade, MobileRuntimeSnapshot,
-    OnboardingCursor, RegistryInitPlan, RegistryNetworkPolicy, RegistryOperationState,
-    RegistryTransferPlatform, RegistryTransferScheduleRecord, RegistryTransferScheduleState,
-    ResourceBudgets, RuntimeServices, SecurityBootstrapMaterial, SecuritySessionState,
+    OnboardingCursor, RegistryChunkRecord, RegistryChunkState, RegistryChunkWriteProgress,
+    RegistryChunkWriteSession, RegistryChunkWriteStart, RegistryInitPlan, RegistryLandingProgress,
+    RegistryNetworkPolicy, RegistryOperationState, RegistryTransferPlatform,
+    RegistryTransferScheduleRecord, RegistryTransferScheduleState, ResourceBudgets,
+    RuntimeServices, SecurityBootstrapMaterial, SecuritySessionState,
+    REGISTRY_NATIVE_BLOCK_MAX_BYTES,
 };
 
 /// Stable ABI revision understood by the current Swift/Kotlin adapters.
-pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 10;
+pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 11;
 
 pub const OB_MOBILE_RUNTIME_OK: u32 = 0;
 pub const OB_MOBILE_RUNTIME_INVALID_PATH: u32 = 1;
@@ -40,11 +43,121 @@ pub const OB_MOBILE_RUNTIME_SHARE_SPOOL_NOT_FOUND: u32 = 9;
 pub const OB_MOBILE_RUNTIME_INVALID_MEDIA_STAGE: u32 = 10;
 pub const OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT: u32 = 11;
 pub const OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_TRANSFER: u32 = 12;
+pub const OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK: u32 = 13;
+pub const OB_MOBILE_RUNTIME_REGISTRY_CHUNK_SESSION_BUSY: u32 = 14;
+pub const OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_CHUNK_SESSION: u32 = 15;
 
 const CORE_VERSION: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
 static RUNTIME: OnceLock<Mutex<Option<MobileRuntimeFacade>>> = OnceLock::new();
+static REGISTRY_CHUNK_WRITE_SESSION: OnceLock<Mutex<Option<RegistryChunkWriteSession>>> =
+    OnceLock::new();
 static REGISTRY_REQUEST_ISSUED: AtomicBool = AtomicBool::new(false);
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ObMobileRegistryLandingProgress {
+    pub status_code: u32,
+    pub transfer_nonce: [u8; 129],
+    pub transfer_nonce_len: u32,
+    pub total_chunks: u32,
+    pub verified_chunks: u32,
+    pub expected_bytes: u64,
+    pub verified_bytes: u64,
+    pub bytes_complete: u8,
+}
+
+impl ObMobileRegistryLandingProgress {
+    const fn error(status_code: u32) -> Self {
+        Self {
+            status_code,
+            transfer_nonce: [0; 129],
+            transfer_nonce_len: 0,
+            total_chunks: 0,
+            verified_chunks: 0,
+            expected_bytes: 0,
+            verified_bytes: 0,
+            bytes_complete: 0,
+        }
+    }
+
+    fn from_core(progress: RegistryLandingProgress) -> Self {
+        let mut bridged = Self::error(OB_MOBILE_RUNTIME_OK);
+        bridged.transfer_nonce_len =
+            copy_utf8(&mut bridged.transfer_nonce, &progress.transfer_nonce);
+        bridged.total_chunks = progress.total_chunks;
+        bridged.verified_chunks = progress.verified_chunks;
+        bridged.expected_bytes = progress.expected_bytes;
+        bridged.verified_bytes = progress.verified_bytes;
+        bridged.bytes_complete = bool_byte(
+            progress.total_chunks > 0
+                && progress.total_chunks == progress.verified_chunks
+                && progress.expected_bytes == progress.verified_bytes,
+        );
+        bridged
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ObMobileRegistryChunkWriteReceipt {
+    pub status_code: u32,
+    pub transfer_nonce: [u8; 129],
+    pub transfer_nonce_len: u32,
+    pub release_id: [u8; 65],
+    pub release_id_len: u32,
+    pub artifact_role: u32,
+    pub chunk_index: u32,
+    pub expected_bytes: u64,
+    pub written_bytes: u64,
+    pub durable_bytes: u64,
+    pub state_code: u32,
+}
+
+impl ObMobileRegistryChunkWriteReceipt {
+    const fn error(status_code: u32) -> Self {
+        Self {
+            status_code,
+            transfer_nonce: [0; 129],
+            transfer_nonce_len: 0,
+            release_id: [0; 65],
+            release_id_len: 0,
+            artifact_role: 0,
+            chunk_index: 0,
+            expected_bytes: 0,
+            written_bytes: 0,
+            durable_bytes: 0,
+            state_code: 0,
+        }
+    }
+
+    fn from_progress(progress: RegistryChunkWriteProgress) -> Self {
+        let mut bridged = Self::error(OB_MOBILE_RUNTIME_OK);
+        bridged.transfer_nonce_len =
+            copy_utf8(&mut bridged.transfer_nonce, &progress.transfer_nonce);
+        bridged.release_id_len = copy_utf8(&mut bridged.release_id, &progress.release_id);
+        bridged.artifact_role = u32::from(progress.artifact_role);
+        bridged.chunk_index = progress.chunk_index;
+        bridged.expected_bytes = progress.expected_bytes;
+        bridged.written_bytes = progress.written_bytes;
+        bridged.durable_bytes = progress.durable_bytes;
+        bridged.state_code = registry_chunk_state_code(progress.state);
+        bridged
+    }
+
+    fn from_verified(record: RegistryChunkRecord) -> Self {
+        Self::from_progress(RegistryChunkWriteProgress {
+            transfer_nonce: record.transfer_nonce,
+            release_id: record.release_id,
+            artifact_role: record.artifact_role,
+            chunk_index: record.chunk_index,
+            expected_bytes: record.expected_length,
+            written_bytes: record.expected_length,
+            durable_bytes: record.expected_length,
+            state: RegistryChunkState::Verified,
+        })
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -799,6 +912,132 @@ pub unsafe extern "C" fn ob_mobile_runtime_registry_transfer_schedule_for_channe
     registry_transfer_schedule_for_channel(channel_id)
 }
 
+/// Materialize the exact signed-manifest-derived chunk ledger for one adopted
+/// transfer. No caller-authored hash, length, URL, path, or transport handle is
+/// accepted.
+///
+/// # Safety
+///
+/// `transfer_nonce` must reference its declared readable UTF-8 byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_prepare_registry_chunk_ledger_utf8(
+    transfer_nonce: *const u8,
+    transfer_nonce_len: usize,
+) -> ObMobileRegistryLandingProgress {
+    let Some(transfer_nonce) =
+        (unsafe { parse_bounded_utf8(transfer_nonce, transfer_nonce_len, 128) })
+    else {
+        return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK);
+    };
+    prepare_registry_chunk_ledger(transfer_nonce)
+}
+
+/// Reconcile partial/verified chunk files after process death and return the
+/// durable typed progress snapshot.
+///
+/// # Safety
+///
+/// `transfer_nonce` must reference its declared readable UTF-8 byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_recover_registry_chunk_ledger_utf8(
+    transfer_nonce: *const u8,
+    transfer_nonce_len: usize,
+) -> ObMobileRegistryLandingProgress {
+    let Some(transfer_nonce) =
+        (unsafe { parse_bounded_utf8(transfer_nonce, transfer_nonce_len, 128) })
+    else {
+        return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK);
+    };
+    recover_registry_chunk_ledger(transfer_nonce)
+}
+
+/// Query the authoritative verified-byte progress without opening a write
+/// session.
+///
+/// # Safety
+///
+/// `transfer_nonce` must reference its declared readable UTF-8 byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_registry_landing_progress_utf8(
+    transfer_nonce: *const u8,
+    transfer_nonce_len: usize,
+) -> ObMobileRegistryLandingProgress {
+    let Some(transfer_nonce) =
+        (unsafe { parse_bounded_utf8(transfer_nonce, transfer_nonce_len, 128) })
+    else {
+        return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK);
+    };
+    registry_landing_progress(transfer_nonce)
+}
+
+/// Open the process-wide native-only write session for one exact signed chunk.
+/// The source offset must equal the partial length Rust rehashed from disk.
+///
+/// # Safety
+///
+/// `transfer_nonce` must reference its declared readable UTF-8 byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_begin_registry_chunk_write_utf8(
+    transfer_nonce: *const u8,
+    transfer_nonce_len: usize,
+    artifact_role: u32,
+    chunk_index: u32,
+    source_offset: u64,
+) -> ObMobileRegistryChunkWriteReceipt {
+    let Some(transfer_nonce) =
+        (unsafe { parse_bounded_utf8(transfer_nonce, transfer_nonce_len, 128) })
+    else {
+        return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK);
+    };
+    let Ok(artifact_role) = u8::try_from(artifact_role) else {
+        return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK);
+    };
+    begin_registry_chunk_write(transfer_nonce, artifact_role, chunk_index, source_offset)
+}
+
+/// Append one bounded native block. At most one exact Registry chunk session
+/// exists in the process, so a callback cannot switch chunk identity between
+/// blocks.
+///
+/// # Safety
+///
+/// `block` must reference its declared readable byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_append_registry_chunk_write(
+    block: *const u8,
+    block_len: usize,
+) -> ObMobileRegistryChunkWriteReceipt {
+    let Some(block) =
+        (unsafe { parse_bounded_bytes(block, block_len, REGISTRY_NATIVE_BLOCK_MAX_BYTES) })
+    else {
+        return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK);
+    };
+    append_registry_chunk_write(block)
+}
+
+/// Force a durability checkpoint while keeping the exact session open.
+#[unsafe(no_mangle)]
+pub extern "C" fn ob_mobile_runtime_checkpoint_registry_chunk_write(
+) -> ObMobileRegistryChunkWriteReceipt {
+    checkpoint_registry_chunk_write()
+}
+
+/// Verify exact length/hash, fsync, same-volume rename and atomically advance
+/// the Rust chunk/operation ledger.
+#[unsafe(no_mangle)]
+pub extern "C" fn ob_mobile_runtime_finish_registry_chunk_write(
+) -> ObMobileRegistryChunkWriteReceipt {
+    finish_registry_chunk_write()
+}
+
+/// Checkpoint and close the in-process session while preserving resumable
+/// partial bytes for the next process/OS grant.
+#[unsafe(no_mangle)]
+pub extern "C" fn ob_mobile_runtime_suspend_registry_chunk_write(
+) -> ObMobileRegistryChunkWriteReceipt {
+    suspend_registry_chunk_write()
+}
+
 /// Bounded deterministic call used to verify the complete generated call path.
 #[unsafe(no_mangle)]
 pub extern "C" fn ob_mobile_bridge_round_trip(nonce: u64) -> u64 {
@@ -870,6 +1109,11 @@ pub extern "C" fn ob_mobile_runtime_snapshot() -> ObMobileRuntimeSnapshot {
 /// Quiesce the current process generation.
 #[unsafe(no_mangle)]
 pub extern "C" fn ob_mobile_runtime_graceful_stop() -> u32 {
+    let sessions = REGISTRY_CHUNK_WRITE_SESSION.get_or_init(|| Mutex::new(None));
+    let mut session_guard = match sessions.lock() {
+        Ok(guard) => guard,
+        Err(_) => return OB_MOBILE_RUNTIME_LOCK_POISONED,
+    };
     let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
     let mut guard = match runtime.lock() {
         Ok(guard) => guard,
@@ -878,6 +1122,11 @@ pub extern "C" fn ob_mobile_runtime_graceful_stop() -> u32 {
     let Some(facade) = guard.as_mut() else {
         return OB_MOBILE_RUNTIME_NOT_OPEN;
     };
+    if let Some(session) = session_guard.take() {
+        if facade.suspend_registry_chunk_write(session).is_err() {
+            return OB_MOBILE_RUNTIME_CORE_ERROR;
+        }
+    }
     match facade.graceful_stop() {
         Ok(()) => OB_MOBILE_RUNTIME_OK,
         Err(_) => OB_MOBILE_RUNTIME_CORE_ERROR,
@@ -1410,6 +1659,245 @@ fn registry_transfer_schedule_for_channel(channel_id: &str) -> ObMobileRegistryT
     }
 }
 
+fn prepare_registry_chunk_ledger(transfer_nonce: &str) -> ObMobileRegistryLandingProgress {
+    let sessions = REGISTRY_CHUNK_WRITE_SESSION.get_or_init(|| Mutex::new(None));
+    let session_guard = match sessions.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    if session_guard.is_some() {
+        return ObMobileRegistryLandingProgress::error(
+            OB_MOBILE_RUNTIME_REGISTRY_CHUNK_SESSION_BUSY,
+        );
+    }
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.prepare_registry_chunk_ledger(transfer_nonce) {
+        Ok(progress) => ObMobileRegistryLandingProgress::from_core(progress),
+        Err(_) => ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn recover_registry_chunk_ledger(transfer_nonce: &str) -> ObMobileRegistryLandingProgress {
+    let sessions = REGISTRY_CHUNK_WRITE_SESSION.get_or_init(|| Mutex::new(None));
+    let session_guard = match sessions.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    if session_guard.is_some() {
+        return ObMobileRegistryLandingProgress::error(
+            OB_MOBILE_RUNTIME_REGISTRY_CHUNK_SESSION_BUSY,
+        );
+    }
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.recover_registry_chunk_ledger(transfer_nonce) {
+        Ok(progress) => ObMobileRegistryLandingProgress::from_core(progress),
+        Err(_) => ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn registry_landing_progress(transfer_nonce: &str) -> ObMobileRegistryLandingProgress {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.registry_landing_progress(transfer_nonce) {
+        Ok(progress) => ObMobileRegistryLandingProgress::from_core(progress),
+        Err(_) => ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn begin_registry_chunk_write(
+    transfer_nonce: &str,
+    artifact_role: u8,
+    chunk_index: u32,
+    source_offset: u64,
+) -> ObMobileRegistryChunkWriteReceipt {
+    let sessions = REGISTRY_CHUNK_WRITE_SESSION.get_or_init(|| Mutex::new(None));
+    let mut session_guard = match sessions.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    if session_guard.is_some() {
+        return ObMobileRegistryChunkWriteReceipt::error(
+            OB_MOBILE_RUNTIME_REGISTRY_CHUNK_SESSION_BUSY,
+        );
+    }
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.begin_registry_chunk_write(
+        transfer_nonce,
+        artifact_role,
+        chunk_index,
+        source_offset,
+    ) {
+        Ok(RegistryChunkWriteStart::AlreadyVerified(progress)) => {
+            ObMobileRegistryChunkWriteReceipt::from_progress(progress)
+        }
+        Ok(RegistryChunkWriteStart::Ready(session)) => {
+            let receipt = ObMobileRegistryChunkWriteReceipt::from_progress(session.progress());
+            *session_guard = Some(*session);
+            receipt
+        }
+        Err(_) => ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn append_registry_chunk_write(block: &[u8]) -> ObMobileRegistryChunkWriteReceipt {
+    let sessions = REGISTRY_CHUNK_WRITE_SESSION.get_or_init(|| Mutex::new(None));
+    let mut session_guard = match sessions.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(session) = session_guard.as_mut() else {
+        return ObMobileRegistryChunkWriteReceipt::error(
+            OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_CHUNK_SESSION,
+        );
+    };
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.append_registry_chunk_write(session, block) {
+        Ok(progress) => ObMobileRegistryChunkWriteReceipt::from_progress(progress),
+        Err(_) => ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn checkpoint_registry_chunk_write() -> ObMobileRegistryChunkWriteReceipt {
+    let sessions = REGISTRY_CHUNK_WRITE_SESSION.get_or_init(|| Mutex::new(None));
+    let mut session_guard = match sessions.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(session) = session_guard.as_mut() else {
+        return ObMobileRegistryChunkWriteReceipt::error(
+            OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_CHUNK_SESSION,
+        );
+    };
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.checkpoint_registry_chunk_write(session) {
+        Ok(progress) => ObMobileRegistryChunkWriteReceipt::from_progress(progress),
+        Err(_) => ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn finish_registry_chunk_write() -> ObMobileRegistryChunkWriteReceipt {
+    let sessions = REGISTRY_CHUNK_WRITE_SESSION.get_or_init(|| Mutex::new(None));
+    let mut session_guard = match sessions.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    if session_guard.is_none() {
+        return ObMobileRegistryChunkWriteReceipt::error(
+            OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_CHUNK_SESSION,
+        );
+    }
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    let session = session_guard.take().expect("session checked above");
+    match facade.finish_registry_chunk_write(session) {
+        Ok(record) => ObMobileRegistryChunkWriteReceipt::from_verified(record),
+        Err(_) => ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn suspend_registry_chunk_write() -> ObMobileRegistryChunkWriteReceipt {
+    let sessions = REGISTRY_CHUNK_WRITE_SESSION.get_or_init(|| Mutex::new(None));
+    let mut session_guard = match sessions.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    if session_guard.is_none() {
+        return ObMobileRegistryChunkWriteReceipt::error(
+            OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_CHUNK_SESSION,
+        );
+    }
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    let session = session_guard.take().expect("session checked above");
+    match facade.suspend_registry_chunk_write(session) {
+        Ok(progress) => ObMobileRegistryChunkWriteReceipt::from_progress(progress),
+        Err(_) => ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
 fn runtime_snapshot() -> ObMobileRuntimeSnapshot {
     let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
     let guard = match runtime.lock() {
@@ -1678,6 +2166,14 @@ const fn registry_transfer_schedule_state_code(state: RegistryTransferScheduleSt
     }
 }
 
+const fn registry_chunk_state_code(state: RegistryChunkState) -> u32 {
+    match state {
+        RegistryChunkState::Planned => 0,
+        RegistryChunkState::Receiving => 1,
+        RegistryChunkState::Verified => 2,
+    }
+}
+
 const fn registry_state_code(state: RegistryOperationState) -> u32 {
     match state {
         RegistryOperationState::IntentRecorded => 0,
@@ -1727,18 +2223,23 @@ mod android {
     };
 
     use super::{
-        abort_media_stage, adopt_registry_transfer, append_media_stage, confirm_registry_init,
-        defer_registry_init, encode_owned_media, enqueue_shared_text, finish_media_stage,
-        finish_owned_media_import, import_shared_text, mark_registry_transfer_submitted,
-        ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
-        ob_mobile_bridge_round_trip, ob_mobile_runtime_lock_private_node,
-        ob_mobile_runtime_set_onboarding_cursor, open_runtime, open_runtime_secured, owned_media,
-        owned_media_count, pending_share_spool_at, prepare_registry_init,
-        prepare_registry_transfer_schedule, record_registry_transfer_missing,
+        abort_media_stage, adopt_registry_transfer, append_media_stage,
+        append_registry_chunk_write, begin_registry_chunk_write, checkpoint_registry_chunk_write,
+        confirm_registry_init, defer_registry_init, encode_owned_media, enqueue_shared_text,
+        finish_media_stage, finish_owned_media_import, finish_registry_chunk_write,
+        import_shared_text, mark_registry_transfer_submitted, ob_mobile_bridge_abi_version,
+        ob_mobile_bridge_registry_request_issued, ob_mobile_bridge_round_trip,
+        ob_mobile_runtime_lock_private_node, ob_mobile_runtime_set_onboarding_cursor, open_runtime,
+        open_runtime_secured, owned_media, owned_media_count, pending_share_spool_at,
+        prepare_registry_chunk_ledger, prepare_registry_init, prepare_registry_transfer_schedule,
+        record_registry_transfer_missing, recover_registry_chunk_ledger, registry_landing_progress,
         registry_network_policy, registry_transfer_platform,
         registry_transfer_schedule_for_channel, runtime_snapshot, save_raw_text_draft,
-        start_media_stage, ObMobileRegistryPlan, ObMobileRegistryTransferSchedule, CORE_VERSION,
+        start_media_stage, suspend_registry_chunk_write, ObMobileRegistryChunkWriteReceipt,
+        ObMobileRegistryLandingProgress, ObMobileRegistryPlan, ObMobileRegistryTransferSchedule,
+        CORE_VERSION, OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK,
         OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT, OB_MOBILE_RUNTIME_OK,
+        REGISTRY_NATIVE_BLOCK_MAX_BYTES,
     };
     use onebrain_mobile_core::SecurityBootstrapMaterial;
     use zeroize::Zeroize;
@@ -2095,6 +2596,167 @@ mod android {
             .resolve::<ThrowRuntimeExAndDefault>();
         let encoded =
             encode_registry_transfer_schedule(&registry_transfer_schedule_for_channel(&channel_id));
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimePrepareRegistryChunkLedger"
+    )]
+    pub fn native_runtime_prepare_registry_chunk_ledger<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        transfer_nonce: JString<'caller>,
+    ) -> JString<'caller> {
+        let transfer_nonce = unowned_env
+            .with_env(|env| transfer_nonce.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let encoded =
+            encode_registry_landing_progress(&prepare_registry_chunk_ledger(&transfer_nonce));
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeRecoverRegistryChunkLedger"
+    )]
+    pub fn native_runtime_recover_registry_chunk_ledger<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        transfer_nonce: JString<'caller>,
+    ) -> JString<'caller> {
+        let transfer_nonce = unowned_env
+            .with_env(|env| transfer_nonce.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let encoded =
+            encode_registry_landing_progress(&recover_registry_chunk_ledger(&transfer_nonce));
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeRegistryLandingProgress"
+    )]
+    pub fn native_runtime_registry_landing_progress<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        transfer_nonce: JString<'caller>,
+    ) -> JString<'caller> {
+        let transfer_nonce = unowned_env
+            .with_env(|env| transfer_nonce.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let encoded = encode_registry_landing_progress(&registry_landing_progress(&transfer_nonce));
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeBeginRegistryChunkWrite"
+    )]
+    pub fn native_runtime_begin_registry_chunk_write<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        transfer_nonce: JString<'caller>,
+        artifact_role: jint,
+        chunk_index: jlong,
+        source_offset: jlong,
+    ) -> JString<'caller> {
+        let transfer_nonce = unowned_env
+            .with_env(|env| transfer_nonce.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let receipt = u8::try_from(artifact_role)
+            .ok()
+            .zip(u32::try_from(chunk_index).ok())
+            .zip(u64::try_from(source_offset).ok())
+            .map_or_else(
+                || {
+                    ObMobileRegistryChunkWriteReceipt::error(
+                        OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK,
+                    )
+                },
+                |((artifact_role, chunk_index), source_offset)| {
+                    begin_registry_chunk_write(
+                        &transfer_nonce,
+                        artifact_role,
+                        chunk_index,
+                        source_offset,
+                    )
+                },
+            );
+        let encoded = encode_registry_chunk_write_receipt(&receipt);
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeAppendRegistryChunkWrite"
+    )]
+    pub fn native_runtime_append_registry_chunk_write<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        block: JByteArray<'caller>,
+    ) -> JString<'caller> {
+        let block = unowned_env
+            .with_env(|env| env.convert_byte_array(&block))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let receipt = if block.is_empty() || block.len() > REGISTRY_NATIVE_BLOCK_MAX_BYTES {
+            ObMobileRegistryChunkWriteReceipt::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK)
+        } else {
+            append_registry_chunk_write(&block)
+        };
+        let encoded = encode_registry_chunk_write_receipt(&receipt);
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeCheckpointRegistryChunkWrite"
+    )]
+    pub fn native_runtime_checkpoint_registry_chunk_write<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+    ) -> JString<'caller> {
+        let encoded = encode_registry_chunk_write_receipt(&checkpoint_registry_chunk_write());
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeFinishRegistryChunkWrite"
+    )]
+    pub fn native_runtime_finish_registry_chunk_write<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+    ) -> JString<'caller> {
+        let encoded = encode_registry_chunk_write_receipt(&finish_registry_chunk_write());
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeSuspendRegistryChunkWrite"
+    )]
+    pub fn native_runtime_suspend_registry_chunk_write<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+    ) -> JString<'caller> {
+        let encoded = encode_registry_chunk_write_receipt(&suspend_registry_chunk_write());
         unowned_env
             .with_env(|env| JString::from_str(env, &encoded))
             .resolve::<ThrowRuntimeExAndDefault>()
@@ -2613,6 +3275,40 @@ mod android {
         )
     }
 
+    fn encode_registry_landing_progress(progress: &ObMobileRegistryLandingProgress) -> String {
+        if progress.status_code != OB_MOBILE_RUNTIME_OK {
+            return format!("ERR:{}", progress.status_code);
+        }
+        let transfer_nonce =
+            encoded_utf8_field(&progress.transfer_nonce, progress.transfer_nonce_len);
+        format!(
+            "{transfer_nonce}|{}|{}|{}|{}|{}",
+            progress.total_chunks,
+            progress.verified_chunks,
+            progress.expected_bytes,
+            progress.verified_bytes,
+            progress.bytes_complete,
+        )
+    }
+
+    fn encode_registry_chunk_write_receipt(receipt: &ObMobileRegistryChunkWriteReceipt) -> String {
+        if receipt.status_code != OB_MOBILE_RUNTIME_OK {
+            return format!("ERR:{}", receipt.status_code);
+        }
+        let transfer_nonce =
+            encoded_utf8_field(&receipt.transfer_nonce, receipt.transfer_nonce_len);
+        let release_id = encoded_utf8_field(&receipt.release_id, receipt.release_id_len);
+        format!(
+            "{transfer_nonce}|{release_id}|{}|{}|{}|{}|{}|{}",
+            receipt.artifact_role,
+            receipt.chunk_index,
+            receipt.expected_bytes,
+            receipt.written_bytes,
+            receipt.durable_bytes,
+            receipt.state_code,
+        )
+    }
+
     fn encoded_utf8_field(bytes: &[u8], length: u32) -> &str {
         std::str::from_utf8(&bytes[..length as usize]).unwrap_or("")
     }
@@ -2626,7 +3322,7 @@ mod tests {
 
     #[test]
     fn abi_and_version_are_bounded_and_stable() {
-        assert_eq!(ob_mobile_bridge_abi_version(), 10);
+        assert_eq!(ob_mobile_bridge_abi_version(), 11);
         let version = unsafe { CStr::from_ptr(ob_mobile_bridge_core_version()) };
         assert_eq!(version.to_str().expect("version UTF-8"), "0.1.0");
         assert!(version.to_bytes().len() <= 32);
@@ -2662,6 +3358,48 @@ mod tests {
         assert_eq!(bridged.has_submitted_process_generation, 1);
         assert_eq!(bridged.adopted_process_generation, 8);
         assert_eq!(bridged.has_adopted_process_generation, 1);
+    }
+
+    #[test]
+    fn registry_landing_progress_has_bounded_stable_abi_fields() {
+        let bridged = ObMobileRegistryLandingProgress::from_core(RegistryLandingProgress {
+            transfer_nonce: "registry_transfer_001122".into(),
+            total_chunks: 3,
+            verified_chunks: 3,
+            expected_bytes: 6_144,
+            verified_bytes: 6_144,
+        });
+        assert_eq!(bridged.status_code, OB_MOBILE_RUNTIME_OK);
+        assert_eq!(bridged.transfer_nonce_len, 24);
+        assert_eq!(bridged.total_chunks, 3);
+        assert_eq!(bridged.verified_chunks, 3);
+        assert_eq!(bridged.expected_bytes, 6_144);
+        assert_eq!(bridged.verified_bytes, 6_144);
+        assert_eq!(bridged.bytes_complete, 1);
+    }
+
+    #[test]
+    fn registry_chunk_write_receipt_has_bounded_stable_abi_fields() {
+        let bridged =
+            ObMobileRegistryChunkWriteReceipt::from_progress(RegistryChunkWriteProgress {
+                transfer_nonce: "registry_transfer_001122".into(),
+                release_id: "aa".repeat(32),
+                artifact_role: 1,
+                chunk_index: 7,
+                expected_bytes: 8 * 1024 * 1024,
+                written_bytes: 512 * 1024,
+                durable_bytes: 256 * 1024,
+                state: RegistryChunkState::Receiving,
+            });
+        assert_eq!(bridged.status_code, OB_MOBILE_RUNTIME_OK);
+        assert_eq!(bridged.transfer_nonce_len, 24);
+        assert_eq!(bridged.release_id_len, 64);
+        assert_eq!(bridged.artifact_role, 1);
+        assert_eq!(bridged.chunk_index, 7);
+        assert_eq!(bridged.expected_bytes, 8 * 1024 * 1024);
+        assert_eq!(bridged.written_bytes, 512 * 1024);
+        assert_eq!(bridged.durable_bytes, 256 * 1024);
+        assert_eq!(bridged.state_code, 1);
     }
 
     #[test]

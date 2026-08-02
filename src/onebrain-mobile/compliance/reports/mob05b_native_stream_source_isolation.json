@@ -1,0 +1,14 @@
+{
+  "files_scanned": {
+    "dart": 40,
+    "kotlin": 6,
+    "rust": 14,
+    "swift": 3
+  },
+  "forbidden_transport_reference_count": 0,
+  "format": "onebrain.mobile.bootstrap-source-isolation/1",
+  "generated_at": "2026-08-02T02:06:02.599666+00:00",
+  "limitations": "The Android UIDT adapter and native Rust byte stream are intentionally present, but no Kotlin/Swift/Rust HTTP or socket implementation exists. The next MOB-05B slice must add approved signed HTTPS landing/range and iOS background-URLSession with packet and recovery tests.",
+  "scope": "MOB-05B signed admission, durable barrier, Android UIDT and native verified streaming before network response execution",
+  "violations": []
+}

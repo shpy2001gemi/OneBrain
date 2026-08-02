@@ -1286,8 +1286,9 @@ mod tests {
 
     use super::*;
     use crate::{
-        BootstrapStore, RegistryOperationState, RegistryReleaseState, RegistryTransferPlatform,
-        RegistryTransferScheduleState, ResourceBudgets, TransferLandingRecord,
+        BootstrapStore, RegistryChunkWriteStart, RegistryOperationState, RegistryReleaseState,
+        RegistryTransferPlatform, RegistryTransferScheduleState, ResourceBudgets,
+        TransferLandingRecord,
     };
 
     const CHANNEL_KEY_ID: &str = "channel-v1";
@@ -2098,6 +2099,210 @@ mod tests {
         assert_eq!(complete.verified_bytes, 6144);
         assert_eq!(
             recovered_after_rename
+                .registry_operation(&operation.operation_id)
+                .unwrap()
+                .unwrap()
+                .state,
+            RegistryOperationState::BytesComplete
+        );
+    }
+
+    #[test]
+    fn native_chunk_stream_checkpoints_resumes_and_rejects_invalid_finishes() {
+        const REQUEST_FINGERPRINT: &str =
+            "1212121212121212121212121212121212121212121212121212121212121212";
+        const DESCRIPTOR_DIGEST: &str =
+            "3434343434343434343434343434343434343434343434343434343434343434";
+
+        let authority = SignedFixtureAuthority::new();
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("bootstrap.redb");
+        let budgets = ResourceBudgets::default();
+        let store = BootstrapStore::open(&path).unwrap();
+        store.start_process(1).unwrap();
+        let operation = store
+            .begin_registry_init("stable", &authority.profile, &budgets)
+            .unwrap();
+        store
+            .verify_and_accept_registry_target(
+                &operation.operation_id,
+                &authority.profile,
+                "stable",
+                &authority.floor_target.channel_envelope,
+                &authority.floor_target.release_envelope,
+            )
+            .unwrap();
+        store
+            .await_registry_exact_confirmation(&operation.operation_id)
+            .unwrap();
+        store
+            .confirm_registry_init(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                &authority.profile,
+                RegistryNetworkPolicy::Unmetered,
+                false,
+                generous_plan(&authority.floor_target),
+            )
+            .unwrap();
+        let schedule = store
+            .prepare_registry_transfer_schedule(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                RegistryTransferPlatform::AndroidUidt,
+                REQUEST_FINGERPRINT,
+                DESCRIPTOR_DIGEST,
+                authority.floor_target.artifact_total_bytes,
+                false,
+                &budgets,
+            )
+            .unwrap();
+        store
+            .mark_registry_transfer_submitted(
+                &schedule.transfer_nonce,
+                "android-native-stream",
+                &budgets,
+            )
+            .unwrap();
+        store
+            .adopt_registry_transfer(
+                &schedule.transfer_nonce,
+                "android-native-stream",
+                REQUEST_FINGERPRINT,
+                schedule.android_job_id,
+                1,
+                &budgets,
+            )
+            .unwrap();
+        store
+            .prepare_registry_chunk_ledger(&schedule.transfer_nonce, &budgets)
+            .unwrap();
+
+        let obr = fixture_chunk_bytes(0, 1024);
+        let mut obr_session = match store
+            .begin_registry_chunk_write(&schedule.transfer_nonce, 0, 0, 0)
+            .unwrap()
+        {
+            RegistryChunkWriteStart::Ready(session) => session,
+            RegistryChunkWriteStart::AlreadyVerified(_) => panic!("fresh chunk was verified"),
+        };
+        let first = store
+            .append_registry_chunk_write(&mut obr_session, &obr[..123])
+            .unwrap();
+        assert_eq!(first.written_bytes, 123);
+        assert_eq!(first.durable_bytes, 0);
+        store
+            .append_registry_chunk_write(&mut obr_session, &obr[123..300])
+            .unwrap();
+        let suspended = store.suspend_registry_chunk_write(*obr_session).unwrap();
+        assert_eq!(suspended.written_bytes, 300);
+        assert_eq!(suspended.durable_bytes, 300);
+        drop(store);
+
+        let recovered = BootstrapStore::open(&path).unwrap();
+        recovered.start_process(2).unwrap();
+        let mut obr_session = match recovered
+            .begin_registry_chunk_write(&schedule.transfer_nonce, 0, 0, 300)
+            .unwrap()
+        {
+            RegistryChunkWriteStart::Ready(session) => session,
+            RegistryChunkWriteStart::AlreadyVerified(_) => panic!("partial chunk was verified"),
+        };
+        for block in obr[300..].chunks(137) {
+            recovered
+                .append_registry_chunk_write(&mut obr_session, block)
+                .unwrap();
+        }
+        recovered.finish_registry_chunk_write(*obr_session).unwrap();
+
+        let labels = fixture_chunk_bytes(1, 2048);
+        let mut short_session = match recovered
+            .begin_registry_chunk_write(&schedule.transfer_nonce, 1, 0, 0)
+            .unwrap()
+        {
+            RegistryChunkWriteStart::Ready(session) => session,
+            RegistryChunkWriteStart::AlreadyVerified(_) => panic!("fresh chunk was verified"),
+        };
+        recovered
+            .append_registry_chunk_write(&mut short_session, &labels[..512])
+            .unwrap();
+        assert!(matches!(
+            recovered.finish_registry_chunk_write(*short_session),
+            Err(MobileCoreError::RegistryAdmission(_))
+        ));
+        assert_eq!(
+            recovered
+                .registry_chunk_resume_offset(&schedule.transfer_nonce, 1, 0)
+                .unwrap(),
+            512
+        );
+        let mut labels_session = match recovered
+            .begin_registry_chunk_write(&schedule.transfer_nonce, 1, 0, 512)
+            .unwrap()
+        {
+            RegistryChunkWriteStart::Ready(session) => session,
+            RegistryChunkWriteStart::AlreadyVerified(_) => panic!("partial chunk was verified"),
+        };
+        for block in labels[512..].chunks(251) {
+            recovered
+                .append_registry_chunk_write(&mut labels_session, block)
+                .unwrap();
+        }
+        assert!(matches!(
+            recovered.append_registry_chunk_write(&mut labels_session, &[0xff]),
+            Err(MobileCoreError::RegistryAdmission(_))
+        ));
+        recovered
+            .finish_registry_chunk_write(*labels_session)
+            .unwrap();
+
+        let ccids = fixture_chunk_bytes(2, 3072);
+        let mut corrupt_session = match recovered
+            .begin_registry_chunk_write(&schedule.transfer_nonce, 2, 0, 0)
+            .unwrap()
+        {
+            RegistryChunkWriteStart::Ready(session) => session,
+            RegistryChunkWriteStart::AlreadyVerified(_) => panic!("fresh chunk was verified"),
+        };
+        let corrupt = vec![0u8; ccids.len()];
+        for block in corrupt.chunks(256) {
+            recovered
+                .append_registry_chunk_write(&mut corrupt_session, block)
+                .unwrap();
+        }
+        assert!(matches!(
+            recovered.finish_registry_chunk_write(*corrupt_session),
+            Err(MobileCoreError::Security(_))
+        ));
+        assert_eq!(
+            recovered
+                .registry_chunk_resume_offset(&schedule.transfer_nonce, 2, 0)
+                .unwrap(),
+            0
+        );
+        let mut ccids_session = match recovered
+            .begin_registry_chunk_write(&schedule.transfer_nonce, 2, 0, 0)
+            .unwrap()
+        {
+            RegistryChunkWriteStart::Ready(session) => session,
+            RegistryChunkWriteStart::AlreadyVerified(_) => panic!("fresh chunk was verified"),
+        };
+        for block in ccids.chunks(256) {
+            recovered
+                .append_registry_chunk_write(&mut ccids_session, block)
+                .unwrap();
+        }
+        recovered
+            .finish_registry_chunk_write(*ccids_session)
+            .unwrap();
+
+        let complete = recovered
+            .registry_landing_progress(&schedule.transfer_nonce)
+            .unwrap();
+        assert_eq!(complete.verified_chunks, 3);
+        assert_eq!(complete.verified_bytes, 6144);
+        assert_eq!(
+            recovered
                 .registry_operation(&operation.operation_id)
                 .unwrap()
                 .unwrap()

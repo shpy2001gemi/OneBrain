@@ -1,6 +1,6 @@
 # WIP Mobile App Analysis and Implementation Plan V1.3
 
-> Status: **ACTIVE IMPLEMENTATION / MOB-05A ADMISSION + MOB-05B UIDT AND VERIFIED BYTE-LANDING FOUNDATION IMPLEMENTED / PRODUCTION HTTPS NEXT**
+> Status: **ACTIVE IMPLEMENTATION / MOB-05A ADMISSION + MOB-05B ABI-11 NATIVE STREAM FOUNDATION IMPLEMENTED / PRODUCTION HTTPS NEXT**
 >
 > Snapshot: **2026-08-02 (Asia/Saigon)**
 >
@@ -142,7 +142,7 @@ target document does not close a work-package exit by itself.
 | Runtime profile | One-writer process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL fixture, private planner, kill/restart recovery and no-network/no-model default | Full platform/background adapter matrix and physical-device lifecycle evidence |
 | Security/private storage | Android Keystore, iOS Keychain adapter, installation binding, encrypted vault/archive, backup exclusions, fail-closed unexpected-restore tests | Physical backup/restore inspection, biometric/protected-data matrices and complete user recovery UX |
 | Limited private shell | vi/en onboarding, adaptive shared shell, encrypted text capture, Android share spool, Limited status, media import and My Media OwnedOriginal shelf | Canonical KU encode/preview/private Save, complete Library/search/KQL/backup journeys and all remaining screens |
-| Registry Init | Signed admission, durable transfer ledger, ABI-10 native recovery and Android 14+ UIDT schedule/kill/adopt/user-stop emulator proof; release still excludes Registry bytes, `INTERNET`, trust profile and descriptor | Owner-issued trust/descriptor, HTTPS landing/range/chunk transfer, iOS background `URLSession`, 2.2 GB qualification, A/B activation, health, rollback and `ReadyOffline` |
+| Registry Init | Signed admission, durable transfer ledger, ABI-11 native recovery/streaming and Android 14+ UIDT schedule plus native checkpoint/kill/resume/`BytesComplete` emulator proof; release still excludes Registry bytes, `INTERNET`, trust profile and descriptor | Owner-issued trust/descriptor, HTTPS landing/range/chunk transfer, iOS background `URLSession`, 2.2 GB qualification, A/B activation, health, rollback and `ReadyOffline` |
 | AI/tools | No-LLM baseline, signed local KQL fixture and proposal-only private-planner feasibility | Provider contract implementation, deterministic ToolOrchestrator journal, local runtime bake-off, system providers, cloud disclosure and model supply chain |
 | Media | Android picker streams to bounded encrypted Rust staging; verified bytes activate as deduplicated `OwnedOriginal` with an owned hold and force-stop recovery | Final piece/pack and manifest layout, viewer, derived share representation, received media, range verification, ENOSPC/large-file matrix and GC |
 | Networking/seeding | No network authority is present in the BootstrapOnly app | P5 and Registry entry gates, peer authorization, reconciliation, provider leases, opportunistic seed policy and multi-device canary |
@@ -1665,7 +1665,7 @@ Status vocabulary:
 | `MOB-02` | **Partial** | Thin mobile crates, process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL/private planner, Android kill recovery | Broader platform lifecycle qualification and any remaining runtime-service adapters; no `ReadyOffline` claim |
 | `MOB-03` | **Partial** | Platform custody adapters, installation binding, encrypted vault/archive, exclusions, corruption and unexpected-restore tests | Physical backup/restore, iOS orphan-Keychain, protected-data/biometric and full recovery UX evidence |
 | `MOB-04` | **Partial** | vi/en Limited shell, onboarding, encrypted raw drafts, Android share spool, status surfaces, system-picker import and My Media shelf | Canonical KU encode/preview/private Save, complete Library/My KU/Received shelves, local search/KQL and export/backup journeys |
-| `MOB-05` | **Partial — MOB-05A admission plus MOB-05B Android UIDT and verified byte-landing foundation implemented** | Deterministic signed admission/capacity, ABI-10 native-only barrier lookup, Android 14+ UIDT scheduling/adoption, process-kill and user-stop receipts, plus a Rust manifest-derived exact chunk ledger with bounded same-volume landing, resume rehash, hash/length verification and `BytesComplete` crash recovery; no production transport authority is embedded | Embed owner-issued production trust and approved transport descriptors; connect signed HTTPS range bodies and live policy to the verified landing API, finish iOS background `URLSession`, then MOB-05C whole-artifact verification/activation/health/rollback/GC and real 2.2 GB qualification |
+| `MOB-05` | **Partial — MOB-05A admission plus MOB-05B Android UIDT and ABI-11 verified native streaming implemented** | Deterministic signed admission/capacity, ABI-11 native-only schedule lookup and bounded chunk-stream receipts, Android 14+ UIDT scheduling/adoption, process-kill and user-stop receipts, plus a Rust manifest-derived exact chunk ledger with 256 KiB native blocks, 4 MiB/explicit checkpoints, resume rehash, hash/length verification and `BytesComplete` crash recovery; no production transport authority is embedded | Embed owner-issued production trust and approved transport descriptors; connect signed HTTPS range bodies and live policy to the verified landing API, finish iOS background `URLSession`, then MOB-05C whole-artifact verification/activation/health/rollback/GC and real 2.2 GB qualification |
 | `MOB-06` | **Partial contract/fixture only** | No-LLM behavior, signed KQL fixture and private proposal feasibility | Provider adapters, deterministic tool execution journal, local-runtime bake-off, cloud disclosure and signed model lifecycle |
 | `MOB-07` | **Partial — current evidence package** | Activation recovery foundations plus Android encrypted media staging/OwnedOriginal activation, catalog query and force-stop recovery | Piece/pack media contract, viewers/received media, camera/OCR/voice, background adapters, notifications/outbox, energy policy and physical matrices |
 | `MOB-08` | **Blocked** | No production network authority in the app | P5, Registry, peer protocol and stable Offline MVP entry gates; then enrollment, reconciliation, seeding/presence and multi-host canary |
@@ -1879,6 +1879,29 @@ rejects wrong hashes and mixed transfer identities. This is a transport-neutral
 Rust foundation exposed through `MobileRuntimeFacade`; no URL, credential,
 `INTERNET` permission, owner-issued production descriptor, Android response
 body, iOS background task, whole-artifact receipt or activation claim is added.
+
+Implementation checkpoint (2026-08-02): ABI 11 now exposes that landing
+foundation directly to native OS callbacks without routing bytes, paths, URLs,
+database handles or transport authority through Flutter. Kotlin and the
+generated Swift C header can prepare/recover the manifest-derived ledger, begin
+exactly one process-wide chunk session at the durable source offset, append
+bounded 1..=256 KiB blocks, checkpoint, suspend and finish while receiving typed
+written-versus-durable progress. Rust rehashes a recovered prefix once when a
+session begins, automatically syncs every 4 MiB or at exact chunk completion,
+checkpoints before a controlled runtime stop, rejects overrun/stale/out-of-band
+mutation and deletes a wrong-hash partial before returning the signed row to
+`Planned`. Android 16 debug evidence checkpoints 300 bytes, starts a new process
+through a native callback, resumes the same transfer and verifies all three
+public 6 KiB fixture chunks through `BytesComplete`. That isolated callback
+gate deliberately cancels the debug OS job before process death and therefore
+complements rather than replaces the separate UIDT inventory/adoption gate.
+The fixture generator now signs hashes for its deterministic A/B/C payloads;
+the debug source set remains excluded from release. The emulator also exposed
+and closed a process-local Android installation-material creation race with a
+single process-wide custody lock, and moved startup custody-open failure inside
+the redacted catch/zeroize boundary. No production URL/descriptor, `INTERNET`,
+HTTP executor, iOS background transfer, full-size qualification or physical-
+device claim is added.
 
 Deliver:
 
@@ -2143,9 +2166,10 @@ qualification integration at `d9270f7`:
    unavailable production trust source only with owner-issued authority and
    physical/full-size qualification evidence.
 2. **MOB-05B — durable platform transfer (Android scheduler/adoption and
-   Rust verified byte landing implemented; production transport and iOS
-   open):** keep the ABI-10
-   prepare/submit/adopt/stop plus active-schedule lookup contract and the
+   Rust ABI-11 verified native stream implemented; production transport and
+   iOS open):** keep the ABI-11
+   prepare/submit/adopt/stop, active-schedule lookup and bounded native
+   begin/append/checkpoint/suspend/finish contract plus the
    Android UIDT namespace/recovery adapter. Feed owner-approved signed HTTPS
    range responses through the manifest-derived Rust chunk ledger and its
    resume/crash recovery, add live policy, then bind iOS background `URLSession`

@@ -1,0 +1,62 @@
+{
+  "format": "onebrain.mobile.compliance-report/1",
+  "generated_at": "2026-08-02",
+  "work_package": "MOB-05B",
+  "scope": "native-only ABI 11 Registry chunk streaming and Android process-death callback recovery",
+  "results": {
+    "mobile_core_unit_tests": 28,
+    "mobile_core_integration_tests": 8,
+    "mobile_bridge_unit_tests": 7,
+    "rust_tests_passed": true,
+    "rust_clippy_no_deps_deny_warnings": true,
+    "rust_dependency_isolation_passed": true,
+    "network_transport_source_isolation_passed": true,
+    "android_rust_abis_built": [
+      "armeabi-v7a",
+      "arm64-v8a",
+      "x86_64"
+    ],
+    "android_debug_kotlin_compiled": true,
+    "android_16_native_callback_gate_passed": true,
+    "android_install_binding_fail_closed_after_lifecycle_fix": true,
+    "android_release_package_inventory_passed": true,
+    "android_release_permission_boundary_passed": true
+  },
+  "verified_behaviors": [
+    "native callers can prepare and recover only the manifest-derived Registry chunk ledger owned by Rust",
+    "one process-wide session accepts only the exact signed transfer, artifact role, chunk index and durable resume offset",
+    "each native block is bounded to 1 through 256 KiB and cannot overrun the signed chunk length",
+    "Rust rehashes an existing partial once when opening a session and reports separate written and durable byte counts",
+    "automatic 4 MiB and exact-completion sync plus explicit checkpoint/suspend preserve resumable prefixes",
+    "controlled runtime stop checkpoints an active chunk session before quiescing",
+    "wrong hash deletes the partial and returns the signed ledger row to Planned; stale or out-of-band mutations fail closed",
+    "ABI 11 C/JNI receipts contain bounded identities and progress but no URL, credential, filesystem path, database handle or transport authority",
+    "Android 16 checkpoints 300 fixture bytes, starts a fresh process from a native broadcast, resumes the same nonce and closes BytesComplete after all three chunks",
+    "Android installation-material creation is serialized process-wide so concurrent startup reconciliation cannot observe a half-created marker/envelope pair",
+    "UIDT startup reconciliation catches custody-open failure inside its zeroizing boundary so unexpected restore remains fail closed without an uncaught background-thread process crash"
+  ],
+  "commands": [
+    "cargo test -p onebrain-mobile-core -p onebrain-mobile-bridge",
+    "cargo clippy -p onebrain-mobile-core -p onebrain-mobile-bridge --all-targets --no-deps -- -D warnings",
+    "python src/onebrain-mobile/tool/generate_rust_bridge_header.py",
+    "python src/onebrain-mobile/tool/build_rust_android.py",
+    "python tool/verify_mobile_rust_dependency_graph.py --report compliance/reports/mob05b_native_stream_rust_dependency_isolation.json",
+    "python tool/verify_bootstrap_source_isolation.py --report compliance/reports/mob05b_native_stream_source_isolation.json",
+    "android/gradlew.bat :app:compileDebugKotlin",
+    "python tool/build_rust_android.py --release",
+    "flutter build apk --release --target-platform android-arm,android-arm64,android-x64",
+    "python tool/scan_mobile_package.py build/app/outputs/flutter-apk/app-release.apk --report compliance/reports/mob05b_native_stream_android_release_package_inventory.json",
+    "python tool/inspect_android_permissions.py build/app/outputs/flutter-apk/app-release.apk --report compliance/reports/mob05b_native_stream_android_release_permissions.json",
+    "flutter test integration_test/native_host_bridge_test.dart -d emulator-5554",
+    "flutter test integration_test/registry_init_bridge_test.dart -d emulator-5554",
+    "python tool/verify_android_registry_chunk_stream.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554 --report compliance/reports/mob05b_android_registry_native_chunk_stream.json",
+    "python tool/verify_android_install_binding_fail_closed.py build/app/outputs/flutter-apk/app-debug.apk --device emulator-5554 --report compliance/reports/mob05b_native_stream_android_install_binding_fail_closed.json"
+  ],
+  "limitations": [
+    "no production HTTPS URL, credential, owner-approved descriptor or production trust profile is present",
+    "the Android JobService and iOS URLSession adapters still do not feed network response bodies into the native stream",
+    "the 6 KiB public debug fixture and isolated callback gate do not qualify full-size Registry transfer or UIDT inventory reconciliation",
+    "whole-artifact verification, immutable release assembly, activation, health, rollback and real 2.2 GB qualification remain open",
+    "power-loss, Doze, thermal, reboot, Task Manager Stop and physical-device matrices remain open"
+  ]
+}

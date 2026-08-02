@@ -1,7 +1,7 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "de485f5b2dcbb8204ccb56a071d10f7b8de43286e03ee9f198396521d9d5f846",
+  "authority_set_sha256": "c424b47fcc597d8ba74c17ea9e851363e8492a52be686ca304fbee38d2ac5273",
   "phase": "feature",
   "work_package": "MOB-05",
   "acknowledged_required_read_set": [
@@ -457,7 +457,7 @@
     {
       "id": "MOB-05B-NATIVE-ONLY-ABI",
       "path": "src/onebrain-mobile-bridge/include/onebrain_mobile_bridge.h",
-      "proves": "Generated ABI 10 preserves bounded prepare, submit, adopt and missing-task recovery and adds channel-scoped active-schedule lookup for Swift/Kotlin startup reconciliation without placing any URL, credential, filesystem path, database handle, transport descriptor bytes or OS transfer handle in the Pigeon/Dart contract."
+      "proves": "Generated ABI 11 preserves bounded prepare, submit, adopt, missing-task and channel-scoped active-schedule recovery, then adds manifest-derived native chunk prepare/recover/begin/append/checkpoint/finish/suspend receipts for Swift/Kotlin callbacks without placing any URL, credential, filesystem path, database handle, transport descriptor bytes or OS transfer handle in the Pigeon/Dart contract."
     },
     {
       "id": "MOB-05B-ANDROID-ABI-INTEGRATION",
@@ -528,9 +528,54 @@
       "id": "MOB-05B-BYTE-LANDING-RECOVERY-TESTS",
       "path": "src/onebrain-mobile/compliance/reports/mob05b_registry_chunk_landing_core.json",
       "proves": "The mobile-core suite covers interrupted partial resume across process death, prefix rehash, wrong-hash cleanup, mixed-transfer rejection and rename-before-ledger-commit recovery across OBR, label-index and CCID-index fixture roles; 27 unit plus 8 integration tests and package-local deny-warnings Clippy pass."
+    },
+    {
+      "id": "MOB-05B-NATIVE-CHUNK-STREAM-CORE",
+      "path": "src/onebrain-mobile-core/src/bootstrap.rs",
+      "proves": "Rust owns one resumable chunk session with a signed exact identity and durable offset, a 256 KiB native block limit, automatic 4 MiB/exact-completion sync, explicit checkpoint/suspend, one-time prefix rehash, wrong-hash reset and controlled-stop checkpointing; native callers cannot supply expected hashes, lengths, landing paths or activation authority."
+    },
+    {
+      "id": "MOB-05B-NATIVE-CHUNK-STREAM-ABI-TESTS",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_native_registry_chunk_stream_abi.json",
+      "proves": "ABI 11 compiles across Kotlin and all three Android Rust ABIs; 28 mobile-core unit, 8 mobile-core integration and 7 bridge tests plus package-local deny-warnings Clippy cover bounded receipts, checkpoint/resume, invalid finish, overrun, wrong hash and BytesComplete behavior."
+    },
+    {
+      "id": "MOB-05B-NATIVE-STREAM-SOURCE-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_native_stream_source_isolation.json",
+      "proves": "Static scanning confirms that Android UIDT and native verified byte streaming are present while the Dart, Kotlin, Swift and Rust product sources still contain no concrete HTTP or socket response executor."
+    },
+    {
+      "id": "MOB-05B-NATIVE-STREAM-DEPENDENCY-ISOLATION",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_native_stream_rust_dependency_isolation.json",
+      "proves": "The ABI-11 mobile core still excludes desktop/node protocol, concrete LLM, Tokio and HTTP transport crates while Rust owns the canonical chunk session and ledger."
+    },
+    {
+      "id": "MOB-05B-NATIVE-STREAM-RELEASE-INVENTORY",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_native_stream_android_release_package_inventory.json",
+      "proves": "The ABI-11 optimized release APK contains matching armeabi-v7a, arm64-v8a and x86_64 Rust bridges while packaging zero Registry, index, database, model, archive, debug trust fixture or other prohibited initial data payloads."
+    },
+    {
+      "id": "MOB-05B-NATIVE-STREAM-RELEASE-PERMISSIONS",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_native_stream_android_release_permissions.json",
+      "proves": "The ABI-11 release retains the non-exported UIDT service/control boundary, excludes the debug probe and still has no INTERNET or other byte-network capability; ACCESS_NETWORK_STATE only evaluates scheduler constraints."
+    },
+    {
+      "id": "MOB-05B-ANDROID-NATIVE-CHUNK-STREAM-EMULATOR",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_android_registry_native_chunk_stream.json",
+      "proves": "Android 16 runs the real Kotlin/JNI/Rust ABI 11 callback path, checkpoints a 300-byte Receiving prefix, starts a new process, resumes the same fixture transfer and verifies all three manifest-derived chunks and 6,144 bytes through BytesComplete. The debug-isolated callback gate is explicitly not HTTPS, full-size, UIDT inventory or physical-device evidence."
+    },
+    {
+      "id": "MOB-03-ANDROID-INSTALLATION-CREATION-RACE-FENCE",
+      "path": "src/onebrain-mobile/android/app/src/main/kotlin/org/onebrain/onebrain_mobile/SecurityMaterialStore.kt",
+      "proves": "A process-wide custody lock serializes creation/open across Activity startup reconciliation and native callbacks, preventing another SecurityMaterialStore instance from observing a half-created protected envelope/install-marker pair while retaining fail-closed unexpected-restore semantics."
+    },
+    {
+      "id": "MOB-03-ANDROID-STARTUP-RESTORE-FAIL-CLOSED",
+      "path": "src/onebrain-mobile/compliance/reports/mob05b_native_stream_android_install_binding_fail_closed.json",
+      "proves": "Android 16 removes the exact no-backup install marker while authority bytes remain, observes a redacted rejection with no runtime snapshot, and no longer lets UIDT startup reconciliation terminate the process before the fail-closed receipt is recorded."
     }
   ],
   "deviations": [],
   "last_reviewed": "2026-08-02",
-  "notes": "MOB-05A admission, the MOB-05B Rust root barrier, Android UIDT scheduler/adoption and transport-neutral verified byte-landing foundation are active. ABI 10 lets Swift/Kotlin query the channel's durable active schedule; Flutter still receives no scheduler handle, URL or transport authority. Android 16 emulator evidence covers real namespaced/persisted UIDT schedule, process-kill inventory survival, exactly-one adoption and positive user Stop using the 6 KiB signed debug fixture. Rust now derives the exact chunk ledger from the accepted manifest, rehashes durable partials, rejects corrupt/mixed bytes and recovers rename-before-ledger-commit, but no Android/iOS response body is connected. The release still has no INTERNET, production trust profile or approved transport descriptor. MOB-05B must connect owner-approved signed HTTPS range responses and live policy and finish iOS background URLSession; MOB-05C must add whole-artifact receipts and qualify/activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. Task Manager Stop, reboot/Doze/thermal, full-size target-filesystem, physical-device, fresh 72-hour P5, multi-host canary and MOB-08 gates remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding, ReadyOffline or product-readiness claim is made."
+  "notes": "MOB-05A admission, the MOB-05B Rust root barrier, Android UIDT scheduler/adoption and ABI-11 transport-neutral native chunk stream are active. ABI 11 lets Swift/Kotlin recover the durable schedule and stream bounded OS-owned blocks into a manifest-derived Rust session with explicit written/durable progress; Flutter still receives no bytes, scheduler handle, path, URL or transport authority. Android 16 evidence separately covers real namespaced/persisted UIDT schedule inventory/adoption/user Stop and an isolated native callback checkpoint/process-death/resume/BytesComplete journey using the public 6 KiB signed fixture. The callback gate cancels its debug OS job before process death and does not replace UIDT reconciliation evidence. Rust rejects corrupt/mixed/overrun bytes and recovers durable partials, but no Android/iOS network response body is connected. The release still has no INTERNET, production trust profile or approved transport descriptor. MOB-05B must connect owner-approved signed HTTPS range responses and live policy and finish iOS background URLSession; MOB-05C must add whole-artifact receipts and qualify/activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. Task Manager Stop, reboot/Doze/thermal, full-size target-filesystem, physical-device, fresh 72-hour P5, multi-host canary and MOB-08 gates remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, seeding, ReadyOffline or product-readiness claim is made."
 }

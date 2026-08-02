@@ -25,7 +25,9 @@ source bytes to Dart. ABI 9 added the Rust-owned Registry
 request/descriptor fingerprints, Android job ID, process-generation receipts
 and conservative stop recovery. ABI 10 adds a bounded channel-to-active-transfer
 lookup so native startup, JobService and notification callbacks can reconcile
-JobScheduler inventory without Flutter. Android 14+ now has a namespaced,
+JobScheduler inventory without Flutter. ABI 11 adds a manifest-derived native
+chunk writer with bounded blocks, durable checkpoints, process-death resume and
+typed landing progress. Android 14+ now has a namespaced,
 persisted UIDT submission/adoption adapter with exact primitive extras,
 estimated bytes, OS constraints, visible bilingual notification and explicit
 Stop receipt. It deliberately has no HTTP/socket byte executor or production
@@ -52,7 +54,12 @@ handling, NDK linker discovery, or C declaration generation.
 
 ## ABI and thread ownership
 
-- ABI revision `10` preserves ABI 9 transfer-barrier calls and adds bounded
+- ABI revision `11` preserves ABI 10 active-schedule recovery and adds bounded
+  native-only prepare/recover/begin/append/checkpoint/finish/suspend calls for
+  streaming OS-owned response bytes into Rust. The caller supplies only the
+  signed-ledger identity and exact resume offset; Rust retains the expected
+  length/hash authority, limits each block to 256 KiB and reports written versus
+  durable bytes. ABI 10 preserved ABI 9 transfer-barrier calls and added bounded
   active-schedule lookup for native-only platform inventory recovery. ABI 9
   preserved ABI 8 signed Registry Init admission and added bounded native-only
   prepare, submit, adopt and missing-task recovery calls.
@@ -89,6 +96,8 @@ From `src/onebrain-mobile`:
 ```text
 cargo install cargo-ndk --version 4.1.2 --locked
 cargo install cbindgen --version 0.29.4 --locked
+cargo run --manifest-path ../Cargo.toml -p onebrain-mobile-core \
+  --example generate_registry_debug_fixture -- android/app/src/debug/assets/mob05a
 python tool/generate_rust_bridge_header.py
 python tool/build_rust_android.py
 python tool/verify_mobile_rust_dependency_graph.py
@@ -105,6 +114,8 @@ python tool/verify_android_install_binding_fail_closed.py \
 python tool/verify_android_media_picker.py \
   build/app/outputs/flutter-apk/app-debug.apk
 python tool/verify_android_registry_uidt.py \
+  build/app/outputs/flutter-apk/app-debug.apk
+python tool/verify_android_registry_chunk_stream.py \
   build/app/outputs/flutter-apk/app-debug.apk
 ```
 

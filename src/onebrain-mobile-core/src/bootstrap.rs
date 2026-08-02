@@ -220,6 +220,51 @@ pub struct RegistryLandingProgress {
     pub verified_bytes: u64,
 }
 
+pub const REGISTRY_NATIVE_BLOCK_MAX_BYTES: usize = 256 * 1024;
+const REGISTRY_NATIVE_CHECKPOINT_BYTES: u64 = 4 * 1024 * 1024;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegistryChunkWriteProgress {
+    pub transfer_nonce: String,
+    pub release_id: String,
+    pub artifact_role: u8,
+    pub chunk_index: u32,
+    pub expected_bytes: u64,
+    pub written_bytes: u64,
+    pub durable_bytes: u64,
+    pub state: RegistryChunkState,
+}
+
+pub enum RegistryChunkWriteStart {
+    AlreadyVerified(RegistryChunkWriteProgress),
+    Ready(Box<RegistryChunkWriteSession>),
+}
+
+pub struct RegistryChunkWriteSession {
+    record: RegistryChunkRecord,
+    paths: RegistryChunkPaths,
+    output: File,
+    hasher: blake3::Hasher,
+    written_bytes: u64,
+    durable_bytes: u64,
+    bytes_since_checkpoint: u64,
+}
+
+impl RegistryChunkWriteSession {
+    pub fn progress(&self) -> RegistryChunkWriteProgress {
+        RegistryChunkWriteProgress {
+            transfer_nonce: self.record.transfer_nonce.clone(),
+            release_id: self.record.release_id.clone(),
+            artifact_role: self.record.artifact_role,
+            chunk_index: self.record.chunk_index,
+            expected_bytes: self.record.expected_length,
+            written_bytes: self.written_bytes,
+            durable_bytes: self.durable_bytes,
+            state: self.record.state,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TransferLandingRecord {
     pub transfer_nonce: String,
@@ -1836,6 +1881,199 @@ impl BootstrapStore {
             ));
         }
         bounded_regular_file_length(&paths.partial, record.expected_length)
+    }
+
+    pub fn begin_registry_chunk_write(
+        &self,
+        transfer_nonce: &str,
+        artifact_role: u8,
+        chunk_index: u32,
+        source_offset: u64,
+    ) -> Result<RegistryChunkWriteStart, MobileCoreError> {
+        let record = self
+            .registry_chunk(transfer_nonce, artifact_role, chunk_index)?
+            .ok_or_else(|| registry_admission("unknown Registry chunk binding"))?;
+        let paths = self.registry_chunk_paths(&record)?;
+        fs::create_dir_all(&paths.directory)
+            .map_err(|error| registry_io("create Registry landing directory", error))?;
+
+        if paths.verified.exists() {
+            verify_registry_chunk_file(&paths.verified, &record)?;
+            let record = if record.state == RegistryChunkState::Verified {
+                record
+            } else {
+                self.mark_registry_chunk_verified(&record)?
+            };
+            return Ok(RegistryChunkWriteStart::AlreadyVerified(
+                RegistryChunkWriteProgress {
+                    transfer_nonce: record.transfer_nonce,
+                    release_id: record.release_id,
+                    artifact_role: record.artifact_role,
+                    chunk_index: record.chunk_index,
+                    expected_bytes: record.expected_length,
+                    written_bytes: record.expected_length,
+                    durable_bytes: record.expected_length,
+                    state: RegistryChunkState::Verified,
+                },
+            ));
+        }
+        if record.state == RegistryChunkState::Verified {
+            return Err(MobileCoreError::Security(
+                "verified Registry chunk file is missing".into(),
+            ));
+        }
+
+        let partial_length = bounded_regular_file_length(&paths.partial, record.expected_length)?;
+        if source_offset != partial_length {
+            return Err(registry_admission(format!(
+                "Registry chunk source offset {source_offset} does not match durable partial length {partial_length}",
+            )));
+        }
+        let record = self.mark_registry_chunk_receiving(&record)?;
+        let (hasher, rehashed_length) = rehash_registry_chunk_prefix(&paths.partial, &record)?;
+        if rehashed_length != partial_length {
+            return Err(MobileCoreError::Security(
+                "Registry partial changed while opening a native write session".into(),
+            ));
+        }
+        let output = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&paths.partial)
+            .map_err(|error| registry_io("open Registry partial chunk", error))?;
+        Ok(RegistryChunkWriteStart::Ready(Box::new(
+            RegistryChunkWriteSession {
+                record,
+                paths,
+                output,
+                hasher,
+                written_bytes: partial_length,
+                durable_bytes: partial_length,
+                bytes_since_checkpoint: 0,
+            },
+        )))
+    }
+
+    pub fn append_registry_chunk_write(
+        &self,
+        session: &mut RegistryChunkWriteSession,
+        block: &[u8],
+    ) -> Result<RegistryChunkWriteProgress, MobileCoreError> {
+        if block.is_empty() || block.len() > REGISTRY_NATIVE_BLOCK_MAX_BYTES {
+            return Err(registry_admission(format!(
+                "Registry native block must contain between 1 and {REGISTRY_NATIVE_BLOCK_MAX_BYTES} bytes",
+            )));
+        }
+        self.validate_registry_chunk_write_session(session)?;
+        let block_length = u64::try_from(block.len())
+            .map_err(|_| MobileCoreError::Security("Registry block length overflow".into()))?;
+        let next_length = session
+            .written_bytes
+            .checked_add(block_length)
+            .ok_or_else(|| MobileCoreError::Security("Registry write length overflow".into()))?;
+        if next_length > session.record.expected_length {
+            return Err(registry_admission(
+                "Registry native block exceeds the signed exact chunk length",
+            ));
+        }
+        session
+            .output
+            .write_all(block)
+            .map_err(|error| registry_io("write Registry native block", error))?;
+        session.hasher.update(block);
+        session.written_bytes = next_length;
+        let checkpoint_bytes = session.bytes_since_checkpoint.checked_add(block_length);
+        session.bytes_since_checkpoint = checkpoint_bytes.ok_or_else(|| {
+            MobileCoreError::Security("Registry checkpoint length overflow".into())
+        })?;
+        if session.bytes_since_checkpoint >= REGISTRY_NATIVE_CHECKPOINT_BYTES
+            || session.written_bytes == session.record.expected_length
+        {
+            self.checkpoint_registry_chunk_write(session)?;
+        }
+        Ok(session.progress())
+    }
+
+    pub fn checkpoint_registry_chunk_write(
+        &self,
+        session: &mut RegistryChunkWriteSession,
+    ) -> Result<RegistryChunkWriteProgress, MobileCoreError> {
+        self.validate_registry_chunk_write_session(session)?;
+        session
+            .output
+            .sync_data()
+            .map_err(|error| registry_io("checkpoint Registry native block", error))?;
+        session.durable_bytes = session.written_bytes;
+        session.bytes_since_checkpoint = 0;
+        Ok(session.progress())
+    }
+
+    pub fn suspend_registry_chunk_write(
+        &self,
+        mut session: RegistryChunkWriteSession,
+    ) -> Result<RegistryChunkWriteProgress, MobileCoreError> {
+        self.checkpoint_registry_chunk_write(&mut session)
+    }
+
+    pub fn finish_registry_chunk_write(
+        &self,
+        mut session: RegistryChunkWriteSession,
+    ) -> Result<RegistryChunkRecord, MobileCoreError> {
+        self.validate_registry_chunk_write_session(&session)?;
+        if session.written_bytes != session.record.expected_length {
+            self.checkpoint_registry_chunk_write(&mut session)?;
+            return Err(registry_admission(format!(
+                "Registry chunk finish requires {} bytes but only {} are present",
+                session.record.expected_length, session.written_bytes,
+            )));
+        }
+        session
+            .output
+            .sync_all()
+            .map_err(|error| registry_io("sync completed Registry native chunk", error))?;
+        session.durable_bytes = session.written_bytes;
+        let observed_hash = hex::encode(session.hasher.finalize().as_bytes());
+        if observed_hash != session.record.expected_hash {
+            drop(session.output);
+            reset_registry_partial(&session.paths.partial)?;
+            self.reset_registry_chunk_planned(&session.record)?;
+            return Err(MobileCoreError::Security(
+                "Registry chunk leaf hash does not match the signed manifest".into(),
+            ));
+        }
+        drop(session.output);
+        fs::rename(&session.paths.partial, &session.paths.verified)
+            .map_err(|error| registry_io("commit Registry verified native chunk", error))?;
+        sync_directory(&session.paths.directory)?;
+        self.mark_registry_chunk_verified(&session.record)
+    }
+
+    fn validate_registry_chunk_write_session(
+        &self,
+        session: &RegistryChunkWriteSession,
+    ) -> Result<(), MobileCoreError> {
+        let current = self
+            .registry_chunk(
+                &session.record.transfer_nonce,
+                session.record.artifact_role,
+                session.record.chunk_index,
+            )?
+            .ok_or_else(|| registry_admission("Registry chunk binding disappeared"))?;
+        if registry_chunk_identity(&current) != registry_chunk_identity(&session.record)
+            || current.state != RegistryChunkState::Receiving
+        {
+            return Err(MobileCoreError::Security(
+                "Registry native write session is stale or rebound".into(),
+            ));
+        }
+        let observed =
+            bounded_regular_file_length(&session.paths.partial, current.expected_length)?;
+        if observed != session.written_bytes {
+            return Err(MobileCoreError::Security(
+                "Registry partial changed outside the active native write session".into(),
+            ));
+        }
+        Ok(())
     }
 
     pub fn land_registry_chunk<R: Read>(

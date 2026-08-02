@@ -340,13 +340,15 @@ internal object RegistryUidtStartupReconciler {
             return
         }
         executor.execute {
-            val securityMaterial = securityMaterialStore.loadOrCreate()
+            var securityMaterial: ByteArray? = null
             try {
+                val material = securityMaterialStore.loadOrCreate()
+                securityMaterial = material
                 val result =
                     RegistryUidtScheduler.reconcileChannel(
                         context = appContext,
                         dataRoot = appContext.noBackupFilesDir.absolutePath,
-                        securityMaterial = securityMaterial,
+                        securityMaterial = material,
                         channelId = "stable",
                     )
                 Log.i(
@@ -357,7 +359,7 @@ internal object RegistryUidtStartupReconciler {
             } catch (error: Throwable) {
                 Log.w("OneBrainRegistryUidt", "uidt_startup_reconcile_failed", error)
             } finally {
-                securityMaterial.fill(0)
+                securityMaterial?.fill(0)
             }
         }
     }

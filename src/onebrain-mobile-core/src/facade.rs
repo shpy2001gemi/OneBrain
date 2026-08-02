@@ -4,11 +4,13 @@ use crate::{
     run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, ExecutionGrant,
     ExecutionGrantKind, MediaStageReceipt, MobileCoreError, MobileFeatureFlags, NetworkScope,
     OnboardingCursor, OwnedMediaSummary, RawDraftReceipt, RegistryCapacityPlan,
-    RegistryChunkRecord, RegistryLandingProgress, RegistryLimitedReceipt, RegistryNetworkPolicy,
-    RegistryOperationRecord, RegistryOperationState, RegistryReleaseCatalogRecord,
-    RegistryTransferPlatform, RegistryTransferScheduleRecord, RegistryTrustProfile,
-    ResourceBudgets, RuntimeServices, SecureIdentitySession, SecurityBootstrapMaterial,
-    SecuritySessionState, ShareSpoolSummary, TransferLandingRecord, MOBILE_RUNTIME_PROFILE_VERSION,
+    RegistryChunkRecord, RegistryChunkWriteProgress, RegistryChunkWriteSession,
+    RegistryChunkWriteStart, RegistryLandingProgress, RegistryLimitedReceipt,
+    RegistryNetworkPolicy, RegistryOperationRecord, RegistryOperationState,
+    RegistryReleaseCatalogRecord, RegistryTransferPlatform, RegistryTransferScheduleRecord,
+    RegistryTrustProfile, ResourceBudgets, RuntimeServices, SecureIdentitySession,
+    SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary, TransferLandingRecord,
+    MOBILE_RUNTIME_PROFILE_VERSION,
 };
 
 const FOREGROUND_GRANT_ID: &str = "native.foreground";
@@ -673,6 +675,50 @@ impl MobileRuntimeFacade {
     ) -> Result<u64, MobileCoreError> {
         self.store
             .registry_chunk_resume_offset(transfer_nonce, artifact_role, chunk_index)
+    }
+
+    pub fn begin_registry_chunk_write(
+        &self,
+        transfer_nonce: &str,
+        artifact_role: u8,
+        chunk_index: u32,
+        source_offset: u64,
+    ) -> Result<RegistryChunkWriteStart, MobileCoreError> {
+        self.store.begin_registry_chunk_write(
+            transfer_nonce,
+            artifact_role,
+            chunk_index,
+            source_offset,
+        )
+    }
+
+    pub fn append_registry_chunk_write(
+        &self,
+        session: &mut RegistryChunkWriteSession,
+        block: &[u8],
+    ) -> Result<RegistryChunkWriteProgress, MobileCoreError> {
+        self.store.append_registry_chunk_write(session, block)
+    }
+
+    pub fn checkpoint_registry_chunk_write(
+        &self,
+        session: &mut RegistryChunkWriteSession,
+    ) -> Result<RegistryChunkWriteProgress, MobileCoreError> {
+        self.store.checkpoint_registry_chunk_write(session)
+    }
+
+    pub fn suspend_registry_chunk_write(
+        &self,
+        session: RegistryChunkWriteSession,
+    ) -> Result<RegistryChunkWriteProgress, MobileCoreError> {
+        self.store.suspend_registry_chunk_write(session)
+    }
+
+    pub fn finish_registry_chunk_write(
+        &self,
+        session: RegistryChunkWriteSession,
+    ) -> Result<RegistryChunkRecord, MobileCoreError> {
+        self.store.finish_registry_chunk_write(session)
     }
 
     pub fn land_registry_chunk<R: Read>(

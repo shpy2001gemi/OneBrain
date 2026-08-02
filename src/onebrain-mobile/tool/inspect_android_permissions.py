@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit the Android UIDT scheduler boundary before byte transport is enabled."""
+"""Audit the Android UIDT/native-stream boundary before network transport."""
 
 from __future__ import annotations
 
@@ -103,7 +103,7 @@ def inspect(apk: Path) -> dict[str, object]:
     return {
         "format": "onebrain.mobile.android-permissions/1",
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "scope": "MOB-05B Android UIDT scheduler/adoption boundary before byte transport execution",
+        "scope": "MOB-05B Android UIDT and native verified-stream boundary before network response execution",
         "package": apk.name,
         "package_bytes": apk.stat().st_size,
         "package_sha256": _sha256(apk),

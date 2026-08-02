@@ -110,6 +110,26 @@ internal data class RustRegistryTransferSchedule(
     val adoptedProcessGeneration: Long?,
 )
 
+internal data class RustRegistryLandingProgress(
+    val transferNonce: String,
+    val totalChunks: Int,
+    val verifiedChunks: Int,
+    val expectedBytes: Long,
+    val verifiedBytes: Long,
+    val bytesComplete: Boolean,
+)
+
+internal data class RustRegistryChunkWriteReceipt(
+    val transferNonce: String,
+    val releaseId: String,
+    val artifactRole: Int,
+    val chunkIndex: Int,
+    val expectedBytes: Long,
+    val writtenBytes: Long,
+    val durableBytes: Long,
+    val stateCode: Int,
+)
+
 internal object RustMobileBridge {
     private const val NO_ACTIVE_REGISTRY_TRANSFER_STATUS = 12
     private val loadFailure =
@@ -328,6 +348,70 @@ internal object RustMobileBridge {
         return decodeRegistryTransferSchedule(encoded)
     }
 
+    fun prepareRegistryChunkLedger(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        transferNonce: String,
+    ): RustRegistryLandingProgress {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return decodeRegistryLandingProgress(
+            nativeRuntimePrepareRegistryChunkLedger(transferNonce),
+        )
+    }
+
+    fun recoverRegistryChunkLedger(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        transferNonce: String,
+    ): RustRegistryLandingProgress {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return decodeRegistryLandingProgress(
+            nativeRuntimeRecoverRegistryChunkLedger(transferNonce),
+        )
+    }
+
+    fun registryLandingProgress(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        transferNonce: String,
+    ): RustRegistryLandingProgress {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return decodeRegistryLandingProgress(
+            nativeRuntimeRegistryLandingProgress(transferNonce),
+        )
+    }
+
+    fun beginRegistryChunkWrite(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        transferNonce: String,
+        artifactRole: Int,
+        chunkIndex: Long,
+        sourceOffset: Long,
+    ): RustRegistryChunkWriteReceipt {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return decodeRegistryChunkWriteReceipt(
+            nativeRuntimeBeginRegistryChunkWrite(
+                transferNonce,
+                artifactRole,
+                chunkIndex,
+                sourceOffset,
+            ),
+        )
+    }
+
+    fun appendRegistryChunkWrite(block: ByteArray): RustRegistryChunkWriteReceipt =
+        decodeRegistryChunkWriteReceipt(nativeRuntimeAppendRegistryChunkWrite(block))
+
+    fun checkpointRegistryChunkWrite(): RustRegistryChunkWriteReceipt =
+        decodeRegistryChunkWriteReceipt(nativeRuntimeCheckpointRegistryChunkWrite())
+
+    fun finishRegistryChunkWrite(): RustRegistryChunkWriteReceipt =
+        decodeRegistryChunkWriteReceipt(nativeRuntimeFinishRegistryChunkWrite())
+
+    fun suspendRegistryChunkWrite(): RustRegistryChunkWriteReceipt =
+        decodeRegistryChunkWriteReceipt(nativeRuntimeSuspendRegistryChunkWrite())
+
     private fun ensureSecureRuntime(
         dataRoot: String,
         securityMaterial: ByteArray,
@@ -395,6 +479,44 @@ internal object RustMobileBridge {
             preparedProcessGeneration = fields[13].toLong(),
             submittedProcessGeneration = fields[14].toLong().takeIf { fields[15] == "1" },
             adoptedProcessGeneration = fields[16].toLong().takeIf { fields[17] == "1" },
+        )
+    }
+
+    private fun decodeRegistryLandingProgress(encoded: String): RustRegistryLandingProgress {
+        check(!encoded.startsWith("ERR:")) {
+            "Rust Registry landing rejected the operation (${encoded.removePrefix("ERR:")})"
+        }
+        val fields = encoded.split('|')
+        check(fields.size == 6) {
+            "Rust mobile runtime returned invalid Registry landing progress"
+        }
+        return RustRegistryLandingProgress(
+            transferNonce = fields[0],
+            totalChunks = fields[1].toInt(),
+            verifiedChunks = fields[2].toInt(),
+            expectedBytes = fields[3].toLong(),
+            verifiedBytes = fields[4].toLong(),
+            bytesComplete = fields[5] == "1",
+        )
+    }
+
+    private fun decodeRegistryChunkWriteReceipt(encoded: String): RustRegistryChunkWriteReceipt {
+        check(!encoded.startsWith("ERR:")) {
+            "Rust Registry chunk writer rejected the operation (${encoded.removePrefix("ERR:")})"
+        }
+        val fields = encoded.split('|')
+        check(fields.size == 8) {
+            "Rust mobile runtime returned an invalid Registry chunk receipt"
+        }
+        return RustRegistryChunkWriteReceipt(
+            transferNonce = fields[0],
+            releaseId = fields[1],
+            artifactRole = fields[2].toInt(),
+            chunkIndex = fields[3].toInt(),
+            expectedBytes = fields[4].toLong(),
+            writtenBytes = fields[5].toLong(),
+            durableBytes = fields[6].toLong(),
+            stateCode = fields[7].toInt(),
         )
     }
 
@@ -673,6 +795,33 @@ internal object RustMobileBridge {
     @JvmStatic private external fun nativeRuntimeRegistryTransferScheduleForChannel(
         channelId: String,
     ): String
+
+    @JvmStatic private external fun nativeRuntimePrepareRegistryChunkLedger(
+        transferNonce: String,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimeRecoverRegistryChunkLedger(
+        transferNonce: String,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimeRegistryLandingProgress(
+        transferNonce: String,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimeBeginRegistryChunkWrite(
+        transferNonce: String,
+        artifactRole: Int,
+        chunkIndex: Long,
+        sourceOffset: Long,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimeAppendRegistryChunkWrite(block: ByteArray): String
+
+    @JvmStatic private external fun nativeRuntimeCheckpointRegistryChunkWrite(): String
+
+    @JvmStatic private external fun nativeRuntimeFinishRegistryChunkWrite(): String
+
+    @JvmStatic private external fun nativeRuntimeSuspendRegistryChunkWrite(): String
 
     @JvmStatic private external fun nativeRuntimeSaveRawTextDraft(
         contentLanguage: String,

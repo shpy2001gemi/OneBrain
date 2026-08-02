@@ -31,8 +31,11 @@ internal class SecurityMaterialStore(context: Context) {
 
     fun hasExistingInstallationState(): Boolean = markerFile.exists() || envelopeFile.exists()
 
-    @Synchronized
-    fun loadOrCreate(): ByteArray {
+    fun loadOrCreate(): ByteArray = synchronized(INSTALLATION_STATE_LOCK) {
+        loadOrCreateLocked()
+    }
+
+    private fun loadOrCreateLocked(): ByteArray {
         val markerExists = markerFile.isFile
         val envelopeExists = envelopeFile.isFile
         if (!markerExists && !envelopeExists) {
@@ -188,5 +191,9 @@ internal class SecurityMaterialStore(context: Context) {
         check(temporary.renameTo(target)) {
             "SECURITY_STORAGE_UNAVAILABLE: cannot atomically install ${target.name}"
         }
+    }
+
+    private companion object {
+        val INSTALLATION_STATE_LOCK = Any()
     }
 }
