@@ -26,15 +26,18 @@ import org.onebrain.onebrain_mobile.generated.HostRuntimeSnapshot
 import org.onebrain.onebrain_mobile.generated.HostRawDraftReceipt
 import org.onebrain.onebrain_mobile.generated.HostRegistryInitAvailability
 import org.onebrain.onebrain_mobile.generated.HostRegistryInitPlan
+import org.onebrain.onebrain_mobile.generated.HostRegistryArtifactRole
+import org.onebrain.onebrain_mobile.generated.HostRegistryImportProgress
 import org.onebrain.onebrain_mobile.generated.HostRegistryNetworkPolicy
 import org.onebrain.onebrain_mobile.generated.HostRegistryTrustMode
 import org.onebrain.onebrain_mobile.generated.MobileHostApi
 import org.onebrain.onebrain_mobile.generated.PigeonEventSink
 import org.onebrain.onebrain_mobile.generated.HostShareSpoolSummary
 
-private const val HOST_API_VERSION = "8"
+private const val HOST_API_VERSION = "9"
 private const val MAX_FEASIBILITY_DELAY_MILLIS = 30_000L
 private const val MEDIA_PICK_REQUEST_CODE = 7_104
+private const val REGISTRY_ARTIFACT_PICK_REQUEST_CODE = 7_105
 private const val MEDIA_STREAM_CHUNK_BYTES = 256 * 1024
 private const val RUNTIME_LOG_TAG = "OneBrainMobileRuntime"
 private const val SHARE_CALLBACK_TOKEN =
@@ -44,6 +47,7 @@ class MainActivity : FlutterActivity() {
     private lateinit var hostApi: AndroidMobileHost
     private lateinit var hostEvents: AndroidHostEvents
     private var pendingMediaPick: PendingMediaPick? = null
+    private var pendingRegistryArtifactPick: PendingRegistryArtifactPick? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -55,6 +59,7 @@ class MainActivity : FlutterActivity() {
                 SecurityMaterialStore(applicationContext),
                 hostEvents,
                 ::requestPrivateMediaPick,
+                ::requestRegistryArtifactPick,
             )
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MobileHostApi.setUp(messenger, hostApi)
@@ -74,7 +79,7 @@ class MainActivity : FlutterActivity() {
     override fun onStart() {
         super.onStart()
         if (::hostApi.isInitialized) {
-            hostApi.allowForegroundMediaWork()
+            hostApi.allowForegroundNativeWork()
         }
     }
 
@@ -85,31 +90,49 @@ class MainActivity : FlutterActivity() {
         data: Intent?,
     ) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != MEDIA_PICK_REQUEST_CODE) {
-            return
+        when (requestCode) {
+            MEDIA_PICK_REQUEST_CODE -> {
+                val pending = pendingMediaPick ?: return
+                pendingMediaPick = null
+                val uri = data?.data
+                if (resultCode != Activity.RESULT_OK || uri == null) {
+                    pending.callback(
+                        Result.failure(
+                            FlutterError(
+                                code = "MEDIA_PICK_CANCELLED",
+                                message = "No private media source was selected",
+                            ),
+                        ),
+                    )
+                    return
+                }
+                hostApi.stagePickedMedia(uri, pending.mediaClass, pending.callback)
+            }
+            REGISTRY_ARTIFACT_PICK_REQUEST_CODE -> {
+                val pending = pendingRegistryArtifactPick ?: return
+                pendingRegistryArtifactPick = null
+                val uri = data?.data
+                if (resultCode != Activity.RESULT_OK || uri == null) {
+                    pending.callback(
+                        Result.failure(
+                            FlutterError(
+                                code = "REGISTRY_ARTIFACT_PICK_CANCELLED",
+                                message = "No Registry artifact was selected",
+                            ),
+                        ),
+                    )
+                    return
+                }
+                hostApi.importPickedRegistryArtifact(uri, pending)
+            }
         }
-        val pending = pendingMediaPick ?: return
-        pendingMediaPick = null
-        val uri = data?.data
-        if (resultCode != Activity.RESULT_OK || uri == null) {
-            pending.callback(
-                Result.failure(
-                    FlutterError(
-                        code = "MEDIA_PICK_CANCELLED",
-                        message = "No private media source was selected",
-                    ),
-                ),
-            )
-            return
-        }
-        hostApi.stagePickedMedia(uri, pending.mediaClass, pending.callback)
     }
 
     private fun requestPrivateMediaPick(
         mediaClass: HostMediaClass,
         callback: (Result<HostOwnedMediaSummary>) -> Unit,
     ) {
-        if (pendingMediaPick != null) {
+        if (pendingMediaPick != null || pendingRegistryArtifactPick != null) {
             callback(
                 Result.failure(
                     FlutterError(
@@ -137,9 +160,32 @@ class MainActivity : FlutterActivity() {
         startActivityForResult(intent, MEDIA_PICK_REQUEST_CODE)
     }
 
+    private fun requestRegistryArtifactPick(pending: PendingRegistryArtifactPick) {
+        if (pendingMediaPick != null || pendingRegistryArtifactPick != null) {
+            pending.callback(
+                Result.failure(
+                    FlutterError(
+                        code = "REGISTRY_ARTIFACT_PICK_BUSY",
+                        message = "Another private file picker is active",
+                    ),
+                ),
+            )
+            return
+        }
+        pendingRegistryArtifactPick = pending
+        val intent =
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                type = "*/*"
+            }
+        @Suppress("DEPRECATION")
+        startActivityForResult(intent, REGISTRY_ARTIFACT_PICK_REQUEST_CODE)
+    }
+
     override fun onStop() {
         if (::hostApi.isInitialized) {
-            hostApi.stopForegroundMediaWork()
+            hostApi.stopForegroundNativeWork()
             hostApi.lockPrivateNode()
         }
         super.onStop()
@@ -149,6 +195,13 @@ class MainActivity : FlutterActivity() {
 private data class PendingMediaPick(
     val mediaClass: HostMediaClass,
     val callback: (Result<HostOwnedMediaSummary>) -> Unit,
+)
+
+private data class PendingRegistryArtifactPick(
+    val operationId: String,
+    val manifestDigest: String,
+    val artifactRole: HostRegistryArtifactRole,
+    val callback: (Result<HostRegistryImportProgress>) -> Unit,
 )
 
 private data class RegistryDevelopmentFixture(
@@ -209,6 +262,23 @@ private fun RustRegistryInitPlan.toHostRegistryPlan() =
         trustMode = HostRegistryTrustMode.DEVELOPMENT_FIXTURE,
     )
 
+private fun RustRegistryLandingProgress.toHostRegistryImportProgress(
+    artifactRole: HostRegistryArtifactRole,
+    sourcePlanDigest: String,
+    roleComplete: Boolean,
+) =
+    HostRegistryImportProgress(
+        transferNonce = transferNonce,
+        selectedRole = artifactRole,
+        totalChunks = totalChunks.toLong(),
+        verifiedChunks = verifiedChunks.toLong(),
+        expectedBytes = expectedBytes,
+        verifiedBytes = verifiedBytes,
+        sourcePlanDigest = sourcePlanDigest,
+        roleComplete = roleComplete,
+        bytesComplete = bytesComplete,
+    )
+
 private class AndroidHostEvents : HostOperationEventsStreamHandler() {
     private var sink: PigeonEventSink<HostOperationEvent>? = null
 
@@ -232,6 +302,7 @@ private class AndroidMobileHost(
     private val events: AndroidHostEvents,
     private val requestMediaPick:
         (HostMediaClass, (Result<HostOwnedMediaSummary>) -> Unit) -> Unit,
+    private val requestRegistryArtifactPick: (PendingRegistryArtifactPick) -> Unit,
 ) : MobileHostApi {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val runtimeExecutor =
@@ -239,7 +310,7 @@ private class AndroidMobileHost(
             Thread(runnable, "onebrain-mobile-runtime")
         }
     private val pending = mutableMapOf<String, Runnable>()
-    private val foregroundMediaWorkAllowed = AtomicBoolean(true)
+    private val foregroundNativeWorkAllowed = AtomicBoolean(true)
 
     override fun inspectRegistryInitAvailability(
         callback: (Result<HostRegistryInitAvailability>) -> Unit,
@@ -389,6 +460,24 @@ private class AndroidMobileHost(
                     },
                 )
             mainHandler.post { callback(result) }
+        }
+    }
+
+    override fun pickAndImportRegistryArtifact(
+        operationId: String,
+        manifestDigest: String,
+        artifactRole: HostRegistryArtifactRole,
+        callback: (Result<HostRegistryImportProgress>) -> Unit,
+    ) {
+        mainHandler.post {
+            requestRegistryArtifactPick(
+                PendingRegistryArtifactPick(
+                    operationId = operationId,
+                    manifestDigest = manifestDigest,
+                    artifactRole = artifactRole,
+                    callback = callback,
+                ),
+            )
         }
     }
 
@@ -681,6 +770,215 @@ private class AndroidMobileHost(
         }
     }
 
+    fun importPickedRegistryArtifact(
+        uri: Uri,
+        pendingPick: PendingRegistryArtifactPick,
+    ) {
+        runtimeExecutor.execute {
+            var chunkSessionMayBeOpen = false
+            val result =
+                runCatching {
+                    check(foregroundNativeWorkAllowed.get()) {
+                        "Registry Local Import requires a foreground app grant"
+                    }
+                    val securityMaterial = securityMaterialStore.loadOrCreate()
+                    try {
+                        var schedule =
+                            RustMobileBridge.prepareRegistryLocalImportSchedule(
+                                dataRoot = dataRoot,
+                                securityMaterial = securityMaterial,
+                                operationId = pendingPick.operationId,
+                                manifestDigest = pendingPick.manifestDigest,
+                                foregroundUserResume = true,
+                            )
+                        val osTransferId =
+                            schedule.osTransferId
+                                ?: "android-local-import:${schedule.transferNonce}"
+                        if (schedule.stateCode == 0) {
+                            schedule =
+                                RustMobileBridge.markRegistryTransferSubmitted(
+                                    dataRoot,
+                                    securityMaterial,
+                                    schedule.transferNonce,
+                                    osTransferId,
+                                )
+                        }
+                        if (schedule.stateCode == 1) {
+                            schedule =
+                                RustMobileBridge.adoptRegistryTransfer(
+                                    dataRoot = dataRoot,
+                                    securityMaterial = securityMaterial,
+                                    transferNonce = schedule.transferNonce,
+                                    osTransferId = osTransferId,
+                                    observedRequestFingerprint = schedule.requestFingerprint,
+                                    observedAndroidJobId = null,
+                                    matchingTaskCount = 1,
+                                )
+                        }
+                        check(schedule.stateCode == 2) {
+                            "Registry Local Import schedule is not adopted"
+                        }
+                        RustMobileBridge.prepareRegistryChunkLedger(
+                            dataRoot,
+                            securityMaterial,
+                            schedule.transferNonce,
+                        )
+
+                        val role = pendingPick.artifactRole.raw
+                        var target =
+                            RustMobileBridge.nextRegistryChunkSourceTarget(
+                                dataRoot,
+                                securityMaterial,
+                                schedule.transferNonce,
+                                role,
+                            )
+                        val hadIncompleteChunk = target != null
+                        if (hadIncompleteChunk) {
+                            val buffer = ByteArray(MEDIA_STREAM_CHUNK_BYTES)
+                            try {
+                                context.contentResolver.openInputStream(uri).use { input ->
+                                    checkNotNull(input) {
+                                        "Android content provider returned no readable Registry artifact"
+                                    }
+                                    var sourcePosition = 0L
+                                    while (target != null) {
+                                        check(foregroundNativeWorkAllowed.get()) {
+                                            "Registry Local Import lost its foreground grant"
+                                        }
+                                        val current = target!!
+                                        val requiredPosition =
+                                            Math.addExact(
+                                                current.artifactSourceOffset,
+                                                current.resumeOffset,
+                                            )
+                                        sourcePosition =
+                                            discardRegistrySourceBytes(
+                                                input = input,
+                                                buffer = buffer,
+                                                currentPosition = sourcePosition,
+                                                requiredPosition = requiredPosition,
+                                            )
+                                        RustMobileBridge.beginRegistryChunkWrite(
+                                            dataRoot = dataRoot,
+                                            securityMaterial = securityMaterial,
+                                            transferNonce = schedule.transferNonce,
+                                            artifactRole = role,
+                                            chunkIndex = current.chunkIndex.toLong(),
+                                            sourceOffset = current.resumeOffset,
+                                        )
+                                        chunkSessionMayBeOpen = true
+                                        var remaining = current.expectedLength - current.resumeOffset
+                                        check(remaining >= 0) {
+                                            "Rust returned an invalid Registry resume boundary"
+                                        }
+                                        while (remaining > 0) {
+                                            check(foregroundNativeWorkAllowed.get()) {
+                                                "Registry Local Import lost its foreground grant"
+                                            }
+                                            val requested = minOf(buffer.size.toLong(), remaining).toInt()
+                                            val read = input.read(buffer, 0, requested)
+                                            check(read > 0) {
+                                                "Registry artifact ended before its signed exact length"
+                                            }
+                                            val block =
+                                                if (read == buffer.size) buffer else buffer.copyOf(read)
+                                            try {
+                                                RustMobileBridge.appendRegistryChunkWrite(block)
+                                            } finally {
+                                                if (block !== buffer) block.fill(0)
+                                            }
+                                            sourcePosition = Math.addExact(sourcePosition, read.toLong())
+                                            remaining -= read.toLong()
+                                        }
+                                        RustMobileBridge.finishRegistryChunkWrite()
+                                        chunkSessionMayBeOpen = false
+                                        target =
+                                            RustMobileBridge.nextRegistryChunkSourceTarget(
+                                                dataRoot,
+                                                securityMaterial,
+                                                schedule.transferNonce,
+                                                role,
+                                            )
+                                    }
+                                    check(input.read() == -1) {
+                                        "Registry artifact exceeds its signed exact length"
+                                    }
+                                }
+                            } finally {
+                                buffer.fill(0)
+                            }
+                        }
+                        val progress =
+                            RustMobileBridge.registryLandingProgress(
+                                dataRoot,
+                                securityMaterial,
+                                schedule.transferNonce,
+                            )
+                        progress.toHostRegistryImportProgress(
+                            artifactRole = pendingPick.artifactRole,
+                            sourcePlanDigest = schedule.sourcePlanDigest,
+                            roleComplete =
+                                RustMobileBridge.nextRegistryChunkSourceTarget(
+                                    dataRoot,
+                                    securityMaterial,
+                                    schedule.transferNonce,
+                                    role,
+                                ) == null,
+                        )
+                    } finally {
+                        securityMaterial.fill(0)
+                    }
+                }.fold(
+                    onSuccess = {
+                        Log.i(
+                            RUNTIME_LOG_TAG,
+                            "registry_local_import_verified role=${pendingPick.artifactRole.name.lowercase()}",
+                        )
+                        Result.success(it)
+                    },
+                    onFailure = {
+                        if (chunkSessionMayBeOpen) {
+                            runCatching { RustMobileBridge.suspendRegistryChunkWrite() }
+                        }
+                        Log.w(RUNTIME_LOG_TAG, "registry_local_import_rejected")
+                        Result.failure(
+                            FlutterError(
+                                code = "REGISTRY_LOCAL_IMPORT_FAILED",
+                                message =
+                                    it.message
+                                        ?: "Registry artifact could not be verified and imported",
+                            ),
+                        )
+                    },
+                )
+            mainHandler.post { pendingPick.callback(result) }
+        }
+    }
+
+    private fun discardRegistrySourceBytes(
+        input: java.io.InputStream,
+        buffer: ByteArray,
+        currentPosition: Long,
+        requiredPosition: Long,
+    ): Long {
+        check(requiredPosition >= currentPosition) {
+            "Registry source targets are not monotonic"
+        }
+        var position = currentPosition
+        while (position < requiredPosition) {
+            check(foregroundNativeWorkAllowed.get()) {
+                "Registry Local Import lost its foreground grant"
+            }
+            val requested = minOf(buffer.size.toLong(), requiredPosition - position).toInt()
+            val read = input.read(buffer, 0, requested)
+            check(read > 0) {
+                "Registry artifact ended before its signed resume boundary"
+            }
+            position = Math.addExact(position, read.toLong())
+        }
+        return position
+    }
+
     override fun pickAndImportOwnedMedia(
         mediaClass: HostMediaClass,
         callback: (Result<HostOwnedMediaSummary>) -> Unit,
@@ -718,14 +1016,14 @@ private class AndroidMobileHost(
                                     "Android content provider returned no readable media stream"
                                 }
                                 while (true) {
-                                    check(foregroundMediaWorkAllowed.get()) {
+                                    check(foregroundNativeWorkAllowed.get()) {
                                         "Private media staging lost its foreground grant"
                                     }
                                     val read = input.read(buffer)
                                     if (read < 0) {
                                         break
                                     }
-                                    check(foregroundMediaWorkAllowed.get()) {
+                                    check(foregroundNativeWorkAllowed.get()) {
                                         "Private media staging lost its foreground grant"
                                     }
                                     if (read == 0) {
@@ -843,12 +1141,12 @@ private class AndroidMobileHost(
         }
     }
 
-    fun allowForegroundMediaWork() {
-        foregroundMediaWorkAllowed.set(true)
+    fun allowForegroundNativeWork() {
+        foregroundNativeWorkAllowed.set(true)
     }
 
-    fun stopForegroundMediaWork() {
-        foregroundMediaWorkAllowed.set(false)
+    fun stopForegroundNativeWork() {
+        foregroundNativeWorkAllowed.set(false)
     }
 
     override fun startFeasibilityOperation(

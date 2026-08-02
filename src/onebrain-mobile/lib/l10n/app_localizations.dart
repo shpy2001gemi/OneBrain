@@ -1440,6 +1440,101 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Back to Home'**
   String get backHomeAction;
+
+  /// No description provided for @initLocalImportTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Import the signed Registry from this device'**
+  String get initLocalImportTitle;
+
+  /// No description provided for @initLocalImportBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose each role-scoped artifact with the Android system picker. Native streams directly to Rust, which resumes and verifies every signed chunk. File names, Flutter and the picker never grant content authority.'**
+  String get initLocalImportBody;
+
+  /// No description provided for @initLocalImportResumeNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep OneBrain in the foreground while a file is streaming. If Android stops the app, choose the same artifact again and verification resumes from durable bytes.'**
+  String get initLocalImportResumeNote;
+
+  /// No description provided for @initLocalImportSourceStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Local Import · no server required'**
+  String get initLocalImportSourceStatus;
+
+  /// No description provided for @initLocalImportConceptsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Concept data (concepts.obr)'**
+  String get initLocalImportConceptsTitle;
+
+  /// No description provided for @initLocalImportLabelsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Labels index'**
+  String get initLocalImportLabelsTitle;
+
+  /// No description provided for @initLocalImportCcidsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'CCID index'**
+  String get initLocalImportCcidsTitle;
+
+  /// No description provided for @initLocalImportRoleBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Select the exact artifact for this signed role. Extra, missing or altered bytes are rejected.'**
+  String get initLocalImportRoleBody;
+
+  /// No description provided for @initLocalImportAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose and verify file'**
+  String get initLocalImportAction;
+
+  /// No description provided for @initLocalImportRoleComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Role verified'**
+  String get initLocalImportRoleComplete;
+
+  /// No description provided for @initLocalImportRolePending.
+  ///
+  /// In en, this message translates to:
+  /// **'Not imported'**
+  String get initLocalImportRolePending;
+
+  /// No description provided for @initLocalImportProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{verifiedChunks}/{totalChunks} chunks · {verifiedBytes}/{expectedBytes} bytes verified'**
+  String initLocalImportProgress(
+    int verifiedChunks,
+    int totalChunks,
+    int verifiedBytes,
+    int expectedBytes,
+  );
+
+  /// No description provided for @initLocalImportAllBytesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'All Registry bytes verified'**
+  String get initLocalImportAllBytesTitle;
+
+  /// No description provided for @initLocalImportAllBytesBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The three signed artifacts are complete in durable landing storage. Activation remains gated by the next MOB-05C whole-artifact, KQL smoke and atomic pointer checks.'**
+  String get initLocalImportAllBytesBody;
+
+  /// No description provided for @initLocalImportError.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected artifact was cancelled, unreadable, too short, too long or did not match the signed chunk ledger. Verified durable bytes were kept for resume.'**
+  String get initLocalImportError;
 }
 
 class _AppLocalizationsDelegate

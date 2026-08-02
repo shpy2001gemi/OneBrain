@@ -153,6 +153,8 @@ enum HostRegistryTrustMode { unavailable, developmentFixture, production }
 
 enum HostRegistryNetworkPolicy { wifiOnly, unmetered, anyNetwork }
 
+enum HostRegistryArtifactRole { concepts, labelsIndex, ccidsIndex }
+
 class HostRegistryInitAvailability {
   HostRegistryInitAvailability({
     required this.available,
@@ -217,6 +219,30 @@ class HostRegistryInitPlan {
   HostRegistryTrustMode trustMode;
 }
 
+class HostRegistryImportProgress {
+  HostRegistryImportProgress({
+    required this.transferNonce,
+    required this.selectedRole,
+    required this.totalChunks,
+    required this.verifiedChunks,
+    required this.expectedBytes,
+    required this.verifiedBytes,
+    required this.sourcePlanDigest,
+    required this.roleComplete,
+    required this.bytesComplete,
+  });
+
+  String transferNonce;
+  HostRegistryArtifactRole selectedRole;
+  int totalChunks;
+  int verifiedChunks;
+  int expectedBytes;
+  int verifiedBytes;
+  String sourcePlanDigest;
+  bool roleComplete;
+  bool bytesComplete;
+}
+
 class HostOperationEvent {
   HostOperationEvent({
     required this.operationId,
@@ -252,6 +278,13 @@ abstract class MobileHostApi {
     String manifestDigest,
     HostRegistryNetworkPolicy networkPolicy,
     bool oneTimeNetworkOverride,
+  );
+
+  @async
+  HostRegistryImportProgress pickAndImportRegistryArtifact(
+    String operationId,
+    String manifestDigest,
+    HostRegistryArtifactRole artifactRole,
   );
 
   @async

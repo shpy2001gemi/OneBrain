@@ -18,7 +18,7 @@
 /**
  * Stable ABI revision understood by the current Swift/Kotlin adapters.
  */
-#define OB_MOBILE_BRIDGE_ABI_VERSION 12
+#define OB_MOBILE_BRIDGE_ABI_VERSION 13
 
 #define OB_MOBILE_RUNTIME_OK 0
 
@@ -51,6 +51,8 @@
 #define OB_MOBILE_RUNTIME_REGISTRY_CHUNK_SESSION_BUSY 14
 
 #define OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_CHUNK_SESSION 15
+
+#define OB_MOBILE_RUNTIME_NO_REGISTRY_CHUNK_TARGET 16
 
 typedef struct ObMobileRegistryPlan {
   uint32_t status_code;
@@ -121,6 +123,17 @@ typedef struct ObMobileRegistryLandingProgress {
   uint64_t verified_bytes;
   uint8_t bytes_complete;
 } ObMobileRegistryLandingProgress;
+
+typedef struct ObMobileRegistryChunkSourceTarget {
+  uint32_t status_code;
+  uint8_t transfer_nonce[129];
+  uint32_t transfer_nonce_len;
+  uint32_t artifact_role;
+  uint32_t chunk_index;
+  uint64_t artifact_source_offset;
+  uint64_t expected_length;
+  uint64_t resume_offset;
+} ObMobileRegistryChunkSourceTarget;
 
 typedef struct ObMobileRegistryChunkWriteReceipt {
   uint32_t status_code;
@@ -292,6 +305,20 @@ struct ObMobileRegistryTransferSchedule ob_mobile_runtime_prepare_registry_trans
                                                                                                   uint8_t foreground_user_resume);
 
 /**
+ * Prepare the canonical foreground Local Import barrier. Rust derives the
+ * source-plan digest, request fingerprint, source kind, executor, and exact
+ * byte count from the admitted signed operation.
+ *
+ * # Safety
+ * Every pointer must reference its declared readable UTF-8 byte length.
+ */
+struct ObMobileRegistryTransferSchedule ob_mobile_runtime_prepare_registry_local_import_schedule_utf8(const uint8_t *operation_id,
+                                                                                                      size_t operation_id_len,
+                                                                                                      const uint8_t *manifest_digest,
+                                                                                                      size_t manifest_digest_len,
+                                                                                                      uint8_t foreground_user_resume);
+
+/**
  * Record the platform scheduler's durable submit receipt.
  *
  * # Safety
@@ -377,6 +404,17 @@ struct ObMobileRegistryLandingProgress ob_mobile_runtime_recover_registry_chunk_
  */
 struct ObMobileRegistryLandingProgress ob_mobile_runtime_registry_landing_progress_utf8(const uint8_t *transfer_nonce,
                                                                                         size_t transfer_nonce_len);
+
+/**
+ * Resolve the next incomplete signed chunk and its exact offset in one
+ * role-scoped local artifact. A no-target status means that role is complete.
+ *
+ * # Safety
+ * `transfer_nonce` must reference its declared readable UTF-8 byte length.
+ */
+struct ObMobileRegistryChunkSourceTarget ob_mobile_runtime_next_registry_chunk_source_target_utf8(const uint8_t *transfer_nonce,
+                                                                                                  size_t transfer_nonce_len,
+                                                                                                  uint32_t artifact_role);
 
 /**
  * Open the process-wide native-only write session for one exact signed chunk.

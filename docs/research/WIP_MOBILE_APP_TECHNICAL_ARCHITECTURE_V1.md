@@ -1655,6 +1655,26 @@ identity. Allowed V1 source kinds are:
 5. `LOCAL_IMPORT` - a user-selected file/removable/local-share source that is
    still verified through the same chunk and release contracts.
 
+After the signed manifest has been accepted and exactly confirmed, Android V1
+represents `LOCAL_IMPORT` as three role-scoped user selections: Concepts OBR,
+labels index and CCID index. Each selected file is the exact concatenation of
+that role's signed chunks in ascending chunk index. The UI supplies only the
+role selected by the user; neither the filename, extension, picker metadata nor
+URI becomes authority. Native owns the transient content handle and streams
+bounded blocks directly into Rust. Flutter receives only typed progress and
+opaque digests, never the path, URI or source bytes.
+
+Rust derives every chunk boundary, absolute source-file offset and durable
+resume offset from the accepted manifest ledger. Missing, extra, reordered or
+wrong-hash bytes fail closed. If Android stops the foreground process, verified
+and partial durable bytes remain; the user can reselect the same role artifact
+and native discards source bytes up to Rust's exact resume boundary before
+continuing. Persisting a provider URI is not required for this foreground V1
+adapter. A local artifact set alone cannot establish a fresh-install authority
+root: a clean offline install must also receive the owner-issued signed trust,
+channel-head and release metadata through a separately approved bootstrap
+source before exact confirmation.
+
 An exact `RegistrySourcePlan/1` contains one or more sorted descriptors and is
 bound by `source_plan_digest` into `SchedulePrepared`. The confirmed plan shows
 source kinds, expected network/cost/power behavior and whether automatic

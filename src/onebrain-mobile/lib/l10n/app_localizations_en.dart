@@ -789,4 +789,62 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get backHomeAction => 'Back to Home';
+
+  @override
+  String get initLocalImportTitle =>
+      'Import the signed Registry from this device';
+
+  @override
+  String get initLocalImportBody =>
+      'Choose each role-scoped artifact with the Android system picker. Native streams directly to Rust, which resumes and verifies every signed chunk. File names, Flutter and the picker never grant content authority.';
+
+  @override
+  String get initLocalImportResumeNote =>
+      'Keep OneBrain in the foreground while a file is streaming. If Android stops the app, choose the same artifact again and verification resumes from durable bytes.';
+
+  @override
+  String get initLocalImportSourceStatus => 'Local Import · no server required';
+
+  @override
+  String get initLocalImportConceptsTitle => 'Concept data (concepts.obr)';
+
+  @override
+  String get initLocalImportLabelsTitle => 'Labels index';
+
+  @override
+  String get initLocalImportCcidsTitle => 'CCID index';
+
+  @override
+  String get initLocalImportRoleBody =>
+      'Select the exact artifact for this signed role. Extra, missing or altered bytes are rejected.';
+
+  @override
+  String get initLocalImportAction => 'Choose and verify file';
+
+  @override
+  String get initLocalImportRoleComplete => 'Role verified';
+
+  @override
+  String get initLocalImportRolePending => 'Not imported';
+
+  @override
+  String initLocalImportProgress(
+    int verifiedChunks,
+    int totalChunks,
+    int verifiedBytes,
+    int expectedBytes,
+  ) {
+    return '$verifiedChunks/$totalChunks chunks · $verifiedBytes/$expectedBytes bytes verified';
+  }
+
+  @override
+  String get initLocalImportAllBytesTitle => 'All Registry bytes verified';
+
+  @override
+  String get initLocalImportAllBytesBody =>
+      'The three signed artifacts are complete in durable landing storage. Activation remains gated by the next MOB-05C whole-artifact, KQL smoke and atomic pointer checks.';
+
+  @override
+  String get initLocalImportError =>
+      'The selected artifact was cancelled, unreadable, too short, too long or did not match the signed chunk ledger. Verified durable bytes were kept for resume.';
 }

@@ -1,0 +1,75 @@
+{
+  "format": "onebrain.mobile.mob05b-android-local-import/1",
+  "generated_at": "2026-08-02T08:24:32.3518011Z",
+  "work_package": "MOB-05B",
+  "result": "passed",
+  "scope": "Server-free Android Local Import for the three signed Registry artifact roles after MOB-05A exact consent and admission",
+  "contract": {
+    "authority_set_sha256": "f1397c5c690c2024616d5817965c1f8a441008e2dd8cd37f98e6c72627fb6ace",
+    "host_api_version": "9",
+    "rust_abi_version": 13
+  },
+  "implemented_behavior": [
+    "Flutter selects an explicit Concepts OBR, labels index or CCIDs index role and receives only bounded progress receipts.",
+    "Android owns the ACTION_OPEN_DOCUMENT URI and streams from the exact signed-manifest source offset without exposing a path, URI or byte buffer to Flutter.",
+    "Rust derives the LocalImport/ForegroundNative schedule, request fingerprint, source-plan digest, expected chunk lengths and hashes from the admitted signed release.",
+    "Rust revalidates verified rows, resumes an interrupted partial at its durable offset, rejects short or extra source data and reaches BytesComplete only after all three artifact roles verify.",
+    "Process loss does not persist provider authority: the user reselects the same source document and Rust resumes from durable verified or partial state."
+  ],
+  "validation": {
+    "mobile_core_unit_tests": 28,
+    "mobile_core_integration_tests": 8,
+    "mobile_bridge_tests": 8,
+    "flutter_widget_tests": 13,
+    "flutter_golden_tests": 14,
+    "android_emulator_integration_tests": 1,
+    "android_emulator": "Android 16 x86_64 emulator-5554",
+    "fixture_roles": 3,
+    "fixture_total_bytes": 6144,
+    "final_registry_state": "BytesComplete",
+    "android_debug_rust_abis": [
+      "armeabi-v7a",
+      "arm64-v8a",
+      "x86_64"
+    ],
+    "android_release_rust_abis": [
+      "armeabi-v7a",
+      "arm64-v8a",
+      "x86_64"
+    ],
+    "release_apk_bytes": 66102444,
+    "release_apk_sha256": "bc372c5aea73348f8c93464b2856b4462f1925d6d1edab5be961fd6ec687488b",
+    "release_internet_permission_present": false,
+    "packaged_registry_payload_count": 0,
+    "forbidden_transport_reference_count": 0,
+    "forbidden_rust_dependency_count": 0
+  },
+  "supporting_evidence": [
+    "src/onebrain-mobile/compliance/reports/mob05b_release_package_inventory.json",
+    "src/onebrain-mobile/compliance/reports/mob05b_android_release_permissions.json",
+    "src/onebrain-mobile/compliance/reports/mob05b_bootstrap_source_isolation.json",
+    "src/onebrain-mobile/compliance/reports/mob05b_rust_dependency_isolation.json",
+    "src/onebrain-mobile/integration_test/registry_local_import_bridge_test.dart"
+  ],
+  "commands": [
+    "cargo test --manifest-path ../onebrain-mobile-core/Cargo.toml",
+    "cargo test --manifest-path ../onebrain-mobile-bridge/Cargo.toml",
+    "cargo clippy --manifest-path ../onebrain-mobile-core/Cargo.toml --all-targets --no-deps -- -D warnings",
+    "cargo clippy --manifest-path ../onebrain-mobile-bridge/Cargo.toml --all-targets --no-deps -- -D warnings",
+    "flutter analyze",
+    "flutter test --exclude-tags golden",
+    "flutter test --tags golden",
+    "flutter test integration_test/registry_local_import_bridge_test.dart -d emulator-5554",
+    "flutter build apk --release",
+    "python tool/scan_mobile_package.py build/app/outputs/flutter-apk/app-release.apk --report compliance/reports/mob05b_release_package_inventory.json",
+    "python tool/inspect_android_permissions.py build/app/outputs/flutter-apk/app-release.apk --report compliance/reports/mob05b_android_release_permissions.json",
+    "python tool/verify_bootstrap_source_isolation.py --report compliance/reports/mob05b_bootstrap_source_isolation.json",
+    "python tool/verify_mobile_rust_dependency_graph.py --report compliance/reports/mob05b_rust_dependency_isolation.json"
+  ],
+  "limitations": [
+    "The emulator journey uses a public 6 KiB development fixture; it is not the 1.2 GB concepts.obr or full 2.2 GB-class target-filesystem qualification.",
+    "Fresh installation still needs an admitted signed trust profile, channel head and release envelope before local artifact import; no central service is required by the byte-import path.",
+    "Android process death requires explicit user reselection because transient document-provider authority is deliberately not persisted.",
+    "DirectPeer, CommunitySeed, CarrierPeer, optional HTTPS fallback, iOS bounded execution, MOB-05C whole-artifact activation and physical-device energy/recovery gates remain open."
+  ]
+}

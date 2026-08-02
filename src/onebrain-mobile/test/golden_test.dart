@@ -376,6 +376,15 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   }) => throw UnsupportedError('Registry Init is unavailable in this fake');
 
   @override
+  Future<MobileRegistryImportProgress> pickAndImportRegistryArtifact({
+    required String operationId,
+    required String manifestDigest,
+    required MobileRegistryArtifactRole artifactRole,
+  }) => throw UnsupportedError(
+    'Registry Local Import is unavailable in this fake',
+  );
+
+  @override
   Future<void> setOnboardingCursor(MobileOnboardingCursor cursor) async {}
 
   @override

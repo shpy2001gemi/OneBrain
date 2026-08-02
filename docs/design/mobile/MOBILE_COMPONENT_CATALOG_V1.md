@@ -148,10 +148,10 @@ change. Its primary button names the exact action, not “Continue.”
 | ID | Component | Contract | Variants / required states |
 |---|---|---|---|
 | `OBM-CMP-OPS-001` | Operation card | Durable operation ID, scoped state, exact progress, selected source kind/executor when applicable, pause reason and canonical detail route | Init, restore, model, media, sync, seed, backup |
-| `OBM-CMP-OPS-002` | Exact plan panel | Signed target, artifacts, authoritative required/free bytes, canonical provider/source-plan digest, source kind versus OS executor, network/power policy and consequences; provider identity is never authority | first Init, update, model, restore |
+| `OBM-CMP-OPS-002` | Exact plan panel | Signed target, artifacts, authoritative required/free bytes, canonical provider/source-plan digest, source kind versus OS executor, network/power policy and consequences; provider identity is never authority. Local Import composes one shared action card per signed artifact role and never displays a path/URI | first Init, update, model, restore |
 | `OBM-CMP-OPS-003` | Resource facts | Available/required/protected/reclaimable bytes, network, battery and thermal facts | preflight, live recheck, failure |
 | `OBM-CMP-OPS-004` | Resume decision | Typed reason, retained verified progress, provider failover facts and exact Resume/Defer/Cleanup choices | source, network, storage, OS budget, user stop |
-| `OBM-CMP-OPS-005` | Verification receipt | Device-local verification scope and identifiers; never remote delivery proof | artifact, backup, media pack, model |
+| `OBM-CMP-OPS-005` | Verification receipt | Device-local verification scope and identifiers; exact role/chunk/byte progress may be shown with an opaque source-plan digest, never filename authority or remote delivery proof | artifact, backup, media pack, model |
 
 For first Init:
 

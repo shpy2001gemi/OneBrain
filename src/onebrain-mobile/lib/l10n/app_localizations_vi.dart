@@ -789,4 +789,61 @@ class AppLocalizationsVi extends AppLocalizations {
 
   @override
   String get backHomeAction => 'Về Trang chủ';
+
+  @override
+  String get initLocalImportTitle => 'Nhập Registry đã ký từ thiết bị này';
+
+  @override
+  String get initLocalImportBody =>
+      'Chọn từng artifact theo role bằng system picker của Android. Native stream thẳng sang Rust; Rust tiếp tục và xác minh từng chunk đã ký. Tên file, Flutter và picker không cấp quyền cho nội dung.';
+
+  @override
+  String get initLocalImportResumeNote =>
+      'Giữ OneBrain ở foreground khi đang stream file. Nếu Android dừng app, hãy chọn lại cùng artifact để tiếp tục từ các byte đã lưu bền vững.';
+
+  @override
+  String get initLocalImportSourceStatus => 'Local Import · không cần server';
+
+  @override
+  String get initLocalImportConceptsTitle => 'Dữ liệu concept (concepts.obr)';
+
+  @override
+  String get initLocalImportLabelsTitle => 'Chỉ mục nhãn';
+
+  @override
+  String get initLocalImportCcidsTitle => 'Chỉ mục CCID';
+
+  @override
+  String get initLocalImportRoleBody =>
+      'Chọn đúng artifact cho role đã ký này. Byte thừa, thiếu hoặc bị thay đổi sẽ bị từ chối.';
+
+  @override
+  String get initLocalImportAction => 'Chọn và xác minh file';
+
+  @override
+  String get initLocalImportRoleComplete => 'Role đã xác minh';
+
+  @override
+  String get initLocalImportRolePending => 'Chưa nhập';
+
+  @override
+  String initLocalImportProgress(
+    int verifiedChunks,
+    int totalChunks,
+    int verifiedBytes,
+    int expectedBytes,
+  ) {
+    return 'Đã xác minh $verifiedChunks/$totalChunks chunk · $verifiedBytes/$expectedBytes byte';
+  }
+
+  @override
+  String get initLocalImportAllBytesTitle => 'Đã xác minh tất cả byte Registry';
+
+  @override
+  String get initLocalImportAllBytesBody =>
+      'Ba artifact đã ký đã hoàn tất trong kho landing bền vững. Việc activate vẫn chờ các gate MOB-05C: xác minh toàn artifact, KQL smoke và commit pointer nguyên tử.';
+
+  @override
+  String get initLocalImportError =>
+      'Artifact đã chọn bị hủy, không đọc được, quá ngắn, quá dài hoặc không khớp ledger chunk đã ký. Các byte bền vững đã xác minh vẫn được giữ để tiếp tục.';
 }

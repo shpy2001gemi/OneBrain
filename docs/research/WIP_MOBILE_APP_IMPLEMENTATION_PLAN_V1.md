@@ -1,6 +1,6 @@
-# WIP Mobile App Analysis and Implementation Plan V1.4
+# WIP Mobile App Analysis and Implementation Plan V1.5
 
-> Status: **ACTIVE IMPLEMENTATION / MOB-05A ADMISSION + MOB-05B ABI-12 SOURCE-PLAN CONTRACT IMPLEMENTED / PROVIDER ADAPTERS NEXT**
+> Status: **ACTIVE IMPLEMENTATION / MOB-05A ADMISSION + MOB-05B ABI-13 ANDROID LOCAL IMPORT IMPLEMENTED / PEER + ACTIVATION NEXT**
 >
 > Snapshot: **2026-08-02 (Asia/Saigon)**
 >
@@ -1685,7 +1685,7 @@ Status vocabulary:
 | `MOB-02` | **Partial** | Thin mobile crates, process generation, bounded grants, callback fence, bootstrap ledger, signed local KQL/private planner, Android kill recovery | Broader platform lifecycle qualification and any remaining runtime-service adapters; no `ReadyOffline` claim |
 | `MOB-03` | **Partial** | Platform custody adapters, installation binding, encrypted vault/archive, exclusions, corruption and unexpected-restore tests | Physical backup/restore, iOS orphan-Keychain, protected-data/biometric and full recovery UX evidence |
 | `MOB-04` | **Partial** | vi/en Limited shell, onboarding, encrypted raw drafts, Android share spool, status surfaces, system-picker import and My Media shelf | Canonical KU encode/preview/private Save, complete Library/My KU/Received shelves, local search/KQL and export/backup journeys |
-| `MOB-05` | **Partial — MOB-05A admission plus MOB-05B Android UIDT, verified native streaming and ABI-12 provider-plan binding implemented** | Deterministic signed admission/capacity; ABI-12 schedules bind a canonical source-plan digest and one of direct peer/community seed/carrier peer/optional HTTPS mirror/local import independently from Android UIDT/iOS URLSession/foreground-native execution; Android 14+ UIDT scheduling/adoption, process-kill and user-stop receipts; plus a Rust manifest-derived exact chunk ledger with 256 KiB native blocks, 4 MiB/explicit checkpoints, resume rehash, hash/length verification and `BytesComplete` crash recovery. No provider endpoint or production source authority is embedded | Embed owner-issued production trust; implement canonical provider descriptors/plans and direct-peer/community-seed plus local-import byte adapters before optional HTTPS mirror/carrier fallback; finish iOS bounded direct/background execution, then MOB-05C whole-artifact verification/activation/health/rollback/GC and real 2.2 GB qualification |
+| `MOB-05` | **Partial — MOB-05A admission plus MOB-05B Android UIDT, ABI-13 role-scoped Local Import and verified native streaming implemented** | Deterministic signed admission/capacity; schedules bind a canonical source-plan digest and source kind independently from the OS executor. Android 14+ UIDT scheduling/adoption and process/user-stop receipts remain available. Host API 9 + ABI 13 now let Android select each exact Concepts/labels/CCID artifact with the system picker, keep URI/path/bytes native-only, derive chunk/source/resume offsets in Rust, stream 256 KiB blocks, reject short/extra/corrupt bytes and preserve durable process-kill resume. The Local Import plan/fingerprint and total bytes are derived by Rust; release still embeds no endpoint or production source authority | Embed owner-issued production trust; qualify full-size Local Import on emulator then physical devices; implement direct-peer/community-seed adapters and optional HTTPS mirror/carrier fallback; finish iOS bounded local/direct/background execution, then MOB-05C whole-artifact verification/activation/health/rollback/GC and real 2.2 GB qualification |
 | `MOB-06` | **Partial contract/fixture only** | No-LLM behavior, signed KQL fixture and private proposal feasibility | Provider adapters, deterministic tool execution journal, local-runtime bake-off, cloud disclosure and signed model lifecycle |
 | `MOB-07` | **Partial — current evidence package** | Activation recovery foundations plus Android encrypted media staging/OwnedOriginal activation, catalog query and force-stop recovery | Piece/pack media contract, viewers/received media, camera/OCR/voice, background adapters, notifications/outbox, energy policy and physical matrices |
 | `MOB-08` | **Blocked** | No production network authority in the app | P5, Registry, peer protocol and stable Offline MVP entry gates; then enrollment, reconciliation, seeding/presence and multi-host canary |
@@ -1946,6 +1946,20 @@ Android Kotlin compilation pass. This checkpoint defines the provider-neutral
 contract only; direct-peer/community-seed, local-import, optional mirror and iOS
 byte adapters remain open and no production transport or readiness claim is
 made.
+
+Implementation checkpoint (2026-08-02): ABI 13 and Android Host API 9 close the
+first production-shaped `LocalImport` data-plane adapter. After exact Confirm,
+the shared Init screen offers role-scoped system-picker actions for Concepts
+OBR, labels index and CCID index. Android owns the transient content URI and
+streams bounded blocks directly to Rust. Rust derives the Local Import source
+plan/fingerprint and exact total from the admitted signed release, derives the
+next chunk plus absolute artifact/resume offsets from the signed ledger, and
+rejects short, extra or corrupt bytes. Verified/partial bytes survive process
+death; a foreground Resume may require the user to select the same file again.
+Flutter receives only role, chunk/byte progress and opaque digests. Android
+release still has no `INTERNET`, central endpoint or production trust material.
+This closes neither fresh-install offline metadata provisioning nor MOB-05C
+whole-artifact verification, activation, health, rollback and GC.
 
 Deliver:
 
@@ -2217,18 +2231,17 @@ qualification integration at `d9270f7`:
    unavailable production trust source only with owner-issued authority and
    physical/full-size qualification evidence.
 2. **MOB-05B — durable multi-provider platform transfer (Android
-   scheduler/adoption and Rust ABI-11 verified native stream implemented;
-   production providers and iOS open):** keep the ABI-11
+   scheduler/adoption, ABI-13 verified native stream and role-scoped Local
+   Import implemented; peer providers and iOS open):** keep the
    prepare/submit/adopt/stop, active-schedule lookup and bounded native
-   begin/append/checkpoint/suspend/finish contract plus the
-   Android UIDT namespace/recovery adapter. First freeze and bind the canonical
-   Registry source-plan digest with source kind independent of executor. Feed
-   direct-peer/community-seed and local-import streams through the manifest-
-   derived Rust chunk ledger, add optional HTTPS peer/carrier/mirror failover
-   and live policy, then bind iOS bounded direct work plus optional background
-   `URLSession` with force-quit/native callback recovery without Flutter.
-   Production remains unavailable until owner-issued trust and approved source
-   descriptors exist.
+   begin/append/checkpoint/suspend/finish contract plus the Android UIDT
+   namespace/recovery adapter. Qualify the current Local Import adapter with
+   full-size emulator files, process kill, reselect/resume and ENOSPC; then feed
+   direct-peer/community-seed streams through the same manifest-derived Rust
+   chunk ledger, add optional HTTPS peer/carrier/mirror failover and live
+   policy, and bind iOS local/direct work plus optional background `URLSession`
+   recovery without Flutter. Production remains unavailable until owner-issued
+   trust and approved source descriptors exist.
 3. **MOB-05C — full activation:** provision the real 2.2 GB-class Registry,
    verify immutable chunks/indexes, perform A/B pointer activation, independent
    post-pointer health, compensation/rollback and safe GC; then measure mmap,

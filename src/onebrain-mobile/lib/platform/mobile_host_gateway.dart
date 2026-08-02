@@ -121,6 +121,8 @@ enum MobileRegistryTrustMode { unavailable, developmentFixture, production }
 
 enum MobileRegistryNetworkPolicy { wifiOnly, unmetered, anyNetwork }
 
+enum MobileRegistryArtifactRole { concepts, labelsIndex, ccidsIndex }
+
 class MobileRegistryInitAvailability {
   const MobileRegistryInitAvailability({
     required this.available,
@@ -185,6 +187,30 @@ class MobileRegistryInitPlan {
   final MobileRegistryTrustMode trustMode;
 }
 
+class MobileRegistryImportProgress {
+  const MobileRegistryImportProgress({
+    required this.transferNonce,
+    required this.selectedRole,
+    required this.totalChunks,
+    required this.verifiedChunks,
+    required this.expectedBytes,
+    required this.verifiedBytes,
+    required this.sourcePlanDigest,
+    required this.roleComplete,
+    required this.bytesComplete,
+  });
+
+  final String transferNonce;
+  final MobileRegistryArtifactRole selectedRole;
+  final int totalChunks;
+  final int verifiedChunks;
+  final int expectedBytes;
+  final int verifiedBytes;
+  final String sourcePlanDigest;
+  final bool roleComplete;
+  final bool bytesComplete;
+}
+
 class MobileOwnedMediaSummary {
   const MobileOwnedMediaSummary({
     required this.mediaRef,
@@ -226,6 +252,12 @@ abstract interface class MobileHostGateway {
     required String manifestDigest,
     required MobileRegistryNetworkPolicy networkPolicy,
     required bool oneTimeNetworkOverride,
+  });
+
+  Future<MobileRegistryImportProgress> pickAndImportRegistryArtifact({
+    required String operationId,
+    required String manifestDigest,
+    required MobileRegistryArtifactRole artifactRole,
   });
 
   Future<MobileRawDraftReceipt> saveRawTextDraft({
@@ -350,6 +382,31 @@ class PigeonMobileHostGateway implements MobileHostGateway {
       oneTimeNetworkOverride,
     ),
   );
+
+  @override
+  Future<MobileRegistryImportProgress> pickAndImportRegistryArtifact({
+    required String operationId,
+    required String manifestDigest,
+    required MobileRegistryArtifactRole artifactRole,
+  }) async {
+    final progress = await _api.pickAndImportRegistryArtifact(
+      operationId,
+      manifestDigest,
+      HostRegistryArtifactRole.values[artifactRole.index],
+    );
+    return MobileRegistryImportProgress(
+      transferNonce: progress.transferNonce,
+      selectedRole:
+          MobileRegistryArtifactRole.values[progress.selectedRole.index],
+      totalChunks: progress.totalChunks,
+      verifiedChunks: progress.verifiedChunks,
+      expectedBytes: progress.expectedBytes,
+      verifiedBytes: progress.verifiedBytes,
+      sourcePlanDigest: progress.sourcePlanDigest,
+      roleComplete: progress.roleComplete,
+      bytesComplete: progress.bytesComplete,
+    );
+  }
 
   MobileRegistryInitPlan _registryPlanFromHost(HostRegistryInitPlan plan) =>
       MobileRegistryInitPlan(

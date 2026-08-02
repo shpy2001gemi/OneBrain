@@ -10,9 +10,9 @@ import 'package:flutter/services.dart';
 import 'package:meta/meta.dart' show immutable, protected, visibleForTesting;
 
 Object? _extractReplyValueOrThrow(
-  List<Object?>? replyList,
-  String channelName, {
-  required bool isNullValid,
+    List<Object?>? replyList,
+    String channelName, {
+    required bool isNullValid,
 }) {
   if (replyList == null) {
     throw PlatformException(
@@ -46,9 +46,8 @@ bool _deepEquals(Object? a, Object? b) {
   }
   if (a is List && b is List) {
     return a.length == b.length &&
-        a.indexed.every(
-          ((int, dynamic) item) => _deepEquals(item.$2, b[item.$1]),
-        );
+        a.indexed
+            .every(((int, dynamic) item) => _deepEquals(item.$2, b[item.$1]));
   }
   if (a is Map && b is Map) {
     if (a.length != b.length) {
@@ -97,6 +96,7 @@ int _deepHash(Object? value) {
   return value.hashCode;
 }
 
+
 enum HostOnboardingCursor {
   welcome,
   preflight,
@@ -106,13 +106,36 @@ enum HostOnboardingCursor {
   limitedHome,
 }
 
-enum HostMediaClass { image, video, audio, document }
+enum HostMediaClass {
+  image,
+  video,
+  audio,
+  document,
+}
 
-enum HostOperationEventKind { started, cancelled, completed }
+enum HostOperationEventKind {
+  started,
+  cancelled,
+  completed,
+}
 
-enum HostRegistryTrustMode { unavailable, developmentFixture, production }
+enum HostRegistryTrustMode {
+  unavailable,
+  developmentFixture,
+  production,
+}
 
-enum HostRegistryNetworkPolicy { wifiOnly, unmetered, anyNetwork }
+enum HostRegistryNetworkPolicy {
+  wifiOnly,
+  unmetered,
+  anyNetwork,
+}
+
+enum HostRegistryArtifactRole {
+  concepts,
+  labelsIndex,
+  ccidsIndex,
+}
 
 class HostBootstrapSnapshot {
   HostBootstrapSnapshot({
@@ -152,8 +175,7 @@ class HostBootstrapSnapshot {
   }
 
   Object encode() {
-    return _toList();
-  }
+    return _toList();  }
 
   static HostBootstrapSnapshot decode(Object result) {
     result as List<Object?>;
@@ -177,13 +199,7 @@ class HostBootstrapSnapshot {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(platform, other.platform) &&
-        _deepEquals(apiVersion, other.apiVersion) &&
-        _deepEquals(registryRequestIssued, other.registryRequestIssued) &&
-        _deepEquals(rustCoreLinked, other.rustCoreLinked) &&
-        _deepEquals(rustCoreVersion, other.rustCoreVersion) &&
-        _deepEquals(rustAbiVersion, other.rustAbiVersion) &&
-        _deepEquals(rustRoundTripVerified, other.rustRoundTripVerified);
+    return _deepEquals(platform, other.platform) && _deepEquals(apiVersion, other.apiVersion) && _deepEquals(registryRequestIssued, other.registryRequestIssued) && _deepEquals(rustCoreLinked, other.rustCoreLinked) && _deepEquals(rustCoreVersion, other.rustCoreVersion) && _deepEquals(rustAbiVersion, other.rustAbiVersion) && _deepEquals(rustRoundTripVerified, other.rustRoundTripVerified);
   }
 
   @override
@@ -298,8 +314,7 @@ class HostRuntimeSnapshot {
   }
 
   Object encode() {
-    return _toList();
-  }
+    return _toList();  }
 
   static HostRuntimeSnapshot decode(Object result) {
     result as List<Object?>;
@@ -339,32 +354,7 @@ class HostRuntimeSnapshot {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(profileVersion, other.profileVersion) &&
-        _deepEquals(processGeneration, other.processGeneration) &&
-        _deepEquals(activationPhase, other.activationPhase) &&
-        _deepEquals(activeGrantCount, other.activeGrantCount) &&
-        _deepEquals(recoveredUncleanStart, other.recoveredUncleanStart) &&
-        _deepEquals(bootstrapStoreOpened, other.bootstrapStoreOpened) &&
-        _deepEquals(registryState, other.registryState) &&
-        _deepEquals(localKqlFixtureVerified, other.localKqlFixtureVerified) &&
-        _deepEquals(privatePlannerVerified, other.privatePlannerVerified) &&
-        _deepEquals(noLlmProvider, other.noLlmProvider) &&
-        _deepEquals(staleCallbackRejected, other.staleCallbackRejected) &&
-        _deepEquals(secureProfileActive, other.secureProfileActive) &&
-        _deepEquals(
-          installationBindingVerified,
-          other.installationBindingVerified,
-        ) &&
-        _deepEquals(installationCreated, other.installationCreated) &&
-        _deepEquals(securitySessionUnlocked, other.securitySessionUnlocked) &&
-        _deepEquals(privateVaultReady, other.privateVaultReady) &&
-        _deepEquals(identityDomainsSeparated, other.identityDomainsSeparated) &&
-        _deepEquals(privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) &&
-        _deepEquals(redactedHistoryReady, other.redactedHistoryReady) &&
-        _deepEquals(encryptedRawDraftCount, other.encryptedRawDraftCount) &&
-        _deepEquals(pendingShareSpoolCount, other.pendingShareSpoolCount) &&
-        _deepEquals(stagedVerifiedMediaCount, other.stagedVerifiedMediaCount) &&
-        _deepEquals(onboardingCursor, other.onboardingCursor);
+    return _deepEquals(profileVersion, other.profileVersion) && _deepEquals(processGeneration, other.processGeneration) && _deepEquals(activationPhase, other.activationPhase) && _deepEquals(activeGrantCount, other.activeGrantCount) && _deepEquals(recoveredUncleanStart, other.recoveredUncleanStart) && _deepEquals(bootstrapStoreOpened, other.bootstrapStoreOpened) && _deepEquals(registryState, other.registryState) && _deepEquals(localKqlFixtureVerified, other.localKqlFixtureVerified) && _deepEquals(privatePlannerVerified, other.privatePlannerVerified) && _deepEquals(noLlmProvider, other.noLlmProvider) && _deepEquals(staleCallbackRejected, other.staleCallbackRejected) && _deepEquals(secureProfileActive, other.secureProfileActive) && _deepEquals(installationBindingVerified, other.installationBindingVerified) && _deepEquals(installationCreated, other.installationCreated) && _deepEquals(securitySessionUnlocked, other.securitySessionUnlocked) && _deepEquals(privateVaultReady, other.privateVaultReady) && _deepEquals(identityDomainsSeparated, other.identityDomainsSeparated) && _deepEquals(privacyDefaultsFailSafe, other.privacyDefaultsFailSafe) && _deepEquals(redactedHistoryReady, other.redactedHistoryReady) && _deepEquals(encryptedRawDraftCount, other.encryptedRawDraftCount) && _deepEquals(pendingShareSpoolCount, other.pendingShareSpoolCount) && _deepEquals(stagedVerifiedMediaCount, other.stagedVerifiedMediaCount) && _deepEquals(onboardingCursor, other.onboardingCursor);
   }
 
   @override
@@ -394,12 +384,16 @@ class HostRawDraftReceipt {
   int totalDrafts;
 
   List<Object?> _toList() {
-    return <Object?>[draftRef, contentLanguage, contentBytes, totalDrafts];
+    return <Object?>[
+      draftRef,
+      contentLanguage,
+      contentBytes,
+      totalDrafts,
+    ];
   }
 
   Object encode() {
-    return _toList();
-  }
+    return _toList();  }
 
   static HostRawDraftReceipt decode(Object result) {
     result as List<Object?>;
@@ -420,10 +414,7 @@ class HostRawDraftReceipt {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(draftRef, other.draftRef) &&
-        _deepEquals(contentLanguage, other.contentLanguage) &&
-        _deepEquals(contentBytes, other.contentBytes) &&
-        _deepEquals(totalDrafts, other.totalDrafts);
+    return _deepEquals(draftRef, other.draftRef) && _deepEquals(contentLanguage, other.contentLanguage) && _deepEquals(contentBytes, other.contentBytes) && _deepEquals(totalDrafts, other.totalDrafts);
   }
 
   @override
@@ -462,8 +453,7 @@ class HostShareSpoolSummary {
   }
 
   Object encode() {
-    return _toList();
-  }
+    return _toList();  }
 
   static HostShareSpoolSummary decode(Object result) {
     result as List<Object?>;
@@ -484,10 +474,7 @@ class HostShareSpoolSummary {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(spoolRef, other.spoolRef) &&
-        _deepEquals(mimeType, other.mimeType) &&
-        _deepEquals(contentBytes, other.contentBytes) &&
-        _deepEquals(receivedAtMonotonicMillis, other.receivedAtMonotonicMillis);
+    return _deepEquals(spoolRef, other.spoolRef) && _deepEquals(mimeType, other.mimeType) && _deepEquals(contentBytes, other.contentBytes) && _deepEquals(receivedAtMonotonicMillis, other.receivedAtMonotonicMillis);
   }
 
   @override
@@ -542,8 +529,7 @@ class HostOwnedMediaSummary {
   }
 
   Object encode() {
-    return _toList();
-  }
+    return _toList();  }
 
   static HostOwnedMediaSummary decode(Object result) {
     result as List<Object?>;
@@ -568,14 +554,7 @@ class HostOwnedMediaSummary {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(mediaRef, other.mediaRef) &&
-        _deepEquals(mediaClass, other.mediaClass) &&
-        _deepEquals(mimeType, other.mimeType) &&
-        _deepEquals(contentBytes, other.contentBytes) &&
-        _deepEquals(verifiedBytes, other.verifiedBytes) &&
-        _deepEquals(storageClass, other.storageClass) &&
-        _deepEquals(ownedHold, other.ownedHold) &&
-        _deepEquals(importState, other.importState);
+    return _deepEquals(mediaRef, other.mediaRef) && _deepEquals(mediaClass, other.mediaClass) && _deepEquals(mimeType, other.mimeType) && _deepEquals(contentBytes, other.contentBytes) && _deepEquals(verifiedBytes, other.verifiedBytes) && _deepEquals(storageClass, other.storageClass) && _deepEquals(ownedHold, other.ownedHold) && _deepEquals(importState, other.importState);
   }
 
   @override
@@ -618,8 +597,7 @@ class HostRegistryInitAvailability {
   }
 
   Object encode() {
-    return _toList();
-  }
+    return _toList();  }
 
   static HostRegistryInitAvailability decode(Object result) {
     result as List<Object?>;
@@ -635,18 +613,13 @@ class HostRegistryInitAvailability {
   @override
   // ignore: avoid_equals_and_hash_code_on_mutable_classes
   bool operator ==(Object other) {
-    if (other is! HostRegistryInitAvailability ||
-        other.runtimeType != runtimeType) {
+    if (other is! HostRegistryInitAvailability || other.runtimeType != runtimeType) {
       return false;
     }
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(available, other.available) &&
-        _deepEquals(trustMode, other.trustMode) &&
-        _deepEquals(channelId, other.channelId) &&
-        _deepEquals(reasonCode, other.reasonCode) &&
-        _deepEquals(transportEnabled, other.transportEnabled);
+    return _deepEquals(available, other.available) && _deepEquals(trustMode, other.trustMode) && _deepEquals(channelId, other.channelId) && _deepEquals(reasonCode, other.reasonCode) && _deepEquals(transportEnabled, other.transportEnabled);
   }
 
   @override
@@ -753,8 +726,7 @@ class HostRegistryInitPlan {
   }
 
   Object encode() {
-    return _toList();
-  }
+    return _toList();  }
 
   static HostRegistryInitPlan decode(Object result) {
     result as List<Object?>;
@@ -792,36 +764,7 @@ class HostRegistryInitPlan {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(operationId, other.operationId) &&
-        _deepEquals(stateCode, other.stateCode) &&
-        _deepEquals(channelId, other.channelId) &&
-        _deepEquals(releaseId, other.releaseId) &&
-        _deepEquals(manifestDigest, other.manifestDigest) &&
-        _deepEquals(trustProfileDigest, other.trustProfileDigest) &&
-        _deepEquals(headGeneration, other.headGeneration) &&
-        _deepEquals(releaseSequence, other.releaseSequence) &&
-        _deepEquals(
-          publisherMinAdditionalFreeBytes,
-          other.publisherMinAdditionalFreeBytes,
-        ) &&
-        _deepEquals(artifactTotalBytes, other.artifactTotalBytes) &&
-        _deepEquals(targetTotalAllocBytes, other.targetTotalAllocBytes) &&
-        _deepEquals(transferInitialBytes, other.transferInitialBytes) &&
-        _deepEquals(
-          verificationWorkspaceBytes,
-          other.verificationWorkspaceBytes,
-        ) &&
-        _deepEquals(catalogGrowthBytes, other.catalogGrowthBytes) &&
-        _deepEquals(safetyReserveBytes, other.safetyReserveBytes) &&
-        _deepEquals(
-          destinationTotalUsableBytes,
-          other.destinationTotalUsableBytes,
-        ) &&
-        _deepEquals(measuredFreeBytes, other.measuredFreeBytes) &&
-        _deepEquals(initialRequiredFreeBytes, other.initialRequiredFreeBytes) &&
-        _deepEquals(admitted, other.admitted) &&
-        _deepEquals(transportEnabled, other.transportEnabled) &&
-        _deepEquals(trustMode, other.trustMode);
+    return _deepEquals(operationId, other.operationId) && _deepEquals(stateCode, other.stateCode) && _deepEquals(channelId, other.channelId) && _deepEquals(releaseId, other.releaseId) && _deepEquals(manifestDigest, other.manifestDigest) && _deepEquals(trustProfileDigest, other.trustProfileDigest) && _deepEquals(headGeneration, other.headGeneration) && _deepEquals(releaseSequence, other.releaseSequence) && _deepEquals(publisherMinAdditionalFreeBytes, other.publisherMinAdditionalFreeBytes) && _deepEquals(artifactTotalBytes, other.artifactTotalBytes) && _deepEquals(targetTotalAllocBytes, other.targetTotalAllocBytes) && _deepEquals(transferInitialBytes, other.transferInitialBytes) && _deepEquals(verificationWorkspaceBytes, other.verificationWorkspaceBytes) && _deepEquals(catalogGrowthBytes, other.catalogGrowthBytes) && _deepEquals(safetyReserveBytes, other.safetyReserveBytes) && _deepEquals(destinationTotalUsableBytes, other.destinationTotalUsableBytes) && _deepEquals(measuredFreeBytes, other.measuredFreeBytes) && _deepEquals(initialRequiredFreeBytes, other.initialRequiredFreeBytes) && _deepEquals(admitted, other.admitted) && _deepEquals(transportEnabled, other.transportEnabled) && _deepEquals(trustMode, other.trustMode);
   }
 
   @override
@@ -831,6 +774,91 @@ class HostRegistryInitPlan {
   @override
   String toString() {
     return 'HostRegistryInitPlan(operationId: $operationId, stateCode: $stateCode, channelId: $channelId, releaseId: $releaseId, manifestDigest: $manifestDigest, trustProfileDigest: $trustProfileDigest, headGeneration: $headGeneration, releaseSequence: $releaseSequence, publisherMinAdditionalFreeBytes: $publisherMinAdditionalFreeBytes, artifactTotalBytes: $artifactTotalBytes, targetTotalAllocBytes: $targetTotalAllocBytes, transferInitialBytes: $transferInitialBytes, verificationWorkspaceBytes: $verificationWorkspaceBytes, catalogGrowthBytes: $catalogGrowthBytes, safetyReserveBytes: $safetyReserveBytes, destinationTotalUsableBytes: $destinationTotalUsableBytes, measuredFreeBytes: $measuredFreeBytes, initialRequiredFreeBytes: $initialRequiredFreeBytes, admitted: $admitted, transportEnabled: $transportEnabled, trustMode: $trustMode)';
+  }
+}
+
+class HostRegistryImportProgress {
+  HostRegistryImportProgress({
+    required this.transferNonce,
+    required this.selectedRole,
+    required this.totalChunks,
+    required this.verifiedChunks,
+    required this.expectedBytes,
+    required this.verifiedBytes,
+    required this.sourcePlanDigest,
+    required this.roleComplete,
+    required this.bytesComplete,
+  });
+
+  String transferNonce;
+
+  HostRegistryArtifactRole selectedRole;
+
+  int totalChunks;
+
+  int verifiedChunks;
+
+  int expectedBytes;
+
+  int verifiedBytes;
+
+  String sourcePlanDigest;
+
+  bool roleComplete;
+
+  bool bytesComplete;
+
+  List<Object?> _toList() {
+    return <Object?>[
+      transferNonce,
+      selectedRole,
+      totalChunks,
+      verifiedChunks,
+      expectedBytes,
+      verifiedBytes,
+      sourcePlanDigest,
+      roleComplete,
+      bytesComplete,
+    ];
+  }
+
+  Object encode() {
+    return _toList();  }
+
+  static HostRegistryImportProgress decode(Object result) {
+    result as List<Object?>;
+    return HostRegistryImportProgress(
+      transferNonce: result[0]! as String,
+      selectedRole: result[1]! as HostRegistryArtifactRole,
+      totalChunks: result[2]! as int,
+      verifiedChunks: result[3]! as int,
+      expectedBytes: result[4]! as int,
+      verifiedBytes: result[5]! as int,
+      sourcePlanDigest: result[6]! as String,
+      roleComplete: result[7]! as bool,
+      bytesComplete: result[8]! as bool,
+    );
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  bool operator ==(Object other) {
+    if (other is! HostRegistryImportProgress || other.runtimeType != runtimeType) {
+      return false;
+    }
+    if (identical(this, other)) {
+      return true;
+    }
+    return _deepEquals(transferNonce, other.transferNonce) && _deepEquals(selectedRole, other.selectedRole) && _deepEquals(totalChunks, other.totalChunks) && _deepEquals(verifiedChunks, other.verifiedChunks) && _deepEquals(expectedBytes, other.expectedBytes) && _deepEquals(verifiedBytes, other.verifiedBytes) && _deepEquals(sourcePlanDigest, other.sourcePlanDigest) && _deepEquals(roleComplete, other.roleComplete) && _deepEquals(bytesComplete, other.bytesComplete);
+  }
+
+  @override
+  // ignore: avoid_equals_and_hash_code_on_mutable_classes
+  int get hashCode => _deepHash(<Object?>[runtimeType, ..._toList()]);
+
+  @override
+  String toString() {
+    return 'HostRegistryImportProgress(transferNonce: $transferNonce, selectedRole: $selectedRole, totalChunks: $totalChunks, verifiedChunks: $verifiedChunks, expectedBytes: $expectedBytes, verifiedBytes: $verifiedBytes, sourcePlanDigest: $sourcePlanDigest, roleComplete: $roleComplete, bytesComplete: $bytesComplete)';
   }
 }
 
@@ -848,12 +876,15 @@ class HostOperationEvent {
   String code;
 
   List<Object?> _toList() {
-    return <Object?>[operationId, kind, code];
+    return <Object?>[
+      operationId,
+      kind,
+      code,
+    ];
   }
 
   Object encode() {
-    return _toList();
-  }
+    return _toList();  }
 
   static HostOperationEvent decode(Object result) {
     result as List<Object?>;
@@ -873,9 +904,7 @@ class HostOperationEvent {
     if (identical(this, other)) {
       return true;
     }
-    return _deepEquals(operationId, other.operationId) &&
-        _deepEquals(kind, other.kind) &&
-        _deepEquals(code, other.code);
+    return _deepEquals(operationId, other.operationId) && _deepEquals(kind, other.kind) && _deepEquals(code, other.code);
   }
 
   @override
@@ -888,6 +917,7 @@ class HostOperationEvent {
   }
 }
 
+
 class _PigeonCodec extends StandardMessageCodec {
   const _PigeonCodec();
   @override
@@ -895,44 +925,50 @@ class _PigeonCodec extends StandardMessageCodec {
     if (value is int) {
       buffer.putUint8(4);
       buffer.putInt64(value);
-    } else if (value is HostOnboardingCursor) {
+    }    else if (value is HostOnboardingCursor) {
       buffer.putUint8(129);
       writeValue(buffer, value.index);
-    } else if (value is HostMediaClass) {
+    }    else if (value is HostMediaClass) {
       buffer.putUint8(130);
       writeValue(buffer, value.index);
-    } else if (value is HostOperationEventKind) {
+    }    else if (value is HostOperationEventKind) {
       buffer.putUint8(131);
       writeValue(buffer, value.index);
-    } else if (value is HostRegistryTrustMode) {
+    }    else if (value is HostRegistryTrustMode) {
       buffer.putUint8(132);
       writeValue(buffer, value.index);
-    } else if (value is HostRegistryNetworkPolicy) {
+    }    else if (value is HostRegistryNetworkPolicy) {
       buffer.putUint8(133);
       writeValue(buffer, value.index);
-    } else if (value is HostBootstrapSnapshot) {
+    }    else if (value is HostRegistryArtifactRole) {
       buffer.putUint8(134);
-      writeValue(buffer, value.encode());
-    } else if (value is HostRuntimeSnapshot) {
+      writeValue(buffer, value.index);
+    }    else if (value is HostBootstrapSnapshot) {
       buffer.putUint8(135);
       writeValue(buffer, value.encode());
-    } else if (value is HostRawDraftReceipt) {
+    }    else if (value is HostRuntimeSnapshot) {
       buffer.putUint8(136);
       writeValue(buffer, value.encode());
-    } else if (value is HostShareSpoolSummary) {
+    }    else if (value is HostRawDraftReceipt) {
       buffer.putUint8(137);
       writeValue(buffer, value.encode());
-    } else if (value is HostOwnedMediaSummary) {
+    }    else if (value is HostShareSpoolSummary) {
       buffer.putUint8(138);
       writeValue(buffer, value.encode());
-    } else if (value is HostRegistryInitAvailability) {
+    }    else if (value is HostOwnedMediaSummary) {
       buffer.putUint8(139);
       writeValue(buffer, value.encode());
-    } else if (value is HostRegistryInitPlan) {
+    }    else if (value is HostRegistryInitAvailability) {
       buffer.putUint8(140);
       writeValue(buffer, value.encode());
-    } else if (value is HostOperationEvent) {
+    }    else if (value is HostRegistryInitPlan) {
       buffer.putUint8(141);
+      writeValue(buffer, value.encode());
+    }    else if (value is HostRegistryImportProgress) {
+      buffer.putUint8(142);
+      writeValue(buffer, value.encode());
+    }    else if (value is HostOperationEvent) {
+      buffer.putUint8(143);
       writeValue(buffer, value.encode());
     } else {
       super.writeValue(buffer, value);
@@ -958,20 +994,25 @@ class _PigeonCodec extends StandardMessageCodec {
         final value = readValue(buffer) as int?;
         return value == null ? null : HostRegistryNetworkPolicy.values[value];
       case 134:
-        return HostBootstrapSnapshot.decode(readValue(buffer)!);
+        final value = readValue(buffer) as int?;
+        return value == null ? null : HostRegistryArtifactRole.values[value];
       case 135:
-        return HostRuntimeSnapshot.decode(readValue(buffer)!);
+        return HostBootstrapSnapshot.decode(readValue(buffer)!);
       case 136:
-        return HostRawDraftReceipt.decode(readValue(buffer)!);
+        return HostRuntimeSnapshot.decode(readValue(buffer)!);
       case 137:
-        return HostShareSpoolSummary.decode(readValue(buffer)!);
+        return HostRawDraftReceipt.decode(readValue(buffer)!);
       case 138:
-        return HostOwnedMediaSummary.decode(readValue(buffer)!);
+        return HostShareSpoolSummary.decode(readValue(buffer)!);
       case 139:
-        return HostRegistryInitAvailability.decode(readValue(buffer)!);
+        return HostOwnedMediaSummary.decode(readValue(buffer)!);
       case 140:
-        return HostRegistryInitPlan.decode(readValue(buffer)!);
+        return HostRegistryInitAvailability.decode(readValue(buffer)!);
       case 141:
+        return HostRegistryInitPlan.decode(readValue(buffer)!);
+      case 142:
+        return HostRegistryImportProgress.decode(readValue(buffer)!);
+      case 143:
         return HostOperationEvent.decode(readValue(buffer)!);
       default:
         return super.readValueOfType(type, buffer);
@@ -979,21 +1020,15 @@ class _PigeonCodec extends StandardMessageCodec {
   }
 }
 
-const StandardMethodCodec pigeonMethodCodec = StandardMethodCodec(
-  _PigeonCodec(),
-);
+const StandardMethodCodec pigeonMethodCodec = StandardMethodCodec(_PigeonCodec());
 
 class MobileHostApi {
   /// Constructor for [MobileHostApi]. The [binaryMessenger] named argument is
   /// available for dependency injection. If it is left null, the default
   /// BinaryMessenger will be used which routes to the host platform.
-  MobileHostApi({
-    BinaryMessenger? binaryMessenger,
-    String messageChannelSuffix = '',
-  }) : pigeonVar_binaryMessenger = binaryMessenger,
-       pigeonVar_messageChannelSuffix = messageChannelSuffix.isNotEmpty
-           ? '.$messageChannelSuffix'
-           : '';
+  MobileHostApi({BinaryMessenger? binaryMessenger, String messageChannelSuffix = ''})
+      : pigeonVar_binaryMessenger = binaryMessenger,
+        pigeonVar_messageChannelSuffix = messageChannelSuffix.isNotEmpty ? '.$messageChannelSuffix' : '';
   final BinaryMessenger? pigeonVar_binaryMessenger;
 
   static const MessageCodec<Object?> pigeonChannelCodec = _PigeonCodec();
@@ -1001,8 +1036,7 @@ class MobileHostApi {
   final String pigeonVar_messageChannelSuffix;
 
   Future<HostBootstrapSnapshot> inspectBootstrapHost() async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectBootstrapHost$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectBootstrapHost$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -1012,16 +1046,16 @@ class MobileHostApi {
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as HostBootstrapSnapshot;
   }
 
   Future<HostRuntimeSnapshot> inspectRuntimeProfile() async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectRuntimeProfile$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectRuntimeProfile$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -1031,16 +1065,16 @@ class MobileHostApi {
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as HostRuntimeSnapshot;
   }
 
   Future<HostRegistryInitAvailability> inspectRegistryInitAvailability() async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectRegistryInitAvailability$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectRegistryInitAvailability$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -1050,116 +1084,111 @@ class MobileHostApi {
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as HostRegistryInitAvailability;
   }
 
   Future<HostRegistryInitPlan> beginRegistryInit(String channelId) async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.beginRegistryInit$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.beginRegistryInit$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
-      <Object?>[channelId],
-    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[channelId]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as HostRegistryInitPlan;
   }
 
-  Future<bool> deferRegistryInit(
-    String operationId,
-    String manifestDigest,
-  ) async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.deferRegistryInit$pigeonVar_messageChannelSuffix';
+  Future<bool> deferRegistryInit(String operationId, String manifestDigest) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.deferRegistryInit$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
-      <Object?>[operationId, manifestDigest],
-    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[operationId, manifestDigest]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as bool;
   }
 
-  Future<HostRegistryInitPlan> confirmRegistryInit(
-    String operationId,
-    String manifestDigest,
-    HostRegistryNetworkPolicy networkPolicy,
-    bool oneTimeNetworkOverride,
-  ) async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.confirmRegistryInit$pigeonVar_messageChannelSuffix';
+  Future<HostRegistryInitPlan> confirmRegistryInit(String operationId, String manifestDigest, HostRegistryNetworkPolicy networkPolicy, bool oneTimeNetworkOverride) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.confirmRegistryInit$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
-      <Object?>[
-        operationId,
-        manifestDigest,
-        networkPolicy,
-        oneTimeNetworkOverride,
-      ],
-    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[operationId, manifestDigest, networkPolicy, oneTimeNetworkOverride]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as HostRegistryInitPlan;
   }
 
-  Future<HostRawDraftReceipt> saveRawTextDraft(
-    String contentLanguage,
-    String content,
-  ) async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.saveRawTextDraft$pigeonVar_messageChannelSuffix';
+  Future<HostRegistryImportProgress> pickAndImportRegistryArtifact(String operationId, String manifestDigest, HostRegistryArtifactRole artifactRole) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndImportRegistryArtifact$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
-      <Object?>[contentLanguage, content],
-    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[operationId, manifestDigest, artifactRole]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return pigeonVar_replyValue! as HostRegistryImportProgress;
+  }
+
+  Future<HostRawDraftReceipt> saveRawTextDraft(String contentLanguage, String content) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.saveRawTextDraft$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
-      isNullValid: false,
+      pigeonChannelCodec,
+      binaryMessenger: pigeonVar_binaryMessenger,
     );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[contentLanguage, content]);
+    final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
+
+    final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as HostRawDraftReceipt;
   }
 
   Future<List<HostShareSpoolSummary>> inspectPendingShareSpools() async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectPendingShareSpools$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectPendingShareSpools$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -1169,64 +1198,54 @@ class MobileHostApi {
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
-    return (pigeonVar_replyValue! as List<Object?>)
-        .cast<HostShareSpoolSummary>();
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return (pigeonVar_replyValue! as List<Object?>).cast<HostShareSpoolSummary>();
   }
 
-  Future<HostRawDraftReceipt> importSharedText(
-    String spoolRef,
-    String contentLanguage,
-  ) async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.importSharedText$pigeonVar_messageChannelSuffix';
+  Future<HostRawDraftReceipt> importSharedText(String spoolRef, String contentLanguage) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.importSharedText$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
-      <Object?>[spoolRef, contentLanguage],
-    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[spoolRef, contentLanguage]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as HostRawDraftReceipt;
   }
 
-  Future<HostOwnedMediaSummary> pickAndImportOwnedMedia(
-    HostMediaClass mediaClass,
-  ) async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndImportOwnedMedia$pigeonVar_messageChannelSuffix';
+  Future<HostOwnedMediaSummary> pickAndImportOwnedMedia(HostMediaClass mediaClass) async {
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndImportOwnedMedia$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
-      <Object?>[mediaClass],
-    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[mediaClass]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as HostOwnedMediaSummary;
   }
 
   Future<List<HostOwnedMediaSummary>> inspectOwnedMedia() async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectOwnedMedia$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.inspectOwnedMedia$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
@@ -1236,74 +1255,68 @@ class MobileHostApi {
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
-    return (pigeonVar_replyValue! as List<Object?>)
-        .cast<HostOwnedMediaSummary>();
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
+    return (pigeonVar_replyValue! as List<Object?>).cast<HostOwnedMediaSummary>();
   }
 
   Future<bool> setOnboardingCursor(HostOnboardingCursor cursor) async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.setOnboardingCursor$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.setOnboardingCursor$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
-      <Object?>[cursor],
-    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[cursor]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as bool;
   }
 
   Future<String> startFeasibilityOperation(int delayMilliseconds) async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.startFeasibilityOperation$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.startFeasibilityOperation$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
-      <Object?>[delayMilliseconds],
-    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[delayMilliseconds]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as String;
   }
 
   Future<bool> cancelFeasibilityOperation(String operationId) async {
-    final pigeonVar_channelName =
-        'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.cancelFeasibilityOperation$pigeonVar_messageChannelSuffix';
+    final pigeonVar_channelName = 'dev.flutter.pigeon.onebrain_mobile.MobileHostApi.cancelFeasibilityOperation$pigeonVar_messageChannelSuffix';
     final pigeonVar_channel = BasicMessageChannel<Object?>(
       pigeonVar_channelName,
       pigeonChannelCodec,
       binaryMessenger: pigeonVar_binaryMessenger,
     );
-    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(
-      <Object?>[operationId],
-    );
+    final Future<Object?> pigeonVar_sendFuture = pigeonVar_channel.send(<Object?>[operationId]);
     final pigeonVar_replyList = await pigeonVar_sendFuture as List<Object?>?;
 
     final Object? pigeonVar_replyValue = _extractReplyValueOrThrow(
-      pigeonVar_replyList,
-      pigeonVar_channelName,
-      isNullValid: false,
-    );
+        pigeonVar_replyList,
+        pigeonVar_channelName,
+        isNullValid: false,
+    )
+    ;
     return pigeonVar_replyValue! as bool;
   }
 }
@@ -1314,17 +1327,13 @@ class MobileHostApi {
 /// not be called multiple times for the same `instanceName`. To deliver
 /// events to multiple listeners, call this method once and listen to the
 /// returned broadcast stream multiple times instead.
-Stream<HostOperationEvent> hostOperationEvents({String instanceName = ''}) {
+Stream<HostOperationEvent> hostOperationEvents( {String instanceName = ''}) {
   if (instanceName.isNotEmpty) {
     instanceName = '.$instanceName';
   }
-  final EventChannel hostOperationEventsChannel = EventChannel(
-    'dev.flutter.pigeon.onebrain_mobile.MobileHostEventApi.hostOperationEvents$instanceName',
-    pigeonMethodCodec,
-  );
-  return hostOperationEventsChannel.receiveBroadcastStream().map((
-    dynamic event,
-  ) {
+  final EventChannel hostOperationEventsChannel =
+      EventChannel('dev.flutter.pigeon.onebrain_mobile.MobileHostEventApi.hostOperationEvents$instanceName', pigeonMethodCodec);
+  return hostOperationEventsChannel.receiveBroadcastStream().map((dynamic event) {
     return event as HostOperationEvent;
   });
 }

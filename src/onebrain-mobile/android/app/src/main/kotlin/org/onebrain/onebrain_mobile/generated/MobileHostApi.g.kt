@@ -256,6 +256,18 @@ enum class HostRegistryNetworkPolicy(val raw: Int) {
   }
 }
 
+enum class HostRegistryArtifactRole(val raw: Int) {
+  CONCEPTS(0),
+  LABELS_INDEX(1),
+  CCIDS_INDEX(2);
+
+  companion object {
+    fun ofRaw(raw: Int): HostRegistryArtifactRole? {
+      return values().firstOrNull { it.raw == raw }
+    }
+  }
+}
+
 /** Generated class from Pigeon that represents data sent in messages. */
 data class HostBootstrapSnapshot (
   val platform: String,
@@ -776,6 +788,75 @@ data class HostRegistryInitPlan (
 }
 
 /** Generated class from Pigeon that represents data sent in messages. */
+data class HostRegistryImportProgress (
+  val transferNonce: String,
+  val selectedRole: HostRegistryArtifactRole,
+  val totalChunks: Long,
+  val verifiedChunks: Long,
+  val expectedBytes: Long,
+  val verifiedBytes: Long,
+  val sourcePlanDigest: String,
+  val roleComplete: Boolean,
+  val bytesComplete: Boolean
+)
+ {
+  companion object {
+    fun fromList(pigeonVar_list: List<Any?>): HostRegistryImportProgress {
+      val transferNonce = pigeonVar_list[0] as String
+      val selectedRole = pigeonVar_list[1] as HostRegistryArtifactRole
+      val totalChunks = pigeonVar_list[2] as Long
+      val verifiedChunks = pigeonVar_list[3] as Long
+      val expectedBytes = pigeonVar_list[4] as Long
+      val verifiedBytes = pigeonVar_list[5] as Long
+      val sourcePlanDigest = pigeonVar_list[6] as String
+      val roleComplete = pigeonVar_list[7] as Boolean
+      val bytesComplete = pigeonVar_list[8] as Boolean
+      return HostRegistryImportProgress(transferNonce, selectedRole, totalChunks, verifiedChunks, expectedBytes, verifiedBytes, sourcePlanDigest, roleComplete, bytesComplete)
+    }
+  }
+  fun toList(): List<Any?> {
+    return listOf(
+      transferNonce,
+      selectedRole,
+      totalChunks,
+      verifiedChunks,
+      expectedBytes,
+      verifiedBytes,
+      sourcePlanDigest,
+      roleComplete,
+      bytesComplete,
+    )
+  }
+  override fun equals(other: Any?): Boolean {
+    if (other == null || other.javaClass != javaClass) {
+      return false
+    }
+    if (this === other) {
+      return true
+    }
+    val other = other as HostRegistryImportProgress
+    return MobileHostApiPigeonUtils.deepEquals(this.transferNonce, other.transferNonce) && MobileHostApiPigeonUtils.deepEquals(this.selectedRole, other.selectedRole) && MobileHostApiPigeonUtils.deepEquals(this.totalChunks, other.totalChunks) && MobileHostApiPigeonUtils.deepEquals(this.verifiedChunks, other.verifiedChunks) && MobileHostApiPigeonUtils.deepEquals(this.expectedBytes, other.expectedBytes) && MobileHostApiPigeonUtils.deepEquals(this.verifiedBytes, other.verifiedBytes) && MobileHostApiPigeonUtils.deepEquals(this.sourcePlanDigest, other.sourcePlanDigest) && MobileHostApiPigeonUtils.deepEquals(this.roleComplete, other.roleComplete) && MobileHostApiPigeonUtils.deepEquals(this.bytesComplete, other.bytesComplete)
+  }
+
+  override fun hashCode(): Int {
+    var result = javaClass.hashCode()
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.transferNonce)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.selectedRole)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.totalChunks)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.verifiedChunks)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.expectedBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.verifiedBytes)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.sourcePlanDigest)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.roleComplete)
+    result = 31 * result + MobileHostApiPigeonUtils.deepHash(this.bytesComplete)
+    return result
+  }
+  override fun toString(): String {
+    return "HostRegistryImportProgress(transferNonce=$transferNonce, selectedRole=$selectedRole, totalChunks=$totalChunks, verifiedChunks=$verifiedChunks, expectedBytes=$expectedBytes, verifiedBytes=$verifiedBytes, sourcePlanDigest=$sourcePlanDigest, roleComplete=$roleComplete, bytesComplete=$bytesComplete)"
+  }
+}
+
+/** Generated class from Pigeon that represents data sent in messages. */
 data class HostOperationEvent (
   val operationId: String,
   val kind: HostOperationEventKind,
@@ -848,41 +929,51 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
         }
       }
       134.toByte() -> {
-        return (readValue(buffer) as? List<Any?>)?.let {
-          HostBootstrapSnapshot.fromList(it)
+        return (readValue(buffer) as Long?)?.let {
+          HostRegistryArtifactRole.ofRaw(it.toInt())
         }
       }
       135.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostRuntimeSnapshot.fromList(it)
+          HostBootstrapSnapshot.fromList(it)
         }
       }
       136.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostRawDraftReceipt.fromList(it)
+          HostRuntimeSnapshot.fromList(it)
         }
       }
       137.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostShareSpoolSummary.fromList(it)
+          HostRawDraftReceipt.fromList(it)
         }
       }
       138.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostOwnedMediaSummary.fromList(it)
+          HostShareSpoolSummary.fromList(it)
         }
       }
       139.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostRegistryInitAvailability.fromList(it)
+          HostOwnedMediaSummary.fromList(it)
         }
       }
       140.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
-          HostRegistryInitPlan.fromList(it)
+          HostRegistryInitAvailability.fromList(it)
         }
       }
       141.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          HostRegistryInitPlan.fromList(it)
+        }
+      }
+      142.toByte() -> {
+        return (readValue(buffer) as? List<Any?>)?.let {
+          HostRegistryImportProgress.fromList(it)
+        }
+      }
+      143.toByte() -> {
         return (readValue(buffer) as? List<Any?>)?.let {
           HostOperationEvent.fromList(it)
         }
@@ -912,36 +1003,44 @@ private open class MobileHostApiPigeonCodec : StandardMessageCodec() {
         stream.write(133)
         writeValue(stream, value.raw.toLong())
       }
-      is HostBootstrapSnapshot -> {
+      is HostRegistryArtifactRole -> {
         stream.write(134)
-        writeValue(stream, value.toList())
+        writeValue(stream, value.raw.toLong())
       }
-      is HostRuntimeSnapshot -> {
+      is HostBootstrapSnapshot -> {
         stream.write(135)
         writeValue(stream, value.toList())
       }
-      is HostRawDraftReceipt -> {
+      is HostRuntimeSnapshot -> {
         stream.write(136)
         writeValue(stream, value.toList())
       }
-      is HostShareSpoolSummary -> {
+      is HostRawDraftReceipt -> {
         stream.write(137)
         writeValue(stream, value.toList())
       }
-      is HostOwnedMediaSummary -> {
+      is HostShareSpoolSummary -> {
         stream.write(138)
         writeValue(stream, value.toList())
       }
-      is HostRegistryInitAvailability -> {
+      is HostOwnedMediaSummary -> {
         stream.write(139)
         writeValue(stream, value.toList())
       }
-      is HostRegistryInitPlan -> {
+      is HostRegistryInitAvailability -> {
         stream.write(140)
         writeValue(stream, value.toList())
       }
-      is HostOperationEvent -> {
+      is HostRegistryInitPlan -> {
         stream.write(141)
+        writeValue(stream, value.toList())
+      }
+      is HostRegistryImportProgress -> {
+        stream.write(142)
+        writeValue(stream, value.toList())
+      }
+      is HostOperationEvent -> {
+        stream.write(143)
         writeValue(stream, value.toList())
       }
       else -> super.writeValue(stream, value)
@@ -960,6 +1059,7 @@ interface MobileHostApi {
   fun beginRegistryInit(channelId: String, callback: (Result<HostRegistryInitPlan>) -> Unit)
   fun deferRegistryInit(operationId: String, manifestDigest: String, callback: (Result<Boolean>) -> Unit)
   fun confirmRegistryInit(operationId: String, manifestDigest: String, networkPolicy: HostRegistryNetworkPolicy, oneTimeNetworkOverride: Boolean, callback: (Result<HostRegistryInitPlan>) -> Unit)
+  fun pickAndImportRegistryArtifact(operationId: String, manifestDigest: String, artifactRole: HostRegistryArtifactRole, callback: (Result<HostRegistryImportProgress>) -> Unit)
   fun saveRawTextDraft(contentLanguage: String, content: String, callback: (Result<HostRawDraftReceipt>) -> Unit)
   fun inspectPendingShareSpools(callback: (Result<List<HostShareSpoolSummary>>) -> Unit)
   fun importSharedText(spoolRef: String, contentLanguage: String, callback: (Result<HostRawDraftReceipt>) -> Unit)
@@ -1083,6 +1183,28 @@ interface MobileHostApi {
             val networkPolicyArg = args[2] as HostRegistryNetworkPolicy
             val oneTimeNetworkOverrideArg = args[3] as Boolean
             api.confirmRegistryInit(operationIdArg, manifestDigestArg, networkPolicyArg, oneTimeNetworkOverrideArg) { result: Result<HostRegistryInitPlan> ->
+              val error = result.exceptionOrNull()
+              if (error != null) {
+                reply.reply(MobileHostApiPigeonUtils.wrapError(error))
+              } else {
+                val data = result.getOrNull()
+                reply.reply(MobileHostApiPigeonUtils.wrapResult(data))
+              }
+            }
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.onebrain_mobile.MobileHostApi.pickAndImportRegistryArtifact$separatedMessageChannelSuffix", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val operationIdArg = args[0] as String
+            val manifestDigestArg = args[1] as String
+            val artifactRoleArg = args[2] as HostRegistryArtifactRole
+            api.pickAndImportRegistryArtifact(operationIdArg, manifestDigestArg, artifactRoleArg) { result: Result<HostRegistryImportProgress> ->
               val error = result.exceptionOrNull()
               if (error != null) {
                 reply.reply(MobileHostApiPigeonUtils.wrapError(error))

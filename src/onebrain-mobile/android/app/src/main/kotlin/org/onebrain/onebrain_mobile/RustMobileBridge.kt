@@ -120,6 +120,15 @@ internal data class RustRegistryLandingProgress(
     val bytesComplete: Boolean,
 )
 
+internal data class RustRegistryChunkSourceTarget(
+    val transferNonce: String,
+    val artifactRole: Int,
+    val chunkIndex: Int,
+    val artifactSourceOffset: Long,
+    val expectedLength: Long,
+    val resumeOffset: Long,
+)
+
 internal data class RustRegistryChunkWriteReceipt(
     val transferNonce: String,
     val releaseId: String,
@@ -290,6 +299,23 @@ internal object RustMobileBridge {
         )
     }
 
+    fun prepareRegistryLocalImportSchedule(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        operationId: String,
+        manifestDigest: String,
+        foregroundUserResume: Boolean,
+    ): RustRegistryTransferSchedule {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        return decodeRegistryTransferSchedule(
+            nativeRuntimePrepareRegistryLocalImportSchedule(
+                operationId,
+                manifestDigest,
+                foregroundUserResume,
+            ),
+        )
+    }
+
     fun markRegistryTransferSubmitted(
         dataRoot: String,
         securityMaterial: ByteArray,
@@ -381,6 +407,32 @@ internal object RustMobileBridge {
         ensureSecureRuntime(dataRoot, securityMaterial)
         return decodeRegistryLandingProgress(
             nativeRuntimeRegistryLandingProgress(transferNonce),
+        )
+    }
+
+    fun nextRegistryChunkSourceTarget(
+        dataRoot: String,
+        securityMaterial: ByteArray,
+        transferNonce: String,
+        artifactRole: Int,
+    ): RustRegistryChunkSourceTarget? {
+        ensureSecureRuntime(dataRoot, securityMaterial)
+        val encoded = nativeRuntimeNextRegistryChunkSourceTarget(transferNonce, artifactRole)
+        if (encoded == "NONE") return null
+        check(!encoded.startsWith("ERR:")) {
+            "Rust Registry source target rejected the operation (${encoded.removePrefix("ERR:")})"
+        }
+        val fields = encoded.split('|')
+        check(fields.size == 6) {
+            "Rust mobile runtime returned an invalid Registry source target"
+        }
+        return RustRegistryChunkSourceTarget(
+            transferNonce = fields[0],
+            artifactRole = fields[1].toInt(),
+            chunkIndex = fields[2].toInt(),
+            artifactSourceOffset = fields[3].toLong(),
+            expectedLength = fields[4].toLong(),
+            resumeOffset = fields[5].toLong(),
         )
     }
 
@@ -779,6 +831,12 @@ internal object RustMobileBridge {
         foregroundUserResume: Boolean,
     ): String
 
+    @JvmStatic private external fun nativeRuntimePrepareRegistryLocalImportSchedule(
+        operationId: String,
+        manifestDigest: String,
+        foregroundUserResume: Boolean,
+    ): String
+
     @JvmStatic private external fun nativeRuntimeMarkRegistryTransferSubmitted(
         transferNonce: String,
         osTransferId: String,
@@ -811,6 +869,11 @@ internal object RustMobileBridge {
 
     @JvmStatic private external fun nativeRuntimeRegistryLandingProgress(
         transferNonce: String,
+    ): String
+
+    @JvmStatic private external fun nativeRuntimeNextRegistryChunkSourceTarget(
+        transferNonce: String,
+        artifactRole: Int,
     ): String
 
     @JvmStatic private external fun nativeRuntimeBeginRegistryChunkWrite(

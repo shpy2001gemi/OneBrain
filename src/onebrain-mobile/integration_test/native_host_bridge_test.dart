@@ -14,10 +14,10 @@ void main() {
       final events = gateway.observeFeasibilityOperations().asBroadcastStream();
 
       final snapshot = await gateway.inspectBootstrapHost();
-      expect(snapshot.apiVersion, '8');
+      expect(snapshot.apiVersion, '9');
       expect(snapshot.registryRequestIssued, isFalse);
       expect(snapshot.rustCoreLinked, isTrue);
-      expect(snapshot.rustAbiVersion, 11);
+      expect(snapshot.rustAbiVersion, 13);
       expect(snapshot.rustRoundTripVerified, isTrue);
 
       final runtime = await gateway.inspectRuntimeProfile();

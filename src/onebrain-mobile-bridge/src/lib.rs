@@ -19,16 +19,16 @@ use std::{
 use onebrain_mobile_core::OwnedMediaSummary;
 use onebrain_mobile_core::{
     ActivationPhase, AppLockPolicy, MobileFeatureFlags, MobileRuntimeFacade, MobileRuntimeSnapshot,
-    OnboardingCursor, RegistryChunkRecord, RegistryChunkState, RegistryChunkWriteProgress,
-    RegistryChunkWriteSession, RegistryChunkWriteStart, RegistryInitPlan, RegistryLandingProgress,
-    RegistryNetworkPolicy, RegistryOperationState, RegistrySourceKind, RegistryTransferPlatform,
-    RegistryTransferScheduleRecord, RegistryTransferScheduleState, ResourceBudgets,
-    RuntimeServices, SecurityBootstrapMaterial, SecuritySessionState,
-    REGISTRY_NATIVE_BLOCK_MAX_BYTES,
+    OnboardingCursor, RegistryChunkRecord, RegistryChunkSourceTarget, RegistryChunkState,
+    RegistryChunkWriteProgress, RegistryChunkWriteSession, RegistryChunkWriteStart,
+    RegistryInitPlan, RegistryLandingProgress, RegistryNetworkPolicy, RegistryOperationState,
+    RegistrySourceKind, RegistryTransferPlatform, RegistryTransferScheduleRecord,
+    RegistryTransferScheduleState, ResourceBudgets, RuntimeServices, SecurityBootstrapMaterial,
+    SecuritySessionState, REGISTRY_NATIVE_BLOCK_MAX_BYTES,
 };
 
 /// Stable ABI revision understood by the current Swift/Kotlin adapters.
-pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 12;
+pub const OB_MOBILE_BRIDGE_ABI_VERSION: u32 = 13;
 
 pub const OB_MOBILE_RUNTIME_OK: u32 = 0;
 pub const OB_MOBILE_RUNTIME_INVALID_PATH: u32 = 1;
@@ -46,6 +46,7 @@ pub const OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_TRANSFER: u32 = 12;
 pub const OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK: u32 = 13;
 pub const OB_MOBILE_RUNTIME_REGISTRY_CHUNK_SESSION_BUSY: u32 = 14;
 pub const OB_MOBILE_RUNTIME_NO_ACTIVE_REGISTRY_CHUNK_SESSION: u32 = 15;
+pub const OB_MOBILE_RUNTIME_NO_REGISTRY_CHUNK_TARGET: u32 = 16;
 
 const CORE_VERSION: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
@@ -94,6 +95,45 @@ impl ObMobileRegistryLandingProgress {
                 && progress.total_chunks == progress.verified_chunks
                 && progress.expected_bytes == progress.verified_bytes,
         );
+        bridged
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ObMobileRegistryChunkSourceTarget {
+    pub status_code: u32,
+    pub transfer_nonce: [u8; 129],
+    pub transfer_nonce_len: u32,
+    pub artifact_role: u32,
+    pub chunk_index: u32,
+    pub artifact_source_offset: u64,
+    pub expected_length: u64,
+    pub resume_offset: u64,
+}
+
+impl ObMobileRegistryChunkSourceTarget {
+    const fn error(status_code: u32) -> Self {
+        Self {
+            status_code,
+            transfer_nonce: [0; 129],
+            transfer_nonce_len: 0,
+            artifact_role: 0,
+            chunk_index: 0,
+            artifact_source_offset: 0,
+            expected_length: 0,
+            resume_offset: 0,
+        }
+    }
+
+    fn from_core(target: RegistryChunkSourceTarget) -> Self {
+        let mut bridged = Self::error(OB_MOBILE_RUNTIME_OK);
+        bridged.transfer_nonce_len = copy_utf8(&mut bridged.transfer_nonce, &target.transfer_nonce);
+        bridged.artifact_role = u32::from(target.artifact_role);
+        bridged.chunk_index = target.chunk_index;
+        bridged.artifact_source_offset = target.artifact_source_offset;
+        bridged.expected_length = target.expected_length;
+        bridged.resume_offset = target.resume_offset;
         bridged
     }
 }
@@ -808,6 +848,36 @@ pub unsafe extern "C" fn ob_mobile_runtime_prepare_registry_transfer_schedule_ut
     )
 }
 
+/// Prepare the canonical foreground Local Import barrier. Rust derives the
+/// source-plan digest, request fingerprint, source kind, executor, and exact
+/// byte count from the admitted signed operation.
+///
+/// # Safety
+/// Every pointer must reference its declared readable UTF-8 byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_prepare_registry_local_import_schedule_utf8(
+    operation_id: *const u8,
+    operation_id_len: usize,
+    manifest_digest: *const u8,
+    manifest_digest_len: usize,
+    foreground_user_resume: u8,
+) -> ObMobileRegistryTransferSchedule {
+    let Some(operation_id) = (unsafe { parse_bounded_utf8(operation_id, operation_id_len, 128) })
+    else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    let Some(manifest_digest) =
+        (unsafe { parse_bounded_utf8(manifest_digest, manifest_digest_len, 64) })
+    else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT);
+    };
+    prepare_registry_local_import_schedule(
+        operation_id,
+        manifest_digest,
+        foreground_user_resume != 0,
+    )
+}
+
 /// Record the platform scheduler's durable submit receipt.
 ///
 /// # Safety
@@ -973,6 +1043,28 @@ pub unsafe extern "C" fn ob_mobile_runtime_registry_landing_progress_utf8(
         return ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK);
     };
     registry_landing_progress(transfer_nonce)
+}
+
+/// Resolve the next incomplete signed chunk and its exact offset in one
+/// role-scoped local artifact. A no-target status means that role is complete.
+///
+/// # Safety
+/// `transfer_nonce` must reference its declared readable UTF-8 byte length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn ob_mobile_runtime_next_registry_chunk_source_target_utf8(
+    transfer_nonce: *const u8,
+    transfer_nonce_len: usize,
+    artifact_role: u32,
+) -> ObMobileRegistryChunkSourceTarget {
+    let Some(transfer_nonce) =
+        (unsafe { parse_bounded_utf8(transfer_nonce, transfer_nonce_len, 128) })
+    else {
+        return ObMobileRegistryChunkSourceTarget::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK);
+    };
+    let Ok(artifact_role) = u8::try_from(artifact_role) else {
+        return ObMobileRegistryChunkSourceTarget::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK);
+    };
+    next_registry_chunk_source_target(transfer_nonce, artifact_role)
 }
 
 /// Open the process-wide native-only write session for one exact signed chunk.
@@ -1585,6 +1677,29 @@ fn prepare_registry_transfer_schedule(
     }
 }
 
+fn prepare_registry_local_import_schedule(
+    operation_id: &str,
+    manifest_digest: &str,
+    foreground_user_resume: bool,
+) -> ObMobileRegistryTransferSchedule {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_LOCK_POISONED),
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.prepare_registry_local_import_schedule(
+        operation_id,
+        manifest_digest,
+        foreground_user_resume,
+    ) {
+        Ok(schedule) => ObMobileRegistryTransferSchedule::from_core(schedule),
+        Err(_) => ObMobileRegistryTransferSchedule::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
 fn mark_registry_transfer_submitted(
     transfer_nonce: &str,
     os_transfer_id: &str,
@@ -1738,6 +1853,29 @@ fn registry_landing_progress(transfer_nonce: &str) -> ObMobileRegistryLandingPro
     match facade.registry_landing_progress(transfer_nonce) {
         Ok(progress) => ObMobileRegistryLandingProgress::from_core(progress),
         Err(_) => ObMobileRegistryLandingProgress::error(OB_MOBILE_RUNTIME_CORE_ERROR),
+    }
+}
+
+fn next_registry_chunk_source_target(
+    transfer_nonce: &str,
+    artifact_role: u8,
+) -> ObMobileRegistryChunkSourceTarget {
+    let runtime = RUNTIME.get_or_init(|| Mutex::new(None));
+    let guard = match runtime.lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return ObMobileRegistryChunkSourceTarget::error(OB_MOBILE_RUNTIME_LOCK_POISONED);
+        }
+    };
+    let Some(facade) = guard.as_ref() else {
+        return ObMobileRegistryChunkSourceTarget::error(OB_MOBILE_RUNTIME_NOT_OPEN);
+    };
+    match facade.next_registry_chunk_source_target(transfer_nonce, artifact_role) {
+        Ok(Some(target)) => ObMobileRegistryChunkSourceTarget::from_core(target),
+        Ok(None) => {
+            ObMobileRegistryChunkSourceTarget::error(OB_MOBILE_RUNTIME_NO_REGISTRY_CHUNK_TARGET)
+        }
+        Err(_) => ObMobileRegistryChunkSourceTarget::error(OB_MOBILE_RUNTIME_CORE_ERROR),
     }
 }
 
@@ -2255,19 +2393,21 @@ mod android {
         append_registry_chunk_write, begin_registry_chunk_write, checkpoint_registry_chunk_write,
         confirm_registry_init, defer_registry_init, encode_owned_media, enqueue_shared_text,
         finish_media_stage, finish_owned_media_import, finish_registry_chunk_write,
-        import_shared_text, mark_registry_transfer_submitted, ob_mobile_bridge_abi_version,
-        ob_mobile_bridge_registry_request_issued, ob_mobile_bridge_round_trip,
-        ob_mobile_runtime_lock_private_node, ob_mobile_runtime_set_onboarding_cursor, open_runtime,
-        open_runtime_secured, owned_media, owned_media_count, pending_share_spool_at,
-        prepare_registry_chunk_ledger, prepare_registry_init, prepare_registry_transfer_schedule,
-        record_registry_transfer_missing, recover_registry_chunk_ledger, registry_landing_progress,
-        registry_network_policy, registry_source_kind, registry_transfer_platform,
-        registry_transfer_schedule_for_channel, runtime_snapshot, save_raw_text_draft,
-        start_media_stage, suspend_registry_chunk_write, ObMobileRegistryChunkWriteReceipt,
+        import_shared_text, mark_registry_transfer_submitted, next_registry_chunk_source_target,
+        ob_mobile_bridge_abi_version, ob_mobile_bridge_registry_request_issued,
+        ob_mobile_bridge_round_trip, ob_mobile_runtime_lock_private_node,
+        ob_mobile_runtime_set_onboarding_cursor, open_runtime, open_runtime_secured, owned_media,
+        owned_media_count, pending_share_spool_at, prepare_registry_chunk_ledger,
+        prepare_registry_init, prepare_registry_local_import_schedule,
+        prepare_registry_transfer_schedule, record_registry_transfer_missing,
+        recover_registry_chunk_ledger, registry_landing_progress, registry_network_policy,
+        registry_source_kind, registry_transfer_platform, registry_transfer_schedule_for_channel,
+        runtime_snapshot, save_raw_text_draft, start_media_stage, suspend_registry_chunk_write,
+        ObMobileRegistryChunkSourceTarget, ObMobileRegistryChunkWriteReceipt,
         ObMobileRegistryLandingProgress, ObMobileRegistryPlan, ObMobileRegistryTransferSchedule,
         CORE_VERSION, OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK,
-        OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT, OB_MOBILE_RUNTIME_OK,
-        REGISTRY_NATIVE_BLOCK_MAX_BYTES,
+        OB_MOBILE_RUNTIME_INVALID_REGISTRY_INIT, OB_MOBILE_RUNTIME_NO_REGISTRY_CHUNK_TARGET,
+        OB_MOBILE_RUNTIME_OK, REGISTRY_NATIVE_BLOCK_MAX_BYTES,
     };
     use onebrain_mobile_core::SecurityBootstrapMaterial;
     use zeroize::Zeroize;
@@ -2523,6 +2663,33 @@ mod android {
 
     #[jni_mangle(
         "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimePrepareRegistryLocalImportSchedule"
+    )]
+    pub fn native_runtime_prepare_registry_local_import_schedule<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        operation_id: JString<'caller>,
+        manifest_digest: JString<'caller>,
+        foreground_user_resume: jboolean,
+    ) -> JString<'caller> {
+        let operation_id = unowned_env
+            .with_env(|env| operation_id.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let manifest_digest = unowned_env
+            .with_env(|env| manifest_digest.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let encoded = encode_registry_transfer_schedule(&prepare_registry_local_import_schedule(
+            &operation_id,
+            &manifest_digest,
+            foreground_user_resume != JNI_FALSE,
+        ));
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
         "nativeRuntimeMarkRegistryTransferSubmitted"
     )]
     pub fn native_runtime_mark_registry_transfer_submitted<'caller>(
@@ -2683,6 +2850,29 @@ mod android {
             .with_env(|env| transfer_nonce.try_to_string(env))
             .resolve::<ThrowRuntimeExAndDefault>();
         let encoded = encode_registry_landing_progress(&registry_landing_progress(&transfer_nonce));
+        unowned_env
+            .with_env(|env| JString::from_str(env, &encoded))
+            .resolve::<ThrowRuntimeExAndDefault>()
+    }
+
+    #[jni_mangle(
+        "org.onebrain.onebrain_mobile.RustMobileBridge",
+        "nativeRuntimeNextRegistryChunkSourceTarget"
+    )]
+    pub fn native_runtime_next_registry_chunk_source_target<'caller>(
+        mut unowned_env: EnvUnowned<'caller>,
+        _class: JClass<'caller>,
+        transfer_nonce: JString<'caller>,
+        artifact_role: jint,
+    ) -> JString<'caller> {
+        let transfer_nonce = unowned_env
+            .with_env(|env| transfer_nonce.try_to_string(env))
+            .resolve::<ThrowRuntimeExAndDefault>();
+        let target = u8::try_from(artifact_role).map_or_else(
+            |_| ObMobileRegistryChunkSourceTarget::error(OB_MOBILE_RUNTIME_INVALID_REGISTRY_CHUNK),
+            |artifact_role| next_registry_chunk_source_target(&transfer_nonce, artifact_role),
+        );
+        let encoded = encode_registry_chunk_source_target(&target);
         unowned_env
             .with_env(|env| JString::from_str(env, &encoded))
             .resolve::<ThrowRuntimeExAndDefault>()
@@ -3323,6 +3513,24 @@ mod android {
         )
     }
 
+    fn encode_registry_chunk_source_target(target: &ObMobileRegistryChunkSourceTarget) -> String {
+        if target.status_code == OB_MOBILE_RUNTIME_NO_REGISTRY_CHUNK_TARGET {
+            return "NONE".into();
+        }
+        if target.status_code != OB_MOBILE_RUNTIME_OK {
+            return format!("ERR:{}", target.status_code);
+        }
+        let transfer_nonce = encoded_utf8_field(&target.transfer_nonce, target.transfer_nonce_len);
+        format!(
+            "{transfer_nonce}|{}|{}|{}|{}|{}",
+            target.artifact_role,
+            target.chunk_index,
+            target.artifact_source_offset,
+            target.expected_length,
+            target.resume_offset,
+        )
+    }
+
     fn encode_registry_chunk_write_receipt(receipt: &ObMobileRegistryChunkWriteReceipt) -> String {
         if receipt.status_code != OB_MOBILE_RUNTIME_OK {
             return format!("ERR:{}", receipt.status_code);
@@ -3354,10 +3562,28 @@ mod tests {
 
     #[test]
     fn abi_and_version_are_bounded_and_stable() {
-        assert_eq!(ob_mobile_bridge_abi_version(), 12);
+        assert_eq!(ob_mobile_bridge_abi_version(), 13);
         let version = unsafe { CStr::from_ptr(ob_mobile_bridge_core_version()) };
         assert_eq!(version.to_str().expect("version UTF-8"), "0.1.0");
         assert!(version.to_bytes().len() <= 32);
+    }
+
+    #[test]
+    fn registry_chunk_source_target_has_bounded_stable_abi_fields() {
+        let bridged = ObMobileRegistryChunkSourceTarget::from_core(RegistryChunkSourceTarget {
+            transfer_nonce: "registry_transfer_001122".into(),
+            artifact_role: 2,
+            chunk_index: 17,
+            artifact_source_offset: 4_294_967_296,
+            expected_length: 1_048_576,
+            resume_offset: 262_144,
+        });
+        assert_eq!(bridged.status_code, OB_MOBILE_RUNTIME_OK);
+        assert_eq!(bridged.artifact_role, 2);
+        assert_eq!(bridged.chunk_index, 17);
+        assert_eq!(bridged.artifact_source_offset, 4_294_967_296);
+        assert_eq!(bridged.expected_length, 1_048_576);
+        assert_eq!(bridged.resume_offset, 262_144);
     }
 
     #[test]

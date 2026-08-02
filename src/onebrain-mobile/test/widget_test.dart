@@ -157,10 +157,14 @@ void main() {
 
     await tapVisible('Confirm exact plan');
     expect(find.text('Capacity admitted'), findsOneWidget);
-    expect(
-      find.text('Transfer is not enabled in this build slice.'),
-      findsOneWidget,
-    );
+    expect(find.text('Local Import · no server required'), findsWidgets);
+    expect(find.byKey(const Key('init_local_import_concepts')), findsOneWidget);
+    final importAction = find.text('Choose and verify file').first;
+    await tester.ensureVisible(importAction);
+    await tester.tap(importAction);
+    await tester.pumpAndSettle();
+    expect(find.text('Role verified'), findsOneWidget);
+    expect(find.byKey(const Key('init_local_import_progress')), findsOneWidget);
   });
 
   testWidgets('MOB-SCR-INI-002 reflows at 320 pixels and 200 percent text', (
@@ -465,6 +469,15 @@ class _FakeMobileHostGateway implements MobileHostGateway {
   }) => throw UnsupportedError('Registry Init is unavailable in this fake');
 
   @override
+  Future<MobileRegistryImportProgress> pickAndImportRegistryArtifact({
+    required String operationId,
+    required String manifestDigest,
+    required MobileRegistryArtifactRole artifactRole,
+  }) => throw UnsupportedError(
+    'Registry Local Import is unavailable in this fake',
+  );
+
+  @override
   Future<void> setOnboardingCursor(MobileOnboardingCursor cursor) async {}
 
   @override
@@ -551,6 +564,23 @@ class _RegistryInitFakeGateway extends _FakeMobileHostGateway {
     required MobileRegistryNetworkPolicy networkPolicy,
     required bool oneTimeNetworkOverride,
   }) async => _plan(stateCode: 8);
+
+  @override
+  Future<MobileRegistryImportProgress> pickAndImportRegistryArtifact({
+    required String operationId,
+    required String manifestDigest,
+    required MobileRegistryArtifactRole artifactRole,
+  }) async => MobileRegistryImportProgress(
+    transferNonce: 'registry_transfer_${'d' * 48}',
+    selectedRole: artifactRole,
+    totalChunks: 3,
+    verifiedChunks: 1,
+    expectedBytes: 6144,
+    verifiedBytes: 1024,
+    sourcePlanDigest: 'e' * 64,
+    roleComplete: true,
+    bytesComplete: false,
+  );
 
   MobileRegistryInitPlan _plan({required int stateCode}) =>
       MobileRegistryInitPlan(

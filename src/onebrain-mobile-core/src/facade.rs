@@ -4,9 +4,9 @@ use crate::{
     run_signed_local_kql_smoke, ActivationArbiter, ActivationPhase, AppLockPolicy, ExecutionGrant,
     ExecutionGrantKind, MediaStageReceipt, MobileCoreError, MobileFeatureFlags, NetworkScope,
     OnboardingCursor, OwnedMediaSummary, RawDraftReceipt, RegistryCapacityPlan,
-    RegistryChunkRecord, RegistryChunkWriteProgress, RegistryChunkWriteSession,
-    RegistryChunkWriteStart, RegistryLandingProgress, RegistryLimitedReceipt,
-    RegistryNetworkPolicy, RegistryOperationRecord, RegistryOperationState,
+    RegistryChunkRecord, RegistryChunkSourceTarget, RegistryChunkWriteProgress,
+    RegistryChunkWriteSession, RegistryChunkWriteStart, RegistryLandingProgress,
+    RegistryLimitedReceipt, RegistryNetworkPolicy, RegistryOperationRecord, RegistryOperationState,
     RegistryReleaseCatalogRecord, RegistrySourceKind, RegistryTransferPlatform,
     RegistryTransferScheduleRecord, RegistryTrustProfile, ResourceBudgets, RuntimeServices,
     SecureIdentitySession, SecurityBootstrapMaterial, SecuritySessionState, ShareSpoolSummary,
@@ -614,6 +614,20 @@ impl MobileRuntimeFacade {
         )
     }
 
+    pub fn prepare_registry_local_import_schedule(
+        &self,
+        operation_id: &str,
+        manifest_digest: &str,
+        foreground_user_resume: bool,
+    ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
+        self.store.prepare_registry_local_import_schedule(
+            operation_id,
+            manifest_digest,
+            foreground_user_resume,
+            &self.budgets,
+        )
+    }
+
     pub fn mark_registry_transfer_submitted(
         &self,
         transfer_nonce: &str,
@@ -677,6 +691,15 @@ impl MobileRuntimeFacade {
     ) -> Result<u64, MobileCoreError> {
         self.store
             .registry_chunk_resume_offset(transfer_nonce, artifact_role, chunk_index)
+    }
+
+    pub fn next_registry_chunk_source_target(
+        &self,
+        transfer_nonce: &str,
+        artifact_role: u8,
+    ) -> Result<Option<RegistryChunkSourceTarget>, MobileCoreError> {
+        self.store
+            .next_registry_chunk_source_target(transfer_nonce, artifact_role)
     }
 
     pub fn begin_registry_chunk_write(

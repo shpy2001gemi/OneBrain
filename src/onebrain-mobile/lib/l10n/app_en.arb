@@ -262,5 +262,21 @@
   "languageSettingsTitle": "Language and accessibility",
   "languageSettingsBody": "English and Vietnamese UI, system text scaling, contrast and Reduce Motion use the shared design contract.",
   "unavailableTitle": "Feature not available yet",
-  "backHomeAction": "Back to Home"
+  "backHomeAction": "Back to Home",
+  "initLocalImportTitle": "Import the signed Registry from this device",
+  "initLocalImportBody": "Choose each role-scoped artifact with the Android system picker. Native streams directly to Rust, which resumes and verifies every signed chunk. File names, Flutter and the picker never grant content authority.",
+  "initLocalImportResumeNote": "Keep OneBrain in the foreground while a file is streaming. If Android stops the app, choose the same artifact again and verification resumes from durable bytes.",
+  "initLocalImportSourceStatus": "Local Import · no server required",
+  "initLocalImportConceptsTitle": "Concept data (concepts.obr)",
+  "initLocalImportLabelsTitle": "Labels index",
+  "initLocalImportCcidsTitle": "CCID index",
+  "initLocalImportRoleBody": "Select the exact artifact for this signed role. Extra, missing or altered bytes are rejected.",
+  "initLocalImportAction": "Choose and verify file",
+  "initLocalImportRoleComplete": "Role verified",
+  "initLocalImportRolePending": "Not imported",
+  "initLocalImportProgress": "{verifiedChunks}/{totalChunks} chunks · {verifiedBytes}/{expectedBytes} bytes verified",
+  "@initLocalImportProgress": {"placeholders": {"verifiedChunks": {"type": "int"}, "totalChunks": {"type": "int"}, "verifiedBytes": {"type": "int"}, "expectedBytes": {"type": "int"}}},
+  "initLocalImportAllBytesTitle": "All Registry bytes verified",
+  "initLocalImportAllBytesBody": "The three signed artifacts are complete in durable landing storage. Activation remains gated by the next MOB-05C whole-artifact, KQL smoke and atomic pointer checks.",
+  "initLocalImportError": "The selected artifact was cancelled, unreadable, too short, too long or did not match the signed chunk ledger. Verified durable bytes were kept for resume."
 }

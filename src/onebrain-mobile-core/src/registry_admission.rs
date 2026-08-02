@@ -1967,11 +1967,6 @@ mod tests {
 
     #[test]
     fn signed_chunk_ledger_resumes_rehashes_and_closes_bytes_complete_atomically() {
-        const REQUEST_FINGERPRINT: &str =
-            "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
-        const SOURCE_PLAN_DIGEST: &str =
-            "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef";
-
         let authority = SignedFixtureAuthority::new();
         let directory = tempdir().unwrap();
         let path = directory.path().join("bootstrap.redb");
@@ -2004,18 +1999,21 @@ mod tests {
             )
             .unwrap();
         let schedule = store
-            .prepare_registry_transfer_schedule(
+            .prepare_registry_local_import_schedule(
                 &operation.operation_id,
                 &hex::encode(authority.floor_target.manifest_digest),
-                RegistryTransferPlatform::AndroidUidt,
-                RegistrySourceKind::LocalImport,
-                REQUEST_FINGERPRINT,
-                SOURCE_PLAN_DIGEST,
-                authority.floor_target.artifact_total_bytes,
                 false,
                 &budgets,
             )
             .unwrap();
+        assert_eq!(
+            schedule.platform,
+            RegistryTransferPlatform::ForegroundNative
+        );
+        assert_eq!(schedule.source_kind, RegistrySourceKind::LocalImport);
+        assert_eq!(schedule.source_plan_digest.len(), 64);
+        assert_eq!(schedule.request_fingerprint.len(), 64);
+        assert_eq!(schedule.expected_total_bytes, 6144);
         store
             .mark_registry_transfer_submitted(
                 &schedule.transfer_nonce,
@@ -2027,8 +2025,8 @@ mod tests {
             .adopt_registry_transfer(
                 &schedule.transfer_nonce,
                 "android-byte-job",
-                REQUEST_FINGERPRINT,
-                schedule.android_job_id,
+                &schedule.request_fingerprint,
+                None,
                 1,
                 &budgets,
             )
@@ -2040,6 +2038,32 @@ mod tests {
         assert_eq!(planned.total_chunks, 3);
         assert_eq!(planned.expected_bytes, 6144);
         assert_eq!(planned.verified_chunks, 0);
+        let replay = store
+            .prepare_registry_local_import_schedule(
+                &operation.operation_id,
+                &hex::encode(authority.floor_target.manifest_digest),
+                false,
+                &budgets,
+            )
+            .unwrap();
+        assert_eq!(replay.transfer_nonce, schedule.transfer_nonce);
+        assert_eq!(replay.source_plan_digest, schedule.source_plan_digest);
+        assert_eq!(replay.request_fingerprint, schedule.request_fingerprint);
+        assert_eq!(replay.state, RegistryTransferScheduleState::TransferAdopted);
+        assert_eq!(
+            store
+                .next_registry_chunk_source_target(&schedule.transfer_nonce, 0)
+                .unwrap()
+                .unwrap(),
+            crate::RegistryChunkSourceTarget {
+                transfer_nonce: schedule.transfer_nonce.clone(),
+                artifact_role: 0,
+                chunk_index: 0,
+                artifact_source_offset: 0,
+                expected_length: 1024,
+                resume_offset: 0,
+            }
+        );
         assert_eq!(
             store
                 .registry_operation(&operation.operation_id)
@@ -2065,6 +2089,14 @@ mod tests {
                 .unwrap(),
             300
         );
+        assert_eq!(
+            store
+                .next_registry_chunk_source_target(&schedule.transfer_nonce, 0)
+                .unwrap()
+                .unwrap()
+                .resume_offset,
+            300
+        );
         drop(store);
 
         let recovered = BootstrapStore::open(&path).unwrap();
@@ -2086,6 +2118,14 @@ mod tests {
             .land_registry_chunk(&schedule.transfer_nonce, 0, 0, 300, &mut remainder)
             .unwrap();
         assert_eq!(obr_receipt.state, crate::RegistryChunkState::Verified);
+        assert!(recovered
+            .next_registry_chunk_source_target(&schedule.transfer_nonce, 0)
+            .unwrap()
+            .is_none());
+        assert!(matches!(
+            recovered.next_registry_chunk_source_target(&schedule.transfer_nonce, 3),
+            Err(MobileCoreError::RegistryAdmission(_))
+        ));
 
         let labels = fixture_chunk_bytes(1, 2048);
         let mut overlong_labels = labels.clone();

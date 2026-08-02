@@ -202,6 +202,19 @@ pub struct RegistryChunkRecord {
     pub state: RegistryChunkState,
 }
 
+/// Native-readable location of the next incomplete signed chunk inside one
+/// role-scoped source artifact. The source offset is derived exclusively from
+/// the accepted manifest ledger; callers never provide chunk boundaries.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegistryChunkSourceTarget {
+    pub transfer_nonce: String,
+    pub artifact_role: u8,
+    pub chunk_index: u32,
+    pub artifact_source_offset: u64,
+    pub expected_length: u64,
+    pub resume_offset: u64,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RegistryChunkState {
@@ -1361,12 +1374,7 @@ impl BootstrapStore {
         let operation_snapshot = self
             .registry_operation(operation_id)?
             .ok_or_else(|| registry_admission("unknown Registry Init operation"))?;
-        if matches!(
-            operation_snapshot.state,
-            RegistryOperationState::SchedulePrepared
-                | RegistryOperationState::TransferSubmitted
-                | RegistryOperationState::TransferAdopted
-        ) {
+        if operation_snapshot.state.permits_transfer_preparation() {
             let active_nonce = operation_snapshot
                 .active_transfer_nonce
                 .as_deref()
@@ -1873,6 +1881,60 @@ impl BootstrapStore {
         self.registry_landing_progress(transfer_nonce)
     }
 
+    /// Prepare the canonical foreground Local Import schedule without
+    /// accepting caller-authored request/source digests. The exact release and
+    /// byte count are recovered from the admitted signed operation.
+    pub fn prepare_registry_local_import_schedule(
+        &self,
+        operation_id: &str,
+        manifest_digest: &str,
+        foreground_user_resume: bool,
+        budgets: &ResourceBudgets,
+    ) -> Result<RegistryTransferScheduleRecord, MobileCoreError> {
+        require_bounded("operation_id", operation_id, budgets.max_operation_id_bytes)?;
+        validate_hash(manifest_digest)?;
+        let operation = self
+            .registry_operation(operation_id)?
+            .ok_or_else(|| registry_admission("unknown Registry Init operation"))?;
+        if operation.confirmed_manifest_digest.as_deref() != Some(manifest_digest) {
+            return Err(registry_admission(
+                "Local Import must match the confirmed Registry manifest",
+            ));
+        }
+        let release = self
+            .registry_release_catalog(&operation.release_id)?
+            .ok_or_else(|| registry_admission("verified release lost its catalog record"))?;
+        if release.state == RegistryReleaseState::Revoked
+            || release.manifest_digest != manifest_digest
+            || release.artifact_total_bytes == 0
+        {
+            return Err(registry_admission(
+                "Local Import cannot bind a revoked, changed, or empty release",
+            ));
+        }
+
+        let source_plan_digest = registry_local_import_source_plan_digest(
+            operation_id,
+            &operation.release_id,
+            manifest_digest,
+        );
+        let request_fingerprint = registry_local_import_request_fingerprint(
+            &source_plan_digest,
+            release.artifact_total_bytes,
+        );
+        self.prepare_registry_transfer_schedule(
+            operation_id,
+            manifest_digest,
+            RegistryTransferPlatform::ForegroundNative,
+            RegistrySourceKind::LocalImport,
+            &request_fingerprint,
+            &source_plan_digest,
+            release.artifact_total_bytes,
+            foreground_user_resume,
+            budgets,
+        )
+    }
+
     pub fn registry_chunk(
         &self,
         transfer_nonce: &str,
@@ -1911,6 +1973,57 @@ impl BootstrapStore {
             ));
         }
         bounded_regular_file_length(&paths.partial, record.expected_length)
+    }
+
+    /// Return the first incomplete chunk for a role-scoped artifact together
+    /// with its absolute byte offset in that source artifact. Verified chunks
+    /// are rechecked before they are skipped.
+    pub fn next_registry_chunk_source_target(
+        &self,
+        transfer_nonce: &str,
+        artifact_role: u8,
+    ) -> Result<Option<RegistryChunkSourceTarget>, MobileCoreError> {
+        if artifact_role > 2 {
+            return Err(registry_admission("unknown Registry artifact role"));
+        }
+        let records = self.registry_chunks_for_transfer(transfer_nonce)?;
+        if records.is_empty() {
+            return Err(registry_admission("Registry chunk ledger is not prepared"));
+        }
+        let mut artifact_source_offset = 0u64;
+        let mut observed_role = false;
+        for record in records
+            .into_iter()
+            .filter(|record| record.artifact_role == artifact_role)
+        {
+            observed_role = true;
+            let resume_offset = self.registry_chunk_resume_offset(
+                transfer_nonce,
+                artifact_role,
+                record.chunk_index,
+            )?;
+            if resume_offset < record.expected_length {
+                return Ok(Some(RegistryChunkSourceTarget {
+                    transfer_nonce: transfer_nonce.to_owned(),
+                    artifact_role,
+                    chunk_index: record.chunk_index,
+                    artifact_source_offset,
+                    expected_length: record.expected_length,
+                    resume_offset,
+                }));
+            }
+            artifact_source_offset = artifact_source_offset
+                .checked_add(record.expected_length)
+                .ok_or_else(|| {
+                    MobileCoreError::Security("Registry artifact source offset overflow".into())
+                })?;
+        }
+        if !observed_role {
+            return Err(registry_admission(
+                "signed Registry manifest has no chunks for this artifact role",
+            ));
+        }
+        Ok(None)
     }
 
     pub fn begin_registry_chunk_write(
@@ -3051,6 +3164,48 @@ fn registry_transfer_request_matches(
         && schedule.request_fingerprint == request_fingerprint
         && schedule.source_plan_digest == source_plan_digest
         && schedule.expected_total_bytes == expected_total_bytes
+}
+
+fn registry_local_import_source_plan_digest(
+    operation_id: &str,
+    release_id: &str,
+    manifest_digest: &str,
+) -> String {
+    stable_registry_local_import_digest(
+        b"onebrain:registry-local-import-source-plan:1\0",
+        &[
+            operation_id.as_bytes(),
+            release_id.as_bytes(),
+            manifest_digest.as_bytes(),
+            b"role-scoped-user-selected-artifacts",
+        ],
+    )
+}
+
+fn registry_local_import_request_fingerprint(
+    source_plan_digest: &str,
+    expected_total_bytes: u64,
+) -> String {
+    let expected_total_bytes = expected_total_bytes.to_le_bytes();
+    stable_registry_local_import_digest(
+        b"onebrain:registry-local-import-request:1\0",
+        &[
+            source_plan_digest.as_bytes(),
+            b"foreground-native",
+            b"local-import",
+            &expected_total_bytes,
+        ],
+    )
+}
+
+fn stable_registry_local_import_digest(domain: &[u8], values: &[&[u8]]) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(domain);
+    for value in values {
+        hasher.update(&(value.len() as u64).to_le_bytes());
+        hasher.update(value);
+    }
+    hex::encode(hasher.finalize().as_bytes())
 }
 
 fn android_registry_job_id(

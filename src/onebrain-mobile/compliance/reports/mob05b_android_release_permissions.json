@@ -1,16 +1,29 @@
 {
   "aapt": "aapt.exe",
   "android_build_tools": "36.0.0",
+  "debug_probe_receiver_declared": false,
   "forbidden_bootstrap_network_permissions": [],
   "format": "onebrain.mobile.android-permissions/1",
-  "generated_at": "2026-08-01T17:31:37.168305+00:00",
-  "limitations": "This proves the packaged root-barrier release still lacks OS network permissions. It does not replace the next explicit-Init platform transport tests or physical-device packet capture.",
+  "generated_at": "2026-08-02T08:23:56.401114+00:00",
+  "internet_permission_present": false,
+  "limitations": "ACCESS_NETWORK_STATE permits JobScheduler constraint evaluation; it does not open a socket. This proves the release declares the UIDT scheduler permissions but still lacks INTERNET. It does not replace HTTPS landing, packet, full-size, or physical-device tests.",
+  "missing_uidt_permissions": [],
   "network_capability_present": false,
   "package": "app-release.apk",
-  "package_bytes": 65732084,
-  "package_sha256": "4bb48df24152ce158b61271e29a8bfded2bd98c4e031a7ba0d9b8237ecdcc613",
+  "package_bytes": 66102444,
+  "package_sha256": "bc372c5aea73348f8c93464b2856b4462f1925d6d1edab5be961fd6ec687488b",
   "permissions": [
+    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.RECEIVE_BOOT_COMPLETED",
+    "android.permission.RUN_USER_INITIATED_JOBS",
     "org.onebrain.onebrain_mobile.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
   ],
-  "scope": "MOB-05B root-barrier Android release before platform transfer execution"
+  "required_uidt_permissions": [
+    "android.permission.ACCESS_NETWORK_STATE",
+    "android.permission.RECEIVE_BOOT_COMPLETED",
+    "android.permission.RUN_USER_INITIATED_JOBS"
+  ],
+  "scope": "MOB-05B Android UIDT and native verified-stream boundary before network response execution",
+  "uidt_control_receiver_declared": true,
+  "uidt_service_declared": true
 }

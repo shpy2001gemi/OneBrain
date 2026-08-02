@@ -159,7 +159,9 @@ Anatomy:
 - current state → proposed state;
 - exact object, recipient/provider, bytes/cost/retention/permanence; Registry
   Init additionally separates its non-authoritative provider source plan from
-  the OS executor and never implies a required central endpoint;
+  the OS executor and never implies a required central endpoint; after exact
+  Confirm, Local Import reuses role-scoped action cards for Concepts, labels
+  and CCID artifacts and shows only typed signed-ledger progress;
 - disclosure and consequence sections;
 - fresh-state/plan validity;
 - explicit secondary Cancel/Defer and primary named commit.

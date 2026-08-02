@@ -26,6 +26,8 @@ class _InitScreenState extends ConsumerState<InitScreen> {
   bool _oneTimeNetworkOverride = false;
   bool _busy = false;
   String? _error;
+  MobileRegistryImportProgress? _importProgress;
+  final Set<MobileRegistryArtifactRole> _verifiedRoles = {};
 
   @override
   Widget build(BuildContext context) {
@@ -230,7 +232,7 @@ class _InitScreenState extends ConsumerState<InitScreen> {
           hasCapacity: hasCapacity,
         ),
         SizedBox(height: context.spacing.lg),
-        if (confirmationRecorded)
+        if (confirmationRecorded) ...[
           ObmActionCard(
             title: plan.stateCode == 8
                 ? strings.initAdmittedTitle
@@ -244,9 +246,15 @@ class _InitScreenState extends ConsumerState<InitScreen> {
             tone: plan.stateCode == 8
                 ? ObmStatusTone.ready
                 : ObmStatusTone.waiting,
-            statusLabel: strings.initTransportGated,
-          )
-        else ...[
+            statusLabel: plan.stateCode == 8
+                ? strings.initLocalImportSourceStatus
+                : strings.initTransportGated,
+          ),
+          if (plan.stateCode == 8) ...[
+            SizedBox(height: context.spacing.lg),
+            _buildLocalImport(context, strings, plan),
+          ],
+        ] else ...[
           Text(
             strings.initNetworkPolicyTitle,
             style: Theme.of(context).textTheme.titleMedium,
@@ -309,6 +317,85 @@ class _InitScreenState extends ConsumerState<InitScreen> {
             busy: _busy,
           ),
         ],
+      ],
+    );
+  }
+
+  Widget _buildLocalImport(
+    BuildContext context,
+    AppLocalizations strings,
+    MobileRegistryInitPlan plan,
+  ) {
+    final progress = _importProgress;
+    final roles = <(MobileRegistryArtifactRole, String)>[
+      (
+        MobileRegistryArtifactRole.concepts,
+        strings.initLocalImportConceptsTitle,
+      ),
+      (
+        MobileRegistryArtifactRole.labelsIndex,
+        strings.initLocalImportLabelsTitle,
+      ),
+      (
+        MobileRegistryArtifactRole.ccidsIndex,
+        strings.initLocalImportCcidsTitle,
+      ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ObmActionCard(
+          title: strings.initLocalImportTitle,
+          body:
+              '${strings.initLocalImportBody}\n\n${strings.initLocalImportResumeNote}',
+          icon: ObmSymbol.folder,
+          tone: ObmStatusTone.information,
+          statusLabel: strings.initLocalImportSourceStatus,
+        ),
+        SizedBox(height: context.spacing.lg),
+        for (final role in roles) ...[
+          ObmActionCard(
+            key: Key('init_local_import_${role.$1.name}'),
+            title: role.$2,
+            body: strings.initLocalImportRoleBody,
+            icon: ObmSymbol.database,
+            tone: _verifiedRoles.contains(role.$1)
+                ? ObmStatusTone.ready
+                : ObmStatusTone.waiting,
+            statusLabel: _verifiedRoles.contains(role.$1)
+                ? strings.initLocalImportRoleComplete
+                : strings.initLocalImportRolePending,
+            actionLabel: _verifiedRoles.contains(role.$1)
+                ? null
+                : strings.initLocalImportAction,
+            onPressed: _busy || _verifiedRoles.contains(role.$1)
+                ? null
+                : () => _importRegistryArtifact(plan, role.$1),
+          ),
+          SizedBox(height: context.spacing.lg),
+        ],
+        if (progress != null)
+          ObmActionCard(
+            key: const Key('init_local_import_progress'),
+            title: progress.bytesComplete
+                ? strings.initLocalImportAllBytesTitle
+                : strings.initLocalImportTitle,
+            body: progress.bytesComplete
+                ? '${strings.initLocalImportProgress(progress.verifiedChunks, progress.totalChunks, progress.verifiedBytes, progress.expectedBytes)}\n\n${strings.initLocalImportAllBytesBody}'
+                : strings.initLocalImportProgress(
+                    progress.verifiedChunks,
+                    progress.totalChunks,
+                    progress.verifiedBytes,
+                    progress.expectedBytes,
+                  ),
+            icon: progress.bytesComplete
+                ? ObmSymbol.checkCircle
+                : ObmSymbol.storage,
+            tone: progress.bytesComplete
+                ? ObmStatusTone.ready
+                : ObmStatusTone.information,
+            statusLabel: _shortDigest(progress.sourcePlanDigest),
+          ),
       ],
     );
   }
@@ -380,6 +467,39 @@ class _InitScreenState extends ConsumerState<InitScreen> {
     } on Object {
       if (mounted) {
         setState(() => _error = AppLocalizations.of(context).initConfirmError);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _importRegistryArtifact(
+    MobileRegistryInitPlan plan,
+    MobileRegistryArtifactRole role,
+  ) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final progress = await ref
+          .read(mobileHostGatewayProvider)
+          .pickAndImportRegistryArtifact(
+            operationId: plan.operationId,
+            manifestDigest: plan.manifestDigest,
+            artifactRole: role,
+          );
+      if (mounted) {
+        setState(() {
+          _importProgress = progress;
+          if (progress.roleComplete) _verifiedRoles.add(role);
+        });
+      }
+    } on Object {
+      if (mounted) {
+        setState(
+          () => _error = AppLocalizations.of(context).initLocalImportError,
+        );
       }
     } finally {
       if (mounted) setState(() => _busy = false);

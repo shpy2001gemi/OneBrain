@@ -29,10 +29,11 @@ pub use archive::{
 pub use bootstrap::{
     BootstrapStore, InstallationAuthorityRecord, OnboardingCursor, PrivacyPolicyRecord,
     ProcessGenerationRecord, ProcessLifecycle, ProcessStart, RegistryChunkRecord,
-    RegistryChunkState, RegistryChunkWriteProgress, RegistryChunkWriteSession,
-    RegistryChunkWriteStart, RegistryLandingProgress, RegistryOperationRecord, RegistrySourceKind,
-    RegistryTransferPlatform, RegistryTransferScheduleRecord, RegistryTransferScheduleState,
-    SecurityHistoryRecord, TransferLandingRecord, REGISTRY_NATIVE_BLOCK_MAX_BYTES,
+    RegistryChunkSourceTarget, RegistryChunkState, RegistryChunkWriteProgress,
+    RegistryChunkWriteSession, RegistryChunkWriteStart, RegistryLandingProgress,
+    RegistryOperationRecord, RegistrySourceKind, RegistryTransferPlatform,
+    RegistryTransferScheduleRecord, RegistryTransferScheduleState, SecurityHistoryRecord,
+    TransferLandingRecord, REGISTRY_NATIVE_BLOCK_MAX_BYTES,
 };
 pub use draft::{PrivateDraftKey, PrivateDraftStore, RawDraftReceipt, ShareSpoolSummary};
 pub use error::MobileCoreError;
