@@ -1,8 +1,8 @@
 # WIP Mobile App Analysis and Implementation Plan V1.5
 
-> Status: **ACTIVE IMPLEMENTATION / MOB-05A ADMISSION + MOB-05B ABI-13 ANDROID LOCAL IMPORT IMPLEMENTED / PEER + ACTIVATION NEXT**
+> Status: **MOBILE FOUNDATION BRANCH HANDOFF / MOB-05A ADMISSION + MOB-05B ABI-13 ANDROID LOCAL IMPORT IMPLEMENTED / REMAINING PACKAGES CONTINUE ON NEW BRANCHES**
 >
-> Snapshot: **2026-08-02 (Asia/Saigon)**
+> Snapshot: **2026-08-06 (Asia/Saigon)**
 >
 > Scope: iOS, Android, an autonomous OneBrain mobile node, local or cloud LLM
 > providers, deterministic tool execution, 2 GB+ post-launch Init data, and
@@ -1706,6 +1706,47 @@ Status vocabulary:
 | AI/tools (`MOB-GATE-AI`) | **Open/optional** | No-LLM remains valid; close only for selected providers after quality, RAM, energy, cancellation, tool-conformance and disclosure evidence |
 | Network/seeding (`MOB-GATE-NETWORKED-BETA`) | **Blocked** | P5/peer/Registry/Offline MVP gates, provider-lease semantics, intermittent mobile scheduling, privacy wire capture and two-device/multi-host canary |
 | Store release (`MOB-GATE-STORE`) | **Open** | Physical-device beta, signed packages, policy/privacy/license inventory, recovery/rollback and no open P0 data-loss/security issue |
+
+### 11.3 Mobile foundation branch handoff — 2026-08-06
+
+`codex/mobile-autonomous-node` is intentionally closed into `main` as a
+foundation checkpoint, not as a declaration that the mobile product or any
+open composite gate is complete. The branch contributes eight commits from
+`3b9ee33` through `847502d` and leaves the package/gate statuses in §§11.1–11.2
+authoritative.
+
+Included executable scope:
+
+- MOB-05A signed Registry trust/admission, exact capacity review and durable
+  Begin/Defer/Confirm;
+- MOB-05B provider-neutral source/executor binding, Android UIDT
+  schedule/adopt/recovery, manifest-derived chunk ledger and bounded native
+  streaming;
+- Android Host API 9 / Rust ABI 13 role-scoped Local Import through the system
+  document picker for Concepts OBR, labels index and CCID index, with
+  native-only URI/bytes, exact signed offsets, corruption/short/extra rejection
+  and durable resume;
+- the earlier partial MOB-01..04 and MOB-07 mobile scaffold, security,
+  encrypted raw/media foundations, vi/en shared UI and build evidence already
+  enumerated in §11.1.
+
+Fresh branch-closure verification on 2026-08-06 covered the mobile contract
+validator and its 7 unit tests, 28 Rust core unit tests, 8 Rust core integration
+tests, 8 bridge tests, package-local deny-warnings Clippy, Flutter analyze, 13
+non-golden widget tests, 14 golden tests and 5 mobile tooling tests. Existing
+Android 16 evidence also covers the real 6 KiB signed Local Import fixture;
+this handoff does not upgrade that evidence into full-size or physical-device
+qualification.
+
+The next mobile branches resume at execution-sequence items 2–9 in §15. In
+particular, they must still close full-size ~2.2 GB Local Import and ENOSPC,
+direct-peer/community-seed plus bounded iOS adapters, MOB-05C immutable
+verification/A-B activation/health/rollback/GC, the private KU journey,
+received media, AI/tool provider qualification and physical-device/store
+matrices. `MOB-GATE-REGISTRY`, `OFFLINE-MVP`, `KU-ENCODE`, `MEDIA`, `AI`,
+`NETWORKED-BETA` and `STORE` therefore remain open or blocked exactly as shown
+above. Merging this checkpoint neither closes nor changes the independent P5
+72-hour, multi-host canary or production-rollout evidence.
 
 ### MOB-00 — Authority and ADRs
 

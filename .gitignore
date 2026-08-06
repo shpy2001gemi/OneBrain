@@ -120,3 +120,4 @@ scripts/concept_registry/export.csv
 onebrain_data/
 *.obr
 *.redb
+src/onebrain-mobile/.dart_tool/
