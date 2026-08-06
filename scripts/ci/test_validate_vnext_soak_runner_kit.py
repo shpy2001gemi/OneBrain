@@ -26,7 +26,7 @@ class VNextSoakRunnerKitTests(unittest.TestCase):
             validate_vnext_soak_runner_kit(
                 self.script, self.guide, self.workflow
             ),
-            (23, 9, 3),
+            (23, 9, 4),
         )
 
     def test_ephemeral_default_cannot_disappear(self) -> None:
@@ -84,6 +84,11 @@ class VNextSoakRunnerKitTests(unittest.TestCase):
             "  workflow_dispatch:", "  pull_request:\n  workflow_dispatch:"
         )
         with self.assertRaisesRegex(ContractError, "pull requests"):
+            validate_vnext_soak_runner_kit(self.script, self.guide, mutated)
+
+    def test_long_soak_cache_must_remain_restore_only(self) -> None:
+        mutated = self.workflow.replace("save-if: false", "save-if: true")
+        with self.assertRaisesRegex(ContractError, "workflow safety"):
             validate_vnext_soak_runner_kit(self.script, self.guide, mutated)
 
     def test_guide_cannot_request_an_inbound_port(self) -> None:

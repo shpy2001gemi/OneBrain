@@ -76,6 +76,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src
+          save-if: false
       - name: Run qualifying optimized soak
         run: >-
           cargo run --locked --release -p onebrain-node

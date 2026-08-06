@@ -1,9 +1,9 @@
 {
   "format": "onebrain.mobile.build-evidence/1",
   "contract_id": "onebrain-mobile-owner-approved-v1",
-  "authority_set_sha256": "fe7d8077e2f4885939b5b9051f470d191de3c6ef8c5192886c0a666260babd55",
+  "authority_set_sha256": "6e2627f4360d0d6a05f939c619ace7a52f035173f5967c486c69fb2e3390b5af",
   "phase": "feature",
-  "work_package": "MOB-05",
+  "work_package": "MOB-00",
   "acknowledged_required_read_set": [
     "docs/research/WIP_MOBILE_APP_TECHNICAL_ARCHITECTURE_V1.md",
     "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
@@ -113,7 +113,12 @@
     {
       "id": "MOB-00-P5-AUTHORITY-INTEGRATION",
       "path": "docs/research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md",
-      "proves": "The mobile authority set explicitly accepts shared P5 and Concept Registry foundations plus bounded truncated-index/disk-shortage failure qualification through cbe5495 and merge d9270f7 without claiming the abandoned 72-hour run, multi-host canary, full-size target-filesystem Registry qualification or production rollout gates are complete."
+      "proves": "The mobile authority set explicitly accepts shared P5 and Concept Registry foundations plus bounded truncated-index/disk-shortage failure qualification through cbe5495 and merge d9270f7. It now also records the accepted pinned M5-07/DR-M5 soak artifact without claiming that multi-host canary, full-size target-filesystem Registry qualification or production rollout gates are complete."
+    },
+    {
+      "id": "MOB-00-M5-07-SOAK-ACCEPTANCE",
+      "path": "docs/research/evidence/M5_07_MACOS_ARM64_PRE_RELEASE_72H_C336C5BA_RUN_30704999238.json",
+      "proves": "The pinned native macOS/aarch64 pre-release workload ran for 259,233 monotonic seconds, completed its qualification checks, and persisted qualification_met=true plus pre_release_qualified=true before GitHub cancelled only the post-job cache-save hook at the outer 74-hour timeout. This closes M5-07/DR-M5 soak only; P5 multi-host, Registry production and operator rollout gates remain open."
     },
     {
       "id": "MOB-01-FLUTTER-TESTS",
@@ -593,5 +598,5 @@
   ],
   "deviations": [],
   "last_reviewed": "2026-08-06",
-  "notes": "The 2026-08-06 implementation-plan handoff closes codex/mobile-autonomous-node into main as a foundation checkpoint without changing any package-exit or composite-gate claim. MOB-05A admission, the MOB-05B Rust root barrier, Android UIDT scheduler/adoption, provider-neutral native chunk streaming and ABI-13 Android Local Import are active. ABI 13 lets Swift/Kotlin recover the durable schedule and binds a canonical source-plan digest plus DirectPeer, CommunitySeed, CarrierPeer, optional HttpsMirror or LocalImport independently from AndroidUidt, IosBackgroundUrlSession or ForegroundNative execution; Flutter still receives no bytes, scheduler handle, path, URI, URL or provider authority. Android 16 evidence covers real namespaced/persisted UIDT schedule inventory/adoption/user Stop, isolated callback checkpoint/process-death/resume, and a real ACTION_OPEN_DOCUMENT Local Import journey for all three signed 6 KiB fixture artifacts through BytesComplete. Rust rejects corrupt, short, extra, mixed or overrun bytes and source/executor rebinding, and resumes durable partials after the user reselects provider authority. The release has no INTERNET, packaged Registry data, production trust profile, provider endpoint or central-server dependency. MOB-05B still needs direct-peer/community-seed and carrier adapters, optional HTTPS fallback, live energy/network policy and bounded iOS execution; MOB-05C must add whole-artifact receipts and qualify/activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. Task Manager Stop, reboot/Doze/thermal, full-size target-filesystem, physical-device, fresh 72-hour P5, multi-host canary and MOB-08 gates remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, normal seeding, ReadyOffline or product-readiness claim is made."
+  "notes": "The 2026-08-06 MOB-00 authority review acknowledges the mobile foundation merge and the accepted pinned M5-07/DR-M5 macOS ARM64 soak evidence from run 30704999238. The workload and evidence artifact completed before GitHub cancelled only the post-job cache-save hook at the outer timeout, so another 72-hour run is not required for that artifact. This authority update changes no mobile feature, screen, component, pattern or runtime behavior. MOB-05A admission, the MOB-05B Rust root barrier, Android UIDT scheduler/adoption, provider-neutral native chunk streaming and ABI-13 Android Local Import remain active. The release still has no INTERNET, packaged Registry data, production trust profile, provider endpoint or central-server dependency. MOB-05B still needs direct-peer/community-seed and carrier adapters, optional HTTPS fallback, live energy/network policy and bounded iOS execution; MOB-05C must add whole-artifact receipts and qualify/activate the real 2.2 GB-class Registry with A/B health, rollback, GC and airplane-mode exits. Task Manager Stop, reboot/Doze/thermal, full-size target-filesystem, physical-device, P5 multi-host canary, operator-approved rollout and MOB-08 gates remain open. MOB-04, MOB-06, MOB-07 and MOB-09 remain partial; no LLM, public publish, normal seeding, ReadyOffline or product-readiness claim is made."
 }

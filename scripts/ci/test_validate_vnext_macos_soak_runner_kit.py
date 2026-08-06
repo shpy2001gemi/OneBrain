@@ -38,7 +38,7 @@ class VNextMacOsSoakRunnerKitTests(unittest.TestCase):
         )
 
     def test_macos_runner_kit_is_accepted(self) -> None:
-        self.assertEqual(self.validate(), (11, 8, 7, 5))
+        self.assertEqual(self.validate(), (11, 8, 8, 5))
 
     def test_cross_platform_skip_helpers_must_return_success(self) -> None:
         mutated = self.script.replace(
@@ -125,6 +125,11 @@ class VNextMacOsSoakRunnerKitTests(unittest.TestCase):
             "permissions:\n  contents: read",
             "permissions:\n  contents: write",
         )
+        with self.assertRaisesRegex(ContractError, "workflow safety"):
+            self.validate(workflow=mutated)
+
+    def test_long_soak_cache_must_remain_restore_only(self) -> None:
+        mutated = self.workflow.replace("save-if: false", "save-if: true")
         with self.assertRaisesRegex(ContractError, "workflow safety"):
             self.validate(workflow=mutated)
 

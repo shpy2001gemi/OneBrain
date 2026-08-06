@@ -2548,3 +2548,49 @@ CI fixture luôn giữ `production_qualified=false` và
 `full_registry_evidence_required=true`. Truncated-index và disk-shortage chỉ
 được đóng ở production sau report full-size trên target filesystem/storage đã
 khai báo; cold-cache, low-RAM, SSD, HDD và quarterly dry-run cũng vẫn mở.
+
+### 2026-08-06 — M5-07 macOS ARM64 pre-release-72h acceptance
+
+Run
+[`30704999238`](https://github.com/shpy2001gemi/OneBrain/actions/runs/30704999238)
+trên commit `c336c5ba47a6bf8498d7aa22fb7f2c3f5f6d4416` đã chạy workload
+`pre-release-72h` thành công trên runner ephemeral native `macOS/aarch64` từ
+`2026-08-01T15:01:31Z` đến `2026-08-04T15:03:08Z`. Bước upload artifact cũng
+hoàn tất thành công trước khi runner tự gỡ registration.
+
+Artifact JSON gốc được giữ tại
+[`M5_07_MACOS_ARM64_PRE_RELEASE_72H_C336C5BA_RUN_30704999238.json`](evidence/M5_07_MACOS_ARM64_PRE_RELEASE_72H_C336C5BA_RUN_30704999238.json),
+3.035 byte, SHA-256
+`48f7a07379952204178c88b901b0380433507878021078e7f832e4499622e084`.
+Artifact ZIP GitHub có digest
+`ae2f47cfb4fdddfb1a3feb737a80fabb805b667ac4ef3bbc26d8d29c2a78cf0a`.
+Evidence xác nhận:
+
+- monotonic elapsed `259.233` giây, vượt pre-release floor `259.200` giây;
+- 4.304 fault cycle, gồm 1.435 slow-peer, 1.435 bounded-flood và 1.434
+  partition/restart/reunion; fair-redelivery oracle khớp;
+- real-QUIC connect p50/p95/p99 `869/1.177/1.304 µs`, đều dưới budget;
+- write+fsync p50/p95/p99 `2.996/3.458/4.961 µs`, đều dưới budget;
+- RSS tăng `26.394.624` byte, peak `86.016.000` byte; disk tăng `4.243.456`
+  byte, peak `41.160.784` byte; task count giữ nguyên `9`; mọi hard cap,
+  endpoint-growth cap và positive slope đều đạt;
+- KQL first/drained `1/0` record trong `6.027/3.016 µs`; PoMV `1/0` record
+  trong `6.050/5.971 µs`, đều dưới scan budget;
+- shutdown còn `0` active session, không task leak, không pending/retry-exhausted
+  outbox, không wallet/OBT/authority/truth/Benefit/network-completion mutation;
+- `qualification_met=true`, `pre_release_qualified=true`,
+  `rollback_recommended=false` và rollback reason rỗng.
+
+Workflow-level conclusion là `cancelled`, nhưng không phải workload failure.
+Workload và artifact đều đã xanh; sau đó `Post Run Swatinem/rust-cache@v2`
+treo từ `2026-08-04T15:03:11Z` đến khi job chạm giới hạn `74h` lúc
+`2026-08-04T17:01:13Z`. Long-soak workflow nay dùng cache restore-only với
+`save-if: false`; mutation gate khóa policy này trên cả Linux và macOS để hook
+save không thể tiêu hết post-run headroom lần nữa.
+
+Theo frozen machine profile, report cùng commit đã pin là bằng chứng quyết định;
+không yêu cầu workflow conclusion phải xanh sau khi qualifying report đã được
+ghi và lưu thành công. Vì vậy không cần chạy lại 72 giờ. M5-07 và soak gate của
+DR-M5 được chốt. P5 vẫn chưa production-qualified: multi-host production canary
+và operator-approved rollout còn mở; Concept Registry production-size storage
+qualification cũng tiếp tục là gate riêng.

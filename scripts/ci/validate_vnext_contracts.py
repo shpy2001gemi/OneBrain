@@ -2559,6 +2559,7 @@ def validate_vnext_soak_runner_kit(
         "permissions:\n  contents: read",
         "github.ref == 'refs/heads/main'",
         "runs-on: [self-hosted, linux, x64, onebrain-soak]",
+        "save-if: false",
     )
     for needle in workflow_needles:
         if needle not in soak_workflow:
@@ -2625,6 +2626,7 @@ def validate_vnext_macos_soak_runner_kit(
         "timeout-minutes: 4440",
         "caffeinate -dimsu",
         "actions/upload-artifact@v4",
+        "save-if: false",
     )
     for needle in workflow_needles:
         if needle not in soak_workflow:

@@ -1,0 +1,121 @@
+{
+  "profile": "onebrain/dr-m5-soak-release/1",
+  "host_os": "macos",
+  "host_arch": "aarch64",
+  "run_profile": "pre-release72h",
+  "elapsed_seconds": 259233,
+  "cycles": 4304,
+  "slow_peer_cycles": 1435,
+  "bounded_flood_cycles": 1435,
+  "partition_reunion_cycles": 1434,
+  "fair_redelivery_oracle_matches": true,
+  "quic_connect_latency": {
+    "samples": 128,
+    "p50_micros": 869,
+    "p95_micros": 1177,
+    "p99_micros": 1304,
+    "max_micros": 2078,
+    "budget": {
+      "p50_max_micros": 500000,
+      "p95_max_micros": 1000000,
+      "p99_max_micros": 2000000
+    }
+  },
+  "fsync_latency": {
+    "samples": 128,
+    "p50_micros": 2996,
+    "p95_micros": 3458,
+    "p99_micros": 4961,
+    "max_micros": 7606,
+    "budget": {
+      "p50_max_micros": 100000,
+      "p95_max_micros": 500000,
+      "p99_max_micros": 2000000
+    }
+  },
+  "rss_bytes": {
+    "available": true,
+    "samples": 4306,
+    "first": 53772288,
+    "last": 80166912,
+    "peak": 86016000,
+    "positive_growth": 26394624,
+    "signed_slope_per_cycle": 6131,
+    "budget": {
+      "hard_cap": 536870912,
+      "max_growth": 134217728,
+      "max_positive_slope_per_cycle": 8388608
+    }
+  },
+  "disk_bytes": {
+    "available": true,
+    "samples": 4306,
+    "first": 36917328,
+    "last": 41160784,
+    "peak": 41160784,
+    "positive_growth": 4243456,
+    "signed_slope_per_cycle": 985,
+    "budget": {
+      "hard_cap": 536870912,
+      "max_growth": 33554432,
+      "max_positive_slope_per_cycle": 2097152
+    }
+  },
+  "task_count": {
+    "available": true,
+    "samples": 4306,
+    "first": 9,
+    "last": 9,
+    "peak": 9,
+    "positive_growth": 0,
+    "signed_slope_per_cycle": 0,
+    "budget": {
+      "hard_cap": 512,
+      "max_growth": 16,
+      "max_positive_slope_per_cycle": 4
+    }
+  },
+  "kql_incremental_scan": {
+    "lane": "distributed-kql-one-hop",
+    "first_scan_records": 1,
+    "first_scan_micros": 6027,
+    "drained_scan_records": 0,
+    "drained_scan_micros": 3016,
+    "max_records": 64,
+    "max_micros": 250000
+  },
+  "pomv_incremental_scan": {
+    "lane": "distributed-pomv-view",
+    "first_scan_records": 1,
+    "first_scan_micros": 6050,
+    "drained_scan_records": 0,
+    "drained_scan_micros": 5971,
+    "max_records": 64,
+    "max_micros": 250000
+  },
+  "final_runtime_signals": {
+    "authenticated_sessions": 8750,
+    "active_sessions": 0,
+    "rejected_sessions": 1,
+    "accepted_records": 0,
+    "deferred_records": 0,
+    "rejected_records": 0,
+    "pending_outbox": 0,
+    "retry_exhausted_outbox": 0,
+    "contains_high_cardinality_labels": false,
+    "contains_private_need_labels": false,
+    "claims_network_completion": false
+  },
+  "active_sessions_after_shutdown": 0,
+  "task_leak_detected": false,
+  "changes_wallet_state": false,
+  "changes_obt_state": false,
+  "grants_authority": false,
+  "claims_truth": false,
+  "claims_benefit": false,
+  "claims_network_completion": false,
+  "qualification_met": true,
+  "pre_release_qualified": true,
+  "rollback_recommended": false,
+  "rollback_reasons": []
+}

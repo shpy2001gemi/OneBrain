@@ -32,10 +32,10 @@
 
 ## 0. Executive decision
 
-Mobile work can start while the 72-hour runner is executing, but only as an
-independent mobile architecture, toolchain, private/offline product, and LLM
-workstream. It must not be used to bypass the remaining distributed-runtime
-gates.
+Mobile work started independently while the earlier 72-hour runner was
+executing. A later pinned macOS ARM64 run has now supplied accepted M5-07 soak
+evidence, but neither that evidence nor mobile work bypasses the remaining
+distributed-runtime production gates.
 
 The product architecture is:
 
@@ -128,10 +128,10 @@ target document does not close a work-package exit by itself.
 | P2.1-P2.5 | Runtime ownership/lifecycle/concurrency complete | Reuse patterns, not desktop budgets |
 | P3.1-P3.4 | REST, private WS, CLI, Desktop/Web UX complete | Useful DTO/UX evidence; mobile uses its own in-process node facade |
 | M5-00-M5-06 | Implementation/evidence complete | Reuse admission, telemetry, recovery, compaction patterns |
-| M5-07 | Code, release smoke, and 24-hour evidence complete | Final 72-hour evidence still open |
+| M5-07 | Code, release smoke, 24-hour evidence, and pinned 72-hour macOS ARM64 evidence complete | Soak gate closed for the accepted artifact; this is not P5 production approval |
 | P5-01 | Three logical nodes on one host passed preflight | Not a production mobile/network canary |
 | P5-02-P5-06 | Fault, restore, rollback, default-off, dashboard preflight passed | Good operational contract for future mobile lanes |
-| P5 production | **Open** | 72-hour run, multi-host canary, and operator-approved rollout remain |
+| P5 production | **Open** | Multi-host canary, remaining Registry production qualification, and operator-approved rollout remain |
 | Concept Registry operations | Signed-release, atomic-activation, CCID-stability, bounded resource and truncated-index/disk-shortage qualification foundations implemented | Reuse the contracts, but full-size storage/resource, target-filesystem and quarterly operational exits remain open |
 | M6A/M6B | Not authorized yet | No active distributed KQL in mobile MVP |
 | M7/OBT | Not started | No production wallet, rewards, or economic balance in mobile |
@@ -167,30 +167,38 @@ Current branch evidence:
 
 Evidence snapshot:
 
-- Remote `codex/p5-canary-preflight` is at `cbe5495`; remote `main` remains at
-  `1055db8` in this snapshot.
+- Remote `main` contains the mobile foundation merge and the current authority
+  integration at `9db50d4` in this snapshot.
 - [P5 CI run 30701845332](https://github.com/shpy2001gemi/OneBrain/actions/runs/30701845332)
   passed 5/5 jobs.
-- [Pre-release 72-hour run 30382763222](https://github.com/shpy2001gemi/OneBrain/actions/runs/30382763222)
-  was abandoned after about 51 hours 30 minutes when the self-hosted runner
-  lost GitHub connectivity for an extended interval; it is useful diagnostic
-  evidence but does not satisfy the 72-hour gate.
+- [Pre-release 72-hour run 30704999238](https://github.com/shpy2001gemi/OneBrain/actions/runs/30704999238)
+  ran the pinned `c336c5ba47a6bf8498d7aa22fb7f2c3f5f6d4416` optimized workload for
+  259,233 monotonic seconds on native macOS/aarch64, wrote
+  `qualification_met=true` and `pre_release_qualified=true`, and preserved the
+  exact evidence artifact before GitHub cancelled only the post-job cache save
+  at the 74-hour job timeout. The distributed-runtime authority accepts this
+  artifact and does not require another 72-hour run.
+- The earlier [run 30382763222](https://github.com/shpy2001gemi/OneBrain/actions/runs/30382763222)
+  remains diagnostic-only because it was abandoned after about 51 hours 30
+  minutes during an extended runner connectivity loss.
 - [Nightly 24-hour run 30287048429](https://github.com/shpy2001gemi/OneBrain/actions/runs/30287048429)
   passed.
 
 ### Distributed-runtime evidence still to resolve
 
 P5 and Concept Registry preflight code through `cbe5495`, including bounded
-truncated-index and disk-shortage failure qualification, is now integrated into
-the mobile branch at `d9270f7`. This does not close P5 production. The abandoned
-`main@1055db8` run cannot be carried as a completed 72-hour artifact. Before a
-production rollout, run a fresh pinned 72-hour profile on the selected release
-artifact, complete the multi-host canary, close the remaining full-size Concept
-Registry qualification gates, and obtain explicit operator approval.
+truncated-index and disk-shortage failure qualification, is integrated into the
+mobile foundation at `d9270f7`. The accepted run `30704999238` closes M5-07 and
+the DR-M5 soak gate for its pinned artifact, but it does not close P5
+production. Before a production rollout, complete the multi-host canary, close
+the remaining full-size Concept Registry qualification gates, and obtain
+explicit operator approval. If the selected production artifact is outside the
+approved evidence carry-forward boundary, rerun the qualifying profile for that
+artifact rather than applying this evidence silently.
 
 This separation allows `MOB-05` and other private/offline mobile work to proceed
-without waiting for the rerun. `MOB-08`, peer networking, seeding and any
-production rollout remain fail-closed.
+without waiting on another soak. `MOB-08`, peer networking, seeding and any
+production rollout remain fail-closed until their remaining entry gates close.
 
 ---
 
@@ -1745,8 +1753,10 @@ verification/A-B activation/health/rollback/GC, the private KU journey,
 received media, AI/tool provider qualification and physical-device/store
 matrices. `MOB-GATE-REGISTRY`, `OFFLINE-MVP`, `KU-ENCODE`, `MEDIA`, `AI`,
 `NETWORKED-BETA` and `STORE` therefore remain open or blocked exactly as shown
-above. Merging this checkpoint neither closes nor changes the independent P5
-72-hour, multi-host canary or production-rollout evidence.
+above. Merging this checkpoint did not itself close any independent P5
+evidence. The later accepted run `30704999238` closes only M5-07/DR-M5 soak;
+multi-host canary, Registry production qualification and operator-approved
+rollout remain open.
 
 ### MOB-00 — Authority and ADRs
 
@@ -2250,8 +2260,9 @@ Remaining decisions:
    appear in the first public beta.
 8. Freeze the generic KU publication profile and verifier-exchange substrate;
    neither private Save nor Public UseEvidence substitutes for these decisions.
-9. Schedule a fresh pinned 72-hour qualification for the selected P5 release
-   artifact before production; the abandoned `1055db8` run cannot close it.
+9. Bind the accepted 72-hour evidence from run `30704999238` only to its pinned
+   artifact and an explicitly approved carry-forward boundary; rerun if the
+   selected production artifact falls outside that boundary.
 
 Flutter + generated native host + Rust core is now the implemented baseline;
 reopening that stack decision requires a new owner-approved ADR and evidence
