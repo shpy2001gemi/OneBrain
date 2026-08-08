@@ -1,266 +1,293 @@
 # 🧠 OneBrain
 
-**A Decentralized Knowledge-Sharing Network for Humanity**
+**Mạng tri thức phi tập trung dành cho con người và AI**
 
 <p align="center">
-  <img src="docs/images/onebrain_hero.png" alt="OneBrain — Mạng lưới Chia sẻ Tri thức Phi tập trung" width="800" />
+  <img src="docs/images/onebrain_hero.png" alt="OneBrain — Mạng tri thức phi tập trung" width="800" />
 </p>
 
-> *"If machines can share knowledge instantly through networks, why can't humans?"*
+> **Nếu máy móc có thể chia sẻ điều chúng học được gần như tức thời, tại sao tri thức của con người vẫn bị cô lập trong từng bộ não, tổ chức và ngôn ngữ?**
+
+OneBrain là một dự án mã nguồn mở nhằm xây dựng **lớp tri thức chung, phi tập trung và có thể kiểm chứng** cho con người, Personal AI và các thiết bị trong tương lai.
+
+Dự án mã hóa tri thức thành những **Knowledge Unit (KU)** nhỏ gọn, có định danh nội dung, ngữ nghĩa, nguồn gốc và trạng thái nhận thức. Các KU có thể được lưu cục bộ, truy vấn, kết nối thành đồ thị và trao đổi giữa những node ngang hàng mà không cần một máy chủ trung tâm giữ vai trò nguồn chân lý.
+
+> [!IMPORTANT]
+> OneBrain hiện là một dự án nghiên cứu và kỹ thuật đang phát triển. KU local, KQL, lưu trữ, AI qua Ollama, CLI, API, Web và Desktop đã có đường chạy thực tế. OBP vNext, PoMV phân tán, OBT vận hành và BCI vẫn đang ở các mức tích hợp, thử nghiệm hoặc nghiên cứu khác nhau. Dự án chưa phải mainnet hay một hệ thống tài chính hoàn chỉnh.
+
+Ngày nay, một vấn đề lớn có thể cần hàng nghìn con người ở nhiều lĩnh vực, nhưng tri thức của họ vẫn bị ngăn cách bởi tổ chức, ngôn ngữ, định dạng dữ liệu và thời gian. Hãy hình dung nếu mỗi người không còn phải bắt đầu từ con số không; nếu một phát hiện nhỏ ở nơi này có thể gặp đúng câu hỏi ở nơi khác; nếu hàng triệu bộ não độc lập có thể cùng suy nghĩ về một vấn đề mà không phải giao quyền kiểm soát cho một “siêu não” trung tâm.
+
+Đó là tương lai OneBrain muốn góp phần kiến tạo: **mỗi bộ não là một node tự chủ, nhưng toàn mạng có thể học hỏi và giải quyết vấn đề như một bộ não chung của nhân loại**.
 
 ---
 
-## 1. Tầm nhìn (Vision)
+## Mục lục
 
-Trong thế giới AI, các hệ thống trí tuệ nhân tạo có thể chia sẻ tri thức cho nhau gần như tức thời thông qua kết nối mạng. Một robot học được cách mở cánh cửa, tất cả các robot khác cũng biết ngay lập tức. Một mô hình AI được huấn luyện trên dữ liệu mới, kiến thức đó có thể được phân phối đến hàng triệu hệ thống khác trong tích tắc.
-
-**Nhưng con người thì không.**
-
-Kiến thức của loài người bị phân mảnh, bị giam cầm trong từng bộ não riêng lẻ, bị giới hạn bởi ngôn ngữ, địa lý, và thời gian. Một bác sĩ ở Việt Nam phát hiện ra phương pháp điều trị mới, có thể mất hàng năm để kiến thức đó đến được với đồng nghiệp ở Brazil. Một kỹ sư giải được bài toán phức tạp, nhưng hàng nghìn kỹ sư khác vẫn đang vật lộn với chính bài toán đó mà không hề hay biết.
-
-**OneBrain ra đời để thay đổi điều này.**
-
-OneBrain là một mạng lưới phi tập trung (decentralized network) lấy cảm hứng từ blockchain, được thiết kế để con người có thể chia sẻ, đóng góp, và tiếp nhận tri thức một cách hiệu quả — giống như cách các AI chia sẻ kiến thức cho nhau qua mạng.
-
-### 1.1. Triết lý: Tri thức không có gì cao siêu
-
-Khi nói đến "tri thức" hay "kiến thức", người ta thường nghĩ đến những thứ hàn lâm — công thức toán học, lý thuyết khoa học, phát minh đột phá. Nhưng **OneBrain không nghĩ vậy.**
-
-**Tri thức là mọi thứ con người quan sát, trải nghiệm, và học được trong cuộc sống hàng ngày.** Nó có thể là:
-
-- 🌅 Một khung cảnh đẹp mà bạn bắt gặp trên đường đi làm
-- 🔧 Một mẹo hay để tháo bánh xe đạp mà bạn vô tình phát hiện ra
-- 🍜 Một cách nấu phở mà bà bạn truyền lại, không có trong bất kỳ sách dạy nấu ăn nào
-- 🌿 Một loài hoa lạ bạn thấy trong rừng mà bạn chưa từng thấy trước đó
-- 🛠️ Cách sửa ống nước bị rò mà bạn tự mày mò ra lúc nửa đêm
-- 🚗 Con đường tắt tránh kẹt xe mà chỉ dân địa phương mới biết
-
-Hãy tưởng tượng:
-
-> **Anh Tùng, một thợ sửa xe đạp ở Huế**, đang làm việc và phát hiện ra một cách tháo bánh xe nhanh hơn, ít tốn sức hơn. Anh không cần phải viết bài báo khoa học. Anh chỉ cần **nghĩ** — ra lệnh cho AI cá nhân của mình. AI cá nhân tự động xử lý: quay lại hình ảnh, phân tích động tác tay, ghi nhận dụng cụ được dùng, tạo ra mô tả chi tiết kèm chỉ dẫn từng bước — rồi đóng gói tất cả thành một Knowledge Unit và chia sẻ lên OneBrain. Anh Tùng nhận được OBT. Và ở đâu đó trên thế giới, một người đang loay hoay với chiếc xe đạp hỏng sẽ nhận được kiến thức này qua AI cá nhân của họ.
-
-> **Chị Lan đi du lịch Sapa**, đứng trên đỉnh đồi nhìn xuống thung lũng lúa chín vàng lúc hoàng hôn. Chị cảm thấy khung cảnh đẹp đến nghẹt thở. Chị nghĩ: *"Chia sẻ điều này."* AI cá nhân lập tức ghi nhận — tọa độ GPS, hướng nhìn, thời điểm trong ngày, điều kiện thời tiết, và cảm nhận thị giác qua BCI — đóng gói thành tri thức trải nghiệm và đưa lên OneBrain. Những người khác có thể "nhìn thấy" Sapa qua đôi mắt của chị Lan, từ chính góc nhìn đó, vào chính khoảnh khắc đó.
-
-### 1.2. Tri thức "trùng lặp" vẫn có giá trị
-
-Một câu hỏi tự nhiên: *"Nếu đã có người chia sẻ cách tháo bánh xe rồi, thì đóng góp thêm có ý nghĩa gì?"*
-
-**Câu trả lời: Rất có ý nghĩa.**
-
-Trong thế giới thực, không có hai trải nghiệm nào giống hệt nhau. Mỗi người mang đến:
-
-- **Góc nhìn khác biệt** — cùng một kỹ thuật nhưng được giải thích theo cách khác, phù hợp với nhóm người khác
-- **Kinh nghiệm bổ sung** — "cách này hiệu quả hơn khi trời mưa", "dùng với loại xe này thì cần điều chỉnh thế này"
-- **Độ tin cậy cộng dồn** — khi 100 người xác nhận cùng một kiến thức, nó trở nên đáng tin hơn rất nhiều so với khi chỉ 1 người nói
-- **Sự phong phú của dữ liệu** — nhiều góc quay, nhiều cách diễn đạt, nhiều ngữ cảnh giúp AI tổng hợp kiến thức tốt hơn
-
-OneBrain coi mỗi đóng góp như một **neuron** trong bộ não chung. Một neuron đơn lẻ thì yếu, nhưng hàng nghìn neuron cùng kích hoạt cho một kiến thức thì tạo nên **sự hiểu biết sâu sắc và đáng tin cậy** — giống cách bộ não con người thực sự hoạt động.
-
-### 1.3. Tri thức dở dang — Mảnh ghép chờ được hoàn thiện
-
-Bên cạnh tri thức đời thường, những **tri thức hàn lâm, tri thức khó, thậm chí tri thức còn dở dang** cũng là thứ vô cùng quý giá trên OneBrain — có lẽ còn quý giá hơn cả tri thức đã hoàn chỉnh.
-
-**Vì sao?** Vì lịch sử loài người cho thấy những bước nhảy vĩ đại nhất thường không đến từ một bộ não duy nhất, mà từ sự **kết nối giữa nhiều bộ não** — dù họ không hề biết nhau.
-
-Hãy tưởng tượng:
-
-> **Giáo sư Khoa, một nhà vật lý ở Hà Nội**, cảm thấy mình đang đi đúng hướng trong nghiên cứu về động cơ phản trọng lực. Ông có một lý thuyết, một vài phương trình, một trực giác mạnh mẽ — nhưng chưa thể chứng minh hoàn chỉnh. Trong thế giới cũ, ông sẽ giữ nghiên cứu dở dang này trong ngăn kéo, chờ ngày nào đó hoàn thiện — và có thể ngày đó không bao giờ đến.
->
-> Nhưng trên OneBrain, ông chia sẻ tri thức dở dang đó.
->
-> Điều kỳ diệu xảy ra: **tri thức của ông không đơn độc.** Trên Knowledge Graph, AI phát hiện ra rằng:
-> - Một kỹ sư vật liệu ở Đức đã đóng góp dữ liệu về hợp kim siêu dẫn ở nhiệt độ phòng — chính xác là thứ lý thuyết của Giáo sư Khoa cần
-> - Một nhà toán học ở Nhật đã giải một phương trình vi phân mà ông đang bế tắc — nhưng trong ngữ cảnh hoàn toàn khác
-> - Một **thợ sửa xe đạp ở Cần Thơ** đã chia sẻ quan sát về hiện tượng từ trường kỳ lạ khi xoay bánh xe trong điều kiện nhất định — một bằng chứng thực nghiệm mà Giáo sư Khoa chưa bao giờ nghĩ tới
->
-> Mỗi mảnh tri thức riêng lẻ tưởng như không liên quan. Nhưng khi được **kết nối trong cùng một bộ não chung**, chúng ghép lại thành bức tranh hoàn chỉnh.
-
-Đây chính là sức mạnh thực sự của OneBrain: **không ai cần phải hoàn thiện một mình.** Bạn chỉ cần đóng góp mảnh ghép của bạn — dù nó nhỏ bé, dở dang, hay có vẻ không quan trọng. Bộ não chung sẽ tìm ra cách kết nối nó với những mảnh ghép khác.
-
-Cách tiếp cận này giải quyết một trong những bi kịch lớn nhất của tri thức nhân loại: **biết bao nhiêu nghiên cứu dở dang đã chết theo người tạo ra chúng**, biết bao nhiêu ý tưởng thiên tài đã bị lãng quên trong ngăn kéo, biết bao nhiêu bước đột phá đã không xảy ra — chỉ vì hai bộ não đúng không tìm thấy nhau.
-
-OneBrain đảm bảo rằng **không tri thức nào bị lãng phí. Không ý tưởng nào bị bỏ quên. Không bộ não nào phải chiến đấu một mình.**
+- [OneBrain là gì?](#onebrain-là-gì)
+- [Nguồn gốc của dự án](#nguồn-gốc-của-dự-án)
+- [Vì sao OneBrain cần được xây dựng ngay bây giờ?](#vì-sao-onebrain-cần-được-xây-dựng-ngay-bây-giờ)
+- [Tầm nhìn](#tầm-nhìn)
+- [Mục tiêu](#mục-tiêu)
+- [Những nguyên tắc cốt lõi](#những-nguyên-tắc-cốt-lõi)
+- [Các khái niệm nền tảng](#các-khái-niệm-nền-tảng)
+- [Kiến trúc 10 trụ cột](#kiến-trúc-10-trụ-cột)
+- [OneBrain hoạt động như thế nào?](#onebrain-hoạt-động-như-thế-nào)
+- [OneBrain hiện làm được gì?](#onebrain-hiện-làm-được-gì)
+- [Bắt đầu nhanh](#bắt-đầu-nhanh)
+- [Cấu trúc mã nguồn](#cấu-trúc-mã-nguồn)
+- [Tài liệu](#tài-liệu)
+- [Lộ trình](#lộ-trình)
+- [Lời mời cùng xây dựng OneBrain](#lời-mời-cùng-xây-dựng-onebrain)
 
 ---
 
-## 2. Bối cảnh & Xu hướng (Context & Trends)
+## OneBrain là gì?
 
-OneBrain được xây dựng trên nền tảng của ba xu hướng công nghệ đang hội tụ:
+OneBrain không phải là một kho tài liệu tập trung, một mạng xã hội hỏi đáp hay một blockchain tài chính được đổi tên.
 
-```mermaid
-graph LR
-    A["🧠 AI Cá nhân<br/>Bộ não thứ hai"] --> D["🌐 OneBrain<br/>Tầng Kiến thức Toàn cầu"]
-    B["⚡ Giao tiếp<br/>Não-Máy (BCI)"] --> D
-    C["📚 Nhu cầu về<br/>Knowledge Layer"] --> D
-    D --> E["🚀 Mạng lưới Tri thức<br/>Phi tập trung"]
+OneBrain hướng tới một **mạng tri thức sống**:
 
-    style A fill:#1a1a2e,stroke:#6c63ff,color:#e0e0ff,stroke-width:2px
-    style B fill:#1a1a2e,stroke:#ff6584,color:#ffe0e6,stroke-width:2px
-    style C fill:#1a1a2e,stroke:#43e97b,color:#e0ffe8,stroke-width:2px
-    style D fill:#0d0d3b,stroke:#ffd700,color:#fff8dc,stroke-width:3px
-    style E fill:#1a0a2e,stroke:#a855f7,color:#f0e0ff,stroke-width:2px
-```
+- Mỗi người và mỗi Personal AI có thể vận hành một node độc lập.
+- Tri thức được lưu dưới dạng đối tượng có cấu trúc thay vì chỉ là văn bản dài.
+- Mỗi mảnh tri thức có định danh nội dung, nguồn gốc, bằng chứng và quan hệ với các mảnh khác.
+- Node vẫn có thể ghi nhớ, tìm kiếm và tạo tri thức khi offline hoặc khi mạng bị phân mảnh.
+- Khi các node gặp lại nhau, chúng đối soát và hợp nhất phần tri thức phù hợp mà không cần một trung tâm quyết định chân lý.
+- AI hỗ trợ quan sát, mã hóa, truy hồi và đề xuất; AI không mặc nhiên được trao quyền xuất bản hay thay người dùng quyết định.
 
-### 2.1. AI cá nhân — Bộ não thứ hai
+Mục tiêu cuối cùng không phải tạo ra một “bộ não duy nhất” kiểm soát mọi người. Đó là tạo ra **một năng lực nhận thức chung**, được hình thành từ nhiều bộ não và nhiều AI vẫn giữ quyền tự chủ của riêng mình.
 
-Trong tương lai gần, mỗi người sẽ sở hữu một **AI cá nhân (Personal AI)** — một trợ lý trí tuệ nhân tạo hiểu sâu về bạn: kiến thức của bạn, cách bạn tư duy, những gì bạn cần học, và những gì bạn có thể đóng góp. AI cá nhân chính là **bộ não thứ hai** của mỗi người.
+---
 
-### 2.2. Giao tiếp não — máy hai chiều (Brain-Computer Interface)
+## Nguồn gốc của dự án
+
+OneBrain bắt đầu từ một nghịch lý đơn giản.
+
+Một mô hình AI có thể được cập nhật và triển khai cho hàng triệu máy. Một robot học được thao tác mới có thể truyền kết quả cho cả đội. Nhưng khi một con người khám phá ra một mẹo hữu ích, giải được một vấn đề khó hoặc chứng kiến một hiện tượng hiếm, tri thức đó thường chỉ tồn tại trong trí nhớ cá nhân, một nhóm nhỏ, một ngôn ngữ hoặc một tài liệu không ai tìm thấy.
+
+Phần lớn tri thức của nhân loại không biến mất vì nó sai. Nó biến mất vì:
+
+- người biết không có cách diễn đạt hoặc chia sẻ thuận tiện;
+- người cần không biết ai đang sở hữu mảnh ghép phù hợp;
+- các hệ thống hiện tại ưu tiên nội dung hoàn chỉnh, nổi tiếng hoặc dễ tìm kiếm;
+- tri thức đời thường bị xem là quá nhỏ để ghi lại;
+- nghiên cứu dở dang không gặp được mảnh ghép bổ sung;
+- ngôn ngữ, địa lý, tổ chức và thời gian chia cắt những người có thể giúp nhau.
+
+### Tri thức không có gì cao siêu
+
+Với OneBrain, tri thức không chỉ là công thức khoa học hay phát minh lớn. Tri thức còn có thể là:
+
+- một mẹo tháo lốp xe nhanh hơn;
+- cách xử lý một lỗi phần mềm hiếm;
+- kinh nghiệm chăm sóc cây trong một loại đất cụ thể;
+- bí quyết nấu ăn được truyền qua nhiều thế hệ;
+- một quan sát chưa thể giải thích;
+- một giả thuyết mới chỉ đúng một phần;
+- một thất bại giúp người khác tránh lặp lại sai lầm.
+
+### Tri thức trùng lặp vẫn có giá trị
+
+Hai người cùng mô tả một kỹ thuật không tạo ra hai bản sao vô nghĩa. Họ có thể mang đến góc nhìn, điều kiện, công cụ, bằng chứng và giới hạn khác nhau. Nhiều quan sát độc lập còn giúp hệ thống hiểu khi nào một tri thức hữu ích, khi nào nó không còn đúng và nó liên quan đến điều gì.
+
+### Tri thức dở dang là lời mời cộng tác
+
+Một nhà nghiên cứu có thể thiếu dữ liệu. Một kỹ sư có thể có dữ liệu nhưng không biết nó giải được bài toán nào. Một người thợ có thể quan sát một hiện tượng mà giới học thuật chưa từng đo trong bối cảnh thực tế.
+
+OneBrain được sinh ra từ niềm tin rằng **không ai phải hoàn thiện một mình**. Mỗi người chỉ cần đóng góp mảnh ghép mình có; hệ thống phải giúp những mảnh ghép phù hợp tìm thấy nhau.
+
+---
+
+## Vì sao OneBrain cần được xây dựng ngay bây giờ?
+
+Trong phần lớn lịch sử, công cụ giúp con người mạnh hơn nhưng không tự học, tự suy luận hay tự hành động. AI và robot đang thay đổi điều đó. Chúng có thể học, sao chép kỹ năng và phối hợp với tốc độ vượt xa một cá nhân. Đây có thể là bước nhảy vọt lớn nhất của văn minh — đồng thời cũng đặt ra câu hỏi quan trọng nhất của thế hệ chúng ta:
+
+> **Khi trí tuệ máy móc phát triển nhanh hơn từng con người, nhân loại sẽ cùng tiến hóa với nó, hay dần phụ thuộc vào những hệ thống mà mình không còn hiểu và kiểm soát?**
+
+Vấn đề không nằm ở việc AI trở nên thông minh. Nguy cơ xuất hiện khi tri thức của hàng tỷ con người vẫn phân mảnh, trong khi năng lực AI và quyền truy cập dữ liệu tập trung vào một số ít nền tảng. Một cá nhân không thể cạnh tranh với máy móc bằng tốc độ tính toán hay dung lượng nhớ. Nhưng nhân loại sở hữu điều không một hệ thống đơn lẻ nào có: hàng tỷ cuộc đời, góc nhìn, nền văn hóa, kinh nghiệm thực địa, hệ giá trị và khả năng chịu trách nhiệm.
+
+Nếu những năng lực đó tiếp tục bị cô lập, chúng là những mảnh nhỏ rời rạc. Nếu chúng có thể kết nối mà không đánh mất quyền tự chủ, chúng trở thành một **trí tuệ tập thể có sức cân bằng với bất kỳ hệ AI tập trung nào**.
 
 <p align="center">
-  <img src="docs/images/bci_future.png" alt="BCI — Tương lai Giao tiếp Não-Máy" width="700" />
+  <img src="docs/images/human_ai_collective_intelligence.png" alt="Con người, Personal AI và robot cùng tham gia mạng tri thức OneBrain từ Trái Đất tới Sao Hỏa" width="1000" />
 </p>
 
-Công nghệ **BCI (Brain-Computer Interface)** đang phát triển nhanh chóng với các dự án như Neuralink, Synchron, và nhiều nghiên cứu khác. Việc giao tiếp hai chiều giữa não người và máy tính — nơi con người có thể **xuất** suy nghĩ ra dạng số và **nhập** kiến thức mới trực tiếp — sẽ trở thành hiện thực phổ biến.
+<p align="center"><i>Không phải con người chống lại máy móc — mà là con người có đủ năng lực để cùng AI định hình tương lai.</i></p>
 
-### 2.3. Nhu cầu về một "Knowledge Layer" toàn cầu
+OneBrain chọn con đường cộng sinh. Personal AI và robot có thể trở thành những cộng sự mạnh mẽ, nhưng chúng tham gia mạng với identity, capability, provenance và giới hạn quyền hạn có thể kiểm chứng. AI có thể quan sát, mã hóa, tìm kiếm và đề xuất; nó không mặc nhiên trở thành nguồn chân lý, không âm thầm xuất bản thay người dùng và không nắm quyền kiểm soát ký ức chung.
 
-Khi AI cá nhân và BCI trở nên phổ biến, sẽ xuất hiện nhu cầu cấp thiết về một **tầng kiến thức toàn cầu (Global Knowledge Layer)** — nơi tri thức được:
-- **Chuẩn hóa** để máy và người đều có thể hiểu
-- **Xác minh** để đảm bảo chất lượng và độ tin cậy
-- **Định giá** để người đóng góp được công nhận và trả thưởng
-- **Phân phối** một cách công bằng và hiệu quả
+Vì vậy, OneBrain là một **công cuộc chuẩn bị cho tương lai của nhân loại**. Chúng ta cần đặt nền móng cho một hạ tầng nhận thức mở trước khi giao diện tới tri thức, AI và BCI bị khóa trong những hệ sinh thái độc quyền. Mục tiêu không phải giữ con người đứng yên trước tiến bộ, mà giúp loài người tiến lên cùng AI trong khi vẫn giữ tay trên vô-lăng.
 
-**OneBrain chính là tầng kiến thức đó.**
+Đây không phải công việc của riêng một công ty, một quốc gia hay một nhóm lập trình viên. Những giao thức định hình quyền tự chủ nhận thức của các thế hệ sau phải được xây dựng công khai, phản biện bởi nhiều ngành và thuộc về tất cả mọi người.
 
 ---
 
-## 3. Ý tưởng cốt lõi (Core Concept)
+## Tầm nhìn
 
-### 3.1. So sánh với Blockchain truyền thống
+### Từ những bộ não phân tán đến một năng lực nhận thức chung
 
-| Khía cạnh | Blockchain (Bitcoin) | OneBrain |
-|---|---|---|
-| **Đơn vị cốt lõi** | Transaction (giao dịch) | Knowledge Unit (đơn vị kiến thức) |
-| **Cách kiếm token** | Mining — giải bài toán toán học | Contributing — đóng góp kiến thức có giá trị |
-| **Cơ chế đồng thuận** | Proof of Work / Proof of Stake | **Proof of Knowledge (PoK)** — chứng minh bằng tri thức |
-| **Giá trị nội tại** | Sự khan hiếm và niềm tin | Giá trị thực của tri thức được đóng góp |
-| **Mạng lưới** | Ngang hàng (peer-to-peer) | Ngang hàng (brain-to-brain) |
-| **Mục tiêu** | Hệ thống tài chính phi tập trung | Hệ thống tri thức phi tập trung |
+OneBrain hình dung một mạng lưới nơi mỗi con người, Personal AI và thiết bị là một node nhận thức độc lập. Mỗi node có ký ức, góc nhìn, quyền riêng tư và quyền tự quyết riêng; không ai phải giao toàn bộ dữ liệu hay bản sắc của mình cho một máy chủ trung tâm.
 
-### 3.2. Proof of Knowledge (PoK) — Chứng minh bằng Tri thức
+Khi một vấn đề xuất hiện, mạng OBP có thể giúp vấn đề đó tìm đến đúng tri thức, đúng chuyên gia và đúng AI. Những node phù hợp có thể hình thành một **assembly nhận thức tạm thời**: chia sẻ các mảnh ghép cần thiết, kiểm chứng lẫn nhau, tạo giả thuyết và hợp nhất kết quả. Assembly giải tán khi nhiệm vụ kết thúc, nhưng tri thức được chứng minh có thể ở lại để toàn mạng tiếp tục học.
 
-Thay vì "đào" coin bằng sức mạnh tính toán, người dùng OneBrain **"đào" coin bằng tri thức**. Giá trị của phần thưởng phụ thuộc vào:
+Đó không phải là một “hive mind” xóa nhòa cá nhân. Đó là **một bộ não chung được tạo nên từ nhiều bộ não vẫn hoàn toàn tự chủ** — giống như các neuron có thể phối hợp tạo nên tư duy, nhưng ở quy mô con người, AI và cuối cùng là cả một nền văn minh.
 
-- **Tính mới (Novelty):** Kiến thức này có mới không? Đã ai đóng góp trước đó chưa?
-- **Tính đúng đắn (Accuracy):** Kiến thức có chính xác, đáng tin cậy không?
-- **Tính hữu ích (Utility):** Bao nhiêu người đã sử dụng và hưởng lợi từ kiến thức này?
-- **Chiều sâu (Depth):** Kiến thức ở mức độ nông hay sâu?
-- **Tính kết nối (Connectivity):** Kiến thức này liên kết và bổ sung cho bao nhiêu tri thức khác?
+> **Một người có thể không sở hữu toàn bộ lời giải. Nhưng cả mạng lưới có thể đưa những mảnh lời giải tìm thấy nhau.**
 
-### 3.3. OneBrain Token (OBT)
+### KQL trên OBP — để nhu cầu tự tìm đến tri thức
 
-**OBT** là đồng tiền số (cryptocurrency) của hệ sinh thái OneBrain:
+> **KQL không đưa mọi tri thức về một nơi; nó đưa nhu cầu đến đúng nơi tri thức đang sống.**
 
-- 🎁 **Kiếm OBT** bằng cách đóng góp kiến thức có giá trị
-- 🔓 **Chi OBT** để truy cập kiến thức chuyên sâu, premium
-- 🗳️ **Stake OBT** để tham gia quản trị và bỏ phiếu trong mạng lưới
-- 💱 **Giao dịch OBT** trên các sàn trao đổi (tương lai)
+Trong đích đến OBP vNext, một câu hỏi — hoặc một **Standing Need** tồn tại lâu dài — được xử lý local-first. Chỉ khi người dùng cho phép, node mới gửi một biểu diễn tối thiểu của nhu cầu qua các peer. Mỗi peer tự matching trên kho và đồ thị cục bộ, tự quyết định mức tiết lộ, rồi có thể trả về một KU, bằng chứng hoặc lời mời cộng tác từ chuyên gia, Personal AI hay robot phù hợp.
 
----
+Không cần một chỉ mục trung tâm biết ai đang biết gì. Không node nào phải công khai toàn bộ vault để được tìm thấy. Một câu hỏi y học có thể gặp quan sát của bác sĩ ở quốc gia khác; một bài toán năng lượng có thể gặp dữ liệu từ robot trên Sao Hỏa; một giả thuyết dang dở có thể tiếp tục tìm mảnh ghép ngay cả khi người đặt câu hỏi đang offline.
 
-## 4. Kiến trúc tổng quan (High-Level Architecture)
+Kết quả trả về là **candidate hoặc proposal có provenance và evidence**, không phải chân lý hay quyết định tự động. KQL có thể tìm và đề xuất; materialize, adopt, use và publish vẫn là những ranh giới riêng, cần consent và authority phù hợp.
 
-```mermaid
-block-beta
-    columns 4
+**Trạng thái hiện tại:** KQL local đã chạy trong runtime sản phẩm. Typed matching, Standing Need, private multipath/disclosure và partition–reunion đã có ở foundation vNext và test harness; định tuyến query ngang hàng qua OBP chưa phải đường live end-to-end mặc định.
 
-    block:user["👤 USER LAYER (Tầng Người dùng)"]:4
-        columns 4
-        WebApp["🌐 Web App"]
-        MobileApp["📱 Mobile App"]
-        BCI["🧠 BCI/AR/VR"]
-        PAI["🤖 Personal AI"]
-    end
+### BCI — cánh cổng giữa tư duy và mạng tri thức
 
-    space:4
+<p align="center">
+  <img src="docs/images/bci_future.png" alt="Tầm nhìn OneBrain BCI — kết nối tư duy con người với mạng tri thức" width="800" />
+</p>
 
-    block:ai["🤖 AI LAYER (Tầng Trí tuệ nhân tạo)"]:4
-        columns 3
-        KC["Knowledge<br/>Classifier<br/>(Phân loại)"]
-        QA["Quality<br/>Assessor<br/>(Đánh giá)"]
-        RC["Reward<br/>Calculator<br/>(Tính thưởng)"]
-        DD["Duplicate<br/>Detector<br/>(Chống trùng)"]
-        CM["Connection<br/>Mapper<br/>(Liên kết)"]
-        PM["Personal AI<br/>Mediator<br/>(Trung gian)"]
-    end
+Giao diện não–máy tính (BCI) đang tiến từ phòng thí nghiệm đến những ứng dụng đầu tiên trong giao tiếp, vận động và phục hồi chức năng. Trong tương lai gần, khi BCI trở nên đủ an toàn, chính xác và phổ biến, OneBrain hướng tới việc để con người kết nối trực tiếp với mạng OBP bằng ý định — tìm kiếm, đóng góp và tiếp nhận tri thức mà không bị giới hạn bởi bàn phím hay màn hình.
 
-    space:4
+Hình ảnh **Neo học một kỹ năng trong _The Matrix_** là phép ẩn dụ dễ hiểu cho đích đến dài hạn: một ngày nào đó, việc tiếp nhận một cấu trúc tri thức mới có thể trực tiếp và tự nhiên hơn rất nhiều so với cách chúng ta học hiện nay. Nhưng để đi từ phép ẩn dụ đến hiện thực, khoa học còn phải giải quyết những bài toán cực khó: giải mã ý định, biểu diễn tri thức thần kinh, khả năng ghi có chọn lọc, tính toàn vẹn, consent, khả năng đảo ngược và an toàn lâu dài.
 
-    block:consensus["⛓️ CONSENSUS LAYER (Tầng Đồng thuận)"]:4
-        columns 1
-        PoK["Proof of Knowledge (PoK) Engine<br/>Voting & Validation · Reputation Scoring · Knowledge Valuation · Dispute Resolution"]
-    end
+OneBrain không tuyên bố những bài toán đó đã được giải. Dự án muốn chuẩn bị **knowledge protocol, identity, provenance, permission và safety boundary** từ hôm nay, để nếu neural I/O trưởng thành, con người có một mạng tri thức mở và do chính mình kiểm soát để kết nối vào — thay vì một cánh cổng độc quyền thuộc về một công ty.
 
-    space:4
+### Không gian tri thức và bước tiến hóa tiếp theo
 
-    block:data["📦 DATA LAYER (Tầng Dữ liệu)"]:4
-        columns 4
-        KG["Knowledge<br/>Graph<br/>(Đồ thị tri thức)"]
-        UP["User Profiles<br/>& Reputation<br/>(Hồ sơ & uy tín)"]
-        TL["Token<br/>Ledger<br/>(Sổ cái token)"]
-        DS["Decentralized Storage<br/>(IPFS / Custom)"]
-    end
+Nhân loại từng tổ chức xã hội quanh đất đai, rồi máy móc, năng lượng và thông tin. OneBrain tin rằng tầng nền tiếp theo sẽ là **không gian tri thức**: một môi trường sống nơi tri thức có thể được định danh, liên kết, kiểm chứng, tái sử dụng và chuyển hóa liên tục giữa con người với AI.
 
-    user --> ai
-    ai --> consensus
-    consensus --> data
+Khi đó, tiến hóa không chỉ còn là thay đổi sinh học qua nhiều thế hệ. Năng lực của một cá nhân và cộng đồng có thể tăng lên nhờ khả năng kết nối với kho kinh nghiệm chung, tìm đúng mảnh ghép và cộng tác ở tốc độ chưa từng có. Một đứa trẻ không chỉ thừa hưởng gene và tài sản; em còn có thể bước vào một không gian tri thức sống, nơi kinh nghiệm đã được kiểm chứng của nhiều thế hệ luôn sẵn sàng để tiếp tục phát triển.
 
-    style user fill:#1a1a3e,color:#c8c8ff
-    style ai fill:#1a2e1a,color:#c8ffc8
-    style consensus fill:#2e1a1a,color:#ffc8c8
-    style data fill:#1a2e2e,color:#c8ffff
-```
+OneBrain muốn đặt một viên gạch nền cho bước tiến hóa ấy — không thay thế bộ não con người, không hòa tan cá nhân vào máy móc, mà mở rộng khả năng để các bộ não **cùng nhớ, cùng học, cùng sáng tạo và cùng bảo vệ tương lai của mình**.
+
+### OBT — đơn vị giá trị của nền kinh tế tri thức
+
+Các nền kinh tế trước đây định giá chủ yếu từ hàng hóa khan hiếm, tài nguyên và sức lao động. Nhưng khi AI và robot đảm nhiệm ngày càng nhiều lao động vật chất lẫn trí óc lặp lại, những thước đo cũ sẽ không còn đủ để phân phối giá trị. Trong một nền văn minh nơi tri thức là hạ tầng sản xuất quan trọng nhất, người tạo ra một phát hiện, kiểm chứng một giả thuyết, kết nối hai mảnh ghép hoặc lưu giữ tri thức cho cộng đồng cũng cần được ghi nhận bằng giá trị có thể chuyển giao.
+
+**OneBrain Token (OBT)** được hình dung như đơn vị thanh toán gốc của nền kinh tế kế tiếp của nhân loại: giá trị được tạo ra từ tri thức đã chứng minh tác dụng, thay vì từ quyền kiểm soát tri thức. Nếu Internet làm thông tin có thể truyền đi, OBT hướng tới làm cho lợi ích do tri thức tạo ra có thể được chứng minh, quy công và quyết toán — để giá trị quay trở lại những người và hệ thống đã thực sự giúp tri thức tạo nên tác động.
+
+OBT hướng tới khả năng hoạt động xuyên biên giới, xuyên nền tảng và cuối cùng xuyên hành tinh. Một đơn vị OBT không bị giao thức định nghĩa lại chỉ vì chủ sở hữu đang ở Trái Đất, trên quỹ đạo hay Sao Hỏa; cùng các quy tắc định danh, phát hành và quyết toán phải có thể được kiểm chứng ở mọi nơi mạng tồn tại.
+
+Khoảng cách liên hành tinh đặt ra độ trễ lớn, partition dài hạn và khác biệt thị trường địa phương, nên sức mua thực tế có thể khác nhau. Thách thức của OneBrain là giữ cho **định danh, quyền sở hữu, quy tắc phát hành và giá trị quyết toán của OBT nhất quán** dù các khu vực của mạng phải hoạt động tự chủ trong thời gian dài.
+
+Đây là tầm nhìn giao thức, không phải cam kết đầu tư hay mô tả một đồng tiền đã vận hành. OBT hiện vẫn là prototype; tri thức phải tồn tại độc lập, còn reward chỉ được tạo sau bằng chứng về lợi ích thực.
 
 ---
 
-## 5. Các thành phần chính (Core Components)
+## Mục tiêu
 
-### 5.1. Knowledge Unit (Đơn vị Kiến thức)
+### Mục tiêu kỹ thuật
 
-Đây là đơn vị cơ bản nhất trong OneBrain — tương đương với "transaction" trong blockchain. Mỗi Knowledge Unit chứa:
+- Xây dựng định dạng Knowledge Unit nhỏ gọn, có thể xác định nội dung và độc lập với cách trình bày.
+- Cung cấp ngôn ngữ truy vấn tri thức có kiểu, có giới hạn và có thể giải thích.
+- Đưa KQL từ truy vấn local đến discovery ngang hàng qua OBP mà không cần global index hoặc công khai toàn bộ query intent.
+- Cho phép node hoạt động độc lập, chịu được phân mảnh và hội tụ khi tái kết nối.
+- Tách rõ ngữ nghĩa, quyền hạn, khả dụng, danh tiếng và phần thưởng.
+- Bảo vệ query intent, dữ liệu quan sát và tri thức riêng tư bằng disclosure policy và local vault.
+- Xây dựng đồ thị tri thức có khả năng tiến hóa theo bằng chứng, thời gian và mức sử dụng.
+- Đưa PoMV thành lớp bằng chứng ngang hàng: use, derivation và outcome có nguồn gốc, có thể đối soát mà không tạo một điểm chân lý toàn cầu.
+- Xây chuỗi Benefit → Attribution → RewardClaim → Finality để OBT chỉ được tạo sau lợi ích có thể kiểm chứng.
+- Cung cấp các giao diện dùng chung: CLI, REST/WebSocket API, Web và Desktop.
 
+### Mục tiêu xã hội
+
+- Giảm lượng tri thức hữu ích bị thất lạc.
+- Giúp tri thức đời thường được ghi nhận ngang hàng với tri thức chuyên môn.
+- Tạo điều kiện để các mảnh nghiên cứu dở dang tìm được người và dữ liệu bổ sung.
+- Giữ Personal AI dưới quyền kiểm soát của người dùng.
+- Xây dựng một commons tri thức mở mà không biến một tổ chức trung tâm thành người gác cổng.
+- Tạo nền móng để nhiều bộ não phân tán có thể phối hợp giải quyết những vấn đề vượt quá năng lực của bất kỳ cá nhân hay tổ chức đơn lẻ nào.
+- Chuẩn bị một knowledge plane mở cho thời đại BCI và cho một nền văn minh có thể mở rộng ra ngoài Trái Đất.
+
+### Những điều OneBrain không muốn trở thành
+
+- Một nguồn chân lý toàn cầu do một bên kiểm soát.
+- Một hệ thống chấm điểm con người bằng một con số duy nhất.
+- Một mạng buộc người dùng công khai dữ liệu riêng tư để được tham gia.
+- Một token economy có quyền can thiệp ngược vào tính đúng đắn của tri thức.
+- Một lời hứa BCI vượt quá bằng chứng khoa học hiện có.
+
+---
+
+## Những nguyên tắc cốt lõi
+
+| Nguyên tắc | Ý nghĩa |
+|---|---|
+| **Local-first** | Node phải hữu ích khi offline; mạng mở rộng năng lực chứ không phải điều kiện để tồn tại. |
+| **Không có root authority** | Seed hỗ trợ discovery/relay nhưng không cấp danh tính, finality hay chân lý. |
+| **Content-addressed** | Nội dung xác định danh tính; thay đổi nội dung tạo ra định danh mới. |
+| **Validate before accept** | Dữ liệu nhận từ mạng phải được kiểm tra trước khi trở thành tri thức có thể thực thi. |
+| **Unknown không có nghĩa là false** | Thiếu bằng chứng được giữ là chưa biết, không bị ép thành đúng hoặc sai. |
+| **Proposal không phải quyết định** | AI và KQL có thể đề xuất; materialize, adopt, use và publish là các ranh giới riêng. |
+| **Consent không được suy diễn** | Quyền quan sát, định tuyến, chia sẻ và nhận thức từ xa phải được cấp rõ ràng. |
+| **Exposure không phải use** | Việc một kết quả được hiển thị không tự động chứng minh nó hữu ích. |
+| **Reward đi sau knowledge** | OBT chỉ được xử lý sau khi knowledge operation đã commit; reward không tạo authority. |
+| **Partition autonomy** | Một “đảo” mạng vẫn là OneBrain hợp lệ và có thể hội tụ khi gặp lại phần còn lại. |
+
+---
+
+## Các khái niệm nền tảng
+
+### Knowledge Unit — KU
+
+KU là đơn vị tri thức cơ bản của OneBrain. Kiến trúc KU hiện tại gồm ba lớp:
+
+```text
+CoreDna                 Epigenetics                    Expression
+Ngữ nghĩa lõi      +    bằng chứng, trust, bonds   +   cách trình bày cho người
 ```
-Knowledge Unit {
-    id:             Mã định danh duy nhất (hash)
-    author:         Người đóng góp (địa chỉ ví)
-    timestamp:      Thời điểm tạo
-    content:        Nội dung kiến thức
-    category:       Phân loại (khoa học, kỹ thuật, nghệ thuật, ...)
-    tags:           Các nhãn liên quan
-    references:     Các Knowledge Unit được tham chiếu
-    evidence:       Bằng chứng / nguồn xác minh
-    language:       Ngôn ngữ gốc
-    difficulty:     Độ khó / chuyên sâu
-    
-    // Metadata tự động tính toán
-    votes:          Số phiếu bầu (upvote / downvote)
-    usage_count:    Số lần được truy cập / sử dụng
-    novelty_score:  Điểm tính mới
-    value_score:    Điểm giá trị tổng hợp
-    connections:    Các liên kết đến Knowledge Unit khác
-}
-```
 
-### 5.2. Knowledge Graph (Đồ thị Tri thức)
+- **CoreDna** biểu diễn cấu trúc ngữ nghĩa và các instruction.
+- **Epigenetics** lưu trạng thái có thể tiến hóa: bằng chứng, quan hệ, độ tin cậy và tín hiệu sử dụng.
+- **Expression** giữ cách diễn đạt bằng ngôn ngữ tự nhiên hoặc định dạng phục vụ giao diện.
 
-Toàn bộ kiến thức trong OneBrain được tổ chức dưới dạng **đồ thị (graph)** — không phải chuỗi tuyến tính như blockchain:
+### OneBrain Protocol — OBP Network
 
-- **Nodes** = Knowledge Units
-- **Edges** = Mối quan hệ giữa các Knowledge Units (bổ sung, phản bác, mở rộng, phụ thuộc, ...)
+<p align="center">
+  <img src="docs/images/obp_peer_network.png" alt="Mạng OBP ngang hàng kết nối các node độc lập từ Trái Đất tới Sao Hỏa mà không có máy chủ trung tâm" width="1000" />
+</p>
+
+<p align="center"><i>Mỗi node giữ quyền tự chủ; mạng mở rộng khả năng tiếp cận tri thức chứ không tạo ra một trung tâm quyền lực mới.</i></p>
+
+OBP là lớp giao tiếp giúp các node độc lập tìm thấy nhau, thương lượng capability, trao đổi inventory, đối soát khác biệt và truyền đúng phần tri thức được phép chia sẻ. Mạng được thiết kế để tiếp tục hoạt động khi offline, bị partition hoặc phải đi qua carrier có độ trễ lớn; khi kết nối trở lại, các node hội tụ bằng evidence và validation thay vì tin vào một root authority.
+
+**Trạng thái hiện tại:** live node vẫn sử dụng TCP/JSON legacy cho kết nối peer cơ bản. Authenticated session, scoped inventory, reconciliation journal, partition–reunion và các carrier vNext đã có ở protocol/library/test harness nhưng chưa thay thế transport mặc định end-to-end.
+
+### Receptor, Affordance, Assembly và Mapping
+
+Foundation vNext mở rộng mô hình KU bằng bốn khái niệm:
+
+- **Receptor** mô tả một “vị trí còn thiếu” hoặc một nhu cầu tri thức có kiểu.
+- **Affordance** mô tả một KU có thể đóng vai trò gì, với input và giới hạn nào.
+- **Assembly** gom nhiều Receptor thành một cấu trúc tri thức lớn hơn.
+- **Mapping** mô tả cách một nguồn tri thức có thể tương ứng với một Receptor.
+
+KQL có thể tạo proposal cho Mapping, nhưng proposal không tự trở thành tri thức chính thức. Materialization và adoption cần những hành động, quyền hạn và bằng chứng riêng.
+
+### OneBrain Knowledge Graph — OBKG
+
+Tri thức trong OneBrain không được tổ chức thành một chuỗi tuyến tính. Nó hình thành một **đồ thị sống**, nơi mỗi mảnh tri thức có thể kết nối với nhiều mảnh khác theo những quan hệ có kiểu:
+
+- **Node** đại diện cho Knowledge Unit, khái niệm hoặc projection đã được kiểm tra.
+- **Edge** mô tả quan hệ như bổ sung, ủng hộ, phản biện, mở rộng, phụ thuộc, dẫn xuất hoặc liên kết xuyên lĩnh vực.
 
 ```mermaid
 graph TD
-    A["🔧 Tháo bánh xe<br/>đạp"] -->|"bổ sung"| B["🔧 Hướng dẫn<br/>bảo trì xe"]
-    A -->|"mở rộng"| C["🔧 Kỹ thuật<br/>sửa chữa nâng cao"]
-    D["🌡️ Ảnh hưởng thời tiết<br/>lên cao su"] -->|"bổ sung"| A
-    E["🧪 Khoa học<br/>vật liệu"] -->|"phụ thuộc"| D
-    F["👵 Công thức<br/>nấu ăn truyền thống"] -->|"liên quan"| G["🔥 Vật lý<br/>truyền nhiệt"]
-    G -->|"kết nối"| E
-    H["🩺 Điều trị<br/>bệnh hiếm"] -->|"mở rộng"| I["💊 Cơ sở dữ liệu<br/>dược học"]
-    J["💻 Sửa lỗi<br/>bảo mật"] -->|"bổ sung"| K["🔐 An ninh<br/>mạng"]
-    C -->|"liên ngành"| G
-    B -->|"liên ngành"| J
+    A["🔧 Kỹ thuật<br/>tháo lốp"] -->|bổ sung| B["🔧 Hướng dẫn<br/>bảo dưỡng xe đạp"]
+    A -->|mở rộng| C["🔧 Phương pháp<br/>sửa chữa nâng cao"]
+    D["🌡️ Ảnh hưởng thời tiết<br/>lên cao su"] -->|bổ trợ| A
+    E["🧪 Khoa học<br/>vật liệu"] -->|giải thích| D
+    F["👵 Phương pháp<br/>nấu ăn truyền thống"] -->|liên hệ| G["🔥 Vật lý<br/>truyền nhiệt"]
+    G -->|kết nối| E
+    H["🩺 Điều trị<br/>bệnh hiếm"] -->|mở rộng| I["💊 Dữ liệu<br/>dược lý"]
+    J["💻 Khắc phục<br/>lỗ hổng"] -->|bổ sung| K["🔐 Thực hành<br/>an ninh mạng"]
+    C -->|xuyên lĩnh vực| G
+    B -->|xuyên lĩnh vực| J
 
     style A fill:#ff6b6b,stroke:#ff4757,color:#fff
     style B fill:#ff6b6b,stroke:#ff4757,color:#fff
@@ -276,444 +303,410 @@ graph TD
 ```
 
 <p align="center">
-  <img src="docs/images/knowledge_graph_viz.png" alt="Trực quan hóa Đồ thị Tri thức" width="700" />
+  <img src="docs/images/knowledge_graph_viz.png" alt="Minh họa OneBrain Knowledge Graph kết nối tri thức khoa học, kỹ thuật, y học, nghệ thuật và đời sống" width="800" />
 </p>
 
-Cấu trúc đồ thị cho phép:
-- 🔍 Tìm kiếm kiến thức liên quan một cách thông minh
-- 🧩 Phát hiện các "lỗ hổng" tri thức cần được lấp đầy
-- 🌐 Xây dựng "bản đồ tri thức" toàn cầu
-- 🔗 Tự động gợi ý kiến thức liên quan cho người dùng
+<p align="center"><i>Một đóng góp nhỏ có thể trở thành cây cầu giữa những miền tri thức tưởng như không liên quan.</i></p>
 
-### 5.3. Hệ thống Bỏ phiếu & Đánh giá (Voting & Evaluation)
+Đồ thị cho phép OneBrain:
 
-```mermaid
-flowchart TD
-    A["📤 Knowledge Unit được đăng"] --> B{"🤖 AI Sàng lọc sơ bộ"}
-    B -->|"✅ Đạt"| C["👥 Cộng đồng đánh giá"]
-    B -->|"❌ Spam / Không hợp lệ"| X["🚫 Từ chối"]
-    C -->|"👍 Được duyệt"| D["📊 Tính toán giá trị"]
-    C -->|"👎 Từ chối"| Y["🔄 Phản hồi cho tác giả"]
-    D --> E["💰 Phân phối thưởng"]
-    E --> F["🎁 OBT gửi cho người đóng góp"]
+- 🔍 tìm tri thức liên quan dựa trên cấu trúc và ngữ cảnh, không chỉ từ khóa;
+- 🧩 phát hiện những “khoảng trống tri thức” dưới dạng Receptor cần được lấp đầy;
+- 🌐 kết nối các phát hiện xuyên lĩnh vực để tạo ra Assembly và giả thuyết mới;
+- 🔗 giải thích vì sao một KU được đề xuất, nó phụ thuộc vào đâu và bằng chứng nào đang ủng hộ hoặc phản biện nó;
+- 🧠 cung cấp ngữ cảnh cho KQL, Personal AI và quá trình đánh giá PoMV.
 
-    B -.->|"Kiểm tra"| B1["Phát hiện Spam"]
-    B -.->|"Kiểm tra"| B2["Kiểm tra trùng lặp"]
-    B -.->|"Kiểm tra"| B3["Xác thực định dạng"]
+OBKG không phải một bản đồ chân lý bất biến. Các projection được dựng từ object và evidence đã validate; quan hệ có thể được bổ sung, phản biện hoặc thay đổi theo frontier và policy của từng node. Hai node có thể nhìn thấy những phần đồ thị khác nhau mà vẫn trao đổi và hội tụ khi có consent.
 
-    D -.->|"Yếu tố"| D1["Số phiếu bầu"]
-    D -.->|"Yếu tố"| D2["Lượt sử dụng"]
-    D -.->|"Yếu tố"| D3["Tính mới"]
-    D -.->|"Yếu tố"| D4["Tính kết nối"]
+**Trạng thái hiện tại:** graph index, graph browsing và KQL local đã hoạt động trong runtime. Foundation vNext đã có projection, mapping, resolution và các contract liên quan; graph gossip, distributed learning và discovery xuyên mạng chưa phải đường live end-to-end mặc định.
 
-    style A fill:#6c63ff,stroke:#5a52d5,color:#fff
-    style B fill:#ffd700,stroke:#e6c300,color:#333
-    style C fill:#43e97b,stroke:#38c96a,color:#fff
-    style D fill:#ff6584,stroke:#d9546f,color:#fff
-    style E fill:#a855f7,stroke:#9333ea,color:#fff
-    style F fill:#22c55e,stroke:#16a34a,color:#fff
-    style X fill:#ef4444,stroke:#dc2626,color:#fff
-    style Y fill:#f59e0b,stroke:#d97706,color:#fff
-```
-
-### 5.4. Hệ thống Danh tiếng (Reputation System)
-
-Mỗi người dùng có một **Reputation Score (Điểm uy tín)** ảnh hưởng đến:
-
-- **Trọng lượng vote:** Người có uy tín cao, vote có trọng lượng lớn hơn
-- **Quyền truy cập:** Mở khóa các tính năng và khu vực kiến thức nâng cao
-- **Mức thưởng:** Hệ số nhân thưởng cao hơn cho đóng góp
-- **Quyền quản trị:** Tham gia các quyết định quan trọng của mạng lưới
-
-Uy tín được xây dựng qua:
-- ✅ Đóng góp kiến thức chất lượng cao
-- ✅ Review chính xác kiến thức của người khác
-- ✅ Được cộng đồng công nhận chuyên môn
-- ❌ Bị giảm khi đóng góp sai lệch hoặc spam
-
-### 5.5. Cách chia sẻ Tri thức — Từ bàn phím đến ý nghĩ
-
-BCI là tầm nhìn cuối cùng, nhưng OneBrain phải hoạt động **ngay hôm nay**, rất lâu trước khi giao tiếp não-máy trở nên phổ biến. Việc chia sẻ tri thức tiến hóa qua ba giai đoạn:
-
-```mermaid
-journey
-    title Qua trinh Tien hoa Chia se Tri thuc
-    section Giai doan 1 - Nhap lieu thu cong (Phase 1-2)
-      Viet bai va ghi chu: 3: User
-      Tai anh va video: 3: User
-      Doc bang giong noi: 4: User, AI
-      Quay man hinh: 3: User
-      Dien bieu mau co cau truc: 3: User
-    section Giai doan 2 - AI ho tro ghi nhan (Phase 3-4)
-      AI theo doi ban lam viec: 5: AI
-      AI goi y dong goi: 5: AI
-      AI tu dong ghi hinh: 5: AI
-      Nguoi dung duyet lai: 4: User, AI
-      Ra lenh bang giong noi: 5: User, AI
-    section Giai doan 3 - Nghi-la-chia-se (Phase 5)
-      Nghi la chia se: 5: User, BCI
-      Ma hoa du lieu giac quan: 5: BCI
-      Khong rao can chia se: 5: User, BCI, AI
-```
+### Proof of Metabolic Value — PoMV
 
 <p align="center">
-  <img src="docs/images/knowledge_contribution_ui.png" alt="OneBrain Mobile App — Giao diện Đóng góp Tri thức" width="500" />
+  <img src="docs/images/pomv_evidence_network.png" alt="PoMV theo dõi vòng chuyển hóa của Knowledge Unit qua sử dụng, dẫn xuất, outcome và benefit trên mạng ngang hàng" width="1000" />
 </p>
-<p align="center"><em>Concept: OneBrain Mobile App — Giao diện Đóng góp Tri thức</em></p>
 
-**Nguyên tắc then chốt:** Ở mọi giai đoạn, rào cản chia sẻ phải thấp nhất có thể. Một thợ sửa xe đạp không cần phải biết viết văn. Một bà ngoại không cần phải hiểu công nghệ. Hệ thống phải đến gặp con người ở nơi họ đang đứng.
+<p align="center"><i>Giá trị của tri thức không đến từ độ nổi tiếng, mà từ những dấu vết cho thấy nó đã được sử dụng, chuyển hóa và tạo ra kết quả.</i></p>
 
-> **Ví dụ — Anh Tùng giai đoạn 1:** Anh Tùng chưa có BCI. Anh thậm chí chưa có AI cá nhân. Nhưng anh có thể mở ứng dụng OneBrain trên điện thoại, quay video 2 phút về mẹo tháo bánh xe, thêm vài dòng mô tả, rồi gửi. AI của nền tảng tự động gắn thẻ, phân loại, tạo hình minh họa, và dịch mô tả sang 40 ngôn ngữ. Đóng góp của anh Tùng có mặt trên OneBrain trong vài phút.
->
-> **Ví dụ — Anh Tùng giai đoạn 2:** Một năm sau, anh Tùng có AI cá nhân chạy trên điện thoại. Khi anh làm việc, AI theo dõi qua camera đặt trên bàn sửa xe. Khi anh Tùng làm điều gì mà AI nhận ra là mới lạ, nó nhẹ nhàng gợi ý: *"Kỹ thuật đó tôi chưa thấy ai làm. Để tôi đóng gói lại nhé?"* Anh Tùng nói "Ừ" — AI lo hết. Anh Tùng không cần dừng tay.
->
-> **Ví dụ — Anh Tùng giai đoạn 3:** Năm 2035, anh Tùng đeo một chiếc băng đô BCI nhẹ. Anh không cần nói. Anh phát hiện mẹo mới, cảm thấy hài lòng, và nghĩ: *"Mọi người nên biết cái này."* Xong.
+PoMV không hỏi “tri thức nào nổi tiếng nhất?” mà hỏi “tri thức nào thực sự sống, được sử dụng và tạo ra kết quả?”. Framework đánh giá sáu nhóm tín hiệu quan sát được:
 
----
+1. Mức sử dụng và chuyển hóa.
+2. Khả năng dự đoán.
+3. Tính mới và entropy.
+4. Khả năng tồn tại trước phản biện/thời gian.
+5. Vị trí và hoạt hóa trong đồ thị.
+6. Giá trị đối với một niche cụ thể.
 
-## 6. Kịch bản sử dụng (Use Cases)
+Đích đến của PoMV là một **lớp bằng chứng ngang hàng cho mạng tri thức**. Các dấu vết sử dụng, chuyển hóa và outcome được ký, gắn provenance, ngữ cảnh và giới hạn; chúng có thể được đối soát giữa những peer để mỗi node dựng assessment theo policy và frontier của mình. Không node nào sở hữu một điểm chân lý toàn cầu, và đa số không thể bỏ phiếu để biến điều sai thành đúng.
 
-### 🌍 Tri thức đời thường — Xương sống của OneBrain
+Evidence được quyền tồn tại ngang hàng không có nghĩa mọi evidence có trọng lượng như nhau. Authority, independence, context, contradiction và limitation vẫn phải được đánh giá. Exposure không phải Use; Use không tự chứng minh Benefit; PoMV không phải mint authority.
 
-### 🚲 Kịch bản 1: Người thợ sửa xe và mẹo tháo bánh
+PoMV hiện là một **assessment framework** ở cấp thư viện và local runtime; các contract Use/Derivation/Outcome/Benefit đã có ở foundation vNext, nhưng distributed evidence flow chưa được tích hợp end-to-end vào mạng sản phẩm.
 
-> Anh Tùng, thợ sửa xe đạp ở Huế, phát hiện ra cách tháo bánh xe nhanh hơn bằng cách đặt nghiêng xe một góc 30 độ. Anh nghĩ: *"Hay đấy, chia sẻ cái này."* AI cá nhân của anh lập tức hành động: ghi lại video góc nhìn thứ nhất qua camera/BCI, phân tích từng động tác tay, nhận diện dụng cụ, đo góc nghiêng, và tự động tạo ra hướng dẫn từng bước kèm hình minh họa. Knowledge Unit được đóng gói và đưa lên OneBrain. Dù đã có 47 hướng dẫn tháo bánh xe trên mạng lưới, đóng góp của anh Tùng vẫn có giá trị — vì nó bổ sung thêm góc nhìn từ một người thợ lành nghề 20 năm kinh nghiệm, với dụng cụ đơn giản và điều kiện thực tế.
+### OneBrain Token — OBT
 
-### 🌅 Kịch bản 2: Khoảnh khắc đẹp ở Sapa
+<p align="center">
+  <img src="docs/images/obt_knowledge_economy.png" alt="Nền kinh tế tri thức OBT phân phối giá trị sau khi đóng góp tạo ra benefit có thể kiểm chứng trên Trái Đất và Sao Hỏa" width="1000" />
+</p>
 
-> Chị Lan đứng trên đỉnh đồi Sapa, nhìn xuống thung lũng lúa chín vàng trong ánh hoàng hôn. Tim chị đập nhanh hơn. Chị chỉ cần nghĩ: *"Chia sẻ."* AI cá nhân qua BCI ghi nhận toàn bộ — tọa độ chính xác, hướng nhìn, góc mắt, cảm xúc sinh học, ánh sáng, âm thanh gió, nhiệt độ — và đóng gói thành một trải nghiệm có thể được "sống lại" bởi bất kỳ ai trên thế giới. Đó không chỉ là một bức ảnh. Đó là một **trải nghiệm tri thức** — biết rằng ở tọa độ này, vào tháng 9, lúc 5:45 chiều, khi trời trong, bạn sẽ thấy điều kỳ diệu.
+<p align="center"><i>Tri thức tạo ra lợi ích; bằng chứng xác nhận đóng góp; giá trị quay trở lại những người và hệ thống đã làm nên tác động.</i></p>
 
-### 👵 Kịch bản 3: Bí quyết nấu ăn của bà
+OBT được thiết kế như lớp điều phối kinh tế hậu kiểm cho đóng góp, mã hóa, xác minh và lưu trữ tri thức. Thiết kế hiện có account-chain, bốn reward stream, anti-gaming, penalty và storage reward. Mục tiêu dài hạn là tạo một đơn vị giá trị dựa trên tri thức có ích, có thể được sở hữu và quyết toán nhất quán ở bất kỳ nơi nào OBP hoạt động.
 
-> Bà Năm, 78 tuổi, ở Cần Thơ, có công thức kho cá bằng nồi đất mà cả xóm ai cũng khen ngon. Bà không biết viết blog, không có mạng xã hội. Nhưng bà có AI cá nhân. Khi bà nấu, AI quan sát, ghi nhận nguyên liệu, thời gian, nhiệt độ, thứ tự các bước, và cả những chi tiết "bí truyền" mà bà thường nói bằng miệng — *"kho lửa liu riu cho tới khi nước sánh lại là được."* Tri thức ẩm thực này, vốn sẽ mất đi khi bà qua đời, giờ được bảo tồn vĩnh viễn trên OneBrain.
+Trên mạng tương lai, reward không bắt đầu từ một lượt đăng hay lượt xem. Nó phải đi qua chuỗi bằng chứng **Use → Outcome → Benefit → Attribution → RewardClaim → PendingMint → Final OBT**. Các peer có thể kiểm tra claim và bằng chứng theo cùng contract; reward plane chỉ hoạt động sau knowledge operation và không có quyền sửa nội dung hay quyết định tri thức nào là đúng.
 
----
-
-### 🏢 Tri thức chuyên môn — Nâng tầm giá trị
-
-### 🩺 Kịch bản 4: Bác sĩ chia sẻ ca lâm sàng
-
-> Bác sĩ Minh ở TP.HCM gặp một ca bệnh hiếm và tìm ra phương pháp điều trị hiệu quả. Anh đóng góp kiến thức này lên OneBrain. Hệ thống AI phân loại, kiểm tra tính mới, và đưa vào review bởi các bác sĩ chuyên khoa trên toàn cầu. Sau khi được xác nhận, kiến thức tự động được phân phối đến AI cá nhân của các bác sĩ trên khắp thế giới. Bác sĩ Minh nhận OBT tương xứng với giá trị đóng góp.
-
-### 💻 Kịch bản 5: Lập trình viên giải quyết bug phức tạp
-
-> Một lập trình viên tìm ra cách giải quyết một lỗi bảo mật nghiêm trọng. Thay vì chỉ sửa trong dự án của mình, cô ấy đóng góp kiến thức lên OneBrain. AI cá nhân của hàng nghìn lập trình viên khác tự động nhận và tích hợp kiến thức này, ngăn chặn lỗi tương tự trước khi nó xảy ra.
-
-### 🎓 Kịch bản 6: Học tập cá nhân hóa
-
-> Sinh viên Hùng muốn học về vật lý lượng tử. AI cá nhân của Hùng kết nối với OneBrain, tìm kiếm và tổng hợp các Knowledge Units phù hợp với trình độ và phong cách học của Hùng, tạo ra một lộ trình học tập cá nhân hóa. Mỗi kiến thức đã được xác minh và đánh giá bởi cộng đồng.
-
-### 🧠 Kịch bản 7: Tương lai với BCI
-
-> Năm 2035. An đeo thiết bị BCI, kết nối trực tiếp với AI cá nhân. Khi An gặp một vấn đề kỹ thuật, AI cá nhân tự động truy vấn OneBrain, tìm kiến thức liên quan, và "truyền" kiến thức đó vào nhận thức của An gần như tức thời — giống như cách Neo học kung fu trong The Matrix, nhưng là đời thực.
+OBT hiện vẫn là protocol/economic prototype. Wallet trong ứng dụng chưa phải một mạng token có giao dịch và finality thực; OBT không phải sản phẩm đầu tư và không được dùng để quyết định tri thức nào là đúng.
 
 ---
 
-## 7. Nguồn phần thưởng (Reward Source)
+## Kiến trúc 10 trụ cột
 
-Một câu hỏi quan trọng: **OBT đến từ đâu?**
+OneBrain tổ chức hệ thống theo 10 trụ cột. README này dùng một thứ tự thống nhất cho toàn dự án:
 
-### 7.1. Cơ chế phát hành (Minting)
-
-```mermaid
-pie title Phân bổ Token OBT
-    "🌱 Knowledge Mining" : 60
-    "🏗️ Foundation Reserve" : 15
-    "👥 Community & Ecosystem" : 15
-    "🧑‍💼 Team & Advisors" : 10
-```
-
-| Phân bổ | % | Mô tả |
-|---|---|---|
-| 🌱 Knowledge Mining | 60% | Phát hành dần qua đóng góp kiến thức (giảm dần theo thời gian — tương tự Bitcoin halving) |
-| 🏗️ Foundation Reserve | 15% | Quỹ phát triển dự án |
-| 👥 Community & Ecosystem | 15% | Thưởng cho reviewer, validator, và hệ sinh thái |
-| 🧑‍💼 Team & Advisors | 10% | Đội ngũ phát triển (vesting schedule) |
-
-### 7.2. Cơ chế tuần hoàn (Token Circulation)
+| # | Trụ cột | Vai trò | Thành phần chính |
+|---:|---|---|---|
+| **P1** | **Knowledge Unit — KU** | Định dạng và vòng đời của tri thức | `ku-core`, `ku-encoder` |
+| **P2** | **OneBrain Protocol — OBP** | Identity, discovery, transport, inventory và reconciliation | `onebrain-protocol`, `ku-net`, `onebrain-node`, `onebrain-seed` |
+| **P3** | **Knowledge Query Language — KQL** | Truy vấn local-first, discovery ngang hàng, planning và Standing Need | `ku-kql` |
+| **P4** | **Proof of Metabolic Value — PoMV** | Bằng chứng use/outcome ngang hàng, assessment và epistemic lifecycle | `ku-core` |
+| **P5** | **OneBrain Token — OBT** | Nền kinh tế tri thức, ledger, reward và anti-gaming | `ku-core`, `ku-net` |
+| **P6** | **AI Layer** | Local AI, encoding, mediation và fidelity | `ku-ai`, `ku-encoder`, `ku-mediator` |
+| **P7** | **OneBrain Knowledge Graph — OBKG** | Quan hệ, projection, graph learning và discovery | `ku-core`, `ku-kql` |
+| **P8** | **OneBrain Storage — OBS** | KU, graph, blob, vault, quarantine và migration | `ku-core`, `ku-kql` |
+| **P9** | **BCI Protocol** | Hướng nghiên cứu I/O thần kinh an toàn | Research / future adapters |
+| **P10** | **User Interface** | CLI, API, Web, Desktop và các client tương lai | `onebrain-cli`, `onebrain-api`, `onebrain-web`, `onebrain-desktop` |
 
 ```mermaid
 flowchart LR
-    C["👨‍🔧 Người đóng góp"] -->|"Chia sẻ kiến thức"| OB["🧠 OneBrain<br/>Network"]
-    OB -->|"💰 Nhận OBT"| C
-    U["👤 Người dùng"] -->|"🔓 Chi OBT"| OB
-    OB -->|"📚 Kiến thức premium"| U
-    E["🏢 Doanh nghiệp"] -->|"💳 Mua OBT"| OB
-    OB -->|"🎓 Tri thức cho nhân viên"| E
-    R["🔍 Reviewer"] -->|"✅ Đánh giá kiến thức"| OB
-    OB -->|"💰 Nhận OBT"| R
-    S["🔒 Staker"] -->|"📌 Stake OBT"| OB
-    OB -->|"💰 Phí giao dịch"| S
-
-    style OB fill:#ffd700,stroke:#e6c300,color:#333,stroke-width:3px
-    style C fill:#43e97b,stroke:#38c96a,color:#fff
-    style U fill:#6c63ff,stroke:#5a52d5,color:#fff
-    style E fill:#ff6584,stroke:#d9546f,color:#fff
-    style R fill:#a855f7,stroke:#9333ea,color:#fff
-    style S fill:#00b4d8,stroke:#0096c7,color:#fff
+    UI["P10 · Giao diện"] --> AI["P6 · Local AI"]
+    AI --> KU["P1 · Knowledge Unit"]
+    KU --> OBS["P8 · Storage"]
+    KU --> KG["P7 · Knowledge Graph"]
+    KQL["P3 · KQL"] --> OBS
+    KQL --> KG
+    OBS <--> OBP["P2 · OBP Network"]
+    KQL -. scoped Need · vNext .-> OBP
+    OBP -. proposal + evidence .-> KQL
+    KG --> POMV["P4 · PoMV Evidence"]
+    POMV -. hậu kiểm .-> OBT["P5 · OBT"]
+    BCI["P9 · BCI tương lai"] -. consent-bound adapter .-> AI
 ```
 
 ---
 
-## 8. Bản quyền & Quyền sở hữu tri thức (Copyright & Intellectual Property)
+## OneBrain hoạt động như thế nào?
 
-### 8.1. Nguyên tắc cốt lõi: Tri thức đã chia sẻ là tự do
-
-OneBrain đi theo triết lý rõ ràng:
-
-> **Tri thức một khi đã được chia sẻ lên OneBrain, nó thuộc về nhân loại.**
-
-Người đóng góp đã nhận phần thưởng OBT tại thời điểm chia sẻ — đó là sự ghi nhận và đền đáp cho công sức của họ. Tri thức sau đó được tự do lưu thông, ai cũng có thể tiếp cận, học hỏi, và xây dựng tiếp.
-
-**Tại sao?** Vì nếu tri thức bị khóa sau bản quyền, OneBrain sẽ không khác gì thế giới cũ — nơi kiến thức bị phân mảnh, bị giam cầm, và không thể kết nối thành bộ não chung.
-
-### 8.2. OneBrain như chứng cứ bản quyền
-
-Tuy nhiên, **tự do trong OneBrain không có nghĩa là bất kỳ ai cũng được lợi dụng bên ngoài OneBrain.**
-
-Nếu một cá nhân hoặc tổ chức lấy tri thức từ OneBrain để **kiếm lợi thương mại bên ngoài mạng lưới** (ví dụ: đăng ký bằng sáng chế, thương mại hóa sản phẩm, xuất bản sách...), thì người đóng góp gốc hoàn toàn có quyền yêu cầu bản quyền.
-
-Và lúc này, OneBrain trở thành **bằng chứng không thể chối cãi:**
+Một vòng đời tri thức điển hình:
 
 ```mermaid
 flowchart TD
-    subgraph evidence["🛡️ OneBrain như Chứng cứ Không thể Chối cãi"]
-        E1["✅ Ai đã chia sẻ tri thức<br/>(identity on-chain)"]
-        E2["✅ Chia sẻ lúc nào<br/>(timestamp bất biến)"]
-        E3["✅ Nội dung chính xác là gì<br/>(content hash)"]
-        E4["✅ Ai đã vote xác nhận<br/>(community validation)"]
-        E5["✅ Chuỗi phát triển tri thức<br/>(knowledge lineage)"]
-    end
-    evidence --> R["🔐 Tất cả được ghi trên mạng lưới phi tập trung<br/>Không ai có thể sửa đổi hay xóa bỏ"]
-
-    style evidence fill:#0d1b2a,stroke:#ffd700,color:#ffd700,stroke-width:2px
-    style E1 fill:#1b2838,stroke:#22c55e,color:#bbf7d0
-    style E2 fill:#1b2838,stroke:#22c55e,color:#bbf7d0
-    style E3 fill:#1b2838,stroke:#22c55e,color:#bbf7d0
-    style E4 fill:#1b2838,stroke:#22c55e,color:#bbf7d0
-    style E5 fill:#1b2838,stroke:#22c55e,color:#bbf7d0
-    style R fill:#1a1a2e,stroke:#a855f7,color:#e9d5ff
+    A["Quan sát, văn bản hoặc tệp cục bộ"] --> B["Consent & local policy"]
+    B --> C["AI/rule-based encoding"]
+    C --> D["Knowledge Unit"]
+    D --> E["Quality & fidelity checks"]
+    E --> F["Local validated storage"]
+    F --> G["KQL và Knowledge Graph"]
+    G --> H{"Người dùng cho phép chia sẻ?"}
+    H -->|Không| I["Giữ local/private"]
+    H -->|Có| J["OBP scoped exchange"]
+    J --> K["Peer validate trước khi accept"]
+    K --> L["Use / Outcome evidence"]
+    L -. tùy chọn, hậu kiểm .-> M["Reward evidence / OBT"]
 ```
 
-Nói cách khác: **Trong OneBrain, tri thức tự do. Ra ngoài OneBrain, người đóng góp được bảo vệ.**
+Các bước không bị gộp vào nhau: encode không đồng nghĩa publish; proposal không đồng nghĩa materialize; materialize không đồng nghĩa adopt; một lần hiển thị không đồng nghĩa tri thức đã được sử dụng hay mang lại lợi ích.
 
-### 8.3. Không phải ai cũng "sở hữu" cái mình chia sẻ
-
-Đây là điểm tinh tế nhất trong cơ chế bản quyền của OneBrain.
-
-Khi bà Năm chia sẻ công thức kho cá — **bà có thực sự là "chủ sở hữu" công thức đó không?** Có lẽ không. Công thức đó có thể đã tồn tại hàng trăm năm, được truyền từ đời này sang đời khác. Bà Năm là **người chia sẻ**, đóng góp **góc nhìn và kinh nghiệm cá nhân** của bà — nhưng bà không "phát minh" ra món kho cá.
-
-Ngược lại, nếu Giáo sư Khoa chia sẻ một phương trình hoàn toàn mới mà ông tự phát triển — đó rõ ràng là **sáng tạo gốc** của ông.
-
-Vậy làm sao phân biệt? Bằng **cơ chế bỏ phiếu tính nguyên bản (Originality Voting):**
-
-### 8.4. Originality Voting — Bỏ phiếu tính nguyên bản
-
-Khi một Knowledge Unit được chia sẻ, mạng lưới AI cá nhân tham gia OneBrain sẽ **tự động đánh giá mức độ nguyên bản** của nó:
+### Đích đến kỹ thuật: một vòng nhận thức ngang hàng
 
 ```mermaid
-flowchart TD
-    A["📤 Knowledge Unit được chia sẻ"] --> B["🤖 AI Network Phân tích"]
-    B --> B1["So sánh với tri thức đã có"]
-    B --> B2["Phân tích tính mới"]
-    B --> B3["Đánh giá sáng tạo vs. chia sẻ lại"]
-    B --> B4["Kiểm tra nguồn gốc"]
-    B1 & B2 & B3 & B4 --> C{"📊 Điểm Nguyên bản"}
-
-    C -->|"⭐⭐⭐⭐⭐ 90-100%"| D1["🏆 Sáng tạo gốc hoàn toàn<br/>VD: phương trình mới"]
-    C -->|"⭐⭐⭐ 50-70%"| D2["🔧 Cải tiến sáng tạo<br/>VD: kỹ thuật cải tiến"]
-    C -->|"⭐⭐ 20-40%"| D3["📝 Chia sẻ kinh nghiệm<br/>VD: công thức kho cá"]
-    C -->|"⭐ 0-20%"| D4["👁️ Chia sẻ lại / quan sát<br/>VD: khung cảnh đẹp"]
-
-    D1 --> E1["🛡️ Quyền bản quyền mạnh<br/>nếu bị thương mại hóa"]
-    D2 --> E2["⚖️ Bảo vệ vừa phải"]
-    D3 --> E3["📋 Ghi nhận đóng góp<br/>quyền hạn chế"]
-    D4 --> E4["✅ Ghi nhận<br/>không bản quyền độc quyền"]
-
-    style A fill:#6c63ff,stroke:#5a52d5,color:#fff
-    style B fill:#1a1a2e,stroke:#a855f7,color:#e9d5ff
-    style C fill:#ffd700,stroke:#e6c300,color:#333
-    style D1 fill:#22c55e,stroke:#16a34a,color:#fff
-    style D2 fill:#43e97b,stroke:#38c96a,color:#fff
-    style D3 fill:#f59e0b,stroke:#d97706,color:#fff
-    style D4 fill:#94a3b8,stroke:#64748b,color:#fff
-    style E1 fill:#059669,stroke:#047857,color:#fff
-    style E2 fill:#0891b2,stroke:#0e7490,color:#fff
-    style E3 fill:#d97706,stroke:#b45309,color:#fff
-    style E4 fill:#6b7280,stroke:#4b5563,color:#fff
+flowchart LR
+    A["Need / Standing Need<br/>tại Node A"] --> B["KQL local plan"]
+    B -. consent + scoped intent .-> C["OBP peer routing"]
+    C --> D1["Node B<br/>local matching"]
+    C --> D2["Node C<br/>local matching"]
+    C --> D3["Node N<br/>local matching"]
+    D1 --> E["Candidate KU<br/>+ provenance + evidence"]
+    D2 --> E
+    D3 --> E
+    E --> F["Node A validate,<br/>assemble & adopt"]
+    F --> G["Use / Outcome / Benefit<br/>evidence"]
+    G -. peer-to-peer reconciliation .-> H["PoMV assessment"]
+    H -. attribution + finality .-> I["OBT reward"]
 ```
 
-Cơ chế này hoạt động **tự động và phi tập trung** — được thực hiện bởi mạng lưới AI cá nhân, tương tự cách các node trong blockchain xác nhận giao dịch. Không có một tổ chức trung ương nào quyết định ai có bản quyền — cộng đồng AI quyết định.
+Đây là **target architecture**, không phải mô tả rằng mọi cạnh trong sơ đồ đã chạy trên live network. Mỗi node vẫn tự quyết định dữ liệu nào được quan sát, query nào được phát, evidence nào được chấp nhận và proposal nào được sử dụng. “Toàn mạng” luôn có nghĩa là phần mạng có thể tiếp cận trong điều kiện partition hiện tại — không phải một lời hứa về global completeness hay đồng bộ tức thời.
 
-### 8.5. Tóm tắt triết lý bản quyền
+---
 
-| Tình huống | Xử lý |
+## OneBrain hiện làm được gì?
+
+### Đang chạy trong runtime sản phẩm
+
+- Mã hóa văn bản thành KU thông qua Ollama.
+- Lưu KU, graph index và blob bằng redb/filesystem.
+- Tìm kiếm theo từ khóa, duyệt KU và thực thi KQL local.
+- Xem chi tiết KU, instruction, trust, PoMV và các quan hệ graph hiện có.
+- Chat với local AI khi Ollama và model đã sẵn sàng.
+- Kết nối TCP peer thủ công, gửi/nhận KU và phát sự kiện runtime.
+- Import/export, backup/restore và quản lý blob.
+- Chạy node qua CLI hoặc API; sử dụng Web Dashboard và Tauri Desktop.
+
+### Đã có ở foundation vNext và test harness
+
+- Canonical codec, typed CID, full-width identity và signed event/feed.
+- Authority, delegation, revocation và capability permits.
+- Validated storage, encrypted Vault, Quarantine và rollback-safe migration.
+- Receptor/Affordance/Assembly/Mapping workflow.
+- Typed KQL matcher, structural alignment, assembly search và private multipath.
+- Authenticated session, scoped inventory, persisted reconciliation journal và partition/reunion canary.
+- Use/Derivation/Outcome/Benefit evidence và reward firewall.
+- Checkpoint proofs, restore drill, local retention/GC policy và bounded formal models.
+
+### Chưa phải đường production hoàn chỉnh
+
+- Live node vẫn dùng TCP/JSON legacy; OBP vNext chưa thay transport mặc định.
+- KQL trong runtime hiện truy vấn local; Standing Need, private multipath và discovery tri thức/chuyên gia qua OBP mới ở foundation vNext/test harness.
+- Distributed PoMV/fidelity chưa được nối end-to-end.
+- OBT wallet, transfer và finality chưa vận hành thực.
+- Identity recovery và multi-device sync của giao diện còn chưa hoàn thiện.
+- Dream/FedR/STDP orchestration chưa chạy thường trực trong node.
+- Mobile, browser extension, bot và glasses mới ở mức scaffold.
+- BCI mới là research direction.
+
+### Giao diện hiện có
+
+| Giao diện | Trạng thái | Khả năng chính |
+|---|---|---|
+| **CLI** | Hoạt động | Encode, search, KQL, graph, peer, blob, backup, tags, watch, workflow |
+| **REST/WebSocket API** | Hoạt động local | API cho knowledge, AI, network, graph, data và runtime events |
+| **Web Dashboard** | Hoạt động | Dashboard, Explorer, Encode, Chat, Graph, PoMV, Network, Files, Analytics... |
+| **Desktop** | Hoạt động ở source | Tauri nhúng node/API, system tray, setup wizard và event bridge |
+| **Mobile / Extension / Bot / Glasses** | Scaffold | Thiết kế và điểm tích hợp tương lai |
+
+---
+
+## Một vài kịch bản sử dụng
+
+### Người thợ chia sẻ kinh nghiệm thực tế
+
+Một người thợ xe đạp phát hiện cách tháo lốp nhanh hơn trong điều kiện thiếu dụng cụ. Personal AI giúp mô tả thao tác, điều kiện và giới hạn, sau đó tạo một KU. Những hướng dẫn tương tự không bị xóa như “duplicate”; chúng trở thành các quan sát bổ sung cho cùng một kỹ thuật.
+
+### Nhóm nghiên cứu tìm thấy mảnh ghép còn thiếu
+
+Một nhà nghiên cứu công bố giả thuyết chưa hoàn chỉnh. KQL có thể biểu diễn phần còn thiếu bằng Receptor, sau đó tìm những Affordance phù hợp từ các KU ở lĩnh vực khác. Hệ thống tạo proposal có giải thích; con người vẫn quyết định materialize và adopt kết nối đó.
+
+### Personal AI hoạt động local-first
+
+Personal AI quan sát hoặc đọc tài liệu theo consent, giữ dữ liệu gốc trong local Vault, tạo Need riêng tư và truy vấn kho local trước. Chỉ khi được cho phép, nó mới tạo route sketch tối thiểu để tìm tri thức từ các peer.
+
+### Mạng bị chia cắt rồi tái hợp
+
+Các nhóm node tiếp tục tạo và sử dụng tri thức trong thời gian mất kết nối. Khi có carrier hoặc bridge mới, chúng đối chiếu inventory theo scope, truyền manifest trước payload và chỉ accept dữ liệu đã validate. Không thành phần nào được phép tuyên bố toàn bộ mạng đã “đóng” hoặc hoàn tất tuyệt đối.
+
+---
+
+## Bắt đầu nhanh
+
+### Yêu cầu
+
+- Rust stable, Cargo và toolchain phù hợp hệ điều hành.
+- Node.js/npm nếu muốn xây Web Dashboard.
+- [Ollama](https://ollama.com/) và một model tương thích nếu muốn dùng AI encode/chat.
+
+### Build workspace
+
+```powershell
+cd src
+cargo build --workspace
+```
+
+### Chạy CLI node
+
+```powershell
+cd src
+cargo run -p onebrain-cli -- start --name "My Brain"
+```
+
+Node vẫn có thể duyệt dữ liệu local khi Ollama hoặc mạng không sẵn sàng; các thao tác encode/chat bằng AI cần Ollama hoạt động.
+
+### Chạy cùng Web Dashboard
+
+```powershell
+cd src/onebrain-web
+npm ci
+npm run build
+
+cd ..
+cargo run -p onebrain-cli -- start --api --web-dir onebrain-web/dist
+```
+
+Mở `http://127.0.0.1:4280`. API mặc định chỉ bind vào loopback.
+
+### Kiểm tra mã nguồn
+
+```powershell
+cd src
+cargo fmt --all -- --check
+cargo check --workspace --locked
+```
+
+Kiểm tra contract vNext từ thư mục gốc:
+
+```powershell
+python scripts/ci/validate_vnext_contracts.py
+```
+
+> [!NOTE]
+> Repo đang thay đổi nhanh. Một số integration test legacy có thể cần được cập nhật sau khi type/API vNext thay đổi. Hãy xem CI và issue hiện tại trước khi coi toàn bộ workspace test là release gate xanh.
+
+---
+
+## Cấu trúc mã nguồn
+
+```text
+OneBrain/
+├── src/
+│   ├── ku-core/              # KU, PoMV, OBT, OBKG và foundation vNext
+│   ├── ku-kql/               # KQL local và typed discovery vNext
+│   ├── ku-net/               # DHT, gossip, transport và reconciliation
+│   ├── ku-ai/                # Local AI backends và model policies
+│   ├── ku-encoder/           # Text/observation → KU/Receptor
+│   ├── ku-mediator/          # Intent → retrieve → synthesize
+│   ├── onebrain-protocol/    # Shared wire types và codec
+│   ├── onebrain-node/        # Runtime dùng chung cho các giao diện
+│   ├── onebrain-cli/         # CLI full node
+│   ├── onebrain-api/         # Local REST/WebSocket API
+│   ├── onebrain-desktop/     # Tauri Desktop
+│   ├── onebrain-web/         # React/Vite Web Dashboard
+│   └── onebrain-seed/        # Discovery/relay seed prototype
+├── docs/
+│   ├── specs/                # Đặc tả legacy và vNext
+│   ├── research/             # Research baseline và implementation plan
+│   ├── paper/                # Các paper theo trụ cột
+│   └── features/             # Feature tree và feature details
+├── formal/tla/               # Các bounded formal model TLA+
+├── scripts/                  # Contract validation và Concept Registry tools
+├── installer/                # Build/install scripts
+└── release/                  # Các artifact phát hành
+```
+
+---
+
+## Tài liệu
+
+| Tài liệu | Nội dung |
 |---|---|
-| Học hỏi từ OneBrain cho bản thân | ✅ Hoàn toàn tự do |
-| Sử dụng tri thức để làm việc, giải quyết vấn đề | ✅ Hoàn toàn tự do |
-| Xây dựng tiếp, phát triển tri thức | ✅ Hoàn toàn tự do, khuyến khích |
-| Thương mại hóa bên ngoài OneBrain | ⚠️ Người đóng góp gốc có thể yêu cầu quyền lợi |
-| Đăng ký bằng sáng chế từ tri thức OneBrain | ⚠️ OneBrain là chứng cứ prior art chống lại |
-| Claim bản quyền cho tri thức không nguyên bản | ❌ Originality Score thấp → không đủ cơ sở |
+| [Tổng quan kỹ thuật](docs/README.md) | Crate, module và liên kết code ↔ spec |
+| [Research Baseline v7.1](docs/research/ONEBRAIN_RESEARCH_BASELINE_V7_1.md) | Nền tảng nghiên cứu và các quyết định kiến trúc |
+| [Foundation Implementation Plan](docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md) | Milestone, task, gate và evidence |
+| [vNext Foundation Contracts](docs/specs/vnext/README.md) | Contract canonical, identity, storage, KQL, OBP, AI và security |
+| [Feature Tree](docs/features/FEATURE_TREE.md) | Bản đồ tính năng của hệ thống |
+| [UI Feature Tree](docs/features/UI_FEATURE_TREE_DETAIL.md) | Tính năng và hành trình người dùng trên các nền tảng |
+| [Formal Models](formal/tla/README.md) | Checkpoint, resolution, lease, revocation và reconciliation |
+| [Contributing Guide](CONTRIBUTING.md) | Cách tham gia phát triển dự án |
 
 ---
 
-## 9. Điểm khác biệt (Differentiators)
+## Lộ trình
 
-| So sánh | Wikipedia | Stack Overflow | OneBrain |
-|---|---|---|---|
-| **Cấu trúc** | Bài viết dài | Hỏi & Đáp | Đồ thị tri thức (Knowledge Graph) |
-| **Phần thưởng** | Không có | Điểm danh tiếng | Tiền số (OBT) có giá trị thật |
-| **AI tích hợp** | Không | Không | AI phân loại, đánh giá, phân phối |
-| **Cá nhân hóa** | Không | Không | AI cá nhân tùy chỉnh kiến thức |
-| **BCI Ready** | Không | Không | Thiết kế sẵn sàng cho BCI |
-| **Phi tập trung** | Tập trung | Tập trung | Phi tập trung (decentralized) |
-| **Ownership** | Nền tảng sở hữu | Nền tảng sở hữu | Người đóng góp sở hữu |
-| **Bản quyền** | CC BY-SA | Nền tảng sở hữu | Tự do trong mạng, bảo vệ bên ngoài |
+### Giai đoạn 1 — Foundation
 
----
+- Chuẩn hóa KU, typed identity, object/event/feed và storage boundary.
+- Hoàn thiện local KU/KQL/AI vertical slice.
+- Đóng băng contract vNext và evidence gates.
 
-## 10. Lộ trình phát triển (Roadmap)
+### Giai đoạn 2 — Runtime integration
 
-```mermaid
-timeline
-    title Lộ trình Phát triển OneBrain
-    section Phase 1 — Nền tảng 🏗️
-        Kiến trúc Hệ thống     : Thiết kế Knowledge Unit schema
-                               : Đặc tả giao thức PoK
-                               : Thiết kế tokenomics OBT
-        Khung & Cộng đồng    : Khung bản quyền & IP
-                               : Thuật toán Originality Voting
-                               : Whitepaper v1.0
-                               : Cộng đồng open-source
-    section Phase 2 — Mạng thử nghiệm 🧪
-        Hệ thống cốt lõi      : Triển khai testnet
-                               : Hệ thống voting & reputation
-                               : AI phân loại v1
-        Ứng dụng             : Phát hiện trùng lặp cộng dồn giá trị
-                               : Engine Originality Scoring v1
-                               : Web app prototype
-                               : Cộng đồng early adopters
-    section Phase 3 — Mạng mở rộng 🚀
-        Ra mắt                : Mainnet launch với OBT
-                               : Knowledge Graph v1
-                               : Liên kết tri thức dở dang
-        Mở rộng              : Hệ thống chứng cứ bản quyền
-                               : Ứng dụng iOS & Android
-                               : Dịch đa ngôn ngữ
-                               : DAO v1
-    section Phase 4 — Tích hợp AI 🤖
-        Hệ thống AI           : SDK & API cho Personal AI
-                               : Tự động đóng góp tri thức
-                               : Tự động tiếp nhận tri thức
-        Nâng cao              : Engine khám phá tri thức
-                               : Liên kết liên ngành
-                               : Originality Voting v2
-                               : Giải quyết tranh chấp
-    section Phase 5 — Sẵn sàng BCI 🧠
-        Nền tảng BCI         : Đặc tả giao thức BCI
-                               : Tiêu chuẩn mã hóa thần kinh
-                               : Streaming thời gian thực
-        Tầm nhìn cuối cùng   : Pipeline Thought-to-knowledge
-                               : Định dạng tri thức trải nghiệm
-                               : Bản đồ Tri thức Toàn cầu
-```
+- Nối foundation vNext vào `OneBrainNode` sau feature flag/canary.
+- Thay live TCP demo bằng authenticated OBP reconciliation.
+- Nối KQL Standing Need với OBP scoped routing, peer-local matching và evidence-bearing proposal.
+- Hoàn thiện identity, persistence và multi-device semantics.
+- Bổ sung end-to-end test cho node, seed, API, Web và Desktop.
 
-### Phase 1 — Foundation (Nền tảng) 🏗️
-> *Thiết kế bản thiết kế của bộ não chung*
+### Giai đoạn 3 — Open network
 
-- [ ] Thiết kế chi tiết kiến trúc hệ thống
-- [ ] Xây dựng Knowledge Unit schema & mô hình dữ liệu Knowledge Graph
-- [ ] Đặc tả giao thức Proof of Knowledge (PoK)
-- [ ] Thiết kế tokenomics OBT (phát hành, tuần hoàn, mô hình halving)
-- [ ] Đặc tả khung bản quyền & sở hữu trí tuệ (Copyright & IP)
-- [ ] Thiết kế thuật toán Originality Voting (bỏ phiếu tính nguyên bản)
-- [ ] Xuất bản Whitepaper v1.0
-- [ ] Thiết lập cộng đồng open-source (GitHub, Discord, tài liệu quản trị)
+- Vận hành test network qua nhiều carrier và điều kiện partition thực tế.
+- Hoàn thiện provider discovery, reconciliation, fidelity và observability.
+- Kiểm chứng discovery không cần global index với privacy budget, partial coverage và partition–reunion.
+- Đưa Use/Derivation/Outcome evidence vào luồng đối soát PoMV ngang hàng.
+- Mở rộng Personal AI SDK và client đa nền tảng.
 
-### Phase 2 — Alpha Network (Mạng thử nghiệm) 🧪
-> *Xây dựng những neuron đầu tiên*
+### Giai đoạn 4 — Knowledge economy
 
-- [ ] Triển khai mạng lưới thử nghiệm (testnet)
-- [ ] Hệ thống voting & reputation cơ bản
-- [ ] AI phân loại và đánh giá kiến thức v1
-- [ ] Hệ thống phát hiện trùng lặp kèm cộng dồn giá trị (ghi nhận đóng góp "trùng" vẫn có giá trị)
-- [ ] Engine chấm điểm Originality Scoring v1
-- [ ] Web app đóng góp & duyệt Knowledge Unit (prototype)
-- [ ] Cộng đồng early adopters (nhà nghiên cứu, giáo viên, lập trình viên)
+- Xây Benefit/Attribution/RewardClaim có bằng chứng.
+- Hoàn thiện OBT ledger, transfer, challenge và partition-safe finality.
+- Vận hành thử nền kinh tế tri thức trên test network với reward có thể audit và chống đầu cơ thao túng authority.
+- Giữ reward plane tách khỏi knowledge authority.
 
-### Phase 3 — Beta Network (Mạng mở rộng) 🚀
-> *Bộ não bắt đầu suy nghĩ*
+### Giai đoạn 5 — BCI readiness
 
-- [ ] Mainnet launch với OBT token
-- [ ] Knowledge Graph v1 — liên kết tri thức, phát hiện lỗ hổng, trực quan hóa bản đồ tri thức
-- [ ] Liên kết tri thức dở dang — AI tự động phát hiện tri thức bổ sung nhau giữa các người đóng góp
-- [ ] Hệ thống chứng cứ bản quyền — bằng chứng đóng góp bất biến trên chain (timestamp, hash, lineage)
-- [ ] Ứng dụng di động (iOS & Android)
-- [ ] Dịch đa ngôn ngữ thời gian thực
-- [ ] Nền tảng quản trị cộng đồng (DAO v1)
+- Xây BCI adapter và safety model khi có bằng chứng khoa học phù hợp.
+- Ưu tiên intent input, communication restoration và sensory feedback.
+- Không triển khai semantic neural write nếu chưa chứng minh consent, integrity và reversibility.
 
-### Phase 4 — AI Integration (Tích hợp AI) 🤖
-> *AI cá nhân gia nhập mạng lưới*
+### Giai đoạn 6 — Interplanetary knowledge commons
 
-- [ ] SDK & API cho Personal AI kết nối OneBrain
-- [ ] Tự động đóng góp tri thức — AI quan sát, đóng gói, và chia sẻ thay cho người dùng
-- [ ] Tự động tiếp nhận tri thức — AI tìm kiếm, tổng hợp, và truyền tải tri thức phù hợp
-- [ ] Engine khám phá & đề xuất tri thức bằng AI
-- [ ] Liên kết tri thức liên ngành — kết nối tri thức giữa các lĩnh vực không liên quan (ví dụ: thợ xe đạp ↔ vật lý)
-- [ ] Originality Voting v2 — đánh giá phi tập trung bởi mạng lưới AI cá nhân
-- [ ] Giao thức giải quyết tranh chấp bản quyền
-
-### Phase 5 — BCI Ready (Sẵn sàng BCI) 🧠
-> *Truyền tri thức não-tới-não*
-
-- [ ] Đặc tả giao thức giao tiếp não-máy (BCI)
-- [ ] Tiêu chuẩn mã hóa / giải mã tri thức thần kinh
-- [ ] Streaming tri thức thời gian thực (chia sẻ trải nghiệm trực tiếp)
-- [ ] Pipeline "Thought-to-knowledge" — nghĩ là chia sẻ
-- [ ] Định dạng tri thức trải nghiệm — ghi lại không chỉ dữ liệu mà cả ngữ cảnh giác quan (hình ảnh, âm thanh, cảm xúc)
-- [ ] Bản đồ Tri thức Toàn cầu — trực quan hóa sống động, có thể duyệt, toàn bộ tri thức nhân loại
+- Thử nghiệm OBP trên carrier có độ trễ cao và partition dài giữa Trái Đất, quỹ đạo, Mặt Trăng và Sao Hỏa.
+- Giữ identity, KU provenance và OBT claim có thể kiểm chứng mà không cần một kết nối liên hành tinh liên tục.
+- Xây một không gian tri thức nơi cộng đồng ở mỗi thế giới có thể tự chủ nhưng vẫn tái hợp được với phần còn lại của nhân loại.
 
 ---
 
-## 11. Tuyên ngôn (Manifesto)
+## Lời mời cùng xây dựng OneBrain
 
-> **Tri thức là sức mạnh. Tri thức được chia sẻ là sức mạnh nhân lên.**
+> **Chúng ta không chỉ đang xây một sản phẩm. Chúng ta đang lựa chọn xem hạ tầng nhận thức của tương lai sẽ thuộc về một số ít hệ thống đóng — hay thuộc về nhân loại.**
+
+Internet đã kết nối máy tính. OneBrain muốn giúp kết nối tri thức mà vẫn bảo toàn con người đứng phía sau tri thức đó. Nếu làm đúng, đây có thể là một phần nền móng để loài người cộng tác ở quy mô hành tinh, phát triển cân bằng cùng AI và bước vào thời đại BCI mà không đánh đổi quyền tự chủ nhận thức.
+
+Nếu làm sai — hoặc không bắt đầu đủ sớm — tương lai đó có thể được định nghĩa hoàn toàn bởi những giao thức độc quyền mà công chúng không có quyền kiểm tra, thay đổi hay rời bỏ. Vì thế **mã nguồn mở ở đây không chỉ là mô hình phát triển; nó là một yêu cầu đạo đức**.
+
+OneBrain không thể và không nên được xây dựng chỉ bởi một nhóm kỹ sư phần mềm. Để biến tầm nhìn này thành hạ tầng đáng tin cậy cho nhân loại, dự án cần những người hiểu sâu về bộ não, tri thức, hệ phân tán, kinh tế và xã hội — đặc biệt là những người sẵn sàng chỉ ra điều dự án đang hiểu sai.
+
+| Nếu bạn là… | Những bài toán OneBrain cần bạn cùng giải |
+|---|---|
+| **Nhà khoa học thần kinh / chuyên gia BCI** | Neural intent, safe read/write, consent, reversibility và giới hạn sinh học thực tế. |
+| **Nhà nghiên cứu AI** | Personal AI, knowledge encoding, semantic fidelity, reasoning có nguồn gốc và human-in-the-loop. |
+| **Chuyên gia distributed systems** | Reconciliation, Byzantine resistance, partition autonomy và mạng có độ trễ liên hành tinh. |
+| **Chuyên gia mật mã / an toàn thông tin** | Identity, capability, selective disclosure, private query và chống chiếm quyền nhận thức. |
+| **Nhà kinh tế học / game theorist** | PoMV, attribution, OBT, anti-gaming và nền kinh tế tri thức không biến thành đầu cơ. |
+| **Nhà tri thức học / knowledge graph** | Biểu diễn uncertainty, provenance, contradiction, context và sự tiến hóa của tri thức. |
+| **Chuyên gia trong mọi lĩnh vực** | Định nghĩa thế nào là tri thức hữu ích, bằng chứng đáng tin và giá trị thực trong domain của bạn. |
+| **Kỹ sư sản phẩm / nhà thiết kế** | Biến một kiến trúc phức tạp thành trải nghiệm mà bất kỳ ai cũng có thể sử dụng và kiểm soát. |
+
+OneBrain đang ở giai đoạn mà một contract đúng, một phản ví dụ tốt, một bộ dữ liệu thật hoặc một nguyên tắc an toàn được đặt ra hôm nay có thể định hình nhiều năm phát triển sau này. Đây là thời điểm chuyên môn của bạn tạo ra ảnh hưởng lớn nhất.
+
+Bạn không cần tin rằng toàn bộ viễn cảnh sẽ xuất hiện ngay ngày mai. Bạn chỉ cần tin rằng tri thức của nhân loại có thể được tổ chức tốt hơn hôm nay — và một phần hiểu biết của bạn có thể giúp chúng ta tiến thêm một bước.
+
+- Bắt đầu từ [CONTRIBUTING.md](CONTRIBUTING.md) và chọn một vấn đề phù hợp với chuyên môn của bạn.
+- Đọc spec liên quan trước khi thay đổi public type, wire format hoặc authority boundary.
+- Đưa vào dự án test, dữ liệu, phản biện và bằng chứng — không chỉ mã nguồn.
+- Tuân thủ [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+- Không biến OBT, seed hoặc bất kỳ AI model nào thành nguồn chân lý của knowledge plane.
+
+Nếu bạn muốn công trình của mình không chỉ giải quyết một ticket, mà góp phần giúp nhân loại **cùng học nhanh hơn, đứng vững hơn trước thay đổi và đi xa hơn khỏi Trái Đất**, hãy bắt đầu một discussion, mở issue, gửi pull request hoặc liên hệ **shpy2001@gmail.com**.
+
+> **OneBrain cần người viết code. Nhưng hơn hết, OneBrain cần những người sẵn sàng đặt chuyên môn của mình vào một mục tiêu lớn hơn chính dự án: tương lai tự chủ, cộng tác và tiến hóa của loài người.**
+
+---
+
+## Tuyên ngôn
+
+> **Tri thức là sức mạnh. Tri thức được chia sẻ là sức mạnh được nhân lên.**
 >
-> Chúng tôi tin rằng mỗi bộ não con người chứa đựng những tri thức độc đáo và có giá trị. Chúng tôi tin rằng rào cản lớn nhất của tiến bộ nhân loại không phải là thiếu kiến thức, mà là thiếu khả năng chia sẻ kiến thức.
+> Mỗi bộ não đều chứa những quan sát, kinh nghiệm và mảnh ghép mà không ai khác có chính xác theo cùng một cách. Trở ngại lớn của nhân loại không chỉ là thiếu tri thức, mà còn là việc tri thức không tìm được đúng người vào đúng thời điểm.
 >
-> OneBrain được tạo ra để phá bỏ rào cản đó.
->
-> Trong tương lai mà chúng tôi hình dung, mỗi người không chỉ mang bộ não của riêng mình, mà còn được kết nối với **một bộ não chung** — nơi tri thức của toàn nhân loại được lưu trữ, xác minh, và chia sẻ. Nơi mà khi một người học được điều gì mới, cả thế giới cùng khôn lên.
->
-> **One Brain. Shared Knowledge. Unlimited Potential.**
+> OneBrain được xây dựng để giảm khoảng cách đó — không bằng cách đặt mọi người dưới một bộ não trung tâm, mà bằng cách giúp nhiều bộ não tự chủ kết nối, kiểm chứng và bổ sung cho nhau, cho tới khi nhân loại có thể cùng đối diện những vấn đề lớn như một trí tuệ chung.
+
+**Không có tri thức lãng phí. Không có ý tưởng bị bỏ quên. Không ai phải hoàn thiện một mình. Không khoảng cách nào — kể cả giữa các hành tinh — nên chia cắt tri thức của chúng ta.**
 
 ---
 
-## 12. Liên hệ & Đóng góp
+## Giấy phép
 
-OneBrain là dự án **mã nguồn mở**. Chúng tôi hoan nghênh mọi đóng góp từ cộng đồng.
-
-- 📧 **Email:** shpy2001@gmail.com
-- 🌐 **Website:** Coming Soon
-- 💬 **Community:** Coming Soon
-- 📄 **Whitepaper:** [Coming Soon](docs/whitepaper.md)
-
-### 🤝 Bắt đầu đóng góp
-
-- Đọc [Hướng dẫn Đóng góp](CONTRIBUTING.md) để biết cách tham gia
-- Xem [Quy tắc Ứng xử](CODE_OF_CONDUCT.md) để hiểu văn hóa cộng đồng
-- Kiểm tra [Issues](../../issues) để tìm việc cần làm
-- Xem [CONTRIBUTORS.md](CONTRIBUTORS.md) — danh sách những bộ não đã đóng góp
-
-### 📜 Giấy phép
-
-Dự án này được phân phối dưới giấy phép [MIT License](LICENSE) — tự do sử dụng, sửa đổi, và phân phối, đúng tinh thần OneBrain.
-
----
+OneBrain được phát hành theo [MIT License](LICENSE).
 
 <p align="center">
   <i>Built for Humanity. Powered by Knowledge. Secured by Trust.</i>
-  <br><br>
+  <br /><br />
   <b>🧠 One Brain. Shared Knowledge. Unlimited Potential. 🧠</b>
 </p>
