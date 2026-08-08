@@ -20,6 +20,7 @@ members = [
     "onebrain-desktop", # Interface: Tauri 2.x Desktop App (Phase 2)
     "onebrain-mobile-core", # Autonomous mobile runtime profile and bootstrap state
     "onebrain-mobile-bridge", # Narrow C ABI/JNI feasibility bridge for Flutter NativeHost
+    "onebrain-archive",   # Shared encrypted Base archive container and verified spool
 
     # ── Server / Infrastructure ──
     "onebrain-seed",    # Seed node — cross-platform (Windows, Linux, Arduino...)
