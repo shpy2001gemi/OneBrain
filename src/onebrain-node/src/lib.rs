@@ -9,6 +9,7 @@ pub mod blob_authority;
 pub mod concept_registry_runtime;
 pub mod config;
 pub mod dataset_path;
+pub mod derived_index;
 pub mod display;
 pub mod error;
 pub mod mdns_discovery;
@@ -79,6 +80,11 @@ pub use concept_registry_runtime::{
 pub use config::{ConceptRegistryMode, NodeConfig};
 pub use dataset_path::{
     BaseStorageOwnerId, BootstrapDatasetPathResolver, DatasetGenerationId, DatasetPathResolver,
+};
+pub use derived_index::{
+    AcceptedRecordScan, DerivedIndexError, DerivedIndexOpenState, DerivedIndexReaderLease,
+    RedbAcceptedRecordScan, VNextDerivedIndexManager, VNextIndexParityReport,
+    VNEXT_DERIVED_INDEX_PROFILE,
 };
 pub use error::NodeError;
 #[cfg(feature = "vnext-network-runtime")]

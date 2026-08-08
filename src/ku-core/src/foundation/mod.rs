@@ -246,8 +246,8 @@ pub use semantic::{
 #[cfg(feature = "persist")]
 pub use storage::RedbVerifiedBackend;
 pub use storage::{
-    AtomicVerifiedBackend, InMemoryVerifiedBackend, PutVerifiedOutcome, QuarantineRecord,
-    StoredRecordKind, ValidatedStore, VerifiedStoreError,
+    AcceptedRecordEntry, AtomicVerifiedBackend, InMemoryVerifiedBackend, PutVerifiedOutcome,
+    QuarantineRecord, StoredRecordKind, ValidatedStore, VerifiedStoreError,
 };
 pub use use_evidence::{
     AssessedExerciseEvidence, DerivationEvidencePayload, DerivationInput, ExerciseAuthority,

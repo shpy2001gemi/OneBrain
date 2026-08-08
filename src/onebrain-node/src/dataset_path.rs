@@ -17,8 +17,12 @@ pub struct BaseStorageOwnerId(u16);
 
 impl BaseStorageOwnerId {
     pub const CANONICAL: Self = Self(0x0001);
+    pub const VAULT: Self = Self(0x0002);
     pub const BLOB: Self = Self(0x0004);
     pub const PENDING_BLOB_INTENT: Self = Self(0x0005);
+    pub const SOURCE_CAPTURE_INTENT: Self = Self(0x0006);
+    pub const DERIVED_INDEX: Self = Self(0x0015);
+    pub const RETRIEVER_PROJECTION: Self = Self(0x0016);
 
     pub fn new(value: u16) -> Result<Self, BlobStorageError> {
         if (0x0001..=0x0016).contains(&value) {

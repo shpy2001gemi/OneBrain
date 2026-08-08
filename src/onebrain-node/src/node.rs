@@ -13,7 +13,10 @@ use crate::concept_registry_runtime::{
     initialize_concept_registry, ConceptRegistryRuntimeState, ConceptRegistryStatus,
 };
 use crate::config::NodeConfig;
-use crate::dataset_path::BootstrapDatasetPathResolver;
+use crate::dataset_path::{BaseStorageOwnerId, BootstrapDatasetPathResolver, DatasetPathResolver};
+use crate::derived_index::{
+    DerivedIndexOpenState, RedbAcceptedRecordScan, VNextDerivedIndexManager,
+};
 use crate::error::NodeError;
 use crate::network::{recv_message, send_message, NetMessage, NodeEvent, PeerInfo};
 use crate::peer_manager::PeerManager;
@@ -79,6 +82,9 @@ pub struct SharedState {
     pub blob_store: BlobStorage,
     /// Canonical reference oracle and durable pending upload leases.
     pub blob_authority: Arc<BlobAuthority>,
+    /// Rebuildable vNext graph/search generation; never a write authority.
+    pub derived_index: Arc<VNextDerivedIndexManager>,
+    pub derived_index_state: DerivedIndexOpenState,
     /// Keyword-based KU retriever.
     pub retriever: KuRetriever,
     /// Connected peers.
@@ -227,7 +233,7 @@ impl OneBrainNode {
         );
 
         // Open persistent storage
-        let storage = KuStorage::open(&config.storage_path())
+        let storage = KuStorage::open_base_read_only(&config.storage_path())
             .map_err(|e| NodeError::Storage(format!("{}", e)))?;
 
         let dataset_paths = Arc::new(
@@ -235,7 +241,7 @@ impl OneBrainNode {
                 .map_err(|error| NodeError::Storage(error.to_string()))?,
         );
         let blob_authority = Arc::new(BlobAuthority::new(
-            dataset_paths,
+            dataset_paths.clone(),
             Arc::new(OsPendingUploadIdSource),
             Arc::new(UnavailableValidatedBlobReferenceSource),
         ));
@@ -255,6 +261,18 @@ impl OneBrainNode {
         blob_store
             .migrate_blob_metadata_v2()
             .map_err(|error| NodeError::Storage(error.to_string()))?;
+
+        let derived_index = Arc::new(
+            VNextDerivedIndexManager::new(
+                dataset_paths
+                    .owner_path(BaseStorageOwnerId::DERIVED_INDEX)
+                    .map_err(|error| NodeError::Storage(error.to_string()))?,
+            )
+            .map_err(|error| NodeError::Storage(error.to_string()))?,
+        );
+        let canonical_scan =
+            RedbAcceptedRecordScan::new(config.data_dir.join("vnext_verified.redb"));
+        let (derived_index_state, _) = derived_index.open_or_rebuild(&canonical_scan);
 
         // Load or create retriever index
         let retriever = KuRetriever::load(&config.retriever_path())
@@ -282,6 +300,8 @@ impl OneBrainNode {
             storage,
             blob_store,
             blob_authority,
+            derived_index,
+            derived_index_state,
             retriever,
             peer_manager: PeerManager::new(),
             config: config.clone(),
