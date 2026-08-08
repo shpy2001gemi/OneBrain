@@ -2,6 +2,8 @@
 
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use zeroize::Zeroize;
 
 use super::canonical::ResourceProfile;
@@ -9,6 +11,7 @@ use super::content_id::{EventCid, ObjectCid, ReservedDomain};
 use super::event::{decode_knowledge_event, EventType};
 use super::feed::ValidatedFeedInception;
 use super::object::{decode_knowledge_object, DisclosureClass, KnownObjectKind};
+use super::source_text::{LocalSourceTextRecordV1, SourceTextError};
 use super::storage::{
     AtomicVerifiedBackend, PutVerifiedOutcome, StoredRecordKind, ValidatedStore, VerifiedStoreError,
 };
@@ -107,6 +110,7 @@ impl Drop for VaultCipher {
 enum VaultPurpose {
     Accepted = 1,
     Quarantine = 2,
+    Staging = 3,
 }
 
 fn vault_aad(purpose: VaultPurpose, kind: StoredRecordKind, cid: [u8; 32]) -> Vec<u8> {
@@ -125,6 +129,22 @@ pub struct VaultQuarantineRecord {
     pub claimed_cid: [u8; 32],
     pub reason_code: String,
     pub plaintext: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct VaultStagingId(pub [u8; 32]);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VaultSourceSnapshotRecord {
+    pub subject: super::object::ObjectReference,
+    pub source_record: ObjectCid,
+    pub source_digest: [u8; 32],
+    pub source_text: super::source_text::BoundedUtf8,
+}
+
+pub trait VaultSourceSnapshotPort {
+    fn source_snapshot(&self) -> Result<Vec<VaultSourceSnapshotRecord>, VerifiedStoreError>;
+    fn vault_source_root(&self) -> Result<[u8; 32], VerifiedStoreError>;
 }
 
 impl VaultQuarantineRecord {
@@ -228,6 +248,124 @@ impl<B: AtomicVerifiedBackend> PrivateVault<B> {
         verify_vault_cid(bytes, ReservedDomain::Event, cid.as_bytes())
     }
 
+    pub fn put_source_text(
+        &self,
+        record: &LocalSourceTextRecordV1,
+    ) -> Result<(ObjectCid, PutVerifiedOutcome), VerifiedStoreError> {
+        let (bytes, cid) = record.encode().map_err(source_text_store_error)?;
+        let sealed = self.cipher.seal(
+            VaultPurpose::Accepted,
+            StoredRecordKind::Object,
+            cid.into_bytes(),
+            &bytes,
+        )?;
+        let outcome = self
+            .store
+            .accept(StoredRecordKind::Object, cid.into_bytes(), &sealed)?;
+        Ok((cid, outcome))
+    }
+
+    pub fn get_source_text(
+        &self,
+        cid: ObjectCid,
+    ) -> Result<Option<LocalSourceTextRecordV1>, VerifiedStoreError> {
+        self.get(StoredRecordKind::Object, cid.into_bytes())?
+            .map(|bytes| {
+                let bytes = zeroize::Zeroizing::new(bytes);
+                LocalSourceTextRecordV1::decode(&bytes).map_err(source_text_store_error)
+            })
+            .transpose()
+    }
+
+    /// Encrypt exact source bytes before they enter the durable staging area.
+    /// The caller persists only authenticated metadata and this opaque ID.
+    pub fn stage_source_text(
+        &self,
+        staging_root: &Path,
+        staging_id: VaultStagingId,
+        record: &LocalSourceTextRecordV1,
+    ) -> Result<ObjectCid, VerifiedStoreError> {
+        let (bytes, cid) = record.encode().map_err(source_text_store_error)?;
+        let sealed = self.cipher.seal(
+            VaultPurpose::Staging,
+            StoredRecordKind::Object,
+            staging_id.0,
+            &bytes,
+        )?;
+        std::fs::create_dir_all(staging_root)
+            .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?;
+        write_create_new_synced(&staging_path(staging_root, staging_id), &sealed)?;
+        sync_directory(staging_root)?;
+        Ok(cid)
+    }
+
+    pub fn inspect_staged_source(
+        &self,
+        staging_root: &Path,
+        staging_id: VaultStagingId,
+    ) -> Result<LocalSourceTextRecordV1, VerifiedStoreError> {
+        let sealed = std::fs::read(staging_path(staging_root, staging_id))
+            .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?;
+        let bytes = zeroize::Zeroizing::new(self.cipher.open(
+            VaultPurpose::Staging,
+            StoredRecordKind::Object,
+            staging_id.0,
+            &sealed,
+        )?);
+        LocalSourceTextRecordV1::decode(&bytes).map_err(source_text_store_error)
+    }
+
+    pub fn bind_staged_source(
+        &self,
+        staging_root: &Path,
+        staging_id: VaultStagingId,
+        expected_record: ObjectCid,
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
+        let record = self.inspect_staged_source(staging_root, staging_id)?;
+        let (bytes, cid) = record.encode().map_err(source_text_store_error)?;
+        if cid != expected_record {
+            return Err(VerifiedStoreError::VaultCidMismatch);
+        }
+        let sealed = self.cipher.seal(
+            VaultPurpose::Accepted,
+            StoredRecordKind::Object,
+            cid.into_bytes(),
+            &bytes,
+        )?;
+        let outcome = self
+            .store
+            .accept(StoredRecordKind::Object, cid.into_bytes(), &sealed)?;
+        std::fs::remove_file(staging_path(staging_root, staging_id))
+            .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?;
+        sync_directory(staging_root)?;
+        Ok(outcome)
+    }
+
+    pub fn quarantine_staged_source(
+        &self,
+        staging_root: &Path,
+        staging_id: VaultStagingId,
+        reason: &str,
+    ) -> Result<(), VerifiedStoreError> {
+        let record = self.inspect_staged_source(staging_root, staging_id)?;
+        let (bytes, cid) = record.encode().map_err(source_text_store_error)?;
+        self.quarantine(StoredRecordKind::Object, cid.into_bytes(), reason, &bytes)?;
+        std::fs::remove_file(staging_path(staging_root, staging_id))
+            .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?;
+        sync_directory(staging_root)
+    }
+
+    pub fn source_intent_auth_tag(&self, metadata: &[u8]) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new_keyed(&self.cipher.nonce_key);
+        hasher.update(b"onebrain:vnext:source-capture-intent:1\0");
+        hasher.update(metadata);
+        *hasher.finalize().as_bytes()
+    }
+
+    pub fn staged_source_exists(&self, staging_root: &Path, staging_id: VaultStagingId) -> bool {
+        staging_path(staging_root, staging_id).is_file()
+    }
+
     pub fn get_quarantine(
         &self,
         quarantine_id: &[u8; 32],
@@ -283,6 +421,93 @@ impl<B: AtomicVerifiedBackend> PrivateVault<B> {
         cid: [u8; 32],
     ) -> Result<Option<Vec<u8>>, VerifiedStoreError> {
         self.store.get(kind, cid)
+    }
+}
+
+impl<B: AtomicVerifiedBackend> VaultSourceSnapshotPort for PrivateVault<B> {
+    fn source_snapshot(&self) -> Result<Vec<VaultSourceSnapshotRecord>, VerifiedStoreError> {
+        let mut records = Vec::new();
+        for entry in self.store.accepted_entries(StoredRecordKind::Object)? {
+            let plaintext = zeroize::Zeroizing::new(self.cipher.open(
+                VaultPurpose::Accepted,
+                StoredRecordKind::Object,
+                entry.claimed_cid,
+                &entry.canonical_bytes,
+            )?);
+            let record = match LocalSourceTextRecordV1::decode(&plaintext) {
+                Ok(record) => record,
+                Err(SourceTextError::NotSourceText) => continue,
+                Err(error) => return Err(source_text_store_error(error)),
+            };
+            let source_record = ObjectCid::from_bytes(entry.claimed_cid);
+            let (_, computed) = record.encode().map_err(source_text_store_error)?;
+            if computed != source_record {
+                return Err(VerifiedStoreError::VaultCidMismatch);
+            }
+            records.push(VaultSourceSnapshotRecord {
+                subject: record.subject,
+                source_record,
+                source_digest: record.source_digest,
+                source_text: record.source_text,
+            });
+        }
+        records.sort_by_key(|record| {
+            (
+                record.subject.reference_kind,
+                record.subject.cid,
+                record.source_record.into_bytes(),
+            )
+        });
+        Ok(records)
+    }
+
+    fn vault_source_root(&self) -> Result<[u8; 32], VerifiedStoreError> {
+        let mut hasher = blake3::Hasher::new_derive_key("onebrain:vnext:vault-source-root:1");
+        for record in self.source_snapshot()? {
+            hasher.update(&record.subject.reference_kind.to_be_bytes());
+            hasher.update(&record.subject.cid);
+            hasher.update(record.source_record.as_bytes());
+            hasher.update(&record.source_digest);
+        }
+        Ok(*hasher.finalize().as_bytes())
+    }
+}
+
+fn source_text_store_error(error: SourceTextError) -> VerifiedStoreError {
+    VerifiedStoreError::Backend(error.to_string())
+}
+
+fn staging_path(root: &Path, staging_id: VaultStagingId) -> PathBuf {
+    let mut name = String::with_capacity(70);
+    for byte in staging_id.0 {
+        use std::fmt::Write as _;
+        let _ = write!(name, "{byte:02x}");
+    }
+    name.push_str(".stage");
+    root.join(name)
+}
+
+fn write_create_new_synced(path: &Path, bytes: &[u8]) -> Result<(), VerifiedStoreError> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    let mut file = options
+        .open(path)
+        .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?;
+    file.write_all(bytes)
+        .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?;
+    file.sync_all()
+        .map_err(|error| VerifiedStoreError::Backend(error.to_string()))
+}
+
+fn sync_directory(directory: &Path) -> Result<(), VerifiedStoreError> {
+    match std::fs::File::open(directory) {
+        Ok(file) => file
+            .sync_all()
+            .map_err(|error| VerifiedStoreError::Backend(error.to_string())),
+        Err(error) if cfg!(windows) && error.kind() == std::io::ErrorKind::PermissionDenied => {
+            Ok(())
+        }
+        Err(error) => Err(VerifiedStoreError::Backend(error.to_string())),
     }
 }
 

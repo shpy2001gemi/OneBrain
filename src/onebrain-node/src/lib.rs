@@ -10,6 +10,7 @@ pub mod concept_registry_runtime;
 pub mod config;
 pub mod dataset_path;
 pub mod derived_index;
+pub mod derived_projection;
 pub mod display;
 pub mod error;
 pub mod mdns_discovery;
@@ -18,6 +19,7 @@ pub mod node;
 pub mod peer_manager;
 pub mod peer_memory;
 pub mod seed_client;
+pub mod source_capture_transaction;
 pub mod types;
 pub mod upnp;
 pub mod verifier_service;
@@ -86,11 +88,16 @@ pub use derived_index::{
     RedbAcceptedRecordScan, VNextDerivedIndexManager, VNextIndexParityReport,
     VNEXT_DERIVED_INDEX_PROFILE,
 };
+pub use derived_projection::{DerivedProjectionOpenState, RetrieverProjectionService};
 pub use error::NodeError;
 #[cfg(feature = "vnext-network-runtime")]
 pub use ku_net::vnext_session::SessionIdentitySigner;
 pub use network::{NetMessage, NodeEvent, PeerInfo};
 pub use node::{EncodeStoreResult, OneBrainNode};
+pub use source_capture_transaction::{
+    EncryptedSourceCaptureIntentV1, SourceCaptureError, SourceCaptureRecoveryState,
+    SourceCaptureTransactionStore, MAX_SOURCE_CAPTURE_INTENTS, SOURCE_CAPTURE_BOUNDARY,
+};
 #[cfg(feature = "vnext-canary-harness")]
 pub use vnext_canary_operations::{
     run_p5_canary_preflight, P5CanaryPreflightError, P5CanaryPreflightReport, P5_CANARY_NODE_COUNT,

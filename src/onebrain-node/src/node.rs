@@ -17,6 +17,7 @@ use crate::dataset_path::{BaseStorageOwnerId, BootstrapDatasetPathResolver, Data
 use crate::derived_index::{
     DerivedIndexOpenState, RedbAcceptedRecordScan, VNextDerivedIndexManager,
 };
+use crate::derived_projection::{DerivedProjectionOpenState, RetrieverProjectionService};
 use crate::error::NodeError;
 use crate::network::{recv_message, send_message, NetMessage, NodeEvent, PeerInfo};
 use crate::peer_manager::PeerManager;
@@ -49,7 +50,7 @@ use ku_mediator::retriever::KuRetriever;
 
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
@@ -85,8 +86,10 @@ pub struct SharedState {
     /// Rebuildable vNext graph/search generation; never a write authority.
     pub derived_index: Arc<VNextDerivedIndexManager>,
     pub derived_index_state: DerivedIndexOpenState,
-    /// Keyword-based KU retriever.
-    pub retriever: KuRetriever,
+    /// Rebuildable retriever projection shared with the Mediator.
+    pub retriever: Arc<RwLock<KuRetriever>>,
+    pub retriever_projection: Arc<RetrieverProjectionService>,
+    pub retriever_projection_state: DerivedProjectionOpenState,
     /// Connected peers.
     pub peer_manager: PeerManager,
     /// Node configuration (for data paths, Ollama URL, etc.).
@@ -163,12 +166,11 @@ impl OneBrainNode {
     /// 1. AI backends (chat + encoding + mediator encoding)
     /// 2. The Mediator pipeline
     /// 3. Persistent KU storage (redb)
-    /// 4. KU retriever (keyword index, loaded from disk)
+    /// 4. Vault-derived retriever projection (or typed degraded state)
     /// 5. Anti-gaming guard (rate limiting + quality gates)
     ///
-    /// On startup, all existing KUs are loaded from storage into the
-    /// retriever's keyword index (using stored wire bytes to reconstruct
-    /// source text for keyword search).
+    /// Source prose is never reconstructed from legacy wire bytes. A retriever
+    /// becomes healthy only from exact Vault source records.
     pub async fn new(config: NodeConfig) -> Result<Self, NodeError> {
         config
             .vnext
@@ -224,14 +226,6 @@ impl OneBrainNode {
         // Create concept dictionary
         let dict: ConceptDict = default_dict();
 
-        // Create mediator
-        let mediator = Mediator::new(
-            Box::new(chat_backend),
-            Box::new(mediator_encoder_backend),
-            dict.clone(),
-            MediatorConfig::default(),
-        );
-
         // Open persistent storage
         let storage = KuStorage::open_base_read_only(&config.storage_path())
             .map_err(|e| NodeError::Storage(format!("{}", e)))?;
@@ -272,11 +266,32 @@ impl OneBrainNode {
         );
         let canonical_scan =
             RedbAcceptedRecordScan::new(config.data_dir.join("vnext_verified.redb"));
-        let (derived_index_state, _) = derived_index.open_or_rebuild(&canonical_scan);
+        let (derived_index_state, derived_report) = derived_index.open_or_rebuild(&canonical_scan);
+        let accepted_vnext_root = derived_report
+            .as_ref()
+            .map(|report| report.source_root)
+            .unwrap_or([0; 32]);
+        // Task 12 will inject the platform Vault/key provider. Until that
+        // source snapshot is available, never publish an empty projection as
+        // healthy; canonical reads remain available in typed degraded mode.
+        let (retriever_projection, retriever_projection_state) =
+            RetrieverProjectionService::unavailable(
+                dataset_paths
+                    .owner_path(BaseStorageOwnerId::RETRIEVER_PROJECTION)
+                    .map_err(|error| NodeError::Storage(error.to_string()))?,
+                accepted_vnext_root,
+                "VAULT_SOURCE_SNAPSHOT_UNAVAILABLE",
+            );
+        let retriever_projection = Arc::new(retriever_projection);
+        let retriever = retriever_projection.retriever();
 
-        // Load or create retriever index
-        let retriever = KuRetriever::load(&config.retriever_path())
-            .map_err(|e| NodeError::Storage(format!("Retriever load failed: {}", e)))?;
+        let mediator = Mediator::new_with_retriever(
+            Box::new(chat_backend),
+            Box::new(mediator_encoder_backend),
+            dict.clone(),
+            MediatorConfig::default(),
+            retriever.clone(),
+        );
 
         // Report startup KU count
         let ku_count = storage
@@ -284,11 +299,13 @@ impl OneBrainNode {
             .map_err(|e| NodeError::Storage(format!("{}", e)))?;
         if ku_count > 0 {
             eprintln!("  ✓ Storage contains {} KU(s)", ku_count);
-            // Note: retriever index is loaded from disk (retriever_path),
-            // so already populated from previous sessions' index_ku() calls.
             eprintln!(
-                "  ✓ Retriever index loaded ({} entries)",
-                retriever.index_size()
+                "  ✓ Retriever projection state: {:?} ({} entries)",
+                retriever_projection_state,
+                retriever
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .index_size()
             );
         }
 
@@ -303,6 +320,8 @@ impl OneBrainNode {
             derived_index,
             derived_index_state,
             retriever,
+            retriever_projection,
+            retriever_projection_state,
             peer_manager: PeerManager::new(),
             config: config.clone(),
         }));
@@ -782,7 +801,7 @@ impl OneBrainNode {
         let cid;
         let cid_hex;
         {
-            let mut state = self.shared.lock().await;
+            let state = self.shared.lock().await;
 
             // 4c. Store in redb
             cid = state
@@ -790,12 +809,9 @@ impl OneBrainNode {
                 .put(&ku)
                 .map_err(|e| NodeError::Storage(format!("{}", e)))?;
 
-            // 4d. Index source text in retriever (for keyword search)
+            // Legacy KU persistence is fenced in Base mode. It never grants
+            // retriever authority; only a proven Vault source binding may do so.
             cid_hex = hex_cid(&cid);
-            state.retriever.index_ku(cid_hex.clone(), text.to_string());
-
-            // Save retriever index to disk
-            let _ = state.retriever.save(&state.config.retriever_path());
         }
 
         // 4e. Record creation in rate tracker
@@ -803,15 +819,12 @@ impl OneBrainNode {
 
         // 5. Also process any additional KUs (if encoding produced multiple)
         {
-            let mut state = self.shared.lock().await;
+            let state = self.shared.lock().await;
             for extra_bytes in encoding_result.wire_bytes.iter().skip(1) {
                 if let Ok(extra_ku) = KuRuntime::from_wire(extra_bytes.clone()) {
                     let extra_instr = extra_ku.dna.instructions.len();
                     if self.guard.check_quality(extra_bytes, extra_instr).is_ok() {
-                        if let Ok(extra_cid) = state.storage.put(&extra_ku) {
-                            let extra_hex = hex_cid(&extra_cid);
-                            state.retriever.index_ku(extra_hex, text.to_string());
-                        }
+                        let _ = state.storage.put(&extra_ku);
                     }
                 }
             }
@@ -1140,7 +1153,13 @@ impl OneBrainNode {
                     .expr
                     .as_ref()
                     .map(|e| e.text.clone())
-                    .or_else(|| state.retriever.get_expression(&cid_hex))
+                    .or_else(|| {
+                        state
+                            .retriever
+                            .read()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .get_expression(&cid_hex)
+                    })
                     .unwrap_or_else(|| {
                         format!(
                             "[{} KU, {} instructions]",
@@ -1230,7 +1249,13 @@ impl OneBrainNode {
             .expr
             .as_ref()
             .map(|e| e.text.clone())
-            .or_else(|| state.retriever.get_expression(cid_hex))
+            .or_else(|| {
+                state
+                    .retriever
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .get_expression(cid_hex)
+            })
             .unwrap_or_else(|| {
                 format!(
                     "[{} KU, {} instructions]",
@@ -1551,7 +1576,13 @@ impl OneBrainNode {
                     .expr
                     .as_ref()
                     .map(|e| e.text.clone())
-                    .or_else(|| state.retriever.get_expression(&cid_hex))
+                    .or_else(|| {
+                        state
+                            .retriever
+                            .read()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .get_expression(&cid_hex)
+                    })
                     .unwrap_or_else(|| format!("[{} KU]", gene_type));
                 let preview = if preview.len() > 80 {
                     format!("{}...", &preview[..77])
@@ -1609,6 +1640,8 @@ impl OneBrainNode {
                     .or_else(|| {
                         state
                             .retriever
+                            .read()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
                             .get_expression(&cid_hex_tmp)
                             .map(|t| t.to_lowercase())
                     })
@@ -1623,7 +1656,13 @@ impl OneBrainNode {
                     .expr
                     .as_ref()
                     .map(|e| e.text.clone())
-                    .or_else(|| state.retriever.get_expression(&cid_hex))
+                    .or_else(|| {
+                        state
+                            .retriever
+                            .read()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .get_expression(&cid_hex)
+                    })
                     .unwrap_or_else(|| format!("[{} KU]", gene_type));
                 let preview = if preview.len() > 80 {
                     format!("{}...", &preview[..77])
@@ -3734,23 +3773,20 @@ async fn handle_connection(
         }
 
         NetMessage::KuPush {
-            cid_hex,
+            cid_hex: _peer_claimed_cid,
             wire_bytes,
             source_text,
         } => {
             // Decode and store the KU
             match KuRuntime::from_wire(wire_bytes.clone()) {
                 Ok(ku) => {
-                    let mut state = shared.lock().await;
+                    let state = shared.lock().await;
                     match state.storage.put(&ku) {
-                        Ok(_cid) => {
-                            state
-                                .retriever
-                                .index_ku(cid_hex.clone(), source_text.clone());
-                            let _ = state.retriever.save(&state.config.retriever_path());
+                        Ok(actual_cid) => {
+                            let verified_cid_hex = hex_cid(&actual_cid);
                             let _ = event_tx
                                 .send(NodeEvent::KuReceived {
-                                    cid_hex,
+                                    cid_hex: verified_cid_hex,
                                     wire_bytes,
                                     source_text,
                                     from: format!("{}", peer_addr),
