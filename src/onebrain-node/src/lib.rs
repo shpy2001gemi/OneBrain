@@ -6,6 +6,7 @@
 
 pub mod anti_gaming_guard;
 pub mod blob_authority;
+pub mod canonical_exchange;
 pub mod concept_registry_runtime;
 pub mod config;
 pub mod dataset_path;
@@ -20,6 +21,7 @@ pub mod peer_manager;
 pub mod peer_memory;
 pub mod seed_client;
 pub mod source_capture_transaction;
+pub mod text;
 pub mod types;
 pub mod upnp;
 pub mod verifier_service;
@@ -75,6 +77,10 @@ pub use blob_authority::{
     UnavailableValidatedBlobReferenceSource, ValidatedBlobAuthoritySnapshot,
     ValidatedBlobReferenceSource, MAX_PENDING_BLOB_UPLOADS,
 };
+pub use canonical_exchange::{
+    read_canonical_exchange, write_canonical_exchange, BaseExchangeEntryV1, ExchangeError,
+    ExchangeReceipt, CANONICAL_EXCHANGE_MAGIC,
+};
 pub use concept_registry_runtime::{
     ConceptRegistryBackendKind, ConceptRegistryFailureKind, ConceptRegistryRuntimeState,
     ConceptRegistryStatus,
@@ -98,6 +104,7 @@ pub use source_capture_transaction::{
     EncryptedSourceCaptureIntentV1, SourceCaptureError, SourceCaptureRecoveryState,
     SourceCaptureTransactionStore, MAX_SOURCE_CAPTURE_INTENTS, SOURCE_CAPTURE_BOUNDARY,
 };
+pub use text::truncate_preview;
 #[cfg(feature = "vnext-canary-harness")]
 pub use vnext_canary_operations::{
     run_p5_canary_preflight, P5CanaryPreflightError, P5CanaryPreflightReport, P5_CANARY_NODE_COUNT,

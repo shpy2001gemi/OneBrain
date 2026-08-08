@@ -9,18 +9,22 @@ use crate::blob_authority::{
     BlobAuthority, OsPendingUploadIdSource, PendingBlobUploadId, PendingOwnedBlobUpload,
     UnavailableValidatedBlobReferenceSource,
 };
+use crate::canonical_exchange::{
+    read_canonical_exchange, write_canonical_exchange, BaseExchangeEntryV1,
+};
 use crate::concept_registry_runtime::{
     initialize_concept_registry, ConceptRegistryRuntimeState, ConceptRegistryStatus,
 };
 use crate::config::NodeConfig;
 use crate::dataset_path::{BaseStorageOwnerId, BootstrapDatasetPathResolver, DatasetPathResolver};
 use crate::derived_index::{
-    DerivedIndexOpenState, RedbAcceptedRecordScan, VNextDerivedIndexManager,
+    AcceptedRecordScan, DerivedIndexOpenState, RedbAcceptedRecordScan, VNextDerivedIndexManager,
 };
 use crate::derived_projection::{DerivedProjectionOpenState, RetrieverProjectionService};
 use crate::error::NodeError;
 use crate::network::{recv_message, send_message, NetMessage, NodeEvent, PeerInfo};
 use crate::peer_manager::PeerManager;
+use crate::text::truncate_preview;
 use crate::verifier_service;
 #[cfg(feature = "vnext-network-runtime")]
 use crate::vnext_network_runtime::OutboundVNextSession;
@@ -31,6 +35,7 @@ use crate::vnext_product_runtime::{
 };
 #[cfg(feature = "vnext-network-runtime")]
 use crate::vnext_runtime_rollout::{VNextRuntimeLane, VNextRuntimeRolloutSnapshot};
+use crate::vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};
 #[cfg(feature = "vnext-network-runtime")]
 use ku_net::vnext_session::SessionIdentitySigner;
 
@@ -38,7 +43,7 @@ use crate::types::*;
 use ku_ai::OllamaBackend;
 use ku_core::blob_store::{BlobCid, BlobMeta, BlobType};
 use ku_core::concept_registry::ConceptLookup;
-use ku_core::foundation::ObjectReference;
+use ku_core::foundation::{ObjectReference, RedbVerifiedBackend, StoredRecordKind};
 use ku_core::text_parser::{default_dict, ConceptDict};
 use ku_core::KuRuntime;
 use ku_encoder::{AiEncoder, EncoderConfig, EncodingResult};
@@ -47,6 +52,8 @@ use ku_kql::storage::KuStorage;
 use ku_mediator::input::UserInput;
 use ku_mediator::mediator::{Mediator, MediatorConfig};
 use ku_mediator::retriever::KuRetriever;
+use ku_net::vnext_reconciliation::{PayloadSinkOutcome, ValidateThenAcceptSink};
+use onebrain_protocol::ReconcileManifestKind;
 
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
@@ -1167,11 +1174,7 @@ impl OneBrainNode {
                             ku.instruction_count()
                         )
                     });
-                let preview = if preview.len() > 80 {
-                    format!("{}...", &preview[..77])
-                } else {
-                    preview
-                };
+                let preview = truncate_preview(&preview, 80);
                 let trust = ku.epi.trust.trust_score as f64 / 10000.0;
                 let pomv = ku.epi.pomv_score();
                 let created = ku
@@ -1584,11 +1587,7 @@ impl OneBrainNode {
                             .get_expression(&cid_hex)
                     })
                     .unwrap_or_else(|| format!("[{} KU]", gene_type));
-                let preview = if preview.len() > 80 {
-                    format!("{}...", &preview[..77])
-                } else {
-                    preview
-                };
+                let preview = truncate_preview(&preview, 80);
                 let trust = ku.epi.trust.trust_score as f64 / 10000.0;
                 let pomv = ku.epi.pomv_score();
                 let created = ku
@@ -1664,11 +1663,7 @@ impl OneBrainNode {
                             .get_expression(&cid_hex)
                     })
                     .unwrap_or_else(|| format!("[{} KU]", gene_type));
-                let preview = if preview.len() > 80 {
-                    format!("{}...", &preview[..77])
-                } else {
-                    preview
-                };
+                let preview = truncate_preview(&preview, 80);
                 let trust = ku.epi.trust.trust_score as f64 / 10000.0;
                 let pomv = ku.epi.pomv_score();
                 let created = ku
@@ -1729,7 +1724,7 @@ impl OneBrainNode {
                         let preview = target_ku
                             .expr
                             .as_ref()
-                            .map(|e| e.text.chars().take(80).collect::<String>())
+                            .map(|e| truncate_preview(&e.text, 80))
                             .unwrap_or_default();
                         let gt = target_ku
                             .extract_field("gene_type")
@@ -1764,7 +1759,7 @@ impl OneBrainNode {
                         let preview = source_ku
                             .expr
                             .as_ref()
-                            .map(|e| e.text.chars().take(80).collect::<String>())
+                            .map(|e| truncate_preview(&e.text, 80))
                             .unwrap_or_default();
                         let gt = source_ku
                             .extract_field("gene_type")
@@ -2053,8 +2048,8 @@ impl OneBrainNode {
     // Step 7: Data Portability
     // ═══════════════════════════════════════════════════════
 
-    /// Export KUs to a file.
-    pub fn export_kus(&self, format: &str, path: &std::path::Path) -> Result<usize, NodeError> {
+    /// Export a non-restorable human/machine-readable view.
+    pub fn export_view(&self, mode: &str, path: &std::path::Path) -> Result<usize, NodeError> {
         let state = match self.shared.try_lock() {
             Ok(s) => s,
             Err(_) => return Err(NodeError::Storage("Storage busy".into())),
@@ -2066,8 +2061,8 @@ impl OneBrainNode {
 
         let count = all_kus.len();
 
-        match format {
-            "json" => {
+        match mode {
+            "json-view-v1" => {
                 let items: Vec<serde_json::Value> = all_kus
                     .iter()
                     .map(|ku| {
@@ -2085,7 +2080,7 @@ impl OneBrainNode {
                     .map_err(|e| NodeError::Storage(format!("JSON serialize error: {}", e)))?;
                 std::fs::write(path, json)?;
             }
-            "csv" => {
+            "csv-view-v1" => {
                 let mut csv = String::from("cid,gene_type,content,trust,pomv,wire_size\n");
                 for ku in &all_kus {
                     let content = ku
@@ -2107,8 +2102,8 @@ impl OneBrainNode {
             }
             _ => {
                 return Err(NodeError::InvalidArgument(format!(
-                    "Unknown export format: '{}'. Options: json, csv",
-                    format
+                    "Unknown view mode: '{}'. Options: json-view-v1, csv-view-v1",
+                    mode
                 )))
             }
         }
@@ -2116,8 +2111,41 @@ impl OneBrainNode {
         Ok(count)
     }
 
-    /// Import KUs from a text file (one paragraph per KU).
-    pub async fn import_file(&mut self, path: &std::path::Path) -> Result<ImportResult, NodeError> {
+    /// Export exact validated public vNext bytes. Legacy KU rows are not
+    /// silently promoted into this namespace.
+    pub fn export_canonical_exchange(&self, path: &std::path::Path) -> Result<usize, NodeError> {
+        let scan = RedbAcceptedRecordScan::new(self.config.data_dir.join("vnext_verified.redb"));
+        let entries = scan
+            .accepted_records()
+            .map_err(|error| NodeError::Storage(error.to_string()))?
+            .into_iter()
+            .map(|entry| BaseExchangeEntryV1::VNextPublic {
+                kind: entry.record_kind,
+                cid: entry.claimed_cid,
+                canonical_bytes: entry.canonical_bytes,
+            })
+            .collect::<Vec<_>>();
+        let file = std::fs::File::create(path)?;
+        write_canonical_exchange(&entries, file)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        Ok(entries.len())
+    }
+
+    pub fn export_data(&self, mode: &str, path: &std::path::Path) -> Result<usize, NodeError> {
+        match mode {
+            "canonical-v1" => self.export_canonical_exchange(path),
+            "json-view-v1" | "csv-view-v1" => self.export_view(mode, path),
+            _ => Err(NodeError::InvalidArgument(format!(
+                "Unsupported export mode '{mode}'. Expected canonical-v1, json-view-v1, or csv-view-v1"
+            ))),
+        }
+    }
+
+    /// Encode text paragraphs as new drafts. This is not a canonical restore.
+    pub async fn import_text_drafts(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<ImportResult, NodeError> {
         let content = std::fs::read_to_string(path)?;
         let paragraphs: Vec<&str> = content
             .split("\n\n")
@@ -2141,6 +2169,75 @@ impl OneBrainNode {
             }
         }
 
+        Ok(ImportResult {
+            imported,
+            skipped,
+            errors,
+        })
+    }
+
+    /// Validate and admit exact public vNext records. Explicit legacy evidence
+    /// remains read-only and is reported as skipped.
+    pub fn import_canonical_exchange(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<ImportResult, NodeError> {
+        let entries = read_canonical_exchange(std::fs::File::open(path)?)
+            .map_err(|error| NodeError::InvalidArgument(error.to_string()))?;
+        let legacy_count = entries
+            .iter()
+            .filter(|entry| matches!(entry, BaseExchangeEntryV1::LegacyReadOnlyEvidence { .. }))
+            .count();
+        let backend = RedbVerifiedBackend::open(&self.config.data_dir.join("vnext_verified.redb"))
+            .map_err(NodeError::Storage)?;
+        let mut sink = SharedVNextValidatedSink::new(VNextValidatedSink::new(backend));
+        let mut pending = entries
+            .into_iter()
+            .filter_map(|entry| match entry {
+                BaseExchangeEntryV1::VNextPublic {
+                    kind,
+                    cid,
+                    canonical_bytes,
+                } => Some((kind, cid, canonical_bytes)),
+                BaseExchangeEntryV1::LegacyReadOnlyEvidence { .. } => None,
+            })
+            .collect::<Vec<_>>();
+        pending.sort_by_key(|(kind, cid, _)| (admission_priority(*kind), *cid));
+        let public_count = pending.len();
+        let mut imported = 0usize;
+        let mut skipped = legacy_count;
+        let mut errors = 0usize;
+
+        while !pending.is_empty() {
+            let mut deferred = Vec::new();
+            let mut progressed = false;
+            for (kind, cid, bytes) in pending {
+                let manifest_kind = reconcile_kind(kind);
+                match sink.validate_then_accept(manifest_kind, cid, &bytes) {
+                    Ok(PayloadSinkOutcome::ValidatedStored) => {
+                        imported += 1;
+                        progressed = true;
+                    }
+                    Ok(PayloadSinkOutcome::AlreadyPresent) => {
+                        skipped += 1;
+                        progressed = true;
+                    }
+                    Ok(PayloadSinkOutcome::DeferredMissingDependency) => {
+                        deferred.push((kind, cid, bytes));
+                    }
+                    Ok(PayloadSinkOutcome::RejectedInvalid) | Err(_) => {
+                        errors += 1;
+                        progressed = true;
+                    }
+                }
+            }
+            if !progressed {
+                errors += deferred.len();
+                break;
+            }
+            pending = deferred;
+        }
+        debug_assert_eq!(public_count + legacy_count, imported + skipped + errors);
         Ok(ImportResult {
             imported,
             skipped,
@@ -2619,7 +2716,7 @@ impl OneBrainNode {
             .ok_or_else(|| NodeError::NotFound(format!("Draft not found: {}", draft_id)))?;
         draft.text = text.to_string();
         if let Some(t) = title {
-            draft.title = t.chars().take(80).collect();
+            draft.title = truncate_preview(t, 80);
         }
         draft.updated = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -3006,7 +3103,7 @@ impl OneBrainNode {
                 result.push(KuListItem {
                     cid_hex: detail.cid_hex,
                     gene_type: detail.gene_type,
-                    preview: detail.content.chars().take(80).collect(),
+                    preview: truncate_preview(&detail.content, 80),
                     pomv: detail.pomv,
                     pomv_profile: detail.pomv_profile,
                     pomv_is_economic: detail.pomv_is_economic,
@@ -3357,7 +3454,7 @@ impl OneBrainNode {
                 chain.push(KuVersionEntry {
                     cid_hex: d.cid_hex,
                     gene_type: d.gene_type,
-                    preview: d.content.chars().take(80).collect(),
+                    preview: truncate_preview(&d.content, 80),
                     version: 0,
                     created: d.created,
                 });
@@ -3888,6 +3985,24 @@ async fn handle_connection(
                 state.peer_manager.add_peer(info);
             }
         }
+    }
+}
+
+fn admission_priority(kind: StoredRecordKind) -> u8 {
+    match kind {
+        StoredRecordKind::FeedInception => 0,
+        StoredRecordKind::Object => 1,
+        StoredRecordKind::AuthorityEvent => 2,
+        StoredRecordKind::Event => 3,
+    }
+}
+
+fn reconcile_kind(kind: StoredRecordKind) -> ReconcileManifestKind {
+    match kind {
+        StoredRecordKind::Object => ReconcileManifestKind::Object,
+        StoredRecordKind::Event => ReconcileManifestKind::Event,
+        StoredRecordKind::FeedInception => ReconcileManifestKind::FeedInception,
+        StoredRecordKind::AuthorityEvent => ReconcileManifestKind::AuthorityEvent,
     }
 }
 
