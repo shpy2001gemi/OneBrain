@@ -1,7 +1,7 @@
 # OneBrain vNext — ADR Traceability Matrix v1
 
 > **Task:** `FND-010`  
-> **Status:** In progress — matrix complete, automated CI orphan check pending `FND-007`  
+> **Status:** Complete — matrix and automated CI orphan checks are active
 > **Coverage:** all architecture decisions in Research Baseline §46.3 and §56.1
 
 ## 1. DRI roles

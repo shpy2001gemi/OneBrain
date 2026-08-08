@@ -63,6 +63,9 @@ P5_OPERATIONS_PREFLIGHT_PROFILE = (
 CONCEPT_REGISTRY_OPERATIONS_PROFILE = (
     ROOT / "src/test-vectors/vnext/concept-registry-operations-v1.json"
 )
+BASE_V1_AUTHORITY_RECOVERY_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-authority-recovery-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -160,6 +163,143 @@ def validate_traceability(tasks: set[str]) -> int:
     if len(adrs) < 18:
         raise ContractError(f"expected at least 18 traced ADRs, found {len(adrs)}")
     return len(adrs)
+
+
+def validate_base_v1_authority_recovery(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(BASE_V1_AUTHORITY_RECOVERY_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base v1 authority profile JSON: {error}") from error
+    if not isinstance(profile, dict):
+        raise ContractError("Base v1 authority profile must be an object")
+
+    expected_top_level = {
+        "format": "onebrain/base-v1-authority-recovery/1",
+        "canonical_write_path": "vnext-object-event-feed",
+        "legacy_boundary": "explicit-read-only-migration",
+        "recovery_profile": "encrypted-recovery-package-v1",
+        "archive_profiles": ["password-argon2id-v1", "recovery-key-v1"],
+        "registry_required_states": ["registry-dependent-encoding", "ready-offline"],
+        "network_default_active_lane_count": 0,
+        "delete_semantics": "event-or-local-retention-never-history-rewrite",
+        "authority_order": [
+            "distributed-runtime-plan",
+            "mobile-architecture-constraints",
+            "base-v1-authority-recovery-profile",
+            "product-projections",
+        ],
+        "recovery_decision": {
+            "selected": "encrypted-recovery-package-v1",
+            "rejected": ["mnemonic-derivation", "bip39-shaped-placeholder"],
+        },
+    }
+    for field, expected in expected_top_level.items():
+        if profile.get(field) != expected:
+            raise ContractError(f"unexpected Base v1 {field}")
+
+    expected_archive_crypto = {
+        "password_argon2id_v1": {
+            "algorithm": "argon2id",
+            "memory_kib": 65536,
+            "iterations": 3,
+            "parallelism": 1,
+            "salt_bytes": 16,
+            "output_bytes": 32,
+            "domain": "onebrain:base-v1:archive:password-argon2id-v1",
+        },
+        "recovery_key_v1": {
+            "key_bytes": 32,
+            "derivation": "blake3-derive-key",
+            "separately_verified": True,
+            "domain": "onebrain:base-v1:archive:recovery-key-v1",
+        },
+        "aead": "xchacha20-poly1305",
+        "nonce_bytes": 24,
+        "manifest": "encrypted-and-authenticated",
+        "profiles_use_distinct_domains": True,
+    }
+    archive_crypto = profile.get("archive_crypto")
+    if not isinstance(archive_crypto, dict):
+        raise ContractError("invalid Base v1 archive crypto")
+    if archive_crypto.get("password_argon2id_v1") != expected_archive_crypto[
+        "password_argon2id_v1"
+    ]:
+        raise ContractError("unexpected Base v1 password Argon2id parameters")
+    if archive_crypto != expected_archive_crypto:
+        raise ContractError("unexpected Base v1 archive crypto")
+
+    expected_archive_scope = {
+        "included": [
+            "canonical-object-event-feed",
+            "owned-original-blobs",
+            "private-vault",
+            "quarantine",
+            "correctness-journals",
+            "pending-outbox",
+            "migration-state",
+            "interpretation-configuration",
+            "permitted-recovery-metadata",
+            "signed-authority-high-water-metadata",
+        ],
+        "excluded_rebuildable_or_refetchable": [
+            "derived-indexes",
+            "concept-registry-bytes",
+            "local-model-bytes",
+            "remote-media-cache",
+            "stale-delivery-caches",
+        ],
+        "restore_activation": (
+            "verify-entire-archive-stage-new-generation-parity-health-then-atomic-switch"
+        ),
+    }
+    archive_scope = profile.get("archive_scope")
+    if archive_scope != expected_archive_scope:
+        raise ContractError("unexpected Base v1 archive scope")
+
+    signer_recovery = profile.get("signer_recovery")
+    expected_domains = {
+        "node_transport": "onebrain:base-v1:recovery:node-transport:1",
+        "actor_root": "onebrain:base-v1:recovery:actor-root:1",
+        "feed_author": "onebrain:base-v1:recovery:feed-author:1",
+    }
+    if not isinstance(signer_recovery, dict) or set(signer_recovery) != set(
+        expected_domains
+    ):
+        raise ContractError("unexpected Base v1 signer recovery domains")
+    actual_domains: list[str] = []
+    for signer, domain in expected_domains.items():
+        policy = signer_recovery.get(signer)
+        if not isinstance(policy, dict) or policy.get("domain") != domain:
+            raise ContractError("unexpected Base v1 signer recovery domains")
+        if policy.get("non_exportable_unavailable") != "ReprovisionRequired":
+            raise ContractError("unexpected Base v1 non-exportable signer disposition")
+        if set(policy) != {"domain", "non_exportable_unavailable"}:
+            raise ContractError("unexpected Base v1 signer recovery policy")
+        actual_domains.append(domain)
+    if len(set(actual_domains)) != len(actual_domains):
+        raise ContractError("Base v1 signer recovery domains must be distinct")
+
+    expected_registry_policy = {
+        "bootstrap_limited_without_active_release": True,
+        "missing_exact_release": "fail-closed",
+        "registry_dependent_encoding_requires_exact_release": True,
+        "ready_offline_requires_exact_release": True,
+    }
+    if profile.get("registry_policy") != expected_registry_policy:
+        raise ContractError("unexpected Base v1 Registry policy")
+
+    allowed_fields = set(expected_top_level) | {
+        "archive_crypto",
+        "archive_scope",
+        "signer_recovery",
+        "registry_policy",
+    }
+    if set(profile) != allowed_fields:
+        raise ContractError("unexpected Base v1 authority profile fields")
+    return len(expected_domains), len(expected_archive_scope["included"])
 
 
 def validate_negative_assertions() -> int:
@@ -3650,6 +3790,9 @@ def main() -> int:
     try:
         tasks, _ = plan_tasks()
         adrs = validate_traceability(tasks)
+        base_signer_domains, base_archive_classes = (
+            validate_base_v1_authority_recovery()
+        )
         assertions = validate_negative_assertions()
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
@@ -3728,6 +3871,7 @@ def main() -> int:
         "vNext contracts OK: "
         f"{len(tasks)} tasks, {adrs} ADRs, {assertions} negative assertions, "
         f"{vector_count} foundation vectors/{domains} domains, "
+        f"{base_signer_domains} Base signer domains/{base_archive_classes} archive classes, "
         f"{schema_vectors} identity-object vectors, "
         f"{event_vectors} feed-event vectors, {normative_lines} normative lines, "
         f"{product_endpoints} product endpoints/{product_dtos} DTOs, "
