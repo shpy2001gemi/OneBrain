@@ -3,7 +3,8 @@
 //! Stores media/file blobs using a size-based hybrid strategy:
 //! - **Small blobs (≤ 1 MB)**: chunks stored inline in redb (`blob_chunks` table)
 //! - **Large blobs (> 1 MB)**: chunks stored as files on the filesystem under
-//!   `<db_dir>/blobs/<cid_hex>/chunk_NNNN.bin`; only metadata stays in redb
+//!   `<db_dir>/blobs/v2/<digest-shards>/<full-cid>/chunk_NNNN.bin`; only
+//!   metadata stays in redb
 //!
 //! This avoids bloating the redb database with large media files while keeping
 //! small blobs fast and transactional.
@@ -18,6 +19,8 @@ use ku_core::blob_store::{
 use ku_core::obs_schema;
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 use std::path::{Path, PathBuf};
+
+use crate::blob_layout::{blob_relative_dir, migrate_blob_layout_v2, BlobLayoutMigrationReport};
 
 /// Threshold: blobs larger than this use filesystem storage for chunks.
 const FILESYSTEM_SPILL_THRESHOLD: u64 = 1024 * 1024; // 1 MB
@@ -60,6 +63,7 @@ pub enum BlobStorageError {
     TooLarge(u64),
     QuotaExceeded { used: u64, quota: u64 },
     CodecError(String),
+    MigrationBlocked(BlobLayoutMigrationReport),
 }
 
 impl std::fmt::Display for BlobStorageError {
@@ -77,6 +81,12 @@ impl std::fmt::Display for BlobStorageError {
                 write!(f, "Blob quota exceeded: {} / {} bytes", used, quota)
             }
             Self::CodecError(msg) => write!(f, "Codec error: {}", msg),
+            Self::MigrationBlocked(report) => write!(
+                f,
+                "Blob layout migration blocked: {} collision group(s), {} corrupt CID(s)",
+                report.collision_groups.len(),
+                report.corrupt_cids.len()
+            ),
         }
     }
 }
@@ -160,12 +170,15 @@ impl BlobStorage {
             .join("blobs");
         std::fs::create_dir_all(&chunk_dir)?;
 
-        Ok(Self { db, chunk_dir })
+        let storage = Self { db, chunk_dir };
+        let metas = storage.list_blobs()?;
+        migrate_blob_layout_v2(&storage.chunk_dir, &metas)?;
+        Ok(storage)
     }
 
     /// Directory for a specific blob's filesystem chunks.
     fn blob_chunk_dir(&self, blob_cid: &BlobCid) -> PathBuf {
-        self.chunk_dir.join(blob_cid.short_hex())
+        self.chunk_dir.join(blob_relative_dir(blob_cid))
     }
 
     /// Determine storage mode based on data size.
@@ -208,7 +221,7 @@ impl BlobStorage {
             return self.get_meta(&blob_cid);
         }
 
-        let chunk_count = ((total_size as usize + BLOB_CHUNK_SIZE - 1) / BLOB_CHUNK_SIZE) as u32;
+        let chunk_count = (total_size as usize).div_ceil(BLOB_CHUNK_SIZE) as u32;
         let original_name = file_path
             .file_name()
             .and_then(|n| n.to_str())
@@ -274,7 +287,7 @@ impl BlobStorage {
             return self.get_meta(&blob_cid);
         }
 
-        let chunk_count = ((data.len() + BLOB_CHUNK_SIZE - 1) / BLOB_CHUNK_SIZE) as u32;
+        let chunk_count = data.len().div_ceil(BLOB_CHUNK_SIZE) as u32;
         let mode = Self::storage_mode_for(total_size);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -481,9 +494,10 @@ impl BlobStorage {
         for entry in iter {
             let (_, value) =
                 entry.map_err(|e| BlobStorageError::DatabaseError(format!("{}", e)))?;
-            if let Ok(meta) = serde_json::from_slice::<BlobMeta>(value.value()) {
-                blobs.push(meta);
-            }
+            let meta = serde_json::from_slice::<BlobMeta>(value.value()).map_err(|error| {
+                BlobStorageError::CodecError(format!("invalid blob metadata: {error}"))
+            })?;
+            blobs.push(meta);
         }
 
         Ok(blobs)
