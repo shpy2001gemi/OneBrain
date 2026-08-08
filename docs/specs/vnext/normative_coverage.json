@@ -801,6 +801,14 @@
           "needle": "base-v1-derived-projection-reducer/1"
         },
         {
+          "path": "src/test-vectors/vnext/base-v1-archive-v1.json",
+          "needle": "onebrain/base-v1-archive/1"
+        },
+        {
+          "path": "src/onebrain-archive/tests/dataset_roundtrip.rs",
+          "needle": "portable_data_gates_restore_while_producer_identity_is_provenance"
+        },
+        {
           "path": "scripts/ci/test_validate_vnext_base_storage.py",
           "needle": "test_endian_swapped_owner_code_is_rejected"
         },

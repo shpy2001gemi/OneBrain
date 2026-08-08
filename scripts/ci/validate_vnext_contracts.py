@@ -72,6 +72,7 @@ BASE_V1_STORAGE_INTEGRITY_PROFILE = (
 BASE_V1_DERIVED_PROJECTION_PROFILE = (
     ROOT / "src/test-vectors/vnext/base-v1-derived-projection-v1.json"
 )
+BASE_V1_ARCHIVE_PROFILE = ROOT / "src/test-vectors/vnext/base-v1-archive-v1.json"
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -793,6 +794,67 @@ def validate_base_v1_storage_integrity(
         raise ContractError("unexpected Base v1 projection fields")
 
     return len(expected_boundaries), len(expected_negative_oracles)
+
+
+def validate_base_v1_archive() -> tuple[int, int]:
+    try:
+        profile = json.loads(read(BASE_V1_ARCHIVE_PROFILE))
+    except json.JSONDecodeError as error:
+        raise ContractError(f"invalid Base v1 archive JSON: {error}") from error
+    if profile.get("format") != "onebrain/base-v1-archive/1":
+        raise ContractError("unexpected Base v1 archive format")
+    if profile.get("profile") != "OBARV002":
+        raise ContractError("Base v1 archive must emit OBARV002")
+    expected_domains = {
+        "entry_id": "onebrain:base:archive-entry-id:1",
+        "entry_root": "onebrain:base:archive-entry-root:1",
+        "manifest": "onebrain:base:archive-manifest:1\\0",
+        "high_water": "onebrain:base:archive-high-water:1\\0",
+        "dataset": "onebrain:base:archive-dataset:1\\0",
+    }
+    if profile.get("domains") != expected_domains:
+        raise ContractError("Base v1 archive domain drift")
+    if profile.get("limits") != {
+        "logical_key_bytes": 256,
+        "manifest_entries": 1_000_000,
+        "dataset_bytes": 16 * 1024 * 1024 * 1024,
+    }:
+        raise ContractError("Base v1 archive limit drift")
+    owners = profile.get("owner_codes")
+    if not isinstance(owners, dict) or list(owners.values()) != list(range(1, 23)):
+        raise ContractError("Base v1 archive owner table drift")
+    kinds = profile.get("entry_kinds")
+    if not isinstance(kinds, list) or len(kinds) != 24 or len(set(kinds)) != 24:
+        raise ContractError("Base v1 archive entry-kind set drift")
+    required = profile.get("required_metadata")
+    if required != [
+        "AuthorityHighWater",
+        "MigrationState",
+        "InterpretationConfig",
+        "RegistryHighWater",
+        "SignerRecoveryPolicy",
+    ]:
+        raise ContractError("Base v1 archive required metadata drift")
+    if profile.get("stable_entry_id_vector") != {
+        "kind": "CanonicalObject",
+        "owner": 1,
+        "namespace": 1,
+        "logical_key_utf8": "object-01",
+        "entry_id_blake3_hex": "b83be45eda7ce7bcdbc3e6f9f0eeccfe4febdd7f471b4240c92046b73bf7210d",
+    }:
+        raise ContractError("Base v1 archive stable entry-ID vector drift")
+    if profile.get("restore_gate") != [
+        "canonical_schema_digest",
+        "domain_registry_digest",
+        "resource_registry_digest",
+        "storage_schema_version",
+        "archive_profile",
+        "migration_profile",
+    ]:
+        raise ContractError("Base v1 archive portable restore gate drift")
+    if profile.get("non_exportable_signer_restore") != "reprovision_required":
+        raise ContractError("Base v1 signer restore policy drift")
+    return len(kinds), len(required)
 
 
 def validate_negative_assertions() -> int:
@@ -4289,6 +4351,7 @@ def main() -> int:
         base_storage_boundaries, base_storage_negative_oracles = (
             validate_base_v1_storage_integrity()
         )
+        base_archive_kinds, base_archive_required = validate_base_v1_archive()
         assertions = validate_negative_assertions()
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
@@ -4370,6 +4433,8 @@ def main() -> int:
         f"{base_signer_domains} Base signer domains/{base_archive_classes} archive classes, "
         f"{base_storage_boundaries} Base storage boundaries/"
         f"{base_storage_negative_oracles} negative oracles, "
+        f"{base_archive_kinds} Base archive kinds/"
+        f"{base_archive_required} required metadata, "
         f"{schema_vectors} identity-object vectors, "
         f"{event_vectors} feed-event vectors, {normative_lines} normative lines, "
         f"{product_endpoints} product endpoints/{product_dtos} DTOs, "

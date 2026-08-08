@@ -274,6 +274,28 @@ pub trait AtomicMigrationBackend: Send + Sync {
     ) -> Result<Option<MigrationQuarantineRecord>, String>;
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PortableMigrationSnapshot {
+    pub batches: Vec<MigrationBatchJournal>,
+    pub journals: Vec<MigrationJournalEntry>,
+    pub raw_rows: Vec<LegacySourceRow>,
+    pub derived_rows: Vec<(LegacyRowKey, StoredVNextMigration)>,
+    pub quarantine: Vec<MigrationQuarantineRecord>,
+}
+
+pub trait MigrationStateSnapshotPort {
+    fn portable_migration_snapshot(&self) -> Result<PortableMigrationSnapshot, String>;
+}
+
+/// Restore remains a validation boundary; Task 13 maps archive entries into
+/// this lower-level port without introducing an archive dependency here.
+pub trait ValidatedMigrationRestorePort {
+    fn restore_migration_snapshot(
+        &self,
+        snapshot: &PortableMigrationSnapshot,
+    ) -> Result<(), String>;
+}
+
 #[derive(Default)]
 struct InMemoryMigrationState {
     batches: BTreeMap<[u8; 32], MigrationBatchJournal>,
@@ -459,6 +481,26 @@ impl AtomicMigrationBackend for InMemoryMigrationBackend {
             .quarantine
             .get(key)
             .cloned())
+    }
+}
+
+impl MigrationStateSnapshotPort for InMemoryMigrationBackend {
+    fn portable_migration_snapshot(&self) -> Result<PortableMigrationSnapshot, String> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| "MIGRATION_LOCK".to_string())?;
+        Ok(PortableMigrationSnapshot {
+            batches: state.batches.values().cloned().collect(),
+            journals: state.journals.values().cloned().collect(),
+            raw_rows: state.raw.values().cloned().collect(),
+            derived_rows: state
+                .vnext
+                .iter()
+                .map(|(key, row)| (key.clone(), row.clone()))
+                .collect(),
+            quarantine: state.quarantine.values().cloned().collect(),
+        })
     }
 }
 
@@ -1027,6 +1069,47 @@ mod persistent {
         ) -> Result<Option<MigrationQuarantineRecord>, String> {
             self.get(QUARANTINE, &key.storage_key())
                 .and_then(|bytes| bytes.map(|bytes| decode(&bytes)).transpose())
+        }
+    }
+
+    impl MigrationStateSnapshotPort for RedbMigrationBackend {
+        fn portable_migration_snapshot(&self) -> Result<PortableMigrationSnapshot, String> {
+            fn scan<T: serde::de::DeserializeOwned>(
+                db: &Database,
+                definition: TableDefinition<&[u8], &[u8]>,
+            ) -> Result<Vec<T>, String> {
+                let read = db.begin_read().map_err(|error| error.to_string())?;
+                let table = read
+                    .open_table(definition)
+                    .map_err(|error| error.to_string())?;
+                let mut values = Vec::new();
+                for entry in table.iter().map_err(|error| error.to_string())? {
+                    let (_, value) = entry.map_err(|error| error.to_string())?;
+                    values.push(decode(value.value())?);
+                }
+                Ok(values)
+            }
+
+            let derived = scan::<StoredVNextMigration>(&self.db, VNEXT)?;
+            let raw = scan::<LegacySourceRow>(&self.db, RAW)?;
+            let derived_rows = raw
+                .iter()
+                .filter_map(|source| {
+                    self.get_vnext(&source.key)
+                        .transpose()
+                        .map(|row| row.map(|value| (source.key.clone(), value)))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if derived_rows.len() != derived.len() {
+                return Err("MIGRATION_SNAPSHOT_ORPHAN_DERIVED".into());
+            }
+            Ok(PortableMigrationSnapshot {
+                batches: scan(&self.db, BATCHES)?,
+                journals: scan(&self.db, JOURNALS)?,
+                raw_rows: raw,
+                derived_rows,
+                quarantine: scan(&self.db, QUARANTINE)?,
+            })
         }
     }
 

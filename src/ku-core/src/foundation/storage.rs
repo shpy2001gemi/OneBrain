@@ -74,6 +74,25 @@ pub struct AcceptedRecordEntry {
     pub canonical_bytes: Vec<u8>,
 }
 
+/// Substrate-neutral rows used by the archive adapter. They contain logical
+/// bytes only and never a database path or backend ciphertext.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PortableVerifiedSnapshot {
+    pub accepted: Vec<AcceptedRecordEntry>,
+    pub quarantine: Vec<QuarantineRecord>,
+}
+
+pub trait VerifiedStoreSnapshotPort {
+    fn portable_verified_snapshot(&self) -> Result<PortableVerifiedSnapshot, VerifiedStoreError>;
+}
+
+/// Task 13 supplies the Node-owned implementation so archive types never flow
+/// down into ku-core. Implementations must call the normal validation boundary.
+pub trait ValidatedStoreRestorePort {
+    fn restore_accepted(&self, record: &AcceptedRecordEntry) -> Result<(), VerifiedStoreError>;
+    fn restore_quarantine(&self, record: &QuarantineRecord) -> Result<(), VerifiedStoreError>;
+}
+
 impl QuarantineRecord {
     fn new(
         record_kind: StoredRecordKind,
@@ -132,6 +151,8 @@ pub trait AtomicVerifiedBackend: Send + Sync {
     fn get_accepted(&self, key: &[u8; 33]) -> Result<Option<Vec<u8>>, String>;
 
     fn get_quarantine(&self, id: &[u8; 32]) -> Result<Option<QuarantineRecord>, String>;
+
+    fn quarantine_entries(&self) -> Result<Vec<QuarantineRecord>, String>;
 
     /// Deterministic CID-keyed scan used to rebuild derived projections. The
     /// caller must recompute each CID before the row can influence a root.
@@ -242,6 +263,16 @@ impl AtomicVerifiedBackend for InMemoryVerifiedBackend {
             .quarantine
             .get(id)
             .cloned())
+    }
+
+    fn quarantine_entries(&self) -> Result<Vec<QuarantineRecord>, String> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| "STORE_LOCK_POISONED".to_string())?;
+        let mut records = state.quarantine.values().cloned().collect::<Vec<_>>();
+        records.sort_by_key(|record| record.quarantine_id);
+        Ok(records)
     }
 
     fn accepted_record_entries(
@@ -751,6 +782,12 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
             .map_err(VerifiedStoreError::Backend)
     }
 
+    pub fn quarantine_entries(&self) -> Result<Vec<QuarantineRecord>, VerifiedStoreError> {
+        self.backend
+            .quarantine_entries()
+            .map_err(VerifiedStoreError::Backend)
+    }
+
     pub(crate) fn get(
         &self,
         kind: StoredRecordKind,
@@ -820,6 +857,25 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
             .map_err(VerifiedStoreError::Backend)?;
         Ok(PutVerifiedOutcome::Quarantined {
             quarantine_id: record.quarantine_id,
+        })
+    }
+}
+
+impl<B: AtomicVerifiedBackend> VerifiedStoreSnapshotPort for ValidatedStore<B> {
+    fn portable_verified_snapshot(&self) -> Result<PortableVerifiedSnapshot, VerifiedStoreError> {
+        let mut accepted = Vec::new();
+        for kind in [
+            StoredRecordKind::Object,
+            StoredRecordKind::Event,
+            StoredRecordKind::FeedInception,
+            StoredRecordKind::AuthorityEvent,
+        ] {
+            accepted.extend(self.accepted_entries(kind)?);
+        }
+        accepted.sort_by_key(|record| (record.record_kind as u8, record.claimed_cid));
+        Ok(PortableVerifiedSnapshot {
+            accepted,
+            quarantine: self.quarantine_entries()?,
         })
     }
 }
@@ -999,6 +1055,20 @@ mod persistent {
                 .map_err(|error| error.to_string())?
                 .map(|guard| guard.value().to_vec());
             encoded.map(|bytes| decode_quarantine(&bytes)).transpose()
+        }
+
+        fn quarantine_entries(&self) -> Result<Vec<QuarantineRecord>, String> {
+            let read = self.db.begin_read().map_err(|error| error.to_string())?;
+            let table = read
+                .open_table(QUARANTINE)
+                .map_err(|error| error.to_string())?;
+            let mut records = Vec::new();
+            for entry in table.iter().map_err(|error| error.to_string())? {
+                let (_, bytes) = entry.map_err(|error| error.to_string())?;
+                records.push(decode_quarantine(bytes.value())?);
+            }
+            records.sort_by_key(|record| record.quarantine_id);
+            Ok(records)
         }
 
         fn accepted_record_entries(

@@ -6,7 +6,9 @@
 
 mod container;
 mod crypto;
+mod dataset;
 mod limits;
+mod manifest;
 mod verified;
 
 use thiserror::Error;
@@ -16,7 +18,16 @@ pub use container::{
     OBAR_V1_MAGIC, OBAR_V2_MAGIC,
 };
 pub use crypto::{ArchiveCredential, ArchiveCredentialKind, RecoveryKey};
+pub use dataset::{
+    capture_dataset, compute_high_water_root, CapturedDatasetV1, SnapshotLease, SnapshotSource,
+    MAX_DATASET_BYTES,
+};
 pub use limits::{ArchiveKdfProfileV1, ArchiveLimits, ARCHIVE_CHUNK_BYTES};
+pub use manifest::{
+    compute_entry_id, ArchiveEntryId, ArchiveEntryKind, ArchiveEntryV1, ArchiveLogicalKey,
+    ArchiveOwner, ArchiveProfileId, BoundedBytes, DatasetManifestV1, PortableDataCompatibilityV1,
+    PortableProfileVersion, ProducerArtifactIdentityV1,
+};
 pub use verified::{
     verify_dataset_archive_v2, EncryptedSpoolCapability, FileSecureSpoolFactory,
     LogicalRestoreSink, SecureSpoolFactory, VerifiedDatasetArchiveV2, VerifiedMaterialization,

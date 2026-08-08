@@ -142,6 +142,33 @@ pub struct VaultSourceSnapshotRecord {
     pub source_text: super::source_text::BoundedUtf8,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PortableVaultRecord {
+    pub record_kind: StoredRecordKind,
+    pub claimed_cid: [u8; 32],
+    pub canonical_plaintext: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PortableVaultSnapshot {
+    pub accepted: Vec<PortableVaultRecord>,
+    pub quarantine: Vec<VaultQuarantineRecord>,
+}
+
+pub trait PortableVaultSnapshotPort {
+    fn portable_vault_snapshot(&self) -> Result<PortableVaultSnapshot, VerifiedStoreError>;
+}
+
+/// Restore implementations validate canonical plaintext and encrypt it under
+/// the target Vault key; source database ciphertext is never accepted.
+pub trait ValidatedVaultRestorePort {
+    fn restore_vault_record(&self, record: &PortableVaultRecord) -> Result<(), VerifiedStoreError>;
+    fn restore_vault_quarantine(
+        &self,
+        record: &VaultQuarantineRecord,
+    ) -> Result<(), VerifiedStoreError>;
+}
+
 pub trait VaultSourceSnapshotPort {
     fn source_snapshot(&self) -> Result<Vec<VaultSourceSnapshotRecord>, VerifiedStoreError>;
     fn vault_source_root(&self) -> Result<[u8; 32], VerifiedStoreError>;
@@ -470,6 +497,55 @@ impl<B: AtomicVerifiedBackend> VaultSourceSnapshotPort for PrivateVault<B> {
             hasher.update(&record.source_digest);
         }
         Ok(*hasher.finalize().as_bytes())
+    }
+}
+
+impl<B: AtomicVerifiedBackend> PortableVaultSnapshotPort for PrivateVault<B> {
+    fn portable_vault_snapshot(&self) -> Result<PortableVaultSnapshot, VerifiedStoreError> {
+        let mut accepted = Vec::new();
+        for kind in [
+            StoredRecordKind::Object,
+            StoredRecordKind::Event,
+            StoredRecordKind::FeedInception,
+            StoredRecordKind::AuthorityEvent,
+        ] {
+            for entry in self.store.accepted_entries(kind)? {
+                let plaintext = zeroize::Zeroizing::new(self.cipher.open(
+                    VaultPurpose::Accepted,
+                    kind,
+                    entry.claimed_cid,
+                    &entry.canonical_bytes,
+                )?);
+                accepted.push(PortableVaultRecord {
+                    record_kind: kind,
+                    claimed_cid: entry.claimed_cid,
+                    canonical_plaintext: plaintext.to_vec(),
+                });
+            }
+        }
+        accepted.sort_by_key(|record| (record.record_kind as u8, record.claimed_cid));
+
+        let mut quarantine = Vec::new();
+        for record in self.store.quarantine_entries()? {
+            let plaintext = zeroize::Zeroizing::new(self.cipher.open(
+                VaultPurpose::Quarantine,
+                record.record_kind,
+                record.claimed_cid,
+                &record.original_bytes,
+            )?);
+            quarantine.push(VaultQuarantineRecord {
+                quarantine_id: record.quarantine_id,
+                record_kind: record.record_kind,
+                claimed_cid: record.claimed_cid,
+                reason_code: record.reason_code,
+                plaintext: plaintext.to_vec(),
+            });
+        }
+        quarantine.sort_by_key(|record| record.quarantine_id);
+        Ok(PortableVaultSnapshot {
+            accepted,
+            quarantine,
+        })
     }
 }
 
