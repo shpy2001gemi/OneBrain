@@ -5,8 +5,10 @@
 //! All interface projects (CLI, Web, Desktop, Mobile) depend on this.
 
 pub mod anti_gaming_guard;
+pub mod blob_authority;
 pub mod concept_registry_runtime;
 pub mod config;
+pub mod dataset_path;
 pub mod display;
 pub mod error;
 pub mod mdns_discovery;
@@ -64,11 +66,20 @@ pub mod vnext_status;
 pub mod vnext_validated_sink;
 pub mod vnext_workflow_surface;
 
+pub use blob_authority::{
+    BlobAuthority, BlobAuthorityError, CanonicalBlobReferenceOracle, OsPendingUploadIdSource,
+    PendingBlobUploadId, PendingBlobUploadStore, PendingOwnedBlobUpload, PendingUploadIdSource,
+    UnavailableValidatedBlobReferenceSource, ValidatedBlobAuthoritySnapshot,
+    ValidatedBlobReferenceSource, MAX_PENDING_BLOB_UPLOADS,
+};
 pub use concept_registry_runtime::{
     ConceptRegistryBackendKind, ConceptRegistryFailureKind, ConceptRegistryRuntimeState,
     ConceptRegistryStatus,
 };
 pub use config::{ConceptRegistryMode, NodeConfig};
+pub use dataset_path::{
+    BaseStorageOwnerId, BootstrapDatasetPathResolver, DatasetGenerationId, DatasetPathResolver,
+};
 pub use error::NodeError;
 #[cfg(feature = "vnext-network-runtime")]
 pub use ku_net::vnext_session::SessionIdentitySigner;

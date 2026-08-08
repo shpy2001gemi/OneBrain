@@ -9,6 +9,7 @@ pub mod assembly;
 pub mod authority;
 pub mod authority_event;
 pub mod base_profile;
+pub mod blob_reference;
 pub mod canonical;
 pub mod capability;
 pub mod capability_offer;
@@ -70,6 +71,10 @@ pub use authority_event::{
 pub use base_profile::{
     base_v1_profile_digest, base_v1_profile_registry, BaseProfileRegistry,
     StorageOwnerRegistryEntry, BASE_PROFILE_MAJOR, STORAGE_OWNERS_V1,
+};
+pub use blob_reference::{
+    BlobReferenceError, BlobRetentionState, OwnedBlobReferenceV1, OwnedBlobRole,
+    OWNED_BLOB_REFERENCE_SCHEMA_MAJOR, OWNED_BLOB_REFERENCE_SCHEMA_MINOR,
 };
 pub use canonical::{
     canonicalize_set_by_key, decode_canonical, encode_canonical, CanonicalDocument, CanonicalError,

@@ -206,6 +206,7 @@ fn storage_reopen_migrates_legacy_spill_and_reads_from_v2() {
 
 fn meta_for(cid: &BlobCid, data: &[u8], chunk_size: u32) -> BlobMeta {
     BlobMeta {
+        meta_version: 2,
         blob_cid_hex: cid.to_hex(),
         original_name: "fixture.bin".into(),
         mime_type: "application/octet-stream".into(),
@@ -218,6 +219,10 @@ fn meta_for(cid: &BlobCid, data: &[u8], chunk_size: u32) -> BlobMeta {
         referencing_kus: Vec::new(),
         pinned: false,
         storage_mode: "filesystem".into(),
+        chunk_blake3: data
+            .chunks(chunk_size as usize)
+            .map(|chunk| hex(blake3::hash(chunk).as_bytes()))
+            .collect(),
     }
 }
 

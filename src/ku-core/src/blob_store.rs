@@ -190,7 +190,11 @@ impl BlobCid {
 
     /// Parse from hex string (68 hex chars = 34 bytes).
     pub fn from_hex(hex: &str) -> Option<Self> {
-        if hex.len() < 68 {
+        if hex.len() != 68
+            || !hex
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
             return None;
         }
         let bytes: Result<Vec<u8>, _> = (0..34)
@@ -198,6 +202,9 @@ impl BlobCid {
             .collect();
         bytes.ok().and_then(|b| {
             let arr: [u8; 34] = b.try_into().ok()?;
+            if arr[0] != BLOB_CID_VERSION || arr[1] > BlobType::Document as u8 {
+                return None;
+            }
             Some(BlobCid(arr))
         })
     }
@@ -226,6 +233,10 @@ impl std::fmt::Display for BlobCid {
 /// Stored as JSON in the `blob_meta` redb table.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlobMeta {
+    /// Metadata schema version. Legacy records decode as version 0 and must be
+    /// migrated before any authoritative read.
+    #[serde(default)]
+    pub meta_version: u16,
     /// 34-byte OB-CID (hex-encoded for JSON).
     pub blob_cid_hex: String,
     /// Original filename.
@@ -252,6 +263,10 @@ pub struct BlobMeta {
     /// Defaults to "redb" for backwards compatibility.
     #[serde(default = "default_storage_mode")]
     pub storage_mode: String,
+    /// Per-chunk BLAKE3 digests in chunk-index order. Legacy records decode
+    /// with an empty vector and are never treated as verified.
+    #[serde(default)]
+    pub chunk_blake3: Vec<String>,
 }
 
 fn default_storage_mode() -> String {
@@ -410,6 +425,7 @@ mod tests {
     #[test]
     fn blob_meta_orphan_detection() {
         let meta = BlobMeta {
+            meta_version: 2,
             blob_cid_hex: "01010000".repeat(4) + &"00".repeat(2),
             original_name: "test.jpg".into(),
             mime_type: "image/jpeg".into(),
@@ -422,6 +438,7 @@ mod tests {
             referencing_kus: vec![],
             pinned: false,
             storage_mode: "redb".into(),
+            chunk_blake3: vec!["00".repeat(32)],
         };
         assert!(meta.is_orphaned());
 

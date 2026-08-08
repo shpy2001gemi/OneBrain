@@ -5,10 +5,15 @@
 //! anti-gaming guard, and peer networking.
 
 use crate::anti_gaming_guard::AntiGamingGuard;
+use crate::blob_authority::{
+    BlobAuthority, OsPendingUploadIdSource, PendingBlobUploadId, PendingOwnedBlobUpload,
+    UnavailableValidatedBlobReferenceSource,
+};
 use crate::concept_registry_runtime::{
     initialize_concept_registry, ConceptRegistryRuntimeState, ConceptRegistryStatus,
 };
 use crate::config::NodeConfig;
+use crate::dataset_path::BootstrapDatasetPathResolver;
 use crate::error::NodeError;
 use crate::network::{recv_message, send_message, NetMessage, NodeEvent, PeerInfo};
 use crate::peer_manager::PeerManager;
@@ -27,12 +32,13 @@ use ku_net::vnext_session::SessionIdentitySigner;
 
 use crate::types::*;
 use ku_ai::OllamaBackend;
-use ku_core::blob_store::{BlobCid, BlobMeta};
+use ku_core::blob_store::{BlobCid, BlobMeta, BlobType};
 use ku_core::concept_registry::ConceptLookup;
+use ku_core::foundation::ObjectReference;
 use ku_core::text_parser::{default_dict, ConceptDict};
 use ku_core::KuRuntime;
 use ku_encoder::{AiEncoder, EncoderConfig, EncodingResult};
-use ku_kql::blob_storage::BlobStorage;
+use ku_kql::blob_storage::{BlobStorage, BlobStorageConfig};
 use ku_kql::storage::KuStorage;
 use ku_mediator::input::UserInput;
 use ku_mediator::mediator::{Mediator, MediatorConfig};
@@ -71,6 +77,8 @@ pub struct SharedState {
     pub storage: KuStorage,
     /// Persistent blob storage.
     pub blob_store: BlobStorage,
+    /// Canonical reference oracle and durable pending upload leases.
+    pub blob_authority: Arc<BlobAuthority>,
     /// Keyword-based KU retriever.
     pub retriever: KuRetriever,
     /// Connected peers.
@@ -222,9 +230,31 @@ impl OneBrainNode {
         let storage = KuStorage::open(&config.storage_path())
             .map_err(|e| NodeError::Storage(format!("{}", e)))?;
 
-        // Open blob storage
-        let blob_store = BlobStorage::open(&config.blob_storage_path())
-            .map_err(|e| NodeError::Storage(format!("{}", e)))?;
+        let dataset_paths = Arc::new(
+            BootstrapDatasetPathResolver::new(config.data_dir.join("base-bootstrap"))
+                .map_err(|error| NodeError::Storage(error.to_string()))?,
+        );
+        let blob_authority = Arc::new(BlobAuthority::new(
+            dataset_paths,
+            Arc::new(OsPendingUploadIdSource),
+            Arc::new(UnavailableValidatedBlobReferenceSource),
+        ));
+        blob_authority
+            .pending()
+            .reconcile_generation()
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let blob_store = BlobStorage::open_with_config(
+            &config.blob_storage_path(),
+            BlobStorageConfig {
+                total_quota_bytes: 10 * 1024 * 1024 * 1024,
+                free_space_reserve_bytes: 64 * 1024 * 1024,
+            },
+            blob_authority.oracle(),
+        )
+        .map_err(|e| NodeError::Storage(format!("{}", e)))?;
+        blob_store
+            .migrate_blob_metadata_v2()
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
 
         // Load or create retriever index
         let retriever = KuRetriever::load(&config.retriever_path())
@@ -251,6 +281,7 @@ impl OneBrainNode {
         let shared = Arc::new(Mutex::new(SharedState {
             storage,
             blob_store,
+            blob_authority,
             retriever,
             peer_manager: PeerManager::new(),
             config: config.clone(),
@@ -2263,15 +2294,85 @@ impl OneBrainNode {
     // Blob Storage
     // ═══════════════════════════════════════════════════════
 
-    /// Store a file as a blob and return its metadata.
+    /// Legacy unbound blob ingestion is fenced from Base admission.
     pub fn store_blob(&self, file_path: &std::path::Path) -> Result<BlobMeta, NodeError> {
+        let _ = file_path;
+        Err(NodeError::InvalidArgument(
+            "blob upload must be prepared with an exact owner, CID, type, and length".into(),
+        ))
+    }
+
+    /// Durably reserve an exact future canonical owner before accepting bytes.
+    pub fn prepare_blob_upload(
+        &self,
+        intended_owner: ObjectReference,
+        expected_blob: BlobCid,
+        expected_type: BlobType,
+        expected_length: u64,
+    ) -> Result<PendingOwnedBlobUpload, NodeError> {
         let state = match self.shared.try_lock() {
             Ok(s) => s,
             Err(_) => return Err(NodeError::Storage("Storage busy".into())),
         };
         state
+            .blob_authority
+            .prepare(
+                intended_owner,
+                expected_blob,
+                expected_type,
+                expected_length,
+            )
+            .map_err(|e| NodeError::Storage(format!("{}", e)))
+    }
+
+    /// Stream a file into storage only if it matches a durable pending lease.
+    pub fn store_prepared_blob(
+        &self,
+        upload_id: PendingBlobUploadId,
+        file_path: &std::path::Path,
+    ) -> Result<BlobMeta, NodeError> {
+        let state = match self.shared.try_lock() {
+            Ok(s) => s,
+            Err(_) => return Err(NodeError::Storage("Storage busy".into())),
+        };
+        let pending = state
+            .blob_authority
+            .pending()
+            .get(upload_id)
+            .map_err(|e| NodeError::Storage(format!("{}", e)))?
+            .ok_or_else(|| NodeError::InvalidArgument("unknown pending blob upload".into()))?;
+        state
             .blob_store
-            .store_file(file_path)
+            .store_file_bound(
+                file_path,
+                &pending.expected_blob,
+                pending.expected_type,
+                pending.expected_length,
+            )
+            .map_err(|e| NodeError::Storage(format!("{}", e)))
+    }
+
+    /// Abort a pending lease; any now-unowned bytes become GC-eligible.
+    pub fn abort_blob_upload(&self, upload_id: PendingBlobUploadId) -> Result<bool, NodeError> {
+        let state = match self.shared.try_lock() {
+            Ok(s) => s,
+            Err(_) => return Err(NodeError::Storage("Storage busy".into())),
+        };
+        state
+            .blob_authority
+            .abort(upload_id)
+            .map_err(|e| NodeError::Storage(format!("{}", e)))
+    }
+
+    /// Release the lease only after the exact canonical owner is observable.
+    pub fn confirm_blob_upload(&self, upload_id: PendingBlobUploadId) -> Result<(), NodeError> {
+        let state = match self.shared.try_lock() {
+            Ok(s) => s,
+            Err(_) => return Err(NodeError::Storage("Storage busy".into())),
+        };
+        state
+            .blob_authority
+            .confirm_canonical_owner(upload_id)
             .map_err(|e| NodeError::Storage(format!("{}", e)))
     }
 
