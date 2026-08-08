@@ -178,6 +178,7 @@ jobs:
           ku-core/src/foundation/affordance.rs
           ku-core/src/foundation/assembly.rs
           ku-core/src/foundation/authority.rs
+          ku-core/src/foundation/base_profile.rs
           ku-core/src/foundation/mod.rs
           ku-core/src/foundation/canonical.rs
           ku-core/src/foundation/capability.rs
@@ -220,6 +221,7 @@ jobs:
           ku-core/examples/concept_registry_release.rs
           ku-core/examples/registry_probe.rs
           ku-core/examples/foundation_vector_digests.rs
+          ku-core/tests/base_profile_conformance.rs
           ku-ai/src/vnext_manifest.rs
           ku-ai/src/vnext_executor.rs
           ku-ai/src/vnext_fidelity.rs
@@ -339,6 +341,9 @@ jobs:
 
       - name: Test canonical foundation
         run: cargo test --locked -p ku-core foundation
+
+      - name: Test frozen Base profile registry
+        run: cargo test --locked -p ku-core --test base_profile_conformance
 
       - name: Test feed signer custody and pre-side-effect failures
         run: >-

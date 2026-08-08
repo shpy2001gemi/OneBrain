@@ -5,13 +5,15 @@
 
 use ed25519_dalek::{Signer, SigningKey};
 use ku_core::foundation::{
-    decode_feed_inception, encode_canonical, signature_message, CanonicalValue, DeviceId,
-    DisclosureClass, EventCid, EventType, FeedInception, KnowledgeEventEnvelope,
-    KnowledgeObjectEnvelope, NamespaceCommitment, NodeId, ObjectKind, ObjectReference,
-    ReservedDomain, ResourceProfile, SchemaVersion,
+    base_v1_profile_digest, decode_feed_inception, encode_canonical, signature_message,
+    CanonicalValue, DeviceId, DisclosureClass, EventCid, EventType, FeedInception,
+    KnowledgeEventEnvelope, KnowledgeObjectEnvelope, NamespaceCommitment, NodeId, ObjectKind,
+    ObjectReference, ReservedDomain, ResourceProfile, SchemaVersion,
 };
 
 fn main() {
+    println!("base-profile-digest {}", hex(&base_v1_profile_digest()));
+
     let canonical_empty_map = [0xa0];
     for domain in ReservedDomain::ALL {
         let digest = domain.digest(&canonical_empty_map);
