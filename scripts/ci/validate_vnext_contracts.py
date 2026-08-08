@@ -66,6 +66,12 @@ CONCEPT_REGISTRY_OPERATIONS_PROFILE = (
 BASE_V1_AUTHORITY_RECOVERY_PROFILE = (
     ROOT / "src/test-vectors/vnext/base-v1-authority-recovery-v1.json"
 )
+BASE_V1_STORAGE_INTEGRITY_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-storage-integrity-v1.json"
+)
+BASE_V1_DERIVED_PROJECTION_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-derived-projection-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -300,6 +306,493 @@ def validate_base_v1_authority_recovery(
     if set(profile) != allowed_fields:
         raise ContractError("unexpected Base v1 authority profile fields")
     return len(expected_domains), len(expected_archive_scope["included"])
+
+
+def validate_base_v1_storage_integrity(
+    profile: dict[str, object] | None = None,
+    projection: dict[str, object] | None = None,
+) -> tuple[int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(BASE_V1_STORAGE_INTEGRITY_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base v1 storage profile JSON: {error}") from error
+    if projection is None:
+        try:
+            projection = json.loads(read(BASE_V1_DERIVED_PROJECTION_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(
+                f"invalid Base v1 derived projection JSON: {error}"
+            ) from error
+    if not isinstance(profile, dict) or not isinstance(projection, dict):
+        raise ContractError("Base v1 storage profiles must be objects")
+
+    expected_boundaries = [
+        "full-cid-blob-layout",
+        "full-read-blob-integrity",
+        "bounded-capacity-admission",
+        "journaled-filesystem-commit",
+        "same-transaction-secondary-indexes",
+        "generation-swapped-derived-projections",
+        "character-safe-preview",
+        "exact-canonical-import-export",
+        "owned-blob-reference-authority",
+        "closed-storage-owner-mapping",
+    ]
+    if (
+        profile.get("format") != "onebrain/base-v1-storage-integrity/1"
+        or profile.get("authoritative_boundaries") != expected_boundaries
+    ):
+        raise ContractError("unexpected Base v1 storage integrity profile")
+
+    expected_blob_layout = {
+        "cid_bytes": 34,
+        "cid_hex_characters": 68,
+        "hex_case": "lower",
+        "relative_path": (
+            "v2/<digest-byte-0-hex>/<digest-byte-1-hex>/"
+            "<full-68-lower-hex-cid>"
+        ),
+        "shard_source": "two-leading-digest-bytes-not-version-or-type",
+        "short_cid_use": "display-only",
+    }
+    if profile.get("blob_layout") != expected_blob_layout:
+        raise ContractError("unexpected Base v1 blob layout")
+
+    expected_read_integrity = {
+        "required_checks": [
+            "declared-type",
+            "declared-length",
+            "each-chunk-blake3",
+            "full-payload-blake3",
+            "full-typed-cid",
+        ],
+        "check_before_returning_bytes": True,
+        "legacy_missing_chunk_hash": "typed-migration-required",
+    }
+    if profile.get("blob_read_integrity") != expected_read_integrity:
+        raise ContractError("unexpected Base v1 blob read integrity")
+
+    expected_capacity = {
+        "chunk_max_bytes": 262144,
+        "per_object_max_bytes": 104857600,
+        "total_quota_bytes": "required-configured-nonzero-u64",
+        "free_space_reserve_bytes": "required-configured-nonzero-u64",
+        "accounting": "unique-owned-physical-bytes",
+        "arithmetic": "checked-add-and-subtract-reject-overflow-underflow",
+        "admission_order": "limits-and-space-before-write-side-effect",
+    }
+    if profile.get("capacity_admission") != expected_capacity:
+        raise ContractError("unexpected Base v1 capacity admission")
+
+    expected_filesystem_commit = {
+        "protocol": (
+            "durable-intent-stage-fsync-atomic-publish-metadata-commit-cleanup"
+        ),
+        "reopen": "reconcile-every-nonterminal-intent-idempotently",
+        "unsafe_overwrite": False,
+    }
+    if profile.get("filesystem_commit") != expected_filesystem_commit:
+        raise ContractError("unexpected Base v1 filesystem commit")
+
+    expected_secondary = {
+        "class": "same-redb-transaction",
+        "required_indexes": [
+            "feed-inception-by-feed-id",
+            "authority-event-by-principal-frontier",
+        ],
+        "parity": "canonical-write-and-index-row-commit-or-abort-together",
+    }
+    if profile.get("secondary_index_policy") != expected_secondary:
+        raise ContractError("unexpected Base v1 secondary index policy")
+
+    expected_derived = {
+        "stores": ["graph", "search", "retriever"],
+        "class": "disposable-generation-swapped",
+        "row_binding": [
+            "source-root",
+            "mapping-id",
+            "reducer-version",
+            "index-root",
+            "projection-root",
+        ],
+        "corrupt_reopen": "mark-dirty-rebuild-from-validated-canonical-records",
+        "publication_failure_state": (
+            "canonical-available-derived-degraded-dirty-generation"
+        ),
+        "parity_operations": ["create", "update", "delete", "rebuild"],
+        "empty_projection": (
+            "allowed-only-when-source-kind-coverage-proves-no-output"
+        ),
+        "archive_bytes": "excluded-rebuildable",
+    }
+    if profile.get("derived_store_policy") != expected_derived:
+        raise ContractError("unexpected Base v1 derived store policy")
+
+    expected_preview = {
+        "input": "validated-utf8",
+        "truncation_unit": "unicode-scalar-value",
+        "maximum_scalars": 80,
+        "invalid_utf8": "reject",
+        "byte_slice": "forbidden",
+    }
+    if profile.get("text_preview") != expected_preview:
+        raise ContractError("unexpected Base v1 text preview")
+
+    expected_exchange = {
+        "export": "exact-validated-canonical-bytes-with-full-typed-reference",
+        "import": (
+            "decode-validate-reencode-byte-equality-and-recompute-cid-before-commit"
+        ),
+        "round_trip": "same-bytes-same-cid-same-type-same-length",
+        "partial_success": "explicit-per-record-result-never-silent",
+    }
+    if profile.get("canonical_exchange") != expected_exchange:
+        raise ContractError("unexpected Base v1 canonical exchange")
+
+    expected_blob_reference = {
+        "format": "onebrain/owned-blob-reference/1",
+        "authority_source": "validated-vnext-object-event-bytes-only",
+        "owner": "full-typed-ObjectReference",
+        "required_fields": [
+            "owner",
+            "blob-cid",
+            "role",
+            "retention-state",
+        ],
+        "roles": ["owned-original", "attachment", "source-artifact"],
+        "retention_states": ["live", "terminal-retain", "terminal-release"],
+        "terminal_event_binding": (
+            "terminal-states-require-full-validated-EventCID-live-state-omits"
+        ),
+        "terminal_event_semantics": (
+            "validated-owner-terminal-event-reduces-retention-never-rewrites-history"
+        ),
+        "legacy_ku_metadata": "read-only-migration-evidence-never-authority",
+    }
+    if profile.get("owned_blob_reference") != expected_blob_reference:
+        raise ContractError("unexpected Base v1 owned blob reference")
+
+    owner_names = [
+        "canonical",
+        "vault",
+        "quarantine",
+        "blob",
+        "pending_blob_intent",
+        "source_capture_intent",
+        "reconciliation",
+        "inventory",
+        "outbox",
+        "provenance",
+        "private_kql",
+        "private_pomv",
+        "operational",
+        "rollout",
+        "optional_network",
+        "migration",
+        "base_operations",
+        "interpretation_config",
+        "identity",
+        "registry_metadata",
+        "derived_index",
+        "retriever_projection",
+    ]
+    expected_owner_rows = []
+    for code, name in enumerate(owner_names, start=1):
+        encoded = code.to_bytes(2, "big").hex()
+        expected_owner_rows.append(
+            {
+                "name": name,
+                "code_u16": code,
+                "code_hex": f"0x{code:04X}",
+                "base_storage_owner": name,
+                "archive_owner": name,
+                "base_storage_owner_bytes": encoded,
+                "archive_owner_bytes": encoded,
+            }
+        )
+    expected_owner_table = {
+        "encoding": "big-endian-u16",
+        "base_storage_owner_type": "BaseStorageOwnerId",
+        "archive_owner_type": "ArchiveOwner",
+        "conversion_owner": "onebrain-node-adapter-only",
+        "reserved": ["0x0000", "0x0017..0xFFFF"],
+        "unknown_reserved_reused": "fail-closed",
+        "owners": expected_owner_rows,
+    }
+    if profile.get("storage_owner_table") != expected_owner_table:
+        raise ContractError("unexpected Base v1 storage owner table")
+
+    expected_phases = [
+        "before_begin_write",
+        "after_begin_write_before_mutation",
+        "after_mutation_before_commit",
+        "after_commit_before_next_side_effect",
+        "after_next_side_effect_before_ack",
+    ]
+    if profile.get("failpoint_phases") != expected_phases:
+        raise ContractError("unexpected Base v1 failpoint phases")
+    expected_tx_boundaries = [
+        "TX-BLOB-001",
+        "TX-IDX-001",
+        "TX-ARCH-001",
+        "TX-RESTORE-001",
+        "TX-RECOVERY-001",
+    ]
+    if profile.get("transaction_boundaries") != expected_tx_boundaries:
+        raise ContractError("unexpected Base v1 transaction boundaries")
+    inventory = read(DR_M5_TRANSACTION_INVENTORY)
+    for boundary_id in expected_tx_boundaries:
+        if f"| `{boundary_id}` |" not in inventory:
+            raise ContractError(f"Base v1 transaction inventory lacks {boundary_id}")
+    for index, phase in enumerate(expected_phases, start=1):
+        if f"{index}. `{phase}`" not in inventory:
+            raise ContractError(f"Base v1 failpoint phase missing: {phase}")
+
+    expected_crash_oracle = {
+        "runner": "child-process-real-files-kill-reopen",
+        "every_boundary_every_phase": True,
+        "reopen_outcome": "exact-pre-state-or-exact-post-state-never-partial",
+        "expected_oracle_location": "outside-store-under-test",
+        "recorded_fields": [
+            "boundary-id",
+            "phase",
+            "process-exit",
+            "restart-result",
+            "oracle-digest",
+        ],
+    }
+    if profile.get("crash_oracle") != expected_crash_oracle:
+        raise ContractError("unexpected Base v1 crash oracle")
+
+    expected_negative_oracles = [
+        "short-cid-path-rejected",
+        "missing-full-read-hash-rejected",
+        "missing-total-quota-rejected",
+        "best-effort-without-dirty-generation-rejected",
+        "unknown-or-vacuous-projection-rejected",
+        "legacy-blob-reference-authority-rejected",
+        "corrupt-retriever-rebuilds-with-canonical-startup-available",
+        "missing-update-delete-parity-rejected",
+        "byte-sliced-utf8-rejected",
+    ]
+    if profile.get("negative_oracles") != expected_negative_oracles:
+        raise ContractError("unexpected Base v1 negative oracles")
+    if set(profile) != {
+        "format",
+        "authoritative_boundaries",
+        "blob_layout",
+        "blob_read_integrity",
+        "capacity_admission",
+        "filesystem_commit",
+        "secondary_index_policy",
+        "derived_store_policy",
+        "text_preview",
+        "canonical_exchange",
+        "owned_blob_reference",
+        "storage_owner_table",
+        "failpoint_phases",
+        "transaction_boundaries",
+        "crash_oracle",
+        "negative_oracles",
+    }:
+        raise ContractError("unexpected Base v1 storage profile fields")
+
+    expected_projection_header = {
+        "format": "onebrain/base-v1-derived-projection/1",
+        "accepted_record_families": [
+            "object",
+            "event",
+            "feed-inception",
+            "authority-event",
+        ],
+        "mapping_reducer_id": "base-v1-derived-projection-reducer/1",
+        "projection_root_domain": "onebrain:base-v1:derived-projection-root:1",
+        "row_binding": [
+            "source-root",
+            "canonical-record-reference",
+            "mapping-id",
+            "reducer-version",
+            "output-key",
+            "output-value",
+            "index-root",
+        ],
+        "branch_handling": (
+            "retain-all-canonical-branches-no-winner-from-count-order-or-score"
+        ),
+        "tombstone_handling": (
+            "apply-validated-terminal-reducer-never-rewrite-canonical-history"
+        ),
+        "unknown_kind_exclusion": (
+            "canonical-opaque-or-quarantine-by-criticality-no-derived-row"
+        ),
+        "empty_projection_rule": (
+            "coverage-must-name-every-input-and-prove-zero-output-per-mapping"
+        ),
+    }
+    for field, expected in expected_projection_header.items():
+        if projection.get(field) != expected:
+            raise ContractError(f"unexpected Base v1 projection {field}")
+
+    object_kinds = [
+        "legacy-evidence",
+        "semantic-kernel",
+        "receptor-definition",
+        "assembly-manifest",
+        "knowledge-affordance",
+        "mapping-envelope",
+        "query-definition",
+        "capability-definition",
+        "implementation-manifest",
+        "conformance-fixture",
+        "receptor-claim-envelope",
+        "receptor-resolution-action",
+        "use-evidence",
+        "derivation-evidence",
+        "encoding-attempt",
+        "fidelity-policy",
+        "encoding-fidelity-attestation",
+        "sanitized-public-problem",
+        "outcome-observation",
+        "benefit-evidence",
+        "exploration-policy",
+        "source-artifact",
+        "observation-event-payload",
+    ]
+    object_exclusions = [
+        "never-authority-or-blob-retention-source",
+        "none-after-schema-and-disclosure-validation",
+        "none-after-schema-and-disclosure-validation",
+        "none-after-schema-and-disclosure-validation",
+        "none-after-schema-and-disclosure-validation",
+        "inactive-without-materialization-and-adoption",
+        "private-vault-only-never-public-index",
+        "projection-never-grants-capability",
+        "projection-never-authorizes-execution",
+        "never-production-authority",
+        "claim-is-not-resolution",
+        "consume-reduced-resolution-view-not-raw-action",
+        "does-not-prove-benefit-truth-or-reward",
+        "does-not-prove-benefit-truth-or-reward",
+        "attempt-is-not-success-or-authority",
+        "policy-relative-not-global-truth",
+        "attestation-does-not-rewrite-source",
+        "never-reconstruct-private-source",
+        "observation-is-not-benefit-or-truth",
+        "conflicts-coexist-no-score-authority",
+        "policy-cannot-change-eligibility",
+        "private-or-disclosure-scoped-content-only",
+        "payload-needs-validated-event-for-exercise-view",
+    ]
+    schema_registry = read(ROOT / "src/ku-core/src/foundation/schema_registry.rs")
+    object_registry_match = re.search(
+        r"(?s)pub const OBJECT_KINDS_V1:.*?= &\[(.*?)\];", schema_registry
+    )
+    event_registry_match = re.search(
+        r"(?s)pub const EVENT_TYPES_V1:.*?= &\[(.*?)\];", schema_registry
+    )
+    object_constants = {
+        name: int(value)
+        for name, value in re.findall(
+            r"pub const (OBJECT_KIND_[A-Z0-9_]+): u64 = (\d+);",
+            schema_registry,
+        )
+    }
+    event_constants = {
+        name: int(value)
+        for name, value in re.findall(
+            r"pub const (EVENT_TYPE_[A-Z0-9_]+): u64 = (\d+);",
+            schema_registry,
+        )
+    }
+    if not object_registry_match or not event_registry_match:
+        raise ContractError("Base v1 projection cannot read the schema registry")
+    source_object_rows = [
+        (object_constants.get(constant), name)
+        for constant, name in re.findall(
+            r'id:\s*(OBJECT_KIND_[A-Z0-9_]+),\s*name:\s*"([^"]+)"',
+            object_registry_match.group(1),
+        )
+    ]
+    source_event_rows = [
+        (event_constants.get(constant), name)
+        for constant, name in re.findall(
+            r'id:\s*(EVENT_TYPE_[A-Z0-9_]+),\s*name:\s*"([^"]+)"',
+            event_registry_match.group(1),
+        )
+    ]
+    if source_object_rows != list(enumerate(object_kinds, start=1)):
+        raise ContractError("Base v1 object mapping drifts from the schema registry")
+    expected_object_rows = []
+    for object_id, (kind, exclusion) in enumerate(
+        zip(object_kinds, object_exclusions, strict=True), start=1
+    ):
+        expected_object_rows.append(
+            {
+                "id": object_id,
+                "kind": kind,
+                "mapping_id": f"base-v1/object/{object_id}-{kind}/1",
+                "reducer_version": 1,
+                "graph_key": "object-reference",
+                "graph_output": "validated-declared-object-references",
+                "search_key": "object-reference",
+                "search_output": (
+                    "schema-declared-normalized-text-subject-to-disclosure"
+                ),
+                "exclusion": exclusion,
+            }
+        )
+    if projection.get("object_mappings") != expected_object_rows:
+        raise ContractError("unexpected Base v1 object mapping")
+
+    event_kinds = [
+        "receptor-resolution",
+        "use-evidence",
+        "derivation-evidence",
+        "encoding-fidelity-attestation",
+        "outcome-observation",
+        "benefit-evidence",
+        "observation",
+    ]
+    event_exclusions = [
+        "retain-branches-use-frozen-resolution-reducer",
+        "retrieval-or-exposure-is-not-use",
+        "does-not-prove-benefit-truth-or-reward",
+        "attestation-is-policy-and-frontier-relative",
+        "observation-is-not-benefit-or-truth",
+        "conflicts-coexist-no-score-authority",
+        "private-context-never-public-projection",
+    ]
+    if source_event_rows != list(enumerate(event_kinds, start=1)):
+        raise ContractError("Base v1 event mapping drifts from the schema registry")
+    expected_event_rows = []
+    for event_id, (kind, exclusion) in enumerate(
+        zip(event_kinds, event_exclusions, strict=True), start=1
+    ):
+        expected_event_rows.append(
+            {
+                "id": event_id,
+                "kind": kind,
+                "mapping_id": f"base-v1/event/{event_id}-{kind}/1",
+                "reducer_version": 1,
+                "graph_key": "event-cid",
+                "graph_output": "payload-object-and-causal-references",
+                "search_key": "event-cid",
+                "search_output": (
+                    "schema-declared-normalized-text-subject-to-disclosure"
+                ),
+                "exclusion": exclusion,
+            }
+        )
+    if projection.get("event_mappings") != expected_event_rows:
+        raise ContractError("unexpected Base v1 event mapping")
+    if set(projection) != set(expected_projection_header) | {
+        "object_mappings",
+        "event_mappings",
+    }:
+        raise ContractError("unexpected Base v1 projection fields")
+
+    return len(expected_boundaries), len(expected_negative_oracles)
 
 
 def validate_negative_assertions() -> int:
@@ -3793,6 +4286,9 @@ def main() -> int:
         base_signer_domains, base_archive_classes = (
             validate_base_v1_authority_recovery()
         )
+        base_storage_boundaries, base_storage_negative_oracles = (
+            validate_base_v1_storage_integrity()
+        )
         assertions = validate_negative_assertions()
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
@@ -3872,6 +4368,8 @@ def main() -> int:
         f"{len(tasks)} tasks, {adrs} ADRs, {assertions} negative assertions, "
         f"{vector_count} foundation vectors/{domains} domains, "
         f"{base_signer_domains} Base signer domains/{base_archive_classes} archive classes, "
+        f"{base_storage_boundaries} Base storage boundaries/"
+        f"{base_storage_negative_oracles} negative oracles, "
         f"{schema_vectors} identity-object vectors, "
         f"{event_vectors} feed-event vectors, {normative_lines} normative lines, "
         f"{product_endpoints} product endpoints/{product_dtos} DTOs, "

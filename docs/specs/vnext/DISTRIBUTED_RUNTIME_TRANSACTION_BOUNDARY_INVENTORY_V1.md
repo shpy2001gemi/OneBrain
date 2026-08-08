@@ -27,6 +27,10 @@ After every injected crash and restart, the harness compares:
 - prepared Public Use intent, receipt commitment, and consumed state;
 - Public Use publication state;
 - metabolic view root, revision, lineage, and conflict branches.
+- blob metadata, chunk/full-payload roots, owned-reference set, and filesystem intents;
+- canonical source root, derived generation/mapping digest, and projection root;
+- archive snapshot/root and active dataset generation pointer; and
+- typed recovery-package and signer re-provisioning outcome.
 
 No oracle may use arrival order, path count, provider count, or a legacy wallet
 balance as correctness evidence.
@@ -54,6 +58,11 @@ balance as correctness evidence.
 | `TX-CMP-PRV-001` | Provenance overflow evidence update | `OperationalCompactionStore`; `vnext_compaction_provenance_v1`, `vnext_compaction_overflow_v1` | Return bounded admission outcome | Raw provenance cap holds; retry does not double-count the last overflow ID; oracle root restores exactly | M5-05 five-phase child-process kill/reopen and idempotent retry |
 | `TX-CMP-IDX-001` | KQL/PoMV derived-index snapshot replacement | `OperationalCompactionStore`; `vnext_compaction_derived_snapshots_v1` | Restore and verify exact snapshot | Canonical bytes, lane, reducer version, rows, source root and projection root restore exactly | M5-05 five-phase child-process kill/reopen and idempotent replacement |
 | `TX-ROL-001` | Atomic network/KQL/Public Use/PoMV runtime rollback generation | `VNextRuntimeRollout`; `vnext_runtime_rollout_v1` | Reject later sessions, records, publications, and distributed side effects | All four lanes restore disabled at one exact generation; stale enabled config cannot revive them; raw/journal/outbox/quarantine/provenance/wallet/OBT remain untouched | M5-06 five-phase child-process kill/reopen and idempotent retry |
+| `TX-BLOB-001` | Pending upload/retention intent, staged chunks, metadata and owned-reference commit | `BlobStorage` plus canonical `OwnedBlobReferenceV1`; pending intent, metadata and chunk owners | Publish or delete the staged filesystem generation | Reopen yields the exact pre-state or one fully typed/hash-verified blob with reference parity; no orphan stage, partial metadata, quota double-count or legacy-authorized retention | Five-phase child-process kill/reopen oracle required by Base storage qualification |
+| `TX-IDX-001` | Accepted canonical write and mandatory same-transaction indexes, followed by disposable projection generation publication | Validated canonical store owns feed/authority lookup rows; derived generation manager owns graph/search/retriever bytes and pointer | Admit the new derived generation for readers | Canonical/index parity commits atomically; a failed projection publish leaves canonical reads available and one dirty/degraded generation that rebuilds to the same mapping-bound root | Five-phase child-process kill/reopen oracle required by Base storage qualification |
+| `TX-ARCH-001` | Single-writer logical cut, held physical objects, encrypted manifest/chunks and final archive root | Dataset snapshot coordinator and archive writer; source generation remains authoritative | Publish the completed encrypted archive | Reopen exposes no partial archive as valid; a published archive authenticates the exact held canonical/blob/private/journal frontier and excludes disposable projection bytes | Five-phase child-process kill/reopen oracle required by Base archive qualification |
+| `TX-RESTORE-001` | Verified archive materialization into a new dataset generation and active-pointer switch | Dataset generation store and non-switched activation journal | Rebind canonical services and rebuild excluded projections | Before pointer commit the old generation remains active; after commit the fully verified new generation is active; partial materialization never becomes current | Five-phase child-process kill/reopen oracle required by Base restore qualification |
+| `TX-RECOVERY-001` | Typed encrypted recovery-package import and per-domain signer recovery disposition | Recovery package store and non-switched control journal; Node/Actor/Feed domains remain independent | Activate restored software-backed signer or emit typed re-provisioning requirement | Exact retry cannot clone or cross-bind identity domains; unavailable non-exportable material reopens as `ReprovisionRequired`, never as restored | Five-phase child-process kill/reopen oracle required by Base recovery qualification |
 
 ## Mandatory failpoint phases
 
