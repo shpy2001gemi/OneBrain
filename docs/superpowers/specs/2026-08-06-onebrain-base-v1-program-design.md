@@ -2,7 +2,7 @@
 
 > Date: 2026-08-06
 >
-> Status: Approved design direction; written-spec review pending
+> Status: Approved by owner on 2026-08-07
 >
 > Target: `BASE-GATE-V1` before any new Desktop or Mobile product behavior
 >
