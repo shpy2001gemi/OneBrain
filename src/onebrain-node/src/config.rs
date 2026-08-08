@@ -91,6 +91,13 @@ pub struct NodeConfig {
 }
 
 impl NodeConfig {
+    /// Non-switched Base control plane and generation root. Base-owned stores
+    /// are resolved beneath its selected generation, never joined directly to
+    /// `data_dir`.
+    pub fn base_dataset_root(&self) -> PathBuf {
+        self.data_dir.join("base")
+    }
+
     /// Path to the redb storage file.
     pub fn storage_path(&self) -> PathBuf {
         self.data_dir.join("ku.redb")

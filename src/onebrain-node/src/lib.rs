@@ -4,12 +4,15 @@
 //! configuration, peer management, seed client, and verification.
 //! All interface projects (CLI, Web, Desktop, Mobile) depend on this.
 
+mod activation_journal;
 pub mod anti_gaming_guard;
 pub mod blob_authority;
 pub mod canonical_exchange;
 pub mod concept_registry_runtime;
 pub mod config;
+pub mod dataset_generation;
 pub mod dataset_path;
+mod dataset_root_lease;
 pub mod derived_index;
 pub mod derived_projection;
 pub mod display;
@@ -71,6 +74,7 @@ pub mod vnext_status;
 pub mod vnext_validated_sink;
 pub mod vnext_workflow_surface;
 
+pub use activation_journal::{ActivationPhase, DatasetGenerationReceipt};
 pub use blob_authority::{
     BlobAuthority, BlobAuthorityError, CanonicalBlobReferenceOracle, OsPendingUploadIdSource,
     PendingBlobUploadId, PendingBlobUploadStore, PendingOwnedBlobUpload, PendingUploadIdSource,
@@ -86,8 +90,13 @@ pub use concept_registry_runtime::{
     ConceptRegistryStatus,
 };
 pub use config::{ConceptRegistryMode, NodeConfig};
+pub use dataset_generation::{
+    ActivationReadyGeneration, DatasetGenerationStore, RestoreError, RestoreOperationBinding,
+    StagedDatasetGeneration,
+};
 pub use dataset_path::{
-    BaseStorageOwnerId, BootstrapDatasetPathResolver, DatasetGenerationId, DatasetPathResolver,
+    ActiveDatasetPathResolver, BaseStorageOwnerId, BootstrapDatasetPathResolver,
+    DatasetGenerationId, DatasetPathResolver,
 };
 pub use derived_index::{
     AcceptedRecordScan, DerivedIndexError, DerivedIndexOpenState, DerivedIndexReaderLease,

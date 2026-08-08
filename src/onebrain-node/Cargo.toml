@@ -68,6 +68,7 @@ ku-ai = { path = "../ku-ai" }
 ku-encoder = { path = "../ku-encoder" }
 ku-mediator = { path = "../ku-mediator" }
 onebrain-protocol = { path = "../onebrain-protocol" }
+onebrain-archive = { path = "../onebrain-archive" }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-std", "io-util"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -75,6 +76,7 @@ thiserror = "1"
 blake3 = "1"
 tracing = "0.1"
 getrandom = "0.3"
+fs2 = "0.4"
 zeroize = "1"
 unicode-segmentation = "1.13"
 ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }

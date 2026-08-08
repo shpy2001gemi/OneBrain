@@ -204,6 +204,15 @@ fn stable_ids_sorted_manifest_and_plaintext_are_deterministic() {
     .unwrap();
     assert_eq!(first, second);
     assert!(first.starts_with(b"OBDSV001"));
+    let manifest_bytes = captured.manifest.canonical_bytes().unwrap();
+    assert_eq!(
+        DatasetManifestV1::from_canonical_bytes(&manifest_bytes).unwrap(),
+        captured.manifest
+    );
+    let mut corrupt_manifest = manifest_bytes;
+    let last = corrupt_manifest.len() - 1;
+    corrupt_manifest[last] ^= 1;
+    assert!(DatasetManifestV1::from_canonical_bytes(&corrupt_manifest).is_err());
 }
 
 #[test]

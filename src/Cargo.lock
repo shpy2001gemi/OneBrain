@@ -3420,6 +3420,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "ed25519-dalek",
+ "fs2",
  "getrandom 0.3.4",
  "ku-ai",
  "ku-core",
@@ -3427,6 +3428,7 @@ dependencies = [
  "ku-kql",
  "ku-mediator",
  "ku-net",
+ "onebrain-archive",
  "onebrain-protocol",
  "rand 0.8.6",
  "redb",

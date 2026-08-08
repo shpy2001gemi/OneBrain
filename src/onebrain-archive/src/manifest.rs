@@ -78,6 +78,36 @@ impl ArchiveEntryKind {
         Self::RegistryHighWater,
         Self::SignerRecoveryPolicy,
     ];
+
+    pub(crate) fn from_code(value: u16) -> Result<Self, ArchiveError> {
+        Ok(match value {
+            1 => Self::CanonicalObject,
+            2 => Self::CanonicalEvent,
+            3 => Self::FeedInception,
+            4 => Self::AuthorityEvent,
+            5 => Self::AuthorityHighWater,
+            6 => Self::VaultRecord,
+            7 => Self::QuarantineRecord,
+            8 => Self::OwnedBlob,
+            9 => Self::IdentityEnvelope,
+            10 => Self::ReconciliationJournalRecord,
+            11 => Self::InventoryRecord,
+            12 => Self::OutboxRecord,
+            13 => Self::ProvenanceRecord,
+            14 => Self::PrivateNeedRecord,
+            15 => Self::ReceivedUseRecord,
+            16 => Self::OperationalRecord,
+            17 => Self::RolloutRecord,
+            18 => Self::BaseOperationRecord,
+            19 => Self::PendingBlobUploadIntent,
+            20 => Self::SourceCaptureIntent,
+            21 => Self::MigrationState,
+            22 => Self::InterpretationConfig,
+            23 => Self::RegistryHighWater,
+            24 => Self::SignerRecoveryPolicy,
+            _ => return Err(ArchiveError::InvalidProfile),
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -304,6 +334,83 @@ impl DatasetManifestV1 {
         Ok(self.encode(true))
     }
 
+    pub fn from_canonical_bytes(bytes: &[u8]) -> Result<Self, ArchiveError> {
+        let mut decoder = Decoder::new(bytes);
+        if decoder.take(8)? != b"OBDMV001" || decoder.u16()? != ArchiveProfileId::ObarV2 as u16 {
+            return Err(ArchiveError::InvalidProfile);
+        }
+        let portable_data_compatibility = PortableDataCompatibilityV1 {
+            canonical_schema_digest: decoder.array()?,
+            domain_registry_digest: decoder.array()?,
+            resource_registry_digest: decoder.array()?,
+            storage_schema_version: decoder.u32()?,
+            archive_profile: PortableProfileVersion {
+                major: decoder.u16()?,
+                minor: decoder.u16()?,
+            },
+            migration_profile: PortableProfileVersion {
+                major: decoder.u16()?,
+                minor: decoder.u16()?,
+            },
+        };
+        let producer_artifact_identity = match decoder.byte()? {
+            0 => ProducerArtifactIdentityV1::Unknown,
+            1 => ProducerArtifactIdentityV1::Known(decoder.array()?),
+            _ => return Err(ArchiveError::InvalidProfile),
+        };
+        let canonical_root = decoder.array()?;
+        let object_root = decoder.array()?;
+        let blob_root = decoder.array()?;
+        let feed_root = decoder.array()?;
+        let count = decoder.u32()? as usize;
+        if count == 0 || count > 1_000_000 {
+            return Err(ArchiveError::Limit);
+        }
+        let mut entries = Vec::with_capacity(count);
+        for _ in 0..count {
+            let encoded_id = ArchiveEntryId::from_bytes(decoder.array()?);
+            let kind = ArchiveEntryKind::from_code(decoder.u16()?)?;
+            let owner = ArchiveOwner::new(decoder.u16()?)?;
+            let namespace = decoder.u16()?;
+            let key_length = decoder.u16()? as usize;
+            let logical_key =
+                ArchiveLogicalKey::new(owner, namespace, decoder.take(key_length)?.to_vec())?;
+            let entry = ArchiveEntryV1::new(
+                kind,
+                logical_key,
+                decoder.u64()?,
+                decoder.array()?,
+                match decoder.byte()? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(ArchiveError::InvalidProfile),
+                },
+            )?;
+            if entry.id != encoded_id {
+                return Err(ArchiveError::Integrity);
+            }
+            entries.push(entry);
+        }
+        let aggregate_root = decoder.array()?;
+        decoder.finish()?;
+        let manifest = Self {
+            profile: ArchiveProfileId::ObarV2,
+            portable_data_compatibility,
+            producer_artifact_identity,
+            canonical_root,
+            object_root,
+            blob_root,
+            feed_root,
+            entries,
+            aggregate_root,
+        };
+        manifest.validate()?;
+        if manifest.canonical_bytes()?.as_slice() != bytes {
+            return Err(ArchiveError::InvalidProfile);
+        }
+        Ok(manifest)
+    }
+
     pub fn portable_compatible_with(&self, target: &Self) -> bool {
         self.portable_data_compatibility == target.portable_data_compatibility
     }
@@ -436,4 +543,70 @@ fn push_u32(output: &mut Vec<u8>, value: u32) {
 
 fn push_u64(output: &mut Vec<u8>, value: u64) {
     output.extend_from_slice(&value.to_be_bytes());
+}
+
+struct Decoder<'a> {
+    bytes: &'a [u8],
+    position: usize,
+}
+
+impl<'a> Decoder<'a> {
+    const fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, position: 0 }
+    }
+
+    fn take(&mut self, length: usize) -> Result<&'a [u8], ArchiveError> {
+        let end = self
+            .position
+            .checked_add(length)
+            .ok_or(ArchiveError::Limit)?;
+        let value = self
+            .bytes
+            .get(self.position..end)
+            .ok_or(ArchiveError::Malformed)?;
+        self.position = end;
+        Ok(value)
+    }
+
+    fn byte(&mut self) -> Result<u8, ArchiveError> {
+        Ok(self.take(1)?[0])
+    }
+
+    fn u16(&mut self) -> Result<u16, ArchiveError> {
+        Ok(u16::from_be_bytes(
+            self.take(2)?
+                .try_into()
+                .map_err(|_| ArchiveError::Malformed)?,
+        ))
+    }
+
+    fn u32(&mut self) -> Result<u32, ArchiveError> {
+        Ok(u32::from_be_bytes(
+            self.take(4)?
+                .try_into()
+                .map_err(|_| ArchiveError::Malformed)?,
+        ))
+    }
+
+    fn u64(&mut self) -> Result<u64, ArchiveError> {
+        Ok(u64::from_be_bytes(
+            self.take(8)?
+                .try_into()
+                .map_err(|_| ArchiveError::Malformed)?,
+        ))
+    }
+
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], ArchiveError> {
+        self.take(N)?
+            .try_into()
+            .map_err(|_| ArchiveError::Malformed)
+    }
+
+    fn finish(self) -> Result<(), ArchiveError> {
+        if self.position == self.bytes.len() {
+            Ok(())
+        } else {
+            Err(ArchiveError::TrailingBytes)
+        }
+    }
 }

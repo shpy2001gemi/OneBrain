@@ -16,7 +16,8 @@ use crate::concept_registry_runtime::{
     initialize_concept_registry, ConceptRegistryRuntimeState, ConceptRegistryStatus,
 };
 use crate::config::NodeConfig;
-use crate::dataset_path::{BaseStorageOwnerId, BootstrapDatasetPathResolver, DatasetPathResolver};
+use crate::dataset_generation::DatasetGenerationStore;
+use crate::dataset_path::{BaseStorageOwnerId, DatasetPathResolver};
 use crate::derived_index::{
     AcceptedRecordScan, DerivedIndexOpenState, RedbAcceptedRecordScan, VNextDerivedIndexManager,
 };
@@ -97,6 +98,8 @@ pub struct SharedState {
     pub retriever: Arc<RwLock<KuRetriever>>,
     pub retriever_projection: Arc<RetrieverProjectionService>,
     pub retriever_projection_state: DerivedProjectionOpenState,
+    /// Active generation path authority shared by every Base-owned store.
+    pub dataset_paths: Arc<dyn DatasetPathResolver>,
     /// Connected peers.
     pub peer_manager: PeerManager,
     /// Node configuration (for data paths, Ollama URL, etc.).
@@ -106,6 +109,9 @@ pub struct SharedState {
 /// The top-level OneBrain node.
 pub struct OneBrainNode {
     config: NodeConfig,
+    /// Holds the lifetime OS root lease and non-switched activation journal.
+    _dataset_generations: Arc<DatasetGenerationStore>,
+    dataset_paths: Arc<dyn DatasetPathResolver>,
     mediator: Mediator,
     guard: AntiGamingGuard,
     /// Concept dictionary (shared across encoder and mediator).
@@ -237,10 +243,11 @@ impl OneBrainNode {
         let storage = KuStorage::open_base_read_only(&config.storage_path())
             .map_err(|e| NodeError::Storage(format!("{}", e)))?;
 
-        let dataset_paths = Arc::new(
-            BootstrapDatasetPathResolver::new(config.data_dir.join("base-bootstrap"))
+        let dataset_generations = Arc::new(
+            DatasetGenerationStore::open_exclusive(&config.base_dataset_root())
                 .map_err(|error| NodeError::Storage(error.to_string()))?,
         );
+        let dataset_paths: Arc<dyn DatasetPathResolver> = dataset_generations.clone();
         let blob_authority = Arc::new(BlobAuthority::new(
             dataset_paths.clone(),
             Arc::new(OsPendingUploadIdSource),
@@ -251,7 +258,10 @@ impl OneBrainNode {
             .reconcile_generation()
             .map_err(|error| NodeError::Storage(error.to_string()))?;
         let blob_store = BlobStorage::open_with_config(
-            &config.blob_storage_path(),
+            &dataset_paths
+                .owner_path(BaseStorageOwnerId::BLOB)
+                .map_err(|error| NodeError::Storage(error.to_string()))?
+                .join("ku.blob.redb"),
             BlobStorageConfig {
                 total_quota_bytes: 10 * 1024 * 1024 * 1024,
                 free_space_reserve_bytes: 64 * 1024 * 1024,
@@ -271,8 +281,12 @@ impl OneBrainNode {
             )
             .map_err(|error| NodeError::Storage(error.to_string()))?,
         );
-        let canonical_scan =
-            RedbAcceptedRecordScan::new(config.data_dir.join("vnext_verified.redb"));
+        let canonical_scan = RedbAcceptedRecordScan::new(
+            dataset_paths
+                .owner_path(BaseStorageOwnerId::CANONICAL)
+                .map_err(|error| NodeError::Storage(error.to_string()))?
+                .join("vnext_verified.redb"),
+        );
         let (derived_index_state, derived_report) = derived_index.open_or_rebuild(&canonical_scan);
         let accepted_vnext_root = derived_report
             .as_ref()
@@ -329,6 +343,7 @@ impl OneBrainNode {
             retriever,
             retriever_projection,
             retriever_projection_state,
+            dataset_paths: dataset_paths.clone(),
             peer_manager: PeerManager::new(),
             config: config.clone(),
         }));
@@ -341,6 +356,8 @@ impl OneBrainNode {
 
         Ok(Self {
             config,
+            _dataset_generations: dataset_generations,
+            dataset_paths: dataset_paths.clone(),
             mediator,
             guard,
             dict,
@@ -428,8 +445,8 @@ impl OneBrainNode {
                 )
             })?;
             Some(
-                VNextProductRuntime::start(
-                    &self.config.data_dir,
+                VNextProductRuntime::start_in_dataset(
+                    self.dataset_paths.as_ref(),
                     bind_addr,
                     &self.config.vnext,
                     dependencies,
@@ -2114,7 +2131,11 @@ impl OneBrainNode {
     /// Export exact validated public vNext bytes. Legacy KU rows are not
     /// silently promoted into this namespace.
     pub fn export_canonical_exchange(&self, path: &std::path::Path) -> Result<usize, NodeError> {
-        let scan = RedbAcceptedRecordScan::new(self.config.data_dir.join("vnext_verified.redb"));
+        let canonical_root = self
+            .dataset_paths
+            .owner_path(BaseStorageOwnerId::CANONICAL)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let scan = RedbAcceptedRecordScan::new(canonical_root.join("vnext_verified.redb"));
         let entries = scan
             .accepted_records()
             .map_err(|error| NodeError::Storage(error.to_string()))?
@@ -2188,7 +2209,11 @@ impl OneBrainNode {
             .iter()
             .filter(|entry| matches!(entry, BaseExchangeEntryV1::LegacyReadOnlyEvidence { .. }))
             .count();
-        let backend = RedbVerifiedBackend::open(&self.config.data_dir.join("vnext_verified.redb"))
+        let canonical_root = self
+            .dataset_paths
+            .owner_path(BaseStorageOwnerId::CANONICAL)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let backend = RedbVerifiedBackend::open(&canonical_root.join("vnext_verified.redb"))
             .map_err(NodeError::Storage)?;
         let mut sink = SharedVNextValidatedSink::new(VNextValidatedSink::new(backend));
         let mut pending = entries

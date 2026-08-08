@@ -9,6 +9,7 @@ mod crypto;
 mod dataset;
 mod limits;
 mod manifest;
+mod restore;
 mod verified;
 
 use thiserror::Error;
@@ -27,6 +28,10 @@ pub use manifest::{
     compute_entry_id, ArchiveEntryId, ArchiveEntryKind, ArchiveEntryV1, ArchiveLogicalKey,
     ArchiveOwner, ArchiveProfileId, BoundedBytes, DatasetManifestV1, PortableDataCompatibilityV1,
     PortableProfileVersion, ProducerArtifactIdentityV1,
+};
+pub use restore::{
+    materialize_verified_dataset, ArchiveRestorePolicyV1, SignerRecoveryDisposition,
+    VerifiedDatasetMaterialization, VerifiedDatasetMaterializer,
 };
 pub use verified::{
     verify_dataset_archive_v2, EncryptedSpoolCapability, FileSecureSpoolFactory,

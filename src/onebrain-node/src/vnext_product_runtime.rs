@@ -25,6 +25,7 @@ use thiserror::Error;
 use tokio::sync::{watch, Notify};
 use tokio::task::JoinHandle;
 
+use crate::dataset_path::{BaseStorageOwnerId, DatasetPathResolver};
 use crate::vnext_config::{VNextFeature, VNextFeatureConfig, VNextRuntimeBudgets};
 use crate::vnext_distributed_kql::{
     DistributedKqlBudget, DistributedKqlError, DistributedKqlReport, DistributedKqlRuntime,
@@ -37,7 +38,7 @@ use crate::vnext_distributed_pomv::{
 };
 use crate::vnext_network_runtime::{
     prepare_vnext_identity, OutboundVNextSession, VNextNetworkRuntime, VNextNetworkRuntimeError,
-    VNextNetworkRuntimeState, VNextNetworkRuntimeStatus,
+    VNextNetworkRuntimeState, VNextNetworkRuntimeStatus, VNextNetworkStoragePaths,
 };
 use crate::vnext_observability::{
     VNextObservability, VNextObservabilitySnapshot, VNextReasonCode, VNextRegistryTelemetryState,
@@ -49,6 +50,7 @@ use crate::vnext_runtime_rollout::{
 };
 
 pub const MAX_PRODUCT_BACKGROUND_WORKERS: usize = 8;
+#[cfg(test)]
 const VNEXT_STARTUP_ARTIFACTS: &[&str] = &[
     "vnext_identity.key",
     "vnext_private_need_vault.redb",
@@ -61,6 +63,80 @@ const VNEXT_STARTUP_ARTIFACTS: &[&str] = &[
     "vnext_record_provenance.redb",
     "vnext_outbox.redb",
 ];
+
+struct VNextProductStoragePaths {
+    operational: PathBuf,
+    rollout: PathBuf,
+    identity: PathBuf,
+    private_kql: PathBuf,
+    private_pomv: PathBuf,
+    network: VNextNetworkStoragePaths,
+}
+
+impl VNextProductStoragePaths {
+    fn legacy(data_dir: &Path) -> Self {
+        Self {
+            operational: data_dir.to_path_buf(),
+            rollout: data_dir.to_path_buf(),
+            identity: data_dir.to_path_buf(),
+            private_kql: data_dir.to_path_buf(),
+            private_pomv: data_dir.to_path_buf(),
+            network: VNextNetworkStoragePaths {
+                admission_root: data_dir.to_path_buf(),
+                canonical: data_dir.join("vnext_verified.redb"),
+                reconciliation: data_dir.join("vnext_reconciliation.redb"),
+                inventory: data_dir.join("vnext_inventory.redb"),
+                provenance: data_dir.join("vnext_record_provenance.redb"),
+                outbox: data_dir.join("vnext_outbox.redb"),
+            },
+        }
+    }
+
+    fn from_resolver(resolver: &dyn DatasetPathResolver) -> Result<Self, VNextProductRuntimeError> {
+        let owner = |id| {
+            resolver
+                .owner_path(id)
+                .map_err(|error| VNextProductRuntimeError::Configuration(error.to_string()))
+        };
+        let canonical = owner(BaseStorageOwnerId::CANONICAL)?;
+        let reconciliation = owner(BaseStorageOwnerId::RECONCILIATION)?;
+        let inventory = owner(BaseStorageOwnerId::INVENTORY)?;
+        let provenance = owner(BaseStorageOwnerId::PROVENANCE)?;
+        let outbox = owner(BaseStorageOwnerId::OUTBOX)?;
+        let optional_network = owner(BaseStorageOwnerId::OPTIONAL_NETWORK)?;
+        Ok(Self {
+            operational: owner(BaseStorageOwnerId::OPERATIONAL)?,
+            rollout: owner(BaseStorageOwnerId::ROLLOUT)?,
+            identity: owner(BaseStorageOwnerId::IDENTITY)?,
+            private_kql: owner(BaseStorageOwnerId::PRIVATE_KQL)?,
+            private_pomv: owner(BaseStorageOwnerId::PRIVATE_POMV)?,
+            network: VNextNetworkStoragePaths {
+                admission_root: optional_network,
+                canonical: canonical.join("vnext_verified.redb"),
+                reconciliation: reconciliation.join("vnext_reconciliation.redb"),
+                inventory: inventory.join("vnext_inventory.redb"),
+                provenance: provenance.join("vnext_record_provenance.redb"),
+                outbox: outbox.join("vnext_outbox.redb"),
+            },
+        })
+    }
+
+    fn startup_artifacts(&self) -> Vec<PathBuf> {
+        vec![
+            self.identity.join("vnext_identity.key"),
+            self.private_kql.join("vnext_private_need_vault.redb"),
+            self.private_kql.join("vnext_distributed_kql.redb"),
+            self.private_kql.join("vnext_standing_needs.redb"),
+            self.private_pomv.join("vnext_public_use_sender.redb"),
+            self.private_pomv.join("vnext_distributed_pomv.redb"),
+            self.network.canonical.clone(),
+            self.network.reconciliation.clone(),
+            self.network.inventory.clone(),
+            self.network.provenance.clone(),
+            self.network.outbox.clone(),
+        ]
+    }
+}
 
 /// Caller-owned dependencies that must be supplied before product runtime
 /// startup. The vault key is consumed by the encrypted local store and is not
@@ -275,6 +351,40 @@ impl VNextProductRuntime {
         dependencies: VNextProductRuntimeDependencies,
         identity_signer: Option<Arc<dyn SessionIdentitySigner>>,
     ) -> Result<Self, VNextProductRuntimeError> {
+        Self::start_with_paths(
+            VNextProductStoragePaths::legacy(data_dir),
+            bind_addr,
+            config,
+            dependencies,
+            identity_signer,
+        )
+        .await
+    }
+
+    pub async fn start_in_dataset(
+        resolver: &dyn DatasetPathResolver,
+        bind_addr: SocketAddr,
+        config: &VNextFeatureConfig,
+        dependencies: VNextProductRuntimeDependencies,
+        identity_signer: Option<Arc<dyn SessionIdentitySigner>>,
+    ) -> Result<Self, VNextProductRuntimeError> {
+        Self::start_with_paths(
+            VNextProductStoragePaths::from_resolver(resolver)?,
+            bind_addr,
+            config,
+            dependencies,
+            identity_signer,
+        )
+        .await
+    }
+
+    async fn start_with_paths(
+        paths: VNextProductStoragePaths,
+        bind_addr: SocketAddr,
+        config: &VNextFeatureConfig,
+        dependencies: VNextProductRuntimeDependencies,
+        identity_signer: Option<Arc<dyn SessionIdentitySigner>>,
+    ) -> Result<Self, VNextProductRuntimeError> {
         let mut startup_trace = Vec::with_capacity(8);
         config
             .validate()
@@ -286,13 +396,17 @@ impl VNextProductRuntime {
             public_use_evidence_publish: requested_lanes.public_use_evidence_publish,
             distributed_pomv_view: requested_lanes.distributed_pomv_view,
         };
-        let rollout =
-            VNextRuntimeRollout::open(data_dir, requested_lanes, rollout_configured_kills(config))?;
+        let mut artifact_guard =
+            StartupArtifactGuard::new_candidates(paths.startup_artifacts(), &paths.operational)?;
+        let rollout = VNextRuntimeRollout::open(
+            &paths.rollout,
+            requested_lanes,
+            rollout_configured_kills(config),
+        )?;
         let lanes = VNextProductLaneStatus::from_rollout(&rollout.snapshot()?);
         let budgets = config.runtime_budgets;
-        let storage = ProductStorageGuard::new(data_dir, budgets);
+        let storage = ProductStorageGuard::new(&paths.operational, budgets);
         storage.ensure_writable()?;
-        let mut artifact_guard = StartupArtifactGuard::new(data_dir)?;
         let VNextProductRuntimeDependencies {
             private_need_vault_key,
             policies,
@@ -307,7 +421,7 @@ impl VNextProductRuntime {
         // persisted ciphertext proof is checked when the unopened KQL owner is
         // rehydrated below; signer proof-of-possession is checked here before
         // any durable subsystem store is opened.
-        let prepared_identity = prepare_vnext_identity(data_dir, identity_signer)?;
+        let prepared_identity = prepare_vnext_identity(&paths.identity, identity_signer)?;
         startup_trace.push(VNextStartupPhase::SignerAndVaultValidated);
 
         // A never-requested lane has no owner. A provisioned lane stays open
@@ -315,18 +429,20 @@ impl VNextProductRuntime {
         // recreating durable state.
         let mut distributed_kql = provisioned_lanes
             .distributed_kql_one_hop
-            .then(|| DistributedKqlRuntime::open_unhydrated(data_dir, private_need_vault_key))
+            .then(|| {
+                DistributedKqlRuntime::open_unhydrated(&paths.private_kql, private_need_vault_key)
+            })
             .transpose()?;
         let public_use = provisioned_lanes
             .public_use_evidence_publish
-            .then(|| PublicUseEvidencePublisher::open(data_dir))
+            .then(|| PublicUseEvidencePublisher::open(&paths.private_pomv))
             .transpose()?
             .map(Arc::new);
         let distributed_pomv = provisioned_lanes
             .distributed_pomv_view
             .then(|| {
                 DistributedPomvRuntime::open_with_limits(
-                    data_dir,
+                    &paths.private_pomv,
                     budgets.pomv_max_records,
                     budgets.pomv_max_view_records,
                     policies,
@@ -336,8 +452,8 @@ impl VNextProductRuntime {
         startup_trace.push(VNextStartupPhase::StoresOpened);
 
         let network = Arc::new(
-            VNextNetworkRuntime::start_prepared(
-                data_dir,
+            VNextNetworkRuntime::start_prepared_with_paths(
+                &paths.network,
                 bind_addr,
                 config.network,
                 budgets.storage_hard_watermark_bytes,
@@ -433,7 +549,7 @@ impl VNextProductRuntime {
             startup_pending_publications,
             startup_artifacts,
             startup_data_dir_created,
-            data_dir: data_dir.to_path_buf(),
+            data_dir: paths.operational,
         })
     }
 
@@ -1155,26 +1271,33 @@ impl VNextProductServices {
 
 struct StartupArtifactGuard {
     data_dir: PathBuf,
-    preexisting: BTreeSet<&'static str>,
+    candidates: Vec<PathBuf>,
+    preexisting: BTreeSet<PathBuf>,
     data_dir_preexisting: bool,
     committed: bool,
 }
 
 impl StartupArtifactGuard {
-    fn new(data_dir: &Path) -> Result<Self, VNextProductRuntimeError> {
+    fn new_candidates(
+        mut candidates: Vec<PathBuf>,
+        data_dir: &Path,
+    ) -> Result<Self, VNextProductRuntimeError> {
         let data_dir_preexisting = data_dir.exists();
         if data_dir_preexisting && !data_dir.is_dir() {
             return Err(VNextProductRuntimeError::InvalidDataDirectory(
                 data_dir.to_path_buf(),
             ));
         }
-        let preexisting = VNEXT_STARTUP_ARTIFACTS
+        candidates.sort();
+        candidates.dedup();
+        let preexisting = candidates
             .iter()
-            .copied()
-            .filter(|name| data_dir.join(name).exists())
+            .filter(|path| path.exists())
+            .cloned()
             .collect();
         Ok(Self {
             data_dir: data_dir.to_path_buf(),
+            candidates,
             preexisting,
             data_dir_preexisting,
             committed: false,
@@ -1182,11 +1305,10 @@ impl StartupArtifactGuard {
     }
 
     fn new_artifacts(&self) -> Vec<PathBuf> {
-        VNEXT_STARTUP_ARTIFACTS
+        self.candidates
             .iter()
-            .copied()
-            .filter(|name| !self.preexisting.contains(name))
-            .map(|name| self.data_dir.join(name))
+            .filter(|path| !self.preexisting.contains(*path))
+            .cloned()
             .filter(|path| path.exists())
             .collect()
     }
@@ -1489,6 +1611,7 @@ pub enum VNextProductRuntimeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dataset_path::BootstrapDatasetPathResolver;
     use crate::vnext_config::VNextFeatureConfig;
     use ed25519_dalek::SigningKey;
     use ku_core::foundation::{
@@ -1496,6 +1619,24 @@ mod tests {
         MetabolicViewPolicy, NamespaceCommitment, ObjectReference, UseEvidencePayload, UseMode,
     };
     use ku_net::vnext_carrier::CarrierRecord;
+
+    #[test]
+    fn integrated_runtime_paths_are_scoped_by_closed_storage_owner() {
+        let directory = tempfile::tempdir().unwrap();
+        let resolver = BootstrapDatasetPathResolver::new(directory.path()).unwrap();
+        let paths = VNextProductStoragePaths::from_resolver(&resolver).unwrap();
+        assert_eq!(
+            paths.network.canonical.parent().unwrap(),
+            resolver.owner_path(BaseStorageOwnerId::CANONICAL).unwrap()
+        );
+        assert_eq!(
+            paths.network.outbox.parent().unwrap(),
+            resolver.owner_path(BaseStorageOwnerId::OUTBOX).unwrap()
+        );
+        assert_ne!(paths.private_kql, paths.private_pomv);
+        assert_ne!(paths.identity, paths.rollout);
+        assert_ne!(paths.operational, paths.network.admission_root);
+    }
 
     struct UnavailableIdentitySigner {
         public_key: [u8; 32],
