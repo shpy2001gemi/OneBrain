@@ -5,6 +5,9 @@
 //! anti-gaming guard, and peer networking.
 
 use crate::anti_gaming_guard::AntiGamingGuard;
+use crate::base_runtime::{
+    BaseManagementGrant, BaseManagementScope, BaseRuntime, BaseRuntimeConfig, BaseServices,
+};
 use crate::blob_authority::{
     BlobAuthority, OsPendingUploadIdSource, PendingBlobUploadId, PendingOwnedBlobUpload,
     UnavailableValidatedBlobReferenceSource,
@@ -23,8 +26,10 @@ use crate::derived_index::{
 };
 use crate::derived_projection::{DerivedProjectionOpenState, RetrieverProjectionService};
 use crate::error::NodeError;
+use crate::identity_recovery::SignerReprovisionRequirement;
 use crate::network::{recv_message, send_message, NetMessage, NodeEvent, PeerInfo};
 use crate::peer_manager::PeerManager;
+use crate::signer_ports::{SignerPossessionProof, SignerProviderRegistry};
 use crate::text::truncate_preview;
 use crate::verifier_service;
 #[cfg(feature = "vnext-network-runtime")]
@@ -112,6 +117,9 @@ pub struct OneBrainNode {
     /// Holds the lifetime OS root lease and non-switched activation journal.
     _dataset_generations: Arc<DatasetGenerationStore>,
     dataset_paths: Arc<dyn DatasetPathResolver>,
+    /// Sole owner of the product-neutral Base facade. Service clones are weak
+    /// and remain usable without holding the node mutex.
+    base_runtime: Option<BaseRuntime>,
     mediator: Mediator,
     guard: AntiGamingGuard,
     /// Concept dictionary (shared across encoder and mediator).
@@ -358,6 +366,7 @@ impl OneBrainNode {
             config,
             _dataset_generations: dataset_generations,
             dataset_paths: dataset_paths.clone(),
+            base_runtime: None,
             mediator,
             guard,
             dict,
@@ -969,13 +978,18 @@ impl OneBrainNode {
         let runtime = None;
         #[cfg(not(feature = "vnext-network-runtime"))]
         let effective_vnext = self.config.vnext.clone();
-        crate::vnext_status::VNextStatusSnapshot::local_runtime_with_network(
+        let mut snapshot = crate::vnext_status::VNextStatusSnapshot::local_runtime_with_network(
             self.ku_count().unwrap_or(0),
             self.peer_count(),
             &effective_vnext,
             true,
             runtime,
-        )
+        );
+        snapshot.base_runtime = self
+            .base_services()
+            .and_then(|services| services.snapshot().ok())
+            .map(crate::vnext_status::BaseRuntimeStatusView::from_base);
+        snapshot
     }
 
     /// Address of the real UDP/QUIC OBP-RP listener, if it is running.
@@ -1124,6 +1138,69 @@ impl OneBrainNode {
     /// package through the archive/restore service.
     pub fn recover_identity_legacy(&mut self) -> Result<IdentityInfo, NodeError> {
         Err(NodeError::UnsupportedLegacyRecovery)
+    }
+
+    /// Compose the product-neutral Base facade exactly once around the
+    /// already lease-protected dataset generation owner.
+    pub fn install_base_runtime(&mut self, config: BaseRuntimeConfig) -> Result<(), NodeError> {
+        if self.base_runtime.is_some() {
+            return Err(NodeError::Config(
+                "OneBrainNode already owns a Base runtime".into(),
+            ));
+        }
+        let runtime = BaseRuntime::open(self._dataset_generations.clone(), config)
+            .map_err(|error| NodeError::Config(error.to_string()))?;
+        self.base_runtime = Some(runtime);
+        Ok(())
+    }
+
+    /// Product-neutral weak service handle. The node mutex may be released as
+    /// soon as this value has been cloned.
+    pub fn base_services(&self) -> Option<BaseServices> {
+        self.base_runtime
+            .as_ref()
+            .and_then(|runtime| runtime.services().ok())
+    }
+
+    pub fn issue_base_management_grant(
+        &self,
+        principal: [u8; 32],
+        authentication_proof: &[u8],
+        scopes: impl IntoIterator<Item = BaseManagementScope>,
+        ttl: std::time::Duration,
+    ) -> Result<BaseManagementGrant, NodeError> {
+        self.base_runtime
+            .as_ref()
+            .ok_or_else(|| NodeError::Config("Base runtime is not installed".into()))?
+            .issue_management_grant(principal, authentication_proof, scopes, ttl)
+            .map_err(|error| NodeError::Config(error.to_string()))
+    }
+
+    pub fn register_base_signer_provision(
+        &self,
+        principal: [u8; 32],
+        authentication_proof: &[u8],
+        requirement: SignerReprovisionRequirement,
+        proof: SignerPossessionProof,
+        registry: Arc<dyn SignerProviderRegistry>,
+    ) -> Result<onebrain_base_contract::SignerProvisionHandleV1, NodeError> {
+        self.base_runtime
+            .as_ref()
+            .ok_or_else(|| NodeError::Config("Base runtime is not installed".into()))?
+            .register_signer_provision(
+                principal,
+                authentication_proof,
+                requirement,
+                proof,
+                registry,
+            )
+            .map_err(|error| NodeError::Config(error.to_string()))
+    }
+
+    /// Detach the aggregate without waiting. Callers release any node mutex
+    /// before awaiting `BaseRuntime::close` on the returned owner.
+    pub fn detach_base_runtime(&mut self) -> Option<BaseRuntime> {
+        self.base_runtime.take()
     }
 
     // ═══════════════════════════════════════════════════════

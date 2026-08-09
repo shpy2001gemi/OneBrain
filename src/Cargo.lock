@@ -3440,6 +3440,7 @@ dependencies = [
  "ku-mediator",
  "ku-net",
  "onebrain-archive",
+ "onebrain-base-contract",
  "onebrain-protocol",
  "rand 0.8.6",
  "redb",

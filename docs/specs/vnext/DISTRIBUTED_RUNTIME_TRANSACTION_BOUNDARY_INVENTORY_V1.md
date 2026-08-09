@@ -31,6 +31,8 @@ After every injected crash and restart, the harness compares:
 - canonical source root, derived generation/mapping digest, and projection root;
 - archive snapshot/root and active dataset generation pointer; and
 - typed recovery-package and signer re-provisioning outcome.
+- Base operation reservation/intent/idempotency/receipt state, process and
+  dataset generation fences, capability bindings, and activation carry-forward receipt.
 
 No oracle may use arrival order, path count, provider count, or a legacy wallet
 balance as correctness evidence.
@@ -65,6 +67,7 @@ balance as correctness evidence.
 | `TX-ARCH-001` | Single-writer logical cut, held physical objects, encrypted manifest/chunks and final archive root | Dataset snapshot coordinator and archive writer; source generation remains authoritative | Publish the completed encrypted archive | Reopen exposes no partial archive as valid; a published archive authenticates the exact held canonical/blob/private/journal frontier and excludes disposable projection bytes | Five-phase child-process kill/reopen oracle required by Base archive qualification |
 | `TX-RESTORE-001` | Verified archive materialization into a new dataset generation and active-pointer switch | Dataset generation store and non-switched activation journal | Rebind canonical services and rebuild excluded projections | Before pointer commit the old generation remains active; after commit the fully verified new generation is active; partial materialization never becomes current | Five-phase child-process kill/reopen oracle required by Base restore qualification |
 | `TX-RECOVERY-001` | Typed encrypted recovery-package import and per-domain signer recovery disposition | Recovery package store and non-switched control journal; Node/Actor/Feed domains remain independent | Activate restored software-backed signer or emit typed re-provisioning requirement | Exact retry cannot clone or cross-bind identity domains; unavailable non-exportable material reopens as `ReprovisionRequired`, never as restored | Five-phase child-process kill/reopen oracle required by Base recovery qualification |
+| `TX-BASE-OPS-001` | Durable Base reservation, exact prepared command, idempotency-bound confirmation, terminal/unknown receipt, and restore carry-forward | Node-owned `BaseOperationStore` under the active `DatasetPathResolver`, plus process generation and activation evidence in the non-switched control plane | Execute one bounded local/archive effect, publish its receipt event, or require reconciliation | Reopen yields one exact legal state; a confirming or cross-process/cross-dataset row becomes `UnknownOutcome` and is never replayed; a restore receipt remains reconcilable by its original operation ID after pointer activation | Exact mandatory five-phase child-process kill/reopen matrix plus duplicate idempotency, stale generation, capability-owner, drain, and pointer-switch oracles |
 
 ## Mandatory failpoint phases
 

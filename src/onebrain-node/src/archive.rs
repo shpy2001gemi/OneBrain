@@ -27,6 +27,7 @@ use ku_core::foundation::{
 };
 use ku_kql::blob_storage::{BlobReferenceOracle as _, BlobStorage};
 
+use crate::activation_journal::ActivationOperationContext;
 use crate::archive_capabilities::{
     ArchiveCapabilityRegistry, ArchiveOperationReservationId, ArchiveSecretHandle,
     ReadableArchiveSinkHandle, SealedArchiveSourceHandle, WritableArchiveSinkHandle,
@@ -868,6 +869,34 @@ impl BaseArchiveService {
         credential: ArchiveSecretHandle,
         expected: &ArchiveRestorePolicyV1,
     ) -> Result<DatasetRestoreReceipt, NodeError> {
+        self.restore_archive_bound(archive, credential, expected, None)
+            .await
+    }
+
+    pub(crate) async fn restore_archive_for_base(
+        &self,
+        archive: SealedArchiveSourceHandle,
+        credential: ArchiveSecretHandle,
+        expected: &ArchiveRestorePolicyV1,
+        operation: RestoreOperationBinding,
+        operation_context: ActivationOperationContext,
+    ) -> Result<DatasetRestoreReceipt, NodeError> {
+        self.restore_archive_bound(
+            archive,
+            credential,
+            expected,
+            Some((operation, operation_context)),
+        )
+        .await
+    }
+
+    async fn restore_archive_bound(
+        &self,
+        archive: SealedArchiveSourceHandle,
+        credential: ArchiveSecretHandle,
+        expected: &ArchiveRestorePolicyV1,
+        base_operation: Option<(RestoreOperationBinding, ActivationOperationContext)>,
+    ) -> Result<DatasetRestoreReceipt, NodeError> {
         let factory = self.restore_backend_factory.as_ref().ok_or_else(|| {
             NodeError::ArchiveCapability(
                 "archive restore target backend factory is not configured".into(),
@@ -907,10 +936,25 @@ impl BaseArchiveService {
             self.signer_registry.as_deref(),
         )
         .map_err(restore_error)?;
-        let operation = restore_binding(reservation, archive_digest);
-        self.dataset_generations
-            .activate_restore(ready, operation)
-            .map_err(restore_error)
+        let operation = base_operation
+            .as_ref()
+            .map(|(operation, _)| *operation)
+            .unwrap_or_else(|| restore_binding(reservation, archive_digest));
+        if operation.operation_id != *reservation.as_bytes() {
+            return Err(NodeError::ArchiveCapability(
+                "restore capability is bound to a different Base operation".into(),
+            ));
+        }
+        match base_operation {
+            Some((operation, context)) => self
+                .dataset_generations
+                .activate_restore_with_context(ready, operation, context)
+                .map_err(restore_error),
+            None => self
+                .dataset_generations
+                .activate_restore(ready, operation)
+                .map_err(restore_error),
+        }
     }
 
     /// Applies already-verified logical rows through every target validation

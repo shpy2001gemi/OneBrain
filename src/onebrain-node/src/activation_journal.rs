@@ -18,6 +18,15 @@ pub enum ActivationPhase {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivationOperationContext {
+    pub principal_digest: [u8; 32],
+    pub process_generation: [u8; 32],
+    pub migration_vector_id: Option<String>,
+    pub migration_vector_blake3: Option<[u8; 32]>,
+    pub migration_trust_policy_digest: Option<[u8; 32]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DatasetGenerationReceipt {
     pub operation_id: [u8; 32],
     pub idempotency_key: [u8; 32],
@@ -25,6 +34,8 @@ pub struct DatasetGenerationReceipt {
     pub new_generation_root: [u8; 32],
     pub generation_sequence: u64,
     pub phase: ActivationPhase,
+    #[serde(default)]
+    pub operation_context: Option<ActivationOperationContext>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +47,8 @@ pub(crate) struct ActivationJournalRecord {
     pub old_generation_root: [u8; 32],
     pub new_generation_root: [u8; 32],
     pub phase: ActivationPhase,
+    #[serde(default)]
+    pub operation_context: Option<ActivationOperationContext>,
     pub receipt: Option<DatasetGenerationReceipt>,
 }
 

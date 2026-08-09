@@ -144,6 +144,16 @@ pub struct NetworkRuntimeObservation {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BaseRuntimeStatusView {
+    pub lifecycle: String,
+    pub process_generation: String,
+    pub dataset_generation: String,
+    pub local_usable: bool,
+    pub network_enabled: bool,
+    pub limitations: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VNextStatusSnapshot {
     pub profile_major: u16,
     pub usability: LocalUsability,
@@ -154,6 +164,8 @@ pub struct VNextStatusSnapshot {
     pub consent: ConsentStatusView,
     pub features: VNextFeatureStatus,
     pub network_runtime: NetworkRuntimeStatusView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_runtime: Option<BaseRuntimeStatusView>,
 }
 
 impl VNextStatusSnapshot {
@@ -298,12 +310,30 @@ impl VNextStatusSnapshot {
                 legacy_adapter: config.is_active(VNextFeature::LegacyAdapter),
             },
             network_runtime,
+            base_runtime: None,
         }
     }
 
     pub const fn is_display_only(&self) -> bool {
         true
     }
+}
+
+impl BaseRuntimeStatusView {
+    pub(crate) fn from_base(status: crate::base_runtime::BaseStatusV1) -> Self {
+        Self {
+            lifecycle: format!("{:?}", status.lifecycle),
+            process_generation: hex(status.process_generation.as_bytes()),
+            dataset_generation: hex(&status.dataset_generation.0),
+            local_usable: status.local_usable,
+            network_enabled: status.network_enabled,
+            limitations: status.limitations.into_iter().map(str::to_owned).collect(),
+        }
+    }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 #[cfg(test)]

@@ -865,6 +865,71 @@ def validate_base_v1_archive() -> tuple[int, int]:
         raise ContractError("Base v1 archive portable restore gate drift")
     if profile.get("non_exportable_signer_restore") != "reprovision_required":
         raise ContractError("Base v1 signer restore policy drift")
+    expected_base_operations = {
+        "owner": "base_operations",
+        "entry_kind": "BaseOperationRecord",
+        "boundary": "TX-BASE-OPS-001",
+        "states": [
+            "reserved",
+            "prepared",
+            "confirming",
+            "committed",
+            "canceled",
+            "failed",
+            "unknown_outcome",
+        ],
+        "generation_bindings": ["process_generation", "dataset_generation"],
+        "migration_bindings": [
+            "vector_id",
+            "vector_blake3",
+            "trust_policy_digest",
+        ],
+        "restore_nonterminal": "unknown_outcome_reconcile_required_never_replay",
+        "activation_receipt_plane": "non-switched-control-and-selected-generation",
+        "authority_journal": {
+            "tables": [
+                "management_grant",
+                "management_handle",
+                "archive_capability",
+                "signer_provision",
+            ],
+            "restart_disposition": "revoked_never_reactivated",
+            "archive_disposition": "revoked_evidence_only",
+        },
+    }
+    if profile.get("base_operation_records") != expected_base_operations:
+        raise ContractError("Base operation archive contract drift")
+    inventory = read(DR_M5_TRANSACTION_INVENTORY)
+    if "| `TX-BASE-OPS-001` |" not in inventory:
+        raise ContractError("Base operation transaction boundary is absent")
+    operation_store = read(ROOT / "src/onebrain-node/src/base_operation_store.rs")
+    runtime = read(ROOT / "src/onebrain-node/src/base_runtime.rs")
+    for phase in [
+        "before_begin_write",
+        "after_begin_write_before_mutation",
+        "after_mutation_before_commit",
+        "after_commit_before_next_side_effect",
+        "after_next_side_effect_before_ack",
+    ]:
+        if phase not in operation_store:
+            raise ContractError(f"Base operation failpoint phase is absent: {phase}")
+    for needle in [
+        "ProcessGenerationLease::allocate",
+        "reserve_operation",
+        "begin_confirm",
+        "mark_unknown",
+        "register_authority",
+        "transition_authority",
+        "BaseAuthorityStateV1::Revoked",
+        "register_signer_provision",
+        "complete_signer_reprovision",
+        "signer_request_matches",
+        "import_activation_receipt",
+        "restore_archive_for_base",
+        "MigrationVectorBindingV1",
+    ]:
+        if needle not in operation_store and needle not in runtime:
+            raise ContractError(f"Base runtime implementation evidence missing: {needle}")
     return len(kinds), len(required)
 
 

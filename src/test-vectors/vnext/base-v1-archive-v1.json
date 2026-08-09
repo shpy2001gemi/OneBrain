@@ -42,6 +42,21 @@
     "storage_schema_version", "archive_profile", "migration_profile"
   ],
   "provenance_only": ["producer_artifact_identity", "target_triple", "toolchain_digest"],
+  "base_operation_records": {
+    "owner": "base_operations",
+    "entry_kind": "BaseOperationRecord",
+    "boundary": "TX-BASE-OPS-001",
+    "states": ["reserved", "prepared", "confirming", "committed", "canceled", "failed", "unknown_outcome"],
+    "generation_bindings": ["process_generation", "dataset_generation"],
+    "migration_bindings": ["vector_id", "vector_blake3", "trust_policy_digest"],
+    "restore_nonterminal": "unknown_outcome_reconcile_required_never_replay",
+    "activation_receipt_plane": "non-switched-control-and-selected-generation",
+    "authority_journal": {
+      "tables": ["management_grant", "management_handle", "archive_capability", "signer_provision"],
+      "restart_disposition": "revoked_never_reactivated",
+      "archive_disposition": "revoked_evidence_only"
+    }
+  },
   "excluded_payloads": [
     "derived_index", "retriever_projection", "graph_projection", "search_projection",
     "registry_payload", "model_payload"
