@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use ku_core::foundation::{
-    AcceptedRecordEntry, LocalSourceTextRecordV1, ObjectCid, ReservedDomain, SourceTextError,
-    StoredRecordKind, VaultSourceSnapshotRecord,
+    AcceptedRecordEntry, FeedEventSigner, LocalSourceTextRecordV1, ObjectCid, ReservedDomain,
+    SourceTextError, StoredRecordKind, VaultSourceSnapshotRecord,
 };
 use ku_kql::blob_storage::BlobStorageError;
 use onebrain_archive::{
@@ -28,6 +28,12 @@ use crate::dataset_path::{
 use crate::dataset_root_lease::{DatasetRootLease, DatasetRootLeaseError};
 use crate::derived_index::VNextDerivedIndexManager;
 use crate::derived_projection::{DerivedProjectionOpenState, RetrieverProjectionService};
+use crate::identity_recovery::{
+    clear_reprovision_requirement, recover_policies, verify_reprovision_requirement,
+    IdentityRecoveryError, IdentityRecoveryOutcome, IdentityRecoveryReceipt, RecoveredSignerSet,
+    SignerRecoveryPolicy, SignerReprovisionRequirement,
+};
+use crate::signer_ports::{ActorRootSigner, SignerPossessionProof, SignerProviderRegistry};
 
 const COMPLETE_PROFILE: &str = "onebrain/base-staged-generation/1";
 
@@ -49,6 +55,8 @@ pub struct ActivationReadyGeneration {
     generation_path: PathBuf,
     manifest: DatasetManifestV1,
     signer_recovery: SignerRecoveryDisposition,
+    identity_recovery: IdentityRecoveryReceipt,
+    recovered_signers: RecoveredSignerSet,
 }
 
 pub struct DatasetGenerationStore {
@@ -56,6 +64,7 @@ pub struct DatasetGenerationStore {
     control: PathBuf,
     _root_lease: DatasetRootLease,
     state: Mutex<GenerationState>,
+    recovered_signers: Mutex<RecoveredSignerSet>,
 }
 
 #[derive(Clone, Copy)]
@@ -70,6 +79,25 @@ struct CompleteMarker {
     manifest_root: [u8; 32],
     manifest_blake3: [u8; 32],
     entry_count: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct CompletedReprovision {
+    requirement_digest: [u8; 32],
+    proof_digest: [u8; 32],
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct DurableIdentityRecoveryState {
+    revision: u64,
+    receipt: IdentityRecoveryReceipt,
+    completed: Vec<CompletedReprovision>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct DurableIdentityRecoveryEnvelope {
+    state: DurableIdentityRecoveryState,
+    checksum: [u8; 32],
 }
 
 #[derive(Debug, Error)]
@@ -94,6 +122,8 @@ pub enum RestoreError {
     InjectedFailure,
     #[error("activation outcome is unknown")]
     UnknownOutcome,
+    #[error("identity recovery failed: {0}")]
+    IdentityRecovery(#[from] IdentityRecoveryError),
 }
 
 impl From<DatasetRootLeaseError> for RestoreError {
@@ -132,6 +162,7 @@ impl DatasetGenerationStore {
                 sequence,
                 current_root,
             }),
+            recovered_signers: Mutex::new(RecoveredSignerSet::empty()),
         };
         store.recover_latest()?;
         let selected = store
@@ -140,6 +171,7 @@ impl DatasetGenerationStore {
             .map_err(|_| RestoreError::CorruptState)?
             .current_root;
         verify_published_generation(&generation_path(&store.root, selected), selected)?;
+        store.recover_exportable_signers(selected)?;
         Ok(store)
     }
 
@@ -173,23 +205,99 @@ impl DatasetGenerationStore {
         })
     }
 
-    /// Creates the private one-shot activation token only after every staged
-    /// entry and both generation-owned projection bindings are healthy.
-    pub fn prepare_activation(
+    /// Only the identity-recovery module may create the private one-shot
+    /// activation token, after canonical/projection health and signer policy
+    /// evaluation have both completed.
+    pub(crate) fn prepare_activation_after_identity(
         &self,
         staged: StagedDatasetGeneration,
+        identity: IdentityRecoveryOutcome,
     ) -> Result<ActivationReadyGeneration, RestoreError> {
-        verify_generation(&staged.generation_path, &staged.manifest)?;
-        rebuild_projection_bindings(&staged.generation_path, staged.generation_root)?;
-        Ok(ActivationReadyGeneration {
-            generation_root: staged.generation_root,
-            generation_path: staged.generation_path,
-            manifest: staged.manifest,
-            signer_recovery: staged.signer_recovery,
-        })
+        let generation_root = staged.generation_root;
+        let generation_path = staged.generation_path.clone();
+        let result = (|| {
+            verify_generation(&staged.generation_path, &staged.manifest)?;
+            rebuild_projection_bindings(&staged.generation_path, staged.generation_root)?;
+            persist_identity_recovery_receipt(&staged.generation_path, &identity.receipt)?;
+            Ok(ActivationReadyGeneration {
+                generation_root: staged.generation_root,
+                generation_path: staged.generation_path,
+                manifest: staged.manifest,
+                signer_recovery: staged.signer_recovery,
+                identity_recovery: identity.receipt,
+                recovered_signers: identity.signers,
+            })
+        })();
+        if result.is_err() {
+            self.cleanup_unactivated_generation(&generation_path, generation_root)?;
+        }
+        result
     }
 
-    pub fn activate(
+    fn cleanup_unactivated_generation(
+        &self,
+        path: &Path,
+        generation_root: [u8; 32],
+    ) -> Result<(), RestoreError> {
+        let current = self
+            .state
+            .lock()
+            .map_err(|_| RestoreError::CorruptState)?
+            .current_root;
+        if current == generation_root || path != generation_path(&self.root, generation_root) {
+            return Err(RestoreError::CorruptState);
+        }
+        let generations = self.root.join("datasets/generations").canonicalize()?;
+        let candidate = path.canonicalize()?;
+        if candidate == generations || !candidate.starts_with(&generations) {
+            return Err(RestoreError::UnsafeRoot);
+        }
+        std::fs::remove_dir_all(candidate)?;
+        sync_directory(&generations)?;
+        Ok(())
+    }
+
+    pub(crate) fn staged_identity_policies(
+        &self,
+        staged: &StagedDatasetGeneration,
+    ) -> Result<Vec<SignerRecoveryPolicy>, RestoreError> {
+        load_identity_policies(&staged.generation_path, &staged.manifest)
+    }
+
+    pub(crate) fn staged_generation_id(
+        &self,
+        staged: &StagedDatasetGeneration,
+    ) -> DatasetGenerationId {
+        DatasetGenerationId(staged.generation_root)
+    }
+
+    pub(crate) fn discard_staged_identity_failure(
+        &self,
+        staged: &StagedDatasetGeneration,
+    ) -> Result<(), RestoreError> {
+        self.cleanup_unactivated_generation(&staged.generation_path, staged.generation_root)
+    }
+
+    fn recover_exportable_signers(&self, generation: [u8; 32]) -> Result<(), RestoreError> {
+        if generation == DatasetGenerationId::BOOTSTRAP.0 {
+            return Ok(());
+        }
+        let path = generation_path(&self.root, generation);
+        let manifest =
+            DatasetManifestV1::from_canonical_bytes(&std::fs::read(path.join("manifest.bin"))?)?;
+        let outcome = recover_policies(
+            load_identity_policies(&path, &manifest)?,
+            DatasetGenerationId(generation),
+            None,
+        )?;
+        self.recovered_signers
+            .lock()
+            .map_err(|_| RestoreError::CorruptState)?
+            .merge(outcome.signers);
+        Ok(())
+    }
+
+    pub(crate) fn activate_generation(
         &self,
         ready: ActivationReadyGeneration,
         operation: RestoreOperationBinding,
@@ -313,7 +421,148 @@ impl DatasetGenerationStore {
         journal.phase = ActivationPhase::Complete;
         journal.receipt = Some(receipt.clone());
         write_journal(&self.control, &journal).map_err(|_| RestoreError::CorruptState)?;
+        self.recovered_signers
+            .lock()
+            .map_err(|_| RestoreError::CorruptState)?
+            .merge(ready.recovered_signers);
         Ok(receipt)
+    }
+
+    pub fn activate_restore(
+        &self,
+        ready: ActivationReadyGeneration,
+        operation: RestoreOperationBinding,
+    ) -> Result<crate::archive::DatasetRestoreReceipt, RestoreError> {
+        let identity = ready.identity_recovery.clone();
+        let activation = self.activate_generation(ready, operation)?;
+        Ok(crate::archive::DatasetRestoreReceipt {
+            activation,
+            identity,
+        })
+    }
+
+    pub fn complete_reprovision(
+        &self,
+        requirement: &SignerReprovisionRequirement,
+        proof: &SignerPossessionProof,
+        registry: &dyn SignerProviderRegistry,
+    ) -> Result<IdentityRecoveryReceipt, RestoreError> {
+        identity_recovery_failpoint("before_begin_write")?;
+        let generation = self
+            .state
+            .lock()
+            .map_err(|_| RestoreError::CorruptState)?
+            .current_root;
+        if requirement.expected.domain() != proof.challenge.domain
+            || proof.challenge.dataset_generation != DatasetGenerationId(generation)
+        {
+            return Err(IdentityRecoveryError::Signer(
+                crate::signer_ports::SignerError::InvalidProof,
+            )
+            .into());
+        }
+        let generation_path = generation_path(&self.root, generation);
+        let mut durable = read_identity_recovery_state(&generation_path)?;
+        identity_recovery_failpoint("after_begin_write_before_mutation")?;
+        let requirement_digest = recovery_value_digest("requirement", requirement)?;
+        let proof_digest = recovery_value_digest("proof", proof)?;
+        if let Some(completed) = durable
+            .completed
+            .iter()
+            .find(|completed| completed.requirement_digest == requirement_digest)
+        {
+            return if completed.proof_digest == proof_digest {
+                let signers = verify_reprovision_requirement(
+                    requirement,
+                    proof,
+                    DatasetGenerationId(generation),
+                    registry,
+                )?;
+                self.recovered_signers
+                    .lock()
+                    .map_err(|_| RestoreError::CorruptState)?
+                    .merge(signers);
+                Ok(durable.receipt)
+            } else {
+                Err(
+                    IdentityRecoveryError::Signer(crate::signer_ports::SignerError::InvalidProof)
+                        .into(),
+                )
+            };
+        }
+        if durable
+            .completed
+            .iter()
+            .any(|completed| completed.proof_digest == proof_digest)
+        {
+            return Err(IdentityRecoveryError::Signer(
+                crate::signer_ports::SignerError::InvalidProof,
+            )
+            .into());
+        }
+        if durable.receipt.dataset_generation != DatasetGenerationId(generation) {
+            return Err(RestoreError::CorruptState);
+        }
+        let signers = verify_reprovision_requirement(
+            requirement,
+            proof,
+            DatasetGenerationId(generation),
+            registry,
+        )?;
+        durable.receipt = clear_reprovision_requirement(&durable.receipt, requirement)?;
+        durable.completed.push(CompletedReprovision {
+            requirement_digest,
+            proof_digest,
+        });
+        durable.revision = durable
+            .revision
+            .checked_add(1)
+            .ok_or(RestoreError::CorruptState)?;
+        identity_recovery_failpoint("after_mutation_before_commit")?;
+        write_identity_recovery_state(&generation_path, &durable)?;
+        identity_recovery_failpoint("after_commit_before_next_side_effect")?;
+        self.recovered_signers
+            .lock()
+            .map_err(|_| RestoreError::CorruptState)?
+            .merge(signers);
+        identity_recovery_failpoint("after_next_side_effect_before_ack")?;
+        Ok(durable.receipt)
+    }
+
+    pub fn session_identity_signer(
+        &self,
+    ) -> Result<
+        Option<std::sync::Arc<dyn ku_net::vnext_session::SessionIdentitySigner>>,
+        RestoreError,
+    > {
+        Ok(self
+            .recovered_signers
+            .lock()
+            .map_err(|_| RestoreError::CorruptState)?
+            .session
+            .clone())
+    }
+
+    pub fn actor_root_signer(
+        &self,
+    ) -> Result<Option<std::sync::Arc<dyn ActorRootSigner>>, RestoreError> {
+        Ok(self
+            .recovered_signers
+            .lock()
+            .map_err(|_| RestoreError::CorruptState)?
+            .actor_root
+            .clone())
+    }
+
+    pub fn feed_event_signer(
+        &self,
+    ) -> Result<Option<std::sync::Arc<dyn FeedEventSigner>>, RestoreError> {
+        Ok(self
+            .recovered_signers
+            .lock()
+            .map_err(|_| RestoreError::CorruptState)?
+            .feed
+            .clone())
     }
 
     pub fn recover_activation(
@@ -687,7 +936,116 @@ fn verify_published_generation(path: &Path, root: [u8; 32]) -> Result<(), Restor
         return Err(RestoreError::HealthCheck);
     }
     verify_generation(path, &manifest)?;
-    verify_projection_bindings(path, root)
+    verify_projection_bindings(path, root)?;
+    let identity = read_identity_recovery_state(path)?;
+    if identity.receipt.dataset_generation != DatasetGenerationId(root) {
+        return Err(RestoreError::HealthCheck);
+    }
+    Ok(())
+}
+
+fn persist_identity_recovery_receipt(
+    generation: &Path,
+    receipt: &IdentityRecoveryReceipt,
+) -> Result<(), RestoreError> {
+    let state_root = generation.join("owners/identity/identity-recovery-state");
+    if state_root.exists() {
+        let existing = read_identity_recovery_state(generation)?;
+        return if existing.receipt == *receipt {
+            Ok(())
+        } else {
+            Err(RestoreError::OperationConflict)
+        };
+    }
+    write_identity_recovery_state(
+        generation,
+        &DurableIdentityRecoveryState {
+            revision: 0,
+            receipt: receipt.clone(),
+            completed: Vec::new(),
+        },
+    )
+}
+
+fn read_identity_recovery_state(
+    generation: &Path,
+) -> Result<DurableIdentityRecoveryState, RestoreError> {
+    let root = generation.join("owners/identity/identity-recovery-state");
+    let mut valid = Vec::new();
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let envelope: DurableIdentityRecoveryEnvelope =
+            match serde_json::from_slice(&std::fs::read(entry.path())?) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+        let checksum = recovery_value_digest("state", &envelope.state)?;
+        if checksum == envelope.checksum && completed_state_valid(&envelope.state.completed) {
+            valid.push(envelope.state);
+        }
+    }
+    valid.sort_by_key(|state| state.revision);
+    if valid
+        .windows(2)
+        .any(|pair| pair[0].revision == pair[1].revision)
+    {
+        return Err(RestoreError::CorruptState);
+    }
+    valid.pop().ok_or(RestoreError::CorruptState)
+}
+
+fn completed_state_valid(completed: &[CompletedReprovision]) -> bool {
+    if completed.len() > 3 {
+        return false;
+    }
+    let requirements: BTreeMap<_, _> = completed
+        .iter()
+        .map(|entry| (entry.requirement_digest, entry.proof_digest))
+        .collect();
+    let proofs: BTreeMap<_, _> = completed
+        .iter()
+        .map(|entry| (entry.proof_digest, entry.requirement_digest))
+        .collect();
+    requirements.len() == completed.len() && proofs.len() == completed.len()
+}
+
+fn write_identity_recovery_state(
+    generation: &Path,
+    state: &DurableIdentityRecoveryState,
+) -> Result<(), RestoreError> {
+    let root = generation.join("owners/identity/identity-recovery-state");
+    std::fs::create_dir_all(&root)?;
+    let envelope = DurableIdentityRecoveryEnvelope {
+        checksum: recovery_value_digest("state", state)?,
+        state: state.clone(),
+    };
+    let bytes = serde_json::to_vec(&envelope).map_err(|_| RestoreError::CorruptState)?;
+    write_new_sync(&root.join(format!("{:020}.json", state.revision)), &bytes)?;
+    sync_directory(&root)?;
+    Ok(())
+}
+
+fn recovery_value_digest(label: &str, value: &impl Serialize) -> Result<[u8; 32], RestoreError> {
+    let bytes = serde_json::to_vec(value).map_err(|_| RestoreError::CorruptState)?;
+    let mut hasher = blake3::Hasher::new_derive_key("onebrain:base-v1:identity-recovery-state:1");
+    hasher.update(label.as_bytes());
+    hasher.update(&bytes);
+    Ok(*hasher.finalize().as_bytes())
+}
+
+fn identity_recovery_failpoint(name: &str) -> Result<(), RestoreError> {
+    if std::env::var("ONEBRAIN_IDENTITY_RECOVERY_FAILPOINT")
+        .ok()
+        .as_deref()
+        == Some(name)
+    {
+        Err(RestoreError::InjectedFailure)
+    } else {
+        Ok(())
+    }
 }
 
 fn rebuild_projection_bindings(path: &Path, root: [u8; 32]) -> Result<(), RestoreError> {
@@ -830,6 +1188,24 @@ fn entry_path(root: &Path, entry: &ArchiveEntryV1) -> Result<PathBuf, RestoreErr
         .join(owner_name(entry.logical_key.owner.get()).ok_or(RestoreError::CorruptState)?)
         .join(format!("{:04x}", entry.logical_key.namespace))
         .join(format!("{}.bin", hex(entry.id.as_bytes()))))
+}
+
+fn load_identity_policies(
+    generation: &Path,
+    manifest: &DatasetManifestV1,
+) -> Result<Vec<SignerRecoveryPolicy>, RestoreError> {
+    let mut policies = Vec::new();
+    for entry in &manifest.entries {
+        if entry.kind == ArchiveEntryKind::SignerRecoveryPolicy {
+            policies.push(SignerRecoveryPolicy::decode(&std::fs::read(entry_path(
+                generation, entry,
+            )?)?)?);
+        }
+    }
+    if policies.is_empty() {
+        return Err(IdentityRecoveryError::InvalidPolicy.into());
+    }
+    Ok(policies)
 }
 
 fn generation_path(root: &Path, generation_root: [u8; 32]) -> PathBuf {

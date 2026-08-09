@@ -37,8 +37,9 @@ use crate::vnext_distributed_pomv::{
     PublicUsePublicationRecord, PublicUsePublishOutcome,
 };
 use crate::vnext_network_runtime::{
-    prepare_vnext_identity, OutboundVNextSession, VNextNetworkRuntime, VNextNetworkRuntimeError,
-    VNextNetworkRuntimeState, VNextNetworkRuntimeStatus, VNextNetworkStoragePaths,
+    prepare_vnext_identity, prepare_vnext_identity_caller_owned, OutboundVNextSession,
+    VNextNetworkRuntime, VNextNetworkRuntimeError, VNextNetworkRuntimeState,
+    VNextNetworkRuntimeStatus, VNextNetworkStoragePaths,
 };
 use crate::vnext_observability::{
     VNextObservability, VNextObservabilitySnapshot, VNextReasonCode, VNextRegistryTelemetryState,
@@ -71,6 +72,7 @@ struct VNextProductStoragePaths {
     private_kql: PathBuf,
     private_pomv: PathBuf,
     network: VNextNetworkStoragePaths,
+    allow_compatibility_identity_file: bool,
 }
 
 impl VNextProductStoragePaths {
@@ -89,6 +91,7 @@ impl VNextProductStoragePaths {
                 provenance: data_dir.join("vnext_record_provenance.redb"),
                 outbox: data_dir.join("vnext_outbox.redb"),
             },
+            allow_compatibility_identity_file: true,
         }
     }
 
@@ -118,6 +121,7 @@ impl VNextProductStoragePaths {
                 provenance: provenance.join("vnext_record_provenance.redb"),
                 outbox: outbox.join("vnext_outbox.redb"),
             },
+            allow_compatibility_identity_file: false,
         })
     }
 
@@ -421,7 +425,11 @@ impl VNextProductRuntime {
         // persisted ciphertext proof is checked when the unopened KQL owner is
         // rehydrated below; signer proof-of-possession is checked here before
         // any durable subsystem store is opened.
-        let prepared_identity = prepare_vnext_identity(&paths.identity, identity_signer)?;
+        let prepared_identity = if paths.allow_compatibility_identity_file {
+            prepare_vnext_identity(&paths.identity, identity_signer)?
+        } else {
+            prepare_vnext_identity_caller_owned(identity_signer)?
+        };
         startup_trace.push(VNextStartupPhase::SignerAndVaultValidated);
 
         // A never-requested lane has no owner. A provisioned lane stays open

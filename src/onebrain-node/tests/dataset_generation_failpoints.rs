@@ -2,8 +2,11 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ed25519_dalek::Signer as _;
+use ku_core::foundation::FeedEventSigner;
 use onebrain_archive::{
     capture_dataset, compute_high_water_root, seal_archive, verify_dataset_archive_v2,
     ArchiveCredential, ArchiveEntryId, ArchiveEntryKind, ArchiveEntryV1, ArchiveError,
@@ -12,8 +15,11 @@ use onebrain_archive::{
     ProducerArtifactIdentityV1, SnapshotLease, SnapshotSource,
 };
 use onebrain_node::{
-    ActivationPhase, DatasetGenerationId, DatasetGenerationStore, DatasetPathResolver,
-    RestoreError, RestoreOperationBinding,
+    recover_staged_identity, ActivationPhase, DatasetGenerationId, DatasetGenerationStore,
+    DatasetPathResolver, ExpectedSignerIdentity, FeedAuthorIdentity, NodeTransportIdentity,
+    RestoreError, RestoreOperationBinding, SessionPublicKey, SignerError,
+    SignerPossessionChallengeV1, SignerPossessionProof, SignerProvider, SignerProviderId,
+    SignerProviderRegistry, SignerRecoveryPolicy,
 };
 use tempfile::tempdir;
 
@@ -50,6 +56,16 @@ struct Source {
 
 impl Source {
     fn with_registry_high_water(registry_high_water: &[u8]) -> Self {
+        let signer_policy = SignerRecoveryPolicy::ReprovisionRequired {
+            expected: fixture_node_identity(),
+            provider_id: SignerProviderId::new("fixture-unavailable").unwrap(),
+        }
+        .encode()
+        .unwrap();
+        Self::with_signer_policy(registry_high_water, &signer_policy)
+    }
+
+    fn with_signer_policy(registry_high_water: &[u8], signer_policy: &[u8]) -> Self {
         let rows = [
             (
                 ArchiveEntryKind::AuthorityHighWater,
@@ -79,7 +95,7 @@ impl Source {
                 ArchiveEntryKind::SignerRecoveryPolicy,
                 ArchiveOwner::IDENTITY,
                 "signer",
-                b"reprovision-required".as_slice(),
+                signer_policy,
             ),
             (
                 ArchiveEntryKind::OperationalRecord,
@@ -123,6 +139,15 @@ impl Source {
     }
 }
 
+fn fixture_node_identity() -> ExpectedSignerIdentity {
+    let key = ed25519_dalek::SigningKey::from_bytes(&[77; 32]);
+    let public_key = *key.verifying_key().as_bytes();
+    ExpectedSignerIdentity::NodeTransport(NodeTransportIdentity {
+        session_public_key: SessionPublicKey::from_bytes(public_key),
+        principal_node_id: ku_net::vnext_session::principal_node_id(&public_key),
+    })
+}
+
 impl SnapshotSource for Source {
     fn acquire_snapshot(&self) -> Result<SnapshotLease, ArchiveError> {
         Ok(SnapshotLease {
@@ -157,8 +182,12 @@ fn archive() -> (Vec<u8>, ArchiveCredential) {
 }
 
 fn archive_with_registry_high_water(registry_high_water: &[u8]) -> (Vec<u8>, ArchiveCredential) {
+    archive_source(Source::with_registry_high_water(registry_high_water))
+}
+
+fn archive_source(source: Source) -> (Vec<u8>, ArchiveCredential) {
     let plaintext = capture_dataset(
-        &Source::with_registry_high_water(registry_high_water),
+        &source,
         compatibility(),
         ProducerArtifactIdentityV1::Unknown,
     )
@@ -199,7 +228,82 @@ fn stage_ready_with_registry_high_water(
     )
     .unwrap();
     let staged = store.stage_verified_restore(verified, &policy()).unwrap();
-    store.prepare_activation(staged).unwrap()
+    recover_staged_identity(store, staged, None).unwrap()
+}
+
+fn stage_ready_with_exportable_signer(
+    store: &DatasetGenerationStore,
+    spool: &Path,
+) -> onebrain_node::ActivationReadyGeneration {
+    let signer_policy = SignerRecoveryPolicy::ExportableSeedEnvelope {
+        expected: fixture_node_identity(),
+        sealed_seed: zeroize::Zeroizing::new(vec![77; 32]),
+    }
+    .encode()
+    .unwrap();
+    let (archive, credential) = archive_source(Source::with_signer_policy(b"42", &signer_policy));
+    let factory = FileSecureSpoolFactory::new(spool).unwrap();
+    let verified = verify_dataset_archive_v2(
+        Cursor::new(archive),
+        &factory,
+        &credential,
+        &ArchiveLimits::default(),
+    )
+    .unwrap();
+    let staged = store.stage_verified_restore(verified, &policy()).unwrap();
+    recover_staged_identity(store, staged, None).unwrap()
+}
+
+struct FixtureProvider {
+    id: SignerProviderId,
+    key: ed25519_dalek::SigningKey,
+}
+
+impl SignerProvider for FixtureProvider {
+    fn provider_id(&self) -> &SignerProviderId {
+        &self.id
+    }
+
+    fn session_identity(
+        &self,
+        _: &NodeTransportIdentity,
+    ) -> Result<Arc<dyn ku_net::vnext_session::SessionIdentitySigner>, SignerError> {
+        Ok(Arc::new(self.key.clone()))
+    }
+
+    fn actor_root(
+        &self,
+        _: &onebrain_node::ActorRootIdentity,
+    ) -> Result<Arc<dyn onebrain_node::ActorRootSigner>, SignerError> {
+        Err(SignerError::Unavailable)
+    }
+
+    fn feed_event(&self, _: &FeedAuthorIdentity) -> Result<Arc<dyn FeedEventSigner>, SignerError> {
+        Err(SignerError::Unavailable)
+    }
+
+    fn prove_possession(
+        &self,
+        challenge: &SignerPossessionChallengeV1,
+    ) -> Result<SignerPossessionProof, SignerError> {
+        Ok(SignerPossessionProof::new(
+            self.id.clone(),
+            *challenge,
+            self.key.sign(&challenge.canonical_bytes()).to_bytes(),
+        ))
+    }
+}
+
+struct FixtureRegistry(Arc<FixtureProvider>);
+
+impl SignerProviderRegistry for FixtureRegistry {
+    fn resolve(&self, id: &SignerProviderId) -> Result<Arc<dyn SignerProvider>, SignerError> {
+        if self.0.provider_id() == id {
+            Ok(self.0.clone())
+        } else {
+            Err(SignerError::UnknownProvider)
+        }
+    }
 }
 
 #[test]
@@ -212,7 +316,7 @@ fn reused_idempotency_key_with_a_different_archive_root_fails_closed() {
         idempotency_key: [99; 32],
     };
     let receipt = store
-        .activate(stage_ready(&store, spool.path()), first)
+        .activate_restore(stage_ready(&store, spool.path()), first)
         .unwrap();
     let second = RestoreOperationBinding {
         operation_id: [42; 32],
@@ -220,10 +324,188 @@ fn reused_idempotency_key_with_a_different_archive_root_fails_closed() {
     };
     let ready = stage_ready_with_registry_high_water(&store, spool.path(), b"43");
     assert!(matches!(
-        store.activate(ready, second),
+        store.activate_restore(ready, second),
         Err(RestoreError::OperationConflict)
     ));
-    assert_eq!(store.current_generation().0, receipt.new_generation_root);
+    assert_eq!(
+        store.current_generation().0,
+        receipt.activation.new_generation_root
+    );
+}
+
+#[test]
+fn reprovision_completion_is_durable_idempotent_and_reenables_only_session_signing() {
+    let directory = tempdir().unwrap();
+    let spool = tempdir().unwrap();
+    let operation = RestoreOperationBinding {
+        operation_id: [43; 32],
+        idempotency_key: [44; 32],
+    };
+    let requirement;
+    let generation;
+    {
+        let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
+        let receipt = store
+            .activate_restore(stage_ready(&store, spool.path()), operation)
+            .unwrap();
+        requirement = receipt.identity.reprovision_required.as_slice()[0].clone();
+        generation = receipt.identity.dataset_generation;
+        assert!(store.session_identity_signer().unwrap().is_none());
+    }
+
+    let provider = Arc::new(FixtureProvider {
+        id: SignerProviderId::new("fixture-unavailable").unwrap(),
+        key: ed25519_dalek::SigningKey::from_bytes(&[77; 32]),
+    });
+    let registry = FixtureRegistry(provider.clone());
+    let challenge = SignerPossessionChallengeV1 {
+        domain: requirement.expected.domain(),
+        expected_identity_digest: requirement.expected.digest(),
+        dataset_generation: generation,
+        verifier_nonce: [45; 32],
+    };
+    let proof = provider.prove_possession(&challenge).unwrap();
+    let reopened = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
+    let completed = reopened
+        .complete_reprovision(&requirement, &proof, &registry)
+        .unwrap();
+    assert!(completed.reprovision_required.as_slice().is_empty());
+    assert_eq!(
+        completed.restored.as_slice(),
+        &[onebrain_node::IdentityDomain::NodeTransport]
+    );
+    assert!(reopened.session_identity_signer().unwrap().is_some());
+    assert_eq!(
+        reopened
+            .complete_reprovision(&requirement, &proof, &registry)
+            .unwrap(),
+        completed
+    );
+    let generation_path = directory.path().join("datasets/generations").join(
+        generation
+            .0
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+    );
+    assert!(!generation_path
+        .join("owners/identity/vnext_identity.key")
+        .exists());
+}
+
+#[test]
+fn exportable_session_signer_is_recovered_again_after_process_reopen() {
+    let directory = tempdir().unwrap();
+    let spool = tempdir().unwrap();
+    {
+        let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
+        let receipt = store
+            .activate_restore(
+                stage_ready_with_exportable_signer(&store, spool.path()),
+                RestoreOperationBinding {
+                    operation_id: [47; 32],
+                    idempotency_key: [48; 32],
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            receipt.identity.restored.as_slice(),
+            &[onebrain_node::IdentityDomain::NodeTransport]
+        );
+        assert!(store.session_identity_signer().unwrap().is_some());
+    }
+    let reopened = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
+    let signer = reopened
+        .session_identity_signer()
+        .unwrap()
+        .expect("exportable signer must be rehydrated");
+    assert_eq!(signer.public_key(), fixture_node_identity().public_key());
+}
+
+#[test]
+fn invalid_identity_policy_cleans_unactivated_generation_for_exact_retry() {
+    let directory = tempdir().unwrap();
+    let spool = tempdir().unwrap();
+    let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
+    for _ in 0..2 {
+        let (archive, credential) =
+            archive_source(Source::with_signer_policy(b"42", b"invalid-policy"));
+        let factory = FileSecureSpoolFactory::new(spool.path()).unwrap();
+        let verified = verify_dataset_archive_v2(
+            Cursor::new(archive),
+            &factory,
+            &credential,
+            &ArchiveLimits::default(),
+        )
+        .unwrap();
+        let staged = store.stage_verified_restore(verified, &policy()).unwrap();
+        assert!(matches!(
+            recover_staged_identity(&store, staged, None),
+            Err(RestoreError::IdentityRecovery(_))
+        ));
+        assert_eq!(
+            std::fs::read_dir(directory.path().join("datasets/generations"))
+                .unwrap()
+                .count(),
+            1,
+            "failed identity recovery left a non-current generation"
+        );
+    }
+}
+
+#[test]
+fn reprovision_five_phase_failpoints_reopen_to_one_exact_outcome() {
+    for (marker, phase) in [
+        (51, "before_begin_write"),
+        (52, "after_begin_write_before_mutation"),
+        (53, "after_mutation_before_commit"),
+        (54, "after_commit_before_next_side_effect"),
+        (55, "after_next_side_effect_before_ack"),
+    ] {
+        let directory = tempdir().unwrap();
+        let spool = tempdir().unwrap();
+        let operation = RestoreOperationBinding {
+            operation_id: [marker; 32],
+            idempotency_key: [marker + 20; 32],
+        };
+        let requirement;
+        let generation;
+        {
+            let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
+            let receipt = store
+                .activate_restore(stage_ready(&store, spool.path()), operation)
+                .unwrap();
+            requirement = receipt.identity.reprovision_required.as_slice()[0].clone();
+            generation = receipt.identity.dataset_generation;
+        }
+        let provider = Arc::new(FixtureProvider {
+            id: SignerProviderId::new("fixture-unavailable").unwrap(),
+            key: ed25519_dalek::SigningKey::from_bytes(&[77; 32]),
+        });
+        let registry = FixtureRegistry(provider.clone());
+        let challenge = SignerPossessionChallengeV1 {
+            domain: requirement.expected.domain(),
+            expected_identity_digest: requirement.expected.digest(),
+            dataset_generation: generation,
+            verifier_nonce: [marker + 40; 32],
+        };
+        let proof = provider.prove_possession(&challenge).unwrap();
+        {
+            let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
+            std::env::set_var("ONEBRAIN_IDENTITY_RECOVERY_FAILPOINT", phase);
+            assert!(matches!(
+                store.complete_reprovision(&requirement, &proof, &registry),
+                Err(RestoreError::InjectedFailure)
+            ));
+            std::env::remove_var("ONEBRAIN_IDENTITY_RECOVERY_FAILPOINT");
+        }
+        let reopened = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
+        let receipt = reopened
+            .complete_reprovision(&requirement, &proof, &registry)
+            .unwrap();
+        assert!(receipt.reprovision_required.as_slice().is_empty());
+        assert!(reopened.session_identity_signer().unwrap().is_some());
+    }
 }
 
 #[test]
@@ -245,7 +527,7 @@ fn activation_reopen_and_original_operation_reconcile_to_new_complete() {
             let ready = stage_ready(&store, spool.path());
             std::env::set_var("ONEBRAIN_DATASET_FAILPOINT", failpoint);
             assert!(matches!(
-                store.activate(ready, operation),
+                store.activate_restore(ready, operation),
                 Err(RestoreError::InjectedFailure)
             ));
             std::env::remove_var("ONEBRAIN_DATASET_FAILPOINT");
@@ -272,7 +554,7 @@ fn prepared_without_pointer_recovers_old_complete_and_target_is_not_reused() {
         let ready = stage_ready(&store, spool.path());
         std::env::set_var("ONEBRAIN_DATASET_FAILPOINT", "after_prepared");
         assert!(matches!(
-            store.activate(ready, operation),
+            store.activate_restore(ready, operation),
             Err(RestoreError::InjectedFailure)
         ));
         std::env::remove_var("ONEBRAIN_DATASET_FAILPOINT");
@@ -311,7 +593,7 @@ fn reopen_health_failure_rolls_pointer_back_and_persists_receipt() {
     let ready = stage_ready(&store, spool.path());
     std::env::set_var("ONEBRAIN_DATASET_FAILPOINT", "reopen_health_failure");
     assert!(matches!(
-        store.activate(ready, operation),
+        store.activate_restore(ready, operation),
         Err(RestoreError::HealthCheck)
     ));
     std::env::remove_var("ONEBRAIN_DATASET_FAILPOINT");
@@ -348,7 +630,7 @@ fn crash_before_reopen_with_corrupt_projection_recovers_old_generation() {
         let ready = stage_ready(&store, spool.path());
         std::env::set_var("ONEBRAIN_DATASET_FAILPOINT", "after_pointer");
         assert!(matches!(
-            store.activate(ready, operation),
+            store.activate_restore(ready, operation),
             Err(RestoreError::InjectedFailure)
         ));
         std::env::remove_var("ONEBRAIN_DATASET_FAILPOINT");
@@ -388,9 +670,9 @@ fn torn_newest_pointer_slot_is_repaired_from_terminal_journal() {
     {
         let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
         let receipt = store
-            .activate(stage_ready(&store, spool.path()), operation)
+            .activate_restore(stage_ready(&store, spool.path()), operation)
             .unwrap();
-        new_root = DatasetGenerationId(receipt.new_generation_root);
+        new_root = DatasetGenerationId(receipt.activation.new_generation_root);
     }
     std::fs::write(directory.path().join("control/activation.a.json"), b"{torn").unwrap();
     let repaired_journal = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();

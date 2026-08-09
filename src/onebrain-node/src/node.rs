@@ -399,8 +399,9 @@ impl OneBrainNode {
         })
     }
 
-    /// Inject a caller-owned signer before starting the network. When omitted,
-    /// the compatibility/development file signer is used.
+    /// Inject a caller-owned signer before starting the network. A generation
+    /// restore may also supply this handle through typed identity recovery;
+    /// the Base dataset path never creates a compatibility key file.
     #[cfg(feature = "vnext-network-runtime")]
     pub fn set_vnext_identity_signer(&mut self, signer: Arc<dyn SessionIdentitySigner>) {
         self.vnext_identity_signer = Some(signer);
@@ -444,13 +445,20 @@ impl OneBrainNode {
                         .into(),
                 )
             })?;
+            let identity_signer = match self.vnext_identity_signer.clone() {
+                Some(signer) => Some(signer),
+                None => self
+                    ._dataset_generations
+                    .session_identity_signer()
+                    .map_err(|error| NodeError::Storage(error.to_string()))?,
+            };
             Some(
                 VNextProductRuntime::start_in_dataset(
                     self.dataset_paths.as_ref(),
                     bind_addr,
                     &self.config.vnext,
                     dependencies,
-                    self.vnext_identity_signer.clone(),
+                    identity_signer,
                 )
                 .await
                 .map_err(|error| {
@@ -1111,38 +1119,11 @@ impl OneBrainNode {
         })
     }
 
-    /// Recover identity from BIP39 phrase.
-    pub fn recover_identity(
-        &mut self,
-        phrase: &[String],
-        _password: &str,
-    ) -> Result<IdentityInfo, NodeError> {
-        // Validate BIP39 phrase (24 words)
-        if phrase.len() != 24 {
-            return Err(NodeError::InvalidPhrase(format!(
-                "Expected 24 words, got {}",
-                phrase.len()
-            )));
-        }
-        // TODO: Actual BIP39 derivation + keypair generation
-        // For now, create a placeholder identity
-        let hash_input = phrase.join(" ");
-        let hash_bytes: [u8; 32] = blake3::hash(hash_input.as_bytes()).into();
-        let identity = serde_json::json!({
-            "node_id": hex_cid(&hash_bytes),
-            "created": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default().as_secs(),
-            "recovered": true
-        });
-        let identity_path = self.config.identity_path();
-        std::fs::write(
-            &identity_path,
-            serde_json::to_string_pretty(&identity)
-                .map_err(|e| NodeError::Config(format!("Serialize error: {}", e)))?,
-        )
-        .map_err(|e| NodeError::Io(e))?;
-        self.get_identity_info()
+    /// The mnemonic-shaped prototype never implemented BIP39 and is not a
+    /// recovery authority. Base recovery accepts only a verified encrypted
+    /// package through the archive/restore service.
+    pub fn recover_identity_legacy(&mut self) -> Result<IdentityInfo, NodeError> {
+        Err(NodeError::UnsupportedLegacyRecovery)
     }
 
     // ═══════════════════════════════════════════════════════

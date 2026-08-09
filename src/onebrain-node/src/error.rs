@@ -55,9 +55,9 @@ pub enum NodeError {
     #[error("Identity already exists: {0}")]
     IdentityExists(String),
 
-    /// Invalid BIP39 recovery phrase.
-    #[error("Invalid recovery phrase: {0}")]
-    InvalidPhrase(String),
+    /// The historical mnemonic-shaped endpoint is deliberately disabled.
+    #[error("unsupported_legacy_recovery: use an encrypted Base recovery package")]
+    UnsupportedLegacyRecovery,
 
     /// Backup/restore error.
     #[error("Backup error: {0}")]

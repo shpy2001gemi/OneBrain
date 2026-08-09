@@ -31,7 +31,6 @@ vnext-network-runtime = [
     "ku-core/persist",
     "ku-net/persist",
     "ku-net/quic",
-    "dep:ed25519-dalek",
     "dep:rand",
     "dep:redb",
 ]
@@ -79,7 +78,7 @@ getrandom = "0.3"
 fs2 = "0.4"
 zeroize = "1"
 unicode-segmentation = "1.13"
-ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = { version = "0.8", optional = true }
 redb = { version = "2", optional = true }
 sha2 = { version = "0.10", optional = true }

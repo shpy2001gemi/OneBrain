@@ -40,14 +40,9 @@ pub async fn get_identity(State(state): State<AppState>) -> ApiResult<serde_json
     Ok(ok(serde_json::to_value(info).unwrap()))
 }
 
-pub async fn recover_identity(
-    State(state): State<AppState>,
-    Json(body): Json<RecoverRequest>,
-) -> ApiResult<serde_json::Value> {
+pub async fn recover_identity(State(state): State<AppState>) -> ApiResult<serde_json::Value> {
     let mut node = state.node.lock().await;
-    let info = node
-        .recover_identity(&body.recovery_phrase, &body.new_password)
-        .map_err(ApiError::from)?;
+    let info = node.recover_identity_legacy().map_err(ApiError::from)?;
     Ok(ok(serde_json::to_value(info).unwrap()))
 }
 

@@ -325,6 +325,14 @@ pub(crate) fn prepare_vnext_identity(
     Ok(PreparedVNextIdentity { signer, public_key })
 }
 
+pub(crate) fn prepare_vnext_identity_caller_owned(
+    identity: Option<Arc<dyn SessionIdentitySigner>>,
+) -> Result<PreparedVNextIdentity, VNextNetworkRuntimeError> {
+    let signer = identity.ok_or(VNextNetworkRuntimeError::IdentityReprovisionRequired)?;
+    let public_key = validate_identity_signer(signer.as_ref())?;
+    Ok(PreparedVNextIdentity { signer, public_key })
+}
+
 impl VNextNetworkRuntime {
     /// Start with the built-in local file signer. This is a compatibility and
     /// development path; production deployments should use
@@ -2069,6 +2077,8 @@ pub enum VNextNetworkRuntimeError {
     IdentitySignerProofInvalid,
     #[error("vNext identity signer is unavailable: {0}")]
     IdentitySignerUnavailable(String),
+    #[error("vNext identity signer requires caller-owned reprovisioning")]
+    IdentityReprovisionRequired,
     #[error("vNext filesystem operation failed: {0}")]
     Io(#[from] std::io::Error),
 }

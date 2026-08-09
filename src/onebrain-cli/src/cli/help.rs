@@ -44,7 +44,7 @@ pub(crate) fn cmd_help(args: &str) {
         println!("  ║                                                               ║");
         println!("  ║  ── Identity & Profile ──                                     ║");
         println!("  ║  identity                Show identity info                   ║");
-        println!("  ║  recover                 Recover from BIP39 phrase            ║");
+        println!("  ║  recover                 Show secure recovery guidance        ║");
         println!("  ║  profile                 View/edit profile                    ║");
         println!("  ║                                                               ║");
         println!("  ║  ── Multi-Device ──                                           ║");
@@ -263,8 +263,8 @@ pub(crate) fn cmd_help(args: &str) {
                 println!();
                 println!("  recover");
                 println!();
-                println!("  Recover identity from a 24-word BIP39 recovery phrase.");
-                println!("  ⚠ This will REPLACE the current identity on this device.");
+                println!("  Legacy phrase recovery is disabled.");
+                println!("  Import a verified encrypted Base recovery package instead.");
                 println!();
             }
             "profile" => {
