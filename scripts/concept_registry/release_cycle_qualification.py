@@ -6,10 +6,13 @@ from __future__ import annotations
 import json
 import struct
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import blake3
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from ccid_stability_diff import generate_report
 from production_qualification import (
@@ -39,10 +42,39 @@ REQUIRED_STEPS = (
 HEADER = struct.Struct("<4sIQQ8s")
 ENTRY_PREFIX = struct.Struct("<16sIBBH")
 U16 = struct.Struct("<H")
+STAMP_FIELDS = (
+    "profile", "release_id", "builder_version", "dedup_policy_version",
+    "artifacts", "artifact_root", "sources", "source_root", "distribution",
+    "signer_public_key", "signature",
+)
+STAMP_ARTIFACT_FIELDS = ("role", "relative_path", "length", "blake3")
+STAMP_SOURCE_FIELDS = (
+    "name", "snapshot_id", "source_uri", "license", "snapshot_blake3",
+    "download_blake3",
+)
+STATE_FIELDS = ("profile", "generation", "active_release", "previous_release", "state_root")
+STAMP_SIGNATURE_DOMAIN = b"onebrain:concept-registry-release-stamp:1\0"
+STAMP_SOURCE_ROOT_DOMAIN = b"onebrain:concept-registry-sources:1\0"
+STAMP_DISTRIBUTION = "MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP"
+STAMP_ARTIFACTS = {
+    ("OBR", "concepts.obr"),
+    ("LABEL_INDEX", "concepts.obr.labels.idx"),
+    ("CCID_INDEX", "concepts.obr.ccids.idx"),
+    ("MANIFEST", "concepts.obr.manifest.json"),
+    ("SPDX_SBOM", "sbom.spdx.json"),
+}
+STAMP_SOURCES = {"chebi", "geonames", "ncbi", "wikidata", "wordnet"}
 
 
 class CycleError(RuntimeError):
     """The independently measured release cycle did not complete exactly."""
+
+
+@dataclass(frozen=True)
+class MeasuredCandidateContext:
+    registry_root: Path
+    release_stamp_identity: str
+    state_identity: str
 
 
 def _digest(path: Path) -> str:
@@ -118,7 +150,12 @@ def _latest_state(registry_root: Path) -> dict[str, object]:
         value = json.loads(states[-1].read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise CycleError("active state generation is invalid") from error
-    if not isinstance(value, dict) or value.get("generation") != len(states):
+    generation = value.get("generation") if isinstance(value, dict) else None
+    if (
+        not isinstance(generation, int)
+        or isinstance(generation, bool)
+        or generation != len(states)
+    ):
         raise CycleError("active state generation is not append-only")
     state_view = {
         "profile": value.get("profile"), "generation": value.get("generation"),
@@ -136,6 +173,260 @@ def _latest_state(registry_root: Path) -> dict[str, object]:
     active_stamp = _stamp(registry_root, str(value.get("active_release")))
     value["active_release_root"] = active_stamp["artifact_root"]
     return value
+
+
+def _ordered_json(value: dict[str, object], fields: tuple[str, ...]) -> bytes:
+    return json.dumps(
+        {field: value[field] for field in fields},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _pretty_ordered_json(value: dict[str, object], fields: tuple[str, ...]) -> bytes:
+    return (
+        json.dumps(
+            {field: value[field] for field in fields},
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _is_lower_hex(value: object, length: int) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == length
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _is_release_id(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and 0 < len(value) <= 96
+        and value.isascii()
+        and all(character.isalnum() or character in "._-" for character in value)
+    )
+
+
+def _source_root(sources: list[dict[str, object]]) -> str:
+    hasher = blake3.blake3()
+    hasher.update(STAMP_SOURCE_ROOT_DOMAIN)
+    for source in sorted(sources, key=lambda item: str(item["name"])):
+        for field in STAMP_SOURCE_FIELDS:
+            raw = str(source[field]).encode("utf-8")
+            hasher.update(len(raw).to_bytes(8, "big"))
+            hasher.update(raw)
+    return hasher.hexdigest()
+
+
+def _verify_candidate_stamp_and_state(
+    verified: VerifiedQualificationContextV1,
+    *,
+    candidate_release_stamp: Path,
+    candidate_state: Path,
+    old_release_id: str,
+    candidate_release_id: str,
+    sources: Path,
+    release_private_key: Path,
+    release_public_key: str,
+) -> MeasuredCandidateContext:
+    """Authenticate the pre-existing candidate release/state without trusting paths."""
+    if not _is_release_id(old_release_id) or not _is_release_id(candidate_release_id):
+        raise CycleError("pre-operation release identity is invalid")
+    if old_release_id == candidate_release_id:
+        raise CycleError("pre-operation old and candidate release identities must be distinct")
+    if (
+        candidate_release_stamp.is_symlink()
+        or not candidate_release_stamp.is_file()
+        or candidate_state.is_symlink()
+        or not candidate_state.is_file()
+    ):
+        raise CycleError("pre-operation candidate stamp/state must be regular files")
+    try:
+        stamp_bytes = candidate_release_stamp.read_bytes()
+        stamp = json.loads(stamp_bytes)
+        state_bytes = candidate_state.read_bytes()
+        state = json.loads(state_bytes)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CycleError("pre-operation candidate stamp/state is invalid") from error
+    stamp_blake3 = blake3.blake3(stamp_bytes).hexdigest()
+    state_blake3 = blake3.blake3(state_bytes).hexdigest()
+    if not isinstance(stamp, dict) or set(stamp) != set(STAMP_FIELDS):
+        raise CycleError("pre-operation candidate stamp fields are not closed")
+    artifacts = stamp.get("artifacts")
+    stamp_sources = stamp.get("sources")
+    if (
+        not isinstance(artifacts, list)
+        or len(artifacts) != 5
+        or any(not isinstance(item, dict) or set(item) != set(STAMP_ARTIFACT_FIELDS) for item in artifacts)
+        or not isinstance(stamp_sources, list)
+        or any(not isinstance(item, dict) or set(item) != set(STAMP_SOURCE_FIELDS) for item in stamp_sources)
+    ):
+        raise CycleError("pre-operation candidate stamp nested fields are not closed")
+    artifact_tuples = {
+        (item.get("role"), item.get("relative_path")) for item in artifacts
+    }
+    if artifact_tuples != STAMP_ARTIFACTS or any(
+        not isinstance(item.get("role"), str)
+        or not isinstance(item.get("relative_path"), str)
+        or not isinstance(item.get("length"), int)
+        or isinstance(item.get("length"), bool)
+        or not 0 < item["length"] <= (1 << 64) - 1
+        or not _is_lower_hex(item.get("blake3"), 64)
+        for item in artifacts
+    ):
+        raise CycleError("pre-operation candidate stamp artifact schema is invalid")
+    source_names = {item.get("name") for item in stamp_sources}
+    if len(stamp_sources) != 5 or source_names != STAMP_SOURCES or any(
+        not all(isinstance(item.get(field), str) for field in STAMP_SOURCE_FIELDS)
+        or not str(item.get("snapshot_id")).strip()
+        or not str(item.get("source_uri")).strip()
+        or not str(item.get("license")).strip()
+        or not _is_lower_hex(item.get("snapshot_blake3"), 64)
+        or not _is_lower_hex(item.get("download_blake3"), 64)
+        for item in stamp_sources
+    ):
+        raise CycleError("pre-operation candidate stamp source schema is invalid")
+    canonical_stamp = {
+        field: (
+            [{nested: item[nested] for nested in STAMP_ARTIFACT_FIELDS} for item in artifacts]
+            if field == "artifacts"
+            else [{nested: item[nested] for nested in STAMP_SOURCE_FIELDS} for item in stamp_sources]
+            if field == "sources"
+            else stamp[field]
+        )
+        for field in STAMP_FIELDS
+    }
+    if stamp_bytes != _pretty_ordered_json(canonical_stamp, STAMP_FIELDS):
+        raise CycleError("pre-operation candidate stamp is not canonical JSON")
+    if (
+        stamp.get("profile") != "onebrain/concept-registry-release/1"
+        or stamp.get("release_id") != candidate_release_id
+        or not isinstance(stamp.get("builder_version"), str)
+        or not stamp["builder_version"].strip()
+        or not isinstance(stamp.get("dedup_policy_version"), str)
+        or not stamp["dedup_policy_version"].strip()
+        or stamp.get("distribution") != STAMP_DISTRIBUTION
+        or not _is_lower_hex(stamp.get("artifact_root"), 64)
+        or stamp.get("artifact_root") != verified.bindings["release_aggregate_root"]
+        or not _is_lower_hex(stamp.get("source_root"), 64)
+        or stamp.get("source_root") != _source_root(stamp_sources)
+        or not _is_lower_hex(stamp.get("signer_public_key"), 64)
+        or not _is_lower_hex(stamp.get("signature"), 128)
+        or stamp_blake3 != verified.bindings["release_stamp_blake3"]
+        or stamp.get("signer_public_key") != release_public_key
+    ):
+        if stamp.get("source_root") != _source_root(stamp_sources):
+            raise CycleError("pre-operation candidate source root is invalid")
+        raise CycleError("pre-operation candidate stamp differs from signed request or Rust schema")
+    try:
+        source_value = json.loads(sources.read_bytes())
+    except (OSError, json.JSONDecodeError) as error:
+        raise CycleError("candidate release sources are invalid") from error
+    if source_value != stamp_sources:
+        raise CycleError("candidate release sources differ from signed stamp")
+    release_dir = candidate_release_stamp.resolve(strict=True).parent
+    if release_dir.name != candidate_release_id or release_dir.parent.name != "releases":
+        raise CycleError("pre-operation candidate stamp path is not the staged release")
+    try:
+        manifest = json.loads((release_dir / "concepts.obr.manifest.json").read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise CycleError("pre-operation candidate manifest is invalid") from error
+    manifest_sources = manifest.get("sources") if isinstance(manifest, dict) else None
+    if (
+        not isinstance(manifest_sources, dict)
+        or stamp["builder_version"] != manifest.get("builder_version")
+        or stamp["dedup_policy_version"] != manifest.get("dedup_policy_version")
+        or len(manifest_sources) != len(stamp_sources)
+        or any(
+            not isinstance(manifest_sources.get(source["name"]), dict)
+            or any(
+                source[field] != manifest_sources[source["name"]].get(field)
+                for field in ("snapshot_id", "source_uri", "license")
+            )
+            for source in stamp_sources
+        )
+    ):
+        raise CycleError("pre-operation candidate stamp differs from packaged manifest")
+    try:
+        private_hex = release_private_key.read_text(encoding="ascii").strip()
+        if not _is_lower_hex(private_hex, 64) or not _is_lower_hex(release_public_key, 64):
+            raise ValueError("release key encoding is invalid")
+        public_bytes = bytes.fromhex(release_public_key)
+        private_key = Ed25519PrivateKey.from_private_bytes(
+            bytes.fromhex(private_hex)
+        )
+        if private_key.public_key().public_bytes_raw() != public_bytes:
+            raise ValueError("release key pair mismatch")
+        unsigned = dict(canonical_stamp)
+        unsigned["signature"] = ""
+        message = STAMP_SIGNATURE_DOMAIN + blake3.blake3(
+            _ordered_json(unsigned, STAMP_FIELDS)
+        ).digest()
+        Ed25519PublicKey.from_public_bytes(public_bytes).verify(
+            bytes.fromhex(str(stamp["signature"])), message
+        )
+    except (OSError, UnicodeError, ValueError, InvalidSignature) as error:
+        raise CycleError("pre-operation candidate stamp signature is invalid") from error
+    if signer_fingerprint(public_bytes) != verified.bindings["signer_fingerprint"]:
+        raise CycleError("pre-operation release signer differs from signed request")
+
+    if not isinstance(state, dict) or set(state) != set(STATE_FIELDS):
+        raise CycleError("pre-operation candidate state fields are not closed")
+    if state_bytes != _pretty_ordered_json(state, STATE_FIELDS):
+        raise CycleError("pre-operation candidate state is not canonical JSON")
+    if (
+        not isinstance(state.get("generation"), int)
+        or isinstance(state.get("generation"), bool)
+        or not 0 < state["generation"] <= (1 << 64) - 1
+        or not _is_release_id(state.get("active_release"))
+        or not _is_release_id(state.get("previous_release"))
+        or not _is_lower_hex(state.get("state_root"), 64)
+    ):
+        raise CycleError("pre-operation candidate state schema is invalid")
+    state_view = {field: state[field] for field in STATE_FIELDS[:-1]}
+    state_root = blake3.blake3(
+        b"onebrain:concept-registry-state:1\0" + _ordered_json(state_view, STATE_FIELDS[:-1])
+    ).hexdigest()
+    if (
+        state.get("profile") != "onebrain/concept-registry-release-state/1"
+        or state.get("active_release") != candidate_release_id
+        or state.get("previous_release") != old_release_id
+        or state.get("generation") != verified.bindings["registry_generation"]
+        or state.get("state_root") != state_root
+    ):
+        raise CycleError("pre-operation candidate state differs from signed request")
+
+    candidate_registry_root = release_dir.parent.parent
+    expected_state = candidate_registry_root / "state" / f"state-{int(state['generation']):020}.json"
+    if candidate_state.resolve(strict=True) != expected_state.resolve(strict=True):
+        raise CycleError("pre-operation candidate state is not the active staged generation")
+    measured_stamp = _stamp(candidate_registry_root, candidate_release_id)
+    measured_state = _latest_state(candidate_registry_root)
+    if (
+        measured_stamp["artifact_root"] != verified.bindings["release_aggregate_root"]
+        or measured_state["active_release_root"] != verified.bindings["release_aggregate_root"]
+        or measured_state["generation"] != verified.bindings["registry_generation"]
+    ):
+        raise CycleError("pre-operation candidate Registry context differs from signed request")
+    try:
+        if (
+            candidate_release_stamp.read_bytes() != stamp_bytes
+            or candidate_state.read_bytes() != state_bytes
+        ):
+            raise CycleError("pre-operation candidate stamp/state changed while measured")
+    except OSError as error:
+        raise CycleError("pre-operation candidate stamp/state changed while measured") from error
+    return MeasuredCandidateContext(
+        registry_root=candidate_registry_root,
+        release_stamp_identity=(
+            f"{candidate_release_stamp.name}@blake3:{stamp_blake3}"
+        ),
+        state_identity=f"{candidate_state.name}@blake3:{state_blake3}",
+    )
 
 
 def _verify_cycle_candidate(
@@ -214,6 +505,8 @@ def _run_release_cycle(
     rust_toolchain_evidence: Path,
     runner_image_evidence: Path,
     target_triple: str,
+    candidate_release_stamp: Path,
+    candidate_state: Path,
     registry_root: Path,
     old_input: Path,
     old_obr: Path,
@@ -252,6 +545,61 @@ def _run_release_cycle(
     for name, path in exact_ccid_paths.items():
         if ccid_inputs.get(name) != _digest(path):
             raise CycleError(f"{name} differs from signed request")
+    measured_candidate = _verify_candidate_stamp_and_state(
+        verified,
+        candidate_release_stamp=candidate_release_stamp,
+        candidate_state=candidate_state,
+        old_release_id=old_release_id,
+        candidate_release_id=candidate_release_id,
+        sources=sources,
+        release_private_key=release_private_key,
+        release_public_key=release_public_key,
+    )
+    candidate_registry_root = measured_candidate.registry_root
+    source_payloads = {
+        "OBR:concepts.obr": candidate_obr,
+        "LABEL_INDEX:concepts.obr.labels.idx": Path(f"{candidate_obr}.labels.idx"),
+        "CCID_INDEX:concepts.obr.ccids.idx": Path(f"{candidate_obr}.ccids.idx"),
+        "MANIFEST:concepts.obr.manifest.json": Path(f"{candidate_obr}.manifest.json"),
+        "SPDX_SBOM:sbom.spdx.json": candidate_sbom,
+    }
+    expected_payloads = verified.bindings["candidate_payload_artifacts_blake3"]
+    if (
+        {name: _digest(path) for name, path in source_payloads.items()} != expected_payloads
+        or _digest(candidate_manifest) != expected_payloads["MANIFEST:concepts.obr.manifest.json"]
+    ):
+        raise CycleError("pre-operation candidate payload bytes differ from signed request")
+    candidate_release_dir = candidate_release_stamp.parent
+    measurement_inputs = dict(
+        candidate_root=candidate_root,
+        registry_root=candidate_registry_root,
+        release_id=candidate_release_id,
+        candidate_semantic_evidence=candidate_semantic_evidence,
+        production_profile=production_profile,
+        production_vector=production_vector,
+        append_only_idl_history=append_only_idl_history,
+        candidate_tooling=candidate_tooling,
+        payload_artifacts={
+            name: candidate_release_dir / name.split(":", 1)[1]
+            for name in expected_payloads
+        },
+        release_stamp=candidate_release_stamp,
+        probe=probe,
+        probe_signature=probe_signature,
+        executable=executable,
+        rust_toolchain_evidence=rust_toolchain_evidence,
+        runner_image_evidence=runner_image_evidence,
+        target_triple=target_triple,
+    )
+    try:
+        if test_git_executable is None:
+            verify_registry_candidate_measurements(verified, **measurement_inputs)
+        else:
+            verify_registry_candidate_measurements_for_test_nonproduction(
+                verified, git_executable=test_git_executable, **measurement_inputs
+            )
+    except Exception as error:
+        raise CycleError(f"release-cycle pre-operation candidate binding failed: {error}") from error
     registry_root.mkdir(parents=True, exist_ok=True)
     observed: list[dict[str, object]] = []
     step_digests: dict[str, str] = {}
@@ -396,6 +744,8 @@ def _run_release_cycle(
         f"--executable={executable.name}@blake3:{_digest(executable)}",
         f"--rust-toolchain={rust_toolchain_evidence.name}@blake3:{_digest(rust_toolchain_evidence)}",
         f"--runner-image={runner_image_evidence.name}@blake3:{_digest(runner_image_evidence)}",
+        f"--candidate-release-stamp={measured_candidate.release_stamp_identity}",
+        f"--candidate-state={measured_candidate.state_identity}",
         *[
             f"--candidate-tool-{name}={path.name}@blake3:{_digest(path)}"
             for name, path in sorted(candidate_tooling.items())
@@ -443,6 +793,9 @@ def run_release_cycle(
     signature_path: Path,
     approver_policy_path: Path,
     gpg_home: Path,
+    *,
+    candidate_release_stamp: Path,
+    candidate_state: Path,
     **inputs: object,
 ) -> dict[str, object]:
     """Production entry with fixed candidate bridge and fixed request verifier."""
@@ -454,7 +807,8 @@ def run_release_cycle(
     _verify_cycle_candidate(verified, candidate_root, bridge, Path("/usr/bin/git"), True)
     return _run_release_cycle(
         verified, bridge=bridge, candidate_root=candidate_root,
-        test_git_executable=None, **inputs,
+        test_git_executable=None, candidate_release_stamp=candidate_release_stamp,
+        candidate_state=candidate_state, **inputs,
     )
 
 
@@ -468,6 +822,8 @@ def run_release_cycle_for_test_nonproduction(
     bridge: Path,
     candidate_root: Path,
     git_executable: Path,
+    candidate_release_stamp: Path,
+    candidate_state: Path,
     **inputs: object,
 ) -> dict[str, object]:
     """Explicit test path with real signature verification and nonproduction identity."""
@@ -478,5 +834,7 @@ def run_release_cycle_for_test_nonproduction(
     _verify_cycle_candidate(verified, candidate_root, bridge, git_executable, False)
     return _run_release_cycle(
         verified, bridge=bridge, candidate_root=candidate_root,
-        test_git_executable=git_executable, **inputs,
+        test_git_executable=git_executable,
+        candidate_release_stamp=candidate_release_stamp,
+        candidate_state=candidate_state, **inputs,
     )

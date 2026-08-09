@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -39,6 +40,7 @@ from verify_base_release_request import (  # noqa: E402
 from build_obr import build  # noqa: E402
 from config import SOURCE_WIKIDATA  # noqa: E402
 from production_qualification import signer_fingerprint, trust_policy_digest  # noqa: E402
+import release_cycle_qualification as release_cycle_module  # noqa: E402
 from release_cycle_qualification import (  # noqa: E402
     REQUIRED_STEPS,
     CycleError,
@@ -575,12 +577,21 @@ class SignedReleaseRequestTests(unittest.TestCase):
         bridge = Path(os.environ["ONEBRAIN_REGISTRY_RELEASE_OPS"])
         measured = self.root / "measured"
         candidate_release = "candidate-v2"
-        result = subprocess.run(
-            [str(bridge), "package", str(measured), str(candidate_obr), str(candidate_sbom), str(sources_path), candidate_release, str(private_key)],
-            capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
+        for arguments in (
+            ["package", measured, old_obr, old_sbom, sources_path, "stable-v1", private_key],
+            ["activate", measured, "stable-v1", public.hex()],
+            ["package", measured, candidate_obr, candidate_sbom, sources_path, candidate_release, private_key],
+            ["activate", measured, candidate_release, public.hex()],
+            ["rollback", measured, public.hex()],
+            ["activate", measured, candidate_release, public.hex()],
+        ):
+            result = subprocess.run(
+                [str(bridge), *map(str, arguments)],
+                capture_output=True, text=True, encoding="utf-8", errors="replace", check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
         stamp_path = measured / "releases" / candidate_release / "release.stamp.json"
+        candidate_state = sorted((measured / "state").glob("state-*.json"))[-1]
         stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
         target = "x86_64-pc-windows-msvc"
         artifact_tuple = "62" * 32
@@ -668,25 +679,241 @@ class SignedReleaseRequestTests(unittest.TestCase):
             "verifier": SCRIPT_DIR / "verify_base_release_request.py",
             "signer_policy": approver_policy_path,
         })
-        cycle_registry = self.root / "cycle-registry"
-        receipt = run_release_cycle_for_test_nonproduction(
-            request_path, signature_path, approver_policy_path, self.gpg_home,
-            gpg_executable=Path(_gpg()), bridge=bridge,
-            candidate_root=repo, git_executable=Path(shutil.which("git") or "git"),
-            candidate_semantic_evidence=semantic_path,
-            production_profile=profile_path, production_vector=vector_path,
-            append_only_idl_history=idl_path, candidate_tooling=tooling_paths,
-            probe=failure_executable, probe_signature=probe_signature_path,
-            executable=failure_executable, rust_toolchain_evidence=toolchain_path,
-            runner_image_evidence=runner_path, target_triple=target,
-            registry_root=cycle_registry,
-            old_input=old_input, old_obr=old_obr, old_manifest=old_manifest, old_sbom=old_sbom,
-            candidate_input=candidate_input, candidate_obr=candidate_obr,
-            candidate_manifest=candidate_manifest, candidate_sbom=candidate_sbom,
-            sources=sources_path, old_release_id="stable-v1", candidate_release_id=candidate_release,
-            query_label="water", release_private_key=private_key,
-            release_public_key=public.hex(), signing_key=signing_key, receipt_policy=receipt_policy,
+        def run_cycle(
+            target_registry: Path,
+            old_release_id: str = "stable-v1",
+        ) -> dict[str, object]:
+            return run_release_cycle_for_test_nonproduction(
+                request_path, signature_path, approver_policy_path, self.gpg_home,
+                gpg_executable=Path(_gpg()), bridge=bridge,
+                candidate_root=repo, git_executable=Path(shutil.which("git") or "git"),
+                candidate_semantic_evidence=semantic_path,
+                production_profile=profile_path, production_vector=vector_path,
+                append_only_idl_history=idl_path, candidate_tooling=tooling_paths,
+                probe=failure_executable, probe_signature=probe_signature_path,
+                executable=failure_executable, rust_toolchain_evidence=toolchain_path,
+                runner_image_evidence=runner_path, target_triple=target,
+                candidate_release_stamp=stamp_path, candidate_state=candidate_state,
+                registry_root=target_registry,
+                old_input=old_input, old_obr=old_obr, old_manifest=old_manifest, old_sbom=old_sbom,
+                candidate_input=candidate_input, candidate_obr=candidate_obr,
+                candidate_manifest=candidate_manifest, candidate_sbom=candidate_sbom,
+                sources=sources_path, old_release_id=old_release_id, candidate_release_id=candidate_release,
+                query_label="water", release_private_key=private_key,
+                release_public_key=public.hex(), signing_key=signing_key, receipt_policy=receipt_policy,
+            )
+
+        semantic_original = semantic_path.read_bytes()
+        semantic_mutation = json.loads(semantic_original)
+        semantic_mutation["feature_set_digest"] = "ff" * 32
+        staged_sbom = stamp_path.parent / "sbom.spdx.json"
+        staged_sbom_original = staged_sbom.read_bytes()
+        state_original = candidate_state.read_bytes()
+        state_mutation = json.loads(state_original)
+        state_original_value = json.loads(state_original)
+        state_mutation["previous_release"] = "unbound-previous-v9"
+        state_view = {
+            field: state_mutation[field]
+            for field in ("profile", "generation", "active_release", "previous_release")
+        }
+        state_mutation["state_root"] = blake3.blake3(
+            b"onebrain:concept-registry-state:1\0"
+            + json.dumps(state_view, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        state_mutation_bytes = state_original.replace(
+            json.dumps(state_original_value["previous_release"]).encode("ascii"),
+            json.dumps(state_mutation["previous_release"]).encode("ascii"),
+            1,
+        ).replace(
+            state_original_value["state_root"].encode("ascii"),
+            state_mutation["state_root"].encode("ascii"),
+            1,
         )
+        qualifier_tool = tooling_paths["qualifier"]
+        qualifier_original = qualifier_tool.read_bytes()
+        mismatch_cases = (
+            ("semantic", semantic_path, semantic_original, canonical_json(semantic_mutation)),
+            ("payload", staged_sbom, staged_sbom_original, staged_sbom_original + b" "),
+            (
+                "state",
+                candidate_state,
+                state_original,
+                state_mutation_bytes,
+            ),
+            ("tool", qualifier_tool, qualifier_original, qualifier_original + b"tamper"),
+        )
+
+        def assert_zero_operation_rejection(
+            name: str,
+            old_release_id: str = "stable-v1",
+        ) -> CycleError:
+            rejected_registry = self.root / f"preflight-rejected-{name}"
+            receipt_before_rejection = None
+            caught = None
+            with (
+                patch.object(
+                    release_cycle_module,
+                    "_execute_bridge",
+                    wraps=release_cycle_module._execute_bridge,
+                ) as execute_bridge,
+                patch.object(
+                    release_cycle_module,
+                    "_query_obr",
+                    wraps=release_cycle_module._query_obr,
+                ) as query_obr,
+                patch.object(
+                    release_cycle_module,
+                    "generate_report",
+                    wraps=release_cycle_module.generate_report,
+                ) as ccid_diff,
+            ):
+                try:
+                    receipt_before_rejection = run_cycle(rejected_registry, old_release_id)
+                except CycleError as error:
+                    caught = error
+                operation_calls = execute_bridge.call_count
+                query_calls = query_obr.call_count
+                ccid_calls = ccid_diff.call_count
+            self.assertIsNotNone(caught, "candidate mismatch must fail closed")
+            self.assertIsNone(receipt_before_rejection)
+            self.assertEqual(operation_calls, 0, "candidate mismatch must run zero first-party operations")
+            self.assertEqual(query_calls, 0)
+            self.assertEqual(ccid_calls, 0)
+            self.assertFalse(
+                rejected_registry.exists(),
+                "candidate mismatch must produce no operation state/output",
+            )
+            return caught
+
+        for name, path, original, mutation in mismatch_cases:
+            with self.subTest(preoperation_candidate_mismatch=name):
+                path.write_bytes(mutation)
+                try:
+                    mismatch_error = assert_zero_operation_rejection(name)
+                    if name == "state":
+                        self.assertIn("state differs", str(mismatch_error))
+                finally:
+                    path.write_bytes(original)
+
+        self_state_mutation = json.loads(state_original)
+        original_previous_release = self_state_mutation["previous_release"]
+        original_state_root = self_state_mutation["state_root"]
+        self_state_mutation["previous_release"] = candidate_release
+        self_state_view = {
+            field: self_state_mutation[field]
+            for field in ("profile", "generation", "active_release", "previous_release")
+        }
+        self_state_mutation["state_root"] = blake3.blake3(
+            b"onebrain:concept-registry-state:1\0"
+            + json.dumps(
+                self_state_view,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        candidate_state.write_bytes(
+            state_original.replace(
+                json.dumps(original_previous_release).encode("ascii"),
+                json.dumps(candidate_release).encode("ascii"),
+                1,
+            ).replace(
+                original_state_root.encode("ascii"),
+                self_state_mutation["state_root"].encode("ascii"),
+                1,
+            )
+        )
+        try:
+            with self.subTest(preoperation_candidate_mismatch="same-release-identity"):
+                identity_error = assert_zero_operation_rejection(
+                    "same-release-identity", candidate_release
+                )
+                self.assertIn("distinct", str(identity_error))
+        finally:
+            candidate_state.write_bytes(state_original)
+
+        stamp_original = stamp_path.read_bytes()
+        bad_stamp = json.loads(stamp_original)
+        original_source_root = bad_stamp["source_root"]
+        original_stamp_signature = bad_stamp["signature"]
+        bad_stamp["source_root"] = "00" * 32
+        unsigned_bad_stamp = dict(bad_stamp)
+        unsigned_bad_stamp["signature"] = ""
+        bad_stamp["signature"] = signing_key.sign(
+            b"onebrain:concept-registry-release-stamp:1\0"
+            + blake3.blake3(
+                json.dumps(
+                    unsigned_bad_stamp,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).digest()
+        ).hex()
+        stamp_path.write_bytes(
+            stamp_original.replace(
+                original_source_root.encode("ascii"),
+                bad_stamp["source_root"].encode("ascii"),
+                1,
+            ).replace(
+                original_stamp_signature.encode("ascii"),
+                bad_stamp["signature"].encode("ascii"),
+                1,
+            )
+        )
+        self.request["registry_candidate"]["release_stamp_blake3"] = blake3.blake3(
+            stamp_path.read_bytes()
+        ).hexdigest()
+        request_path, signature_path, approver_policy_path = self._signed_paths()
+        try:
+            with self.subTest(preoperation_candidate_mismatch="resigned-source-root"):
+                source_root_error = assert_zero_operation_rejection("resigned-source-root")
+                self.assertIn("source root", str(source_root_error))
+        finally:
+            stamp_path.write_bytes(stamp_original)
+            self.request["registry_candidate"]["release_stamp_blake3"] = blake3.blake3(
+                stamp_original
+            ).hexdigest()
+            request_path, signature_path, approver_policy_path = self._signed_paths()
+
+        frozen_registry = self.root / "frozen-candidate-provenance"
+        first_operation = True
+        real_execute_bridge = release_cycle_module._execute_bridge
+
+        def mutate_staged_locators_after_preflight(
+            operation_bridge: Path,
+            operation: str,
+            arguments: list[str],
+        ) -> list[str]:
+            nonlocal first_operation
+            if first_operation:
+                first_operation = False
+                stamp_path.write_bytes(stamp_original + b"post-preflight")
+                candidate_state.write_bytes(state_original + b"post-preflight")
+            return real_execute_bridge(operation_bridge, operation, arguments)
+
+        try:
+            with patch.object(
+                release_cycle_module,
+                "_execute_bridge",
+                side_effect=mutate_staged_locators_after_preflight,
+            ):
+                frozen_receipt = run_cycle(frozen_registry)
+        finally:
+            stamp_path.write_bytes(stamp_original)
+            candidate_state.write_bytes(state_original)
+        frozen_command = frozen_receipt["payload"]["command"]
+        self.assertIn(
+            f"--candidate-release-stamp={stamp_path.name}@blake3:"
+            f"{blake3.blake3(stamp_original).hexdigest()}",
+            frozen_command,
+        )
+        self.assertIn(
+            f"--candidate-state={candidate_state.name}@blake3:"
+            f"{blake3.blake3(state_original).hexdigest()}",
+            frozen_command,
+        )
+
+        cycle_registry = self.root / "cycle-registry"
+        receipt = run_cycle(cycle_registry)
         payload = receipt["payload"]
         self.assertEqual([step["step"] for step in payload["steps"]], list(REQUIRED_STEPS))
         self.assertTrue(all(payload["exit_oracles"].values()))
@@ -736,6 +963,8 @@ class SignedReleaseRequestTests(unittest.TestCase):
             f"--probe={file_identity(failure_executable)}", f"--probe-signature={file_identity(probe_signature_path)}",
             f"--executable={file_identity(failure_executable)}", f"--rust-toolchain={file_identity(toolchain_path)}",
             f"--runner-image={file_identity(runner_path)}",
+            f"--candidate-release-stamp={file_identity(stamp_path)}",
+            f"--candidate-state={file_identity(candidate_state)}",
             *[f"--candidate-tool-{name}={file_identity(path)}" for name, path in sorted(tooling_paths.items())],
             *[f"--step-{name}-blake3={expected_step_digests[name]}" for name in REQUIRED_STEPS],
             "--release-private-key=<external-redacted>", "--gpg-home=<redacted>",
@@ -855,6 +1084,30 @@ class SignedReleaseRequestTests(unittest.TestCase):
         self.assertNotEqual(rejected_environment.returncode, 0)
         self.assertIn("reference environment", rejected_environment.stderr)
         runner_path.write_text("runner fixture", encoding="utf-8")
+
+        tuple_original = semantic_path.read_bytes()
+        tuple_with_unknown_field = json.loads(tuple_original)
+        tuple_with_unknown_field["unknown_compatibility_field"] = "known-fields-unchanged"
+        semantic_path.write_bytes(canonical_json(tuple_with_unknown_field))
+        rejected_failure_work = self.root / "unknown-tuple-failure-work"
+        rejected_failure_output = self.root / "unknown-tuple-failure-receipt.json"
+        rejected_failure_command = list(failure_command)
+        rejected_failure_command[2] = str(rejected_failure_work)
+        rejected_failure_command[-1] = str(rejected_failure_output)
+        rejected_failure = subprocess.run(
+            rejected_failure_command,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=90, check=False,
+        )
+        self.assertNotEqual(rejected_failure.returncode, 0)
+        self.assertIn("fields are not closed", rejected_failure.stderr)
+        self.assertFalse(rejected_failure_output.exists())
+        self.assertFalse(
+            rejected_failure_work.exists(),
+            "unknown tuple field must be rejected before failure work-root creation",
+        )
+        semantic_path.write_bytes(tuple_original)
+
         failure_result = subprocess.run(
             failure_command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90, check=False,
         )
@@ -879,11 +1132,41 @@ class SignedReleaseRequestTests(unittest.TestCase):
             str(failure_executable), str(probe_signature_path), str(toolchain_path), str(runner_path), target,
             str(self.root / "receipt-policy.json"), str(private_key), str(generation_output),
         ]
+
+        semantic_path.write_bytes(canonical_json(tuple_with_unknown_field))
+        generation_before = {
+            path.relative_to(generation_registry).as_posix(): path.read_bytes()
+            for path in generation_registry.rglob("*")
+            if path.is_file()
+        }
+        rejected_generation_output = self.root / "unknown-tuple-generation-receipt.json"
+        rejected_generation_command = list(generation_command)
+        rejected_generation_command[-1] = str(rejected_generation_output)
+        rejected_generation = subprocess.run(
+            rejected_generation_command,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=90, check=False,
+        )
+        self.assertNotEqual(rejected_generation.returncode, 0)
+        self.assertIn("fields are not closed", rejected_generation.stderr)
+        self.assertFalse(rejected_generation_output.exists())
+        self.assertEqual(
+            {
+                path.relative_to(generation_registry).as_posix(): path.read_bytes()
+                for path in generation_registry.rglob("*")
+                if path.is_file()
+            },
+            generation_before,
+            "unknown tuple field must be rejected before generation swap state mutation",
+        )
+        semantic_path.write_bytes(tuple_original)
+
         generation_result = subprocess.run(
             generation_command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90, check=False,
         )
         self.assertEqual(generation_result.returncode, 0, generation_result.stderr)
         generation_receipt = json.loads(generation_output.read_text(encoding="utf-8"))
+
         components = [*resource_receipts, failure_receipt, generation_receipt, ccid_receipt, receipt]
         for component in components:
             emitted = component["payload"]
@@ -971,6 +1254,7 @@ class SignedReleaseRequestTests(unittest.TestCase):
                 probe=failure_executable, probe_signature=probe_signature_path,
                 executable=failure_executable, rust_toolchain_evidence=toolchain_path,
                 runner_image_evidence=runner_path, target_triple=target,
+                candidate_release_stamp=stamp_path, candidate_state=candidate_state,
                 registry_root=self.root / "tampered-cycle",
                 old_input=old_input, old_obr=old_obr, old_manifest=old_manifest, old_sbom=old_sbom,
                 candidate_input=candidate_input, candidate_obr=candidate_obr,

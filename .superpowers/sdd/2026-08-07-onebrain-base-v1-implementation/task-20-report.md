@@ -1037,3 +1037,288 @@ lines and 444 local links.
   resource integration; it remains the one expected skip.
 - Production APIs intentionally fail closed on Windows. No full-size production
   artifacts, production signature, or `BASE-GATE-V1` claim were produced.
+
+---
+
+# Fix round 4/5 — close remaining qualification gaps
+
+## Status
+
+DONE_WITH_CONCERNS. Both round-4 findings are behaviorally closed. This round
+does not claim that production measurements exist or that `BASE-GATE-V1`
+passes.
+
+## Implementation summary
+
+- The release cycle now requires explicit pre-existing
+  `candidate_release_stamp` and `candidate_state` files as untrusted locators.
+  Before creating the mutable cycle root or starting operation 1, it verifies
+  canonical Rust stamp/state bytes, exact closed nested shapes and lowercase
+  encodings, recomputed source root, manifest bindings, safe/distinct release
+  identities, the release Ed25519 signature and key identity, signed sources,
+  exact previous/active state and artifact roots/generation, the
+  exact five staged and operation-input payloads, and the existing complete
+  Git/semantic/artifact/profile/vector/IDL/tool/probe/signature/environment
+  measurement set. The post-step inspections and post-cycle full remeasurement
+  remain unchanged defense-in-depth.
+- The two new pre-operation inputs are explicit required keyword parameters.
+  Their sanitized provenance identities are frozen from the exact bytes
+  authenticated before operation 1, rather than re-reading untrusted locators
+  after the cycle. The production entry still fixes the candidate repository,
+  Git executable,
+  request verifier, and release-operation bridge; path identity itself grants
+  no trust.
+- The Rust Base tuple encoder now validates the exact approved 16-field
+  top-level schema, every nested object field set and scalar type/range, known
+  commit/toolchain forms, lowercase hexadecimal, and bounded ASCII strings
+  before deriving tuple bytes. The approved field IDs, framing, semantic
+  fields 1–14, and artifact fields 1–16 are unchanged. Existing canonical-byte
+  comparison continues to reject duplicate and noncanonical JSON.
+- Real compiled failure and generation producers are exercised with canonical
+  tuple JSON containing an unknown top-level field while all approved fields
+  remain unchanged. Failure rejects before even creating its work root or
+  emitting a receipt. Generation is mutated on a fresh stable-only Registry,
+  emits no receipt, and leaves every Registry file byte-identical before the
+  separately executed happy generation swap.
+
+## RED evidence
+
+### Complete candidate measurement occurred after operation output
+
+Command:
+
+```powershell
+$env:ONEBRAIN_REGISTRY_RELEASE_OPS=(Resolve-Path 'src\target\debug\examples\concept_registry_release_ops.exe').Path
+$env:ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION=(Resolve-Path 'src\target\debug\examples\concept_registry_failure_qualification.exe').Path
+$env:ONEBRAIN_REGISTRY_GENERATION_QUALIFICATION=(Resolve-Path 'src\target\debug\examples\concept_registry_production_qualification.exe').Path
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_first_party_nine_step_cycle_inspects_real_state_and_signed_inputs -v
+```
+
+Expected RED against the round-3 implementation:
+
+```text
+AssertionError: True is not false : candidate mismatch must cause zero first-party operation output
+Ran 1 test in 5.122s
+FAILED (failures=1)
+```
+
+The real signed semantic mismatch was detected only after the cycle created its
+Registry root and ran operations.
+
+### Rust tuple schemas were not closed
+
+Command:
+
+```powershell
+cargo test --locked --manifest-path src/Cargo.toml -p ku-core qualification_request::tests::base_tuple_schema_rejects_unknown_missing_and_wrong_type_fields -- --exact --nocapture
+```
+
+Expected RED:
+
+```text
+accepted invalid Base tuple schemas: ["extra top-level field", "extra nested field"]
+test result: FAILED. 0 passed; 1 failed
+```
+
+The missing and wrong-type table rows already rejected; the failure isolated
+the absent top-level/nested closure.
+
+### Compiled producer mutation check
+
+The Rust unit/table RED above was the pre-implementation RED that drove the
+schema gate. The compiled producer assertions were added after that minimal
+implementation, so their negative proof was recorded honestly as a mutation
+check: binaries were rebuilt once with only the new schema-gate call disabled,
+then the real integration was run.
+
+```powershell
+cargo build --locked --manifest-path src/Cargo.toml -p ku-core --example registry_probe --example concept_registry_release_ops --example concept_registry_failure_qualification --features concept-registry-failure-harness
+cargo build --locked --manifest-path src/Cargo.toml -p onebrain-node --example concept_registry_production_qualification
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_first_party_nine_step_cycle_inspects_real_state_and_signed_inputs -v
+```
+
+Mutation-check result:
+
+```text
+AssertionError: 0 == 0
+Ran 1 test in 18.025s
+FAILED (failures=1)
+```
+
+The real failure binary accepted the unknown tuple field, completed, and
+returned zero when the gate was disabled. The gate was immediately restored,
+the binaries rebuilt, and the same behavioral test passed.
+
+### Reviewer-edge REDs for complete pre-operation semantics and ordering
+
+The same focused all-real command above was extended with a legitimately
+re-signed candidate stamp whose `source_root` did not match its exact sources,
+and with an assertion that compiled failure tuple rejection precedes creation
+of the harness work root. Before the corresponding production fixes it failed
+for both intended reasons:
+
+```text
+AssertionError: 4 != 0 : candidate mismatch must run zero first-party operations
+AssertionError: True is not false : unknown tuple field must be rejected before failure work-root creation
+Ran 1 test in 10.986s
+FAILED (failures=2)
+```
+
+The re-signed bad stamp passed the old Python checks and reached four real
+bridge operations. Separately, the real failure binary rejected the tuple only
+after creating its work root. A state with the same valid old/candidate release
+identity, a recomputed state root, and matching caller operation IDs isolated
+the distinct-cycle invariant:
+
+```text
+AssertionError: 4 != 0 : candidate mismatch must run zero first-party operations
+Ran 1 test in 17.849s
+FAILED (failures=1)
+```
+
+An earlier focused state mutation with a valid recomputed root but arbitrary
+`previous_release` also ran the cycle and returned no error, failing with
+`unexpectedly None : candidate mismatch must fail closed` in 19.515s. These
+REDs drove source-root/schema/manifest validation, previous-release binding,
+and distinct safe release IDs in the pre-operation context.
+
+The append-only state reader also received a focused type regression:
+
+```powershell
+python -m unittest scripts.concept_registry.test_release_cycle_qualification -v
+```
+
+Before the explicit integer/non-boolean check, JSON `true` was treated as
+generation 1 and failed later with `installed stamp is invalid` instead of the
+required `active state generation is not append-only`. The restored focused
+suite passed 2/2 tests in 0.005s.
+
+### Frozen-provenance mutation check
+
+The reviewer-added regression changes the staged stamp/state locator bytes
+after preflight and requires the receipt command to retain the identities of
+the bytes actually authenticated. With the two command fields deliberately
+changed back to late path re-reads, the focused integration failed as intended:
+
+```text
+AssertionError: '--candidate-release-stamp=release.stamp.json@blake3:<authenticated>' not found in [... '--candidate-release-stamp=release.stamp.json@blake3:<changed>' ...]
+Ran 1 test in 7.154s
+FAILED (failures=1)
+```
+
+The frozen measured-context fields were restored immediately.
+
+## GREEN verification
+
+### Focused cycle and compiled producer behavior
+
+```powershell
+$env:ONEBRAIN_REGISTRY_RELEASE_OPS=(Resolve-Path 'src\target\debug\examples\concept_registry_release_ops.exe').Path
+$env:ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION=(Resolve-Path 'src\target\debug\examples\concept_registry_failure_qualification.exe').Path
+$env:ONEBRAIN_REGISTRY_GENERATION_QUALIFICATION=(Resolve-Path 'src\target\debug\examples\concept_registry_production_qualification.exe').Path
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_first_party_nine_step_cycle_inspects_real_state_and_signed_inputs -v
+```
+
+Result: PASS - 1 test in 20.200s. For each semantic, payload,
+valid-root-but-wrong-previous-release state, and tooling mutation,
+`_execute_bridge`, `_query_obr`, and the real CCID diff had zero calls; no
+receipt was returned and the unique operation root remained absent. The same
+zero-operation assertions cover a legitimately re-signed wrong source root and
+same old/candidate release identity. A second real cycle proves provenance uses
+the initially authenticated stamp/state bytes even when those untrusted
+locators change after preflight. The test then completes the normal nine-step
+happy cycle and both compiled unknown-field producer regressions: failure
+rejects before work-root creation, and generation rejects on fresh pre-swap
+state without changing any Registry byte.
+
+### Rust tuple and required Task 20 filters
+
+```powershell
+cargo test --locked --manifest-path src/Cargo.toml -p ku-core qualification_request -- --test-threads=1
+cargo test --locked --manifest-path src/Cargo.toml -p ku-core concept_registry_release -- --test-threads=1
+cargo test --locked --manifest-path src/Cargo.toml -p onebrain-node --lib concept_registry_runtime -- --test-threads=1
+```
+
+Result: PASS - 3/3 tuple/request tests, 10/10 release tests, and 13/13 runtime
+tests. The tuple filter includes exact-schema and duplicate/noncanonical JSON
+coverage.
+
+### Full compiled Python integration regression
+
+```powershell
+$env:ONEBRAIN_REGISTRY_PROBE=(Resolve-Path 'src\target\debug\examples\registry_probe.exe').Path
+$env:ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION=(Resolve-Path 'src\target\debug\examples\concept_registry_failure_qualification.exe').Path
+$env:ONEBRAIN_REGISTRY_RELEASE_OPS=(Resolve-Path 'src\target\debug\examples\concept_registry_release_ops.exe').Path
+$env:ONEBRAIN_REGISTRY_GENERATION_QUALIFICATION=(Resolve-Path 'src\target\debug\examples\concept_registry_production_qualification.exe').Path
+python -m unittest scripts.release.test_verify_base_release_request scripts.concept_registry.test_resource_qualification scripts.concept_registry.test_ccid_stability_diff scripts.concept_registry.test_production_qualification scripts.concept_registry.test_release_cycle_qualification scripts.concept_registry.test_failure_qualification -v
+```
+
+Result: PASS - 52 tests, 0 failures/errors, 1 expected Linux-only skip in
+56.369s. All compiled probe, failure, generation, release-operation, signed
+request, real CCID, cycle, provenance, evidence-tier, and aggregate regressions
+ran on Windows.
+
+### Examples, syntax, contracts, format, and diff
+
+```powershell
+python -m py_compile scripts/concept_registry/resource_qualification.py scripts/concept_registry/ccid_stability_qualification.py scripts/concept_registry/release_cycle_qualification.py scripts/concept_registry/production_qualification.py scripts/concept_registry/test_release_cycle_qualification.py scripts/release/verify_base_release_request.py scripts/release/test_verify_base_release_request.py
+cargo check --locked --manifest-path src/Cargo.toml -p ku-core --example registry_probe --example concept_registry_release_ops --example concept_registry_failure_qualification --features concept-registry-failure-harness
+cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node --example concept_registry_production_qualification
+python scripts/ci/validate_vnext_contracts.py
+cargo fmt --manifest-path src/Cargo.toml --all -- --check
+git diff --check
+```
+
+Result: PASS. The validator reported 726 normative lines and 444 local links.
+Git emitted only the Windows LF-to-CRLF working-copy advisory.
+
+## Files changed in round 4
+
+- Modified `scripts/concept_registry/release_cycle_qualification.py` — complete
+  immutable candidate preflight before operation 1, Rust-equivalent
+  stamp/state semantics, and frozen authenticated-byte provenance.
+- Modified `scripts/concept_registry/test_release_cycle_qualification.py` —
+  append-only state generation rejects JSON booleans before release lookup.
+- Modified `scripts/release/test_verify_base_release_request.py` — real staged
+  generation-4 context, semantic/payload/state/tool/source-root/release-ID
+  zero-operation cases, frozen-provenance behavior, and compiled
+  failure/generation unknown-field behavior on observable pre-operation state.
+- Modified `src/ku-core/examples/concept_registry_failure_qualification.rs` —
+  verifies Base tuple evidence before creating the failure-harness work root.
+- Modified `src/ku-core/src/qualification_request.rs` — closed tuple schema and
+  Rust table/canonical-byte tests.
+- Appended this round to `task-20-report.md`.
+
+## Self-review
+
+- Confirmed `registry_root.mkdir` and every `_execute_bridge`/query/CCID call
+  occur only after the full immutable candidate measurement succeeds.
+- Confirmed staged paths are untrusted locators: acceptance derives from exact
+  signed hashes, signature/key identity, recomputed artifact/source/state
+  roots, exact previous/active release state, canonical bytes, safe/distinct
+  release IDs, and equality with independently measured source payloads.
+- Confirmed stamp/state command provenance is frozen from the initially
+  authenticated bytes and cannot be relabeled by a later locator change.
+- Confirmed all post-operation stamp/state/query/CCID checks and the final full
+  installed-candidate remeasurement remain present.
+- Confirmed no tuple field, identifier, framing byte, semantic/artifact field
+  count, payload binding, evidence tier, provenance rule, CCID input, or
+  production claim was broadened or weakened.
+- Confirmed compiled failure rejection occurs before its work root, drills, or
+  receipt; the generation mutation runs before the happy activation and leaves
+  its fresh Registry snapshot byte-identical.
+- Confirmed the diff is limited to five implementation/test files plus this
+  required report, with no private key material or production evidence.
+
+## Concerns
+
+- The compiled producer regressions were added after the Rust schema gate, so
+  they do not have separate chronological REDs. The failure binary received a
+  deliberate post-implementation mutation check; generation is exercised on
+  a fresh pre-swap Registry. The Rust unit/table test is the required
+  pre-implementation RED, and both compiled tests assert real side effects.
+- This Windows host cannot execute the Linux-only RLIMIT/cache resource test;
+  it remains the one expected skip.
+- Existing unrelated Rust dead-code warnings remain in `ku-core`/`ku-kql`.
+- No full-size production artifacts, production private signing key, or
+  `BASE-GATE-V1` claim was created.

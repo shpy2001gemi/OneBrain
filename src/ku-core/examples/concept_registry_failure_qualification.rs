@@ -167,6 +167,10 @@ fn run() -> Result<(), Box<dyn Error>> {
         };
     no_more_args(args)?;
 
+    if let Some(measurements) = &measured_registry {
+        validate_release_tuple_measurements(measurements, &binding)?;
+    }
+
     fs::create_dir_all(&work_dir)?;
     let temporary = tempfile::Builder::new()
         .prefix("onebrain-registry-failure-")
@@ -511,6 +515,31 @@ fn process_kill_drills(
         }));
     }
     Ok(receipts)
+}
+
+fn validate_release_tuple_measurements(
+    measured: &ReleaseMeasurements,
+    binding: &Value,
+) -> Result<(), Box<dyn Error>> {
+    let measured_toolchain_digest = blake3_file_hex(&measured.rust_toolchain_evidence)?;
+    verify_base_tuple_evidence(
+        &measured.semantic_evidence,
+        binding
+            .get("candidate_commit")
+            .and_then(Value::as_str)
+            .ok_or("candidate commit is missing")?,
+        &measured.target_triple,
+        &measured_toolchain_digest,
+        binding
+            .get("candidate_semantic_digest")
+            .and_then(Value::as_str)
+            .ok_or("semantic digest is missing")?,
+        binding
+            .get("artifact_tuple_digest")
+            .and_then(Value::as_str)
+            .ok_or("artifact tuple digest is missing")?,
+    )?;
+    Ok(())
 }
 
 fn package(

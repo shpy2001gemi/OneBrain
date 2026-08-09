@@ -385,6 +385,7 @@ pub fn verify_base_tuple_evidence(
 }
 
 fn compatibility_tuple_bytes(value: &Value, artifact: bool) -> Result<Vec<u8>, String> {
+    validate_compatibility_tuple_schema(value)?;
     let u16le = |v: &Value, name: &str| -> Result<[u8; 2], String> {
         let number = v.as_u64().ok_or_else(|| format!("{name} is invalid"))?;
         Ok(u16::try_from(number)
@@ -507,8 +508,135 @@ fn compatibility_tuple_bytes(value: &Value, artifact: bool) -> Result<Vec<u8>, S
     Ok(output)
 }
 
+fn exact_object<'a>(
+    value: &'a Value,
+    fields: &[&str],
+    name: &str,
+) -> Result<&'a serde_json::Map<String, Value>, String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("{name} must be an object"))?;
+    let expected: BTreeSet<&str> = fields.iter().copied().collect();
+    let actual: BTreeSet<&str> = object.keys().map(String::as_str).collect();
+    if actual != expected {
+        return Err(format!("{name} fields are not closed"));
+    }
+    Ok(object)
+}
+
+fn validate_compatibility_tuple_schema(value: &Value) -> Result<(), String> {
+    const TOP_LEVEL: [&str; 16] = [
+        "base_version",
+        "base_commit",
+        "canonical_schema_digest",
+        "domain_registry_digest",
+        "resource_registry_digest",
+        "storage_schema",
+        "archive_profile",
+        "migration_profile",
+        "registry_profile",
+        "registry_profile_digest",
+        "wire_session",
+        "product_api",
+        "c_abi",
+        "feature_set_digest",
+        "target_triple",
+        "toolchain",
+    ];
+    let tuple = exact_object(value, &TOP_LEVEL, "Base compatibility tuple")?;
+    let unsigned = |value: &Value, maximum: u64, name: &str| -> Result<(), String> {
+        match value.as_u64() {
+            Some(number) if number <= maximum => Ok(()),
+            _ => Err(format!("{name} must be an unsigned integer in range")),
+        }
+    };
+
+    let version = exact_object(
+        &tuple["base_version"],
+        &["major", "minor", "patch", "prerelease"],
+        "base_version",
+    )?;
+    for field in ["major", "minor", "patch"] {
+        unsigned(
+            &version[field],
+            u16::MAX.into(),
+            &format!("base_version.{field}"),
+        )?;
+    }
+    match &version["prerelease"] {
+        Value::Null => {}
+        Value::String(text) if !text.is_empty() && text.is_ascii() && text.len() <= 32 => {}
+        _ => return Err("base_version.prerelease is invalid".to_owned()),
+    }
+
+    let commit = exact_object(&tuple["base_commit"], &["kind", "hex"], "base_commit")?;
+    let (kind, size) = match commit["kind"].as_str() {
+        Some("sha1") => ("sha1", 20),
+        Some("sha256") => ("sha256", 32),
+        _ => return Err("base_commit.kind is invalid".to_owned()),
+    };
+    let commit_hex = commit["hex"]
+        .as_str()
+        .ok_or("base_commit.hex must be lowercase hexadecimal")?;
+    hex_bytes(commit_hex, size)
+        .map_err(|_| format!("base_commit {kind} hexadecimal is invalid"))?;
+
+    for field in [
+        "canonical_schema_digest",
+        "domain_registry_digest",
+        "resource_registry_digest",
+        "registry_profile_digest",
+        "feature_set_digest",
+    ] {
+        let text = tuple[field]
+            .as_str()
+            .ok_or_else(|| format!("{field} must be lowercase hexadecimal"))?;
+        hex_bytes(text, 32).map_err(|_| format!("{field} must be lowercase hexadecimal"))?;
+    }
+    unsigned(&tuple["storage_schema"], u32::MAX.into(), "storage_schema")?;
+
+    for field in [
+        "archive_profile",
+        "migration_profile",
+        "registry_profile",
+        "wire_session",
+        "product_api",
+        "c_abi",
+    ] {
+        let profile = exact_object(&tuple[field], &["major", "minor"], field)?;
+        for component in ["major", "minor"] {
+            unsigned(
+                &profile[component],
+                u16::MAX.into(),
+                &format!("{field}.{component}"),
+            )?;
+        }
+    }
+
+    let target = tuple["target_triple"]
+        .as_str()
+        .ok_or("target_triple must be a string")?;
+    if target.is_empty() || !target.is_ascii() || target.len() > 96 {
+        return Err("target_triple is invalid".to_owned());
+    }
+    let toolchain = exact_object(&tuple["toolchain"], &["kind", "hex"], "toolchain")?;
+    if toolchain["kind"].as_str() != Some("known") {
+        return Err("qualification artifact toolchain must be known".to_owned());
+    }
+    let toolchain_hex = toolchain["hex"]
+        .as_str()
+        .ok_or("toolchain.hex must be lowercase hexadecimal")?;
+    hex_bytes(toolchain_hex, 32)
+        .map_err(|_| "toolchain.hex must be lowercase hexadecimal".to_owned())?;
+    Ok(())
+}
+
 fn hex_bytes(value: &str, size: usize) -> Result<Vec<u8>, String> {
-    if value.len() != size * 2 {
+    if value.len() != size * 2
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
         return Err("hexadecimal field length is invalid".to_owned());
     }
     (0..size)
@@ -598,6 +726,27 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    fn valid_base_tuple() -> Value {
+        json!({
+            "base_version": {"major": 1, "minor": 0, "patch": 0, "prerelease": null},
+            "base_commit": {"kind": "sha1", "hex": "11".repeat(20)},
+            "canonical_schema_digest": "21".repeat(32),
+            "domain_registry_digest": "22".repeat(32),
+            "resource_registry_digest": "23".repeat(32),
+            "storage_schema": 1,
+            "archive_profile": {"major": 1, "minor": 0},
+            "migration_profile": {"major": 1, "minor": 0},
+            "registry_profile": {"major": 1, "minor": 0},
+            "registry_profile_digest": "24".repeat(32),
+            "wire_session": {"major": 1, "minor": 0},
+            "product_api": {"major": 1, "minor": 0},
+            "c_abi": {"major": 1, "minor": 0},
+            "feature_set_digest": "25".repeat(32),
+            "target_triple": "x86_64-unknown-linux-gnu",
+            "toolchain": {"kind": "known", "hex": "26".repeat(32)}
+        })
+    }
+
     #[test]
     fn fake_python_stdout_without_authenticated_bindings_is_rejected() {
         let request = json!({
@@ -623,5 +772,73 @@ mod tests {
         });
         let error = validate_python_context(&request, "aa", &fake, true).unwrap_err();
         assert!(error.contains("closed verified context"), "{error}");
+    }
+
+    #[test]
+    fn base_tuple_schema_rejects_unknown_missing_and_wrong_type_fields() {
+        let mut extra_top_level = valid_base_tuple();
+        extra_top_level["unexpected"] = json!(true);
+
+        let mut extra_nested = valid_base_tuple();
+        extra_nested["toolchain"]["unexpected"] = json!(true);
+
+        let mut missing = valid_base_tuple();
+        missing
+            .as_object_mut()
+            .expect("tuple object")
+            .remove("feature_set_digest");
+
+        let mut wrong_type = valid_base_tuple();
+        wrong_type["storage_schema"] = json!("1");
+
+        let accepted: Vec<&str> = [
+            ("extra top-level field", extra_top_level),
+            ("extra nested field", extra_nested),
+            ("missing field", missing),
+            ("wrong-type field", wrong_type),
+        ]
+        .into_iter()
+        .filter_map(|(name, value)| {
+            compatibility_tuple_bytes(&value, true)
+                .is_ok()
+                .then_some(name)
+        })
+        .collect();
+
+        assert!(
+            accepted.is_empty(),
+            "accepted invalid Base tuple schemas: {accepted:?}"
+        );
+    }
+
+    #[test]
+    fn base_tuple_evidence_rejects_duplicate_and_noncanonical_json() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("base-tuple.json");
+        let canonical = serde_json::to_string(&valid_base_tuple()).unwrap();
+        let duplicate = format!(
+            "{},\"feature_set_digest\":\"{}\"}}",
+            canonical.strip_suffix('}').unwrap(),
+            "25".repeat(32)
+        );
+        for (name, bytes) in [
+            ("duplicate", duplicate.into_bytes()),
+            ("noncanonical", format!("{canonical}\n").into_bytes()),
+        ] {
+            fs::write(&path, bytes).unwrap();
+            let error = verify_base_tuple_evidence(
+                &path,
+                &"11".repeat(20),
+                "x86_64-unknown-linux-gnu",
+                &"26".repeat(32),
+                &"00".repeat(32),
+                &"00".repeat(32),
+            )
+            .unwrap_err();
+            assert!(
+                error.contains("not canonical JSON"),
+                "{name} tuple should fail canonical parsing: {error}"
+            );
+        }
     }
 }
