@@ -106,6 +106,9 @@ def _qualify_ccid_stability_with_verified_context(
         "candidate_commit": context["candidate_commit"],
         "candidate_tree": context["candidate_tree"],
         "base_candidate_bound": True,
+        "evidence_tier": (
+            "production-reference" if verified.production else "nonproduction-test"
+        ),
         "command": invocation,
         "command_blake3": blake3.blake3(canonical_json(invocation)).hexdigest(),
         "result": report.get("qualified") is True,

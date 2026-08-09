@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import struct
 import sys
 import subprocess
 from dataclasses import dataclass
@@ -98,6 +99,41 @@ def blake3_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def python_executable_path() -> Path:
+    """Return the byte-bearing interpreter image (Windows aliases are metadata)."""
+    executable = Path(sys.executable)
+    try:
+        if executable.is_file() and executable.stat().st_size:
+            return executable
+    except OSError:
+        pass
+    packaged = Path(sys.prefix) / ("python.exe" if sys.platform == "win32" else "bin/python3")
+    if not packaged.is_file():
+        raise ReleaseRequestError("running Python executable image is unavailable")
+    return packaged
+
+
+def _verify_authenticated_tooling(
+    request: dict[str, Any],
+    policy_bytes: bytes,
+    *,
+    python_path: Path,
+    gpg_path: Path,
+    verifier_path: Path,
+) -> None:
+    expected = request["reference_environment"]
+    tooling = request["candidate_tooling_blake3"]
+    measured = {
+        "Python executable": (blake3_file(python_path), expected["python_executable_blake3"]),
+        "GPG executable": (blake3_file(gpg_path), expected["gpg_executable_blake3"]),
+        "verifier tooling": (blake3_file(verifier_path), tooling["verifier"]),
+        "signer policy tooling": (blake3.blake3(policy_bytes).hexdigest(), tooling["signer_policy"]),
+    }
+    for name, (actual, signed) in measured.items():
+        if actual != signed:
+            raise ReleaseRequestError(f"signed {name} digest mismatch")
+
+
 def _verify_registry_candidate_measurements(
     verified: VerifiedQualificationContextV1,
     *,
@@ -141,11 +177,46 @@ def _verify_registry_candidate_measurements(
     }
     if git_values != expected_git:
         raise ReleaseRequestError("measured candidate commit/tree/object format differs from request")
-    semantic = candidate_semantic_evidence.read_text(encoding="ascii").strip()
+    try:
+        semantic_bytes = candidate_semantic_evidence.read_bytes()
+        compatibility_tuple = json.loads(semantic_bytes)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ReleaseRequestError("candidate semantic tuple evidence is invalid") from error
+    if semantic_bytes != canonical_json(compatibility_tuple):
+        raise ReleaseRequestError("candidate semantic tuple evidence is not canonical JSON")
+    commit = compatibility_tuple.get("base_commit") if isinstance(compatibility_tuple, dict) else None
+    if not isinstance(commit, dict) or commit.get("hex") != verified.run_context["candidate_commit"]:
+        raise ReleaseRequestError("candidate semantic tuple commit differs from signed request")
+    semantic_tuple_bytes = canonical_compatibility_tuple_bytes(
+        compatibility_tuple, include_artifact_fields=False
+    )
+    semantic = blake3.blake3(
+        semantic_tuple_bytes,
+        derive_key_context="onebrain:base:candidate-semantic:1\0",
+    ).hexdigest()
     if semantic != verified.bindings["candidate_semantic_digest"]:
         raise ReleaseRequestError("measured candidate semantic digest differs from request")
-    if verified.bindings["artifact_tuple_digest"] != verified.bindings["required_targets"][target_triple]:
-        raise ReleaseRequestError("target artifact tuple differs from signed required target map")
+    measured_toolchain_digest = blake3_file(rust_toolchain_evidence)
+    if (
+        compatibility_tuple.get("target_triple") != target_triple
+        or compatibility_tuple.get("toolchain")
+        != {"kind": "known", "hex": measured_toolchain_digest}
+    ):
+        raise ReleaseRequestError("artifact tuple target/toolchain differs from measured evidence")
+    artifact_tuple_bytes = canonical_compatibility_tuple_bytes(
+        compatibility_tuple, include_artifact_fields=True
+    )
+    artifact_tuple = blake3.blake3(
+        artifact_tuple_bytes,
+        derive_key_context="onebrain:base:artifact-tuple:1\0",
+    ).hexdigest()
+    targets = verified.bindings["required_targets"]
+    if (
+        target_triple not in targets
+        or artifact_tuple != verified.bindings["artifact_tuple_digest"]
+        or artifact_tuple != targets[target_triple]
+    ):
+        raise ReleaseRequestError("derived target artifact tuple differs from signed request")
     try:
         profile_value = json.loads(production_profile.read_bytes())
         vector_value = json.loads(production_vector.read_bytes())
@@ -205,7 +276,7 @@ def _verify_registry_candidate_measurements(
         "probe_blake3": blake3_file(probe),
         "probe_signature": blake3_file(probe_signature),
         "executable_blake3": blake3_file(executable),
-        "rust_toolchain_digest": blake3_file(rust_toolchain_evidence),
+        "rust_toolchain_digest": measured_toolchain_digest,
         "runner_image_digest": blake3_file(runner_image_evidence),
         "target_triple": target_triple,
     }
@@ -287,6 +358,84 @@ def canonical_json(value: object) -> bytes:
     return json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     ).encode("utf-8")
+
+
+COMPATIBILITY_TUPLE_FIELDS = (
+    "base_version", "base_commit", "canonical_schema_digest",
+    "domain_registry_digest", "resource_registry_digest", "storage_schema",
+    "archive_profile", "migration_profile", "registry_profile",
+    "registry_profile_digest", "wire_session", "product_api", "c_abi",
+    "feature_set_digest", "target_triple", "toolchain",
+)
+
+
+def canonical_compatibility_tuple_bytes(
+    value: object, *, include_artifact_fields: bool
+) -> bytes:
+    """Encode the frozen BaseCompatibilityTuple field framing byte-for-byte."""
+    tuple_value = _closed(value, set(COMPATIBILITY_TUPLE_FIELDS), "Base compatibility tuple")
+
+    def unsigned(number: object, width: int, field: str) -> bytes:
+        if isinstance(number, bool) or not isinstance(number, int) or number < 0:
+            raise ReleaseRequestError(f"{field} must be an unsigned integer")
+        try:
+            return number.to_bytes(width, "little")
+        except OverflowError as error:
+            raise ReleaseRequestError(f"{field} is out of range") from error
+
+    def release(raw: object) -> bytes:
+        item = _closed(raw, {"major", "minor", "patch", "prerelease"}, "base_version")
+        encoded = b"".join(unsigned(item[name], 2, f"base_version.{name}") for name in ("major", "minor", "patch"))
+        prerelease = item["prerelease"]
+        if prerelease is None:
+            return encoded + b"\0"
+        if not isinstance(prerelease, str) or not prerelease or not prerelease.isascii():
+            raise ReleaseRequestError("base_version.prerelease is invalid")
+        raw_prerelease = prerelease.encode("ascii")
+        return encoded + b"\1" + len(raw_prerelease).to_bytes(4, "little") + raw_prerelease
+
+    def commit(raw: object) -> bytes:
+        item = _closed(raw, {"kind", "hex"}, "base_commit")
+        sizes = {"sha1": (1, 20), "sha256": (2, 32)}
+        if item["kind"] not in sizes:
+            raise ReleaseRequestError("base_commit kind is invalid")
+        discriminator, size = sizes[item["kind"]]
+        digest = bytes.fromhex(_hex(item["hex"], "base_commit.hex", (size * 2,)))
+        return bytes((1, discriminator)) + size.to_bytes(4, "little") + digest
+
+    def profile(raw: object, field: str) -> bytes:
+        item = _closed(raw, {"major", "minor"}, field)
+        return unsigned(item["major"], 2, f"{field}.major") + unsigned(item["minor"], 2, f"{field}.minor")
+
+    def toolchain(raw: object) -> bytes:
+        item = _closed(raw, {"kind", "hex"}, "toolchain")
+        if item["kind"] != "known":
+            raise ReleaseRequestError("qualification artifact toolchain must be known")
+        digest = bytes.fromhex(_hex(item["hex"], "toolchain.hex"))
+        return b"\1" + len(digest).to_bytes(4, "little") + digest
+
+    values = (
+        release(tuple_value["base_version"]), commit(tuple_value["base_commit"]),
+        bytes.fromhex(_hex(tuple_value["canonical_schema_digest"], "canonical_schema_digest")),
+        bytes.fromhex(_hex(tuple_value["domain_registry_digest"], "domain_registry_digest")),
+        bytes.fromhex(_hex(tuple_value["resource_registry_digest"], "resource_registry_digest")),
+        unsigned(tuple_value["storage_schema"], 4, "storage_schema"),
+        profile(tuple_value["archive_profile"], "archive_profile"),
+        profile(tuple_value["migration_profile"], "migration_profile"),
+        profile(tuple_value["registry_profile"], "registry_profile"),
+        bytes.fromhex(_hex(tuple_value["registry_profile_digest"], "registry_profile_digest")),
+        profile(tuple_value["wire_session"], "wire_session"),
+        profile(tuple_value["product_api"], "product_api"),
+        profile(tuple_value["c_abi"], "c_abi"),
+        bytes.fromhex(_hex(tuple_value["feature_set_digest"], "feature_set_digest")),
+        str(tuple_value["target_triple"]).encode("ascii"), toolchain(tuple_value["toolchain"]),
+    )
+    count = 16 if include_artifact_fields else 14
+    output = bytearray()
+    for identifier, raw in enumerate(values[:count], start=1):
+        output.extend(struct.pack("<HI", identifier, len(raw)))
+        output.extend(raw)
+    return bytes(output)
 
 
 def _closed(value: object, fields: set[str], name: str) -> dict[str, Any]:
@@ -434,7 +583,7 @@ def _validate_request(value: object, policy_digest: str, signer: dict[str, Any],
         request["reference_environment"],
         {"target_triple", "rust_toolchain_digest", "runner_image_digest", "probe_blake3",
          "probe_signature", "probe_signer_fingerprint", "probe_signer_public_key",
-         "executable_blake3"},
+         "executable_blake3", "python_executable_blake3", "gpg_executable_blake3"},
         "reference environment",
     )
     if not isinstance(environment["target_triple"], str) or not environment["target_triple"]:
@@ -470,10 +619,6 @@ def _verify_release_request(
     request = _validate_request(
         request_value, policy_digest, signer, now or datetime.now(timezone.utc)
     )
-    if blake3_file(Path(__file__).resolve()) != request["candidate_tooling_blake3"]["verifier"]:
-        raise ReleaseRequestError("signed request verifier tooling digest mismatch")
-    if blake3.blake3(policy_bytes).hexdigest() != request["candidate_tooling_blake3"]["signer_policy"]:
-        raise ReleaseRequestError("signed request signer policy tooling digest mismatch")
     command = [
         str(gpg_executable), "--homedir", str(gpg_home), "--batch",
         "--no-tty", "--status-fd", "1", "--verify", str(signature_path),
@@ -507,6 +652,10 @@ def _verify_release_request(
         raise ReleaseRequestError("allowlisted public key packet could not be exported")
     if blake3.blake3(exported.stdout).hexdigest() != signer["public_key_packet_blake3"]:
         raise ReleaseRequestError("public key packet BLAKE3 mismatch")
+    _verify_authenticated_tooling(
+        request, policy_bytes, python_path=python_executable_path(),
+        gpg_path=gpg_executable, verifier_path=Path(__file__).resolve(),
+    )
     registry = request["registry_candidate"]
     environment = request["reference_environment"]
     request_digest = blake3.blake3(request_bytes).hexdigest()
@@ -519,6 +668,7 @@ def _verify_release_request(
         "candidate_tree": request["candidate"]["tree"],
     }
     bindings = {
+        "evidence_tier": "production-reference" if production else "nonproduction-test",
         "release_request_digest": request_digest,
         "qualification_session_id": request["qualification_session_id"],
         "candidate_commit": request["candidate"]["commit"],
@@ -541,6 +691,8 @@ def _verify_release_request(
         "rust_toolchain_digest": environment["rust_toolchain_digest"],
         "runner_image_digest": environment["runner_image_digest"],
         "target_triple": environment["target_triple"],
+        "python_executable_blake3": environment["python_executable_blake3"],
+        "gpg_executable_blake3": environment["gpg_executable_blake3"],
         "trust_policy_digest": registry["registry_trust_policy_digest"],
         "signer_fingerprint": registry["registry_signer_fingerprint"],
         "ccid_inputs_blake3": registry["ccid_inputs_blake3"],

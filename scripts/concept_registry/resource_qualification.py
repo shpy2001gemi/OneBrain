@@ -131,6 +131,7 @@ def create_resource_receipt(
                     "qualification_context_variant": "Prequalification",
                     "closure_digest": context["closure_digest"],
                     "base_candidate_bound": False,
+                    "evidence_tier": "prequalification",
                 }
             )
         return create_signed_receipt(
@@ -161,6 +162,10 @@ def _create_verified_resource_receipt(
     rust_toolchain_evidence: Path,
     runner_image_evidence: Path,
     target_triple: str,
+    labels_file: Path,
+    cache_strategy: str,
+    budget_profile: str,
+    timeout_seconds: int,
     signing_key: Ed25519PrivateKey,
     policy: dict[str, object],
 ) -> dict[str, object]:
@@ -188,6 +193,13 @@ def _create_verified_resource_receipt(
         raise QualificationError("Registry trust policy differs from verified request")
     if signer_fingerprint(signing_key.public_key().public_bytes_raw()) != verified.bindings["signer_fingerprint"]:
         raise QualificationError("Registry signer differs from verified request")
+    if (
+        report.get("budget_profile") != budget_profile
+        or report.get("cache_strategy_requested") != cache_strategy
+        or not isinstance(report.get("limits"), dict)
+        or report["limits"].get("timeout_seconds") != timeout_seconds
+    ):
+        raise QualificationError("resource report options differ from receipt invocation")
     try:
         measurement_inputs = dict(
             candidate_root=candidate_root,
@@ -218,6 +230,10 @@ def _create_verified_resource_receipt(
         invocation = [
             "resource_qualification.py",
             f"--profile={report.get('qualification_profile')}",
+            f"--labels-file={labels_file.name}@blake3:{_blake3_file(labels_file)}",
+            f"--cache-strategy={cache_strategy}",
+            f"--budget-profile={budget_profile}",
+            f"--timeout-seconds={timeout_seconds}",
             f"--release-request-digest={verified.request_digest}",
             f"--candidate-tree={context['candidate_tree']}",
             f"--release-id={release_id}",
@@ -251,6 +267,9 @@ def _create_verified_resource_receipt(
             "candidate_commit": context["candidate_commit"],
             "candidate_tree": context["candidate_tree"],
             "base_candidate_bound": True,
+            "evidence_tier": (
+                "production-reference" if verified.production else "nonproduction-test"
+            ),
             "qualification_profile": report.get("qualification_profile"),
             "command": invocation,
             "command_blake3": blake3.blake3(canonical_json(invocation)).hexdigest(),
@@ -267,11 +286,19 @@ def _create_verified_resource_receipt(
 def create_verified_resource_receipt(
     report: dict[str, object],
     verified: object,
+    *,
+    labels_file: Path,
+    cache_strategy: str,
+    budget_profile: str,
+    timeout_seconds: int,
     **measurements: object,
 ) -> dict[str, object]:
     """Production receipt producer with fixed production measurement tools."""
     return _create_verified_resource_receipt(
-        report, verified, test_git_executable=None, **measurements
+        report, verified, test_git_executable=None,
+        labels_file=labels_file, cache_strategy=cache_strategy,
+        budget_profile=budget_profile, timeout_seconds=timeout_seconds,
+        **measurements
     )
 
 
@@ -280,6 +307,10 @@ def create_verified_resource_receipt_for_test_nonproduction(
     verified: object,
     *,
     git_executable: Path,
+    labels_file: Path,
+    cache_strategy: str,
+    budget_profile: str,
+    timeout_seconds: int,
     **measurements: object,
 ) -> dict[str, object]:
     """Explicit test producer; it cannot accept a production verified context."""
@@ -289,6 +320,10 @@ def create_verified_resource_receipt_for_test_nonproduction(
         report,
         verified,
         test_git_executable=git_executable,
+        labels_file=labels_file,
+        cache_strategy=cache_strategy,
+        budget_profile=budget_profile,
+        timeout_seconds=timeout_seconds,
         **measurements,
     )
 
@@ -862,6 +897,7 @@ def run_qualification(
         "profile": PROFILE,
         "qualification_profile": qualification_profile,
         "budget_profile": budget_profile,
+        "cache_strategy_requested": cache_strategy,
         "generated_at_utc": _utc_now(),
         "host": {
             "system": platform.system(),
@@ -898,6 +934,7 @@ def run_qualification(
         "exit_oracles": oracles,
         "qualified": all(oracles.values()),
         "base_candidate_bound": False,
+        "evidence_tier": "prequalification",
         "production_qualified": False,
     }
 
@@ -1089,6 +1126,10 @@ def main(argv: list[str] | None = None) -> int:
                 rust_toolchain_evidence=args.rust_toolchain_evidence,
                 runner_image_evidence=args.runner_image_evidence,
                 target_triple=args.target_triple,
+                labels_file=args.labels_file,
+                cache_strategy=args.cache_strategy,
+                budget_profile=args.budget_profile,
+                timeout_seconds=args.timeout_seconds,
                 signing_key=_read_private_key(args.private_key),
                 policy=_read_json_object(args.trust_policy),
             )

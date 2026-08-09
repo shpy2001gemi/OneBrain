@@ -17,6 +17,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from production_qualification import (
     AggregationError,
     _aggregate_reports_for_test_nonproduction,
+    _require_production_reference_evidence,
     aggregate_reports,
     canonical_json,
     create_signed_receipt,
@@ -96,6 +97,7 @@ class ProductionQualificationTests(unittest.TestCase):
             "candidate_semantic_digest": "66" * 32,
             "artifact_tuple_digest": "77" * 32,
             "base_candidate_bound": True,
+            "evidence_tier": "nonproduction-test",
             "release_aggregate_root": ROOT,
             "registry_generation": 9,
             "production_profile_blake3": self.profile_digest,
@@ -156,13 +158,18 @@ class ProductionQualificationTests(unittest.TestCase):
     def test_nonproduction_helper_verifies_components_but_cannot_claim_subgate(self) -> None:
         receipt = self.aggregate()
         self.assertFalse(receipt["payload"]["registry_production_qualified"])
+        self.assertEqual(receipt["payload"]["evidence_tier"], "nonproduction-test")
         self.assertFalse(receipt["payload"]["base_gate_v1"])
         self.assertEqual(receipt["payload"]["release_aggregate_root"], ROOT)
         self.assertEqual(receipt["receipt_kind"], "production-aggregate")
 
     def test_public_production_aggregator_rejects_ephemeral_profile_and_signer(self) -> None:
-        with self.assertRaisesRegex(AggregationError, "frozen"):
+        with self.assertRaisesRegex(AggregationError, "production-reference"):
             aggregate_reports(self.reports(), self.context, self.profile, self.key)
+
+    def test_production_evidence_preflight_rejects_nonproduction_receipts_before_signer(self) -> None:
+        with self.assertRaisesRegex(AggregationError, "production-reference"):
+            _require_production_reference_evidence(self.reports())
 
     def test_report_profile_root_false_result_duplicate_and_fixture_fail_closed(self) -> None:
         mutations = []

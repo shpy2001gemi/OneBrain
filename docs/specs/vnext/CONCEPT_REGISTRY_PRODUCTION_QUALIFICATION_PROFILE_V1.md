@@ -130,6 +130,11 @@ aggregate receipts.
 
 Every receipt payload **MUST** bind the common report identity list from the
 machine contract plus its exact command, result, exit oracles, and limitations.
+A signed `evidence_tier` is mandatory. It is exactly `prequalification` for
+fixture/prequalification receipts, `nonproduction-test` for explicit ephemeral
+Release helpers, and `production-reference` only for the fixed Linux production
+path. Production aggregation rejects any other tier before signer availability
+can become the only fence; `base_candidate_bound` remains a separate fact.
 A prequalification payload additionally binds `closure_digest`, requires
 `base_candidate_bound=false`, and forbids release-request/session/commit/tree
 fields. A release payload instead binds the full release request/session,
@@ -153,6 +158,18 @@ fresh production report **MUST** bind the same request/session, commit/tree,
 candidate semantic digest, artifact tuple digest, Registry root/generation,
 profile and trust-policy digests, allowlisted signer, probe/executable hashes,
 five candidate payload hashes, and stamp hash.
+
+Candidate semantic evidence is canonical `BaseCompatibilityTuple` JSON whose
+bytes are independently encoded with the frozen Base field encoder. The
+semantic digest covers fields 1-14; the artifact tuple digest covers fields
+1-16 and therefore adds only the independently measured target triple and
+toolchain identity. Payload, stamp, executable, probe, and runner bindings are
+separate mandatory measured prerequisites and are not new tuple fields.
+
+The production request also pins BLAKE3 identities for fixed `/usr/bin/python3`
+and `/usr/bin/gpg`. Rust independently verifies canonical request/policy bytes,
+OpenPGP `VALIDSIG` fingerprint/algorithm/time, fixed tooling bytes, and every
+Python-derived binding before accepting a closed production context.
 
 `registry_production_qualified` is a Registry-only subgate. It **MUST NOT** be
 interpreted as `BASE-GATE-V1`, and Base v1 **MUST NOT** accept carry-forward

@@ -29,7 +29,7 @@ RUN_CONTEXT_FORMAT = "onebrain/qualification-run-context/1"
 RECEIPT_DOMAIN = b"onebrain:concept-registry-qualification-receipt:1\0"
 FINGERPRINT_CONTEXT = "onebrain:concept-registry:signer-fingerprint:1"
 TRUST_POLICY_CONTEXT = "onebrain:concept-registry:trust-policy:1"
-FROZEN_PROFILE_BLAKE3 = "8919f487d1e05e826dbac381f7d0a78c5c7b524da16aa6cbc2410f23723cd071"
+FROZEN_PROFILE_BLAKE3 = "a1aacc690422104ba94bb9efdfc19080f1b8e8bb13021571c9cb858e7ccceed0"
 FROZEN_TRUST_POLICY_DIGEST = "e0a2551a39823c3f2cb088defe60484c8a33ffe0f3aab9df9493b52557ab55fe"
 FROZEN_SIGNER_PUBLIC_KEY = "bef8e2b9d8ae7a38b3753a7d756a39c20948f128a66ca71ed04799e7a5d5177c"
 ENVELOPE_FIELDS = {
@@ -67,6 +67,7 @@ REQUIRED_PAYLOAD_FIELDS = {
     *RELEASE_CONTEXT_FIELDS,
     *RELEASE_CANDIDATE_BINDINGS,
     "base_candidate_bound",
+    "evidence_tier",
     "command",
     "result",
     "exit_oracles",
@@ -304,6 +305,16 @@ def _validate_component_payload(
         raise AggregationError("resource qualification profile is invalid")
 
 
+def _require_production_reference_evidence(reports: list[dict[str, object]]) -> None:
+    """Reject nonproduction payloads before production signer availability matters."""
+    if not isinstance(reports, list) or not reports:
+        raise AggregationError("component reports are missing")
+    for receipt in reports:
+        payload = receipt.get("payload") if isinstance(receipt, dict) else None
+        if not isinstance(payload, dict) or payload.get("evidence_tier") != "production-reference":
+            raise AggregationError("every production component must be production-reference evidence")
+
+
 def _aggregate_reports(
     reports: list[dict[str, object]],
     run_context: dict[str, object],
@@ -311,6 +322,7 @@ def _aggregate_reports(
     aggregate_signing_key: Ed25519PrivateKey,
     *,
     production_claim: bool,
+    expected_evidence_tier: str,
 ) -> dict[str, object]:
     """Verify component receipts and return one signed Registry-only aggregate."""
     context = parse_qualification_run_context(run_context)
@@ -336,6 +348,8 @@ def _aggregate_reports(
         _validate_component_payload(
             kind, payload, context, profile_digest, policy_digest, fingerprint
         )
+        if payload.get("evidence_tier") != expected_evidence_tier:
+            raise AggregationError("component evidence_tier mismatch")
         discriminator = (
             str(payload.get("qualification_profile"))
             if kind == "resource-qualification"
@@ -368,6 +382,7 @@ def _aggregate_reports(
         "qualification_context_variant": "Release",
         **{field: context[field] for field in RELEASE_CONTEXT_FIELDS},
         "base_candidate_bound": True,
+        "evidence_tier": expected_evidence_tier,
         **identity,
         "command": ["production_qualification.py", "--pure-aggregate"],
         "result": True,
@@ -398,6 +413,7 @@ def aggregate_reports(
     aggregate_signing_key: Ed25519PrivateKey,
 ) -> dict[str, object]:
     """Production API pinned to the frozen Task 19 profile and signer identity."""
+    _require_production_reference_evidence(reports)
     if blake3.blake3(canonical_json(profile)).hexdigest() != FROZEN_PROFILE_BLAKE3:
         raise AggregationError("production profile is not the frozen Task 19 profile")
     policy_entry = profile.get("trust_policy", {})
@@ -411,7 +427,8 @@ def aggregate_reports(
     ):
         raise AggregationError("production aggregate signer is not frozen")
     return _aggregate_reports(
-        reports, run_context, profile, aggregate_signing_key, production_claim=True
+        reports, run_context, profile, aggregate_signing_key,
+        production_claim=True, expected_evidence_tier="production-reference",
     )
 
 
@@ -423,7 +440,8 @@ def _aggregate_reports_for_test_nonproduction(
 ) -> dict[str, object]:
     """Exercise aggregation with ephemeral keys without a production claim."""
     return _aggregate_reports(
-        reports, run_context, profile, aggregate_signing_key, production_claim=False
+        reports, run_context, profile, aggregate_signing_key,
+        production_claim=False, expected_evidence_tier="nonproduction-test",
     )
 
 

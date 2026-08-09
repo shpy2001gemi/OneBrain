@@ -18,8 +18,11 @@ class ReleaseCycleQualificationTests(unittest.TestCase):
     def test_release_cycle_api_cannot_accept_caller_step_plan_or_commands(self) -> None:
         parameters = inspect.signature(run_release_cycle).parameters
         self.assertNotIn("plan", parameters)
+        self.assertNotIn("commands", parameters)
+        self.assertNotIn("candidate_root", parameters)
         source = (SCRIPT_DIR / "release_cycle_qualification.py").read_text(encoding="utf-8")
-        self.assertNotIn("subprocess.run", source)
+        self.assertIn("subprocess.Popen", source)
+        self.assertIn("_verify_cycle_candidate", source)
 
 
 if __name__ == "__main__":

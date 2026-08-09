@@ -1,9 +1,12 @@
 //! Closed bridge to the owner-approved Base release-request verifier.
 
+use std::collections::BTreeSet;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 /// Invoke only the candidate-owned verifier with the fixed Linux interpreter.
 pub fn verify_base_release_request(
@@ -23,6 +26,14 @@ pub fn verify_base_release_request(
     if !verifier.is_file() {
         return Err("candidate-owned release-request verifier is unavailable".to_owned());
     }
+    let (request_value, request_digest) = authenticate_production_request(
+        request,
+        signature,
+        approver_policy,
+        gpg_home,
+        python,
+        &verifier,
+    )?;
     let result = Command::new(python)
         .arg(&verifier)
         .arg("--request")
@@ -43,12 +54,7 @@ pub fn verify_base_release_request(
     }
     let verified: Value = serde_json::from_slice(&result.stdout)
         .map_err(|error| format!("release-request verifier output is invalid: {error}"))?;
-    if verified.get("format").and_then(Value::as_str)
-        != Some("onebrain/verified-qualification-context/1")
-        || verified.get("production").and_then(Value::as_bool) != Some(true)
-    {
-        return Err("fixed verifier did not return a production closed context".to_owned());
-    }
+    validate_python_context(&request_value, &request_digest, &verified, true)?;
     Ok(verified)
 }
 
@@ -85,12 +91,37 @@ pub fn verify_base_release_request_for_test_nonproduction(
     }
     let verified: Value = serde_json::from_slice(&result.stdout)
         .map_err(|error| format!("release-request verifier output is invalid: {error}"))?;
-    if verified.get("format").and_then(Value::as_str)
-        != Some("onebrain/verified-qualification-context/1")
-        || verified.get("production").and_then(Value::as_bool) != Some(false)
-    {
-        return Err("test-only verifier returned a production context".to_owned());
+    let (request_value, request_digest) = read_canonical_request(request)?;
+    let expected_fields: BTreeSet<&str> = [
+        "format",
+        "usage",
+        "qualification_session_id",
+        "candidate",
+        "qualification_approver_fingerprint",
+        "trust_policy_digest",
+        "required_targets",
+        "production_profile_blake3",
+        "production_vector_blake3",
+        "append_only_idl_history_root",
+        "created_utc",
+        "expires_utc",
+        "evidence_root_uri",
+        "candidate_tooling_blake3",
+        "registry_candidate",
+        "reference_environment",
+    ]
+    .into_iter()
+    .collect();
+    let actual_fields: BTreeSet<&str> = request_value
+        .as_object()
+        .ok_or("authenticated release request is not an object")?
+        .keys()
+        .map(String::as_str)
+        .collect();
+    if actual_fields != expected_fields {
+        return Err("authenticated release request fields are not closed".to_owned());
     }
+    validate_python_context(&request_value, &request_digest, &verified, false)?;
     Ok(verified)
 }
 
@@ -98,4 +129,499 @@ fn candidate_verifier_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("scripts/release/verify_base_release_request.py")
+}
+
+fn read_canonical_request(path: &Path) -> Result<(Value, String), String> {
+    let bytes =
+        fs::read(path).map_err(|error| format!("release request could not be read: {error}"))?;
+    let value: Value = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("release request JSON is invalid: {error}"))?;
+    let canonical = serde_json::to_vec(&value)
+        .map_err(|error| format!("release request could not be canonicalized: {error}"))?;
+    if canonical != bytes {
+        return Err("release request bytes are not canonical".to_owned());
+    }
+    Ok((value, blake3::hash(&bytes).to_hex().to_string()))
+}
+
+const APPROVER_FINGERPRINT: &str = "CB3FF16A1A2C8B017B5D83DF59DC9C079E00928B";
+const APPROVER_POLICY_DIGEST: &str =
+    "2e7cc2dacafad658ab5fe4e1536a4b92590f788c9c9e5a450d123930d65cfbd6";
+const APPROVER_POLICY_CONTEXT: &str = "onebrain:base-v1:qualification-approver-policy:1";
+const APPROVER_PACKET_BLAKE3: &str =
+    "ecee4527ed22908e0afc3a859492f7e0be7d4f4ccef087dd2781673364f39108";
+const FROZEN_POLICY_JSON: &str = "{\"algorithm\":\"OpenPGP-Ed25519\",\"allowed_usages\":[\"base-release-request\"],\"format\":\"onebrain/base-v1-qualification-approver-policy/1\",\"role\":\"qualification-approver\",\"signers\":[{\"created_utc\":\"2026-08-09T13:27:27Z\",\"expires_utc\":\"2028-08-08T13:27:27Z\",\"fingerprint\":\"CB3FF16A1A2C8B017B5D83DF59DC9C079E00928B\",\"key_id\":\"59DC9C079E00928B\",\"public_key_packet_blake3\":\"ecee4527ed22908e0afc3a859492f7e0be7d4f4ccef087dd2781673364f39108\"}],\"valid_unlisted_signature\":\"reject\",\"verification\":{\"fingerprint_source\":\"gpg-status-fd-VALIDSIG-full-primary-fingerprint\",\"trust_model\":\"explicit-allowlist\"}}";
+
+fn file_blake3(path: &Path) -> Result<String, String> {
+    fs::read(path)
+        .map(|bytes| blake3::hash(&bytes).to_hex().to_string())
+        .map_err(|error| format!("qualification tooling could not be measured: {error}"))
+}
+
+fn authenticate_production_request(
+    request: &Path,
+    signature: &Path,
+    policy: &Path,
+    gpg_home: &Path,
+    python: &Path,
+    verifier: &Path,
+) -> Result<(Value, String), String> {
+    let gpg = Path::new("/usr/bin/gpg");
+    if !gpg.is_file() {
+        return Err("fixed production GPG executable is unavailable".to_owned());
+    }
+    let policy_bytes =
+        fs::read(policy).map_err(|error| format!("approver policy could not be read: {error}"))?;
+    if policy_bytes != FROZEN_POLICY_JSON.as_bytes()
+        || blake3::derive_key(APPROVER_POLICY_CONTEXT, &policy_bytes).as_slice()
+            != hex32(APPROVER_POLICY_DIGEST)?.as_slice()
+    {
+        return Err("production qualification approver policy is not frozen".to_owned());
+    }
+    let (request_value, request_digest) = read_canonical_request(request)?;
+    let environment = request_value
+        .get("reference_environment")
+        .and_then(Value::as_object)
+        .ok_or("authenticated request environment is missing")?;
+    let tooling = request_value
+        .get("candidate_tooling_blake3")
+        .and_then(Value::as_object)
+        .ok_or("authenticated request tooling is missing")?;
+    for (field, actual) in [
+        ("python_executable_blake3", file_blake3(python)?),
+        ("gpg_executable_blake3", file_blake3(gpg)?),
+    ] {
+        if environment.get(field).and_then(Value::as_str) != Some(actual.as_str()) {
+            return Err(format!("signed {field} tooling digest mismatch"));
+        }
+    }
+    for (field, path) in [("verifier", verifier), ("signer_policy", policy)] {
+        let actual = file_blake3(path)?;
+        if tooling.get(field).and_then(Value::as_str) != Some(actual.as_str()) {
+            return Err(format!("signed {field} tooling digest mismatch"));
+        }
+    }
+    if request_value
+        .get("qualification_approver_fingerprint")
+        .and_then(Value::as_str)
+        != Some(APPROVER_FINGERPRINT)
+        || request_value
+            .get("trust_policy_digest")
+            .and_then(Value::as_str)
+            != Some(APPROVER_POLICY_DIGEST)
+    {
+        return Err("authenticated request approver identity is not frozen".to_owned());
+    }
+    let verified = Command::new(gpg)
+        .arg("--homedir")
+        .arg(gpg_home)
+        .arg("--batch")
+        .arg("--no-tty")
+        .arg("--status-fd")
+        .arg("1")
+        .arg("--verify")
+        .arg(signature)
+        .arg(request)
+        .output()
+        .map_err(|error| format!("fixed GPG verifier failed to start: {error}"))?;
+    let status = String::from_utf8_lossy(&verified.stdout);
+    let valid: Vec<Vec<&str>> = status
+        .lines()
+        .filter(|line| line.starts_with("[GNUPG:] VALIDSIG "))
+        .map(|line| line.split_whitespace().collect())
+        .collect();
+    if !verified.status.success() || valid.len() != 1 {
+        return Err("detached signature verification failed locally".to_owned());
+    }
+    let tokens = &valid[0];
+    if tokens.len() < 12
+        || tokens[8] != "22"
+        || tokens.last().copied() != Some(APPROVER_FINGERPRINT)
+    {
+        return Err("local VALIDSIG fingerprint or Ed25519 algorithm mismatch".to_owned());
+    }
+    let signature_epoch: i64 = tokens
+        .get(4)
+        .ok_or("local VALIDSIG creation time is missing")?
+        .parse()
+        .map_err(|_| "local VALIDSIG creation time is invalid")?;
+    let created = parse_utc(
+        request_value
+            .get("created_utc")
+            .and_then(Value::as_str)
+            .ok_or("request created_utc is missing")?,
+    )?;
+    let expires = parse_utc(
+        request_value
+            .get("expires_utc")
+            .and_then(Value::as_str)
+            .ok_or("request expires_utc is missing")?,
+    )?;
+    let now = i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| "system clock precedes Unix epoch")?
+            .as_secs(),
+    )
+    .map_err(|_| "system clock is out of range")?;
+    let signer_created = parse_utc("2026-08-09T13:27:27Z")?;
+    let signer_expires = parse_utc("2028-08-08T13:27:27Z")?;
+    if created >= expires
+        || created < signer_created
+        || expires > signer_expires
+        || now < created
+        || now >= expires
+    {
+        return Err(
+            "locally authenticated request validity is outside approved policy/current time"
+                .to_owned(),
+        );
+    }
+    if signature_epoch < created || signature_epoch >= expires {
+        return Err("local VALIDSIG creation time is outside request validity".to_owned());
+    }
+    let exported = Command::new(gpg)
+        .arg("--homedir")
+        .arg(gpg_home)
+        .arg("--batch")
+        .arg("--export")
+        .arg(APPROVER_FINGERPRINT)
+        .output()
+        .map_err(|error| format!("allowlisted public key export failed: {error}"))?;
+    if !exported.status.success()
+        || blake3::hash(&exported.stdout).to_hex().as_str() != APPROVER_PACKET_BLAKE3
+    {
+        return Err("allowlisted public key packet BLAKE3 mismatch".to_owned());
+    }
+    Ok((request_value, request_digest))
+}
+
+fn hex32(value: &str) -> Result<[u8; 32], String> {
+    if value.len() != 64 {
+        return Err("digest length is invalid".to_owned());
+    }
+    let mut output = [0_u8; 32];
+    for (index, byte) in output.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)
+            .map_err(|_| "digest hexadecimal is invalid".to_owned())?;
+    }
+    Ok(output)
+}
+
+fn parse_utc(value: &str) -> Result<i64, String> {
+    if value.len() != 20
+        || &value[4..5] != "-"
+        || &value[7..8] != "-"
+        || &value[10..11] != "T"
+        || &value[13..14] != ":"
+        || &value[16..17] != ":"
+        || &value[19..] != "Z"
+    {
+        return Err("request UTC instant is invalid".to_owned());
+    }
+    let number = |range: std::ops::Range<usize>| {
+        value[range]
+            .parse::<i64>()
+            .map_err(|_| "request UTC instant is invalid".to_owned())
+    };
+    let (year, month, day) = (number(0..4)?, number(5..7)?, number(8..10)?);
+    let (hour, minute, second) = (number(11..13)?, number(14..16)?, number(17..19)?);
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour > 23
+        || minute > 59
+        || second > 59
+    {
+        return Err("request UTC instant is out of range".to_owned());
+    }
+    let adjusted_year = year - i64::from(month <= 2);
+    let era = adjusted_year.div_euclid(400);
+    let yoe = adjusted_year - era * 400;
+    let shifted_month = month + if month > 2 { -3 } else { 9 };
+    let doy = (153 * shifted_month + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    Ok(days * 86400 + hour * 3600 + minute * 60 + second)
+}
+
+/// Recompute the frozen Base semantic/artifact tuple digests from canonical evidence.
+pub fn verify_base_tuple_evidence(
+    path: &Path,
+    candidate_commit: &str,
+    target_triple: &str,
+    toolchain_digest: &str,
+    expected_semantic: &str,
+    expected_artifact: &str,
+) -> Result<(), String> {
+    let bytes = fs::read(path)
+        .map_err(|error| format!("semantic tuple evidence could not be read: {error}"))?;
+    let value: Value = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("semantic tuple evidence is invalid: {error}"))?;
+    if serde_json::to_vec(&value).map_err(|error| error.to_string())? != bytes {
+        return Err("semantic tuple evidence is not canonical JSON".to_owned());
+    }
+    if value.pointer("/base_commit/hex").and_then(Value::as_str) != Some(candidate_commit) {
+        return Err("semantic tuple commit differs from signed request".to_owned());
+    }
+    if value.get("target_triple").and_then(Value::as_str) != Some(target_triple)
+        || value.pointer("/toolchain/kind").and_then(Value::as_str) != Some("known")
+        || value.pointer("/toolchain/hex").and_then(Value::as_str) != Some(toolchain_digest)
+    {
+        return Err("artifact tuple target/toolchain differs from measured evidence".to_owned());
+    }
+    let semantic = compatibility_tuple_bytes(&value, false)?;
+    let artifact = compatibility_tuple_bytes(&value, true)?;
+    if blake3::derive_key("onebrain:base:candidate-semantic:1\0", &semantic)
+        != hex32(expected_semantic)?
+    {
+        return Err("measured candidate semantic digest differs from signed request".to_owned());
+    }
+    if blake3::derive_key("onebrain:base:artifact-tuple:1\0", &artifact)
+        != hex32(expected_artifact)?
+    {
+        return Err("derived artifact tuple differs from signed request".to_owned());
+    }
+    Ok(())
+}
+
+fn compatibility_tuple_bytes(value: &Value, artifact: bool) -> Result<Vec<u8>, String> {
+    let u16le = |v: &Value, name: &str| -> Result<[u8; 2], String> {
+        let number = v.as_u64().ok_or_else(|| format!("{name} is invalid"))?;
+        Ok(u16::try_from(number)
+            .map_err(|_| format!("{name} is out of range"))?
+            .to_le_bytes())
+    };
+    let profile = |name: &str| -> Result<Vec<u8>, String> {
+        let raw = value
+            .get(name)
+            .ok_or_else(|| format!("{name} is missing"))?;
+        Ok([
+            u16le(&raw["major"], name)?.as_slice(),
+            u16le(&raw["minor"], name)?.as_slice(),
+        ]
+        .concat())
+    };
+    let digest = |name: &str| -> Result<Vec<u8>, String> {
+        hex_bytes(
+            value
+                .get(name)
+                .and_then(Value::as_str)
+                .ok_or_else(|| format!("{name} is missing"))?,
+            32,
+        )
+    };
+    let version = &value["base_version"];
+    let mut release = Vec::new();
+    for name in ["major", "minor", "patch"] {
+        release.extend(u16le(&version[name], name)?);
+    }
+    match version.get("prerelease") {
+        Some(Value::Null) => release.push(0),
+        Some(Value::String(text)) if !text.is_empty() && text.is_ascii() => {
+            release.push(1);
+            release.extend(
+                u32::try_from(text.len())
+                    .map_err(|_| "prerelease too long")?
+                    .to_le_bytes(),
+            );
+            release.extend(text.as_bytes());
+        }
+        _ => return Err("base_version.prerelease is invalid".to_owned()),
+    }
+    let commit_kind = value
+        .pointer("/base_commit/kind")
+        .and_then(Value::as_str)
+        .ok_or("base_commit.kind is missing")?;
+    let (discriminator, commit_size) = if commit_kind == "sha1" {
+        (1_u8, 20)
+    } else if commit_kind == "sha256" {
+        (2, 32)
+    } else {
+        return Err("base_commit.kind is invalid".to_owned());
+    };
+    let commit_digest = hex_bytes(
+        value
+            .pointer("/base_commit/hex")
+            .and_then(Value::as_str)
+            .ok_or("base_commit.hex is missing")?,
+        commit_size,
+    )?;
+    let mut commit = vec![1, discriminator];
+    commit.extend((commit_size as u32).to_le_bytes());
+    commit.extend(commit_digest);
+    let storage = u32::try_from(
+        value["storage_schema"]
+            .as_u64()
+            .ok_or("storage_schema is invalid")?,
+    )
+    .map_err(|_| "storage_schema out of range")?
+    .to_le_bytes()
+    .to_vec();
+    let target = value["target_triple"]
+        .as_str()
+        .ok_or("target_triple is invalid")?
+        .as_bytes()
+        .to_vec();
+    let tool_digest = hex_bytes(
+        value
+            .pointer("/toolchain/hex")
+            .and_then(Value::as_str)
+            .ok_or("toolchain.hex is missing")?,
+        32,
+    )?;
+    let mut toolchain = vec![1];
+    toolchain.extend(32_u32.to_le_bytes());
+    toolchain.extend(tool_digest);
+    let fields = vec![
+        release,
+        commit,
+        digest("canonical_schema_digest")?,
+        digest("domain_registry_digest")?,
+        digest("resource_registry_digest")?,
+        storage,
+        profile("archive_profile")?,
+        profile("migration_profile")?,
+        profile("registry_profile")?,
+        digest("registry_profile_digest")?,
+        profile("wire_session")?,
+        profile("product_api")?,
+        profile("c_abi")?,
+        digest("feature_set_digest")?,
+        target,
+        toolchain,
+    ];
+    let mut output = Vec::new();
+    for (index, raw) in fields
+        .into_iter()
+        .take(if artifact { 16 } else { 14 })
+        .enumerate()
+    {
+        output.extend(u16::try_from(index + 1).unwrap().to_le_bytes());
+        output.extend(
+            u32::try_from(raw.len())
+                .map_err(|_| "compatibility field too long")?
+                .to_le_bytes(),
+        );
+        output.extend(raw);
+    }
+    Ok(output)
+}
+
+fn hex_bytes(value: &str, size: usize) -> Result<Vec<u8>, String> {
+    if value.len() != size * 2 {
+        return Err("hexadecimal field length is invalid".to_owned());
+    }
+    (0..size)
+        .map(|index| {
+            u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)
+                .map_err(|_| "hexadecimal field is invalid".to_owned())
+        })
+        .collect()
+}
+
+fn validate_python_context(
+    request: &Value,
+    request_digest: &str,
+    verified: &Value,
+    production: bool,
+) -> Result<(), String> {
+    let candidate = request
+        .get("candidate")
+        .ok_or("authenticated request candidate is missing")?;
+    let registry = request
+        .get("registry_candidate")
+        .ok_or("authenticated request Registry binding is missing")?;
+    let environment = request
+        .get("reference_environment")
+        .ok_or("authenticated request environment is missing")?;
+    let tier = if production {
+        "production-reference"
+    } else {
+        "nonproduction-test"
+    };
+    let expected_context = json!({
+        "format": "onebrain/qualification-run-context/1",
+        "variant": "Release",
+        "release_request_digest": request_digest,
+        "qualification_session_id": request.get("qualification_session_id"),
+        "candidate_commit": candidate.get("commit"),
+        "candidate_tree": candidate.get("tree"),
+    });
+    let expected_bindings = json!({
+        "evidence_tier": tier,
+        "release_request_digest": request_digest,
+        "qualification_session_id": request.get("qualification_session_id"),
+        "candidate_commit": candidate.get("commit"),
+        "candidate_tree": candidate.get("tree"),
+        "candidate_semantic_digest": registry.get("candidate_semantic_digest"),
+        "artifact_tuple_digest": registry.get("artifact_tuple_digest"),
+        "release_aggregate_root": registry.get("release_aggregate_root"),
+        "registry_generation": registry.get("registry_generation"),
+        "production_profile_blake3": request.get("production_profile_blake3"),
+        "production_vector_blake3": request.get("production_vector_blake3"),
+        "append_only_idl_history_root": request.get("append_only_idl_history_root"),
+        "required_targets": request.get("required_targets"),
+        "candidate_payload_artifacts_blake3": registry.get("payload_artifacts_blake3"),
+        "release_stamp_blake3": registry.get("release_stamp_blake3"),
+        "probe_blake3": environment.get("probe_blake3"),
+        "probe_signature": environment.get("probe_signature"),
+        "probe_signer_fingerprint": environment.get("probe_signer_fingerprint"),
+        "probe_signer_public_key": environment.get("probe_signer_public_key"),
+        "executable_blake3": environment.get("executable_blake3"),
+        "rust_toolchain_digest": environment.get("rust_toolchain_digest"),
+        "runner_image_digest": environment.get("runner_image_digest"),
+        "target_triple": environment.get("target_triple"),
+        "python_executable_blake3": environment.get("python_executable_blake3"),
+        "gpg_executable_blake3": environment.get("gpg_executable_blake3"),
+        "trust_policy_digest": registry.get("registry_trust_policy_digest"),
+        "signer_fingerprint": registry.get("registry_signer_fingerprint"),
+        "ccid_inputs_blake3": registry.get("ccid_inputs_blake3"),
+    });
+    let exact = verified.get("format").and_then(Value::as_str)
+        == Some("onebrain/verified-qualification-context/1")
+        && verified.get("production").and_then(Value::as_bool) == Some(production)
+        && verified.get("request_digest").and_then(Value::as_str) == Some(request_digest)
+        && verified.get("signer_fingerprint") == request.get("qualification_approver_fingerprint")
+        && verified.get("trust_policy_digest") == request.get("trust_policy_digest")
+        && verified.get("run_context") == Some(&expected_context)
+        && verified.get("bindings") == Some(&expected_bindings)
+        && verified.get("tooling_blake3") == request.get("candidate_tooling_blake3")
+        && verified.as_object().is_some_and(|object| object.len() == 8);
+    if !exact {
+        return Err("Python verifier did not return the exact closed verified context".to_owned());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn fake_python_stdout_without_authenticated_bindings_is_rejected() {
+        let request = json!({
+            "qualification_session_id": "42".repeat(32),
+            "candidate": {"commit": "11".repeat(20), "tree": "22".repeat(20)},
+            "trust_policy_digest": "33".repeat(32),
+            "candidate_tooling_blake3": {
+                "qualifier": "41".repeat(32), "request": "42".repeat(32),
+                "clean_worktree": "43".repeat(32), "release_wrapper": "44".repeat(32),
+                "verifier": "45".repeat(32), "signer_policy": "46".repeat(32)
+            },
+            "registry_candidate": {
+                "candidate_semantic_digest": "51".repeat(32),
+                "artifact_tuple_digest": "52".repeat(32),
+                "release_aggregate_root": "53".repeat(32),
+                "registry_generation": 7
+            },
+            "reference_environment": {"target_triple": "x86_64-unknown-linux-gnu"}
+        });
+        let fake = json!({
+            "format": "onebrain/verified-qualification-context/1",
+            "production": true
+        });
+        let error = validate_python_context(&request, "aa", &fake, true).unwrap_err();
+        assert!(error.contains("closed verified context"), "{error}");
+    }
 }

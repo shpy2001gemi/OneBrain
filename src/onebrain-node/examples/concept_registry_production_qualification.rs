@@ -12,6 +12,7 @@ use ku_core::{
     activate_concept_registry_release, parse_concept_registry_verifying_key,
     qualification_request::{
         verify_base_release_request, verify_base_release_request_for_test_nonproduction,
+        verify_base_tuple_evidence,
     },
     rollback_concept_registry_release,
 };
@@ -271,6 +272,7 @@ fn apply_run_context(
                     .ok_or("closure_digest is missing")?,
             );
             payload.insert("base_candidate_bound".to_owned(), json!(false));
+            payload.insert("evidence_tier".to_owned(), json!("prequalification"));
         }
         Some("Release") => {
             let fields = [
@@ -369,12 +371,8 @@ fn validate_candidate_measurements(
     if binding.get("candidate_commit").and_then(Value::as_str) != Some(git("HEAD")?.as_str())
         || binding.get("candidate_tree").and_then(Value::as_str)
             != Some(git("HEAD^{tree}")?.as_str())
-        || binding
-            .get("candidate_semantic_digest")
-            .and_then(Value::as_str)
-            != Some(fs::read_to_string(semantic_evidence)?.trim())
     {
-        return Err("candidate Git or semantic evidence differs from signed request".into());
+        return Err("candidate Git evidence differs from signed request".into());
     }
     let canonical_digest = |path: &Path| -> Result<String, Box<dyn Error>> {
         let value: Value = serde_json::from_slice(&fs::read(path)?)?;
@@ -402,6 +400,24 @@ fn validate_candidate_measurements(
     {
         return Err("candidate profile/vector/history/target differs from signed request".into());
     }
+    let measured_toolchain_digest = blake3_file(toolchain)?;
+    verify_base_tuple_evidence(
+        semantic_evidence,
+        binding
+            .get("candidate_commit")
+            .and_then(Value::as_str)
+            .ok_or("candidate commit is missing")?,
+        target_triple,
+        &measured_toolchain_digest,
+        binding
+            .get("candidate_semantic_digest")
+            .and_then(Value::as_str)
+            .ok_or("semantic digest is missing")?,
+        binding
+            .get("artifact_tuple_digest")
+            .and_then(Value::as_str)
+            .ok_or("artifact tuple digest is missing")?,
+    )?;
     let stamp_path = registry_root
         .join("releases")
         .join(release_id)

@@ -29,9 +29,12 @@ from verify_base_release_request import (  # noqa: E402
     FROZEN_APPROVER_POLICY,
     ReleaseRequestError,
     canonical_json,
+    canonical_compatibility_tuple_bytes,
     verify_release_request,
     verify_release_request_for_test_nonproduction,
     verify_registry_candidate_measurements,
+    python_executable_path,
+    _verify_authenticated_tooling,
 )
 from build_obr import build  # noqa: E402
 from config import SOURCE_WIKIDATA  # noqa: E402
@@ -39,12 +42,15 @@ from production_qualification import signer_fingerprint, trust_policy_digest  # 
 from release_cycle_qualification import (  # noqa: E402
     REQUIRED_STEPS,
     CycleError,
+    _latest_state,
+    _stamp,
     run_release_cycle_for_test_nonproduction,
 )
 from ccid_stability_qualification import (  # noqa: E402
     qualify_ccid_stability_from_signed_request_for_test_nonproduction,
 )
 from resource_qualification import (  # noqa: E402
+    QualificationError,
     create_verified_resource_receipt_for_test_nonproduction,
 )
 from production_qualification import _aggregate_reports_for_test_nonproduction  # noqa: E402
@@ -198,11 +204,25 @@ class SignedReleaseRequestTests(unittest.TestCase):
                 "probe_signer_fingerprint": "85" * 32,
                 "probe_signer_public_key": "87" * 32,
                 "executable_blake3": "86" * 32,
+                "python_executable_blake3": blake3.blake3(python_executable_path().read_bytes()).hexdigest(),
+                "gpg_executable_blake3": blake3.blake3(Path(_gpg()).read_bytes()).hexdigest(),
             },
         }
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
+
+    def _compatibility_tuple(self, commit: str, target: str, toolchain_digest: str) -> dict[str, object]:
+        vector = json.loads(
+            (SCRIPT_DIR.parents[1] / "src/test-vectors/vnext/base-v1-compatibility-v1.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        value = json.loads(json.dumps(vector["baseline"]))
+        value["base_commit"] = {"kind": "sha1" if len(commit) == 40 else "sha256", "hex": commit}
+        value["target_triple"] = target
+        value["toolchain"] = {"kind": "known", "hex": toolchain_digest}
+        return value
 
     def _signed_paths(self) -> tuple[Path, Path, Path]:
         request_path = self.root / "request.json"
@@ -234,6 +254,23 @@ class SignedReleaseRequestTests(unittest.TestCase):
         ).hexdigest()
         self.assertEqual(digest, APPROVER_POLICY_DIGEST)
 
+    def test_approved_compatibility_tuple_bytes_recompute_semantic_and_artifact_digests(self) -> None:
+        vector = json.loads(
+            (SCRIPT_DIR.parents[1] / "src/test-vectors/vnext/base-v1-compatibility-v1.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        semantic = canonical_compatibility_tuple_bytes(vector["baseline"], include_artifact_fields=False)
+        artifact = canonical_compatibility_tuple_bytes(vector["baseline"], include_artifact_fields=True)
+        self.assertEqual(
+            blake3.blake3(semantic, derive_key_context="onebrain:base:candidate-semantic:1\0").hexdigest(),
+            vector["golden_digests"]["candidate_semantic"],
+        )
+        self.assertEqual(
+            blake3.blake3(artifact, derive_key_context="onebrain:base:artifact-tuple:1\0").hexdigest(),
+            vector["golden_digests"]["artifact_tuple"],
+        )
+
     def test_production_verifier_api_has_no_executable_or_policy_mode_injection(self) -> None:
         parameters = inspect.signature(verify_release_request).parameters
         self.assertNotIn("gpg_executable", parameters)
@@ -259,6 +296,58 @@ class SignedReleaseRequestTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(json.loads(result.stdout)["production"])
+
+    def test_authenticated_runtime_tooling_identity_rejects_python_and_gpg_mutations(self) -> None:
+        for field, message in (
+            ("python_executable_blake3", "Python executable"),
+            ("gpg_executable_blake3", "GPG executable"),
+        ):
+            with self.subTest(field=field):
+                self.request["reference_environment"][field] = "00" * 32
+                request_path, signature_path, policy_path = self._signed_paths()
+                with self.assertRaisesRegex(ReleaseRequestError, message):
+                    verify_release_request_for_test_nonproduction(
+                        request_path, signature_path, policy_path, self.gpg_home,
+                        gpg_executable=Path(_gpg()),
+                    )
+                self.request["reference_environment"][field] = blake3.blake3(
+                    (python_executable_path() if field.startswith("python") else Path(_gpg())).read_bytes()
+                ).hexdigest()
+
+    def test_authenticated_verifier_tooling_identity_rejects_altered_bytes(self) -> None:
+        request_path, signature_path, policy_path = self._signed_paths()
+        self.request["candidate_tooling_blake3"]["verifier"] = "00" * 32
+        request_path.write_bytes(canonical_json(self.request))
+        signature_path.unlink()
+        _run_gpg(
+            self.gpg_home, "--local-user", self.fingerprint, "--detach-sign",
+            "--output", str(signature_path), str(request_path),
+        )
+        with self.assertRaisesRegex(ReleaseRequestError, "verifier tooling"):
+            verify_release_request_for_test_nonproduction(
+                request_path, signature_path, policy_path, self.gpg_home,
+                gpg_executable=Path(_gpg()),
+            )
+
+    def test_actual_python_verifier_and_gpg_byte_mutations_fail_measurement(self) -> None:
+        _request_path, _signature_path, policy_path = self._signed_paths()
+        paths = {
+            "python_path": python_executable_path(),
+            "gpg_path": Path(_gpg()),
+            "verifier_path": SCRIPT_DIR / "verify_base_release_request.py",
+        }
+        for parameter, source in paths.items():
+            with self.subTest(parameter=parameter):
+                altered = self.root / f"altered-{source.name}"
+                shutil.copyfile(source, altered)
+                with altered.open("ab") as handle:
+                    handle.write(b"altered")
+                arguments = dict(paths)
+                arguments[parameter] = altered
+                with self.assertRaisesRegex(ReleaseRequestError, "digest mismatch"):
+                    _verify_authenticated_tooling(
+                        self.request, policy_path.read_bytes(), **arguments
+                    )
 
     @unittest.skipUnless(
         os.environ.get("ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION")
@@ -329,8 +418,7 @@ class SignedReleaseRequestTests(unittest.TestCase):
         stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
         state_path = sorted((registry_root / "state").glob("state-*.json"))[-1]
         state = json.loads(state_path.read_text(encoding="utf-8"))
-        semantic = self.root / "semantic.txt"
-        semantic.write_text("61" * 32, encoding="utf-8")
+        semantic = self.root / "semantic.json"
         profile = self.root / "profile.json"
         vector = self.root / "vector.json"
         profile.write_text(json.dumps({"profile": 1}), encoding="utf-8")
@@ -348,7 +436,7 @@ class SignedReleaseRequestTests(unittest.TestCase):
         self.request["production_vector_blake3"] = blake3.blake3(canonical_json(json.loads(vector.read_text()))).hexdigest()
         self.request["append_only_idl_history_root"] = idl.read_text()
         self.request["registry_candidate"].update({
-            "candidate_semantic_digest": semantic.read_text(),
+            "candidate_semantic_digest": self.request["registry_candidate"]["candidate_semantic_digest"],
             "artifact_tuple_digest": artifact_tuple,
             "release_aggregate_root": stamp["artifact_root"],
             "registry_generation": state["generation"],
@@ -369,6 +457,21 @@ class SignedReleaseRequestTests(unittest.TestCase):
         runner = self.root / "failure-runner.txt"
         toolchain.write_text("rustc fixture", encoding="utf-8")
         runner.write_text("runner fixture", encoding="utf-8")
+        compatibility_tuple = self._compatibility_tuple(
+            commit, target, blake3.blake3(toolchain.read_bytes()).hexdigest()
+        )
+        semantic.write_bytes(canonical_json(compatibility_tuple))
+        semantic_digest = blake3.blake3(
+            canonical_compatibility_tuple_bytes(compatibility_tuple, include_artifact_fields=False),
+            derive_key_context="onebrain:base:candidate-semantic:1\0",
+        ).hexdigest()
+        artifact_tuple = blake3.blake3(
+            canonical_compatibility_tuple_bytes(compatibility_tuple, include_artifact_fields=True),
+            derive_key_context="onebrain:base:artifact-tuple:1\0",
+        ).hexdigest()
+        self.request["required_targets"] = {target: artifact_tuple}
+        self.request["registry_candidate"]["candidate_semantic_digest"] = semantic_digest
+        self.request["registry_candidate"]["artifact_tuple_digest"] = artifact_tuple
         self.request["reference_environment"].update({
             "target_triple": target,
             "probe_blake3": executable_digest,
@@ -490,11 +593,10 @@ class SignedReleaseRequestTests(unittest.TestCase):
         profile_path = self.root / "production-profile.json"
         vector_path = self.root / "production-vector.json"
         idl_path = self.root / "idl-root.txt"
-        semantic_path = self.root / "semantic.txt"
+        semantic_path = self.root / "semantic.json"
         profile_path.write_bytes(canonical_json(aggregate_profile))
         vector_path.write_bytes(canonical_json({"vector": "small-real-producer-fixture"}))
         idl_path.write_text("46" * 32, encoding="ascii")
-        semantic_path.write_text(self.request["registry_candidate"]["candidate_semantic_digest"], encoding="ascii")
         self.request["production_profile_blake3"] = blake3.blake3(profile_path.read_bytes()).hexdigest()
         self.request["production_vector_blake3"] = blake3.blake3(vector_path.read_bytes()).hexdigest()
         self.request["append_only_idl_history_root"] = idl_path.read_text(encoding="ascii")
@@ -528,6 +630,22 @@ class SignedReleaseRequestTests(unittest.TestCase):
         runner_path = self.root / "runner-image.txt"
         toolchain_path.write_text("rustc fixture", encoding="utf-8")
         runner_path.write_text("runner fixture", encoding="utf-8")
+        compatibility_tuple = self._compatibility_tuple(
+            self.request["candidate"]["commit"], target,
+            blake3.blake3(toolchain_path.read_bytes()).hexdigest(),
+        )
+        semantic_path.write_bytes(canonical_json(compatibility_tuple))
+        semantic_digest = blake3.blake3(
+            canonical_compatibility_tuple_bytes(compatibility_tuple, include_artifact_fields=False),
+            derive_key_context="onebrain:base:candidate-semantic:1\0",
+        ).hexdigest()
+        artifact_tuple = blake3.blake3(
+            canonical_compatibility_tuple_bytes(compatibility_tuple, include_artifact_fields=True),
+            derive_key_context="onebrain:base:artifact-tuple:1\0",
+        ).hexdigest()
+        self.request["required_targets"] = {target: artifact_tuple}
+        self.request["registry_candidate"]["candidate_semantic_digest"] = semantic_digest
+        self.request["registry_candidate"]["artifact_tuple_digest"] = artifact_tuple
         self.request["reference_environment"].update({
             "probe_blake3": executable_digest,
             "executable_blake3": executable_digest,
@@ -538,11 +656,13 @@ class SignedReleaseRequestTests(unittest.TestCase):
             "runner_image_digest": blake3.blake3(runner_path.read_bytes()).hexdigest(),
         })
         tooling_paths: dict[str, Path] = {}
-        for name in ("qualifier", "request", "clean_worktree", "release_wrapper"):
+        for name in ("qualifier", "request", "clean_worktree"):
             path = self.root / f"{name}.tool"
             path.write_text(f"{name} fixture", encoding="utf-8")
             tooling_paths[name] = path
             self.request["candidate_tooling_blake3"][name] = blake3.blake3(path.read_bytes()).hexdigest()
+        tooling_paths["release_wrapper"] = bridge
+        self.request["candidate_tooling_blake3"]["release_wrapper"] = blake3.blake3(bridge.read_bytes()).hexdigest()
         request_path, signature_path, approver_policy_path = self._signed_paths()
         tooling_paths.update({
             "verifier": SCRIPT_DIR / "verify_base_release_request.py",
@@ -552,6 +672,13 @@ class SignedReleaseRequestTests(unittest.TestCase):
         receipt = run_release_cycle_for_test_nonproduction(
             request_path, signature_path, approver_policy_path, self.gpg_home,
             gpg_executable=Path(_gpg()), bridge=bridge,
+            candidate_root=repo, git_executable=Path(shutil.which("git") or "git"),
+            candidate_semantic_evidence=semantic_path,
+            production_profile=profile_path, production_vector=vector_path,
+            append_only_idl_history=idl_path, candidate_tooling=tooling_paths,
+            probe=failure_executable, probe_signature=probe_signature_path,
+            executable=failure_executable, rust_toolchain_evidence=toolchain_path,
+            runner_image_evidence=runner_path, target_triple=target,
             registry_root=cycle_registry,
             old_input=old_input, old_obr=old_obr, old_manifest=old_manifest, old_sbom=old_sbom,
             candidate_input=candidate_input, candidate_obr=candidate_obr,
@@ -566,6 +693,56 @@ class SignedReleaseRequestTests(unittest.TestCase):
         self.assertEqual(payload["registry_generation"], 4)
         self.assertEqual(payload["command_blake3"], blake3.blake3(canonical_json(payload["command"])).hexdigest())
         self.assertNotIn(str(private_key), json.dumps(payload["command"], sort_keys=True))
+        bridge_identity = f"{bridge.name}@blake3:{blake3.blake3(bridge.read_bytes()).hexdigest()}"
+        file_identity = lambda path: f"{path.name}@blake3:{blake3.blake3(path.read_bytes()).hexdigest()}"
+        expected_steps = {
+            "package": ["package", bridge_identity, "package", str(cycle_registry), file_identity(old_obr), file_identity(old_sbom), file_identity(sources_path), "stable-v1", "<external-private-key-redacted>"],
+            "verify": ["verify", bridge_identity, "verify", str(cycle_registry), "stable-v1", public.hex()],
+            "activate": ["activate", bridge_identity, "activate", str(cycle_registry), "stable-v1", public.hex()],
+            "query": ["query", "internal-obr-query", f"--obr={file_identity(old_obr)}", "--label=water"],
+            "build-new-signed-generation": ["build-new-signed-generation", bridge_identity, "package", str(cycle_registry), file_identity(candidate_obr), file_identity(candidate_sbom), file_identity(sources_path), candidate_release, "<external-private-key-redacted>"],
+            "ccid-diff": [
+                "ccid_stability_diff.py",
+                f"--old-input={file_identity(old_input)}", f"--old-obr={file_identity(old_obr)}",
+                f"--old-manifest={file_identity(old_manifest)}", f"--candidate-input={file_identity(candidate_input)}",
+                f"--candidate-obr={file_identity(candidate_obr)}", f"--candidate-manifest={file_identity(candidate_manifest)}",
+            ],
+            "activate-new": ["activate-new", bridge_identity, "activate", str(cycle_registry), candidate_release, public.hex()],
+            "rollback": ["rollback", bridge_identity, "rollback", str(cycle_registry), public.hex()],
+            "reactivate-new": ["reactivate-new", bridge_identity, "activate", str(cycle_registry), candidate_release, public.hex()],
+        }
+        self.assertEqual(payload["step_commands"], expected_steps)
+        self.assertEqual(
+            payload["step_command_blake3"],
+            {name: blake3.blake3(canonical_json(command)).hexdigest() for name, command in expected_steps.items()},
+        )
+        expected_step_digests = {
+            name: blake3.blake3(canonical_json(command)).hexdigest()
+            for name, command in expected_steps.items()
+        }
+        expected_cycle_invocation = [
+            "release_cycle_qualification.py",
+            f"--release-request-digest={blake3.blake3(request_path.read_bytes()).hexdigest()}",
+            f"--bridge-blake3={blake3.blake3(bridge.read_bytes()).hexdigest()}",
+            f"--old-input-blake3={blake3.blake3(old_input.read_bytes()).hexdigest()}",
+            f"--candidate-input-blake3={blake3.blake3(candidate_input.read_bytes()).hexdigest()}",
+            f"--old-obr={file_identity(old_obr)}", f"--old-manifest={file_identity(old_manifest)}",
+            f"--old-sbom={file_identity(old_sbom)}", f"--candidate-obr={file_identity(candidate_obr)}",
+            f"--candidate-manifest={file_identity(candidate_manifest)}", f"--candidate-sbom={file_identity(candidate_sbom)}",
+            f"--sources={file_identity(sources_path)}", "--old-release-id=stable-v1",
+            f"--candidate-release-id={candidate_release}", "--query-label=water", f"--target-triple={target}",
+            f"--semantic-tuple={file_identity(semantic_path)}", f"--production-profile={file_identity(profile_path)}",
+            f"--production-vector={file_identity(vector_path)}", f"--idl-history={file_identity(idl_path)}",
+            f"--probe={file_identity(failure_executable)}", f"--probe-signature={file_identity(probe_signature_path)}",
+            f"--executable={file_identity(failure_executable)}", f"--rust-toolchain={file_identity(toolchain_path)}",
+            f"--runner-image={file_identity(runner_path)}",
+            *[f"--candidate-tool-{name}={file_identity(path)}" for name, path in sorted(tooling_paths.items())],
+            *[f"--step-{name}-blake3={expected_step_digests[name]}" for name in REQUIRED_STEPS],
+            "--release-private-key=<external-redacted>", "--gpg-home=<redacted>",
+            "--receipt-signer=<external-redacted>",
+        ]
+        self.assertEqual(payload["command"], expected_cycle_invocation)
+        self.assertEqual(payload["command_blake3"], blake3.blake3(canonical_json(expected_cycle_invocation)).hexdigest())
 
         verified = verify_release_request_for_test_nonproduction(
             request_path, signature_path, approver_policy_path, self.gpg_home,
@@ -577,15 +754,22 @@ class SignedReleaseRequestTests(unittest.TestCase):
             for name in self.request["registry_candidate"]["payload_artifacts_blake3"]
         }
         resource_receipts = []
+        labels_file = self.root / "qualification-labels.txt"
+        labels_file.write_text("water\nfire\n", encoding="utf-8")
         for resource_profile in ("cold-cache", "low-ram", "ssd", "hdd"):
             resource_receipts.append(create_verified_resource_receipt_for_test_nonproduction(
                 {
                     "qualification_profile": resource_profile,
+                    "budget_profile": "ci-small-fixture-v1",
+                    "cache_strategy_requested": "auto",
+                    "limits": {"timeout_seconds": 60},
                     "qualified": True,
                     "exit_oracles": {"small_fixture_producer_completed": True},
                 },
                 verified,
                 git_executable=Path(shutil.which("git") or "git"),
+                labels_file=labels_file, cache_strategy="auto",
+                budget_profile="ci-small-fixture-v1", timeout_seconds=60,
                 candidate_root=repo,
                 registry_root=cycle_registry,
                 release_id=candidate_release,
@@ -605,6 +789,47 @@ class SignedReleaseRequestTests(unittest.TestCase):
                 signing_key=signing_key,
                 policy=receipt_policy,
             ))
+        for resource_profile, resource_receipt in zip(("cold-cache", "low-ram", "ssd", "hdd"), resource_receipts):
+            expected_invocation = [
+                "resource_qualification.py",
+                f"--profile={resource_profile}",
+                f"--labels-file={labels_file.name}@blake3:{blake3.blake3(labels_file.read_bytes()).hexdigest()}",
+                "--cache-strategy=auto",
+                "--budget-profile=ci-small-fixture-v1",
+                "--timeout-seconds=60",
+                f"--release-request-digest={verified.request_digest}",
+                f"--candidate-tree={verified.run_context['candidate_tree']}",
+                f"--release-id={candidate_release}",
+                *[
+                    f"--payload-{name}={path.name}@blake3:{blake3.blake3(path.read_bytes()).hexdigest()}"
+                    for name, path in sorted(payload_artifacts.items())
+                ],
+                f"--release-stamp=release.stamp.json@blake3:{blake3.blake3((installed_release / 'release.stamp.json').read_bytes()).hexdigest()}",
+                f"--probe={failure_executable.name}@blake3:{blake3.blake3(failure_executable.read_bytes()).hexdigest()}",
+                f"--probe-signature={probe_signature_path.name}@blake3:{blake3.blake3(probe_signature_path.read_bytes()).hexdigest()}",
+                f"--executable={failure_executable.name}@blake3:{blake3.blake3(failure_executable.read_bytes()).hexdigest()}",
+                f"--production-profile={profile_path.name}@blake3:{blake3.blake3(profile_path.read_bytes()).hexdigest()}",
+                f"--production-vector={vector_path.name}@blake3:{blake3.blake3(vector_path.read_bytes()).hexdigest()}",
+                f"--idl-history={idl_path.name}@blake3:{blake3.blake3(idl_path.read_bytes()).hexdigest()}",
+                f"--rust-toolchain={toolchain_path.name}@blake3:{blake3.blake3(toolchain_path.read_bytes()).hexdigest()}",
+                f"--runner-image={runner_path.name}@blake3:{blake3.blake3(runner_path.read_bytes()).hexdigest()}",
+                *[
+                    f"--candidate-tool-{name}={path.name}@blake3:{blake3.blake3(path.read_bytes()).hexdigest()}"
+                    for name, path in sorted(tooling_paths.items())
+                ],
+                f"--target-triple={target}",
+                "--gpg-home=<redacted>",
+                "--receipt-signer=<external-redacted>",
+            ]
+            self.assertEqual(resource_receipt["payload"]["command"], expected_invocation)
+            self.assertEqual(
+                resource_receipt["payload"]["command_blake3"],
+                blake3.blake3(canonical_json(expected_invocation)).hexdigest(),
+            )
+            self.assertNotEqual(
+                resource_receipt["payload"]["command_blake3"],
+                blake3.blake3(canonical_json(expected_invocation[:-1])).hexdigest(),
+            )
         ccid_receipt = qualify_ccid_stability_from_signed_request_for_test_nonproduction(
             request_path, signature_path, approver_policy_path, self.gpg_home,
             old_input, old_obr, old_manifest, candidate_input, candidate_obr, candidate_manifest,
@@ -684,11 +909,68 @@ class SignedReleaseRequestTests(unittest.TestCase):
             {item["receipt_kind"] for item in components},
             {"resource-qualification", "failure-qualification", "generation-swap", "ccid-stability", "signed-release-cycle"},
         )
+        semantic_original = semantic_path.read_bytes()
+        semantic_mutation = json.loads(semantic_original)
+        semantic_mutation["feature_set_digest"] = "ff" * 32
+        semantic_path.write_bytes(canonical_json(semantic_mutation))
+        with self.assertRaisesRegex(QualificationError, "semantic digest"):
+            create_verified_resource_receipt_for_test_nonproduction(
+                {"qualification_profile": "cold-cache", "budget_profile": "ci-small-fixture-v1", "cache_strategy_requested": "auto", "limits": {"timeout_seconds": 60}, "qualified": True, "exit_oracles": {"completed": True}},
+                verified, git_executable=Path(shutil.which("git") or "git"), labels_file=labels_file,
+                cache_strategy="auto", budget_profile="ci-small-fixture-v1", timeout_seconds=60,
+                candidate_root=repo, registry_root=cycle_registry, release_id=candidate_release,
+                candidate_semantic_evidence=semantic_path, production_profile=profile_path,
+                production_vector=vector_path, append_only_idl_history=idl_path,
+                candidate_tooling=tooling_paths, payload_artifacts=payload_artifacts,
+                release_stamp=installed_release / "release.stamp.json", probe=failure_executable,
+                probe_signature=probe_signature_path, executable=failure_executable,
+                rust_toolchain_evidence=toolchain_path, runner_image_evidence=runner_path,
+                target_triple=target, signing_key=signing_key, policy=receipt_policy,
+            )
+        artifact_mutation = json.loads(semantic_original)
+        artifact_mutation["target_triple"] = "aarch64-apple-darwin"
+        semantic_path.write_bytes(canonical_json(artifact_mutation))
+        with self.assertRaisesRegex(QualificationError, "artifact tuple target/toolchain"):
+            create_verified_resource_receipt_for_test_nonproduction(
+                {"qualification_profile": "cold-cache", "budget_profile": "ci-small-fixture-v1", "cache_strategy_requested": "auto", "limits": {"timeout_seconds": 60}, "qualified": True, "exit_oracles": {"completed": True}},
+                verified, git_executable=Path(shutil.which("git") or "git"), labels_file=labels_file,
+                cache_strategy="auto", budget_profile="ci-small-fixture-v1", timeout_seconds=60,
+                candidate_root=repo, registry_root=cycle_registry, release_id=candidate_release,
+                candidate_semantic_evidence=semantic_path, production_profile=profile_path,
+                production_vector=vector_path, append_only_idl_history=idl_path,
+                candidate_tooling=tooling_paths, payload_artifacts=payload_artifacts,
+                release_stamp=installed_release / "release.stamp.json", probe=failure_executable,
+                probe_signature=probe_signature_path, executable=failure_executable,
+                rust_toolchain_evidence=toolchain_path, runner_image_evidence=runner_path,
+                target_triple=target, signing_key=signing_key, policy=receipt_policy,
+            )
+        semantic_path.write_bytes(semantic_original)
+        installed_obr = installed_release / "concepts.obr"
+        installed_obr_original = installed_obr.read_bytes()
+        installed_obr.write_bytes(installed_obr_original + b"tamper")
+        with self.assertRaisesRegex(CycleError, "payload bytes differ"):
+            _stamp(cycle_registry, candidate_release)
+        installed_obr.write_bytes(installed_obr_original)
+        state_path = sorted((cycle_registry / "state").glob("state-*.json"))[-1]
+        state_original = state_path.read_bytes()
+        state_mutation = json.loads(state_original)
+        state_mutation["active_release"] = "stable-v1"
+        state_path.write_bytes(canonical_json(state_mutation))
+        with self.assertRaisesRegex(CycleError, "state root"):
+            _latest_state(cycle_registry)
+        state_path.write_bytes(state_original)
         candidate_input.write_text(candidate_input.read_text(encoding="utf-8") + json.dumps({**fire, "ext_id": 999}) + "\n", encoding="utf-8")
         with self.assertRaisesRegex(CycleError, "signed request"):
             run_release_cycle_for_test_nonproduction(
                 request_path, signature_path, approver_policy_path, self.gpg_home,
                 gpg_executable=Path(_gpg()), bridge=bridge,
+                candidate_root=repo, git_executable=Path(shutil.which("git") or "git"),
+                candidate_semantic_evidence=semantic_path,
+                production_profile=profile_path, production_vector=vector_path,
+                append_only_idl_history=idl_path, candidate_tooling=tooling_paths,
+                probe=failure_executable, probe_signature=probe_signature_path,
+                executable=failure_executable, rust_toolchain_evidence=toolchain_path,
+                runner_image_evidence=runner_path, target_triple=target,
                 registry_root=self.root / "tampered-cycle",
                 old_input=old_input, old_obr=old_obr, old_manifest=old_manifest, old_sbom=old_sbom,
                 candidate_input=candidate_input, candidate_obr=candidate_obr,
@@ -752,6 +1034,14 @@ class SignedReleaseRequestTests(unittest.TestCase):
         ):
             with self.subTest(producer=producer.__name__):
                 self.assertNotIn("invocation", inspect.signature(producer).parameters)
+
+    def test_resource_receipt_api_requires_every_behavior_affecting_option(self) -> None:
+        parameters = inspect.signature(
+            create_verified_resource_receipt_for_test_nonproduction
+        ).parameters
+        for name in ("labels_file", "cache_strategy", "budget_profile", "timeout_seconds"):
+            with self.subTest(name=name):
+                self.assertIn(name, parameters)
 
     def test_valid_signature_yields_closed_context_derived_from_request(self) -> None:
         request_path, signature_path, policy_path = self._signed_paths()

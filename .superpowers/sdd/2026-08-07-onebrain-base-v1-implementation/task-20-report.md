@@ -810,3 +810,230 @@ tag, release publication, or Base signer workflow was implemented.
 - No full-size production measurements or production private signing key are
   present or used. The test-only aggregate intentionally cannot claim
   production.
+
+---
+
+# Fix round 3/5 — harden qualification trust boundary
+
+## Implementation summary
+
+- The signed receipt payload contract now carries an explicit `evidence_tier`:
+  `production-reference`, `nonproduction-test`, or `prequalification`.
+  Production aggregation rejects a nonproduction set before frozen signer/key
+  availability can be the only fence. `base_candidate_bound` remains separate.
+- Python and Rust independently encode the approved Base compatibility tuple
+  (`u16` field ID + `u32` little-endian length + exact field bytes), recompute
+  semantic fields 1-14 and artifact fields 1-16, and bind the artifact tuple to
+  the measured target and toolchain. Payload/stamp/probe/executable/runner
+  hashes remain separate mandatory measurements.
+- The nine-step cycle binds the signed Git commit/tree and exact candidate-owned
+  bridge. After every step it independently hashes exact installed payload
+  lengths/bytes, recomputes the aggregate root, recomputes authoritative state
+  roots from Rust struct-order bytes, resolves the active release root, and
+  queries actual OBR/CCID data. It signs exact sanitized step commands and the
+  complete top-level invocation.
+- Resource provenance now includes and cross-checks labels, requested cache
+  strategy, budget profile, timeout, all payload/tool/profile/environment
+  identities, and fixed redactions. The integration independently constructs
+  literal expected resource and cycle invocations.
+- Rust production verification now uses only fixed `/usr/bin/python3` and
+  `/usr/bin/gpg`; locally verifies canonical request and frozen policy bytes,
+  the approved derive-key policy digest, closed request fields, OpenPGP
+  `VALIDSIG` primary fingerprint/Ed25519 algorithm/signature time, current and
+  signer validity intervals, exported public packet hash, fixed tooling hashes,
+  and exact equality of all eight closed Python result fields and every binding.
+- The authoritative Task 19 profile/vector/validator were updated for the
+  closed evidence tier and fixed Python/GPG identities. No Task 27 manifest,
+  tag, release publication, or private production key operation was added.
+
+## RED evidence
+
+### Explicit evidence tier
+
+```powershell
+python -m unittest scripts.concept_registry.test_production_qualification.ProductionQualificationTests.test_production_evidence_preflight_rejects_nonproduction_receipts_before_signer
+```
+
+RED: `ImportError: cannot import name '_require_production_reference_evidence'`.
+Expected reason: no signed production-reference identity or early production
+component preflight existed.
+
+### Approved tuple bytes
+
+```powershell
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_approved_compatibility_tuple_bytes_recompute_semantic_and_artifact_digests
+```
+
+RED: `ImportError: cannot import name 'canonical_compatibility_tuple_bytes'`.
+Expected reason: semantic evidence was still a digest line and artifact evidence
+was two self-consistent request fields.
+
+### Rust fake verifier output
+
+```powershell
+cargo test --manifest-path src/Cargo.toml -p ku-core fake_python_stdout_without_authenticated_bindings_is_rejected -- --exact
+```
+
+RED compile error: `cannot find function validate_python_context in this scope`.
+Expected reason: Rust accepted Python stdout after checking only format and the
+production boolean. The later exact focused command omitted `--exact` because
+Rust test names include the module path.
+
+### Exact resource provenance
+
+```powershell
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_resource_receipt_api_requires_every_behavior_affecting_option
+```
+
+RED: four assertion failures: `labels_file`, `cache_strategy`,
+`budget_profile`, and `timeout_seconds` were absent from the producer API.
+Expected reason: the signed command omitted real behavior-affecting options.
+
+### Real-cycle debugging REDs
+
+```powershell
+$env:ONEBRAIN_REGISTRY_RELEASE_OPS=(Resolve-Path 'src/target/release/examples/concept_registry_release_ops.exe')
+$env:ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION=(Resolve-Path 'src/target/release/examples/concept_registry_failure_qualification.exe')
+$env:ONEBRAIN_REGISTRY_GENERATION_QUALIFICATION=(Resolve-Path 'src/target/release/examples/concept_registry_production_qualification.exe')
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_first_party_nine_step_cycle_inspects_real_state_and_signed_inputs
+```
+
+First RED: `CycleError: active state root does not match authoritative state
+bytes`. Root cause: Rust hashes compact serde struct field order, while the
+first Python recomputation sorted keys. After correcting that, the next RED was
+`measured candidate semantic digest differs from signed request`; the two Rust
+producers still read a digest line instead of deriving tuple bytes. Both were
+replaced with the shared Rust tuple encoder. The debug suite later exposed
+`release bridge is not the fixed candidate-owned operation`; the nonproduction
+constraint now accepts only the exact candidate-root debug/release example,
+while production remains release-only.
+
+```powershell
+python -m unittest scripts.concept_registry.test_release_cycle_qualification -v
+```
+
+RED: the legacy static assertion rejected any `subprocess.run`, including the
+new trusted Git commit/tree measurement. It now checks the real security
+boundary: no caller plan/commands/candidate root, fixed candidate verification,
+and first-party `Popen` operations.
+
+The combined compiled regression behaviorally mutates and rejects:
+
+- semantic tuple `feature_set_digest` bytes: `measured candidate semantic digest differs`;
+- artifact tuple target: `artifact tuple target/toolchain differs`;
+- installed `concepts.obr` bytes: `installed payload bytes differ from stamp`;
+- authoritative `active_release` with unchanged root: `active state root does not match authoritative state bytes`.
+
+## GREEN verification
+
+### Focused behavior
+
+```powershell
+python -m unittest scripts.concept_registry.test_production_qualification.ProductionQualificationTests.test_production_evidence_preflight_rejects_nonproduction_receipts_before_signer scripts.concept_registry.test_production_qualification.ProductionQualificationTests.test_nonproduction_helper_verifies_components_but_cannot_claim_subgate
+```
+
+PASS: 2 tests.
+
+```powershell
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_approved_compatibility_tuple_bytes_recompute_semantic_and_artifact_digests
+```
+
+PASS: 1 test; exact frozen semantic and artifact golden digests matched.
+
+```powershell
+cargo test --locked --manifest-path src/Cargo.toml -p ku-core fake_python_stdout_without_authenticated_bindings_is_rejected -- --nocapture
+```
+
+PASS: 1 test, 0 failed.
+
+```powershell
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_actual_python_verifier_and_gpg_byte_mutations_fail_measurement scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_authenticated_runtime_tooling_identity_rejects_python_and_gpg_mutations scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_authenticated_verifier_tooling_identity_rejects_altered_bytes -v
+```
+
+PASS: 3 tests. Copies of the actual Python image, verifier script, and GPG
+binary were byte-mutated and independently rejected by digest measurement.
+
+```powershell
+$env:ONEBRAIN_REGISTRY_RELEASE_OPS=(Resolve-Path 'src/target/debug/examples/concept_registry_release_ops.exe')
+$env:ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION=(Resolve-Path 'src/target/debug/examples/concept_registry_failure_qualification.exe')
+$env:ONEBRAIN_REGISTRY_GENERATION_QUALIFICATION=(Resolve-Path 'src/target/debug/examples/concept_registry_production_qualification.exe')
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_first_party_nine_step_cycle_inspects_real_state_and_signed_inputs -v
+```
+
+PASS: 1 test. It ran nine real operations, independently compared literal
+resource/cycle commands, produced all five real receipt kinds, aggregated them
+without handcrafted receipts, and executed all four byte/state mutations.
+
+### Required builds and suites
+
+```powershell
+cargo build --locked --manifest-path src/Cargo.toml -p ku-core --example registry_probe --example concept_registry_release_ops --example concept_registry_failure_qualification --features concept-registry-failure-harness
+cargo build --locked --manifest-path src/Cargo.toml -p onebrain-node --example concept_registry_production_qualification
+```
+
+PASS: locked debug builds completed; only the pre-existing unrelated `ku-kql`
+dead-code warning appeared.
+
+```powershell
+$env:ONEBRAIN_REGISTRY_PROBE=(Resolve-Path 'src/target/debug/examples/registry_probe.exe')
+$env:ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION=(Resolve-Path 'src/target/debug/examples/concept_registry_failure_qualification.exe')
+$env:ONEBRAIN_REGISTRY_RELEASE_OPS=(Resolve-Path 'src/target/debug/examples/concept_registry_release_ops.exe')
+$env:ONEBRAIN_REGISTRY_GENERATION_QUALIFICATION=(Resolve-Path 'src/target/debug/examples/concept_registry_production_qualification.exe')
+python -m unittest scripts.release.test_verify_base_release_request scripts.concept_registry.test_resource_qualification scripts.concept_registry.test_ccid_stability_diff scripts.concept_registry.test_production_qualification scripts.concept_registry.test_release_cycle_qualification scripts.concept_registry.test_failure_qualification
+```
+
+PASS: 51 tests, 0 failures/errors, 1 expected Linux-only skip in 47.495s.
+
+```powershell
+cargo test --locked --manifest-path src/Cargo.toml -p ku-core concept_registry_release -- --test-threads=1
+cargo test --locked --manifest-path src/Cargo.toml -p onebrain-node --lib concept_registry_runtime -- --test-threads=1
+```
+
+PASS: 10/10 and 13/13 respectively.
+
+```powershell
+python -m py_compile scripts/concept_registry/resource_qualification.py scripts/concept_registry/ccid_stability_qualification.py scripts/concept_registry/release_cycle_qualification.py scripts/concept_registry/production_qualification.py scripts/release/verify_base_release_request.py scripts/release/test_verify_base_release_request.py
+python scripts/ci/validate_vnext_contracts.py
+cargo fmt --manifest-path src/Cargo.toml --all -- --check
+git diff --check
+```
+
+PASS: syntax, format, and diff checks passed. Validator reported 726 normative
+lines and 444 local links.
+
+## Files changed in round 3
+
+- Updated the Task 19 production qualification profile, machine vector, and
+  validator for evidence tiers and fixed Python/GPG tooling identities.
+- Updated Python verifier/tests, resource/cycle/CCID producers, pure aggregate,
+  and relevant tests for tuple derivation, exact provenance, state/root
+  inspection, tool identities, and production-reference separation.
+- Updated the shared Rust request bridge and both compiled Release producers
+  for independent OpenPGP/tool/context verification and Base tuple derivation.
+- Updated the existing release-cycle static regression to test the current
+  no-caller-plan boundary. No unrelated production file was added.
+
+## Self-review
+
+- Audited all four round-3 clusters against the open-findings file after the
+  final 51-test run. Each has behavioral, not merely source-text, coverage.
+- Confirmed cycle inspection hashes real installed bytes and authoritative
+  state after every operation; bridge stdout is rejected and never trusted.
+- Confirmed Base artifact tuple layout was not broadened: it is semantic fields
+  plus measured target/toolchain only. Registry payload/environment bindings
+  remain separate exact prerequisites.
+- Confirmed every Release producer emits the explicit tier derived from its
+  closed verified context. Nonproduction receipts remain candidate-bound facts
+  but cannot enter production aggregation.
+- Confirmed production executable selection has no caller injection; test
+  helpers remain explicitly nonproduction and cannot claim the subgate.
+- Confirmed private signing paths/material are fixed-redacted from provenance;
+  tests use only isolated ephemeral GPG and Ed25519 keys. The production private
+  key was never read or used.
+
+## Concerns
+
+- This Windows host cannot execute the Linux-only RLIMIT/cache production
+  resource integration; it remains the one expected skip.
+- Production APIs intentionally fail closed on Windows. No full-size production
+  artifacts, production signature, or `BASE-GATE-V1` claim were produced.

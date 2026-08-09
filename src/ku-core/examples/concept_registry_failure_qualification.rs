@@ -21,6 +21,7 @@ use ku_core::{
     package_concept_registry_release, package_concept_registry_release_with_capacity_for_drill,
     qualification_request::{
         verify_base_release_request, verify_base_release_request_for_test_nonproduction,
+        verify_base_tuple_evidence,
     },
     resolve_active_concept_registry_release, verify_concept_registry_release,
     ConceptRegistryReleaseError, ConceptRegistryReleasePackageInput, ConceptRegistryReleaseSource,
@@ -564,13 +565,6 @@ fn validate_release_measurements(
             return Err(format!("measured {field} differs from signed request").into());
         }
     }
-    if binding
-        .get("candidate_semantic_digest")
-        .and_then(Value::as_str)
-        != Some(fs::read_to_string(&measured.semantic_evidence)?.trim())
-    {
-        return Err("measured candidate semantic digest differs from signed request".into());
-    }
     let canonical_digest = |path: &Path| -> Result<String, Box<dyn Error>> {
         let value: Value = serde_json::from_slice(&fs::read(path)?)?;
         Ok(blake3::hash(&serde_json::to_vec(&value)?)
@@ -593,6 +587,7 @@ fn validate_release_measurements(
         return Err("measured profile/vector/IDL history differs from signed request".into());
     }
     let current_executable = std::env::current_exe()?;
+    let measured_toolchain_digest = blake3_file_hex(&measured.rust_toolchain_evidence)?;
     if binding.get("probe_blake3").and_then(Value::as_str)
         != Some(blake3_file_hex(&measured.probe)?.as_str())
         || binding.get("probe_signature").and_then(Value::as_str)
@@ -600,7 +595,7 @@ fn validate_release_measurements(
         || binding.get("executable_blake3").and_then(Value::as_str)
             != Some(blake3_file_hex(&current_executable)?.as_str())
         || binding.get("rust_toolchain_digest").and_then(Value::as_str)
-            != Some(blake3_file_hex(&measured.rust_toolchain_evidence)?.as_str())
+            != Some(measured_toolchain_digest.as_str())
         || binding.get("runner_image_digest").and_then(Value::as_str)
             != Some(blake3_file_hex(&measured.runner_image_evidence)?.as_str())
     {
@@ -632,6 +627,23 @@ fn validate_release_measurements(
     {
         return Err("measured target artifact tuple differs from signed request".into());
     }
+    verify_base_tuple_evidence(
+        &measured.semantic_evidence,
+        binding
+            .get("candidate_commit")
+            .and_then(Value::as_str)
+            .ok_or("candidate commit is missing")?,
+        &measured.target_triple,
+        &measured_toolchain_digest,
+        binding
+            .get("candidate_semantic_digest")
+            .and_then(Value::as_str)
+            .ok_or("semantic digest is missing")?,
+        binding
+            .get("artifact_tuple_digest")
+            .and_then(Value::as_str)
+            .ok_or("artifact tuple digest is missing")?,
+    )?;
     let actual_artifacts = [
         ("OBR:concepts.obr", obr_path.to_path_buf()),
         (
@@ -742,6 +754,7 @@ fn apply_run_context(
             );
             target.insert("closure_digest".to_owned(), json!(closure));
             target.insert("base_candidate_bound".to_owned(), json!(false));
+            target.insert("evidence_tier".to_owned(), json!("prequalification"));
         }
         Some("Release") => {
             let expected: std::collections::BTreeSet<_> = [
@@ -815,6 +828,13 @@ fn apply_run_context(
                 .ok_or("verified release registry_generation is missing")?;
             target.insert("registry_generation".to_owned(), json!(generation));
             target.insert("base_candidate_bound".to_owned(), json!(true));
+            target.insert(
+                "evidence_tier".to_owned(),
+                binding
+                    .get("evidence_tier")
+                    .cloned()
+                    .ok_or("verified release evidence_tier is missing")?,
+            );
         }
         _ => return Err("QualificationRunContextV1 variant is invalid".into()),
     }
