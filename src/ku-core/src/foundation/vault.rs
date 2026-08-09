@@ -8,13 +8,12 @@ use zeroize::Zeroize;
 
 use super::canonical::ResourceProfile;
 use super::content_id::{EventCid, ObjectCid, ReservedDomain};
-use super::event::{decode_knowledge_event, EventType};
-use super::feed::ValidatedFeedInception;
+use super::event::{decode_knowledge_event, event_author_feed, EventType};
+use super::feed::{decode_feed_inception, ValidatedFeedInception};
 use super::object::{decode_knowledge_object, DisclosureClass, KnownObjectKind};
 use super::source_text::{LocalSourceTextRecordV1, SourceTextError};
-use super::storage::{
-    AtomicVerifiedBackend, PutVerifiedOutcome, StoredRecordKind, ValidatedStore, VerifiedStoreError,
-};
+use super::storage::{AtomicVerifiedBackend, StoredRecordKind, ValidatedStore, VerifiedStoreError};
+use super::{authority_event_descriptor, PutVerifiedOutcome};
 
 pub struct VaultKey([u8; 32]);
 
@@ -534,7 +533,12 @@ impl<B: AtomicVerifiedBackend> PortableVaultSnapshotPort for PrivateVault<B> {
                 &record.original_bytes,
             )?);
             quarantine.push(VaultQuarantineRecord {
-                quarantine_id: record.quarantine_id,
+                quarantine_id: vault_portable_quarantine_id(
+                    record.record_kind,
+                    record.claimed_cid,
+                    &record.reason_code,
+                    &plaintext,
+                ),
                 record_kind: record.record_kind,
                 claimed_cid: record.claimed_cid,
                 reason_code: record.reason_code,
@@ -547,6 +551,131 @@ impl<B: AtomicVerifiedBackend> PortableVaultSnapshotPort for PrivateVault<B> {
             quarantine,
         })
     }
+}
+
+impl<B: AtomicVerifiedBackend> ValidatedVaultRestorePort for PrivateVault<B> {
+    fn restore_vault_record(&self, record: &PortableVaultRecord) -> Result<(), VerifiedStoreError> {
+        validate_portable_vault_record(record)?;
+        let sealed = self.cipher.seal(
+            VaultPurpose::Accepted,
+            record.record_kind,
+            record.claimed_cid,
+            &record.canonical_plaintext,
+        )?;
+        match self
+            .store
+            .accept(record.record_kind, record.claimed_cid, &sealed)?
+        {
+            PutVerifiedOutcome::Stored | PutVerifiedOutcome::AlreadyPresent => Ok(()),
+            PutVerifiedOutcome::Quarantined { .. } => Err(VerifiedStoreError::Backend(
+                "VAULT_RESTORE_ACCEPTED_CONFLICT".into(),
+            )),
+        }
+    }
+
+    fn restore_vault_quarantine(
+        &self,
+        record: &VaultQuarantineRecord,
+    ) -> Result<(), VerifiedStoreError> {
+        if record.reason_code.is_empty()
+            || record.reason_code.len() > 128
+            || record.quarantine_id
+                != vault_portable_quarantine_id(
+                    record.record_kind,
+                    record.claimed_cid,
+                    &record.reason_code,
+                    &record.plaintext,
+                )
+        {
+            return Err(VerifiedStoreError::Backend(
+                "VAULT_RESTORE_QUARANTINE_IDENTITY".into(),
+            ));
+        }
+        self.quarantine(
+            record.record_kind,
+            record.claimed_cid,
+            &record.reason_code,
+            &record.plaintext,
+        )?;
+        Ok(())
+    }
+}
+
+fn validate_portable_vault_record(record: &PortableVaultRecord) -> Result<(), VerifiedStoreError> {
+    let digest_matches = match record.record_kind {
+        StoredRecordKind::Object => {
+            let is_source_text = LocalSourceTextRecordV1::decode(&record.canonical_plaintext)
+                .map(|source| {
+                    source
+                        .encode()
+                        .map(|(bytes, cid)| {
+                            bytes == record.canonical_plaintext
+                                && cid.as_bytes() == &record.claimed_cid
+                        })
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
+            if is_source_text {
+                true
+            } else {
+                let object = decode_knowledge_object(
+                    &record.canonical_plaintext,
+                    ResourceProfile::ObjectV1,
+                    &[],
+                    &[],
+                )
+                .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?;
+                matches!(
+                    object.disclosure(),
+                    DisclosureClass::NegotiatedEncrypted | DisclosureClass::LocalOnly
+                ) && object.cid().as_bytes() == &record.claimed_cid
+                    && object.original_bytes() == record.canonical_plaintext
+            }
+        }
+        StoredRecordKind::Event => {
+            event_author_feed(&record.canonical_plaintext)
+                .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?;
+            EventCid::compute(ReservedDomain::Event, &record.canonical_plaintext)
+                .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?
+                .as_bytes()
+                == &record.claimed_cid
+        }
+        StoredRecordKind::FeedInception => {
+            let feed = decode_feed_inception(&record.canonical_plaintext)
+                .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?;
+            feed.feed_id.as_bytes() == &record.claimed_cid
+                && feed.original_bytes() == record.canonical_plaintext
+        }
+        StoredRecordKind::AuthorityEvent => {
+            authority_event_descriptor(&record.canonical_plaintext)
+                .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?;
+            EventCid::compute(ReservedDomain::AuthorityEvent, &record.canonical_plaintext)
+                .map_err(|error| VerifiedStoreError::Backend(error.to_string()))?
+                .as_bytes()
+                == &record.claimed_cid
+        }
+    };
+    if digest_matches {
+        Ok(())
+    } else {
+        Err(VerifiedStoreError::VaultCidMismatch)
+    }
+}
+
+fn vault_portable_quarantine_id(
+    kind: StoredRecordKind,
+    claimed_cid: [u8; 32],
+    reason: &str,
+    plaintext: &[u8],
+) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"onebrain:vnext:vault-portable-quarantine:1\0");
+    hasher.update(&[kind as u8]);
+    hasher.update(&claimed_cid);
+    hasher.update(&(reason.len() as u64).to_be_bytes());
+    hasher.update(reason.as_bytes());
+    hasher.update(plaintext);
+    *hasher.finalize().as_bytes()
 }
 
 fn source_text_store_error(error: SourceTextError) -> VerifiedStoreError {
@@ -744,5 +873,43 @@ mod tests {
             )
             .unwrap();
         assert_ne!(&left[1..25], &right[1..25]);
+    }
+
+    #[test]
+    fn portable_snapshot_validates_and_reencrypts_under_the_target_key() {
+        let source = PrivateVault::new(
+            InMemoryVerifiedBackend::default(),
+            VaultKey::from_bytes([1; 32]),
+        );
+        let (bytes, cid) = private_object();
+        source
+            .put_verified_object(cid, &bytes, ResourceProfile::ObjectV1, &[KNOWN_KIND], &[])
+            .unwrap();
+        source
+            .put_verified_object(
+                ObjectCid::from_bytes([7; 32]),
+                b"private malformed payload",
+                ResourceProfile::ObjectV1,
+                &[KNOWN_KIND],
+                &[],
+            )
+            .unwrap();
+        let snapshot = source.portable_vault_snapshot().unwrap();
+
+        let target = PrivateVault::new(
+            InMemoryVerifiedBackend::default(),
+            VaultKey::from_bytes([2; 32]),
+        );
+        for record in &snapshot.accepted {
+            target.restore_vault_record(record).unwrap();
+        }
+        for record in &snapshot.quarantine {
+            target.restore_vault_quarantine(record).unwrap();
+        }
+        assert_eq!(target.portable_vault_snapshot().unwrap(), snapshot);
+
+        let mut corrupt = snapshot.accepted[0].clone();
+        corrupt.canonical_plaintext[0] ^= 1;
+        assert!(target.restore_vault_record(&corrupt).is_err());
     }
 }

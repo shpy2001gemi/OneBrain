@@ -7,6 +7,7 @@
 mod activation_journal;
 pub mod anti_gaming_guard;
 pub mod archive;
+pub mod archive_capabilities;
 pub mod blob_authority;
 pub mod canonical_exchange;
 pub mod concept_registry_runtime;
@@ -79,6 +80,11 @@ pub mod vnext_workflow_surface;
 
 pub use activation_journal::{ActivationPhase, DatasetGenerationReceipt};
 pub use archive::DatasetRestoreReceipt;
+pub use archive_capabilities::{
+    ArchiveCapabilityId, ArchiveCapabilityRegistry, ArchiveOperationReservationId,
+    ArchiveProcessGeneration, ArchiveSecretHandle, BoundedArchiveChunk, ReadableArchiveSinkHandle,
+    SealedArchiveSourceHandle, WritableArchiveSinkHandle, WritableArchiveSourceHandle,
+};
 pub use blob_authority::{
     BlobAuthority, BlobAuthorityError, CanonicalBlobReferenceOracle, OsPendingUploadIdSource,
     PendingBlobUploadId, PendingBlobUploadStore, PendingOwnedBlobUpload, PendingUploadIdSource,

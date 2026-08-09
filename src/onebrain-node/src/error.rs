@@ -63,6 +63,18 @@ pub enum NodeError {
     #[error("Backup error: {0}")]
     Backup(String),
 
+    /// Typed Base archive/container failure.
+    #[error("Archive error: {0}")]
+    Archive(#[from] onebrain_archive::ArchiveError),
+
+    /// Opaque archive capability validation or lifecycle failure.
+    #[error("Archive capability error: {0}")]
+    ArchiveCapability(String),
+
+    /// The historical JSON backup is decode-only migration evidence.
+    #[error("unsupported_legacy_backup: use the encrypted Base archive service")]
+    UnsupportedLegacyBackup,
+
     /// Rate limit exceeded.
     #[error("Rate limit exceeded: {0}")]
     RateLimit(String),

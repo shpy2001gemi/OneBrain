@@ -782,6 +782,33 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
             .map_err(VerifiedStoreError::Backend)
     }
 
+    /// Restore non-executable quarantine evidence after recomputing its stable
+    /// identity. This never passes the accepted-record boundary.
+    pub fn restore_quarantine_evidence(
+        &self,
+        record: &QuarantineRecord,
+    ) -> Result<(), VerifiedStoreError> {
+        if record.reason_code.is_empty() || record.reason_code.len() > 128 {
+            return Err(VerifiedStoreError::Backend(
+                "QUARANTINE_REASON_BOUNDS".to_owned(),
+            ));
+        }
+        let rebuilt = QuarantineRecord::new(
+            record.record_kind,
+            record.claimed_cid,
+            record.reason_code.clone(),
+            &record.original_bytes,
+        );
+        if &rebuilt != record {
+            return Err(VerifiedStoreError::Backend(
+                "QUARANTINE_IDENTITY_MISMATCH".to_owned(),
+            ));
+        }
+        self.backend
+            .quarantine(record)
+            .map_err(VerifiedStoreError::Backend)
+    }
+
     pub fn quarantine_entries(&self) -> Result<Vec<QuarantineRecord>, VerifiedStoreError> {
         self.backend
             .quarantine_entries()

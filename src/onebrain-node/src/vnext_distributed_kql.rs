@@ -22,10 +22,13 @@ use ku_kql::vnext_reunion::{
     LocalNeedTarget, ReunionBudget, ReunionFrontier, ValidatedRemoteAffordance,
 };
 use ku_kql::vnext_standing_need::{StandingNeed, StandingNeedId, StandingNeedWriteOutcome};
+use onebrain_archive::{ArchiveEntryKind, ArchiveOwner};
 use onebrain_protocol::ReconcileManifestKind;
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 use thiserror::Error;
 
+use crate::archive::{PortableArchiveRow, PortableArchiveRows};
+use crate::error::NodeError;
 use crate::vnext_network_runtime::{VNextNetworkRuntime, VNextNetworkRuntimeError};
 use crate::vnext_record_provenance::MAX_TYPED_DELTA_PAGE_RECORDS;
 
@@ -456,6 +459,147 @@ impl DistributedKqlRuntime {
             claims_network_completion: false,
         })
     }
+}
+
+impl PortableArchiveRows for DistributedKqlRuntime {
+    fn archive_owner(&self) -> ArchiveOwner {
+        ArchiveOwner::PRIVATE_KQL
+    }
+
+    fn archive_entry_kind(&self) -> ArchiveEntryKind {
+        ArchiveEntryKind::PrivateNeedRecord
+    }
+
+    fn archive_rows(&self) -> Result<Vec<PortableArchiveRow>, NodeError> {
+        let mut rows = self
+            .private_needs
+            .portable_snapshot()
+            .map_err(|error| NodeError::Storage(format!("{error:?}")))?
+            .into_iter()
+            .map(|(key, value)| PortableArchiveRow {
+                table: 1,
+                key: key.to_vec(),
+                value,
+            })
+            .collect::<Vec<_>>();
+        let read = self
+            .durable_matches
+            .database
+            .begin_read()
+            .map_err(kql_archive_error)?;
+        {
+            let table = read.open_table(MATCHES).map_err(kql_archive_error)?;
+            for entry in table.iter().map_err(kql_archive_error)? {
+                let (key, value) = entry.map_err(kql_archive_error)?;
+                if key.value().len() != MATCH_KEY_BYTES || value.value().len() != MATCH_VALUE_BYTES
+                {
+                    return Err(NodeError::ArchiveCapability(
+                        "distributed KQL match row is corrupt".into(),
+                    ));
+                }
+                rows.push(PortableArchiveRow {
+                    table: 2,
+                    key: key.value().to_vec(),
+                    value: value.value().to_vec(),
+                });
+            }
+        }
+        {
+            let table = read.open_table(CURSORS).map_err(kql_archive_error)?;
+            for entry in table.iter().map_err(kql_archive_error)? {
+                let (key, value) = entry.map_err(kql_archive_error)?;
+                if key.value().len() != 32 || value.value().len() != 8 {
+                    return Err(NodeError::ArchiveCapability(
+                        "distributed KQL cursor row is corrupt".into(),
+                    ));
+                }
+                rows.push(PortableArchiveRow {
+                    table: 3,
+                    key: key.value().to_vec(),
+                    value: value.value().to_vec(),
+                });
+            }
+        }
+        rows.sort_by(|left, right| (left.table, &left.key).cmp(&(right.table, &right.key)));
+        Ok(rows)
+    }
+
+    fn restore_row(&self, row: &PortableArchiveRow) -> Result<(), NodeError> {
+        match row.table {
+            1 => {
+                let key: [u8; 32] =
+                    row.key.as_slice().try_into().map_err(|_| {
+                        NodeError::ArchiveCapability("private KQL key length".into())
+                    })?;
+                self.private_needs
+                    .restore_portable_record(key, &row.value)
+                    .map_err(|error| NodeError::Storage(format!("{error:?}")))
+            }
+            2 if row.key.len() == MATCH_KEY_BYTES && row.value.len() == MATCH_VALUE_BYTES => {
+                restore_kql_table_row(
+                    &self.durable_matches.database,
+                    MATCHES,
+                    &row.key,
+                    &row.value,
+                    Some(MAX_DURABLE_KQL_MATCHES),
+                )
+            }
+            3 if row.key.len() == 32 && row.value.len() == 8 => restore_kql_table_row(
+                &self.durable_matches.database,
+                CURSORS,
+                &row.key,
+                &row.value,
+                None,
+            ),
+            _ => Err(NodeError::ArchiveCapability(
+                "distributed KQL archive row is invalid".into(),
+            )),
+        }
+    }
+
+    fn reconcile_restored_rows(&self) -> Result<(), NodeError> {
+        // Matches and cursors are observations only. Restored private needs are
+        // rehydrated by runtime open and are never executed during restore.
+        Ok(())
+    }
+}
+
+fn restore_kql_table_row(
+    database: &Database,
+    definition: TableDefinition<&[u8], &[u8]>,
+    key: &[u8],
+    value: &[u8],
+    maximum_rows: Option<u64>,
+) -> Result<(), NodeError> {
+    let write = database.begin_write().map_err(kql_archive_error)?;
+    {
+        let mut table = write.open_table(definition).map_err(kql_archive_error)?;
+        let existing = table
+            .get(key)
+            .map_err(kql_archive_error)?
+            .map(|existing| existing.value().to_vec());
+        if let Some(existing) = existing {
+            if existing.as_slice() != value {
+                return Err(NodeError::ArchiveCapability(
+                    "distributed KQL archive restore conflict".into(),
+                ));
+            }
+        } else {
+            if let Some(maximum) = maximum_rows {
+                if table.len().map_err(kql_archive_error)? >= maximum {
+                    return Err(NodeError::ArchiveCapability(
+                        "distributed KQL archive row limit reached".into(),
+                    ));
+                }
+            }
+            table.insert(key, value).map_err(kql_archive_error)?;
+        }
+    }
+    write.commit().map_err(kql_archive_error)
+}
+
+fn kql_archive_error(error: impl std::fmt::Display) -> NodeError {
+    NodeError::Storage(error.to_string())
 }
 
 struct AffordanceObservation {

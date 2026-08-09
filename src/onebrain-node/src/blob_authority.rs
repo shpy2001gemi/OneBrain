@@ -15,7 +15,10 @@ use ku_core::foundation::{
 use ku_kql::blob_storage::{BlobReferenceOracle, BlobStorageError};
 use serde::{Deserialize, Serialize};
 
+use crate::archive::{PortableArchiveRow, PortableArchiveRows};
 use crate::dataset_path::{BaseStorageOwnerId, DatasetGenerationId, DatasetPathResolver};
+use crate::error::NodeError;
+use onebrain_archive::{ArchiveEntryKind, ArchiveOwner};
 
 pub const MAX_PENDING_BLOB_UPLOADS: usize = 4_096;
 
@@ -214,6 +217,85 @@ impl PendingBlobUploadStore {
     }
 }
 
+impl PortableArchiveRows for PendingBlobUploadStore {
+    fn archive_owner(&self) -> ArchiveOwner {
+        ArchiveOwner::PENDING_BLOB_INTENT
+    }
+
+    fn archive_entry_kind(&self) -> ArchiveEntryKind {
+        ArchiveEntryKind::PendingBlobUploadIntent
+    }
+
+    fn archive_rows(&self) -> Result<Vec<PortableArchiveRow>, NodeError> {
+        self.list()
+            .map_err(|error| NodeError::Storage(error.to_string()))?
+            .into_iter()
+            .map(|pending| {
+                Ok(PortableArchiveRow {
+                    table: 1,
+                    key: pending.id.into_bytes().to_vec(),
+                    value: serde_json::to_vec(&PendingUploadRecord::from_pending(&pending))
+                        .map_err(|error| NodeError::Storage(error.to_string()))?,
+                })
+            })
+            .collect()
+    }
+
+    fn restore_row(&self, row: &PortableArchiveRow) -> Result<(), NodeError> {
+        if row.table != 1 {
+            return Err(NodeError::ArchiveCapability(
+                "pending blob archive table is unknown".into(),
+            ));
+        }
+        let id: [u8; 32] = row
+            .key
+            .as_slice()
+            .try_into()
+            .map_err(|_| NodeError::ArchiveCapability("pending blob ID length".into()))?;
+        let wire: PendingUploadRecord = serde_json::from_slice(&row.value)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let pending = wire
+            .into_pending()
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        if pending.id.into_bytes() != id
+            || serde_json::to_vec(&PendingUploadRecord::from_pending(&pending))
+                .map_err(|error| NodeError::Storage(error.to_string()))?
+                != row.value
+        {
+            return Err(NodeError::ArchiveCapability(
+                "pending blob archive row is non-canonical".into(),
+            ));
+        }
+        let directory = self
+            .directory()
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let path = directory.join(format!("{}.json", pending.id.hex()));
+        if let Ok(existing) = std::fs::read(&path) {
+            return if existing == row.value {
+                Ok(())
+            } else {
+                Err(NodeError::ArchiveCapability(
+                    "pending blob archive restore conflict".into(),
+                ))
+            };
+        }
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)?;
+        file.write_all(&row.value)?;
+        file.sync_all()?;
+        sync_directory(&directory).map_err(|error| NodeError::Storage(error.to_string()))?;
+        Ok(())
+    }
+
+    fn reconcile_restored_rows(&self) -> Result<(), NodeError> {
+        self.reconcile_generation()
+            .map(|_| ())
+            .map_err(|error| NodeError::Storage(error.to_string()))
+    }
+}
+
 pub struct CanonicalBlobReferenceOracle {
     source: Arc<dyn ValidatedBlobReferenceSource>,
     pending: Arc<PendingBlobUploadStore>,
@@ -296,6 +378,21 @@ impl CanonicalBlobReferenceOracle {
             .map(|record| record.owner)
             .collect())
     }
+
+    /// Exact canonical blob set that must be present for an activatable
+    /// archive. Pending uploads are archived independently as intents; only a
+    /// canonical live owner makes missing blob bytes a hard snapshot failure.
+    pub fn canonical_retained_blob_cids(&self) -> Result<Vec<BlobCid>, BlobAuthorityError> {
+        let mut cids = self
+            .canonical_records()?
+            .into_iter()
+            .filter(OwnedBlobReferenceV1::retains_blob)
+            .map(|record| record.blob_cid)
+            .collect::<Vec<_>>();
+        cids.sort_by_key(|cid| cid.0);
+        cids.dedup();
+        Ok(cids)
+    }
 }
 
 fn is_owned_blob_reference_payload(value: &CanonicalValue) -> bool {
@@ -369,6 +466,10 @@ impl BlobAuthority {
     }
 
     pub fn oracle(&self) -> Arc<dyn BlobReferenceOracle> {
+        self.oracle.clone()
+    }
+
+    pub fn canonical_oracle(&self) -> Arc<CanonicalBlobReferenceOracle> {
         self.oracle.clone()
     }
 

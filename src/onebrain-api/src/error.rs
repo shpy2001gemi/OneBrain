@@ -31,10 +31,17 @@ impl IntoResponse for ApiError {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "UNSUPPORTED_LEGACY_RECOVERY",
             ),
+            NodeError::UnsupportedLegacyBackup => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "UNSUPPORTED_LEGACY_BACKUP",
+            ),
             NodeError::InvalidArgument(_) => (StatusCode::BAD_REQUEST, "INVALID_ARGUMENT"),
             NodeError::Kql(_) => (StatusCode::BAD_REQUEST, "KQL_ERROR"),
             NodeError::Config(_) => (StatusCode::BAD_REQUEST, "CONFIG_ERROR"),
             NodeError::Backup(_) => (StatusCode::INTERNAL_SERVER_ERROR, "BACKUP_ERROR"),
+            NodeError::Archive(_) | NodeError::ArchiveCapability(_) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "ARCHIVE_ERROR")
+            }
             NodeError::Encoder(_) => (StatusCode::INTERNAL_SERVER_ERROR, "ENCODING_FAILED"),
             NodeError::Mediator(_) => (StatusCode::INTERNAL_SERVER_ERROR, "MEDIATOR_ERROR"),
             NodeError::Storage(_) => (StatusCode::INTERNAL_SERVER_ERROR, "STORAGE_ERROR"),

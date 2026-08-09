@@ -504,6 +504,150 @@ impl MigrationStateSnapshotPort for InMemoryMigrationBackend {
     }
 }
 
+fn restore_validated_snapshot<B: AtomicMigrationBackend>(
+    backend: &B,
+    snapshot: &PortableMigrationSnapshot,
+) -> Result<(), String> {
+    let batches = snapshot
+        .batches
+        .iter()
+        .map(|batch| (batch.batch_id, batch))
+        .collect::<BTreeMap<_, _>>();
+    if batches.len() != snapshot.batches.len() {
+        return Err("MIGRATION_RESTORE_DUPLICATE_BATCH".into());
+    }
+    let raw = snapshot
+        .raw_rows
+        .iter()
+        .map(|row| (row.key.clone(), row))
+        .collect::<BTreeMap<_, _>>();
+    if raw.len() != snapshot.raw_rows.len() {
+        return Err("MIGRATION_RESTORE_DUPLICATE_RAW".into());
+    }
+    let derived = snapshot
+        .derived_rows
+        .iter()
+        .map(|(key, row)| (key.clone(), row))
+        .collect::<BTreeMap<_, _>>();
+    if derived.len() != snapshot.derived_rows.len() {
+        return Err("MIGRATION_RESTORE_DUPLICATE_DERIVED".into());
+    }
+    let quarantine = snapshot
+        .quarantine
+        .iter()
+        .map(|row| (row.row_key.clone(), row))
+        .collect::<BTreeMap<_, _>>();
+    if quarantine.len() != snapshot.quarantine.len() {
+        return Err("MIGRATION_RESTORE_DUPLICATE_QUARANTINE".into());
+    }
+
+    for batch in &snapshot.batches {
+        let mut opening = batch.clone();
+        opening.complete = false;
+        backend.begin_batch(&opening)?;
+    }
+    let mut seen_journals = BTreeSet::new();
+    let mut used_derived = BTreeSet::new();
+    let mut used_quarantine = BTreeSet::new();
+    for journal in &snapshot.journals {
+        if !seen_journals.insert((journal.batch_id, journal.row_key.clone()))
+            || !batches.contains_key(&journal.batch_id)
+        {
+            return Err("MIGRATION_RESTORE_INVALID_JOURNAL".into());
+        }
+        let source = raw
+            .get(&journal.row_key)
+            .ok_or_else(|| "MIGRATION_RESTORE_MISSING_RAW".to_string())?;
+        if source.source_digest != journal.source_digest {
+            return Err("MIGRATION_RESTORE_SOURCE_DIGEST".into());
+        }
+        let (accepted, rejected) = match journal.disposition {
+            MigrationDisposition::VNextDerived => {
+                let row = derived
+                    .get(&journal.row_key)
+                    .ok_or_else(|| "MIGRATION_RESTORE_MISSING_DERIVED".to_string())?;
+                let expected = digest(
+                    b"legacy-normalized-row/1",
+                    &[
+                        &[source.key.class as u8],
+                        &source.source_digest,
+                        &row.normalized_bytes,
+                    ],
+                );
+                if row.source_digest != source.source_digest
+                    || row.class != source.key.class
+                    || row.normalized_digest != expected
+                    || journal.output_digest != expected
+                {
+                    return Err("MIGRATION_RESTORE_DERIVED_DIGEST".into());
+                }
+                used_derived.insert(journal.row_key.clone());
+                (Some((*row).clone()), None)
+            }
+            MigrationDisposition::Quarantined => {
+                let row = quarantine
+                    .get(&journal.row_key)
+                    .ok_or_else(|| "MIGRATION_RESTORE_MISSING_QUARANTINE".to_string())?;
+                let expected = digest(
+                    b"legacy-migration-quarantine/1",
+                    &[
+                        &source.source_digest,
+                        row.reason_code.as_bytes(),
+                        source.raw_bytes(),
+                    ],
+                );
+                if row.source_digest != source.source_digest
+                    || row.original_bytes != source.raw_bytes
+                    || row.quarantine_id != expected
+                    || journal.output_digest != expected
+                {
+                    return Err("MIGRATION_RESTORE_QUARANTINE_DIGEST".into());
+                }
+                used_quarantine.insert(journal.row_key.clone());
+                (None, Some((*row).clone()))
+            }
+        };
+        backend.commit_row(&MigrationCommit {
+            raw: (*source).clone(),
+            journal: journal.clone(),
+            accepted,
+            quarantine: rejected,
+        })?;
+    }
+    if used_derived.len() != derived.len()
+        || used_quarantine.len() != quarantine.len()
+        || raw.keys().any(|key| {
+            !snapshot
+                .journals
+                .iter()
+                .any(|journal| &journal.row_key == key)
+        })
+    {
+        return Err("MIGRATION_RESTORE_ORPHAN_ROW".into());
+    }
+    for batch in snapshot.batches.iter().filter(|batch| batch.complete) {
+        let count = snapshot
+            .journals
+            .iter()
+            .filter(|journal| journal.batch_id == batch.batch_id)
+            .count() as u64;
+        if count != batch.expected_rows {
+            return Err("MIGRATION_RESTORE_COMPLETE_COUNT".into());
+        }
+        backend.complete_batch(&batch.batch_id, &batch.manifest_digest)?;
+    }
+    Ok(())
+}
+
+impl ValidatedMigrationRestorePort for InMemoryMigrationBackend {
+    fn restore_migration_snapshot(
+        &self,
+        snapshot: &PortableMigrationSnapshot,
+    ) -> Result<(), String> {
+        restore_validated_snapshot(self, snapshot)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MigrationBatchOutcome {
     Complete { committed: u64, exact_replays: u64 },
@@ -1113,6 +1257,15 @@ mod persistent {
         }
     }
 
+    impl ValidatedMigrationRestorePort for RedbMigrationBackend {
+        fn restore_migration_snapshot(
+            &self,
+            snapshot: &PortableMigrationSnapshot,
+        ) -> Result<(), String> {
+            restore_validated_snapshot(self, snapshot)
+        }
+    }
+
     impl RedbMigrationBackend {
         fn get(
             &self,
@@ -1249,6 +1402,39 @@ mod tests {
         let prefix = LegacyIdentityPrefix::new(42, [3; 32]);
         assert_eq!(prefix.legacy_u64, 42);
         assert!(!prefix.is_full_width_identity());
+    }
+
+    #[test]
+    fn portable_snapshot_restores_only_after_full_digest_validation() {
+        let source = InMemoryMigrationBackend::default();
+        let rows = vec![row(11, b"accepted"), row(12, b"bad-quarantine")];
+        let (manifest_digest, ordered) = prepare_manifest(&rows).unwrap();
+        let batch = MigrationBatchJournal {
+            batch_id: [0x44; 32],
+            manifest_digest,
+            expected_rows: ordered.len() as u64,
+            complete: false,
+        };
+        source.begin_batch(&batch).unwrap();
+        for row in &ordered {
+            source
+                .commit_row(&prepare_commit(batch.batch_id, row, &normalizer))
+                .unwrap();
+        }
+        source
+            .complete_batch(&batch.batch_id, &manifest_digest)
+            .unwrap();
+        let snapshot = source.portable_migration_snapshot().unwrap();
+
+        let target = InMemoryMigrationBackend::default();
+        target.restore_migration_snapshot(&snapshot).unwrap();
+        assert_eq!(target.portable_migration_snapshot().unwrap(), snapshot);
+
+        let mut corrupt = snapshot;
+        corrupt.derived_rows[0].1.normalized_digest[0] ^= 1;
+        assert!(InMemoryMigrationBackend::default()
+            .restore_migration_snapshot(&corrupt)
+            .is_err());
     }
 
     #[cfg(feature = "persist")]

@@ -7,11 +7,12 @@ use ku_core::foundation::schema_registry::{EVENT_TYPES_V1, OBJECT_KINDS_V1};
 use ku_core::foundation::{
     authority_event_descriptor, decode_actor_delegation, decode_actor_revocation,
     decode_actor_root_delegation, decode_feed_inception, decode_knowledge_event,
-    decode_knowledge_object, event_author_feed, validate_successor_structure,
+    decode_knowledge_object, event_author_feed, validate_successor_structure, AcceptedRecordEntry,
     AtomicVerifiedBackend, AuthorityEventDescriptor, EventCid, EventType, FeedAuthorityDecision,
     FeedId, FeedProjection, KeyStateApplyOutcome, KeyStateReducer, KnowledgeAffordance,
-    KnownObjectKind, ObjectCid, ObjectKind, ObjectSemantics, PutVerifiedOutcome, ReservedDomain,
-    ResourceProfile, UseEvidencePayload, ValidatedFeedStore, ValidatedStore,
+    KnownObjectKind, ObjectCid, ObjectKind, ObjectSemantics, PortableVerifiedSnapshot,
+    PutVerifiedOutcome, QuarantineRecord, ReservedDomain, ResourceProfile, StoredRecordKind,
+    UseEvidencePayload, ValidatedFeedStore, ValidatedStore, VerifiedStoreSnapshotPort,
     KNOWLEDGE_AFFORDANCE_KIND, USE_EVIDENCE_KIND,
 };
 use ku_net::vnext_reconciliation::{PayloadSinkOutcome, ValidateThenAcceptSink};
@@ -67,6 +68,45 @@ impl<B: AtomicVerifiedBackend> SharedVNextValidatedSink<B> {
             .lock()
             .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
             .accepted_record_snapshot()
+    }
+
+    pub fn portable_verified_snapshot(&self) -> Result<PortableVerifiedSnapshot, String> {
+        self.0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .store()
+            .portable_verified_snapshot()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn restore_quarantine_evidence(&self, record: &QuarantineRecord) -> Result<(), String> {
+        self.0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .store()
+            .restore_quarantine_evidence(record)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn restore_accepted_record(&self, record: &AcceptedRecordEntry) -> Result<(), String> {
+        let kind = match record.record_kind {
+            StoredRecordKind::Object => ReconcileManifestKind::Object,
+            StoredRecordKind::Event => ReconcileManifestKind::Event,
+            StoredRecordKind::FeedInception => ReconcileManifestKind::FeedInception,
+            StoredRecordKind::AuthorityEvent => ReconcileManifestKind::AuthorityEvent,
+        };
+        let outcome = self
+            .0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .validate_then_accept(kind, record.claimed_cid, &record.canonical_bytes)?;
+        match outcome {
+            PayloadSinkOutcome::ValidatedStored | PayloadSinkOutcome::AlreadyPresent => Ok(()),
+            PayloadSinkOutcome::DeferredMissingDependency => {
+                Err("ARCHIVE_RESTORE_MISSING_DEPENDENCY".to_owned())
+            }
+            PayloadSinkOutcome::RejectedInvalid => Err("ARCHIVE_RESTORE_INVALID_RECORD".to_owned()),
+        }
     }
 
     #[cfg(feature = "vnext-network-runtime")]

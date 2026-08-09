@@ -14,7 +14,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
+use crate::archive::{PortableArchiveRow, PortableArchiveRows};
 use crate::dataset_path::{BaseStorageOwnerId, DatasetGenerationId, DatasetPathResolver};
+use crate::error::NodeError;
+use onebrain_archive::{ArchiveEntryKind, ArchiveOwner};
 
 pub const SOURCE_CAPTURE_BOUNDARY: &str = "TX-SOURCE-001";
 pub const MAX_SOURCE_CAPTURE_INTENTS: usize = 4_096;
@@ -235,6 +238,99 @@ impl SourceCaptureTransactionStore {
         self.resolver
             .owner_path(BaseStorageOwnerId::SOURCE_CAPTURE_INTENT)
             .map_err(|error| SourceCaptureError::Path(error.to_string()))
+    }
+}
+
+impl PortableArchiveRows for SourceCaptureTransactionStore {
+    fn archive_owner(&self) -> ArchiveOwner {
+        ArchiveOwner::SOURCE_CAPTURE_INTENT
+    }
+
+    fn archive_entry_kind(&self) -> ArchiveEntryKind {
+        ArchiveEntryKind::SourceCaptureIntent
+    }
+
+    fn archive_rows(&self) -> Result<Vec<PortableArchiveRow>, NodeError> {
+        let directory = self
+            .intent_directory()
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let mut rows = Vec::new();
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            if entry.path().extension().and_then(|value| value.to_str()) != Some("json") {
+                continue;
+            }
+            let value = std::fs::read(entry.path())?;
+            let wire: IntentWire = serde_json::from_slice(&value)
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+            let intent = wire
+                .into_intent()
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+            let canonical = serde_json::to_vec(&IntentWire::from_intent(&intent))
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+            if canonical != value {
+                return Err(NodeError::ArchiveCapability(
+                    "source capture archive row is non-canonical".into(),
+                ));
+            }
+            rows.push(PortableArchiveRow {
+                table: 1,
+                key: intent.vault_staging_id.0.to_vec(),
+                value,
+            });
+        }
+        rows.sort_by(|left, right| left.key.cmp(&right.key));
+        if rows.len() > MAX_SOURCE_CAPTURE_INTENTS {
+            return Err(NodeError::ArchiveCapability(
+                "source capture archive row limit".into(),
+            ));
+        }
+        Ok(rows)
+    }
+
+    fn restore_row(&self, row: &PortableArchiveRow) -> Result<(), NodeError> {
+        if row.table != 1 {
+            return Err(NodeError::ArchiveCapability(
+                "source capture archive table is unknown".into(),
+            ));
+        }
+        let id: [u8; 32] = row
+            .key
+            .as_slice()
+            .try_into()
+            .map_err(|_| NodeError::ArchiveCapability("source capture ID length".into()))?;
+        let wire: IntentWire = serde_json::from_slice(&row.value)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let intent = wire
+            .into_intent()
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        if intent.vault_staging_id.0 != id
+            || serde_json::to_vec(&IntentWire::from_intent(&intent))
+                .map_err(|error| NodeError::Storage(error.to_string()))?
+                != row.value
+        {
+            return Err(NodeError::ArchiveCapability(
+                "source capture archive row is non-canonical".into(),
+            ));
+        }
+        let directory = self
+            .intent_directory()
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let path = intent_path(&directory, intent.vault_staging_id, "json");
+        if let Ok(existing) = std::fs::read(&path) {
+            return if existing == row.value {
+                Ok(())
+            } else {
+                Err(NodeError::ArchiveCapability(
+                    "source capture archive restore conflict".into(),
+                ))
+            };
+        }
+        let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+        file.write_all(&row.value)?;
+        file.sync_all()?;
+        sync_directory(&directory)?;
+        Ok(())
     }
 }
 

@@ -108,6 +108,24 @@ pub struct HybridInventoryForest {
     semantic_shards: BTreeMap<[u8; 32], SemanticShardHint>,
 }
 
+/// Selector-bound logical inventory snapshot for archive/restore. Derived
+/// shard hints are excluded by `HybridInventoryForest::snapshot_bytes`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PortableInventoryRecord {
+    pub selector: SelectorCid,
+    pub canonical_snapshot: Vec<u8>,
+}
+
+pub trait InventoryForestArchivePort {
+    fn archive_inventory_records(
+        &self,
+    ) -> Result<Vec<PortableInventoryRecord>, InventoryForestError>;
+    fn restore_inventory_record(
+        &self,
+        record: &PortableInventoryRecord,
+    ) -> Result<(), InventoryForestError>;
+}
+
 impl HybridInventoryForest {
     pub fn new(selector: SelectorCid) -> Self {
         Self {
@@ -703,6 +721,88 @@ pub mod persistent {
             dr_m5_failpoint::hit("TX-INV-001", "after_commit_before_next_side_effect");
             dr_m5_failpoint::hit("TX-INV-001", "after_next_side_effect_before_ack");
             Ok(outcome)
+        }
+    }
+
+    impl InventoryForestArchivePort for RedbInventoryForestBackend {
+        fn archive_inventory_records(
+            &self,
+        ) -> Result<Vec<PortableInventoryRecord>, InventoryForestError> {
+            let read = self
+                .db
+                .begin_read()
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            let table = read
+                .open_table(FORESTS)
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            let mut records = Vec::new();
+            for row in table
+                .iter()
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?
+            {
+                let (key, value) =
+                    row.map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+                let selector_bytes: [u8; 32] = key.value().try_into().map_err(|_| {
+                    InventoryForestError::Backend("INVENTORY_ARCHIVE_KEY".to_owned())
+                })?;
+                let selector = SelectorCid::from_bytes(selector_bytes);
+                let canonical_snapshot = value.value().to_vec();
+                let forest = HybridInventoryForest::restore(&canonical_snapshot)?;
+                if forest.selector() != selector || forest.snapshot_bytes()? != canonical_snapshot {
+                    return Err(InventoryForestError::Backend(
+                        "INVENTORY_ARCHIVE_NON_CANONICAL".to_owned(),
+                    ));
+                }
+                records.push(PortableInventoryRecord {
+                    selector,
+                    canonical_snapshot,
+                });
+            }
+            records.sort_by_key(|record| *record.selector.as_bytes());
+            Ok(records)
+        }
+
+        fn restore_inventory_record(
+            &self,
+            record: &PortableInventoryRecord,
+        ) -> Result<(), InventoryForestError> {
+            let forest = HybridInventoryForest::restore(&record.canonical_snapshot)?;
+            if forest.selector() != record.selector
+                || forest.snapshot_bytes()? != record.canonical_snapshot
+            {
+                return Err(InventoryForestError::Backend(
+                    "INVENTORY_ARCHIVE_NON_CANONICAL".to_owned(),
+                ));
+            }
+            let write = self
+                .db
+                .begin_write()
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            {
+                let mut table = write
+                    .open_table(FORESTS)
+                    .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+                if let Some(existing) = table
+                    .get(record.selector.as_bytes().as_slice())
+                    .map_err(|error| InventoryForestError::Backend(error.to_string()))?
+                {
+                    if existing.value() != record.canonical_snapshot.as_slice() {
+                        return Err(InventoryForestError::Backend(
+                            "INVENTORY_ARCHIVE_CONFLICT".to_owned(),
+                        ));
+                    }
+                    return Ok(());
+                }
+                table
+                    .insert(
+                        record.selector.as_bytes().as_slice(),
+                        record.canonical_snapshot.as_slice(),
+                    )
+                    .map_err(|error| InventoryForestError::Backend(error.to_string()))?;
+            }
+            write
+                .commit()
+                .map_err(|error| InventoryForestError::Backend(error.to_string()))
         }
     }
 }

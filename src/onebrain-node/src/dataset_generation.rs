@@ -271,6 +271,29 @@ impl DatasetGenerationStore {
         DatasetGenerationId(staged.generation_root)
     }
 
+    pub(crate) fn staged_resolver(
+        &self,
+        staged: &StagedDatasetGeneration,
+    ) -> Result<ActiveDatasetPathResolver, RestoreError> {
+        ActiveDatasetPathResolver::new(&self.root, DatasetGenerationId(staged.generation_root))
+            .map_err(|_| RestoreError::CorruptState)
+    }
+
+    pub(crate) fn staged_manifest<'a>(
+        &self,
+        staged: &'a StagedDatasetGeneration,
+    ) -> &'a DatasetManifestV1 {
+        &staged.manifest
+    }
+
+    pub(crate) fn staged_entry_payload(
+        &self,
+        staged: &StagedDatasetGeneration,
+        entry: &ArchiveEntryV1,
+    ) -> Result<Vec<u8>, RestoreError> {
+        std::fs::read(entry_path(&staged.generation_path, entry)?).map_err(RestoreError::from)
+    }
+
     pub(crate) fn discard_staged_identity_failure(
         &self,
         staged: &StagedDatasetGeneration,

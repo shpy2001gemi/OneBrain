@@ -19,6 +19,10 @@ use onebrain_protocol::{ReconcileManifestKind, ReconcileReceiptStatus};
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 use thiserror::Error;
 
+use crate::archive::{PortableArchiveRow, PortableArchiveRows};
+use crate::error::NodeError;
+use onebrain_archive::{ArchiveEntryKind, ArchiveOwner};
+
 const OUTBOX: TableDefinition<&[u8], &[u8]> = TableDefinition::new("vnext_outbound_intents");
 const META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("vnext_outbound_meta_v2");
 const TOMBSTONES: TableDefinition<&[u8], &[u8]> =
@@ -632,6 +636,132 @@ impl OutboundOutbox {
         dr_m5_failpoint::hit(boundary, "after_next_side_effect_before_ack");
         Ok(result)
     }
+}
+
+impl PortableArchiveRows for OutboundOutbox {
+    fn archive_owner(&self) -> ArchiveOwner {
+        ArchiveOwner::OUTBOX
+    }
+
+    fn archive_entry_kind(&self) -> ArchiveEntryKind {
+        ArchiveEntryKind::OutboxRecord
+    }
+
+    fn archive_rows(&self) -> Result<Vec<PortableArchiveRow>, NodeError> {
+        let read = self.db.begin_read().map_err(|error| archive_error(error))?;
+        let mut rows = Vec::new();
+        for (table_id, table) in [
+            (1u8, read.open_table(OUTBOX).map_err(archive_error)?),
+            (2u8, read.open_table(META).map_err(archive_error)?),
+            (3u8, read.open_table(TOMBSTONES).map_err(archive_error)?),
+        ] {
+            for row in table.iter().map_err(archive_error)? {
+                let (key, value) = row.map_err(archive_error)?;
+                let row = PortableArchiveRow {
+                    table: table_id,
+                    key: key.value().to_vec(),
+                    value: value.value().to_vec(),
+                };
+                validate_archive_row(&row)?;
+                rows.push(row);
+            }
+        }
+        rows.sort_by(|left, right| (left.table, &left.key).cmp(&(right.table, &right.key)));
+        Ok(rows)
+    }
+
+    fn restore_row(&self, row: &PortableArchiveRow) -> Result<(), NodeError> {
+        validate_archive_row(row)?;
+        let write = self.db.begin_write().map_err(archive_error)?;
+        match row.table {
+            1 => restore_table_value(&write, OUTBOX, row)?,
+            2 => restore_table_value(&write, META, row)?,
+            3 => restore_table_value(&write, TOMBSTONES, row)?,
+            _ => {
+                return Err(NodeError::ArchiveCapability(
+                    "outbox archive table is unknown".into(),
+                ))
+            }
+        }
+        write.commit().map_err(archive_error)
+    }
+
+    fn reconcile_restored_rows(&self) -> Result<(), NodeError> {
+        // Pending records remain pending. Scheduler admission later validates
+        // their exact target and authenticated route; nothing is sent here.
+        self.stats()
+            .map(|_| ())
+            .map_err(|error| NodeError::Storage(error.to_string()))
+    }
+}
+
+fn validate_archive_row(row: &PortableArchiveRow) -> Result<(), NodeError> {
+    match row.table {
+        1 => {
+            let id: [u8; 32] = row
+                .key
+                .as_slice()
+                .try_into()
+                .map_err(|_| NodeError::ArchiveCapability("outbox intent key length".into()))?;
+            let intent =
+                decode_intent(&row.value).map_err(|error| NodeError::Storage(error.to_string()))?;
+            if intent.id != id
+                || encode_intent(&intent).map_err(|error| NodeError::Storage(error.to_string()))?
+                    != row.value
+            {
+                return Err(NodeError::ArchiveCapability(
+                    "outbox intent row is non-canonical".into(),
+                ));
+            }
+        }
+        2 => {
+            let valid = (row.key.as_slice() == FAIR_CURSOR_KEY && row.value.len() == 32)
+                || (row.key.as_slice() == TERMINAL_HEAD_KEY && row.value.len() == 8);
+            if !valid {
+                return Err(NodeError::ArchiveCapability(
+                    "outbox metadata row is invalid".into(),
+                ));
+            }
+        }
+        3 => {
+            let id: [u8; 32] =
+                row.key.as_slice().try_into().map_err(|_| {
+                    NodeError::ArchiveCapability("outbox tombstone key length".into())
+                })?;
+            decode_tombstone(id, &row.value)
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+        }
+        _ => {
+            return Err(NodeError::ArchiveCapability(
+                "outbox archive table is unknown".into(),
+            ))
+        }
+    }
+    Ok(())
+}
+
+fn restore_table_value(
+    write: &redb::WriteTransaction,
+    definition: TableDefinition<&[u8], &[u8]>,
+    row: &PortableArchiveRow,
+) -> Result<(), NodeError> {
+    let mut table = write.open_table(definition).map_err(archive_error)?;
+    if let Some(existing) = table.get(row.key.as_slice()).map_err(archive_error)? {
+        if existing.value() == row.value.as_slice() {
+            return Ok(());
+        }
+        return Err(NodeError::ArchiveCapability(
+            "outbox archive restore conflict".into(),
+        ));
+    }
+    table
+        .insert(row.key.as_slice(), row.value.as_slice())
+        .map_err(archive_error)?;
+    Ok(())
+}
+
+fn archive_error(error: impl std::fmt::Display) -> NodeError {
+    NodeError::Storage(error.to_string())
 }
 
 fn validate_intent(intent: &OutboundTransferIntent) -> Result<(), OutboundOutboxError> {

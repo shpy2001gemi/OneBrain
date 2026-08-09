@@ -745,6 +745,70 @@ mod persistent {
             Ok(records)
         }
 
+        /// Bounded substrate-neutral archive view. Plaintext canonical rows
+        /// may only be consumed by the Node archive boundary, which places
+        /// them inside the authenticated encrypted archive stream.
+        pub fn portable_snapshot(&self) -> Result<Vec<([u8; 32], Vec<u8>)>, PrivateNeedError> {
+            self.load_all()?
+                .into_iter()
+                .map(|record| Ok((*record.id.as_bytes(), record.canonical_bytes()?)))
+                .collect()
+        }
+
+        /// Restore one authenticated logical row through the Vault's normal
+        /// validation and target-key encryption boundary. Conflicting rows
+        /// fail closed; exact replay is idempotent.
+        pub fn restore_portable_record(
+            &self,
+            expected_id: [u8; 32],
+            canonical_bytes: &[u8],
+        ) -> Result<(), PrivateNeedError> {
+            let record = PrivateNeedRecord::decode(canonical_bytes)?;
+            if record.id.as_bytes() != &expected_id {
+                return Err(PrivateNeedError::IdentityMismatch);
+            }
+            let canonical = record.canonical_bytes()?;
+            if canonical.as_slice() != canonical_bytes {
+                return Err(PrivateNeedError::NonCanonical);
+            }
+            let storage_key = self.cipher.storage_key(record.id);
+            let write = self
+                .database
+                .begin_write()
+                .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
+            {
+                let mut table = write
+                    .open_table(PRIVATE_NEEDS)
+                    .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
+                let existing = table
+                    .get(storage_key.as_slice())
+                    .map_err(|error| PrivateNeedError::Storage(error.to_string()))?
+                    .map(|value| value.value().to_vec());
+                if let Some(existing) = existing {
+                    let current =
+                        PrivateNeedRecord::decode(&self.cipher.open(storage_key, &existing)?)?;
+                    if current != record {
+                        return Err(PrivateNeedError::ArchiveConflict);
+                    }
+                } else {
+                    if table
+                        .len()
+                        .map_err(|error| PrivateNeedError::Storage(error.to_string()))?
+                        >= MAX_STANDING_NEEDS as u64
+                    {
+                        return Err(PrivateNeedError::Limit);
+                    }
+                    let sealed = self.cipher.seal(storage_key, &canonical)?;
+                    table
+                        .insert(storage_key.as_slice(), sealed.as_slice())
+                        .map_err(|error| PrivateNeedError::Storage(error.to_string()))?;
+                }
+            }
+            write
+                .commit()
+                .map_err(|error| PrivateNeedError::Storage(error.to_string()))
+        }
+
         pub fn pause(
             &self,
             id: StandingNeedId,
@@ -974,6 +1038,7 @@ pub enum PrivateNeedError {
     NotFound,
     Terminal,
     GenerationMismatch { expected: u64, actual: u64 },
+    ArchiveConflict,
     Limit,
 }
 

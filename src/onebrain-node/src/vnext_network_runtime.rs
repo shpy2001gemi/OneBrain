@@ -50,6 +50,10 @@ use thiserror::Error;
 use tokio::sync::{watch, Mutex as AsyncMutex, Notify};
 use tokio::task::JoinHandle;
 
+use crate::archive::{
+    InventoryArchiveBackend, LogicalRowsArchiveBackend, ReconciliationArchiveBackend,
+    SnapshotVerifiedBackend, ValidatedCanonicalArchiveBackend,
+};
 use crate::vnext_config::VNextNetworkPolicy;
 use crate::vnext_observability::{
     VNextJournalObservation, VNextObservability, VNextObservabilitySnapshot, VNextReasonCode,
@@ -264,6 +268,7 @@ pub struct VNextNetworkRuntime {
     counters: Arc<RuntimeCounters>,
     observability: Arc<VNextObservability>,
     validated_sink: PersistentSink,
+    reconciliation: RedbReconciliationJournalBackend,
     inventory: RedbInventoryForestBackend,
     provenance: RedbRecordProvenance,
     routes: AuthenticatedRouteDirectory,
@@ -561,7 +566,7 @@ impl VNextNetworkRuntime {
             Arc::clone(&counters),
             Arc::clone(&observability),
             admission.clone(),
-            journal,
+            journal.clone(),
             sink.clone(),
             inventory.clone(),
             provenance.clone(),
@@ -599,6 +604,7 @@ impl VNextNetworkRuntime {
             counters,
             observability,
             validated_sink: sink,
+            reconciliation: journal,
             inventory,
             provenance,
             routes,
@@ -613,6 +619,23 @@ impl VNextNetworkRuntime {
 
     pub fn local_addr(&self) -> SocketAddr {
         self.listen_addr
+    }
+
+    /// Return Node-owned logical archive adapters for every durable network
+    /// store. The adapters retain cloneable database handles and expose only
+    /// validated logical rows; raw Redb files and paths never cross this port.
+    pub fn archive_backends(&self) -> Vec<Arc<dyn SnapshotVerifiedBackend>> {
+        vec![
+            Arc::new(ValidatedCanonicalArchiveBackend::new(
+                self.validated_sink.clone(),
+            )),
+            Arc::new(ReconciliationArchiveBackend::new(
+                self.reconciliation.clone(),
+            )),
+            Arc::new(InventoryArchiveBackend::new(self.inventory.clone())),
+            Arc::new(LogicalRowsArchiveBackend::new(self.outbound.outbox.clone())),
+            Arc::new(LogicalRowsArchiveBackend::new(self.provenance.clone())),
+        ]
     }
 
     pub fn status(&self) -> VNextNetworkRuntimeStatus {

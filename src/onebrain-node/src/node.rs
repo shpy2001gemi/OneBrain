@@ -2251,205 +2251,25 @@ impl OneBrainNode {
         })
     }
 
-    /// Create a backup of all node data.
-    ///
-    /// Includes identity, profile, peers, KU wire bytes, and in-memory state
-    /// (tags, pins, follows, watches, deprecated KUs).
+    /// The historical JSON "backup" copied plaintext identity/profile state
+    /// and ignored its password. It is permanently fenced from Base writes;
+    /// Task 18 projects the opaque encrypted archive capability workflow.
     pub fn create_backup(
         &self,
-        path: &std::path::Path,
+        _path: &std::path::Path,
         _password: &str,
     ) -> Result<BackupInfo, NodeError> {
-        let mut backup = serde_json::Map::new();
-
-        // Identity
-        let identity_path = self.config.identity_path();
-        if identity_path.exists() {
-            let data = std::fs::read_to_string(&identity_path)?;
-            backup.insert("identity".to_string(), serde_json::Value::String(data));
-        }
-
-        // Profile
-        let profile_path = self.config.profile_path();
-        if profile_path.exists() {
-            let data = std::fs::read_to_string(&profile_path)?;
-            backup.insert("profile".to_string(), serde_json::Value::String(data));
-        }
-
-        // Peers
-        let peers_path = self.config.peer_memory_path();
-        if peers_path.exists() {
-            let data = std::fs::read_to_string(&peers_path)?;
-            backup.insert("peers".to_string(), serde_json::Value::String(data));
-        }
-
-        // KU data — export all KU wire bytes as hex strings
-        let ku_count = self.ku_count().unwrap_or(0);
-        backup.insert(
-            "ku_count".to_string(),
-            serde_json::Value::Number(ku_count.into()),
-        );
-
-        let mut ku_data = Vec::new();
-        if let Ok((kus, _)) = self.list_kus(1, 100_000, None, "created") {
-            for ku in &kus {
-                ku_data.push(serde_json::json!({
-                    "cid_hex": ku.cid_hex,
-                    "gene_type": ku.gene_type,
-                    "preview": ku.preview,
-                    "pomv": ku.pomv,
-                    "trust": ku.trust,
-                    "created": ku.created,
-                    "wire_size": ku.wire_size,
-                }));
-            }
-        }
-        backup.insert("kus".to_string(), serde_json::Value::Array(ku_data));
-
-        // In-memory state: tags
-        let tags_map: serde_json::Map<String, serde_json::Value> = self
-            .ku_tags
-            .iter()
-            .map(|(cid, tags)| {
-                let tag_arr: Vec<serde_json::Value> = tags
-                    .iter()
-                    .map(|t| serde_json::Value::String(t.clone()))
-                    .collect();
-                (cid.clone(), serde_json::Value::Array(tag_arr))
-            })
-            .collect();
-        backup.insert("tags".to_string(), serde_json::Value::Object(tags_map));
-
-        // In-memory state: pinned KUs
-        let pinned: Vec<serde_json::Value> = self
-            .pinned_kus
-            .iter()
-            .map(|c| serde_json::Value::String(c.clone()))
-            .collect();
-        backup.insert("pinned_kus".to_string(), serde_json::Value::Array(pinned));
-
-        // In-memory state: follows
-        backup.insert(
-            "following".to_string(),
-            serde_json::to_value(&self.following).unwrap_or(serde_json::Value::Array(vec![])),
-        );
-
-        // In-memory state: watches
-        backup.insert(
-            "watches".to_string(),
-            serde_json::to_value(&self.watches).unwrap_or(serde_json::Value::Array(vec![])),
-        );
-
-        // In-memory state: deprecated KUs
-        let deprecated: Vec<serde_json::Value> = self
-            .deprecated_kus
-            .iter()
-            .map(|c| serde_json::Value::String(c.clone()))
-            .collect();
-        backup.insert(
-            "deprecated_kus".to_string(),
-            serde_json::Value::Array(deprecated),
-        );
-
-        let json = serde_json::to_string_pretty(&backup)
-            .map_err(|e| NodeError::Backup(format!("Serialize error: {}", e)))?;
-        let size = json.len() as u64;
-        std::fs::write(path, &json)?;
-
-        Ok(BackupInfo {
-            path: path.display().to_string(),
-            size,
-            ku_count,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-        })
+        Err(NodeError::UnsupportedLegacyBackup)
     }
 
-    /// Restore from a backup file.
-    ///
-    /// Restores identity, profile, peers, and in-memory state (tags, pins,
-    /// follows, watches, deprecated KUs).
+    /// Legacy JSON is decode-only migration evidence and can never activate a
+    /// dataset. This method performs no read, password processing, or write.
     pub fn restore_backup(
         &mut self,
-        path: &std::path::Path,
+        _path: &std::path::Path,
         _password: &str,
     ) -> Result<(), NodeError> {
-        let content = std::fs::read_to_string(path)?;
-        let backup: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&content)
-            .map_err(|e| NodeError::Backup(format!("Invalid backup file: {}", e)))?;
-
-        // Restore identity
-        if let Some(serde_json::Value::String(identity)) = backup.get("identity") {
-            std::fs::write(self.config.identity_path(), identity)?;
-        }
-
-        // Restore profile
-        if let Some(serde_json::Value::String(profile)) = backup.get("profile") {
-            std::fs::write(self.config.profile_path(), profile)?;
-        }
-
-        // Restore peers
-        if let Some(serde_json::Value::String(peers)) = backup.get("peers") {
-            std::fs::write(self.config.peer_memory_path(), peers)?;
-        }
-
-        // Restore tags
-        if let Some(serde_json::Value::Object(tags_map)) = backup.get("tags") {
-            self.ku_tags.clear();
-            for (cid, tags_val) in tags_map {
-                if let serde_json::Value::Array(tags_arr) = tags_val {
-                    let mut tag_set = HashSet::new();
-                    for t in tags_arr {
-                        if let serde_json::Value::String(tag) = t {
-                            tag_set.insert(tag.clone());
-                        }
-                    }
-                    if !tag_set.is_empty() {
-                        self.ku_tags.insert(cid.clone(), tag_set);
-                    }
-                }
-            }
-        }
-
-        // Restore pinned KUs
-        if let Some(serde_json::Value::Array(pinned)) = backup.get("pinned_kus") {
-            self.pinned_kus.clear();
-            for p in pinned {
-                if let serde_json::Value::String(cid) = p {
-                    self.pinned_kus.insert(cid.clone());
-                }
-            }
-        }
-
-        // Restore follows
-        if let Some(following_val) = backup.get("following") {
-            if let Ok(following) =
-                serde_json::from_value::<Vec<FollowedNode>>(following_val.clone())
-            {
-                self.following = following;
-            }
-        }
-
-        // Restore watches
-        if let Some(watches_val) = backup.get("watches") {
-            if let Ok(watches) = serde_json::from_value::<Vec<WatchInfo>>(watches_val.clone()) {
-                self.watches = watches;
-            }
-        }
-
-        // Restore deprecated KUs
-        if let Some(serde_json::Value::Array(deprecated)) = backup.get("deprecated_kus") {
-            self.deprecated_kus.clear();
-            for d in deprecated {
-                if let serde_json::Value::String(cid) = d {
-                    self.deprecated_kus.insert(cid.clone());
-                }
-            }
-        }
-
-        Ok(())
+        Err(NodeError::UnsupportedLegacyBackup)
     }
 
     // ═══════════════════════════════════════════════════════
