@@ -75,6 +75,7 @@ pub mod persistent_concept_dict; // ★ v6 NEW: redb-backed ConceptDict persiste
 pub mod pomv;
 pub mod pomv_runtime;
 pub mod prediction;
+pub mod qualification_request;
 pub mod spread_analysis;
 pub mod synaptic;
 pub mod text_parser;

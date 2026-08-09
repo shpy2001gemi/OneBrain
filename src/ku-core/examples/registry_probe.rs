@@ -44,6 +44,12 @@ struct ProbeReport {
     entry_count: u64,
     label_count: u64,
     obr_blake3: String,
+    obr_bytes: u64,
+    label_index_blake3: String,
+    ccid_index_blake3: String,
+    manifest_blake3: String,
+    probe_blake3: String,
+    executable_blake3: String,
     lookups: usize,
     found: usize,
     ambiguous: usize,
@@ -223,6 +229,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         entry_count: header.entry_count,
         label_count: header.label_count,
         obr_blake3: manifest.obr_blake3,
+        obr_bytes: std::fs::metadata(&path)?.len(),
+        label_index_blake3: blake3_file(&append_suffix(&path, ".labels.idx"))?,
+        ccid_index_blake3: blake3_file(&append_suffix(&path, ".ccids.idx"))?,
+        manifest_blake3: blake3_file(&append_suffix(&path, ".manifest.json"))?,
+        probe_blake3: blake3_file(&std::env::current_exe()?)?,
+        executable_blake3: blake3_file(&std::env::current_exe()?)?,
         lookups: lookup_micros.len(),
         found,
         ambiguous,
@@ -250,6 +262,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     Ok(())
+}
+
+fn append_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut value = path.as_os_str().to_os_string();
+    value.push(suffix);
+    PathBuf::from(value)
+}
+
+fn blake3_file(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buffer = vec![0u8; 1024 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 fn load_labels_file(path: &Path) -> Result<Vec<String>, Box<dyn std::error::Error>> {

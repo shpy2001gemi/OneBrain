@@ -19,7 +19,7 @@ class ConceptRegistryOperationsContractTests(unittest.TestCase):
     def test_frozen_profile_is_accepted(self) -> None:
         self.assertEqual(
             validate_concept_registry_operations(frozen_profile()),
-            (5, 5, 11, 7),
+            (5, 5, 11, 1),
         )
 
     def test_artifact_cannot_be_removed(self) -> None:
@@ -90,8 +90,16 @@ class ConceptRegistryOperationsContractTests(unittest.TestCase):
 
     def test_remaining_resource_gates_cannot_be_hidden(self) -> None:
         profile = copy.deepcopy(frozen_profile())
-        profile["remaining_qualification_gates"].remove("low-ram-profile")
+        profile["remaining_qualification_gates"].remove(
+            "CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1"
+        )
         with self.assertRaisesRegex(ContractError, "remaining qualification"):
+            validate_concept_registry_operations(profile)
+
+    def test_production_profile_cannot_claim_measured_completion(self) -> None:
+        profile = copy.deepcopy(frozen_profile())
+        profile["production_qualification"]["completion_claimed"] = True
+        with self.assertRaisesRegex(ContractError, "production qualification"):
             validate_concept_registry_operations(profile)
 
 
