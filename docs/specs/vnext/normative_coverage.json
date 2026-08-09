@@ -729,7 +729,7 @@
     },
     {
       "path": "docs/specs/vnext/P5_CANARY_PREFLIGHT_PROFILE_V1.md",
-      "expected_statement_lines": 8,
+      "expected_statement_lines": 9,
       "evidence": [
         {
           "path": "src/onebrain-node/src/vnext_canary_operations.rs",
@@ -748,7 +748,7 @@
     },
     {
       "path": "docs/specs/vnext/P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md",
-      "expected_statement_lines": 18,
+      "expected_statement_lines": 19,
       "evidence": [
         {
           "path": "src/onebrain-node/src/vnext_p5_operations.rs",
@@ -768,6 +768,25 @@
         }
       ],
       "rationale": "The single-host operational preflight exercises actual signer, storage, authenticated-QUIC, durable backup/restore, rollback and dashboard boundaries while its frozen scope forbids 72-hour, multi-host or production qualification claims."
+    },
+    {
+      "path": "docs/specs/vnext/P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1.md",
+      "expected_statement_lines": 30,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/p5-multi-host-production-qualification-v1.json",
+          "needle": "onebrain/p5-multi-host-production-qualification/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_vnext_p5_multi_host"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_p5_multi_host.py",
+          "needle": "test_one_physical_host_cannot_claim_multi_host"
+        }
+      ],
+      "rationale": "The production contract freezes a three-physical-host authenticated-QUIC topology, exact signed-candidate and role-separated evidence bindings, the complete fault/recovery matrix, bounded resources and fail-closed derivation while preserving both single-host profiles as non-qualifying preflights."
     },
     {
       "path": "docs/specs/vnext/BASE_V1_AUTHORITY_AND_RECOVERY_PROFILE.md",
