@@ -16,6 +16,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from production_qualification import (
     AggregationError,
+    _aggregate_reports_for_test_nonproduction,
     aggregate_reports,
     canonical_json,
     create_signed_receipt,
@@ -137,7 +138,7 @@ class ProductionQualificationTests(unittest.TestCase):
         ]
 
     def aggregate(self, reports: list[dict[str, object]] | None = None) -> dict[str, object]:
-        return aggregate_reports(
+        return _aggregate_reports_for_test_nonproduction(
             self.reports() if reports is None else reports,
             self.context,
             self.profile,
@@ -152,12 +153,16 @@ class ProductionQualificationTests(unittest.TestCase):
             self.policy,
         )
 
-    def test_release_context_and_every_fresh_signed_component_derive_only_registry_subgate(self) -> None:
+    def test_nonproduction_helper_verifies_components_but_cannot_claim_subgate(self) -> None:
         receipt = self.aggregate()
-        self.assertTrue(receipt["payload"]["registry_production_qualified"])
+        self.assertFalse(receipt["payload"]["registry_production_qualified"])
         self.assertFalse(receipt["payload"]["base_gate_v1"])
         self.assertEqual(receipt["payload"]["release_aggregate_root"], ROOT)
         self.assertEqual(receipt["receipt_kind"], "production-aggregate")
+
+    def test_public_production_aggregator_rejects_ephemeral_profile_and_signer(self) -> None:
+        with self.assertRaisesRegex(AggregationError, "frozen"):
+            aggregate_reports(self.reports(), self.context, self.profile, self.key)
 
     def test_report_profile_root_false_result_duplicate_and_fixture_fail_closed(self) -> None:
         mutations = []
@@ -192,7 +197,7 @@ class ProductionQualificationTests(unittest.TestCase):
             "closure_digest": "ab" * 32,
         }
         with self.assertRaisesRegex(AggregationError, "Release"):
-            aggregate_reports(self.reports(), prequalification, self.profile, self.key)
+            _aggregate_reports_for_test_nonproduction(self.reports(), prequalification, self.profile, self.key)
 
         for field, value in (
             ("release_request_digest", None),

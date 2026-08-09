@@ -369,12 +369,23 @@ impl ConceptRegistryGenerationManager {
 
     pub fn refresh(&self) -> Result<ConceptRegistryStatus, NodeError> {
         let next = Arc::new(load_leased_generation(&self.config)?);
-        let status = next.status.clone();
-        *self
+        Ok(self.install_loaded_generation(next))
+    }
+
+    fn install_loaded_generation(
+        &self,
+        next: Arc<LeasedConceptRegistryGeneration>,
+    ) -> ConceptRegistryStatus {
+        let mut current = self
             .current
             .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = next;
-        Ok(status)
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let current_generation = current.status.release_generation.unwrap_or(0);
+        let next_generation = next.status.release_generation.unwrap_or(0);
+        if next_generation > current_generation {
+            *current = next;
+        }
+        current.status.clone()
     }
 }
 
@@ -849,6 +860,57 @@ mod tests {
             reopened.reader_lease().status().release_aggregate_root,
             rollback_reader.status().release_aggregate_root
         );
+    }
+
+    #[test]
+    fn overlapping_refresh_install_cannot_replace_newer_generation_with_stale_load() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        let directory = tempfile::tempdir().unwrap();
+        let signing_key = install_signed_release(directory.path());
+        let registry_root = directory.path().join("registry");
+        let mut release_config = config(directory.path(), ConceptRegistryMode::Required);
+        release_config.concept_registry_release_root = Some(registry_root.clone());
+        release_config.concept_registry_release_public_key = Some(encode_key(&signing_key));
+        let stale = Arc::new(load_leased_generation(&release_config).unwrap());
+
+        install_additional_release(directory.path(), "registry-v2", 0x72, &signing_key);
+        activate_concept_registry_release(
+            &registry_root,
+            "registry-v2",
+            &signing_key.verifying_key(),
+        )
+        .unwrap();
+        let newest = Arc::new(load_leased_generation(&release_config).unwrap());
+        let manager = Arc::new(ConceptRegistryGenerationManager::open(release_config).unwrap());
+        let barrier = Arc::new(Barrier::new(3));
+
+        let stale_thread = {
+            let manager = Arc::clone(&manager);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                manager.install_loaded_generation(stale)
+            })
+        };
+        let newest_thread = {
+            let manager = Arc::clone(&manager);
+            let barrier = Arc::clone(&barrier);
+            thread::spawn(move || {
+                barrier.wait();
+                manager.install_loaded_generation(newest)
+            })
+        };
+        barrier.wait();
+        stale_thread.join().unwrap();
+        newest_thread.join().unwrap();
+
+        assert_eq!(
+            manager.reader_lease().status().release_id.as_deref(),
+            Some("registry-v2")
+        );
+        assert_eq!(manager.reader_lease().status().release_generation, Some(2));
     }
 
     fn encode_key(key: &SigningKey) -> String {

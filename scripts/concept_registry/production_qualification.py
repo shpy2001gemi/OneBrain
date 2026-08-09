@@ -304,11 +304,13 @@ def _validate_component_payload(
         raise AggregationError("resource qualification profile is invalid")
 
 
-def aggregate_reports(
+def _aggregate_reports(
     reports: list[dict[str, object]],
     run_context: dict[str, object],
     profile: dict[str, object],
     aggregate_signing_key: Ed25519PrivateKey,
+    *,
+    production_claim: bool,
 ) -> dict[str, object]:
     """Verify component receipts and return one signed Registry-only aggregate."""
     context = parse_qualification_run_context(run_context)
@@ -381,11 +383,47 @@ def aggregate_reports(
             "No carry-forward Registry evidence is accepted for Base v1",
         ],
         "component_receipt_blake3": component_digests,
-        "registry_production_qualified": True,
+        "registry_production_qualified": production_claim,
         "base_gate_v1": False,
     }
     return create_signed_receipt(
         "production-aggregate", payload, aggregate_signing_key, policy
+    )
+
+
+def aggregate_reports(
+    reports: list[dict[str, object]],
+    run_context: dict[str, object],
+    profile: dict[str, object],
+    aggregate_signing_key: Ed25519PrivateKey,
+) -> dict[str, object]:
+    """Production API pinned to the frozen Task 19 profile and signer identity."""
+    if blake3.blake3(canonical_json(profile)).hexdigest() != FROZEN_PROFILE_BLAKE3:
+        raise AggregationError("production profile is not the frozen Task 19 profile")
+    policy_entry = profile.get("trust_policy", {})
+    if not isinstance(policy_entry, dict) or policy_entry.get("digest_hex") != FROZEN_TRUST_POLICY_DIGEST:
+        raise AggregationError("production trust policy is not frozen")
+    signers = policy_entry.get("policy", {}).get("signers", []) if isinstance(policy_entry.get("policy"), dict) else []
+    if (
+        len(signers) != 1
+        or signers[0].get("public_key_hex") != FROZEN_SIGNER_PUBLIC_KEY
+        or aggregate_signing_key.public_key().public_bytes_raw().hex() != FROZEN_SIGNER_PUBLIC_KEY
+    ):
+        raise AggregationError("production aggregate signer is not frozen")
+    return _aggregate_reports(
+        reports, run_context, profile, aggregate_signing_key, production_claim=True
+    )
+
+
+def _aggregate_reports_for_test_nonproduction(
+    reports: list[dict[str, object]],
+    run_context: dict[str, object],
+    profile: dict[str, object],
+    aggregate_signing_key: Ed25519PrivateKey,
+) -> dict[str, object]:
+    """Exercise aggregation with ephemeral keys without a production claim."""
+    return _aggregate_reports(
+        reports, run_context, profile, aggregate_signing_key, production_claim=False
     )
 
 

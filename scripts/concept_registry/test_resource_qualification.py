@@ -281,6 +281,53 @@ class ResourceQualificationTests(unittest.TestCase):
         for field in ("release_request_digest", "qualification_session_id", "candidate_commit", "candidate_tree"):
             self.assertNotIn(field, payload)
 
+    def test_raw_release_context_and_binding_cannot_create_a_receipt(self) -> None:
+        from production_qualification import signer_fingerprint, trust_policy_digest
+
+        key = Ed25519PrivateKey.from_private_bytes(bytes([45]) * 32)
+        public = key.public_key().public_bytes_raw()
+        policy = {
+            "algorithm": "Ed25519",
+            "allowed_usages": ["registry-qualification-receipt"],
+            "format": "onebrain/concept-registry-trust-policy/1",
+            "signers": [{
+                "fingerprint_algorithm": "blake3-derive-key-v1",
+                "fingerprint_context": "onebrain:concept-registry:signer-fingerprint:1",
+                "fingerprint_hex": signer_fingerprint(public),
+                "public_key_hex": public.hex(),
+            }],
+        }
+        binding = {
+            "release_aggregate_root": "11" * 32,
+            "registry_generation": 1,
+            "production_profile_blake3": "22" * 32,
+            "trust_policy_digest": trust_policy_digest(policy),
+            "signer_fingerprint": signer_fingerprint(public),
+            "probe_blake3": "33" * 32,
+            "executable_blake3": "34" * 32,
+            "candidate_payload_artifacts_blake3": {name: "44" * 32 for name in (
+                "OBR:concepts.obr", "LABEL_INDEX:concepts.obr.labels.idx",
+                "CCID_INDEX:concepts.obr.ccids.idx", "MANIFEST:concepts.obr.manifest.json",
+                "SPDX_SBOM:sbom.spdx.json",
+            )},
+            "release_stamp_blake3": "55" * 32,
+            "candidate_semantic_digest": "66" * 32,
+            "artifact_tuple_digest": "77" * 32,
+        }
+        context = {
+            "format": "onebrain/qualification-run-context/1",
+            "variant": "Release",
+            "release_request_digest": "88" * 32,
+            "qualification_session_id": "99" * 32,
+            "candidate_commit": "aa" * 20,
+            "candidate_tree": "bb" * 20,
+        }
+        with self.assertRaisesRegex(QualificationError, "verified signed release request"):
+            create_resource_receipt(
+                {"qualified": True, "qualification_profile": "ssd", "exit_oracles": {"ok": True}},
+                context, binding, key, policy,
+            )
+
     def test_shared_ci_budget_does_not_apply_low_ram_limit_to_cold_cache(self) -> None:
         execution = _valid_execution()
         with patch(
@@ -373,6 +420,75 @@ class ResourceQualificationTests(unittest.TestCase):
             ), redirect_stdout(StringIO()):
                 self.assertEqual(main(arguments), 0)
             self.assertEqual(json.loads(output.read_text(encoding="utf-8")), report)
+
+    def test_signed_cli_returns_payload_gate_status_without_key_error(self) -> None:
+        from production_qualification import signer_fingerprint, trust_policy_digest
+
+        report = {
+            "profile": PROFILE,
+            "qualified": True,
+            "qualification_profile": "ssd",
+            "exit_oracles": {"fixture": True},
+        }
+        key = Ed25519PrivateKey.from_private_bytes(bytes([44]) * 32)
+        public = key.public_key().public_bytes_raw()
+        policy = {
+            "algorithm": "Ed25519",
+            "allowed_usages": ["registry-qualification-receipt"],
+            "format": "onebrain/concept-registry-trust-policy/1",
+            "signers": [{
+                "fingerprint_algorithm": "blake3-derive-key-v1",
+                "fingerprint_context": "onebrain:concept-registry:signer-fingerprint:1",
+                "fingerprint_hex": signer_fingerprint(public),
+                "public_key_hex": public.hex(),
+            }],
+        }
+        context = {
+            "format": "onebrain/qualification-run-context/1",
+            "variant": "Prequalification",
+            "closure_digest": "66" * 32,
+        }
+        binding = {
+            "release_aggregate_root": "11" * 32,
+            "registry_generation": 1,
+            "production_profile_blake3": "22" * 32,
+            "trust_policy_digest": trust_policy_digest(policy),
+            "signer_fingerprint": signer_fingerprint(public),
+            "probe_blake3": "33" * 32,
+            "executable_blake3": "34" * 32,
+            "candidate_payload_artifacts_blake3": {
+                "OBR:concepts.obr": "41" * 32,
+                "LABEL_INDEX:concepts.obr.labels.idx": "42" * 32,
+                "CCID_INDEX:concepts.obr.ccids.idx": "43" * 32,
+                "MANIFEST:concepts.obr.manifest.json": "44" * 32,
+                "SPDX_SBOM:sbom.spdx.json": "45" * 32,
+            },
+            "release_stamp_blake3": "55" * 32,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = {
+                "context": root / "context.json",
+                "binding": root / "binding.json",
+                "policy": root / "policy.json",
+                "key": root / "key.hex",
+                "output": root / "receipt.json",
+            }
+            paths["context"].write_text(json.dumps(context), encoding="utf-8")
+            paths["binding"].write_text(json.dumps(binding), encoding="utf-8")
+            paths["policy"].write_text(json.dumps(policy), encoding="utf-8")
+            paths["key"].write_text((bytes([44]) * 32).hex(), encoding="ascii")
+            arguments = [
+                "--profile", "ssd", "--probe", "probe", "--obr", "fixture.obr",
+                "--labels-file", "labels.txt", "--output", str(paths["output"]),
+                "--budget-profile", "ci-small-fixture-v1", "--run-context", str(paths["context"]),
+                "--release-binding", str(paths["binding"]), "--trust-policy", str(paths["policy"]),
+                "--private-key", str(paths["key"]),
+            ]
+            with patch("resource_qualification.run_qualification", return_value=report), redirect_stdout(StringIO()):
+                self.assertEqual(main(arguments), 0)
+            receipt = json.loads(paths["output"].read_text(encoding="utf-8"))
+            self.assertTrue(receipt["payload"]["result"])
 
 
 if __name__ == "__main__":

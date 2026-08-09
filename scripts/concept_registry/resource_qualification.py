@@ -97,6 +97,10 @@ def create_resource_receipt(
 
     try:
         context = parse_qualification_run_context(run_context)
+        if context["variant"] == "Release":
+            raise QualificationError(
+                "Release receipts require a verified signed release request, not caller context/binding JSON"
+            )
         missing = [field for field in COMMON_BINDINGS if field not in binding]
         if missing:
             raise QualificationError(f"release binding missing {missing[0]}")
@@ -129,31 +133,88 @@ def create_resource_receipt(
                     "base_candidate_bound": False,
                 }
             )
-        else:
-            for field in ("candidate_semantic_digest", "artifact_tuple_digest"):
-                if field not in binding:
-                    raise QualificationError(f"verified release binding missing {field}")
-            payload.update(
-                {
-                    "qualification_context_variant": "Release",
-                    **{
-                        field: context[field]
-                        for field in (
-                            "release_request_digest",
-                            "qualification_session_id",
-                            "candidate_commit",
-                            "candidate_tree",
-                        )
-                    },
-                    "candidate_semantic_digest": binding["candidate_semantic_digest"],
-                    "artifact_tuple_digest": binding["artifact_tuple_digest"],
-                    "base_candidate_bound": True,
-                }
-            )
         return create_signed_receipt(
             "resource-qualification", payload, signing_key, policy
         )
     except AggregationError as error:
+        raise QualificationError(str(error)) from error
+
+
+def create_verified_resource_receipt(
+    report: dict[str, object],
+    verified: object,
+    *,
+    payload_artifacts: dict[str, Path],
+    release_stamp: Path,
+    probe: Path,
+    probe_signature: Path,
+    executable: Path,
+    rust_toolchain_evidence: Path,
+    runner_image_evidence: Path,
+    target_triple: str,
+    invocation: list[str],
+    signing_key: Ed25519PrivateKey,
+    policy: dict[str, object],
+) -> dict[str, object]:
+    """Measure a request-bound candidate and sign one resource receipt."""
+    release_dir = Path(__file__).resolve().parents[1] / "release"
+    if str(release_dir) not in sys.path:
+        sys.path.insert(0, str(release_dir))
+    from verify_base_release_request import (
+        ReleaseRequestError,
+        VerifiedQualificationContextV1,
+        verify_registry_candidate_measurements,
+    )
+    from production_qualification import (
+        AggregationError,
+        canonical_json,
+        create_signed_receipt,
+        signer_fingerprint,
+        trust_policy_digest,
+    )
+
+    if not isinstance(verified, VerifiedQualificationContextV1):
+        raise QualificationError("closed verified release context is required")
+    if not invocation or not all(isinstance(value, str) and value for value in invocation):
+        raise QualificationError("canonical full invocation is required")
+    if any("private-key" in value.lower() or "secret" in value.lower() for value in invocation):
+        raise QualificationError("invocation contains private key material or secret paths")
+    if trust_policy_digest(policy) != verified.bindings["trust_policy_digest"]:
+        raise QualificationError("Registry trust policy differs from verified request")
+    if signer_fingerprint(signing_key.public_key().public_bytes_raw()) != verified.bindings["signer_fingerprint"]:
+        raise QualificationError("Registry signer differs from verified request")
+    try:
+        measured = verify_registry_candidate_measurements(
+            verified,
+            payload_artifacts=payload_artifacts,
+            release_stamp=release_stamp,
+            probe=probe,
+            probe_signature=probe_signature,
+            executable=executable,
+            rust_toolchain_evidence=rust_toolchain_evidence,
+            runner_image_evidence=runner_image_evidence,
+            target_triple=target_triple,
+        )
+        context = verified.run_context
+        payload: dict[str, object] = {
+            **verified.bindings,
+            **measured,
+            "qualification_context_variant": "Release",
+            "release_request_digest": context["release_request_digest"],
+            "qualification_session_id": context["qualification_session_id"],
+            "candidate_commit": context["candidate_commit"],
+            "candidate_tree": context["candidate_tree"],
+            "base_candidate_bound": verified.production,
+            "qualification_profile": report.get("qualification_profile"),
+            "command": invocation,
+            "command_blake3": blake3.blake3(canonical_json(invocation)).hexdigest(),
+            "result": report.get("qualified") is True,
+            "exit_oracles": report.get("exit_oracles"),
+            "limitations": ["Registry-only resource evidence; never BASE-GATE-V1"],
+            "resource_report": report,
+        }
+        return create_signed_receipt("resource-qualification", payload, signing_key, policy)
+    except (ReleaseRequestError, AggregationError) as error:
         raise QualificationError(str(error)) from error
 
 
@@ -810,6 +871,21 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--release-binding", type=Path)
     parser.add_argument("--trust-policy", type=Path)
     parser.add_argument("--private-key", type=Path)
+    parser.add_argument("--release-request", type=Path)
+    parser.add_argument("--release-request-signature", type=Path)
+    parser.add_argument("--qualification-approver-policy", type=Path)
+    parser.add_argument("--gpg-home", type=Path)
+    parser.add_argument("--gpg", type=Path)
+    parser.add_argument("--label-index", type=Path)
+    parser.add_argument("--ccid-index", type=Path)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--sbom", type=Path)
+    parser.add_argument("--release-stamp", type=Path)
+    parser.add_argument("--probe-signature", type=Path)
+    parser.add_argument("--executable", type=Path)
+    parser.add_argument("--rust-toolchain-evidence", type=Path)
+    parser.add_argument("--runner-image-evidence", type=Path)
+    parser.add_argument("--target-triple")
     return parser
 
 
@@ -842,13 +918,78 @@ def main(argv: list[str] | None = None) -> int:
             args.budget_profile,
             args.timeout_seconds,
         )
+        qualified = report.get("qualified") is True
+        verified_inputs = (
+            args.release_request,
+            args.release_request_signature,
+            args.qualification_approver_policy,
+            args.gpg_home,
+            args.label_index,
+            args.ccid_index,
+            args.manifest,
+            args.sbom,
+            args.release_stamp,
+            args.probe_signature,
+            args.executable,
+            args.rust_toolchain_evidence,
+            args.runner_image_evidence,
+            args.target_triple,
+            args.trust_policy,
+            args.private_key,
+        )
         signing_inputs = (
             args.run_context,
             args.release_binding,
             args.trust_policy,
             args.private_key,
         )
-        if any(value is not None for value in signing_inputs):
+        if any(value is not None for value in verified_inputs[:14]):
+            if not all(value is not None for value in verified_inputs):
+                raise QualificationError("all verified release-request and measured candidate inputs are required together")
+            if args.run_context is not None or args.release_binding is not None:
+                raise QualificationError("caller run context/binding overrides are forbidden in Release mode")
+            release_dir = Path(__file__).resolve().parents[1] / "release"
+            if str(release_dir) not in sys.path:
+                sys.path.insert(0, str(release_dir))
+            from verify_base_release_request import verify_release_request
+            try:
+                verified = verify_release_request(
+                    args.release_request,
+                    args.release_request_signature,
+                    args.qualification_approver_policy,
+                    args.gpg_home,
+                    gpg_executable=args.gpg,
+                )
+            except RuntimeError as error:
+                raise QualificationError(str(error)) from error
+            invocation = [
+                "resource_qualification.py", "--profile", args.profile,
+                "--probe", str(args.probe), "--obr", str(args.obr),
+                "--labels-file", str(args.labels_file), "--budget-profile", args.budget_profile,
+                "--timeout-seconds", str(args.timeout_seconds),
+            ]
+            report = create_verified_resource_receipt(
+                report,
+                verified,
+                payload_artifacts={
+                    "OBR:concepts.obr": args.obr,
+                    "LABEL_INDEX:concepts.obr.labels.idx": args.label_index,
+                    "CCID_INDEX:concepts.obr.ccids.idx": args.ccid_index,
+                    "MANIFEST:concepts.obr.manifest.json": args.manifest,
+                    "SPDX_SBOM:sbom.spdx.json": args.sbom,
+                },
+                release_stamp=args.release_stamp,
+                probe=args.probe,
+                probe_signature=args.probe_signature,
+                executable=args.executable,
+                rust_toolchain_evidence=args.rust_toolchain_evidence,
+                runner_image_evidence=args.runner_image_evidence,
+                target_triple=args.target_triple,
+                invocation=invocation,
+                signing_key=_read_private_key(args.private_key),
+                policy=_read_json_object(args.trust_policy),
+            )
+        elif any(value is not None for value in signing_inputs):
             if not all(value is not None for value in signing_inputs):
                 raise QualificationError(
                     "run context, release binding, trust policy, and private key are required together"
@@ -865,11 +1006,11 @@ def main(argv: list[str] | None = None) -> int:
                 "production resource qualification requires signed run context and binding"
             )
         _write_report(args.output, report)
-    except (OSError, subprocess.SubprocessError, QualificationError) as error:
+    except (OSError, subprocess.SubprocessError, QualificationError, ValueError) as error:
         print(f"Concept Registry resource qualification failed: {error}", file=sys.stderr)
         return 2
     print(json.dumps(report, sort_keys=True))
-    return 0 if report["qualified"] else 1
+    return 0 if qualified else 1
 
 
 if __name__ == "__main__":

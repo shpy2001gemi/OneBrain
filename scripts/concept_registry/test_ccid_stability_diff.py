@@ -11,6 +11,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 import blake3
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -27,6 +28,13 @@ from ccid_stability_diff import (
     main,
 )
 from config import SOURCE_NCBI, SOURCE_WIKIDATA
+from ccid_stability_qualification import CcidQualificationError, qualify_ccid_stability
+from production_qualification import signer_fingerprint, trust_policy_digest
+
+RELEASE_DIR = SCRIPT_DIR.parent / "release"
+if str(RELEASE_DIR) not in sys.path:
+    sys.path.insert(0, str(RELEASE_DIR))
+from verify_base_release_request import VerifiedQualificationContextV1
 
 
 def _record(source: int, ext_id: int | str, name: str) -> dict[str, object]:
@@ -244,6 +252,92 @@ class CcidStabilityDiffTests(unittest.TestCase):
                 self.assertEqual(main(arguments), 0)
             self.assertTrue(json.loads(output.read_text(encoding="utf-8"))["qualified"])
             self.assertEqual(list(work_dir.iterdir()), [])
+
+    def test_real_ccid_diff_signs_only_exact_request_bound_six_file_tuple(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            records = [_record(SOURCE_WIKIDATA, 42, "Douglas Adams")]
+            old = self._build(root, "old", records)
+            candidate = self._build(root, "candidate", records)
+            key = Ed25519PrivateKey.from_private_bytes(bytes([47]) * 32)
+            public = key.public_key().public_bytes_raw()
+            policy = {
+                "algorithm": "Ed25519",
+                "allowed_usages": ["registry-qualification-receipt"],
+                "format": "onebrain/concept-registry-trust-policy/1",
+                "signers": [{
+                    "fingerprint_algorithm": "blake3-derive-key-v1",
+                    "fingerprint_context": "onebrain:concept-registry:signer-fingerprint:1",
+                    "fingerprint_hex": signer_fingerprint(public),
+                    "public_key_hex": public.hex(),
+                }],
+            }
+            measured = {
+                name: blake3.blake3(path.read_bytes()).hexdigest()
+                for name, path in zip(
+                    ("old_input", "old_obr", "old_manifest", "candidate_input", "candidate_obr", "candidate_manifest"),
+                    (*old, *candidate),
+                    strict=True,
+                )
+            }
+            bindings = {
+                "release_request_digest": "11" * 32,
+                "qualification_session_id": "12" * 32,
+                "candidate_commit": "13" * 20,
+                "candidate_tree": "14" * 20,
+                "candidate_semantic_digest": "15" * 32,
+                "artifact_tuple_digest": "16" * 32,
+                "release_aggregate_root": "17" * 32,
+                "registry_generation": 8,
+                "production_profile_blake3": "18" * 32,
+                "candidate_payload_artifacts_blake3": {
+                    "OBR:concepts.obr": measured["candidate_obr"],
+                    "LABEL_INDEX:concepts.obr.labels.idx": "19" * 32,
+                    "CCID_INDEX:concepts.obr.ccids.idx": "1a" * 32,
+                    "MANIFEST:concepts.obr.manifest.json": measured["candidate_manifest"],
+                    "SPDX_SBOM:sbom.spdx.json": "1b" * 32,
+                },
+                "release_stamp_blake3": "1c" * 32,
+                "probe_blake3": "1d" * 32,
+                "probe_signature": "1e" * 32,
+                "probe_signer_fingerprint": "1f" * 32,
+                "executable_blake3": "20" * 32,
+                "rust_toolchain_digest": "21" * 32,
+                "runner_image_digest": "22" * 32,
+                "target_triple": "x86_64-unknown-linux-gnu",
+                "trust_policy_digest": trust_policy_digest(policy),
+                "signer_fingerprint": signer_fingerprint(public),
+                "ccid_inputs_blake3": measured,
+            }
+            context = VerifiedQualificationContextV1(
+                request_digest="11" * 32,
+                signer_fingerprint="A" * 40,
+                trust_policy_digest="23" * 32,
+                run_context={
+                    "format": "onebrain/qualification-run-context/1",
+                    "variant": "Release",
+                    "release_request_digest": "11" * 32,
+                    "qualification_session_id": "12" * 32,
+                    "candidate_commit": "13" * 20,
+                    "candidate_tree": "14" * 20,
+                },
+                bindings=bindings,
+                tooling_blake3={"verifier": "24" * 32},
+                production=True,
+            )
+            invocation = ["ccid_stability_qualification.py", "--sample-limit", "10"]
+            receipt = qualify_ccid_stability(
+                context, *old, *candidate, sample_limit=10, work_dir=root / "work",
+                invocation=invocation, signing_key=key, receipt_policy=policy,
+            )
+            self.assertTrue(receipt["payload"]["result"])
+            self.assertEqual(receipt["payload"]["command"], invocation)
+            candidate[0].write_text(candidate[0].read_text() + "\n", encoding="utf-8")
+            with self.assertRaisesRegex(CcidQualificationError, "do not match"):
+                qualify_ccid_stability(
+                    context, *old, *candidate, sample_limit=10, work_dir=root / "work",
+                    invocation=invocation, signing_key=key, receipt_policy=policy,
+                )
 
 
 if __name__ == "__main__":

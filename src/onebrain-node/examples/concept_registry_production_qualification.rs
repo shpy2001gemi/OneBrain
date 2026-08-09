@@ -6,8 +6,9 @@ use std::fs::File;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use ku_core::{
     activate_concept_registry_release, parse_concept_registry_verifying_key,
     rollback_concept_registry_release,
@@ -34,8 +35,17 @@ fn run() -> Result<(), Box<dyn Error>> {
     let old_release = required_string(&mut args, "OLD_RELEASE_ID")?;
     let new_release = required_string(&mut args, "NEW_RELEASE_ID")?;
     let query_label = required_string(&mut args, "QUERY_LABEL")?;
-    let context_path = required_path(&mut args, "RUN_CONTEXT_JSON")?;
-    let binding_path = required_path(&mut args, "BINDING_JSON")?;
+    let request_verifier = required_path(&mut args, "REQUEST_VERIFIER")?;
+    let release_request = required_path(&mut args, "RELEASE_REQUEST")?;
+    let release_request_signature = required_path(&mut args, "RELEASE_REQUEST_SIGNATURE")?;
+    let approver_policy = required_path(&mut args, "QUALIFICATION_APPROVER_POLICY")?;
+    let gpg_home = required_path(&mut args, "GPG_HOME")?;
+    let gpg_executable = required_path(&mut args, "GPG_EXECUTABLE")?;
+    let probe_executable = required_path(&mut args, "PROBE_EXECUTABLE")?;
+    let probe_signature = required_path(&mut args, "PROBE_SIGNATURE")?;
+    let rust_toolchain_evidence = required_path(&mut args, "RUST_TOOLCHAIN_EVIDENCE")?;
+    let runner_image_evidence = required_path(&mut args, "RUNNER_IMAGE_EVIDENCE")?;
+    let target_triple = required_string(&mut args, "TARGET_TRIPLE")?;
     let policy_path = required_path(&mut args, "TRUST_POLICY_JSON")?;
     let private_key_path = required_path(&mut args, "PRIVATE_KEY_FILE")?;
     let output_path = required_path(&mut args, "OUTPUT_JSON")?;
@@ -46,8 +56,33 @@ fn run() -> Result<(), Box<dyn Error>> {
     let release_key = parse_concept_registry_verifying_key(&public_key_hex)?;
     let signing_key = read_signing_key(&private_key_path)?;
     let policy: Value = serde_json::from_slice(&fs::read(policy_path)?)?;
-    let context: Value = serde_json::from_slice(&fs::read(context_path)?)?;
-    let mut binding: Map<String, Value> = serde_json::from_slice(&fs::read(binding_path)?)?;
+    let verified = verify_release_request(
+        &request_verifier,
+        &release_request,
+        &release_request_signature,
+        &approver_policy,
+        &gpg_home,
+        &gpg_executable,
+    )?;
+    let context = verified
+        .get("run_context")
+        .cloned()
+        .ok_or("verified request omitted run_context")?;
+    let mut binding: Map<String, Value> = verified
+        .get("bindings")
+        .and_then(Value::as_object)
+        .cloned()
+        .ok_or("verified request omitted bindings")?;
+    validate_candidate_measurements(
+        &registry_root,
+        &new_release,
+        &binding,
+        &probe_executable,
+        &probe_signature,
+        &rust_toolchain_evidence,
+        &runner_image_evidence,
+        &target_triple,
+    )?;
     validate_receipt_signer(&policy, &signing_key, &binding)?;
     let expected_root = binding
         .get("release_aggregate_root")
@@ -66,7 +101,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         ..NodeConfig::default()
     };
     config.concept_registry_path = None;
-    let manager = ConceptRegistryGenerationManager::open(config)?;
+    let manager = ConceptRegistryGenerationManager::open(config.clone())?;
     let old_reader = manager.reader_lease();
     if old_reader.status().release_id.as_deref() != Some(old_release.as_str()) {
         return Err("initial reader is not pinned to the expected old release".into());
@@ -92,8 +127,9 @@ fn run() -> Result<(), Box<dyn Error>> {
         && rollback_reader.status().release_id.as_deref() == Some(old_release.as_str());
 
     activate_concept_registry_release(&registry_root, &new_release, &release_key)?;
-    manager.refresh()?;
-    let final_reader = manager.reader_lease();
+    drop(manager);
+    let reopened_manager = ConceptRegistryGenerationManager::open(config)?;
+    let final_reader = reopened_manager.reader_lease();
     final_reader.resolve_checked(&query_label)?;
     let exact_root_after_reopen = final_reader.status().release_aggregate_root.as_deref()
         == Some(expected_root.as_str())
@@ -233,6 +269,126 @@ fn apply_run_context(
         _ => return Err("QualificationRunContextV1 variant is invalid".into()),
     }
     Ok(())
+}
+
+fn verify_release_request(
+    verifier: &Path,
+    request: &Path,
+    signature: &Path,
+    approver_policy: &Path,
+    gpg_home: &Path,
+    gpg_executable: &Path,
+) -> Result<Value, Box<dyn Error>> {
+    let python = std::env::var("PYTHON").unwrap_or_else(|_| "python".to_owned());
+    let result = Command::new(python)
+        .arg(verifier)
+        .arg("--request")
+        .arg(request)
+        .arg("--signature")
+        .arg(signature)
+        .arg("--policy")
+        .arg(approver_policy)
+        .arg("--gpg-home")
+        .arg(gpg_home)
+        .arg("--gpg")
+        .arg(gpg_executable)
+        .output()?;
+    if !result.status.success() {
+        return Err(format!(
+            "signed release request verification failed: {}",
+            String::from_utf8_lossy(&result.stderr).trim()
+        )
+        .into());
+    }
+    let verified: Value = serde_json::from_slice(&result.stdout)?;
+    if verified.get("format").and_then(Value::as_str)
+        != Some("onebrain/verified-qualification-context/1")
+        || verified.get("production").and_then(Value::as_bool) != Some(true)
+    {
+        return Err("request verifier did not return a production closed context".into());
+    }
+    Ok(verified)
+}
+
+fn validate_candidate_measurements(
+    registry_root: &Path,
+    release_id: &str,
+    binding: &Map<String, Value>,
+    probe: &Path,
+    probe_signature: &Path,
+    toolchain: &Path,
+    runner_image: &Path,
+    target_triple: &str,
+) -> Result<(), Box<dyn Error>> {
+    let stamp_path = registry_root
+        .join("releases")
+        .join(release_id)
+        .join("release.stamp.json");
+    if binding.get("release_stamp_blake3").and_then(Value::as_str)
+        != Some(blake3_file(&stamp_path)?.as_str())
+    {
+        return Err("measured release stamp differs from signed request".into());
+    }
+    let stamp: Value = serde_json::from_slice(&fs::read(&stamp_path)?)?;
+    let mut artifacts = Map::new();
+    for artifact in stamp
+        .get("artifacts")
+        .and_then(Value::as_array)
+        .ok_or("release stamp artifacts are missing")?
+    {
+        let role = artifact
+            .get("role")
+            .and_then(Value::as_str)
+            .ok_or("stamp role missing")?;
+        let path = artifact
+            .get("relative_path")
+            .and_then(Value::as_str)
+            .ok_or("stamp path missing")?;
+        let digest = artifact
+            .get("blake3")
+            .cloned()
+            .ok_or("stamp digest missing")?;
+        artifacts.insert(format!("{role}:{path}"), digest);
+    }
+    if binding.get("candidate_payload_artifacts_blake3") != Some(&Value::Object(artifacts)) {
+        return Err("five measured release payloads differ from signed request".into());
+    }
+    let probe_digest = blake3_file(probe)?;
+    if binding.get("probe_blake3").and_then(Value::as_str) != Some(probe_digest.as_str())
+        || binding.get("executable_blake3").and_then(Value::as_str) != Some(probe_digest.as_str())
+        || binding.get("probe_signature").and_then(Value::as_str)
+            != Some(blake3_file(probe_signature)?.as_str())
+        || binding.get("rust_toolchain_digest").and_then(Value::as_str)
+            != Some(blake3_file(toolchain)?.as_str())
+        || binding.get("runner_image_digest").and_then(Value::as_str)
+            != Some(blake3_file(runner_image)?.as_str())
+        || binding.get("target_triple").and_then(Value::as_str) != Some(target_triple)
+    {
+        return Err("measured probe or reference environment differs from signed request".into());
+    }
+    let public = decode_hex::<32>(
+        binding
+            .get("probe_signer_public_key")
+            .and_then(Value::as_str)
+            .ok_or("probe signer key missing")?,
+    )?;
+    if signer_fingerprint(&public)
+        != binding
+            .get("probe_signer_fingerprint")
+            .and_then(Value::as_str)
+            .ok_or("probe signer fingerprint missing")?
+    {
+        return Err("probe signer fingerprint differs from public key".into());
+    }
+    let signature = decode_hex::<64>(fs::read_to_string(probe_signature)?.trim())?;
+    let mut message = b"onebrain:concept-registry-probe:1\0".to_vec();
+    message.extend_from_slice(blake3::hash(&fs::read(probe)?).as_bytes());
+    VerifyingKey::from_bytes(&public)?.verify(&message, &Signature::from_bytes(&signature))?;
+    Ok(())
+}
+
+fn blake3_file(path: &Path) -> Result<String, Box<dyn Error>> {
+    Ok(blake3::hash(&fs::read(path)?).to_hex().to_string())
 }
 
 fn sign_receipt(payload: Value, policy: &Value, key: &SigningKey) -> Result<Value, Box<dyn Error>> {
@@ -382,5 +538,5 @@ fn required_string(
 }
 
 fn usage() -> &'static str {
-    "usage: concept_registry_production_qualification REGISTRY_ROOT RELEASE_PUBLIC_KEY OLD_RELEASE_ID NEW_RELEASE_ID QUERY_LABEL RUN_CONTEXT_JSON BINDING_JSON TRUST_POLICY_JSON PRIVATE_KEY_FILE OUTPUT_JSON"
+    "usage: concept_registry_production_qualification REGISTRY_ROOT RELEASE_PUBLIC_KEY OLD_RELEASE_ID NEW_RELEASE_ID QUERY_LABEL REQUEST_VERIFIER RELEASE_REQUEST RELEASE_REQUEST_SIGNATURE QUALIFICATION_APPROVER_POLICY GPG_HOME GPG_EXECUTABLE PROBE_EXECUTABLE PROBE_SIGNATURE RUST_TOOLCHAIN_EVIDENCE RUNNER_IMAGE_EVIDENCE TARGET_TRIPLE TRUST_POLICY_JSON PRIVATE_KEY_FILE OUTPUT_JSON"
 }
