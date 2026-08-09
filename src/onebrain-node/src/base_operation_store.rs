@@ -1797,12 +1797,25 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 fn base_ops_failpoint(phase: &str) -> Result<(), BaseOperationStoreError> {
+    #[cfg(test)]
+    if BASE_OPS_TEST_FAILPOINT.with(|configured| configured.get() == Some(phase)) {
+        return Err(BaseOperationStoreError::Io(std::io::Error::other(format!(
+            "TX-BASE-OPS-001 failpoint: {phase}"
+        ))));
+    }
     if std::env::var("ONEBRAIN_BASE_OPS_FAILPOINT").ok().as_deref() == Some(phase) {
         return Err(BaseOperationStoreError::Io(std::io::Error::other(format!(
             "TX-BASE-OPS-001 failpoint: {phase}"
         ))));
     }
     Ok(())
+}
+
+#[cfg(test)]
+thread_local! {
+    static BASE_OPS_TEST_FAILPOINT: std::cell::Cell<Option<&'static str>> = const {
+        std::cell::Cell::new(None)
+    };
 }
 
 fn store_node_error(error: BaseOperationStoreError) -> NodeError {
@@ -1813,8 +1826,6 @@ fn store_node_error(error: BaseOperationStoreError) -> NodeError {
 mod tests {
     use super::*;
     use crate::dataset_path::BootstrapDatasetPathResolver;
-
-    static FAILPOINT_ENV: Mutex<()> = Mutex::new(());
 
     #[test]
     fn durable_protocol_reopens_unknown_without_replaying() {
@@ -1850,7 +1861,6 @@ mod tests {
 
     #[test]
     fn tx_base_ops_five_phase_reopen_never_observes_a_partial_revision() {
-        let _guard = FAILPOINT_ENV.lock().unwrap();
         for phase in [
             "before_begin_write",
             "after_begin_write_before_mutation",
@@ -1862,11 +1872,11 @@ mod tests {
             let resolver = BootstrapDatasetPathResolver::new(temp.path()).unwrap();
             let process = ProcessGenerationId([7; 32]);
             let store = BaseOperationStore::open(&resolver, process).unwrap();
-            std::env::set_var("ONEBRAIN_BASE_OPS_FAILPOINT", phase);
+            BASE_OPS_TEST_FAILPOINT.with(|configured| configured.set(Some(phase)));
             assert!(store
                 .reserve_operation(BaseOperationKindV1::ExistingLocalCommand, [9; 32])
                 .is_err());
-            std::env::remove_var("ONEBRAIN_BASE_OPS_FAILPOINT");
+            BASE_OPS_TEST_FAILPOINT.with(|configured| configured.set(None));
             drop(store);
             let reopened = BaseOperationStore::open(&resolver, process).unwrap();
             let count = reopened.records.lock().unwrap().len();

@@ -18,17 +18,28 @@ use onebrain_node::{
     NodeConfig, OneBrainNode,
 };
 
+#[cfg(all(feature = "legacy-read-compat", not(feature = "base-v1")))]
+compile_error!("legacy-read-compat requires base-v1");
+
 #[derive(Parser)]
 #[command(name = "onebrain")]
 #[command(about = "OneBrain — Decentralized Knowledge Network")]
-#[command(version)]
+#[command(disable_version_flag = true)]
 struct CliArgs {
+    /// Print the OneBrain version without opening a node.
+    #[arg(long)]
+    version: bool,
+    /// Include the complete Base tuple and digests with --version.
+    #[arg(long, requires = "version")]
+    verbose: bool,
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Inspect the offline-first Base runtime contract.
+    Base(BaseArgs),
     /// Start an OneBrain node
     Start {
         #[arg(long, default_value = "OneBrain")]
@@ -86,6 +97,18 @@ enum Commands {
     Vnext(VNextArgs),
 }
 
+#[derive(clap::Args)]
+struct BaseArgs {
+    #[command(subcommand)]
+    command: BaseCommand,
+}
+
+#[derive(Subcommand)]
+enum BaseCommand {
+    /// Print the compiled compatibility tuple without starting a node.
+    Status,
+}
+
 fn generate_peer_id() -> String {
     use std::time::SystemTime;
     let t = SystemTime::now()
@@ -102,7 +125,30 @@ fn generate_peer_id() -> String {
 async fn main() {
     let args = CliArgs::parse();
 
-    match args.command {
+    if args.version {
+        if args.verbose {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&cli::data::compiled_base_status_json()).unwrap()
+            );
+        } else {
+            println!("onebrain {}", env!("CARGO_PKG_VERSION"));
+        }
+        return;
+    }
+
+    let Some(command) = args.command else {
+        eprintln!("A command is required. Use --help for available commands.");
+        std::process::exit(2);
+    };
+
+    match command {
+        Commands::Base(BaseArgs {
+            command: BaseCommand::Status,
+        }) => println!(
+            "{}",
+            serde_json::to_string_pretty(&cli::data::compiled_base_status_json()).unwrap()
+        ),
         Commands::Need(args) => exit_on_client_error(cli::vnext::execute_need(args).await),
         Commands::Pomv(args) => exit_on_client_error(cli::vnext::execute_pomv(args).await),
         Commands::Vnext(args) => exit_on_client_error(cli::vnext::execute_vnext(args).await),
@@ -218,6 +264,13 @@ async fn main() {
                     std::process::exit(1);
                 }
             };
+            #[cfg(feature = "base-v1")]
+            if let Err(error) = node
+                .install_base_runtime(onebrain_api::base_runtime_config_for_api_token(&api_token))
+            {
+                eprintln!("Failed to install the Base v1 runtime: {error}");
+                std::process::exit(1);
+            }
             #[cfg(feature = "vnext-network-runtime")]
             if let Some(dependencies) = vnext_dependencies {
                 if let Err(error) = node.set_vnext_product_dependencies(dependencies) {
@@ -333,7 +386,7 @@ async fn main() {
                 println!();
 
                 // REPL uses shared node — lock per-command, not permanently
-                if let Err(e) = cli::run_repl_shared(shared_node.clone()).await {
+                if let Err(e) = cli::run_repl_shared(shared_node.clone(), &api_token).await {
                     eprintln!("REPL error: {}", e);
                 }
             } else {
@@ -342,7 +395,7 @@ async fn main() {
                 println!("Tip: Use --api to enable Web Dashboard");
                 println!();
 
-                if let Err(e) = cli::run_repl(&mut node).await {
+                if let Err(e) = cli::run_repl(&mut node, &api_token).await {
                     eprintln!("REPL error: {}", e);
                 }
             }

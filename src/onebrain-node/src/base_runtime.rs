@@ -11,14 +11,18 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use onebrain_archive::ArchiveCredentialKind;
 use onebrain_base_contract::{
-    ArchiveCapabilityHandleV1, ArchiveCredentialKindV1, ArchiveSecretHandleV1, ArchiveSinkHandleV1,
-    ArchiveSourceHandleV1, BaseCapabilityRequirements, BaseCommandV1, BaseCompatibilityPolicy,
+    ArchiveCapabilityHandleV1, ArchiveCredentialKindV1, ArchiveRestorePolicyV1,
+    ArchiveSecretHandleV1, ArchiveSinkHandleV1, ArchiveSourceHandleV1, BaseCapabilityRequirements,
+    BaseCapabilitySet, BaseCommandV1, BaseCompatibilityPolicy, BaseCompatibilityTuple,
     BaseErrorCodeV1, BaseIdempotencyKey, BaseManagementRequestV1, BaseNegotiationOutcome,
     BaseOperationId, BaseOperationKindV1, BaseOperationReservationId, BasePollEventsRequestV1,
-    BasePrepareRequestV1, BaseQualificationState, BaseQueryRequestV1, BaseRequestV1,
-    BaseSubscriptionId, BaseSubscriptionRequestV1, BaseVersionStatus, CompleteSignerReprovisionV1,
-    MigrationVectorBindingV1, ResourceBudgetV1, SignerProvisionHandleV1, SignerPublicIdV1,
-    TopicKindV1, TypedPayloadV1,
+    BasePrepareRequestV1, BaseQualificationState, BaseQueryRequestV1, BaseReleaseVersion,
+    BaseRequestV1, BaseSubscriptionId, BaseSubscriptionRequestV1, BaseVersionStatus,
+    CompatibilityDigestV1, CompleteSignerReprovisionV1, MigrationVectorBindingV1,
+    NegotiatedVersions, ProfileVersion, ResourceBudgetV1, SignerProvisionHandleV1,
+    SignerPublicIdV1, StorageSchemaVersion, TargetTriple, TopicKindV1, TypedPayloadV1,
+    COMPILED_BASE_COMMIT, COMPILED_TARGET_TRIPLE, COMPILED_TOOLCHAIN,
+    MAX_BASE_ARCHIVE_DATASET_BYTES,
 };
 use tokio::sync::Notify;
 
@@ -69,7 +73,9 @@ pub struct BaseServiceError {
 }
 
 impl BaseServiceError {
-    fn new(code: BaseErrorCodeV1, reason: &'static str) -> Self {
+    /// Construct a typed projection error without discarding the frozen retry
+    /// and reconciliation semantics owned by the Base contract.
+    pub fn new(code: BaseErrorCodeV1, reason: &'static str) -> Self {
         Self {
             code,
             reason,
@@ -312,6 +318,74 @@ impl BaseRuntimeConfig {
             network_enabled: false,
         }
     }
+}
+
+/// Compose the truthful compiled Base tuple without opening any store. Product
+/// hosts may replace the deny-all authorizer and unavailable local adapter
+/// before installing the returned config exactly once on a node.
+pub fn compiled_base_runtime_config() -> BaseRuntimeConfig {
+    let registry = ku_core::foundation::base_v1_profile_registry();
+    let mut features = blake3::Hasher::new();
+    features.update(b"onebrain:base-v1:compiled-features:1\0");
+    features.update(b"base-v1");
+    if cfg!(feature = "legacy-read-compat") {
+        features.update(b";legacy-read-compat");
+    }
+    if cfg!(feature = "vnext-network-runtime") {
+        features.update(b";vnext-network-runtime");
+    }
+    let tuple = BaseCompatibilityTuple {
+        base_version: BaseReleaseVersion {
+            major: 1,
+            minor: 1,
+            patch: 0,
+            prerelease: None,
+        },
+        base_commit: COMPILED_BASE_COMMIT,
+        canonical_schema_digest: CompatibilityDigestV1(registry.canonical_schema_digest),
+        domain_registry_digest: CompatibilityDigestV1(registry.domain_registry_digest),
+        resource_registry_digest: CompatibilityDigestV1(registry.resource_registry_digest),
+        storage_schema: StorageSchemaVersion(1),
+        archive_profile: ProfileVersion { major: 2, minor: 0 },
+        migration_profile: ProfileVersion { major: 1, minor: 0 },
+        registry_profile: ProfileVersion { major: 1, minor: 0 },
+        registry_profile_digest: CompatibilityDigestV1([0x24; 32]),
+        wire_session: ProfileVersion { major: 1, minor: 0 },
+        product_api: ProfileVersion { major: 1, minor: 1 },
+        c_abi: ProfileVersion { major: 1, minor: 0 },
+        feature_set_digest: CompatibilityDigestV1(*features.finalize().as_bytes()),
+        target_triple: TargetTriple::try_from_string(COMPILED_TARGET_TRIPLE.to_owned())
+            .expect("build.rs emits a bounded target triple"),
+        toolchain: COMPILED_TOOLCHAIN,
+    };
+    let archive_restore = ArchiveRestorePolicyV1 {
+        canonical_schema_digest: tuple.canonical_schema_digest,
+        domain_registry_digest: tuple.domain_registry_digest,
+        resource_registry_digest: tuple.resource_registry_digest,
+        storage_schema: tuple.storage_schema,
+        archive_profile: tuple.archive_profile,
+        migration_profile: tuple.migration_profile,
+        max_dataset_bytes: MAX_BASE_ARCHIVE_DATASET_BYTES,
+    };
+    let empty =
+        || BaseCapabilitySet::try_from_discriminators(Vec::new()).expect("empty bounded set");
+    BaseRuntimeConfig::new(
+        BaseCompatibilityPolicy {
+            current: tuple.clone(),
+            minimum_additive: NegotiatedVersions {
+                base_minor: 0,
+                wire_session_minor: 0,
+                product_api_minor: 0,
+                c_abi_minor: 0,
+            },
+            archive_restore,
+        },
+        tuple.unqualified_status(),
+        BaseCapabilityRequirements {
+            supported: empty(),
+            required: empty(),
+        },
+    )
 }
 
 pub struct BaseManagementGrant {
@@ -1383,7 +1457,7 @@ impl BaseServiceCore {
             .producer_artifact_identity();
         let receipt = match service.create_archive(sink, secret, producer).await {
             Ok(receipt) => receipt,
-            Err(_) => {
+            Err(_error) => {
                 let store = self.current_store()?;
                 for id in [*command.sink.as_bytes(), *command.secret.as_bytes()] {
                     let _ = store.transition_authority(

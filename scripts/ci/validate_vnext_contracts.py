@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -4133,7 +4134,7 @@ def validate_vnext_dr_m5_crash_harness(
 
     node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
     if (
-        "default = []" not in node_manifest
+        'default = ["base-v1"]' not in node_manifest
         or "vnext-crash-harness = [" not in node_manifest
         or '"ku-core/dr-m5-crash-harness"' not in node_manifest
         or '"ku-net/dr-m5-crash-harness"' not in node_manifest
@@ -4387,7 +4388,7 @@ def validate_vnext_dr_m5_chaos_fuzz(
 
     node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
     if (
-        "default = []" not in node_manifest
+        'default = ["base-v1"]' not in node_manifest
         or "vnext-chaos-harness = [" not in node_manifest
         or '"ku-net/dr-m5-chaos-harness"' not in node_manifest
         or 'required-features = ["vnext-chaos-harness"]' not in node_manifest
@@ -4626,7 +4627,7 @@ def validate_vnext_dr_m5_operational_compaction(
 
     node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
     if (
-        "default = []" not in node_manifest
+        'default = ["base-v1"]' not in node_manifest
         or "vnext-compaction-harness = [" not in node_manifest
         or '"ku-core/dr-m5-crash-harness"' not in node_manifest
         or '"ku-net/dr-m5-crash-harness"' not in node_manifest
@@ -6034,6 +6035,95 @@ def validate_normative_coverage() -> int:
     return sum(actual.values())
 
 
+def validate_base_v1_packaging() -> int:
+    """Validate Base-default features and fail-closed legacy/harness fences."""
+
+    packages = {
+        "onebrain-node": ROOT / "src/onebrain-node/Cargo.toml",
+        "onebrain-api": ROOT / "src/onebrain-api/Cargo.toml",
+        "onebrain-cli": ROOT / "src/onebrain-cli/Cargo.toml",
+    }
+    for name, path in packages.items():
+        document = tomllib.loads(path.read_text(encoding="utf-8"))
+        features = document.get("features", {})
+        if features.get("default") != ["base-v1"]:
+            raise ContractError(f"{name} must default to base-v1 only")
+        if "base-v1" not in features or "legacy-read-compat" not in features:
+            raise ContractError(f"{name} is missing Base/legacy feature declarations")
+        if "base-v1" in features["legacy-read-compat"]:
+            raise ContractError(
+                f"{name} legacy-read-compat must not silently auto-enable base-v1"
+            )
+    feature_guards = {
+        ROOT / "src/onebrain-node/src/lib.rs": "legacy-read-compat requires base-v1",
+        ROOT / "src/onebrain-api/src/lib.rs": "legacy-read-compat requires base-v1",
+        ROOT / "src/onebrain-cli/src/main.rs": "legacy-read-compat requires base-v1",
+    }
+    for path, guard in feature_guards.items():
+        if guard not in path.read_text(encoding="utf-8"):
+            raise ContractError(f"missing forbidden-combination guard in {path}")
+    cli_archive = (ROOT / "src/onebrain-cli/src/cli/data.rs").read_text(
+        encoding="utf-8"
+    )
+    for forbidden in ("node.create_backup(", "node.restore_backup("):
+        if forbidden in cli_archive:
+            raise ContractError(
+                f"CLI archive path bypasses the Base scoped facade: {forbidden}"
+            )
+    api_archive = (ROOT / "src/onebrain-api/src/handlers.rs").read_text(
+        encoding="utf-8"
+    )
+    for forbidden in ("node.create_backup(", "node.restore_backup("):
+        if forbidden in api_archive:
+            raise ContractError(
+                f"API archive path bypasses the Base scoped facade: {forbidden}"
+            )
+    for required in (
+        "issue_base_management_grant",
+        "ArchiveSinkBegin",
+        "ArchiveSourceBegin",
+        "ArchiveCapabilityHandleV1",
+        "management.close().await",
+    ):
+        if required not in cli_archive:
+            raise ContractError(f"CLI Base archive lifecycle is missing {required}")
+    abi = tomllib.loads(
+        (ROOT / "src/onebrain-base-abi/Cargo.toml").read_text(encoding="utf-8")
+    )
+    if abi.get("lib", {}).get("crate-type") != ["cdylib", "staticlib", "rlib"]:
+        raise ContractError("onebrain-base-abi crate types drifted")
+    node_features = tomllib.loads(
+        (ROOT / "src/onebrain-node/Cargo.toml").read_text(encoding="utf-8")
+    )["features"]
+    for forbidden in (
+        "vnext-canary-harness",
+        "vnext-crash-harness",
+        "vnext-chaos-harness",
+        "vnext-compaction-harness",
+        "vnext-soak-harness",
+    ):
+        if forbidden in node_features["default"] or forbidden in node_features["base-v1"]:
+            raise ContractError(f"production Base feature includes {forbidden}")
+    workflow = (ROOT / ".github/workflows/vnext-foundation.yml").read_text(
+        encoding="utf-8"
+    )
+    for marker in (
+        "base-v1-projections",
+        "--no-default-features --features base-v1",
+        "--no-default-features --features base-v1,legacy-read-compat",
+        "onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime",
+        "validate_base_abi_header.py",
+        "dart pub get --enforce-lockfile",
+        "install_base_v1_cbindgen.ps1",
+        "ONEBRAIN_BASE_CBINDGEN",
+    ):
+        if marker not in workflow:
+            raise ContractError(f"Base packaging workflow is missing marker: {marker}")
+    if "--skip-tool-verification" in workflow:
+        raise ContractError("Base ABI CI may not bypass the pinned executable hash")
+    return len(packages) + 1
+
+
 def main() -> int:
     try:
         tasks, _ = plan_tasks()
@@ -6065,6 +6155,7 @@ def main() -> int:
                 base_runtime_errors,
             ) = validate_base_v1_runtime_interface()
         base_compatibility_vectors = validate_base_v1_compatibility()
+        base_packaging_surfaces = validate_base_v1_packaging()
         assertions = validate_negative_assertions()
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
@@ -6150,7 +6241,8 @@ def main() -> int:
         f"{base_archive_required} required metadata, "
         f"{base_runtime_operations} Base runtime operations/"
         f"{base_runtime_topics} topics/{base_runtime_errors} errors, "
-        f"{base_compatibility_vectors} Base compatibility vectors, "
+        f"{base_compatibility_vectors} Base compatibility vectors/"
+        f"{base_packaging_surfaces} packaging surfaces, "
         f"{schema_vectors} identity-object vectors, "
         f"{event_vectors} feed-event vectors, {normative_lines} normative lines, "
         f"{product_endpoints} product endpoints/{product_dtos} DTOs, "

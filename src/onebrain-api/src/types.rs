@@ -4,6 +4,58 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Bounded product-neutral operation projection. Archive capabilities remain
+/// scoped handles; no path or Rust runtime object is accepted here.
+#[derive(Debug, Deserialize)]
+pub struct BaseOperationProjectionRequest {
+    pub operation: String,
+    /// Opaque REST management-session identifier returned by
+    /// `management_open`; never a Rust pointer or runtime reference.
+    #[serde(default)]
+    pub management_handle: Option<String>,
+    /// Explicit scopes selected by authenticated local host policy.
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    /// Opaque archive capability identifier returned by a management action.
+    #[serde(default)]
+    pub capability_id: Option<String>,
+    #[serde(default)]
+    pub kind: Option<u16>,
+    #[serde(default)]
+    pub operation_id: Option<String>,
+    #[serde(default)]
+    pub reservation_id: Option<String>,
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
+    #[serde(default)]
+    pub auxiliary_id: Option<String>,
+    #[serde(default)]
+    pub payload: Option<String>,
+    /// Lossless binary payload/credential projection. Supplying both this
+    /// field and `payload` is rejected rather than choosing one implicitly.
+    #[serde(default)]
+    pub payload_hex: Option<String>,
+    #[serde(default)]
+    pub topic: Option<u16>,
+    #[serde(default)]
+    pub cursor: Option<u64>,
+    #[serde(default)]
+    pub offset: Option<u64>,
+    #[serde(default)]
+    pub declared_total_bytes: Option<u64>,
+    #[serde(default)]
+    pub credential_kind: Option<u8>,
+    /// Binary archive chunks are represented as bounded hexadecimal text.
+    #[serde(default)]
+    pub chunk_hex: Option<String>,
+    #[serde(default)]
+    pub max_items: Option<u32>,
+    #[serde(default)]
+    pub max_bytes: Option<u64>,
+    #[serde(default)]
+    pub max_work_units: Option<u64>,
+}
+
 // ─── Success / Error Wrappers ──────────────────────────────────────────────
 
 /// Uniform success envelope.

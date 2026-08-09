@@ -1,0 +1,30 @@
+language = "C"
+include_guard = "ONEBRAIN_BASE_V1_H"
+pragma_once = true
+usize_is_size_t = true
+documentation = true
+cpp_compat = true
+style = "both"
+sort_by = "Name"
+
+header = """
+/* Generated from onebrain-base-abi with pinned cbindgen; DO NOT EDIT. */
+"""
+
+[parse]
+parse_deps = false
+
+[export]
+include = [
+  "ObBaseCallV1",
+  "ObBaseErrorV1",
+  "ObBaseOpenRequestV1",
+  "ObBaseOutputV1",
+  "ObBaseOwnedBufferV1",
+  "ObBaseRuntimeV1",
+  "ObBaseManagementV1",
+]
+
+[fn]
+args = "vertical"
+rename_args = "None"

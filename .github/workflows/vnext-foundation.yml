@@ -63,6 +63,87 @@ permissions:
   contents: read
 
 jobs:
+  base-v1-projections:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.20.0"
+          cache: npm
+          cache-dependency-path: src/onebrain-base-contract/conformance/typescript/package-lock.json
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.11.3"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - name: Install the reviewed C header generator
+        shell: pwsh
+        run: |
+          $toolRoot = Join-Path $env:RUNNER_TEMP "onebrain-base-v1-tools"
+          $executable = & ./scripts/toolchains/install_base_v1_cbindgen.ps1 -Destination $toolRoot
+          "ONEBRAIN_BASE_CBINDGEN=$executable" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify pinned language tools and generated header
+        shell: pwsh
+        run: |
+          if ((node --version) -ne "v22.20.0") { throw "Node version drift" }
+          if ((npm --version) -ne "10.9.3") { throw "npm version drift" }
+          if ((dart --version 2>&1) -notmatch "3.11.3") { throw "Dart version drift" }
+          python scripts/ci/validate_base_abi_header.py
+          $generated = Join-Path $env:RUNNER_TEMP "onebrain_base_v1.h"
+          Push-Location src
+          & $env:ONEBRAIN_BASE_CBINDGEN --config onebrain-base-abi/cbindgen.toml --crate onebrain-base-abi --output $generated
+          Pop-Location
+          if ((Get-FileHash $generated).Hash -ne (Get-FileHash src/onebrain-base-abi/include/onebrain_base_v1.h).Hash) {
+            throw "Generated Base header drift"
+          }
+      - name: Run Rust, TypeScript, and Dart projection conformance
+        shell: pwsh
+        run: |
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-base-abi
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-base-contract --test projection_conformance
+          npm ci --prefix src/onebrain-base-contract/conformance/typescript
+          npm test --prefix src/onebrain-base-contract/conformance/typescript
+          Push-Location src/onebrain-base-contract/conformance/dart
+          dart pub get --enforce-lockfile
+          dart analyze
+          dart test
+          Pop-Location
+      - name: Run Base-default and optional-feature packaging matrix
+        shell: pwsh
+        run: |
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node -p onebrain-api -p onebrain-cli
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node --no-default-features --features base-v1
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-api --no-default-features --features base-v1
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-cli --no-default-features --features base-v1
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node --no-default-features --features base-v1,legacy-read-compat
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-api --no-default-features --features base-v1,legacy-read-compat
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-cli --no-default-features --features base-v1,legacy-read-compat
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node -p onebrain-api -p onebrain-cli --features onebrain-node/vnext-network-runtime,onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-api --features legacy-read-compat --test base_contract
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-cli --test version
+          $nativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+          $PSNativeCommandUseErrorActionPreference = $false
+          try {
+            cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node --no-default-features --features legacy-read-compat
+            if ($LASTEXITCODE -eq 0) { throw "forbidden Node feature combination compiled" }
+            cargo check --locked --manifest-path src/Cargo.toml -p onebrain-api --no-default-features --features legacy-read-compat
+            if ($LASTEXITCODE -eq 0) { throw "forbidden API feature combination compiled" }
+            cargo check --locked --manifest-path src/Cargo.toml -p onebrain-cli --no-default-features --features legacy-read-compat
+            if ($LASTEXITCODE -eq 0) { throw "forbidden CLI feature combination compiled" }
+          } finally {
+            $PSNativeCommandUseErrorActionPreference = $nativeErrorPreference
+            $global:LASTEXITCODE = 0
+          }
+
   macos-arm64-soak-smoke:
     runs-on: macos-15
     timeout-minutes: 90

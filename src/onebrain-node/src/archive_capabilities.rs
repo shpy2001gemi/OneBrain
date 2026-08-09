@@ -274,9 +274,10 @@ impl ArchiveCapabilityRegistry {
         reservation: ArchiveOperationReservationId,
     ) -> Result<(), NodeError> {
         let mut state = self.lock_state()?;
-        if !state.reservations.remove(&reservation) {
-            return Err(capability_error("unknown archive reservation"));
-        }
+        // Dropping or consuming the final capability drains its reservation.
+        // Explicit operation cleanup is therefore an idempotent close, not an
+        // error when that automatic cleanup already won the race.
+        state.reservations.remove(&reservation);
         let ids = state
             .capabilities
             .iter()

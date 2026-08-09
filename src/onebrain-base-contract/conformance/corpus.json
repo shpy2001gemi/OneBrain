@@ -1,0 +1,72 @@
+{
+  "format": "onebrain/base-v1-projection-conformance/1",
+  "ordinary": [
+    {"id": 3, "name": "Status"},
+    {"id": 5, "name": "Query"},
+    {"id": 6, "name": "ReserveOperation"},
+    {"id": 7, "name": "Prepare"},
+    {"id": 8, "name": "Confirm"},
+    {"id": 9, "name": "Cancel"},
+    {"id": 10, "name": "Reconcile"},
+    {"id": 11, "name": "Subscribe"},
+    {"id": 12, "name": "PollEvents"},
+    {"id": 13, "name": "CloseSubscription"},
+    {"id": 14, "name": "Drain"},
+    {"id": 15, "name": "Close"}
+  ],
+  "management": [
+    {"id": 102, "name": "ArchiveSourceBegin"},
+    {"id": 103, "name": "ArchiveSourcePush"},
+    {"id": 104, "name": "ArchiveSourceSeal"},
+    {"id": 105, "name": "ArchiveSinkBegin"},
+    {"id": 106, "name": "ArchiveSinkRead"},
+    {"id": 107, "name": "ArchiveSinkCommit"},
+    {"id": 108, "name": "ArchiveSecretRegister"},
+    {"id": 109, "name": "ArchiveCapabilityAbort"},
+    {"id": 110, "name": "ArchiveCapabilityDestroy"},
+    {"id": 111, "name": "CompleteSignerReprovision"},
+    {"id": 112, "name": "Close"}
+  ],
+  "errors": [
+    {"id": 1, "name": "InvalidRequest", "retryable": false, "reconcile_before_retry": false},
+    {"id": 2, "name": "NotFound", "retryable": false, "reconcile_before_retry": false},
+    {"id": 3, "name": "Conflict", "retryable": false, "reconcile_before_retry": false},
+    {"id": 4, "name": "Expired", "retryable": false, "reconcile_before_retry": false},
+    {"id": 5, "name": "RateLimited", "retryable": true, "reconcile_before_retry": true},
+    {"id": 6, "name": "CapabilityDisabled", "retryable": false, "reconcile_before_retry": false},
+    {"id": 7, "name": "DependencyUnavailable", "retryable": true, "reconcile_before_retry": true},
+    {"id": 8, "name": "IncompatibleProfile", "retryable": false, "reconcile_before_retry": false},
+    {"id": 9, "name": "ResourceExhausted", "retryable": true, "reconcile_before_retry": true},
+    {"id": 10, "name": "CorruptState", "retryable": false, "reconcile_before_retry": false},
+    {"id": 11, "name": "ReprovisionRequired", "retryable": false, "reconcile_before_retry": false},
+    {"id": 12, "name": "UnknownOutcome", "retryable": true, "reconcile_before_retry": true},
+    {"id": 13, "name": "InternalError", "retryable": false, "reconcile_before_retry": true}
+  ],
+  "lifecycle": ["open", "draining", "closed"],
+  "archive_roundtrip": [
+    "reserve_create_archive",
+    "register_sink",
+    "register_secret",
+    "prepare_create_archive",
+    "confirm_create_archive",
+    "read_sink",
+    "commit_sink",
+    "reserve_restore_archive",
+    "upload_source",
+    "seal_source",
+    "register_restore_secret",
+    "prepare_restore_archive",
+    "confirm_restore_archive",
+    "reconcile_restore_archive",
+    "destroy_all_capabilities"
+  ],
+  "negative_vectors": [
+    "wrong_reservation",
+    "wrong_credential",
+    "unprivileged_management",
+    "revoked_grant",
+    "stale_generation",
+    "cursor_gap",
+    "kill_reopen_unknown_outcome"
+  ]
+}

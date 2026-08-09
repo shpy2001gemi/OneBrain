@@ -63,8 +63,8 @@ pub(crate) fn cmd_help(args: &str) {
         println!("  ║  ── Data ──                                                   ║");
         println!("  ║  export --mode <mode>    Export canonical data or a view      ║");
         println!("  ║  import --mode <mode>    Import canonical data or text drafts ║");
-        println!("  ║  backup                  Full encrypted backup                ║");
-        println!("  ║  restore <file>          Restore from backup                  ║");
+        println!("  ║  backup                  Create a scoped Base archive         ║");
+        println!("  ║  restore <file>          Verify/activate a Base archive       ║");
         println!("  ║                                                               ║");
         println!("  ║  ── Blob ──                                                   ║");
         println!("  ║  blob list               List stored blobs                    ║");
@@ -330,20 +330,20 @@ pub(crate) fn cmd_help(args: &str) {
                 println!();
                 println!("  backup");
                 println!();
-                println!("  Create a full encrypted backup of all node data:");
-                println!("  identity, KUs, profile, peers, and retriever index.");
-                println!("  You will be prompted for a password.");
+                println!("  Create one authenticated .obar Base dataset archive.");
+                println!("  The CLI uses a short-lived scoped management handle and");
+                println!("  destroys it after the archive sink is committed.");
                 println!();
             }
             "restore" => {
                 println!();
                 println!("  restore <file>");
                 println!();
-                println!("  Restore from an encrypted backup (.obk) file.");
+                println!("  Verify, stage, activate, and reconcile a Base archive (.obar).");
                 println!("  ⚠ This will REPLACE all local data.");
                 println!();
                 println!("  Example:");
-                println!("    restore onebrain_backup_20260707.obk");
+                println!("    restore onebrain_archive_20260809.obar");
                 println!();
             }
             "config" => {
