@@ -1,7 +1,14 @@
 #![forbid(unsafe_code)]
 
+mod compatibility;
 mod generated;
+mod negotiation;
 mod operation;
 
+pub use compatibility::{
+    BaseCompatibilityBuildError, BaseQualificationError, MAX_BASE_ARCHIVE_DATASET_BYTES,
+};
 pub use generated::*;
 pub use operation::{BaseContractError, BoundedAscii, BoundedBytes, BoundedVec, SecretBytes};
+
+include!(concat!(env!("OUT_DIR"), "/base_build_identity.rs"));

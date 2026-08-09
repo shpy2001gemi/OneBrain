@@ -2,10 +2,11 @@
 
 > **Status:** Frozen
 > **Profile ID:** `BASE_V1_RUNTIME_INTERFACE_V1`
-> **Profile version:** `1.0`
+> **Profile version:** `1.1`
 > **Product API projection:** `VNEXT_PRODUCT_INTEGRATION_PROFILE_V1/1.1`
 > **Machine IDL:** [`base-v1-runtime-interface-v1.json`](../../../src/test-vectors/vnext/base-v1-runtime-interface-v1.json)
 > **Discriminator history:** [`base-v1-runtime-interface-history-v1.json`](../../../src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json)
+> **Compatibility vectors:** [`base-v1-compatibility-v1.json`](../../../src/test-vectors/vnext/base-v1-compatibility-v1.json)
 
 ## 1. Scope and authority
 
@@ -200,7 +201,92 @@ non-ancestor, or digest-mismatched baseline MUST stop generation.
 The baseline ref is not a qualification or release tag. Task 27 separately
 binds the history-chain root into the signed release request.
 
-## 10. Product projection and acceptance evidence
+## 10. Unified compatibility tuple and negotiation
+
+`BaseCompatibilityTuple` is the only Base v1 compatibility declaration. The
+machine IDL generates it for Rust, TypeScript, and Dart; an archive, product,
+CLI, ABI, or release adapter MUST NOT compute a competing tuple.
+
+Two BLAKE3 derive-key digests use the exact field order in the machine IDL and
+an outer encoding of `u16 field ID`, `u32 little-endian byte length`, then field
+bytes. Nested integers are fixed-width little-endian; option and identity
+variants have explicit discriminators and bounded payload lengths.
+
+- Candidate semantic domain: `onebrain:base:candidate-semantic:1\0`.
+- Artifact tuple domain: `onebrain:base:artifact-tuple:1\0`.
+- The candidate digest covers Base release and commit identity, canonical,
+  domain and resource digests, storage schema, archive, migration and Registry
+  profiles, Registry profile digest, wire session, product API, C ABI and
+  feature-set digest.
+- The artifact digest covers the same ordered fields plus target triple and
+  toolchain identity. A target/toolchain-only change therefore preserves the
+  candidate digest and changes the artifact digest.
+- Qualification is an external attestation and is never a tuple field or
+  digest input. Candidate-bound Registry or P5 evidence is also absent.
+
+`SourceCommitIdentity::Unknown` and `ToolchainIdentity::Unknown` have explicit,
+domain-separated canonical encodings. Missing, malformed or unverifiable
+`ONEBRAIN_BASE_COMMIT` and missing or malformed
+`ONEBRAIN_TOOLCHAIN_DIGEST` produce those values; a development build never
+fabricates zero/sample identity. Any unknown identity is usable locally but can
+only report `Unqualified`, cannot publish an artifact identity, and cannot be
+upgraded to `Qualified`.
+
+Qualification attachment requires a known tuple commit and toolchain, an exact
+candidate commit and semantic digest, the exact artifact digest verified from
+the external evidence manifest, and a nonzero evidence BLAKE3. Attaching that
+state MUST NOT change either compatibility digest.
+
+### 10.1 Field-by-field decision table
+
+| Field | Negotiation rule |
+|---|---|
+| Base major | Exact; mismatch is `BaseMajorMismatch`. |
+| Base minor | Additive; negotiate independently to the lower value, subject to `base_minor` floor. |
+| Base patch and prerelease | Provenance-only after every semantic rule succeeds. |
+| Source commit | Provenance-only for negotiation; unknown remains unqualified. |
+| Canonical schema digest | Exact; mismatch is `CanonicalSchemaMismatch`. |
+| Domain registry digest | Exact; mismatch is `DomainRegistryMismatch`. |
+| Resource registry digest | Exact; mismatch is `ResourceRegistryMismatch`. |
+| Storage schema | Mismatch is `MigrationRequired` only with an exact verified migration binding; otherwise `MigrationVectorRequired`. |
+| Archive profile | Same migration rule as storage; no implicit compatibility by major or minor. |
+| Migration profile | Same migration rule as storage; no implicit compatibility by major or minor. |
+| Registry profile major/minor | Exact; either mismatch is `RegistryProfileMismatch`. |
+| Registry profile digest | Exact; mismatch is `RegistryProfileDigestMismatch`. |
+| Wire-session major | Exact; mismatch is `WireSessionMajorMismatch`. |
+| Wire-session minor | Additive; negotiate independently to the lower value, subject to `wire_session_minor` floor. |
+| Product-API major | Exact; mismatch is `ProductApiMajorMismatch`. |
+| Product-API minor | Additive; negotiate independently to the lower value, subject to `product_api_minor` floor. |
+| C-ABI major | Exact; mismatch is `CAbiMajorMismatch`. |
+| C-ABI minor | Additive; negotiate independently to the lower value, subject to `c_abi_minor` floor. |
+| Feature-set digest | A difference uses sorted capability intersection; each side's required set MUST be a subset of the other side's supported set or fail with `MissingRequiredCapability`. |
+| Target triple | Artifact provenance only. |
+| Toolchain identity | Artifact provenance only; unknown remains unqualified and has no producer artifact identity. |
+
+The four additive minors are returned together in `NegotiatedVersions`; no
+single lockstep minor exists. Values below their own configured floor fail with
+the matching typed reason. There is no catch-all equality shortcut.
+
+A migration outcome carries `MigrationVectorBindingV1` containing the exact
+bounded vector ID, vector BLAKE3 and trust-policy digest. All three are required,
+the digests must be nonzero, and the binding is accepted only after its signed
+trust relation is verified. Merely observing a storage/archive mismatch never
+authorizes migration.
+
+### 10.2 Archive and artifact adapters
+
+The one-way archive adapter copies canonical, domain, resource, storage,
+archive and migration fields exactly into Task 11's
+`ArchiveRestorePolicyV1`. It rejects a mismatched local archive policy, a zero
+limit, or any limit above the frozen 16 GiB dataset ceiling. Archive code never
+constructs the unified tuple.
+
+The producer adapter emits Task 10's `ProducerArtifactIdentityV1::Known` with
+the exact artifact tuple digest only when both commit and toolchain are known.
+Any unknown identity emits `Unknown`; changing artifact provenance never
+rewrites portable-data compatibility.
+
+## 11. Product projection and acceptance evidence
 
 Product API profile minor `1.1` adds only
 `POST /api/vnext/base/negotiate`. It carries bounded capabilities and a
@@ -211,9 +297,12 @@ meaning, and semantic firewall.
 Acceptance evidence is:
 
 - [`test_validate_base_v1_runtime_interface.py`](../../../scripts/ci/test_validate_base_v1_runtime_interface.py), which mutates each authority, bound, operation, history, subscription, archive, lifecycle, and projection rule;
+- [`test_validate_base_v1_compatibility.py`](../../../scripts/ci/test_validate_base_v1_compatibility.py), which mutates tuple declarations, digest separation, build identity, migration binding, capability and negotiation rules;
+- [`negotiation_vectors.rs`](../../../src/onebrain-base-contract/tests/negotiation_vectors.rs), which executes every compatibility vector against the generated Rust contract and archive adapters;
 - [`validate_vnext_contracts.py`](../../../scripts/ci/validate_vnext_contracts.py), which validates the focused machine profile as part of the global vNext gate;
 - the machine IDL and append-only history linked at the top of this profile.
 
-Task 14 freezes declarations only. It does not claim that Task 15 projections,
-Task 17 facade implementations, Task 18 ABI, or release qualification already
-exist.
+Tasks 14-16 freeze the IDL/history, generated Rust/TypeScript/Dart projections,
+compatibility digests, adapters and negotiation behavior. They do not claim
+that Task 17 facade implementations, Task 18 ABI, or release qualification
+already exist.

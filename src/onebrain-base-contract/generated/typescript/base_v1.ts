@@ -1,6 +1,10 @@
 // Generated from src/test-vectors/vnext/base-v1-runtime-interface-v1.json; DO NOT EDIT.
 export const BASE_RUNTIME_PROFILE_MAJOR = 1 as const;
-export const BASE_RUNTIME_PROFILE_MINOR = 0 as const;
+export const BASE_RUNTIME_PROFILE_MINOR = 1 as const;
+
+export type BaseCapabilitySet = ReadonlyArray<number> & { readonly __maxItems: 64 };
+
+export type BasePrerelease = string & { readonly __maxBytes: 32 };
 
 export type CapabilitySetV1 = ReadonlyArray<number> & { readonly __maxItems: 64 };
 
@@ -15,6 +19,8 @@ export type IdempotencyKeyV1 = Uint8Array & { readonly __brand: "IdempotencyKeyV
 export type LimitationCodeV1 = string & { readonly __maxBytes: 128 };
 
 export type ManagementHandleV1 = Uint8Array & { readonly __brand: "ManagementHandleV1" };
+
+export type MigrationVectorIdV1 = string & { readonly __maxBytes: 64 };
 
 export class OpaqueContinuationV1 {
   private constructor(private readonly value: Uint8Array) {}
@@ -41,7 +47,11 @@ export type ProfileMinorV1 = number & { readonly __brand: "ProfileMinorV1" };
 
 export type RequestIdV1 = Uint8Array & { readonly __brand: "RequestIdV1" };
 
+export type StorageSchemaVersion = number & { readonly __brand: "StorageSchemaVersion" };
+
 export type SubscriptionHandleV1 = Uint8Array & { readonly __brand: "SubscriptionHandleV1" };
+
+export type TargetTriple = string & { readonly __maxBytes: 96 };
 
 export class TypedPayloadV1 {
   private constructor(private readonly value: Uint8Array) {}
@@ -78,6 +88,16 @@ export enum ArchiveCredentialKindV1 {
   RecoveryKey = 2,
 }
 
+export interface ArchiveRestorePolicyV1 {
+  readonly canonical_schema_digest: CompatibilityDigestV1;
+  readonly domain_registry_digest: CompatibilityDigestV1;
+  readonly resource_registry_digest: CompatibilityDigestV1;
+  readonly storage_schema: StorageSchemaVersion;
+  readonly archive_profile: ProfileVersion;
+  readonly migration_profile: ProfileVersion;
+  readonly max_dataset_bytes: bigint;
+}
+
 export type ArchiveSecretHandleV1 = Uint8Array & { readonly __brand: "ArchiveSecretHandleV1" };
 
 export interface ArchiveSinkBeginV1 {
@@ -106,10 +126,64 @@ export interface ArchiveSourcePushV1 {
   readonly chunk: ArchiveChunkV1;
 }
 
+export interface BaseCapabilityRequirements {
+  readonly supported: BaseCapabilitySet;
+  readonly required: BaseCapabilitySet;
+}
+
 export type BaseCommandV1 =
   | { readonly kind: 1; readonly name: "ExistingLocalCommand"; readonly payload: BaseLocalCommandV1 }
   | { readonly kind: 2; readonly name: "CreateArchive"; readonly payload: CreateArchiveCommandV1 }
   | { readonly kind: 3; readonly name: "RestoreArchive"; readonly payload: RestoreArchiveCommandV1 };
+
+export enum BaseCompatibilityError {
+  BaseMajorMismatch = 1,
+  BaseMinorBelowMinimum = 2,
+  CanonicalSchemaMismatch = 3,
+  DomainRegistryMismatch = 4,
+  ResourceRegistryMismatch = 5,
+  RegistryProfileMismatch = 6,
+  RegistryProfileDigestMismatch = 7,
+  WireSessionMajorMismatch = 8,
+  WireSessionMinorBelowMinimum = 9,
+  ProductApiMajorMismatch = 10,
+  ProductApiMinorBelowMinimum = 11,
+  CAbiMajorMismatch = 12,
+  CAbiMinorBelowMinimum = 13,
+  MigrationVectorRequired = 14,
+  MissingRequiredCapability = 15,
+  InvalidPolicy = 16,
+}
+
+export interface BaseCompatibilityPolicy {
+  readonly current: BaseCompatibilityTuple;
+  readonly minimum_additive: NegotiatedVersions;
+  readonly archive_restore: ArchiveRestorePolicyV1;
+}
+
+export interface BaseCompatibilityTuple {
+  readonly base_version: BaseReleaseVersion;
+  readonly base_commit: SourceCommitIdentity;
+  readonly canonical_schema_digest: CompatibilityDigestV1;
+  readonly domain_registry_digest: CompatibilityDigestV1;
+  readonly resource_registry_digest: CompatibilityDigestV1;
+  readonly storage_schema: StorageSchemaVersion;
+  readonly archive_profile: ProfileVersion;
+  readonly migration_profile: ProfileVersion;
+  readonly registry_profile: ProfileVersion;
+  readonly registry_profile_digest: CompatibilityDigestV1;
+  readonly wire_session: ProfileVersion;
+  readonly product_api: ProfileVersion;
+  readonly c_abi: ProfileVersion;
+  readonly feature_set_digest: CompatibilityDigestV1;
+  readonly target_triple: TargetTriple;
+  readonly toolchain: ToolchainIdentity;
+}
+
+export interface BaseCompatibleNegotiationV1 {
+  readonly versions: NegotiatedVersions;
+  readonly capabilities: BaseCapabilitySet;
+}
 
 export interface BaseConfirmRequestV1 {
   readonly operation_id: BaseOperationId;
@@ -154,6 +228,17 @@ export type BaseManagementRequestV1 =
   | { readonly kind: 111; readonly name: "CompleteSignerReprovision"; readonly payload: CompleteSignerReprovisionV1 }
   | { readonly kind: 112; readonly name: "Close" };
 
+export interface BaseMigrationRequiredNegotiationV1 {
+  readonly from: BaseReleaseVersion;
+  readonly to: BaseReleaseVersion;
+  readonly vector: MigrationVectorBindingV1;
+}
+
+export type BaseNegotiationOutcome =
+  | { readonly kind: 1; readonly name: "Compatible"; readonly payload: BaseCompatibleNegotiationV1 }
+  | { readonly kind: 2; readonly name: "MigrationRequired"; readonly payload: BaseMigrationRequiredNegotiationV1 }
+  | { readonly kind: 3; readonly name: "Incompatible"; readonly payload: BaseCompatibilityError };
+
 export class BaseOpaqueContinuation {
   private constructor(private readonly value: Uint8Array) {}
 
@@ -188,10 +273,27 @@ export interface BasePrepareRequestV1 {
   readonly command: BaseCommandV1;
 }
 
+export type BaseQualificationState =
+  | { readonly kind: 1; readonly name: "Unqualified" }
+  | { readonly kind: 2; readonly name: "Qualified"; readonly payload: BaseQualifiedEvidence };
+
+export interface BaseQualifiedEvidence {
+  readonly candidate_commit: SourceCommitId;
+  readonly candidate_semantic_digest: CompatibilityDigestV1;
+  readonly evidence_blake3: CompatibilityDigestV1;
+}
+
 export interface BaseQueryRequestV1 {
   readonly payload: TypedPayloadV1;
   readonly continuation?: BaseOpaqueContinuation;
   readonly budget: ResourceBudgetV1;
+}
+
+export interface BaseReleaseVersion {
+  readonly major: number;
+  readonly minor: number;
+  readonly patch: number;
+  readonly prerelease?: BasePrerelease;
 }
 
 export type BaseRequestV1 =
@@ -215,6 +317,13 @@ export interface BaseSubscriptionRequestV1 {
   readonly cursor?: bigint;
 }
 
+export interface BaseVersionStatus {
+  readonly compatibility: BaseCompatibilityTuple;
+  readonly candidate_semantic_digest: CompatibilityDigestV1;
+  readonly artifact_tuple_digest: CompatibilityDigestV1;
+  readonly qualification: BaseQualificationState;
+}
+
 export interface BoundedSecretIngressV1 {
   readonly kind: ArchiveCredentialKindV1;
   readonly bytes: Uint8Array;
@@ -234,7 +343,25 @@ export interface CreateArchiveCommandV1 {
 
 export type FeedAuthorPublicIdV1 = Uint8Array & { readonly __brand: "FeedAuthorPublicIdV1" };
 
+export interface MigrationVectorBindingV1 {
+  readonly vector_id: MigrationVectorIdV1;
+  readonly vector_blake3: CompatibilityDigestV1;
+  readonly trust_policy_digest: CompatibilityDigestV1;
+}
+
+export interface NegotiatedVersions {
+  readonly base_minor: number;
+  readonly wire_session_minor: number;
+  readonly product_api_minor: number;
+  readonly c_abi_minor: number;
+}
+
 export type NodeTransportPublicIdV1 = Uint8Array & { readonly __brand: "NodeTransportPublicIdV1" };
+
+export interface ProfileVersion {
+  readonly major: number;
+  readonly minor: number;
+}
 
 export interface ResourceBudgetV1 {
   readonly max_items: number;
@@ -260,6 +387,24 @@ export type SignerPublicIdV1 =
   | { readonly kind: 1; readonly name: "NodeTransport"; readonly payload: NodeTransportPublicIdV1 }
   | { readonly kind: 2; readonly name: "ActorRoot"; readonly payload: ActorRootPublicIdV1 }
   | { readonly kind: 3; readonly name: "FeedAuthor"; readonly payload: FeedAuthorPublicIdV1 };
+
+export type SourceCommitId =
+  | { readonly kind: 1; readonly name: "Sha1"; readonly payload: SourceCommitSha1 }
+  | { readonly kind: 2; readonly name: "Sha256"; readonly payload: SourceCommitSha256 };
+
+export type SourceCommitIdentity =
+  | { readonly kind: 1; readonly name: "Known"; readonly payload: SourceCommitId }
+  | { readonly kind: 2; readonly name: "Unknown" };
+
+export type SourceCommitSha1 = Uint8Array & { readonly __brand: "SourceCommitSha1" };
+
+export type SourceCommitSha256 = Uint8Array & { readonly __brand: "SourceCommitSha256" };
+
+export type ToolchainDigest = Uint8Array & { readonly __brand: "ToolchainDigest" };
+
+export type ToolchainIdentity =
+  | { readonly kind: 1; readonly name: "Known"; readonly payload: ToolchainDigest }
+  | { readonly kind: 2; readonly name: "Unknown" };
 
 export enum TopicKindV1 {
   RuntimeStatus = 1,

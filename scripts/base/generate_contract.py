@@ -157,6 +157,12 @@ def validate_idl(idl: dict[str, object]) -> None:
         kind = definition.get("kind")
         if kind not in {"newtype", "opaque_registry_id", "struct", "enum"}:
             raise GenerationError(f"unsupported type kind: {kind}")
+        derives = definition.get("derives", [])
+        if not isinstance(derives, list) or any(
+            derive not in {"Clone", "Copy", "Debug", "PartialEq", "Eq"}
+            for derive in derives
+        ) or len(derives) != len(set(derives)):
+            raise GenerationError(f"unsupported or duplicate Rust derive in {name}")
         if kind in {"newtype", "opaque_registry_id"}:
             if kind == "newtype" and definition.get("wire") not in {
                 "fixed_bytes",
@@ -222,10 +228,10 @@ def _rust_field_type(field: Mapping[str, object]) -> str:
 def _rust_newtype(name: str, definition: Mapping[str, object]) -> list[str]:
     ownership = definition.get("ownership")
     derives = (
-        "#[derive(Clone, Copy, PartialEq, Eq)]"
+        "#[derive(Clone, Copy, Debug, PartialEq, Eq)]"
         if definition.get("exact_bytes") is not None
         and ownership in {"owned", "value"}
-        else "#[derive(Clone, PartialEq, Eq)]"
+        else "#[derive(Clone, Debug, PartialEq, Eq)]"
         if ownership == "owned"
         else ""
     )
@@ -248,11 +254,11 @@ def _rust_scalar(scalar: Mapping[str, object]) -> list[str]:
     wire = scalar["wire"]
     ownership = scalar.get("ownership")
     if wire in {"u8", "u16", "u32", "u64"}:
-        return ["#[derive(Clone, Copy, PartialEq, Eq)]", f"pub struct {name}(pub {wire});"]
+        return ["#[derive(Clone, Copy, Debug, PartialEq, Eq)]", f"pub struct {name}(pub {wire});"]
     derives = (
-        "#[derive(Clone, Copy, PartialEq, Eq)]"
+        "#[derive(Clone, Copy, Debug, PartialEq, Eq)]"
         if scalar.get("exact_bytes") is not None and ownership in {"owned", "value"}
-        else "#[derive(Clone, PartialEq, Eq)]"
+        else "#[derive(Clone, Debug, PartialEq, Eq)]"
         if ownership == "owned"
         else ""
     )
@@ -300,6 +306,9 @@ def _rust_enum(idl: dict[str, object], name: str, definition: dict[str, object])
         )
         return lines
 
+    derives = definition.get("derives", [])
+    if derives:
+        lines.append(f"#[derive({', '.join(derives)})]")
     lines.append(f"pub enum {name} {{")
     for row in variants:
         payload = row.get("payload")
@@ -314,7 +323,11 @@ def _rust_enum(idl: dict[str, object], name: str, definition: dict[str, object])
 
 
 def _rust_struct(name: str, definition: Mapping[str, object]) -> list[str]:
-    lines = [f"pub struct {name} {{"]
+    lines: list[str] = []
+    derives = definition.get("derives", [])
+    if derives:
+        lines.append(f"#[derive({', '.join(str(derive) for derive in derives)})]")
+    lines.append(f"pub struct {name} {{")
     for field in _rows_by_id(definition["fields"], f"{name}.fields"):
         visibility = "pub(crate)" if name == "BoundedSecretIngressV1" and field["name"] == "bytes" else "pub"
         lines.append(f"    {visibility} {field['name']}: {_rust_field_type(field)},")

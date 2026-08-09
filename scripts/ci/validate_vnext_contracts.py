@@ -81,6 +81,9 @@ BASE_V1_RUNTIME_INTERFACE_PROFILE = (
 BASE_V1_RUNTIME_INTERFACE_HISTORY = (
     ROOT / "src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json"
 )
+BASE_V1_COMPATIBILITY_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-compatibility-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -1892,6 +1895,588 @@ def validate_base_v1_runtime_interface(
         raise ContractError("runtime discriminator history chain root mismatch")
 
     return len(operations), len(topics), len(errors)
+
+
+def validate_base_v1_compatibility(
+    profile: dict[str, object] | None = None,
+    runtime_profile: dict[str, object] | None = None,
+) -> int:
+    if profile is None:
+        try:
+            profile = json.loads(read(BASE_V1_COMPATIBILITY_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base compatibility JSON: {error}") from error
+    if profile.get("format") != "onebrain/base-v1-compatibility/1" or profile.get(
+        "profile_id"
+    ) != "BASE_V1_COMPATIBILITY_V1":
+        raise ContractError("unexpected Base compatibility profile")
+    if profile.get("domains") != {
+        "candidate_semantic": "onebrain:base:candidate-semantic:1\\0",
+        "artifact_tuple": "onebrain:base:artifact-tuple:1\\0",
+    }:
+        raise ContractError("Base compatibility digest domain drift")
+    if profile.get("identity_inputs") != {
+        "source_commit": "ONEBRAIN_BASE_COMMIT",
+        "toolchain_digest": "ONEBRAIN_TOOLCHAIN_DIGEST",
+        "missing_or_malformed": "typed_unknown",
+    }:
+        raise ContractError("Base compatibility build identity contract drift")
+
+    tuple_fields = [
+        "base_version",
+        "base_commit",
+        "canonical_schema_digest",
+        "domain_registry_digest",
+        "resource_registry_digest",
+        "storage_schema",
+        "archive_profile",
+        "migration_profile",
+        "registry_profile",
+        "registry_profile_digest",
+        "wire_session",
+        "product_api",
+        "c_abi",
+        "feature_set_digest",
+        "target_triple",
+        "toolchain",
+    ]
+    candidate_fields = tuple_fields[:-2]
+    if profile.get("tuple_fields") != tuple_fields or profile.get(
+        "candidate_fields"
+    ) != candidate_fields or profile.get("artifact_only_fields") != [
+        "target_triple",
+        "toolchain",
+    ]:
+        raise ContractError("Base compatibility tuple field order drift")
+
+    if runtime_profile is None:
+        try:
+            runtime_profile = json.loads(read(BASE_V1_RUNTIME_INTERFACE_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base runtime interface JSON: {error}") from error
+    runtime = runtime_profile
+    runtime_compatibility = runtime.get("compatibility")
+    if not isinstance(runtime_compatibility, dict) or runtime_compatibility.get(
+        "candidate_fields"
+    ) != candidate_fields or runtime_compatibility.get("artifact_only_fields") != [
+        "target_triple",
+        "toolchain",
+    ] or runtime_compatibility.get(
+        "qualification_participates_in_digest"
+    ) is not False or runtime_compatibility.get(
+        "qualification_is_external"
+    ) is not True:
+        raise ContractError("Base compatibility IDL binding drift")
+
+    scalar_rows = runtime.get("scalar_types")
+    if not isinstance(scalar_rows, list):
+        raise ContractError("Base compatibility scalar declarations are absent")
+    scalars = {
+        row.get("name"): row for row in scalar_rows if isinstance(row, dict)
+    }
+    expected_scalars = {
+        "BasePrerelease": {
+            "name": "BasePrerelease",
+            "wire": "ascii_token",
+            "max_bytes": 32,
+            "ownership": "owned",
+        },
+        "TargetTriple": {
+            "name": "TargetTriple",
+            "wire": "ascii_token",
+            "max_bytes": 96,
+            "ownership": "owned",
+        },
+        "MigrationVectorIdV1": {
+            "name": "MigrationVectorIdV1",
+            "wire": "ascii_token",
+            "max_bytes": 64,
+            "ownership": "owned",
+        },
+        "BaseCapabilitySet": {
+            "name": "BaseCapabilitySet",
+            "wire": "bounded_set",
+            "max_items": 64,
+            "ownership": "owned",
+        },
+        "StorageSchemaVersion": {
+            "name": "StorageSchemaVersion",
+            "wire": "u32",
+            "ownership": "value",
+        },
+    }
+    if any(scalars.get(name) != row for name, row in expected_scalars.items()):
+        raise ContractError("Base compatibility scalar declaration drift")
+
+    definitions = runtime.get("type_definitions")
+    if not isinstance(definitions, dict):
+        raise ContractError("Base compatibility type declarations are absent")
+
+    def fields(name: str) -> list[tuple[object, ...]]:
+        definition = definitions.get(name)
+        if not isinstance(definition, dict) or definition.get("kind") != "struct":
+            raise ContractError(f"Base compatibility struct declaration drift: {name}")
+        rows = definition.get("fields")
+        if not isinstance(rows, list):
+            raise ContractError(f"Base compatibility field declaration drift: {name}")
+        return [
+            (
+                row.get("id"),
+                row.get("name"),
+                row.get("type"),
+                row.get("required"),
+                row.get("ownership"),
+                row.get("max_value"),
+            )
+            for row in rows
+            if isinstance(row, dict)
+        ]
+
+    expected_struct_fields = {
+        "ProfileVersion": [
+            (1, "major", "u16", True, "value", None),
+            (2, "minor", "u16", True, "value", None),
+        ],
+        "BaseReleaseVersion": [
+            (1, "major", "u16", True, "value", None),
+            (2, "minor", "u16", True, "value", None),
+            (3, "patch", "u16", True, "value", None),
+            (4, "prerelease", "BasePrerelease", False, "owned", None),
+        ],
+        "BaseQualifiedEvidence": [
+            (1, "candidate_commit", "SourceCommitId", True, "owned", None),
+            (
+                2,
+                "candidate_semantic_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (3, "evidence_blake3", "CompatibilityDigestV1", True, "owned", None),
+        ],
+        "ArchiveRestorePolicyV1": [
+            (
+                1,
+                "canonical_schema_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                2,
+                "domain_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                3,
+                "resource_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (4, "storage_schema", "StorageSchemaVersion", True, "value", None),
+            (5, "archive_profile", "ProfileVersion", True, "value", None),
+            (6, "migration_profile", "ProfileVersion", True, "value", None),
+            (7, "max_dataset_bytes", "u64", True, "value", 17_179_869_184),
+        ],
+        "BaseCompatibilityTuple": [
+            (1, "base_version", "BaseReleaseVersion", True, "owned", None),
+            (2, "base_commit", "SourceCommitIdentity", True, "owned", None),
+            (
+                3,
+                "canonical_schema_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                4,
+                "domain_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                5,
+                "resource_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (6, "storage_schema", "StorageSchemaVersion", True, "value", None),
+            (7, "archive_profile", "ProfileVersion", True, "value", None),
+            (8, "migration_profile", "ProfileVersion", True, "value", None),
+            (9, "registry_profile", "ProfileVersion", True, "value", None),
+            (
+                10,
+                "registry_profile_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (11, "wire_session", "ProfileVersion", True, "value", None),
+            (12, "product_api", "ProfileVersion", True, "value", None),
+            (13, "c_abi", "ProfileVersion", True, "value", None),
+            (
+                14,
+                "feature_set_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (15, "target_triple", "TargetTriple", True, "owned", None),
+            (16, "toolchain", "ToolchainIdentity", True, "owned", None),
+        ],
+        "BaseVersionStatus": [
+            (1, "compatibility", "BaseCompatibilityTuple", True, "owned", None),
+            (
+                2,
+                "candidate_semantic_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                3,
+                "artifact_tuple_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (4, "qualification", "BaseQualificationState", True, "owned", None),
+        ],
+        "NegotiatedVersions": [
+            (1, "base_minor", "u16", True, "value", None),
+            (2, "wire_session_minor", "u16", True, "value", None),
+            (3, "product_api_minor", "u16", True, "value", None),
+            (4, "c_abi_minor", "u16", True, "value", None),
+        ],
+        "MigrationVectorBindingV1": [
+            (1, "vector_id", "MigrationVectorIdV1", True, "owned", None),
+            (2, "vector_blake3", "CompatibilityDigestV1", True, "owned", None),
+            (
+                3,
+                "trust_policy_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+        ],
+        "BaseCompatibilityPolicy": [
+            (1, "current", "BaseCompatibilityTuple", True, "owned", None),
+            (2, "minimum_additive", "NegotiatedVersions", True, "owned", None),
+            (3, "archive_restore", "ArchiveRestorePolicyV1", True, "owned", None),
+        ],
+        "BaseCapabilityRequirements": [
+            (1, "supported", "BaseCapabilitySet", True, "owned", None),
+            (2, "required", "BaseCapabilitySet", True, "owned", None),
+        ],
+        "BaseCompatibleNegotiationV1": [
+            (1, "versions", "NegotiatedVersions", True, "owned", None),
+            (2, "capabilities", "BaseCapabilitySet", True, "owned", None),
+        ],
+        "BaseMigrationRequiredNegotiationV1": [
+            (1, "from", "BaseReleaseVersion", True, "owned", None),
+            (2, "to", "BaseReleaseVersion", True, "owned", None),
+            (3, "vector", "MigrationVectorBindingV1", True, "owned", None),
+        ],
+    }
+    for name, expected in expected_struct_fields.items():
+        if fields(name) != expected:
+            raise ContractError(f"Base compatibility field declaration drift: {name}")
+
+    for name, expected in {
+        "SourceCommitSha1": {
+            "kind": "newtype",
+            "wire": "fixed_bytes",
+            "exact_bytes": 20,
+            "ownership": "owned",
+        },
+        "SourceCommitSha256": {
+            "kind": "newtype",
+            "wire": "fixed_bytes",
+            "exact_bytes": 32,
+            "ownership": "owned",
+        },
+        "ToolchainDigest": {
+            "kind": "newtype",
+            "wire": "fixed_bytes",
+            "exact_bytes": 32,
+            "ownership": "owned",
+        },
+    }.items():
+        if definitions.get(name) != expected:
+            raise ContractError(f"Base compatibility identity declaration drift: {name}")
+
+    expected_enums = {
+        "SourceCommitId": (
+            "u8",
+            [(1, "Sha1", "SourceCommitSha1"), (2, "Sha256", "SourceCommitSha256")],
+        ),
+        "SourceCommitIdentity": (
+            "u8",
+            [(1, "Known", "SourceCommitId"), (2, "Unknown", None)],
+        ),
+        "ToolchainIdentity": (
+            "u8",
+            [(1, "Known", "ToolchainDigest"), (2, "Unknown", None)],
+        ),
+        "BaseQualificationState": (
+            "u8",
+            [
+                (1, "Unqualified", None),
+                (2, "Qualified", "BaseQualifiedEvidence"),
+            ],
+        ),
+        "BaseNegotiationOutcome": (
+            "u8",
+            [
+                (1, "Compatible", "BaseCompatibleNegotiationV1"),
+                (2, "MigrationRequired", "BaseMigrationRequiredNegotiationV1"),
+                (3, "Incompatible", "BaseCompatibilityError"),
+            ],
+        ),
+    }
+    for name, (expected_repr, expected) in expected_enums.items():
+        definition = definitions.get(name)
+        variants = definition.get("variants") if isinstance(definition, dict) else None
+        actual = [
+            (row.get("id"), row.get("name"), row.get("payload"))
+            for row in variants
+            if isinstance(row, dict)
+        ] if isinstance(variants, list) else []
+        if not isinstance(definition, dict) or definition.get(
+            "kind"
+        ) != "enum" or definition.get("closed") is not True or definition.get(
+            "repr"
+        ) != expected_repr or actual != expected:
+            raise ContractError(f"Base compatibility enum declaration drift: {name}")
+    error_definition = definitions.get("BaseCompatibilityError")
+    error_variants = (
+        error_definition.get("variants")
+        if isinstance(error_definition, dict)
+        else None
+    )
+    expected_error_names = [
+        "BaseMajorMismatch",
+        "BaseMinorBelowMinimum",
+        "CanonicalSchemaMismatch",
+        "DomainRegistryMismatch",
+        "ResourceRegistryMismatch",
+        "RegistryProfileMismatch",
+        "RegistryProfileDigestMismatch",
+        "WireSessionMajorMismatch",
+        "WireSessionMinorBelowMinimum",
+        "ProductApiMajorMismatch",
+        "ProductApiMinorBelowMinimum",
+        "CAbiMajorMismatch",
+        "CAbiMinorBelowMinimum",
+        "MigrationVectorRequired",
+        "MissingRequiredCapability",
+        "InvalidPolicy",
+    ]
+    if not isinstance(error_definition, dict) or error_definition.get(
+        "kind"
+    ) != "enum" or error_definition.get("closed") is not True or error_definition.get(
+        "repr"
+    ) != "u16" or not isinstance(error_variants, list) or [
+        (row.get("id"), row.get("name"), row.get("payload"))
+        for row in error_variants
+        if isinstance(row, dict)
+    ] != [
+        (identifier, name, None)
+        for identifier, name in enumerate(expected_error_names, start=1)
+    ]:
+        raise ContractError("Base compatibility error declaration drift")
+
+    baseline = profile.get("baseline")
+    if not isinstance(baseline, dict) or list(baseline) != tuple_fields:
+        raise ContractError("Base compatibility baseline tuple drift")
+    release = baseline.get("base_version")
+    if not isinstance(release, dict) or set(release) != {
+        "major",
+        "minor",
+        "patch",
+        "prerelease",
+    } or any(
+        not isinstance(release.get(field), int)
+        for field in ("major", "minor", "patch")
+    ):
+        raise ContractError("Base compatibility release version drift")
+
+    digest_fields = {
+        "canonical_schema_digest",
+        "domain_registry_digest",
+        "resource_registry_digest",
+        "registry_profile_digest",
+        "feature_set_digest",
+    }
+    digest_pattern = re.compile(r"[0-9a-f]{64}")
+    for field in digest_fields:
+        if not digest_pattern.fullmatch(str(baseline.get(field, ""))):
+            raise ContractError(f"Base compatibility digest field drift: {field}")
+    commit = baseline.get("base_commit")
+    toolchain = baseline.get("toolchain")
+    if not isinstance(commit, dict) or commit.get("kind") != "sha1" or not re.fullmatch(
+        r"[0-9a-f]{40}", str(commit.get("hex", ""))
+    ) or not isinstance(toolchain, dict) or toolchain.get(
+        "kind"
+    ) != "known" or not digest_pattern.fullmatch(str(toolchain.get("hex", ""))):
+        raise ContractError("Base compatibility known identity vector drift")
+    if not isinstance(baseline.get("storage_schema"), int) or not isinstance(
+        baseline.get("target_triple"), str
+    ) or not 0 < len(baseline["target_triple"].encode("ascii")) <= 96:
+        raise ContractError("Base compatibility storage/target vector drift")
+    for field in ("archive_profile", "migration_profile", "registry_profile", "wire_session", "product_api", "c_abi"):
+        value = baseline.get(field)
+        if not isinstance(value, dict) or set(value) != {"major", "minor"} or any(
+            not isinstance(value.get(part), int) for part in ("major", "minor")
+        ):
+            raise ContractError(f"Base compatibility profile version drift: {field}")
+
+    minimum = profile.get("minimum_additive")
+    if not isinstance(minimum, dict) or set(minimum) != {
+        "base_minor",
+        "wire_session_minor",
+        "product_api_minor",
+        "c_abi_minor",
+    } or any(not isinstance(value, int) for value in minimum.values()):
+        raise ContractError("Base compatibility independent minor floors drift")
+    archive_restore = profile.get("archive_restore")
+    if archive_restore != {"max_dataset_bytes": 17_179_869_184}:
+        raise ContractError("Base compatibility archive limit drift")
+
+    capabilities = profile.get("capabilities")
+    if not isinstance(capabilities, dict):
+        raise ContractError("Base compatibility capability vectors are absent")
+    for side in ("local", "peer"):
+        offer = capabilities.get(side)
+        if not isinstance(offer, dict) or set(offer) != {"supported", "required"}:
+            raise ContractError("Base compatibility capability offer drift")
+        supported = offer.get("supported")
+        required = offer.get("required")
+        if not isinstance(supported, list) or not isinstance(required, list) or (
+            supported != sorted(set(supported))
+            or required != sorted(set(required))
+            or not set(required) <= set(supported)
+            or len(supported) > 64
+        ):
+            raise ContractError("Base compatibility capability bounds drift")
+    if capabilities.get("expected_intersection") != [1, 2]:
+        raise ContractError("Base compatibility capability intersection drift")
+
+    vector = profile.get("migration_vector")
+    if not isinstance(vector, dict) or set(vector) != {
+        "vector_id",
+        "vector_blake3",
+        "trust_policy_digest",
+    } or not isinstance(vector.get("vector_id"), str) or not 0 < len(
+        vector["vector_id"].encode("ascii")
+    ) <= 64 or not digest_pattern.fullmatch(str(vector.get("vector_blake3", ""))) or not digest_pattern.fullmatch(
+        str(vector.get("trust_policy_digest", ""))
+    ):
+        raise ContractError("Base compatibility migration binding drift")
+
+    golden = profile.get("golden_digests")
+    if not isinstance(golden, dict) or set(golden) != {
+        "candidate_semantic",
+        "artifact_tuple",
+    } or any(
+        not digest_pattern.fullmatch(str(golden.get(field, "")))
+        for field in golden
+    ):
+        raise ContractError("Base compatibility golden digest drift")
+
+    cases = profile.get("cases")
+    if not isinstance(cases, list) or len(cases) != 34:
+        raise ContractError("Base compatibility vector count drift")
+    expected_outcomes = {
+        "exact": "compatible",
+        "base-major": "incompatible:BaseMajorMismatch",
+        "base-minor": "compatible",
+        "base-minor-below-floor": "incompatible:BaseMinorBelowMinimum",
+        "base-patch": "compatible",
+        "base-prerelease": "compatible",
+        "commit-known": "compatible",
+        "commit-unknown": "compatible",
+        "canonical-schema": "incompatible:CanonicalSchemaMismatch",
+        "domain-registry": "incompatible:DomainRegistryMismatch",
+        "resource-registry": "incompatible:ResourceRegistryMismatch",
+        "storage-with-vector": "migration_required",
+        "storage-without-vector": "incompatible:MigrationVectorRequired",
+        "archive-profile": "migration_required",
+        "archive-profile-without-vector": "incompatible:MigrationVectorRequired",
+        "migration-profile": "migration_required",
+        "migration-profile-without-vector": "incompatible:MigrationVectorRequired",
+        "registry-profile": "incompatible:RegistryProfileMismatch",
+        "registry-profile-digest": "incompatible:RegistryProfileDigestMismatch",
+        "wire-major": "incompatible:WireSessionMajorMismatch",
+        "wire-minor": "compatible",
+        "wire-minor-below-floor": "incompatible:WireSessionMinorBelowMinimum",
+        "product-major": "incompatible:ProductApiMajorMismatch",
+        "product-minor": "compatible",
+        "product-minor-below-floor": "incompatible:ProductApiMinorBelowMinimum",
+        "c-abi-major": "incompatible:CAbiMajorMismatch",
+        "c-abi-minor": "compatible",
+        "c-abi-minor-below-floor": "incompatible:CAbiMinorBelowMinimum",
+        "optional-feature": "compatible",
+        "required-feature": "incompatible:MissingRequiredCapability",
+        "target": "compatible",
+        "toolchain-known": "compatible",
+        "toolchain-unknown": "compatible",
+        "commit-toolchain-unknown": "compatible",
+    }
+    by_id: dict[str, dict[str, object]] = {}
+    for case in cases:
+        if not isinstance(case, dict) or set(case) != {
+            "id",
+            "field",
+            "change",
+            "migration_vector",
+            "outcome",
+            "semantic_digest_changed",
+            "artifact_digest_changed",
+            "qualification",
+        } or not isinstance(case.get("id"), str) or case["id"] in by_id:
+            raise ContractError("Base compatibility case schema/ID drift")
+        by_id[case["id"]] = case
+    if set(by_id) != set(expected_outcomes) or any(
+        by_id[identifier].get("outcome") != outcome
+        for identifier, outcome in expected_outcomes.items()
+    ):
+        raise ContractError("Base compatibility decision vector drift")
+    covered = {
+        str(case.get("field")).split(".", 1)[0].split("+", 1)[0]
+        for case in cases
+    }
+    if not set(tuple_fields) <= covered | {"all"}:
+        raise ContractError("Base compatibility tuple field coverage drift")
+    if by_id["target"].get("semantic_digest_changed") is not False or by_id[
+        "target"
+    ].get("artifact_digest_changed") is not True or by_id[
+        "toolchain-known"
+    ].get("semantic_digest_changed") is not False or by_id[
+        "toolchain-known"
+    ].get("artifact_digest_changed") is not True:
+        raise ContractError("Base artifact-only digest separation drift")
+    for identifier in ("commit-unknown", "toolchain-unknown", "commit-toolchain-unknown"):
+        if by_id[identifier].get("qualification") != "unqualified":
+            raise ContractError("unknown build identity must remain unqualified")
+    return len(cases)
 
 
 def validate_negative_assertions() -> int:
@@ -5414,6 +5999,7 @@ def main() -> int:
                 base_runtime_topics,
                 base_runtime_errors,
             ) = validate_base_v1_runtime_interface()
+        base_compatibility_vectors = validate_base_v1_compatibility()
         assertions = validate_negative_assertions()
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
@@ -5499,6 +6085,7 @@ def main() -> int:
         f"{base_archive_required} required metadata, "
         f"{base_runtime_operations} Base runtime operations/"
         f"{base_runtime_topics} topics/{base_runtime_errors} errors, "
+        f"{base_compatibility_vectors} Base compatibility vectors, "
         f"{schema_vectors} identity-object vectors, "
         f"{event_vectors} feed-event vectors, {normative_lines} normative lines, "
         f"{product_endpoints} product endpoints/{product_dtos} DTOs, "

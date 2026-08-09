@@ -3,7 +3,7 @@
   "profile_id": "BASE_V1_RUNTIME_INTERFACE_V1",
   "profile_version": {
     "major": 1,
-    "minor": 0
+    "minor": 1
   },
   "product_api_profile": {
     "major": 1,
@@ -49,7 +49,12 @@
     {"name": "ManagementHandleV1", "wire": "opaque_handle", "exact_bytes": 32, "ownership": "host_principal"},
     {"name": "EventCursorV1", "wire": "u64", "ownership": "value"},
     {"name": "CapabilitySetV1", "wire": "bounded_set", "max_items": 64, "ownership": "owned"},
-    {"name": "TypedPayloadV1", "wire": "bounded_bytes", "max_bytes": 1048576, "ownership": "owned"}
+    {"name": "TypedPayloadV1", "wire": "bounded_bytes", "max_bytes": 1048576, "ownership": "owned"},
+    {"name": "BasePrerelease", "wire": "ascii_token", "max_bytes": 32, "ownership": "owned"},
+    {"name": "TargetTriple", "wire": "ascii_token", "max_bytes": 96, "ownership": "owned"},
+    {"name": "MigrationVectorIdV1", "wire": "ascii_token", "max_bytes": 64, "ownership": "owned"},
+    {"name": "BaseCapabilitySet", "wire": "bounded_set", "max_items": 64, "ownership": "owned"},
+    {"name": "StorageSchemaVersion", "wire": "u32", "ownership": "value"}
   ],
   "common_cross_projection_fields": [
     "profile_major",
@@ -370,6 +375,208 @@
         {"id": 112, "name": "Close", "payload": null}
       ]
     },
+    "ProfileVersion": {
+      "kind": "struct",
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "major", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 2, "name": "minor", "type": "u16", "required": true, "ownership": "value"}
+      ]
+    },
+    "BaseReleaseVersion": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "major", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 2, "name": "minor", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 3, "name": "patch", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 4, "name": "prerelease", "type": "BasePrerelease", "required": false, "ownership": "owned"}
+      ]
+    },
+    "SourceCommitSha1": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 20, "ownership": "owned"},
+    "SourceCommitSha256": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "owned"},
+    "ToolchainDigest": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "owned"},
+    "SourceCommitId": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "variants": [
+        {"id": 1, "name": "Sha1", "payload": "SourceCommitSha1"},
+        {"id": 2, "name": "Sha256", "payload": "SourceCommitSha256"}
+      ]
+    },
+    "SourceCommitIdentity": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "variants": [
+        {"id": 1, "name": "Known", "payload": "SourceCommitId"},
+        {"id": 2, "name": "Unknown", "payload": null}
+      ]
+    },
+    "ToolchainIdentity": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "variants": [
+        {"id": 1, "name": "Known", "payload": "ToolchainDigest"},
+        {"id": 2, "name": "Unknown", "payload": null}
+      ]
+    },
+    "BaseQualifiedEvidence": {
+      "kind": "struct",
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "candidate_commit", "type": "SourceCommitId", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "candidate_semantic_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "evidence_blake3", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseQualificationState": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "variants": [
+        {"id": 1, "name": "Unqualified", "payload": null},
+        {"id": 2, "name": "Qualified", "payload": "BaseQualifiedEvidence"}
+      ]
+    },
+    "ArchiveRestorePolicyV1": {
+      "kind": "struct",
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "canonical_schema_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "domain_registry_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "resource_registry_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 4, "name": "storage_schema", "type": "StorageSchemaVersion", "required": true, "ownership": "value"},
+        {"id": 5, "name": "archive_profile", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 6, "name": "migration_profile", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 7, "name": "max_dataset_bytes", "type": "u64", "required": true, "ownership": "value", "max_value": 17179869184}
+      ]
+    },
+    "BaseCompatibilityTuple": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "base_version", "type": "BaseReleaseVersion", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "base_commit", "type": "SourceCommitIdentity", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "canonical_schema_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 4, "name": "domain_registry_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 5, "name": "resource_registry_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 6, "name": "storage_schema", "type": "StorageSchemaVersion", "required": true, "ownership": "value"},
+        {"id": 7, "name": "archive_profile", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 8, "name": "migration_profile", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 9, "name": "registry_profile", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 10, "name": "registry_profile_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 11, "name": "wire_session", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 12, "name": "product_api", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 13, "name": "c_abi", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 14, "name": "feature_set_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 15, "name": "target_triple", "type": "TargetTriple", "required": true, "ownership": "owned"},
+        {"id": 16, "name": "toolchain", "type": "ToolchainIdentity", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseVersionStatus": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "compatibility", "type": "BaseCompatibilityTuple", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "candidate_semantic_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "artifact_tuple_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 4, "name": "qualification", "type": "BaseQualificationState", "required": true, "ownership": "owned"}
+      ]
+    },
+    "NegotiatedVersions": {
+      "kind": "struct",
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "base_minor", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 2, "name": "wire_session_minor", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 3, "name": "product_api_minor", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 4, "name": "c_abi_minor", "type": "u16", "required": true, "ownership": "value"}
+      ]
+    },
+    "MigrationVectorBindingV1": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "vector_id", "type": "MigrationVectorIdV1", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "vector_blake3", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "trust_policy_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseCompatibilityPolicy": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "current", "type": "BaseCompatibilityTuple", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "minimum_additive", "type": "NegotiatedVersions", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "archive_restore", "type": "ArchiveRestorePolicyV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseCapabilityRequirements": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "supported", "type": "BaseCapabilitySet", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "required", "type": "BaseCapabilitySet", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseCompatibleNegotiationV1": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "versions", "type": "NegotiatedVersions", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "capabilities", "type": "BaseCapabilitySet", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseMigrationRequiredNegotiationV1": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "from", "type": "BaseReleaseVersion", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "to", "type": "BaseReleaseVersion", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "vector", "type": "MigrationVectorBindingV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseCompatibilityError": {
+      "kind": "enum",
+      "repr": "u16",
+      "closed": true,
+      "variants": [
+        {"id": 1, "name": "BaseMajorMismatch"},
+        {"id": 2, "name": "BaseMinorBelowMinimum"},
+        {"id": 3, "name": "CanonicalSchemaMismatch"},
+        {"id": 4, "name": "DomainRegistryMismatch"},
+        {"id": 5, "name": "ResourceRegistryMismatch"},
+        {"id": 6, "name": "RegistryProfileMismatch"},
+        {"id": 7, "name": "RegistryProfileDigestMismatch"},
+        {"id": 8, "name": "WireSessionMajorMismatch"},
+        {"id": 9, "name": "WireSessionMinorBelowMinimum"},
+        {"id": 10, "name": "ProductApiMajorMismatch"},
+        {"id": 11, "name": "ProductApiMinorBelowMinimum"},
+        {"id": 12, "name": "CAbiMajorMismatch"},
+        {"id": 13, "name": "CAbiMinorBelowMinimum"},
+        {"id": 14, "name": "MigrationVectorRequired"},
+        {"id": 15, "name": "MissingRequiredCapability"},
+        {"id": 16, "name": "InvalidPolicy"}
+      ]
+    },
+    "BaseNegotiationOutcome": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "variants": [
+        {"id": 1, "name": "Compatible", "payload": "BaseCompatibleNegotiationV1"},
+        {"id": 2, "name": "MigrationRequired", "payload": "BaseMigrationRequiredNegotiationV1"},
+        {"id": 3, "name": "Incompatible", "payload": "BaseCompatibilityError"}
+      ]
+    },
     "BaseErrorCodeV1": {
       "kind": "enum",
       "repr": "u16",
@@ -508,6 +715,53 @@
     "close_closes_subscriptions": true,
     "close_is_idempotent": true,
     "management_close_is_explicit": true
+  },
+  "compatibility": {
+    "candidate_digest_domain": "onebrain:base:candidate-semantic:1\\0",
+    "artifact_digest_domain": "onebrain:base:artifact-tuple:1\\0",
+    "candidate_fields": [
+      "base_version",
+      "base_commit",
+      "canonical_schema_digest",
+      "domain_registry_digest",
+      "resource_registry_digest",
+      "storage_schema",
+      "archive_profile",
+      "migration_profile",
+      "registry_profile",
+      "registry_profile_digest",
+      "wire_session",
+      "product_api",
+      "c_abi",
+      "feature_set_digest"
+    ],
+    "artifact_only_fields": ["target_triple", "toolchain"],
+    "qualification_is_external": true,
+    "qualification_participates_in_digest": false,
+    "unknown_identity_encoding": "typed-zero-payload-discriminator",
+    "unknown_identity_qualification": "unqualified-only",
+    "migration_requires": ["vector_id", "vector_blake3", "trust_policy_digest"],
+    "minor_negotiation_fields": ["base_version", "wire_session", "product_api", "c_abi"],
+    "exact_incompatible_fields": [
+      "base_version.major",
+      "canonical_schema_digest",
+      "domain_registry_digest",
+      "resource_registry_digest",
+      "registry_profile",
+      "registry_profile_digest",
+      "wire_session.major",
+      "product_api.major",
+      "c_abi.major"
+    ],
+    "migration_fields": ["storage_schema", "archive_profile", "migration_profile"],
+    "provenance_only_fields": [
+      "base_version.patch",
+      "base_version.prerelease",
+      "base_commit",
+      "target_triple",
+      "toolchain"
+    ],
+    "feature_difference": "capability-intersection-require-both-required-subsets"
   },
   "projection_rules": {
     "source": "machine_idl_only",

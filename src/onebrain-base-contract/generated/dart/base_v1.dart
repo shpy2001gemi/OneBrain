@@ -2,7 +2,11 @@
 import 'dart:typed_data';
 
 const int baseRuntimeProfileMajor = 1;
-const int baseRuntimeProfileMinor = 0;
+const int baseRuntimeProfileMinor = 1;
+
+extension type const BaseCapabilitySet(List<int> value) {}
+
+extension type const BasePrerelease(String value) {}
 
 extension type const CapabilitySetV1(List<int> value) {}
 
@@ -26,6 +30,8 @@ final class ManagementHandleV1 {
   ManagementHandleV1(Uint8List value) : value = Uint8List.fromList(value);
   final Uint8List value;
 }
+
+extension type const MigrationVectorIdV1(String value) {}
 
 final class OpaqueContinuationV1 {
   OpaqueContinuationV1._(this._value);
@@ -63,10 +69,14 @@ final class RequestIdV1 {
   final Uint8List value;
 }
 
+extension type const StorageSchemaVersion(int value) {}
+
 final class SubscriptionHandleV1 {
   SubscriptionHandleV1(Uint8List value) : value = Uint8List.fromList(value);
   final Uint8List value;
 }
+
+extension type const TargetTriple(String value) {}
 
 final class TypedPayloadV1 {
   TypedPayloadV1._(this._value);
@@ -114,6 +124,26 @@ enum ArchiveCredentialKindV1 {
 
   const ArchiveCredentialKindV1(this.discriminator);
   final int discriminator;
+}
+
+final class ArchiveRestorePolicyV1 {
+  const ArchiveRestorePolicyV1({
+    required this.canonical_schema_digest,
+    required this.domain_registry_digest,
+    required this.resource_registry_digest,
+    required this.storage_schema,
+    required this.archive_profile,
+    required this.migration_profile,
+    required this.max_dataset_bytes,
+  });
+
+  final CompatibilityDigestV1 canonical_schema_digest;
+  final CompatibilityDigestV1 domain_registry_digest;
+  final CompatibilityDigestV1 resource_registry_digest;
+  final StorageSchemaVersion storage_schema;
+  final ProfileVersion archive_profile;
+  final ProfileVersion migration_profile;
+  final int max_dataset_bytes;
 }
 
 final class ArchiveSecretHandleV1 {
@@ -175,6 +205,16 @@ final class ArchiveSourcePushV1 {
   final ArchiveChunkV1 chunk;
 }
 
+final class BaseCapabilityRequirements {
+  const BaseCapabilityRequirements({
+    required this.supported,
+    required this.required,
+  });
+
+  final BaseCapabilitySet supported;
+  final BaseCapabilitySet required;
+}
+
 sealed class BaseCommandV1 {
   const BaseCommandV1(this.discriminator);
   final int discriminator;
@@ -193,6 +233,88 @@ final class BaseCommandV1CreateArchive extends BaseCommandV1 {
 final class BaseCommandV1RestoreArchive extends BaseCommandV1 {
   const BaseCommandV1RestoreArchive(this.payload) : super(3);
   final RestoreArchiveCommandV1 payload;
+}
+
+enum BaseCompatibilityError {
+  baseMajorMismatch(1),
+  baseMinorBelowMinimum(2),
+  canonicalSchemaMismatch(3),
+  domainRegistryMismatch(4),
+  resourceRegistryMismatch(5),
+  registryProfileMismatch(6),
+  registryProfileDigestMismatch(7),
+  wireSessionMajorMismatch(8),
+  wireSessionMinorBelowMinimum(9),
+  productApiMajorMismatch(10),
+  productApiMinorBelowMinimum(11),
+  cAbiMajorMismatch(12),
+  cAbiMinorBelowMinimum(13),
+  migrationVectorRequired(14),
+  missingRequiredCapability(15),
+  invalidPolicy(16);
+
+  const BaseCompatibilityError(this.discriminator);
+  final int discriminator;
+}
+
+final class BaseCompatibilityPolicy {
+  const BaseCompatibilityPolicy({
+    required this.current,
+    required this.minimum_additive,
+    required this.archive_restore,
+  });
+
+  final BaseCompatibilityTuple current;
+  final NegotiatedVersions minimum_additive;
+  final ArchiveRestorePolicyV1 archive_restore;
+}
+
+final class BaseCompatibilityTuple {
+  const BaseCompatibilityTuple({
+    required this.base_version,
+    required this.base_commit,
+    required this.canonical_schema_digest,
+    required this.domain_registry_digest,
+    required this.resource_registry_digest,
+    required this.storage_schema,
+    required this.archive_profile,
+    required this.migration_profile,
+    required this.registry_profile,
+    required this.registry_profile_digest,
+    required this.wire_session,
+    required this.product_api,
+    required this.c_abi,
+    required this.feature_set_digest,
+    required this.target_triple,
+    required this.toolchain,
+  });
+
+  final BaseReleaseVersion base_version;
+  final SourceCommitIdentity base_commit;
+  final CompatibilityDigestV1 canonical_schema_digest;
+  final CompatibilityDigestV1 domain_registry_digest;
+  final CompatibilityDigestV1 resource_registry_digest;
+  final StorageSchemaVersion storage_schema;
+  final ProfileVersion archive_profile;
+  final ProfileVersion migration_profile;
+  final ProfileVersion registry_profile;
+  final CompatibilityDigestV1 registry_profile_digest;
+  final ProfileVersion wire_session;
+  final ProfileVersion product_api;
+  final ProfileVersion c_abi;
+  final CompatibilityDigestV1 feature_set_digest;
+  final TargetTriple target_triple;
+  final ToolchainIdentity toolchain;
+}
+
+final class BaseCompatibleNegotiationV1 {
+  const BaseCompatibleNegotiationV1({
+    required this.versions,
+    required this.capabilities,
+  });
+
+  final NegotiatedVersions versions;
+  final BaseCapabilitySet capabilities;
 }
 
 final class BaseConfirmRequestV1 {
@@ -303,6 +425,38 @@ final class BaseManagementRequestV1Close extends BaseManagementRequestV1 {
   const BaseManagementRequestV1Close() : super(112);
 }
 
+final class BaseMigrationRequiredNegotiationV1 {
+  const BaseMigrationRequiredNegotiationV1({
+    required this.from,
+    required this.to,
+    required this.vector,
+  });
+
+  final BaseReleaseVersion from;
+  final BaseReleaseVersion to;
+  final MigrationVectorBindingV1 vector;
+}
+
+sealed class BaseNegotiationOutcome {
+  const BaseNegotiationOutcome(this.discriminator);
+  final int discriminator;
+}
+
+final class BaseNegotiationOutcomeCompatible extends BaseNegotiationOutcome {
+  const BaseNegotiationOutcomeCompatible(this.payload) : super(1);
+  final BaseCompatibleNegotiationV1 payload;
+}
+
+final class BaseNegotiationOutcomeMigrationRequired extends BaseNegotiationOutcome {
+  const BaseNegotiationOutcomeMigrationRequired(this.payload) : super(2);
+  final BaseMigrationRequiredNegotiationV1 payload;
+}
+
+final class BaseNegotiationOutcomeIncompatible extends BaseNegotiationOutcome {
+  const BaseNegotiationOutcomeIncompatible(this.payload) : super(3);
+  final BaseCompatibilityError payload;
+}
+
 final class BaseOpaqueContinuation {
   BaseOpaqueContinuation._(this._value);
 
@@ -359,6 +513,32 @@ final class BasePrepareRequestV1 {
   final BaseCommandV1 command;
 }
 
+sealed class BaseQualificationState {
+  const BaseQualificationState(this.discriminator);
+  final int discriminator;
+}
+
+final class BaseQualificationStateUnqualified extends BaseQualificationState {
+  const BaseQualificationStateUnqualified() : super(1);
+}
+
+final class BaseQualificationStateQualified extends BaseQualificationState {
+  const BaseQualificationStateQualified(this.payload) : super(2);
+  final BaseQualifiedEvidence payload;
+}
+
+final class BaseQualifiedEvidence {
+  const BaseQualifiedEvidence({
+    required this.candidate_commit,
+    required this.candidate_semantic_digest,
+    required this.evidence_blake3,
+  });
+
+  final SourceCommitId candidate_commit;
+  final CompatibilityDigestV1 candidate_semantic_digest;
+  final CompatibilityDigestV1 evidence_blake3;
+}
+
 final class BaseQueryRequestV1 {
   const BaseQueryRequestV1({
     required this.payload,
@@ -369,6 +549,20 @@ final class BaseQueryRequestV1 {
   final TypedPayloadV1 payload;
   final BaseOpaqueContinuation? continuation;
   final ResourceBudgetV1 budget;
+}
+
+final class BaseReleaseVersion {
+  const BaseReleaseVersion({
+    required this.major,
+    required this.minor,
+    required this.patch,
+    this.prerelease,
+  });
+
+  final int major;
+  final int minor;
+  final int patch;
+  final BasePrerelease? prerelease;
 }
 
 sealed class BaseRequestV1 {
@@ -448,6 +642,20 @@ final class BaseSubscriptionRequestV1 {
   final int? cursor;
 }
 
+final class BaseVersionStatus {
+  const BaseVersionStatus({
+    required this.compatibility,
+    required this.candidate_semantic_digest,
+    required this.artifact_tuple_digest,
+    required this.qualification,
+  });
+
+  final BaseCompatibilityTuple compatibility;
+  final CompatibilityDigestV1 candidate_semantic_digest;
+  final CompatibilityDigestV1 artifact_tuple_digest;
+  final BaseQualificationState qualification;
+}
+
 final class BoundedSecretIngressV1 {
   const BoundedSecretIngressV1({
     required this.kind,
@@ -487,9 +695,45 @@ final class FeedAuthorPublicIdV1 {
   final Uint8List value;
 }
 
+final class MigrationVectorBindingV1 {
+  const MigrationVectorBindingV1({
+    required this.vector_id,
+    required this.vector_blake3,
+    required this.trust_policy_digest,
+  });
+
+  final MigrationVectorIdV1 vector_id;
+  final CompatibilityDigestV1 vector_blake3;
+  final CompatibilityDigestV1 trust_policy_digest;
+}
+
+final class NegotiatedVersions {
+  const NegotiatedVersions({
+    required this.base_minor,
+    required this.wire_session_minor,
+    required this.product_api_minor,
+    required this.c_abi_minor,
+  });
+
+  final int base_minor;
+  final int wire_session_minor;
+  final int product_api_minor;
+  final int c_abi_minor;
+}
+
 final class NodeTransportPublicIdV1 {
   NodeTransportPublicIdV1(Uint8List value) : value = Uint8List.fromList(value);
   final Uint8List value;
+}
+
+final class ProfileVersion {
+  const ProfileVersion({
+    required this.major,
+    required this.minor,
+  });
+
+  final int major;
+  final int minor;
 }
 
 final class ResourceBudgetV1 {
@@ -548,6 +792,64 @@ final class SignerPublicIdV1ActorRoot extends SignerPublicIdV1 {
 final class SignerPublicIdV1FeedAuthor extends SignerPublicIdV1 {
   const SignerPublicIdV1FeedAuthor(this.payload) : super(3);
   final FeedAuthorPublicIdV1 payload;
+}
+
+sealed class SourceCommitId {
+  const SourceCommitId(this.discriminator);
+  final int discriminator;
+}
+
+final class SourceCommitIdSha1 extends SourceCommitId {
+  const SourceCommitIdSha1(this.payload) : super(1);
+  final SourceCommitSha1 payload;
+}
+
+final class SourceCommitIdSha256 extends SourceCommitId {
+  const SourceCommitIdSha256(this.payload) : super(2);
+  final SourceCommitSha256 payload;
+}
+
+sealed class SourceCommitIdentity {
+  const SourceCommitIdentity(this.discriminator);
+  final int discriminator;
+}
+
+final class SourceCommitIdentityKnown extends SourceCommitIdentity {
+  const SourceCommitIdentityKnown(this.payload) : super(1);
+  final SourceCommitId payload;
+}
+
+final class SourceCommitIdentityUnknown extends SourceCommitIdentity {
+  const SourceCommitIdentityUnknown() : super(2);
+}
+
+final class SourceCommitSha1 {
+  SourceCommitSha1(Uint8List value) : value = Uint8List.fromList(value);
+  final Uint8List value;
+}
+
+final class SourceCommitSha256 {
+  SourceCommitSha256(Uint8List value) : value = Uint8List.fromList(value);
+  final Uint8List value;
+}
+
+final class ToolchainDigest {
+  ToolchainDigest(Uint8List value) : value = Uint8List.fromList(value);
+  final Uint8List value;
+}
+
+sealed class ToolchainIdentity {
+  const ToolchainIdentity(this.discriminator);
+  final int discriminator;
+}
+
+final class ToolchainIdentityKnown extends ToolchainIdentity {
+  const ToolchainIdentityKnown(this.payload) : super(1);
+  final ToolchainDigest payload;
+}
+
+final class ToolchainIdentityUnknown extends ToolchainIdentity {
+  const ToolchainIdentityUnknown() : super(2);
 }
 
 enum TopicKindV1 {

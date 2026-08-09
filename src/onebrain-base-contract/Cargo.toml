@@ -8,6 +8,8 @@ publish = false
 build = "build.rs"
 
 [dependencies]
+blake3 = "1"
+onebrain-archive = { path = "../onebrain-archive" }
 thiserror = "2"
 zeroize = "1"
 

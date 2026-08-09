@@ -53,7 +53,7 @@ use crate::operation::BoundedBytes;
 pub const BASE_RUNTIME_PROFILE_MAJOR: u16 = 1;
 pub const BASE_RUNTIME_PROFILE_MINOR: u16 = 0;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BaseOpaqueContinuation(pub(crate) BoundedBytes<4>);
 
 #[repr(u16)]

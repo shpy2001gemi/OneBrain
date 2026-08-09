@@ -2,60 +2,75 @@
 use crate::operation::{BoundedAscii, BoundedBytes, BoundedVec, SecretBytes};
 
 pub const BASE_RUNTIME_PROFILE_MAJOR: u16 = 1;
-pub const BASE_RUNTIME_PROFILE_MINOR: u16 = 0;
+pub const BASE_RUNTIME_PROFILE_MINOR: u16 = 1;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BaseCapabilitySet(pub(crate) BoundedVec<u16, 64>);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BasePrerelease(pub(crate) BoundedAscii<32>);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CapabilitySetV1(pub(crate) BoundedVec<u16, 64>);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CompatibilityDigestV1(pub [u8; 32]);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DatasetGenerationV1(pub u64);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EventCursorV1(pub u64);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IdempotencyKeyV1(pub [u8; 32]);
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LimitationCodeV1(pub(crate) BoundedAscii<128>);
 
 pub struct ManagementHandleV1(pub(crate) [u8; 32]);
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MigrationVectorIdV1(pub(crate) BoundedAscii<64>);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OpaqueContinuationV1(pub(crate) BoundedBytes<4096>);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OperationIdV1(pub [u8; 32]);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OperationReservationIdV1(pub [u8; 32]);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProcessGenerationV1(pub u64);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProfileMajorV1(pub u16);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ProfileMinorV1(pub u16);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct RequestIdV1(pub [u8; 32]);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StorageSchemaVersion(pub u32);
 
 pub struct SubscriptionHandleV1(pub(crate) [u8; 32]);
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TargetTriple(pub(crate) BoundedAscii<96>);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TypedPayloadV1(pub(crate) BoundedBytes<1048576>);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ActorRootPublicIdV1(pub [u8; 32]);
 
 pub struct ArchiveCapabilityHandleV1(pub(crate) [u8; 32]);
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArchiveChunkV1(pub(crate) BoundedBytes<1048576>);
 
 #[repr(u8)]
@@ -69,6 +84,17 @@ impl ArchiveCredentialKindV1 {
     pub const fn discriminator(self) -> u8 {
         self as u8
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArchiveRestorePolicyV1 {
+    pub canonical_schema_digest: CompatibilityDigestV1,
+    pub domain_registry_digest: CompatibilityDigestV1,
+    pub resource_registry_digest: CompatibilityDigestV1,
+    pub storage_schema: StorageSchemaVersion,
+    pub archive_profile: ProfileVersion,
+    pub migration_profile: ProfileVersion,
+    pub max_dataset_bytes: u64,
 }
 
 pub struct ArchiveSecretHandleV1(pub(crate) [u8; 32]);
@@ -99,6 +125,12 @@ pub struct ArchiveSourcePushV1 {
     pub chunk: ArchiveChunkV1,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BaseCapabilityRequirements {
+    pub supported: BaseCapabilitySet,
+    pub required: BaseCapabilitySet,
+}
+
 pub enum BaseCommandV1 {
     ExistingLocalCommand(BaseLocalCommandV1),
     CreateArchive(CreateArchiveCommandV1),
@@ -113,6 +145,66 @@ impl BaseCommandV1 {
             Self::RestoreArchive(..) => 3,
         }
     }
+}
+
+#[repr(u16)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BaseCompatibilityError {
+    BaseMajorMismatch = 1,
+    BaseMinorBelowMinimum = 2,
+    CanonicalSchemaMismatch = 3,
+    DomainRegistryMismatch = 4,
+    ResourceRegistryMismatch = 5,
+    RegistryProfileMismatch = 6,
+    RegistryProfileDigestMismatch = 7,
+    WireSessionMajorMismatch = 8,
+    WireSessionMinorBelowMinimum = 9,
+    ProductApiMajorMismatch = 10,
+    ProductApiMinorBelowMinimum = 11,
+    CAbiMajorMismatch = 12,
+    CAbiMinorBelowMinimum = 13,
+    MigrationVectorRequired = 14,
+    MissingRequiredCapability = 15,
+    InvalidPolicy = 16,
+}
+
+impl BaseCompatibilityError {
+    pub const fn discriminator(self) -> u16 {
+        self as u16
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BaseCompatibilityPolicy {
+    pub current: BaseCompatibilityTuple,
+    pub minimum_additive: NegotiatedVersions,
+    pub archive_restore: ArchiveRestorePolicyV1,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BaseCompatibilityTuple {
+    pub base_version: BaseReleaseVersion,
+    pub base_commit: SourceCommitIdentity,
+    pub canonical_schema_digest: CompatibilityDigestV1,
+    pub domain_registry_digest: CompatibilityDigestV1,
+    pub resource_registry_digest: CompatibilityDigestV1,
+    pub storage_schema: StorageSchemaVersion,
+    pub archive_profile: ProfileVersion,
+    pub migration_profile: ProfileVersion,
+    pub registry_profile: ProfileVersion,
+    pub registry_profile_digest: CompatibilityDigestV1,
+    pub wire_session: ProfileVersion,
+    pub product_api: ProfileVersion,
+    pub c_abi: ProfileVersion,
+    pub feature_set_digest: CompatibilityDigestV1,
+    pub target_triple: TargetTriple,
+    pub toolchain: ToolchainIdentity,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BaseCompatibleNegotiationV1 {
+    pub versions: NegotiatedVersions,
+    pub capabilities: BaseCapabilitySet,
 }
 
 pub struct BaseConfirmRequestV1 {
@@ -144,7 +236,7 @@ impl BaseErrorCodeV1 {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BaseIdempotencyKey(pub [u8; 32]);
 
 pub struct BaseLocalCommandV1 {
@@ -186,10 +278,34 @@ impl BaseManagementRequestV1 {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BaseMigrationRequiredNegotiationV1 {
+    pub from: BaseReleaseVersion,
+    pub to: BaseReleaseVersion,
+    pub vector: MigrationVectorBindingV1,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BaseNegotiationOutcome {
+    Compatible(BaseCompatibleNegotiationV1),
+    MigrationRequired(BaseMigrationRequiredNegotiationV1),
+    Incompatible(BaseCompatibilityError),
+}
+
+impl BaseNegotiationOutcome {
+    pub const fn discriminator(&self) -> u8 {
+        match self {
+            Self::Compatible(..) => 1,
+            Self::MigrationRequired(..) => 2,
+            Self::Incompatible(..) => 3,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BaseOpaqueContinuation(pub(crate) BoundedBytes<4096>);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BaseOperationId(pub [u8; 32]);
 
 #[repr(u16)]
@@ -206,7 +322,7 @@ impl BaseOperationKindV1 {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct BaseOperationReservationId(pub [u8; 32]);
 
 pub struct BasePollEventsRequestV1 {
@@ -220,10 +336,40 @@ pub struct BasePrepareRequestV1 {
     pub command: BaseCommandV1,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BaseQualificationState {
+    Unqualified,
+    Qualified(BaseQualifiedEvidence),
+}
+
+impl BaseQualificationState {
+    pub const fn discriminator(&self) -> u8 {
+        match self {
+            Self::Unqualified => 1,
+            Self::Qualified(..) => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BaseQualifiedEvidence {
+    pub candidate_commit: SourceCommitId,
+    pub candidate_semantic_digest: CompatibilityDigestV1,
+    pub evidence_blake3: CompatibilityDigestV1,
+}
+
 pub struct BaseQueryRequestV1 {
     pub payload: TypedPayloadV1,
     pub continuation: Option<BaseOpaqueContinuation>,
     pub budget: ResourceBudgetV1,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BaseReleaseVersion {
+    pub major: u16,
+    pub minor: u16,
+    pub patch: u16,
+    pub prerelease: Option<BasePrerelease>,
 }
 
 pub enum BaseRequestV1 {
@@ -267,6 +413,14 @@ pub struct BaseSubscriptionRequestV1 {
     pub cursor: Option<u64>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BaseVersionStatus {
+    pub compatibility: BaseCompatibilityTuple,
+    pub candidate_semantic_digest: CompatibilityDigestV1,
+    pub artifact_tuple_digest: CompatibilityDigestV1,
+    pub qualification: BaseQualificationState,
+}
+
 pub struct BoundedSecretIngressV1 {
     pub kind: ArchiveCredentialKindV1,
     pub(crate) bytes: SecretBytes<1024>,
@@ -284,11 +438,32 @@ pub struct CreateArchiveCommandV1 {
     pub budget: ResourceBudgetV1,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FeedAuthorPublicIdV1(pub [u8; 32]);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MigrationVectorBindingV1 {
+    pub vector_id: MigrationVectorIdV1,
+    pub vector_blake3: CompatibilityDigestV1,
+    pub trust_policy_digest: CompatibilityDigestV1,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NegotiatedVersions {
+    pub base_minor: u16,
+    pub wire_session_minor: u16,
+    pub product_api_minor: u16,
+    pub c_abi_minor: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NodeTransportPublicIdV1(pub [u8; 32]);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ProfileVersion {
+    pub major: u16,
+    pub minor: u16,
+}
 
 pub struct ResourceBudgetV1 {
     pub max_items: u32,
@@ -330,6 +505,60 @@ impl SignerPublicIdV1 {
             Self::NodeTransport(..) => 1,
             Self::ActorRoot(..) => 2,
             Self::FeedAuthor(..) => 3,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceCommitId {
+    Sha1(SourceCommitSha1),
+    Sha256(SourceCommitSha256),
+}
+
+impl SourceCommitId {
+    pub const fn discriminator(&self) -> u8 {
+        match self {
+            Self::Sha1(..) => 1,
+            Self::Sha256(..) => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceCommitIdentity {
+    Known(SourceCommitId),
+    Unknown,
+}
+
+impl SourceCommitIdentity {
+    pub const fn discriminator(&self) -> u8 {
+        match self {
+            Self::Known(..) => 1,
+            Self::Unknown => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SourceCommitSha1(pub [u8; 20]);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SourceCommitSha256(pub [u8; 32]);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ToolchainDigest(pub [u8; 32]);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolchainIdentity {
+    Known(ToolchainDigest),
+    Unknown,
+}
+
+impl ToolchainIdentity {
+    pub const fn discriminator(&self) -> u8 {
+        match self {
+            Self::Known(..) => 1,
+            Self::Unknown => 2,
         }
     }
 }
