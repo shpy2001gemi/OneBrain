@@ -12,6 +12,8 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
@@ -19,9 +21,13 @@ if str(SCRIPT_DIR) not in sys.path:
 from build_obr import build
 from config import SOURCE_WIKIDATA
 from resource_qualification import (
+    MAX_PRODUCTION_OBR_BYTES,
+    MIN_PRODUCTION_OBR_BYTES,
     PROFILE,
     PROBE_PROFILE,
     QualificationError,
+    collect_volume_evidence,
+    create_resource_receipt,
     evaluate_oracles,
     execute_probe,
     main,
@@ -109,6 +115,171 @@ class ResourceQualificationTests(unittest.TestCase):
     def test_budget_cannot_be_used_for_the_wrong_profile(self) -> None:
         with self.assertRaisesRegex(QualificationError, "does not allow"):
             resolve_budget("low-ram", "cold-cache-production-v1")
+
+    def test_ssd_and_hdd_require_matching_captured_volume_evidence(self) -> None:
+        cases = (
+            (
+                "ssd",
+                {"storage_class": "ssd", "collector": "linux-sysfs", "rotational": 0},
+                "storage_is_ssd",
+            ),
+            (
+                "hdd",
+                {"storage_class": "hdd", "collector": "linux-sysfs", "rotational": 1},
+                "storage_is_rotational_hdd",
+            ),
+        )
+        for profile, evidence, oracle in cases:
+            with self.subTest(profile=profile):
+                oracles = evaluate_oracles(
+                    profile,
+                    _valid_execution(),
+                    {"request_completed": False},
+                    None,
+                    1_000,
+                    1_000,
+                    64 * 1024 * 1024,
+                    volume_evidence=evidence,
+                    obr_bytes=MIN_PRODUCTION_OBR_BYTES,
+                    production_candidate=True,
+                )
+                self.assertTrue(oracles[oracle])
+                self.assertTrue(oracles["production_obr_size_is_inclusive"])
+
+    def test_unknown_or_missing_production_volume_evidence_fails_closed(self) -> None:
+        for evidence in (None, {}, {"storage_class": "unknown"}):
+            with self.subTest(evidence=evidence):
+                oracles = evaluate_oracles(
+                    "ssd",
+                    _valid_execution(),
+                    {"request_completed": False},
+                    None,
+                    1_000,
+                    1_000,
+                    64 * 1024 * 1024,
+                    volume_evidence=evidence,
+                    obr_bytes=MIN_PRODUCTION_OBR_BYTES,
+                    production_candidate=True,
+                )
+                self.assertFalse(oracles["storage_is_ssd"])
+                self.assertFalse(all(oracles.values()))
+
+        mismatched = evaluate_oracles(
+            "ssd",
+            _valid_execution(),
+            {"request_completed": False},
+            None,
+            1_000,
+            1_000,
+            64 * 1024 * 1024,
+            volume_evidence={
+                "storage_class": "ssd",
+                "collector": "linux-sysfs",
+                "rotational": 1,
+            },
+            obr_bytes=MIN_PRODUCTION_OBR_BYTES,
+            production_candidate=True,
+        )
+        self.assertFalse(mismatched["storage_is_ssd"])
+
+    def test_portability_storage_collector_cannot_claim_production_reference(self) -> None:
+        with patch("resource_qualification.sys.platform", "win32"):
+            oracles = evaluate_oracles(
+                "ssd",
+                _valid_execution(),
+                {"request_completed": False},
+                None,
+                1_000,
+                1_000,
+                64 * 1024 * 1024,
+                volume_evidence={
+                    "storage_class": "ssd",
+                    "collector": "windows-physical-disk",
+                },
+                obr_bytes=MIN_PRODUCTION_OBR_BYTES,
+                production_candidate=True,
+            )
+        self.assertFalse(oracles["production_reference_host_is_linux"])
+        self.assertFalse(all(oracles.values()))
+
+    def test_production_candidate_size_bounds_are_inclusive(self) -> None:
+        cases = (
+            (MIN_PRODUCTION_OBR_BYTES - 1, False),
+            (MIN_PRODUCTION_OBR_BYTES, True),
+            (MAX_PRODUCTION_OBR_BYTES, True),
+            (MAX_PRODUCTION_OBR_BYTES + 1, False),
+        )
+        for size, expected in cases:
+            with self.subTest(size=size):
+                oracles = evaluate_oracles(
+                    "cold-cache",
+                    _valid_execution(),
+                    {"request_completed": True},
+                    None,
+                    1_000,
+                    1_000,
+                    64 * 1024 * 1024,
+                    obr_bytes=size,
+                    production_candidate=True,
+                )
+                self.assertEqual(
+                    oracles["production_obr_size_is_inclusive"], expected
+                )
+
+    def test_platform_volume_collector_rejects_unknown_platform(self) -> None:
+        with patch("resource_qualification.sys.platform", "plan9"):
+            with self.assertRaisesRegex(QualificationError, "unsupported platform"):
+                collect_volume_evidence(Path("candidate"))
+
+    def test_prequalification_receipt_is_signed_without_release_only_fields(self) -> None:
+        from production_qualification import signer_fingerprint, trust_policy_digest
+
+        key = Ed25519PrivateKey.from_private_bytes(bytes([43]) * 32)
+        public = key.public_key().public_bytes_raw()
+        policy = {
+            "algorithm": "Ed25519",
+            "allowed_usages": ["registry-qualification-receipt"],
+            "format": "onebrain/concept-registry-trust-policy/1",
+            "signers": [{
+                "fingerprint_algorithm": "blake3-derive-key-v1",
+                "fingerprint_context": "onebrain:concept-registry:signer-fingerprint:1",
+                "fingerprint_hex": signer_fingerprint(public),
+                "public_key_hex": public.hex(),
+            }],
+        }
+        binding = {
+            "release_aggregate_root": "11" * 32,
+            "registry_generation": 1,
+            "production_profile_blake3": "22" * 32,
+            "trust_policy_digest": trust_policy_digest(policy),
+            "signer_fingerprint": signer_fingerprint(public),
+            "probe_blake3": "33" * 32,
+            "executable_blake3": "33" * 32,
+            "candidate_payload_artifacts_blake3": {
+                "OBR:concepts.obr": "41" * 32,
+                "LABEL_INDEX:concepts.obr.labels.idx": "42" * 32,
+                "CCID_INDEX:concepts.obr.ccids.idx": "43" * 32,
+                "MANIFEST:concepts.obr.manifest.json": "44" * 32,
+                "SPDX_SBOM:sbom.spdx.json": "45" * 32,
+            },
+            "release_stamp_blake3": "55" * 32,
+        }
+        receipt = create_resource_receipt(
+            {"qualified": True, "qualification_profile": "ssd", "exit_oracles": {"ok": True}},
+            {
+                "format": "onebrain/qualification-run-context/1",
+                "variant": "Prequalification",
+                "closure_digest": "66" * 32,
+            },
+            binding,
+            key,
+            policy,
+        )
+        payload = receipt["payload"]
+        self.assertFalse(payload["base_candidate_bound"])
+        self.assertEqual(payload["qualification_context_variant"], "Prequalification")
+        for field in ("release_request_digest", "qualification_session_id", "candidate_commit", "candidate_tree"):
+            self.assertNotIn(field, payload)
 
     def test_shared_ci_budget_does_not_apply_low_ram_limit_to_cold_cache(self) -> None:
         execution = _valid_execution()

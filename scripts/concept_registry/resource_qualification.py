@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import platform
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -23,11 +24,14 @@ from pathlib import Path
 from typing import Any, Callable
 
 import blake3
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 PROFILE = "onebrain/concept-registry-resource-qualification/1"
 PROBE_PROFILE = "onebrain/concept-registry-probe/1"
-QUALIFICATION_PROFILES = ("cold-cache", "low-ram")
+QUALIFICATION_PROFILES = ("cold-cache", "low-ram", "ssd", "hdd")
+MIN_PRODUCTION_OBR_BYTES = 2_200_000_000
+MAX_PRODUCTION_OBR_BYTES = 2_500_000_000
 BUDGETS: dict[str, dict[str, object]] = {
     "ci-small-fixture-v1": {
         "qualification_profiles": ["cold-cache", "low-ram"],
@@ -50,6 +54,20 @@ BUDGETS: dict[str, dict[str, object]] = {
         "max_peak_rss_bytes": 256 * 1024 * 1024,
         "address_space_limit_bytes": 3 * 1024 * 1024 * 1024,
     },
+    "ssd-production-v1": {
+        "qualification_profiles": ["ssd"],
+        "max_ready_ms": 120_000,
+        "max_p95_us": 100_000,
+        "max_peak_rss_bytes": 512 * 1024 * 1024,
+        "address_space_limit_bytes": None,
+    },
+    "hdd-production-v1": {
+        "qualification_profiles": ["hdd"],
+        "max_ready_ms": 300_000,
+        "max_p95_us": 750_000,
+        "max_peak_rss_bytes": 512 * 1024 * 1024,
+        "address_space_limit_bytes": None,
+    },
 }
 MAX_EVIDENCE_BYTES = 1024 * 1024
 MAX_STDERR_BYTES = 64 * 1024
@@ -58,6 +76,85 @@ POLL_SECONDS = 0.01
 
 class QualificationError(RuntimeError):
     """Qualification could not produce trustworthy evidence."""
+
+
+def create_resource_receipt(
+    report: dict[str, object],
+    run_context: dict[str, object],
+    binding: dict[str, object],
+    signing_key: Ed25519PrivateKey,
+    policy: dict[str, object],
+) -> dict[str, object]:
+    """Bind a resource report to one closed context and sign its receipt."""
+    from production_qualification import (
+        AggregationError,
+        COMMON_BINDINGS,
+        create_signed_receipt,
+        parse_qualification_run_context,
+        signer_fingerprint,
+        trust_policy_digest,
+    )
+
+    try:
+        context = parse_qualification_run_context(run_context)
+        missing = [field for field in COMMON_BINDINGS if field not in binding]
+        if missing:
+            raise QualificationError(f"release binding missing {missing[0]}")
+        public = signing_key.public_key().public_bytes_raw()
+        if binding.get("trust_policy_digest") != trust_policy_digest(policy):
+            raise QualificationError("release binding trust_policy_digest mismatch")
+        if binding.get("signer_fingerprint") != signer_fingerprint(public):
+            raise QualificationError("release binding signer_fingerprint mismatch")
+        payload: dict[str, object] = {
+            **{field: binding[field] for field in COMMON_BINDINGS},
+            "qualification_profile": report.get("qualification_profile"),
+            "command": [
+                "resource_qualification.py",
+                "--profile",
+                str(report.get("qualification_profile")),
+            ],
+            "result": report.get("qualified") is True,
+            "exit_oracles": report.get("exit_oracles"),
+            "limitations": [
+                "Registry-only resource evidence; never BASE-GATE-V1",
+                "Prequalification evidence cannot derive registry_production_qualified",
+            ],
+            "resource_report": report,
+        }
+        if context["variant"] == "Prequalification":
+            payload.update(
+                {
+                    "qualification_context_variant": "Prequalification",
+                    "closure_digest": context["closure_digest"],
+                    "base_candidate_bound": False,
+                }
+            )
+        else:
+            for field in ("candidate_semantic_digest", "artifact_tuple_digest"):
+                if field not in binding:
+                    raise QualificationError(f"verified release binding missing {field}")
+            payload.update(
+                {
+                    "qualification_context_variant": "Release",
+                    **{
+                        field: context[field]
+                        for field in (
+                            "release_request_digest",
+                            "qualification_session_id",
+                            "candidate_commit",
+                            "candidate_tree",
+                        )
+                    },
+                    "candidate_semantic_digest": binding["candidate_semantic_digest"],
+                    "artifact_tuple_digest": binding["artifact_tuple_digest"],
+                    "base_candidate_bound": True,
+                }
+            )
+        return create_signed_receipt(
+            "resource-qualification", payload, signing_key, policy
+        )
+    except AggregationError as error:
+        raise QualificationError(str(error)) from error
 
 
 def _utc_now() -> str:
@@ -150,6 +247,118 @@ def prepare_cold_cache(paths: list[Path], strategy: str) -> dict[str, object]:
     if strategy == "vmtouch":
         return _prepare_vmtouch(paths)
     raise QualificationError(f"unsupported cache preparation strategy: {strategy}")
+
+
+def _run_collector(command: list[str], label: str) -> subprocess.CompletedProcess[bytes]:
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise QualificationError(f"{label} collector failed: {error}") from error
+    if result.returncode != 0:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()[-2000:]
+        raise QualificationError(f"{label} collector failed: {detail}")
+    return result
+
+
+def _linux_volume_evidence(candidate_path: Path) -> dict[str, object]:
+    result = _run_collector(
+        ["findmnt", "--noheadings", "--output", "SOURCE,FSTYPE", "--target", str(candidate_path)],
+        "Linux findmnt",
+    )
+    fields = result.stdout.decode("utf-8", errors="strict").strip().split(None, 1)
+    if len(fields) != 2 or not fields[0].startswith("/dev/"):
+        raise QualificationError("Linux volume source or filesystem type is unknown")
+    source, filesystem_type = fields
+    device = Path(source).name
+    sysfs = Path("/sys/class/block") / device
+    try:
+        resolved = sysfs.resolve(strict=True)
+        if (resolved / "partition").is_file():
+            resolved = resolved.parent
+        rotational_text = (resolved / "queue" / "rotational").read_text(
+            encoding="ascii"
+        ).strip()
+    except (OSError, UnicodeError) as error:
+        raise QualificationError(
+            "Linux sysfs block device rotational evidence is unavailable"
+        ) from error
+    if rotational_text not in {"0", "1"}:
+        raise QualificationError("Linux sysfs rotational value is unknown")
+    rotational = int(rotational_text)
+    return {
+        "collector": "linux-sysfs",
+        "source": source,
+        "filesystem_type": filesystem_type,
+        "block_device": resolved.name,
+        "rotational": rotational,
+        "storage_class": "hdd" if rotational == 1 else "ssd",
+    }
+
+
+def _windows_volume_evidence(candidate_path: Path) -> dict[str, object]:
+    script = (
+        "& { param($candidate) $p=(Resolve-Path -LiteralPath $candidate).Path;"
+        "$v=Get-Volume -FilePath $p;"
+        "$part=Get-Partition -DriveLetter $v.DriveLetter;"
+        "$disk=Get-PhysicalDisk | Where-Object DeviceId -eq $part.DiskNumber;"
+        "[pscustomobject]@{DriveLetter=$v.DriveLetter;FileSystem=$v.FileSystem;"
+        "DiskNumber=$part.DiskNumber;MediaType=[string]$disk.MediaType} | ConvertTo-Json -Compress }"
+    )
+    result = _run_collector(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script, str(candidate_path)],
+        "Windows physical-disk",
+    )
+    try:
+        value = json.loads(result.stdout.decode("utf-8", errors="strict"))
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise QualificationError("Windows physical-disk evidence is invalid") from error
+    media_type = str(value.get("MediaType", "")).strip().lower()
+    storage_class = {"ssd": "ssd", "hdd": "hdd"}.get(media_type)
+    if storage_class is None:
+        raise QualificationError("Windows physical-disk media type is unknown")
+    return {
+        "collector": "windows-physical-disk",
+        "source": f"disk-{value.get('DiskNumber')}",
+        "filesystem_type": value.get("FileSystem"),
+        "media_type": media_type,
+        "storage_class": storage_class,
+    }
+
+
+def _macos_volume_evidence(candidate_path: Path) -> dict[str, object]:
+    result = _run_collector(["diskutil", "info", "-plist", str(candidate_path)], "macOS diskutil")
+    try:
+        value = plistlib.loads(result.stdout)
+    except Exception as error:
+        raise QualificationError("macOS storage evidence is invalid") from error
+    solid_state = value.get("SolidState")
+    protocol = str(value.get("BusProtocol", "")).strip()
+    if not isinstance(solid_state, bool) or not protocol:
+        raise QualificationError("macOS solid-state or storage protocol evidence is unknown")
+    return {
+        "collector": "macos-diskutil",
+        "source": value.get("DeviceNode"),
+        "filesystem_type": value.get("FilesystemType"),
+        "storage_protocol": protocol,
+        "solid_state": solid_state,
+        "storage_class": "ssd" if solid_state else "hdd",
+    }
+
+
+def collect_volume_evidence(candidate_path: Path) -> dict[str, object]:
+    """Capture OS-owned storage class evidence for the candidate filesystem."""
+    if sys.platform.startswith("linux"):
+        return _linux_volume_evidence(candidate_path)
+    if sys.platform == "win32":
+        return _windows_volume_evidence(candidate_path)
+    if sys.platform == "darwin":
+        return _macos_volume_evidence(candidate_path)
+    raise QualificationError(f"unsupported platform for volume evidence: {sys.platform}")
 
 
 def _linux_rss_bytes(process_id: int) -> int | None:
@@ -342,6 +551,10 @@ def evaluate_oracles(
     max_ready_ms: int,
     max_p95_us: int,
     max_peak_rss_bytes: int,
+    *,
+    volume_evidence: dict[str, object] | None = None,
+    obr_bytes: int | None = None,
+    production_candidate: bool = False,
 ) -> dict[str, bool]:
     probe = execution.get("probe")
     probe = probe if isinstance(probe, dict) else {}
@@ -381,11 +594,49 @@ def evaluate_oracles(
             isinstance(address_space_limit_bytes, int)
             and address_space_limit_bytes > 0
         )
+    elif qualification_profile == "ssd":
+        oracles["storage_is_ssd"] = (
+            isinstance(volume_evidence, dict)
+            and volume_evidence.get("storage_class") == "ssd"
+            and volume_evidence.get("collector")
+            in {"linux-sysfs", "windows-physical-disk", "macos-diskutil"}
+            and _storage_details_match("ssd", volume_evidence)
+        )
+    elif qualification_profile == "hdd":
+        oracles["storage_is_rotational_hdd"] = (
+            isinstance(volume_evidence, dict)
+            and volume_evidence.get("storage_class") == "hdd"
+            and volume_evidence.get("collector")
+            in {"linux-sysfs", "windows-physical-disk", "macos-diskutil"}
+            and _storage_details_match("hdd", volume_evidence)
+        )
     else:
         raise QualificationError(
             f"unsupported qualification profile: {qualification_profile}"
         )
+    if production_candidate:
+        oracles["production_obr_size_is_inclusive"] = (
+            isinstance(obr_bytes, int)
+            and not isinstance(obr_bytes, bool)
+            and MIN_PRODUCTION_OBR_BYTES <= obr_bytes <= MAX_PRODUCTION_OBR_BYTES
+        )
+        oracles["production_reference_host_is_linux"] = sys.platform.startswith(
+            "linux"
+        )
     return oracles
+
+
+def _storage_details_match(
+    expected_class: str, evidence: dict[str, object]
+) -> bool:
+    collector = evidence.get("collector")
+    if collector == "linux-sysfs":
+        return evidence.get("rotational") == (0 if expected_class == "ssd" else 1)
+    if collector == "windows-physical-disk":
+        return evidence.get("media_type") == expected_class
+    if collector == "macos-diskutil":
+        return evidence.get("solid_state") is (expected_class == "ssd")
+    return False
 
 
 def resolve_budget(
@@ -440,9 +691,14 @@ def run_qualification(
         cache_preparation = prepare_cold_cache(_artifact_paths(obr_path), cache_strategy)
     else:
         cache_preparation = {
-            "strategy": "not-required-for-low-ram",
+            "strategy": f"not-required-for-{qualification_profile}",
             "request_completed": False,
         }
+    volume_evidence = (
+        collect_volume_evidence(obr_path)
+        if qualification_profile in {"ssd", "hdd"}
+        else None
+    )
     execution = execute_probe(
         probe_path,
         obr_path,
@@ -458,6 +714,13 @@ def run_qualification(
         max_ready_ms,
         max_p95_us,
         max_peak_rss_bytes,
+        volume_evidence=volume_evidence,
+        obr_bytes=(
+            obr_path.stat().st_size
+            if budget_profile != "ci-small-fixture-v1"
+            else None
+        ),
+        production_candidate=budget_profile != "ci-small-fixture-v1",
     )
     return {
         "profile": PROFILE,
@@ -469,6 +732,15 @@ def run_qualification(
             "release": platform.release(),
             "machine": platform.machine(),
             "python": platform.python_version(),
+        },
+        "filesystem": {
+            "candidate_path": str(obr_path.resolve()),
+            "volume_evidence_captured": volume_evidence is not None,
+        },
+        "volume_evidence": volume_evidence,
+        "candidate": {
+            "obr_path": str(obr_path.resolve()),
+            "obr_bytes": obr_path.stat().st_size if obr_path.is_file() else None,
         },
         "artifacts": artifacts,
         "cache_preparation": cache_preparation,
@@ -489,6 +761,8 @@ def run_qualification(
         "execution": execution,
         "exit_oracles": oracles,
         "qualified": all(oracles.values()),
+        "base_candidate_bound": False,
+        "production_qualified": False,
     }
 
 
@@ -532,7 +806,28 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--cache-strategy", choices=("auto", "vmtouch"), default="auto")
     parser.add_argument("--budget-profile", choices=tuple(BUDGETS), required=True)
     parser.add_argument("--timeout-seconds", type=_positive_int, default=600)
+    parser.add_argument("--run-context", type=Path)
+    parser.add_argument("--release-binding", type=Path)
+    parser.add_argument("--trust-policy", type=Path)
+    parser.add_argument("--private-key", type=Path)
     return parser
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise QualificationError(f"JSON input is not an object: {path}")
+    return value
+
+
+def _read_private_key(path: Path) -> Ed25519PrivateKey:
+    try:
+        value = path.read_text(encoding="ascii").strip()
+    except OSError as error:
+        raise QualificationError("private signing key could not be read") from error
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        raise QualificationError("private signing key must be exactly 64 lowercase hex digits")
+    return Ed25519PrivateKey.from_private_bytes(bytes.fromhex(value))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -547,6 +842,28 @@ def main(argv: list[str] | None = None) -> int:
             args.budget_profile,
             args.timeout_seconds,
         )
+        signing_inputs = (
+            args.run_context,
+            args.release_binding,
+            args.trust_policy,
+            args.private_key,
+        )
+        if any(value is not None for value in signing_inputs):
+            if not all(value is not None for value in signing_inputs):
+                raise QualificationError(
+                    "run context, release binding, trust policy, and private key are required together"
+                )
+            report = create_resource_receipt(
+                report,
+                _read_json_object(args.run_context),
+                _read_json_object(args.release_binding),
+                _read_private_key(args.private_key),
+                _read_json_object(args.trust_policy),
+            )
+        elif args.budget_profile != "ci-small-fixture-v1":
+            raise QualificationError(
+                "production resource qualification requires signed run context and binding"
+            )
         _write_report(args.output, report)
     except (OSError, subprocess.SubprocessError, QualificationError) as error:
         print(f"Concept Registry resource qualification failed: {error}", file=sys.stderr)

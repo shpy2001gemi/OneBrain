@@ -25,6 +25,9 @@ required-features = ["vnext-canary-harness"]
 name = "p5_operations_preflight"
 required-features = ["vnext-canary-harness"]
 
+[[example]]
+name = "concept_registry_production_qualification"
+
 [features]
 default = ["base-v1"]
 base-v1 = []
