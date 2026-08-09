@@ -3338,6 +3338,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "onebrain-base-contract"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror 2.0.18",
+ "zeroize",
+]
+
+[[package]]
 name = "onebrain-cli"
 version = "0.1.0"
 dependencies = [
