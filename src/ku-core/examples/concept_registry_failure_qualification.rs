@@ -15,10 +15,13 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use ku_core::{
     activate_concept_registry_release, concept_registry_release_capacity,
     package_concept_registry_release, package_concept_registry_release_with_capacity_for_drill,
+    qualification_request::{
+        verify_base_release_request, verify_base_release_request_for_test_nonproduction,
+    },
     resolve_active_concept_registry_release, verify_concept_registry_release,
     ConceptRegistryReleaseError, ConceptRegistryReleasePackageInput, ConceptRegistryReleaseSource,
 };
@@ -32,6 +35,23 @@ const RECEIPT_DOMAIN: &[u8] = b"onebrain:concept-registry-qualification-receipt:
 const FINGERPRINT_CONTEXT: &str = "onebrain:concept-registry:signer-fingerprint:1";
 const TRUST_POLICY_CONTEXT: &str = "onebrain:concept-registry:trust-policy:1";
 
+struct ReleaseMeasurements {
+    registry_root: PathBuf,
+    release_id: String,
+    candidate_root: PathBuf,
+    semantic_evidence: PathBuf,
+    production_profile: PathBuf,
+    production_vector: PathBuf,
+    idl_history: PathBuf,
+    target_triple: String,
+    probe: PathBuf,
+    probe_signature: PathBuf,
+    rust_toolchain_evidence: PathBuf,
+    runner_image_evidence: PathBuf,
+    git_executable: PathBuf,
+    production: bool,
+}
+
 fn main() {
     if let Err(error) = run() {
         eprintln!("concept-registry-failure-qualification: {error}");
@@ -40,19 +60,110 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    if env::args().nth(1).as_deref() == Some("--kill-worker") {
+    let raw_invocation: Vec<String> = env::args().collect();
+    if raw_invocation.get(1).map(String::as_str) == Some("--kill-worker") {
         return run_kill_worker();
     }
-    let mut args = env::args().skip(1);
+    let mut args = raw_invocation.iter().skip(1).cloned();
+    let mode = required_string(&mut args, "MODE")?;
+    if mode != "--prequalification" && mode != "--release" && mode != "--test-release-nonproduction"
+    {
+        return Err("explicit --prequalification or --release mode is required".into());
+    }
     let work_dir = required_path(&mut args, "WORK_DIR")?;
     let obr_path = required_path(&mut args, "OBR_PATH")?;
     let sbom_path = required_path(&mut args, "SPDX_SBOM_PATH")?;
     let sources_path = required_path(&mut args, "SOURCES_JSON_PATH")?;
     let private_key_path = required_path(&mut args, "PRIVATE_KEY_FILE")?;
-    let context_path = required_path(&mut args, "RUN_CONTEXT_JSON")?;
-    let binding_path = required_path(&mut args, "RELEASE_BINDING_JSON")?;
-    let policy_path = required_path(&mut args, "TRUST_POLICY_JSON")?;
-    let output_path = required_path(&mut args, "OUTPUT_JSON")?;
+    let (context, binding, policy_path, output_path, measured_registry) =
+        if mode == "--prequalification" {
+            let context_path = required_path(&mut args, "PREQUALIFICATION_CONTEXT_JSON")?;
+            let binding_path = required_path(&mut args, "PREQUALIFICATION_BINDING_JSON")?;
+            let policy_path = required_path(&mut args, "TRUST_POLICY_JSON")?;
+            let output_path = required_path(&mut args, "OUTPUT_JSON")?;
+            (
+                serde_json::from_slice(&fs::read(context_path)?)?,
+                serde_json::from_slice(&fs::read(binding_path)?)?,
+                policy_path,
+                output_path,
+                None,
+            )
+        } else {
+            let request_path = required_path(&mut args, "RELEASE_REQUEST")?;
+            let signature_path = required_path(&mut args, "RELEASE_REQUEST_SIGNATURE")?;
+            let approver_policy = required_path(&mut args, "QUALIFICATION_APPROVER_POLICY")?;
+            let gpg_home = required_path(&mut args, "GPG_HOME")?;
+            let (verified, git_executable, production) = if mode == "--release" {
+                (
+                    verify_base_release_request(
+                        &request_path,
+                        &signature_path,
+                        &approver_policy,
+                        &gpg_home,
+                    )?,
+                    PathBuf::from("/usr/bin/git"),
+                    true,
+                )
+            } else {
+                let python = required_path(&mut args, "TEST_PYTHON")?;
+                let gpg = required_path(&mut args, "TEST_GPG")?;
+                let git = required_path(&mut args, "TEST_GIT")?;
+                (
+                    verify_base_release_request_for_test_nonproduction(
+                        &python,
+                        &gpg,
+                        &request_path,
+                        &signature_path,
+                        &approver_policy,
+                        &gpg_home,
+                    )?,
+                    git,
+                    false,
+                )
+            };
+            let registry_root = required_path(&mut args, "INSTALLED_REGISTRY_ROOT")?;
+            let release_id = required_string(&mut args, "RELEASE_ID")?;
+            let candidate_root = required_path(&mut args, "CANDIDATE_ROOT")?;
+            let semantic_evidence = required_path(&mut args, "CANDIDATE_SEMANTIC_EVIDENCE")?;
+            let production_profile = required_path(&mut args, "PRODUCTION_PROFILE")?;
+            let production_vector = required_path(&mut args, "PRODUCTION_VECTOR")?;
+            let idl_history = required_path(&mut args, "APPEND_ONLY_IDL_HISTORY")?;
+            let target_triple = required_string(&mut args, "TARGET_TRIPLE")?;
+            let probe = required_path(&mut args, "PROBE_EXECUTABLE")?;
+            let probe_signature = required_path(&mut args, "PROBE_SIGNATURE")?;
+            let rust_toolchain_evidence = required_path(&mut args, "RUST_TOOLCHAIN_EVIDENCE")?;
+            let runner_image_evidence = required_path(&mut args, "RUNNER_IMAGE_EVIDENCE")?;
+            let policy_path = required_path(&mut args, "TRUST_POLICY_JSON")?;
+            let output_path = required_path(&mut args, "OUTPUT_JSON")?;
+            (
+                verified
+                    .get("run_context")
+                    .cloned()
+                    .ok_or("verified request omitted run_context")?,
+                verified
+                    .get("bindings")
+                    .cloned()
+                    .ok_or("verified request omitted bindings")?,
+                policy_path,
+                output_path,
+                Some(ReleaseMeasurements {
+                    registry_root,
+                    release_id,
+                    candidate_root,
+                    semantic_evidence,
+                    production_profile,
+                    production_vector,
+                    idl_history,
+                    target_triple,
+                    probe,
+                    probe_signature,
+                    rust_toolchain_evidence,
+                    runner_image_evidence,
+                    git_executable,
+                    production,
+                }),
+            )
+        };
     no_more_args(args)?;
 
     fs::create_dir_all(&work_dir)?;
@@ -64,8 +175,6 @@ fn run() -> Result<(), Box<dyn Error>> {
         serde_json::from_slice(&fs::read(&sources_path)?)?;
     let signing_key = read_signing_key(&private_key_path)?;
     let public_key = signing_key.verifying_key();
-    let context: Value = serde_json::from_slice(&fs::read(&context_path)?)?;
-    let binding: Value = serde_json::from_slice(&fs::read(&binding_path)?)?;
     let policy: Value = serde_json::from_slice(&fs::read(&policy_path)?)?;
     validate_receipt_signer(&policy, &signing_key, &binding)?;
 
@@ -85,6 +194,15 @@ fn run() -> Result<(), Box<dyn Error>> {
         &sources,
         &signing_key,
     )?;
+    if let Some(measurements) = &measured_registry {
+        validate_release_measurements(
+            measurements,
+            &binding,
+            &obr_path,
+            &sbom_path,
+            &candidate_stamp,
+        )?;
+    }
     let stable_state =
         activate_concept_registry_release(&registry_root, STABLE_RELEASE, &public_key)?;
 
@@ -173,6 +291,23 @@ fn run() -> Result<(), Box<dyn Error>> {
     {
         return Err("release binding executable_blake3 does not match this executable".into());
     }
+    let command = sanitized_invocation(&raw_invocation, mode.as_str())?;
+    let command_blake3 = blake3::hash(&serde_json::to_vec(&command)?)
+        .to_hex()
+        .to_string();
+    let receipt_stamp_blake3 = if measured_registry.is_some() {
+        binding
+            .get("release_stamp_blake3")
+            .cloned()
+            .ok_or("verified release stamp digest is missing")?
+    } else {
+        json!(blake3_file_hex(
+            &registry_root
+                .join("releases")
+                .join(CANDIDATE_RELEASE)
+                .join("release.stamp.json")
+        )?)
+    };
     let mut payload = json!({
         "profile": PROFILE,
         "generated_at_unix_seconds": SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
@@ -211,8 +346,9 @@ fn run() -> Result<(), Box<dyn Error>> {
         "candidate_payload_artifacts_blake3": candidate_stamp.artifacts.iter().map(|artifact| {
             (format!("{}:{}", artifact.role, artifact.relative_path), Value::String(artifact.blake3.clone()))
         }).collect::<serde_json::Map<String, Value>>(),
-        "release_stamp_blake3": blake3_file_hex(&registry_root.join("releases").join(CANDIDATE_RELEASE).join("release.stamp.json"))?,
-        "command": ["concept_registry_failure_qualification", "truncated-index", "disk-shortage"],
+        "release_stamp_blake3": receipt_stamp_blake3,
+        "command": command,
+        "command_blake3": command_blake3,
         "result": qualified,
         "production_qualified": false,
         "limitations": ["Registry-only failure evidence; never BASE-GATE-V1"],
@@ -225,6 +361,32 @@ fn run() -> Result<(), Box<dyn Error>> {
         return Err("one or more failure qualification oracles failed".into());
     }
     Ok(())
+}
+
+fn sanitized_invocation(raw: &[String], mode: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    raw.iter()
+        .enumerate()
+        .map(|(index, value)| {
+            if index == 6 {
+                return Ok("<external-private-key-redacted>".to_owned());
+            }
+            if mode != "--prequalification" && index == 10 {
+                return Ok("<gpg-home-redacted>".to_owned());
+            }
+            if mode == "--test-release-nonproduction" && (11..=13).contains(&index) {
+                return Ok(format!("<nonproduction-test-tool-{index}>"));
+            }
+            let path = Path::new(value);
+            if path.is_file() {
+                let name = path
+                    .file_name()
+                    .and_then(|part| part.to_str())
+                    .unwrap_or("input");
+                return Ok(format!("{name}@blake3:{}", blake3_file_hex(path)?));
+            }
+            Ok(value.clone())
+        })
+        .collect()
 }
 
 fn run_kill_worker() -> Result<(), Box<dyn Error>> {
@@ -368,6 +530,179 @@ fn package(
         },
         signing_key,
     )
+}
+
+fn validate_release_measurements(
+    measured: &ReleaseMeasurements,
+    binding: &Value,
+    obr_path: &Path,
+    sbom_path: &Path,
+    candidate_stamp: &ku_core::ConceptRegistryReleaseStamp,
+) -> Result<(), Box<dyn Error>> {
+    if measured.production
+        && (!cfg!(target_os = "linux") || measured.git_executable != Path::new("/usr/bin/git"))
+    {
+        return Err("production candidate measurement requires fixed Linux Git".into());
+    }
+    let git = |revision: &str| -> Result<String, Box<dyn Error>> {
+        let output = Command::new(&measured.git_executable)
+            .arg("-C")
+            .arg(&measured.candidate_root)
+            .arg("rev-parse")
+            .arg(revision)
+            .output()?;
+        if !output.status.success() {
+            return Err(format!("candidate Git measurement failed: {revision}").into());
+        }
+        Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+    };
+    for (field, revision) in [
+        ("candidate_commit", "HEAD"),
+        ("candidate_tree", "HEAD^{tree}"),
+    ] {
+        if binding.get(field).and_then(Value::as_str) != Some(git(revision)?.as_str()) {
+            return Err(format!("measured {field} differs from signed request").into());
+        }
+    }
+    if binding
+        .get("candidate_semantic_digest")
+        .and_then(Value::as_str)
+        != Some(fs::read_to_string(&measured.semantic_evidence)?.trim())
+    {
+        return Err("measured candidate semantic digest differs from signed request".into());
+    }
+    let canonical_digest = |path: &Path| -> Result<String, Box<dyn Error>> {
+        let value: Value = serde_json::from_slice(&fs::read(path)?)?;
+        Ok(blake3::hash(&serde_json::to_vec(&value)?)
+            .to_hex()
+            .to_string())
+    };
+    if binding
+        .get("production_profile_blake3")
+        .and_then(Value::as_str)
+        != Some(canonical_digest(&measured.production_profile)?.as_str())
+        || binding
+            .get("production_vector_blake3")
+            .and_then(Value::as_str)
+            != Some(canonical_digest(&measured.production_vector)?.as_str())
+        || binding
+            .get("append_only_idl_history_root")
+            .and_then(Value::as_str)
+            != Some(fs::read_to_string(&measured.idl_history)?.trim())
+    {
+        return Err("measured profile/vector/IDL history differs from signed request".into());
+    }
+    let current_executable = std::env::current_exe()?;
+    if binding.get("probe_blake3").and_then(Value::as_str)
+        != Some(blake3_file_hex(&measured.probe)?.as_str())
+        || binding.get("probe_signature").and_then(Value::as_str)
+            != Some(blake3_file_hex(&measured.probe_signature)?.as_str())
+        || binding.get("executable_blake3").and_then(Value::as_str)
+            != Some(blake3_file_hex(&current_executable)?.as_str())
+        || binding.get("rust_toolchain_digest").and_then(Value::as_str)
+            != Some(blake3_file_hex(&measured.rust_toolchain_evidence)?.as_str())
+        || binding.get("runner_image_digest").and_then(Value::as_str)
+            != Some(blake3_file_hex(&measured.runner_image_evidence)?.as_str())
+    {
+        return Err("measured reference environment differs from signed request".into());
+    }
+    let public = decode_hex::<32>(
+        binding
+            .get("probe_signer_public_key")
+            .and_then(Value::as_str)
+            .ok_or("probe signer public key is missing")?,
+    )?;
+    if signer_fingerprint(&public)
+        != binding
+            .get("probe_signer_fingerprint")
+            .and_then(Value::as_str)
+            .ok_or("probe signer fingerprint is missing")?
+    {
+        return Err("probe signer fingerprint differs from signed request".into());
+    }
+    let signature = decode_hex::<64>(fs::read_to_string(&measured.probe_signature)?.trim())?;
+    let mut message = b"onebrain:concept-registry-probe:1\0".to_vec();
+    message.extend_from_slice(blake3::hash(&fs::read(&measured.probe)?).as_bytes());
+    VerifyingKey::from_bytes(&public)?.verify(&message, &Signature::from_bytes(&signature))?;
+    if binding
+        .get("required_targets")
+        .and_then(|value| value.get(&measured.target_triple))
+        .and_then(Value::as_str)
+        != binding.get("artifact_tuple_digest").and_then(Value::as_str)
+    {
+        return Err("measured target artifact tuple differs from signed request".into());
+    }
+    let actual_artifacts = [
+        ("OBR:concepts.obr", obr_path.to_path_buf()),
+        (
+            "LABEL_INDEX:concepts.obr.labels.idx",
+            append_suffix(obr_path, ".labels.idx"),
+        ),
+        (
+            "CCID_INDEX:concepts.obr.ccids.idx",
+            append_suffix(obr_path, ".ccids.idx"),
+        ),
+        (
+            "MANIFEST:concepts.obr.manifest.json",
+            append_suffix(obr_path, ".manifest.json"),
+        ),
+        ("SPDX_SBOM:sbom.spdx.json", sbom_path.to_path_buf()),
+    ];
+    for (name, path) in actual_artifacts {
+        if binding
+            .get("candidate_payload_artifacts_blake3")
+            .and_then(|value| value.get(name))
+            .and_then(Value::as_str)
+            != Some(blake3_file_hex(&path)?.as_str())
+        {
+            return Err(format!("measured payload {name} differs from signed request").into());
+        }
+    }
+    if binding
+        .get("release_aggregate_root")
+        .and_then(Value::as_str)
+        != Some(candidate_stamp.artifact_root.as_str())
+    {
+        return Err("measured artifact root differs from signed request".into());
+    }
+    let stamp_path = measured
+        .registry_root
+        .join("releases")
+        .join(&measured.release_id)
+        .join("release.stamp.json");
+    if binding.get("release_stamp_blake3").and_then(Value::as_str)
+        != Some(blake3_file_hex(&stamp_path)?.as_str())
+    {
+        return Err("measured installed release stamp differs from signed request".into());
+    }
+    let stamp: Value = serde_json::from_slice(&fs::read(stamp_path)?)?;
+    if stamp.get("artifact_root").and_then(Value::as_str)
+        != binding
+            .get("release_aggregate_root")
+            .and_then(Value::as_str)
+    {
+        return Err("installed release root differs from signed request".into());
+    }
+    let states = measured.registry_root.join("state");
+    let mut state_paths = fs::read_dir(states)?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("state-"))
+        })
+        .collect::<Vec<_>>();
+    state_paths.sort();
+    let state: Value = serde_json::from_slice(&fs::read(
+        state_paths.last().ok_or("active state is missing")?,
+    )?)?;
+    if state.get("active_release").and_then(Value::as_str) != Some(measured.release_id.as_str())
+        || state.get("generation").and_then(Value::as_u64)
+            != binding.get("registry_generation").and_then(Value::as_u64)
+    {
+        return Err("measured active release generation differs from signed request".into());
+    }
+    Ok(())
 }
 
 fn apply_run_context(
@@ -595,6 +930,21 @@ fn encode_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn decode_hex<const N: usize>(value: &str) -> Result<[u8; N], Box<dyn Error>> {
+    if value.len() != N * 2
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err("hex value has the wrong lowercase shape".into());
+    }
+    let mut bytes = [0u8; N];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16)?;
+    }
+    Ok(bytes)
+}
+
 fn truncated_index_drill(
     registry_root: &Path,
     obr_path: &Path,
@@ -717,6 +1067,15 @@ fn required_path(
         .ok_or_else(|| format!("missing {name}\n{}", usage()).into())
 }
 
+fn required_string(
+    args: &mut impl Iterator<Item = String>,
+    name: &str,
+) -> Result<String, Box<dyn Error>> {
+    args.next()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| format!("missing {name}\n{}", usage()).into())
+}
+
 fn no_more_args(mut args: impl Iterator<Item = String>) -> Result<(), Box<dyn Error>> {
     if let Some(extra) = args.next() {
         return Err(format!("unexpected argument: {extra}\n{}", usage()).into());
@@ -748,5 +1107,5 @@ fn append_suffix(path: &Path, suffix: &str) -> PathBuf {
 }
 
 fn usage() -> &'static str {
-    "usage: concept_registry_failure_qualification WORK_DIR OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE RUN_CONTEXT_JSON RELEASE_BINDING_JSON TRUST_POLICY_JSON OUTPUT_JSON"
+    "usage: concept_registry_failure_qualification (--prequalification WORK_DIR OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE PREQUALIFICATION_CONTEXT_JSON PREQUALIFICATION_BINDING_JSON TRUST_POLICY_JSON OUTPUT_JSON | --release WORK_DIR OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE RELEASE_REQUEST RELEASE_REQUEST_SIGNATURE QUALIFICATION_APPROVER_POLICY GPG_HOME INSTALLED_REGISTRY_ROOT RELEASE_ID CANDIDATE_ROOT CANDIDATE_SEMANTIC_EVIDENCE PRODUCTION_PROFILE PRODUCTION_VECTOR APPEND_ONLY_IDL_HISTORY TARGET_TRIPLE PROBE_EXECUTABLE PROBE_SIGNATURE RUST_TOOLCHAIN_EVIDENCE RUNNER_IMAGE_EVIDENCE TRUST_POLICY_JSON OUTPUT_JSON | --test-release-nonproduction WORK_DIR OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE RELEASE_REQUEST RELEASE_REQUEST_SIGNATURE QUALIFICATION_APPROVER_POLICY GPG_HOME TEST_PYTHON TEST_GPG TEST_GIT INSTALLED_REGISTRY_ROOT RELEASE_ID CANDIDATE_ROOT CANDIDATE_SEMANTIC_EVIDENCE PRODUCTION_PROFILE PRODUCTION_VECTOR APPEND_ONLY_IDL_HISTORY TARGET_TRIPLE PROBE_EXECUTABLE PROBE_SIGNATURE RUST_TOOLCHAIN_EVIDENCE RUNNER_IMAGE_EVIDENCE TRUST_POLICY_JSON OUTPUT_JSON)"
 }

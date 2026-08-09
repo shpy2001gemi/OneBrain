@@ -19,7 +19,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from build_obr import build
 from config import SOURCE_WIKIDATA
-from production_qualification import signer_fingerprint
+from production_qualification import canonical_json, signer_fingerprint
 
 
 PROFILE = "onebrain/concept-registry-failure-qualification/1"
@@ -31,6 +31,30 @@ REQUIRED_SOURCES = ("chebi", "geonames", "ncbi", "wikidata", "wordnet")
     "set ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION to run the compiled drill",
 )
 class FailureQualificationIntegrationTests(unittest.TestCase):
+    def test_raw_release_context_binding_cli_is_rejected_before_inputs_are_read(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw_context = root / "raw-release-context.json"
+            raw_binding = root / "raw-release-binding.json"
+            raw_context.write_text(json.dumps({"variant": "Release"}), encoding="utf-8")
+            raw_binding.write_text(json.dumps({"release_aggregate_root": "00" * 32}), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    os.environ["ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION"],
+                    str(root / "work"), str(root / "candidate.obr"), str(root / "sbom.json"),
+                    str(root / "sources.json"), str(root / "private.key"),
+                    str(raw_context), str(raw_binding), str(root / "policy.json"),
+                    str(root / "output.json"),
+                ],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=30, check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(
+                "explicit --prequalification or --release mode is required",
+                result.stderr,
+            )
+
     def test_truncated_indexes_and_disk_shortage_fail_closed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -138,6 +162,7 @@ class FailureQualificationIntegrationTests(unittest.TestCase):
             result = subprocess.run(
                 [
                     os.environ["ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION"],
+                    "--prequalification",
                     str(root / "work"),
                     str(obr_path),
                     str(sbom_path),
@@ -190,6 +215,22 @@ class FailureQualificationIntegrationTests(unittest.TestCase):
             self.assertEqual(len(kills), 6)
             self.assertTrue(all(drill["old_or_new_complete"] for drill in kills))
             self.assertTrue(payload["exit_oracles"]["all_process_kills_reopened_complete_state"])
+            command = payload["command"]
+            self.assertEqual(
+                payload["command_blake3"],
+                blake3.blake3(canonical_json(command)).hexdigest(),
+            )
+            serialized_command = json.dumps(command, sort_keys=True)
+            self.assertNotIn(str(private_key_path), serialized_command)
+            self.assertIn("<external-private-key-redacted>", serialized_command)
+            for path in (executable_path, obr_path, sbom_path, sources_path, policy_path):
+                with self.subTest(path=path):
+                    self.assertIn(blake3.blake3(path.read_bytes()).hexdigest(), serialized_command)
+            mutated = [*command, "--omitted-option"]
+            self.assertNotEqual(
+                payload["command_blake3"],
+                blake3.blake3(canonical_json(mutated)).hexdigest(),
+            )
             self.assertEqual(
                 json.loads(result.stdout)["payload"]["input"], payload["input"]
             )

@@ -140,10 +140,19 @@ def create_resource_receipt(
         raise QualificationError(str(error)) from error
 
 
-def create_verified_resource_receipt(
+def _create_verified_resource_receipt(
     report: dict[str, object],
     verified: object,
     *,
+    test_git_executable: Path | None,
+    candidate_root: Path,
+    registry_root: Path,
+    release_id: str,
+    candidate_semantic_evidence: Path,
+    production_profile: Path,
+    production_vector: Path,
+    append_only_idl_history: Path,
+    candidate_tooling: dict[str, Path],
     payload_artifacts: dict[str, Path],
     release_stamp: Path,
     probe: Path,
@@ -152,7 +161,6 @@ def create_verified_resource_receipt(
     rust_toolchain_evidence: Path,
     runner_image_evidence: Path,
     target_triple: str,
-    invocation: list[str],
     signing_key: Ed25519PrivateKey,
     policy: dict[str, object],
 ) -> dict[str, object]:
@@ -164,6 +172,7 @@ def create_verified_resource_receipt(
         ReleaseRequestError,
         VerifiedQualificationContextV1,
         verify_registry_candidate_measurements,
+        verify_registry_candidate_measurements_for_test_nonproduction,
     )
     from production_qualification import (
         AggregationError,
@@ -175,17 +184,20 @@ def create_verified_resource_receipt(
 
     if not isinstance(verified, VerifiedQualificationContextV1):
         raise QualificationError("closed verified release context is required")
-    if not invocation or not all(isinstance(value, str) and value for value in invocation):
-        raise QualificationError("canonical full invocation is required")
-    if any("private-key" in value.lower() or "secret" in value.lower() for value in invocation):
-        raise QualificationError("invocation contains private key material or secret paths")
     if trust_policy_digest(policy) != verified.bindings["trust_policy_digest"]:
         raise QualificationError("Registry trust policy differs from verified request")
     if signer_fingerprint(signing_key.public_key().public_bytes_raw()) != verified.bindings["signer_fingerprint"]:
         raise QualificationError("Registry signer differs from verified request")
     try:
-        measured = verify_registry_candidate_measurements(
-            verified,
+        measurement_inputs = dict(
+            candidate_root=candidate_root,
+            registry_root=registry_root,
+            release_id=release_id,
+            candidate_semantic_evidence=candidate_semantic_evidence,
+            production_profile=production_profile,
+            production_vector=production_vector,
+            append_only_idl_history=append_only_idl_history,
+            candidate_tooling=candidate_tooling,
             payload_artifacts=payload_artifacts,
             release_stamp=release_stamp,
             probe=probe,
@@ -195,7 +207,41 @@ def create_verified_resource_receipt(
             runner_image_evidence=runner_image_evidence,
             target_triple=target_triple,
         )
+        measured = (
+            verify_registry_candidate_measurements(verified, **measurement_inputs)
+            if test_git_executable is None
+            else verify_registry_candidate_measurements_for_test_nonproduction(
+                verified, git_executable=test_git_executable, **measurement_inputs
+            )
+        )
         context = verified.run_context
+        invocation = [
+            "resource_qualification.py",
+            f"--profile={report.get('qualification_profile')}",
+            f"--release-request-digest={verified.request_digest}",
+            f"--candidate-tree={context['candidate_tree']}",
+            f"--release-id={release_id}",
+            *[
+                f"--payload-{name}={path.name}@blake3:{_blake3_file(path)}"
+                for name, path in sorted(payload_artifacts.items())
+            ],
+            f"--release-stamp={release_stamp.name}@blake3:{_blake3_file(release_stamp)}",
+            f"--probe={probe.name}@blake3:{_blake3_file(probe)}",
+            f"--probe-signature={probe_signature.name}@blake3:{_blake3_file(probe_signature)}",
+            f"--executable={executable.name}@blake3:{_blake3_file(executable)}",
+            f"--production-profile={production_profile.name}@blake3:{_blake3_file(production_profile)}",
+            f"--production-vector={production_vector.name}@blake3:{_blake3_file(production_vector)}",
+            f"--idl-history={append_only_idl_history.name}@blake3:{_blake3_file(append_only_idl_history)}",
+            f"--rust-toolchain={rust_toolchain_evidence.name}@blake3:{_blake3_file(rust_toolchain_evidence)}",
+            f"--runner-image={runner_image_evidence.name}@blake3:{_blake3_file(runner_image_evidence)}",
+            *[
+                f"--candidate-tool-{name}={path.name}@blake3:{_blake3_file(path)}"
+                for name, path in sorted(candidate_tooling.items())
+            ],
+            f"--target-triple={target_triple}",
+            "--gpg-home=<redacted>",
+            "--receipt-signer=<external-redacted>",
+        ]
         payload: dict[str, object] = {
             **verified.bindings,
             **measured,
@@ -204,7 +250,7 @@ def create_verified_resource_receipt(
             "qualification_session_id": context["qualification_session_id"],
             "candidate_commit": context["candidate_commit"],
             "candidate_tree": context["candidate_tree"],
-            "base_candidate_bound": verified.production,
+            "base_candidate_bound": True,
             "qualification_profile": report.get("qualification_profile"),
             "command": invocation,
             "command_blake3": blake3.blake3(canonical_json(invocation)).hexdigest(),
@@ -216,6 +262,35 @@ def create_verified_resource_receipt(
         return create_signed_receipt("resource-qualification", payload, signing_key, policy)
     except (ReleaseRequestError, AggregationError) as error:
         raise QualificationError(str(error)) from error
+
+
+def create_verified_resource_receipt(
+    report: dict[str, object],
+    verified: object,
+    **measurements: object,
+) -> dict[str, object]:
+    """Production receipt producer with fixed production measurement tools."""
+    return _create_verified_resource_receipt(
+        report, verified, test_git_executable=None, **measurements
+    )
+
+
+def create_verified_resource_receipt_for_test_nonproduction(
+    report: dict[str, object],
+    verified: object,
+    *,
+    git_executable: Path,
+    **measurements: object,
+) -> dict[str, object]:
+    """Explicit test producer; it cannot accept a production verified context."""
+    if getattr(verified, "production", None) is not False:
+        raise QualificationError("test-only resource producer rejects production contexts")
+    return _create_verified_resource_receipt(
+        report,
+        verified,
+        test_git_executable=git_executable,
+        **measurements,
+    )
 
 
 def _utc_now() -> str:
@@ -875,7 +950,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--release-request-signature", type=Path)
     parser.add_argument("--qualification-approver-policy", type=Path)
     parser.add_argument("--gpg-home", type=Path)
-    parser.add_argument("--gpg", type=Path)
+    parser.add_argument("--candidate-root", type=Path)
+    parser.add_argument("--registry-root", type=Path)
+    parser.add_argument("--release-id")
+    parser.add_argument("--candidate-semantic-evidence", type=Path)
+    parser.add_argument("--production-profile", type=Path)
+    parser.add_argument("--production-vector", type=Path)
+    parser.add_argument("--append-only-idl-history", type=Path)
+    for tooling_name in ("qualifier", "request", "clean-worktree", "release-wrapper", "verifier", "signer-policy"):
+        parser.add_argument(f"--candidate-tool-{tooling_name}", type=Path)
     parser.add_argument("--label-index", type=Path)
     parser.add_argument("--ccid-index", type=Path)
     parser.add_argument("--manifest", type=Path)
@@ -924,6 +1007,19 @@ def main(argv: list[str] | None = None) -> int:
             args.release_request_signature,
             args.qualification_approver_policy,
             args.gpg_home,
+            args.candidate_root,
+            args.registry_root,
+            args.release_id,
+            args.candidate_semantic_evidence,
+            args.production_profile,
+            args.production_vector,
+            args.append_only_idl_history,
+            args.candidate_tool_qualifier,
+            args.candidate_tool_request,
+            args.candidate_tool_clean_worktree,
+            args.candidate_tool_release_wrapper,
+            args.candidate_tool_verifier,
+            args.candidate_tool_signer_policy,
             args.label_index,
             args.ccid_index,
             args.manifest,
@@ -943,7 +1039,7 @@ def main(argv: list[str] | None = None) -> int:
             args.trust_policy,
             args.private_key,
         )
-        if any(value is not None for value in verified_inputs[:14]):
+        if any(value is not None for value in verified_inputs[:-2]):
             if not all(value is not None for value in verified_inputs):
                 raise QualificationError("all verified release-request and measured candidate inputs are required together")
             if args.run_context is not None or args.release_binding is not None:
@@ -958,19 +1054,27 @@ def main(argv: list[str] | None = None) -> int:
                     args.release_request_signature,
                     args.qualification_approver_policy,
                     args.gpg_home,
-                    gpg_executable=args.gpg,
                 )
             except RuntimeError as error:
                 raise QualificationError(str(error)) from error
-            invocation = [
-                "resource_qualification.py", "--profile", args.profile,
-                "--probe", str(args.probe), "--obr", str(args.obr),
-                "--labels-file", str(args.labels_file), "--budget-profile", args.budget_profile,
-                "--timeout-seconds", str(args.timeout_seconds),
-            ]
             report = create_verified_resource_receipt(
                 report,
                 verified,
+                candidate_root=args.candidate_root,
+                registry_root=args.registry_root,
+                release_id=args.release_id,
+                candidate_semantic_evidence=args.candidate_semantic_evidence,
+                production_profile=args.production_profile,
+                production_vector=args.production_vector,
+                append_only_idl_history=args.append_only_idl_history,
+                candidate_tooling={
+                    "qualifier": args.candidate_tool_qualifier,
+                    "request": args.candidate_tool_request,
+                    "clean_worktree": args.candidate_tool_clean_worktree,
+                    "release_wrapper": args.candidate_tool_release_wrapper,
+                    "verifier": args.candidate_tool_verifier,
+                    "signer_policy": args.candidate_tool_signer_policy,
+                },
                 payload_artifacts={
                     "OBR:concepts.obr": args.obr,
                     "LABEL_INDEX:concepts.obr.labels.idx": args.label_index,
@@ -985,7 +1089,6 @@ def main(argv: list[str] | None = None) -> int:
                 rust_toolchain_evidence=args.rust_toolchain_evidence,
                 runner_image_evidence=args.runner_image_evidence,
                 target_triple=args.target_triple,
-                invocation=invocation,
                 signing_key=_read_private_key(args.private_key),
                 policy=_read_json_object(args.trust_policy),
             )

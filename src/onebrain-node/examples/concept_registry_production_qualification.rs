@@ -6,11 +6,13 @@ use std::fs::File;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use ku_core::{
     activate_concept_registry_release, parse_concept_registry_verifying_key,
+    qualification_request::{
+        verify_base_release_request, verify_base_release_request_for_test_nonproduction,
+    },
     rollback_concept_registry_release,
 };
 use onebrain_node::concept_registry_runtime::ConceptRegistryGenerationManager;
@@ -29,18 +31,54 @@ fn main() {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
-    let mut args = std::env::args().skip(1);
+    let raw_invocation: Vec<String> = std::env::args().collect();
+    let mut args = raw_invocation.iter().skip(1).cloned();
+    let mode = required_string(&mut args, "MODE")?;
+    if mode != "--release" && mode != "--test-release-nonproduction" {
+        return Err("explicit --release mode is required".into());
+    }
     let registry_root = required_path(&mut args, "REGISTRY_ROOT")?;
     let public_key_hex = required_string(&mut args, "RELEASE_PUBLIC_KEY")?;
     let old_release = required_string(&mut args, "OLD_RELEASE_ID")?;
     let new_release = required_string(&mut args, "NEW_RELEASE_ID")?;
     let query_label = required_string(&mut args, "QUERY_LABEL")?;
-    let request_verifier = required_path(&mut args, "REQUEST_VERIFIER")?;
     let release_request = required_path(&mut args, "RELEASE_REQUEST")?;
     let release_request_signature = required_path(&mut args, "RELEASE_REQUEST_SIGNATURE")?;
     let approver_policy = required_path(&mut args, "QUALIFICATION_APPROVER_POLICY")?;
     let gpg_home = required_path(&mut args, "GPG_HOME")?;
-    let gpg_executable = required_path(&mut args, "GPG_EXECUTABLE")?;
+    let (verified, git_executable, production) = if mode == "--release" {
+        (
+            verify_base_release_request(
+                &release_request,
+                &release_request_signature,
+                &approver_policy,
+                &gpg_home,
+            )?,
+            PathBuf::from("/usr/bin/git"),
+            true,
+        )
+    } else {
+        let python = required_path(&mut args, "TEST_PYTHON")?;
+        let gpg = required_path(&mut args, "TEST_GPG")?;
+        let git = required_path(&mut args, "TEST_GIT")?;
+        (
+            verify_base_release_request_for_test_nonproduction(
+                &python,
+                &gpg,
+                &release_request,
+                &release_request_signature,
+                &approver_policy,
+                &gpg_home,
+            )?,
+            git,
+            false,
+        )
+    };
+    let candidate_root = required_path(&mut args, "CANDIDATE_ROOT")?;
+    let semantic_evidence = required_path(&mut args, "CANDIDATE_SEMANTIC_EVIDENCE")?;
+    let production_profile = required_path(&mut args, "PRODUCTION_PROFILE")?;
+    let production_vector = required_path(&mut args, "PRODUCTION_VECTOR")?;
+    let idl_history = required_path(&mut args, "APPEND_ONLY_IDL_HISTORY")?;
     let probe_executable = required_path(&mut args, "PROBE_EXECUTABLE")?;
     let probe_signature = required_path(&mut args, "PROBE_SIGNATURE")?;
     let rust_toolchain_evidence = required_path(&mut args, "RUST_TOOLCHAIN_EVIDENCE")?;
@@ -56,14 +94,6 @@ fn run() -> Result<(), Box<dyn Error>> {
     let release_key = parse_concept_registry_verifying_key(&public_key_hex)?;
     let signing_key = read_signing_key(&private_key_path)?;
     let policy: Value = serde_json::from_slice(&fs::read(policy_path)?)?;
-    let verified = verify_release_request(
-        &request_verifier,
-        &release_request,
-        &release_request_signature,
-        &approver_policy,
-        &gpg_home,
-        &gpg_executable,
-    )?;
     let context = verified
         .get("run_context")
         .cloned()
@@ -82,6 +112,13 @@ fn run() -> Result<(), Box<dyn Error>> {
         &rust_toolchain_evidence,
         &runner_image_evidence,
         &target_triple,
+        &candidate_root,
+        &semantic_evidence,
+        &production_profile,
+        &production_vector,
+        &idl_history,
+        &git_executable,
+        production,
     )?;
     validate_receipt_signer(&policy, &signing_key, &binding)?;
     let expected_root = binding
@@ -139,13 +176,12 @@ fn run() -> Result<(), Box<dyn Error>> {
         && new_reader_complete
         && rollback_with_active_reader
         && exact_root_after_reopen;
-    binding.insert(
-        "command".to_owned(),
-        json!([
-            "concept_registry_production_qualification",
-            "generation-swap"
-        ]),
-    );
+    let command = sanitized_invocation(&raw_invocation, &mode)?;
+    let command_blake3 = blake3::hash(&serde_json::to_vec(&command)?)
+        .to_hex()
+        .to_string();
+    binding.insert("command".to_owned(), json!(command));
+    binding.insert("command_blake3".to_owned(), json!(command_blake3));
     binding.insert("result".to_owned(), json!(result));
     binding.insert(
         "exit_oracles".to_owned(),
@@ -168,6 +204,33 @@ fn run() -> Result<(), Box<dyn Error>> {
         return Err("one or more generation-swap oracles failed".into());
     }
     Ok(())
+}
+
+fn sanitized_invocation(raw: &[String], mode: &str) -> Result<Vec<String>, Box<dyn Error>> {
+    raw.iter()
+        .enumerate()
+        .map(|(index, value)| {
+            if index == 10 {
+                return Ok("<gpg-home-redacted>".to_owned());
+            }
+            let private_index = if mode == "--release" { 22 } else { 25 };
+            if index == private_index {
+                return Ok("<external-private-key-redacted>".to_owned());
+            }
+            if mode == "--test-release-nonproduction" && (11..=13).contains(&index) {
+                return Ok(format!("<nonproduction-test-tool-{index}>"));
+            }
+            let path = Path::new(value);
+            if path.is_file() {
+                let name = path
+                    .file_name()
+                    .and_then(|part| part.to_str())
+                    .unwrap_or("input");
+                return Ok(format!("{name}@blake3:{}", blake3_file(path)?));
+            }
+            Ok(value.clone())
+        })
+        .collect()
 }
 
 fn apply_run_context(
@@ -271,45 +334,6 @@ fn apply_run_context(
     Ok(())
 }
 
-fn verify_release_request(
-    verifier: &Path,
-    request: &Path,
-    signature: &Path,
-    approver_policy: &Path,
-    gpg_home: &Path,
-    gpg_executable: &Path,
-) -> Result<Value, Box<dyn Error>> {
-    let python = std::env::var("PYTHON").unwrap_or_else(|_| "python".to_owned());
-    let result = Command::new(python)
-        .arg(verifier)
-        .arg("--request")
-        .arg(request)
-        .arg("--signature")
-        .arg(signature)
-        .arg("--policy")
-        .arg(approver_policy)
-        .arg("--gpg-home")
-        .arg(gpg_home)
-        .arg("--gpg")
-        .arg(gpg_executable)
-        .output()?;
-    if !result.status.success() {
-        return Err(format!(
-            "signed release request verification failed: {}",
-            String::from_utf8_lossy(&result.stderr).trim()
-        )
-        .into());
-    }
-    let verified: Value = serde_json::from_slice(&result.stdout)?;
-    if verified.get("format").and_then(Value::as_str)
-        != Some("onebrain/verified-qualification-context/1")
-        || verified.get("production").and_then(Value::as_bool) != Some(true)
-    {
-        return Err("request verifier did not return a production closed context".into());
-    }
-    Ok(verified)
-}
-
 fn validate_candidate_measurements(
     registry_root: &Path,
     release_id: &str,
@@ -319,7 +343,65 @@ fn validate_candidate_measurements(
     toolchain: &Path,
     runner_image: &Path,
     target_triple: &str,
+    candidate_root: &Path,
+    semantic_evidence: &Path,
+    production_profile: &Path,
+    production_vector: &Path,
+    idl_history: &Path,
+    git_executable: &Path,
+    production: bool,
 ) -> Result<(), Box<dyn Error>> {
+    if production && (!cfg!(target_os = "linux") || git_executable != Path::new("/usr/bin/git")) {
+        return Err("production candidate measurement requires fixed Linux Git".into());
+    }
+    let git = |revision: &str| -> Result<String, Box<dyn Error>> {
+        let output = std::process::Command::new(git_executable)
+            .arg("-C")
+            .arg(candidate_root)
+            .arg("rev-parse")
+            .arg(revision)
+            .output()?;
+        if !output.status.success() {
+            return Err(format!("candidate Git measurement failed: {revision}").into());
+        }
+        Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+    };
+    if binding.get("candidate_commit").and_then(Value::as_str) != Some(git("HEAD")?.as_str())
+        || binding.get("candidate_tree").and_then(Value::as_str)
+            != Some(git("HEAD^{tree}")?.as_str())
+        || binding
+            .get("candidate_semantic_digest")
+            .and_then(Value::as_str)
+            != Some(fs::read_to_string(semantic_evidence)?.trim())
+    {
+        return Err("candidate Git or semantic evidence differs from signed request".into());
+    }
+    let canonical_digest = |path: &Path| -> Result<String, Box<dyn Error>> {
+        let value: Value = serde_json::from_slice(&fs::read(path)?)?;
+        Ok(blake3::hash(&serde_json::to_vec(&value)?)
+            .to_hex()
+            .to_string())
+    };
+    if binding
+        .get("production_profile_blake3")
+        .and_then(Value::as_str)
+        != Some(canonical_digest(production_profile)?.as_str())
+        || binding
+            .get("production_vector_blake3")
+            .and_then(Value::as_str)
+            != Some(canonical_digest(production_vector)?.as_str())
+        || binding
+            .get("append_only_idl_history_root")
+            .and_then(Value::as_str)
+            != Some(fs::read_to_string(idl_history)?.trim())
+        || binding
+            .get("required_targets")
+            .and_then(|value| value.get(target_triple))
+            .and_then(Value::as_str)
+            != binding.get("artifact_tuple_digest").and_then(Value::as_str)
+    {
+        return Err("candidate profile/vector/history/target differs from signed request".into());
+    }
     let stamp_path = registry_root
         .join("releases")
         .join(release_id)
@@ -538,5 +620,5 @@ fn required_string(
 }
 
 fn usage() -> &'static str {
-    "usage: concept_registry_production_qualification REGISTRY_ROOT RELEASE_PUBLIC_KEY OLD_RELEASE_ID NEW_RELEASE_ID QUERY_LABEL REQUEST_VERIFIER RELEASE_REQUEST RELEASE_REQUEST_SIGNATURE QUALIFICATION_APPROVER_POLICY GPG_HOME GPG_EXECUTABLE PROBE_EXECUTABLE PROBE_SIGNATURE RUST_TOOLCHAIN_EVIDENCE RUNNER_IMAGE_EVIDENCE TARGET_TRIPLE TRUST_POLICY_JSON PRIVATE_KEY_FILE OUTPUT_JSON"
+    "usage: concept_registry_production_qualification (--release | --test-release-nonproduction) REGISTRY_ROOT RELEASE_PUBLIC_KEY OLD_RELEASE_ID NEW_RELEASE_ID QUERY_LABEL RELEASE_REQUEST RELEASE_REQUEST_SIGNATURE QUALIFICATION_APPROVER_POLICY GPG_HOME [TEST_PYTHON TEST_GPG TEST_GIT] CANDIDATE_ROOT CANDIDATE_SEMANTIC_EVIDENCE PRODUCTION_PROFILE PRODUCTION_VECTOR APPEND_ONLY_IDL_HISTORY PROBE_EXECUTABLE PROBE_SIGNATURE RUST_TOOLCHAIN_EVIDENCE RUNNER_IMAGE_EVIDENCE TARGET_TRIPLE TRUST_POLICY_JSON PRIVATE_KEY_FILE OUTPUT_JSON"
 }

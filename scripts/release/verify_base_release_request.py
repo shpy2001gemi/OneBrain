@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
+import sys
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -98,9 +98,18 @@ def blake3_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def verify_registry_candidate_measurements(
+def _verify_registry_candidate_measurements(
     verified: VerifiedQualificationContextV1,
     *,
+    git_executable: Path,
+    candidate_root: Path,
+    registry_root: Path,
+    release_id: str,
+    candidate_semantic_evidence: Path,
+    production_profile: Path,
+    production_vector: Path,
+    append_only_idl_history: Path,
+    candidate_tooling: dict[str, Path],
     payload_artifacts: dict[str, Path],
     release_stamp: Path,
     probe: Path,
@@ -113,13 +122,83 @@ def verify_registry_candidate_measurements(
     """Measure every candidate-owned Registry byte named by the request."""
     if not isinstance(verified, VerifiedQualificationContextV1):
         raise ReleaseRequestError("closed verified release context is required")
+    root = candidate_root.resolve(strict=True)
+    git_values: dict[str, str] = {}
+    for field, revision in (
+        ("object_format", "--show-object-format"),
+        ("commit", "HEAD"),
+        ("tree", "HEAD^{tree}"),
+    ):
+        command = [str(git_executable), "-C", str(root), "rev-parse", revision]
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        if completed.returncode != 0:
+            raise ReleaseRequestError(f"candidate Git {field} could not be measured")
+        git_values[field] = completed.stdout.strip()
+    expected_git = {
+        "object_format": "sha1" if len(verified.run_context["candidate_commit"]) == 40 else "sha256",
+        "commit": verified.run_context["candidate_commit"],
+        "tree": verified.run_context["candidate_tree"],
+    }
+    if git_values != expected_git:
+        raise ReleaseRequestError("measured candidate commit/tree/object format differs from request")
+    semantic = candidate_semantic_evidence.read_text(encoding="ascii").strip()
+    if semantic != verified.bindings["candidate_semantic_digest"]:
+        raise ReleaseRequestError("measured candidate semantic digest differs from request")
+    if verified.bindings["artifact_tuple_digest"] != verified.bindings["required_targets"][target_triple]:
+        raise ReleaseRequestError("target artifact tuple differs from signed required target map")
+    try:
+        profile_value = json.loads(production_profile.read_bytes())
+        vector_value = json.loads(production_vector.read_bytes())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ReleaseRequestError("production profile/vector evidence is invalid") from error
+    if blake3.blake3(canonical_json(profile_value)).hexdigest() != verified.bindings["production_profile_blake3"]:
+        raise ReleaseRequestError("measured production profile differs from request")
+    if blake3.blake3(canonical_json(vector_value)).hexdigest() != verified.bindings["production_vector_blake3"]:
+        raise ReleaseRequestError("measured production vector differs from request")
+    if append_only_idl_history.read_text(encoding="ascii").strip() != verified.bindings["append_only_idl_history_root"]:
+        raise ReleaseRequestError("measured append-only IDL history root differs from request")
+    if set(candidate_tooling) != TOOLING_FIELDS:
+        raise ReleaseRequestError("measured candidate tooling map is not exact")
+    measured_tooling = {name: blake3_file(path) for name, path in candidate_tooling.items()}
+    if measured_tooling != verified.tooling_blake3:
+        raise ReleaseRequestError("measured candidate tooling differs from request")
     if set(payload_artifacts) != ARTIFACT_FIELDS:
         raise ReleaseRequestError("measured Registry payload tuple is not exact")
+    release_dir = registry_root.resolve(strict=True) / "releases" / release_id
+    if release_stamp.resolve(strict=True) != (release_dir / "release.stamp.json").resolve(strict=True):
+        raise ReleaseRequestError("release stamp path is not the measured installed release")
+    expected_names = {name.split(":", 1)[1] for name in ARTIFACT_FIELDS}
+    if {
+        path.resolve(strict=True).name for path in payload_artifacts.values()
+    } != expected_names or any(path.resolve(strict=True).parent != release_dir for path in payload_artifacts.values()):
+        raise ReleaseRequestError("payload paths are not the measured installed release")
     measured_artifacts = {
         name: blake3_file(path) for name, path in payload_artifacts.items()
     }
     if measured_artifacts != verified.bindings["candidate_payload_artifacts_blake3"]:
         raise ReleaseRequestError("measured Registry payload bytes differ from request")
+    try:
+        stamp = json.loads(release_stamp.read_bytes())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ReleaseRequestError("installed release stamp is invalid") from error
+    stamp_artifacts = {
+        f"{artifact['role']}:{artifact['relative_path']}": artifact["blake3"]
+        for artifact in stamp.get("artifacts", [])
+        if isinstance(artifact, dict)
+    }
+    if stamp.get("release_id") != release_id or stamp.get("artifact_root") != verified.bindings["release_aggregate_root"]:
+        raise ReleaseRequestError("installed release root differs from request")
+    if stamp_artifacts != measured_artifacts:
+        raise ReleaseRequestError("installed release stamp artifact tuple differs from measured bytes")
+    states = sorted((registry_root / "state").glob("state-*.json"))
+    if not states:
+        raise ReleaseRequestError("installed Registry has no active state generation")
+    try:
+        state = json.loads(states[-1].read_bytes())
+    except (OSError, json.JSONDecodeError) as error:
+        raise ReleaseRequestError("active Registry state generation is invalid") from error
+    if state.get("active_release") != release_id or state.get("generation") != verified.bindings["registry_generation"]:
+        raise ReleaseRequestError("active Registry root/generation differs from request")
     measured = {
         "candidate_payload_artifacts_blake3": measured_artifacts,
         "release_stamp_blake3": blake3_file(release_stamp),
@@ -149,6 +228,59 @@ def verify_registry_candidate_measurements(
     except (OSError, UnicodeError, ValueError, InvalidSignature) as error:
         raise ReleaseRequestError("probe detached signature identity verification failed") from error
     return measured
+
+
+def verify_registry_candidate_measurements(
+    verified: VerifiedQualificationContextV1,
+    *,
+    candidate_root: Path,
+    registry_root: Path,
+    release_id: str,
+    candidate_semantic_evidence: Path,
+    production_profile: Path,
+    production_vector: Path,
+    append_only_idl_history: Path,
+    candidate_tooling: dict[str, Path],
+    payload_artifacts: dict[str, Path],
+    release_stamp: Path,
+    probe: Path,
+    probe_signature: Path,
+    executable: Path,
+    rust_toolchain_evidence: Path,
+    runner_image_evidence: Path,
+    target_triple: str,
+) -> dict[str, object]:
+    """Production candidate measurement with fixed Linux Git executable."""
+    if not verified.production:
+        raise ReleaseRequestError("production candidate measurement requires production verified context")
+    if not sys.platform.startswith("linux") or not Path("/usr/bin/git").is_file():
+        raise ReleaseRequestError("production candidate measurement requires fixed Linux Git")
+    return _verify_registry_candidate_measurements(
+        verified,
+        git_executable=Path("/usr/bin/git"), candidate_root=candidate_root,
+        registry_root=registry_root, release_id=release_id,
+        candidate_semantic_evidence=candidate_semantic_evidence,
+        production_profile=production_profile, production_vector=production_vector,
+        append_only_idl_history=append_only_idl_history,
+        candidate_tooling=candidate_tooling, payload_artifacts=payload_artifacts,
+        release_stamp=release_stamp, probe=probe, probe_signature=probe_signature,
+        executable=executable, rust_toolchain_evidence=rust_toolchain_evidence,
+        runner_image_evidence=runner_image_evidence, target_triple=target_triple,
+    )
+
+
+def verify_registry_candidate_measurements_for_test_nonproduction(
+    verified: VerifiedQualificationContextV1,
+    *,
+    git_executable: Path,
+    **measurements: Any,
+) -> dict[str, object]:
+    """Test-only exact measurement; never upgrades the verified production flag."""
+    if verified.production:
+        raise ReleaseRequestError("test measurement helper rejects production contexts")
+    return _verify_registry_candidate_measurements(
+        verified, git_executable=git_executable, **measurements
+    )
 
 
 def canonical_json(value: object) -> bytes:
@@ -312,26 +444,14 @@ def _validate_request(value: object, policy_digest: str, signer: dict[str, Any],
     return request
 
 
-def _gpg_path(explicit: Path | None) -> Path:
-    if explicit is not None:
-        return explicit
-    found = shutil.which("gpg")
-    if found:
-        return Path(found)
-    bundled = Path(r"C:\Program Files\Git\usr\bin\gpg.exe")
-    if bundled.is_file():
-        return bundled
-    raise ReleaseRequestError("GPG executable was not found")
-
-
-def verify_release_request(
+def _verify_release_request(
     request_path: Path,
     signature_path: Path,
     policy_path: Path,
     gpg_home: Path,
     *,
-    gpg_executable: Path | None = None,
-    production: bool = True,
+    gpg_executable: Path,
+    production: bool,
     now: datetime | None = None,
 ) -> VerifiedQualificationContextV1:
     try:
@@ -350,8 +470,12 @@ def verify_release_request(
     request = _validate_request(
         request_value, policy_digest, signer, now or datetime.now(timezone.utc)
     )
+    if blake3_file(Path(__file__).resolve()) != request["candidate_tooling_blake3"]["verifier"]:
+        raise ReleaseRequestError("signed request verifier tooling digest mismatch")
+    if blake3.blake3(policy_bytes).hexdigest() != request["candidate_tooling_blake3"]["signer_policy"]:
+        raise ReleaseRequestError("signed request signer policy tooling digest mismatch")
     command = [
-        str(_gpg_path(gpg_executable)), "--homedir", str(gpg_home), "--batch",
+        str(gpg_executable), "--homedir", str(gpg_home), "--batch",
         "--no-tty", "--status-fd", "1", "--verify", str(signature_path),
         str(request_path),
     ]
@@ -376,7 +500,7 @@ def verify_release_request(
     if primary_fingerprint != allowed or request["qualification_approver_fingerprint"] != allowed:
         raise ReleaseRequestError("VALIDSIG full primary fingerprint is not in the explicit allowlist")
     exported = subprocess.run(
-        [str(_gpg_path(gpg_executable)), "--homedir", str(gpg_home), "--batch", "--export", allowed],
+        [str(gpg_executable), "--homedir", str(gpg_home), "--batch", "--export", allowed],
         capture_output=True, check=False,
     )
     if exported.returncode != 0 or not exported.stdout:
@@ -404,6 +528,9 @@ def verify_release_request(
         "release_aggregate_root": registry["release_aggregate_root"],
         "registry_generation": registry["registry_generation"],
         "production_profile_blake3": request["production_profile_blake3"],
+        "production_vector_blake3": request["production_vector_blake3"],
+        "append_only_idl_history_root": request["append_only_idl_history_root"],
+        "required_targets": request["required_targets"],
         "candidate_payload_artifacts_blake3": registry["payload_artifacts_blake3"],
         "release_stamp_blake3": registry["release_stamp_blake3"],
         "probe_blake3": environment["probe_blake3"],
@@ -429,20 +556,67 @@ def verify_release_request(
     )
 
 
+def verify_release_request(
+    request_path: Path,
+    signature_path: Path,
+    policy_path: Path,
+    gpg_home: Path,
+    *,
+    now: datetime | None = None,
+) -> VerifiedQualificationContextV1:
+    """Production Linux verifier with no executable or policy-mode injection."""
+    if not sys.platform.startswith("linux"):
+        raise ReleaseRequestError("production release-request verification requires Linux")
+    gpg = Path("/usr/bin/gpg")
+    if not gpg.is_file():
+        raise ReleaseRequestError("fixed production GPG executable is unavailable")
+    return _verify_release_request(
+        request_path, signature_path, policy_path, gpg_home,
+        gpg_executable=gpg, production=True, now=now,
+    )
+
+
+def verify_release_request_for_test_nonproduction(
+    request_path: Path,
+    signature_path: Path,
+    policy_path: Path,
+    gpg_home: Path,
+    *,
+    gpg_executable: Path,
+    now: datetime | None = None,
+) -> VerifiedQualificationContextV1:
+    """Explicit test helper; its result can never carry a production identity."""
+    return _verify_release_request(
+        request_path, signature_path, policy_path, gpg_home,
+        gpg_executable=gpg_executable, production=False, now=now,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path, required=True)
     parser.add_argument("--signature", type=Path, required=True)
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--gpg-home", type=Path, required=True)
-    parser.add_argument("--gpg", type=Path)
-    parser.add_argument("--test-policy", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--test-nonproduction-gpg",
+        type=Path,
+        help=argparse.SUPPRESS,
+    )
     args = parser.parse_args(argv)
     try:
-        verified = verify_release_request(
-            args.request, args.signature, args.policy, args.gpg_home,
-            gpg_executable=args.gpg, production=not args.test_policy,
-        )
+        if args.test_nonproduction_gpg is None:
+            verified = verify_release_request(
+                args.request, args.signature, args.policy, args.gpg_home,
+            )
+        else:
+            verified = verify_release_request_for_test_nonproduction(
+                args.request,
+                args.signature,
+                args.policy,
+                args.gpg_home,
+                gpg_executable=args.test_nonproduction_gpg,
+            )
     except ReleaseRequestError as error:
         print(f"Base release request verification failed: {error}", file=__import__("sys").stderr)
         return 1

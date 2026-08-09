@@ -20,7 +20,11 @@ from production_qualification import (
 RELEASE_DIR = Path(__file__).resolve().parents[1] / "release"
 if str(RELEASE_DIR) not in __import__("sys").path:
     __import__("sys").path.insert(0, str(RELEASE_DIR))
-from verify_base_release_request import VerifiedQualificationContextV1  # noqa: E402
+from verify_base_release_request import (  # noqa: E402
+    VerifiedQualificationContextV1,
+    verify_release_request,
+    verify_release_request_for_test_nonproduction,
+)
 
 
 class CcidQualificationError(RuntimeError):
@@ -35,7 +39,7 @@ def _digest(path: Path) -> str:
     return value.hexdigest()
 
 
-def qualify_ccid_stability(
+def _qualify_ccid_stability_with_verified_context(
     verified: VerifiedQualificationContextV1,
     old_input: Path,
     old_obr: Path,
@@ -46,7 +50,6 @@ def qualify_ccid_stability(
     *,
     sample_limit: int,
     work_dir: Path | None,
-    invocation: list[str],
     signing_key: Ed25519PrivateKey,
     receipt_policy: dict[str, object],
 ) -> dict[str, object]:
@@ -77,12 +80,18 @@ def qualify_ccid_stability(
     public = signing_key.public_key().public_bytes_raw()
     if signer_fingerprint(public) != verified.bindings["signer_fingerprint"]:
         raise CcidQualificationError("Registry receipt signer differs from the request")
-    if (
-        not invocation
-        or not all(isinstance(value, str) and value for value in invocation)
-        or any("private-key" in value.lower() or "secret" in value.lower() for value in invocation)
-    ):
-        raise CcidQualificationError("canonical sanitized invocation is invalid")
+    invocation = [
+        "ccid_stability_qualification.py",
+        f"--release-request-digest={verified.request_digest}",
+        *[
+            f"--{name.replace('_', '-')}={path.name}@blake3:{measured[name]}"
+            for name, path in paths.items()
+        ],
+        f"--sample-limit={sample_limit}",
+        "--work-dir=<ephemeral-redacted>" if work_dir is not None else "--work-dir=<system-temporary>",
+        "--gpg-home=<redacted>",
+        "--receipt-signer=<external-redacted>",
+    ]
     report = generate_report(
         old_input, old_obr, old_manifest,
         candidate_input, candidate_obr, candidate_manifest,
@@ -96,7 +105,7 @@ def qualify_ccid_stability(
         "qualification_session_id": context["qualification_session_id"],
         "candidate_commit": context["candidate_commit"],
         "candidate_tree": context["candidate_tree"],
-        "base_candidate_bound": verified.production,
+        "base_candidate_bound": True,
         "command": invocation,
         "command_blake3": blake3.blake3(canonical_json(invocation)).hexdigest(),
         "result": report.get("qualified") is True,
@@ -109,3 +118,63 @@ def qualify_ccid_stability(
         return create_signed_receipt("ccid-stability", payload, signing_key, receipt_policy)
     except AggregationError as error:
         raise CcidQualificationError(str(error)) from error
+
+
+def qualify_ccid_stability_from_signed_request(
+    request_path: Path,
+    signature_path: Path,
+    approver_policy_path: Path,
+    gpg_home: Path,
+    old_input: Path,
+    old_obr: Path,
+    old_manifest: Path,
+    candidate_input: Path,
+    candidate_obr: Path,
+    candidate_manifest: Path,
+    *,
+    sample_limit: int,
+    work_dir: Path | None,
+    signing_key: Ed25519PrivateKey,
+    receipt_policy: dict[str, object],
+) -> dict[str, object]:
+    """Production entry: verify fixed-policy request before touching CCID inputs."""
+    verified = verify_release_request(
+        request_path, signature_path, approver_policy_path, gpg_home
+    )
+    return _qualify_ccid_stability_with_verified_context(
+        verified, old_input, old_obr, old_manifest,
+        candidate_input, candidate_obr, candidate_manifest,
+        sample_limit=sample_limit, work_dir=work_dir,
+        signing_key=signing_key, receipt_policy=receipt_policy,
+    )
+
+
+def qualify_ccid_stability_from_signed_request_for_test_nonproduction(
+    request_path: Path,
+    signature_path: Path,
+    approver_policy_path: Path,
+    gpg_home: Path,
+    old_input: Path,
+    old_obr: Path,
+    old_manifest: Path,
+    candidate_input: Path,
+    candidate_obr: Path,
+    candidate_manifest: Path,
+    *,
+    sample_limit: int,
+    work_dir: Path | None,
+    signing_key: Ed25519PrivateKey,
+    receipt_policy: dict[str, object],
+    gpg_executable: Path,
+) -> dict[str, object]:
+    """Explicit test path: real signature verification, never production identity."""
+    verified = verify_release_request_for_test_nonproduction(
+        request_path, signature_path, approver_policy_path, gpg_home,
+        gpg_executable=gpg_executable,
+    )
+    return _qualify_ccid_stability_with_verified_context(
+        verified, old_input, old_obr, old_manifest,
+        candidate_input, candidate_obr, candidate_manifest,
+        sample_limit=sample_limit, work_dir=work_dir,
+        signing_key=signing_key, receipt_policy=receipt_policy,
+    )

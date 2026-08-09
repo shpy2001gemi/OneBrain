@@ -535,3 +535,278 @@ paths but still summary-only in the legacy failure/release-cycle paths, and no
 all-eight-real-receipt aggregation test exists yet. The CCID test's missing
 separately recorded RED is also a TDD process concern. These items prevent a
 `DONE` status for round 1.
+
+---
+
+# Fix loop round 2/5 — closed qualification evidence chain
+
+## Implementation summary
+
+- Closed the production verifier boundary. Python production verification uses
+  only `/usr/bin/gpg`; Rust production producers use `/usr/bin/python3`, the
+  candidate-owned verifier, and `/usr/bin/git`. Executable injection exists
+  only in explicitly named non-production test helpers whose verified context
+  is required to carry `production=false` and whose aggregate cannot claim the
+  Registry production subgate.
+- Extended candidate measurement through Git commit/tree/object format,
+  semantic evidence, target artifact tuple, canonical profile/vector, IDL
+  history root, exact candidate-owned tooling, five installed payloads,
+  release stamp/root/generation, probe/signature identity, executable,
+  toolchain, runner image, and target triple.
+- Replaced failure-harness raw Release context/binding arguments with signed
+  request modes. The compiled behavioral integration proves the legacy raw
+  shape is rejected before inputs are read and that an ephemeral signed
+  request plus actual installed Registry/Git/evidence state is accepted only
+  as non-production evidence.
+- Replaced the caller-command release cycle with a narrow compiled first-party
+  release-operation bridge. The cycle independently inspects package and
+  verify stamps/roots, activation states/generations, actual OBR queries, exact
+  candidate payload/stamp bytes, the real CCID diff, rollback state, and final
+  reactivation at signed generation 4. No caller plan or step JSON is accepted.
+- Added signed-request verification to the real CCID receipt producer and
+  exact six-file byte comparison before invoking the SQLite-backed diff.
+- Producers now derive canonical sanitized command provenance internally.
+  Rust producers hash the actual argv/files while redacting GPG/private-key
+  paths; Python producers construct full measured input/tool/profile option
+  identities. Tests independently recompute every emitted `command_blake3`,
+  prove an omitted option changes it, and assert the private-key path is absent.
+- Added an all-real-producer integration: four measured resource producer
+  receipts, compiled failure and generation receipts, the real CCID producer,
+  and the compiled first-party nine-step cycle feed the test-only aggregate.
+  No direct component receipt constructor or handcrafted signed payload is
+  used; the aggregate verifies every signature/equality binding and emits
+  `registry_production_qualified=false`.
+
+## RED evidence
+
+### Closed verifier and candidate measurement
+
+```powershell
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_production_verifier_api_has_no_executable_or_policy_mode_injection -v
+```
+
+Expected RED: `AssertionError: 'gpg_executable' unexpectedly found` because the
+public production verifier still accepted a caller-selected GPG executable.
+
+```powershell
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_candidate_measurement_api_requires_git_state_release_state_and_semantic_evidence -v
+```
+
+Expected RED: `AssertionError: 'candidate_root' not found` (and the other six
+state/evidence parameters), because measurement covered hashes but not actual
+candidate Git/semantic/installed state.
+
+```powershell
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_explicit_nonproduction_cli_can_never_return_production_context -v
+```
+
+Expected RED: argparse rejected `--test-nonproduction-gpg` as unrecognized.
+The minimal GREEN path explicitly returns `production:false` and is separate
+from the non-injectable production API.
+
+### CCID signed boundary
+
+```powershell
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_ccid_producer_verifies_signed_request_before_exact_input_diff -v
+```
+
+Expected RED: `ImportError: cannot import name
+'qualify_ccid_stability_from_signed_request_for_test_nonproduction'`. The GREEN
+test verifies canonical request/signature bytes with an isolated ephemeral GPG
+home, invokes the real diff, and rejects a mutated candidate input.
+
+### Compiled failure boundary
+
+```powershell
+cargo build --manifest-path src/Cargo.toml -p ku-core --features concept-registry-failure-harness --example concept_registry_failure_qualification
+$env:ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION=(Resolve-Path 'src\target\debug\examples\concept_registry_failure_qualification.exe')
+python -m unittest scripts.concept_registry.test_failure_qualification.FailureQualificationIntegrationTests.test_raw_release_context_binding_cli_is_rejected_before_inputs_are_read -v
+```
+
+Expected initial RED: the old binary attempted to open a raw caller path rather
+than rejecting it. After the mode boundary existed, the signed acceptance test
+was RED with `explicit --prequalification or --release mode is required`
+because the explicit non-production signed mode did not yet exist.
+
+The behavioral command-provenance regression was separately RED with
+`KeyError: 'command_blake3'` when inspecting the emitted failure receipt.
+
+The final self-audit added a behavioral reference-environment mutation to the
+all-real test. Its RED failed with `unexpected argument: ...rust-toolchain.txt`
+instead of the required `reference environment` rejection, proving the
+compiled failure producer did not yet accept/measure probe signature,
+toolchain, or runner evidence. GREEN adds those exact inputs, independently
+hashes them and the executing binary, verifies the probe signer
+fingerprint/public key and detached Ed25519 signature, and rejects a mutated
+runner before running the real failure drills.
+
+### First-party release cycle
+
+```powershell
+python -m unittest scripts.concept_registry.test_release_cycle_qualification.ReleaseCycleQualificationTests.test_release_cycle_api_cannot_accept_caller_step_plan_or_commands -v
+```
+
+Expected RED: `plan` remained in the public signature and the implementation
+executed caller-provided commands.
+
+```powershell
+$env:ONEBRAIN_REGISTRY_RELEASE_OPS=(Resolve-Path 'src\target\debug\examples\concept_registry_release_ops.exe')
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_first_party_nine_step_cycle_inspects_real_state_and_signed_inputs -v
+```
+
+The first real-cycle RED was `CycleError: built candidate manifest differs
+from signed request`. Root cause: rebuilding a previously signed candidate
+regenerated the manifest timestamp. GREEN treats the exact signed candidate
+bytes as immutable and uses the real package operation to build the signed
+generation, then independently compares all five payloads/stamp/root.
+
+### Exact provenance and all-real aggregation
+
+```powershell
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_all_release_producers_bind_full_sanitized_command_provenance -v
+```
+
+Expected RED: generation and failure sources omitted `command_blake3` and used
+two-token summaries.
+
+```powershell
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_python_producers_do_not_accept_caller_command_provenance -v
+```
+
+Expected RED: CCID exposed an `invocation` parameter, allowing caller-selected
+provenance. Resource and CCID now derive provenance from measured inputs.
+
+```powershell
+python -m unittest scripts.release.test_verify_base_release_request.SignedReleaseRequestTests.test_resource_production_cli_has_no_caller_selected_gpg -v
+```
+
+Expected RED: `parser.add_argument("--gpg"` was present and the CLI forwarded
+`gpg_executable=args.gpg`.
+
+The first all-real aggregate execution reached the production validator and
+failed with `AggregationError: component is not bound to the Base candidate`.
+Root cause: the resource receipt incorrectly equated non-production signer
+identity with lack of signed candidate binding. After fixing that distinction,
+the next RED was `component release_stamp_blake3 mismatch`; the failure harness
+validated the installed signed stamp but emitted its timestamped drill-copy
+stamp. Release mode now emits the verified installed stamp digest.
+
+## GREEN verification
+
+### Producer builds and focused Python suite
+
+```powershell
+cargo build --locked --manifest-path src/Cargo.toml -p ku-core --example registry_probe --example concept_registry_release_ops --example concept_registry_failure_qualification --features concept-registry-failure-harness
+cargo build --locked --manifest-path src/Cargo.toml -p onebrain-node --example concept_registry_production_qualification
+```
+
+Result: PASS. Only the pre-existing unrelated `ku-kql` dead-code warning was
+reported.
+
+```powershell
+$env:ONEBRAIN_REGISTRY_PROBE=(Resolve-Path 'src\target\debug\examples\registry_probe.exe')
+$env:ONEBRAIN_REGISTRY_FAILURE_QUALIFICATION=(Resolve-Path 'src\target\debug\examples\concept_registry_failure_qualification.exe')
+$env:ONEBRAIN_REGISTRY_RELEASE_OPS=(Resolve-Path 'src\target\debug\examples\concept_registry_release_ops.exe')
+$env:ONEBRAIN_REGISTRY_GENERATION_QUALIFICATION=(Resolve-Path 'src\target\debug\examples\concept_registry_production_qualification.exe')
+python -m unittest scripts.release.test_verify_base_release_request scripts.concept_registry.test_resource_qualification scripts.concept_registry.test_ccid_stability_diff scripts.concept_registry.test_production_qualification scripts.concept_registry.test_release_cycle_qualification scripts.concept_registry.test_failure_qualification -v
+```
+
+Result: PASS — 45 tests, 0 failures/errors, 1 expected Linux-only skip. The
+compiled probe, failure, generation, release-operation, signed-request, real
+CCID, first-party cycle, and all-real aggregate paths ran on Windows.
+
+### Required Rust filters
+
+```powershell
+cargo test --locked --manifest-path src/Cargo.toml -p ku-core concept_registry_release -- --test-threads=1
+```
+
+Result: PASS — 10 passed, 0 failed.
+
+```powershell
+cargo test --locked --manifest-path src/Cargo.toml -p onebrain-node --lib concept_registry_runtime -- --test-threads=1
+```
+
+Result: PASS — 13 passed, 0 failed.
+
+### Syntax, contracts, format, and diff
+
+```powershell
+python -m py_compile scripts/concept_registry/resource_qualification.py scripts/concept_registry/ccid_stability_qualification.py scripts/concept_registry/release_cycle_qualification.py scripts/release/verify_base_release_request.py
+python scripts/ci/validate_vnext_contracts.py
+cargo fmt --manifest-path src/Cargo.toml --all -- --check
+git diff --check
+```
+
+Result: PASS. Validator ended with `vNext contracts OK ... 444 local links`.
+
+## Files changed in round 2
+
+- Modified `scripts/release/verify_base_release_request.py` and
+  `scripts/release/test_verify_base_release_request.py`: fixed production
+  verifier boundary, full candidate measurement, signed producer/e2e tests.
+- Modified `scripts/concept_registry/resource_qualification.py`: exact
+  production measurement inputs, fixed GPG policy, internally derived
+  provenance, explicit non-claiming test producer.
+- Modified `scripts/concept_registry/ccid_stability_qualification.py` and
+  `test_ccid_stability_diff.py`: closed signed-request producer and internally
+  derived exact six-input provenance; removed fabricated context test.
+- Replaced `scripts/concept_registry/release_cycle_qualification.py` behavior
+  and its test: compiled first-party operations and independent real-state
+  inspection, with no caller step plan.
+- Modified `scripts/concept_registry/test_failure_qualification.py` and
+  `src/ku-core/examples/concept_registry_failure_qualification.rs`: behavioral
+  raw rejection, signed acceptance, actual measurements, and exact provenance.
+- Modified
+  `src/onebrain-node/examples/concept_registry_production_qualification.rs`:
+  closed signed verification, actual candidate evidence, explicit non-claiming
+  test mode, and full invocation provenance.
+- Added `src/ku-core/src/qualification_request.rs`: smallest shared fixed-path
+  Rust bridge to the candidate-owned verifier. Added its required module export
+  in `src/ku-core/src/lib.rs`; without that one-line integration change the two
+  producer examples cannot call the shared verifier.
+- Added `src/ku-core/examples/concept_registry_release_ops.rs`: smallest narrow
+  compiled first-party bridge for package/verify/activate/rollback. It emits no
+  trusted step JSON and is independently inspected by the Python cycle.
+
+These two added Rust files and the `lib.rs` export intentionally expand the
+original Task 20 list under the round-2 owner direction. No Task 27 manifest,
+tag, release publication, or Base signer workflow was implemented.
+
+## Self-review
+
+- Re-read the round-2 findings and audited all six clusters. Production
+  verifier/Python/GPG/Git executable selection is fixed; injection is isolated
+  behind explicitly named non-production helpers that reject production
+  contexts and cannot make a production aggregate claim.
+- Confirmed the approved policy canonical preimage recomputes the exact
+  owner-approved derive-key digest and `VALIDSIG` full primary fingerprint is
+  required; valid unlisted, tampered, expired, and extended-schema requests
+  fail closed.
+- Confirmed every Release producer derives context from signed bytes and
+  compares the candidate state/artifacts/environment it actually uses. No raw
+  Release context or binding override remains. Prequalification remains
+  closed, non-candidate-bound, and omits Release-only fields.
+- Confirmed the compiled failure producer specifically measures the five
+  payloads, installed stamp/root/generation, executable/probe, detached probe
+  signature and signer identity, Rust toolchain, runner image, target, Git
+  commit/tree, semantic evidence, profile/vector, and IDL history.
+- Confirmed all nine cycle steps are first-party and independently inspected;
+  the test mutates a signed candidate input and observes rejection.
+- Confirmed the all-real integration uses real producer calls/binaries for all
+  required receipt kinds, then independently recomputes provenance digests and
+  runs the signature/equality aggregator without a direct receipt constructor.
+- Confirmed no production private key, path, or material was read or printed.
+  Every signing test uses ephemeral keys and isolated temporary GPG homes.
+- Confirmed the Registry result remains a Registry-only subgate and the
+  non-production aggregate is false; nothing in this round implies
+  `BASE-GATE-V1`.
+
+## Concerns
+
+- This Windows host cannot run the documented Linux-only RLIMIT/cache resource
+  integration; it remains the single expected skip. The compiled probe and all
+  other round-2 process integrations ran.
+- No full-size production measurements or production private signing key are
+  present or used. The test-only aggregate intentionally cannot claim
+  production.
