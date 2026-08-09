@@ -7,6 +7,7 @@ on:
       - ".github/workflows/vnext-fuzz-nightly.yml"
       - ".github/workflows/vnext-soak.yml"
       - ".github/workflows/vnext-soak-macos-arm64.yml"
+      - ".github/workflows/concept-registry-production.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/operations/**"
@@ -36,6 +37,7 @@ on:
       - ".github/workflows/vnext-fuzz-nightly.yml"
       - ".github/workflows/vnext-soak.yml"
       - ".github/workflows/vnext-soak-macos-arm64.yml"
+      - ".github/workflows/concept-registry-production.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/operations/**"
@@ -219,9 +221,11 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_p5_operations_preflight
           python -m unittest scripts.ci.test_validate_concept_registry_operations
           python -m unittest scripts.ci.test_validate_concept_registry_production_qualification
+          python -m unittest scripts.ci.test_validate_concept_registry_runner
           python -m unittest scripts.ci.test_validate_vnext_soak_runner_kit
           python -m unittest scripts.ci.test_validate_vnext_macos_soak_runner_kit
           bash -n scripts/runner/onebrain-soak-runner.sh
+          bash -n scripts/runner/onebrain-registry-runner.sh
           bash scripts/ci/test_onebrain_soak_runner_macos.sh
 
       - name: P3.4 Web UX build, lint, and receipt contract
@@ -234,6 +238,8 @@ jobs:
 
       - name: Build and verify a small Concept Registry fixture
         working-directory: .
+        env:
+          ONEBRAIN_REGISTRY_EVIDENCE_TIER: fixture
         run: |
           python -m pip install --requirement scripts/concept_registry/requirements.txt
           python -m unittest scripts/concept_registry/test_build_obr.py

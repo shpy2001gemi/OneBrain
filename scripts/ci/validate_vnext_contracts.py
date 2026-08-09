@@ -104,6 +104,15 @@ VNEXT_SOAK_RUNNER_GUIDE = (
 VNEXT_MACOS_SOAK_RUNNER_GUIDE = (
     ROOT / "docs/operations/ONEBRAIN_SOAK_RUNNER_MAC_M2_GUIDE_V1.md"
 )
+CONCEPT_REGISTRY_PRODUCTION_WORKFLOW = (
+    ROOT / ".github/workflows/concept-registry-production.yml"
+)
+CONCEPT_REGISTRY_RUNNER_SCRIPT = (
+    ROOT / "scripts/runner/onebrain-registry-runner.sh"
+)
+CONCEPT_REGISTRY_RUNNER_GUIDE = (
+    ROOT / "docs/operations/ONEBRAIN_REGISTRY_RUNNER_GUIDE_V1.md"
+)
 
 TASK_ROW = re.compile(r"^\|\s*\[[ x~]\]\s*`([A-Z][A-Z0-9]*-\d{3})`")
 TASK_ID = re.compile(r"(?<!ADR-)(?<!NEG-)\b[A-Z][A-Z0-9]*-\d{3}\b")
@@ -4965,6 +4974,210 @@ def validate_vnext_soak_runner_kit(
     return len(script_needles), len(guide_needles), len(workflow_needles)
 
 
+def validate_concept_registry_runner_kit(
+    runner_script: str | None = None,
+    runner_guide: str | None = None,
+    production_workflow: str | None = None,
+    foundation_workflow: str | None = None,
+) -> tuple[int, int, int, int]:
+    if runner_script is None:
+        runner_script = read(CONCEPT_REGISTRY_RUNNER_SCRIPT)
+    if runner_guide is None:
+        runner_guide = read(CONCEPT_REGISTRY_RUNNER_GUIDE)
+    if production_workflow is None:
+        production_workflow = read(CONCEPT_REGISTRY_PRODUCTION_WORKFLOW)
+    if foundation_workflow is None:
+        foundation_workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+
+    runner_needles = (
+        'readonly RUNNER_FORMAT="onebrain/concept-registry-runner/1"',
+        'readonly TARGET_TRIPLE="x86_64-unknown-linux-gnu"',
+        '[[ "$QUALIFICATION_MODE" == "prequalification" || "$QUALIFICATION_MODE" == "release" ]]',
+        "verify_base_release_request.py",
+        "/usr/bin/python3",
+        "/usr/bin/gpg",
+        '"previous/input.jsonl"',
+        '"previous/concepts.obr"',
+        '"previous/release.stamp.json"',
+        '"previous/state.json"',
+        '"candidate/input.jsonl"',
+        '"candidate/concepts.obr"',
+        '"candidate/release.stamp.json"',
+        '"candidate/state.json"',
+        '"environment/runner-image.json"',
+        '"environment/rust-toolchain.json"',
+        '"environment/registry_probe.sig"',
+        '"environment/registry-trust-policy.json"',
+        "onebrain:concept-registry-closure:1\\0",
+        'readonly REGISTRY_CLOSURE_DIGEST_FILE=',
+        "fixture fallback is forbidden",
+        "ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE:?external",
+        '"base_candidate_bound": False',
+        '"registry_production_qualified": False',
+        "ccid_stability_diff.py",
+        "concept_registry_failure_qualification",
+        "concept_registry_production_qualification",
+        "release_cycle_qualification",
+        "production_qualification.py",
+        "raw_report_blake3",
+        "_verify_receipt",
+        "STAMP_SIGNATURE_DOMAIN",
+        'readonly CANDIDATE_RELEASE_WRAPPER_TOOL="${RELEASE_OPS}"',
+    )
+    for needle in runner_needles:
+        if needle not in runner_script:
+            if "QUALIFICATION_MODE" in needle:
+                raise ContractError(
+                    "Concept Registry runner closed qualification mode is missing"
+                )
+            if "release.stamp.json" in needle or "closure" in needle:
+                raise ContractError(
+                    f"Concept Registry runner closure input is missing: {needle}"
+                )
+            if "verify_base_release_request" in needle:
+                raise ContractError(
+                    "Concept Registry runner signed release request verification is missing"
+                )
+            if "fixture fallback" in needle:
+                raise ContractError(
+                    "Concept Registry runner fixture fallback fence is missing"
+                )
+            if "PRIVATE_KEY" in needle:
+                raise ContractError(
+                    "Concept Registry runner external signing key fence is missing"
+                )
+            if "base_candidate_bound" in needle or "registry_production" in needle:
+                raise ContractError(
+                    "Concept Registry runner non-production summary fence is missing"
+                )
+            if needle == "_verify_receipt":
+                raise ContractError(
+                    "Concept Registry prequalification receipt signature verification is missing"
+                )
+            if needle == "STAMP_SIGNATURE_DOMAIN":
+                raise ContractError(
+                    "Concept Registry staged release signature verification is missing"
+                )
+            if "CANDIDATE_RELEASE_WRAPPER_TOOL" in needle:
+                raise ContractError(
+                    "Concept Registry release-cycle wrapper is not the fixed candidate binary"
+                )
+            raise ContractError(f"Concept Registry runner contract missing: {needle}")
+    if "ONEBRAIN_REGISTRY_CLOSURE_DIGEST" in runner_script:
+        raise ContractError("Concept Registry runner permits a closure override")
+    for forbidden in (
+        "--candidate-root)",
+        "--previous-root)",
+        "--release-request-digest)",
+        "--qualification-session-id)",
+        "--candidate-commit)",
+        "--candidate-tree)",
+        "ci-small-fixture-v1",
+        "target/private-key.hex",
+    ):
+        if forbidden in runner_script:
+            raise ContractError(
+                f"Concept Registry runner contains forbidden override/fallback: {forbidden}"
+            )
+
+    guide_needles = (
+        "Task 21 prequalification is not `BASE-GATE-V1`",
+        "registry_production_qualified=true",
+        "fixture-only",
+        "Never commit measured reports",
+        "ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE",
+        "ONEBRAIN_QUALIFICATION_GPG_HOME",
+        "x86_64-unknown-linux-gnu",
+        "onebrain-registry-image-v1",
+        "onebrain-registry-cold-cache",
+        "onebrain-registry-low-ram",
+        "onebrain-registry-ssd",
+        "onebrain-registry-hdd",
+        "onebrain-registry-controller",
+        "2,200,000,000",
+        "registry_closure_digest",
+        "90 days",
+        "raw report",
+        '"base_candidate_bound": false',
+        '"registry_production_qualified": false',
+        "Task 28",
+    )
+    for needle in guide_needles:
+        if needle not in runner_guide:
+            raise ContractError(
+                f"Concept Registry operations guide missing: {needle}"
+            )
+
+    workflow_needles = (
+        "  workflow_dispatch:",
+        "permissions:\n  contents: read",
+        "qualification_mode:",
+        "onebrain-registry-image-v1",
+        "onebrain-registry-cold-cache",
+        "onebrain-registry-low-ram",
+        "onebrain-registry-ssd",
+        "onebrain-registry-hdd",
+        "onebrain-registry-controller",
+        "actions/upload-artifact@v4",
+        "retention-days: 90",
+        "scripts/runner/onebrain-registry-runner.sh",
+    )
+    for needle in workflow_needles:
+        if needle not in production_workflow:
+            if "onebrain-registry" in needle:
+                raise ContractError(
+                    f"Concept Registry immutable runner labels missing: {needle}"
+                )
+            if "retention-days" in needle:
+                raise ContractError("Concept Registry raw report retention is missing")
+            raise ContractError(
+                f"Concept Registry production workflow missing: {needle}"
+            )
+    for forbidden_trigger in (
+        "  pull_request:",
+        "  push:",
+        "  schedule:",
+        "  workflow_call:",
+    ):
+        if forbidden_trigger in production_workflow:
+            raise ContractError(
+                "Concept Registry production workflow must remain manual-only"
+            )
+    for forbidden_identity in (
+        "release_request_digest:",
+        "qualification_session_id:",
+        "candidate_commit:",
+        "candidate_tree:",
+        "runner_label:",
+    ):
+        if forbidden_identity in production_workflow and forbidden_identity != "runner_label:":
+            raise ContractError(
+                "Concept Registry workflow exposes a release identity override"
+            )
+    if "${{ inputs.runner_label }}" in production_workflow:
+        raise ContractError(
+            "Concept Registry workflow immutable runner labels are caller-controlled"
+        )
+
+    foundation_needles = (
+        "ONEBRAIN_REGISTRY_EVIDENCE_TIER: fixture",
+        "Build and verify a small Concept Registry fixture",
+        "python -m unittest scripts.ci.test_validate_concept_registry_runner",
+        "bash -n scripts/runner/onebrain-registry-runner.sh",
+    )
+    for needle in foundation_needles:
+        if needle not in foundation_workflow:
+            raise ContractError(
+                f"Concept Registry fixture-only foundation lane missing: {needle}"
+            )
+    return (
+        len(runner_needles),
+        len(guide_needles),
+        len(workflow_needles),
+        len(foundation_needles),
+    )
+
+
 def validate_vnext_macos_soak_runner_kit(
     runner_script: str | None = None,
     runner_guide: str | None = None,
@@ -6668,6 +6881,12 @@ def main() -> int:
             registry_production_failure_gates,
             registry_production_signers,
         ) = validate_concept_registry_production_qualification()
+        (
+            registry_runner_checks,
+            registry_runner_guide_checks,
+            registry_runner_workflow_checks,
+            registry_runner_fixture_checks,
+        ) = validate_concept_registry_runner_kit()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -6726,6 +6945,10 @@ def main() -> int:
         f"{registry_production_resources} resource profiles/"
         f"{registry_production_failure_gates} failure gates/"
         f"{registry_production_signers} approved signer, "
+        f"{registry_runner_checks} Registry runner checks/"
+        f"{registry_runner_guide_checks} guide checks/"
+        f"{registry_runner_workflow_checks} workflow checks/"
+        f"{registry_runner_fixture_checks} fixture checks, "
         f"{links} local links"
     )
     return 0
