@@ -218,6 +218,7 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_p5_canary_preflight
           python -m unittest scripts.ci.test_validate_vnext_p5_operations_preflight
           python -m unittest scripts.ci.test_validate_concept_registry_operations
+          python -m unittest scripts.ci.test_validate_concept_registry_production_qualification
           python -m unittest scripts.ci.test_validate_vnext_soak_runner_kit
           python -m unittest scripts.ci.test_validate_vnext_macos_soak_runner_kit
           bash -n scripts/runner/onebrain-soak-runner.sh

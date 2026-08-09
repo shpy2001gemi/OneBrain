@@ -66,6 +66,10 @@ P5_OPERATIONS_PREFLIGHT_PROFILE = (
 CONCEPT_REGISTRY_OPERATIONS_PROFILE = (
     ROOT / "src/test-vectors/vnext/concept-registry-operations-v1.json"
 )
+CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE = (
+    ROOT
+    / "src/test-vectors/vnext/concept-registry-production-qualification-v1.json"
+)
 BASE_V1_AUTHORITY_RECOVERY_PROFILE = (
     ROOT / "src/test-vectors/vnext/base-v1-authority-recovery-v1.json"
 )
@@ -5592,6 +5596,431 @@ def validate_vnext_p5_operations_preflight(
     )
 
 
+def validate_concept_registry_production_qualification(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(
+                read(CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE)
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise ContractError(
+                "invalid Concept Registry production qualification profile JSON: "
+                f"{error}"
+            ) from error
+
+    if (
+        profile.get("format")
+        != "onebrain/concept-registry-production-qualification/1"
+        or profile.get("profile_id")
+        != "CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError(
+            "Concept Registry production qualification profile identity drift"
+        )
+    if profile.get("profile_digest") != {
+        "algorithm": "BLAKE3",
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "input": "complete-profile-object-without-an-embedded-digest-value",
+        "receipt_field": "production_profile_blake3",
+    }:
+        raise ContractError("Concept Registry production profile digest drift")
+
+    release = profile.get("release_package")
+    expected_artifacts = [
+        ["OBR", "concepts.obr"],
+        ["LABEL_INDEX", "concepts.obr.labels.idx"],
+        ["CCID_INDEX", "concepts.obr.ccids.idx"],
+        ["MANIFEST", "concepts.obr.manifest.json"],
+        ["SPDX_SBOM", "sbom.spdx.json"],
+    ]
+    if not isinstance(release, dict):
+        raise ContractError("Concept Registry production release package missing")
+    if release.get("payload_artifacts") != expected_artifacts:
+        raise ContractError("Concept Registry production artifact set drift")
+    if release.get("verification_stamp") != {
+        "filename": "release.stamp.json",
+        "signature_algorithm": "Ed25519",
+        "signature_domain_hex": (
+            "6f6e65627261696e3a636f6e636570742d72656769737472792d"
+            "72656c656173652d7374616d703a3100"
+        ),
+        "signature_message": (
+            "domain-bytes-then-blake3-of-serde-json-struct-order-unsigned-stamp"
+        ),
+        "unsigned_transform": "clone-then-set-signature-to-empty-string",
+        "json_encoding": "serde-json-compact-rust-struct-field-order-utf8",
+        "signed_fields": [
+            "profile",
+            "release_id",
+            "builder_version",
+            "dedup_policy_version",
+            "artifacts",
+            "artifact_root",
+            "sources",
+            "source_root",
+            "distribution",
+            "signer_public_key",
+            "signature",
+        ],
+        "signature_field_value_during_message": "",
+        "activation_metadata_fields": ["release_id"],
+    }:
+        raise ContractError("Concept Registry production verification stamp drift")
+    if release.get("obr_size_bytes") != {
+        "artifact": "concepts.obr",
+        "minimum": 2_200_000_000,
+        "maximum": 2_500_000_000,
+    }:
+        raise ContractError("Concept Registry production OBR size bounds drift")
+    if release.get("aggregate_root") != {
+        "algorithm": "BLAKE3",
+        "domain_hex": (
+            "6f6e65627261696e3a636f6e636570742d72656769737472792d"
+            "6172746966616374733a3100"
+        ),
+        "order": "role-then-relative-path-bytewise",
+        "fields": [
+            "role",
+            "relative_path",
+            "exact_length_u64_be",
+            "blake3_hex",
+        ],
+        "string_framing": "u64-be-length-then-utf8-bytes",
+        "digest_encoding": "lowercase-hex-ascii",
+        "includes_verification_stamp": False,
+    }:
+        raise ContractError("Concept Registry production aggregate root drift")
+    if (
+        release.get("root_match_policy")
+        != "stamp-reports-and-aggregate-must-match-exactly"
+    ):
+        raise ContractError("Concept Registry production aggregate root match drift")
+
+    resources = profile.get("resource_profiles")
+    if not isinstance(resources, dict) or set(resources) != {
+        "cold-cache",
+        "low-ram",
+        "ssd",
+        "hdd",
+    }:
+        raise ContractError("Concept Registry production resource profile set drift")
+    expected_budgets = {
+        "cold-cache": (180_000, 250_000, 536_870_912, None),
+        "low-ram": (300_000, 500_000, 268_435_456, 3_221_225_472),
+        "ssd": (120_000, 100_000, 536_870_912, None),
+        "hdd": (300_000, 750_000, 536_870_912, None),
+    }
+    for name, expected in expected_budgets.items():
+        row = resources.get(name)
+        if not isinstance(row, dict):
+            raise ContractError(
+                f"Concept Registry production resource budget missing: {name}"
+            )
+        actual = (
+            row.get("max_ready_ms"),
+            row.get("max_lookup_p95_us"),
+            row.get("max_peak_rss_bytes"),
+            row.get("address_space_limit_bytes"),
+        )
+        if actual != expected:
+            raise ContractError(
+                f"Concept Registry production resource budget drift: {name}"
+            )
+    if resources["cold-cache"].get("cache_evidence") != [
+        "linux-posix-fadvise-dontneed",
+        "vmtouch-evict",
+    ]:
+        raise ContractError("Concept Registry cold-cache evidence drift")
+    if resources["low-ram"].get("enforcement_evidence") != ["linux-rlimit-as"]:
+        raise ContractError("Concept Registry low-RAM enforcement evidence drift")
+    if resources["ssd"].get("storage_evidence") != [
+        "linux-findmnt-source-and-fstype",
+        "linux-sysfs-block-device",
+        "linux-sysfs-rotational-equals-0",
+    ]:
+        raise ContractError("Concept Registry SSD storage evidence drift")
+    if resources["hdd"].get("storage_evidence") != [
+        "linux-findmnt-source-and-fstype",
+        "linux-sysfs-block-device",
+        "linux-sysfs-rotational-equals-1",
+    ]:
+        raise ContractError("Concept Registry HDD storage evidence drift")
+
+    if profile.get("reference_environment") != {
+        "target_triple": "x86_64-unknown-linux-gnu",
+        "identity_source": "verified-signed-release-request",
+        "required_pinned_fields": [
+            "rust_toolchain_digest",
+            "runner_image_digest",
+            "probe_blake3",
+            "probe_signature",
+            "probe_signer_fingerprint",
+        ],
+        "cross_host_equality": [
+            "target_triple",
+            "rust_toolchain_digest",
+            "runner_image_digest",
+            "probe_blake3",
+        ],
+        "producer_override": False,
+        "portability_collectors": ["windows-preflight", "macos-preflight"],
+        "portability_collectors_are_production_reference": False,
+    }:
+        raise ContractError("Concept Registry production reference environment drift")
+
+    if profile.get("trust_policy") != {
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "digest_algorithm": "BLAKE3-derive-key-v1",
+        "digest_context": "onebrain:concept-registry:trust-policy:1",
+        "digest_hex": (
+            "e0a2551a39823c3f2cb088defe60484c8a33ffe0f3aab9df9493b52557ab55fe"
+        ),
+        "policy": {
+            "algorithm": "Ed25519",
+            "allowed_usages": [
+                "registry-release-stamp",
+                "registry-qualification-receipt",
+            ],
+            "format": "onebrain/concept-registry-trust-policy/1",
+            "signers": [
+                {
+                    "fingerprint_algorithm": "blake3-derive-key-v1",
+                    "fingerprint_context": (
+                        "onebrain:concept-registry:signer-fingerprint:1"
+                    ),
+                    "fingerprint_hex": (
+                        "dcc09574ac53ec8b95585cad5e2e88cbdfbe44841ad46b3709f73c989b4316d4"
+                    ),
+                    "public_key_hex": (
+                        "bef8e2b9d8ae7a38b3753a7d756a39c20948f128a66ca71ed04799e7a5d5177c"
+                    ),
+                }
+            ],
+        },
+        "valid_unlisted_signature": "reject",
+        "verification_required_for": [
+            "release.stamp.json",
+            "every-registry-evidence-receipt",
+        ],
+    }:
+        raise ContractError("Concept Registry production signer trust policy drift")
+
+    if profile.get("qualification_receipt_envelope") != {
+        "format": "onebrain/concept-registry-qualification-receipt/1",
+        "signature_algorithm": "Ed25519",
+        "signature_domain_hex": (
+            "6f6e65627261696e3a636f6e636570742d72656769737472792d"
+            "7175616c696669636174696f6e2d726563656970743a3100"
+        ),
+        "signature_message": (
+            "domain-bytes-then-blake3-of-canonical-unsigned-envelope"
+        ),
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "unsigned_transform": "clone-then-set-signature-to-empty-string",
+        "envelope_fields": [
+            "format",
+            "receipt_kind",
+            "usage",
+            "payload",
+            "signer_public_key",
+            "signer_fingerprint",
+            "trust_policy_digest",
+            "signature",
+        ],
+        "signature_field_value_during_message": "",
+        "usage": "registry-qualification-receipt",
+        "closed_receipt_kinds": [
+            "resource-qualification",
+            "failure-qualification",
+            "generation-swap",
+            "ccid-stability",
+            "signed-release-cycle",
+            "production-aggregate",
+        ],
+        "payload_binding_sets": {
+            "common": [
+                "qualification_context_variant",
+                "release_aggregate_root",
+                "registry_generation",
+                "production_profile_blake3",
+                "trust_policy_digest",
+                "signer_fingerprint",
+                "probe_blake3",
+                "executable_blake3",
+                "candidate_payload_artifacts_blake3",
+                "release_stamp_blake3",
+                "command",
+                "result",
+                "exit_oracles",
+                "limitations",
+            ],
+            "prequalification": {
+                "required": ["closure_digest", "base_candidate_bound"],
+                "base_candidate_bound": False,
+                "forbidden": [
+                    "release_request_digest",
+                    "qualification_session_id",
+                    "candidate_commit",
+                    "candidate_tree",
+                ],
+            },
+            "release": {
+                "required": [
+                    "release_request_digest",
+                    "qualification_session_id",
+                    "candidate_commit",
+                    "candidate_tree",
+                    "candidate_semantic_digest",
+                    "artifact_tuple_digest",
+                    "base_candidate_bound",
+                ],
+                "base_candidate_bound": True,
+            },
+        },
+        "unknown_field_policy": "reject",
+        "valid_unlisted_signature": "reject",
+    }:
+        raise ContractError(
+            "Concept Registry production qualification receipt envelope drift"
+        )
+
+    context = profile.get("qualification_run_context")
+    if not isinstance(context, dict):
+        raise ContractError("Concept Registry qualification run context missing")
+    if (
+        context.get("format") != "onebrain/qualification-run-context/1"
+        or context.get("closed_variants") != ["Prequalification", "Release"]
+        or context.get("prequalification")
+        != {
+            "required_fields": ["closure_digest"],
+            "base_candidate_bound": False,
+            "production_aggregate_allowed": False,
+        }
+    ):
+        raise ContractError("Concept Registry prequalification context drift")
+    if context.get("release") != {
+        "required_fields": [
+            "release_request_digest",
+            "qualification_session_id",
+            "candidate_commit",
+            "candidate_tree",
+        ],
+        "verified_signed_request_required": True,
+        "request_match": "exact",
+        "producer_override": False,
+        "missing_context_policy": "reject",
+        "mixed_context_policy": "reject",
+        "base_candidate_bound": True,
+        "production_aggregate_allowed": True,
+    }:
+        raise ContractError("Concept Registry release context drift")
+
+    if profile.get("evidence_classes") != {
+        "fixture": {
+            "production_eligible": False,
+            "base_candidate_bound": False,
+        },
+        "prequalification": {
+            "production_eligible": False,
+            "base_candidate_bound": False,
+        },
+        "release": {
+            "production_eligible": True,
+            "base_candidate_bound": True,
+            "fresh_reports_required": True,
+        },
+    }:
+        raise ContractError("Concept Registry production evidence classification drift")
+
+    if profile.get("production_report_binding") != {
+        "identical_fields": [
+            "release_request_digest",
+            "qualification_session_id",
+            "candidate_commit",
+            "candidate_tree",
+            "candidate_semantic_digest",
+            "artifact_tuple_digest",
+            "release_aggregate_root",
+            "registry_generation",
+            "production_profile_blake3",
+            "trust_policy_digest",
+            "signer_fingerprint",
+            "probe_blake3",
+            "executable_blake3",
+            "candidate_payload_artifacts_blake3",
+            "release_stamp_blake3",
+        ],
+        "component_mismatch_policy": "reject",
+        "carry_forward_allowed_for_base_v1": False,
+        "registry_subgate_only": True,
+    }:
+        raise ContractError("Concept Registry production report binding drift")
+
+    expected_failure_gates = [
+        "truncated-index",
+        "disk-shortage",
+        "update-interruption-process-kill",
+        "live-reader-generation-swap",
+        "rollback",
+        "ccid-stability",
+        "signed-release-cycle",
+    ]
+    if profile.get("failure_gates") != expected_failure_gates:
+        raise ContractError("Concept Registry production failure gate drift")
+
+    if profile.get("signed_release_cycle") != {
+        "accepted_harnesses": ["release_cycle_qualification.py"],
+        "rejected_substitutes": ["quarterly_update.py"],
+        "required_steps": [
+            "package",
+            "verify",
+            "activate",
+            "query",
+            "build-new-signed-generation",
+            "ccid-diff",
+            "activate-new",
+            "rollback",
+            "reactivate-new",
+        ],
+        "complete_cycle_required": True,
+        "signed_receipt_required": True,
+    }:
+        raise ContractError("Concept Registry signed release cycle drift")
+
+    if profile.get("qualification_state") != {
+        "contract_frozen": True,
+        "measured_evidence_committed": False,
+        "production_qualified": False,
+    }:
+        raise ContractError("Concept Registry qualification state drift")
+
+    spec = read(
+        VNEXT / "CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1.md"
+    )
+    if "concept-registry-production-qualification-v1.json" not in spec:
+        raise ContractError(
+            "Concept Registry production profile is not linked to machine contract"
+        )
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    if (
+        "python -m unittest "
+        "scripts.ci.test_validate_concept_registry_production_qualification"
+        not in workflow
+    ):
+        raise ContractError(
+            "Concept Registry production negative validator CI gate missing"
+        )
+    return (
+        len(expected_artifacts),
+        len(expected_budgets),
+        len(expected_failure_gates),
+        len(profile["trust_policy"]["policy"]["signers"]),
+    )
+
+
 def validate_concept_registry_operations(
     profile: dict[str, object] | None = None,
 ) -> tuple[int, int, int, int]:
@@ -5816,15 +6245,14 @@ def validate_concept_registry_operations(
     remaining = profile.get("remaining_qualification_gates")
     if not isinstance(drills, list) or len(drills) != 11:
         raise ContractError("Concept Registry implemented failure drills drift")
-    if remaining != [
-        "cold-cache-profile",
-        "low-ram-profile",
-        "ssd-profile",
-        "hdd-profile",
-        "truncated-index-profile",
-        "disk-shortage-profile",
-        "quarterly-build-update-rollback-dry-run",
-    ]:
+    if profile.get("production_qualification") != {
+        "profile": "onebrain/concept-registry-production-qualification/1",
+        "machine_contract": "concept-registry-production-qualification-v1.json",
+        "status": "contract-frozen-evidence-open",
+        "completion_claimed": False,
+    }:
+        raise ContractError("Concept Registry production qualification link drift")
+    if remaining != ["CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1"]:
         raise ContractError("Concept Registry remaining qualification gates drift")
 
     release_source = read(ROOT / "src/ku-core/src/concept_registry_release.rs")
@@ -6224,6 +6652,12 @@ def main() -> int:
             registry_failure_drills,
             registry_remaining_gates,
         ) = validate_concept_registry_operations()
+        (
+            registry_production_artifacts,
+            registry_production_resources,
+            registry_production_failure_gates,
+            registry_production_signers,
+        ) = validate_concept_registry_production_qualification()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -6278,6 +6712,10 @@ def main() -> int:
         f"{p5_external_gates} external gates, "
         f"{registry_release_artifacts} registry artifacts/{registry_sources} sources/"
         f"{registry_failure_drills} failure drills/{registry_remaining_gates} remaining gates, "
+        f"{registry_production_artifacts} production registry payloads/"
+        f"{registry_production_resources} resource profiles/"
+        f"{registry_production_failure_gates} failure gates/"
+        f"{registry_production_signers} approved signer, "
         f"{links} local links"
     )
     return 0
