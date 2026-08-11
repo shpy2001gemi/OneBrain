@@ -7,6 +7,7 @@
 use ku_ai::traits::ModelBackend;
 use ku_ai::types::{ChatMessage, InferenceOptions};
 use ku_core::text_parser::ConceptDict;
+use std::sync::{Arc, RwLock};
 
 use crate::context::{ContextManager, MessageRole};
 use crate::deduplicator::{DeduplicationResult, KnowledgeDeduplicator};
@@ -55,7 +56,7 @@ pub struct Mediator {
     classifier: IntentClassifier,
     context: ContextManager,
     session: MediatorSession,
-    retriever: KuRetriever,
+    retriever: Arc<RwLock<KuRetriever>>,
     deduplicator: KnowledgeDeduplicator,
     detector: KnowledgeDetector,
     graph_agent: GraphAgent,
@@ -80,6 +81,24 @@ impl Mediator {
         dict: ConceptDict,
         config: MediatorConfig,
     ) -> Self {
+        Self::new_with_retriever(
+            backend,
+            encoder_backend,
+            dict,
+            config,
+            Arc::new(RwLock::new(KuRetriever::default())),
+        )
+    }
+
+    /// Create a mediator bound to the node-owned retriever projection. There is
+    /// exactly one live index; the mediator never creates a divergent copy.
+    pub fn new_with_retriever(
+        backend: Box<dyn ModelBackend>,
+        encoder_backend: Box<dyn ModelBackend>,
+        dict: ConceptDict,
+        config: MediatorConfig,
+        retriever: Arc<RwLock<KuRetriever>>,
+    ) -> Self {
         let encoder_config = EncoderConfig::default();
         let encoder = AiEncoder::new(encoder_backend, dict.clone(), encoder_config.clone());
 
@@ -90,7 +109,7 @@ impl Mediator {
             encoder,
             classifier: IntentClassifier::new(),
             session: MediatorSession::new(),
-            retriever: KuRetriever::default(),
+            retriever,
             deduplicator: KnowledgeDeduplicator::new(),
             detector: KnowledgeDetector::new(),
             graph_agent: GraphAgent::new(),
@@ -249,7 +268,11 @@ impl Mediator {
         self.session.record_query();
         self.profile.record_query();
 
-        let results = self.retriever.retrieve(query);
+        let results = self
+            .retriever
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retrieve(query);
         if results.is_empty() {
             return Ok(MediatorResponse::chat(format!(
                 "I don't have any knowledge about '{}' yet. Would you like to teach me?",
@@ -282,7 +305,11 @@ impl Mediator {
 
     /// Handle synthesis request.
     async fn handle_synthesize(&mut self, topic: &str) -> Result<MediatorResponse, MediatorError> {
-        let results = self.retriever.retrieve(topic);
+        let results = self
+            .retriever
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retrieve(topic);
         let response_text = crate::synthesizer::Synthesizer::format_results_simple(topic, &results);
         Ok(MediatorResponse::chat(response_text))
     }
@@ -384,9 +411,9 @@ impl Mediator {
         &self.context
     }
 
-    /// Get the retriever mutably (for indexing KUs).
-    pub fn retriever_mut(&mut self) -> &mut KuRetriever {
-        &mut self.retriever
+    /// Clone the handle to the sole node-owned retriever service.
+    pub fn retriever(&self) -> Arc<RwLock<KuRetriever>> {
+        self.retriever.clone()
     }
 
     /// Get the deduplicator mutably.

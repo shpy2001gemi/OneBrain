@@ -10,6 +10,8 @@
 
 pub mod ast;
 #[cfg(feature = "storage")]
+pub mod blob_layout;
+#[cfg(feature = "storage")]
 pub mod blob_storage;
 pub mod executor;
 #[cfg(feature = "storage")]

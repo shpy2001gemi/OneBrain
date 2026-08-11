@@ -121,3 +121,4 @@ onebrain_data/
 *.obr
 *.redb
 src/onebrain-mobile/.dart_tool/
+.superpowers/brainstorm/

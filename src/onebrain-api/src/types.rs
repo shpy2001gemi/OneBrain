@@ -132,9 +132,6 @@ fn default_sort() -> String {
 fn default_history_limit() -> usize {
     50
 }
-fn default_export_format() -> String {
-    "json".to_string()
-}
 fn default_graph_depth() -> u32 {
     2
 }
@@ -164,8 +161,37 @@ pub struct HistoryParams {
 /// Query params for export.
 #[derive(Debug, Deserialize)]
 pub struct ExportParams {
-    #[serde(default = "default_export_format")]
-    pub format: String,
+    pub mode: DataPortabilityMode,
+}
+
+/// Query params for import. The mode is mandatory so a view or text draft can
+/// never be mistaken for canonical bytes.
+#[derive(Debug, Deserialize)]
+pub struct ImportParams {
+    pub mode: DataPortabilityMode,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum DataPortabilityMode {
+    #[serde(rename = "canonical-v1")]
+    CanonicalV1,
+    #[serde(rename = "json-view-v1")]
+    JsonViewV1,
+    #[serde(rename = "csv-view-v1")]
+    CsvViewV1,
+    #[serde(rename = "text-drafts-v1")]
+    TextDraftsV1,
+}
+
+impl DataPortabilityMode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::CanonicalV1 => "canonical-v1",
+            Self::JsonViewV1 => "json-view-v1",
+            Self::CsvViewV1 => "csv-view-v1",
+            Self::TextDraftsV1 => "text-drafts-v1",
+        }
+    }
 }
 
 /// Query params for graph traversal.
@@ -306,4 +332,30 @@ pub struct LimitQuery {
 pub struct PaginationQuery {
     pub page: Option<usize>,
     pub limit: Option<usize>,
+}
+
+#[cfg(test)]
+mod data_portability_tests {
+    use super::*;
+
+    #[test]
+    fn export_and_import_modes_are_explicit_and_closed() {
+        assert!(serde_json::from_value::<ExportParams>(serde_json::json!({})).is_err());
+        assert!(serde_json::from_value::<ImportParams>(serde_json::json!({})).is_err());
+        for (wire, expected) in [
+            ("canonical-v1", DataPortabilityMode::CanonicalV1),
+            ("json-view-v1", DataPortabilityMode::JsonViewV1),
+            ("csv-view-v1", DataPortabilityMode::CsvViewV1),
+            ("text-drafts-v1", DataPortabilityMode::TextDraftsV1),
+        ] {
+            let parsed: ExportParams =
+                serde_json::from_value(serde_json::json!({ "mode": wire })).unwrap();
+            assert_eq!(parsed.mode, expected);
+            assert_eq!(parsed.mode.as_str(), wire);
+        }
+        assert!(serde_json::from_value::<ExportParams>(serde_json::json!({
+            "mode": "json"
+        }))
+        .is_err());
+    }
 }

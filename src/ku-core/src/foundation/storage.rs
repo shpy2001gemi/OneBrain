@@ -67,6 +67,13 @@ pub struct QuarantineRecord {
     pub original_bytes: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AcceptedRecordEntry {
+    pub record_kind: StoredRecordKind,
+    pub claimed_cid: [u8; 32],
+    pub canonical_bytes: Vec<u8>,
+}
+
 impl QuarantineRecord {
     fn new(
         record_kind: StoredRecordKind,
@@ -126,9 +133,21 @@ pub trait AtomicVerifiedBackend: Send + Sync {
 
     fn get_quarantine(&self, id: &[u8; 32]) -> Result<Option<QuarantineRecord>, String>;
 
-    /// Deterministic accepted-record scan used to rebuild derived projections
-    /// such as feed sequence/equivocation state after restart.
-    fn accepted_records(&self, kind: StoredRecordKind) -> Result<Vec<Vec<u8>>, String>;
+    /// Deterministic CID-keyed scan used to rebuild derived projections. The
+    /// caller must recompute each CID before the row can influence a root.
+    fn accepted_record_entries(
+        &self,
+        kind: StoredRecordKind,
+    ) -> Result<Vec<AcceptedRecordEntry>, String>;
+
+    fn accepted_records(&self, kind: StoredRecordKind) -> Result<Vec<Vec<u8>>, String> {
+        self.accepted_record_entries(kind).map(|entries| {
+            entries
+                .into_iter()
+                .map(|entry| entry.canonical_bytes)
+                .collect()
+        })
+    }
 
     /// Atomically accept canonical FeedInception bytes and index every branch
     /// by FeedId. Multiple branches remain visible; arrival order never grants
@@ -142,6 +161,17 @@ pub trait AtomicVerifiedBackend: Send + Sync {
     ) -> Result<BackendAcceptOutcome, String>;
 
     fn feed_inceptions(&self, feed_id: &[u8; 32]) -> Result<Vec<Vec<u8>>, String>;
+
+    /// Atomically accept an authority record and its actor/frontier lookup.
+    fn accept_authority_event(
+        &self,
+        key: &[u8; 33],
+        actor_id: &[u8; 32],
+        bytes: &[u8],
+        collision: &QuarantineRecord,
+    ) -> Result<BackendAcceptOutcome, String>;
+
+    fn authority_events(&self, actor_id: &[u8; 32]) -> Result<Vec<Vec<u8>>, String>;
 }
 
 #[derive(Default)]
@@ -149,6 +179,7 @@ struct InMemoryState {
     accepted: HashMap<[u8; 33], Vec<u8>>,
     quarantine: HashMap<[u8; 32], QuarantineRecord>,
     feed_index: HashMap<[u8; 64], Vec<u8>>,
+    authority_index: HashMap<[u8; 64], Vec<u8>>,
 }
 
 #[derive(Default)]
@@ -213,7 +244,10 @@ impl AtomicVerifiedBackend for InMemoryVerifiedBackend {
             .cloned())
     }
 
-    fn accepted_records(&self, kind: StoredRecordKind) -> Result<Vec<Vec<u8>>, String> {
+    fn accepted_record_entries(
+        &self,
+        kind: StoredRecordKind,
+    ) -> Result<Vec<AcceptedRecordEntry>, String> {
         let state = self
             .state
             .lock()
@@ -225,7 +259,14 @@ impl AtomicVerifiedBackend for InMemoryVerifiedBackend {
             .map(|(key, bytes)| (*key, bytes.clone()))
             .collect::<Vec<_>>();
         records.sort_by_key(|(key, _)| *key);
-        Ok(records.into_iter().map(|(_, bytes)| bytes).collect())
+        Ok(records
+            .into_iter()
+            .map(|(key, canonical_bytes)| AcceptedRecordEntry {
+                record_kind: kind,
+                claimed_cid: key[1..].try_into().expect("accepted key is fixed width"),
+                canonical_bytes,
+            })
+            .collect())
     }
 
     fn accept_feed_inception(
@@ -274,6 +315,58 @@ impl AtomicVerifiedBackend for InMemoryVerifiedBackend {
             .feed_index
             .iter()
             .filter(|(key, _)| &key[..32] == feed_id)
+            .map(|(key, bytes)| (*key, bytes.clone()))
+            .collect::<Vec<_>>();
+        branches.sort_by_key(|(key, _)| *key);
+        Ok(branches.into_iter().map(|(_, bytes)| bytes).collect())
+    }
+
+    fn accept_authority_event(
+        &self,
+        key: &[u8; 33],
+        actor_id: &[u8; 32],
+        bytes: &[u8],
+        collision: &QuarantineRecord,
+    ) -> Result<BackendAcceptOutcome, String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "STORE_LOCK_POISONED".to_string())?;
+        let outcome = match state.accepted.get(key) {
+            Some(existing) if existing == bytes => BackendAcceptOutcome::AlreadyPresent,
+            Some(_) => {
+                state
+                    .quarantine
+                    .entry(collision.quarantine_id)
+                    .or_insert_with(|| collision.clone());
+                BackendAcceptOutcome::CollisionQuarantined
+            }
+            None => {
+                state.accepted.insert(*key, bytes.to_vec());
+                BackendAcceptOutcome::Stored
+            }
+        };
+        if !matches!(outcome, BackendAcceptOutcome::CollisionQuarantined) {
+            let mut index_key = [0u8; 64];
+            index_key[..32].copy_from_slice(actor_id);
+            index_key[32..].copy_from_slice(&key[1..]);
+            state
+                .authority_index
+                .entry(index_key)
+                .or_insert_with(|| bytes.to_vec());
+        }
+        Ok(outcome)
+    }
+
+    fn authority_events(&self, actor_id: &[u8; 32]) -> Result<Vec<Vec<u8>>, String> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| "STORE_LOCK_POISONED".to_string())?;
+        let mut branches = state
+            .authority_index
+            .iter()
+            .filter(|(key, _)| &key[..32] == actor_id)
             .map(|(key, bytes)| (*key, bytes.clone()))
             .collect::<Vec<_>>();
         branches.sort_by_key(|(key, _)| *key);
@@ -500,9 +593,9 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
                 validated.original_bytes(),
             );
         }
-        self.accept(
-            StoredRecordKind::AuthorityEvent,
-            claimed_cid.into_bytes(),
+        self.accept_authority(
+            claimed_cid,
+            *validated.signed.delegation.actor.as_bytes(),
             validated.original_bytes(),
         )
     }
@@ -513,6 +606,7 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
         &self,
         claimed_cid: EventCid,
         actual_cid: EventCid,
+        actor_id: [u8; 32],
         bytes: &[u8],
     ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
         if claimed_cid != actual_cid {
@@ -523,11 +617,7 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
                 bytes,
             );
         }
-        self.accept(
-            StoredRecordKind::AuthorityEvent,
-            claimed_cid.into_bytes(),
-            bytes,
-        )
+        self.accept_authority(claimed_cid, actor_id, bytes)
     }
 
     pub fn quarantine_authority_event(
@@ -582,6 +672,15 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
             .map_err(VerifiedStoreError::Backend)
     }
 
+    pub fn accepted_entries(
+        &self,
+        kind: StoredRecordKind,
+    ) -> Result<Vec<AcceptedRecordEntry>, VerifiedStoreError> {
+        self.backend
+            .accepted_record_entries(kind)
+            .map_err(VerifiedStoreError::Backend)
+    }
+
     pub fn get_event(&self, cid: EventCid) -> Result<Option<Vec<u8>>, VerifiedStoreError> {
         self.get(StoredRecordKind::Event, cid.into_bytes())
     }
@@ -609,6 +708,15 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
     pub fn accepted_authority_events(&self) -> Result<Vec<Vec<u8>>, VerifiedStoreError> {
         self.backend
             .accepted_records(StoredRecordKind::AuthorityEvent)
+            .map_err(VerifiedStoreError::Backend)
+    }
+
+    pub fn authority_events_for_actor(
+        &self,
+        actor_id: &[u8; 32],
+    ) -> Result<Vec<Vec<u8>>, VerifiedStoreError> {
+        self.backend
+            .authority_events(actor_id)
             .map_err(VerifiedStoreError::Backend)
     }
 
@@ -673,6 +781,32 @@ impl<B: AtomicVerifiedBackend> ValidatedStore<B> {
         }
     }
 
+    fn accept_authority(
+        &self,
+        cid: EventCid,
+        actor_id: [u8; 32],
+        bytes: &[u8],
+    ) -> Result<PutVerifiedOutcome, VerifiedStoreError> {
+        let key = AcceptedKey::new(StoredRecordKind::AuthorityEvent, cid.into_bytes()).0;
+        let collision = QuarantineRecord::new(
+            StoredRecordKind::AuthorityEvent,
+            cid.into_bytes(),
+            "SAME_CID_DIFFERENT_BYTES",
+            bytes,
+        );
+        match self
+            .backend
+            .accept_authority_event(&key, &actor_id, bytes, &collision)
+            .map_err(VerifiedStoreError::Backend)?
+        {
+            BackendAcceptOutcome::Stored => Ok(PutVerifiedOutcome::Stored),
+            BackendAcceptOutcome::AlreadyPresent => Ok(PutVerifiedOutcome::AlreadyPresent),
+            BackendAcceptOutcome::CollisionQuarantined => Ok(PutVerifiedOutcome::Quarantined {
+                quarantine_id: collision.quarantine_id,
+            }),
+        }
+    }
+
     pub(crate) fn quarantine(
         &self,
         kind: StoredRecordKind,
@@ -726,6 +860,8 @@ mod persistent {
         TableDefinition::new("vnext_quarantine_records");
     const FEED_INDEX: TableDefinition<&[u8], &[u8]> =
         TableDefinition::new("vnext_feed_inception_index");
+    const AUTHORITY_INDEX: TableDefinition<&[u8], &[u8]> =
+        TableDefinition::new("vnext_authority_by_actor_frontier");
 
     pub struct RedbVerifiedBackend {
         db: Database,
@@ -744,6 +880,9 @@ mod persistent {
                     .map_err(|error| error.to_string())?;
                 write
                     .open_table(FEED_INDEX)
+                    .map_err(|error| error.to_string())?;
+                write
+                    .open_table(AUTHORITY_INDEX)
                     .map_err(|error| error.to_string())?;
             }
             write.commit().map_err(|error| error.to_string())?;
@@ -862,7 +1001,10 @@ mod persistent {
             encoded.map(|bytes| decode_quarantine(&bytes)).transpose()
         }
 
-        fn accepted_records(&self, kind: StoredRecordKind) -> Result<Vec<Vec<u8>>, String> {
+        fn accepted_record_entries(
+            &self,
+            kind: StoredRecordKind,
+        ) -> Result<Vec<AcceptedRecordEntry>, String> {
             let read = self.db.begin_read().map_err(|error| error.to_string())?;
             let table = read
                 .open_table(ACCEPTED)
@@ -875,7 +1017,14 @@ mod persistent {
                 }
             }
             records.sort_by(|left, right| left.0.cmp(&right.0));
-            Ok(records.into_iter().map(|(_, bytes)| bytes).collect())
+            Ok(records
+                .into_iter()
+                .map(|(key, canonical_bytes)| AcceptedRecordEntry {
+                    record_kind: kind,
+                    claimed_cid: key[1..].try_into().expect("accepted key is fixed width"),
+                    canonical_bytes,
+                })
+                .collect())
         }
 
         fn accept_feed_inception(
@@ -957,6 +1106,82 @@ mod persistent {
             for entry in table.iter().map_err(|error| error.to_string())? {
                 let (key, bytes) = entry.map_err(|error| error.to_string())?;
                 if key.value().get(..32) == Some(feed_id.as_slice()) {
+                    branches.push((key.value().to_vec(), bytes.value().to_vec()));
+                }
+            }
+            branches.sort_by(|left, right| left.0.cmp(&right.0));
+            Ok(branches.into_iter().map(|(_, bytes)| bytes).collect())
+        }
+
+        fn accept_authority_event(
+            &self,
+            key: &[u8; 33],
+            actor_id: &[u8; 32],
+            bytes: &[u8],
+            collision: &QuarantineRecord,
+        ) -> Result<BackendAcceptOutcome, String> {
+            dr_m5_failpoint::hit("TX-AUTH-001", "before_begin_write");
+            let write = self.db.begin_write().map_err(|error| error.to_string())?;
+            dr_m5_failpoint::hit("TX-AUTH-001", "after_begin_write_before_mutation");
+            let outcome;
+            {
+                let mut accepted = write
+                    .open_table(ACCEPTED)
+                    .map_err(|error| error.to_string())?;
+                let existing = accepted
+                    .get(key.as_slice())
+                    .map_err(|error| error.to_string())?
+                    .map(|value| value.value().to_vec());
+                outcome = match existing {
+                    Some(existing) if existing == bytes => BackendAcceptOutcome::AlreadyPresent,
+                    Some(_) => {
+                        let encoded = encode_quarantine(collision)?;
+                        write
+                            .open_table(QUARANTINE)
+                            .map_err(|error| error.to_string())?
+                            .insert(collision.quarantine_id.as_slice(), encoded.as_slice())
+                            .map_err(|error| error.to_string())?;
+                        BackendAcceptOutcome::CollisionQuarantined
+                    }
+                    None => {
+                        if accepted.len().map_err(|error| error.to_string())?
+                            >= MAX_VERIFIED_ACCEPTED_RECORDS
+                        {
+                            return Err("VNEXT_VERIFIED_ACCEPTED_LIMIT".to_string());
+                        }
+                        accepted
+                            .insert(key.as_slice(), bytes)
+                            .map_err(|error| error.to_string())?;
+                        BackendAcceptOutcome::Stored
+                    }
+                };
+                if !matches!(outcome, BackendAcceptOutcome::CollisionQuarantined) {
+                    let mut index_key = [0u8; 64];
+                    index_key[..32].copy_from_slice(actor_id);
+                    index_key[32..].copy_from_slice(&key[1..]);
+                    write
+                        .open_table(AUTHORITY_INDEX)
+                        .map_err(|error| error.to_string())?
+                        .insert(index_key.as_slice(), bytes)
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+            dr_m5_failpoint::hit("TX-AUTH-001", "after_mutation_before_commit");
+            write.commit().map_err(|error| error.to_string())?;
+            dr_m5_failpoint::hit("TX-AUTH-001", "after_commit_before_next_side_effect");
+            dr_m5_failpoint::hit("TX-AUTH-001", "after_next_side_effect_before_ack");
+            Ok(outcome)
+        }
+
+        fn authority_events(&self, actor_id: &[u8; 32]) -> Result<Vec<Vec<u8>>, String> {
+            let read = self.db.begin_read().map_err(|error| error.to_string())?;
+            let table = read
+                .open_table(AUTHORITY_INDEX)
+                .map_err(|error| error.to_string())?;
+            let mut branches = Vec::new();
+            for entry in table.iter().map_err(|error| error.to_string())? {
+                let (key, bytes) = entry.map_err(|error| error.to_string())?;
+                if key.value().get(..32) == Some(actor_id.as_slice()) {
                     branches.push((key.value().to_vec(), bytes.value().to_vec()));
                 }
             }
@@ -1377,6 +1602,12 @@ mod tests {
         .encode()
         .unwrap();
         let cid = EventCid::from_bytes(ReservedDomain::AuthorityEvent.digest(&bytes));
+        let actor_id = *decode_actor_root_delegation(&bytes)
+            .unwrap()
+            .signed
+            .delegation
+            .actor
+            .as_bytes();
         {
             let store = ValidatedStore::new(RedbVerifiedBackend::open(&path).unwrap());
             assert_eq!(
@@ -1392,6 +1623,10 @@ mod tests {
             bytes
         );
         assert_eq!(reopened.accepted_actor_root_delegations().unwrap().len(), 1);
+        assert_eq!(
+            reopened.authority_events_for_actor(&actor_id).unwrap(),
+            vec![bytes]
+        );
         drop(reopened);
         std::fs::remove_file(path).unwrap();
     }

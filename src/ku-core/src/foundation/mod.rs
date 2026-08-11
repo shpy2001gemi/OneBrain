@@ -9,6 +9,7 @@ pub mod assembly;
 pub mod authority;
 pub mod authority_event;
 pub mod base_profile;
+pub mod blob_reference;
 pub mod canonical;
 pub mod capability;
 pub mod capability_offer;
@@ -42,6 +43,7 @@ pub mod resolution;
 pub mod revocation;
 pub mod schema_registry;
 pub mod semantic;
+pub mod source_text;
 pub mod storage;
 pub mod use_evidence;
 pub mod vault;
@@ -70,6 +72,10 @@ pub use authority_event::{
 pub use base_profile::{
     base_v1_profile_digest, base_v1_profile_registry, BaseProfileRegistry,
     StorageOwnerRegistryEntry, BASE_PROFILE_MAJOR, STORAGE_OWNERS_V1,
+};
+pub use blob_reference::{
+    BlobReferenceError, BlobRetentionState, OwnedBlobReferenceV1, OwnedBlobRole,
+    OWNED_BLOB_REFERENCE_SCHEMA_MAJOR, OWNED_BLOB_REFERENCE_SCHEMA_MINOR,
 };
 pub use canonical::{
     canonicalize_set_by_key, decode_canonical, encode_canonical, CanonicalDocument, CanonicalError,
@@ -238,11 +244,15 @@ pub use semantic::{
     SemanticFrameSet, SourceSpan, StatementFrame, StatementId, StatementQualifiers, TermRef,
     TypedConstraint, UnitRef, VariableId, SEMANTIC_KERNEL_OBJECT_KIND,
 };
+pub use source_text::{
+    source_text_digest, BoundedUtf8, LocalSourceTextRecordV1, SourceTextError,
+    LOCAL_SOURCE_TEXT_KIND, LOCAL_SOURCE_TEXT_KNOWN_KIND, MAX_LOCAL_SOURCE_TEXT_BYTES,
+};
 #[cfg(feature = "persist")]
 pub use storage::RedbVerifiedBackend;
 pub use storage::{
-    AtomicVerifiedBackend, InMemoryVerifiedBackend, PutVerifiedOutcome, QuarantineRecord,
-    StoredRecordKind, ValidatedStore, VerifiedStoreError,
+    AcceptedRecordEntry, AtomicVerifiedBackend, InMemoryVerifiedBackend, PutVerifiedOutcome,
+    QuarantineRecord, StoredRecordKind, ValidatedStore, VerifiedStoreError,
 };
 pub use use_evidence::{
     AssessedExerciseEvidence, DerivationEvidencePayload, DerivationInput, ExerciseAuthority,
@@ -251,4 +261,7 @@ pub use use_evidence::{
     DERIVATION_EVIDENCE_EVENT_TYPE, DERIVATION_EVIDENCE_KIND, USE_EVIDENCE_EVENT_TYPE,
     USE_EVIDENCE_KIND,
 };
-pub use vault::{PrivateVault, VaultKey, VaultQuarantineRecord};
+pub use vault::{
+    PrivateVault, VaultKey, VaultQuarantineRecord, VaultSourceSnapshotPort,
+    VaultSourceSnapshotRecord, VaultStagingId,
+};

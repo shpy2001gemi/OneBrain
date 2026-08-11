@@ -5,8 +5,13 @@
 //! All interface projects (CLI, Web, Desktop, Mobile) depend on this.
 
 pub mod anti_gaming_guard;
+pub mod blob_authority;
+pub mod canonical_exchange;
 pub mod concept_registry_runtime;
 pub mod config;
+pub mod dataset_path;
+pub mod derived_index;
+pub mod derived_projection;
 pub mod display;
 pub mod error;
 pub mod mdns_discovery;
@@ -15,6 +20,8 @@ pub mod node;
 pub mod peer_manager;
 pub mod peer_memory;
 pub mod seed_client;
+pub mod source_capture_transaction;
+pub mod text;
 pub mod types;
 pub mod upnp;
 pub mod verifier_service;
@@ -64,16 +71,40 @@ pub mod vnext_status;
 pub mod vnext_validated_sink;
 pub mod vnext_workflow_surface;
 
+pub use blob_authority::{
+    BlobAuthority, BlobAuthorityError, CanonicalBlobReferenceOracle, OsPendingUploadIdSource,
+    PendingBlobUploadId, PendingBlobUploadStore, PendingOwnedBlobUpload, PendingUploadIdSource,
+    UnavailableValidatedBlobReferenceSource, ValidatedBlobAuthoritySnapshot,
+    ValidatedBlobReferenceSource, MAX_PENDING_BLOB_UPLOADS,
+};
+pub use canonical_exchange::{
+    read_canonical_exchange, write_canonical_exchange, BaseExchangeEntryV1, ExchangeError,
+    ExchangeReceipt, CANONICAL_EXCHANGE_MAGIC,
+};
 pub use concept_registry_runtime::{
     ConceptRegistryBackendKind, ConceptRegistryFailureKind, ConceptRegistryRuntimeState,
     ConceptRegistryStatus,
 };
 pub use config::{ConceptRegistryMode, NodeConfig};
+pub use dataset_path::{
+    BaseStorageOwnerId, BootstrapDatasetPathResolver, DatasetGenerationId, DatasetPathResolver,
+};
+pub use derived_index::{
+    AcceptedRecordScan, DerivedIndexError, DerivedIndexOpenState, DerivedIndexReaderLease,
+    RedbAcceptedRecordScan, VNextDerivedIndexManager, VNextIndexParityReport,
+    VNEXT_DERIVED_INDEX_PROFILE,
+};
+pub use derived_projection::{DerivedProjectionOpenState, RetrieverProjectionService};
 pub use error::NodeError;
 #[cfg(feature = "vnext-network-runtime")]
 pub use ku_net::vnext_session::SessionIdentitySigner;
 pub use network::{NetMessage, NodeEvent, PeerInfo};
 pub use node::{EncodeStoreResult, OneBrainNode};
+pub use source_capture_transaction::{
+    EncryptedSourceCaptureIntentV1, SourceCaptureError, SourceCaptureRecoveryState,
+    SourceCaptureTransactionStore, MAX_SOURCE_CAPTURE_INTENTS, SOURCE_CAPTURE_BOUNDARY,
+};
+pub use text::truncate_preview;
 #[cfg(feature = "vnext-canary-harness")]
 pub use vnext_canary_operations::{
     run_p5_canary_preflight, P5CanaryPreflightError, P5CanaryPreflightReport, P5_CANARY_NODE_COUNT,

@@ -939,13 +939,19 @@ pub async fn export_kus(
 ) -> Result<axum::response::Response, ApiError> {
     let node = state.node.lock().await;
     let temp_dir = tempfile::tempdir().map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
-    let ext = match params.format.as_str() {
-        "csv" => "csv",
-        _ => "json",
+    let ext = match params.mode {
+        DataPortabilityMode::CanonicalV1 => "obx",
+        DataPortabilityMode::JsonViewV1 => "json",
+        DataPortabilityMode::CsvViewV1 => "csv",
+        DataPortabilityMode::TextDraftsV1 => {
+            return Err(ApiError(onebrain_node::NodeError::InvalidArgument(
+                "text-drafts-v1 is import-only".into(),
+            )))
+        }
     };
     let file_path = temp_dir.path().join(format!("export.{}", ext));
     let count = node
-        .export_kus(&params.format, &file_path)
+        .export_data(params.mode.as_str(), &file_path)
         .map_err(ApiError::from)?;
     drop(node);
 
@@ -953,9 +959,11 @@ pub async fn export_kus(
         .await
         .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
 
-    let content_type = match params.format.as_str() {
-        "csv" => "text/csv",
-        _ => "application/json",
+    let content_type = match params.mode {
+        DataPortabilityMode::CanonicalV1 => "application/vnd.onebrain.obx-v1",
+        DataPortabilityMode::JsonViewV1 => "application/json",
+        DataPortabilityMode::CsvViewV1 => "text/csv",
+        DataPortabilityMode::TextDraftsV1 => unreachable!(),
     };
     let filename = format!("onebrain_export_{}.{}", count, ext);
 
@@ -973,6 +981,7 @@ pub async fn export_kus(
 
 pub async fn import_kus(
     State(state): State<AppState>,
+    Query(params): Query<ImportParams>,
     mut multipart: axum::extract::Multipart,
 ) -> ApiResult<serde_json::Value> {
     let temp_dir = tempfile::tempdir().map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
@@ -1007,7 +1016,20 @@ pub async fn import_kus(
     })?;
 
     let mut node = state.node.lock().await;
-    let result = node.import_file(&path).await.map_err(ApiError::from)?;
+    let result = match params.mode {
+        DataPortabilityMode::CanonicalV1 => node
+            .import_canonical_exchange(&path)
+            .map_err(ApiError::from)?,
+        DataPortabilityMode::TextDraftsV1 => node
+            .import_text_drafts(&path)
+            .await
+            .map_err(ApiError::from)?,
+        DataPortabilityMode::JsonViewV1 | DataPortabilityMode::CsvViewV1 => {
+            return Err(ApiError(onebrain_node::NodeError::InvalidArgument(
+                "JSON/CSV views are not importable".into(),
+            )))
+        }
+    };
     Ok(ok(serde_json::to_value(&result).unwrap()))
 }
 

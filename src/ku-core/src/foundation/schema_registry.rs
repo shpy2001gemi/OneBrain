@@ -11,6 +11,8 @@ pub const SCHEMA_MANIFEST: u64 = 8;
 pub const SCHEMA_ACTOR_ROOT_DELEGATION: u64 = 9;
 pub const SCHEMA_ACTOR_DELEGATION: u64 = 10;
 pub const SCHEMA_ACTOR_REVOCATION: u64 = 11;
+pub const SCHEMA_OWNED_BLOB_REFERENCE: u64 = 12;
+pub const SCHEMA_LOCAL_SOURCE_TEXT: u64 = 13;
 
 pub const OBJECT_KIND_LEGACY_EVIDENCE: u64 = 1;
 pub const OBJECT_KIND_SEMANTIC_KERNEL: u64 = 2;
@@ -94,6 +96,14 @@ pub const SCHEMAS_V1: &[RegistryEntry] = &[
     RegistryEntry {
         id: SCHEMA_ACTOR_REVOCATION,
         name: "actor-revocation",
+    },
+    RegistryEntry {
+        id: SCHEMA_OWNED_BLOB_REFERENCE,
+        name: "owned-blob-reference",
+    },
+    RegistryEntry {
+        id: SCHEMA_LOCAL_SOURCE_TEXT,
+        name: "local-source-text",
     },
 ];
 

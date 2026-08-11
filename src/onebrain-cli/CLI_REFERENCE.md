@@ -687,17 +687,19 @@ OneBrain> wallet history --limit 10
 
 #### `export` / `import`
 
-Export/import KUs.
+Export canonical public data, render non-importable views, or import text as
+new drafts. The mode is mandatory so view files cannot be mistaken for a
+canonical exchange.
 
 ```
-OneBrain> export --format json --output my_knowledge.json
+OneBrain> export --mode canonical-v1 --output public_exchange.obx
 
-  Exporting 42 KUs...
-  ✓ Exported to my_knowledge.json (156 KB)
+  Exporting canonical public records...
+  ✓ Exported to public_exchange.obx (156 KB)
 ```
 
 ```
-OneBrain> import knowledge_backup.json
+OneBrain> import --mode text-drafts-v1 notes.txt
 
   Reading file... ✓ Found 15 text entries
   Encoding: [████████████████] 15/15
@@ -959,8 +961,8 @@ OneBrain> help
   ║  wallet history          Transaction history                  ║
   ║                                                               ║
   ║  ── Data ──                                                   ║
-  ║  export [--format json]  Export KUs to file                   ║
-  ║  import <file>           Import file into knowledge base      ║
+  ║  export --mode <mode>    Export canonical data or a view      ║
+  ║  import --mode <mode>    Import canonical data or text drafts ║
   ║  backup                  Full encrypted backup                ║
   ║  restore <file>          Restore from backup                  ║
   ║                                                               ║
@@ -1392,7 +1394,7 @@ graph TD
 | **4. Profile & AI** | Step 1 | `get_profile()`, `update_profile()`, `list_ai_models()`, `switch_model()`, `test_ai_connection()` | `profile`, `model *` |
 | **5. Config** | Step 1 | `get_config()`, `update_config()` | `config`, `config set` |
 | **6. Wallet** | Step 2 | `get_balance()`, `get_wallet_history()` | `wallet`, `wallet history` |
-| **7. Data** | Step 3 | `export_kus()`, `import_file()`, `create_backup()`, `restore_backup()` | `export`, `import`, `backup`, `restore` |
+| **7. Data** | Step 3 | `export_data()`, `import_canonical_exchange()`, `import_text_drafts()`, `create_backup()`, `restore_backup()` | `export`, `import`, `backup`, `restore` |
 | **8. Onboarding** | Step 2, 4 | — (CLI only) | Setup wizard, `help [cmd]` |
 | **9. Status** | Step 3, 5, 6 | — (combines existing) | Enhanced `status` |
 | **10. Blob Store** | Step 1, 3 | `store_blob()`, `list_blobs()`, `get_blob_meta()`, `export_blob()`, `delete_blob_file()`, `blob_stats()`, `blob_gc()`, `blob_add_ku_ref()` | `blob list`, `blob store`, `blob detail`, `blob export`, `blob delete`, `blob stats`, `blob gc` |

@@ -4,6 +4,7 @@
 //! directives. None of them acquires network authority merely by migration.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use ku_core::foundation::schema_registry::OBJECT_KIND_LEGACY_EVIDENCE;
 use ku_core::foundation::KnowledgeObjectEnvelope;
@@ -18,6 +19,16 @@ use serde::{Deserialize, Serialize};
 
 pub const LEGACY_BACKFILL_PROFILE_MAJOR: u16 = 1;
 pub const LEGACY_PROVIDER_HINT_MAX_LOCAL_TICKS: u64 = 3_600;
+
+/// The sole Base adapter allowed to enumerate legacy KU primary rows. The
+/// returned KUs are migration evidence only and never enter a Base authority
+/// or derived-index write path directly.
+pub fn scan_legacy_ku_migration_evidence(path: &Path) -> Result<Vec<ku_core::KuRuntime>, String> {
+    ku_kql::storage::KuStorage::open_migration_evidence(path)
+        .map_err(|error| error.to_string())?
+        .scan_migration_evidence()
+        .map_err(|error| error.to_string())
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LegacyBackfillEnvelope {

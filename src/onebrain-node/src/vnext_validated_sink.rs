@@ -60,6 +60,15 @@ impl<B: AtomicVerifiedBackend> SharedVNextValidatedSink<B> {
             .map_err(|error| error.to_string())
     }
 
+    pub fn accepted_record_snapshot(
+        &self,
+    ) -> Result<Vec<ku_core::foundation::AcceptedRecordEntry>, String> {
+        self.0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .accepted_record_snapshot()
+    }
+
     #[cfg(feature = "vnext-network-runtime")]
     pub(crate) fn accepted_record_type(
         &self,
@@ -126,6 +135,26 @@ impl<B: AtomicVerifiedBackend> VNextValidatedSink<B> {
 
     pub fn store(&self) -> &ValidatedStore<B> {
         &self.store
+    }
+
+    pub fn accepted_record_snapshot(
+        &self,
+    ) -> Result<Vec<ku_core::foundation::AcceptedRecordEntry>, String> {
+        let mut records = Vec::new();
+        for kind in [
+            ku_core::foundation::StoredRecordKind::Object,
+            ku_core::foundation::StoredRecordKind::Event,
+            ku_core::foundation::StoredRecordKind::FeedInception,
+            ku_core::foundation::StoredRecordKind::AuthorityEvent,
+        ] {
+            records.extend(
+                self.store
+                    .accepted_entries(kind)
+                    .map_err(|error| error.to_string())?,
+            );
+        }
+        records.sort_by_key(|entry| (entry.record_kind as u8, entry.claimed_cid));
+        Ok(records)
     }
 
     #[cfg(feature = "vnext-network-runtime")]
@@ -454,7 +483,12 @@ impl<B: AtomicVerifiedBackend> VNextValidatedSink<B> {
                 match reducer.submit_child(child.scoped_delegation()) {
                     KeyStateApplyOutcome::Accepted | KeyStateApplyOutcome::AlreadyPresent => self
                         .store
-                        .put_validated_authority_event(claimed, child.cid, child.original_bytes())
+                        .put_validated_authority_event(
+                            claimed,
+                            child.cid,
+                            *child.signed.delegation.actor.as_bytes(),
+                            child.original_bytes(),
+                        )
                         .map(Self::outcome)
                         .map_err(|error| error.to_string()),
                     KeyStateApplyOutcome::RejectedAttenuation => self.reject_authority_event(
@@ -524,6 +558,7 @@ impl<B: AtomicVerifiedBackend> VNextValidatedSink<B> {
                         .put_validated_authority_event(
                             claimed,
                             revocation.cid,
+                            *revocation.signed.revocation.actor.as_bytes(),
                             revocation.original_bytes(),
                         )
                         .map(Self::outcome)

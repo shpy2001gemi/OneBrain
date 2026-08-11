@@ -74,6 +74,9 @@ serde_json = "1"
 thiserror = "1"
 blake3 = "1"
 tracing = "0.1"
+getrandom = "0.3"
+zeroize = "1"
+unicode-segmentation = "1.13"
 ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
 rand = { version = "0.8", optional = true }
 redb = { version = "2", optional = true }

@@ -61,8 +61,8 @@ pub(crate) fn cmd_help(args: &str) {
         println!("  ║  wallet history          Show simulated activity history      ║");
         println!("  ║                                                               ║");
         println!("  ║  ── Data ──                                                   ║");
-        println!("  ║  export [--format json]  Export KUs to file                   ║");
-        println!("  ║  import <file>           Import file into knowledge base      ║");
+        println!("  ║  export --mode <mode>    Export canonical data or a view      ║");
+        println!("  ║  import --mode <mode>    Import canonical data or text drafts ║");
         println!("  ║  backup                  Full encrypted backup                ║");
         println!("  ║  restore <file>          Restore from backup                  ║");
         println!("  ║                                                               ║");
@@ -305,25 +305,25 @@ pub(crate) fn cmd_help(args: &str) {
             }
             "export" => {
                 println!();
-                println!("  export [--format FORMAT] [--output FILE]");
+                println!("  export --mode MODE [--output FILE]");
                 println!();
-                println!("  Export KUs to a file.");
-                println!("  Formats: json (default), csv");
+                println!("  Modes: canonical-v1, json-view-v1, csv-view-v1.");
+                println!("  JSON/CSV are non-restorable views.");
                 println!();
                 println!("  Examples:");
-                println!("    export");
-                println!("    export --format json --output my_knowledge.json");
+                println!("    export --mode canonical-v1 --output public.obx");
+                println!("    export --mode json-view-v1 --output knowledge.json");
                 println!();
             }
             "import" => {
                 println!();
-                println!("  import <file>");
+                println!("  import --mode MODE <file>");
                 println!();
-                println!("  Import KUs from a JSON file.");
-                println!("  Duplicates are automatically skipped.");
+                println!("  Modes: canonical-v1 or text-drafts-v1.");
+                println!("  JSON/CSV views are never importable.");
                 println!();
                 println!("  Example:");
-                println!("    import knowledge_backup.json");
+                println!("    import --mode canonical-v1 public.obx");
                 println!();
             }
             "backup" => {

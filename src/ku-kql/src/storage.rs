@@ -45,6 +45,14 @@ pub struct KuStorage {
     db: Database,
     /// Graph edge index storage (6 redb tables for O(1) graph queries)
     graph: crate::graph_storage::GraphStorage,
+    access: KuStorageAccess,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KuStorageAccess {
+    LegacyWritable,
+    BaseReadOnly,
+    MigrationEvidence,
 }
 
 /// Storage operation errors.
@@ -56,6 +64,8 @@ pub enum StorageError {
     CodecError(String),
     /// Key not found.
     NotFound,
+    /// Base v1 never routes writes through the legacy KU store.
+    LegacyReadOnly,
 }
 
 impl std::fmt::Display for StorageError {
@@ -64,6 +74,7 @@ impl std::fmt::Display for StorageError {
             Self::DatabaseError(msg) => write!(f, "Storage error: {}", msg),
             Self::CodecError(msg) => write!(f, "Codec error: {}", msg),
             Self::NotFound => write!(f, "KU not found"),
+            Self::LegacyReadOnly => write!(f, "legacy KU storage is read-only in Base mode"),
         }
     }
 }
@@ -110,6 +121,18 @@ impl KuStorage {
     /// Also creates a neighboring graph storage file at `<path>.graph.redb`
     /// for O(1) bond/edge index queries.
     pub fn open(path: &Path) -> Result<Self, StorageError> {
+        Self::open_with_access(path, KuStorageAccess::LegacyWritable)
+    }
+
+    pub fn open_base_read_only(path: &Path) -> Result<Self, StorageError> {
+        Self::open_with_access(path, KuStorageAccess::BaseReadOnly)
+    }
+
+    pub fn open_migration_evidence(path: &Path) -> Result<Self, StorageError> {
+        Self::open_with_access(path, KuStorageAccess::MigrationEvidence)
+    }
+
+    fn open_with_access(path: &Path, access: KuStorageAccess) -> Result<Self, StorageError> {
         let db =
             Database::create(path).map_err(|e| StorageError::DatabaseError(format!("{}", e)))?;
 
@@ -132,7 +155,7 @@ impl KuStorage {
         let graph_path = path.with_extension("graph.redb");
         let graph = crate::graph_storage::GraphStorage::open(&graph_path)?;
 
-        Ok(Self { db, graph })
+        Ok(Self { db, graph, access })
     }
 
     /// Store a KuRuntime. Returns the CID.
@@ -140,6 +163,7 @@ impl KuStorage {
     /// Core DNA wire bytes go to `kus` table (immutable).
     /// Epigenetics go to `epigenetics` table (can be updated).
     pub fn put(&self, ku: &KuRuntime) -> Result<[u8; 32], StorageError> {
+        self.ensure_writable()?;
         let cid = ku.cid;
 
         // Serialize epigenetics as JSON (compact, human-debuggable)
@@ -216,6 +240,7 @@ impl KuStorage {
 
     /// Update Epigenetics only (Core DNA remains immutable).
     pub fn update_epi(&self, cid: &[u8; 32], epi: &Epigenetics) -> Result<(), StorageError> {
+        self.ensure_writable()?;
         let epi_bytes =
             serde_json::to_vec(epi).map_err(|e| StorageError::CodecError(format!("{}", e)))?;
 
@@ -280,6 +305,7 @@ impl KuStorage {
 
     /// Delete a KU by CID (both Core DNA and Epigenetics).
     pub fn delete(&self, cid: &[u8; 32]) -> Result<bool, StorageError> {
+        self.ensure_writable()?;
         let txn = self.db.begin_write()?;
         let existed;
         {
@@ -329,6 +355,22 @@ impl KuStorage {
         }
 
         Ok(results)
+    }
+
+    /// Explicit primary-row scan for the one legacy migration adapter.
+    pub fn scan_migration_evidence(&self) -> Result<Vec<KuRuntime>, StorageError> {
+        if self.access != KuStorageAccess::MigrationEvidence {
+            return Err(StorageError::LegacyReadOnly);
+        }
+        self.get_all()
+    }
+
+    fn ensure_writable(&self) -> Result<(), StorageError> {
+        if self.access == KuStorageAccess::LegacyWritable {
+            Ok(())
+        } else {
+            Err(StorageError::LegacyReadOnly)
+        }
     }
 
     /// Access the graph edge index storage for direct queries.
