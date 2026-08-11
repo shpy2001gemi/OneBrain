@@ -8,6 +8,7 @@ pub mod affordance;
 pub mod assembly;
 pub mod authority;
 pub mod authority_event;
+pub mod base_profile;
 pub mod canonical;
 pub mod capability;
 pub mod capability_offer;
@@ -65,6 +66,10 @@ pub use authority_event::{
     authority_event_descriptor, decode_actor_delegation, decode_actor_revocation, ActorDelegation,
     ActorRevocation, AuthorityEventDescriptor, AuthorityEventError, SignedActorDelegation,
     SignedActorRevocation, ValidatedActorDelegation, ValidatedActorRevocation,
+};
+pub use base_profile::{
+    base_v1_profile_digest, base_v1_profile_registry, BaseProfileRegistry,
+    StorageOwnerRegistryEntry, BASE_PROFILE_MAJOR, STORAGE_OWNERS_V1,
 };
 pub use canonical::{
     canonicalize_set_by_key, decode_canonical, encode_canonical, CanonicalDocument, CanonicalError,

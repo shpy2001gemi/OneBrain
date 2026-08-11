@@ -770,6 +770,48 @@
       "rationale": "The single-host operational preflight exercises actual signer, storage, authenticated-QUIC, durable backup/restore, rollback and dashboard boundaries while its frozen scope forbids 72-hour, multi-host or production qualification claims."
     },
     {
+      "path": "docs/specs/vnext/BASE_V1_AUTHORITY_AND_RECOVERY_PROFILE.md",
+      "expected_statement_lines": 13,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/base-v1-authority-recovery-v1.json",
+          "needle": "onebrain/base-v1-authority-recovery/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_base_v1_authority_recovery"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_base_authority.py",
+          "needle": "test_non_exportable_signers_require_reprovisioning"
+        }
+      ],
+      "rationale": "The closed machine profile and mutation suite freeze Base canonical/legacy authority, encrypted recovery, archive crypto/scope, signer separation, Registry readiness, network defaults and immutable-history deletion before product implementation begins."
+    },
+    {
+      "path": "docs/specs/vnext/BASE_V1_STORAGE_INTEGRITY_PROFILE.md",
+      "expected_statement_lines": 22,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/base-v1-storage-integrity-v1.json",
+          "needle": "onebrain/base-v1-storage-integrity/1"
+        },
+        {
+          "path": "src/test-vectors/vnext/base-v1-derived-projection-v1.json",
+          "needle": "base-v1-derived-projection-reducer/1"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_base_storage.py",
+          "needle": "test_endian_swapped_owner_code_is_rejected"
+        },
+        {
+          "path": "docs/specs/vnext/DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md",
+          "needle": "TX-RECOVERY-001"
+        }
+      ],
+      "rationale": "Two closed machine vectors and mutation tests freeze blob identity/integrity/capacity, canonical exchange, owner IDs, complete mapping coverage, derived parity and the exact five-phase crash vocabulary before storage implementation begins."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [

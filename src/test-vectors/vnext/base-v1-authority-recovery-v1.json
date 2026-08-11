@@ -1,0 +1,92 @@
+{
+  "format": "onebrain/base-v1-authority-recovery/1",
+  "canonical_write_path": "vnext-object-event-feed",
+  "legacy_boundary": "explicit-read-only-migration",
+  "recovery_profile": "encrypted-recovery-package-v1",
+  "archive_profiles": [
+    "password-argon2id-v1",
+    "recovery-key-v1"
+  ],
+  "registry_required_states": [
+    "registry-dependent-encoding",
+    "ready-offline"
+  ],
+  "network_default_active_lane_count": 0,
+  "delete_semantics": "event-or-local-retention-never-history-rewrite",
+  "authority_order": [
+    "distributed-runtime-plan",
+    "mobile-architecture-constraints",
+    "base-v1-authority-recovery-profile",
+    "product-projections"
+  ],
+  "recovery_decision": {
+    "selected": "encrypted-recovery-package-v1",
+    "rejected": [
+      "mnemonic-derivation",
+      "bip39-shaped-placeholder"
+    ]
+  },
+  "archive_crypto": {
+    "password_argon2id_v1": {
+      "algorithm": "argon2id",
+      "memory_kib": 65536,
+      "iterations": 3,
+      "parallelism": 1,
+      "salt_bytes": 16,
+      "output_bytes": 32,
+      "domain": "onebrain:base-v1:archive:password-argon2id-v1"
+    },
+    "recovery_key_v1": {
+      "key_bytes": 32,
+      "derivation": "blake3-derive-key",
+      "separately_verified": true,
+      "domain": "onebrain:base-v1:archive:recovery-key-v1"
+    },
+    "aead": "xchacha20-poly1305",
+    "nonce_bytes": 24,
+    "manifest": "encrypted-and-authenticated",
+    "profiles_use_distinct_domains": true
+  },
+  "archive_scope": {
+    "included": [
+      "canonical-object-event-feed",
+      "owned-original-blobs",
+      "private-vault",
+      "quarantine",
+      "correctness-journals",
+      "pending-outbox",
+      "migration-state",
+      "interpretation-configuration",
+      "permitted-recovery-metadata",
+      "signed-authority-high-water-metadata"
+    ],
+    "excluded_rebuildable_or_refetchable": [
+      "derived-indexes",
+      "concept-registry-bytes",
+      "local-model-bytes",
+      "remote-media-cache",
+      "stale-delivery-caches"
+    ],
+    "restore_activation": "verify-entire-archive-stage-new-generation-parity-health-then-atomic-switch"
+  },
+  "signer_recovery": {
+    "node_transport": {
+      "domain": "onebrain:base-v1:recovery:node-transport:1",
+      "non_exportable_unavailable": "ReprovisionRequired"
+    },
+    "actor_root": {
+      "domain": "onebrain:base-v1:recovery:actor-root:1",
+      "non_exportable_unavailable": "ReprovisionRequired"
+    },
+    "feed_author": {
+      "domain": "onebrain:base-v1:recovery:feed-author:1",
+      "non_exportable_unavailable": "ReprovisionRequired"
+    }
+  },
+  "registry_policy": {
+    "bootstrap_limited_without_active_release": true,
+    "missing_exact_release": "fail-closed",
+    "registry_dependent_encoding_requires_exact_release": true,
+    "ready_offline_requires_exact_release": true
+  }
+}
