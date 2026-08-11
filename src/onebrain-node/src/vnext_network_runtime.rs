@@ -50,6 +50,10 @@ use thiserror::Error;
 use tokio::sync::{watch, Mutex as AsyncMutex, Notify};
 use tokio::task::JoinHandle;
 
+use crate::archive::{
+    InventoryArchiveBackend, LogicalRowsArchiveBackend, ReconciliationArchiveBackend,
+    SnapshotVerifiedBackend, ValidatedCanonicalArchiveBackend,
+};
 use crate::vnext_config::VNextNetworkPolicy;
 use crate::vnext_observability::{
     VNextJournalObservation, VNextObservability, VNextObservabilitySnapshot, VNextReasonCode,
@@ -264,6 +268,7 @@ pub struct VNextNetworkRuntime {
     counters: Arc<RuntimeCounters>,
     observability: Arc<VNextObservability>,
     validated_sink: PersistentSink,
+    reconciliation: RedbReconciliationJournalBackend,
     inventory: RedbInventoryForestBackend,
     provenance: RedbRecordProvenance,
     routes: AuthenticatedRouteDirectory,
@@ -285,6 +290,29 @@ pub(crate) struct PreparedVNextIdentity {
     public_key: [u8; 32],
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct VNextNetworkStoragePaths {
+    pub admission_root: PathBuf,
+    pub canonical: PathBuf,
+    pub reconciliation: PathBuf,
+    pub inventory: PathBuf,
+    pub provenance: PathBuf,
+    pub outbox: PathBuf,
+}
+
+impl VNextNetworkStoragePaths {
+    fn legacy(data_dir: &Path) -> Self {
+        Self {
+            admission_root: data_dir.to_path_buf(),
+            canonical: data_dir.join("vnext_verified.redb"),
+            reconciliation: data_dir.join("vnext_reconciliation.redb"),
+            inventory: data_dir.join("vnext_inventory.redb"),
+            provenance: data_dir.join("vnext_record_provenance.redb"),
+            outbox: data_dir.join("vnext_outbox.redb"),
+        }
+    }
+}
+
 pub(crate) fn prepare_vnext_identity(
     data_dir: &Path,
     identity: Option<Arc<dyn SessionIdentitySigner>>,
@@ -298,6 +326,14 @@ pub(crate) fn prepare_vnext_identity(
             )?)
         }
     };
+    let public_key = validate_identity_signer(signer.as_ref())?;
+    Ok(PreparedVNextIdentity { signer, public_key })
+}
+
+pub(crate) fn prepare_vnext_identity_caller_owned(
+    identity: Option<Arc<dyn SessionIdentitySigner>>,
+) -> Result<PreparedVNextIdentity, VNextNetworkRuntimeError> {
+    let signer = identity.ok_or(VNextNetworkRuntimeError::IdentityReprovisionRequired)?;
     let public_key = validate_identity_signer(signer.as_ref())?;
     Ok(PreparedVNextIdentity { signer, public_key })
 }
@@ -380,8 +416,8 @@ impl VNextNetworkRuntime {
         .await
     }
 
-    pub(crate) async fn start_prepared(
-        data_dir: &Path,
+    pub(crate) async fn start_prepared_with_paths(
+        paths: &VNextNetworkStoragePaths,
         bind_addr: SocketAddr,
         policy: VNextNetworkPolicy,
         storage_hard_watermark_bytes: u64,
@@ -391,9 +427,9 @@ impl VNextNetworkRuntime {
         policy
             .validate()
             .map_err(|error| VNextNetworkRuntimeError::Config(error.to_string()))?;
-        std::fs::create_dir_all(data_dir)?;
-        Self::start_initialized(
-            data_dir,
+        std::fs::create_dir_all(&paths.admission_root)?;
+        Self::start_initialized_with_paths(
+            paths,
             bind_addr,
             policy,
             true,
@@ -443,6 +479,31 @@ impl VNextNetworkRuntime {
         identity_public_key: [u8; 32],
         rollout: Option<VNextRuntimeRollout>,
     ) -> Result<Self, VNextNetworkRuntimeError> {
+        let paths = VNextNetworkStoragePaths::legacy(data_dir);
+        Self::start_initialized_with_paths(
+            &paths,
+            bind_addr,
+            policy,
+            continuous_outbound,
+            storage_hard_watermark_bytes,
+            identity,
+            identity_public_key,
+            rollout,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn start_initialized_with_paths(
+        paths: &VNextNetworkStoragePaths,
+        bind_addr: SocketAddr,
+        policy: VNextNetworkPolicy,
+        continuous_outbound: bool,
+        storage_hard_watermark_bytes: u64,
+        identity: Arc<dyn SessionIdentitySigner>,
+        identity_public_key: [u8; 32],
+        rollout: Option<VNextRuntimeRollout>,
+    ) -> Result<Self, VNextNetworkRuntimeError> {
         let principal = principal_node_id(&identity_public_key);
         if storage_hard_watermark_bytes == 0 {
             return Err(VNextNetworkRuntimeError::Config(
@@ -450,21 +511,20 @@ impl VNextNetworkRuntime {
             ));
         }
         let storage_admission = NetworkStorageAdmission {
-            data_dir: data_dir.to_path_buf(),
+            data_dir: paths.admission_root.clone(),
             hard_watermark_bytes: storage_hard_watermark_bytes,
         };
         let sink = SharedVNextValidatedSink::new(VNextValidatedSink::new(
-            RedbVerifiedBackend::open(&data_dir.join("vnext_verified.redb"))
+            RedbVerifiedBackend::open(&paths.canonical)
                 .map_err(VNextNetworkRuntimeError::Storage)?,
         ));
-        let journal =
-            RedbReconciliationJournalBackend::open(data_dir.join("vnext_reconciliation.redb"))
-                .map_err(VNextNetworkRuntimeError::Storage)?;
-        let inventory = RedbInventoryForestBackend::open(&data_dir.join("vnext_inventory.redb"))
+        let journal = RedbReconciliationJournalBackend::open(paths.reconciliation.clone())
+            .map_err(VNextNetworkRuntimeError::Storage)?;
+        let inventory = RedbInventoryForestBackend::open(&paths.inventory)
             .map_err(|error| VNextNetworkRuntimeError::Inventory(format!("{error:?}")))?;
-        let provenance = RedbRecordProvenance::open(data_dir.join("vnext_record_provenance.redb"))
+        let provenance = RedbRecordProvenance::open(paths.provenance.clone())
             .map_err(VNextNetworkRuntimeError::Provenance)?;
-        let outbox = OutboundOutbox::open(&data_dir.join("vnext_outbox.redb"))
+        let outbox = OutboundOutbox::open(&paths.outbox)
             .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
 
         let transport = Arc::new(
@@ -506,7 +566,7 @@ impl VNextNetworkRuntime {
             Arc::clone(&counters),
             Arc::clone(&observability),
             admission.clone(),
-            journal,
+            journal.clone(),
             sink.clone(),
             inventory.clone(),
             provenance.clone(),
@@ -544,6 +604,7 @@ impl VNextNetworkRuntime {
             counters,
             observability,
             validated_sink: sink,
+            reconciliation: journal,
             inventory,
             provenance,
             routes,
@@ -558,6 +619,23 @@ impl VNextNetworkRuntime {
 
     pub fn local_addr(&self) -> SocketAddr {
         self.listen_addr
+    }
+
+    /// Return Node-owned logical archive adapters for every durable network
+    /// store. The adapters retain cloneable database handles and expose only
+    /// validated logical rows; raw Redb files and paths never cross this port.
+    pub fn archive_backends(&self) -> Vec<Arc<dyn SnapshotVerifiedBackend>> {
+        vec![
+            Arc::new(ValidatedCanonicalArchiveBackend::new(
+                self.validated_sink.clone(),
+            )),
+            Arc::new(ReconciliationArchiveBackend::new(
+                self.reconciliation.clone(),
+            )),
+            Arc::new(InventoryArchiveBackend::new(self.inventory.clone())),
+            Arc::new(LogicalRowsArchiveBackend::new(self.outbound.outbox.clone())),
+            Arc::new(LogicalRowsArchiveBackend::new(self.provenance.clone())),
+        ]
     }
 
     pub fn status(&self) -> VNextNetworkRuntimeStatus {
@@ -2022,6 +2100,8 @@ pub enum VNextNetworkRuntimeError {
     IdentitySignerProofInvalid,
     #[error("vNext identity signer is unavailable: {0}")]
     IdentitySignerUnavailable(String),
+    #[error("vNext identity signer requires caller-owned reprovisioning")]
+    IdentityReprovisionRequired,
     #[error("vNext filesystem operation failed: {0}")]
     Io(#[from] std::io::Error),
 }

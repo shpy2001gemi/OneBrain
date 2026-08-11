@@ -31,7 +31,6 @@ vnext-network-runtime = [
     "ku-core/persist",
     "ku-net/persist",
     "ku-net/quic",
-    "dep:ed25519-dalek",
     "dep:rand",
     "dep:redb",
 ]
@@ -68,6 +67,7 @@ ku-ai = { path = "../ku-ai" }
 ku-encoder = { path = "../ku-encoder" }
 ku-mediator = { path = "../ku-mediator" }
 onebrain-protocol = { path = "../onebrain-protocol" }
+onebrain-archive = { path = "../onebrain-archive" }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-std", "io-util"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -75,9 +75,10 @@ thiserror = "1"
 blake3 = "1"
 tracing = "0.1"
 getrandom = "0.3"
+fs2 = "0.4"
 zeroize = "1"
 unicode-segmentation = "1.13"
-ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = { version = "0.8", optional = true }
 redb = { version = "2", optional = true }
 sha2 = { version = "0.10", optional = true }

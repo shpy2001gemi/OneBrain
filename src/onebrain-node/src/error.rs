@@ -55,13 +55,25 @@ pub enum NodeError {
     #[error("Identity already exists: {0}")]
     IdentityExists(String),
 
-    /// Invalid BIP39 recovery phrase.
-    #[error("Invalid recovery phrase: {0}")]
-    InvalidPhrase(String),
+    /// The historical mnemonic-shaped endpoint is deliberately disabled.
+    #[error("unsupported_legacy_recovery: use an encrypted Base recovery package")]
+    UnsupportedLegacyRecovery,
 
     /// Backup/restore error.
     #[error("Backup error: {0}")]
     Backup(String),
+
+    /// Typed Base archive/container failure.
+    #[error("Archive error: {0}")]
+    Archive(#[from] onebrain_archive::ArchiveError),
+
+    /// Opaque archive capability validation or lifecycle failure.
+    #[error("Archive capability error: {0}")]
+    ArchiveCapability(String),
+
+    /// The historical JSON backup is decode-only migration evidence.
+    #[error("unsupported_legacy_backup: use the encrypted Base archive service")]
+    UnsupportedLegacyBackup,
 
     /// Rate limit exceeded.
     #[error("Rate limit exceeded: {0}")]

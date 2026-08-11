@@ -145,6 +145,20 @@ impl VNextDerivedIndexManager {
         }
     }
 
+    pub fn rebuild_entries(
+        &self,
+        entries: Vec<AcceptedRecordEntry>,
+    ) -> Result<VNextIndexParityReport, DerivedIndexError> {
+        self.rebuild(&OwnedAcceptedRecordScan(entries))
+    }
+
+    pub fn verify_entries(
+        &self,
+        entries: Vec<AcceptedRecordEntry>,
+    ) -> Result<VNextIndexParityReport, DerivedIndexError> {
+        self.verify_parity(&OwnedAcceptedRecordScan(entries))
+    }
+
     pub fn verify_parity(
         &self,
         source: &dyn AcceptedRecordScan,
@@ -225,6 +239,14 @@ impl VNextDerivedIndexManager {
     fn read_pointer(&self) -> Result<GenerationPointer, DerivedIndexError> {
         let bytes = std::fs::read(self.root.join(POINTER_FILE))?;
         serde_json::from_slice(&bytes).map_err(|_| DerivedIndexError::Corrupt)
+    }
+}
+
+struct OwnedAcceptedRecordScan(Vec<AcceptedRecordEntry>);
+
+impl AcceptedRecordScan for OwnedAcceptedRecordScan {
+    fn accepted_records(&self) -> Result<Vec<AcceptedRecordEntry>, DerivedIndexError> {
+        Ok(self.0.clone())
     }
 }
 

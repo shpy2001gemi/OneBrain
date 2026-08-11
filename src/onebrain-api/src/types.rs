@@ -111,13 +111,6 @@ pub struct SwitchModelRequest {
     pub model_name: String,
 }
 
-/// Identity recovery request.
-#[derive(Debug, Deserialize)]
-pub struct RecoverRequest {
-    pub recovery_phrase: Vec<String>,
-    pub new_password: String,
-}
-
 // ─── Query Parameters ──────────────────────────────────────────────────────
 
 fn default_page() -> usize {

@@ -112,6 +112,22 @@ impl RetrieverProjectionService {
     pub fn snapshot_path(&self) -> &Path {
         &self.snapshot_path
     }
+
+    pub fn verify_generation(
+        owner_root: impl AsRef<Path>,
+        accepted_vnext_root: [u8; 32],
+        vault_source_root: [u8; 32],
+        source_records: Vec<VaultSourceSnapshotRecord>,
+    ) -> Result<(), RetrieverError> {
+        let source_root = retriever_source_root(accepted_vnext_root, vault_source_root);
+        let expected = KuRetriever::from_vault_records(source_records, RetrieverConfig::default())?;
+        let expected_envelope = expected.envelope(source_root);
+        let loaded = KuRetriever::load_for_source_root(
+            &owner_root.as_ref().join("retriever-index-v2.json"),
+            source_root,
+        )?;
+        verify_exact(loaded, &expected_envelope).map(|_| ())
+    }
 }
 
 fn verify_exact(

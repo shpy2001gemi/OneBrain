@@ -13,6 +13,10 @@ use ku_core::foundation::{dr_m5_failpoint, OperationalCompactionPermit};
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 use thiserror::Error;
 
+use crate::archive::{PortableArchiveRow, PortableArchiveRows};
+use crate::error::NodeError;
+use onebrain_archive::{ArchiveEntryKind, ArchiveOwner};
+
 const QUARANTINE: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_compaction_quarantine_v1");
 const PROVENANCE: TableDefinition<&[u8], &[u8]> =
@@ -492,6 +496,144 @@ impl OperationalCompactionStore {
         }
         Ok(reclaimed)
     }
+}
+
+impl PortableArchiveRows for OperationalCompactionStore {
+    fn archive_owner(&self) -> ArchiveOwner {
+        ArchiveOwner::OPERATIONAL
+    }
+
+    fn archive_entry_kind(&self) -> ArchiveEntryKind {
+        ArchiveEntryKind::OperationalRecord
+    }
+
+    fn archive_rows(&self) -> Result<Vec<PortableArchiveRow>, NodeError> {
+        let read = self.db.begin_read().map_err(operational_archive_error)?;
+        let mut rows = Vec::new();
+        for (table_id, table) in [
+            (
+                1u8,
+                read.open_table(QUARANTINE)
+                    .map_err(operational_archive_error)?,
+            ),
+            (
+                2u8,
+                read.open_table(PROVENANCE)
+                    .map_err(operational_archive_error)?,
+            ),
+            (
+                3u8,
+                read.open_table(OVERFLOW)
+                    .map_err(operational_archive_error)?,
+            ),
+        ] {
+            for row in table.iter().map_err(operational_archive_error)? {
+                let (key, value) = row.map_err(operational_archive_error)?;
+                let row = PortableArchiveRow {
+                    table: table_id,
+                    key: key.value().to_vec(),
+                    value: value.value().to_vec(),
+                };
+                validate_operational_archive_row(&row)?;
+                rows.push(row);
+            }
+        }
+        rows.sort_by(|left, right| (left.table, &left.key).cmp(&(right.table, &right.key)));
+        Ok(rows)
+    }
+
+    fn restore_row(&self, row: &PortableArchiveRow) -> Result<(), NodeError> {
+        validate_operational_archive_row(row)?;
+        let write = self.db.begin_write().map_err(operational_archive_error)?;
+        match row.table {
+            1 => restore_operational_value(&write, QUARANTINE, row)?,
+            2 => restore_operational_value(&write, PROVENANCE, row)?,
+            3 => restore_operational_value(&write, OVERFLOW, row)?,
+            _ => {
+                return Err(NodeError::ArchiveCapability(
+                    "operational archive table is unknown".into(),
+                ))
+            }
+        }
+        write.commit().map_err(operational_archive_error)
+    }
+}
+
+fn validate_operational_archive_row(row: &PortableArchiveRow) -> Result<(), NodeError> {
+    match row.table {
+        1 | 2 => {
+            let id: [u8; 32] = row
+                .key
+                .as_slice()
+                .try_into()
+                .map_err(|_| NodeError::ArchiveCapability("operational evidence ID".into()))?;
+            let kind = if row.table == 1 {
+                BoundedEvidenceKind::Quarantine
+            } else {
+                BoundedEvidenceKind::Provenance
+            };
+            if row.value.is_empty()
+                || row.value.len() > MAX_OPERATIONAL_EVIDENCE_BYTES
+                || evidence_id(kind, &row.value) != id
+            {
+                return Err(NodeError::ArchiveCapability(
+                    "operational evidence row is non-canonical".into(),
+                ));
+            }
+        }
+        3 => {
+            match row.key.as_slice() {
+                b"quarantine" | b"provenance" => {}
+                _ => {
+                    return Err(NodeError::ArchiveCapability(
+                        "operational overflow key is unknown".into(),
+                    ))
+                }
+            };
+            let evidence = decode_overflow(&row.value)
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+            if encode_overflow(evidence).as_slice() != row.value.as_slice() {
+                return Err(NodeError::ArchiveCapability(
+                    "operational overflow row is non-canonical".into(),
+                ));
+            }
+        }
+        _ => {
+            return Err(NodeError::ArchiveCapability(
+                "operational archive table is unknown".into(),
+            ))
+        }
+    }
+    Ok(())
+}
+
+fn restore_operational_value(
+    write: &redb::WriteTransaction,
+    definition: TableDefinition<&[u8], &[u8]>,
+    row: &PortableArchiveRow,
+) -> Result<(), NodeError> {
+    let mut table = write
+        .open_table(definition)
+        .map_err(operational_archive_error)?;
+    if let Some(existing) = table
+        .get(row.key.as_slice())
+        .map_err(operational_archive_error)?
+    {
+        if existing.value() == row.value.as_slice() {
+            return Ok(());
+        }
+        return Err(NodeError::ArchiveCapability(
+            "operational archive restore conflict".into(),
+        ));
+    }
+    table
+        .insert(row.key.as_slice(), row.value.as_slice())
+        .map_err(operational_archive_error)?;
+    Ok(())
+}
+
+fn operational_archive_error(error: impl std::fmt::Display) -> NodeError {
+    NodeError::Storage(error.to_string())
 }
 
 fn validate_rows(rows: &[DerivedIndexRow]) -> Result<(), OperationalCompactionError> {

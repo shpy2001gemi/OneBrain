@@ -16,7 +16,8 @@ use crate::concept_registry_runtime::{
     initialize_concept_registry, ConceptRegistryRuntimeState, ConceptRegistryStatus,
 };
 use crate::config::NodeConfig;
-use crate::dataset_path::{BaseStorageOwnerId, BootstrapDatasetPathResolver, DatasetPathResolver};
+use crate::dataset_generation::DatasetGenerationStore;
+use crate::dataset_path::{BaseStorageOwnerId, DatasetPathResolver};
 use crate::derived_index::{
     AcceptedRecordScan, DerivedIndexOpenState, RedbAcceptedRecordScan, VNextDerivedIndexManager,
 };
@@ -97,6 +98,8 @@ pub struct SharedState {
     pub retriever: Arc<RwLock<KuRetriever>>,
     pub retriever_projection: Arc<RetrieverProjectionService>,
     pub retriever_projection_state: DerivedProjectionOpenState,
+    /// Active generation path authority shared by every Base-owned store.
+    pub dataset_paths: Arc<dyn DatasetPathResolver>,
     /// Connected peers.
     pub peer_manager: PeerManager,
     /// Node configuration (for data paths, Ollama URL, etc.).
@@ -106,6 +109,9 @@ pub struct SharedState {
 /// The top-level OneBrain node.
 pub struct OneBrainNode {
     config: NodeConfig,
+    /// Holds the lifetime OS root lease and non-switched activation journal.
+    _dataset_generations: Arc<DatasetGenerationStore>,
+    dataset_paths: Arc<dyn DatasetPathResolver>,
     mediator: Mediator,
     guard: AntiGamingGuard,
     /// Concept dictionary (shared across encoder and mediator).
@@ -237,10 +243,11 @@ impl OneBrainNode {
         let storage = KuStorage::open_base_read_only(&config.storage_path())
             .map_err(|e| NodeError::Storage(format!("{}", e)))?;
 
-        let dataset_paths = Arc::new(
-            BootstrapDatasetPathResolver::new(config.data_dir.join("base-bootstrap"))
+        let dataset_generations = Arc::new(
+            DatasetGenerationStore::open_exclusive(&config.base_dataset_root())
                 .map_err(|error| NodeError::Storage(error.to_string()))?,
         );
+        let dataset_paths: Arc<dyn DatasetPathResolver> = dataset_generations.clone();
         let blob_authority = Arc::new(BlobAuthority::new(
             dataset_paths.clone(),
             Arc::new(OsPendingUploadIdSource),
@@ -251,7 +258,10 @@ impl OneBrainNode {
             .reconcile_generation()
             .map_err(|error| NodeError::Storage(error.to_string()))?;
         let blob_store = BlobStorage::open_with_config(
-            &config.blob_storage_path(),
+            &dataset_paths
+                .owner_path(BaseStorageOwnerId::BLOB)
+                .map_err(|error| NodeError::Storage(error.to_string()))?
+                .join("ku.blob.redb"),
             BlobStorageConfig {
                 total_quota_bytes: 10 * 1024 * 1024 * 1024,
                 free_space_reserve_bytes: 64 * 1024 * 1024,
@@ -271,8 +281,12 @@ impl OneBrainNode {
             )
             .map_err(|error| NodeError::Storage(error.to_string()))?,
         );
-        let canonical_scan =
-            RedbAcceptedRecordScan::new(config.data_dir.join("vnext_verified.redb"));
+        let canonical_scan = RedbAcceptedRecordScan::new(
+            dataset_paths
+                .owner_path(BaseStorageOwnerId::CANONICAL)
+                .map_err(|error| NodeError::Storage(error.to_string()))?
+                .join("vnext_verified.redb"),
+        );
         let (derived_index_state, derived_report) = derived_index.open_or_rebuild(&canonical_scan);
         let accepted_vnext_root = derived_report
             .as_ref()
@@ -329,6 +343,7 @@ impl OneBrainNode {
             retriever,
             retriever_projection,
             retriever_projection_state,
+            dataset_paths: dataset_paths.clone(),
             peer_manager: PeerManager::new(),
             config: config.clone(),
         }));
@@ -341,6 +356,8 @@ impl OneBrainNode {
 
         Ok(Self {
             config,
+            _dataset_generations: dataset_generations,
+            dataset_paths: dataset_paths.clone(),
             mediator,
             guard,
             dict,
@@ -382,8 +399,9 @@ impl OneBrainNode {
         })
     }
 
-    /// Inject a caller-owned signer before starting the network. When omitted,
-    /// the compatibility/development file signer is used.
+    /// Inject a caller-owned signer before starting the network. A generation
+    /// restore may also supply this handle through typed identity recovery;
+    /// the Base dataset path never creates a compatibility key file.
     #[cfg(feature = "vnext-network-runtime")]
     pub fn set_vnext_identity_signer(&mut self, signer: Arc<dyn SessionIdentitySigner>) {
         self.vnext_identity_signer = Some(signer);
@@ -427,13 +445,20 @@ impl OneBrainNode {
                         .into(),
                 )
             })?;
+            let identity_signer = match self.vnext_identity_signer.clone() {
+                Some(signer) => Some(signer),
+                None => self
+                    ._dataset_generations
+                    .session_identity_signer()
+                    .map_err(|error| NodeError::Storage(error.to_string()))?,
+            };
             Some(
-                VNextProductRuntime::start(
-                    &self.config.data_dir,
+                VNextProductRuntime::start_in_dataset(
+                    self.dataset_paths.as_ref(),
                     bind_addr,
                     &self.config.vnext,
                     dependencies,
-                    self.vnext_identity_signer.clone(),
+                    identity_signer,
                 )
                 .await
                 .map_err(|error| {
@@ -1094,38 +1119,11 @@ impl OneBrainNode {
         })
     }
 
-    /// Recover identity from BIP39 phrase.
-    pub fn recover_identity(
-        &mut self,
-        phrase: &[String],
-        _password: &str,
-    ) -> Result<IdentityInfo, NodeError> {
-        // Validate BIP39 phrase (24 words)
-        if phrase.len() != 24 {
-            return Err(NodeError::InvalidPhrase(format!(
-                "Expected 24 words, got {}",
-                phrase.len()
-            )));
-        }
-        // TODO: Actual BIP39 derivation + keypair generation
-        // For now, create a placeholder identity
-        let hash_input = phrase.join(" ");
-        let hash_bytes: [u8; 32] = blake3::hash(hash_input.as_bytes()).into();
-        let identity = serde_json::json!({
-            "node_id": hex_cid(&hash_bytes),
-            "created": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default().as_secs(),
-            "recovered": true
-        });
-        let identity_path = self.config.identity_path();
-        std::fs::write(
-            &identity_path,
-            serde_json::to_string_pretty(&identity)
-                .map_err(|e| NodeError::Config(format!("Serialize error: {}", e)))?,
-        )
-        .map_err(|e| NodeError::Io(e))?;
-        self.get_identity_info()
+    /// The mnemonic-shaped prototype never implemented BIP39 and is not a
+    /// recovery authority. Base recovery accepts only a verified encrypted
+    /// package through the archive/restore service.
+    pub fn recover_identity_legacy(&mut self) -> Result<IdentityInfo, NodeError> {
+        Err(NodeError::UnsupportedLegacyRecovery)
     }
 
     // ═══════════════════════════════════════════════════════
@@ -2114,7 +2112,11 @@ impl OneBrainNode {
     /// Export exact validated public vNext bytes. Legacy KU rows are not
     /// silently promoted into this namespace.
     pub fn export_canonical_exchange(&self, path: &std::path::Path) -> Result<usize, NodeError> {
-        let scan = RedbAcceptedRecordScan::new(self.config.data_dir.join("vnext_verified.redb"));
+        let canonical_root = self
+            .dataset_paths
+            .owner_path(BaseStorageOwnerId::CANONICAL)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let scan = RedbAcceptedRecordScan::new(canonical_root.join("vnext_verified.redb"));
         let entries = scan
             .accepted_records()
             .map_err(|error| NodeError::Storage(error.to_string()))?
@@ -2188,7 +2190,11 @@ impl OneBrainNode {
             .iter()
             .filter(|entry| matches!(entry, BaseExchangeEntryV1::LegacyReadOnlyEvidence { .. }))
             .count();
-        let backend = RedbVerifiedBackend::open(&self.config.data_dir.join("vnext_verified.redb"))
+        let canonical_root = self
+            .dataset_paths
+            .owner_path(BaseStorageOwnerId::CANONICAL)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let backend = RedbVerifiedBackend::open(&canonical_root.join("vnext_verified.redb"))
             .map_err(NodeError::Storage)?;
         let mut sink = SharedVNextValidatedSink::new(VNextValidatedSink::new(backend));
         let mut pending = entries
@@ -2245,205 +2251,25 @@ impl OneBrainNode {
         })
     }
 
-    /// Create a backup of all node data.
-    ///
-    /// Includes identity, profile, peers, KU wire bytes, and in-memory state
-    /// (tags, pins, follows, watches, deprecated KUs).
+    /// The historical JSON "backup" copied plaintext identity/profile state
+    /// and ignored its password. It is permanently fenced from Base writes;
+    /// Task 18 projects the opaque encrypted archive capability workflow.
     pub fn create_backup(
         &self,
-        path: &std::path::Path,
+        _path: &std::path::Path,
         _password: &str,
     ) -> Result<BackupInfo, NodeError> {
-        let mut backup = serde_json::Map::new();
-
-        // Identity
-        let identity_path = self.config.identity_path();
-        if identity_path.exists() {
-            let data = std::fs::read_to_string(&identity_path)?;
-            backup.insert("identity".to_string(), serde_json::Value::String(data));
-        }
-
-        // Profile
-        let profile_path = self.config.profile_path();
-        if profile_path.exists() {
-            let data = std::fs::read_to_string(&profile_path)?;
-            backup.insert("profile".to_string(), serde_json::Value::String(data));
-        }
-
-        // Peers
-        let peers_path = self.config.peer_memory_path();
-        if peers_path.exists() {
-            let data = std::fs::read_to_string(&peers_path)?;
-            backup.insert("peers".to_string(), serde_json::Value::String(data));
-        }
-
-        // KU data — export all KU wire bytes as hex strings
-        let ku_count = self.ku_count().unwrap_or(0);
-        backup.insert(
-            "ku_count".to_string(),
-            serde_json::Value::Number(ku_count.into()),
-        );
-
-        let mut ku_data = Vec::new();
-        if let Ok((kus, _)) = self.list_kus(1, 100_000, None, "created") {
-            for ku in &kus {
-                ku_data.push(serde_json::json!({
-                    "cid_hex": ku.cid_hex,
-                    "gene_type": ku.gene_type,
-                    "preview": ku.preview,
-                    "pomv": ku.pomv,
-                    "trust": ku.trust,
-                    "created": ku.created,
-                    "wire_size": ku.wire_size,
-                }));
-            }
-        }
-        backup.insert("kus".to_string(), serde_json::Value::Array(ku_data));
-
-        // In-memory state: tags
-        let tags_map: serde_json::Map<String, serde_json::Value> = self
-            .ku_tags
-            .iter()
-            .map(|(cid, tags)| {
-                let tag_arr: Vec<serde_json::Value> = tags
-                    .iter()
-                    .map(|t| serde_json::Value::String(t.clone()))
-                    .collect();
-                (cid.clone(), serde_json::Value::Array(tag_arr))
-            })
-            .collect();
-        backup.insert("tags".to_string(), serde_json::Value::Object(tags_map));
-
-        // In-memory state: pinned KUs
-        let pinned: Vec<serde_json::Value> = self
-            .pinned_kus
-            .iter()
-            .map(|c| serde_json::Value::String(c.clone()))
-            .collect();
-        backup.insert("pinned_kus".to_string(), serde_json::Value::Array(pinned));
-
-        // In-memory state: follows
-        backup.insert(
-            "following".to_string(),
-            serde_json::to_value(&self.following).unwrap_or(serde_json::Value::Array(vec![])),
-        );
-
-        // In-memory state: watches
-        backup.insert(
-            "watches".to_string(),
-            serde_json::to_value(&self.watches).unwrap_or(serde_json::Value::Array(vec![])),
-        );
-
-        // In-memory state: deprecated KUs
-        let deprecated: Vec<serde_json::Value> = self
-            .deprecated_kus
-            .iter()
-            .map(|c| serde_json::Value::String(c.clone()))
-            .collect();
-        backup.insert(
-            "deprecated_kus".to_string(),
-            serde_json::Value::Array(deprecated),
-        );
-
-        let json = serde_json::to_string_pretty(&backup)
-            .map_err(|e| NodeError::Backup(format!("Serialize error: {}", e)))?;
-        let size = json.len() as u64;
-        std::fs::write(path, &json)?;
-
-        Ok(BackupInfo {
-            path: path.display().to_string(),
-            size,
-            ku_count,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-        })
+        Err(NodeError::UnsupportedLegacyBackup)
     }
 
-    /// Restore from a backup file.
-    ///
-    /// Restores identity, profile, peers, and in-memory state (tags, pins,
-    /// follows, watches, deprecated KUs).
+    /// Legacy JSON is decode-only migration evidence and can never activate a
+    /// dataset. This method performs no read, password processing, or write.
     pub fn restore_backup(
         &mut self,
-        path: &std::path::Path,
+        _path: &std::path::Path,
         _password: &str,
     ) -> Result<(), NodeError> {
-        let content = std::fs::read_to_string(path)?;
-        let backup: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&content)
-            .map_err(|e| NodeError::Backup(format!("Invalid backup file: {}", e)))?;
-
-        // Restore identity
-        if let Some(serde_json::Value::String(identity)) = backup.get("identity") {
-            std::fs::write(self.config.identity_path(), identity)?;
-        }
-
-        // Restore profile
-        if let Some(serde_json::Value::String(profile)) = backup.get("profile") {
-            std::fs::write(self.config.profile_path(), profile)?;
-        }
-
-        // Restore peers
-        if let Some(serde_json::Value::String(peers)) = backup.get("peers") {
-            std::fs::write(self.config.peer_memory_path(), peers)?;
-        }
-
-        // Restore tags
-        if let Some(serde_json::Value::Object(tags_map)) = backup.get("tags") {
-            self.ku_tags.clear();
-            for (cid, tags_val) in tags_map {
-                if let serde_json::Value::Array(tags_arr) = tags_val {
-                    let mut tag_set = HashSet::new();
-                    for t in tags_arr {
-                        if let serde_json::Value::String(tag) = t {
-                            tag_set.insert(tag.clone());
-                        }
-                    }
-                    if !tag_set.is_empty() {
-                        self.ku_tags.insert(cid.clone(), tag_set);
-                    }
-                }
-            }
-        }
-
-        // Restore pinned KUs
-        if let Some(serde_json::Value::Array(pinned)) = backup.get("pinned_kus") {
-            self.pinned_kus.clear();
-            for p in pinned {
-                if let serde_json::Value::String(cid) = p {
-                    self.pinned_kus.insert(cid.clone());
-                }
-            }
-        }
-
-        // Restore follows
-        if let Some(following_val) = backup.get("following") {
-            if let Ok(following) =
-                serde_json::from_value::<Vec<FollowedNode>>(following_val.clone())
-            {
-                self.following = following;
-            }
-        }
-
-        // Restore watches
-        if let Some(watches_val) = backup.get("watches") {
-            if let Ok(watches) = serde_json::from_value::<Vec<WatchInfo>>(watches_val.clone()) {
-                self.watches = watches;
-            }
-        }
-
-        // Restore deprecated KUs
-        if let Some(serde_json::Value::Array(deprecated)) = backup.get("deprecated_kus") {
-            self.deprecated_kus.clear();
-            for d in deprecated {
-                if let serde_json::Value::String(cid) = d {
-                    self.deprecated_kus.insert(cid.clone());
-                }
-            }
-        }
-
-        Ok(())
+        Err(NodeError::UnsupportedLegacyBackup)
     }
 
     // ═══════════════════════════════════════════════════════

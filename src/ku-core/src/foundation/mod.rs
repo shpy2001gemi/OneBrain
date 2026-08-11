@@ -184,9 +184,11 @@ pub use migration::{
     AtomicMigrationBackend, BackendMigrationOutcome, DualReadRecord, InMemoryMigrationBackend,
     LegacyDataClass, LegacyIdentityPrefix, LegacyRowKey, LegacyRowNormalizer, LegacySourceRow,
     MigrationBatchJournal, MigrationBatchOutcome, MigrationDisposition, MigrationError,
-    MigrationJournalEntry, MigrationQuarantineRecord, MigrationRejection, MigrationStore,
-    NormalizedLegacyRow, ReadOnlyLegacyRow, StoredVNextMigration, MAX_LEGACY_PRIMARY_KEY_BYTES,
-    MAX_LEGACY_ROW_BYTES, MAX_MIGRATION_REASON_BYTES, MIGRATION_PROFILE_MAJOR,
+    MigrationJournalEntry, MigrationQuarantineRecord, MigrationRejection,
+    MigrationStateSnapshotPort, MigrationStore, NormalizedLegacyRow, PortableMigrationSnapshot,
+    ReadOnlyLegacyRow, StoredVNextMigration, ValidatedMigrationRestorePort,
+    MAX_LEGACY_PRIMARY_KEY_BYTES, MAX_LEGACY_ROW_BYTES, MAX_MIGRATION_REASON_BYTES,
+    MIGRATION_PROFILE_MAJOR,
 };
 pub use object::{
     decode_knowledge_object, DisclosureClass, KnowledgeObjectEnvelope, KnownObjectKind,
@@ -251,8 +253,9 @@ pub use source_text::{
 #[cfg(feature = "persist")]
 pub use storage::RedbVerifiedBackend;
 pub use storage::{
-    AcceptedRecordEntry, AtomicVerifiedBackend, InMemoryVerifiedBackend, PutVerifiedOutcome,
-    QuarantineRecord, StoredRecordKind, ValidatedStore, VerifiedStoreError,
+    AcceptedRecordEntry, AtomicVerifiedBackend, InMemoryVerifiedBackend, PortableVerifiedSnapshot,
+    PutVerifiedOutcome, QuarantineRecord, StoredRecordKind, ValidatedStore,
+    ValidatedStoreRestorePort, VerifiedStoreError, VerifiedStoreSnapshotPort,
 };
 pub use use_evidence::{
     AssessedExerciseEvidence, DerivationEvidencePayload, DerivationInput, ExerciseAuthority,
@@ -262,6 +265,7 @@ pub use use_evidence::{
     USE_EVIDENCE_KIND,
 };
 pub use vault::{
-    PrivateVault, VaultKey, VaultQuarantineRecord, VaultSourceSnapshotPort,
+    PortableVaultRecord, PortableVaultSnapshot, PortableVaultSnapshotPort, PrivateVault,
+    ValidatedVaultRestorePort, VaultKey, VaultQuarantineRecord, VaultSourceSnapshotPort,
     VaultSourceSnapshotRecord, VaultStagingId,
 };

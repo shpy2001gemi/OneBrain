@@ -9,6 +9,7 @@ use ku_core::foundation::{
     ReservedDomain, ResourceProfile, SchemaVersion,
 };
 use ku_kql::blob_storage::{BlobStorage, BlobStorageConfig, BlobStorageError};
+use onebrain_node::archive::{OwnedBlobArchiveBackend, SnapshotVerifiedBackend};
 use onebrain_node::{
     BaseStorageOwnerId, BlobAuthority, BlobAuthorityError, DatasetGenerationId,
     DatasetPathResolver, PendingBlobUploadId, PendingUploadIdSource,
@@ -89,6 +90,74 @@ fn pending_upload_prevents_gc_until_abort_then_becomes_collectable() {
     assert_eq!(storage.garbage_collect().unwrap().0, 0);
     assert!(authority.abort(pending.id).unwrap());
     assert_eq!(storage.garbage_collect().unwrap().0, 1);
+}
+
+#[test]
+fn archive_requires_every_canonical_owned_blob_and_restores_by_logical_cid() {
+    let temp = tempfile::tempdir().unwrap();
+    let records = Arc::new(Records::default());
+    let source_authority = authority(
+        temp.path().join("source-authority"),
+        records.clone(),
+        vec![],
+    );
+    let data = b"archive-owned-blob";
+    let cid = BlobCid::from_content(BlobType::Document, data);
+    let reference = OwnedBlobReferenceV1::new(
+        ObjectReference::new(0, [0x27; 32]),
+        cid,
+        OwnedBlobRole::Attachment,
+        BlobRetentionState::Live,
+        None,
+    )
+    .unwrap();
+    records
+        .objects
+        .lock()
+        .unwrap()
+        .push(reference_object(&reference));
+    let source_storage = Arc::new(
+        BlobStorage::open_with_config(
+            &temp.path().join("source.redb"),
+            config(),
+            source_authority.oracle(),
+        )
+        .unwrap(),
+    );
+    let source =
+        OwnedBlobArchiveBackend::new(source_storage.clone(), source_authority.canonical_oracle());
+
+    assert!(
+        source.bounded_snapshot().is_err(),
+        "missing blob must block"
+    );
+    source_storage
+        .store_bytes("owned", data, BlobType::Document)
+        .unwrap();
+    let rows = source.bounded_snapshot().unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].key, cid.0);
+
+    let target_records = Arc::new(Records::default());
+    target_records
+        .objects
+        .lock()
+        .unwrap()
+        .push(reference_object(&reference));
+    let target_authority = authority(temp.path().join("target-authority"), target_records, vec![]);
+    let target_storage = Arc::new(
+        BlobStorage::open_with_config(
+            &temp.path().join("target.redb"),
+            config(),
+            target_authority.oracle(),
+        )
+        .unwrap(),
+    );
+    let target =
+        OwnedBlobArchiveBackend::new(target_storage.clone(), target_authority.canonical_oracle());
+    target.restore_validated(&rows[0]).unwrap();
+    target.reconcile_after_restore().unwrap();
+    assert_eq!(target_storage.read_full_blob(&cid).unwrap(), data);
 }
 
 #[test]

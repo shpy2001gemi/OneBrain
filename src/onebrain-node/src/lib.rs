@@ -4,22 +4,29 @@
 //! configuration, peer management, seed client, and verification.
 //! All interface projects (CLI, Web, Desktop, Mobile) depend on this.
 
+mod activation_journal;
 pub mod anti_gaming_guard;
+pub mod archive;
+pub mod archive_capabilities;
 pub mod blob_authority;
 pub mod canonical_exchange;
 pub mod concept_registry_runtime;
 pub mod config;
+pub mod dataset_generation;
 pub mod dataset_path;
+mod dataset_root_lease;
 pub mod derived_index;
 pub mod derived_projection;
 pub mod display;
 pub mod error;
+pub mod identity_recovery;
 pub mod mdns_discovery;
 pub mod network;
 pub mod node;
 pub mod peer_manager;
 pub mod peer_memory;
 pub mod seed_client;
+pub mod signer_ports;
 pub mod source_capture_transaction;
 pub mod text;
 pub mod types;
@@ -71,6 +78,13 @@ pub mod vnext_status;
 pub mod vnext_validated_sink;
 pub mod vnext_workflow_surface;
 
+pub use activation_journal::{ActivationPhase, DatasetGenerationReceipt};
+pub use archive::DatasetRestoreReceipt;
+pub use archive_capabilities::{
+    ArchiveCapabilityId, ArchiveCapabilityRegistry, ArchiveOperationReservationId,
+    ArchiveProcessGeneration, ArchiveSecretHandle, BoundedArchiveChunk, ReadableArchiveSinkHandle,
+    SealedArchiveSourceHandle, WritableArchiveSinkHandle, WritableArchiveSourceHandle,
+};
 pub use blob_authority::{
     BlobAuthority, BlobAuthorityError, CanonicalBlobReferenceOracle, OsPendingUploadIdSource,
     PendingBlobUploadId, PendingBlobUploadStore, PendingOwnedBlobUpload, PendingUploadIdSource,
@@ -86,8 +100,13 @@ pub use concept_registry_runtime::{
     ConceptRegistryStatus,
 };
 pub use config::{ConceptRegistryMode, NodeConfig};
+pub use dataset_generation::{
+    ActivationReadyGeneration, DatasetGenerationStore, RestoreError, RestoreOperationBinding,
+    StagedDatasetGeneration,
+};
 pub use dataset_path::{
-    BaseStorageOwnerId, BootstrapDatasetPathResolver, DatasetGenerationId, DatasetPathResolver,
+    ActiveDatasetPathResolver, BaseStorageOwnerId, BootstrapDatasetPathResolver,
+    DatasetGenerationId, DatasetPathResolver,
 };
 pub use derived_index::{
     AcceptedRecordScan, DerivedIndexError, DerivedIndexOpenState, DerivedIndexReaderLease,
@@ -96,10 +115,22 @@ pub use derived_index::{
 };
 pub use derived_projection::{DerivedProjectionOpenState, RetrieverProjectionService};
 pub use error::NodeError;
+pub use identity_recovery::{
+    evaluate_signer_recovery, recover_staged_identity, BoundedIdentityDomains,
+    BoundedReprovisionRequirements, IdentityRecoveryError, IdentityRecoveryReceipt,
+    SignerRecoveryPolicy, SignerReprovisionRequirement,
+};
 #[cfg(feature = "vnext-network-runtime")]
 pub use ku_net::vnext_session::SessionIdentitySigner;
 pub use network::{NetMessage, NodeEvent, PeerInfo};
 pub use node::{EncodeStoreResult, OneBrainNode};
+pub use signer_ports::{
+    ActorRootIdentity, ActorRootPublicKey, ActorRootSigner, ActorRootStatementV1,
+    ExpectedSignerIdentity, FeedAuthorIdentity, FeedPublicKey, IdentityDomain,
+    NodeTransportIdentity, SessionPublicKey, SignerCapability, SignerCapabilitySet, SignerError,
+    SignerPossessionChallengeV1, SignerPossessionProof, SignerProvider, SignerProviderId,
+    SignerProviderRegistry,
+};
 pub use source_capture_transaction::{
     EncryptedSourceCaptureIntentV1, SourceCaptureError, SourceCaptureRecoveryState,
     SourceCaptureTransactionStore, MAX_SOURCE_CAPTURE_INTENTS, SOURCE_CAPTURE_BOUNDARY,

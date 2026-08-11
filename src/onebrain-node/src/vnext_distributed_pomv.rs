@@ -17,9 +17,10 @@ use ku_core::foundation::{
     ExerciseEvidence, FeedAuthorityDecision, FeedEventSigner, FeedId, KnowledgeEventEnvelope,
     KnownObjectKind, MetabolicEvidenceFrontier, MetabolicEvidenceReducer, MetabolicEvidenceView,
     NamespaceCommitment, NodeId, ObjectCid, ObjectReference, ObjectSemantics,
-    ProvenFeedEventSigner, ResourceProfile, SelectorCid, UseEvidencePayload,
+    ProvenFeedEventSigner, ReservedDomain, ResourceProfile, SelectorCid, UseEvidencePayload,
     ValidatedKnowledgeEvent, ValidatedUseEvidenceEvent, USE_EVIDENCE_EVENT_TYPE, USE_EVIDENCE_KIND,
 };
+use onebrain_archive::{ArchiveEntryKind, ArchiveOwner};
 use onebrain_protocol::ReconcileManifestKind;
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -27,6 +28,8 @@ use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::archive::{PortableArchiveRow, PortableArchiveRows};
+use crate::error::NodeError;
 use crate::vnext_network_runtime::{VNextNetworkRuntime, VNextNetworkRuntimeError};
 use crate::vnext_outbox::{OutboundTransferIntent, OutboxEnqueueOutcome};
 use crate::vnext_record_provenance::MAX_TYPED_DELTA_PAGE_RECORDS;
@@ -1827,6 +1830,331 @@ impl DistributedPomvRuntime {
             claims_network_completion: false,
         })
     }
+}
+
+/// Composite owner for both halves of private PoMV state. Keeping one adapter
+/// for the closed owner ID prevents ambiguous restore routing between sender
+/// consent/publication rows and receiver view/index rows.
+pub struct PomvArchiveStores {
+    publisher: Arc<PublicUseEvidencePublisher>,
+    runtime: Arc<DistributedPomvRuntime>,
+}
+
+impl PomvArchiveStores {
+    pub const fn new(
+        publisher: Arc<PublicUseEvidencePublisher>,
+        runtime: Arc<DistributedPomvRuntime>,
+    ) -> Self {
+        Self { publisher, runtime }
+    }
+}
+
+impl PortableArchiveRows for PomvArchiveStores {
+    fn archive_owner(&self) -> ArchiveOwner {
+        ArchiveOwner::PRIVATE_POMV
+    }
+
+    fn archive_entry_kind(&self) -> ArchiveEntryKind {
+        ArchiveEntryKind::ReceivedUseRecord
+    }
+
+    fn archive_rows(&self) -> Result<Vec<PortableArchiveRow>, NodeError> {
+        let mut rows = Vec::new();
+        snapshot_pomv_table(&self.publisher.database, PUBLICATIONS, 1, &mut rows)?;
+        snapshot_pomv_table(&self.publisher.database, FEED_HEADS, 2, &mut rows)?;
+        snapshot_pomv_table(&self.publisher.database, PREPARED_PUBLIC_USE, 3, &mut rows)?;
+        snapshot_pomv_table(
+            &self.publisher.database,
+            PREPARED_BY_OPERATION,
+            4,
+            &mut rows,
+        )?;
+        snapshot_pomv_table(
+            &self.runtime.identities.database,
+            USE_IDENTITIES,
+            5,
+            &mut rows,
+        )?;
+        snapshot_pomv_table(&self.runtime.identities.database, VIEW_HEADS, 6, &mut rows)?;
+        snapshot_pomv_table(
+            &self.runtime.identities.database,
+            TYPED_INPUTS,
+            7,
+            &mut rows,
+        )?;
+        snapshot_pomv_table(
+            &self.runtime.identities.database,
+            INPUT_CURSORS,
+            8,
+            &mut rows,
+        )?;
+        rows.sort_by(|left, right| (left.table, &left.key).cmp(&(right.table, &right.key)));
+        Ok(rows)
+    }
+
+    fn restore_row(&self, row: &PortableArchiveRow) -> Result<(), NodeError> {
+        validate_pomv_archive_row(row.table, &row.key, &row.value)?;
+        match row.table {
+            1 => restore_pomv_table(
+                &self.publisher.database,
+                PUBLICATIONS,
+                &row.key,
+                &row.value,
+                Some(MAX_PUBLICATIONS),
+            ),
+            2 => restore_pomv_table(
+                &self.publisher.database,
+                FEED_HEADS,
+                &row.key,
+                &row.value,
+                None,
+            ),
+            3 => restore_pomv_table(
+                &self.publisher.database,
+                PREPARED_PUBLIC_USE,
+                &row.key,
+                &row.value,
+                Some(MAX_PREPARED_PUBLIC_USE_INTENTS),
+            ),
+            4 => restore_pomv_table(
+                &self.publisher.database,
+                PREPARED_BY_OPERATION,
+                &row.key,
+                &row.value,
+                Some(MAX_PREPARED_PUBLIC_USE_INTENTS),
+            ),
+            5 => restore_pomv_table(
+                &self.runtime.identities.database,
+                USE_IDENTITIES,
+                &row.key,
+                &row.value,
+                None,
+            ),
+            6 => restore_pomv_table(
+                &self.runtime.identities.database,
+                VIEW_HEADS,
+                &row.key,
+                &row.value,
+                None,
+            ),
+            7 => restore_pomv_table(
+                &self.runtime.identities.database,
+                TYPED_INPUTS,
+                &row.key,
+                &row.value,
+                None,
+            ),
+            8 => restore_pomv_table(
+                &self.runtime.identities.database,
+                INPUT_CURSORS,
+                &row.key,
+                &row.value,
+                None,
+            ),
+            _ => Err(NodeError::ArchiveCapability(
+                "private PoMV archive table is unknown".into(),
+            )),
+        }
+    }
+
+    fn reconcile_restored_rows(&self) -> Result<(), NodeError> {
+        // Consent intents remain pending and publication rows retain their
+        // exported flag. They are reconciled by the normal explicit confirm /
+        // bounded flush paths, never replayed merely because restore opened.
+        let read = self
+            .publisher
+            .database
+            .begin_read()
+            .map_err(pomv_archive_error)?;
+        let operations = read
+            .open_table(PREPARED_BY_OPERATION)
+            .map_err(pomv_archive_error)?;
+        let intents = read
+            .open_table(PREPARED_PUBLIC_USE)
+            .map_err(pomv_archive_error)?;
+        for entry in operations.iter().map_err(pomv_archive_error)? {
+            let (operation, intent_id) = entry.map_err(pomv_archive_error)?;
+            let intent = intents
+                .get(intent_id.value())
+                .map_err(pomv_archive_error)?
+                .map(|value| value.value().to_vec())
+                .ok_or_else(|| {
+                    NodeError::ArchiveCapability(
+                        "PoMV operation references a missing prepared intent".into(),
+                    )
+                })?;
+            let stored = decode_stored_prepared_public_use(&intent)
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+            if publication_key(
+                FeedId::from_bytes(stored.author_feed),
+                stored.idempotency_key,
+            )
+            .as_slice()
+                != operation.value()
+            {
+                return Err(NodeError::ArchiveCapability(
+                    "PoMV prepared-operation binding is inconsistent".into(),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+fn snapshot_pomv_table(
+    database: &Database,
+    definition: TableDefinition<&[u8], &[u8]>,
+    table_id: u8,
+    rows: &mut Vec<PortableArchiveRow>,
+) -> Result<(), NodeError> {
+    let read = database.begin_read().map_err(pomv_archive_error)?;
+    let table = read.open_table(definition).map_err(pomv_archive_error)?;
+    for entry in table.iter().map_err(pomv_archive_error)? {
+        let (key, value) = entry.map_err(pomv_archive_error)?;
+        validate_pomv_archive_row(table_id, key.value(), value.value())?;
+        rows.push(PortableArchiveRow {
+            table: table_id,
+            key: key.value().to_vec(),
+            value: value.value().to_vec(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_pomv_archive_row(table: u8, key: &[u8], value: &[u8]) -> Result<(), NodeError> {
+    let valid = match table {
+        1 if key.len() == PUBLICATION_KEY_BYTES => {
+            let stored = decode_stored_publication(value)
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+            encode_stored_publication(&stored)
+                .map_err(|error| NodeError::Storage(error.to_string()))?
+                == value
+                && publication_key(
+                    FeedId::from_bytes(stored.author_feed),
+                    stored.idempotency_key,
+                )
+                .as_slice()
+                    == key
+        }
+        2 if key.len() == 32 => {
+            let head: StoredFeedHead = serde_json::from_slice(value)
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+            head.next_sequence > 0
+                && head.last_event_cid.is_some()
+                && serde_json::to_vec(&head)
+                    .map_err(|error| NodeError::Storage(error.to_string()))?
+                    == value
+        }
+        3 if key.len() == 32 => {
+            let stored = decode_stored_prepared_public_use(value)
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+            stored.intent_cid.as_slice() == key
+                && encode_stored_prepared_public_use(&stored)
+                    .map_err(|error| NodeError::Storage(error.to_string()))?
+                    == value
+        }
+        4 => key.len() == PUBLICATION_KEY_BYTES && value.len() == 32,
+        5 if key.len() == USE_IDENTITY_BYTES => {
+            let (overflowed, cids) = decode_identity_value(value)
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+            encode_identity_value(overflowed, &cids) == value
+        }
+        6 if key.len() == VIEW_LINEAGE_KEY_BYTES => {
+            let head =
+                decode_view_head(value).map_err(|error| NodeError::Storage(error.to_string()))?;
+            encode_view_head(head).as_slice() == value
+        }
+        7 if key.len() == INPUT_KEY_BYTES && !value.is_empty() => {
+            validate_pomv_typed_input(key, value)?
+        }
+        8 => key.len() == INPUT_PREFIX_BYTES && value.len() == 8,
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(NodeError::ArchiveCapability(
+            "private PoMV archive row is non-canonical".into(),
+        ))
+    }
+}
+
+fn validate_pomv_typed_input(key: &[u8], value: &[u8]) -> Result<bool, NodeError> {
+    let kind = u64::from_be_bytes(
+        key[32..40]
+            .try_into()
+            .map_err(|_| NodeError::ArchiveCapability("PoMV input kind".into()))?,
+    );
+    let type_id = u64::from_be_bytes(
+        key[40..48]
+            .try_into()
+            .map_err(|_| NodeError::ArchiveCapability("PoMV input type".into()))?,
+    );
+    let mut expected_cid = [0u8; 32];
+    expected_cid.copy_from_slice(&key[INPUT_PREFIX_BYTES..]);
+    match kind {
+        value_kind
+            if value_kind == ReconcileManifestKind::Object as u64
+                && type_id == USE_EVIDENCE_KIND.0 =>
+        {
+            let object = decode_knowledge_object(
+                value,
+                ResourceProfile::ObjectV1,
+                &[KnownObjectKind::new(USE_EVIDENCE_KIND, 1)],
+                &[],
+            )
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+            Ok(object.cid().as_bytes() == &expected_cid)
+        }
+        value_kind
+            if value_kind == ReconcileManifestKind::Event as u64
+                && type_id == USE_EVIDENCE_EVENT_TYPE.0 =>
+        {
+            event_author_feed(value).map_err(|error| NodeError::Storage(error.to_string()))?;
+            let cid = EventCid::compute(ReservedDomain::Event, value)
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+            Ok(cid.as_bytes() == &expected_cid)
+        }
+        _ => Ok(false),
+    }
+}
+
+fn restore_pomv_table(
+    database: &Database,
+    definition: TableDefinition<&[u8], &[u8]>,
+    key: &[u8],
+    value: &[u8],
+    maximum_rows: Option<u64>,
+) -> Result<(), NodeError> {
+    let write = database.begin_write().map_err(pomv_archive_error)?;
+    {
+        let mut table = write.open_table(definition).map_err(pomv_archive_error)?;
+        let existing = table
+            .get(key)
+            .map_err(pomv_archive_error)?
+            .map(|existing| existing.value().to_vec());
+        if let Some(existing) = existing {
+            if existing.as_slice() != value {
+                return Err(NodeError::ArchiveCapability(
+                    "private PoMV archive restore conflict".into(),
+                ));
+            }
+        } else {
+            if let Some(maximum) = maximum_rows {
+                if table.len().map_err(pomv_archive_error)? >= maximum {
+                    return Err(NodeError::ArchiveCapability(
+                        "private PoMV archive row limit reached".into(),
+                    ));
+                }
+            }
+            table.insert(key, value).map_err(pomv_archive_error)?;
+        }
+    }
+    write.commit().map_err(pomv_archive_error)
+}
+
+fn pomv_archive_error(error: impl std::fmt::Display) -> NodeError {
+    NodeError::Storage(error.to_string())
 }
 
 fn local_authority_frontier_digest(
