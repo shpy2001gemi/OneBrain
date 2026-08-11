@@ -147,7 +147,7 @@ pub use identity_recovery::{
 #[cfg(feature = "vnext-network-runtime")]
 pub use ku_net::vnext_session::SessionIdentitySigner;
 pub use network::{NetMessage, NodeEvent, PeerInfo};
-pub use node::{EncodeStoreResult, OneBrainNode};
+pub use node::{BaseIntegrationReceipt, EncodeStoreResult, OneBrainNode};
 pub use signer_ports::{
     ActorRootIdentity, ActorRootPublicKey, ActorRootSigner, ActorRootStatementV1,
     ExpectedSignerIdentity, FeedAuthorIdentity, FeedPublicKey, IdentityDomain,

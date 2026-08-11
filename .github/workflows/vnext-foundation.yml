@@ -119,6 +119,14 @@ jobs:
           dart analyze
           dart test
           Pop-Location
+      - name: Run the Base v1 integrated root and tuple gate
+        shell: pwsh
+        run: |
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-node --test base_gate_integration
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-base-contract --test cross_consumer_tuple
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-api --test base_contract
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-cli --test version
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-node -p onebrain-api -p onebrain-cli --features onebrain-node/vnext-network-runtime,onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime
       - name: Run Base-default and optional-feature packaging matrix
         shell: pwsh
         run: |

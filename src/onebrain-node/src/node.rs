@@ -88,6 +88,22 @@ pub struct EncodeStoreResult {
     pub peers_reached: usize,
 }
 
+/// Candidate-integration evidence assembled from the live Node boundary.
+///
+/// This is deliberately not a qualification receipt: Task 28 is the only
+/// authority that may attach production qualification to the Base candidate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BaseIntegrationReceipt {
+    pub candidate_semantic_digest: [u8; 32],
+    pub artifact_tuple_digest: [u8; 32],
+    pub canonical_root_before_restart: [u8; 32],
+    pub canonical_root_after_restart: [u8; 32],
+    pub archive_restore_root: [u8; 32],
+    pub registry_release_root: [u8; 32],
+    pub default_active_network_lanes: u16,
+    pub legacy_write_enabled: bool,
+}
+
 /// Shared state accessible from both the REPL and background tasks.
 pub struct SharedState {
     /// Persistent KU storage.
@@ -932,6 +948,61 @@ impl OneBrainNode {
     /// Return the effective Concept Registry startup policy and load result.
     pub fn concept_registry_status(&self) -> &ConceptRegistryStatus {
         &self.registry_status
+    }
+
+    /// Close the Task 25 integration receipt from independently measured
+    /// archive/restart roots and live Node-owned tuple, Registry, rollout, and
+    /// legacy-fence state. Root disagreement is rejected instead of being
+    /// recorded as apparently successful evidence.
+    pub fn base_integration_receipt(
+        &self,
+        canonical_root_before_restart: [u8; 32],
+        canonical_root_after_restart: [u8; 32],
+        archive_restore_root: [u8; 32],
+    ) -> Result<BaseIntegrationReceipt, NodeError> {
+        if canonical_root_before_restart != canonical_root_after_restart
+            || canonical_root_before_restart != archive_restore_root
+        {
+            return Err(NodeError::Storage(
+                "Base integration canonical/archive roots disagree".into(),
+            ));
+        }
+        let status = self
+            .base_services()
+            .ok_or_else(|| NodeError::Config("Base runtime is not installed".into()))?
+            .snapshot()
+            .map_err(|error| NodeError::Config(error.to_string()))?;
+        let registry_release_root = self
+            .registry_status
+            .release_aggregate_root
+            .as_deref()
+            .ok_or_else(|| {
+                NodeError::Config("signed Concept Registry release is not active".into())
+            })
+            .and_then(decode_integration_root)?;
+        let features = self.vnext_status().features;
+        let default_active_network_lanes = [
+            features.obp_rp,
+            features.distributed_kql_one_hop,
+            features.public_use_evidence_publish,
+            features.distributed_pomv_view,
+        ]
+        .into_iter()
+        .filter(|active| *active)
+        .count() as u16;
+
+        Ok(BaseIntegrationReceipt {
+            candidate_semantic_digest: status.version.candidate_semantic_digest.0,
+            artifact_tuple_digest: status.version.artifact_tuple_digest.0,
+            canonical_root_before_restart,
+            canonical_root_after_restart,
+            archive_restore_root,
+            registry_release_root,
+            default_active_network_lanes,
+            // KuStorage is opened through the read-only compatibility port;
+            // no feature combination restores legacy write authority.
+            legacy_write_enabled: false,
+        })
     }
 
     /// Build a scope-aware, display-only vNext status projection.
@@ -3912,6 +3983,21 @@ fn reconcile_kind(kind: StoredRecordKind) -> ReconcileManifestKind {
 /// Format a 32-byte CID as a hex string.
 pub fn hex_cid(cid: &[u8; 32]) -> String {
     cid.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+fn decode_integration_root(value: &str) -> Result<[u8; 32], NodeError> {
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(NodeError::Config(
+            "Concept Registry release root is not 32-byte hex".into(),
+        ));
+    }
+    let mut decoded = [0_u8; 32];
+    for (index, output) in decoded.iter_mut().enumerate() {
+        *output = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16).map_err(|_| {
+            NodeError::Config("Concept Registry release root is not valid hex".into())
+        })?;
+    }
+    Ok(decoded)
 }
 
 /// Parse a hex CID string (prefix match) to 32-byte array.

@@ -7424,6 +7424,11 @@ def validate_base_v1_packaging() -> int:
     )
     for marker in (
         "base-v1-projections",
+        "Run the Base v1 integrated root and tuple gate",
+        "-p onebrain-node --test base_gate_integration",
+        "-p onebrain-base-contract --test cross_consumer_tuple",
+        "-p onebrain-api --test base_contract",
+        "-p onebrain-cli --test version",
         "--no-default-features --features base-v1",
         "--no-default-features --features base-v1,legacy-read-compat",
         "onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime",
@@ -7436,6 +7441,34 @@ def validate_base_v1_packaging() -> int:
             raise ContractError(f"Base packaging workflow is missing marker: {marker}")
     if "--skip-tool-verification" in workflow:
         raise ContractError("Base ABI CI may not bypass the pinned executable hash")
+    integration_test = read(
+        ROOT / "src/onebrain-node/tests/base_gate_integration.rs"
+    )
+    for marker in (
+        "BaseIntegrationReceipt",
+        "canonical_root_before_restart",
+        "canonical_root_after_restart",
+        "archive_restore_root",
+        "registry_release_root",
+        "default_active_network_lanes",
+        "legacy_write_enabled",
+    ):
+        if marker not in integration_test:
+            raise ContractError(f"Base integration fixture is missing marker: {marker}")
+    cross_consumer = read(
+        ROOT / "src/onebrain-base-contract/tests/cross_consumer_tuple.rs"
+    )
+    for marker in (
+        "candidate_semantic_digest",
+        "artifact_tuple_digest",
+        "generated TypeScript",
+        "generated Dart",
+        "Axum API",
+        "CLI verbose version",
+        "C ABI",
+    ):
+        if marker not in cross_consumer:
+            raise ContractError(f"Base cross-consumer gate is missing marker: {marker}")
     return len(packages) + 1
 
 
