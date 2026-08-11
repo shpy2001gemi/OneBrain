@@ -729,7 +729,7 @@
     },
     {
       "path": "docs/specs/vnext/P5_CANARY_PREFLIGHT_PROFILE_V1.md",
-      "expected_statement_lines": 8,
+      "expected_statement_lines": 9,
       "evidence": [
         {
           "path": "src/onebrain-node/src/vnext_canary_operations.rs",
@@ -748,7 +748,7 @@
     },
     {
       "path": "docs/specs/vnext/P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md",
-      "expected_statement_lines": 18,
+      "expected_statement_lines": 19,
       "evidence": [
         {
           "path": "src/onebrain-node/src/vnext_p5_operations.rs",
@@ -768,6 +768,44 @@
         }
       ],
       "rationale": "The single-host operational preflight exercises actual signer, storage, authenticated-QUIC, durable backup/restore, rollback and dashboard boundaries while its frozen scope forbids 72-hour, multi-host or production qualification claims."
+    },
+    {
+      "path": "docs/specs/vnext/P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1.md",
+      "expected_statement_lines": 30,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/p5-multi-host-production-qualification-v1.json",
+          "needle": "onebrain/p5-multi-host-production-qualification/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_vnext_p5_multi_host"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_p5_multi_host.py",
+          "needle": "test_one_physical_host_cannot_claim_multi_host"
+        }
+      ],
+      "rationale": "The production contract freezes a three-physical-host authenticated-QUIC topology, exact signed-candidate and role-separated evidence bindings, the complete fault/recovery matrix, bounded resources and fail-closed derivation while preserving both single-host profiles as non-qualifying preflights."
+    },
+    {
+      "path": "docs/specs/vnext/BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE.md",
+      "expected_statement_lines": 23,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/base-v1-exact-candidate-soak-v1.json",
+          "needle": "onebrain/base-v1-exact-candidate-soak/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_base_v1_exact_candidate_soak"
+        },
+        {
+          "path": "scripts/ci/test_validate_base_v1_soak_profile.py",
+          "needle": "test_three_local_process_p5_dry_run_cannot_claim_multi_host"
+        }
+      ],
+      "rationale": "The exact-candidate profile makes Task 27 the only eligible SHA, requires a fresh Task 28 72-hour run, binds role-separated signed interval evidence to the release request plus Registry/P5/artifact identity, preserves raw receipts and forbids old or synthetic carry-forward evidence from qualifying Base v1."
     },
     {
       "path": "docs/specs/vnext/CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1.md",
