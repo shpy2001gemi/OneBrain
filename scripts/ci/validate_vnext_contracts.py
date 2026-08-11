@@ -116,6 +116,7 @@ CONCEPT_REGISTRY_PRODUCTION_WORKFLOW = (
 BASE_V1_P5_PRODUCTION_WORKFLOW = (
     ROOT / ".github/workflows/vnext-p5-production-canary.yml"
 )
+BASE_V1_CANDIDATE_WORKFLOW = ROOT / ".github/workflows/base-v1-candidate.yml"
 CONCEPT_REGISTRY_RUNNER_SCRIPT = (
     ROOT / "scripts/runner/onebrain-registry-runner.sh"
 )
@@ -7472,6 +7473,157 @@ def validate_base_v1_packaging() -> int:
     return len(packages) + 1
 
 
+def validate_base_v1_candidate_workflow(
+    workflow: str | None = None,
+    runbook: str | None = None,
+) -> tuple[int, int]:
+    """Validate the closed Task 26 workflow without executing qualification."""
+    if workflow is None:
+        workflow = read(BASE_V1_CANDIDATE_WORKFLOW)
+    if runbook is None:
+        runbook = read(ROOT / "docs/operations/ONEBRAIN_BASE_V1_CANDIDATE_RUNBOOK.md")
+
+    required_actions = {
+        "actions/checkout": "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+        "actions/setup-python": "ece7cb06caefa5fff74198d8649806c4678c61a1",
+        "actions/setup-node": "a0853c24544627f65ddf259abe73b1d18a591444",
+        "dart-lang/setup-dart": "65eb853c7ba17dde3be364c3d2858773e7144260",
+        "actions/upload-artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "actions/download-artifact": "634f93cb2916e3fdff6788551b99b062d0335ce0",
+    }
+    required_action_counts = {
+        "actions/checkout": 3,
+        "actions/setup-python": 3,
+        "actions/setup-node": 1,
+        "dart-lang/setup-dart": 1,
+        "actions/upload-artifact": 2,
+        "actions/download-artifact": 2,
+    }
+    references = re.findall(
+        r"^\s*(?:-\s+)?uses:\s*([^\s#]+)", workflow, re.MULTILINE
+    )
+    seen_actions: set[str] = set()
+    for reference in references:
+        if reference.startswith("./"):
+            continue
+        if "@" not in reference:
+            raise ContractError(f"Base candidate action has no revision: {reference}")
+        action, revision = reference.rsplit("@", 1)
+        if not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise ContractError(f"Base candidate action is not pinned by full SHA: {reference}")
+        if required_actions.get(action) != revision:
+            raise ContractError(f"Base candidate action is unknown or unreviewed: {reference}")
+        seen_actions.add(action)
+    if seen_actions != set(required_actions):
+        raise ContractError(
+            f"Base candidate reviewed action set drift: {sorted(seen_actions)}"
+        )
+    for action, count in required_action_counts.items():
+        reference = f"{action}@{required_actions[action]}"
+        if references.count(reference) != count:
+            raise ContractError(
+                f"Base candidate action occurrence drift: {action}"
+            )
+    for action, revision in required_actions.items():
+        if f"`{action}`" not in runbook or f"`{revision}`" not in runbook:
+            raise ContractError(f"Base candidate action mapping missing from runbook: {action}")
+
+    dispatch = workflow.split("workflow_dispatch:", 1)
+    if len(dispatch) != 2:
+        raise ContractError("Base candidate workflow_dispatch is missing")
+    dispatch_inputs = dispatch[1].split("\npermissions:", 1)[0]
+    for forbidden in (
+        "release_request_digest",
+        "qualification_session_id",
+        "candidate_commit",
+        "candidate_tree",
+        "candidate_semantic_digest",
+        "artifact_tuple_digest",
+    ):
+        if re.search(rf"^\s{{6}}{forbidden}:\s*$", dispatch_inputs, re.MULTILINE):
+            raise ContractError(f"Base candidate workflow exposes identity input: {forbidden}")
+
+    required_markers = (
+        "pull_request:",
+        "push:",
+        "qualification_mode:",
+        "signed_request_run_id:",
+        "base-v1-signed-release-request",
+        "approver-public-key.gpg",
+        "approver-policy.json",
+        "verify_base_release_request.py",
+        "needs.verify-candidate-identity.outputs.candidate_commit",
+        "needs.verify-candidate-identity.outputs.candidate_tree",
+        "ubuntu-24.04",
+        "windows-2025",
+        "macos-15",
+        "python-version: '3.13'",
+        "--only-binary=:all: --require-hashes",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-apple-darwin",
+        "linux_artifact_tuple_digest",
+        "windows_artifact_tuple_digest",
+        "macos_artifact_tuple_digest",
+        "EXPECTED_ARTIFACT_TUPLE",
+        "cargo fmt --all --manifest-path src/Cargo.toml -- --check",
+        "cargo check --workspace --locked --manifest-path src/Cargo.toml",
+        "cargo clippy --workspace --all-targets --locked --manifest-path src/Cargo.toml -- -D warnings",
+        "cargo test --workspace --locked --manifest-path src/Cargo.toml",
+        "onebrain-node/vnext-network-runtime,onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime",
+        "python scripts/ci/validate_vnext_contracts.py",
+        "python scripts/ci/validate_mobile_build_contracts.py",
+        "python scripts/base/generate_contract.py --check",
+        "npm test --prefix src/onebrain-base-contract/conformance/typescript",
+        "dart pub get --enforce-lockfile",
+        "dart analyze",
+        "dart test",
+        "-p onebrain-archive",
+        "--test archive_roundtrip --test dataset_generation_failpoints",
+        "test_validate_concept_registry_operations",
+        "test_validate_vnext_p5_canary_preflight",
+        "test_validate_vnext_p5_operations_preflight",
+        "--no-default-features --features base-v1",
+        "cargo audit --file src/Cargo.lock --json",
+        "cargo install --locked --version 0.22.2 cargo-audit",
+        "npm audit --package-lock-only --json",
+        "generate_base_sbom.py",
+        "verify_base_provenance.py",
+        "--ignored=matching",
+        "compression-level: 0",
+        "overwrite: false",
+        "retention-days: 90",
+        "CARGO_TARGET_DIR=$env:CARGO_TARGET_DIR",
+        "ONEBRAIN_BASE_V1_IDL_BASELINE_RECEIPT",
+        "BASE_V1_IDL_BASELINE_RECEIPT=$env:BASE_V1_IDL_BASELINE_RECEIPT",
+        "refs/heads/base-v1-idl-baseline:refs/heads/base-v1-idl-baseline",
+        "rustc-vV.txt",
+        "ImageVersion",
+        "'qualification_mode':os.environ['QUALIFICATION_MODE']",
+    )
+    for marker in required_markers:
+        if marker not in workflow:
+            raise ContractError(f"Base candidate workflow is missing marker: {marker}")
+    for marker, count in (
+        ("python-version: '3.13'", 3),
+        ("--only-binary=:all: --require-hashes", 3),
+    ):
+        if workflow.count(marker) != count:
+            raise ContractError(f"Base candidate workflow marker count drift: {marker}")
+    for forbidden in (
+        "permissions:\n  contents: write",
+        "continue-on-error: true",
+        "overwrite: true",
+        "actions/checkout@v",
+        "actions/setup-python@v",
+        "actions/upload-artifact@v",
+        "actions/download-artifact@v",
+    ):
+        if forbidden in workflow:
+            raise ContractError(f"Base candidate workflow contains forbidden marker: {forbidden}")
+    return (3, len(required_actions))
+
+
 def main() -> int:
     try:
         tasks, _ = plan_tasks()
@@ -7504,6 +7656,9 @@ def main() -> int:
             ) = validate_base_v1_runtime_interface()
         base_compatibility_vectors = validate_base_v1_compatibility()
         base_packaging_surfaces = validate_base_v1_packaging()
+        base_candidate_os_lanes, base_candidate_actions = (
+            validate_base_v1_candidate_workflow()
+        )
         assertions = validate_negative_assertions()
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
@@ -7616,6 +7771,8 @@ def main() -> int:
         f"{base_runtime_topics} topics/{base_runtime_errors} errors, "
         f"{base_compatibility_vectors} Base compatibility vectors/"
         f"{base_packaging_surfaces} packaging surfaces, "
+        f"{base_candidate_os_lanes} Base candidate OS lanes/"
+        f"{base_candidate_actions} pinned actions, "
         f"{schema_vectors} identity-object vectors, "
         f"{event_vectors} feed-event vectors, {normative_lines} normative lines, "
         f"{product_endpoints} product endpoints/{product_dtos} DTOs, "

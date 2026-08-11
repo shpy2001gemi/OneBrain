@@ -1,0 +1,388 @@
+name: Base v1 three-OS qualification candidate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      qualification_mode:
+        description: Prequalification, or release bound to one signed Task 27 request
+        required: true
+        default: prequalification
+        type: choice
+        options: [prequalification, release]
+      signed_request_run_id:
+        description: Prior run containing the fixed base-v1-signed-release-request artifact; required only for release
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: base-v1-candidate-${{ github.event.pull_request.number || github.ref }}-${{ inputs.qualification_mode || 'prequalification' }}
+  cancel-in-progress: false
+
+jobs:
+  verify-candidate-identity:
+    name: Verify or derive the single candidate identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      mode: ${{ steps.identity.outputs.mode }}
+      release_request_digest: ${{ steps.identity.outputs.release_request_digest }}
+      qualification_session_id: ${{ steps.identity.outputs.qualification_session_id }}
+      candidate_commit: ${{ steps.identity.outputs.candidate_commit }}
+      candidate_tree: ${{ steps.identity.outputs.candidate_tree }}
+      candidate_semantic_digest: ${{ steps.identity.outputs.candidate_semantic_digest }}
+      linux_artifact_tuple_digest: ${{ steps.identity.outputs.linux_artifact_tuple_digest }}
+      windows_artifact_tuple_digest: ${{ steps.identity.outputs.windows_artifact_tuple_digest }}
+      macos_artifact_tuple_digest: ${{ steps.identity.outputs.macos_artifact_tuple_digest }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Require the immutable signed-request artifact in release mode
+        if: inputs.qualification_mode == 'release'
+        shell: bash
+        run: test -n "${{ inputs.signed_request_run_id }}"
+      - name: Download the fixed signed release-request envelope
+        if: inputs.qualification_mode == 'release'
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: base-v1-signed-release-request
+          path: ${{ runner.temp }}/base-v1-signed-release-request
+          run-id: ${{ inputs.signed_request_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify signed Task 27 request before deriving any identity
+        if: inputs.qualification_mode == 'release'
+        shell: bash
+        run: |
+          printf '%s\n' 'blake3==1.0.8 --hash=sha256:d17eb6382634b3a5bc0c0e0454d5265b0becaeeadb6801ed25150b39a999d0cc --hash=sha256:e4072196547484c95a5a09adbb952e9bb501949f03f9e2a85e7249ef85faaba8 --hash=sha256:1af0e5a29aa56d4fba904452ae784740997440afd477a15e583c38338e641f41 --hash=sha256:9456c829601d72852d8ba0af8dae0610f7def1d59f5942efde1e2ef93e8a8b57 --hash=sha256:3cec94ed5676821cf371e9c9d25a41b4f3ebdb5724719b31b2749653b7cc1dfa --hash=sha256:3168c457255b5d2a2fc356ba696996fcaff5d38284f968210d54376312107662' > "$RUNNER_TEMP/blake3-requirements.txt"
+          python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/blake3-requirements.txt"
+          install -d -m 700 "$RUNNER_TEMP/qualification-gpg-home"
+          gpg --homedir "$RUNNER_TEMP/qualification-gpg-home" --batch --import \
+            "$RUNNER_TEMP/base-v1-signed-release-request/approver-public-key.gpg"
+          python scripts/release/verify_base_release_request.py \
+            --request "$RUNNER_TEMP/base-v1-signed-release-request/request.json" \
+            --signature "$RUNNER_TEMP/base-v1-signed-release-request/request.json.asc" \
+            --policy "$RUNNER_TEMP/base-v1-signed-release-request/approver-policy.json" \
+            --gpg-home "$RUNNER_TEMP/qualification-gpg-home" \
+            > "$RUNNER_TEMP/verified-base-release-request.json"
+      - name: Derive request, session, commit, and tree without identity inputs
+        id: identity
+        shell: bash
+        env:
+          MODE: ${{ inputs.qualification_mode || 'prequalification' }}
+        run: |
+          python - "$GITHUB_OUTPUT" "$RUNNER_TEMP/verified-base-release-request.json" <<'PY'
+          import hashlib, json, os, subprocess, sys
+          from pathlib import Path
+
+          output = Path(sys.argv[1])
+          mode = os.environ["MODE"]
+          if mode == "release":
+              verified = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+              run = verified["run_context"]
+              binding = verified["bindings"]
+              targets = binding["required_targets"]
+              expected_targets = {
+                  "x86_64-unknown-linux-gnu",
+                  "x86_64-pc-windows-msvc",
+                  "aarch64-apple-darwin",
+              }
+              if set(targets) != expected_targets:
+                  raise SystemExit("signed release request target map is not the closed three-OS set")
+              values = {
+                  "mode": mode,
+                  "release_request_digest": run["release_request_digest"],
+                  "qualification_session_id": run["qualification_session_id"],
+                  "candidate_commit": run["candidate_commit"],
+                  "candidate_tree": run["candidate_tree"],
+                  "candidate_semantic_digest": binding["candidate_semantic_digest"],
+                  "linux_artifact_tuple_digest": targets["x86_64-unknown-linux-gnu"],
+                  "windows_artifact_tuple_digest": targets["x86_64-pc-windows-msvc"],
+                  "macos_artifact_tuple_digest": targets["aarch64-apple-darwin"],
+              }
+          else:
+              commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+              tree = subprocess.check_output(["git", "rev-parse", "HEAD^{tree}"], text=True).strip()
+              domain = b"onebrain:base-v1:prequalification:1\0" + commit.encode() + tree.encode()
+              values = {
+                  "mode": "prequalification",
+                  "release_request_digest": hashlib.sha256(domain + b":request").hexdigest(),
+                  "qualification_session_id": hashlib.sha256(domain + b":session").hexdigest(),
+                  "candidate_commit": commit,
+                  "candidate_tree": tree,
+                  "candidate_semantic_digest": "",
+                  "linux_artifact_tuple_digest": "",
+                  "windows_artifact_tuple_digest": "",
+                  "macos_artifact_tuple_digest": "",
+              }
+          with output.open("a", encoding="utf-8") as stream:
+              for key, value in values.items():
+                  stream.write(f"{key}={value}\n")
+          PY
+
+  candidate-matrix:
+    name: Candidate ${{ matrix.os_name }} default plus network
+    needs: verify-candidate-identity
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os_name: linux
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            executable: onebrain
+          - os_name: windows
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            executable: onebrain.exe
+          - os_name: macos
+            runner: macos-15
+            target: aarch64-apple-darwin
+            executable: onebrain
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    env:
+      CARGO_TERM_COLOR: always
+      BASELINE_RECEIPT_JSON: ${{ vars.ONEBRAIN_BASE_V1_IDL_BASELINE_RECEIPT }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.verify-candidate-identity.outputs.candidate_commit }}
+          persist-credentials: false
+          clean: true
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22.20.0
+          cache: npm
+          cache-dependency-path: src/onebrain-base-contract/conformance/typescript/package-lock.json
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: 3.11.3
+      - name: Verify exact candidate checkout and immutable tool versions
+        shell: pwsh
+        run: |
+          $env:CARGO_TARGET_DIR = Join-Path $env:RUNNER_TEMP 'onebrain-base-v1-target'
+          $env:EVIDENCE_DIR = Join-Path $env:RUNNER_TEMP 'onebrain-base-v1-evidence'
+          $env:BASE_V1_IDL_BASELINE_RECEIPT = Join-Path $env:RUNNER_TEMP 'base-v1-idl-baseline-receipt.json'
+          "CARGO_TARGET_DIR=$env:CARGO_TARGET_DIR" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "EVIDENCE_DIR=$env:EVIDENCE_DIR" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "BASE_V1_IDL_BASELINE_RECEIPT=$env:BASE_V1_IDL_BASELINE_RECEIPT" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          if (-not $env:BASELINE_RECEIPT_JSON) { throw 'immutable Task 14 baseline receipt repository variable is missing' }
+          $env:BASELINE_RECEIPT_JSON | Out-File $env:BASE_V1_IDL_BASELINE_RECEIPT -Encoding utf8
+          git fetch --no-tags origin refs/heads/base-v1-idl-baseline:refs/heads/base-v1-idl-baseline
+          if ($LASTEXITCODE -ne 0) { throw 'protected Base v1 IDL baseline fetch failed' }
+          if ((git rev-parse HEAD) -ne '${{ needs.verify-candidate-identity.outputs.candidate_commit }}') { throw 'candidate commit mismatch' }
+          if ((git rev-parse 'HEAD^{tree}') -ne '${{ needs.verify-candidate-identity.outputs.candidate_tree }}') { throw 'candidate tree mismatch' }
+          if ((git status --porcelain=v1 --untracked-files=all --ignored=matching)) { throw 'candidate checkout is not byte-clean' }
+          if ((node --version) -ne 'v22.20.0') { throw 'Node version drift' }
+          if ((npm --version) -ne '10.9.3') { throw 'npm version drift' }
+          if ((dart --version 2>&1) -notmatch '3.11.3') { throw 'Dart version drift' }
+          'blake3==1.0.8 --hash=sha256:d17eb6382634b3a5bc0c0e0454d5265b0becaeeadb6801ed25150b39a999d0cc --hash=sha256:e4072196547484c95a5a09adbb952e9bb501949f03f9e2a85e7249ef85faaba8 --hash=sha256:1af0e5a29aa56d4fba904452ae784740997440afd477a15e583c38338e641f41 --hash=sha256:9456c829601d72852d8ba0af8dae0610f7def1d59f5942efde1e2ef93e8a8b57 --hash=sha256:3cec94ed5676821cf371e9c9d25a41b4f3ebdb5724719b31b2749653b7cc1dfa --hash=sha256:3168c457255b5d2a2fc356ba696996fcaff5d38284f968210d54376312107662' | Out-File "$env:RUNNER_TEMP/blake3-requirements.txt" -Encoding ascii
+          python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$env:RUNNER_TEMP/blake3-requirements.txt"
+          New-Item -ItemType Directory -Force $env:EVIDENCE_DIR | Out-Null
+      - name: Format, check, clippy, and test the default Base workspace
+        shell: pwsh
+        run: |
+          cargo fmt --all --manifest-path src/Cargo.toml -- --check
+          cargo check --workspace --locked --manifest-path src/Cargo.toml
+          cargo clippy --workspace --all-targets --locked --manifest-path src/Cargo.toml -- -D warnings
+          cargo test --workspace --locked --manifest-path src/Cargo.toml
+      - name: Check and test the real network feature across Node, API, and CLI
+        shell: pwsh
+        run: |
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node -p onebrain-api -p onebrain-cli --features onebrain-node/vnext-network-runtime,onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-node -p onebrain-api -p onebrain-cli --features onebrain-node/vnext-network-runtime,onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime
+      - name: Generated contract, vNext, mobile, TypeScript, and Dart conformance
+        shell: pwsh
+        run: |
+          python scripts/ci/validate_vnext_contracts.py
+          python scripts/ci/validate_mobile_build_contracts.py
+          python scripts/base/generate_contract.py --check
+          npm ci --prefix src/onebrain-base-contract/conformance/typescript
+          npm test --prefix src/onebrain-base-contract/conformance/typescript
+          Push-Location src/onebrain-base-contract/conformance/dart
+          dart pub get --enforce-lockfile
+          dart analyze
+          dart test
+          Pop-Location
+      - name: Archive, recovery, Registry fixture, and P5 preflight gates
+        shell: pwsh
+        run: |
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-archive
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-node --test archive_roundtrip --test dataset_generation_failpoints
+          python -m unittest scripts.ci.test_validate_concept_registry_operations scripts.concept_registry.test_ccid_stability_diff scripts.concept_registry.test_resource_qualification scripts.concept_registry.test_failure_qualification
+          python -m unittest scripts.ci.test_validate_vnext_p5_canary_preflight scripts.ci.test_validate_vnext_p5_operations_preflight
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-node --features vnext-canary-harness --lib p5_01_ -- --test-threads=1
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-node --features vnext-canary-harness --lib vnext_p5_operations -- --test-threads=1
+      - name: Enforce legacy-disabled Base packaging
+        shell: pwsh
+        run: |
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node --no-default-features --features base-v1
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-api --no-default-features --features base-v1
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-cli --no-default-features --features base-v1
+          python -c "import pathlib; files=['src/onebrain-node/Cargo.toml','src/onebrain-api/Cargo.toml','src/onebrain-cli/Cargo.toml']; assert all('legacy-read-compat' not in pathlib.Path(p).read_text().split('[features]',1)[1].split('default =',1)[1].splitlines()[0] for p in files)"
+      - name: Preserve raw locked dependency audit data
+        shell: pwsh
+        run: |
+          cargo install --locked --version 0.22.2 cargo-audit
+          $nativePreference = $PSNativeCommandUseErrorActionPreference
+          $PSNativeCommandUseErrorActionPreference = $false
+          try {
+            cargo audit --file src/Cargo.lock --json | Out-File "$env:EVIDENCE_DIR/cargo-audit.json" -Encoding utf8
+            if ($LASTEXITCODE -gt 1) { throw 'cargo audit execution failed' }
+            npm audit --package-lock-only --json --prefix src/onebrain-base-contract/conformance/typescript | Out-File "$env:EVIDENCE_DIR/npm-audit.json" -Encoding utf8
+            if ($LASTEXITCODE -gt 1) { throw 'npm audit execution failed' }
+          } finally {
+            $PSNativeCommandUseErrorActionPreference = $nativePreference
+            $global:LASTEXITCODE = 0
+          }
+      - name: Build exact default executable and deterministic target-bound SPDX
+        shell: pwsh
+        env:
+          RELEASE_REQUEST_DIGEST: ${{ needs.verify-candidate-identity.outputs.release_request_digest }}
+          QUALIFICATION_SESSION_ID: ${{ needs.verify-candidate-identity.outputs.qualification_session_id }}
+          CANDIDATE_COMMIT: ${{ needs.verify-candidate-identity.outputs.candidate_commit }}
+          CANDIDATE_TREE: ${{ needs.verify-candidate-identity.outputs.candidate_tree }}
+          QUALIFICATION_MODE: ${{ needs.verify-candidate-identity.outputs.mode }}
+          EXPECTED_ARTIFACT_TUPLE: ${{ matrix.os_name == 'linux' && needs.verify-candidate-identity.outputs.linux_artifact_tuple_digest || matrix.os_name == 'windows' && needs.verify-candidate-identity.outputs.windows_artifact_tuple_digest || needs.verify-candidate-identity.outputs.macos_artifact_tuple_digest }}
+        run: |
+          cargo build --locked --release --manifest-path src/Cargo.toml -p onebrain-cli
+          $executable = Join-Path $env:CARGO_TARGET_DIR 'release/${{ matrix.executable }}'
+          & $executable --version --verbose | Out-File "$env:EVIDENCE_DIR/base-status.json" -Encoding utf8
+          rustc -vV | Out-File "$env:EVIDENCE_DIR/rustc-vV.txt" -Encoding utf8
+          if (-not $env:ImageOS -or -not $env:ImageVersion) { throw 'immutable hosted-runner image identity is unavailable' }
+          cargo metadata --locked --manifest-path src/Cargo.toml --format-version 1 | Out-File "$env:EVIDENCE_DIR/cargo-metadata.json" -Encoding utf8
+          $status = Get-Content "$env:EVIDENCE_DIR/base-status.json" -Raw | ConvertFrom-Json
+          if ($status.target_triple -ne '${{ matrix.target }}') { throw 'compiled target triple mismatch' }
+          if ($status.qualification.state -ne 'unqualified') { throw 'candidate build may not self-claim qualification' }
+          if ('${{ needs.verify-candidate-identity.outputs.mode }}' -eq 'release' -and $status.candidate_semantic_digest -ne '${{ needs.verify-candidate-identity.outputs.candidate_semantic_digest }}') { throw 'signed-request semantic digest mismatch' }
+          if ($env:QUALIFICATION_MODE -eq 'release' -and $status.artifact_tuple_digest -ne $env:EXPECTED_ARTIFACT_TUPLE) { throw 'signed-request target artifact tuple mismatch' }
+          $binding = [ordered]@{
+            format = 'onebrain/base-v1-candidate-binding/1'
+            release_request_digest = $env:RELEASE_REQUEST_DIGEST
+            qualification_session_id = $env:QUALIFICATION_SESSION_ID
+            candidate_commit = $env:CANDIDATE_COMMIT
+            candidate_tree = $env:CANDIDATE_TREE
+            candidate_semantic_digest = $status.candidate_semantic_digest
+            target_triple = $status.target_triple
+            toolchain_digest = $status.toolchain.digest
+            created_utc = '2026-08-11T00:00:00Z'
+          }
+          $binding | ConvertTo-Json -Compress | Out-File "$env:EVIDENCE_DIR/candidate-binding.json" -Encoding utf8
+          python scripts/release/generate_base_sbom.py --cargo-metadata "$env:EVIDENCE_DIR/cargo-metadata.json" --cargo-lock src/Cargo.lock --npm-lock src/onebrain-base-contract/conformance/typescript/package-lock.json --binding "$env:EVIDENCE_DIR/candidate-binding.json" --output "$env:EVIDENCE_DIR/sbom.spdx.json"
+          Copy-Item $executable "$env:EVIDENCE_DIR/onebrain-cli.bin"
+      - name: Emit byte-measured lane receipt
+        shell: pwsh
+        env:
+          RELEASE_REQUEST_DIGEST: ${{ needs.verify-candidate-identity.outputs.release_request_digest }}
+          QUALIFICATION_SESSION_ID: ${{ needs.verify-candidate-identity.outputs.qualification_session_id }}
+          CANDIDATE_COMMIT: ${{ needs.verify-candidate-identity.outputs.candidate_commit }}
+          CANDIDATE_TREE: ${{ needs.verify-candidate-identity.outputs.candidate_tree }}
+          QUALIFICATION_MODE: ${{ needs.verify-candidate-identity.outputs.mode }}
+        run: |
+          python -c "import blake3,json,os,pathlib; from scripts.release.verify_base_provenance import REVIEWED_AUDIT_ITEMS; root=pathlib.Path(os.environ['EVIDENCE_DIR']); status=json.loads((root/'base-status.json').read_text(encoding='utf-8-sig')); b=lambda p:blake3.blake3(p.read_bytes()).hexdigest(); lane={'qualification_mode':os.environ['QUALIFICATION_MODE'],'release_request_digest':os.environ['RELEASE_REQUEST_DIGEST'],'qualification_session_id':os.environ['QUALIFICATION_SESSION_ID'],'candidate_commit':os.environ['CANDIDATE_COMMIT'],'candidate_tree':os.environ['CANDIDATE_TREE'],'candidate_semantic_digest':status['candidate_semantic_digest'],'os':'${{ matrix.os_name }}','target_triple':status['target_triple'],'toolchain_digest':status['toolchain']['digest'],'runner_image':os.environ['ImageOS']+'@'+os.environ['ImageVersion'],'artifact_tuple_digest':status['artifact_tuple_digest'],'executable_path':'onebrain-cli.bin','executable_blake3':b(root/'onebrain-cli.bin'),'compiler_path':'rustc-vV.txt','compiler_blake3':b(root/'rustc-vV.txt'),'sbom_path':'sbom.spdx.json','sbom_blake3':b(root/'sbom.spdx.json'),'workflow_sha256':'','raw_audits':{'cargo':{'path':'cargo-audit.json','blake3':b(root/'cargo-audit.json')},'npm':{'path':'npm-audit.json','blake3':b(root/'npm-audit.json')}},'audit_items':[REVIEWED_AUDIT_ITEMS[key] for key in sorted(REVIEWED_AUDIT_ITEMS)]}; (root/'lane.json').write_text(json.dumps(lane,sort_keys=True,separators=(',',':'))+'\n',encoding='utf-8')"
+      - name: Upload immutable OS lane evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: base-v1-lane-${{ matrix.os_name }}-${{ needs.verify-candidate-identity.outputs.release_request_digest }}
+          path: ${{ runner.temp }}/onebrain-base-v1-evidence
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: false
+          include-hidden-files: false
+          retention-days: 90
+
+  verify-provenance:
+    name: Verify three-OS semantic and supply-chain closure
+    needs: [verify-candidate-identity, candidate-matrix]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.verify-candidate-identity.outputs.candidate_commit }}
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Download immutable lane artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          pattern: base-v1-lane-*-${{ needs.verify-candidate-identity.outputs.release_request_digest }}
+          path: ${{ runner.temp }}/base-v1-lanes
+      - name: Rebuild aggregate from raw lane bytes
+        shell: bash
+        run: |
+          printf '%s\n' 'blake3==1.0.8 --hash=sha256:d17eb6382634b3a5bc0c0e0454d5265b0becaeeadb6801ed25150b39a999d0cc --hash=sha256:e4072196547484c95a5a09adbb952e9bb501949f03f9e2a85e7249ef85faaba8 --hash=sha256:1af0e5a29aa56d4fba904452ae784740997440afd477a15e583c38338e641f41 --hash=sha256:9456c829601d72852d8ba0af8dae0610f7def1d59f5942efde1e2ef93e8a8b57 --hash=sha256:3cec94ed5676821cf371e9c9d25a41b4f3ebdb5724719b31b2749653b7cc1dfa --hash=sha256:3168c457255b5d2a2fc356ba696996fcaff5d38284f968210d54376312107662' > "$RUNNER_TEMP/blake3-requirements.txt"
+          python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/blake3-requirements.txt"
+          python - "$RUNNER_TEMP/base-v1-lanes" "$RUNNER_TEMP/base-v1-provenance-input.json" <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          lanes = []
+          for lane_file in sorted(root.glob("*/lane.json")):
+              lane = json.loads(lane_file.read_text(encoding="utf-8"))
+              lane["executable_path"] = str(lane_file.parent / lane["executable_path"])
+              lane["sbom_path"] = str(lane_file.parent / lane["sbom_path"])
+              lane["compiler_path"] = str(lane_file.parent / lane["compiler_path"])
+              for report in lane["raw_audits"].values():
+                  report["path"] = str(lane_file.parent / report["path"])
+              lane["workflow_sha256"] = hashlib.sha256(
+                  Path(".github/workflows/base-v1-candidate.yml").read_bytes()
+              ).hexdigest()
+              lanes.append(lane)
+          if not lanes:
+              raise SystemExit("no Base candidate lanes were downloaded")
+          first = lanes[0]
+          aggregate = {
+              "format": "onebrain/base-v1-provenance/1",
+              "qualification_mode": first["qualification_mode"],
+              **{key: first[key] for key in (
+                  "release_request_digest", "qualification_session_id", "candidate_commit",
+                  "candidate_tree", "candidate_semantic_digest",
+              )},
+              "workflow_path": str(Path(".github/workflows/base-v1-candidate.yml").resolve()),
+              "action_allowlist": {
+                  "actions/checkout": "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+                  "actions/setup-python": "ece7cb06caefa5fff74198d8649806c4678c61a1",
+                  "actions/setup-node": "a0853c24544627f65ddf259abe73b1d18a591444",
+                  "dart-lang/setup-dart": "65eb853c7ba17dde3be364c3d2858773e7144260",
+                  "actions/upload-artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+                  "actions/download-artifact": "634f93cb2916e3fdff6788551b99b062d0335ce0",
+              },
+              "lanes": lanes,
+          }
+          Path(sys.argv[2]).write_text(json.dumps(aggregate, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+          PY
+      - name: Verify provenance and clean source independently
+        shell: bash
+        run: |
+          python scripts/release/verify_base_provenance.py \
+            --bundle "$RUNNER_TEMP/base-v1-provenance-input.json" \
+            --repo-root . \
+            --output "$RUNNER_TEMP/base-v1-provenance-receipt.json"
+      - name: Upload immutable verified provenance receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: base-v1-provenance-${{ needs.verify-candidate-identity.outputs.release_request_digest }}
+          path: ${{ runner.temp }}/base-v1-provenance-receipt.json
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: false
+          include-hidden-files: false
+          retention-days: 90
