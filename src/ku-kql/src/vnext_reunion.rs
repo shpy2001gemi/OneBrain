@@ -244,7 +244,7 @@ impl ReunionFrontier {
                     MatcherOutcome::Proposal { proposal, .. }
                         if (report.proposals.len() as u64) < budget.max_proposals =>
                     {
-                        let proposal = quarantine.insert(proposal)?;
+                        let proposal = quarantine.insert(*proposal)?;
                         report.proposals.push(ReunionProposalRecord {
                             proposal,
                             local_need: Some(*need_id),
@@ -316,7 +316,7 @@ impl ReunionFrontier {
                     MatcherOutcome::Proposal { proposal, .. }
                         if (report.proposals.len() as u64) < budget.max_proposals =>
                     {
-                        let proposal = quarantine.insert(proposal)?;
+                        let proposal = quarantine.insert(*proposal)?;
                         report.proposals.push(ReunionProposalRecord {
                             proposal,
                             local_need: None,

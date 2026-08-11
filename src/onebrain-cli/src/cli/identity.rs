@@ -65,8 +65,8 @@ pub(crate) fn cmd_devices(node: &mut OneBrainNode) {
     println!();
     println!("  ── Devices ({}) ──", devices.len());
     println!(
-        "  {:<16}  {:<20}  {:<8}  {:<12}  {:<6}  {}",
-        "Device ID", "Name", "Type", "Last Seen", "KUs", "Status"
+        "  {:<16}  {:<20}  {:<8}  {:<12}  {:<6}  Status",
+        "Device ID", "Name", "Type", "Last Seen", "KUs"
     );
     println!("  {}", "─".repeat(80));
 

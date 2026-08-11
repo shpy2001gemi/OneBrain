@@ -219,10 +219,7 @@ impl ConceptRegistry {
 
         for label in labels {
             let key = label.to_lowercase();
-            self.label_index
-                .entry(key.clone())
-                .or_insert_with(Vec::new)
-                .push(idx);
+            self.label_index.entry(key.clone()).or_default().push(idx);
 
             // Also add stripped-diacritics version to fuzzy index
             let stripped = strip_vietnamese_diacritics(&key);
@@ -252,7 +249,7 @@ impl ConceptRegistry {
                     let key = label.to_lowercase();
                     self.label_index
                         .entry(key.clone())
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push(existing_idx);
                     let stripped = strip_vietnamese_diacritics(&key);
                     if stripped != key {
@@ -443,7 +440,7 @@ impl ConceptRegistry {
 
         let metadata = Self::inspect_obr(path)?;
 
-        let mut file = std::fs::File::open(path).map_err(|e| ObrLoadError::Io(e))?;
+        let mut file = std::fs::File::open(path).map_err(ObrLoadError::Io)?;
 
         // Read header
         let mut header = [0u8; Self::OBR_HEADER_SIZE];
@@ -464,8 +461,7 @@ impl ConceptRegistry {
 
         // Read entire file into memory for fast parsing (avoids syscall per entry)
         let mut data = Vec::new();
-        file.read_to_end(&mut data)
-            .map_err(|e| ObrLoadError::Io(e))?;
+        file.read_to_end(&mut data).map_err(ObrLoadError::Io)?;
 
         #[cfg(test)]
         eprintln!(
@@ -941,7 +937,9 @@ mod tests {
     /// Build a minimal OBR1 binary in memory for testing.
     /// Format: ccid(16) + ext_id(u32) + source(u8) + category(u8) +
     ///         name_len(u16) + name + num_labels(u16) + [label_len(u16) + label]*
-    fn build_test_obr(entries: &[(&[u8; 16], u32, u8, u8, &str, &[&str])]) -> Vec<u8> {
+    type TestObrEntry<'a> = (&'a [u8; 16], u32, u8, u8, &'a str, &'a [&'a str]);
+
+    fn build_test_obr(entries: &[TestObrEntry<'_>]) -> Vec<u8> {
         let mut buf = Vec::new();
         // Header
         buf.extend_from_slice(b"OBR1"); // magic

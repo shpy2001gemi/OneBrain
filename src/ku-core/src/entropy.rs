@@ -23,9 +23,6 @@ use std::collections::HashMap;
 /// Entropy cold-start boost decay period (7 days in seconds)
 pub const ENTROPY_DECAY_PERIOD_SECS: u64 = 7 * 24 * 3600;
 
-/// Ln(2) for exponential decay
-const LN2: f64 = 0.693147180559945;
-
 /// Weight for novelty component in combined entropy
 pub const WEIGHT_NOVELTY: f32 = 0.6;
 
@@ -157,7 +154,8 @@ impl EntropyCalculator {
         let raw = WEIGHT_NOVELTY * novelty + WEIGHT_BRIDGE * bridge;
 
         // Exponential decay over 7 days
-        let decay = (-LN2 * age_secs as f64 / ENTROPY_DECAY_PERIOD_SECS as f64).exp();
+        let decay =
+            (-std::f64::consts::LN_2 * age_secs as f64 / ENTROPY_DECAY_PERIOD_SECS as f64).exp();
 
         (raw as f64 * decay) as f32
     }

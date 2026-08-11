@@ -304,64 +304,80 @@ mod tests {
 
     #[test]
     fn test_invalid_weight_sum() {
-        let mut config = GovernanceConfig::default();
-        config.weight_r1_owner = 0.90; // Sum will be 0.90 + 0.25 + 0.15 + 0.20 = 1.50
+        let config = GovernanceConfig {
+            weight_r1_owner: 0.90, // Sum will be 0.90 + 0.25 + 0.15 + 0.20 = 1.50
+            ..GovernanceConfig::default()
+        };
         let err = config.validate().unwrap_err();
         assert!(matches!(err, GovernanceError::InvalidWeightSum { .. }));
     }
 
     #[test]
     fn test_zero_emission_rejected() {
-        let mut config = GovernanceConfig::default();
-        config.base_emission_per_epoch = 0;
+        let config = GovernanceConfig {
+            base_emission_per_epoch: 0,
+            ..GovernanceConfig::default()
+        };
         let err = config.validate().unwrap_err();
         assert_eq!(err, GovernanceError::ZeroEmission);
     }
 
     #[test]
     fn test_invalid_activity_factor() {
-        let mut config = GovernanceConfig::default();
-        config.activity_multiplier_max = -1.0;
+        let config = GovernanceConfig {
+            activity_multiplier_max: -1.0,
+            ..GovernanceConfig::default()
+        };
         let err = config.validate().unwrap_err();
         assert_eq!(err, GovernanceError::InvalidActivityFactor);
     }
 
     #[test]
     fn test_invalid_decay_rate() {
-        let mut config = GovernanceConfig::default();
-        config.trust_decay_lambda = 0.0;
+        let config = GovernanceConfig {
+            trust_decay_lambda: 0.0,
+            ..GovernanceConfig::default()
+        };
         let err = config.validate().unwrap_err();
         assert_eq!(err, GovernanceError::InvalidDecayRate);
     }
 
     #[test]
     fn test_invalid_challenge_rate() {
-        let mut config = GovernanceConfig::default();
-        config.challenge_rate = 1.5;
+        let config = GovernanceConfig {
+            challenge_rate: 1.5,
+            ..GovernanceConfig::default()
+        };
         let err = config.validate().unwrap_err();
         assert_eq!(err, GovernanceError::InvalidChallengeRate);
     }
 
     #[test]
     fn test_negative_challenge_rate() {
-        let mut config = GovernanceConfig::default();
-        config.challenge_rate = -0.1;
+        let config = GovernanceConfig {
+            challenge_rate: -0.1,
+            ..GovernanceConfig::default()
+        };
         let err = config.validate().unwrap_err();
         assert_eq!(err, GovernanceError::InvalidChallengeRate);
     }
 
     #[test]
     fn test_epoch_too_short() {
-        let mut config = GovernanceConfig::default();
-        config.epoch_duration_s = 30;
+        let config = GovernanceConfig {
+            epoch_duration_s: 30,
+            ..GovernanceConfig::default()
+        };
         let err = config.validate().unwrap_err();
         assert_eq!(err, GovernanceError::EpochTooShort);
     }
 
     #[test]
     fn test_epoch_minimum_boundary() {
-        let mut config = GovernanceConfig::default();
-        config.epoch_duration_s = 60; // Exactly at minimum
+        let config = GovernanceConfig {
+            epoch_duration_s: 60, // Exactly at minimum
+            ..GovernanceConfig::default()
+        };
         assert!(config.validate().is_ok());
     }
 
@@ -382,9 +398,11 @@ mod tests {
 
     #[test]
     fn test_custom_config() {
-        let mut config = GovernanceConfig::default();
-        config.base_emission_per_epoch = 20_000_000;
-        config.challenge_rate = 0.20;
+        let config = GovernanceConfig {
+            base_emission_per_epoch: 20_000_000,
+            challenge_rate: 0.20,
+            ..GovernanceConfig::default()
+        };
         assert!(config.validate().is_ok());
         assert_eq!(config.base_emission_per_epoch, 20_000_000);
         assert!((config.challenge_rate - 0.20).abs() < f64::EPSILON);
@@ -433,16 +451,20 @@ mod tests {
 
     #[test]
     fn test_invalid_min_ku_size() {
-        let mut config = GovernanceConfig::default();
-        config.min_ku_raw_size = 0;
+        let config = GovernanceConfig {
+            min_ku_raw_size: 0,
+            ..GovernanceConfig::default()
+        };
         let err = config.validate().unwrap_err();
         assert_eq!(err, GovernanceError::InvalidMinKuSize);
     }
 
     #[test]
     fn test_negative_pomv_threshold() {
-        let mut config = GovernanceConfig::default();
-        config.min_pomv_30d = -0.1;
+        let config = GovernanceConfig {
+            min_pomv_30d: -0.1,
+            ..GovernanceConfig::default()
+        };
         let err = config.validate().unwrap_err();
         assert_eq!(err, GovernanceError::InvalidPomvThreshold);
     }

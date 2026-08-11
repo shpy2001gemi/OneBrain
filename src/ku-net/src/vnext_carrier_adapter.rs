@@ -141,8 +141,10 @@ mod tests {
         ReconciliationJournalConfig,
     };
 
+    type SinkRecords = Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>;
+
     #[derive(Clone, Default)]
-    struct Sink(Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>);
+    struct Sink(SinkRecords);
 
     impl ValidateThenAcceptSink for Sink {
         fn validate_then_accept(
@@ -153,11 +155,14 @@ mod tests {
         ) -> Result<PayloadSinkOutcome, String> {
             let mut records = self.0.lock().unwrap();
             let key = (kind as u64, cid);
-            if records.contains_key(&key) {
-                Ok(PayloadSinkOutcome::AlreadyPresent)
-            } else {
-                records.insert(key, bytes.to_vec());
-                Ok(PayloadSinkOutcome::ValidatedStored)
+            match records.entry(key) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(bytes.to_vec());
+                    Ok(PayloadSinkOutcome::ValidatedStored)
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    Ok(PayloadSinkOutcome::AlreadyPresent)
+                }
             }
         }
     }

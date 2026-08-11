@@ -12,8 +12,11 @@
 //!
 //! All tables use composite byte keys for O(1) prefix-scan queries.
 
+pub type TimedBond = ([u8; 32], [u8; 32], u32);
+
 #[cfg(feature = "storage")]
 mod impl_ {
+    use super::TimedBond;
     use redb::{Database, ReadableTable, TableDefinition};
     use std::path::Path;
 
@@ -491,7 +494,7 @@ mod impl_ {
             &self,
             from: u32,
             to: u32,
-        ) -> Result<Vec<([u8; 32], [u8; 32], u32)>, StorageError> {
+        ) -> Result<Vec<TimedBond>, StorageError> {
             let txn = self.db.begin_read()?;
             let table = txn.open_table(TABLE_EDGE_TIME)?;
 
@@ -546,6 +549,7 @@ mod impl_ {
         // ─── Private helpers ───────────────────────────────────────────────
 
         /// Read BondMeta for a specific bond (used internally).
+        #[cfg(test)]
         fn read_bond_meta(
             &self,
             src: &[u8; 32],

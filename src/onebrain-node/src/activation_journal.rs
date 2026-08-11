@@ -130,7 +130,7 @@ pub(crate) fn write_current_pointer(
         payload,
     };
     write_slot(
-        &control.join(if sequence % 2 == 0 {
+        &control.join(if sequence.is_multiple_of(2) {
             "current.a.json"
         } else {
             "current.b.json"
@@ -180,7 +180,7 @@ pub(crate) fn write_journal(
         payload,
     };
     write_slot(
-        &control.join(if record.revision % 2 == 0 {
+        &control.join(if record.revision.is_multiple_of(2) {
             "activation.a.json"
         } else {
             "activation.b.json"

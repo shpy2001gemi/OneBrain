@@ -55,9 +55,11 @@ impl BaseHostAuthorizer for AllowIntegrationHost {
     }
 }
 
+type IntegrationRows = Arc<Mutex<BTreeMap<(u16, u16, Vec<u8>), ArchiveSnapshotRecord>>>;
+
 #[derive(Clone)]
 struct IntegrationBackend {
-    rows: Arc<Mutex<BTreeMap<(u16, u16, Vec<u8>), ArchiveSnapshotRecord>>>,
+    rows: IntegrationRows,
 }
 
 impl IntegrationBackend {

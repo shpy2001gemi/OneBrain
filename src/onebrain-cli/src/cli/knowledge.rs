@@ -171,11 +171,7 @@ pub(crate) fn cmd_list(node: &OneBrainNode, args: &str) {
 
     match node.list_kus(page, limit, type_filter.as_deref(), &sort_by) {
         Ok((items, total)) => {
-            let total_pages = if total == 0 {
-                1
-            } else {
-                (total + limit - 1) / limit
-            };
+            let total_pages = if total == 0 { 1 } else { total.div_ceil(limit) };
             println!();
             if items.is_empty() {
                 println!("  No KUs found.");
@@ -189,8 +185,8 @@ pub(crate) fn cmd_list(node: &OneBrainNode, args: &str) {
                     total, type_str, page, total_pages
                 );
                 println!(
-                    "  {:>3}  {:<8} {:<5} {:<5} {:<10} {:<10} {}",
-                    "#", "Gene", "PoMV", "Trust", "Created", "CID", "Preview"
+                    "  {:>3}  {:<8} {:<5} {:<5} {:<10} {:<10} Preview",
+                    "#", "Gene", "PoMV", "Trust", "Created", "CID"
                 );
                 for (idx_offset, item) in items.iter().enumerate() {
                     let idx = (page - 1) * limit + idx_offset + 1;
@@ -645,13 +641,12 @@ pub(crate) async fn cmd_bulk_delete(
                     i += 1;
                 }
             }
+            "--before" if i + 1 < parts.len() => {
+                before = parts[i + 1].parse().ok();
+                i += 2;
+            }
             "--before" => {
-                if i + 1 < parts.len() {
-                    before = parts[i + 1].parse().ok();
-                    i += 2;
-                } else {
-                    i += 1;
-                }
+                i += 1;
             }
             _ => {
                 i += 1;

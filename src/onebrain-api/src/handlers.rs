@@ -1276,9 +1276,8 @@ async fn ws_handler(socket: WebSocket, state: AppState) {
 
     // Read incoming messages (keep alive / close detection)
     while let Some(Ok(msg)) = receiver.next().await {
-        match msg {
-            Message::Close(_) => break,
-            _ => {} // Ignore other messages
+        if let Message::Close(_) = msg {
+            break;
         }
     }
 

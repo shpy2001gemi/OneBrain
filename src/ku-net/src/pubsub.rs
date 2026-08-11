@@ -77,12 +77,12 @@ impl PubSubManager {
 
     /// Register a remote node's subscription.
     pub fn add_subscriber(&mut self, topic: DomainCode, subscriber: Subscription) {
-        let subs = self.subscriptions.entry(topic).or_insert_with(Vec::new);
+        let subs = self.subscriptions.entry(topic).or_default();
         // Don't duplicate
-        if !subs.iter().any(|s| s.node_id == subscriber.node_id) {
-            if subs.len() < self.max_subs_per_topic {
-                subs.push(subscriber);
-            }
+        if !subs.iter().any(|s| s.node_id == subscriber.node_id)
+            && subs.len() < self.max_subs_per_topic
+        {
+            subs.push(subscriber);
         }
     }
 

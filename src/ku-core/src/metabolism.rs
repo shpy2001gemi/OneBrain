@@ -36,9 +36,6 @@ pub const METABOLISM_ALIVE_THRESHOLD: f64 = 0.001;
 /// Default half-life for metabolic decay (30 days in seconds)
 pub const DEFAULT_HALF_LIFE_SECS: u64 = 30 * 24 * 3600;
 
-/// Ln(2) constant for exponential decay
-const LN2: f64 = 0.693147180559945;
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Metabolism Event Types
 // ═══════════════════════════════════════════════════════════════════════════
@@ -184,7 +181,7 @@ impl KUMetabolism {
         };
 
         // Exponential decay: e^(-ln2 × age / half_life)
-        let decay = (-LN2 * age_secs as f64 / half_life as f64).exp();
+        let decay = (-std::f64::consts::LN_2 * age_secs as f64 / half_life as f64).exp();
 
         // Raw signal components (normalized by node diversity)
         let diversity = (self.unique_nodes.value() as f64).max(1.0);

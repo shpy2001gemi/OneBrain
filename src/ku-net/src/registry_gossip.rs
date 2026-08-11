@@ -572,7 +572,7 @@ mod tests {
     fn make_entry(name: &str, qid: u32) -> WireConceptEntry {
         let ccid = ku_core::ccid::ccid(format!("wd:Q{}", qid).as_bytes());
         WireConceptEntry {
-            ccid: ccid,
+            ccid,
             qid,
             category: ConceptCategory::Entity as u8,
             canonical_name: name.to_string(),

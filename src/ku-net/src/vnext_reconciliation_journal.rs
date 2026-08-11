@@ -1308,9 +1308,11 @@ mod tests {
     use super::*;
     use crate::vnext_reconciliation::{PayloadRejectReason, PayloadSinkOutcome};
 
+    type SharedSinkState = Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>;
+
     #[derive(Clone, Default)]
     struct SharedSink {
-        state: Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>,
+        state: SharedSinkState,
         insertions: Arc<Mutex<u64>>,
         reject: bool,
         defer_missing_dependency: Arc<AtomicBool>,
@@ -1331,12 +1333,12 @@ mod tests {
             }
             let mut state = self.state.lock().unwrap();
             let key = (kind as u64, cid);
-            if state.contains_key(&key) {
-                return Ok(PayloadSinkOutcome::AlreadyPresent);
+            if let std::collections::btree_map::Entry::Vacant(entry) = state.entry(key) {
+                entry.insert(bytes.to_vec());
+                *self.insertions.lock().unwrap() += 1;
+                return Ok(PayloadSinkOutcome::ValidatedStored);
             }
-            state.insert(key, bytes.to_vec());
-            *self.insertions.lock().unwrap() += 1;
-            Ok(PayloadSinkOutcome::ValidatedStored)
+            Ok(PayloadSinkOutcome::AlreadyPresent)
         }
     }
 
@@ -1655,8 +1657,10 @@ mod tests {
     #[test]
     fn retry_and_backpressure_are_bounded_and_persisted() {
         let backend = SharedMemoryBackend::default();
-        let mut rejecting = SharedSink::default();
-        rejecting.reject = true;
+        let rejecting = SharedSink {
+            reject: true,
+            ..SharedSink::default()
+        };
         let frame = frame();
         let mut session = JournaledReconciliationSession::open(
             backend.clone(),

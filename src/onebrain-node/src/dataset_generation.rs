@@ -1190,16 +1190,13 @@ fn verify_projection_bindings(path: &Path, root: [u8; 32]) -> Result<(), Restore
     Ok(())
 }
 
-fn generation_projection_inputs(
-    path: &Path,
-) -> Result<
-    (
-        Vec<AcceptedRecordEntry>,
-        Vec<VaultSourceSnapshotRecord>,
-        [u8; 32],
-    ),
-    RestoreError,
-> {
+type GenerationProjectionInputs = (
+    Vec<AcceptedRecordEntry>,
+    Vec<VaultSourceSnapshotRecord>,
+    [u8; 32],
+);
+
+fn generation_projection_inputs(path: &Path) -> Result<GenerationProjectionInputs, RestoreError> {
     let manifest =
         DatasetManifestV1::from_canonical_bytes(&std::fs::read(path.join("manifest.bin"))?)?;
     let mut accepted = Vec::new();

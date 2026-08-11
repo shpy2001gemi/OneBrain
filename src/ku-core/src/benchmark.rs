@@ -9,7 +9,7 @@
 //! 6. Full summary report
 
 #[cfg(test)]
-mod benchmark {
+mod tests {
     use crate::decoder::*;
     use crate::encoder::*;
     use crate::error::KuError;
@@ -1032,8 +1032,8 @@ mod benchmark {
         ];
 
         println!(
-            "\n  {:>15}  {:>5}  {:>5}  {:>15}  {:<20}  {}",
-            "Value", "ExpB", "GotB", "Decoded", "Label", "Status"
+            "\n  {:>15}  {:>5}  {:>5}  {:>15}  {:<20}  Status",
+            "Value", "ExpB", "GotB", "Decoded", "Label"
         );
         println!(
             "  {:->15}  {:->5}  {:->5}  {:->15}  {:-<20}  {:-<6}",

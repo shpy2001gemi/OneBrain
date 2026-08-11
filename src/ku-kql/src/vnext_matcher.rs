@@ -69,7 +69,7 @@ pub struct TypedMatchRequest<'a> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MatcherOutcome {
     Proposal {
-        proposal: BindingProposal,
+        proposal: Box<BindingProposal>,
         checks: Vec<MatchCheck>,
     },
     HardMismatch {
@@ -234,7 +234,10 @@ impl ExactTypedMatcher {
             privacy: request.privacy,
         };
         proposal.validate()?;
-        Ok(MatcherOutcome::Proposal { proposal, checks })
+        Ok(MatcherOutcome::Proposal {
+            proposal: Box::new(proposal),
+            checks,
+        })
     }
 }
 

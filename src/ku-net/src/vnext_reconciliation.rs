@@ -580,11 +580,14 @@ mod tests {
                 return Ok(PayloadSinkOutcome::RejectedInvalid);
             }
             let key = record_key(kind, cid);
-            if self.stored.contains_key(&key) {
-                Ok(PayloadSinkOutcome::AlreadyPresent)
-            } else {
-                self.stored.insert(key, canonical_bytes.to_vec());
-                Ok(PayloadSinkOutcome::ValidatedStored)
+            match self.stored.entry(key) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(canonical_bytes.to_vec());
+                    Ok(PayloadSinkOutcome::ValidatedStored)
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {
+                    Ok(PayloadSinkOutcome::AlreadyPresent)
+                }
             }
         }
     }
@@ -634,7 +637,7 @@ mod tests {
         assert_eq!(receiver.sink.calls, 0);
 
         receiver
-            .ingest_manifest(&manifest(&[valid.clone()]))
+            .ingest_manifest(&manifest(std::slice::from_ref(&valid)))
             .unwrap();
         let mut corrupt = valid.clone();
         corrupt.canonical_bytes[0] ^= 1;
@@ -683,8 +686,10 @@ mod tests {
     fn corrupt_branch_does_not_block_valid_branch() {
         let good = frame(b"good");
         let bad = frame(b"reject-me");
-        let mut sink = TestSink::default();
-        sink.reject_prefix = Some(b'r');
+        let sink = TestSink {
+            reject_prefix: Some(b'r'),
+            ..TestSink::default()
+        };
         let mut receiver = ReconciliationReceiver::new(context(), sink).unwrap();
         receiver
             .ingest_manifest(&manifest(&[good.clone(), bad.clone()]))

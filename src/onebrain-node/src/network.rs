@@ -49,8 +49,7 @@ const MAX_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
 
 /// Send a message over a TCP stream (length-prefixed JSON).
 pub async fn send_message(stream: &mut TcpStream, msg: &NetMessage) -> Result<(), std::io::Error> {
-    let data =
-        serde_json::to_vec(msg).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let data = serde_json::to_vec(msg).map_err(std::io::Error::other)?;
     let len = (data.len() as u32).to_be_bytes();
     stream.write_all(&len).await?;
     stream.write_all(&data).await?;

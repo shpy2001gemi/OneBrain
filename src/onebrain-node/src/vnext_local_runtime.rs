@@ -167,7 +167,7 @@ impl<B: AtomicMappingBackend> LocalVerticalSlice<B> {
             MatcherOutcome::Proposal { proposal, checks } => {
                 let proposal_id = self
                     .proposals
-                    .insert(proposal)
+                    .insert(*proposal)
                     .map_err(LocalRuntimeError::Proposal)?;
                 Ok(LocalCandidateOutcome::Quarantined {
                     proposal_id,

@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::task::{Context, Poll, Waker};
 
 use ed25519_dalek::SigningKey;
 use ku_core::foundation::{
@@ -481,9 +483,7 @@ async fn restore_archive(
 
 #[tokio::test]
 async fn encrypted_logical_fixture_roundtrips_and_rebuilds_excluded_projection() {
-    let _serial = environment_lock()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = environment_lock().lock().await;
     let fixture = make_fixture(fixture_rows(true));
     let (archive, manifest_root) = create_archive(&fixture, b"archive-password").await;
     assert!(archive.starts_with(b"OBARV002"));
@@ -500,9 +500,7 @@ async fn encrypted_logical_fixture_roundtrips_and_rebuilds_excluded_projection()
 
 #[tokio::test]
 async fn wrong_password_modified_byte_and_plaintext_never_activate() {
-    let _serial = environment_lock()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = environment_lock().lock().await;
     let fixture = make_fixture(fixture_rows(false));
     let (archive, _) = create_archive(&fixture, b"correct-password").await;
     assert!(restore_archive(&fixture, &archive, b"wrong-password")
@@ -520,9 +518,7 @@ async fn wrong_password_modified_byte_and_plaintext_never_activate() {
 
 #[tokio::test]
 async fn restore_without_a_staged_target_factory_fails_before_activation() {
-    let _serial = environment_lock()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = environment_lock().lock().await;
     let source = make_fixture(fixture_rows(false));
     let (archive, _) = create_archive(&source, b"correct-password").await;
 
@@ -578,9 +574,7 @@ fn releasing_an_already_drained_reservation_is_idempotent() {
 
 #[tokio::test]
 async fn capability_type_state_bounds_disconnect_and_cross_operation_fail_closed() {
-    let _serial = environment_lock()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = environment_lock().lock().await;
     let fixture = make_fixture(fixture_rows(false));
     let first = fixture.registry.reserve_operation().unwrap();
     let second = fixture.registry.reserve_operation().unwrap();
@@ -685,9 +679,7 @@ async fn capability_type_state_bounds_disconnect_and_cross_operation_fail_closed
 
 #[tokio::test]
 async fn quiesce_failure_and_every_archive_failpoint_publish_no_sink() {
-    let _serial = environment_lock()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = environment_lock().lock().await;
     let fixture = make_fixture(fixture_rows(false));
     let reservation = fixture.registry.reserve_operation().unwrap();
     let sink = fixture
@@ -702,13 +694,20 @@ async fn quiesce_failure_and_every_archive_failpoint_publish_no_sink() {
             Zeroizing::new(b"password".to_vec()),
         )
         .unwrap();
-    let held = fixture.quiesce.lock().unwrap();
-    assert!(fixture
-        .service
-        .create_archive(sink, secret, ProducerArtifactIdentityV1::Unknown)
-        .await
-        .is_err());
-    drop(held);
+    let quiesce_result = {
+        let _held = fixture.quiesce.lock().unwrap();
+        let mut future = std::pin::pin!(fixture.service.create_archive(
+            sink,
+            secret,
+            ProducerArtifactIdentityV1::Unknown,
+        ));
+        let mut context = Context::from_waker(Waker::noop());
+        match future.as_mut().poll(&mut context) {
+            Poll::Ready(result) => result,
+            Poll::Pending => panic!("quiesce rejection must complete before asynchronous I/O"),
+        }
+    };
+    assert!(quiesce_result.is_err());
     assert_eq!(fixture.registry.active_capability_count().unwrap(), 0);
 
     for phase in [
@@ -744,9 +743,7 @@ async fn quiesce_failure_and_every_archive_failpoint_publish_no_sink() {
 
 #[tokio::test]
 async fn stale_process_registry_and_unsafe_logical_keys_are_rejected() {
-    let _serial = environment_lock()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _serial = environment_lock().lock().await;
     let fixture = make_fixture(fixture_rows(false));
     let foreign = ArchiveCapabilityRegistry::new().unwrap();
     let reservation = foreign.reserve_operation().unwrap();
@@ -796,9 +793,9 @@ async fn stale_process_registry_and_unsafe_logical_keys_are_rejected() {
         .is_err());
 }
 
-fn environment_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+fn environment_lock() -> &'static tokio::sync::Mutex<()> {
+    static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
 #[derive(Clone)]

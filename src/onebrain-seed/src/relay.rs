@@ -47,13 +47,9 @@ impl RelayService {
         };
 
         let mut guard = stream.lock().await;
-        send_message(&mut *guard, &msg)
+        send_message(&mut guard, &msg)
             .await
             .map_err(|e| format!("Relay failed: {}", e))
-    }
-
-    pub fn has_connection(&self, peer_id: &str) -> bool {
-        self.connections.contains_key(peer_id)
     }
 
     pub fn connection_count(&self) -> usize {

@@ -53,7 +53,7 @@ fn three_domain_exportable_envelopes_are_typed_roundtrip_and_recovered() {
     let node = key(1);
     let actor = key(2);
     let feed = key(3);
-    let policies = vec![
+    let policies = [
         exportable(node_identity(&node), &node),
         exportable(actor_identity(&actor), &actor),
         exportable(feed_identity(&feed, [9; 32]), &feed),

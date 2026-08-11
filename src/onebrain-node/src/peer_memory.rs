@@ -67,7 +67,7 @@ impl PeerMemory {
         // Keep max 100 peers, most recently seen first
         if self.known_peers.len() > 100 {
             self.known_peers
-                .sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+                .sort_by_key(|peer| std::cmp::Reverse(peer.last_seen));
             self.known_peers.truncate(100);
         }
     }

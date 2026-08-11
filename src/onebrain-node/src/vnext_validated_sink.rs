@@ -907,7 +907,9 @@ mod tests {
         (feed_bytes, feed_cid, event_bytes, event_cid.into_bytes())
     }
 
-    fn feed_object_and_event() -> (Vec<u8>, [u8; 32], Vec<u8>, [u8; 32], Vec<u8>, [u8; 32]) {
+    type FeedObjectEventFixture = (Vec<u8>, [u8; 32], Vec<u8>, [u8; 32], Vec<u8>, [u8; 32]);
+
+    fn feed_object_and_event() -> FeedObjectEventFixture {
         let key = SigningKey::from_bytes(&[0x61; 32]);
         let signed_feed = FeedInception::new(
             *key.verifying_key().as_bytes(),

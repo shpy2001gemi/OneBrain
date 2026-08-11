@@ -430,11 +430,9 @@ impl MembershipState {
         let current_score = components.score();
 
         // Check demotion with hysteresis (SPEC B §2.5)
-        if new_tier < self.my_tier && current_score < self.my_tier.demotion_threshold() {
-            self.my_tier = new_tier;
-        }
-        // Check promotion
-        else if new_tier > self.my_tier && current_score >= new_tier.promotion_threshold() {
+        if (new_tier < self.my_tier && current_score < self.my_tier.demotion_threshold())
+            || (new_tier > self.my_tier && current_score >= new_tier.promotion_threshold())
+        {
             self.my_tier = new_tier;
         }
 

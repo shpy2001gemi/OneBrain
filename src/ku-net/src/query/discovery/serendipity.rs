@@ -319,11 +319,7 @@ mod tests {
     #[test]
     fn test_known_vs_novel() {
         let mut engine = SerendipityEngine::new();
-        engine.build_profile(&vec![
-            make_simple_ku(1),
-            make_simple_ku(2),
-            make_simple_ku(3),
-        ]);
+        engine.build_profile(&[make_simple_ku(1), make_simple_ku(2), make_simple_ku(3)]);
 
         let known_ku = make_ku(1, &[2, 3]);
         assert!(engine.compute_novelty(&known_ku) < 0.5);
@@ -335,7 +331,7 @@ mod tests {
     #[test]
     fn test_evaluate() {
         let mut engine = SerendipityEngine::new();
-        engine.build_profile(&vec![make_ku(1, &[10])]);
+        engine.build_profile(&[make_ku(1, &[10])]);
         let candidates = vec![make_ku(50, &[10])];
         let _ = engine.evaluate_candidates(&candidates); // Should not panic
     }
@@ -369,7 +365,7 @@ mod tests {
     #[test]
     fn test_sorted() {
         let mut engine = SerendipityEngine::new();
-        engine.build_profile(&vec![make_ku(1, &[10])]);
+        engine.build_profile(&[make_ku(1, &[10])]);
         let candidates = vec![make_ku(50, &[10]), make_ku(99, &[88])];
         let discoveries = engine.evaluate_candidates(&candidates);
         for i in 1..discoveries.len() {

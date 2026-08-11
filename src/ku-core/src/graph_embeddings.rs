@@ -97,12 +97,12 @@ impl EntityEmbedding {
     /// 32-byte seed (e.g. a BLAKE3 hash of the entity ID).
     pub fn from_seed(seed: &[u8; 32]) -> Self {
         let mut values = [0i8; 64];
-        for i in 0..64 {
+        for (i, value) in values.iter_mut().enumerate() {
             let idx = i % 32;
             let mix = seed[idx]
                 .wrapping_mul(71)
                 .wrapping_add(seed[(idx + 13) % 32]);
-            values[i] = mix as i8;
+            *value = mix as i8;
         }
         Self {
             values,
@@ -353,7 +353,7 @@ pub fn predict_tail(
         .enumerate()
         .map(|(idx, tail)| (idx, rotate_score(head, relation, tail)))
         .collect();
-    scored.sort_by(|a, b| b.1.cmp(&a.1)); // descending
+    scored.sort_by_key(|entry| std::cmp::Reverse(entry.1));
     scored.truncate(top_k);
     scored
 }

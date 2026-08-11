@@ -118,11 +118,11 @@ impl SeedClient {
         let stream = self.stream.as_ref().ok_or("Not connected to seed")?;
         let mut guard = stream.lock().await;
 
-        send_message(&mut *guard, &SeedMessage::GetPeers)
+        send_message(&mut guard, &SeedMessage::GetPeers)
             .await
             .map_err(|e| format!("Send failed: {}", e))?;
 
-        match recv_message::<SeedMessage>(&mut *guard).await {
+        match recv_message::<SeedMessage>(&mut guard).await {
             Ok(SeedMessage::PeerList { peers }) => Ok(peers),
             Ok(_) => Err("Unexpected response".to_string()),
             Err(e) => Err(format!("Read failed: {}", e)),
@@ -140,7 +140,7 @@ impl SeedClient {
         };
 
         let mut guard = stream.lock().await;
-        send_message(&mut *guard, &relay_msg)
+        send_message(&mut guard, &relay_msg)
             .await
             .map_err(|e| format!("Relay failed: {}", e))
     }
@@ -168,11 +168,11 @@ impl SeedClient {
                     ku_count: 0, // TODO: get actual count from shared state
                 };
                 let mut guard = stream.lock().await;
-                if send_message(&mut *guard, &msg).await.is_err() {
+                if send_message(&mut guard, &msg).await.is_err() {
                     break; // connection lost
                 }
                 // Read HeartbeatAck
-                match recv_message::<SeedMessage>(&mut *guard).await {
+                match recv_message::<SeedMessage>(&mut guard).await {
                     Ok(SeedMessage::HeartbeatAck) => {}
                     Ok(SeedMessage::RelayedMessage {
                         from_peer_id: _,

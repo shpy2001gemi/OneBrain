@@ -19,6 +19,12 @@ pub struct AntiGamingGuard {
     policy: AntiGamingPolicy,
 }
 
+impl Default for AntiGamingGuard {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AntiGamingGuard {
     /// Create a production guard for a Leaf-tier node (epoch 0).
     pub fn new() -> Self {

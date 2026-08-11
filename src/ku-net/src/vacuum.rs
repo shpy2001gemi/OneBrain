@@ -37,14 +37,14 @@ impl VacuumFilter {
     pub fn new(capacity: usize, fpr: f64) -> Self {
         // Optimal bits per item: -log2(fpr) * 1.44
         let bpi = (-fpr.log2() * 1.44).ceil() as u8;
-        let bits_per_item = bpi.max(4).min(20);
+        let bits_per_item = bpi.clamp(4, 20);
 
         let num_bits = capacity * bits_per_item as usize;
-        let num_words = (num_bits + 63) / 64;
+        let num_words = num_bits.div_ceil(64);
 
         // Optimal hash count: bits_per_item * ln(2) ≈ bits_per_item * 0.693
-        let hash_count = ((bits_per_item as f64) * 0.693).ceil() as u8;
-        let hash_count = hash_count.max(1).min(16);
+        let hash_count = ((bits_per_item as f64) * std::f64::consts::LN_2).ceil() as u8;
+        let hash_count = hash_count.clamp(1, 16);
 
         Self {
             bits: vec![0u64; num_words],
@@ -118,7 +118,7 @@ impl VacuumFilter {
         let bits_per_item = bytes[5];
         let num_items = u16::from_be_bytes([bytes[6], bytes[7]]) as usize;
 
-        let num_words = (num_bits + 63) / 64;
+        let num_words = num_bits.div_ceil(64);
         let expected_len = 8 + num_words * 8;
 
         if bytes.len() < expected_len {

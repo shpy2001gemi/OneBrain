@@ -85,22 +85,21 @@ impl UserProfile {
     /// Top expertise areas by KU count.
     pub fn top_expertise(&self, n: usize) -> Vec<&ExpertiseArea> {
         let mut areas: Vec<&ExpertiseArea> = self.expertise_areas.iter().collect();
-        areas.sort_by(|a, b| b.ku_count.cmp(&a.ku_count));
+        areas.sort_by_key(|area| std::cmp::Reverse(area.ku_count));
         areas.truncate(n);
         areas
     }
 
     /// Save profile to JSON file.
     pub fn save(&self, path: &std::path::Path) -> Result<(), std::io::Error> {
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 
     /// Load profile from JSON file.
     pub fn load(path: &std::path::Path) -> Result<Self, std::io::Error> {
         let json = std::fs::read_to_string(path)?;
-        serde_json::from_str(&json).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+        serde_json::from_str(&json).map_err(std::io::Error::other)
     }
 }
 

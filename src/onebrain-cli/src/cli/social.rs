@@ -56,7 +56,7 @@ pub(crate) fn cmd_following(node: &OneBrainNode) {
         println!("  Use 'follow <node_id>' to follow a node.");
     } else {
         println!("  ── Following ({} nodes) ──", list.len());
-        println!("  {:<32}  {:<20}  {}", "Node ID", "Name", "Since");
+        println!("  {:<32}  {:<20}  Since", "Node ID", "Name");
         println!("  {}", "─".repeat(70));
         for f in &list {
             let since = format_timestamp(f.followed_since);

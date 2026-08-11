@@ -22,6 +22,10 @@ use crate::graph_types::{BondEvent, BondMeta, WeakeningReason};
 use crate::types::{Creator, DecayRate, EdgeState, RelationType};
 use std::collections::HashMap;
 
+pub type DreamBondKey = ([u8; 32], [u8; 32], RelationType);
+pub type DreamBondMap = HashMap<DreamBondKey, BondMeta>;
+pub type DreamBondCandidate = ([u8; 32], [u8; 32], RelationType, BondMeta);
+
 // ============================================================================
 // 1. DreamConfig — Dream Mode configuration
 // ============================================================================
@@ -72,16 +76,9 @@ impl Default for DreamConfig {
 /// 1. **Replay** — reinforces frequently-used bonds
 /// 2. **Associate** — discovers cross-domain connections via embeddings
 /// 3. **Prune** — removes stale speculative bonds
+#[derive(Default)]
 pub struct DreamEngine {
     pub config: DreamConfig,
-}
-
-impl Default for DreamEngine {
-    fn default() -> Self {
-        Self {
-            config: DreamConfig::default(),
-        }
-    }
 }
 
 impl DreamEngine {
@@ -145,7 +142,7 @@ impl DreamEngine {
     pub fn replay_phase(
         &self,
         access_log: &[AccessRecord],
-        current_bonds: &mut HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>,
+        current_bonds: &mut DreamBondMap,
     ) -> (usize, u64, Vec<BondEvent>) {
         let mut reinforced = 0;
         let mut total_added: u64 = 0;
@@ -197,12 +194,9 @@ impl DreamEngine {
         &self,
         entities: &[([u8; 32], EntityEmbedding)],
         relation_table: &RelationTable,
-        existing_bonds: &HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>,
+        existing_bonds: &DreamBondMap,
         now_secs: u64,
-    ) -> (
-        Vec<([u8; 32], [u8; 32], RelationType, BondMeta)>,
-        Vec<BondEvent>,
-    ) {
+    ) -> (Vec<DreamBondCandidate>, Vec<BondEvent>) {
         let mut new_bonds = Vec::new();
         let mut events = Vec::new();
 
@@ -274,7 +268,7 @@ impl DreamEngine {
     /// Returns `(pruned_count, events)`.
     pub fn pruning_phase(
         &self,
-        bonds: &mut HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>,
+        bonds: &mut DreamBondMap,
         access_log: &[AccessRecord],
         now_secs: u64,
     ) -> (usize, Vec<BondEvent>) {
@@ -333,7 +327,7 @@ impl DreamEngine {
         access_log: &[AccessRecord],
         entities: &[([u8; 32], EntityEmbedding)],
         relation_table: &RelationTable,
-        bonds: &mut HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>,
+        bonds: &mut DreamBondMap,
         now_secs: u64,
     ) -> DreamReport {
         // Phase 1: Replay — reinforce frequently-accessed bonds
@@ -398,9 +392,7 @@ mod tests {
         }
     }
 
-    fn make_bonds_map(
-        entries: Vec<(u8, u8, RelationType, u16, u32)>,
-    ) -> HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> {
+    fn make_bonds_map(entries: Vec<(u8, u8, RelationType, u16, u32)>) -> DreamBondMap {
         entries
             .into_iter()
             .map(|(src, tgt, rel, w, ts)| {
@@ -523,10 +515,12 @@ mod tests {
 
     #[test]
     fn association_finds_similar() {
-        let mut config = DreamConfig::default();
         // Use a very permissive threshold so that even somewhat-distant
         // embeddings can form associations in tests.
-        config.association_score_threshold = i32::MIN;
+        let config = DreamConfig {
+            association_score_threshold: i32::MIN,
+            ..DreamConfig::default()
+        };
         let engine = DreamEngine::new(config);
 
         // Two entities with identical embeddings should score well
@@ -534,7 +528,7 @@ mod tests {
         let emb = EntityEmbedding::from_seed(&seed);
         let entities = vec![(make_cid(1), emb.clone()), (make_cid(2), emb.clone())];
         let relation_table = RelationTable::new();
-        let existing: HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> = HashMap::new();
+        let existing = DreamBondMap::new();
         let now = 100_000u64;
 
         let (new_bonds, events) =
@@ -550,8 +544,10 @@ mod tests {
 
     #[test]
     fn association_skips_existing() {
-        let mut config = DreamConfig::default();
-        config.association_score_threshold = i32::MIN;
+        let config = DreamConfig {
+            association_score_threshold: i32::MIN,
+            ..DreamConfig::default()
+        };
         let engine = DreamEngine::new(config);
 
         let seed = [42u8; 32];
@@ -560,7 +556,7 @@ mod tests {
         let relation_table = RelationTable::new();
 
         // First run: discover the best relation
-        let existing: HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> = HashMap::new();
+        let existing = DreamBondMap::new();
         let (first_bonds, _) =
             engine.association_phase(&entities, &relation_table, &existing, 100_000);
         assert!(!first_bonds.is_empty());
@@ -588,9 +584,11 @@ mod tests {
 
     #[test]
     fn association_respects_max() {
-        let mut config = DreamConfig::default();
-        config.association_score_threshold = i32::MIN;
-        config.max_associations_per_cycle = 2;
+        let config = DreamConfig {
+            association_score_threshold: i32::MIN,
+            max_associations_per_cycle: 2,
+            ..DreamConfig::default()
+        };
         let engine = DreamEngine::new(config);
 
         // Create enough entities to potentially produce many pairs
@@ -602,7 +600,7 @@ mod tests {
             })
             .collect();
         let relation_table = RelationTable::new();
-        let existing: HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> = HashMap::new();
+        let existing = DreamBondMap::new();
 
         let (new_bonds, _) =
             engine.association_phase(&entities, &relation_table, &existing, 100_000);
@@ -617,15 +615,17 @@ mod tests {
 
     #[test]
     fn association_generates_events() {
-        let mut config = DreamConfig::default();
-        config.association_score_threshold = i32::MIN;
+        let config = DreamConfig {
+            association_score_threshold: i32::MIN,
+            ..DreamConfig::default()
+        };
         let engine = DreamEngine::new(config);
 
         let seed = [42u8; 32];
         let emb = EntityEmbedding::from_seed(&seed);
         let entities = vec![(make_cid(1), emb.clone()), (make_cid(2), emb.clone())];
         let relation_table = RelationTable::new();
-        let existing: HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> = HashMap::new();
+        let existing = DreamBondMap::new();
 
         let (_, events) = engine.association_phase(&entities, &relation_table, &existing, 100_000);
         assert!(!events.is_empty());
@@ -737,8 +737,10 @@ mod tests {
 
     #[test]
     fn full_dream_cycle() {
-        let mut config = DreamConfig::default();
-        config.association_score_threshold = i32::MIN;
+        let config = DreamConfig {
+            association_score_threshold: i32::MIN,
+            ..DreamConfig::default()
+        };
         let engine = DreamEngine::new(config);
 
         let now = 1_000_000u64;
@@ -779,7 +781,7 @@ mod tests {
     #[test]
     fn full_dream_cycle_empty() {
         let engine = DreamEngine::default();
-        let mut bonds: HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> = HashMap::new();
+        let mut bonds = DreamBondMap::new();
         let access_log: Vec<AccessRecord> = vec![];
         let entities: Vec<([u8; 32], EntityEmbedding)> = vec![];
         let relation_table = RelationTable::new();
@@ -799,7 +801,7 @@ mod tests {
     #[test]
     fn replay_missing_bond_is_noop() {
         let engine = DreamEngine::default();
-        let mut bonds: HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> = HashMap::new();
+        let mut bonds = DreamBondMap::new();
         // Access log references a bond that doesn't exist in the map
         let log = vec![make_access(99, 100, RelationType::PartOf, 10, 2000)];
 

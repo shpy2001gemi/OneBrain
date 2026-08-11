@@ -15,6 +15,9 @@ pub const STANDING_NEED_PROFILE_MINOR: u64 = 0;
 pub const MINIMAL_VIEW_REDUCER_VERSION: u64 = 1;
 pub const MAX_STANDING_NEEDS: usize = 1_000_000;
 
+type StandingNeedRecord = (u64, Vec<u8>);
+type ResolutionStateEntry = (ResolutionTarget, ResolutionState);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StandingNeedId([u8; 32]);
 
@@ -205,7 +208,7 @@ pub trait StandingNeedBackend: Send + Sync {
 
 #[derive(Default)]
 pub struct InMemoryStandingNeedBackend {
-    records: Mutex<HashMap<[u8; 32], (u64, Vec<u8>)>>,
+    records: Mutex<HashMap<[u8; 32], StandingNeedRecord>>,
 }
 
 impl StandingNeedBackend for InMemoryStandingNeedBackend {
@@ -436,7 +439,7 @@ pub struct MinimalViewSnapshot {
 #[derive(Clone, Debug, Default)]
 pub struct MinimalKnowledgeViews {
     receptor_needs: BTreeMap<(u64, [u8; 32]), BTreeSet<[u8; 32]>>,
-    receptor_resolutions: BTreeMap<(u64, [u8; 32]), Vec<(ResolutionTarget, ResolutionState)>>,
+    receptor_resolutions: BTreeMap<(u64, [u8; 32]), Vec<ResolutionStateEntry>>,
     mappings: BTreeMap<[u8; 32], MappingViewRecord>,
     mapping_adoptions: BTreeMap<[u8; 32], BTreeSet<ResolutionTargetKey>>,
     snapshot: Option<MinimalViewSnapshot>,
@@ -817,9 +820,9 @@ mod tests {
             disclosure: DisclosureClass::Public,
         };
         let first = MinimalKnowledgeViews::rebuild(
-            &[need.clone()],
-            &[resolution.clone()],
-            &[mapping_record.clone()],
+            std::slice::from_ref(&need),
+            std::slice::from_ref(&resolution),
+            std::slice::from_ref(&mapping_record),
         )
         .unwrap();
         let restarted =

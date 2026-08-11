@@ -1339,6 +1339,8 @@ mod persistent {
         ))
     }
 
+    pub use RedbVerifiedBackend as Backend;
+
     #[cfg(test)]
     mod tests {
         use std::time::{SystemTime, UNIX_EPOCH};
@@ -1415,8 +1417,6 @@ mod persistent {
             std::fs::remove_file(path).unwrap();
         }
     }
-
-    pub use RedbVerifiedBackend as Backend;
 }
 
 #[cfg(feature = "persist")]

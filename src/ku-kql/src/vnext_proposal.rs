@@ -263,6 +263,10 @@ impl ProposalQuarantine {
     pub fn len(&self) -> usize {
         self.proposals.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.proposals.is_empty()
+    }
 }
 
 fn canonical_reference_set(values: &[ObjectReference]) -> Result<CanonicalValue, ProposalError> {

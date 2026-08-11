@@ -1226,10 +1226,10 @@ pub async fn prepare_need(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, request);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1343,10 +1343,10 @@ pub async fn activate_need(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, request);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1419,10 +1419,10 @@ pub async fn list_needs(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, query);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1465,10 +1465,10 @@ pub async fn get_need(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, id);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1500,10 +1500,10 @@ pub async fn retire_need(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, id);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1649,10 +1649,10 @@ pub async fn scan_need(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, id, headers, request);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1803,10 +1803,10 @@ pub async fn list_need_matches(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, id, query);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1927,10 +1927,10 @@ pub async fn prepare_public_use(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, request);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "Public UseEvidence publication runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -2104,10 +2104,10 @@ pub async fn confirm_public_use(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, headers, request);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "Public UseEvidence publication runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -2205,10 +2205,10 @@ pub async fn get_publication(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, id);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "Public UseEvidence publication runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -2251,10 +2251,10 @@ pub async fn get_metabolic_view(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, target, headers);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed PoMV view runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {

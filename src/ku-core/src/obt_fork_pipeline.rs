@@ -67,6 +67,12 @@ pub struct ForkPipeline {
     processed: Vec<ForkWarrantRecord>,
 }
 
+impl Default for ForkPipeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ForkPipeline {
     /// Create an empty pipeline.
     pub fn new() -> Self {

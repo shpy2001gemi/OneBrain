@@ -7,7 +7,7 @@ use super::helpers::*;
 pub(crate) fn cmd_tag(node: &mut OneBrainNode, args: &str) {
     let parts: Vec<&str> = args.splitn(3, ' ').collect();
 
-    match parts.first().map(|s| *s) {
+    match parts.first().copied() {
         Some("add") => {
             if parts.len() < 3 {
                 eprintln!("  ✗ Usage: tag add <cid> <tag>");
@@ -148,7 +148,7 @@ pub(crate) fn cmd_unpin(node: &mut OneBrainNode, args: &str) {
 pub(crate) fn cmd_watch(node: &mut OneBrainNode, args: &str) {
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
 
-    match parts.first().map(|s| *s) {
+    match parts.first().copied() {
         Some("create") | Some("add") => {
             let kql = parts.get(1).copied().unwrap_or("").trim();
             if kql.is_empty() {

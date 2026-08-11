@@ -170,7 +170,7 @@ impl ReplicationManager {
         // 2. From remaining, find tier >= 2 node (closest by XOR)
         let mut tier_anchored = Vec::new();
         for &(node_id, tier) in &sorted {
-            if tier_anchored.len() >= 1 {
+            if !tier_anchored.is_empty() {
                 break;
             }
             if tier >= 2 && !selected.contains(&node_id) {
@@ -193,7 +193,7 @@ impl ReplicationManager {
         // 4. From remaining, pick first unselected as diversity node
         let mut diversity = Vec::new();
         for &(node_id, _tier) in &sorted {
-            if diversity.len() >= 1 {
+            if !diversity.is_empty() {
                 break;
             }
             if !selected.contains(&node_id) {
@@ -205,11 +205,6 @@ impl ReplicationManager {
         // 5. Fill shortfalls from XOR overflow
         let total = xor_closest.len() + tier_anchored.len() + diversity.len();
         if total < self.replication_factor {
-            // Fill tier_anchored shortfall
-            while tier_anchored.len() < 2 && xor_closest.len() > 4 {
-                // Won't happen in practice since xor_closest caps at 4
-                break;
-            }
             // Fill from any remaining sorted candidates
             for &(node_id, _tier) in &sorted {
                 if selected.len() >= self.replication_factor {
@@ -220,7 +215,7 @@ impl ReplicationManager {
                     // Add to whichever bucket is short
                     if tier_anchored.len() < 2 {
                         tier_anchored.push(node_id);
-                    } else if diversity.len() < 1 {
+                    } else if diversity.is_empty() {
                         diversity.push(node_id);
                     } else {
                         xor_closest.push(node_id);

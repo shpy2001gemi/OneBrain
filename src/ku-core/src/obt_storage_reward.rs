@@ -570,8 +570,8 @@ mod tests {
         let c_epoch_2 = generate_storage_challenges(2, &node_id, &cids, 50);
 
         // Different epochs should (very likely) produce different challenge sets
-        let cids_1: Vec<_> = c_epoch_1.iter().map(|c| c.ku_cid().clone()).collect();
-        let cids_2: Vec<_> = c_epoch_2.iter().map(|c| c.ku_cid().clone()).collect();
+        let cids_1: Vec<_> = c_epoch_1.iter().map(|c| *c.ku_cid()).collect();
+        let cids_2: Vec<_> = c_epoch_2.iter().map(|c| *c.ku_cid()).collect();
         // Not guaranteed to differ, but overwhelmingly likely with 100 KUs
         assert!(
             cids_1 != cids_2 || c_epoch_1.is_empty(),

@@ -253,12 +253,12 @@ impl OneBrainNode {
         // Create chat backend
         let chat_backend =
             OllamaBackend::new(&config.ollama_url, &config.model, "nomic-embed-text", 120)
-                .map_err(|e| NodeError::Ai(e))?;
+                .map_err(NodeError::Ai)?;
 
         // Create encoder backend for mediator
         let mediator_encoder_backend =
             OllamaBackend::new(&config.ollama_url, &config.model, "nomic-embed-text", 120)
-                .map_err(|e| NodeError::Ai(e))?;
+                .map_err(NodeError::Ai)?;
 
         // Create concept dictionary
         let dict: ConceptDict = default_dict();
@@ -660,42 +660,39 @@ impl OneBrainNode {
             let event_tx = event_tx.clone();
             let cid_hex = cid_hex.to_string();
             tokio::spawn(async move {
-                match TcpStream::connect(addr).await {
-                    Ok(mut stream) => {
-                        if send_message(&mut stream, &msg).await.is_ok() {
-                            // Wait for response (with timeout)
-                            match tokio::time::timeout(
-                                std::time::Duration::from_secs(60),
-                                recv_message(&mut stream),
-                            )
-                            .await
-                            {
-                                Ok(Ok(NetMessage::VerifyResponse {
-                                    agreement_score,
-                                    verified,
-                                    ..
-                                })) => {
-                                    let _ = event_tx
-                                        .send(NodeEvent::VerifyResult {
-                                            cid_hex,
-                                            agreement_score,
-                                            verified,
-                                            from: format!("{}", addr),
-                                        })
-                                        .await;
-                                }
-                                _ => {
-                                    let _ = event_tx
-                                        .send(NodeEvent::Notification(format!(
-                                            "  ⚠ Verification timeout from {}",
-                                            addr
-                                        )))
-                                        .await;
-                                }
+                if let Ok(mut stream) = TcpStream::connect(addr).await {
+                    if send_message(&mut stream, &msg).await.is_ok() {
+                        // Wait for response (with timeout)
+                        match tokio::time::timeout(
+                            std::time::Duration::from_secs(60),
+                            recv_message(&mut stream),
+                        )
+                        .await
+                        {
+                            Ok(Ok(NetMessage::VerifyResponse {
+                                agreement_score,
+                                verified,
+                                ..
+                            })) => {
+                                let _ = event_tx
+                                    .send(NodeEvent::VerifyResult {
+                                        cid_hex,
+                                        agreement_score,
+                                        verified,
+                                        from: format!("{}", addr),
+                                    })
+                                    .await;
+                            }
+                            _ => {
+                                let _ = event_tx
+                                    .send(NodeEvent::Notification(format!(
+                                        "  ⚠ Verification timeout from {}",
+                                        addr
+                                    )))
+                                    .await;
                             }
                         }
                     }
-                    Err(_) => {}
                 }
             });
         }
@@ -754,9 +751,7 @@ impl OneBrainNode {
                 message: "Rate limit check...".into(),
             })
             .await;
-        self.guard
-            .check_rate_limit()
-            .map_err(|e| NodeError::Pipeline(e))?;
+        self.guard.check_rate_limit().map_err(NodeError::Pipeline)?;
 
         // 2. Create a fresh encoder backend (OllamaBackend doesn't impl Clone)
         send_progress(
@@ -777,7 +772,7 @@ impl OneBrainNode {
             "nomic-embed-text",
             300,
         )
-        .map_err(|e| NodeError::Ai(e))?;
+        .map_err(NodeError::Ai)?;
 
         let encoder = AiEncoder::new(
             Box::new(encoder_backend),
@@ -843,7 +838,7 @@ impl OneBrainNode {
         // 4b. Quality gate check
         self.guard
             .check_quality(wire_bytes, instruction_count)
-            .map_err(|e| NodeError::Pipeline(e))?;
+            .map_err(NodeError::Pipeline)?;
 
         // 4c-4e. Store, index, record (using shared state)
         send_progress(5, "Storing KU and indexing...".into());
@@ -1180,7 +1175,7 @@ impl OneBrainNode {
         // Read identity from file if exists
         let identity_path = self.config.identity_path();
         let (node_id, created) = if identity_path.exists() {
-            let data = std::fs::read_to_string(&identity_path).map_err(|e| NodeError::Io(e))?;
+            let data = std::fs::read_to_string(&identity_path).map_err(NodeError::Io)?;
             let json: serde_json::Value = serde_json::from_str(&data)
                 .map_err(|e| NodeError::Config(format!("Invalid identity file: {}", e)))?;
             let nid = json["node_id"].as_str().unwrap_or("unknown").to_string();
@@ -1362,7 +1357,7 @@ impl OneBrainNode {
                     .partial_cmp(&a.trust)
                     .unwrap_or(std::cmp::Ordering::Equal)
             }),
-            _ => items.sort_by(|a, b| b.created.cmp(&a.created)), // default: newest first
+            _ => items.sort_by_key(|item| std::cmp::Reverse(item.created)), // default: newest first
         }
 
         // Paginate
@@ -1864,7 +1859,7 @@ impl OneBrainNode {
         // Outgoing bonds: this KU → targets
         if let Ok(outgoing) = state.storage.graph().outgoing_bonds(&cid_bytes) {
             for (rel, target_cid, meta) in &outgoing {
-                let target_hex = hex_cid(&target_cid);
+                let target_hex = hex_cid(target_cid);
                 let (preview, gene_type, pomv, is_local) = match state.storage.get(target_cid) {
                     Ok(target_ku) => {
                         let preview = target_ku
@@ -1899,7 +1894,7 @@ impl OneBrainNode {
         // Incoming bonds: sources → this KU
         if let Ok(incoming) = state.storage.graph().incoming_bonds(&cid_bytes) {
             for (rel, source_cid) in &incoming {
-                let source_hex = hex_cid(&source_cid);
+                let source_hex = hex_cid(source_cid);
                 let (preview, gene_type, pomv, is_local) = match state.storage.get(source_cid) {
                     Ok(source_ku) => {
                         let preview = source_ku
@@ -2017,11 +2012,11 @@ impl OneBrainNode {
         // Create new backends with the new model
         let new_chat_backend =
             OllamaBackend::new(&self.config.ollama_url, model_name, "nomic-embed-text", 120)
-                .map_err(|e| NodeError::Ai(e))?;
+                .map_err(NodeError::Ai)?;
 
         let new_encoder_backend =
             OllamaBackend::new(&self.config.ollama_url, model_name, "nomic-embed-text", 120)
-                .map_err(|e| NodeError::Ai(e))?;
+                .map_err(NodeError::Ai)?;
 
         // Replace backends in mediator
         self.mediator
@@ -2665,7 +2660,7 @@ impl OneBrainNode {
     /// List all saved drafts, newest first.
     pub fn list_drafts(&self) -> Vec<Draft> {
         let mut drafts: Vec<Draft> = self.drafts.values().cloned().collect();
-        drafts.sort_by(|a, b| b.updated.cmp(&a.updated));
+        drafts.sort_by_key(|draft| std::cmp::Reverse(draft.updated));
         drafts
     }
 
@@ -3013,7 +3008,7 @@ impl OneBrainNode {
         }
         self.ku_tags
             .entry(cid_hex.to_string())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(tag.to_string());
         Ok(())
     }
@@ -3087,7 +3082,7 @@ impl OneBrainNode {
                 });
             }
         }
-        result.sort_by(|a, b| b.created.cmp(&a.created));
+        result.sort_by_key(|item| std::cmp::Reverse(item.created));
         result
     }
 
@@ -3637,7 +3632,7 @@ impl OneBrainNode {
             0.0
         };
         let mut kus_by_type: Vec<(String, usize)> = type_counts.into_iter().collect();
-        kus_by_type.sort_by(|a, b| b.1.cmp(&a.1));
+        kus_by_type.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         let top_gene_type = kus_by_type
             .first()
             .map(|(t, _)| t.clone())
@@ -3726,7 +3721,7 @@ impl OneBrainNode {
                 example_cids: examples,
             })
             .collect();
-        result.sort_by(|a, b| b.ku_count.cmp(&a.ku_count));
+        result.sort_by_key(|item| std::cmp::Reverse(item.ku_count));
         Ok(result)
     }
 

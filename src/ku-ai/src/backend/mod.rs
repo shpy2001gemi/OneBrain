@@ -58,8 +58,10 @@ mod tests {
 
     #[test]
     fn test_create_backend_mock() {
-        let mut config = AiConfig::default();
-        config.backend = "mock".to_string();
+        let config = AiConfig {
+            backend: "mock".to_string(),
+            ..AiConfig::default()
+        };
         let backend = create_backend(&config);
         assert!(backend.is_ok());
         assert_eq!(backend.unwrap().backend_name(), "mock");
@@ -67,8 +69,10 @@ mod tests {
 
     #[test]
     fn test_create_backend_unknown() {
-        let mut config = AiConfig::default();
-        config.backend = "unknown".to_string();
+        let config = AiConfig {
+            backend: "unknown".to_string(),
+            ..AiConfig::default()
+        };
         let backend = create_backend(&config);
         assert!(backend.is_err());
     }

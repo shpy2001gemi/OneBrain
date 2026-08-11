@@ -581,7 +581,7 @@ mod tests {
 
         // Use different concept IDs to produce different CIDs
         // (trust_score is Epigenetics, doesn't affect CID)
-        let mut ku1 = make_test_ku(1000);
+        let ku1 = make_test_ku(1000);
         let mut ku2 = make_test_ku(2000);
         let mut ku3 = make_test_ku(3000);
         // Modify Core DNA to make CIDs unique

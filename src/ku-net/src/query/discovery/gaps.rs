@@ -290,7 +290,7 @@ mod tests {
         ku = rebuilt;
         ku.epi.add_bond(vec![0x42; 32], RelationType::Extends, 8000);
         if let Some(bond) = ku.epi.bonds.last_mut() {
-            bond.context = ctx_concepts.iter().copied().collect();
+            bond.context = ctx_concepts.to_vec();
         }
         ku
     }

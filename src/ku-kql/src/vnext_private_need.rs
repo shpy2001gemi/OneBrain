@@ -32,6 +32,7 @@ use crate::vnext_standing_need::{StandingNeedWriteOutcome, MAX_STANDING_NEEDS};
 pub const PRIVATE_NEED_PROFILE_MAJOR: u64 = 1;
 pub const PRIVATE_NEED_PROFILE_MINOR: u64 = 0;
 pub const MAX_PRIVATE_NEED_PLAINTEXT_BYTES: usize = 8 * 1024 * 1024;
+pub type PrivateNeedSnapshotRow = ([u8; 32], Vec<u8>);
 
 /// Caller-supplied key material. Production callers must source it from a
 /// CSPRNG-backed key store. The bytes are never exposed again.
@@ -748,7 +749,7 @@ mod persistent {
         /// Bounded substrate-neutral archive view. Plaintext canonical rows
         /// may only be consumed by the Node archive boundary, which places
         /// them inside the authenticated encrypted archive stream.
-        pub fn portable_snapshot(&self) -> Result<Vec<([u8; 32], Vec<u8>)>, PrivateNeedError> {
+        pub fn portable_snapshot(&self) -> Result<Vec<PrivateNeedSnapshotRow>, PrivateNeedError> {
             self.load_all()?
                 .into_iter()
                 .map(|record| Ok((*record.id.as_bytes(), record.canonical_bytes()?)))

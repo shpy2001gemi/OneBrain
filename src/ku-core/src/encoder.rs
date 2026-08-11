@@ -261,7 +261,7 @@ pub fn size_breakdown_full(ku: &KnowledgeUnit) -> Result<String, KuError> {
 
     let mut report = String::new();
     report.push_str("=== KU Size Report ===\n");
-    report.push_str(&format!("Layer 1 (Header):     8B (v5)\n"));
+    report.push_str("Layer 1 (Header):     8B (v5)\n");
     report.push_str(&format!(
         "Layer 1 (Codons):     {}B ({} codons)\n",
         codons_size,
@@ -279,7 +279,7 @@ pub fn size_breakdown_full(ku: &KnowledgeUnit) -> Result<String, KuError> {
     ));
     report.push_str(&format!("Layer 4 (Trust):      {}B\n", trust_size));
     report.push_str(&format!("Layer 4 (Epigenetic): {}B\n", epigenetic_size));
-    report.push_str(&format!("Layer 5 (CRC):        4B\n"));
+    report.push_str("Layer 5 (CRC):        4B\n");
     report.push_str("---\n");
     report.push_str(&format!("Total wire:           {}B\n", wire.len()));
     Ok(report)

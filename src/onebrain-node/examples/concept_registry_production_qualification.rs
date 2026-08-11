@@ -104,23 +104,23 @@ fn run() -> Result<(), Box<dyn Error>> {
         .and_then(Value::as_object)
         .cloned()
         .ok_or("verified request omitted bindings")?;
-    validate_candidate_measurements(
-        &registry_root,
-        &new_release,
-        &binding,
-        &probe_executable,
-        &probe_signature,
-        &rust_toolchain_evidence,
-        &runner_image_evidence,
-        &target_triple,
-        &candidate_root,
-        &semantic_evidence,
-        &production_profile,
-        &production_vector,
-        &idl_history,
-        &git_executable,
+    validate_candidate_measurements(CandidateMeasurementInputs {
+        registry_root: &registry_root,
+        release_id: &new_release,
+        binding: &binding,
+        probe: &probe_executable,
+        probe_signature: &probe_signature,
+        toolchain: &rust_toolchain_evidence,
+        runner_image: &runner_image_evidence,
+        target_triple: &target_triple,
+        candidate_root: &candidate_root,
+        semantic_evidence: &semantic_evidence,
+        production_profile: &production_profile,
+        production_vector: &production_vector,
+        idl_history: &idl_history,
+        git_executable: &git_executable,
         production,
-    )?;
+    })?;
     validate_receipt_signer(&policy, &signing_key, &binding)?;
     let expected_root = binding
         .get("release_aggregate_root")
@@ -336,23 +336,44 @@ fn apply_run_context(
     Ok(())
 }
 
-fn validate_candidate_measurements(
-    registry_root: &Path,
-    release_id: &str,
-    binding: &Map<String, Value>,
-    probe: &Path,
-    probe_signature: &Path,
-    toolchain: &Path,
-    runner_image: &Path,
-    target_triple: &str,
-    candidate_root: &Path,
-    semantic_evidence: &Path,
-    production_profile: &Path,
-    production_vector: &Path,
-    idl_history: &Path,
-    git_executable: &Path,
+struct CandidateMeasurementInputs<'a> {
+    registry_root: &'a Path,
+    release_id: &'a str,
+    binding: &'a Map<String, Value>,
+    probe: &'a Path,
+    probe_signature: &'a Path,
+    toolchain: &'a Path,
+    runner_image: &'a Path,
+    target_triple: &'a str,
+    candidate_root: &'a Path,
+    semantic_evidence: &'a Path,
+    production_profile: &'a Path,
+    production_vector: &'a Path,
+    idl_history: &'a Path,
+    git_executable: &'a Path,
     production: bool,
+}
+
+fn validate_candidate_measurements(
+    inputs: CandidateMeasurementInputs<'_>,
 ) -> Result<(), Box<dyn Error>> {
+    let CandidateMeasurementInputs {
+        registry_root,
+        release_id,
+        binding,
+        probe,
+        probe_signature,
+        toolchain,
+        runner_image,
+        target_triple,
+        candidate_root,
+        semantic_evidence,
+        production_profile,
+        production_vector,
+        idl_history,
+        git_executable,
+        production,
+    } = inputs;
     if production && (!cfg!(target_os = "linux") || git_executable != Path::new("/usr/bin/git")) {
         return Err("production candidate measurement requires fixed Linux Git".into());
     }

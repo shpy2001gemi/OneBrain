@@ -198,7 +198,8 @@ impl ObkgOrchestrator {
 
         for (target_cid, relation, weight, creator) in bonds {
             let key = (*cid, target_cid, relation);
-            if !self.bond_snapshot.contains_key(&key) {
+            if let std::collections::hash_map::Entry::Vacant(entry) = self.bond_snapshot.entry(key)
+            {
                 let meta = BondMeta {
                     weight,
                     creator,
@@ -206,7 +207,7 @@ impl ObkgOrchestrator {
                     decay: crate::graph_decay::suggested_decay_rate(relation),
                     timestamp: (now & 0xFFFF_FFFF) as u32,
                 };
-                self.bond_snapshot.insert(key, meta);
+                entry.insert(meta);
                 events.push(BondEvent::Created {
                     source_cid: *cid,
                     target_cid,
@@ -278,7 +279,9 @@ impl ObkgOrchestrator {
 
         // 4. Dream cycle — run periodically
         let dream_report = if self.config.dream_interval_ticks > 0
-            && self.tick_count % self.config.dream_interval_ticks == 0
+            && self
+                .tick_count
+                .is_multiple_of(self.config.dream_interval_ticks)
         {
             let report = self.dream_engine.run_dream_cycle(
                 &[], // access log — callers provide via run_dream_with_data()

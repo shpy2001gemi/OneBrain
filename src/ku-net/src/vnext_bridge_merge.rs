@@ -254,9 +254,11 @@ mod tests {
         InMemoryReconciliationJournalBackend, ReconciliationJournalConfig,
     };
 
+    type SinkRecords = Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>;
+
     #[derive(Clone, Default)]
     struct Sink {
-        records: Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>,
+        records: SinkRecords,
         insertions: Arc<Mutex<u64>>,
     }
 
@@ -269,12 +271,12 @@ mod tests {
         ) -> Result<PayloadSinkOutcome, String> {
             let key = (kind as u64, cid);
             let mut records = self.records.lock().unwrap();
-            if records.contains_key(&key) {
-                return Ok(PayloadSinkOutcome::AlreadyPresent);
+            if let std::collections::btree_map::Entry::Vacant(entry) = records.entry(key) {
+                entry.insert(bytes.to_vec());
+                *self.insertions.lock().unwrap() += 1;
+                return Ok(PayloadSinkOutcome::ValidatedStored);
             }
-            records.insert(key, bytes.to_vec());
-            *self.insertions.lock().unwrap() += 1;
-            Ok(PayloadSinkOutcome::ValidatedStored)
+            Ok(PayloadSinkOutcome::AlreadyPresent)
         }
     }
 

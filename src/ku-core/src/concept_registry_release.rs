@@ -1055,6 +1055,52 @@ impl From<ConceptRegistryManifestError> for ConceptRegistryReleaseError {
     }
 }
 
+fn write_state_json_sync(
+    path: &Path,
+    value: &ConceptRegistryReleaseState,
+) -> Result<(), ConceptRegistryReleaseError> {
+    let mut bytes = serde_json::to_vec_pretty(value)?;
+    bytes.push(b'\n');
+    qualification_failpoint("state-append-before")?;
+    let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
+    let midpoint = bytes.len() / 2;
+    file.write_all(&bytes[..midpoint])?;
+    file.sync_all()?;
+    qualification_failpoint("state-append-during")?;
+    file.write_all(&bytes[midpoint..])?;
+    file.sync_all()?;
+    qualification_failpoint("state-append-after")?;
+    Ok(())
+}
+
+#[cfg(any(test, feature = "concept-registry-failure-harness"))]
+fn qualification_failpoint(phase: &str) -> Result<(), ConceptRegistryReleaseError> {
+    if std::env::var("ONEBRAIN_REGISTRY_KILL_PHASE")
+        .ok()
+        .as_deref()
+        != Some(phase)
+    {
+        return Ok(());
+    }
+    let marker = std::env::var_os("ONEBRAIN_REGISTRY_KILL_MARKER").ok_or_else(|| {
+        ConceptRegistryReleaseError::InvalidField("qualification kill marker is missing".to_owned())
+    })?;
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(PathBuf::from(marker))?;
+    file.write_all(phase.as_bytes())?;
+    file.sync_all()?;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+}
+
+#[cfg(not(any(test, feature = "concept-registry-failure-harness")))]
+fn qualification_failpoint(_phase: &str) -> Result<(), ConceptRegistryReleaseError> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1538,50 +1584,4 @@ mod tests {
             verify_concept_registry_release(&entry.path(), &key.verifying_key()).unwrap();
         }
     }
-}
-
-fn write_state_json_sync(
-    path: &Path,
-    value: &ConceptRegistryReleaseState,
-) -> Result<(), ConceptRegistryReleaseError> {
-    let mut bytes = serde_json::to_vec_pretty(value)?;
-    bytes.push(b'\n');
-    qualification_failpoint("state-append-before")?;
-    let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
-    let midpoint = bytes.len() / 2;
-    file.write_all(&bytes[..midpoint])?;
-    file.sync_all()?;
-    qualification_failpoint("state-append-during")?;
-    file.write_all(&bytes[midpoint..])?;
-    file.sync_all()?;
-    qualification_failpoint("state-append-after")?;
-    Ok(())
-}
-
-#[cfg(any(test, feature = "concept-registry-failure-harness"))]
-fn qualification_failpoint(phase: &str) -> Result<(), ConceptRegistryReleaseError> {
-    if std::env::var("ONEBRAIN_REGISTRY_KILL_PHASE")
-        .ok()
-        .as_deref()
-        != Some(phase)
-    {
-        return Ok(());
-    }
-    let marker = std::env::var_os("ONEBRAIN_REGISTRY_KILL_MARKER").ok_or_else(|| {
-        ConceptRegistryReleaseError::InvalidField("qualification kill marker is missing".to_owned())
-    })?;
-    let mut file = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(PathBuf::from(marker))?;
-    file.write_all(phase.as_bytes())?;
-    file.sync_all()?;
-    loop {
-        std::thread::sleep(std::time::Duration::from_millis(25));
-    }
-}
-
-#[cfg(not(any(test, feature = "concept-registry-failure-harness")))]
-fn qualification_failpoint(_phase: &str) -> Result<(), ConceptRegistryReleaseError> {
-    Ok(())
 }

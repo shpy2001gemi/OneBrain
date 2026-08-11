@@ -179,10 +179,7 @@ impl SyncManager {
             if !dominated {
                 self.local_store.insert(delta.cid, delta.data.clone());
                 // Merge version clocks
-                let entry = self
-                    .versions
-                    .entry(delta.cid)
-                    .or_insert_with(VectorClock::new);
+                let entry = self.versions.entry(delta.cid).or_default();
                 entry.merge(&delta.version);
                 applied.push(delta.cid);
             }

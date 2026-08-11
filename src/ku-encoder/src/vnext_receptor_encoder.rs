@@ -165,7 +165,7 @@ impl EncodedReceptor {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReceptorEncodingOutcome {
-    Encoded(EncodedReceptor),
+    Encoded(Box<EncodedReceptor>),
     Incomplete(IncompleteReceptorEncoding),
 }
 
@@ -266,14 +266,16 @@ impl ReceptorEncoder {
         let (bytes, cid) = object
             .encode(ResourceProfile::ObjectV1)
             .map_err(ReceptorEncodingError::Object)?;
-        Ok(ReceptorEncodingOutcome::Encoded(EncodedReceptor {
-            definition,
-            disclosure,
-            trace,
-            object,
-            bytes,
-            cid,
-        }))
+        Ok(ReceptorEncodingOutcome::Encoded(Box::new(
+            EncodedReceptor {
+                definition,
+                disclosure,
+                trace,
+                object,
+                bytes,
+                cid,
+            },
+        )))
     }
 }
 
@@ -437,7 +439,7 @@ mod tests {
 
     fn encoded(draft: ReceptorEncodingDraft) -> EncodedReceptor {
         match ReceptorEncoder.encode(draft).unwrap() {
-            ReceptorEncodingOutcome::Encoded(value) => value,
+            ReceptorEncodingOutcome::Encoded(value) => *value,
             ReceptorEncodingOutcome::Incomplete(_) => panic!("expected encoded receptor"),
         }
     }

@@ -635,7 +635,7 @@ fn private_need_restart_delta_proposal_materialization_and_resolution_remain_sep
     let report = frontier
         .join_affordance_delta(
             vec![partial_remote],
-            &[target.clone()],
+            std::slice::from_ref(&target),
             &mut quarantine,
             ReunionBudget {
                 max_delta_objects: 8,

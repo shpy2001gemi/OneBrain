@@ -341,7 +341,7 @@ impl KuRuntime {
         };
 
         // Resolve a local concept ID to a 32-byte padded CCID
-        let resolve = |id: ConceptId| -> Option<[u8; 32]> { ccid_map.get(&id).map(|c| pad32(c)) };
+        let resolve = |id: ConceptId| -> Option<[u8; 32]> { ccid_map.get(&id).map(&pad32) };
 
         let mut edges = Vec::new();
         let mut last_step_action: Option<ConceptId> = None;

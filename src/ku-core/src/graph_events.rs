@@ -8,6 +8,8 @@ use crate::graph_types::{BondEvent, BondSnapshot, CompactionReport};
 use crate::types::{EdgeState, RelationType};
 use std::collections::HashMap;
 
+type ReplayBondState = HashMap<([u8; 32], [u8; 32], u8), (u16, EdgeState)>;
+
 /// In-memory event accumulator for bond lifecycle tracking.
 ///
 /// Events are stored in append-only order with monotonically increasing
@@ -106,7 +108,7 @@ impl EventAccumulator {
     /// in order.
     pub fn replay_at_time(&self, target_time: u64) -> Vec<BondSnapshot> {
         // Key: (source_cid, target_cid, relation_u8) -> (weight, state)
-        let mut bonds: HashMap<([u8; 32], [u8; 32], u8), (u16, EdgeState)> = HashMap::new();
+        let mut bonds = ReplayBondState::new();
 
         for event in &self.events {
             // ★ OBKG Fix L1: Use continue (not break) to handle out-of-order events

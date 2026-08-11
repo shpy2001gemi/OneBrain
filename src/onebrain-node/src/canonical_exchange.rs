@@ -522,7 +522,7 @@ fn decode_hex_32(value: &str) -> Result<[u8; 32], ExchangeError> {
 }
 
 fn decode_bytes(value: &str) -> Result<Vec<u8>, ExchangeError> {
-    if value.len() % 2 != 0 || value.len() / 2 > MAX_EXCHANGE_RECORD_BYTES {
+    if !value.len().is_multiple_of(2) || value.len() / 2 > MAX_EXCHANGE_RECORD_BYTES {
         return Err(ExchangeError::Malformed);
     }
     (0..value.len())

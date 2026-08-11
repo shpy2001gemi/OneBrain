@@ -630,15 +630,14 @@ impl ArchiveCapabilityRegistry {
         }
         for _ in 0..32 {
             let id = ArchiveCapabilityId(random_id()?);
-            if !state.capabilities.contains_key(&id) {
+            if let std::collections::btree_map::Entry::Vacant(entry) = state.capabilities.entry(id)
+            {
                 let binding = CapabilityBinding {
                     id,
                     reservation,
                     process_generation: self.process_generation(),
                 };
-                state
-                    .capabilities
-                    .insert(id, CapabilityRecord { binding, value });
+                entry.insert(CapabilityRecord { binding, value });
                 state.reserved_spool_bytes = next_reserved;
                 return Ok(binding);
             }
