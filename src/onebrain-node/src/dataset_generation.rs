@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use ku_core::foundation::{
@@ -19,8 +20,8 @@ use thiserror::Error;
 
 use crate::activation_journal::{
     read_current_pointer, read_idempotency_receipt, read_latest_journal, read_receipt,
-    write_current_pointer, write_journal, write_receipt, ActivationJournalRecord, ActivationPhase,
-    DatasetGenerationReceipt,
+    write_current_pointer, write_journal, write_receipt, ActivationJournalRecord,
+    ActivationOperationContext, ActivationPhase, DatasetGenerationReceipt,
 };
 use crate::dataset_path::{
     ActiveDatasetPathResolver, BaseStorageOwnerId, DatasetGenerationId, DatasetPathResolver,
@@ -65,6 +66,19 @@ pub struct DatasetGenerationStore {
     _root_lease: DatasetRootLease,
     state: Mutex<GenerationState>,
     recovered_signers: Mutex<RecoveredSignerSet>,
+    base_runtime_claimed: AtomicBool,
+}
+
+pub(crate) struct DatasetBaseRuntimeClaim {
+    owner: std::sync::Arc<DatasetGenerationStore>,
+}
+
+impl Drop for DatasetBaseRuntimeClaim {
+    fn drop(&mut self) {
+        self.owner
+            .base_runtime_claimed
+            .store(false, Ordering::Release);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -163,6 +177,7 @@ impl DatasetGenerationStore {
                 current_root,
             }),
             recovered_signers: Mutex::new(RecoveredSignerSet::empty()),
+            base_runtime_claimed: AtomicBool::new(false),
         };
         store.recover_latest()?;
         let selected = store
@@ -179,6 +194,24 @@ impl DatasetGenerationStore {
         let state = *self.state.lock().map_err(|_| RestoreError::CorruptState)?;
         ActiveDatasetPathResolver::new(&self.root, DatasetGenerationId(state.current_root))
             .map_err(|_| RestoreError::CorruptState)
+    }
+
+    /// Non-switched control-plane root. Base runtime process fencing and the
+    /// activation journal live here so a dataset pointer swap cannot hide the
+    /// operation that performed the swap.
+    pub(crate) fn control_path(&self) -> &Path {
+        &self.control
+    }
+
+    pub(crate) fn claim_base_runtime(
+        self: &std::sync::Arc<Self>,
+    ) -> Result<DatasetBaseRuntimeClaim, RestoreError> {
+        self.base_runtime_claimed
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| RestoreError::DatasetRootInUse)?;
+        Ok(DatasetBaseRuntimeClaim {
+            owner: self.clone(),
+        })
     }
 
     pub fn stage_verified_restore(
@@ -325,6 +358,15 @@ impl DatasetGenerationStore {
         ready: ActivationReadyGeneration,
         operation: RestoreOperationBinding,
     ) -> Result<DatasetGenerationReceipt, RestoreError> {
+        self.activate_generation_with_context(ready, operation, None)
+    }
+
+    pub(crate) fn activate_generation_with_context(
+        &self,
+        ready: ActivationReadyGeneration,
+        operation: RestoreOperationBinding,
+        operation_context: Option<ActivationOperationContext>,
+    ) -> Result<DatasetGenerationReceipt, RestoreError> {
         verify_generation(&ready.generation_path, &ready.manifest)?;
         verify_projection_bindings(&ready.generation_path, ready.generation_root)?;
         let _signer_recovery = ready.signer_recovery;
@@ -370,6 +412,7 @@ impl DatasetGenerationStore {
             old_generation_root: state.current_root,
             new_generation_root: ready.generation_root,
             phase: ActivationPhase::Prepared,
+            operation_context: operation_context.clone(),
             receipt: None,
         };
         write_journal(&self.control, &journal).map_err(|_| RestoreError::CorruptState)?;
@@ -414,6 +457,7 @@ impl DatasetGenerationStore {
                 new_generation_root: ready.generation_root,
                 generation_sequence: next_sequence,
                 phase: ActivationPhase::RolledBack,
+                operation_context: operation_context.clone(),
             };
             carry_receipt_to_generation(&self.root, journal.old_generation_root, &receipt)?;
             write_receipt(&self.control, &receipt).map_err(|_| RestoreError::CorruptState)?;
@@ -433,6 +477,7 @@ impl DatasetGenerationStore {
             new_generation_root: ready.generation_root,
             generation_sequence: next_sequence,
             phase: ActivationPhase::Complete,
+            operation_context: operation_context.clone(),
         };
         carry_receipt_to_generation(&self.root, ready.generation_root, &receipt)?;
         write_receipt(&self.control, &receipt).map_err(|_| RestoreError::CorruptState)?;
@@ -458,6 +503,21 @@ impl DatasetGenerationStore {
     ) -> Result<crate::archive::DatasetRestoreReceipt, RestoreError> {
         let identity = ready.identity_recovery.clone();
         let activation = self.activate_generation(ready, operation)?;
+        Ok(crate::archive::DatasetRestoreReceipt {
+            activation,
+            identity,
+        })
+    }
+
+    pub(crate) fn activate_restore_with_context(
+        &self,
+        ready: ActivationReadyGeneration,
+        operation: RestoreOperationBinding,
+        operation_context: ActivationOperationContext,
+    ) -> Result<crate::archive::DatasetRestoreReceipt, RestoreError> {
+        let identity = ready.identity_recovery.clone();
+        let activation =
+            self.activate_generation_with_context(ready, operation, Some(operation_context))?;
         Ok(crate::archive::DatasetRestoreReceipt {
             activation,
             identity,
@@ -671,6 +731,7 @@ impl DatasetGenerationStore {
             new_generation_root: journal.new_generation_root,
             generation_sequence: journal.pointer_sequence,
             phase,
+            operation_context: journal.operation_context.clone(),
         };
         carry_receipt_to_generation(&self.root, selected, &receipt)?;
         write_receipt(&self.control, &receipt).map_err(|_| RestoreError::CorruptState)?;

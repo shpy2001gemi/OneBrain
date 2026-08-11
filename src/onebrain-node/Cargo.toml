@@ -26,7 +26,9 @@ name = "p5_operations_preflight"
 required-features = ["vnext-canary-harness"]
 
 [features]
-default = []
+default = ["base-v1"]
+base-v1 = []
+legacy-read-compat = []
 vnext-network-runtime = [
     "ku-core/persist",
     "ku-net/persist",
@@ -68,6 +70,7 @@ ku-encoder = { path = "../ku-encoder" }
 ku-mediator = { path = "../ku-mediator" }
 onebrain-protocol = { path = "../onebrain-protocol" }
 onebrain-archive = { path = "../onebrain-archive" }
+onebrain-base-contract = { path = "../onebrain-base-contract" }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-std", "io-util"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

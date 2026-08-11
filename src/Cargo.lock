@@ -3308,6 +3308,9 @@ dependencies = [
  "futures",
  "ku-core",
  "ku-kql",
+ "onebrain-archive",
+ "onebrain-base-abi",
+ "onebrain-base-contract",
  "onebrain-node",
  "rand 0.8.6",
  "reqwest 0.12.28",
@@ -3338,6 +3341,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "onebrain-base-abi"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "getrandom 0.3.4",
+ "ku-core",
+ "onebrain-base-contract",
+ "onebrain-node",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "onebrain-base-contract"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "onebrain-archive",
+ "serde_json",
+ "thiserror 2.0.18",
+ "zeroize",
+]
+
+[[package]]
 name = "onebrain-cli"
 version = "0.1.0"
 dependencies = [
@@ -3348,12 +3376,14 @@ dependencies = [
  "ku-core",
  "ku-kql",
  "onebrain-api",
+ "onebrain-base-contract",
  "onebrain-node",
  "rand 0.8.6",
  "reqwest 0.12.28",
  "serde_json",
  "tempfile",
  "tokio",
+ "zeroize",
 ]
 
 [[package]]
@@ -3429,6 +3459,7 @@ dependencies = [
  "ku-mediator",
  "ku-net",
  "onebrain-archive",
+ "onebrain-base-contract",
  "onebrain-protocol",
  "rand 0.8.6",
  "redb",

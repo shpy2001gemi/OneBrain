@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -73,6 +76,15 @@ BASE_V1_DERIVED_PROJECTION_PROFILE = (
     ROOT / "src/test-vectors/vnext/base-v1-derived-projection-v1.json"
 )
 BASE_V1_ARCHIVE_PROFILE = ROOT / "src/test-vectors/vnext/base-v1-archive-v1.json"
+BASE_V1_RUNTIME_INTERFACE_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-runtime-interface-v1.json"
+)
+BASE_V1_RUNTIME_INTERFACE_HISTORY = (
+    ROOT / "src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json"
+)
+BASE_V1_COMPATIBILITY_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-compatibility-v1.json"
+)
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -854,7 +866,1683 @@ def validate_base_v1_archive() -> tuple[int, int]:
         raise ContractError("Base v1 archive portable restore gate drift")
     if profile.get("non_exportable_signer_restore") != "reprovision_required":
         raise ContractError("Base v1 signer restore policy drift")
+    expected_base_operations = {
+        "owner": "base_operations",
+        "entry_kind": "BaseOperationRecord",
+        "boundary": "TX-BASE-OPS-001",
+        "states": [
+            "reserved",
+            "prepared",
+            "confirming",
+            "committed",
+            "canceled",
+            "failed",
+            "unknown_outcome",
+        ],
+        "generation_bindings": ["process_generation", "dataset_generation"],
+        "migration_bindings": [
+            "vector_id",
+            "vector_blake3",
+            "trust_policy_digest",
+        ],
+        "restore_nonterminal": "unknown_outcome_reconcile_required_never_replay",
+        "activation_receipt_plane": "non-switched-control-and-selected-generation",
+        "authority_journal": {
+            "tables": [
+                "management_grant",
+                "management_handle",
+                "archive_capability",
+                "signer_provision",
+            ],
+            "restart_disposition": "revoked_never_reactivated",
+            "archive_disposition": "revoked_evidence_only",
+        },
+    }
+    if profile.get("base_operation_records") != expected_base_operations:
+        raise ContractError("Base operation archive contract drift")
+    inventory = read(DR_M5_TRANSACTION_INVENTORY)
+    if "| `TX-BASE-OPS-001` |" not in inventory:
+        raise ContractError("Base operation transaction boundary is absent")
+    operation_store = read(ROOT / "src/onebrain-node/src/base_operation_store.rs")
+    runtime = read(ROOT / "src/onebrain-node/src/base_runtime.rs")
+    for phase in [
+        "before_begin_write",
+        "after_begin_write_before_mutation",
+        "after_mutation_before_commit",
+        "after_commit_before_next_side_effect",
+        "after_next_side_effect_before_ack",
+    ]:
+        if phase not in operation_store:
+            raise ContractError(f"Base operation failpoint phase is absent: {phase}")
+    for needle in [
+        "ProcessGenerationLease::allocate",
+        "reserve_operation",
+        "begin_confirm",
+        "mark_unknown",
+        "register_authority",
+        "transition_authority",
+        "BaseAuthorityStateV1::Revoked",
+        "register_signer_provision",
+        "complete_signer_reprovision",
+        "signer_request_matches",
+        "import_activation_receipt",
+        "restore_archive_for_base",
+        "MigrationVectorBindingV1",
+    ]:
+        if needle not in operation_store and needle not in runtime:
+            raise ContractError(f"Base runtime implementation evidence missing: {needle}")
     return len(kinds), len(required)
+
+
+def _closed_discriminators(
+    rows: object, namespace: str
+) -> dict[int, dict[str, object]]:
+    if not isinstance(rows, list) or not rows:
+        raise ContractError(f"closed discriminator inventory is absent: {namespace}")
+    by_id: dict[int, dict[str, object]] = {}
+    names: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ContractError(f"invalid closed discriminator: {namespace}")
+        identifier = row.get("id")
+        name = row.get("name")
+        if (
+            not isinstance(identifier, int)
+            or identifier <= 0
+            or not isinstance(name, str)
+            or not name
+            or identifier in by_id
+            or name in names
+        ):
+            raise ContractError(
+                f"closed discriminator ID/name is missing, duplicated, or reused: {namespace}"
+            )
+        by_id[identifier] = row
+        names.add(name)
+    return by_id
+
+
+def _runtime_history_root(entries: list[dict[str, object]]) -> str:
+    digest = bytes(32)
+    domain = b"onebrain/base-v1-runtime-interface-history/1\x00"
+    for entry in entries:
+        canonical = json.dumps(
+            entry, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        digest = hashlib.sha256(domain + digest + canonical).digest()
+    return digest.hex()
+
+
+def _runtime_live_discriminators(
+    profile: dict[str, object],
+) -> set[tuple[str, int, str]]:
+    sources = {
+        "request": profile.get("requests"),
+        "response": profile.get("responses"),
+        "error": profile.get("errors"),
+        "command": profile.get("command_kinds"),
+        "topic": profile.get("topic_kinds"),
+        "operation": profile.get("operations"),
+    }
+    live: set[tuple[str, int, str]] = set()
+    for namespace, rows in sources.items():
+        for identifier, row in _closed_discriminators(rows, namespace).items():
+            live.add((namespace, identifier, str(row["name"])))
+    definitions = profile.get("type_definitions")
+    if not isinstance(definitions, dict):
+        raise ContractError("runtime type definition inventory is absent")
+    for name, definition in definitions.items():
+        if (
+            isinstance(name, str)
+            and isinstance(definition, dict)
+            and definition.get("kind") == "enum"
+            and isinstance(definition.get("variants"), list)
+        ):
+            namespace = f"type:{name}"
+            for identifier, row in _closed_discriminators(
+                definition["variants"], namespace
+            ).items():
+                live.add((namespace, identifier, str(row["name"])))
+    return live
+
+
+def _validate_runtime_baseline(
+    profile: dict[str, object],
+    history: dict[str, object],
+    baseline_profile: dict[str, object],
+    baseline_history: dict[str, object],
+) -> None:
+    current_entries = history.get("entries")
+    baseline_entries = baseline_history.get("entries")
+    if not isinstance(current_entries, list) or not isinstance(baseline_entries, list):
+        raise ContractError("baseline history is absent")
+    if current_entries[: len(baseline_entries)] != baseline_entries:
+        raise ContractError("baseline history is not an immutable prefix")
+
+    current_version = profile.get("profile_version")
+    baseline_version = baseline_profile.get("profile_version")
+    if not isinstance(current_version, dict) or not isinstance(baseline_version, dict):
+        raise ContractError("baseline profile version is absent")
+    if current_version.get("major") != baseline_version.get("major"):
+        return
+    current_minor = current_version.get("minor")
+    baseline_minor = baseline_version.get("minor")
+    if (
+        not isinstance(current_minor, int)
+        or not isinstance(baseline_minor, int)
+        or current_minor < baseline_minor
+    ):
+        raise ContractError("Base runtime profile minor regressed")
+    if len(current_entries) > len(baseline_entries) and current_minor <= baseline_minor:
+        raise ContractError("additive discriminator history requires a profile minor bump")
+
+    for field, namespace in (
+        ("requests", "request"),
+        ("responses", "response"),
+        ("errors", "error"),
+        ("command_kinds", "command"),
+        ("topic_kinds", "topic"),
+        ("operations", "operation"),
+    ):
+        current = _closed_discriminators(profile.get(field), namespace)
+        baseline = _closed_discriminators(baseline_profile.get(field), namespace)
+        for identifier, old_row in baseline.items():
+            new_row = current.get(identifier)
+            if new_row is None or new_row.get("name") != old_row.get("name"):
+                raise ContractError(
+                    f"breaking-major discriminator removal/retype: {namespace}/{identifier}"
+                )
+            if namespace == "operation" and new_row != old_row:
+                raise ContractError(
+                    f"breaking-major operation ownership/type change: {identifier}"
+                )
+
+    current_limits = profile.get("limits")
+    baseline_limits = baseline_profile.get("limits")
+    if not isinstance(current_limits, dict) or not isinstance(baseline_limits, dict):
+        raise ContractError("baseline limit inventory is absent")
+    for name, old_value in baseline_limits.items():
+        new_value = current_limits.get(name)
+        if isinstance(old_value, int) and (
+            not isinstance(new_value, int) or new_value > old_value
+        ):
+            raise ContractError(f"bound widening is a breaking-major change: {name}")
+
+    baseline_scalars = {
+        row.get("name"): row
+        for row in baseline_profile.get("scalar_types", [])
+        if isinstance(row, dict)
+    }
+    current_scalars = {
+        row.get("name"): row
+        for row in profile.get("scalar_types", [])
+        if isinstance(row, dict)
+    }
+    for name, old_row in baseline_scalars.items():
+        new_row = current_scalars.get(name)
+        if new_row is None or new_row.get("ownership") != old_row.get("ownership"):
+            raise ContractError(f"breaking-major ownership change: {name}")
+        for bound_name in ("exact_bytes", "max_bytes", "max_items"):
+            old_bound = old_row.get(bound_name)
+            new_bound = new_row.get(bound_name) if new_row is not None else None
+            if isinstance(old_bound, int) and (
+                not isinstance(new_bound, int)
+                or bound_name == "exact_bytes"
+                and new_bound != old_bound
+                or bound_name != "exact_bytes"
+                and new_bound > old_bound
+            ):
+                raise ContractError(
+                    f"bound widening is a breaking-major change: {name}/{bound_name}"
+                )
+
+    baseline_definitions = baseline_profile.get("type_definitions")
+    current_definitions = profile.get("type_definitions")
+    if not isinstance(baseline_definitions, dict) or not isinstance(
+        current_definitions, dict
+    ):
+        raise ContractError("baseline type definition inventory is absent")
+    for name, old_definition in baseline_definitions.items():
+        new_definition = current_definitions.get(name)
+        if not isinstance(old_definition, dict) or not isinstance(
+            new_definition, dict
+        ) or new_definition.get("kind") != old_definition.get("kind"):
+            raise ContractError(f"breaking-major type removal/retype: {name}")
+        kind = old_definition.get("kind")
+        if kind == "struct":
+            old_fields = _closed_discriminators(
+                old_definition.get("fields"), f"baseline/type/{name}/field"
+            )
+            new_fields = _closed_discriminators(
+                new_definition.get("fields"), f"type/{name}/field"
+            )
+            for identifier, old_field in old_fields.items():
+                new_field = new_fields.get(identifier)
+                if (
+                    new_field is None
+                    or new_field.get("name") != old_field.get("name")
+                    or new_field.get("type") != old_field.get("type")
+                    or new_field.get("ownership") != old_field.get("ownership")
+                    or old_field.get("required") is False
+                    and new_field.get("required") is True
+                ):
+                    raise ContractError(
+                        f"breaking-major field retype/optionality/ownership: {name}/{identifier}"
+                    )
+                for bound_name in ("exact_bytes", "max_bytes", "max_value"):
+                    old_bound = old_field.get(bound_name)
+                    new_bound = new_field.get(bound_name)
+                    if isinstance(old_bound, int) and (
+                        not isinstance(new_bound, int)
+                        or bound_name == "exact_bytes"
+                        and new_bound != old_bound
+                        or bound_name != "exact_bytes"
+                        and new_bound > old_bound
+                    ):
+                        raise ContractError(
+                            f"bound widening is a breaking-major change: {name}/{identifier}/{bound_name}"
+                        )
+        elif kind == "enum" and "variants" in old_definition:
+            old_variants = _closed_discriminators(
+                old_definition.get("variants"), f"baseline/type/{name}"
+            )
+            new_variants = _closed_discriminators(
+                new_definition.get("variants"), f"type/{name}"
+            )
+            for identifier, old_variant in old_variants.items():
+                new_variant = new_variants.get(identifier)
+                if (
+                    new_variant is None
+                    or new_variant.get("name") != old_variant.get("name")
+                    or new_variant.get("payload") != old_variant.get("payload")
+                ):
+                    raise ContractError(
+                        f"breaking-major enum removal/retype: {name}/{identifier}"
+                    )
+        elif kind in {"newtype", "opaque_registry_id"}:
+            if new_definition.get("wire") != old_definition.get("wire") or new_definition.get(
+                "ownership"
+            ) != old_definition.get("ownership"):
+                raise ContractError(f"breaking-major newtype/ownership change: {name}")
+            for bound_name in ("exact_bytes", "max_bytes"):
+                old_bound = old_definition.get(bound_name)
+                new_bound = new_definition.get(bound_name)
+                if isinstance(old_bound, int) and (
+                    not isinstance(new_bound, int)
+                    or bound_name == "exact_bytes"
+                    and new_bound != old_bound
+                    or bound_name != "exact_bytes"
+                    and new_bound > old_bound
+                ):
+                    raise ContractError(
+                        f"bound widening is a breaking-major change: {name}/{bound_name}"
+                    )
+
+
+def validate_base_v1_runtime_baseline_receipt(
+    receipt: dict[str, object],
+    *,
+    resolved_commit: str,
+    resolved_tree: str,
+    baseline_idl_bytes: bytes,
+    baseline_history_bytes: bytes,
+    candidate_is_descendant: bool,
+) -> tuple[dict[str, object], dict[str, object]]:
+    required = {
+        "format",
+        "ref",
+        "commit_sha1",
+        "tree_sha1",
+        "idl_sha256",
+        "history_chain_root_sha256",
+    }
+    if set(receipt) != required or receipt.get("format") != (
+        "onebrain/base-v1-idl-baseline-receipt/1"
+    ) or receipt.get("ref") != "refs/heads/base-v1-idl-baseline":
+        raise ContractError("invalid Base runtime baseline receipt")
+    sha1 = re.compile(r"[0-9a-f]{40}")
+    sha256 = re.compile(r"[0-9a-f]{64}")
+    if not sha1.fullmatch(str(receipt.get("commit_sha1", ""))) or not sha1.fullmatch(
+        str(receipt.get("tree_sha1", ""))
+    ) or not sha256.fullmatch(str(receipt.get("idl_sha256", ""))) or not sha256.fullmatch(
+        str(receipt.get("history_chain_root_sha256", ""))
+    ):
+        raise ContractError("invalid Base runtime baseline receipt digest")
+    if receipt.get("commit_sha1") != resolved_commit:
+        raise ContractError("Base runtime baseline ref moved from receipt commit")
+    if receipt.get("tree_sha1") != resolved_tree:
+        raise ContractError("Base runtime baseline tree digest mismatch")
+    if not candidate_is_descendant:
+        raise ContractError("Base runtime baseline is not a candidate ancestor")
+    if receipt.get("idl_sha256") != hashlib.sha256(baseline_idl_bytes).hexdigest():
+        raise ContractError("Base runtime baseline IDL digest mismatch")
+    try:
+        baseline_profile = json.loads(baseline_idl_bytes.decode("utf-8"))
+        baseline_history = json.loads(baseline_history_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ContractError(f"invalid Base runtime baseline payload: {error}") from error
+    chain = baseline_history.get("history_chain")
+    if not isinstance(chain, dict) or receipt.get(
+        "history_chain_root_sha256"
+    ) != chain.get("root_sha256") or not isinstance(
+        baseline_history.get("entries"), list
+    ) or chain.get("root_sha256") != _runtime_history_root(
+        baseline_history["entries"]
+    ):
+        raise ContractError("Base runtime baseline history digest mismatch")
+    return baseline_profile, baseline_history
+
+
+def load_base_v1_runtime_baseline(
+    receipt_path: Path,
+    *,
+    candidate_ref: str = "HEAD",
+) -> tuple[dict[str, object], dict[str, object]]:
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ContractError(f"cannot load Base runtime baseline receipt: {error}") from error
+
+    def git_bytes(*arguments: str) -> bytes:
+        try:
+            return subprocess.run(
+                ["git", *arguments],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise ContractError(
+                f"cannot load protected Base runtime baseline with git {' '.join(arguments)}"
+            ) from error
+
+    baseline_ref = "refs/heads/base-v1-idl-baseline"
+    resolved_commit = git_bytes("rev-parse", f"{baseline_ref}^{{commit}}").decode(
+        "ascii"
+    ).strip()
+    resolved_tree = git_bytes("rev-parse", f"{resolved_commit}^{{tree}}").decode(
+        "ascii"
+    ).strip()
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", resolved_commit, candidate_ref],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+    ).returncode == 0
+    idl_path = "src/test-vectors/vnext/base-v1-runtime-interface-v1.json"
+    history_path = (
+        "src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json"
+    )
+    baseline_profile, baseline_history = validate_base_v1_runtime_baseline_receipt(
+        receipt,
+        resolved_commit=resolved_commit,
+        resolved_tree=resolved_tree,
+        baseline_idl_bytes=git_bytes("show", f"{resolved_commit}:{idl_path}"),
+        baseline_history_bytes=git_bytes("show", f"{resolved_commit}:{history_path}"),
+        candidate_is_descendant=ancestor,
+    )
+    return baseline_profile, baseline_history
+
+
+def validate_base_v1_runtime_interface(
+    profile: dict[str, object] | None = None,
+    history: dict[str, object] | None = None,
+    *,
+    baseline_profile: dict[str, object] | None = None,
+    baseline_history: dict[str, object] | None = None,
+) -> tuple[int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(BASE_V1_RUNTIME_INTERFACE_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base runtime interface JSON: {error}") from error
+    if history is None:
+        try:
+            history = json.loads(read(BASE_V1_RUNTIME_INTERFACE_HISTORY))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base runtime history JSON: {error}") from error
+
+    if profile.get("format") != "onebrain/base-v1-runtime-interface/1":
+        raise ContractError("unexpected Base runtime interface format")
+    if profile.get("profile_id") != "BASE_V1_RUNTIME_INTERFACE_V1":
+        raise ContractError("unexpected Base runtime interface ID")
+    version = profile.get("profile_version")
+    product_version = profile.get("product_api_profile")
+    if (
+        not isinstance(version, dict)
+        or version.get("major") != 1
+        or not isinstance(version.get("minor"), int)
+        or not 0 <= version["minor"] <= 65535
+    ):
+        raise ContractError("unexpected Base runtime interface version")
+    if product_version != {"major": 1, "minor": 1}:
+        raise ContractError("Base product API minor was not bumped additively")
+
+    baseline_contract = profile.get("baseline_contract")
+    if baseline_contract != {
+        "ref": "refs/heads/base-v1-idl-baseline",
+        "receipt_format": "onebrain/base-v1-idl-baseline-receipt/1",
+        "required_fields": [
+            "format",
+            "ref",
+            "commit_sha1",
+            "tree_sha1",
+            "idl_sha256",
+            "history_chain_root_sha256",
+        ],
+        "load": "git_show_exact_commit",
+        "candidate_relation": "baseline_is_ancestor",
+        "missing_or_moved": "fail_closed",
+    }:
+        raise ContractError("Base runtime protected baseline contract drift")
+
+    if (baseline_profile is None) != (baseline_history is None):
+        raise ContractError("baseline profile/history must be supplied together")
+    if baseline_profile is not None and baseline_history is not None:
+        _validate_runtime_baseline(
+            profile, history, baseline_profile, baseline_history
+        )
+
+    limits = profile.get("limits")
+    if not isinstance(limits, dict):
+        raise ContractError("runtime payload bound inventory is absent")
+    required_limits = {
+        "max_payload_bytes": 1048576,
+        "max_continuation_bytes": 4096,
+        "max_continuation_encoded_chars": 5462,
+        "max_string_bytes": 4096,
+        "max_limitations": 64,
+        "max_limitation_bytes": 128,
+        "max_capabilities": 64,
+        "max_resource_budget_dimensions": 16,
+        "max_query_items": 256,
+        "max_subscription_batch_items": 256,
+        "max_event_payload_bytes": 65536,
+        "max_archive_chunk_bytes": 1048576,
+        "max_archive_total_bytes": 1099511627776,
+        "max_management_scopes": 16,
+        "max_active_operations": 1024,
+    }
+    if limits.get("max_payload_bytes") != required_limits["max_payload_bytes"]:
+        raise ContractError("runtime payload bound drift")
+    if any(limits.get(name) != value for name, value in required_limits.items()):
+        if not isinstance(limits.get("max_continuation_bytes"), int) or limits.get(
+            "max_continuation_bytes", 0
+        ) <= 0:
+            raise ContractError("opaque continuation bound drift")
+        raise ContractError("runtime resource bound drift")
+
+    scalar_types = profile.get("scalar_types")
+    if not isinstance(scalar_types, list) or not scalar_types:
+        raise ContractError("runtime scalar type inventory is absent")
+    forbidden = {
+        "raw_path",
+        "runtime_handle",
+        "store_handle",
+        "private_key",
+        "authority_implementation",
+        "borrowed_reader",
+        "borrowed_writer",
+        "unbounded_string",
+    }
+    for scalar in scalar_types:
+        if not isinstance(scalar, dict):
+            raise ContractError("invalid runtime scalar type")
+        wire = scalar.get("wire")
+        if wire in forbidden:
+            raise ContractError(f"forbidden exposure in machine IDL: {wire}")
+        if isinstance(wire, str) and (
+            "utf8" in wire
+            or wire
+            in {"ascii_token", "bounded_bytes", "opaque_bytes", "secret_bytes"}
+        ):
+            if not isinstance(scalar.get("max_bytes", scalar.get("exact_bytes")), int):
+                raise ContractError("unbounded string/bytes type in machine IDL")
+
+    required_common = {
+        "profile_major",
+        "profile_minor",
+        "process_generation",
+        "dataset_generation",
+        "request_id",
+        "operation_id",
+        "idempotency_key",
+        "lifecycle",
+        "coverage",
+        "limitations",
+        "retryable",
+        "resource_budget",
+        "payload_discriminator",
+        "compatibility_digest",
+    }
+    if set(profile.get("common_cross_projection_fields", [])) != required_common:
+        raise ContractError("cross-projection common field inventory drift")
+
+    definitions = profile.get("type_definitions")
+    required_definition_names = {
+        "BaseOperationId",
+        "BaseOperationReservationId",
+        "BaseIdempotencyKey",
+        "BaseOpaqueContinuation",
+        "BaseCommandV1",
+        "ArchiveCredentialKindV1",
+        "BoundedSecretIngressV1",
+        "BaseManagementGrantV1",
+        "BaseRequestV1",
+        "BaseManagementRequestV1",
+        "BaseErrorCodeV1",
+    }
+    if not isinstance(definitions, dict) or not required_definition_names <= set(
+        definitions
+    ):
+        raise ContractError("generator-ready core type inventory drift")
+    scalar_names = {
+        row.get("name") for row in scalar_types if isinstance(row, dict)
+    }
+    permitted_references = set(definitions) | scalar_names | {
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+        "bool",
+        "SecretBytes",
+    }
+    permitted_ownership = {
+        "value",
+        "owned",
+        "service_handle",
+        "management_handle",
+        "host_principal",
+        "zeroizing_one_way_ingress",
+    }
+    for name, definition in definitions.items():
+        if not isinstance(name, str) or not isinstance(definition, dict):
+            raise ContractError("invalid generator-ready type definition")
+        kind = definition.get("kind")
+        if kind == "struct":
+            fields = _closed_discriminators(
+                definition.get("fields"), f"type/{name}/field"
+            )
+            for field in fields.values():
+                if field.get("type") not in permitted_references:
+                    raise ContractError(
+                        f"generator-ready type has unresolved reference: {name}"
+                    )
+                if field.get("required") not in {True, False} or field.get(
+                    "ownership"
+                ) not in permitted_ownership:
+                    raise ContractError(
+                        f"generator-ready field optionality/ownership drift: {name}"
+                    )
+        elif kind == "enum":
+            if definition.get("closed") is not True:
+                raise ContractError(f"generator-ready enum is not closed: {name}")
+            if "variants_from" not in definition:
+                variants = _closed_discriminators(
+                    definition.get("variants"), f"type/{name}"
+                )
+                for variant in variants.values():
+                    payload = variant.get("payload")
+                    if payload is not None and payload not in permitted_references:
+                        raise ContractError(
+                            f"generator-ready enum has unresolved payload: {name}"
+                        )
+        elif kind in {"newtype", "opaque_registry_id"}:
+            bound = definition.get("exact_bytes", definition.get("max_bytes"))
+            if not isinstance(bound, int) or bound <= 0 or definition.get(
+                "ownership"
+            ) not in permitted_ownership:
+                raise ContractError(f"generator-ready newtype is unbounded: {name}")
+        else:
+            raise ContractError(f"unsupported generator-ready type kind: {name}")
+    for name in (
+        "BaseOperationId",
+        "BaseOperationReservationId",
+        "BaseIdempotencyKey",
+    ):
+        if definitions.get(name) != {
+            "kind": "newtype",
+            "wire": "fixed_bytes",
+            "exact_bytes": 32,
+            "ownership": "owned",
+        }:
+            raise ContractError(f"generator-ready fixed ID type drift: {name}")
+    if definitions.get("BaseOpaqueContinuation") != {
+        "kind": "newtype",
+        "wire": "bounded_bytes",
+        "max_bytes": 4096,
+        "ownership": "owned",
+        "constructor": "private_checked",
+    }:
+        raise ContractError("generator-ready private continuation type drift")
+    command_definition = definitions.get("BaseCommandV1")
+    credential_definition = definitions.get("ArchiveCredentialKindV1")
+    request_definition = definitions.get("BaseRequestV1")
+    management_request_definition = definitions.get("BaseManagementRequestV1")
+    for definition, name in (
+        (command_definition, "BaseCommandV1"),
+        (credential_definition, "ArchiveCredentialKindV1"),
+        (request_definition, "BaseRequestV1"),
+        (management_request_definition, "BaseManagementRequestV1"),
+    ):
+        if (
+            not isinstance(definition, dict)
+            or definition.get("kind") != "enum"
+            or definition.get("closed") is not True
+        ):
+            raise ContractError(f"generator-ready closed enum drift: {name}")
+        _closed_discriminators(definition.get("variants"), f"type/{name}")
+    command_variants = _closed_discriminators(
+        command_definition.get("variants"), "type/BaseCommandV1"
+    )
+    if {
+        identifier: (row.get("name"), row.get("payload"))
+        for identifier, row in command_variants.items()
+    } != {
+        1: ("ExistingLocalCommand", "BaseLocalCommandV1"),
+        2: ("CreateArchive", "CreateArchiveCommandV1"),
+        3: ("RestoreArchive", "RestoreArchiveCommandV1"),
+    }:
+        raise ContractError("generator-ready Base command variants drift")
+    credential_variants = _closed_discriminators(
+        credential_definition.get("variants"), "type/ArchiveCredentialKindV1"
+    )
+    if {identifier: row.get("name") for identifier, row in credential_variants.items()} != {
+        1: "Password",
+        2: "RecoveryKey",
+    }:
+        raise ContractError("generator-ready archive credential variants drift")
+    secret_definition = definitions.get("BoundedSecretIngressV1")
+    if not isinstance(secret_definition, dict) or secret_definition.get(
+        "response_serializable"
+    ) is not False or secret_definition.get("loggable") is not False:
+        raise ContractError("generator-ready secret ingress firewall drift")
+    secret_fields = _closed_discriminators(
+        secret_definition.get("fields"), "type/BoundedSecretIngressV1/field"
+    )
+    if secret_fields.get(2, {}).get("max_bytes") != 1024 or secret_fields.get(
+        2, {}
+    ).get("ownership") != "zeroizing_one_way_ingress":
+        raise ContractError("generator-ready secret ingress bound/custody drift")
+    if definitions.get("BaseManagementGrantV1") != {
+        "kind": "opaque_registry_id",
+        "exact_bytes": 32,
+        "ownership": "host_principal",
+        "constructible_by_service": False,
+    }:
+        raise ContractError("generator-ready management grant type drift")
+    expected_request_variants = {
+        3: "Status",
+        5: "Query",
+        6: "ReserveOperation",
+        7: "Prepare",
+        8: "Confirm",
+        9: "Cancel",
+        10: "Reconcile",
+        11: "Subscribe",
+        12: "PollEvents",
+        13: "CloseSubscription",
+        14: "Drain",
+        15: "Close",
+    }
+    if {
+        identifier: row.get("name")
+        for identifier, row in _closed_discriminators(
+            request_definition.get("variants"), "type/BaseRequestV1"
+        ).items()
+    } != expected_request_variants:
+        raise ContractError("generator-ready Base request variants drift")
+    expected_management_variants = {
+        102: "ArchiveSourceBegin",
+        103: "ArchiveSourcePush",
+        104: "ArchiveSourceSeal",
+        105: "ArchiveSinkBegin",
+        106: "ArchiveSinkRead",
+        107: "ArchiveSinkCommit",
+        108: "ArchiveSecretRegister",
+        109: "ArchiveCapabilityAbort",
+        110: "ArchiveCapabilityDestroy",
+        111: "CompleteSignerReprovision",
+        112: "Close",
+    }
+    if {
+        identifier: row.get("name")
+        for identifier, row in _closed_discriminators(
+            management_request_definition.get("variants"),
+            "type/BaseManagementRequestV1",
+        ).items()
+    } != expected_management_variants:
+        raise ContractError("generator-ready Base management request variants drift")
+    if definitions.get("BaseErrorCodeV1") != {
+        "kind": "enum",
+        "repr": "u16",
+        "closed": True,
+        "variants_from": "errors",
+    }:
+        raise ContractError("generator-ready Base error declaration drift")
+
+    requests = _closed_discriminators(profile.get("requests"), "request")
+    responses = _closed_discriminators(profile.get("responses"), "response")
+    errors = _closed_discriminators(profile.get("errors"), "error")
+    commands = _closed_discriminators(profile.get("command_kinds"), "command")
+    topics = _closed_discriminators(profile.get("topic_kinds"), "topic")
+    operations = _closed_discriminators(profile.get("operations"), "operation")
+
+    expected_operations = {
+        1: "open",
+        2: "negotiate",
+        3: "status",
+        4: "snapshot",
+        5: "query",
+        6: "reserve_operation",
+        7: "prepare",
+        8: "confirm",
+        9: "cancel",
+        10: "reconcile",
+        11: "subscribe",
+        12: "poll_events",
+        13: "close_subscription",
+        14: "drain",
+        15: "close",
+        101: "management.open",
+        102: "management.archive_source_begin",
+        103: "management.archive_source_push_chunk",
+        104: "management.archive_source_seal",
+        105: "management.archive_sink_begin",
+        106: "management.archive_sink_read_chunk",
+        107: "management.archive_sink_commit",
+        108: "management.archive_secret_register",
+        109: "management.archive_capability_abort",
+        110: "management.archive_capability_destroy",
+        111: "management.complete_signer_reprovision",
+        112: "management.close",
+    }
+    if {identifier: row["name"] for identifier, row in operations.items()} != expected_operations:
+        raise ContractError("Base runtime operation inventory drift")
+    if set(requests) != set(operations) or set(responses) != set(operations):
+        raise ContractError("request/response discriminator inventory drift")
+    for identifier, operation in operations.items():
+        if operation.get("request_id") != identifier or operation.get(
+            "response_id"
+        ) != identifier:
+            raise ContractError("operation request/response projection drift")
+
+    if {row["name"] for row in commands.values()} != {
+        "ExistingLocalCommand",
+        "CreateArchive",
+        "RestoreArchive",
+    }:
+        raise ContractError("required archive command discriminator is absent")
+    if {row["name"] for row in topics.values()} != {
+        "RuntimeStatus",
+        "OperationReceipts",
+        "QueryResults",
+        "ArchiveProgress",
+        "Compatibility",
+    }:
+        raise ContractError("subscription topic vocabulary drift")
+    expected_errors = {
+        1: "InvalidRequest",
+        2: "NotFound",
+        3: "Conflict",
+        4: "Expired",
+        5: "RateLimited",
+        6: "CapabilityDisabled",
+        7: "DependencyUnavailable",
+        8: "IncompatibleProfile",
+        9: "ResourceExhausted",
+        10: "CorruptState",
+        11: "ReprovisionRequired",
+        12: "UnknownOutcome",
+        13: "InternalError",
+    }
+    if {identifier: row["name"] for identifier, row in errors.items()} != expected_errors:
+        raise ContractError("closed discriminator error inventory drift")
+    for error in errors.values():
+        if error.get("retryable") is True and error.get(
+            "reconcile_before_retry"
+        ) is not True:
+            raise ContractError("retryable error lacks reconcile requirement")
+
+    protocol = profile.get("operation_protocol")
+    if not isinstance(protocol, dict):
+        raise ContractError("operation protocol is absent")
+    if protocol.get("durable_order") != [
+        "reserve_operation",
+        "management_capability_registration",
+        "prepare",
+        "confirm_or_cancel",
+        "reconcile",
+    ] or protocol.get("prepare_requires_reservation") is not True:
+        raise ContractError("durable reserve-before-capability flow drift")
+    if protocol.get("confirm_requires_idempotency_key") is not True:
+        raise ContractError("confirm idempotency requirement drift")
+    if protocol.get("retry_requires_reconcile") is not True or protocol.get(
+        "unknown_outcome_requires_reconcile"
+    ) is not True:
+        raise ContractError("retry must reconcile unknown outcome")
+    if set(protocol.get("states", [])) != {
+        "reserved",
+        "prepared",
+        "confirming",
+        "committed",
+        "canceled",
+        "failed",
+        "unknown_outcome",
+    } or set(protocol.get("transitions", [])) != {
+        "reserved->prepared",
+        "reserved->canceled",
+        "prepared->confirming",
+        "prepared->canceled",
+        "confirming->committed",
+        "confirming->failed",
+        "confirming->unknown_outcome",
+        "unknown_outcome->committed",
+        "unknown_outcome->failed",
+    }:
+        raise ContractError("asynchronous operation state machine drift")
+
+    generation = profile.get("generation_fence")
+    if not isinstance(generation, dict) or set(
+        generation.get("required_fields", [])
+    ) != {"process_generation", "dataset_generation"} or generation.get(
+        "checked_on_every_operation"
+    ) is not True:
+        raise ContractError("process/dataset generation fence drift")
+
+    subscriptions = profile.get("subscriptions")
+    if not isinstance(subscriptions, dict):
+        raise ContractError("subscription contract is absent")
+    if set(subscriptions.get("required_operations", [])) != {
+        "subscribe",
+        "poll_events",
+        "close_subscription",
+    } or subscriptions.get("handle_ownership") != "owned_by_service_session":
+        raise ContractError("subscription ownership/close contract drift")
+    if subscriptions.get("max_batch_items") != 256 or subscriptions.get(
+        "max_event_payload_bytes"
+    ) != 65536:
+        raise ContractError("bounded subscription batch drift")
+    if subscriptions.get("cursor_rule") != "strictly_monotonic_non_regressing":
+        raise ContractError("subscription cursor regression rule drift")
+    if subscriptions.get("gap_response") != (
+        "typed_resync_required_with_earliest_available_cursor"
+    ):
+        raise ContractError("retention gap lacks explicit resync response")
+    if subscriptions.get("slow_consumer") != (
+        "bounded_buffer_then_typed_disconnect_with_resync"
+    ):
+        raise ContractError("slow-consumer backpressure behavior drift")
+
+    management = profile.get("management")
+    if not isinstance(management, dict):
+        raise ContractError("management contract is absent")
+    required_grant_bindings = {
+        "principal_id",
+        "exact_scopes",
+        "process_generation",
+        "dataset_generation",
+        "expires_at",
+        "revocation_epoch",
+    }
+    if set(management.get("grant_bindings", [])) != required_grant_bindings or management.get(
+        "open_consumes_grant"
+    ) is not True or management.get("ordinary_service_can_mint_grant") is not False:
+        raise ContractError("management grant principal/scope binding drift")
+    required_management = {
+        name for name in expected_operations.values() if name.startswith("management.")
+    }
+    if set(management.get("required_operations", [])) != required_management:
+        if "management.complete_signer_reprovision" not in management.get(
+            "required_operations", []
+        ):
+            raise ContractError("management reprovision lifecycle drift")
+        raise ContractError("management operation lifecycle drift")
+
+    archive = profile.get("archive_capabilities")
+    if not isinstance(archive, dict):
+        raise ContractError("archive capability contract is absent")
+    if set(archive.get("ownership_binding", [])) != {
+        "management_handle",
+        "principal_id",
+        "operation_id",
+        "process_generation",
+        "dataset_generation",
+        "capability_kind",
+    }:
+        raise ContractError("archive capability ownership is ambiguous")
+    if archive.get("max_chunk_bytes") != 1048576 or archive.get(
+        "max_total_bytes"
+    ) != 1099511627776:
+        raise ContractError("bounded archive chunk/total drift")
+    required_archive_lifecycle = {
+        "management.archive_source_begin",
+        "management.archive_source_push_chunk",
+        "management.archive_source_seal",
+        "management.archive_sink_begin",
+        "management.archive_sink_read_chunk",
+        "management.archive_sink_commit",
+        "management.archive_secret_register",
+        "management.archive_capability_abort",
+        "management.archive_capability_destroy",
+    }
+    if set(archive.get("lifecycle_operations", [])) != required_archive_lifecycle:
+        raise ContractError("archive lifecycle register/seal/commit/abort/destroy drift")
+    if (
+        archive.get("opaque_handles_only") is not True
+        or archive.get("reserve_before_registration") is not True
+        or archive.get("secret_custody") != "zeroizing_non_exportable"
+        or archive.get("terminal_reuse") != "reject"
+        or archive.get("drop_behavior") != "abort_then_destroy"
+        or set(archive.get("source_states", []))
+        != {"registered", "streaming", "sealed", "consumed", "aborted", "destroyed"}
+        or set(archive.get("sink_states", []))
+        != {"registered", "streaming", "committed", "aborted", "destroyed"}
+        or set(archive.get("secret_states", []))
+        != {"registered", "consumed", "aborted", "destroyed"}
+    ):
+        raise ContractError("archive capability state/custody drift")
+
+    lifecycle = profile.get("runtime_lifecycle")
+    if not isinstance(lifecycle, dict) or lifecycle.get(
+        "drain_blocks_new_operations"
+    ) is not True or lifecycle.get("drain_preserves_poll_cancel_reconcile") is not True:
+        raise ContractError("runtime drain behavior drift")
+    if lifecycle.get("close_requires_drain") is not True or lifecycle.get(
+        "management_close_is_explicit"
+    ) is not True:
+        raise ContractError("runtime close authority drift")
+
+    projections = profile.get("projection_rules")
+    if not isinstance(projections, dict) or projections.get("source") != (
+        "machine_idl_only"
+    ) or projections.get("generated") is not True or projections.get(
+        "handwritten_declarations_allowed"
+    ) is not False:
+        raise ContractError("projection source must be generated machine IDL only")
+    targets = projections.get("targets")
+    if not isinstance(targets, list):
+        raise ContractError("projection target inventory is absent")
+    targets_by_name = {
+        row.get("name"): row for row in targets if isinstance(row, dict)
+    }
+    if set(targets_by_name) != {"rust", "typescript", "dart", "c_abi"}:
+        raise ContractError("projection target inventory drift")
+    if targets_by_name["c_abi"].get("struct_size_required") is not True:
+        raise ContractError("C ABI structs require struct_size")
+    mappings = projections.get("operation_mapping")
+    if not isinstance(mappings, list) or {
+        row.get("operation") for row in mappings if isinstance(row, dict)
+    } != set(expected_operations.values()):
+        raise ContractError("exact operation projection mapping drift")
+    if set(projections.get("forbidden_exposures", [])) != forbidden:
+        raise ContractError("forbidden exposure inventory drift")
+    mapping_by_operation = {
+        row.get("operation"): row for row in mappings if isinstance(row, dict)
+    }
+
+    def camel(name: str) -> str:
+        head, *tail = name.split("_")
+        return head + "".join(part[:1].upper() + part[1:] for part in tail)
+
+    for operation_name, row in mapping_by_operation.items():
+        if not isinstance(operation_name, str):
+            raise ContractError("invalid operation projection mapping")
+        if operation_name in {"management.open", "management.close"}:
+            suffix = operation_name.replace(".", "_")
+        else:
+            suffix = operation_name.removeprefix("management.")
+        rust_name = suffix
+        expected_mapping = {
+            "operation": operation_name,
+            "rust": rust_name,
+            "typescript": camel(rust_name),
+            "dart": camel(rust_name),
+            "c_abi": f"ob_base_{rust_name}_v1",
+        }
+        if row != expected_mapping:
+            raise ContractError(f"exact projection name drift: {operation_name}")
+
+    if history.get("format") != "onebrain/base-v1-runtime-interface-history/1" or history.get(
+        "profile_id"
+    ) != "BASE_V1_RUNTIME_INTERFACE_V1" or history.get("append_only") is not True:
+        raise ContractError("unexpected runtime discriminator history format")
+    entries = history.get("entries")
+    if not isinstance(entries, list) or not entries:
+        raise ContractError("runtime discriminator history is absent")
+    seen_ids: dict[tuple[str, int], str] = {}
+    seen_names: dict[tuple[str, str], int] = {}
+    active: set[tuple[str, int, str]] = set()
+    for expected_sequence, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict) or entry.get("sequence") != expected_sequence:
+            raise ContractError("runtime history sequence is not append-only")
+        namespace = entry.get("namespace")
+        identifier = entry.get("id")
+        name = entry.get("name")
+        state = entry.get("state")
+        if (
+            not (
+                namespace
+                in {"request", "response", "error", "command", "topic", "operation"}
+                or isinstance(namespace, str)
+                and namespace.startswith("type:")
+            )
+            or not isinstance(identifier, int)
+            or identifier <= 0
+            or not isinstance(name, str)
+            or state not in {"active", "tombstone"}
+        ):
+            raise ContractError("invalid runtime history entry")
+        id_key = (namespace, identifier)
+        name_key = (namespace, name)
+        prior_name = seen_ids.get(id_key)
+        prior_id = seen_names.get(name_key)
+        if (prior_name is not None and prior_name != name) or (
+            prior_id is not None and prior_id != identifier
+        ):
+            raise ContractError("runtime history discriminator reuse detected")
+        if prior_name is not None and state != "tombstone":
+            raise ContractError("runtime history active discriminator was rewritten")
+        seen_ids[id_key] = name
+        seen_names[name_key] = identifier
+        key = (str(namespace), identifier, name)
+        if state == "active":
+            active.add(key)
+        else:
+            active.discard(key)
+    if active != _runtime_live_discriminators(profile):
+        raise ContractError("runtime discriminator history coverage drift")
+    chain = history.get("history_chain")
+    if not isinstance(chain, dict) or chain.get("algorithm") != "sha256-chain-v1" or chain.get(
+        "canonicalization"
+    ) != "json-sort-keys-utf8-no-whitespace" or chain.get(
+        "root_sha256"
+    ) != _runtime_history_root(entries):
+        raise ContractError("runtime discriminator history chain root mismatch")
+
+    return len(operations), len(topics), len(errors)
+
+
+def validate_base_v1_compatibility(
+    profile: dict[str, object] | None = None,
+    runtime_profile: dict[str, object] | None = None,
+) -> int:
+    if profile is None:
+        try:
+            profile = json.loads(read(BASE_V1_COMPATIBILITY_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base compatibility JSON: {error}") from error
+    if profile.get("format") != "onebrain/base-v1-compatibility/1" or profile.get(
+        "profile_id"
+    ) != "BASE_V1_COMPATIBILITY_V1":
+        raise ContractError("unexpected Base compatibility profile")
+    if profile.get("domains") != {
+        "candidate_semantic": "onebrain:base:candidate-semantic:1\\0",
+        "artifact_tuple": "onebrain:base:artifact-tuple:1\\0",
+    }:
+        raise ContractError("Base compatibility digest domain drift")
+    if profile.get("identity_inputs") != {
+        "source_commit": "ONEBRAIN_BASE_COMMIT",
+        "toolchain_digest": "ONEBRAIN_TOOLCHAIN_DIGEST",
+        "missing_or_malformed": "typed_unknown",
+    }:
+        raise ContractError("Base compatibility build identity contract drift")
+
+    tuple_fields = [
+        "base_version",
+        "base_commit",
+        "canonical_schema_digest",
+        "domain_registry_digest",
+        "resource_registry_digest",
+        "storage_schema",
+        "archive_profile",
+        "migration_profile",
+        "registry_profile",
+        "registry_profile_digest",
+        "wire_session",
+        "product_api",
+        "c_abi",
+        "feature_set_digest",
+        "target_triple",
+        "toolchain",
+    ]
+    candidate_fields = tuple_fields[:-2]
+    if profile.get("tuple_fields") != tuple_fields or profile.get(
+        "candidate_fields"
+    ) != candidate_fields or profile.get("artifact_only_fields") != [
+        "target_triple",
+        "toolchain",
+    ]:
+        raise ContractError("Base compatibility tuple field order drift")
+
+    if runtime_profile is None:
+        try:
+            runtime_profile = json.loads(read(BASE_V1_RUNTIME_INTERFACE_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base runtime interface JSON: {error}") from error
+    runtime = runtime_profile
+    runtime_compatibility = runtime.get("compatibility")
+    if not isinstance(runtime_compatibility, dict) or runtime_compatibility.get(
+        "candidate_fields"
+    ) != candidate_fields or runtime_compatibility.get("artifact_only_fields") != [
+        "target_triple",
+        "toolchain",
+    ] or runtime_compatibility.get(
+        "qualification_participates_in_digest"
+    ) is not False or runtime_compatibility.get(
+        "qualification_is_external"
+    ) is not True:
+        raise ContractError("Base compatibility IDL binding drift")
+
+    scalar_rows = runtime.get("scalar_types")
+    if not isinstance(scalar_rows, list):
+        raise ContractError("Base compatibility scalar declarations are absent")
+    scalars = {
+        row.get("name"): row for row in scalar_rows if isinstance(row, dict)
+    }
+    expected_scalars = {
+        "BasePrerelease": {
+            "name": "BasePrerelease",
+            "wire": "ascii_token",
+            "max_bytes": 32,
+            "ownership": "owned",
+        },
+        "TargetTriple": {
+            "name": "TargetTriple",
+            "wire": "ascii_token",
+            "max_bytes": 96,
+            "ownership": "owned",
+        },
+        "MigrationVectorIdV1": {
+            "name": "MigrationVectorIdV1",
+            "wire": "ascii_token",
+            "max_bytes": 64,
+            "ownership": "owned",
+        },
+        "BaseCapabilitySet": {
+            "name": "BaseCapabilitySet",
+            "wire": "bounded_set",
+            "max_items": 64,
+            "ownership": "owned",
+        },
+        "StorageSchemaVersion": {
+            "name": "StorageSchemaVersion",
+            "wire": "u32",
+            "ownership": "value",
+        },
+    }
+    if any(scalars.get(name) != row for name, row in expected_scalars.items()):
+        raise ContractError("Base compatibility scalar declaration drift")
+
+    definitions = runtime.get("type_definitions")
+    if not isinstance(definitions, dict):
+        raise ContractError("Base compatibility type declarations are absent")
+
+    def fields(name: str) -> list[tuple[object, ...]]:
+        definition = definitions.get(name)
+        if not isinstance(definition, dict) or definition.get("kind") != "struct":
+            raise ContractError(f"Base compatibility struct declaration drift: {name}")
+        rows = definition.get("fields")
+        if not isinstance(rows, list):
+            raise ContractError(f"Base compatibility field declaration drift: {name}")
+        return [
+            (
+                row.get("id"),
+                row.get("name"),
+                row.get("type"),
+                row.get("required"),
+                row.get("ownership"),
+                row.get("max_value"),
+            )
+            for row in rows
+            if isinstance(row, dict)
+        ]
+
+    expected_struct_fields = {
+        "ProfileVersion": [
+            (1, "major", "u16", True, "value", None),
+            (2, "minor", "u16", True, "value", None),
+        ],
+        "BaseReleaseVersion": [
+            (1, "major", "u16", True, "value", None),
+            (2, "minor", "u16", True, "value", None),
+            (3, "patch", "u16", True, "value", None),
+            (4, "prerelease", "BasePrerelease", False, "owned", None),
+        ],
+        "BaseQualifiedEvidence": [
+            (1, "candidate_commit", "SourceCommitId", True, "owned", None),
+            (
+                2,
+                "candidate_semantic_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (3, "evidence_blake3", "CompatibilityDigestV1", True, "owned", None),
+        ],
+        "ArchiveRestorePolicyV1": [
+            (
+                1,
+                "canonical_schema_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                2,
+                "domain_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                3,
+                "resource_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (4, "storage_schema", "StorageSchemaVersion", True, "value", None),
+            (5, "archive_profile", "ProfileVersion", True, "value", None),
+            (6, "migration_profile", "ProfileVersion", True, "value", None),
+            (7, "max_dataset_bytes", "u64", True, "value", 17_179_869_184),
+        ],
+        "BaseCompatibilityTuple": [
+            (1, "base_version", "BaseReleaseVersion", True, "owned", None),
+            (2, "base_commit", "SourceCommitIdentity", True, "owned", None),
+            (
+                3,
+                "canonical_schema_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                4,
+                "domain_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                5,
+                "resource_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (6, "storage_schema", "StorageSchemaVersion", True, "value", None),
+            (7, "archive_profile", "ProfileVersion", True, "value", None),
+            (8, "migration_profile", "ProfileVersion", True, "value", None),
+            (9, "registry_profile", "ProfileVersion", True, "value", None),
+            (
+                10,
+                "registry_profile_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (11, "wire_session", "ProfileVersion", True, "value", None),
+            (12, "product_api", "ProfileVersion", True, "value", None),
+            (13, "c_abi", "ProfileVersion", True, "value", None),
+            (
+                14,
+                "feature_set_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (15, "target_triple", "TargetTriple", True, "owned", None),
+            (16, "toolchain", "ToolchainIdentity", True, "owned", None),
+        ],
+        "BaseVersionStatus": [
+            (1, "compatibility", "BaseCompatibilityTuple", True, "owned", None),
+            (
+                2,
+                "candidate_semantic_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                3,
+                "artifact_tuple_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (4, "qualification", "BaseQualificationState", True, "owned", None),
+        ],
+        "NegotiatedVersions": [
+            (1, "base_minor", "u16", True, "value", None),
+            (2, "wire_session_minor", "u16", True, "value", None),
+            (3, "product_api_minor", "u16", True, "value", None),
+            (4, "c_abi_minor", "u16", True, "value", None),
+        ],
+        "MigrationVectorBindingV1": [
+            (1, "vector_id", "MigrationVectorIdV1", True, "owned", None),
+            (2, "vector_blake3", "CompatibilityDigestV1", True, "owned", None),
+            (
+                3,
+                "trust_policy_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+        ],
+        "BaseCompatibilityPolicy": [
+            (1, "current", "BaseCompatibilityTuple", True, "owned", None),
+            (2, "minimum_additive", "NegotiatedVersions", True, "owned", None),
+            (3, "archive_restore", "ArchiveRestorePolicyV1", True, "owned", None),
+        ],
+        "BaseCapabilityRequirements": [
+            (1, "supported", "BaseCapabilitySet", True, "owned", None),
+            (2, "required", "BaseCapabilitySet", True, "owned", None),
+        ],
+        "BaseCompatibleNegotiationV1": [
+            (1, "versions", "NegotiatedVersions", True, "owned", None),
+            (2, "capabilities", "BaseCapabilitySet", True, "owned", None),
+        ],
+        "BaseMigrationRequiredNegotiationV1": [
+            (1, "from", "BaseReleaseVersion", True, "owned", None),
+            (2, "to", "BaseReleaseVersion", True, "owned", None),
+            (3, "vector", "MigrationVectorBindingV1", True, "owned", None),
+        ],
+    }
+    for name, expected in expected_struct_fields.items():
+        if fields(name) != expected:
+            raise ContractError(f"Base compatibility field declaration drift: {name}")
+
+    for name, expected in {
+        "SourceCommitSha1": {
+            "kind": "newtype",
+            "wire": "fixed_bytes",
+            "exact_bytes": 20,
+            "ownership": "owned",
+        },
+        "SourceCommitSha256": {
+            "kind": "newtype",
+            "wire": "fixed_bytes",
+            "exact_bytes": 32,
+            "ownership": "owned",
+        },
+        "ToolchainDigest": {
+            "kind": "newtype",
+            "wire": "fixed_bytes",
+            "exact_bytes": 32,
+            "ownership": "owned",
+        },
+    }.items():
+        if definitions.get(name) != expected:
+            raise ContractError(f"Base compatibility identity declaration drift: {name}")
+
+    expected_enums = {
+        "SourceCommitId": (
+            "u8",
+            [(1, "Sha1", "SourceCommitSha1"), (2, "Sha256", "SourceCommitSha256")],
+        ),
+        "SourceCommitIdentity": (
+            "u8",
+            [(1, "Known", "SourceCommitId"), (2, "Unknown", None)],
+        ),
+        "ToolchainIdentity": (
+            "u8",
+            [(1, "Known", "ToolchainDigest"), (2, "Unknown", None)],
+        ),
+        "BaseQualificationState": (
+            "u8",
+            [
+                (1, "Unqualified", None),
+                (2, "Qualified", "BaseQualifiedEvidence"),
+            ],
+        ),
+        "BaseNegotiationOutcome": (
+            "u8",
+            [
+                (1, "Compatible", "BaseCompatibleNegotiationV1"),
+                (2, "MigrationRequired", "BaseMigrationRequiredNegotiationV1"),
+                (3, "Incompatible", "BaseCompatibilityError"),
+            ],
+        ),
+    }
+    for name, (expected_repr, expected) in expected_enums.items():
+        definition = definitions.get(name)
+        variants = definition.get("variants") if isinstance(definition, dict) else None
+        actual = [
+            (row.get("id"), row.get("name"), row.get("payload"))
+            for row in variants
+            if isinstance(row, dict)
+        ] if isinstance(variants, list) else []
+        if not isinstance(definition, dict) or definition.get(
+            "kind"
+        ) != "enum" or definition.get("closed") is not True or definition.get(
+            "repr"
+        ) != expected_repr or actual != expected:
+            raise ContractError(f"Base compatibility enum declaration drift: {name}")
+    error_definition = definitions.get("BaseCompatibilityError")
+    error_variants = (
+        error_definition.get("variants")
+        if isinstance(error_definition, dict)
+        else None
+    )
+    expected_error_names = [
+        "BaseMajorMismatch",
+        "BaseMinorBelowMinimum",
+        "CanonicalSchemaMismatch",
+        "DomainRegistryMismatch",
+        "ResourceRegistryMismatch",
+        "RegistryProfileMismatch",
+        "RegistryProfileDigestMismatch",
+        "WireSessionMajorMismatch",
+        "WireSessionMinorBelowMinimum",
+        "ProductApiMajorMismatch",
+        "ProductApiMinorBelowMinimum",
+        "CAbiMajorMismatch",
+        "CAbiMinorBelowMinimum",
+        "MigrationVectorRequired",
+        "MissingRequiredCapability",
+        "InvalidPolicy",
+    ]
+    if not isinstance(error_definition, dict) or error_definition.get(
+        "kind"
+    ) != "enum" or error_definition.get("closed") is not True or error_definition.get(
+        "repr"
+    ) != "u16" or not isinstance(error_variants, list) or [
+        (row.get("id"), row.get("name"), row.get("payload"))
+        for row in error_variants
+        if isinstance(row, dict)
+    ] != [
+        (identifier, name, None)
+        for identifier, name in enumerate(expected_error_names, start=1)
+    ]:
+        raise ContractError("Base compatibility error declaration drift")
+
+    baseline = profile.get("baseline")
+    if not isinstance(baseline, dict) or list(baseline) != tuple_fields:
+        raise ContractError("Base compatibility baseline tuple drift")
+    release = baseline.get("base_version")
+    if not isinstance(release, dict) or set(release) != {
+        "major",
+        "minor",
+        "patch",
+        "prerelease",
+    } or any(
+        not isinstance(release.get(field), int)
+        for field in ("major", "minor", "patch")
+    ):
+        raise ContractError("Base compatibility release version drift")
+
+    digest_fields = {
+        "canonical_schema_digest",
+        "domain_registry_digest",
+        "resource_registry_digest",
+        "registry_profile_digest",
+        "feature_set_digest",
+    }
+    digest_pattern = re.compile(r"[0-9a-f]{64}")
+    for field in digest_fields:
+        if not digest_pattern.fullmatch(str(baseline.get(field, ""))):
+            raise ContractError(f"Base compatibility digest field drift: {field}")
+    commit = baseline.get("base_commit")
+    toolchain = baseline.get("toolchain")
+    if not isinstance(commit, dict) or commit.get("kind") != "sha1" or not re.fullmatch(
+        r"[0-9a-f]{40}", str(commit.get("hex", ""))
+    ) or not isinstance(toolchain, dict) or toolchain.get(
+        "kind"
+    ) != "known" or not digest_pattern.fullmatch(str(toolchain.get("hex", ""))):
+        raise ContractError("Base compatibility known identity vector drift")
+    if not isinstance(baseline.get("storage_schema"), int) or not isinstance(
+        baseline.get("target_triple"), str
+    ) or not 0 < len(baseline["target_triple"].encode("ascii")) <= 96:
+        raise ContractError("Base compatibility storage/target vector drift")
+    for field in ("archive_profile", "migration_profile", "registry_profile", "wire_session", "product_api", "c_abi"):
+        value = baseline.get(field)
+        if not isinstance(value, dict) or set(value) != {"major", "minor"} or any(
+            not isinstance(value.get(part), int) for part in ("major", "minor")
+        ):
+            raise ContractError(f"Base compatibility profile version drift: {field}")
+
+    minimum = profile.get("minimum_additive")
+    if not isinstance(minimum, dict) or set(minimum) != {
+        "base_minor",
+        "wire_session_minor",
+        "product_api_minor",
+        "c_abi_minor",
+    } or any(not isinstance(value, int) for value in minimum.values()):
+        raise ContractError("Base compatibility independent minor floors drift")
+    archive_restore = profile.get("archive_restore")
+    if archive_restore != {"max_dataset_bytes": 17_179_869_184}:
+        raise ContractError("Base compatibility archive limit drift")
+
+    capabilities = profile.get("capabilities")
+    if not isinstance(capabilities, dict):
+        raise ContractError("Base compatibility capability vectors are absent")
+    for side in ("local", "peer"):
+        offer = capabilities.get(side)
+        if not isinstance(offer, dict) or set(offer) != {"supported", "required"}:
+            raise ContractError("Base compatibility capability offer drift")
+        supported = offer.get("supported")
+        required = offer.get("required")
+        if not isinstance(supported, list) or not isinstance(required, list) or (
+            supported != sorted(set(supported))
+            or required != sorted(set(required))
+            or not set(required) <= set(supported)
+            or len(supported) > 64
+        ):
+            raise ContractError("Base compatibility capability bounds drift")
+    if capabilities.get("expected_intersection") != [1, 2]:
+        raise ContractError("Base compatibility capability intersection drift")
+
+    vector = profile.get("migration_vector")
+    if not isinstance(vector, dict) or set(vector) != {
+        "vector_id",
+        "vector_blake3",
+        "trust_policy_digest",
+    } or not isinstance(vector.get("vector_id"), str) or not 0 < len(
+        vector["vector_id"].encode("ascii")
+    ) <= 64 or not digest_pattern.fullmatch(str(vector.get("vector_blake3", ""))) or not digest_pattern.fullmatch(
+        str(vector.get("trust_policy_digest", ""))
+    ):
+        raise ContractError("Base compatibility migration binding drift")
+
+    golden = profile.get("golden_digests")
+    if not isinstance(golden, dict) or set(golden) != {
+        "candidate_semantic",
+        "artifact_tuple",
+    } or any(
+        not digest_pattern.fullmatch(str(golden.get(field, "")))
+        for field in golden
+    ):
+        raise ContractError("Base compatibility golden digest drift")
+
+    cases = profile.get("cases")
+    if not isinstance(cases, list) or len(cases) != 34:
+        raise ContractError("Base compatibility vector count drift")
+    expected_outcomes = {
+        "exact": "compatible",
+        "base-major": "incompatible:BaseMajorMismatch",
+        "base-minor": "compatible",
+        "base-minor-below-floor": "incompatible:BaseMinorBelowMinimum",
+        "base-patch": "compatible",
+        "base-prerelease": "compatible",
+        "commit-known": "compatible",
+        "commit-unknown": "compatible",
+        "canonical-schema": "incompatible:CanonicalSchemaMismatch",
+        "domain-registry": "incompatible:DomainRegistryMismatch",
+        "resource-registry": "incompatible:ResourceRegistryMismatch",
+        "storage-with-vector": "migration_required",
+        "storage-without-vector": "incompatible:MigrationVectorRequired",
+        "archive-profile": "migration_required",
+        "archive-profile-without-vector": "incompatible:MigrationVectorRequired",
+        "migration-profile": "migration_required",
+        "migration-profile-without-vector": "incompatible:MigrationVectorRequired",
+        "registry-profile": "incompatible:RegistryProfileMismatch",
+        "registry-profile-digest": "incompatible:RegistryProfileDigestMismatch",
+        "wire-major": "incompatible:WireSessionMajorMismatch",
+        "wire-minor": "compatible",
+        "wire-minor-below-floor": "incompatible:WireSessionMinorBelowMinimum",
+        "product-major": "incompatible:ProductApiMajorMismatch",
+        "product-minor": "compatible",
+        "product-minor-below-floor": "incompatible:ProductApiMinorBelowMinimum",
+        "c-abi-major": "incompatible:CAbiMajorMismatch",
+        "c-abi-minor": "compatible",
+        "c-abi-minor-below-floor": "incompatible:CAbiMinorBelowMinimum",
+        "optional-feature": "compatible",
+        "required-feature": "incompatible:MissingRequiredCapability",
+        "target": "compatible",
+        "toolchain-known": "compatible",
+        "toolchain-unknown": "compatible",
+        "commit-toolchain-unknown": "compatible",
+    }
+    by_id: dict[str, dict[str, object]] = {}
+    for case in cases:
+        if not isinstance(case, dict) or set(case) != {
+            "id",
+            "field",
+            "change",
+            "migration_vector",
+            "outcome",
+            "semantic_digest_changed",
+            "artifact_digest_changed",
+            "qualification",
+        } or not isinstance(case.get("id"), str) or case["id"] in by_id:
+            raise ContractError("Base compatibility case schema/ID drift")
+        by_id[case["id"]] = case
+    if set(by_id) != set(expected_outcomes) or any(
+        by_id[identifier].get("outcome") != outcome
+        for identifier, outcome in expected_outcomes.items()
+    ):
+        raise ContractError("Base compatibility decision vector drift")
+    covered = {
+        str(case.get("field")).split(".", 1)[0].split("+", 1)[0]
+        for case in cases
+    }
+    if not set(tuple_fields) <= covered | {"all"}:
+        raise ContractError("Base compatibility tuple field coverage drift")
+    if by_id["target"].get("semantic_digest_changed") is not False or by_id[
+        "target"
+    ].get("artifact_digest_changed") is not True or by_id[
+        "toolchain-known"
+    ].get("semantic_digest_changed") is not False or by_id[
+        "toolchain-known"
+    ].get("artifact_digest_changed") is not True:
+        raise ContractError("Base artifact-only digest separation drift")
+    for identifier in ("commit-unknown", "toolchain-unknown", "commit-toolchain-unknown"):
+        if by_id[identifier].get("qualification") != "unqualified":
+            raise ContractError("unknown build identity must remain unqualified")
+    return len(cases)
 
 
 def validate_negative_assertions() -> int:
@@ -968,7 +2656,12 @@ def validate_product_integration_profile(
         raise ContractError("unexpected product integration profile format")
     if profile.get("profile_id") != "VNEXT_PRODUCT_INTEGRATION_PROFILE_V1":
         raise ContractError("unexpected product integration profile ID")
-    if profile.get("version") != 1 or profile.get("base_path") != "/api/vnext":
+    if (
+        profile.get("version") != 1
+        or profile.get("profile_major") != 1
+        or profile.get("profile_minor") != 1
+        or profile.get("base_path") != "/api/vnext"
+    ):
         raise ContractError("unexpected product integration version/base path")
 
     wire = profile.get("wire")
@@ -1071,6 +2764,7 @@ def validate_product_integration_profile(
         ("POST", "/api/vnext/pomv/public-use/confirm"),
         ("GET", "/api/vnext/pomv/publications/{id}"),
         ("GET", "/api/vnext/pomv/views/{target}"),
+        ("POST", "/api/vnext/base/negotiate"),
         ("GET", "/api/vnext/runtime/status"),
     }
     endpoints = profile.get("endpoints")
@@ -2440,7 +4134,7 @@ def validate_vnext_dr_m5_crash_harness(
 
     node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
     if (
-        "default = []" not in node_manifest
+        'default = ["base-v1"]' not in node_manifest
         or "vnext-crash-harness = [" not in node_manifest
         or '"ku-core/dr-m5-crash-harness"' not in node_manifest
         or '"ku-net/dr-m5-crash-harness"' not in node_manifest
@@ -2694,7 +4388,7 @@ def validate_vnext_dr_m5_chaos_fuzz(
 
     node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
     if (
-        "default = []" not in node_manifest
+        'default = ["base-v1"]' not in node_manifest
         or "vnext-chaos-harness = [" not in node_manifest
         or '"ku-net/dr-m5-chaos-harness"' not in node_manifest
         or 'required-features = ["vnext-chaos-harness"]' not in node_manifest
@@ -2933,7 +4627,7 @@ def validate_vnext_dr_m5_operational_compaction(
 
     node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
     if (
-        "default = []" not in node_manifest
+        'default = ["base-v1"]' not in node_manifest
         or "vnext-compaction-harness = [" not in node_manifest
         or '"ku-core/dr-m5-crash-harness"' not in node_manifest
         or '"ku-net/dr-m5-crash-harness"' not in node_manifest
@@ -4341,6 +6035,95 @@ def validate_normative_coverage() -> int:
     return sum(actual.values())
 
 
+def validate_base_v1_packaging() -> int:
+    """Validate Base-default features and fail-closed legacy/harness fences."""
+
+    packages = {
+        "onebrain-node": ROOT / "src/onebrain-node/Cargo.toml",
+        "onebrain-api": ROOT / "src/onebrain-api/Cargo.toml",
+        "onebrain-cli": ROOT / "src/onebrain-cli/Cargo.toml",
+    }
+    for name, path in packages.items():
+        document = tomllib.loads(path.read_text(encoding="utf-8"))
+        features = document.get("features", {})
+        if features.get("default") != ["base-v1"]:
+            raise ContractError(f"{name} must default to base-v1 only")
+        if "base-v1" not in features or "legacy-read-compat" not in features:
+            raise ContractError(f"{name} is missing Base/legacy feature declarations")
+        if "base-v1" in features["legacy-read-compat"]:
+            raise ContractError(
+                f"{name} legacy-read-compat must not silently auto-enable base-v1"
+            )
+    feature_guards = {
+        ROOT / "src/onebrain-node/src/lib.rs": "legacy-read-compat requires base-v1",
+        ROOT / "src/onebrain-api/src/lib.rs": "legacy-read-compat requires base-v1",
+        ROOT / "src/onebrain-cli/src/main.rs": "legacy-read-compat requires base-v1",
+    }
+    for path, guard in feature_guards.items():
+        if guard not in path.read_text(encoding="utf-8"):
+            raise ContractError(f"missing forbidden-combination guard in {path}")
+    cli_archive = (ROOT / "src/onebrain-cli/src/cli/data.rs").read_text(
+        encoding="utf-8"
+    )
+    for forbidden in ("node.create_backup(", "node.restore_backup("):
+        if forbidden in cli_archive:
+            raise ContractError(
+                f"CLI archive path bypasses the Base scoped facade: {forbidden}"
+            )
+    api_archive = (ROOT / "src/onebrain-api/src/handlers.rs").read_text(
+        encoding="utf-8"
+    )
+    for forbidden in ("node.create_backup(", "node.restore_backup("):
+        if forbidden in api_archive:
+            raise ContractError(
+                f"API archive path bypasses the Base scoped facade: {forbidden}"
+            )
+    for required in (
+        "issue_base_management_grant",
+        "ArchiveSinkBegin",
+        "ArchiveSourceBegin",
+        "ArchiveCapabilityHandleV1",
+        "management.close().await",
+    ):
+        if required not in cli_archive:
+            raise ContractError(f"CLI Base archive lifecycle is missing {required}")
+    abi = tomllib.loads(
+        (ROOT / "src/onebrain-base-abi/Cargo.toml").read_text(encoding="utf-8")
+    )
+    if abi.get("lib", {}).get("crate-type") != ["cdylib", "staticlib", "rlib"]:
+        raise ContractError("onebrain-base-abi crate types drifted")
+    node_features = tomllib.loads(
+        (ROOT / "src/onebrain-node/Cargo.toml").read_text(encoding="utf-8")
+    )["features"]
+    for forbidden in (
+        "vnext-canary-harness",
+        "vnext-crash-harness",
+        "vnext-chaos-harness",
+        "vnext-compaction-harness",
+        "vnext-soak-harness",
+    ):
+        if forbidden in node_features["default"] or forbidden in node_features["base-v1"]:
+            raise ContractError(f"production Base feature includes {forbidden}")
+    workflow = (ROOT / ".github/workflows/vnext-foundation.yml").read_text(
+        encoding="utf-8"
+    )
+    for marker in (
+        "base-v1-projections",
+        "--no-default-features --features base-v1",
+        "--no-default-features --features base-v1,legacy-read-compat",
+        "onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime",
+        "validate_base_abi_header.py",
+        "dart pub get --enforce-lockfile",
+        "install_base_v1_cbindgen.ps1",
+        "ONEBRAIN_BASE_CBINDGEN",
+    ):
+        if marker not in workflow:
+            raise ContractError(f"Base packaging workflow is missing marker: {marker}")
+    if "--skip-tool-verification" in workflow:
+        raise ContractError("Base ABI CI may not bypass the pinned executable hash")
+    return len(packages) + 1
+
+
 def main() -> int:
     try:
         tasks, _ = plan_tasks()
@@ -4352,6 +6135,27 @@ def main() -> int:
             validate_base_v1_storage_integrity()
         )
         base_archive_kinds, base_archive_required = validate_base_v1_archive()
+        baseline_receipt = os.environ.get("BASE_V1_IDL_BASELINE_RECEIPT")
+        if baseline_receipt:
+            baseline_profile, baseline_history = load_base_v1_runtime_baseline(
+                Path(baseline_receipt)
+            )
+            (
+                base_runtime_operations,
+                base_runtime_topics,
+                base_runtime_errors,
+            ) = validate_base_v1_runtime_interface(
+                baseline_profile=baseline_profile,
+                baseline_history=baseline_history,
+            )
+        else:
+            (
+                base_runtime_operations,
+                base_runtime_topics,
+                base_runtime_errors,
+            ) = validate_base_v1_runtime_interface()
+        base_compatibility_vectors = validate_base_v1_compatibility()
+        base_packaging_surfaces = validate_base_v1_packaging()
         assertions = validate_negative_assertions()
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
@@ -4435,6 +6239,10 @@ def main() -> int:
         f"{base_storage_negative_oracles} negative oracles, "
         f"{base_archive_kinds} Base archive kinds/"
         f"{base_archive_required} required metadata, "
+        f"{base_runtime_operations} Base runtime operations/"
+        f"{base_runtime_topics} topics/{base_runtime_errors} errors, "
+        f"{base_compatibility_vectors} Base compatibility vectors/"
+        f"{base_packaging_surfaces} packaging surfaces, "
         f"{schema_vectors} identity-object vectors, "
         f"{event_vectors} feed-event vectors, {normative_lines} normative lines, "
         f"{product_endpoints} product endpoints/{product_dtos} DTOs, "

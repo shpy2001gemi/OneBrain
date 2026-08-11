@@ -1277,6 +1277,79 @@ impl VNextProductServices {
     }
 }
 
+/// Transitional host adapter: existing typed vNext status is reachable
+/// through `BaseServices::query` while products migrate to the sole Base
+/// facade. Mutating legacy product commands are deliberately not decoded from
+/// opaque bytes here; Task 18 projects their generated Base command forms.
+impl crate::base_runtime::BaseLocalOperationAdapter for VNextProductServices {
+    fn query(
+        &self,
+        request: onebrain_base_contract::BaseQueryRequestV1,
+    ) -> Result<
+        (
+            onebrain_base_contract::TypedPayloadV1,
+            Option<onebrain_base_contract::BaseOpaqueContinuation>,
+        ),
+        crate::base_runtime::BaseServiceError,
+    > {
+        if request.payload.as_bytes() != b"vnext.runtime.status.v1" {
+            return Err(crate::base_runtime::BaseServiceError {
+                code: onebrain_base_contract::BaseErrorCodeV1::InvalidRequest,
+                reason: "unsupported_vnext_base_query",
+                retryable: false,
+                reconcile_before_retry: false,
+            });
+        }
+        let status = self
+            .status()
+            .map_err(|_| crate::base_runtime::BaseServiceError {
+                code: onebrain_base_contract::BaseErrorCodeV1::DependencyUnavailable,
+                reason: "vnext_runtime_status_unavailable",
+                retryable: true,
+                reconcile_before_retry: true,
+            })?;
+        let bytes = serde_json::to_vec(&serde_json::json!({
+            "profile": "vnext.runtime.status.v1",
+            "state": format!("{:?}", status.state),
+            "authenticated_routes": status.authenticated_routes,
+            "active_private_needs": status.active_private_needs,
+            "durable_matches": status.durable_matches,
+            "pending_publications": status.pending_publications,
+            "storage_bytes": status.storage_bytes,
+            "network_enabled": status.rollout.lane(VNextRuntimeLane::Network).enabled,
+            "claims_network_completion": false,
+        }))
+        .map_err(|_| crate::base_runtime::BaseServiceError {
+            code: onebrain_base_contract::BaseErrorCodeV1::InternalError,
+            reason: "vnext_runtime_status_encoding_failed",
+            retryable: false,
+            reconcile_before_retry: true,
+        })?;
+        let payload =
+            onebrain_base_contract::TypedPayloadV1::try_from_bytes(bytes).map_err(|_| {
+                crate::base_runtime::BaseServiceError {
+                    code: onebrain_base_contract::BaseErrorCodeV1::ResourceExhausted,
+                    reason: "vnext_runtime_status_too_large",
+                    retryable: true,
+                    reconcile_before_retry: true,
+                }
+            })?;
+        Ok((payload, None))
+    }
+
+    fn confirm_local(
+        &self,
+        _command: onebrain_base_contract::BaseLocalCommandV1,
+    ) -> Result<Vec<u8>, crate::base_runtime::BaseServiceError> {
+        Err(crate::base_runtime::BaseServiceError {
+            code: onebrain_base_contract::BaseErrorCodeV1::CapabilityDisabled,
+            reason: "vnext_mutation_requires_generated_base_command",
+            retryable: false,
+            reconcile_before_retry: false,
+        })
+    }
+}
+
 struct StartupArtifactGuard {
     data_dir: PathBuf,
     candidates: Vec<PathBuf>,

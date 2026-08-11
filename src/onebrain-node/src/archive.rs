@@ -27,6 +27,7 @@ use ku_core::foundation::{
 };
 use ku_kql::blob_storage::{BlobReferenceOracle as _, BlobStorage};
 
+use crate::activation_journal::ActivationOperationContext;
 use crate::archive_capabilities::{
     ArchiveCapabilityRegistry, ArchiveOperationReservationId, ArchiveSecretHandle,
     ReadableArchiveSinkHandle, SealedArchiveSourceHandle, WritableArchiveSinkHandle,
@@ -44,6 +45,10 @@ use crate::DatasetGenerationReceipt;
 
 const SNAPSHOT_BINDING_DOMAIN: &str = "onebrain:base:node-snapshot-binding:1";
 const RESTORE_IDEMPOTENCY_DOMAIN: &str = "onebrain:base:restore-idempotency:1";
+const LOGICAL_ROW_KEY_DOMAIN: &str = "onebrain:base:logical-row-key:1";
+const LOGICAL_ROW_ENVELOPE_DOMAIN: &str = "onebrain:base:logical-row-envelope:1";
+const LOGICAL_ROW_ENVELOPE_MAGIC: &[u8; 8] = b"OBLRV001";
+const LOGICAL_ROW_KEY_PREFIX: &[u8] = b"row-v1:";
 const MAX_SNAPSHOT_RECORDS: usize = 1_000_000;
 
 /// Substrate-neutral logical row. `key` is an application identity, never a
@@ -128,15 +133,14 @@ impl<T: PortableArchiveRows> SnapshotVerifiedBackend for LogicalRowsArchiveBacke
                         "logical archive row key exceeds the bound".into(),
                     ));
                 }
-                let mut key = Vec::with_capacity(row.key.len() + 1);
-                key.push(row.table);
-                key.extend_from_slice(&row.key);
+                let key = logical_row_archive_key(row.table, &row.key);
+                let bytes = encode_logical_row_envelope(&row)?;
                 Ok(ArchiveSnapshotRecord {
                     kind,
                     owner,
                     namespace: 1,
                     key,
-                    bytes: row.value,
+                    bytes,
                     required: true,
                 })
             })
@@ -151,19 +155,106 @@ impl<T: PortableArchiveRows> SnapshotVerifiedBackend for LogicalRowsArchiveBacke
                 "logical archive adapter owner/kind mismatch".into(),
             ));
         }
-        let (&table, key) = record.key.split_first().ok_or_else(|| {
-            NodeError::ArchiveCapability("logical archive row key is empty".into())
-        })?;
-        self.store.restore_row(&PortableArchiveRow {
-            table,
-            key: key.to_vec(),
-            value: record.bytes.clone(),
-        })
+        let row = decode_logical_row_envelope(&record.key, &record.bytes)?;
+        self.store.restore_row(&row)
     }
 
     fn reconcile_after_restore(&self) -> Result<(), NodeError> {
         self.store.reconcile_restored_rows()
     }
+}
+
+fn logical_row_archive_key(table: u8, key: &[u8]) -> Vec<u8> {
+    let mut binding = Vec::with_capacity(3 + key.len());
+    binding.push(table);
+    binding.extend_from_slice(&(key.len() as u16).to_be_bytes());
+    binding.extend_from_slice(key);
+    let digest = blake3::derive_key(LOGICAL_ROW_KEY_DOMAIN, &binding);
+    let mut encoded = Vec::with_capacity(LOGICAL_ROW_KEY_PREFIX.len() + 2 + 1 + 64);
+    encoded.extend_from_slice(LOGICAL_ROW_KEY_PREFIX);
+    push_hex_byte(&mut encoded, table);
+    encoded.push(b':');
+    for byte in digest {
+        push_hex_byte(&mut encoded, byte);
+    }
+    encoded
+}
+
+fn encode_logical_row_envelope(row: &PortableArchiveRow) -> Result<Vec<u8>, NodeError> {
+    let key_length = u16::try_from(row.key.len()).map_err(|_| {
+        NodeError::ArchiveCapability("logical archive row key exceeds the bound".into())
+    })?;
+    let value_length = u64::try_from(row.value.len()).map_err(|_| {
+        NodeError::ArchiveCapability("logical archive row value exceeds the bound".into())
+    })?;
+    let mut encoded = Vec::with_capacity(19 + row.key.len() + row.value.len() + 32);
+    encoded.extend_from_slice(LOGICAL_ROW_ENVELOPE_MAGIC);
+    encoded.push(row.table);
+    encoded.extend_from_slice(&key_length.to_be_bytes());
+    encoded.extend_from_slice(&value_length.to_be_bytes());
+    encoded.extend_from_slice(&row.key);
+    encoded.extend_from_slice(&row.value);
+    let checksum = blake3::derive_key(LOGICAL_ROW_ENVELOPE_DOMAIN, &encoded);
+    encoded.extend_from_slice(&checksum);
+    Ok(encoded)
+}
+
+fn decode_logical_row_envelope(
+    archive_key: &[u8],
+    encoded: &[u8],
+) -> Result<PortableArchiveRow, NodeError> {
+    const HEADER_BYTES: usize = 8 + 1 + 2 + 8;
+    const CHECKSUM_BYTES: usize = 32;
+    if encoded.len() < HEADER_BYTES + CHECKSUM_BYTES || &encoded[..8] != LOGICAL_ROW_ENVELOPE_MAGIC
+    {
+        return Err(NodeError::ArchiveCapability(
+            "logical archive row envelope is malformed".into(),
+        ));
+    }
+    let table = encoded[8];
+    let key_length = u16::from_be_bytes([encoded[9], encoded[10]]) as usize;
+    let value_length = u64::from_be_bytes(
+        encoded[11..19]
+            .try_into()
+            .map_err(|_| NodeError::ArchiveCapability("logical row length is malformed".into()))?,
+    );
+    let value_length = usize::try_from(value_length).map_err(|_| {
+        NodeError::ArchiveCapability("logical archive row value exceeds the bound".into())
+    })?;
+    let payload_end = HEADER_BYTES
+        .checked_add(key_length)
+        .and_then(|value| value.checked_add(value_length))
+        .ok_or_else(|| {
+            NodeError::ArchiveCapability("logical archive row length overflow".into())
+        })?;
+    if payload_end.checked_add(CHECKSUM_BYTES) != Some(encoded.len()) {
+        return Err(NodeError::ArchiveCapability(
+            "logical archive row length mismatch".into(),
+        ));
+    }
+    let expected = blake3::derive_key(LOGICAL_ROW_ENVELOPE_DOMAIN, &encoded[..payload_end]);
+    if encoded[payload_end..] != expected {
+        return Err(NodeError::ArchiveCapability(
+            "logical archive row checksum mismatch".into(),
+        ));
+    }
+    let key = encoded[HEADER_BYTES..HEADER_BYTES + key_length].to_vec();
+    if archive_key != logical_row_archive_key(table, &key) {
+        return Err(NodeError::ArchiveCapability(
+            "logical archive row key binding mismatch".into(),
+        ));
+    }
+    Ok(PortableArchiveRow {
+        table,
+        key,
+        value: encoded[HEADER_BYTES + key_length..payload_end].to_vec(),
+    })
+}
+
+fn push_hex_byte(output: &mut Vec<u8>, byte: u8) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    output.push(HEX[(byte >> 4) as usize]);
+    output.push(HEX[(byte & 0x0f) as usize]);
 }
 
 /// Canonical/Quarantine adapter over the normal validate-then-accept sink.
@@ -868,6 +959,34 @@ impl BaseArchiveService {
         credential: ArchiveSecretHandle,
         expected: &ArchiveRestorePolicyV1,
     ) -> Result<DatasetRestoreReceipt, NodeError> {
+        self.restore_archive_bound(archive, credential, expected, None)
+            .await
+    }
+
+    pub(crate) async fn restore_archive_for_base(
+        &self,
+        archive: SealedArchiveSourceHandle,
+        credential: ArchiveSecretHandle,
+        expected: &ArchiveRestorePolicyV1,
+        operation: RestoreOperationBinding,
+        operation_context: ActivationOperationContext,
+    ) -> Result<DatasetRestoreReceipt, NodeError> {
+        self.restore_archive_bound(
+            archive,
+            credential,
+            expected,
+            Some((operation, operation_context)),
+        )
+        .await
+    }
+
+    async fn restore_archive_bound(
+        &self,
+        archive: SealedArchiveSourceHandle,
+        credential: ArchiveSecretHandle,
+        expected: &ArchiveRestorePolicyV1,
+        base_operation: Option<(RestoreOperationBinding, ActivationOperationContext)>,
+    ) -> Result<DatasetRestoreReceipt, NodeError> {
         let factory = self.restore_backend_factory.as_ref().ok_or_else(|| {
             NodeError::ArchiveCapability(
                 "archive restore target backend factory is not configured".into(),
@@ -907,10 +1026,25 @@ impl BaseArchiveService {
             self.signer_registry.as_deref(),
         )
         .map_err(restore_error)?;
-        let operation = restore_binding(reservation, archive_digest);
-        self.dataset_generations
-            .activate_restore(ready, operation)
-            .map_err(restore_error)
+        let operation = base_operation
+            .as_ref()
+            .map(|(operation, _)| *operation)
+            .unwrap_or_else(|| restore_binding(reservation, archive_digest));
+        if operation.operation_id != *reservation.as_bytes() {
+            return Err(NodeError::ArchiveCapability(
+                "restore capability is bound to a different Base operation".into(),
+            ));
+        }
+        match base_operation {
+            Some((operation, context)) => self
+                .dataset_generations
+                .activate_restore_with_context(ready, operation, context)
+                .map_err(restore_error),
+            None => self
+                .dataset_generations
+                .activate_restore(ready, operation)
+                .map_err(restore_error),
+        }
     }
 
     /// Applies already-verified logical rows through every target validation

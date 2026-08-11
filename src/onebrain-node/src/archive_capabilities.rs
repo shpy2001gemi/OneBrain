@@ -32,6 +32,10 @@ impl ArchiveCapabilityId {
 pub struct ArchiveOperationReservationId([u8; 32]);
 
 impl ArchiveOperationReservationId {
+    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
@@ -41,6 +45,10 @@ impl ArchiveOperationReservationId {
 pub struct ArchiveProcessGeneration([u8; 32]);
 
 impl ArchiveProcessGeneration {
+    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
@@ -199,12 +207,19 @@ impl ArchiveCapabilityRegistry {
     }
 
     pub fn with_spool_limit(max_spool_bytes: u64) -> Result<Self, NodeError> {
+        Self::with_process_generation(ArchiveProcessGeneration(random_id()?), max_spool_bytes)
+    }
+
+    pub(crate) fn with_process_generation(
+        process_generation: ArchiveProcessGeneration,
+        max_spool_bytes: u64,
+    ) -> Result<Self, NodeError> {
         if max_spool_bytes == 0 {
             return Err(capability_error("archive spool limit must be nonzero"));
         }
         Ok(Self {
             inner: Arc::new(RegistryInner {
-                process_generation: ArchiveProcessGeneration(random_id()?),
+                process_generation,
                 max_spool_bytes,
                 state: Mutex::new(RegistryState {
                     reservations: BTreeSet::new(),
@@ -235,14 +250,34 @@ impl ArchiveCapabilityRegistry {
         Err(capability_error("archive reservation ID collision"))
     }
 
+    /// Registers the durable Base reservation without allocating a competing
+    /// archive-only operation identity.
+    pub(crate) fn register_operation(
+        &self,
+        id: ArchiveOperationReservationId,
+    ) -> Result<(), NodeError> {
+        if id.as_bytes() == &[0; 32] {
+            return Err(capability_error("archive reservation ID is zero"));
+        }
+        let mut state = self.lock_state()?;
+        if state.reservations.len() >= MAX_ARCHIVE_RESERVATIONS {
+            return Err(capability_error("archive reservation limit reached"));
+        }
+        if !state.reservations.insert(id) {
+            return Err(capability_error("archive reservation already exists"));
+        }
+        Ok(())
+    }
+
     pub fn release_reservation(
         &self,
         reservation: ArchiveOperationReservationId,
     ) -> Result<(), NodeError> {
         let mut state = self.lock_state()?;
-        if !state.reservations.remove(&reservation) {
-            return Err(capability_error("unknown archive reservation"));
-        }
+        // Dropping or consuming the final capability drains its reservation.
+        // Explicit operation cleanup is therefore an idempotent close, not an
+        // error when that automatic cleanup already won the race.
+        state.reservations.remove(&reservation);
         let ids = state
             .capabilities
             .iter()

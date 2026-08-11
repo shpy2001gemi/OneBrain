@@ -4,10 +4,15 @@
 //! configuration, peer management, seed client, and verification.
 //! All interface projects (CLI, Web, Desktop, Mobile) depend on this.
 
+#[cfg(all(feature = "legacy-read-compat", not(feature = "base-v1")))]
+compile_error!("legacy-read-compat requires base-v1");
+
 mod activation_journal;
 pub mod anti_gaming_guard;
 pub mod archive;
 pub mod archive_capabilities;
+pub mod base_operation_store;
+pub mod base_runtime;
 pub mod blob_authority;
 pub mod canonical_exchange;
 pub mod concept_registry_runtime;
@@ -78,12 +83,27 @@ pub mod vnext_status;
 pub mod vnext_validated_sink;
 pub mod vnext_workflow_surface;
 
-pub use activation_journal::{ActivationPhase, DatasetGenerationReceipt};
+pub use activation_journal::{
+    ActivationOperationContext, ActivationPhase, DatasetGenerationReceipt,
+};
 pub use archive::DatasetRestoreReceipt;
 pub use archive_capabilities::{
     ArchiveCapabilityId, ArchiveCapabilityRegistry, ArchiveOperationReservationId,
     ArchiveProcessGeneration, ArchiveSecretHandle, BoundedArchiveChunk, ReadableArchiveSinkHandle,
     SealedArchiveSourceHandle, WritableArchiveSinkHandle, WritableArchiveSourceHandle,
+};
+pub use base_operation_store::{
+    BaseOperationReceiptV1, BaseOperationStateV1, BaseOperationStore, PreparedBaseIntentV1,
+    ProcessGenerationId, ProcessGenerationIdSource, ReconciliationResultV1,
+};
+pub use base_runtime::{
+    compiled_base_runtime_config, BaseArchiveServiceFactory, BaseCloseReceiptV1,
+    BaseDrainReceiptV1, BaseEventBatchV1, BaseEventV1, BaseHostAuthorizer,
+    BaseLocalOperationAdapter, BaseManagementCloseReceiptV1, BaseManagementGrant,
+    BaseManagementResponseV1, BaseManagementScope, BaseManagementServices, BaseNegotiationRequest,
+    BaseNegotiationResponse, BaseResponseV1, BaseRuntime, BaseRuntimeConfig, BaseRuntimeLifecycle,
+    BaseServiceError, BaseServiceErrorCode, BaseServices, BaseStatusV1, DenyAllBaseHostAuthorizer,
+    UnavailableBaseLocalOperationAdapter,
 };
 pub use blob_authority::{
     BlobAuthority, BlobAuthorityError, CanonicalBlobReferenceOracle, OsPendingUploadIdSource,

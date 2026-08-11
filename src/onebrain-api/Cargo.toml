@@ -10,11 +10,14 @@ name = "onebrain_api"
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["base-v1"]
+base-v1 = ["onebrain-node/base-v1"]
+legacy-read-compat = ["onebrain-node/legacy-read-compat"]
 vnext-network-runtime = ["onebrain-node/vnext-network-runtime"]
 
 [dependencies]
 onebrain-node = { path = "../onebrain-node" }
+onebrain-base-contract = { path = "../onebrain-base-contract" }
 ku-core = { path = "../ku-core" }
 ku-kql = { path = "../ku-kql", features = ["storage"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
@@ -33,4 +36,6 @@ reqwest = { version = "0.12", features = ["json", "native-tls"] }
 
 [dev-dependencies]
 ed25519-dalek = "2"
+onebrain-base-abi = { path = "../onebrain-base-abi" }
+onebrain-archive = { path = "../onebrain-archive" }
 tokio-tungstenite = "0.29"

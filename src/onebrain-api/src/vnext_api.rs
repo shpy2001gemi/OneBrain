@@ -808,9 +808,36 @@ pub async fn get_runtime_status(State(state): State<AppState>) -> VNextResult<Ru
             || config.kill_switches.distributed_pomv_view;
         (requested, kill_switch, node.vnext_status())
     };
-    let compiled = cfg!(feature = "vnext-network-runtime");
+    #[cfg(feature = "base-v1")]
+    let base_status = match state.base_services().await {
+        Some(services) => services.snapshot().ok(),
+        None => None,
+    };
+    let compiled = {
+        #[cfg(feature = "base-v1")]
+        {
+            base_status
+                .as_ref()
+                .map_or(cfg!(feature = "vnext-network-runtime"), |status| {
+                    status.network_compiled
+                })
+        }
+        #[cfg(not(feature = "base-v1"))]
+        {
+            cfg!(feature = "vnext-network-runtime")
+        }
+    };
     #[cfg(feature = "vnext-network-runtime")]
-    let active = state.vnext_product_services().await.is_some();
+    let active = {
+        #[cfg(feature = "base-v1")]
+        if let Some(status) = &base_status {
+            status.network_enabled
+        } else {
+            state.vnext_product_services().await.is_some()
+        }
+        #[cfg(not(feature = "base-v1"))]
+        state.vnext_product_services().await.is_some()
+    };
     #[cfg(not(feature = "vnext-network-runtime"))]
     let active = false;
     let coverage = if status.reachability.standalone {
@@ -2611,6 +2638,7 @@ mod tests {
         config.vnext.enabled.public_use_evidence_publish = true;
         config.vnext.enabled.distributed_pomv_view = true;
         let mut node = onebrain_node::OneBrainNode::new(config).await.unwrap();
+        node.set_vnext_identity_signer(Arc::new(SigningKey::from_bytes(&[0x30; 32])));
         node.set_vnext_product_dependencies(product_dependencies())
             .unwrap();
         node.start_network().await.unwrap();

@@ -18,13 +18,29 @@ def frozen_profile() -> dict[str, object]:
 class ProductIntegrationProfileTests(unittest.TestCase):
     def test_frozen_profile_is_accepted(self) -> None:
         endpoints, dtos = validate_product_integration_profile(frozen_profile())
-        self.assertEqual(endpoints, 14)
-        self.assertEqual(dtos, 18)
+        self.assertEqual(endpoints, 15)
+        self.assertEqual(dtos, 20)
 
     def test_endpoint_cannot_escape_vnext_namespace(self) -> None:
         profile = copy.deepcopy(frozen_profile())
         profile["endpoints"][0]["path"] = "/api/kql"
         with self.assertRaisesRegex(ContractError, "escaped additive namespace"):
+            validate_product_integration_profile(profile)
+
+    def test_base_negotiation_requires_additive_minor_1(self) -> None:
+        profile = copy.deepcopy(frozen_profile())
+        profile["profile_minor"] = 0
+        with self.assertRaisesRegex(ContractError, "version"):
+            validate_product_integration_profile(profile)
+
+    def test_base_negotiation_endpoint_cannot_disappear(self) -> None:
+        profile = copy.deepcopy(frozen_profile())
+        profile["endpoints"] = [
+            row
+            for row in profile["endpoints"]
+            if row["path"] != "/api/vnext/base/negotiate"
+        ]
+        with self.assertRaisesRegex(ContractError, "endpoint inventory"):
             validate_product_integration_profile(profile)
 
     def test_client_cannot_supply_authority_frontier(self) -> None:

@@ -12,7 +12,8 @@ use onebrain_archive::{
     PortableDataCompatibilityV1, PortableProfileVersion, ProducerArtifactIdentityV1,
 };
 use onebrain_node::archive::{
-    ArchiveSnapshotRecord, BaseArchiveService, SnapshotVerifiedBackend, StagedArchiveBackendFactory,
+    ArchiveSnapshotRecord, BaseArchiveService, LogicalRowsArchiveBackend, PortableArchiveRow,
+    PortableArchiveRows, SnapshotVerifiedBackend, StagedArchiveBackendFactory,
 };
 use onebrain_node::identity_recovery::SignerRecoveryPolicy;
 use onebrain_node::signer_ports::{
@@ -563,6 +564,18 @@ async fn restore_without_a_staged_target_factory_fails_before_activation() {
     ));
 }
 
+#[test]
+fn releasing_an_already_drained_reservation_is_idempotent() {
+    let registry = ArchiveCapabilityRegistry::new().unwrap();
+    let reservation = registry.reserve_operation().unwrap();
+    let sink = registry.begin_sink(reservation, 1024).unwrap();
+
+    drop(sink);
+
+    registry.release_reservation(reservation).unwrap();
+    assert_eq!(registry.active_capability_count().unwrap(), 0);
+}
+
 #[tokio::test]
 async fn capability_type_state_bounds_disconnect_and_cross_operation_fail_closed() {
     let _serial = environment_lock()
@@ -786,6 +799,58 @@ async fn stale_process_registry_and_unsafe_logical_keys_are_rejected() {
 fn environment_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
+}
+
+#[derive(Clone)]
+struct BinaryLogicalRows {
+    archived: PortableArchiveRow,
+    restored: Arc<Mutex<Vec<PortableArchiveRow>>>,
+}
+
+impl PortableArchiveRows for BinaryLogicalRows {
+    fn archive_owner(&self) -> ArchiveOwner {
+        ArchiveOwner::BASE_OPERATIONS
+    }
+
+    fn archive_entry_kind(&self) -> ArchiveEntryKind {
+        ArchiveEntryKind::BaseOperationRecord
+    }
+
+    fn archive_rows(&self) -> Result<Vec<PortableArchiveRow>, NodeError> {
+        Ok(vec![self.archived.clone()])
+    }
+
+    fn restore_row(&self, row: &PortableArchiveRow) -> Result<(), NodeError> {
+        self.restored.lock().unwrap().push(row.clone());
+        Ok(())
+    }
+}
+
+#[test]
+fn logical_row_adapter_roundtrips_arbitrary_binary_keys_without_path_semantics() {
+    let row = PortableArchiveRow {
+        table: 3,
+        key: vec![0, b'/', b'\\', b':', 0xff],
+        value: vec![1, 2, 3],
+    };
+    let restored = Arc::new(Mutex::new(Vec::new()));
+    let source = LogicalRowsArchiveBackend::new(BinaryLogicalRows {
+        archived: row.clone(),
+        restored: restored.clone(),
+    });
+    let records = source.bounded_snapshot().unwrap();
+    assert_eq!(records.len(), 1);
+    assert!(records[0]
+        .key
+        .iter()
+        .all(|byte| !matches!(byte, 0 | b'/' | b'\\')));
+
+    let target = LogicalRowsArchiveBackend::new(BinaryLogicalRows {
+        archived: row.clone(),
+        restored: restored.clone(),
+    });
+    target.restore_validated(&records[0]).unwrap();
+    assert_eq!(restored.lock().unwrap().as_slice(), &[row]);
 }
 
 struct ArchiveFailpointGuard;

@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{Path, Query, State, WebSocketUpgrade};
+use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use futures::SinkExt;
@@ -17,6 +18,10 @@ use serde_json::json;
 use crate::error::{ApiError, ApiResult};
 use crate::server::AppState;
 use crate::types::*;
+
+#[cfg(feature = "base-v1")]
+const BASE_ARCHIVE_PROJECTION_MAX_BYTES: u64 =
+    onebrain_node::archive_capabilities::DEFAULT_ARCHIVE_SPOOL_BYTES;
 
 // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -30,6 +35,714 @@ fn now_epoch() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+#[cfg(feature = "base-v1")]
+fn base_error(error: onebrain_node::BaseServiceError) -> axum::response::Response {
+    let status = match error.code {
+        onebrain_base_contract::BaseErrorCodeV1::InvalidRequest => StatusCode::BAD_REQUEST,
+        onebrain_base_contract::BaseErrorCodeV1::NotFound => StatusCode::NOT_FOUND,
+        onebrain_base_contract::BaseErrorCodeV1::Conflict
+        | onebrain_base_contract::BaseErrorCodeV1::Expired
+        | onebrain_base_contract::BaseErrorCodeV1::UnknownOutcome => StatusCode::CONFLICT,
+        onebrain_base_contract::BaseErrorCodeV1::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+        onebrain_base_contract::BaseErrorCodeV1::CapabilityDisabled
+        | onebrain_base_contract::BaseErrorCodeV1::IncompatibleProfile => StatusCode::FORBIDDEN,
+        onebrain_base_contract::BaseErrorCodeV1::ResourceExhausted => {
+            StatusCode::INSUFFICIENT_STORAGE
+        }
+        _ => StatusCode::SERVICE_UNAVAILABLE,
+    };
+    (
+        status,
+        Json(
+            ApiErrorResponse::new(
+                format!("base_v1_error_{}", error.code.discriminator()),
+                error.reason,
+            )
+            .with_details(json!({
+                "retryable": error.retryable,
+                "reconcile_before_retry": error.reconcile_before_retry,
+            })),
+        ),
+    )
+        .into_response()
+}
+
+#[cfg(feature = "base-v1")]
+fn base_unavailable() -> axum::response::Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(ApiErrorResponse::new(
+            "base_v1_error_7",
+            "base_runtime_not_installed",
+        )),
+    )
+        .into_response()
+}
+
+#[cfg(feature = "base-v1")]
+fn base_status_value(status: &onebrain_node::BaseStatusV1) -> serde_json::Value {
+    use onebrain_base_contract::{SourceCommitId, SourceCommitIdentity, ToolchainIdentity};
+
+    let tuple = &status.version.compatibility;
+    let source_commit = match tuple.base_commit {
+        SourceCommitIdentity::Known(SourceCommitId::Sha1(value)) => {
+            json!({ "kind": "sha1", "digest": encode_hex_slice(&value.0) })
+        }
+        SourceCommitIdentity::Known(SourceCommitId::Sha256(value)) => {
+            json!({ "kind": "sha256", "digest": hex::encode(value.0) })
+        }
+        SourceCommitIdentity::Unknown => json!({ "kind": "unknown" }),
+    };
+    let toolchain = match tuple.toolchain {
+        ToolchainIdentity::Known(value) => {
+            json!({ "kind": "known", "digest": hex::encode(value.0) })
+        }
+        ToolchainIdentity::Unknown => json!({ "kind": "unknown" }),
+    };
+    json!({
+        "profile_major": onebrain_base_contract::BASE_RUNTIME_PROFILE_MAJOR,
+        "profile_minor": onebrain_base_contract::BASE_RUNTIME_PROFILE_MINOR,
+        "process_generation": hex::encode(*status.process_generation.as_bytes()),
+        "dataset_generation": hex::encode(status.dataset_generation.0),
+        "lifecycle": status.lifecycle as u8,
+        "candidate_semantic_digest": hex::encode(status.version.candidate_semantic_digest.0),
+        "artifact_tuple_digest": hex::encode(status.version.artifact_tuple_digest.0),
+        "qualification": status.version.qualification.discriminator(),
+        "compatibility": {
+            "base_version": {
+                "major": tuple.base_version.major,
+                "minor": tuple.base_version.minor,
+                "patch": tuple.base_version.patch,
+                "prerelease": tuple.base_version.prerelease.as_ref().map(|value| value.as_str()),
+            },
+            "base_commit": source_commit,
+            "canonical_schema_digest": hex::encode(tuple.canonical_schema_digest.0),
+            "domain_registry_digest": hex::encode(tuple.domain_registry_digest.0),
+            "resource_registry_digest": hex::encode(tuple.resource_registry_digest.0),
+            "storage_schema": tuple.storage_schema.0,
+            "archive_profile": { "major": tuple.archive_profile.major, "minor": tuple.archive_profile.minor },
+            "migration_profile": { "major": tuple.migration_profile.major, "minor": tuple.migration_profile.minor },
+            "registry_profile": { "major": tuple.registry_profile.major, "minor": tuple.registry_profile.minor },
+            "registry_profile_digest": hex::encode(tuple.registry_profile_digest.0),
+            "wire_session": { "major": tuple.wire_session.major, "minor": tuple.wire_session.minor },
+            "product_api": { "major": tuple.product_api.major, "minor": tuple.product_api.minor },
+            "c_abi": { "major": tuple.c_abi.major, "minor": tuple.c_abi.minor },
+            "feature_set_digest": hex::encode(tuple.feature_set_digest.0),
+            "target_triple": tuple.target_triple.as_str(),
+            "toolchain": toolchain,
+        },
+        "local_usable": status.local_usable,
+        "network_compiled": status.network_compiled,
+        "network_requested": false,
+        "network_active": status.network_enabled,
+        "limitations": status.limitations,
+    })
+}
+
+/// Authenticated local capability projection. Reading it never activates a
+/// distributed lane or opens a legacy backend.
+#[cfg(feature = "base-v1")]
+pub async fn get_base_capabilities(State(state): State<AppState>) -> axum::response::Response {
+    let status = match state.base_services().await {
+        Some(services) => match services.snapshot() {
+            Ok(status) => Some(status),
+            Err(error) => return base_error(error),
+        },
+        None => None,
+    };
+    ok(json!({
+        "base_v1": true,
+        "runtime_installed": status.is_some(),
+        "legacy_read_compat_compiled": cfg!(feature = "legacy-read-compat"),
+        "legacy_read_compat_enabled": state.legacy_read_compat_enabled,
+        "network_compiled": cfg!(feature = "vnext-network-runtime"),
+        "network_requested": false,
+        "network_active": status.as_ref().is_some_and(|value| value.network_enabled),
+    }))
+    .into_response()
+}
+
+#[cfg(feature = "base-v1")]
+pub async fn get_base_status(State(state): State<AppState>) -> axum::response::Response {
+    let Some(services) = state.base_services().await else {
+        return base_unavailable();
+    };
+    match services.snapshot() {
+        Ok(status) => ok(base_status_value(&status)).into_response(),
+        Err(error) => base_error(error),
+    }
+}
+
+#[cfg(feature = "base-v1")]
+pub async fn invoke_base_operation(
+    State(state): State<AppState>,
+    Json(mut body): Json<BaseOperationProjectionRequest>,
+) -> axum::response::Response {
+    use onebrain_base_contract::{
+        ArchiveSecretHandleV1, ArchiveSinkHandleV1, ArchiveSourceHandleV1, BaseCommandV1,
+        BaseConfirmRequestV1, BaseIdempotencyKey, BaseLocalCommandV1, BaseOperationId,
+        BaseOperationKindV1, BaseOperationReservationId, BasePollEventsRequestV1,
+        BasePrepareRequestV1, BaseQueryRequestV1, BaseRequestV1, BaseSubscriptionId,
+        BaseSubscriptionRequestV1, CreateArchiveCommandV1, ResourceBudgetV1,
+        RestoreArchiveCommandV1, TopicKindV1, TypedPayloadV1,
+    };
+
+    if is_base_management_operation(&body.operation) {
+        return invoke_base_management_operation(&state, body).await;
+    }
+
+    let Some(services) = state.base_services().await else {
+        return base_unavailable();
+    };
+    let closes_runtime = body.operation == "close";
+    let request = match body.operation.as_str() {
+        "status" => BaseRequestV1::Status,
+        "reserve" => BaseRequestV1::ReserveOperation(match body.kind {
+            Some(1) => BaseOperationKindV1::ExistingLocalCommand,
+            Some(2) => BaseOperationKindV1::CreateArchive,
+            Some(3) => BaseOperationKindV1::RestoreArchive,
+            _ => return base_bad_request("unknown_operation_kind"),
+        }),
+        "query" => {
+            let bytes = match decode_projection_payload(
+                body.payload.take(),
+                body.payload_hex.take(),
+                1_048_576,
+            ) {
+                Ok(bytes) => bytes,
+                Err(()) => return base_bad_request("invalid_query_payload"),
+            };
+            let payload = match TypedPayloadV1::try_from_bytes(bytes) {
+                Ok(payload) => payload,
+                Err(_) => return base_bad_request("invalid_query_payload"),
+            };
+            let budget = match ResourceBudgetV1::try_new(
+                body.max_items.unwrap_or(256),
+                body.max_bytes.unwrap_or(1_048_576),
+                body.max_work_units.unwrap_or(1_000_000),
+            ) {
+                Ok(budget) => budget,
+                Err(_) => return base_bad_request("invalid_resource_budget"),
+            };
+            BaseRequestV1::Query(BaseQueryRequestV1 {
+                payload,
+                continuation: None,
+                budget,
+            })
+        }
+        "prepare" => {
+            let Some(reservation_id) = body.reservation_id.as_deref().and_then(parse_hex_32) else {
+                return base_bad_request("invalid_reservation_id");
+            };
+            let budget = || {
+                ResourceBudgetV1::try_new(
+                    body.max_items.unwrap_or(1),
+                    body.max_bytes.unwrap_or(1_048_576),
+                    body.max_work_units.unwrap_or(1_000_000),
+                )
+            };
+            let command = match body.kind {
+                Some(1) => {
+                    let bytes = match decode_projection_payload(
+                        body.payload.take(),
+                        body.payload_hex.take(),
+                        1_048_576,
+                    ) {
+                        Ok(bytes) => bytes,
+                        Err(()) => return base_bad_request("invalid_command_payload"),
+                    };
+                    let payload = match TypedPayloadV1::try_from_bytes(bytes) {
+                        Ok(payload) => payload,
+                        Err(_) => return base_bad_request("invalid_command_payload"),
+                    };
+                    BaseCommandV1::ExistingLocalCommand(BaseLocalCommandV1 { kind: 1, payload })
+                }
+                Some(2) => {
+                    let Some(sink) = body.auxiliary_id.as_deref().and_then(parse_hex_32) else {
+                        return base_bad_request("invalid_archive_sink_handle");
+                    };
+                    let Some(secret) = body.operation_id.as_deref().and_then(parse_hex_32) else {
+                        return base_bad_request("invalid_archive_secret_handle");
+                    };
+                    BaseCommandV1::CreateArchive(CreateArchiveCommandV1 {
+                        sink: ArchiveSinkHandleV1::from_opaque_bytes(sink),
+                        secret: ArchiveSecretHandleV1::from_opaque_bytes(secret),
+                        budget: match budget() {
+                            Ok(value) => value,
+                            Err(_) => return base_bad_request("invalid_resource_budget"),
+                        },
+                    })
+                }
+                Some(3) => {
+                    let Some(source) = body.auxiliary_id.as_deref().and_then(parse_hex_32) else {
+                        return base_bad_request("invalid_archive_source_handle");
+                    };
+                    let Some(secret) = body.operation_id.as_deref().and_then(parse_hex_32) else {
+                        return base_bad_request("invalid_archive_secret_handle");
+                    };
+                    BaseCommandV1::RestoreArchive(RestoreArchiveCommandV1 {
+                        source: ArchiveSourceHandleV1::from_opaque_bytes(source),
+                        secret: ArchiveSecretHandleV1::from_opaque_bytes(secret),
+                        budget: match budget() {
+                            Ok(value) => value,
+                            Err(_) => return base_bad_request("invalid_resource_budget"),
+                        },
+                    })
+                }
+                _ => return base_bad_request("unknown_command_kind"),
+            };
+            BaseRequestV1::Prepare(BasePrepareRequestV1 {
+                reservation_id: BaseOperationReservationId(reservation_id),
+                command,
+            })
+        }
+        "confirm" => {
+            let Some(operation_id) = body.operation_id.as_deref().and_then(parse_hex_32) else {
+                return base_bad_request("invalid_operation_id");
+            };
+            let Some(idempotency_key) = body.idempotency_key.as_deref().and_then(parse_hex_32)
+            else {
+                return base_bad_request("invalid_idempotency_key");
+            };
+            BaseRequestV1::Confirm(BaseConfirmRequestV1 {
+                operation_id: BaseOperationId(operation_id),
+                idempotency_key: BaseIdempotencyKey(idempotency_key),
+            })
+        }
+        "cancel" | "reconcile" => {
+            let Some(value) = body.operation_id.as_deref().and_then(parse_hex_32) else {
+                return base_bad_request("invalid_operation_id");
+            };
+            if body.operation == "cancel" {
+                BaseRequestV1::Cancel(BaseOperationId(value))
+            } else {
+                BaseRequestV1::Reconcile(BaseOperationId(value))
+            }
+        }
+        "drain" => BaseRequestV1::Drain,
+        "close" => BaseRequestV1::Close,
+        "subscribe" => BaseRequestV1::Subscribe(BaseSubscriptionRequestV1 {
+            topic: match body.topic {
+                Some(1) => TopicKindV1::RuntimeStatus,
+                Some(2) => TopicKindV1::OperationReceipts,
+                Some(3) => TopicKindV1::QueryResults,
+                Some(4) => TopicKindV1::ArchiveProgress,
+                Some(5) => TopicKindV1::Compatibility,
+                _ => return base_bad_request("unknown_subscription_topic"),
+            },
+            cursor: body.cursor,
+        }),
+        "poll_events" => {
+            let Some(subscription_id) = body.operation_id.as_deref().and_then(parse_hex_32) else {
+                return base_bad_request("invalid_subscription_id");
+            };
+            BaseRequestV1::PollEvents(BasePollEventsRequestV1 {
+                subscription_id: BaseSubscriptionId::from_opaque_bytes(subscription_id),
+                after_cursor: body.cursor.unwrap_or(0),
+                max_items: body.max_items.unwrap_or(256),
+            })
+        }
+        "close_subscription" => {
+            let Some(subscription_id) = body.operation_id.as_deref().and_then(parse_hex_32) else {
+                return base_bad_request("invalid_subscription_id");
+            };
+            BaseRequestV1::CloseSubscription(BaseSubscriptionId::from_opaque_bytes(subscription_id))
+        }
+        _ => {
+            let _ = body.payload;
+            let _ = body.payload_hex;
+            return base_bad_request("unsupported_base_operation");
+        }
+    };
+    if closes_runtime {
+        if let Err(error) = state.close_all_base_management().await {
+            return base_error(error);
+        }
+    }
+    match services.invoke(request).await {
+        Ok(onebrain_node::BaseResponseV1::Status(status)) => {
+            ok(base_status_value(&status)).into_response()
+        }
+        Ok(onebrain_node::BaseResponseV1::Reserved(id)) => {
+            ok(json!({ "operation_id": hex::encode(id.0), "state": "reserved" })).into_response()
+        }
+        Ok(onebrain_node::BaseResponseV1::Query {
+            payload,
+            continuation,
+        }) => ok(json!({
+            "payload_hex": encode_hex_slice(payload.as_bytes()),
+            "continuation": continuation.map(|value| encode_hex_slice(value.as_bytes())),
+        }))
+        .into_response(),
+        Ok(onebrain_node::BaseResponseV1::Prepared(intent)) => ok(json!({
+            "operation_id": hex::encode(intent.operation_id.0),
+            "command_blake3": hex::encode(intent.command_blake3),
+        }))
+        .into_response(),
+        Ok(onebrain_node::BaseResponseV1::Receipt(receipt)) => ok(json!({
+            "operation_id": hex::encode(receipt.operation_id.0),
+            "state": receipt.state as u8,
+            "attempts": receipt.attempts,
+            "result_hex": encode_hex_slice(&receipt.result),
+            "result_blake3": receipt.result_blake3.map(hex::encode),
+            "error": receipt.error.map(|value| value.discriminator()),
+            "reconcile_required": receipt.reconcile_required,
+        }))
+        .into_response(),
+        Ok(onebrain_node::BaseResponseV1::Reconciled(result)) => ok(json!({
+            "operation_id": hex::encode(result.receipt.operation_id.0),
+            "state": result.receipt.state as u8,
+            "attempts": result.receipt.attempts,
+            "result_hex": encode_hex_slice(&result.receipt.result),
+            "result_blake3": result.receipt.result_blake3.map(hex::encode),
+            "error": result.receipt.error.map(|value| value.discriminator()),
+            "resumed_effect": result.resumed_effect,
+            "reconcile_required": result.receipt.reconcile_required,
+        }))
+        .into_response(),
+        Ok(onebrain_node::BaseResponseV1::Drain(receipt)) => {
+            ok(json!({ "lifecycle": receipt.lifecycle as u8 })).into_response()
+        }
+        Ok(onebrain_node::BaseResponseV1::Close(receipt)) => {
+            ok(json!({ "lifecycle": receipt.lifecycle as u8 })).into_response()
+        }
+        Ok(onebrain_node::BaseResponseV1::Subscription(id)) => ok(json!({
+            "subscription_id": encode_hex_slice(id.as_bytes()),
+        }))
+        .into_response(),
+        Ok(onebrain_node::BaseResponseV1::Events(batch)) => ok(json!({
+            "subscription_id": encode_hex_slice(batch.subscription_id.as_bytes()),
+            "next_cursor": batch.next_cursor,
+            "earliest_available_cursor": batch.earliest_available_cursor,
+            "resync_required": batch.resync_required,
+            "events": batch.events.into_iter().map(|event| json!({
+                "cursor": event.cursor,
+                "topic": event.topic.discriminator(),
+                "operation_id": event.operation_id.map(|value| hex::encode(value.0)),
+                "payload": encode_hex_slice(&event.payload),
+            })).collect::<Vec<_>>(),
+        }))
+        .into_response(),
+        Ok(onebrain_node::BaseResponseV1::SubscriptionClosed) => {
+            ok(json!({ "closed": true })).into_response()
+        }
+        Err(error) => base_error(error),
+    }
+}
+
+#[cfg(feature = "base-v1")]
+fn is_base_management_operation(operation: &str) -> bool {
+    matches!(
+        operation,
+        "management_open"
+            | "management_close"
+            | "archive_source_begin"
+            | "archive_source_push"
+            | "archive_source_seal"
+            | "archive_sink_begin"
+            | "archive_sink_read"
+            | "archive_sink_commit"
+            | "archive_secret_register"
+            | "archive_capability_abort"
+            | "archive_capability_destroy"
+            | "complete_signer_reprovision"
+    )
+}
+
+#[cfg(feature = "base-v1")]
+async fn invoke_base_management_operation(
+    state: &AppState,
+    mut body: BaseOperationProjectionRequest,
+) -> axum::response::Response {
+    use onebrain_base_contract::{
+        ActorRootPublicIdV1, ArchiveCapabilityHandleV1, ArchiveChunkV1, ArchiveCredentialKindV1,
+        ArchiveSinkBeginV1, ArchiveSinkHandleV1, ArchiveSinkReadV1, ArchiveSourceBeginV1,
+        ArchiveSourceHandleV1, ArchiveSourcePushV1, BaseManagementRequestV1,
+        BaseOperationReservationId, BoundedSecretIngressV1, CompleteSignerReprovisionV1,
+        FeedAuthorPublicIdV1, NodeTransportPublicIdV1, SignerDomainV1, SignerProvisionHandleV1,
+        SignerPublicIdV1,
+    };
+    use onebrain_node::{BaseManagementResponseV1, BaseManagementScope};
+
+    if body.operation == "management_open" {
+        let mut scopes = Vec::with_capacity(body.scopes.len());
+        for scope in &body.scopes {
+            let parsed = match scope.as_str() {
+                "archive_source" => BaseManagementScope::ArchiveSource,
+                "archive_sink" => BaseManagementScope::ArchiveSink,
+                "archive_secret" => BaseManagementScope::ArchiveSecret,
+                "signer_reprovision" => BaseManagementScope::SignerReprovision,
+                _ => return base_bad_request("unknown_management_scope"),
+            };
+            if scopes.contains(&parsed) {
+                return base_bad_request("duplicate_management_scope");
+            }
+            scopes.push(parsed);
+        }
+        if scopes.is_empty() {
+            return base_bad_request("management_scope_is_empty");
+        }
+        return match state.open_base_management(scopes).await {
+            Ok(id) => ok(json!({
+                "management_handle": encode_hex_slice(&id),
+                "expires_with_host_grant_seconds": 300,
+            }))
+            .into_response(),
+            Err(error) => base_error(error),
+        };
+    }
+
+    let Some(management_id) = body.management_handle.as_deref().and_then(parse_hex_32) else {
+        return base_bad_request("invalid_management_handle");
+    };
+    if body.operation == "management_close" {
+        return match state.close_base_management(management_id).await {
+            Ok(receipt) => ok(json!({
+                "management_handle": encode_hex_slice(&receipt.management_handle),
+                "revoked_capabilities": receipt.revoked_capabilities,
+                "closed": true,
+            }))
+            .into_response(),
+            Err(error) => base_error(error),
+        };
+    }
+
+    let management = match state.base_management(management_id).await {
+        Ok(services) => services,
+        Err(error) => return base_error(error),
+    };
+    let capability = || {
+        body.capability_id
+            .as_deref()
+            .and_then(parse_hex_32)
+            .map(ArchiveCapabilityHandleV1::from_opaque_bytes)
+    };
+    let request = match body.operation.as_str() {
+        "archive_source_begin" => {
+            let Some(reservation_id) = body.reservation_id.as_deref().and_then(parse_hex_32) else {
+                return base_bad_request("invalid_reservation_id");
+            };
+            BaseManagementRequestV1::ArchiveSourceBegin(ArchiveSourceBeginV1 {
+                reservation_id: BaseOperationReservationId(reservation_id),
+                declared_total_bytes: body.declared_total_bytes.unwrap_or(0),
+            })
+        }
+        "archive_source_push" => {
+            let Some(handle) = body.capability_id.as_deref().and_then(parse_hex_32) else {
+                return base_bad_request("invalid_archive_source_handle");
+            };
+            let Some(chunk_hex) = body.chunk_hex.take() else {
+                return base_bad_request("missing_archive_chunk");
+            };
+            let Some(chunk) = decode_bounded_hex(&chunk_hex, 1_048_576) else {
+                return base_bad_request("invalid_archive_chunk");
+            };
+            let chunk = match ArchiveChunkV1::try_from_bytes(chunk) {
+                Ok(value) => value,
+                Err(_) => return base_bad_request("invalid_archive_chunk"),
+            };
+            BaseManagementRequestV1::ArchiveSourcePush(ArchiveSourcePushV1 {
+                handle: ArchiveSourceHandleV1::from_opaque_bytes(handle),
+                offset: body.offset.unwrap_or(0),
+                chunk,
+            })
+        }
+        "archive_source_seal" => {
+            let Some(handle) = capability() else {
+                return base_bad_request("invalid_archive_source_handle");
+            };
+            BaseManagementRequestV1::ArchiveSourceSeal(handle)
+        }
+        "archive_sink_begin" => {
+            let Some(reservation_id) = body.reservation_id.as_deref().and_then(parse_hex_32) else {
+                return base_bad_request("invalid_reservation_id");
+            };
+            BaseManagementRequestV1::ArchiveSinkBegin(ArchiveSinkBeginV1 {
+                reservation_id: BaseOperationReservationId(reservation_id),
+                max_total_bytes: body.declared_total_bytes.unwrap_or(0),
+            })
+        }
+        "archive_sink_read" => {
+            let Some(handle) = body.capability_id.as_deref().and_then(parse_hex_32) else {
+                return base_bad_request("invalid_archive_sink_handle");
+            };
+            BaseManagementRequestV1::ArchiveSinkRead(ArchiveSinkReadV1 {
+                handle: ArchiveSinkHandleV1::from_opaque_bytes(handle),
+                offset: body.offset.unwrap_or(0),
+                max_bytes: body.max_items.unwrap_or(1_048_576),
+            })
+        }
+        "archive_sink_commit" => {
+            let Some(handle) = capability() else {
+                return base_bad_request("invalid_archive_sink_handle");
+            };
+            BaseManagementRequestV1::ArchiveSinkCommit(handle)
+        }
+        "archive_secret_register" => {
+            let kind = match body.credential_kind {
+                Some(1) => ArchiveCredentialKindV1::Password,
+                Some(2) => ArchiveCredentialKindV1::RecoveryKey,
+                _ => return base_bad_request("invalid_archive_credential_kind"),
+            };
+            let bytes = match decode_projection_payload(
+                body.payload.take(),
+                body.payload_hex.take(),
+                4_096,
+            ) {
+                Ok(bytes) => bytes,
+                Err(()) => return base_bad_request("invalid_archive_secret"),
+            };
+            let secret = match BoundedSecretIngressV1::try_new(kind, bytes) {
+                Ok(value) => value,
+                Err(_) => return base_bad_request("invalid_archive_secret"),
+            };
+            BaseManagementRequestV1::ArchiveSecretRegister(secret)
+        }
+        "archive_capability_abort" => {
+            let Some(handle) = capability() else {
+                return base_bad_request("invalid_archive_capability_handle");
+            };
+            BaseManagementRequestV1::ArchiveCapabilityAbort(handle)
+        }
+        "archive_capability_destroy" => {
+            let Some(handle) = capability() else {
+                return base_bad_request("invalid_archive_capability_handle");
+            };
+            BaseManagementRequestV1::ArchiveCapabilityDestroy(handle)
+        }
+        "complete_signer_reprovision" => {
+            let Some(expected) = body.auxiliary_id.as_deref().and_then(parse_hex_32) else {
+                return base_bad_request("invalid_signer_public_id");
+            };
+            let Some(provision) = body.operation_id.as_deref().and_then(parse_hex_32) else {
+                return base_bad_request("invalid_signer_provision_handle");
+            };
+            let (domain, expected_public_id) = match body.kind {
+                Some(1) => (
+                    SignerDomainV1::NodeTransport,
+                    SignerPublicIdV1::NodeTransport(NodeTransportPublicIdV1(expected)),
+                ),
+                Some(2) => (
+                    SignerDomainV1::ActorRoot,
+                    SignerPublicIdV1::ActorRoot(ActorRootPublicIdV1(expected)),
+                ),
+                Some(3) => (
+                    SignerDomainV1::FeedAuthor,
+                    SignerPublicIdV1::FeedAuthor(FeedAuthorPublicIdV1(expected)),
+                ),
+                _ => return base_bad_request("invalid_signer_domain"),
+            };
+            BaseManagementRequestV1::CompleteSignerReprovision(CompleteSignerReprovisionV1 {
+                domain,
+                expected_public_id,
+                provision_handle: SignerProvisionHandleV1::from_opaque_bytes(provision),
+            })
+        }
+        _ => return base_bad_request("unsupported_base_management_operation"),
+    };
+    match management.invoke(request).await {
+        Ok(BaseManagementResponseV1::ArchiveSource(handle)) => ok(json!({
+            "archive_source_handle": encode_hex_slice(handle.as_bytes()),
+        }))
+        .into_response(),
+        Ok(BaseManagementResponseV1::ArchiveSink(handle)) => ok(json!({
+            "archive_sink_handle": encode_hex_slice(handle.as_bytes()),
+        }))
+        .into_response(),
+        Ok(BaseManagementResponseV1::ArchiveSecret(handle)) => ok(json!({
+            "archive_secret_handle": encode_hex_slice(handle.as_bytes()),
+        }))
+        .into_response(),
+        Ok(BaseManagementResponseV1::ArchiveCapability(handle)) => ok(json!({
+            "archive_capability_handle": encode_hex_slice(handle.as_bytes()),
+        }))
+        .into_response(),
+        Ok(BaseManagementResponseV1::ArchiveChunk { offset, bytes, eof }) => ok(json!({
+            "offset": offset,
+            "chunk_hex": encode_hex_slice(&bytes),
+            "eof": eof,
+        }))
+        .into_response(),
+        Ok(BaseManagementResponseV1::CapabilityClosed) => {
+            ok(json!({ "capability_closed": true })).into_response()
+        }
+        Ok(BaseManagementResponseV1::SignerReprovisioned) => {
+            ok(json!({ "signer_reprovisioned": true })).into_response()
+        }
+        Ok(BaseManagementResponseV1::Close(_)) => {
+            base_bad_request("management_close_must_use_registry_close")
+        }
+        Err(error) => base_error(error),
+    }
+}
+
+#[cfg(feature = "base-v1")]
+fn base_bad_request(reason: &'static str) -> axum::response::Response {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ApiErrorResponse::new("base_v1_error_1", reason)),
+    )
+        .into_response()
+}
+
+#[cfg(feature = "legacy-read-compat")]
+pub async fn get_legacy_read_compat_status(
+    State(state): State<AppState>,
+) -> axum::response::Response {
+    if !state.legacy_read_compat_enabled {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    ok(json!({
+        "mode": "bounded_read_only",
+        "writes": "capability_disabled",
+        "automatic_fallback": false,
+    }))
+    .into_response()
+}
+
+#[cfg(feature = "base-v1")]
+fn parse_hex_32(value: &str) -> Option<[u8; 32]> {
+    if value.len() != 64 || !value.is_ascii() {
+        return None;
+    }
+    let mut output = [0; 32];
+    for (index, byte) in output.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16).ok()?;
+    }
+    Some(output)
+}
+
+#[cfg(feature = "base-v1")]
+fn encode_hex_slice(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[cfg(feature = "base-v1")]
+fn decode_bounded_hex(value: &str, maximum: usize) -> Option<Vec<u8>> {
+    if !value.is_ascii() || value.len() & 1 == 1 || value.len() / 2 > maximum {
+        return None;
+    }
+    (0..value.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&value[index..index + 2], 16).ok())
+        .collect()
+}
+
+#[cfg(feature = "base-v1")]
+fn decode_projection_payload(
+    text: Option<String>,
+    hexadecimal: Option<String>,
+    maximum: usize,
+) -> Result<Vec<u8>, ()> {
+    match (text, hexadecimal) {
+        (Some(_), Some(_)) => Err(()),
+        (Some(value), None) if value.len() <= maximum => Ok(value.into_bytes()),
+        (Some(_), None) => Err(()),
+        (None, Some(value)) => decode_bounded_hex(&value, maximum).ok_or(()),
+        (None, None) => Ok(Vec::new()),
+    }
 }
 
 // â”€â”€â”€ Identity â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1028,87 +1741,487 @@ pub async fn import_kus(
     Ok(ok(serde_json::to_value(&result).unwrap()))
 }
 
+#[cfg(feature = "base-v1")]
+async fn create_base_archive_bytes(
+    state: &AppState,
+    password: Vec<u8>,
+) -> Result<Vec<u8>, onebrain_node::BaseServiceError> {
+    use onebrain_base_contract::{
+        ArchiveCapabilityHandleV1, ArchiveCredentialKindV1, ArchiveSinkBeginV1,
+        ArchiveSinkHandleV1, ArchiveSinkReadV1, BaseCommandV1, BaseConfirmRequestV1,
+        BaseErrorCodeV1, BaseIdempotencyKey, BaseManagementRequestV1, BaseOperationKindV1,
+        BasePrepareRequestV1, BaseRequestV1, BoundedSecretIngressV1, CreateArchiveCommandV1,
+        ResourceBudgetV1,
+    };
+    use onebrain_node::{BaseManagementResponseV1, BaseManagementScope, BaseResponseV1};
+
+    let services = state.base_services().await.ok_or_else(|| {
+        onebrain_node::BaseServiceError::new(
+            BaseErrorCodeV1::DependencyUnavailable,
+            "base_runtime_not_installed",
+        )
+    })?;
+    let management_id = state
+        .open_base_management(vec![
+            BaseManagementScope::ArchiveSink,
+            BaseManagementScope::ArchiveSecret,
+        ])
+        .await?;
+    let management = state.base_management(management_id).await?;
+    let operation = async {
+        let reservation = match services
+            .invoke(BaseRequestV1::ReserveOperation(
+                BaseOperationKindV1::CreateArchive,
+            ))
+            .await?
+        {
+            BaseResponseV1::Reserved(value) => value,
+            _ => {
+                return Err(base_projection_internal(
+                    "unexpected_archive_reserve_response",
+                ))
+            }
+        };
+        let sink = match management
+            .invoke(BaseManagementRequestV1::ArchiveSinkBegin(
+                ArchiveSinkBeginV1 {
+                    reservation_id: reservation,
+                    max_total_bytes: BASE_ARCHIVE_PROJECTION_MAX_BYTES,
+                },
+            ))
+            .await?
+        {
+            BaseManagementResponseV1::ArchiveSink(value) => value,
+            _ => return Err(base_projection_internal("unexpected_archive_sink_response")),
+        };
+        let sink_id = *sink.as_bytes();
+        let secret = match management
+            .invoke(BaseManagementRequestV1::ArchiveSecretRegister(
+                BoundedSecretIngressV1::try_new(ArchiveCredentialKindV1::Password, password)
+                    .map_err(|_| {
+                        onebrain_node::BaseServiceError::new(
+                            BaseErrorCodeV1::InvalidRequest,
+                            "invalid_archive_secret",
+                        )
+                    })?,
+            ))
+            .await?
+        {
+            BaseManagementResponseV1::ArchiveSecret(value) => value,
+            _ => {
+                return Err(base_projection_internal(
+                    "unexpected_archive_secret_response",
+                ))
+            }
+        };
+        let prepared = match services
+            .invoke(BaseRequestV1::Prepare(BasePrepareRequestV1 {
+                reservation_id: reservation,
+                command: BaseCommandV1::CreateArchive(CreateArchiveCommandV1 {
+                    sink: ArchiveSinkHandleV1::from_opaque_bytes(sink_id),
+                    secret,
+                    budget: ResourceBudgetV1::try_new(1, 1_048_576, 1_000_000).map_err(|_| {
+                        base_projection_internal("compiled_archive_budget_is_invalid")
+                    })?,
+                }),
+            }))
+            .await?
+        {
+            BaseResponseV1::Prepared(value) => value,
+            _ => {
+                return Err(base_projection_internal(
+                    "unexpected_archive_prepare_response",
+                ))
+            }
+        };
+        let receipt = match services
+            .invoke(BaseRequestV1::Confirm(BaseConfirmRequestV1 {
+                operation_id: prepared.operation_id,
+                idempotency_key: BaseIdempotencyKey(random_projection_id()?),
+            }))
+            .await?
+        {
+            BaseResponseV1::Receipt(value) => value,
+            _ => {
+                return Err(base_projection_internal(
+                    "unexpected_archive_confirm_response",
+                ))
+            }
+        };
+        if let Some(error) = receipt.error {
+            return Err(onebrain_node::BaseServiceError::new(
+                error,
+                "base_archive_create_failed",
+            ));
+        }
+        if receipt.result.len() != 64 || receipt.result[..32] != sink_id {
+            return Err(onebrain_node::BaseServiceError::new(
+                BaseErrorCodeV1::CorruptState,
+                "archive_create_receipt_binding_mismatch",
+            ));
+        }
+
+        let mut archive = Vec::new();
+        let mut offset = 0u64;
+        loop {
+            let (chunk_offset, bytes, eof) = match management
+                .invoke(BaseManagementRequestV1::ArchiveSinkRead(
+                    ArchiveSinkReadV1 {
+                        handle: ArchiveSinkHandleV1::from_opaque_bytes(sink_id),
+                        offset,
+                        max_bytes: 1_048_576,
+                    },
+                ))
+                .await?
+            {
+                BaseManagementResponseV1::ArchiveChunk { offset, bytes, eof } => {
+                    (offset, bytes, eof)
+                }
+                _ => {
+                    return Err(base_projection_internal(
+                        "unexpected_archive_chunk_response",
+                    ))
+                }
+            };
+            if chunk_offset != offset || (bytes.is_empty() && !eof) {
+                return Err(onebrain_node::BaseServiceError::new(
+                    BaseErrorCodeV1::CorruptState,
+                    "archive_sink_non_contiguous",
+                ));
+            }
+            let next = archive.len().checked_add(bytes.len()).ok_or_else(|| {
+                onebrain_node::BaseServiceError::new(
+                    BaseErrorCodeV1::ResourceExhausted,
+                    "archive_response_size_overflow",
+                )
+            })?;
+            if next as u64 > BASE_ARCHIVE_PROJECTION_MAX_BYTES {
+                return Err(onebrain_node::BaseServiceError::new(
+                    BaseErrorCodeV1::ResourceExhausted,
+                    "archive_response_exceeds_bound",
+                ));
+            }
+            archive.extend_from_slice(&bytes);
+            offset = next as u64;
+            if eof {
+                break;
+            }
+        }
+        match management
+            .invoke(BaseManagementRequestV1::ArchiveSinkCommit(
+                ArchiveCapabilityHandleV1::from_opaque_bytes(sink_id),
+            ))
+            .await?
+        {
+            BaseManagementResponseV1::CapabilityClosed => Ok(archive),
+            _ => Err(base_projection_internal(
+                "unexpected_archive_commit_response",
+            )),
+        }
+    }
+    .await;
+    let close = state.close_base_management(management_id).await;
+    match (operation, close) {
+        (Ok(archive), Ok(_)) => Ok(archive),
+        (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+    }
+}
+
+#[cfg(feature = "base-v1")]
+async fn restore_base_archive_bytes(
+    state: &AppState,
+    archive: Vec<u8>,
+    password: Vec<u8>,
+) -> Result<[u8; 32], onebrain_node::BaseServiceError> {
+    use onebrain_base_contract::{
+        ArchiveCapabilityHandleV1, ArchiveChunkV1, ArchiveCredentialKindV1, ArchiveSourceBeginV1,
+        ArchiveSourceHandleV1, ArchiveSourcePushV1, BaseCommandV1, BaseConfirmRequestV1,
+        BaseErrorCodeV1, BaseIdempotencyKey, BaseManagementRequestV1, BaseOperationKindV1,
+        BasePrepareRequestV1, BaseRequestV1, BoundedSecretIngressV1, ResourceBudgetV1,
+        RestoreArchiveCommandV1,
+    };
+    use onebrain_node::{BaseManagementResponseV1, BaseManagementScope, BaseResponseV1};
+
+    let services = state.base_services().await.ok_or_else(|| {
+        onebrain_node::BaseServiceError::new(
+            BaseErrorCodeV1::DependencyUnavailable,
+            "base_runtime_not_installed",
+        )
+    })?;
+    let management_id = state
+        .open_base_management(vec![
+            BaseManagementScope::ArchiveSource,
+            BaseManagementScope::ArchiveSecret,
+        ])
+        .await?;
+    let management = state.base_management(management_id).await?;
+    let operation = async {
+        let reservation = match services
+            .invoke(BaseRequestV1::ReserveOperation(
+                BaseOperationKindV1::RestoreArchive,
+            ))
+            .await?
+        {
+            BaseResponseV1::Reserved(value) => value,
+            _ => {
+                return Err(base_projection_internal(
+                    "unexpected_restore_reserve_response",
+                ))
+            }
+        };
+        let source = match management
+            .invoke(BaseManagementRequestV1::ArchiveSourceBegin(
+                ArchiveSourceBeginV1 {
+                    reservation_id: reservation,
+                    declared_total_bytes: archive.len() as u64,
+                },
+            ))
+            .await?
+        {
+            BaseManagementResponseV1::ArchiveSource(value) => value,
+            _ => {
+                return Err(base_projection_internal(
+                    "unexpected_archive_source_response",
+                ))
+            }
+        };
+        let source_id = *source.as_bytes();
+        let mut offset = 0u64;
+        for chunk in archive.chunks(1_048_576) {
+            match management
+                .invoke(BaseManagementRequestV1::ArchiveSourcePush(
+                    ArchiveSourcePushV1 {
+                        handle: ArchiveSourceHandleV1::from_opaque_bytes(source_id),
+                        offset,
+                        chunk: ArchiveChunkV1::try_from_bytes(chunk.to_vec()).map_err(|_| {
+                            base_projection_internal("bounded_archive_chunk_is_invalid")
+                        })?,
+                    },
+                ))
+                .await?
+            {
+                BaseManagementResponseV1::ArchiveCapability(_) => {}
+                _ => {
+                    return Err(base_projection_internal(
+                        "unexpected_archive_source_push_response",
+                    ))
+                }
+            }
+            offset = offset.checked_add(chunk.len() as u64).ok_or_else(|| {
+                onebrain_node::BaseServiceError::new(
+                    BaseErrorCodeV1::ResourceExhausted,
+                    "archive_upload_offset_overflow",
+                )
+            })?;
+        }
+        match management
+            .invoke(BaseManagementRequestV1::ArchiveSourceSeal(
+                ArchiveCapabilityHandleV1::from_opaque_bytes(source_id),
+            ))
+            .await?
+        {
+            BaseManagementResponseV1::ArchiveSource(handle) if handle.as_bytes() == &source_id => {}
+            _ => return Err(base_projection_internal("unexpected_archive_seal_response")),
+        }
+        let secret = match management
+            .invoke(BaseManagementRequestV1::ArchiveSecretRegister(
+                BoundedSecretIngressV1::try_new(ArchiveCredentialKindV1::Password, password)
+                    .map_err(|_| {
+                        onebrain_node::BaseServiceError::new(
+                            BaseErrorCodeV1::InvalidRequest,
+                            "invalid_archive_secret",
+                        )
+                    })?,
+            ))
+            .await?
+        {
+            BaseManagementResponseV1::ArchiveSecret(value) => value,
+            _ => {
+                return Err(base_projection_internal(
+                    "unexpected_archive_secret_response",
+                ))
+            }
+        };
+        let prepared = match services
+            .invoke(BaseRequestV1::Prepare(BasePrepareRequestV1 {
+                reservation_id: reservation,
+                command: BaseCommandV1::RestoreArchive(RestoreArchiveCommandV1 {
+                    source: ArchiveSourceHandleV1::from_opaque_bytes(source_id),
+                    secret,
+                    budget: ResourceBudgetV1::try_new(1, 1_048_576, 1_000_000).map_err(|_| {
+                        base_projection_internal("compiled_archive_budget_is_invalid")
+                    })?,
+                }),
+            }))
+            .await?
+        {
+            BaseResponseV1::Prepared(value) => value,
+            _ => {
+                return Err(base_projection_internal(
+                    "unexpected_restore_prepare_response",
+                ))
+            }
+        };
+        let receipt = match services
+            .invoke(BaseRequestV1::Confirm(BaseConfirmRequestV1 {
+                operation_id: prepared.operation_id,
+                idempotency_key: BaseIdempotencyKey(random_projection_id()?),
+            }))
+            .await?
+        {
+            BaseResponseV1::Receipt(value) => value,
+            _ => {
+                return Err(base_projection_internal(
+                    "unexpected_restore_confirm_response",
+                ))
+            }
+        };
+        if let Some(error) = receipt.error {
+            return Err(onebrain_node::BaseServiceError::new(
+                error,
+                "base_archive_restore_failed",
+            ));
+        }
+        Ok(prepared.operation_id.0)
+    }
+    .await;
+    let _ = state.close_base_management(management_id).await;
+    let operation_id = operation?;
+    let refreshed = state.base_services().await.ok_or_else(|| {
+        onebrain_node::BaseServiceError::new(
+            BaseErrorCodeV1::DependencyUnavailable,
+            "base_runtime_missing_after_restore",
+        )
+    })?;
+    match refreshed
+        .invoke(BaseRequestV1::Reconcile(
+            onebrain_base_contract::BaseOperationId(operation_id),
+        ))
+        .await?
+    {
+        BaseResponseV1::Reconciled(result)
+            if result.receipt.error.is_none() && !result.receipt.reconcile_required =>
+        {
+            Ok(operation_id)
+        }
+        BaseResponseV1::Reconciled(_) => Err(onebrain_node::BaseServiceError::new(
+            BaseErrorCodeV1::UnknownOutcome,
+            "base_restore_reconcile_required",
+        )),
+        _ => Err(base_projection_internal(
+            "unexpected_restore_reconcile_response",
+        )),
+    }
+}
+
+#[cfg(feature = "base-v1")]
+fn base_projection_internal(reason: &'static str) -> onebrain_node::BaseServiceError {
+    onebrain_node::BaseServiceError::new(
+        onebrain_base_contract::BaseErrorCodeV1::InternalError,
+        reason,
+    )
+}
+
+#[cfg(feature = "base-v1")]
+fn random_projection_id() -> Result<[u8; 32], onebrain_node::BaseServiceError> {
+    use rand::RngCore;
+
+    let mut id = [0; 32];
+    rand::rngs::OsRng.fill_bytes(&mut id);
+    if id == [0; 32] {
+        return Err(base_projection_internal("projection_entropy_returned_zero"));
+    }
+    Ok(id)
+}
+
+#[cfg(feature = "base-v1")]
 pub async fn create_backup(
     State(state): State<AppState>,
     Json(body): Json<BackupRequest>,
-) -> Result<axum::response::Response, ApiError> {
-    let node = state.node.lock().await;
-    let temp_dir = tempfile::tempdir().map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
-    let file_path = temp_dir.path().join("backup.onebrain");
-    let info = node
-        .create_backup(&file_path, &body.password)
-        .map_err(ApiError::from)?;
-    drop(node);
-
-    let data = tokio::fs::read(&file_path)
-        .await
-        .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
-
-    let filename = format!("onebrain_backup_{}.onebrain", info.timestamp);
-
-    Ok(axum::response::Response::builder()
-        .status(200)
-        .header("Content-Type", "application/octet-stream")
-        .header(
-            "Content-Disposition",
-            format!("attachment; filename=\"{}\"", filename),
-        )
-        .header("X-Backup-KU-Count", info.ku_count.to_string())
-        .header("X-Backup-Size", info.size.to_string())
-        .body(axum::body::Body::from(data))
-        .unwrap())
+) -> axum::response::Response {
+    match create_base_archive_bytes(&state, body.password.into_bytes()).await {
+        Ok(data) => axum::response::Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", "application/vnd.onebrain.obar-v2")
+            .header(
+                "Content-Disposition",
+                format!(
+                    "attachment; filename=\"onebrain_base_{}.obar\"",
+                    now_epoch()
+                ),
+            )
+            .header("X-Backup-Size", data.len().to_string())
+            .body(axum::body::Body::from(data))
+            .unwrap(),
+        Err(error) => base_error(error),
+    }
 }
 
+#[cfg(not(feature = "base-v1"))]
+pub async fn create_backup(
+    State(_state): State<AppState>,
+    Json(_body): Json<BackupRequest>,
+) -> axum::response::Response {
+    StatusCode::NOT_FOUND.into_response()
+}
+
+#[cfg(feature = "base-v1")]
 pub async fn restore_backup(
     State(state): State<AppState>,
     mut multipart: axum::extract::Multipart,
-) -> ApiResult<serde_json::Value> {
-    let temp_dir = tempfile::tempdir().map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
-    let mut file_path = None;
+) -> axum::response::Response {
+    let mut archive = None;
     let mut password = String::new();
 
-    while let Some(field) = multipart.next_field().await.map_err(|e| {
-        ApiError(onebrain_node::NodeError::InvalidArgument(format!(
-            "Multipart error: {}",
-            e
-        )))
-    })? {
+    loop {
+        let field = match multipart.next_field().await {
+            Ok(Some(field)) => field,
+            Ok(None) => break,
+            Err(_) => return base_bad_request("invalid_restore_multipart"),
+        };
         match field.name() {
             Some("file") => {
-                let path = temp_dir.path().join("restore.onebrain");
-                let data = field.bytes().await.map_err(|e| {
-                    ApiError(onebrain_node::NodeError::InvalidArgument(format!(
-                        "Read error: {}",
-                        e
-                    )))
-                })?;
-                tokio::fs::write(&path, &data)
-                    .await
-                    .map_err(|e| ApiError(onebrain_node::NodeError::Io(e)))?;
-                file_path = Some(path);
+                let data = match field.bytes().await {
+                    Ok(value)
+                        if !value.is_empty()
+                            && value.len() as u64 <= BASE_ARCHIVE_PROJECTION_MAX_BYTES =>
+                    {
+                        value.to_vec()
+                    }
+                    _ => return base_bad_request("invalid_restore_archive"),
+                };
+                archive = Some(data);
             }
             Some("password") => {
-                password = field.text().await.map_err(|e| {
-                    ApiError(onebrain_node::NodeError::InvalidArgument(format!(
-                        "Read error: {}",
-                        e
-                    )))
-                })?;
+                password = match field.text().await {
+                    Ok(value) => value,
+                    Err(_) => return base_bad_request("invalid_restore_password"),
+                };
             }
             _ => {}
         }
     }
 
-    let path = file_path.ok_or_else(|| {
-        ApiError(onebrain_node::NodeError::InvalidArgument(
-            "No file field in multipart".into(),
-        ))
-    })?;
+    let Some(archive) = archive else {
+        return base_bad_request("missing_restore_archive");
+    };
+    match restore_base_archive_bytes(&state, archive, password.into_bytes()).await {
+        Ok(operation_id) => ok(json!({
+            "restored": true,
+            "operation_id": hex::encode(operation_id),
+            "reconciled": true,
+        }))
+        .into_response(),
+        Err(error) => base_error(error),
+    }
+}
 
-    let mut node = state.node.lock().await;
-    node.restore_backup(&path, &password)
-        .map_err(ApiError::from)?;
-    Ok(ok(json!({ "restored": true })))
+#[cfg(not(feature = "base-v1"))]
+pub async fn restore_backup(
+    State(_state): State<AppState>,
+    _multipart: axum::extract::Multipart,
+) -> axum::response::Response {
+    StatusCode::NOT_FOUND.into_response()
 }
 
 // â”€â”€â”€ Phase 1: Blob Upload & Download â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

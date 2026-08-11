@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use ed25519_dalek::Signer as _;
@@ -22,6 +22,29 @@ use onebrain_node::{
     SignerProviderRegistry, SignerRecoveryPolicy,
 };
 use tempfile::tempdir;
+
+static TEST_ENVIRONMENT: Mutex<()> = Mutex::new(());
+
+fn test_environment() -> MutexGuard<'static, ()> {
+    TEST_ENVIRONMENT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+struct ScopedEnvironmentVariable(&'static str);
+
+impl ScopedEnvironmentVariable {
+    fn set(key: &'static str, value: &str) -> Self {
+        std::env::set_var(key, value);
+        Self(key)
+    }
+}
+
+impl Drop for ScopedEnvironmentVariable {
+    fn drop(&mut self) {
+        std::env::remove_var(self.0);
+    }
+}
 
 fn compatibility() -> PortableDataCompatibilityV1 {
     PortableDataCompatibilityV1 {
@@ -308,6 +331,7 @@ impl SignerProviderRegistry for FixtureRegistry {
 
 #[test]
 fn reused_idempotency_key_with_a_different_archive_root_fails_closed() {
+    let _environment = test_environment();
     let directory = tempdir().unwrap();
     let spool = tempdir().unwrap();
     let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
@@ -335,6 +359,7 @@ fn reused_idempotency_key_with_a_different_archive_root_fails_closed() {
 
 #[test]
 fn reprovision_completion_is_durable_idempotent_and_reenables_only_session_signing() {
+    let _environment = test_environment();
     let directory = tempdir().unwrap();
     let spool = tempdir().unwrap();
     let operation = RestoreOperationBinding {
@@ -395,6 +420,7 @@ fn reprovision_completion_is_durable_idempotent_and_reenables_only_session_signi
 
 #[test]
 fn exportable_session_signer_is_recovered_again_after_process_reopen() {
+    let _environment = test_environment();
     let directory = tempdir().unwrap();
     let spool = tempdir().unwrap();
     {
@@ -424,6 +450,7 @@ fn exportable_session_signer_is_recovered_again_after_process_reopen() {
 
 #[test]
 fn invalid_identity_policy_cleans_unactivated_generation_for_exact_retry() {
+    let _environment = test_environment();
     let directory = tempdir().unwrap();
     let spool = tempdir().unwrap();
     let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
@@ -455,6 +482,7 @@ fn invalid_identity_policy_cleans_unactivated_generation_for_exact_retry() {
 
 #[test]
 fn reprovision_five_phase_failpoints_reopen_to_one_exact_outcome() {
+    let _environment = test_environment();
     for (marker, phase) in [
         (51, "before_begin_write"),
         (52, "after_begin_write_before_mutation"),
@@ -492,12 +520,13 @@ fn reprovision_five_phase_failpoints_reopen_to_one_exact_outcome() {
         let proof = provider.prove_possession(&challenge).unwrap();
         {
             let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
-            std::env::set_var("ONEBRAIN_IDENTITY_RECOVERY_FAILPOINT", phase);
+            let failpoint =
+                ScopedEnvironmentVariable::set("ONEBRAIN_IDENTITY_RECOVERY_FAILPOINT", phase);
             assert!(matches!(
                 store.complete_reprovision(&requirement, &proof, &registry),
                 Err(RestoreError::InjectedFailure)
             ));
-            std::env::remove_var("ONEBRAIN_IDENTITY_RECOVERY_FAILPOINT");
+            drop(failpoint);
         }
         let reopened = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
         let receipt = reopened
@@ -510,6 +539,7 @@ fn reprovision_five_phase_failpoints_reopen_to_one_exact_outcome() {
 
 #[test]
 fn activation_reopen_and_original_operation_reconcile_to_new_complete() {
+    let _environment = test_environment();
     for (marker, failpoint) in [
         (11, "after_pointer"),
         (12, "after_pointer_journal"),
@@ -525,12 +555,13 @@ fn activation_reopen_and_original_operation_reconcile_to_new_complete() {
         {
             let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
             let ready = stage_ready(&store, spool.path());
-            std::env::set_var("ONEBRAIN_DATASET_FAILPOINT", failpoint);
+            let failpoint_guard =
+                ScopedEnvironmentVariable::set("ONEBRAIN_DATASET_FAILPOINT", failpoint);
             assert!(matches!(
                 store.activate_restore(ready, operation),
                 Err(RestoreError::InjectedFailure)
             ));
-            std::env::remove_var("ONEBRAIN_DATASET_FAILPOINT");
+            drop(failpoint_guard);
             new_root = store.current_generation();
             assert_ne!(new_root, DatasetGenerationId::BOOTSTRAP);
         }
@@ -543,6 +574,7 @@ fn activation_reopen_and_original_operation_reconcile_to_new_complete() {
 
 #[test]
 fn prepared_without_pointer_recovers_old_complete_and_target_is_not_reused() {
+    let _environment = test_environment();
     let directory = tempdir().unwrap();
     let spool = tempdir().unwrap();
     let operation = RestoreOperationBinding {
@@ -552,12 +584,13 @@ fn prepared_without_pointer_recovers_old_complete_and_target_is_not_reused() {
     {
         let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
         let ready = stage_ready(&store, spool.path());
-        std::env::set_var("ONEBRAIN_DATASET_FAILPOINT", "after_prepared");
+        let failpoint =
+            ScopedEnvironmentVariable::set("ONEBRAIN_DATASET_FAILPOINT", "after_prepared");
         assert!(matches!(
             store.activate_restore(ready, operation),
             Err(RestoreError::InjectedFailure)
         ));
-        std::env::remove_var("ONEBRAIN_DATASET_FAILPOINT");
+        drop(failpoint);
     }
     let reopened = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
     let receipt = reopened.recover_activation(operation.operation_id).unwrap();
@@ -583,6 +616,7 @@ fn prepared_without_pointer_recovers_old_complete_and_target_is_not_reused() {
 
 #[test]
 fn reopen_health_failure_rolls_pointer_back_and_persists_receipt() {
+    let _environment = test_environment();
     let directory = tempdir().unwrap();
     let spool = tempdir().unwrap();
     let operation = RestoreOperationBinding {
@@ -591,12 +625,13 @@ fn reopen_health_failure_rolls_pointer_back_and_persists_receipt() {
     };
     let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
     let ready = stage_ready(&store, spool.path());
-    std::env::set_var("ONEBRAIN_DATASET_FAILPOINT", "reopen_health_failure");
+    let failpoint =
+        ScopedEnvironmentVariable::set("ONEBRAIN_DATASET_FAILPOINT", "reopen_health_failure");
     assert!(matches!(
         store.activate_restore(ready, operation),
         Err(RestoreError::HealthCheck)
     ));
-    std::env::remove_var("ONEBRAIN_DATASET_FAILPOINT");
+    drop(failpoint);
     assert_eq!(store.current_generation(), DatasetGenerationId::BOOTSTRAP);
     let receipt = store.recover_activation(operation.operation_id).unwrap();
     assert_eq!(receipt.phase, ActivationPhase::RolledBack);
@@ -618,6 +653,7 @@ fn reopen_health_failure_rolls_pointer_back_and_persists_receipt() {
 
 #[test]
 fn crash_before_reopen_with_corrupt_projection_recovers_old_generation() {
+    let _environment = test_environment();
     let directory = tempdir().unwrap();
     let spool = tempdir().unwrap();
     let operation = RestoreOperationBinding {
@@ -628,12 +664,13 @@ fn crash_before_reopen_with_corrupt_projection_recovers_old_generation() {
     {
         let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
         let ready = stage_ready(&store, spool.path());
-        std::env::set_var("ONEBRAIN_DATASET_FAILPOINT", "after_pointer");
+        let failpoint =
+            ScopedEnvironmentVariable::set("ONEBRAIN_DATASET_FAILPOINT", "after_pointer");
         assert!(matches!(
             store.activate_restore(ready, operation),
             Err(RestoreError::InjectedFailure)
         ));
-        std::env::remove_var("ONEBRAIN_DATASET_FAILPOINT");
+        drop(failpoint);
         new_root = store.current_generation().0;
     }
     let generation = directory.path().join("datasets/generations").join(
@@ -660,6 +697,7 @@ fn crash_before_reopen_with_corrupt_projection_recovers_old_generation() {
 
 #[test]
 fn torn_newest_pointer_slot_is_repaired_from_terminal_journal() {
+    let _environment = test_environment();
     let directory = tempdir().unwrap();
     let spool = tempdir().unwrap();
     let operation = RestoreOperationBinding {
@@ -696,6 +734,7 @@ fn torn_newest_pointer_slot_is_repaired_from_terminal_journal() {
 
 #[test]
 fn root_lease_rejects_same_root_and_alias_without_mutating_control_state() {
+    let _environment = test_environment();
     let directory = tempdir().unwrap();
     let store = DatasetGenerationStore::open_exclusive(directory.path()).unwrap();
     let before = std::fs::read(directory.path().join("control/current.a.json")).unwrap();
@@ -713,6 +752,7 @@ fn root_lease_rejects_same_root_and_alias_without_mutating_control_state() {
 
 #[test]
 fn child_process_lock_is_released_only_when_holder_dies() {
+    let _environment = test_environment();
     let directory = tempdir().unwrap();
     let ready = directory.path().join("child-ready");
     let executable = std::env::current_exe().unwrap();
@@ -759,6 +799,7 @@ fn root_lease_child_helper() {
 #[cfg(unix)]
 #[test]
 fn symlink_alias_is_rejected_before_lock_or_pointer_side_effects() {
+    let _environment = test_environment();
     use std::os::unix::fs::symlink;
     let parent = tempdir().unwrap();
     let root = parent.path().join("root");

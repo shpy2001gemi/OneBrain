@@ -1,0 +1,14 @@
+{
+  "name": "@onebrain/base-v1-conformance",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --outDir ../../../target/base-v1/typescript-conformance --noEmit false",
+    "test": "npm run typecheck && npm run build && node ../../../target/base-v1/typescript-conformance/conformance/typescript/test_base_v1.js"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "typescript": "7.0.2"
+  }
+}

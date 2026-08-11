@@ -1,0 +1,125 @@
+{
+  "format": "onebrain/base-v1-compatibility/1",
+  "profile_id": "BASE_V1_COMPATIBILITY_V1",
+  "domains": {
+    "candidate_semantic": "onebrain:base:candidate-semantic:1\\0",
+    "artifact_tuple": "onebrain:base:artifact-tuple:1\\0"
+  },
+  "identity_inputs": {
+    "source_commit": "ONEBRAIN_BASE_COMMIT",
+    "toolchain_digest": "ONEBRAIN_TOOLCHAIN_DIGEST",
+    "missing_or_malformed": "typed_unknown"
+  },
+  "tuple_fields": [
+    "base_version",
+    "base_commit",
+    "canonical_schema_digest",
+    "domain_registry_digest",
+    "resource_registry_digest",
+    "storage_schema",
+    "archive_profile",
+    "migration_profile",
+    "registry_profile",
+    "registry_profile_digest",
+    "wire_session",
+    "product_api",
+    "c_abi",
+    "feature_set_digest",
+    "target_triple",
+    "toolchain"
+  ],
+  "candidate_fields": [
+    "base_version",
+    "base_commit",
+    "canonical_schema_digest",
+    "domain_registry_digest",
+    "resource_registry_digest",
+    "storage_schema",
+    "archive_profile",
+    "migration_profile",
+    "registry_profile",
+    "registry_profile_digest",
+    "wire_session",
+    "product_api",
+    "c_abi",
+    "feature_set_digest"
+  ],
+  "artifact_only_fields": ["target_triple", "toolchain"],
+  "baseline": {
+    "base_version": {"major": 1, "minor": 4, "patch": 2, "prerelease": null},
+    "base_commit": {"kind": "sha1", "hex": "1111111111111111111111111111111111111111"},
+    "canonical_schema_digest": "2121212121212121212121212121212121212121212121212121212121212121",
+    "domain_registry_digest": "2222222222222222222222222222222222222222222222222222222222222222",
+    "resource_registry_digest": "2323232323232323232323232323232323232323232323232323232323232323",
+    "storage_schema": 7,
+    "archive_profile": {"major": 2, "minor": 0},
+    "migration_profile": {"major": 1, "minor": 3},
+    "registry_profile": {"major": 1, "minor": 0},
+    "registry_profile_digest": "2424242424242424242424242424242424242424242424242424242424242424",
+    "wire_session": {"major": 1, "minor": 5},
+    "product_api": {"major": 1, "minor": 1},
+    "c_abi": {"major": 1, "minor": 2},
+    "feature_set_digest": "2525252525252525252525252525252525252525252525252525252525252525",
+    "target_triple": "x86_64-pc-windows-msvc",
+    "toolchain": {"kind": "known", "hex": "2626262626262626262626262626262626262626262626262626262626262626"}
+  },
+  "minimum_additive": {
+    "base_minor": 2,
+    "wire_session_minor": 3,
+    "product_api_minor": 1,
+    "c_abi_minor": 1
+  },
+  "archive_restore": {
+    "max_dataset_bytes": 17179869184
+  },
+  "capabilities": {
+    "local": {"supported": [1, 2, 3], "required": [1]},
+    "peer": {"supported": [1, 2, 4], "required": [2]},
+    "expected_intersection": [1, 2]
+  },
+  "migration_vector": {
+    "vector_id": "base-v1-storage-6-to-7",
+    "vector_blake3": "3131313131313131313131313131313131313131313131313131313131313131",
+    "trust_policy_digest": "3232323232323232323232323232323232323232323232323232323232323232"
+  },
+  "golden_digests": {
+    "candidate_semantic": "7f13ed722884038cbde2eaf2b166cfceb12e2951cd53d5c9a77b81cb28754912",
+    "artifact_tuple": "aa57d9f63f0bf00726f2eead97197033e3eb42f82fc4e5577a80ac9364876500"
+  },
+  "cases": [
+    {"id": "exact", "field": "all", "change": "none", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": false, "artifact_digest_changed": false, "qualification": "eligible"},
+    {"id": "base-major", "field": "base_version.major", "change": "increment", "migration_vector": false, "outcome": "incompatible:BaseMajorMismatch", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "base-minor", "field": "base_version.minor", "change": "decrement", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "base-minor-below-floor", "field": "base_version.minor", "change": "below-floor", "migration_vector": false, "outcome": "incompatible:BaseMinorBelowMinimum", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "base-patch", "field": "base_version.patch", "change": "increment", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "base-prerelease", "field": "base_version.prerelease", "change": "set-rc.1", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "commit-known", "field": "base_commit", "change": "known-sha256", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "commit-unknown", "field": "base_commit", "change": "unknown", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "unqualified"},
+    {"id": "canonical-schema", "field": "canonical_schema_digest", "change": "digest", "migration_vector": false, "outcome": "incompatible:CanonicalSchemaMismatch", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "domain-registry", "field": "domain_registry_digest", "change": "digest", "migration_vector": false, "outcome": "incompatible:DomainRegistryMismatch", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "resource-registry", "field": "resource_registry_digest", "change": "digest", "migration_vector": false, "outcome": "incompatible:ResourceRegistryMismatch", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "storage-with-vector", "field": "storage_schema", "change": "decrement", "migration_vector": true, "outcome": "migration_required", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "storage-without-vector", "field": "storage_schema", "change": "decrement", "migration_vector": false, "outcome": "incompatible:MigrationVectorRequired", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "archive-profile", "field": "archive_profile", "change": "minor", "migration_vector": true, "outcome": "migration_required", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "archive-profile-without-vector", "field": "archive_profile", "change": "minor", "migration_vector": false, "outcome": "incompatible:MigrationVectorRequired", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "migration-profile", "field": "migration_profile", "change": "minor", "migration_vector": true, "outcome": "migration_required", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "migration-profile-without-vector", "field": "migration_profile", "change": "minor", "migration_vector": false, "outcome": "incompatible:MigrationVectorRequired", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "registry-profile", "field": "registry_profile", "change": "minor", "migration_vector": false, "outcome": "incompatible:RegistryProfileMismatch", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "registry-profile-digest", "field": "registry_profile_digest", "change": "digest", "migration_vector": false, "outcome": "incompatible:RegistryProfileDigestMismatch", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "wire-major", "field": "wire_session.major", "change": "increment", "migration_vector": false, "outcome": "incompatible:WireSessionMajorMismatch", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "wire-minor", "field": "wire_session.minor", "change": "decrement", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "wire-minor-below-floor", "field": "wire_session.minor", "change": "below-floor", "migration_vector": false, "outcome": "incompatible:WireSessionMinorBelowMinimum", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "product-major", "field": "product_api.major", "change": "increment", "migration_vector": false, "outcome": "incompatible:ProductApiMajorMismatch", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "product-minor", "field": "product_api.minor", "change": "increment", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "product-minor-below-floor", "field": "product_api.minor", "change": "below-floor", "migration_vector": false, "outcome": "incompatible:ProductApiMinorBelowMinimum", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "c-abi-major", "field": "c_abi.major", "change": "increment", "migration_vector": false, "outcome": "incompatible:CAbiMajorMismatch", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "c-abi-minor", "field": "c_abi.minor", "change": "decrement", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "c-abi-minor-below-floor", "field": "c_abi.minor", "change": "below-floor", "migration_vector": false, "outcome": "incompatible:CAbiMinorBelowMinimum", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "optional-feature", "field": "feature_set_digest", "change": "digest", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "required-feature", "field": "feature_set_digest", "change": "missing-required-capability", "migration_vector": false, "outcome": "incompatible:MissingRequiredCapability", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "target", "field": "target_triple", "change": "aarch64-apple-darwin", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": false, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "toolchain-known", "field": "toolchain", "change": "known-digest", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": false, "artifact_digest_changed": true, "qualification": "eligible"},
+    {"id": "toolchain-unknown", "field": "toolchain", "change": "unknown", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": false, "artifact_digest_changed": true, "qualification": "unqualified"},
+    {"id": "commit-toolchain-unknown", "field": "base_commit+toolchain", "change": "unknown", "migration_vector": false, "outcome": "compatible", "semantic_digest_changed": true, "artifact_digest_changed": true, "qualification": "unqualified"}
+  ]
+}

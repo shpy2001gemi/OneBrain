@@ -820,6 +820,37 @@
       "rationale": "Two closed machine vectors and mutation tests freeze blob identity/integrity/capacity, canonical exchange, owner IDs, complete mapping coverage, derived parity and the exact five-phase crash vocabulary before storage implementation begins."
     },
     {
+      "path": "docs/specs/vnext/BASE_V1_RUNTIME_INTERFACE_PROFILE.md",
+      "expected_statement_lines": 66,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/base-v1-runtime-interface-v1.json",
+          "needle": "onebrain/base-v1-runtime-interface/1"
+        },
+        {
+          "path": "src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json",
+          "needle": "bdfb630138e6c4dbb012825c47a59aec176d093ea828d0d52609bedb632feba7"
+        },
+        {
+          "path": "src/test-vectors/vnext/base-v1-compatibility-v1.json",
+          "needle": "onebrain/base-v1-compatibility/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_base_v1_runtime_interface"
+        },
+        {
+          "path": "scripts/ci/test_validate_base_v1_runtime_interface.py",
+          "needle": "test_baseline_history_is_an_immutable_prefix"
+        },
+        {
+          "path": "scripts/ci/test_validate_base_v1_compatibility.py",
+          "needle": "test_target_and_toolchain_are_artifact_only"
+        }
+      ],
+      "rationale": "The closed IDL, append-only discriminator chain, exact cross-language projection map and mutation suites freeze all Base operations, finite bounds, durable reserve/prepare/confirm/reconcile flow, management authority, archive capability custody, subscriptions, drain/close semantics, compatibility digest separation and field-by-field negotiation before facade implementation begins."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [
