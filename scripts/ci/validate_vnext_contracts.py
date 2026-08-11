@@ -4,13 +4,18 @@
 from __future__ import annotations
 
 import hashlib
+import ast
 import json
 import os
 import re
 import subprocess
 import sys
 import tomllib
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
+
+import blake3
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -95,6 +100,11 @@ BASE_V1_RUNTIME_INTERFACE_HISTORY = (
 BASE_V1_COMPATIBILITY_PROFILE = (
     ROOT / "src/test-vectors/vnext/base-v1-compatibility-v1.json"
 )
+BASE_V1_FREEZE_PROFILE = ROOT / "src/test-vectors/vnext/base-v1-freeze-v1.json"
+BASE_V1_RELEASE_SIGNERS = (
+    ROOT / "src/test-vectors/vnext/base-v1-release-signers-v1.json"
+)
+BASE_V1_FREEZE_DOCUMENT = VNEXT / "BASE_V1_FREEZE_AND_EVIDENCE_PROFILE.md"
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -2566,6 +2576,347 @@ def validate_base_v1_compatibility(
         if by_id[identifier].get("qualification") != "unqualified":
             raise ContractError("unknown build identity must remain unqualified")
     return len(cases)
+
+
+def validate_base_v1_freeze() -> int:
+    try:
+        profile = json.loads(read(BASE_V1_FREEZE_PROFILE))
+        signers = json.loads(read(BASE_V1_RELEASE_SIGNERS))
+    except json.JSONDecodeError as error:
+        raise ContractError(f"invalid Base v1 freeze JSON: {error}") from error
+    if profile.get("format") != "onebrain/base-v1-freeze/1" or profile.get(
+        "profile_id"
+    ) != "BASE_V1_FREEZE_AND_EVIDENCE_PROFILE_V1":
+        raise ContractError("unexpected Base v1 freeze profile")
+    candidate = profile.get("candidate")
+    if candidate != {
+        "version": "1.0.0",
+        "qualification_state_before_task_28": "Unqualified",
+        "only_eligible_commit": "task-27-commit",
+        "task_25_is_ancestor_checkpoint_only": True,
+        "tag": "base-v1.0.0",
+        "tag_must_be_absent_before_verified_atomic_publication": True,
+    }:
+        raise ContractError("Base v1 candidate freeze drift")
+    targets = profile.get("targets")
+    if targets != [
+        "x86_64-unknown-linux-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-apple-darwin",
+    ]:
+        raise ContractError("Base v1 exact target map drift")
+    gates = profile.get("base_gate_v1")
+    expected_gates = {
+        "contract-validators",
+        "canonical-and-negative-vectors",
+        "three-os-build-matrix",
+        "blob-and-derived-index-integrity",
+        "archive-recovery-and-kill-windows",
+        "authoritative-transaction-boundaries",
+        "cross-language-and-n-minus-one-conformance",
+        "fresh-production-registry",
+        "fresh-multi-host-p5",
+        "fresh-exact-candidate-72h-soak",
+        "dependency-security-and-sbom",
+        "product-default-and-release-documents",
+    }
+    if not isinstance(gates, list) or len(gates) != 12 or set(gates) != expected_gates:
+        raise ContractError("BASE-GATE-V1 gate set drift")
+    child = profile.get("child_evidence_policies")
+    expected_child = {
+        "fresh-production-registry": {
+            "role": "registry-production-aggregator",
+            "public_key_hex": "bef8e2b9d8ae7a38b3753a7d756a39c20948f128a66ca71ed04799e7a5d5177c",
+            "fingerprint_context": "onebrain:concept-registry:signer-fingerprint:1",
+            "fingerprint_hex": "dcc09574ac53ec8b95585cad5e2e88cbdfbe44841ad46b3709f73c989b4316d4",
+            "trust_policy_digest": "e0a2551a39823c3f2cb088defe60484c8a33ffe0f3aab9df9493b52557ab55fe",
+        },
+        "fresh-multi-host-p5": {
+            "role": "p5-orchestrator",
+            "public_key_hex": "cce7da80b255ed3a67a8414f79e700bb0fdc4944abe3793d9c23e8ca1699fc27",
+            "fingerprint_context": "onebrain:p5:evidence-signer-fingerprint:1",
+            "fingerprint_hex": "6d018ba3d7224bc5a415a54c226f81db1139d950aedf0ef5dfb9b9da441b01ca",
+            "trust_policy_digest": "deac187c74148dbeb9db4c29590b862121cff44506be2efc79f30d688868987b",
+        },
+        "fresh-exact-candidate-72h-soak": {
+            "role": "soak-aggregator",
+            "public_key_hex": "888cf37977b179b78aff9045a0ce599cd090172d38ec04e4d462cf70eee454b3",
+            "fingerprint_context": "onebrain:base-v1:soak-evidence-signer-fingerprint:1",
+            "fingerprint_hex": "8ab8e70864bd2258042dc4e5d18d271680df2566092317363b1064b6f1fa2ae9",
+            "trust_policy_digest": "f2ef9e95575c47a25a1809ba580b70eac1413bc5d147f9f021987c393ba778d6",
+        },
+    }
+    if child != expected_child:
+        raise ContractError("Base v1 child evidence signer policy drift")
+    evidence_approver = profile.get("base_evidence_approver_policy")
+    evidence_policy_context = "onebrain:base-v1:evidence-approver-policy:1"
+    evidence_fingerprint_context = (
+        "onebrain:base-v1:evidence-approver-fingerprint:1"
+    )
+    evidence_approver_fields = {
+        "status", "trust_policy_context", "trust_policy_digest", "policy",
+    }
+    evidence_policy_fields = {
+        "algorithm", "allowed_usages", "format", "role", "signature_domain",
+        "signers", "valid_unlisted_signature",
+    }
+    evidence_signer_fields = {
+        "created_utc", "expires_utc", "fingerprint_context",
+        "fingerprint_hex", "public_key_hex",
+    }
+    if (
+        not isinstance(evidence_approver, dict)
+        or set(evidence_approver) != evidence_approver_fields
+        or evidence_approver.get("status") != "owner-approved"
+        or evidence_approver.get("trust_policy_context")
+        != evidence_policy_context
+    ):
+        raise ContractError("Base v1 evidence approver policy fields drift")
+    evidence_policy = evidence_approver.get("policy")
+    if (
+        not isinstance(evidence_policy, dict)
+        or set(evidence_policy) != evidence_policy_fields
+        or evidence_policy.get("algorithm") != "Ed25519"
+        or evidence_policy.get("allowed_usages")
+        != ["gate-receipt-approval", "target-receipt-approval"]
+        or evidence_policy.get("format")
+        != "onebrain/base-v1-evidence-approver-policy/1"
+        or evidence_policy.get("role") != "base-evidence-approver"
+        or evidence_policy.get("signature_domain")
+        != "onebrain:base-v1:evidence-receipt-approval:1"
+        or evidence_policy.get("valid_unlisted_signature") != "reject"
+    ):
+        raise ContractError("Base v1 evidence approver public policy drift")
+    evidence_signers = evidence_policy.get("signers")
+    if (
+        not isinstance(evidence_signers, list)
+        or len(evidence_signers) != 1
+        or not isinstance(evidence_signers[0], dict)
+        or set(evidence_signers[0]) != evidence_signer_fields
+    ):
+        raise ContractError("Base v1 evidence approver signer allowlist drift")
+    evidence_signer = evidence_signers[0]
+    public_key = evidence_signer.get("public_key_hex")
+    fingerprint = evidence_signer.get("fingerprint_hex")
+    trust_digest = evidence_approver.get("trust_policy_digest")
+    if (
+        evidence_signer.get("fingerprint_context")
+        != evidence_fingerprint_context
+        or not all(
+            isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+            for value in (public_key, fingerprint, trust_digest)
+        )
+    ):
+        raise ContractError("approved Base v1 evidence approver values are invalid")
+    measured_fingerprint = blake3.blake3(
+        bytes.fromhex(public_key),
+        derive_key_context=evidence_fingerprint_context,
+    ).hexdigest()
+    if measured_fingerprint != fingerprint:
+        raise ContractError("Base v1 evidence approver fingerprint does not derive")
+    canonical_evidence_policy = json.dumps(
+        evidence_policy, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    measured_trust_digest = blake3.blake3(
+        canonical_evidence_policy,
+        derive_key_context=evidence_policy_context,
+    ).hexdigest()
+    if measured_trust_digest != trust_digest:
+        raise ContractError("Base v1 evidence approver trust policy does not derive")
+    try:
+        created_utc = datetime.fromisoformat(
+            evidence_signer["created_utc"].removesuffix("Z") + "+00:00"
+        )
+        expires_utc = datetime.fromisoformat(
+            evidence_signer["expires_utc"].removesuffix("Z") + "+00:00"
+        )
+    except (TypeError, ValueError) as error:
+        raise ContractError(
+            "Base v1 evidence approver validity is invalid"
+        ) from error
+    if (
+        not str(evidence_signer["created_utc"]).endswith("Z")
+        or not str(evidence_signer["expires_utc"]).endswith("Z")
+        or created_utc.microsecond
+        or expires_utc.microsecond
+        or created_utc.tzinfo != timezone.utc
+        or expires_utc.tzinfo != timezone.utc
+        or created_utc >= expires_utc
+        or not (created_utc <= datetime.now(timezone.utc) < expires_utc)
+    ):
+        raise ContractError("Base v1 evidence approver is not currently valid")
+    if signers.get("format") != "onebrain/base-v1-release-signers/1" or signers.get(
+        "owner_approval"
+    ) != {
+        "status": "owner-approved",
+        "approved_utc": "2026-08-11",
+        "sample_or_default_keys_allowed": False,
+    }:
+        raise ContractError("Base v1 release signer approval drift")
+    policies = signers.get("policies")
+    if not isinstance(policies, list) or len(policies) != 3:
+        raise ContractError("Base v1 release signer role count drift")
+    by_role = {row.get("policy", {}).get("role"): row for row in policies}
+    expected_policies = {
+        "qualification-approver": (
+            "CB3FF16A1A2C8B017B5D83DF59DC9C079E00928B",
+            "2e7cc2dacafad658ab5fe4e1536a4b92590f788c9c9e5a450d123930d65cfbd6",
+            ["base-release-request"],
+        ),
+        "base-release": (
+            "F9DDAFB46FB6603E14B21B4DB0D9DBF23DBE8ED2",
+            "443534ac4f583368cc5e07b1c4dbddf1ac66c63eba32bcf9e565b07f07a80d88",
+            ["base-evidence-manifest", "base-release-tag"],
+        ),
+    }
+    if set(by_role) != {*expected_policies, "base-evidence-approver"}:
+        raise ContractError("Base v1 release signer roles drift")
+    for role, (fingerprint, digest, usages) in expected_policies.items():
+        row = by_role[role]
+        policy = row.get("policy", {})
+        if (
+            policy.get("algorithm") != "OpenPGP-Ed25519"
+            or policy.get("allowed_usages") != usages
+            or policy.get("signers", [{}])[0].get("fingerprint") != fingerprint
+            or row.get("digest", {}).get("expected_hex") != digest
+        ):
+            raise ContractError(f"Base v1 {role} signer policy drift")
+    evidence_policy_row = by_role["base-evidence-approver"]
+    if (
+        evidence_policy_row.get("policy") != evidence_policy
+        or evidence_policy_row.get("digest")
+        != {
+            "algorithm": "BLAKE3 derive-key",
+            "context": evidence_policy_context,
+            "expected_hex": trust_digest,
+        }
+    ):
+        raise ContractError("Base v1 evidence approver vector policy drift")
+    source = read(ROOT / "src/onebrain-base-contract/src/compatibility.rs")
+    runtime = read(ROOT / "src/onebrain-node/src/base_runtime.rs")
+    qualifier = read(ROOT / "scripts/base/qualify_base.py")
+    frozen_binding = None
+    for statement in ast.parse(qualifier).body:
+        if (
+            isinstance(statement, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "FROZEN_PROFILE_BLAKE3" for target in statement.targets)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            frozen_binding = statement.value.value
+    canonical_profile = json.dumps(
+        profile, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    measured_profile = blake3.blake3(canonical_profile).hexdigest()
+    if frozen_binding != measured_profile:
+        raise ContractError("Base v1 frozen-profile digest binding drift")
+    if profile.get("release_publication", {}).get("request_validity_hours") != 168:
+        raise ContractError("Base v1 release request validity drift")
+    if profile.get("machine_receipts") != {
+        "gate_format": "onebrain/base-v1-gate-receipt/1",
+        "target_format": "onebrain/base-v1-target-receipt/1",
+        "outer_result_claim_allowed": False,
+        "pass_derivation": "closed-frozen-check-contract-and-substantive-output-oracle",
+        "command_and_output_hashes_required": True,
+        "runner_provenance_required": True,
+        "substantive_output_oracle_required": True,
+        "target_binary_sbom_provenance_relation_required": True,
+        "spdx_package_verification_code": (
+            "sha1-of-concatenated-sorted-analyzed-file-sha1-no-excludes"
+        ),
+        "slsa_builder_id": "absolute-TypeURI-distinct-from-runner_identity",
+    }:
+        raise ContractError("Base v1 machine receipt contract drift")
+    gate_contracts = profile.get("gate_check_contracts")
+    target_contracts = profile.get("target_check_contracts")
+    if not isinstance(gate_contracts, dict) or set(gate_contracts) != expected_gates:
+        raise ContractError("Base v1 frozen gate check contract set drift")
+    if not isinstance(target_contracts, dict) or set(target_contracts) != set(targets):
+        raise ContractError("Base v1 frozen target check contract set drift")
+    expected_builder_ids = {
+        "x86_64-unknown-linux-gnu": (
+            "https://onebrain.dev/builders/base-v1/linux-release-runner/v1"
+        ),
+        "x86_64-pc-windows-msvc": (
+            "https://onebrain.dev/builders/base-v1/windows-release-runner/v1"
+        ),
+        "aarch64-apple-darwin": (
+            "https://onebrain.dev/builders/base-v1/macos-release-runner/v1"
+        ),
+    }
+    for owner, contracts in {**gate_contracts, **target_contracts}.items():
+        if not isinstance(contracts, list) or not contracts:
+            raise ContractError(f"Base v1 {owner} has no frozen substantive checks")
+        names: set[str] = set()
+        is_target_contract = owner in target_contracts
+        expected_contract_fields = {
+            "name", "command", "runner_kind", "runner_identity",
+            "required_assertion_ids",
+        }
+        if is_target_contract:
+            expected_contract_fields.add("builder_id")
+        for contract in contracts:
+            if not isinstance(contract, dict) or set(contract) != expected_contract_fields:
+                raise ContractError(f"Base v1 {owner} check contract fields drift")
+            name = contract.get("name")
+            command = contract.get("command")
+            assertions = contract.get("required_assertion_ids")
+            if (
+                not isinstance(name, str)
+                or not name
+                or name in names
+                or not isinstance(command, list)
+                or not command
+                or not all(isinstance(argument, str) and argument for argument in command)
+                or contract.get("runner_kind") != "candidate-bound-runner"
+                or not isinstance(contract.get("runner_identity"), str)
+                or not contract["runner_identity"]
+                or not isinstance(assertions, list)
+                or not assertions
+                or len(assertions) != len(set(assertions))
+                or not all(isinstance(assertion, str) and assertion for assertion in assertions)
+            ):
+                raise ContractError(f"Base v1 {owner} check contract is not substantive")
+            if is_target_contract:
+                builder_id = contract.get("builder_id")
+                try:
+                    parsed_builder_id = urlsplit(builder_id)
+                    builder_port = parsed_builder_id.port
+                except (TypeError, ValueError) as error:
+                    raise ContractError(
+                        f"Base v1 {owner} SLSA builder ID is not an absolute TypeURI"
+                    ) from error
+                if (
+                    builder_port is not None and builder_port <= 0
+                    or not isinstance(builder_id, str)
+                    or any(character.isspace() for character in builder_id)
+                    or parsed_builder_id.scheme != "https"
+                    or parsed_builder_id.netloc != "onebrain.dev"
+                    or builder_id != expected_builder_ids.get(owner)
+                    or builder_id == contract.get("runner_identity")
+                ):
+                    raise ContractError(
+                        f"Base v1 {owner} SLSA builder ID is not target-frozen"
+                    )
+            names.add(name)
+    if "pub const BASE_V1_RELEASE_VERSION" not in source or not all(
+        needle in source for needle in ("major: 1", "minor: 0", "patch: 0", "prerelease: None")
+    ) or "base_version: BASE_V1_RELEASE_VERSION" not in runtime:
+        raise ContractError("compiled Base v1.0.0 candidate version drift")
+    for path in (
+        BASE_V1_FREEZE_DOCUMENT,
+        ROOT / "docs/security/BASE_V1_RELEASE_SIGNER_POLICY.md",
+        ROOT / "docs/operations/ONEBRAIN_BASE_V1_MIGRATION_GUIDE.md",
+        ROOT / "docs/operations/ONEBRAIN_BASE_V1_ROLLBACK_GUIDE.md",
+        ROOT / "docs/operations/ONEBRAIN_BASE_V1_CHANGELOG.md",
+        ROOT / "scripts/base/qualify_base.py",
+        ROOT / "scripts/release/create_base_release_request.py",
+        ROOT / "scripts/release/prepare_clean_candidate.py",
+        ROOT / "scripts/release/create_verified_base_release.py",
+    ):
+        if not path.is_file():
+            raise ContractError(f"Base v1 freeze artifact missing: {path.relative_to(ROOT)}")
+    return len(gates)
 
 
 def validate_negative_assertions() -> int:
@@ -7655,6 +8006,7 @@ def main() -> int:
                 base_runtime_errors,
             ) = validate_base_v1_runtime_interface()
         base_compatibility_vectors = validate_base_v1_compatibility()
+        base_freeze_gates = validate_base_v1_freeze()
         base_packaging_surfaces = validate_base_v1_packaging()
         base_candidate_os_lanes, base_candidate_actions = (
             validate_base_v1_candidate_workflow()
@@ -7770,6 +8122,7 @@ def main() -> int:
         f"{base_runtime_operations} Base runtime operations/"
         f"{base_runtime_topics} topics/{base_runtime_errors} errors, "
         f"{base_compatibility_vectors} Base compatibility vectors/"
+        f"{base_freeze_gates} Base freeze gates/"
         f"{base_packaging_surfaces} packaging surfaces, "
         f"{base_candidate_os_lanes} Base candidate OS lanes/"
         f"{base_candidate_actions} pinned actions, "

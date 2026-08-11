@@ -908,6 +908,33 @@
       "rationale": "The closed IDL, append-only discriminator chain, exact cross-language projection map and mutation suites freeze all Base operations, finite bounds, durable reserve/prepare/confirm/reconcile flow, management authority, archive capability custody, subscriptions, drain/close semantics, compatibility digest separation and field-by-field negotiation before facade implementation begins."
     },
     {
+      "path": "docs/specs/vnext/BASE_V1_FREEZE_AND_EVIDENCE_PROFILE.md",
+      "expected_statement_lines": 15,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/base-v1-freeze-v1.json",
+          "needle": "onebrain/base-v1-freeze/1"
+        },
+        {
+          "path": "src/test-vectors/vnext/base-v1-release-signers-v1.json",
+          "needle": "F9DDAFB46FB6603E14B21B4DB0D9DBF23DBE8ED2"
+        },
+        {
+          "path": "scripts/base/test_qualify_base.py",
+          "needle": "test_removing_or_falsifying_every_gate_fails"
+        },
+        {
+          "path": "scripts/release/test_create_verified_base_release.py",
+          "needle": "test_failure_boundaries_never_publish_unverified_ref_and_recover_after_cas"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_base_v1_freeze"
+        }
+      ],
+      "rationale": "The closed freeze and signer vectors, pure mutation-tested qualifier, pristine candidate tool, immutable request, verified tag CAS wrapper and operational documents freeze the only Task 27 candidate without claiming Task 28 production qualification."
+    },
+    {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",
       "expected_statement_lines": 7,
       "evidence": [

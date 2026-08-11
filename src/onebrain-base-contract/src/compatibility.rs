@@ -13,6 +13,16 @@ use crate::{
 };
 use crate::{BaseContractError, BoundedAscii, BoundedVec};
 
+/// Frozen source version of the Task 27 Base v1 qualification candidate.
+/// Qualification remains a separate runtime state and is never implied by
+/// this version value.
+pub const BASE_V1_RELEASE_VERSION: crate::BaseReleaseVersion = crate::BaseReleaseVersion {
+    major: 1,
+    minor: 0,
+    patch: 0,
+    prerelease: None,
+};
+
 pub const MAX_BASE_ARCHIVE_DATASET_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 const CANDIDATE_DIGEST_DOMAIN: &str = "onebrain:base:candidate-semantic:1\0";
 const ARTIFACT_DIGEST_DOMAIN: &str = "onebrain:base:artifact-tuple:1\0";

@@ -16,13 +16,12 @@ use onebrain_base_contract::{
     BaseCapabilitySet, BaseCommandV1, BaseCompatibilityPolicy, BaseCompatibilityTuple,
     BaseErrorCodeV1, BaseIdempotencyKey, BaseManagementRequestV1, BaseNegotiationOutcome,
     BaseOperationId, BaseOperationKindV1, BaseOperationReservationId, BasePollEventsRequestV1,
-    BasePrepareRequestV1, BaseQualificationState, BaseQueryRequestV1, BaseReleaseVersion,
-    BaseRequestV1, BaseSubscriptionId, BaseSubscriptionRequestV1, BaseVersionStatus,
-    CompatibilityDigestV1, CompleteSignerReprovisionV1, MigrationVectorBindingV1,
-    NegotiatedVersions, ProfileVersion, ResourceBudgetV1, SignerProvisionHandleV1,
-    SignerPublicIdV1, StorageSchemaVersion, TargetTriple, TopicKindV1, TypedPayloadV1,
-    COMPILED_BASE_COMMIT, COMPILED_TARGET_TRIPLE, COMPILED_TOOLCHAIN,
-    MAX_BASE_ARCHIVE_DATASET_BYTES,
+    BasePrepareRequestV1, BaseQualificationState, BaseQueryRequestV1, BaseRequestV1,
+    BaseSubscriptionId, BaseSubscriptionRequestV1, BaseVersionStatus, CompatibilityDigestV1,
+    CompleteSignerReprovisionV1, MigrationVectorBindingV1, NegotiatedVersions, ProfileVersion,
+    ResourceBudgetV1, SignerProvisionHandleV1, SignerPublicIdV1, StorageSchemaVersion,
+    TargetTriple, TopicKindV1, TypedPayloadV1, BASE_V1_RELEASE_VERSION, COMPILED_BASE_COMMIT,
+    COMPILED_TARGET_TRIPLE, COMPILED_TOOLCHAIN, MAX_BASE_ARCHIVE_DATASET_BYTES,
 };
 use tokio::sync::Notify;
 
@@ -335,12 +334,7 @@ pub fn compiled_base_runtime_config() -> BaseRuntimeConfig {
         features.update(b";vnext-network-runtime");
     }
     let tuple = BaseCompatibilityTuple {
-        base_version: BaseReleaseVersion {
-            major: 1,
-            minor: 1,
-            patch: 0,
-            prerelease: None,
-        },
+        base_version: BASE_V1_RELEASE_VERSION,
         base_commit: COMPILED_BASE_COMMIT,
         canonical_schema_digest: CompatibilityDigestV1(registry.canonical_schema_digest),
         domain_registry_digest: CompatibilityDigestV1(registry.domain_registry_digest),

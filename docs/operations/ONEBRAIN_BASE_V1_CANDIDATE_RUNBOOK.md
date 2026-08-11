@@ -96,12 +96,42 @@ bytes rather than a summary copied into a new file.
 
 ## Task 26 implementation validation state
 
-The Task 26 Python suites, real 674-package SPDX generation, mobile/vNext
-validators, generated-contract drift check, YAML parse, and checksum-verified
-`actionlint 1.7.12` pass locally. The exact required Clippy command remains a
-stop-the-line candidate blocker on Rust/Clippy 1.96: it reports 97 pre-existing
-`ku-core` diagnostics in source/test/benchmark/governance code outside the
-Task 26 file set. This workflow intentionally retains `-D warnings`; do not
-weaken, skip, or relabel that gate. No three-OS run may be treated as candidate
-evidence until those diagnostics are fixed in an owner-approved source task
-and the entire workflow is rerun.
+The Task 26 Python suites, 674-package SPDX rehearsal, mobile/vNext validators,
+generated-contract drift check, YAML parse, and checksum-verified `actionlint`
+run are historical implementation checks only. A later dedicated source commit
+removed the known workspace Clippy blocker, but neither that result nor any
+Task 21-26 artifact is admissible as Task 28 qualification evidence.
+
+Task 28 must rerun every frozen command against the exact Task 27 commit under
+the signed request's new session. It must create new command receipts,
+substantive assertion outputs, three target binaries, SPDX 2.3 documents, SLSA
+v1 provenance, Registry/P5 aggregates, security results, and uninterrupted soak
+evidence. Every receipt and evidence-approver signature must bind the same
+request digest, session, commit, tree, semantic digest, artifact map, and roots.
+Historical green output, a copied digest, or an edited/rehashed result is never
+fresh evidence.
+
+The candidate request interval must be wholly contained within the frozen
+`base-evidence-approver` validity interval. Before accepting any receipt
+signature, recompute the signer fingerprint from its approved Ed25519 public
+key and recompute the trust-policy digest from the closed canonical public
+policy; do not rely on copied fingerprint or digest fields.
+
+## Task 28 immutable release handoff
+
+Run all four Task 28 tools by absolute path from the verified bootstrap or
+candidate worktree. The request tool has four closed modes: `--new-attempt`,
+`--verify`, `--print`, and explicit `--resume <release-request>`; resume verifies
+and reuses the byte-identical request/session/timestamps and never generates a
+new identity. Candidate preparation accepts only the exact ignored request and
+signature files in the bootstrap source, then persists
+`prepared-candidate.json`; `--verify-only` is the mandatory finalizer.
+
+The qualifier consumes exactly `qualification-bundle.json` beneath the session
+evidence root and publishes a checksummed `manifest.ready.json` only after the
+two-file content-addressed manifest generation is durable. The release wrapper
+accepts only that ready pointer, the same request/signature, the approved signer
+policy with role `base-release`, and tag `base-v1.0.0`. It reruns qualification
+and candidate finalization automatically. `GNUPGHOME` must name the external
+production keyring; signing always selects the frozen full fingerprint and no
+private key is stored in the repository.

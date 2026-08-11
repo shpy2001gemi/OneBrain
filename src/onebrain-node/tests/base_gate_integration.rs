@@ -783,6 +783,14 @@ async fn task25_integrates_archive_restart_registry_tuple_and_default_off_lanes(
         )
         .unwrap();
     let compiled = compiled_base_runtime_config().version_status;
+    assert_eq!(compiled.compatibility.base_version.major, 1);
+    assert_eq!(compiled.compatibility.base_version.minor, 0);
+    assert_eq!(compiled.compatibility.base_version.patch, 0);
+    assert!(compiled.compatibility.base_version.prerelease.is_none());
+    assert!(matches!(
+        compiled.qualification,
+        onebrain_base_contract::BaseQualificationState::Unqualified
+    ));
     assert_eq!(
         receipt.candidate_semantic_digest,
         compiled.candidate_semantic_digest.0

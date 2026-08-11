@@ -6,7 +6,8 @@ mod negotiation;
 mod operation;
 
 pub use compatibility::{
-    BaseCompatibilityBuildError, BaseQualificationError, MAX_BASE_ARCHIVE_DATASET_BYTES,
+    BaseCompatibilityBuildError, BaseQualificationError, BASE_V1_RELEASE_VERSION,
+    MAX_BASE_ARCHIVE_DATASET_BYTES,
 };
 pub use generated::*;
 pub use operation::{BaseContractError, BoundedAscii, BoundedBytes, BoundedVec, SecretBytes};

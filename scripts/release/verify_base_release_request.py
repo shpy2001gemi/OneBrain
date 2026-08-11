@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+from datetime import timedelta
 
 import blake3
 from cryptography.exceptions import InvalidSignature
@@ -57,6 +58,18 @@ TOOLING_FIELDS = {
     "qualifier", "request", "clean_worktree", "release_wrapper", "verifier",
     "signer_policy",
 }
+CANONICAL_CANDIDATE_FILES = {
+    "production_profile": Path("src/test-vectors/vnext/base-v1-freeze-v1.json"),
+    "production_vector": Path("src/test-vectors/vnext/base-v1-release-signers-v1.json"),
+    "append_only_idl_history": Path("src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json"),
+    "qualifier": Path("scripts/base/qualify_base.py"),
+    "request": Path("scripts/release/create_base_release_request.py"),
+    "clean_worktree": Path("scripts/release/prepare_clean_candidate.py"),
+    "release_wrapper": Path("scripts/release/create_verified_base_release.py"),
+    "verifier": Path("scripts/release/verify_base_release_request.py"),
+    "signer_policy": Path("src/test-vectors/vnext/base-v1-release-signers-v1.json"),
+}
+FROZEN_REQUEST_VALIDITY = timedelta(hours=168)
 ARTIFACT_FIELDS = {
     "OBR:concepts.obr", "LABEL_INDEX:concepts.obr.labels.idx",
     "CCID_INDEX:concepts.obr.ccids.idx", "MANIFEST:concepts.obr.manifest.json",
@@ -120,6 +133,7 @@ def _verify_authenticated_tooling(
     python_path: Path,
     gpg_path: Path,
     verifier_path: Path,
+    candidate_root: Path | None = None,
 ) -> None:
     expected = request["reference_environment"]
     tooling = request["candidate_tooling_blake3"]
@@ -132,6 +146,61 @@ def _verify_authenticated_tooling(
     for name, (actual, signed) in measured.items():
         if actual != signed:
             raise ReleaseRequestError(f"signed {name} digest mismatch")
+    if candidate_root is None:
+        return
+    root = candidate_root.resolve(strict=True)
+    status = subprocess.run(
+        [
+            "git", "-C", str(root), "status", "--porcelain=v1",
+            "--untracked-files=all", "--ignored=matching",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if status.returncode != 0 or status.stdout:
+        raise ReleaseRequestError("candidate tooling root is dirty, untracked, ignored or generated")
+    for revision, expected in (
+        ("HEAD", request["candidate"]["commit"]),
+        ("HEAD^{tree}", request["candidate"]["tree"]),
+        ("--show-object-format", request["candidate"]["object_format"]),
+    ):
+        completed = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", revision],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0 or completed.stdout.strip() != expected:
+            raise ReleaseRequestError("candidate tooling root commit/tree is not the signed candidate")
+    candidate_paths = {
+        name: (root / relative).resolve(strict=True)
+        for name, relative in CANONICAL_CANDIDATE_FILES.items()
+    }
+    for name, relative in CANONICAL_CANDIDATE_FILES.items():
+        relative_text = relative.as_posix()
+        tracked = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "--error-unmatch", "--", relative_text],
+            capture_output=True,
+            check=False,
+        )
+        if tracked.returncode != 0:
+            raise ReleaseRequestError(f"candidate {name} is not tracked by the signed commit")
+    measured_candidate = {
+        name: blake3_file(candidate_paths[name]) for name in TOOLING_FIELDS
+    }
+    if measured_candidate != tooling:
+        raise ReleaseRequestError("signed candidate tooling digest mismatch")
+    if blake3_file(candidate_paths["production_profile"]) != request["production_profile_blake3"]:
+        raise ReleaseRequestError("signed production profile digest mismatch")
+    if blake3_file(candidate_paths["production_vector"]) != request["production_vector_blake3"]:
+        raise ReleaseRequestError("signed production vector digest mismatch")
+    try:
+        history = json.loads(candidate_paths["append_only_idl_history"].read_bytes())
+        history_root = history["history_chain"]["root_sha256"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as error:
+        raise ReleaseRequestError("candidate append-only history is invalid") from error
+    if history_root != request["append_only_idl_history_root"]:
+        raise ReleaseRequestError("signed append-only history root mismatch")
 
 
 def _verify_registry_candidate_measurements(
@@ -222,11 +291,15 @@ def _verify_registry_candidate_measurements(
         vector_value = json.loads(production_vector.read_bytes())
     except (OSError, json.JSONDecodeError) as error:
         raise ReleaseRequestError("production profile/vector evidence is invalid") from error
-    if blake3.blake3(canonical_json(profile_value)).hexdigest() != verified.bindings["production_profile_blake3"]:
+    if blake3_file(production_profile) != verified.bindings["production_profile_blake3"]:
         raise ReleaseRequestError("measured production profile differs from request")
-    if blake3.blake3(canonical_json(vector_value)).hexdigest() != verified.bindings["production_vector_blake3"]:
+    if blake3_file(production_vector) != verified.bindings["production_vector_blake3"]:
         raise ReleaseRequestError("measured production vector differs from request")
-    if append_only_idl_history.read_text(encoding="ascii").strip() != verified.bindings["append_only_idl_history_root"]:
+    try:
+        history_root = json.loads(append_only_idl_history.read_bytes())["history_chain"]["root_sha256"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as error:
+        raise ReleaseRequestError("measured append-only IDL history is invalid") from error
+    if history_root != verified.bindings["append_only_idl_history_root"]:
         raise ReleaseRequestError("measured append-only IDL history root differs from request")
     if set(candidate_tooling) != TOOLING_FIELDS:
         raise ReleaseRequestError("measured candidate tooling map is not exact")
@@ -517,7 +590,39 @@ def _policy(value: object, production: bool) -> tuple[dict[str, Any], str]:
     return policy, digest
 
 
-def _validate_request(value: object, policy_digest: str, signer: dict[str, Any], now: datetime) -> dict[str, Any]:
+def _policy_source(value: object, production: bool) -> tuple[dict[str, Any], str]:
+    """Extract the approver policy from the frozen candidate signer vector."""
+    if isinstance(value, dict) and value.get("format") == "onebrain/base-v1-release-signers/1":
+        try:
+            rows = [
+                row for row in value["policies"]
+                if row["policy"].get("role") == "qualification-approver"
+            ]
+            if len(rows) != 1:
+                raise ValueError("role")
+            policy, digest = _policy(rows[0]["policy"], production)
+            if rows[0]["digest"] != {
+                "algorithm": "BLAKE3 derive-key",
+                "context": APPROVER_POLICY_DIGEST_CONTEXT,
+                "expected_hex": digest,
+            }:
+                raise ValueError("digest")
+            return policy, digest
+        except (KeyError, TypeError, ValueError) as error:
+            raise ReleaseRequestError("qualification approver signer vector is invalid") from error
+    if production:
+        raise ReleaseRequestError("production policy must be the frozen candidate signer vector")
+    return _policy(value, False)
+
+
+def _validate_request(
+    value: object,
+    policy_digest: str,
+    signer: dict[str, Any],
+    now: datetime,
+    *,
+    frozen_validity: bool = False,
+) -> dict[str, Any]:
     request = _closed(value, REQUEST_FIELDS, "release request")
     if request["format"] != "onebrain/base-v1-release-request/1" or request["usage"] != "base-release-request":
         raise ReleaseRequestError("release request format or usage is invalid")
@@ -547,6 +652,8 @@ def _validate_request(value: object, policy_digest: str, signer: dict[str, Any],
     signer_expires = _instant(signer["expires_utc"], "signer expires_utc")
     if created >= expires or created < signer_created or expires > signer_expires:
         raise ReleaseRequestError("request validity is outside signer policy")
+    if frozen_validity and expires - created != FROZEN_REQUEST_VALIDITY:
+        raise ReleaseRequestError("production request validity is not exactly 168 hours")
     if now < created or now >= expires:
         raise ReleaseRequestError("release request is expired or not yet valid")
     uri = request["evidence_root_uri"]
@@ -612,12 +719,16 @@ def _verify_release_request(
         raise ReleaseRequestError("release request or policy could not be read") from error
     if request_bytes != canonical_json(request_value):
         raise ReleaseRequestError("release request bytes are not canonical")
-    if policy_bytes != canonical_json(policy_value):
+    if not production and policy_bytes != canonical_json(policy_value):
         raise ReleaseRequestError("qualification approver policy bytes are not canonical")
-    policy, policy_digest = _policy(policy_value, production)
+    policy, policy_digest = _policy_source(policy_value, production)
     signer = policy["signers"][0]
     request = _validate_request(
-        request_value, policy_digest, signer, now or datetime.now(timezone.utc)
+        request_value,
+        policy_digest,
+        signer,
+        now or datetime.now(timezone.utc),
+        frozen_validity=production,
     )
     command = [
         str(gpg_executable), "--homedir", str(gpg_home), "--batch",
@@ -654,7 +765,9 @@ def _verify_release_request(
         raise ReleaseRequestError("public key packet BLAKE3 mismatch")
     _verify_authenticated_tooling(
         request, policy_bytes, python_path=python_executable_path(),
-        gpg_path=gpg_executable, verifier_path=Path(__file__).resolve(),
+        gpg_path=gpg_executable,
+        verifier_path=Path(__file__).resolve(),
+        candidate_root=Path(__file__).resolve().parents[2] if production else None,
     )
     registry = request["registry_candidate"]
     environment = request["reference_environment"]
