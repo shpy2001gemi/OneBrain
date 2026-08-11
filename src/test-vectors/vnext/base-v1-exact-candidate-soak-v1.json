@@ -1,0 +1,189 @@
+{
+  "format": "onebrain/base-v1-exact-candidate-soak/1",
+  "profile_id": "BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE_V1",
+  "version": 1,
+  "scope": {
+    "minimum_uninterrupted_elapsed_seconds": 259200,
+    "minimum_distinct_physical_runners": 3,
+    "target_triple": "x86_64-unknown-linux-gnu",
+    "cargo_profile": "release",
+    "transport": "authenticated-real-quic",
+    "candidate_source": "verified-signed-task-28-release-request",
+    "only_eligible_candidate": "exact-task-27-commit-and-tree",
+    "task_25_is_ancestor_checkpoint_only": true,
+    "fresh_run_required": true,
+    "prior_m5_07_may_qualify": false,
+    "synthetic_unchanged_closure_may_qualify": false
+  },
+  "reference_environment": {
+    "identity_source": "verified-signed-release-request",
+    "producer_override": false,
+    "required_pinned_fields": [
+      "release_request_digest",
+      "qualification_session_id",
+      "candidate_commit",
+      "candidate_tree",
+      "candidate_semantic_digest",
+      "frozen_target_artifact_digest",
+      "registry_root",
+      "p5_aggregate_root",
+      "executable_blake3",
+      "sbom_blake3",
+      "provenance_blake3",
+      "runner_image_digest"
+    ],
+    "cross_runner_byte_equality": [
+      "candidate_commit",
+      "candidate_tree",
+      "candidate_semantic_digest",
+      "frozen_target_artifact_digest",
+      "registry_root",
+      "p5_aggregate_root",
+      "executable_blake3",
+      "sbom_blake3",
+      "provenance_blake3",
+      "runner_image_digest"
+    ],
+    "identical_release_executable_hash_required": true
+  },
+  "runners": [
+    {
+      "runner_id": "runner-a",
+      "role": "soak-runner:runner-a",
+      "required_labels": ["self-hosted", "linux", "x64", "onebrain-soak", "onebrain-soak-a"]
+    },
+    {
+      "runner_id": "runner-b",
+      "role": "soak-runner:runner-b",
+      "required_labels": ["self-hosted", "linux", "x64", "onebrain-soak", "onebrain-soak-b"]
+    },
+    {
+      "runner_id": "runner-c",
+      "role": "soak-runner:runner-c",
+      "required_labels": ["self-hosted", "linux", "x64", "onebrain-soak", "onebrain-soak-c"]
+    }
+  ],
+  "trust_policy": {
+    "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+    "digest_algorithm": "BLAKE3-derive-key-v1",
+    "digest_context": "onebrain:base-v1:soak-trust-policy:1",
+    "digest_hex": "f2ef9e95575c47a25a1809ba580b70eac1413bc5d147f9f021987c393ba778d6",
+    "fingerprint_algorithm": "BLAKE3-derive-key-v1",
+    "fingerprint_context": "onebrain:base-v1:soak-evidence-signer-fingerprint:1",
+    "policy": {
+      "algorithm": "Ed25519",
+      "allowed_usages": [
+        "base-v1-soak-child-receipt",
+        "base-v1-soak-aggregate"
+      ],
+      "format": "onebrain/base-v1-exact-candidate-soak-trust-policy/1",
+      "role_bindings": [
+        {
+          "role": "soak-runner:runner-a",
+          "public_key_hex": "f6dcfda9ff046728bd9ffec69f38db909f6198e46b3eb6c208411c3fef95fd27",
+          "fingerprint_hex": "af9ec4df16d41ab7700c3428f12430c95c8ada4d2c0ca5ac8353af42fcb755ad"
+        },
+        {
+          "role": "soak-runner:runner-b",
+          "public_key_hex": "9b415457ea3f9a794670c55387d4742bd6105dea6f95780c6cf6c3d9ae7c4907",
+          "fingerprint_hex": "160ce310b3c99f1f30d21f3ad2206b638cb391bfe057058155a2355998a1e08f"
+        },
+        {
+          "role": "soak-runner:runner-c",
+          "public_key_hex": "d4295546c6818dacf38758d75f70867ea06a50f12c8800bcae532f76e737ac9e",
+          "fingerprint_hex": "2069e547629b1551c505becebf4da5cabe6c61b92b9465aba328fb8258065ae1"
+        },
+        {
+          "role": "soak-aggregator",
+          "public_key_hex": "888cf37977b179b78aff9045a0ce599cd090172d38ec04e4d462cf70eee454b3",
+          "fingerprint_hex": "8ab8e70864bd2258042dc4e5d18d271680df2566092317363b1064b6f1fa2ae9"
+        }
+      ]
+    },
+    "valid_unlisted_signature": "reject",
+    "wrong_or_cross_runner_role": "reject",
+    "changed_trust_policy": "reject",
+    "owner_approval": {
+      "status": "owner-approved",
+      "approved_utc": "2026-08-11"
+    }
+  },
+  "child_receipt": {
+    "format": "onebrain/base-v1-exact-candidate-soak-child-receipt/1",
+    "signature_domain": "onebrain:base-v1:exact-candidate-soak-child-receipt:1\\0",
+    "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+    "unknown_field_policy": "reject",
+    "receipt_kinds": ["interval", "fault"],
+    "required_bindings": [
+      "release_request_digest",
+      "qualification_session_id",
+      "candidate_commit",
+      "candidate_tree",
+      "candidate_semantic_digest",
+      "frozen_target_artifact_digest",
+      "registry_root",
+      "p5_aggregate_root",
+      "executable_blake3",
+      "sbom_blake3",
+      "provenance_blake3",
+      "runner_image_digest",
+      "trust_policy_digest"
+    ],
+    "required_payload_fields": [
+      "role",
+      "runner_id",
+      "runner_identity",
+      "interval_sequence",
+      "receipt_kind",
+      "monotonic_start_ns",
+      "monotonic_end_ns",
+      "command",
+      "result",
+      "limitations"
+    ]
+  },
+  "aggregate": {
+    "format": "onebrain/base-v1-exact-candidate-soak-aggregate/1",
+    "signer_role": "soak-aggregator",
+    "signature_domain": "onebrain:base-v1:exact-candidate-soak-aggregate:1\\0",
+    "root_algorithm": "BLAKE3",
+    "root_domain": "onebrain:base-v1:exact-candidate-soak-child-root:1\\0",
+    "root_order": "runner-id-then-monotonic-start-then-sequence-then-receipt-kind",
+    "root_inputs": ["canonical-ordered-interval-and-fault-child-receipt-bytes"],
+    "root_excludes": ["aggregate_report", "aggregate_signature"],
+    "mixed_binding_policy": "reject",
+    "input_qualification_boolean_trusted": false
+  },
+  "fault_cycle": [
+    "slow-peer",
+    "bounded-session-flood",
+    "partition-reunion"
+  ],
+  "exit_oracles": [
+    "fresh-uninterrupted-259200-monotonic-seconds",
+    "exact-task-27-commit-and-tree",
+    "single-signed-release-request-and-session",
+    "identical-release-executable-on-every-runner",
+    "final-candidate-bound-registry-root",
+    "final-candidate-bound-p5-root",
+    "signed-raw-receipts-retained",
+    "complete-fault-cycle-without-gap",
+    "memory-disk-task-and-session-bounds-hold",
+    "zero-task-or-session-leak-after-shutdown",
+    "zero-truth-authority-completion-reward-wallet-amplification",
+    "local-kql-works-with-all-network-lanes-off",
+    "multi-host-and-soak-results-remain-separate"
+  ],
+  "carry_forward": {
+    "analyzer_purpose": "staleness-demonstration-only",
+    "analytically_reusable_when_closure_unchanged": true,
+    "base_v1_reusable": false,
+    "fresh_task_28_soak_required": true
+  },
+  "qualification_state": {
+    "contract_frozen": true,
+    "measured_evidence_committed": false,
+    "soak_qualified": false,
+    "production_qualified": false
+  }
+}

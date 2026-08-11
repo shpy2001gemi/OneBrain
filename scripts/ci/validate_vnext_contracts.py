@@ -66,6 +66,9 @@ P5_OPERATIONS_PREFLIGHT_PROFILE = (
 P5_MULTI_HOST_PRODUCTION_PROFILE = (
     ROOT / "src/test-vectors/vnext/p5-multi-host-production-qualification-v1.json"
 )
+BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-exact-candidate-soak-v1.json"
+)
 CONCEPT_REGISTRY_OPERATIONS_PROFILE = (
     ROOT / "src/test-vectors/vnext/concept-registry-operations-v1.json"
 )
@@ -109,6 +112,9 @@ VNEXT_MACOS_SOAK_RUNNER_GUIDE = (
 )
 CONCEPT_REGISTRY_PRODUCTION_WORKFLOW = (
     ROOT / ".github/workflows/concept-registry-production.yml"
+)
+BASE_V1_P5_PRODUCTION_WORKFLOW = (
+    ROOT / ".github/workflows/vnext-p5-production-canary.yml"
 )
 CONCEPT_REGISTRY_RUNNER_SCRIPT = (
     ROOT / "scripts/runner/onebrain-registry-runner.sh"
@@ -5849,6 +5855,276 @@ def validate_vnext_p5_multi_host(
     )
 
 
+def validate_base_v1_exact_candidate_soak(
+    profile: dict[str, object] | None = None,
+    workflow: str | None = None,
+) -> tuple[int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base v1 exact-candidate soak JSON: {error}") from error
+    if (
+        profile.get("format") != "onebrain/base-v1-exact-candidate-soak/1"
+        or profile.get("profile_id") != "BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("Base v1 exact-candidate soak identity drift")
+
+    expected_scope = {
+        "minimum_uninterrupted_elapsed_seconds": 259200,
+        "minimum_distinct_physical_runners": 3,
+        "target_triple": "x86_64-unknown-linux-gnu",
+        "cargo_profile": "release",
+        "transport": "authenticated-real-quic",
+        "candidate_source": "verified-signed-task-28-release-request",
+        "only_eligible_candidate": "exact-task-27-commit-and-tree",
+        "task_25_is_ancestor_checkpoint_only": True,
+        "fresh_run_required": True,
+        "prior_m5_07_may_qualify": False,
+        "synthetic_unchanged_closure_may_qualify": False,
+    }
+    if profile.get("scope") != expected_scope:
+        raise ContractError("Base v1 exact-candidate soak scope drift")
+
+    required_bindings = [
+        "release_request_digest",
+        "qualification_session_id",
+        "candidate_commit",
+        "candidate_tree",
+        "candidate_semantic_digest",
+        "frozen_target_artifact_digest",
+        "registry_root",
+        "p5_aggregate_root",
+        "executable_blake3",
+        "sbom_blake3",
+        "provenance_blake3",
+        "runner_image_digest",
+        "trust_policy_digest",
+    ]
+    reference_pins = required_bindings[:-1]
+    reference = profile.get("reference_environment")
+    if reference != {
+        "identity_source": "verified-signed-release-request",
+        "producer_override": False,
+        "required_pinned_fields": reference_pins,
+        "cross_runner_byte_equality": reference_pins[2:],
+        "identical_release_executable_hash_required": True,
+    }:
+        raise ContractError("Base v1 exact-candidate reference identity drift")
+
+    expected_runners = [
+        {
+            "runner_id": "runner-a",
+            "role": "soak-runner:runner-a",
+            "required_labels": [
+                "self-hosted",
+                "linux",
+                "x64",
+                "onebrain-soak",
+                "onebrain-soak-a",
+            ],
+        },
+        {
+            "runner_id": "runner-b",
+            "role": "soak-runner:runner-b",
+            "required_labels": [
+                "self-hosted",
+                "linux",
+                "x64",
+                "onebrain-soak",
+                "onebrain-soak-b",
+            ],
+        },
+        {
+            "runner_id": "runner-c",
+            "role": "soak-runner:runner-c",
+            "required_labels": [
+                "self-hosted",
+                "linux",
+                "x64",
+                "onebrain-soak",
+                "onebrain-soak-c",
+            ],
+        },
+    ]
+    if profile.get("runners") != expected_runners:
+        raise ContractError("Base v1 exact-candidate soak runner topology drift")
+
+    expected_roles = [
+        {
+            "role": "soak-runner:runner-a",
+            "public_key_hex": "f6dcfda9ff046728bd9ffec69f38db909f6198e46b3eb6c208411c3fef95fd27",
+            "fingerprint_hex": "af9ec4df16d41ab7700c3428f12430c95c8ada4d2c0ca5ac8353af42fcb755ad",
+        },
+        {
+            "role": "soak-runner:runner-b",
+            "public_key_hex": "9b415457ea3f9a794670c55387d4742bd6105dea6f95780c6cf6c3d9ae7c4907",
+            "fingerprint_hex": "160ce310b3c99f1f30d21f3ad2206b638cb391bfe057058155a2355998a1e08f",
+        },
+        {
+            "role": "soak-runner:runner-c",
+            "public_key_hex": "d4295546c6818dacf38758d75f70867ea06a50f12c8800bcae532f76e737ac9e",
+            "fingerprint_hex": "2069e547629b1551c505becebf4da5cabe6c61b92b9465aba328fb8258065ae1",
+        },
+        {
+            "role": "soak-aggregator",
+            "public_key_hex": "888cf37977b179b78aff9045a0ce599cd090172d38ec04e4d462cf70eee454b3",
+            "fingerprint_hex": "8ab8e70864bd2258042dc4e5d18d271680df2566092317363b1064b6f1fa2ae9",
+        },
+    ]
+    trust = profile.get("trust_policy")
+    if not isinstance(trust, dict):
+        raise ContractError("Base v1 exact-candidate soak trust policy missing")
+    expected_trust_without_approval = {
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "digest_algorithm": "BLAKE3-derive-key-v1",
+        "digest_context": "onebrain:base-v1:soak-trust-policy:1",
+        "digest_hex": "f2ef9e95575c47a25a1809ba580b70eac1413bc5d147f9f021987c393ba778d6",
+        "fingerprint_algorithm": "BLAKE3-derive-key-v1",
+        "fingerprint_context": "onebrain:base-v1:soak-evidence-signer-fingerprint:1",
+        "policy": {
+            "algorithm": "Ed25519",
+            "allowed_usages": [
+                "base-v1-soak-child-receipt",
+                "base-v1-soak-aggregate",
+            ],
+            "format": "onebrain/base-v1-exact-candidate-soak-trust-policy/1",
+            "role_bindings": expected_roles,
+        },
+        "valid_unlisted_signature": "reject",
+        "wrong_or_cross_runner_role": "reject",
+        "changed_trust_policy": "reject",
+    }
+    actual_without_approval = dict(trust)
+    approval = actual_without_approval.pop("owner_approval", None)
+    if actual_without_approval != expected_trust_without_approval:
+        raise ContractError("Base v1 exact-candidate soak trust-policy drift")
+    if approval not in (
+        {"status": "pending-owner-approval", "approved_utc": None},
+        {"status": "owner-approved", "approved_utc": "2026-08-11"},
+    ):
+        raise ContractError("Base v1 exact-candidate soak owner approval state drift")
+    public_keys = {row["public_key_hex"] for row in expected_roles}
+    fingerprints = {row["fingerprint_hex"] for row in expected_roles}
+    if len(public_keys) != 4 or len(fingerprints) != 4:
+        raise ContractError("Base v1 exact-candidate soak reuses a signer across roles")
+
+    payload_fields = [
+        "role",
+        "runner_id",
+        "runner_identity",
+        "interval_sequence",
+        "receipt_kind",
+        "monotonic_start_ns",
+        "monotonic_end_ns",
+        "command",
+        "result",
+        "limitations",
+    ]
+    if profile.get("child_receipt") != {
+        "format": "onebrain/base-v1-exact-candidate-soak-child-receipt/1",
+        "signature_domain": "onebrain:base-v1:exact-candidate-soak-child-receipt:1\\0",
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "unknown_field_policy": "reject",
+        "receipt_kinds": ["interval", "fault"],
+        "required_bindings": required_bindings,
+        "required_payload_fields": payload_fields,
+    }:
+        raise ContractError("Base v1 exact-candidate soak child-receipt drift")
+    if profile.get("aggregate") != {
+        "format": "onebrain/base-v1-exact-candidate-soak-aggregate/1",
+        "signer_role": "soak-aggregator",
+        "signature_domain": "onebrain:base-v1:exact-candidate-soak-aggregate:1\\0",
+        "root_algorithm": "BLAKE3",
+        "root_domain": "onebrain:base-v1:exact-candidate-soak-child-root:1\\0",
+        "root_order": "runner-id-then-monotonic-start-then-sequence-then-receipt-kind",
+        "root_inputs": ["canonical-ordered-interval-and-fault-child-receipt-bytes"],
+        "root_excludes": ["aggregate_report", "aggregate_signature"],
+        "mixed_binding_policy": "reject",
+        "input_qualification_boolean_trusted": False,
+    }:
+        raise ContractError("Base v1 exact-candidate soak aggregate-root drift")
+    if profile.get("fault_cycle") != [
+        "slow-peer",
+        "bounded-session-flood",
+        "partition-reunion",
+    ]:
+        raise ContractError("Base v1 exact-candidate soak fault-cycle drift")
+    exit_oracles = profile.get("exit_oracles")
+    if not isinstance(exit_oracles, list) or len(exit_oracles) != 13:
+        raise ContractError("Base v1 exact-candidate soak exit-oracle drift")
+    if profile.get("carry_forward") != {
+        "analyzer_purpose": "staleness-demonstration-only",
+        "analytically_reusable_when_closure_unchanged": True,
+        "base_v1_reusable": False,
+        "fresh_task_28_soak_required": True,
+    }:
+        raise ContractError("Base v1 exact-candidate carry-forward boundary drift")
+    expected_state = {
+        "contract_frozen": approval["status"] == "owner-approved",
+        "measured_evidence_committed": False,
+        "soak_qualified": False,
+        "production_qualified": False,
+    }
+    if profile.get("qualification_state") != expected_state:
+        raise ContractError("Base v1 exact-candidate qualification state drift")
+
+    if workflow is None:
+        workflow = read(BASE_V1_P5_PRODUCTION_WORKFLOW)
+    markers = (
+        "workflow_dispatch:",
+        "if: github.ref == 'refs/heads/main'",
+        "verify_base_release_request.py",
+        "ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}",
+        "git rev-parse HEAD^{tree}",
+        "compare-release-executable-hashes",
+        "retain-signed-raw-receipts",
+        "p5-multi-host-aggregate",
+        "base-v1-exact-candidate-soak-aggregate",
+        "timeout-minutes: 4440",
+        "pre-release-72h",
+    )
+    for marker in markers:
+        if marker not in workflow:
+            raise ContractError(f"Base v1 production canary workflow missing: {marker}")
+    for forbidden in ("pull_request:", "schedule:", "candidate_commit:\n        description:"):
+        if forbidden in workflow:
+            raise ContractError(f"Base v1 production canary workflow exposes: {forbidden}")
+
+    analyzer = read(ROOT / "scripts/release/validate_evidence_carry_forward.py")
+    for marker in (
+        "def _verify_p5_aggregate(",
+        'parser.add_argument("--p5-aggregate", type=Path, required=True)',
+        'parser.add_argument("--executable", type=Path, required=True)',
+        '"SPDX_SBOM:sbom.spdx.json"',
+        'fresh exact-candidate soak evidence is incomplete',
+    ):
+        if marker not in analyzer:
+            raise ContractError(f"Base v1 evidence analyzer missing: {marker}")
+    for forbidden in (
+        'parser.add_argument("--p5-aggregate-root"',
+        'parser.add_argument("--executable-blake3"',
+        'parser.add_argument("--sbom-blake3"',
+        'parser.add_argument("--provenance-blake3"',
+    ):
+        if forbidden in analyzer:
+            raise ContractError(f"Base v1 evidence analyzer accepts override: {forbidden}")
+
+    spec = read(VNEXT / "BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE.md")
+    for marker in (
+        "base-v1-exact-candidate-soak-v1.json",
+        "fresh, uninterrupted 259,200-second soak",
+        "Task 27",
+        "Task 28",
+        "fresh_soak_required=true",
+        "production_qualified=false",
+    ):
+        if marker not in spec:
+            raise ContractError(f"Base v1 exact-candidate soak spec missing: {marker}")
+    return (len(expected_runners), len(expected_roles), 2, len(exit_oracles))
+
+
 def validate_vnext_p5_canary_preflight(
     profile: dict[str, object] | None = None,
 ) -> tuple[int, int, int, int, int]:
@@ -7249,6 +7525,12 @@ def main() -> int:
             p5_evidence_roles,
         ) = validate_vnext_p5_multi_host()
         (
+            base_soak_runners,
+            base_soak_roles,
+            base_soak_receipt_kinds,
+            base_soak_exit_oracles,
+        ) = validate_base_v1_exact_candidate_soak()
+        (
             p5_canary_nodes,
             p5_ring_deliveries,
             p5_route_observations,
@@ -7330,6 +7612,8 @@ def main() -> int:
         f"{p5_physical_hosts} P5 production hosts/{p5_inventory_hosts} inventory hosts/"
         f"{p5_production_faults} production faults/{p5_production_exit_oracles} exit oracles/"
         f"{p5_evidence_roles} evidence roles, "
+        f"{base_soak_runners} Base exact-soak runners/{base_soak_roles} roles/"
+        f"{base_soak_receipt_kinds} receipt kinds/{base_soak_exit_oracles} exit oracles, "
         f"{p5_canary_nodes} P5-01 nodes/{p5_ring_deliveries} ring deliveries/"
         f"{p5_route_observations} route observations/{p5_fault_drills} fault drills/"
         f"{p5_exit_oracles} exit oracles, "
