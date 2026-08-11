@@ -26,6 +26,10 @@ name = "p5_operations_preflight"
 required-features = ["vnext-canary-harness"]
 
 [[example]]
+name = "p5_multi_host_agent"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
 name = "concept_registry_production_qualification"
 
 [features]
@@ -63,6 +67,7 @@ vnext-soak-harness = [
     "ku-net/dr-m5-chaos-harness",
 ]
 vnext-canary-harness = ["vnext-network-runtime"]
+vnext-production-canary-harness = ["vnext-canary-harness"]
 
 [dependencies]
 ku-core = { path = "../ku-core" }

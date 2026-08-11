@@ -61,6 +61,10 @@ pub mod vnext_observability;
 pub mod vnext_operational_compaction;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_outbox;
+#[cfg(feature = "vnext-production-canary-harness")]
+pub mod vnext_p5_fault_proxy;
+#[cfg(feature = "vnext-production-canary-harness")]
+pub mod vnext_p5_multi_host;
 #[cfg(feature = "vnext-canary-harness")]
 pub mod vnext_p5_operations;
 pub mod vnext_performance_budgets;
@@ -220,6 +224,23 @@ pub use vnext_operational_compaction::{
 pub use vnext_outbox::{
     OutboundAuditTombstone, OutboundCompactionReport, OutboundIntentState, OutboundOutbox,
     OutboundOutboxError, OutboundOutboxStats, OutboundTransferIntent, OutboxEnqueueOutcome,
+};
+#[cfg(feature = "vnext-production-canary-harness")]
+pub use vnext_p5_fault_proxy::{
+    P5DeliveryBatch, P5FaultKind, P5FaultProxy, P5FaultProxyConfig, P5FaultProxyError,
+    P5_MAX_DUPLICATE_COPIES, P5_MAX_FAULT_DELAY_MS, P5_MAX_PROXY_FRAME_BYTES,
+    P5_MAX_REORDERED_FRAMES,
+};
+#[cfg(feature = "vnext-production-canary-harness")]
+pub use vnext_p5_multi_host::{
+    evaluate_host_claims, P5CandidateBindingV1, P5ChildReceiptPayloadV1, P5ChildReceiptV1,
+    P5ControlCommandV1, P5ControlPayloadV1, P5ControlVerifier, P5DirectoryRootObserver,
+    P5HostAgentConfig, P5HostClaimEvaluationV1, P5HostClaimV1, P5LinuxProcessResourceObserver,
+    P5MultiHostAgent, P5MultiHostError, P5ResourceObservationV1, P5ResourceObserver,
+    P5RootObserver, P5RootSetV1, P5SignedControlV1, P5_CHILD_RECEIPT_FORMAT, P5_CONTROL_FORMAT,
+    P5_MAX_CLOCK_SKEW_MS, P5_MAX_COMMAND_LIFETIME_MS, P5_MAX_CONTROL_MESSAGE_BYTES,
+    P5_MAX_QUIESCENCE_MS, P5_ORCHESTRATOR_FINGERPRINT, P5_ORCHESTRATOR_PUBLIC_KEY,
+    P5_TRUST_POLICY_DIGEST,
 };
 #[cfg(feature = "vnext-canary-harness")]
 pub use vnext_p5_operations::{
