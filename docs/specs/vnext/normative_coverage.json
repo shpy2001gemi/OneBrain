@@ -770,6 +770,25 @@
       "rationale": "The single-host operational preflight exercises actual signer, storage, authenticated-QUIC, durable backup/restore, rollback and dashboard boundaries while its frozen scope forbids 72-hour, multi-host or production qualification claims."
     },
     {
+      "path": "docs/specs/vnext/CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1.md",
+      "expected_statement_lines": 30,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/concept-registry-production-qualification-v1.json",
+          "needle": "onebrain/concept-registry-production-qualification/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_concept_registry_production_qualification"
+        },
+        {
+          "path": "scripts/ci/test_validate_concept_registry_production_qualification.py",
+          "needle": "test_valid_but_unlisted_signer_is_rejected"
+        }
+      ],
+      "rationale": "The closed machine profile and mutation suite freeze the exact production release set/root, 2.2 GB-class bounds, four resource profiles, signed-request environment identity, owner-approved Registry signer, candidate binding and failure/release-cycle gates without claiming measured qualification."
+    },
+    {
       "path": "docs/specs/vnext/BASE_V1_AUTHORITY_AND_RECOVERY_PROFILE.md",
       "expected_statement_lines": 13,
       "evidence": [
