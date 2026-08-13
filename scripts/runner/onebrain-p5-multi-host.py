@@ -139,6 +139,7 @@ HOST_SPEC_FIELDS = {
     "durable_root_locator",
     "expected_principal",
     "ssh_destination",
+    "ssh_port",
     "known_hosts_file",
     "agent_command",
     "host_evidence_path",
@@ -451,6 +452,7 @@ def inventory_for_test_nonproduction(
                 ],
                 "durable_root_locator": f"test-only://root-{index}",
                 "expected_principal": blake3.blake3(f"principal:{host}".encode()).hexdigest(),
+                "ssh_port": 22,
                 "physical_machine_fingerprint": blake3.blake3(
                     f"machine:{host}".encode()
                 ).hexdigest(),
@@ -631,6 +633,13 @@ def _validate_inventory(
             raise P5OrchestrationError("inventory host role mismatch")
         if row.get("observed_ssh_host_key_fingerprint") != row["ssh_host_key_fingerprint"]:
             raise P5OrchestrationError("SSH host key does not match its pinned fingerprint")
+        ssh_port = row.get("ssh_port")
+        if (
+            isinstance(ssh_port, bool)
+            or not isinstance(ssh_port, int)
+            or not 1 <= ssh_port <= 65535
+        ):
+            raise P5OrchestrationError("inventory SSH port is invalid")
         for field in (
             "physical_machine_fingerprint",
             "host_evidence_sha256",
@@ -926,6 +935,13 @@ class OpenSshExecutor:
         required = ("ssh_destination", "known_hosts_file", "agent_command")
         if any(not isinstance(host.get(field), str) or not host[field] for field in required):
             raise P5OrchestrationError("production inventory lacks SSH execution fields")
+        ssh_port = host.get("ssh_port")
+        if (
+            isinstance(ssh_port, bool)
+            or not isinstance(ssh_port, int)
+            or not 1 <= ssh_port <= 65535
+        ):
+            raise P5OrchestrationError("production inventory SSH port is invalid")
         command = [
             "/usr/bin/ssh",
             "-o",
@@ -934,6 +950,8 @@ class OpenSshExecutor:
             "StrictHostKeyChecking=yes",
             "-o",
             f"UserKnownHostsFile={host['known_hosts_file']}",
+            "-p",
+            str(ssh_port),
             str(host["ssh_destination"]),
             str(host["agent_command"]),
         ]
@@ -1426,6 +1444,7 @@ def _prepare_signed_inventory(
                 "durable_root_locator",
                 "expected_principal",
                 "ssh_destination",
+                "ssh_port",
                 "known_hosts_file",
                 "agent_command",
             )

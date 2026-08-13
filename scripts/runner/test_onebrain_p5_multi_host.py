@@ -450,6 +450,32 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
         with self.assertRaisesRegex(runner.P5OrchestrationError, "inventory signature"):
             self._run(inventory=tampered)
 
+    def test_production_ssh_executor_uses_inventory_bound_port(self) -> None:
+        host = {
+            "physical_host_id": "host-a",
+            "ssh_destination": "runner-a@host-a.example",
+            "ssh_port": 10041,
+            "known_hosts_file": "/controller/known_hosts",
+            "agent_command": "/opt/onebrain/run-p5-agent",
+        }
+        with mock.patch.object(
+            runner,
+            "_run_bounded_process",
+            return_value=(0, b"[]", b""),
+        ) as process:
+            self.assertEqual(runner.OpenSshExecutor().run(host, [], 3.0), [])
+        command = process.call_args.args[0]
+        self.assertEqual(command[command.index("-p") + 1], "10041")
+        self.assertLess(command.index("-p"), command.index(host["ssh_destination"]))
+
+        for invalid in (True, 0, 65536, "10041"):
+            with self.subTest(invalid=invalid):
+                rejected = dict(host, ssh_port=invalid)
+                with self.assertRaisesRegex(
+                    runner.P5OrchestrationError, "SSH port"
+                ):
+                    runner.OpenSshExecutor().run(rejected, [], 3.0)
+
     def test_inventory_preparation_measures_topology_and_writes_closed_configs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -496,6 +522,7 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
                         "durable_root_locator": f"/var/lib/onebrain/{runner_id}",
                         "expected_principal": f"{index + 40:064x}",
                         "ssh_destination": f"{runner_id}@host-{index}.example",
+                        "ssh_port": 10000 + index,
                         "known_hosts_file": f"/controller/known-hosts-{host_id}",
                         "agent_command": f"/controller/run-{host_id}",
                         "host_evidence_path": str(evidence_path),

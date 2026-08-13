@@ -5939,6 +5939,7 @@ def validate_vnext_p5_multi_host(
             "receipt_signer_fingerprint",
             "durable_root_locator",
             "expected_principal",
+            "ssh_port",
             "physical_machine_fingerprint",
             "host_evidence_sha256",
             "placement_evidence_sha256",

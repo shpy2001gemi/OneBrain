@@ -18,7 +18,9 @@ All hosts MUST run the byte-identical signed release agent, pinned toolchain
 and pinned runner image named by the verified signed Base release request.
 
 The A→B→C→A data ring MUST use authenticated real QUIC; SSH stdio is a bounded,
-control-only channel and MUST NOT carry application data.
+control-only channel and MUST NOT carry application data. Each host's SSH TCP
+port MUST be signed into the inventory with its pinned host key; the production
+controller MUST NOT obtain that port from an unmeasured user SSH configuration.
 
 Single-host and three-process runs remain preflight and MUST emit
 `multi_host_qualified=false`; cross-platform portability is a separate Base v1
