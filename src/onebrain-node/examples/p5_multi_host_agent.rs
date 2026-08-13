@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ed25519_dalek::SigningKey;
+use onebrain_base_contract::{SourceCommitId, SourceCommitIdentity, ToolchainIdentity};
 use onebrain_node::{
     compiled_base_runtime_config, BaseRuntime, DatasetGenerationStore, OperationalCompactionPolicy,
     OperationalCompactionStore, P5DirectoryRootObserver, P5HostAgentConfig,
@@ -28,6 +29,11 @@ struct Arguments {
     network_signing_key: PathBuf,
 }
 
+enum Mode {
+    PrintCompiledBinding,
+    Run(Arguments),
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
     if let Err(error) = run().await {
@@ -40,7 +46,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     if !cfg!(target_os = "linux") {
         return Err("production P5 host agent requires Linux".into());
     }
-    let arguments = arguments()?;
+    let arguments = match arguments()? {
+        Mode::PrintCompiledBinding => {
+            print_compiled_binding()?;
+            return Ok(());
+        }
+        Mode::Run(arguments) => arguments,
+    };
     let config: P5HostAgentConfig = serde_json::from_slice(&fs::read(&arguments.config)?)?;
     fs::create_dir_all(&arguments.data_root)?;
 
@@ -118,13 +130,17 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn arguments() -> Result<Arguments, Box<dyn std::error::Error>> {
+fn arguments() -> Result<Mode, Box<dyn std::error::Error>> {
+    let raw = std::env::args().skip(1).collect::<Vec<_>>();
+    if raw == ["--print-compiled-binding"] {
+        return Ok(Mode::PrintCompiledBinding);
+    }
     let mut config = None;
     let mut data_root = None;
     let mut bind = None;
     let mut receipt_signing_key = None;
     let mut network_signing_key = None;
-    let mut values = std::env::args().skip(1);
+    let mut values = raw.into_iter();
     while let Some(argument) = values.next() {
         let value = values
             .next()
@@ -138,13 +154,50 @@ fn arguments() -> Result<Arguments, Box<dyn std::error::Error>> {
             _ => return Err(format!("unknown argument: {argument}").into()),
         }
     }
-    Ok(Arguments {
+    Ok(Mode::Run(Arguments {
         config: config.ok_or("--config is required")?,
         data_root: data_root.ok_or("--data-root is required")?,
         bind: bind.ok_or("--bind is required")?,
         receipt_signing_key: receipt_signing_key.ok_or("--receipt-signing-key is required")?,
         network_signing_key: network_signing_key.ok_or("--network-signing-key is required")?,
-    })
+    }))
+}
+
+fn print_compiled_binding() -> Result<(), Box<dyn std::error::Error>> {
+    let compiled = compiled_base_runtime_config();
+    let tuple = &compiled.compatibility_policy.current;
+    let commit = match tuple.base_commit {
+        SourceCommitIdentity::Known(SourceCommitId::Sha1(value)) => hex(&value.0),
+        SourceCommitIdentity::Known(SourceCommitId::Sha256(_)) => {
+            return Err("P5 production candidate requires a SHA-1 Git commit".into())
+        }
+        SourceCommitIdentity::Unknown => {
+            return Err("P5 production candidate commit is unknown".into())
+        }
+    };
+    let toolchain = match tuple.toolchain {
+        ToolchainIdentity::Known(value) => hex(&value.0),
+        ToolchainIdentity::Unknown => {
+            return Err("P5 production toolchain identity is unknown".into())
+        }
+    };
+    let value = serde_json::json!({
+        "candidate_commit": commit,
+        "candidate_semantic_digest": hex(&compiled.version_status.candidate_semantic_digest.0),
+        "format": "onebrain/p5-compiled-binding/1",
+        "linux_artifact_tuple_digest": hex(&compiled.version_status.artifact_tuple_digest.0),
+        "target_triple": tuple.target_triple.as_str(),
+        "toolchain_digest": toolchain,
+    });
+    let mut stdout = std::io::stdout().lock();
+    stdout.write_all(&canonical_json(value)?)?;
+    stdout.write_all(b"\n")?;
+    stdout.flush()?;
+    Ok(())
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn read_signing_key(path: &Path) -> Result<SigningKey, Box<dyn std::error::Error>> {

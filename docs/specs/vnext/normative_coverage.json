@@ -771,7 +771,7 @@
     },
     {
       "path": "docs/specs/vnext/P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1.md",
-      "expected_statement_lines": 30,
+      "expected_statement_lines": 32,
       "evidence": [
         {
           "path": "src/test-vectors/vnext/p5-multi-host-production-qualification-v1.json",

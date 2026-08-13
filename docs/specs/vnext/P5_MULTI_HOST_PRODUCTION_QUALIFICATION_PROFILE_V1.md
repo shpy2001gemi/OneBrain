@@ -26,19 +26,43 @@ gate and MUST NOT substitute for this Linux production topology.
 
 ## 2. Candidate and inventory binding
 
-The orchestrator MUST derive candidate commit/tree, semantic digest, Linux
-artifact-tuple digest, toolchain, runner-image, agent binary/signature,
-Registry root and profile digest from one verified signed release request.
+The orchestrator MUST verify the canonical Task 28 release request v2 and its
+owner-approved qualification signature. Candidate commit/tree come from that
+request. Semantic digest, Linux artifact-tuple digest, target and toolchain are
+read from the exact compiled agent. The controller independently checks every
+file record in the exact native-bundle manifest before executing bundle code.
+The `p5-orchestrator` key signs both the agent bytes and the native-bundle
+manifest digest under the separate `p5-release-agent-signature` usage and
+domain; hashing an opaque signature file is not authentication.
+
+P5 also measures the exact existing Registry candidate files
+`concepts.obr`, `concepts.obr.ccids.idx`, `concepts.obr.labels.idx`,
+`concepts.obr.manifest.json` and `concepts.obr.verification.json`. It hashes the
+actual bytes, checks size/digest agreement with manifest and verification, and
+derives a domain-separated Registry candidate root. The P5 subgate does not
+require every future Registry resource profile. This deliberately does **not**
+set `registry_production_qualified=true` and does **not** satisfy
+`BASE-GATE-V1`.
 
 Every host MUST use the identical candidate/environment binding, and neither a
 producer nor an operator-supplied command may override a derived identity.
 
-The signed inventory MUST pin each physical host ID, runner identity, SSH host
-key, receipt role/key, durable-root locator and expected principal, plus the
-orchestrator runner and receipt key.
+The orchestrator-signed inventory MUST pin each physical host ID, runner
+identity, observed and expected SSH host key, machine fingerprint, complete
+host-evidence and placement-evidence SHA-256, receipt role/key, durable-root
+locator and expected principal, plus the exact limitations and Registry
+candidate measurement.
 
 Duplicate physical hosts, runner identities, durable roots, principals, SSH
 host keys or receipt keys MUST fail before the first remote command.
+
+Topology admission may be based on provider-signed placement, a bare-metal
+lease/inventory receipt, or an owner-signed out-of-band verification of the
+provider's placement statement. In the owner-attested case the signed
+inventory MUST bind the exact complete host-evidence and placement-evidence
+SHA-256 for all three hosts; an unsigned telephone note by itself is not a
+machine receipt. This accepts the owner's signed evidence judgment without
+claiming that it came from a provider API.
 
 ## 3. Receipt trust policy
 
@@ -55,6 +79,12 @@ Linux artifact tuple, release-agent binary/signature, Registry root, profile
 and trust-policy digests, runner/SSH identity, monotonic command sequence,
 fault, before/after roots, bounded resource observation, result and
 limitations.
+
+Every child receipt and the aggregate MUST carry the frozen limitations:
+the receipt is evidence rather than authority, aggregate qualification is
+orchestrator-owned, Registry candidate bytes are bound without full Registry
+profile qualification, Registry resource profiles remain pending, Registry
+production qualification is not claimed, and `BASE-GATE-V1` is not claimed.
 
 The aggregate root MUST cover canonical ordered child-receipt bytes only; the
 aggregate report and detached orchestrator signature MUST remain outside the
@@ -118,3 +148,7 @@ any failed exit oracle MUST force `multi_host_qualified=false`.
 This document freezes the contract and owner-approved public signer identities;
 it is not measured multi-host evidence and does not set
 `multi_host_qualified=true`.
+
+Even after a measured P5 run sets the P5-only `multi_host_qualified` field,
+`registry_production_qualified` and `base_gate_v1_qualified` remain false until
+their separate future gates are complete.

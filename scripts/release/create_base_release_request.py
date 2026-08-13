@@ -367,7 +367,12 @@ def _fsync_directory(path: Path) -> None:
 
 
 def verify_task28_release_request(
-    request_path: Path, signature_path: Path, signer_policy_path: Path
+    request_path: Path,
+    signature_path: Path,
+    signer_policy_path: Path,
+    *,
+    gpg_home: Path | None = None,
+    gpg_executable: Path | None = None,
 ) -> dict[str, object]:
     request, payload = _task28_request_value(request_path)
     vector, _ = _json_file(signer_policy_path.resolve(strict=True), "signer vector")
@@ -382,9 +387,19 @@ def verify_task28_release_request(
     expires = datetime.fromisoformat(str(request["expires_utc"]).replace("Z", "+00:00"))
     if expires - created != REQUEST_VALIDITY:
         raise ReleaseRequestCreationError("Task 28 request validity is not exactly 168 hours")
-    gpg = _default_gpg()
+    gpg = (
+        gpg_executable.resolve(strict=True)
+        if gpg_executable is not None
+        else _default_gpg()
+    )
+    gpg_prefix = [str(gpg), "--batch", "--no-tty"]
+    if gpg_home is not None:
+        resolved_home = gpg_home.resolve(strict=True)
+        if not resolved_home.is_dir():
+            raise ReleaseRequestCreationError("Task 28 GPG home must be a directory")
+        gpg_prefix.extend(["--homedir", str(resolved_home)])
     completed = subprocess.run(
-        [str(gpg), "--batch", "--no-tty", "--status-fd", "1", "--verify", str(signature_path), str(request_path)],
+        [*gpg_prefix, "--status-fd", "1", "--verify", str(signature_path), str(request_path)],
         capture_output=True,
         text=True,
         check=False,
@@ -405,7 +420,7 @@ def verify_task28_release_request(
     if not created <= signed < expires:
         raise ReleaseRequestCreationError("Task 28 request signature timestamp is outside validity")
     exported = subprocess.run(
-        [str(gpg), "--batch", "--export", str(signer["fingerprint"])],
+        [*gpg_prefix, "--export", str(signer["fingerprint"])],
         capture_output=True,
         check=False,
     )

@@ -5852,14 +5852,14 @@ def validate_vnext_p5_multi_host(
         raise ContractError("P5 multi-host scope drift")
 
     expected_reference = {
-        "identity_source": "verified-signed-release-request",
+        "identity_source": "verified-task28-request-v2-plus-compiled-agent-and-measured-registry-candidate",
         "required_pinned_fields": [
             "candidate_commit",
             "candidate_tree",
             "candidate_semantic_digest",
             "linux_artifact_tuple_digest",
             "toolchain_digest",
-            "runner_image_digest",
+            "runner_bundle_manifest_digest",
             "agent_binary_digest",
             "agent_signature_digest",
             "registry_root",
@@ -5871,13 +5871,13 @@ def validate_vnext_p5_multi_host(
             "candidate_tree",
             "linux_artifact_tuple_digest",
             "toolchain_digest",
-            "runner_image_digest",
+            "runner_bundle_manifest_digest",
             "agent_binary_digest",
             "agent_signature_digest",
             "registry_root",
             "profile_digest",
         ],
-        "byte_identical_signed_release_agent": True,
+        "byte_identical_cryptographically_signed_release_agent": True,
         "producer_override": False,
     }
     if profile.get("reference_environment") != expected_reference:
@@ -5919,6 +5919,12 @@ def validate_vnext_p5_multi_host(
         "independent_durable_roots": 3,
         "independent_principals": 3,
         "shared_root_or_principal_policy": "reject",
+        "accepted_placement_authorities": [
+            "provider-signed-placement",
+            "bare-metal-lease-inventory",
+            "owner-signed-out-of-band-provider-verification",
+        ],
+        "owner_attestation_binding": "signed-inventory-plus-exact-host-and-placement-evidence-sha256",
     }:
         raise ContractError("P5 multi-host topology drift")
 
@@ -5928,10 +5934,14 @@ def validate_vnext_p5_multi_host(
             "runner_identity",
             "ssh_host_key_algorithm",
             "ssh_host_key_fingerprint",
+            "observed_ssh_host_key_fingerprint",
             "receipt_role",
             "receipt_signer_fingerprint",
             "durable_root_locator",
             "expected_principal",
+            "physical_machine_fingerprint",
+            "host_evidence_sha256",
+            "placement_evidence_sha256",
         ],
         "required_orchestrator_fields": [
             "runner_identity",
@@ -6041,7 +6051,7 @@ def validate_vnext_p5_multi_host(
         "canonicalization": "utf8-json-sorted-keys-no-whitespace",
         "digest_algorithm": "BLAKE3-derive-key-v1",
         "digest_context": "onebrain:p5:trust-policy:1",
-        "digest_hex": "deac187c74148dbeb9db4c29590b862121cff44506be2efc79f30d688868987b",
+        "digest_hex": "9aa666fedfc1ee3ee76cf814b9027d06dc1e243a0937001f8df10e996bf7572d",
         "fingerprint_algorithm": "BLAKE3-derive-key-v1",
         "fingerprint_context": "onebrain:p5:evidence-signer-fingerprint:1",
         "policy": {
@@ -6049,6 +6059,7 @@ def validate_vnext_p5_multi_host(
             "allowed_usages": [
                 "p5-host-receipt",
                 "p5-orchestrator-aggregate",
+                "p5-release-agent-signature",
             ],
             "format": "onebrain/p5-multi-host-trust-policy/1",
             "role_bindings": expected_role_bindings,
@@ -6068,6 +6079,8 @@ def validate_vnext_p5_multi_host(
         "candidate_tree",
         "candidate_semantic_digest",
         "linux_artifact_tuple_digest",
+        "toolchain_digest",
+        "runner_bundle_manifest_digest",
         "agent_binary_digest",
         "agent_signature_digest",
         "registry_root",
@@ -6075,6 +6088,9 @@ def validate_vnext_p5_multi_host(
         "trust_policy_digest",
         "runner_identity",
         "ssh_host_key_fingerprint",
+        "physical_machine_fingerprint",
+        "host_evidence_sha256",
+        "placement_evidence_sha256",
         "command_sequence",
         "command",
         "fault_id",
@@ -6109,6 +6125,8 @@ def validate_vnext_p5_multi_host(
         "candidate_tree",
         "candidate_semantic_digest",
         "linux_artifact_tuple_digest",
+        "toolchain_digest",
+        "runner_bundle_manifest_digest",
         "agent_binary_digest",
         "agent_signature_digest",
         "registry_root",
@@ -6177,8 +6195,35 @@ def validate_vnext_p5_multi_host(
         "measured_evidence_committed": False,
         "multi_host_qualified": False,
         "portability_qualified": False,
+        "registry_production_qualified": False,
+        "base_gate_v1_qualified": False,
     }:
         raise ContractError("P5 multi-host qualification state drift")
+
+    if profile.get("required_limitations") != [
+        "aggregate-qualification-is-orchestrator-owned",
+        "base-gate-v1-not-claimed",
+        "receipt-is-evidence-not-authority",
+        "registry-candidate-bytes-bound-without-full-profile-qualification",
+        "registry-production-qualification-not-claimed",
+        "registry-production-resource-profiles-pending",
+    ]:
+        raise ContractError("P5 multi-host limitations drift")
+    if profile.get("registry_candidate_binding") != {
+        "format": "onebrain/p5-registry-candidate-binding/1",
+        "files": [
+            "concepts.obr",
+            "concepts.obr.ccids.idx",
+            "concepts.obr.labels.idx",
+            "concepts.obr.manifest.json",
+            "concepts.obr.verification.json",
+        ],
+        "root_domain": "onebrain:p5:registry-candidate-binding:1\\0",
+        "full_registry_profile_required_for_p5_subgate": False,
+        "registry_production_qualified": False,
+        "base_gate_v1_qualified": False,
+    }:
+        raise ContractError("P5 Registry candidate binding drift")
 
     spec = read(VNEXT / "P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1.md")
     for needle in (

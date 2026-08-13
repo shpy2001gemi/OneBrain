@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import blake3
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -54,6 +58,8 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
             "candidate_tree": "44" * 20,
             "candidate_semantic_digest": "55" * 32,
             "linux_artifact_tuple_digest": "66" * 32,
+            "toolchain_digest": "67" * 32,
+            "runner_bundle_manifest_digest": "68" * 32,
             "agent_binary_digest": "77" * 32,
             "agent_signature_digest": "88" * 32,
             "registry_root": "99" * 32,
@@ -105,6 +111,9 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
         self.assertEqual(report["distinct_physical_hosts"], 3)
         self.assertEqual(report["verified_child_receipts"], 39)
         self.assertFalse(report["multi_host_qualified"])
+        self.assertFalse(report["registry_production_qualified"])
+        self.assertFalse(report["base_gate_v1_qualified"])
+        self.assertEqual(report["limitations"], runner.REQUIRED_PRODUCTION_LIMITATIONS)
         self.assertEqual(report["evidence_tier"], "nonproduction-test")
         unsigned = {
             key: value
@@ -151,6 +160,7 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
     def test_pinned_ssh_host_key_mismatch_is_rejected(self) -> None:
         inventory = copy.deepcopy(self.inventory)
         inventory["hosts"][0]["observed_ssh_host_key_fingerprint"] = "ff" * 32
+        self._resign_inventory(inventory)
         with self.assertRaisesRegex(runner.P5OrchestrationError, "SSH host key"):
             self._run(inventory=inventory)
 
@@ -211,6 +221,7 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
             with self.subTest(field=field):
                 inventory = copy.deepcopy(self.inventory)
                 inventory["hosts"][1][field] = inventory["hosts"][0][field]
+                self._resign_inventory(inventory)
                 with self.assertRaisesRegex(runner.P5OrchestrationError, "duplicate"):
                     self._run(inventory=inventory)
 
@@ -261,11 +272,301 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
         with self.assertRaisesRegex(runner.P5OrchestrationError, "allowlisted"):
             self._run(receipts=receipts)
 
+    def test_registry_candidate_binding_hashes_real_bytes_and_rejects_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            obr = b"obr-candidate-bytes"
+            labels = b"label-index"
+            ccids = b"ccid-index"
+            (root / "concepts.obr").write_bytes(obr)
+            (root / "concepts.obr.labels.idx").write_bytes(labels)
+            (root / "concepts.obr.ccids.idx").write_bytes(ccids)
+            manifest = {
+                "manifest_version": 1,
+                "obr_blake3": blake3.blake3(obr).hexdigest(),
+                "label_index": {
+                    "blake3": blake3.blake3(labels).hexdigest(),
+                    "file_size": len(labels),
+                },
+                "ccid_index": {
+                    "blake3": blake3.blake3(ccids).hexdigest(),
+                    "file_size": len(ccids),
+                },
+            }
+            verification = {
+                "file_size": len(obr),
+                "obr_blake3": manifest["obr_blake3"],
+                "label_index": manifest["label_index"],
+                "ccid_index": manifest["ccid_index"],
+            }
+            (root / "concepts.obr.manifest.json").write_text(
+                json.dumps(manifest), encoding="utf-8"
+            )
+            (root / "concepts.obr.verification.json").write_text(
+                json.dumps(verification), encoding="utf-8"
+            )
+
+            measured = runner._registry_candidate_binding(root)
+            self.assertEqual(measured["format"], "onebrain/p5-registry-candidate-binding/1")
+            self.assertFalse(measured["registry_production_qualified"])
+            self.assertEqual(len(measured["files"]), 5)
+            self.assertEqual(len(measured["root"]), 64)
+
+            (root / "concepts.obr.labels.idx").write_bytes(labels + b"tamper")
+            with self.assertRaisesRegex(runner.P5OrchestrationError, "label index"):
+                runner._registry_candidate_binding(root)
+
+    def test_agent_signature_is_verified_not_only_hashed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            agent = root / "agent"
+            signature = root / "agent.sig"
+            agent.write_bytes(b"exact-agent")
+            manifest_digest = "ab" * 32
+            signature.write_bytes(
+                self.orchestrator_key.sign(
+                    runner.agent_signature_message(agent.read_bytes(), manifest_digest)
+                )
+            )
+            digest = runner._verify_agent_signature(
+                agent.read_bytes(), manifest_digest, signature, self.profile
+            )
+            self.assertEqual(digest, blake3.blake3(signature.read_bytes()).hexdigest())
+
+            agent.write_bytes(b"mutated-agent")
+            with self.assertRaisesRegex(runner.P5OrchestrationError, "agent signature"):
+                runner._verify_agent_signature(
+                    agent.read_bytes(), manifest_digest, signature, self.profile
+                )
+            with self.assertRaisesRegex(runner.P5OrchestrationError, "agent signature"):
+                runner._verify_agent_signature(
+                    b"exact-agent", "ac" * 32, signature, self.profile
+                )
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux bundle-mode contract")
+    def test_bundle_manifest_is_verified_without_executing_bundle_scripts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            commit = "12" * 20
+            tree = "34" * 20
+            files = {
+                "bin/p5_multi_host_agent": b"signed-agent-bytes",
+                "metadata/BUILD-PROVENANCE.json": b"{\"build\":true}\n",
+                "metadata/candidate-commit.txt": (commit + "\n").encode(),
+                "metadata/candidate-tree.txt": (tree + "\n").encode(),
+                "scripts/verify.sh": b"#!/bin/sh\ntouch verifier-was-executed\n",
+            }
+            for relative, bytes_value in files.items():
+                path = root.joinpath(*relative.split("/"))
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(bytes_value)
+                path.chmod(0o555 if relative.startswith(("bin/", "scripts/")) else 0o444)
+            sums = b"".join(
+                f"{hashlib.sha256(files[path]).hexdigest()}  {path}\n".encode()
+                for path in sorted(files)
+            )
+            sums_path = root / "metadata" / "SHA256SUMS"
+            sums_path.write_bytes(sums)
+            sums_path.chmod(0o444)
+            files["metadata/SHA256SUMS"] = sums
+            rows = []
+            for relative in sorted(files):
+                bytes_value = files[relative]
+                rows.append(
+                    {
+                        "blake3": blake3.blake3(bytes_value).hexdigest(),
+                        "mode": "0555" if relative.startswith(("bin/", "scripts/")) else "0444",
+                        "path": relative,
+                        "sha256": hashlib.sha256(bytes_value).hexdigest(),
+                        "size": len(bytes_value),
+                    }
+                )
+            provenance = files["metadata/BUILD-PROVENANCE.json"]
+            manifest = {
+                "build": {
+                    "digest": hashlib.sha256(provenance).hexdigest(),
+                    "platform": "linux/x64",
+                    "source_date_epoch": 1,
+                },
+                "candidate": {
+                    "id": commit,
+                    "source_digest": "56" * 32,
+                    "version": tree,
+                },
+                "files": rows,
+                "format": "onebrain/base-v1-native-runner-bundle/1",
+                "private_material_included": False,
+                "qualification_tier": "prepared-not-production-qualified",
+                "required_runtime": {
+                    "architecture": "x64",
+                    "minimum_glibc": "2.39",
+                    "os": "linux",
+                },
+            }
+            manifest_path = root / "metadata" / "bundle.manifest.json"
+            manifest_path.write_bytes(runner._canonical_json(manifest))
+            manifest_path.chmod(0o444)
+            digest, agent_bytes = runner._bundle_manifest_binding(
+                root,
+                root / "bin" / "p5_multi_host_agent",
+                candidate_commit=commit,
+                candidate_tree=tree,
+            )
+            self.assertEqual(digest, blake3.blake3(manifest_path.read_bytes()).hexdigest())
+            self.assertEqual(agent_bytes, b"signed-agent-bytes")
+            self.assertFalse((root / "verifier-was-executed").exists())
+            (root / "scripts" / "verify.sh").chmod(0o755)
+            (root / "scripts" / "verify.sh").write_bytes(b"tampered")
+            with self.assertRaisesRegex(runner.P5OrchestrationError, "file differs"):
+                runner._bundle_manifest_binding(
+                    root,
+                    root / "bin" / "p5_multi_host_agent",
+                    candidate_commit=commit,
+                    candidate_tree=tree,
+                )
+
+    def test_inventory_and_every_receipt_bind_topology_evidence_and_limitations(self) -> None:
+        self.assertEqual(
+            self.inventory["limitations"], runner.REQUIRED_PRODUCTION_LIMITATIONS
+        )
+        self.assertIn("signature", self.inventory)
+        for host in self.inventory["hosts"]:
+            for field in (
+                "physical_machine_fingerprint",
+                "host_evidence_sha256",
+                "placement_evidence_sha256",
+            ):
+                self.assertEqual(len(host[field]), 64)
+        for receipts in self.receipts.values():
+            for receipt in receipts:
+                payload = receipt["payload"]
+                self.assertEqual(payload["limitations"], runner.REQUIRED_PRODUCTION_LIMITATIONS)
+                self.assertIn("physical_machine_fingerprint", payload)
+                self.assertIn("host_evidence_sha256", payload)
+                self.assertIn("placement_evidence_sha256", payload)
+
+        tampered = copy.deepcopy(self.inventory)
+        tampered["hosts"][0]["placement_evidence_sha256"] = "ff" * 32
+        with self.assertRaisesRegex(runner.P5OrchestrationError, "inventory signature"):
+            self._run(inventory=tampered)
+
+    def test_inventory_preparation_measures_topology_and_writes_closed_configs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rows = []
+            expected_machine_fingerprints = set()
+            roles = runner._role_bindings(self.profile)
+            for index, host_id in enumerate(("host-a", "host-b", "host-c"), start=1):
+                runner_id = f"runner-{host_id[-1]}"
+                placement = {
+                    "account_scope_digest": f"{index:064x}",
+                    "collected_at": "2026-08-14T00:00:00Z",
+                    "collector_identity": "onebrain-owner-telephone-verifier-v1",
+                    "instance_id": f"instance-{host_id}",
+                    "physical_host_id": f"owner-phone-attested:{index:064x}",
+                    "placement_group": f"region-{index}",
+                    "provider": f"provider-{index}",
+                    "receipt_sha256": f"{index + 10:064x}",
+                    "receipt_verified": True,
+                }
+                host_evidence = {
+                    "format": "onebrain/host-evidence/1",
+                    "runner_id": runner_id,
+                    "machine_id_sha256": {"status": "ok", "value": f"{index + 20:064x}"},
+                    "virtualization": {"status": "ok", "value": "kvm"},
+                    "placement": placement,
+                }
+                evidence_path = root / f"{host_id}-evidence.json"
+                placement_path = root / f"{host_id}-placement.json"
+                evidence_path.write_bytes(runner._canonical_json(host_evidence))
+                placement_path.write_bytes(runner._canonical_json(placement))
+                expected_machine_fingerprints.add(
+                    runner._physical_machine_fingerprint(host_evidence, placement)
+                )
+                receipt_role = f"p5-host:{host_id}"
+                rows.append(
+                    {
+                        "physical_host_id": host_id,
+                        "runner_identity": runner_id,
+                        "ssh_host_key_algorithm": "ssh-ed25519",
+                        "ssh_host_key_fingerprint": f"{index + 30:064x}",
+                        "observed_ssh_host_key_fingerprint": f"{index + 30:064x}",
+                        "receipt_role": receipt_role,
+                        "receipt_signer_fingerprint": roles[receipt_role]["fingerprint_hex"],
+                        "durable_root_locator": f"/var/lib/onebrain/{runner_id}",
+                        "expected_principal": f"{index + 40:064x}",
+                        "ssh_destination": f"{runner_id}@host-{index}.example",
+                        "known_hosts_file": f"/controller/known-hosts-{host_id}",
+                        "agent_command": f"/controller/run-{host_id}",
+                        "host_evidence_path": str(evidence_path),
+                        "placement_evidence_path": str(placement_path),
+                        "remote_agent_signature_path": "/etc/onebrain/p5-agent.sig",
+                    }
+                )
+            host_spec = root / "hosts.json"
+            host_spec.write_bytes(
+                runner._canonical_json(
+                    {"format": "onebrain/p5-production-host-spec/1", "hosts": rows}
+                )
+            )
+            registry = {
+                "format": "onebrain/p5-registry-candidate-binding/1",
+                "registry_production_qualified": False,
+                "root": self.binding["registry_root"],
+                "files": [],
+            }
+            output_root = root / "configs"
+            with (
+                mock.patch.object(runner, "_profile", return_value=self.profile),
+                mock.patch.object(
+                    runner,
+                    "_derive_verified_binding",
+                    return_value=(self.binding, registry),
+                ),
+            ):
+                inventory = runner._prepare_signed_inventory(
+                    args=mock.Mock(),
+                    host_spec_path=host_spec,
+                    signing_key=self.orchestrator_key,
+                    config_output_root=output_root,
+                )
+            self.assertEqual(inventory["limitations"], runner.REQUIRED_PRODUCTION_LIMITATIONS)
+            self.assertFalse(inventory["registry_candidate"]["registry_production_qualified"])
+            self.assertEqual(
+                {row["physical_machine_fingerprint"] for row in inventory["hosts"]},
+                expected_machine_fingerprints,
+            )
+            unsigned = {
+                field: inventory[field] for field in runner.INVENTORY_UNSIGNED_FIELDS
+            }
+            self.orchestrator_key.public_key().verify(
+                bytes.fromhex(inventory["signature"]),
+                runner.inventory_signature_message(unsigned),
+            )
+            for host_id in ("host-a", "host-b", "host-c"):
+                config_path = output_root / f"{host_id}-agent-config.json"
+                config = json.loads(config_path.read_bytes())
+                self.assertEqual(config["binding"], self.binding)
+                self.assertEqual(config["evidence_tier"], "production-reference")
+                self.assertEqual(config["limitations"], runner.REQUIRED_PRODUCTION_LIMITATIONS)
+            with self.assertRaises(FileExistsError):
+                runner._write_atomic(
+                    output_root / "host-a-agent-config.json", b"must-not-clobber\n"
+                )
+
     def _resign(
         self, receipt: dict[str, object], signing_key: Ed25519PrivateKey
     ) -> None:
         receipt["signature"] = signing_key.sign(
             runner.child_receipt_signature_message(receipt["payload"])
+        ).hex()
+
+    def _resign_inventory(self, inventory: dict[str, object]) -> None:
+        unsigned = {
+            field: inventory[field] for field in runner.INVENTORY_UNSIGNED_FIELDS
+        }
+        inventory["signature"] = self.orchestrator_key.sign(
+            runner.inventory_signature_message(unsigned)
         ).hex()
 
 

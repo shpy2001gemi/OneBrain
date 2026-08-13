@@ -42,10 +42,11 @@ pub const P5_CONTROL_FORMAT: &str = "onebrain/p5-multi-host-control/1";
 pub const P5_CHILD_RECEIPT_FORMAT: &str = "onebrain/p5-multi-host-child-receipt/1";
 pub const P5_CONTROL_DOMAIN: &[u8] = b"onebrain:p5:multi-host-control:1\0";
 pub const P5_CHILD_RECEIPT_DOMAIN: &[u8] = b"onebrain:p5:multi-host-child-receipt:1\0";
+pub const P5_AGENT_SIGNATURE_DOMAIN: &[u8] = b"onebrain:p5:release-agent-signature:1\0";
 pub const P5_FINGERPRINT_CONTEXT: &str = "onebrain:p5:evidence-signer-fingerprint:1";
 pub const P5_TRUST_POLICY_DIGEST: [u8; 32] = [
-    0xde, 0xac, 0x18, 0x7c, 0x74, 0x14, 0x8d, 0xbe, 0xb9, 0xdb, 0x4c, 0x29, 0x59, 0x0b, 0x86, 0x21,
-    0x21, 0xcf, 0xf4, 0x45, 0x06, 0xbe, 0x2e, 0xfc, 0x79, 0xf3, 0x0d, 0x68, 0x88, 0x69, 0x87, 0xb8,
+    0x9a, 0xa6, 0x66, 0xfe, 0xdf, 0xc1, 0xee, 0x3e, 0xe7, 0x6c, 0xf8, 0x14, 0xb9, 0x02, 0x7d, 0x06,
+    0xdc, 0x1e, 0x24, 0x3a, 0x09, 0x37, 0x00, 0x1f, 0x8d, 0xf1, 0x0e, 0x99, 0x6b, 0xf7, 0x57, 0x2d,
 ];
 pub const P5_ORCHESTRATOR_PUBLIC_KEY: [u8; 32] = [
     0xcc, 0xe7, 0xda, 0x80, 0xb2, 0x55, 0xed, 0x3a, 0x67, 0xa8, 0x41, 0x4f, 0x79, 0xe7, 0x00, 0xbb,
@@ -111,6 +112,8 @@ pub struct P5CandidateBindingV1 {
     pub candidate_tree: String,
     pub candidate_semantic_digest: String,
     pub linux_artifact_tuple_digest: String,
+    pub toolchain_digest: String,
+    pub runner_bundle_manifest_digest: String,
     pub agent_binary_digest: String,
     pub agent_signature_digest: String,
     pub registry_root: String,
@@ -141,6 +144,12 @@ impl P5CandidateBindingV1 {
             (
                 "linux_artifact_tuple_digest",
                 self.linux_artifact_tuple_digest.as_str(),
+                32,
+            ),
+            ("toolchain_digest", self.toolchain_digest.as_str(), 32),
+            (
+                "runner_bundle_manifest_digest",
+                self.runner_bundle_manifest_digest.as_str(),
                 32,
             ),
             ("agent_binary_digest", self.agent_binary_digest.as_str(), 32),
@@ -271,6 +280,9 @@ pub struct P5ChildReceiptPayloadV1 {
     pub binding: P5CandidateBindingV1,
     pub runner_identity: String,
     pub ssh_host_key_fingerprint: String,
+    pub physical_machine_fingerprint: String,
+    pub host_evidence_sha256: String,
+    pub placement_evidence_sha256: String,
     pub command_sequence: u64,
     pub command: String,
     pub fault_id: String,
@@ -404,11 +416,14 @@ pub struct P5HostAgentConfig {
     pub runner_identity: String,
     pub ssh_host_key_fingerprint: String,
     pub physical_machine_fingerprint: String,
+    pub host_evidence_sha256: String,
+    pub placement_evidence_sha256: String,
     pub durable_root_locator: String,
     pub expected_principal: String,
     pub agent_signature_path: PathBuf,
     pub binding: P5CandidateBindingV1,
     pub evidence_tier: String,
+    pub limitations: Vec<String>,
 }
 
 pub struct P5MultiHostAgent {
@@ -441,14 +456,37 @@ impl P5MultiHostAgent {
         }
         config.binding.validate()?;
         let executable = std::env::current_exe()?;
-        let executable_digest = blake3::hash(&fs::read(executable)?).to_hex().to_string();
-        let signature_digest = blake3::hash(&fs::read(&config.agent_signature_path)?)
-            .to_hex()
-            .to_string();
+        let executable_bytes = fs::read(executable)?;
+        let executable_digest = blake3::hash(&executable_bytes).to_hex().to_string();
+        let signature_bytes = fs::read(&config.agent_signature_path)?;
+        let signature_digest = blake3::hash(&signature_bytes).to_hex().to_string();
+        let mut signature_message = Vec::with_capacity(P5_AGENT_SIGNATURE_DOMAIN.len() + 64);
+        signature_message.extend_from_slice(P5_AGENT_SIGNATURE_DOMAIN);
+        signature_message.extend_from_slice(blake3::hash(&executable_bytes).as_bytes());
+        signature_message.extend_from_slice(&decode_hex_32(
+            &config.binding.runner_bundle_manifest_digest,
+        )?);
+        let agent_signature =
+            Signature::from_slice(&signature_bytes).map_err(|_| P5MultiHostError::HostIdentity)?;
+        VerifyingKey::from_bytes(&P5_ORCHESTRATOR_PUBLIC_KEY)
+            .map_err(|_| P5MultiHostError::FrozenSigner)?
+            .verify(&signature_message, &agent_signature)
+            .map_err(|_| P5MultiHostError::HostIdentity)?;
         if config.runner_identity.is_empty()
             || config.durable_root_locator.is_empty()
             || decode_hex_32(&config.ssh_host_key_fingerprint).is_err()
             || decode_hex_32(&config.physical_machine_fingerprint).is_err()
+            || decode_hex_32(&config.host_evidence_sha256).is_err()
+            || decode_hex_32(&config.placement_evidence_sha256).is_err()
+            || config.limitations
+                != [
+                    "aggregate-qualification-is-orchestrator-owned",
+                    "base-gate-v1-not-claimed",
+                    "receipt-is-evidence-not-authority",
+                    "registry-candidate-bytes-bound-without-full-profile-qualification",
+                    "registry-production-qualification-not-claimed",
+                    "registry-production-resource-profiles-pending",
+                ]
             || decode_hex_32(&config.expected_principal)? != network.status().principal
             || executable_digest != config.binding.agent_binary_digest
             || signature_digest != config.binding.agent_signature_digest
@@ -533,6 +571,9 @@ impl P5MultiHostAgent {
             binding: self.config.binding.clone(),
             runner_identity: self.config.runner_identity.clone(),
             ssh_host_key_fingerprint: self.config.ssh_host_key_fingerprint.clone(),
+            physical_machine_fingerprint: self.config.physical_machine_fingerprint.clone(),
+            host_evidence_sha256: self.config.host_evidence_sha256.clone(),
+            placement_evidence_sha256: self.config.placement_evidence_sha256.clone(),
             command_sequence: verified.payload.command_sequence,
             command: command_name(&verified.payload.command).to_owned(),
             fault_id: fault.as_str().to_owned(),
@@ -540,10 +581,7 @@ impl P5MultiHostAgent {
             after_roots: after,
             resource_observation: resource,
             result: "pass".to_owned(),
-            limitations: vec![
-                "receipt-is-evidence-not-authority".to_owned(),
-                "aggregate-qualification-is-orchestrator-owned".to_owned(),
-            ],
+            limitations: self.config.limitations.clone(),
         };
         let receipt = self
             .receipt_signer
@@ -1286,6 +1324,8 @@ mod tests {
             candidate_tree: "44".repeat(20),
             candidate_semantic_digest: "55".repeat(32),
             linux_artifact_tuple_digest: "66".repeat(32),
+            toolchain_digest: "67".repeat(32),
+            runner_bundle_manifest_digest: "68".repeat(32),
             agent_binary_digest: "77".repeat(32),
             agent_signature_digest: "88".repeat(32),
             registry_root: "99".repeat(32),
@@ -1381,6 +1421,9 @@ mod tests {
                     binding: binding(),
                     runner_identity: "test".to_owned(),
                     ssh_host_key_fingerprint: "ab".repeat(32),
+                    physical_machine_fingerprint: "ac".repeat(32),
+                    host_evidence_sha256: "ad".repeat(32),
+                    placement_evidence_sha256: "ae".repeat(32),
                     command_sequence: sequence,
                     command: "base-status".to_owned(),
                     fault_id: "explicit-re-enable".to_owned(),
@@ -1546,11 +1589,14 @@ mod tests {
                 runner_identity: "test-runner".to_owned(),
                 ssh_host_key_fingerprint: "09".repeat(32),
                 physical_machine_fingerprint: "0a".repeat(32),
+                host_evidence_sha256: "0b".repeat(32),
+                placement_evidence_sha256: "0c".repeat(32),
                 durable_root_locator: "test-only://root-a".to_owned(),
                 expected_principal: hex32(network.status().principal),
                 agent_signature_path: temp.path().join("test-agent-signature"),
                 binding: exact_binding.clone(),
                 evidence_tier: "nonproduction-test".to_owned(),
+                limitations: vec!["test-only".to_owned()],
             },
             temp.path().join("control.json"),
             &control_key,
