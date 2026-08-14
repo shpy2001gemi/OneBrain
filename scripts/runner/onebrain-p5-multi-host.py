@@ -1271,11 +1271,7 @@ def _bundle_manifest_binding(
                 actual_paths.append(relative)
     if sorted(actual_paths) != expected_paths:
         raise P5OrchestrationError("native bundle filesystem differs from manifest inventory")
-    sums = b"".join(
-        f"{hashlib.sha256(measured[path]).hexdigest()}  {path}\n".encode("ascii")
-        for path in expected_paths
-        if path != "metadata/SHA256SUMS"
-    )
+    sums = _canonical_native_bundle_sha256sums(measured, expected_paths)
     if measured.get("metadata/SHA256SUMS") != sums:
         raise P5OrchestrationError("native bundle SHA256SUMS differs from manifest records")
     if hashlib.sha256(measured.get("metadata/BUILD-PROVENANCE.json", b"")).hexdigest() != build["digest"]:
@@ -1287,6 +1283,16 @@ def _bundle_manifest_binding(
     if "bin/p5_multi_host_agent" not in measured:
         raise P5OrchestrationError("native bundle lacks the P5 release agent")
     return blake3.blake3(manifest_bytes).hexdigest(), measured["bin/p5_multi_host_agent"]
+
+
+def _canonical_native_bundle_sha256sums(
+    measured: dict[str, bytes], expected_paths: list[str]
+) -> bytes:
+    return b"".join(
+        f"{hashlib.sha256(measured[path]).hexdigest()} *{path}\n".encode("ascii")
+        for path in expected_paths
+        if path != "metadata/SHA256SUMS"
+    )
 
 
 def _derive_verified_binding(

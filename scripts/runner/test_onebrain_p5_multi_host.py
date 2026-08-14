@@ -409,7 +409,7 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
                 path.write_bytes(bytes_value)
                 path.chmod(0o555 if relative.startswith(("bin/", "scripts/")) else 0o444)
             sums = b"".join(
-                f"{hashlib.sha256(files[path]).hexdigest()}  {path}\n".encode()
+                f"{hashlib.sha256(files[path]).hexdigest()} *{path}\n".encode()
                 for path in sorted(files)
             )
             sums_path = root / "metadata" / "SHA256SUMS"
@@ -428,6 +428,7 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
                         "size": len(bytes_value),
                     }
                 )
+
             provenance = files["metadata/BUILD-PROVENANCE.json"]
             manifest = {
                 "build": {
@@ -471,6 +472,19 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
                     candidate_commit=commit,
                     candidate_tree=tree,
                 )
+
+    def test_bundle_sha256sums_uses_gnu_binary_marker(self) -> None:
+        payload = b"native-bundle-payload"
+        expected = (
+            f"{hashlib.sha256(payload).hexdigest()} *README.md\n".encode("ascii")
+        )
+        self.assertEqual(
+            runner._canonical_native_bundle_sha256sums(
+                {"README.md": payload, "metadata/SHA256SUMS": b"ignored"},
+                ["README.md", "metadata/SHA256SUMS"],
+            ),
+            expected,
+        )
 
     def test_inventory_and_every_receipt_bind_topology_evidence_and_limitations(self) -> None:
         self.assertEqual(
