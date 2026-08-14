@@ -132,6 +132,53 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
             bytes.fromhex(report["aggregate_signature"]), message
         )
 
+    def test_nonproduction_receipts_cannot_be_relabelled_as_production(self) -> None:
+        receipts = copy.deepcopy(self.receipts)
+        for rows in receipts.values():
+            for receipt in rows:
+                receipt["evidence_tier"] = "production-reference"
+        executor = FakeSshExecutor(receipts)
+        with (
+            mock.patch.object(runner, "_validate_profile"),
+            self.assertRaisesRegex(
+                runner.P5OrchestrationError,
+                "inventory evidence_tier|child receipt signature",
+            ),
+        ):
+            runner._run_multi_host_qualification(
+                profile=self.profile,
+                inventory=self.inventory,
+                binding=self.binding,
+                executor=executor,
+                timeout_seconds=1.0,
+                production=True,
+                control_signer=self.orchestrator_key,
+            )
+
+    def test_observe_only_matrix_cannot_claim_real_quic_qualification(self) -> None:
+        inventory = copy.deepcopy(self.inventory)
+        inventory["evidence_tier"] = "production-reference"
+        self._resign_inventory(inventory)
+        receipts = copy.deepcopy(self.receipts)
+        for host_id, rows in receipts.items():
+            for receipt in rows:
+                receipt["evidence_tier"] = "production-reference"
+                self._resign(receipt, self.host_keys[host_id])
+        with mock.patch.object(runner, "_validate_profile"):
+            report = runner._run_multi_host_qualification(
+                profile=self.profile,
+                inventory=inventory,
+                binding=self.binding,
+                executor=FakeSshExecutor(receipts),
+                timeout_seconds=1.0,
+                production=True,
+                control_signer=self.orchestrator_key,
+            )
+        self.assertFalse(report["multi_host_qualified"])
+        self.assertIn(
+            "real-quic-ring-and-fault-injection-pending", report["limitations"]
+        )
+
     def test_every_ssh_control_is_bounded_and_signed_by_the_orchestrator(self) -> None:
         executor = FakeSshExecutor(self.receipts)
         runner.run_multi_host_qualification_for_test_nonproduction(
@@ -585,7 +632,9 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
         self, receipt: dict[str, object], signing_key: Ed25519PrivateKey
     ) -> None:
         receipt["signature"] = signing_key.sign(
-            runner.child_receipt_signature_message(receipt["payload"])
+            runner.child_receipt_signature_message(
+                str(receipt["evidence_tier"]), receipt["payload"]
+            )
         ).hex()
 
     def _resign_inventory(self, inventory: dict[str, object]) -> None:

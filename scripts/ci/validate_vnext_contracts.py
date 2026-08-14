@@ -6205,6 +6205,7 @@ def validate_vnext_p5_multi_host(
         "aggregate-qualification-is-orchestrator-owned",
         "base-gate-v1-not-claimed",
         "receipt-is-evidence-not-authority",
+        "real-quic-ring-and-fault-injection-pending",
         "registry-candidate-bytes-bound-without-full-profile-qualification",
         "registry-production-qualification-not-claimed",
         "registry-production-resource-profiles-pending",

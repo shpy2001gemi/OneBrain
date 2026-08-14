@@ -86,7 +86,10 @@ Every child receipt and the aggregate MUST carry the frozen limitations:
 the receipt is evidence rather than authority, aggregate qualification is
 orchestrator-owned, Registry candidate bytes are bound without full Registry
 profile qualification, Registry resource profiles remain pending, Registry
-production qualification is not claimed, and `BASE-GATE-V1` is not claimed.
+production qualification is not claimed, the real-QUIC ring and fault
+injection remain pending, and `BASE-GATE-V1` is not claimed. A three-host
+production-reference collection using only `observe-host-fault` commands MUST
+emit `multi_host_qualified=false`.
 
 The aggregate root MUST cover canonical ordered child-receipt bytes only; the
 aggregate report and detached orchestrator signature MUST remain outside the

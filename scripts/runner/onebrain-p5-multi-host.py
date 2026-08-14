@@ -120,6 +120,7 @@ REQUIRED_PRODUCTION_LIMITATIONS = [
     "aggregate-qualification-is-orchestrator-owned",
     "base-gate-v1-not-claimed",
     "receipt-is-evidence-not-authority",
+    "real-quic-ring-and-fault-injection-pending",
     "registry-candidate-bytes-bound-without-full-profile-qualification",
     "registry-production-qualification-not-claimed",
     "registry-production-resource-profiles-pending",
@@ -389,10 +390,16 @@ def _policy_digest(policy: dict[str, object], profile: dict[str, object]) -> str
     ).hexdigest()
 
 
-def child_receipt_signature_message(payload: object) -> bytes:
+def child_receipt_signature_message(evidence_tier: str, payload: object) -> bytes:
     profile = _profile()
     return _domain(str(profile["child_receipt"]["signature_domain"])) + blake3.blake3(
-        _canonical_json(payload)
+        _canonical_json(
+            {
+                "format": profile["child_receipt"]["format"],
+                "evidence_tier": evidence_tier,
+                "payload": payload,
+            }
+        )
     ).digest()
 
 
@@ -538,7 +545,9 @@ def sign_child_receipt_for_test_nonproduction(
         "payload": payload,
         "signer_public_key": public.hex(),
         "signer_fingerprint": _fingerprint(public, profile),
-        "signature": signing_key.sign(child_receipt_signature_message(payload)).hex(),
+        "signature": signing_key.sign(
+            child_receipt_signature_message("nonproduction-test", payload)
+        ).hex(),
     }
 
 
@@ -570,12 +579,17 @@ def _validate_profile(profile: dict[str, object], *, production: bool) -> None:
 
 
 def _validate_inventory(
-    profile: dict[str, object], inventory: dict[str, object], binding: dict[str, str]
+    profile: dict[str, object],
+    inventory: dict[str, object],
+    binding: dict[str, str],
+    expected_tier: str,
 ) -> dict[str, dict[str, object]]:
     if set(inventory) != INVENTORY_FIELDS:
         raise P5OrchestrationError("inventory has unknown or missing fields")
     if inventory.get("format") != "onebrain/p5-multi-host-inventory/1":
         raise P5OrchestrationError("inventory format mismatch")
+    if inventory.get("evidence_tier") != expected_tier:
+        raise P5OrchestrationError("inventory evidence_tier mismatch")
     if inventory.get("binding") != binding:
         raise P5OrchestrationError("inventory candidate binding mismatch")
     if inventory.get("limitations") != REQUIRED_PRODUCTION_LIMITATIONS:
@@ -730,7 +744,7 @@ def _validate_receipt(
     try:
         Ed25519PublicKey.from_public_bytes(bytes.fromhex(str(receipt["signer_public_key"]))).verify(
             bytes.fromhex(str(receipt["signature"])),
-            child_receipt_signature_message(payload),
+            child_receipt_signature_message(str(receipt["evidence_tier"]), payload),
         )
     except (ValueError, InvalidSignature) as error:
         raise P5OrchestrationError("child receipt signature is invalid") from error
@@ -832,7 +846,8 @@ def _run_multi_host_qualification(
         _hex(binding.get(field), length, field)
     if binding["trust_policy_digest"] != profile["trust_policy"]["digest_hex"]:
         raise P5OrchestrationError("trust_policy_digest mismatch")
-    hosts = _validate_inventory(profile, inventory, binding)
+    expected_tier = "production-reference" if production else "nonproduction-test"
+    hosts = _validate_inventory(profile, inventory, binding, expected_tier)
     all_receipts: list[dict[str, object]] = []
     fault_set = set(profile["fault_matrix"])
     for host_id in sorted(hosts):
@@ -851,9 +866,7 @@ def _run_multi_host_qualification(
                 profile=profile,
                 binding=binding,
                 host=hosts[host_id],
-                expected_tier=(
-                    "production-reference" if production else "nonproduction-test"
-                ),
+                expected_tier=expected_tier,
             )
             for row in receipts
         ]
@@ -870,10 +883,6 @@ def _run_multi_host_qualification(
     if claimed_aggregate_root is not None and claimed_aggregate_root != aggregate_root:
         raise P5OrchestrationError("claimed aggregate root does not match verified receipts")
     distinct_hosts = len({row["payload"]["physical_host_id"] for row in all_receipts})
-    verified_matrix = len(all_receipts) == len(profile["fault_matrix"]) * 3
-    production_evidence = production and all(
-        row["evidence_tier"] == "production-reference" for row in all_receipts
-    )
     unsigned = {
         "format": profile["aggregate"]["format"],
         "evidence_tier": "production-reference" if production else "nonproduction-test",
@@ -884,11 +893,10 @@ def _run_multi_host_qualification(
         "limitations": list(REQUIRED_PRODUCTION_LIMITATIONS),
         "registry_production_qualified": False,
         "base_gate_v1_qualified": False,
-        "multi_host_qualified": bool(
-            production_evidence
-            and verified_matrix
-            and distinct_hosts >= profile["aggregate"]["minimum_distinct_physical_hosts"]
-        ),
+        # This controller currently collects exact-host production-reference
+        # evidence using observe-host-fault commands. Until the A→B→C→A QUIC
+        # ring and injected fault outcomes are measured, qualification is false.
+        "multi_host_qualified": False,
         "child_receipts": sorted(
             all_receipts,
             key=lambda row: (

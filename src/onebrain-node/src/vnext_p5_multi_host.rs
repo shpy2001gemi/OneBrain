@@ -483,6 +483,7 @@ impl P5MultiHostAgent {
                     "aggregate-qualification-is-orchestrator-owned",
                     "base-gate-v1-not-claimed",
                     "receipt-is-evidence-not-authority",
+                    "real-quic-ring-and-fault-injection-pending",
                     "registry-candidate-bytes-bound-without-full-profile-qualification",
                     "registry-production-qualification-not-claimed",
                     "registry-production-resource-profiles-pending",
@@ -903,7 +904,12 @@ impl P5ReceiptSigner {
         evidence_tier: &str,
     ) -> Result<P5ChildReceiptV1, P5MultiHostError> {
         let mut message = Vec::from(P5_CHILD_RECEIPT_DOMAIN);
-        message.extend_from_slice(canonical_digest(&payload)?.as_bytes());
+        let unsigned = serde_json::json!({
+            "format": P5_CHILD_RECEIPT_FORMAT,
+            "evidence_tier": evidence_tier,
+            "payload": &payload,
+        });
+        message.extend_from_slice(canonical_digest(&unsigned)?.as_bytes());
         Ok(P5ChildReceiptV1 {
             format: P5_CHILD_RECEIPT_FORMAT.to_owned(),
             evidence_tier: evidence_tier.to_owned(),
