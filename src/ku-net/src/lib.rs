@@ -58,6 +58,7 @@ pub mod vnext_provider_view;
 #[cfg(feature = "quic")]
 pub mod vnext_quic_session;
 pub mod vnext_reachability;
+pub mod vnext_reachability_crypto;
 pub mod vnext_reconciliation;
 pub mod vnext_reconciliation_journal;
 pub mod vnext_resource_gate;
