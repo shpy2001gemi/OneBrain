@@ -136,7 +136,7 @@ pub fn public_candidate_from_direct(
     })
 }
 
-fn endpoint_is_public(endpoint: &ReachabilityEndpointV1) -> bool {
+pub(crate) fn endpoint_is_public(endpoint: &ReachabilityEndpointV1) -> bool {
     if endpoint.port == 0 {
         return false;
     }

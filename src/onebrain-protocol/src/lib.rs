@@ -7,6 +7,8 @@ pub mod codec;
 pub mod legacy;
 pub mod legacy_adapter;
 pub mod reachability_codec;
+pub mod reachability_signaling;
+pub mod reachability_signaling_codec;
 pub mod reachability_types;
 pub mod reconciliation_codec;
 pub mod session_codec;
@@ -22,6 +24,11 @@ pub use legacy_adapter::{
 pub use reachability_codec::{
     decode_reachability_object, encode_reachability_object, reachability_signing_bytes,
     ReachabilityCodecError,
+};
+pub use reachability_signaling::*;
+pub use reachability_signaling_codec::{
+    connectivity_signing_bytes, decode_connectivity_signaling, encode_connectivity_signaling,
+    ConnectivitySignalingCodecError,
 };
 pub use reachability_types::*;
 pub use reconciliation_codec::{

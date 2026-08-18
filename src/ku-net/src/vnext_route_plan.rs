@@ -69,6 +69,24 @@ impl AdmittedHolePunchCandidate {
         self.schedule_digest
     }
 
+    pub(crate) fn from_validated_schedule(
+        schedule: &crate::vnext_connectivity_signaling::ValidatedHolePunchSchedule,
+        priority: u32,
+    ) -> Self {
+        let value = schedule.canonical();
+        Self {
+            candidate: HolePunchCandidateV1 {
+                relay_node_id: value.relay_node_id,
+                local_reservation_id: value.initiator_reservation_id,
+                remote_reservation_id: value.responder_reservation_id,
+                schedule_digest: schedule.digest(),
+                priority,
+                expires_at: value.expires_at,
+            },
+            schedule_digest: schedule.digest(),
+        }
+    }
+
     #[cfg(test)]
     fn test_only(
         relay_node_id: NodeId,
