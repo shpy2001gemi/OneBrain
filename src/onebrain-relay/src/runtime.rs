@@ -16,7 +16,7 @@ use onebrain_protocol::{
 };
 use rand::rngs::OsRng;
 use rand::RngCore;
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 
 use crate::{
     principal_node_id, relay_identity_certificate, DurableRelayState, DurableStateKind,
@@ -30,18 +30,26 @@ const ACTIVATION_KEY: &[u8] = b"descriptor-activation-v1";
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RelayConfigV1 {
+    #[serde(deserialize_with = "deserialize_config_format")]
     pub format: u64,
     pub data_root: PathBuf,
+    #[serde(alias = "identity_key_locator")]
     pub signer_locator: PathBuf,
     pub udp_bind: Option<SocketAddr>,
     pub tcp443_bind: Option<SocketAddr>,
+    #[serde(deserialize_with = "deserialize_configured_endpoints")]
     pub advertised_endpoints: Vec<RelayConfiguredEndpointV1>,
+    #[serde(default)]
     pub capacity_policy_digest: [u8; 32],
     pub max_reservations: usize,
     pub max_reservations_per_target: usize,
+    #[serde(alias = "rendezvous_max_records")]
     pub max_rendezvous_records: usize,
+    #[serde(default = "default_descriptor_sequence")]
     pub descriptor_sequence: u64,
+    #[serde(default)]
     pub descriptor_issued_at: u64,
+    #[serde(default = "default_descriptor_expires_at")]
     pub descriptor_expires_at: u64,
     pub log_destination: PathBuf,
 }
@@ -52,6 +60,73 @@ pub struct RelayConfiguredEndpointV1 {
     pub transport: String,
     pub host: String,
     pub port: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ConfigFormatInput {
+    Integer(u64),
+    Text(String),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ConfiguredEndpointInput {
+    Structured(RelayConfiguredEndpointV1),
+    Uri(String),
+}
+
+fn deserialize_config_format<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match ConfigFormatInput::deserialize(deserializer)? {
+        ConfigFormatInput::Integer(1) => Ok(1),
+        ConfigFormatInput::Text(value) if value == "onebrain/relay-config/1" => Ok(1),
+        _ => Err(D::Error::custom("unsupported relay config format")),
+    }
+}
+
+fn deserialize_configured_endpoints<'de, D>(
+    deserializer: D,
+) -> Result<Vec<RelayConfiguredEndpointV1>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Vec::<ConfiguredEndpointInput>::deserialize(deserializer)?
+        .into_iter()
+        .map(|value| match value {
+            ConfiguredEndpointInput::Structured(value) => Ok(value),
+            ConfiguredEndpointInput::Uri(value) => parse_configured_endpoint(&value)
+                .ok_or_else(|| D::Error::custom("invalid relay endpoint URI")),
+        })
+        .collect()
+}
+
+fn parse_configured_endpoint(value: &str) -> Option<RelayConfiguredEndpointV1> {
+    let (scheme, authority) = value.split_once("://")?;
+    let (host, port) = authority.rsplit_once(':')?;
+    let transport = match scheme {
+        "udp" => "quic-udp",
+        "tls" => "tls-tcp-443",
+        _ => return None,
+    };
+    if host.is_empty() || host.contains('/') {
+        return None;
+    }
+    Some(RelayConfiguredEndpointV1 {
+        transport: transport.into(),
+        host: host.trim_matches(['[', ']']).into(),
+        port: port.parse().ok()?,
+    })
+}
+
+const fn default_descriptor_sequence() -> u64 {
+    1
+}
+
+const fn default_descriptor_expires_at() -> u64 {
+    u64::MAX
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -463,6 +538,30 @@ impl std::error::Error for RuntimeError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_operations_config_normalizes_to_the_closed_runtime_shape() {
+        let directory = tempfile::tempdir().unwrap();
+        let config_path = directory.path().join("relay-public.json");
+        std::fs::write(
+            &config_path,
+            br#"{"format":"onebrain/relay-config/1","data_root":"/var/lib/onebrain/relay-p5","identity_key_locator":"/var/lib/onebrain/relay-p5/identity.key","udp_bind":"0.0.0.0:41000","tcp443_bind":"0.0.0.0:443","advertised_endpoints":["udp://103.77.214.30:41000","tls://103.77.214.30:443"],"max_reservations":256,"max_reservations_per_target":3,"rendezvous_max_records":256,"log_destination":"journald"}"#,
+        )
+        .unwrap();
+        let config = read_config(&config_path).unwrap();
+        assert_eq!(config.format, 1);
+        assert_eq!(
+            config.signer_locator,
+            Path::new("/var/lib/onebrain/relay-p5/identity.key")
+        );
+        assert_eq!(config.udp_bind, Some("0.0.0.0:41000".parse().unwrap()));
+        assert_eq!(config.tcp443_bind, Some("0.0.0.0:443".parse().unwrap()));
+        assert_eq!(config.max_rendezvous_records, 256);
+        assert_eq!(config.descriptor_sequence, 1);
+        assert_eq!(config.descriptor_expires_at, u64::MAX);
+        assert_eq!(config.advertised_endpoints[0].transport, "quic-udp");
+        assert_eq!(config.advertised_endpoints[1].transport, "tls-tcp-443");
+    }
 
     #[test]
     fn lifecycle_is_create_new_and_activation_requires_two_remote_hosts() {
