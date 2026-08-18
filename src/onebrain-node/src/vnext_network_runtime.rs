@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+#[cfg(feature = "vnext-outbound-first")]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
 use ku_core::foundation::{
@@ -17,6 +19,8 @@ use ku_core::foundation::{
 };
 use ku_net::transport::{OBPConnection, QuicTransport, TransportConfig};
 use ku_net::vnext_carrier::CarrierRecord;
+#[cfg(feature = "vnext-outbound-first")]
+use ku_net::vnext_connection_executor::ConnectionPlannerExecutor;
 use ku_net::vnext_inventory_forest::{InventoryLeaf, RedbInventoryForestBackend};
 use ku_net::vnext_quic_session::{
     accept_authenticated_session, initiate_authenticated_session, send_carrier_record,
@@ -34,6 +38,10 @@ use ku_net::vnext_resource_gate::{
     AdmissionStage, HandshakeAdmission, ResourceAdmissionError, ResourceUsage,
     RuntimeAdmissionController, RuntimeAdmissionLimits, SessionAdmission,
 };
+#[cfg(feature = "vnext-outbound-first")]
+use ku_net::vnext_route_plan::{PlannerAction, RouteFailure};
+#[cfg(feature = "vnext-outbound-first")]
+use ku_net::vnext_secure_session_adapter::authenticate_expected_outbound;
 use ku_net::vnext_session::{
     principal_node_id, AuthenticatedSession, SessionIdentitySigner, SessionReplayGuard,
 };
@@ -42,6 +50,10 @@ use onebrain_protocol::{
     reconciliation_capability, reconciliation_profile, ReconcileManifestEntry,
     ReconcileReceiptStatus, ReconciliationBody, ReconciliationBudget, ReconciliationContext,
     ReconciliationResumeMode, ReconciliationSummaryMethod,
+};
+#[cfg(feature = "vnext-outbound-first")]
+use onebrain_protocol::{
+    DirectCandidateKindV1, DirectCandidateV1, HostAddressV1, ReachabilityEndpointV1,
 };
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -55,6 +67,8 @@ use crate::archive::{
     SnapshotVerifiedBackend, ValidatedCanonicalArchiveBackend,
 };
 use crate::vnext_config::VNextNetworkPolicy;
+#[cfg(feature = "vnext-outbound-first")]
+use crate::vnext_connection_planner::RoutedVNextSession;
 use crate::vnext_observability::{
     VNextJournalObservation, VNextObservability, VNextObservabilitySnapshot, VNextReasonCode,
     VNextRegistryTelemetryState,
@@ -68,6 +82,8 @@ use crate::vnext_route_authority::{
     resolve_authority_frontier, AuthenticatedRoute, AuthenticatedRouteDirectory,
     AuthorityFrontierResolution, AuthorityResolverError, RouteDirectoryError,
 };
+#[cfg(feature = "vnext-outbound-first")]
+use crate::vnext_route_journal::{RouteJournal, RouteJournalEntryV1};
 use crate::vnext_runtime_rollout::{
     VNextRuntimeGenerationLease, VNextRuntimeLane, VNextRuntimeRollout,
 };
@@ -257,6 +273,8 @@ struct OutboundDeliveryEngine {
     scheduler: AsyncMutex<()>,
     policy: VNextNetworkPolicy,
     rollout: Option<VNextRuntimeRollout>,
+    #[cfg(feature = "vnext-outbound-first")]
+    route_journal: RouteJournal,
 }
 
 /// Owns the real QUIC endpoint, persistent validated store, persistent
@@ -545,6 +563,13 @@ impl VNextNetworkRuntime {
                 .map_err(|error| VNextNetworkRuntimeError::Config(format!("{error:?}")))?,
         ));
         let routes = AuthenticatedRouteDirectory::default();
+        #[cfg(feature = "vnext-outbound-first")]
+        let route_journal = RouteJournal::open(
+            &paths.admission_root.join("vnext_route_journal.redb"),
+            4_096,
+            16 * 1024 * 1024,
+        )
+        .map_err(|error| VNextNetworkRuntimeError::Journal(error.to_string()))?;
         let counters = Arc::new(RuntimeCounters::default());
         let observability = Arc::new(VNextObservability::default());
         let outbox_stats = outbox
@@ -587,6 +612,8 @@ impl VNextNetworkRuntime {
             scheduler: AsyncMutex::new(()),
             policy,
             rollout,
+            #[cfg(feature = "vnext-outbound-first")]
+            route_journal,
         });
         let outbound_notify = Arc::new(Notify::new());
         let (outbound_shutdown, shutdown_rx) = watch::channel(false);
@@ -841,6 +868,37 @@ impl VNextNetworkRuntime {
         addr: SocketAddr,
     ) -> Result<OutboundVNextSession, VNextNetworkRuntimeError> {
         self.outbound.connect(addr).await
+    }
+
+    /// Establish a direct carrier while granting route authority only after
+    /// the frozen OBP handshake proves the expected peer identity.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub async fn connect_expected(
+        &self,
+        expected_peer: NodeId,
+        addr: SocketAddr,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        self.outbound.connect_expected(expected_peer, addr).await
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub fn authenticated_routed_route_count(&self) -> Result<usize, VNextNetworkRuntimeError> {
+        self.routes
+            .routed_len()
+            .map_err(VNextNetworkRuntimeError::RouteDirectory)
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub fn authenticated_routed_route(
+        &self,
+        peer: NodeId,
+    ) -> Result<
+        Option<crate::vnext_route_authority::RoutedAuthenticatedRoute>,
+        VNextNetworkRuntimeError,
+    > {
+        self.routes
+            .resolve_routed(peer)
+            .map_err(VNextNetworkRuntimeError::RouteDirectory)
     }
 }
 
@@ -1209,6 +1267,114 @@ impl OutboundDeliveryEngine {
             runtime_generation,
         })
     }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    async fn connect_expected(
+        &self,
+        expected_peer: NodeId,
+        addr: SocketAddr,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        let _runtime_generation = self
+            .rollout
+            .as_ref()
+            .map(|rollout| rollout.acquire(VNextRuntimeLane::Network))
+            .transpose()
+            .map_err(|error| VNextNetworkRuntimeError::RuntimeFenced(error.to_string()))?;
+        let handshake_admission = self
+            .admission
+            .try_begin_handshake(addr.ip())
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
+        let connection = self
+            .transport
+            .connect(addr)
+            .await
+            .map_err(|error| VNextNetworkRuntimeError::Transport(error.to_string()))?;
+        let host = match addr.ip() {
+            std::net::IpAddr::V4(value) => HostAddressV1::Ipv4(value.octets()),
+            std::net::IpAddr::V6(value) => HostAddressV1::Ipv6(value.octets()),
+        };
+        let candidate = DirectCandidateV1 {
+            endpoint: ReachabilityEndpointV1 {
+                host,
+                port: addr.port(),
+            },
+            kind: DirectCandidateKindV1::Host,
+            priority: 1,
+            network_epoch: 1,
+            expires_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(|_| VNextNetworkRuntimeError::Config("system clock before epoch".into()))?
+                .as_secs()
+                .saturating_add(self.policy.handshake_timeout_seconds),
+        };
+        let selected = ConnectionPlannerExecutor::seal_connected_direct(
+            PlannerAction::CheckDirect(candidate),
+            connection,
+            Vec::new(),
+        )
+        .map_err(route_failure)?;
+        let authenticated = tokio::time::timeout(
+            Duration::from_secs(self.policy.handshake_timeout_seconds),
+            authenticate_expected_outbound(
+                selected,
+                expected_peer,
+                self.identity.as_ref(),
+                random_nonce(),
+                &[reconciliation_profile()],
+                &[reconciliation_capability()],
+                Vec::new(),
+            ),
+        )
+        .await
+        .map_err(|_| VNextNetworkRuntimeError::HandshakeTimeout)?
+        .map_err(route_failure)?;
+        let session_admission = handshake_admission
+            .promote(expected_peer)
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
+        self.replay_guard
+            .lock()
+            .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?
+            .accept(authenticated.session())
+            .map_err(|error| VNextNetworkRuntimeError::Session(format!("{error:?}")))?;
+        let mut routed = RoutedVNextSession::promote(expected_peer, authenticated)
+            .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
+        routed.attach_admission(session_admission);
+        self.routes
+            .observe_routed(&routed)
+            .map_err(VNextNetworkRuntimeError::RouteDirectory)?;
+        let next_sequence = self
+            .route_journal
+            .len()
+            .map_err(|error| VNextNetworkRuntimeError::Journal(error.to_string()))?
+            .checked_add(1)
+            .ok_or_else(|| VNextNetworkRuntimeError::Journal("route sequence exhausted".into()))?
+            as u64;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| VNextNetworkRuntimeError::Config("system clock before epoch".into()))?
+            .as_secs();
+        if let Err(error) = self.route_journal.append(RouteJournalEntryV1::direct(
+            expected_peer,
+            routed.route_receipt_digest(),
+            next_sequence,
+            now,
+        )) {
+            let _ = self
+                .routes
+                .remove_routed(expected_peer, routed.authenticated().session_id);
+            routed.close();
+            return Err(VNextNetworkRuntimeError::Journal(error.to_string()));
+        }
+        self.counters
+            .authenticated_sessions
+            .fetch_add(1, Ordering::Relaxed);
+        Ok(routed)
+    }
+}
+
+#[cfg(feature = "vnext-outbound-first")]
+fn route_failure(error: RouteFailure) -> VNextNetworkRuntimeError {
+    VNextNetworkRuntimeError::Session(format!("outbound route failed: {error:?}"))
 }
 
 impl VNextNetworkRuntime {

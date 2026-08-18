@@ -18,6 +18,9 @@ use ku_core::foundation::{
 use ku_net::vnext_session::AuthenticatedSession;
 use thiserror::Error;
 
+#[cfg(feature = "vnext-outbound-first")]
+use crate::vnext_connection_planner::{RoutedVNextSession, VerifiedCarrierIdentity};
+
 pub const MAX_AUTHENTICATED_ROUTES: usize = 4_096;
 pub const MAX_LOCAL_POLICY_VERSIONS: usize = 64;
 
@@ -40,7 +43,23 @@ pub struct AuthenticatedRoute {
 struct RouteDirectoryState {
     by_node: BTreeMap<NodeId, AuthenticatedRoute>,
     by_addr: BTreeMap<SocketAddr, NodeId>,
+    #[cfg(feature = "vnext-outbound-first")]
+    routed_by_node: BTreeMap<NodeId, RoutedAuthenticatedRoute>,
+    #[cfg(feature = "vnext-outbound-first")]
+    routed_direct_by_addr: BTreeMap<SocketAddr, NodeId>,
+    #[cfg(feature = "vnext-outbound-first")]
+    routed_relay_index: BTreeMap<(NodeId, [u8; 32], NodeId), NodeId>,
     next_generation: u64,
+}
+
+#[cfg(feature = "vnext-outbound-first")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RoutedAuthenticatedRoute {
+    pub peer: NodeId,
+    pub session_id: [u8; 32],
+    pub transport_binding_digest: [u8; 32],
+    pub carrier: VerifiedCarrierIdentity,
+    pub generation: u64,
 }
 
 /// A cloneable, read-mostly directory whose only writers require a completed
@@ -74,6 +93,112 @@ impl AuthenticatedRouteDirectory {
 
     pub fn is_empty(&self) -> Result<bool, RouteDirectoryError> {
         self.len().map(|len| len == 0)
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub fn resolve_routed(
+        &self,
+        peer: NodeId,
+    ) -> Result<Option<RoutedAuthenticatedRoute>, RouteDirectoryError> {
+        self.inner
+            .read()
+            .map_err(|_| RouteDirectoryError::LockPoisoned)
+            .map(|state| state.routed_by_node.get(&peer).cloned())
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub fn routed_len(&self) -> Result<usize, RouteDirectoryError> {
+        self.inner
+            .read()
+            .map_err(|_| RouteDirectoryError::LockPoisoned)
+            .map(|state| state.routed_by_node.len())
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub(crate) fn observe_routed(
+        &self,
+        routed: &RoutedVNextSession,
+    ) -> Result<RoutedAuthenticatedRoute, RouteDirectoryError> {
+        let peer = routed.expected_peer();
+        if peer.as_bytes() == &[0; 32]
+            || routed.authenticated().session_id == [0; 32]
+            || routed.transport_binding_digest() == [0; 32]
+        {
+            return Err(RouteDirectoryError::InvalidObservation);
+        }
+        let mut state = self
+            .inner
+            .write()
+            .map_err(|_| RouteDirectoryError::LockPoisoned)?;
+        if !state.routed_by_node.contains_key(&peer)
+            && state.routed_by_node.len() >= MAX_AUTHENTICATED_ROUTES
+        {
+            return Err(RouteDirectoryError::CapacityReached);
+        }
+        if let Some(previous) = state.routed_by_node.remove(&peer) {
+            remove_routed_reverse_indexes(&mut state, &previous);
+        }
+        state.next_generation = state
+            .next_generation
+            .checked_add(1)
+            .ok_or(RouteDirectoryError::GenerationExhausted)?;
+        let route = RoutedAuthenticatedRoute {
+            peer,
+            session_id: routed.authenticated().session_id,
+            transport_binding_digest: routed.transport_binding_digest(),
+            carrier: routed.carrier().clone(),
+            generation: state.next_generation,
+        };
+        match &route.carrier {
+            VerifiedCarrierIdentity::Direct {
+                connected_socket, ..
+            }
+            | VerifiedCarrierIdentity::HolePunched {
+                connected_socket, ..
+            } => {
+                if let Some(other) = state.routed_direct_by_addr.get(connected_socket) {
+                    if *other != peer {
+                        return Err(RouteDirectoryError::VerifiedOutboundRouteConflict);
+                    }
+                }
+                state.routed_direct_by_addr.insert(*connected_socket, peer);
+            }
+            VerifiedCarrierIdentity::Relay {
+                relay_node_id,
+                association_id,
+                ..
+            } => {
+                state
+                    .routed_relay_index
+                    .insert((*relay_node_id, *association_id, peer), peer);
+            }
+        }
+        state.routed_by_node.insert(peer, route.clone());
+        Ok(route)
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub(crate) fn remove_routed(
+        &self,
+        peer: NodeId,
+        session_id: [u8; 32],
+    ) -> Result<(), RouteDirectoryError> {
+        let mut state = self
+            .inner
+            .write()
+            .map_err(|_| RouteDirectoryError::LockPoisoned)?;
+        let Some(route) = state.routed_by_node.get(&peer) else {
+            return Ok(());
+        };
+        if route.session_id != session_id {
+            return Err(RouteDirectoryError::InvalidObservation);
+        }
+        let route = state
+            .routed_by_node
+            .remove(&peer)
+            .ok_or(RouteDirectoryError::InvalidObservation)?;
+        remove_routed_reverse_indexes(&mut state, &route);
+        Ok(())
     }
 
     pub(crate) fn observe_outbound(
@@ -167,6 +292,32 @@ impl AuthenticatedRouteDirectory {
         state.by_node.insert(node, route);
         state.by_addr.insert(addr, node);
         Ok(route)
+    }
+}
+
+#[cfg(feature = "vnext-outbound-first")]
+fn remove_routed_reverse_indexes(
+    state: &mut RouteDirectoryState,
+    route: &RoutedAuthenticatedRoute,
+) {
+    match &route.carrier {
+        VerifiedCarrierIdentity::Direct {
+            connected_socket, ..
+        }
+        | VerifiedCarrierIdentity::HolePunched {
+            connected_socket, ..
+        } => {
+            state.routed_direct_by_addr.remove(connected_socket);
+        }
+        VerifiedCarrierIdentity::Relay {
+            relay_node_id,
+            association_id,
+            ..
+        } => {
+            state
+                .routed_relay_index
+                .remove(&(*relay_node_id, *association_id, route.peer));
+        }
     }
 }
 

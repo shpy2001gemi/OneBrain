@@ -16,7 +16,8 @@ use ku_core::foundation::{
     ReservedDomain, SelectorCid,
 };
 use onebrain_protocol::{ReconcileManifestKind, ReconcileReceiptStatus};
-use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
+use redb::{Database, Durability, ReadableTable, ReadableTableMetadata, TableDefinition};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::archive::{PortableArchiveRow, PortableArchiveRows};
@@ -27,6 +28,10 @@ const OUTBOX: TableDefinition<&[u8], &[u8]> = TableDefinition::new("vnext_outbou
 const META: TableDefinition<&[u8], &[u8]> = TableDefinition::new("vnext_outbound_meta_v2");
 const TOMBSTONES: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_outbound_terminal_tombstones_v2");
+const ROUTE_SEQUENCE: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_route_sequence_v1");
+const DURABLE_CHECKPOINT: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_durable_checkpoint_v1");
 const MAGIC_V1: &[u8; 8] = b"OBOUTV1\0";
 const MAGIC_V2: &[u8; 8] = b"OBOUTV2\0";
 const MAGIC_V3: &[u8; 8] = b"OBOUTV3\0";
@@ -40,6 +45,56 @@ const TERMINAL_HEAD_KEY: &[u8] = b"terminal_head";
 pub const MAX_OUTBOX_PAYLOAD_BYTES: usize = 1_048_576;
 pub const MAX_OUTBOX_RECORDS: u64 = 65_536;
 pub const MAX_OUTBOX_TOMBSTONES: u64 = 65_536;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DurableCheckpointV1 {
+    format: u64,
+    expected_peer: NodeId,
+    acknowledged_intent_id: [u8; 32],
+    acknowledged_sequence: u64,
+    outbox_state_root: [u8; 32],
+    route_journal_root: [u8; 32],
+    created_at_unix_seconds: u64,
+    checkpoint_digest: [u8; 32],
+}
+
+impl DurableCheckpointV1 {
+    pub fn format(&self) -> u64 {
+        self.format
+    }
+
+    pub fn expected_peer(&self) -> NodeId {
+        self.expected_peer
+    }
+
+    pub fn acknowledged_intent_id(&self) -> [u8; 32] {
+        self.acknowledged_intent_id
+    }
+
+    pub fn acknowledged_sequence(&self) -> u64 {
+        self.acknowledged_sequence
+    }
+
+    pub fn outbox_state_root(&self) -> [u8; 32] {
+        self.outbox_state_root
+    }
+
+    pub fn route_journal_root(&self) -> [u8; 32] {
+        self.route_journal_root
+    }
+
+    pub fn created_at_unix_seconds(&self) -> u64 {
+        self.created_at_unix_seconds
+    }
+
+    pub fn checkpoint_digest(&self) -> [u8; 32] {
+        self.checkpoint_digest
+    }
+
+    pub fn canonical_bytes(&self) -> Vec<u8> {
+        encode_checkpoint(self)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -162,14 +217,21 @@ pub struct OutboundOutbox {
 impl OutboundOutbox {
     pub fn open(path: &Path) -> Result<Self, OutboundOutboxError> {
         let path = path.to_path_buf();
+        let first_create = !path.exists();
         let db = Database::create(&path).map_err(backend)?;
-        let write = db.begin_write().map_err(backend)?;
+        let mut write = db.begin_write().map_err(backend)?;
+        write.set_durability(Durability::Immediate);
         {
             write.open_table(OUTBOX).map_err(backend)?;
             write.open_table(META).map_err(backend)?;
             write.open_table(TOMBSTONES).map_err(backend)?;
+            write.open_table(ROUTE_SEQUENCE).map_err(backend)?;
+            write.open_table(DURABLE_CHECKPOINT).map_err(backend)?;
         }
         write.commit().map_err(backend)?;
+        if first_create {
+            sync_parent(&path)?;
+        }
         Ok(Self {
             db: Arc::new(db),
             path: Arc::new(path),
@@ -418,6 +480,175 @@ impl OutboundOutbox {
             };
             Ok(intent.state)
         })
+    }
+
+    /// Atomically persist a successful receipt and the checkpoint which makes
+    /// that acknowledgement resumable. Neither half can become visible alone.
+    pub fn apply_receipt_and_checkpoint(
+        &self,
+        id: &[u8; 32],
+        status: ReconcileReceiptStatus,
+        max_validation_retries: u64,
+        acknowledged_sequence: u64,
+        route_journal_root: [u8; 32],
+    ) -> Result<DurableCheckpointV1, OutboundOutboxError> {
+        if max_validation_retries == 0
+            || acknowledged_sequence == 0
+            || route_journal_root == [0; 32]
+            || !matches!(
+                status,
+                ReconcileReceiptStatus::ValidatedStored | ReconcileReceiptStatus::AlreadyPresent
+            )
+        {
+            return Err(OutboundOutboxError::InvalidCheckpoint);
+        }
+        dr_m5_failpoint::hit("TX-OUT-CHK-001", "before_begin_write");
+        let mut write = self.db.begin_write().map_err(backend)?;
+        write.set_durability(Durability::Immediate);
+        dr_m5_failpoint::hit("TX-OUT-CHK-001", "after_begin_write_before_mutation");
+
+        let intent = {
+            let mut table = write.open_table(OUTBOX).map_err(backend)?;
+            let bytes = table
+                .get(id.as_slice())
+                .map_err(backend)?
+                .map(|guard| guard.value().to_vec())
+                .ok_or(OutboundOutboxError::MissingIntent)?;
+            let mut intent = decode_intent(&bytes)?;
+            if intent.state != OutboundIntentState::Pending {
+                return Err(OutboundOutboxError::CheckpointSequence);
+            }
+            intent.transport_attempts = 0;
+            intent.state = OutboundIntentState::Acknowledged;
+            touch(&mut intent);
+            intent.terminal_sequence = next_terminal_sequence(&write)?;
+            let encoded = encode_intent(&intent)?;
+            table
+                .insert(id.as_slice(), encoded.as_slice())
+                .map_err(backend)?;
+            intent
+        };
+
+        let expected_previous = acknowledged_sequence - 1;
+        {
+            let sequence = write.open_table(ROUTE_SEQUENCE).map_err(backend)?;
+            let previous = sequence
+                .get(intent.expected_peer.as_bytes().as_slice())
+                .map_err(backend)?
+                .map(|value| decode_u64(value.value()))
+                .transpose()?
+                .unwrap_or(0);
+            if previous != expected_previous {
+                return Err(OutboundOutboxError::CheckpointSequence);
+            }
+        }
+
+        let outbox_state_root = {
+            let table = write.open_table(OUTBOX).map_err(backend)?;
+            let mut hasher = blake3::Hasher::new();
+            hasher.update(b"onebrain:vnext:outbox-state:1\0");
+            for entry in table.iter().map_err(backend)? {
+                let (key, value) = entry.map_err(backend)?;
+                let decoded = decode_intent(value.value())?;
+                if decoded.expected_peer != intent.expected_peer {
+                    continue;
+                }
+                hasher.update(key.value());
+                hasher.update(&(value.value().len() as u64).to_be_bytes());
+                hasher.update(value.value());
+            }
+            *hasher.finalize().as_bytes()
+        };
+        let created_at_unix_seconds = unix_seconds();
+        if created_at_unix_seconds == 0 {
+            return Err(OutboundOutboxError::InvalidCheckpoint);
+        }
+        let mut checkpoint = DurableCheckpointV1 {
+            format: 1,
+            expected_peer: intent.expected_peer,
+            acknowledged_intent_id: intent.id,
+            acknowledged_sequence,
+            outbox_state_root,
+            route_journal_root,
+            created_at_unix_seconds,
+            checkpoint_digest: [0; 32],
+        };
+        checkpoint.checkpoint_digest = checkpoint_digest(&checkpoint);
+        let encoded = encode_checkpoint(&checkpoint);
+        {
+            let mut sequence = write.open_table(ROUTE_SEQUENCE).map_err(backend)?;
+            sequence
+                .insert(
+                    intent.expected_peer.as_bytes().as_slice(),
+                    acknowledged_sequence.to_be_bytes().as_slice(),
+                )
+                .map_err(backend)?;
+            let mut checkpoints = write.open_table(DURABLE_CHECKPOINT).map_err(backend)?;
+            checkpoints
+                .insert(
+                    intent.expected_peer.as_bytes().as_slice(),
+                    encoded.as_slice(),
+                )
+                .map_err(backend)?;
+        }
+        dr_m5_failpoint::hit("TX-OUT-CHK-001", "after_mutation_before_commit");
+        write.commit().map_err(backend)?;
+        dr_m5_failpoint::hit("TX-OUT-CHK-001", "after_commit_before_next_side_effect");
+        Ok(checkpoint)
+    }
+
+    pub fn latest_checkpoint(
+        &self,
+        expected_peer: NodeId,
+    ) -> Result<Option<DurableCheckpointV1>, OutboundOutboxError> {
+        let read = self.db.begin_read().map_err(backend)?;
+        let table = read.open_table(DURABLE_CHECKPOINT).map_err(backend)?;
+        let checkpoint = table
+            .get(expected_peer.as_bytes().as_slice())
+            .map_err(backend)?
+            .map(|value| decode_checkpoint(value.value()))
+            .transpose()?;
+        let Some(checkpoint) = checkpoint else {
+            return Ok(None);
+        };
+        let intent_table = read.open_table(OUTBOX).map_err(backend)?;
+        let intent = intent_table
+            .get(checkpoint.acknowledged_intent_id.as_slice())
+            .map_err(backend)?
+            .map(|value| decode_intent(value.value()))
+            .transpose()?
+            .ok_or(OutboundOutboxError::InvalidCheckpoint)?;
+        if intent.expected_peer != expected_peer
+            || intent.state != OutboundIntentState::Acknowledged
+        {
+            return Err(OutboundOutboxError::InvalidCheckpoint);
+        }
+        let sequence_table = read.open_table(ROUTE_SEQUENCE).map_err(backend)?;
+        let sequence = sequence_table
+            .get(expected_peer.as_bytes().as_slice())
+            .map_err(backend)?
+            .map(|value| decode_u64(value.value()))
+            .transpose()?
+            .ok_or(OutboundOutboxError::InvalidCheckpoint)?;
+        if sequence != checkpoint.acknowledged_sequence {
+            return Err(OutboundOutboxError::InvalidCheckpoint);
+        }
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"onebrain:vnext:outbox-state:1\0");
+        for entry in intent_table.iter().map_err(backend)? {
+            let (key, value) = entry.map_err(backend)?;
+            let decoded = decode_intent(value.value())?;
+            if decoded.expected_peer != expected_peer {
+                continue;
+            }
+            hasher.update(key.value());
+            hasher.update(&(value.value().len() as u64).to_be_bytes());
+            hasher.update(value.value());
+        }
+        if *hasher.finalize().as_bytes() != checkpoint.outbox_state_root {
+            return Err(OutboundOutboxError::InvalidCheckpoint);
+        }
+        Ok(Some(checkpoint))
     }
 
     /// Remove old terminal payloads while atomically retaining bounded audit
@@ -1143,6 +1374,103 @@ fn backend(error: impl std::fmt::Display) -> OutboundOutboxError {
     OutboundOutboxError::Backend(error.to_string())
 }
 
+fn checkpoint_digest(checkpoint: &DurableCheckpointV1) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"onebrain/reachability/durable-checkpoint/v1\0");
+    let preceding = CheckpointPreimage(
+        checkpoint.format,
+        checkpoint.expected_peer.as_bytes().to_vec(),
+        checkpoint.acknowledged_sequence,
+        checkpoint.acknowledged_intent_id.to_vec(),
+        checkpoint.outbox_state_root.to_vec(),
+        checkpoint.route_journal_root.to_vec(),
+        checkpoint.created_at_unix_seconds,
+    );
+    let mut bytes = Vec::new();
+    ciborium::into_writer(&preceding, &mut bytes)
+        .expect("serializing a fixed checkpoint tuple into Vec cannot fail");
+    hasher.update(&bytes);
+    *hasher.finalize().as_bytes()
+}
+
+fn encode_checkpoint(checkpoint: &DurableCheckpointV1) -> Vec<u8> {
+    let wire = CheckpointWire(
+        checkpoint.format,
+        checkpoint.expected_peer.as_bytes().to_vec(),
+        checkpoint.acknowledged_sequence,
+        checkpoint.acknowledged_intent_id.to_vec(),
+        checkpoint.outbox_state_root.to_vec(),
+        checkpoint.route_journal_root.to_vec(),
+        checkpoint.created_at_unix_seconds,
+        checkpoint.checkpoint_digest.to_vec(),
+    );
+    let mut bytes = Vec::new();
+    ciborium::into_writer(&wire, &mut bytes)
+        .expect("serializing a fixed checkpoint tuple into Vec cannot fail");
+    bytes
+}
+
+fn decode_checkpoint(bytes: &[u8]) -> Result<DurableCheckpointV1, OutboundOutboxError> {
+    let CheckpointWire(
+        format,
+        expected_peer,
+        acknowledged_sequence,
+        acknowledged_intent_id,
+        outbox_state_root,
+        route_journal_root,
+        created_at_unix_seconds,
+        checkpoint_digest_bytes,
+    ) = ciborium::from_reader(bytes).map_err(|_| OutboundOutboxError::InvalidCheckpoint)?;
+    let checkpoint = DurableCheckpointV1 {
+        format,
+        expected_peer: NodeId::from_bytes(array32(&expected_peer)?),
+        acknowledged_intent_id: array32(&acknowledged_intent_id)?,
+        acknowledged_sequence,
+        outbox_state_root: array32(&outbox_state_root)?,
+        route_journal_root: array32(&route_journal_root)?,
+        created_at_unix_seconds,
+        checkpoint_digest: array32(&checkpoint_digest_bytes)?,
+    };
+    if checkpoint.format != 1
+        || checkpoint.expected_peer.as_bytes() == &[0; 32]
+        || checkpoint.acknowledged_intent_id == [0; 32]
+        || checkpoint.acknowledged_sequence == 0
+        || checkpoint.outbox_state_root == [0; 32]
+        || checkpoint.route_journal_root == [0; 32]
+        || checkpoint.created_at_unix_seconds == 0
+        || checkpoint.checkpoint_digest != checkpoint_digest(&checkpoint)
+    {
+        return Err(OutboundOutboxError::InvalidCheckpoint);
+    }
+    Ok(checkpoint)
+}
+
+#[derive(Serialize)]
+struct CheckpointPreimage(u64, Vec<u8>, u64, Vec<u8>, Vec<u8>, Vec<u8>, u64);
+
+#[derive(Serialize, Deserialize)]
+struct CheckpointWire(u64, Vec<u8>, u64, Vec<u8>, Vec<u8>, Vec<u8>, u64, Vec<u8>);
+
+fn decode_u64(bytes: &[u8]) -> Result<u64, OutboundOutboxError> {
+    bytes
+        .try_into()
+        .map(u64::from_be_bytes)
+        .map_err(|_| OutboundOutboxError::InvalidRecord)
+}
+
+fn sync_parent(path: &Path) -> Result<(), OutboundOutboxError> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    #[cfg(unix)]
+    std::fs::File::open(parent)
+        .and_then(|directory| directory.sync_all())
+        .map_err(backend)?;
+    #[cfg(not(unix))]
+    let _ = parent;
+    Ok(())
+}
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum OutboundOutboxError {
     #[error("outbox backend failed: {0}")]
@@ -1161,6 +1489,10 @@ pub enum OutboundOutboxError {
     IdentityCollision,
     #[error("outbox terminal sequence exhausted")]
     SequenceExhausted,
+    #[error("durable checkpoint is invalid")]
+    InvalidCheckpoint,
+    #[error("durable checkpoint sequence did not advance exactly once")]
+    CheckpointSequence,
     #[error("outbox compaction generation is disabled or stale")]
     CompactionFenced,
     #[error("outbox database has live clones and cannot reclaim disk")]

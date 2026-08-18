@@ -3451,6 +3451,7 @@ name = "onebrain-node"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "ciborium",
  "ed25519-dalek",
  "fs2",
  "getrandom 0.3.4",

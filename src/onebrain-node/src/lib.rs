@@ -43,6 +43,8 @@ pub mod vnext_bootstrap_client;
 pub mod vnext_canary_operations;
 pub mod vnext_companion;
 pub mod vnext_config;
+#[cfg(feature = "vnext-outbound-first")]
+pub mod vnext_connection_planner;
 #[cfg(feature = "vnext-crash-harness")]
 pub mod vnext_crash_harness;
 #[cfg(feature = "vnext-network-runtime")]
@@ -88,6 +90,8 @@ pub mod vnext_reunion_canary;
 pub mod vnext_reward_firewall;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_route_authority;
+#[cfg(feature = "vnext-outbound-first")]
+pub mod vnext_route_journal;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_runtime_rollout;
 pub mod vnext_scale_simulation;
