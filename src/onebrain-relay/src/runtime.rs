@@ -49,7 +49,7 @@ pub struct RelayConfigV1 {
     pub descriptor_sequence: u64,
     #[serde(default)]
     pub descriptor_issued_at: u64,
-    #[serde(default = "default_descriptor_expires_at")]
+    #[serde(default)]
     pub descriptor_expires_at: u64,
     pub log_destination: PathBuf,
 }
@@ -125,10 +125,6 @@ const fn default_descriptor_sequence() -> u64 {
     1
 }
 
-const fn default_descriptor_expires_at() -> u64 {
-    u64::MAX
-}
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RelayActivationProbeSetV1 {
@@ -198,7 +194,7 @@ pub fn export_candidate_descriptor(
     let state = DurableRelayState::open(&config.data_root.join(STATE_FILE))
         .map_err(|_| RuntimeError::State)?;
     state
-        .create_new(DurableStateKind::DescriptorFloor, b"candidate-v1", &digest)
+        .create_new(DurableStateKind::DescriptorFloor, b"candidate-v1", &bytes)
         .map_err(|_| RuntimeError::State)?;
     Ok(digest)
 }
@@ -208,27 +204,18 @@ pub fn activate_descriptor(
     probe_set_path: &Path,
 ) -> Result<[u8; 32], RuntimeError> {
     let config = verify_config(config_path)?;
-    let signing_key = read_signing_key(&config.signer_locator)?;
-    let mut descriptor = descriptor_from_config(&config, &signing_key)?;
-    descriptor.relay_signature = signing_key
-        .sign(
-            &reachability_signing_bytes(
-                &ReachabilityObjectV1::RelayDescriptor(descriptor.clone()),
-                ReachabilitySignatureRoleV1::RelayDescriptor,
-            )
-            .map_err(|_| RuntimeError::Descriptor)?,
-        )
-        .to_bytes();
-    let bytes = encode_reachability_object(&ReachabilityObjectV1::RelayDescriptor(descriptor))
-        .map_err(|_| RuntimeError::Descriptor)?;
+    let state = DurableRelayState::open(&config.data_root.join(STATE_FILE))
+        .map_err(|_| RuntimeError::State)?;
+    let bytes = state
+        .get(DurableStateKind::DescriptorFloor, b"candidate-v1")
+        .map_err(|_| RuntimeError::State)?
+        .ok_or(RuntimeError::Descriptor)?;
     let descriptor_digest = *blake3::hash(&bytes).as_bytes();
     let probe_bytes = read_bounded(probe_set_path)?;
     let probes: RelayActivationProbeSetV1 =
         serde_json::from_slice(&probe_bytes).map_err(|_| RuntimeError::ProbeSet)?;
     validate_probe_set(&config, &probes, descriptor_digest)?;
     let digest = *blake3::hash(&probe_bytes).as_bytes();
-    let state = DurableRelayState::open(&config.data_root.join(STATE_FILE))
-        .map_err(|_| RuntimeError::State)?;
     state
         .create_new(DurableStateKind::ControlFloor, ACTIVATION_KEY, &digest)
         .map_err(|_| RuntimeError::State)?;
@@ -324,6 +311,16 @@ fn descriptor_from_config(
         .collect::<Vec<_>>();
     transports.sort();
     transports.dedup();
+    let (issued_at, expires_at) =
+        if config.descriptor_issued_at == 0 && config.descriptor_expires_at == 0 {
+            let issued_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| RuntimeError::Descriptor)?
+                .as_secs();
+            (issued_at, issued_at + 600)
+        } else {
+            (config.descriptor_issued_at, config.descriptor_expires_at)
+        };
     Ok(RelayDescriptorV1 {
         format: 1,
         relay_node_id: principal_node_id(signing_key.verifying_key().as_bytes()),
@@ -334,8 +331,8 @@ fn descriptor_from_config(
         capacity_policy_digest: config.capacity_policy_digest,
         previous_descriptor_blake3: None,
         sequence: config.descriptor_sequence,
-        issued_at: config.descriptor_issued_at,
-        expires_at: config.descriptor_expires_at,
+        issued_at,
+        expires_at,
         relay_signature: [0; 64],
     })
 }
@@ -353,8 +350,9 @@ fn validate_config_shape(config: &RelayConfigV1) -> Result<(), RuntimeError> {
         || config.max_rendezvous_records == 0
         || config.max_rendezvous_records > 256
         || config.descriptor_sequence == 0
-        || config.descriptor_issued_at >= config.descriptor_expires_at
-        || config.descriptor_expires_at - config.descriptor_issued_at > 600
+        || !((config.descriptor_issued_at == 0 && config.descriptor_expires_at == 0)
+            || (config.descriptor_issued_at < config.descriptor_expires_at
+                && config.descriptor_expires_at - config.descriptor_issued_at <= 600))
         || (config.udp_bind.is_none() && config.tcp443_bind.is_none())
     {
         return Err(RuntimeError::Config);
@@ -558,7 +556,7 @@ mod tests {
         assert_eq!(config.tcp443_bind, Some("0.0.0.0:443".parse().unwrap()));
         assert_eq!(config.max_rendezvous_records, 256);
         assert_eq!(config.descriptor_sequence, 1);
-        assert_eq!(config.descriptor_expires_at, u64::MAX);
+        assert_eq!(config.descriptor_expires_at, 0);
         assert_eq!(config.advertised_endpoints[0].transport, "quic-udp");
         assert_eq!(config.advertised_endpoints[1].transport, "tls-tcp-443");
     }
