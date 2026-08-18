@@ -173,6 +173,18 @@ impl VNextFeatureConfig {
         self.enabled.is_set(feature) && !self.kill_switches.is_set(feature)
     }
 
+    #[cfg(feature = "vnext-outbound-first")]
+    pub fn outbound_reachability_policy(
+        &self,
+    ) -> Result<crate::vnext_reachability_manager::VNextReachabilityPolicy, VNextFeatureConfigError>
+    {
+        let policy = crate::vnext_reachability_manager::VNextReachabilityPolicy::default();
+        policy
+            .validate()
+            .map_err(|_| VNextFeatureConfigError::InvalidNetworkPolicy)?;
+        Ok(policy)
+    }
+
     pub fn validate(&self) -> Result<(), VNextFeatureConfigError> {
         self.network.validate()?;
         self.runtime_budgets.validate(&self.network)?;

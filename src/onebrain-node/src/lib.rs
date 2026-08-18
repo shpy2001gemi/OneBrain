@@ -52,6 +52,10 @@ pub mod vnext_distributed_pomv;
 #[cfg(feature = "vnext-chaos-harness")]
 pub mod vnext_fuzz_targets;
 pub mod vnext_legacy_migration;
+#[cfg(feature = "vnext-outbound-first")]
+pub mod vnext_linux_candidate_gatherer;
+#[cfg(feature = "vnext-outbound-first")]
+pub mod vnext_linux_network_epoch;
 pub mod vnext_local_runtime;
 pub mod vnext_m5_benchmark;
 pub mod vnext_m6_model;
@@ -72,8 +76,14 @@ pub mod vnext_p5_operations;
 pub mod vnext_performance_budgets;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_product_runtime;
+#[cfg(feature = "vnext-outbound-first")]
+pub mod vnext_reachability_manager;
+#[cfg(feature = "vnext-outbound-first")]
+pub mod vnext_reachability_replay_store;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_record_provenance;
+#[cfg(feature = "vnext-outbound-first")]
+pub mod vnext_rendezvous_publisher;
 pub mod vnext_reunion_canary;
 pub mod vnext_reward_firewall;
 #[cfg(feature = "vnext-network-runtime")]

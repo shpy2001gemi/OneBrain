@@ -66,6 +66,8 @@ pub mod vnext_reconciliation;
 pub mod vnext_reconciliation_journal;
 pub mod vnext_relay_discovery;
 #[cfg(feature = "outbound-first")]
+pub mod vnext_relay_reservation;
+#[cfg(feature = "outbound-first")]
 pub mod vnext_relay_tunnel;
 #[cfg(feature = "outbound-first")]
 pub mod vnext_rendezvous_client;

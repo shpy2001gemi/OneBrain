@@ -44,6 +44,44 @@ pub struct ValidatedAlternateRelayDialEndpoint {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AlternateRelayProbeObservation {
+    public_endpoint_index: usize,
+    alternate_socket: SocketAddr,
+    transport: RelayTransportV1,
+    observed_spki: [u8; 32],
+    observation_digest: [u8; 32],
+    expires_at: u64,
+}
+
+impl AlternateRelayProbeObservation {
+    pub fn new(
+        public_endpoint_index: usize,
+        alternate_socket: SocketAddr,
+        transport: RelayTransportV1,
+        observed_spki: [u8; 32],
+        observation_digest: [u8; 32],
+        observed_at: u64,
+        expires_at: u64,
+    ) -> Result<Self, RelayRouteError> {
+        if observation_digest == [0; 32]
+            || alternate_socket.ip().is_unspecified()
+            || observed_at >= expires_at
+            || expires_at > observed_at.saturating_add(30)
+        {
+            return Err(RelayRouteError::InvalidProbe);
+        }
+        Ok(Self {
+            public_endpoint_index,
+            alternate_socket,
+            transport,
+            observed_spki,
+            observation_digest,
+            expires_at,
+        })
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ValidatedRelayDialRoute {
     Public(ValidatedPublicRelayDialEndpoint),
     Alternate(ValidatedAlternateRelayDialEndpoint),
@@ -79,6 +117,31 @@ impl ValidatedRelayDialRoute {
             endpoint_index: index,
             endpoint,
             transport,
+        }))
+    }
+
+    pub fn alternate_from_verified_probe(
+        descriptor: &ValidatedRelayDescriptor,
+        probe: AlternateRelayProbeObservation,
+    ) -> Result<Self, RelayRouteError> {
+        let endpoint = descriptor
+            .canonical()
+            .endpoints
+            .get(probe.public_endpoint_index)
+            .ok_or(RelayRouteError::EndpointMismatch)?;
+        if endpoint.transport != probe.transport
+            || probe.observed_spki != descriptor.canonical().relay_public_key
+            || probe.expires_at > descriptor.canonical().expires_at
+        {
+            return Err(RelayRouteError::InvalidProbe);
+        }
+        Ok(Self::Alternate(ValidatedAlternateRelayDialEndpoint {
+            descriptor: descriptor.clone(),
+            public_endpoint_index: probe.public_endpoint_index,
+            alternate_socket: probe.alternate_socket,
+            transport: probe.transport,
+            spki_observation_digest: probe.observation_digest,
+            expires_at: probe.expires_at,
         }))
     }
 
@@ -196,6 +259,94 @@ pub enum RelayRouteError {
     EndpointMismatch,
     TransportMismatch,
     NoUsableTransport,
+    InvalidHandshake,
+    InvalidProbe,
+}
+
+/// Identity and measured transport binding for one live outer relay carrier.
+/// Construction remains inside ku-net's authenticated handshake path; node
+/// policy can inspect but cannot relabel the connection.
+#[derive(Debug)]
+pub struct AuthenticatedOuterRelayConnection {
+    route: ValidatedRelayDialRoute,
+    client_node_id: NodeId,
+    relay_node_id: NodeId,
+    connected_socket: SocketAddr,
+    connection_binding: [u8; 32],
+    transport: RelayTransportV1,
+    established_at: u64,
+    expires_at: u64,
+    open: AtomicBool,
+}
+
+impl AuthenticatedOuterRelayConnection {
+    #[allow(dead_code)]
+    pub(crate) fn from_verified_handshake(
+        route: ValidatedRelayDialRoute,
+        client_node_id: NodeId,
+        connected_socket: SocketAddr,
+        connection_binding: [u8; 32],
+        established_at: u64,
+        expires_at: u64,
+    ) -> Result<Self, RelayRouteError> {
+        if connection_binding == [0; 32]
+            || established_at >= expires_at
+            || expires_at > route.expires_at()
+        {
+            return Err(RelayRouteError::InvalidHandshake);
+        }
+        Ok(Self {
+            relay_node_id: route.relay_node_id(),
+            transport: route.transport(),
+            route,
+            client_node_id,
+            connected_socket,
+            connection_binding,
+            established_at,
+            expires_at,
+            open: AtomicBool::new(true),
+        })
+    }
+
+    pub fn client_node_id(&self) -> NodeId {
+        self.client_node_id
+    }
+
+    pub fn relay_node_id(&self) -> NodeId {
+        self.relay_node_id
+    }
+
+    pub fn connected_socket(&self) -> SocketAddr {
+        self.connected_socket
+    }
+
+    pub fn connection_binding(&self) -> [u8; 32] {
+        self.connection_binding
+    }
+
+    pub fn transport(&self) -> RelayTransportV1 {
+        self.transport
+    }
+
+    pub fn established_at(&self) -> u64 {
+        self.established_at
+    }
+
+    pub fn expires_at(&self) -> u64 {
+        self.expires_at
+    }
+
+    pub fn route(&self) -> &ValidatedRelayDialRoute {
+        &self.route
+    }
+
+    pub fn is_open(&self) -> bool {
+        self.open.load(Ordering::Acquire)
+    }
+
+    pub fn close(&self) {
+        self.open.store(false, Ordering::Release);
+    }
 }
 
 #[derive(Clone, Debug)]
