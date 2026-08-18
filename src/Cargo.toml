@@ -10,6 +10,7 @@ members = [
 
     # ── Shared Protocol ──
     "onebrain-protocol",# Shared P2P message types (node ↔ seed)
+    "onebrain-relay",   # Permissionless outbound-first relay service
 
     # ── Node Runtime (shared by ALL interfaces) ──
     "onebrain-node",    # ★ Library: OneBrainNode, networking, config

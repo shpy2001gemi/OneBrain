@@ -1,0 +1,27 @@
+[package]
+name = "onebrain-relay"
+version = "0.1.0"
+edition = "2021"
+description = "Permissionless authenticated relay for OneBrain outbound-first connectivity"
+license = "MIT"
+
+[dependencies]
+blake3 = "1"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
+ku-core = { path = "../ku-core" }
+onebrain-protocol = { path = "../onebrain-protocol" }
+rand = "0.8"
+redb = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[bin]]
+name = "onebrain-relay"
+path = "src/main.rs"
+
+[[bin]]
+name = "relay_preflight_probe"
+path = "src/bin/relay_preflight_probe.rs"

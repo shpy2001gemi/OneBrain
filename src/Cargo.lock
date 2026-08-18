@@ -3489,6 +3489,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "onebrain-relay"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "ed25519-dalek",
+ "ku-core",
+ "onebrain-protocol",
+ "rand 0.8.6",
+ "redb",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "onebrain-seed"
 version = "0.1.0"
 dependencies = [

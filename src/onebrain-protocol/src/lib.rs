@@ -11,6 +11,7 @@ pub mod reachability_signaling;
 pub mod reachability_signaling_codec;
 pub mod reachability_types;
 pub mod reconciliation_codec;
+pub mod relay_codec;
 pub mod session_codec;
 pub mod types;
 
@@ -37,6 +38,7 @@ pub use reconciliation_codec::{
     reconciliation_capability, reconciliation_profile, reconciliation_resume_scope_digest,
     validate_reconciliation_context, ReconciliationCodecError,
 };
+pub use relay_codec::*;
 pub use session_codec::{
     decode_session_message, encode_session_message, session_signing_bytes, SessionCodecError,
 };
