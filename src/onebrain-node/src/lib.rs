@@ -73,8 +73,14 @@ pub mod vnext_outbox;
 pub mod vnext_p5_fault_proxy;
 #[cfg(feature = "vnext-production-canary-harness")]
 pub mod vnext_p5_multi_host;
+#[cfg(feature = "vnext-production-canary-harness")]
+pub mod vnext_p5_multi_host_v2;
 #[cfg(feature = "vnext-canary-harness")]
 pub mod vnext_p5_operations;
+#[cfg(feature = "vnext-production-canary-harness")]
+pub mod vnext_p5_recovery_ops_v2;
+#[cfg(feature = "vnext-production-canary-harness")]
+pub mod vnext_p5_signer_provider;
 pub mod vnext_performance_budgets;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_product_runtime;

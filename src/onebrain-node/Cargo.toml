@@ -30,6 +30,30 @@ name = "p5_multi_host_agent"
 required-features = ["vnext-production-canary-harness"]
 
 [[example]]
+name = "p5_multi_host_agent_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "p5_agent_ctl_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "p5_receipt_signer_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "p5_identity_signer_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "p5_admin_ctl_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "p5_recovery_ops_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
 name = "concept_registry_production_qualification"
 
 [features]
