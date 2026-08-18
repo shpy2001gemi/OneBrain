@@ -49,6 +49,7 @@ pub mod transport;
 pub mod vacuum; // ★ v7 NEW: ConceptRegistry delta gossip + bloom anti-entropy
 
 pub mod vnext_bridge_merge;
+pub mod vnext_candidates;
 pub mod vnext_carrier;
 pub mod vnext_carrier_adapter;
 #[cfg(feature = "dr-m5-chaos-harness")]
@@ -64,6 +65,7 @@ pub mod vnext_reconciliation;
 pub mod vnext_reconciliation_journal;
 pub mod vnext_relay_discovery;
 pub mod vnext_resource_gate;
+pub mod vnext_route_plan;
 pub mod vnext_session;
 
 #[cfg(test)]
