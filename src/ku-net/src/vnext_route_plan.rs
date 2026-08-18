@@ -136,6 +136,28 @@ impl AdmittedRelayPath {
         self.association_digest
     }
 
+    pub(crate) fn from_validated_association(
+        candidate: RelayCandidateV1,
+        association: &crate::vnext_connectivity_signaling::ValidatedRelayAssociation,
+    ) -> Result<Self, crate::vnext_connectivity_signaling::ConnectivitySignalingError> {
+        let canonical = association.canonical();
+        if candidate.relay_node_id != canonical.relay_node_id
+            || candidate.reservation_id != canonical.initiator_reservation_id
+            || candidate.expires_at > canonical.expires_at
+        {
+            return Err(
+                crate::vnext_connectivity_signaling::ConnectivitySignalingError::AssociationMismatch,
+            );
+        }
+        Ok(Self {
+            candidate,
+            association_id: canonical.association_id,
+            local_reservation_id: canonical.initiator_reservation_id,
+            remote_reservation_id: canonical.target_reservation_id,
+            association_digest: association.digest(),
+        })
+    }
+
     #[cfg(test)]
     fn test_only(
         candidate: RelayCandidateV1,

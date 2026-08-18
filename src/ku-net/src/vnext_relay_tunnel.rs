@@ -192,7 +192,7 @@ impl ValidatedRelayDialRoute {
         }
     }
 
-    fn descriptor(&self) -> &ValidatedRelayDescriptor {
+    pub(crate) fn descriptor(&self) -> &ValidatedRelayDescriptor {
         match self {
             Self::Public(value) => &value.descriptor,
             Self::Alternate(value) => &value.descriptor,
@@ -338,6 +338,11 @@ impl AuthenticatedOuterRelayConnection {
 
     pub fn route(&self) -> &ValidatedRelayDialRoute {
         &self.route
+    }
+
+    pub fn public_endpoint(&self) -> &onebrain_protocol::RelayEndpointV1 {
+        let descriptor = self.route.descriptor();
+        &descriptor.canonical().endpoints[self.route.endpoint_index()]
     }
 
     pub fn is_open(&self) -> bool {

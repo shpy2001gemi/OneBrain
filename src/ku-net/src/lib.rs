@@ -54,6 +54,8 @@ pub mod vnext_carrier;
 pub mod vnext_carrier_adapter;
 #[cfg(feature = "dr-m5-chaos-harness")]
 pub mod vnext_chaos;
+#[cfg(feature = "outbound-first")]
+pub mod vnext_connection_executor;
 pub mod vnext_connectivity_signaling;
 pub mod vnext_inventory_forest;
 pub mod vnext_provider_view;
@@ -73,6 +75,8 @@ pub mod vnext_relay_tunnel;
 pub mod vnext_rendezvous_client;
 pub mod vnext_resource_gate;
 pub mod vnext_route_plan;
+#[cfg(feature = "outbound-first")]
+pub mod vnext_secure_session_adapter;
 pub mod vnext_session;
 
 #[cfg(test)]

@@ -11,8 +11,8 @@ use onebrain_protocol::ReachabilityEndpointV1;
 use onebrain_protocol::{
     connectivity_signing_bytes, decode_connectivity_signaling, ConnectivitySignalingV1,
     ConnectivitySignatureRoleV1, HolePunchScheduleV1, PrivateCandidateSignalV1,
-    ReflexiveObservationV1, RelayAssociationV1, RelayConnectRequestV1, HOLE_PUNCH_ATTEMPT_COUNT,
-    HOLE_PUNCH_INTERVAL_MS, HOLE_PUNCH_START_DELAY_MS,
+    ReflexiveObservationV1, RelayAssociationV1, RelayCandidateV1, RelayConnectRequestV1,
+    HOLE_PUNCH_ATTEMPT_COUNT, HOLE_PUNCH_INTERVAL_MS, HOLE_PUNCH_START_DELAY_MS,
 };
 
 use crate::vnext_candidates::{endpoint_is_public, CandidateBoundaryError, PrivateCandidateSet};
@@ -103,6 +103,13 @@ impl ValidatedRelayAssociation {
             return Err(ConnectivitySignalingError::AssociationMismatch);
         }
         Ok(())
+    }
+
+    pub fn admitted_relay_path(
+        &self,
+        candidate: RelayCandidateV1,
+    ) -> Result<crate::vnext_route_plan::AdmittedRelayPath, ConnectivitySignalingError> {
+        crate::vnext_route_plan::AdmittedRelayPath::from_validated_association(candidate, self)
     }
 }
 
@@ -209,6 +216,17 @@ impl ValidatedPunchedCarrier {
 
     pub fn schedule_digest(&self) -> [u8; 32] {
         self.schedule.digest
+    }
+
+    pub fn relay_node_id(&self) -> NodeId {
+        self.schedule.canonical.relay_node_id
+    }
+
+    pub fn reservation_ids(&self) -> ([u8; 32], [u8; 32]) {
+        (
+            self.schedule.canonical.initiator_reservation_id,
+            self.schedule.canonical.responder_reservation_id,
+        )
     }
 
     pub fn connected_endpoint(&self) -> &ReachabilityEndpointV1 {

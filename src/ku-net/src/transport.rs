@@ -274,6 +274,12 @@ impl OBPConnection {
     pub(crate) fn from_authenticated_quinn(inner: QuinnConnection) -> Self {
         Self { inner }
     }
+
+    /// Return the peer address measured by Quinn for this exact connection.
+    /// Callers cannot supply or rewrite this value.
+    pub fn remote_address(&self) -> SocketAddr {
+        self.inner.remote_address()
+    }
     /// Derive a channel binding from the established TLS 1.3 session.
     /// Both endpoints obtain the same exporter bytes, while a different QUIC
     /// connection produces a different binding.

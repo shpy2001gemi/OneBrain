@@ -1,3 +1,5 @@
+#![cfg(feature = "outbound-first")]
+
 use ku_core::foundation::NodeId;
 use ku_net::vnext_relay_reservation::{RelayReservationBounds, StandingRelaySet};
 
