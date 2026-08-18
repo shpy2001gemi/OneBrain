@@ -1,7 +1,7 @@
 # OneBrain Outbound-First NAT Traversal and Federated Relay Design
 
 > **Date:** 2026-08-14
-> **Status:** Owner-approved design; implementation planning pending
+> **Status:** Owner-approved design; implementation plan at [`../plans/2026-08-14-onebrain-outbound-first-nat-traversal-linux-p5.md`](../plans/2026-08-14-onebrain-outbound-first-nat-traversal-linux-p5.md)
 > **Scope:** Shared OBP reachability, direct-path upgrade, federated relay fallback, and P5 real-network qualification
 > **Does not change:** NodeID authority, authenticated-session authority, content authority, feed authority, or local-first operation
 
