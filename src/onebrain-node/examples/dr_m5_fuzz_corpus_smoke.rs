@@ -1,12 +1,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use onebrain_node::vnext_fuzz_targets::{run_target, FUZZ_TARGETS, MAX_FUZZ_INPUT_BYTES};
+use onebrain_node::vnext_fuzz_targets::{
+    run_target, valid_reachability_corpus_seed, FUZZ_TARGETS, MAX_FUZZ_INPUT_BYTES,
+    REACHABILITY_INVALID_CORPUS,
+};
 use sha2::{Digest, Sha256};
 
 const SEEDS_PER_TARGET: usize = 3;
 const CORPUS_MANIFEST_SHA256: &str =
-    "465d554e235738511b69e37c33c0b5e6fcccbc09f8b30e010d7d3eac916c66fd";
+    "578d5abef5cfe9cc57eea95e77c2f4c3b0faa04cde0b688a973fc3ebaa91f7a2";
 
 fn main() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fuzz/corpus");
@@ -40,6 +43,18 @@ fn main() {
             case_count += 1;
         }
     }
+
+    for (class, data) in REACHABILITY_INVALID_CORPUS {
+        update_field(&mut digest, class.as_bytes());
+        update_field(&mut digest, data);
+        run_target("reachability_codec", data);
+        case_count += 1;
+    }
+    let valid_reachability = valid_reachability_corpus_seed();
+    update_field(&mut digest, b"valid-reachability-object");
+    update_field(&mut digest, &valid_reachability);
+    run_target("reachability_codec", &valid_reachability);
+    case_count += 1;
 
     let observed = format!("{:x}", digest.finalize());
     assert_eq!(observed, CORPUS_MANIFEST_SHA256);

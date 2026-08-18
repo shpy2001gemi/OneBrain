@@ -629,7 +629,7 @@
         },
         {
           "path": "src/onebrain-node/src/vnext_fuzz_targets.rs",
-          "needle": "pub const FUZZ_TARGETS: [&str; 6]"
+          "needle": "pub const FUZZ_TARGETS: [&str; 7]"
         },
         {
           "path": "src/onebrain-node/examples/dr_m5_fuzz_corpus_smoke.rs",

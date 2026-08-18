@@ -779,8 +779,31 @@ jobs:
       - name: M5.4 deterministic parser corpus smoke
         run: >-
           cargo run --locked -p onebrain-node
-          --features vnext-chaos-harness
+          --features vnext-chaos-harness,vnext-outbound-first
           --example dr_m5_fuzz_corpus_smoke
+      - name: Outbound-first runner contract unit tests
+        working-directory: .
+        run: >-
+          python -m unittest
+          scripts.ci.test_run_vnext_low_resource_matrix
+          scripts.ci.test_run_vnext_namespace_matrix -v
+      - name: Outbound-first deterministic adversarial and platform matrix
+        working-directory: .
+        run: >-
+          cargo test --locked --manifest-path src/Cargo.toml
+          -p onebrain-node --features vnext-outbound-first
+          --test vnext_outbound_first_matrix -- --test-threads=1
+      - name: Outbound-first constrained 512-MiB matrix
+        working-directory: .
+        run: >-
+          python scripts/ci/run_vnext_low_resource_matrix.py
+          --manifest-path src/Cargo.toml --test vnext_outbound_first_matrix
+      - name: Outbound-first privileged namespace matrix
+        working-directory: .
+        run: >-
+          python scripts/ci/run_vnext_namespace_matrix.py
+          --manifest-path src/Cargo.toml --test vnext_outbound_first_matrix
+          --apparmor-unconfined
       - name: M5.5 operational compaction and process-kill recovery
         run: >-
           cargo test --locked -p ku-net
