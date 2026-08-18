@@ -3,7 +3,21 @@ use std::io::Read;
 const MAX_REQUEST_BYTES: u64 = 65_536;
 
 fn main() {
-    if std::env::args_os().len() != 1 {
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    if arguments == ["--print-compiled-binding"] {
+        let value = serde_json::json!({
+            "candidate_commit": option_env!("ONEBRAIN_BASE_COMMIT").unwrap_or("unbound"),
+            "candidate_tree": option_env!("ONEBRAIN_SOURCE_TREE").unwrap_or("bound-by-bundle-provenance"),
+            "format": "onebrain/relay-preflight-compiled-binding/1",
+            "toolchain_digest": option_env!("ONEBRAIN_TOOLCHAIN_DIGEST").unwrap_or("unbound")
+        });
+        println!(
+            "{}",
+            serde_json::to_string(&value).expect("closed JSON is serializable")
+        );
+        return;
+    }
+    if !arguments.is_empty() {
         eprintln!("OBP_RELAY_PREFLIGHT: argv forbidden");
         std::process::exit(2);
     }

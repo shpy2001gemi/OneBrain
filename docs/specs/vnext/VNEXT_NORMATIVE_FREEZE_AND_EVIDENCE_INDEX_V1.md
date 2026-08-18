@@ -58,6 +58,7 @@ The semantic guardrails are indexed in the [Normative Vocabulary](NORMATIVE_VOCA
 | signer/disk/slow-peer drills, backup/restore, rollback and operator dashboard | [P5 operations preflight profile](P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md) |
 | portable outbound-only reachability, permissionless relays and capability-based platform adapters | [Outbound-first reachability profile](OUTBOUND_FIRST_REACHABILITY_PROFILE_V1.md) |
 | three-host mixed-path and relay-failover production reference | [P5 multi-host production qualification V2](P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V2.md) |
+| source-free permissionless relay deployment, immutable units and NAT-free node operations | [Outbound-first relay operator guide](../../operations/ONEBRAIN_OUTBOUND_FIRST_RELAY_GUIDE.md) |
 | concurrent pinned-SSH orchestration, partial evidence durability and V2 carry-forward | [P5 outbound-first preflight V2](P5_OUTBOUND_FIRST_PREFLIGHT_PROFILE_V2.md) |
 | signed Registry release, capacity admission, truncated-index and disk-shortage qualification | [Concept Registry operations profile](CONCEPT_REGISTRY_OPERATIONS_PROFILE_V1.md) |
 | operator-visible scope and consent | [Scoped Runtime Status](SCOPED_RUNTIME_STATUS_PROFILE_V1.md) |

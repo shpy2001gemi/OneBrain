@@ -35,6 +35,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             RECEIPT_SOCKET,
             "--session-config",
             SESSION_CONFIG,
+            "--bind",
+            "0.0.0.0:41010",
         ]
     {
         return Err("expected fixed P5 V2 socket/config arguments".into());

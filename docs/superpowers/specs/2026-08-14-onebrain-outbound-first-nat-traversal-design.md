@@ -638,3 +638,29 @@ The relay-plus-direct-upgrade structure also aligns conceptually with the
 These references guide interoperability and threat analysis. They do not
 replace the frozen OneBrain NodeID, session, privacy, resource, or receipt
 contracts.
+
+## 15. Source-free Linux relay packaging and operations
+
+The native Linux bundle carries both legacy P5/soak executables and the eight
+outbound-first executables (`onebrain-relay`, `relay_preflight_probe`, and six
+P5 V2 node/admin/signer executables). Every executable is built under the same
+pinned Linux/amd64 toolchain and recorded independently by ELF/content/provenance
+evidence. The two public compiled-binding probes must emit closed candidate and
+toolchain JSON in both the builder and a source-free runtime container.
+
+The bundle also carries only public relay configs and reviewed immutable-path
+systemd units. Relay, node-identity, and receipt-signing private keys remain
+external and owned by distinct locked service users. The node agent never reads
+those keys. Three forced-command SSH principals separate pre-request relay
+probing, unprivileged agent control, and the no-argument privileged admin
+boundary; none offers an interactive shell or caller-selected command.
+
+Ordinary nodes remain outbound-only on every platform and do not configure NAT
+or public ports. The Linux three-host qualification uses a private
+session-scoped veth override solely to avoid hairpinning into a co-resident
+relay, while preserving the admitted relay NodeID/SPKI and never publishing the
+private endpoint. Namespace/NAT/UFW changes are exact, reversible,
+session-owned, management-safe, and qualification evidence rather than shared
+portable-core semantics. Other platforms implement the same outbound/direct/
+hole-punch/relay contract through their platform capability adapter and earn
+separate evidence.

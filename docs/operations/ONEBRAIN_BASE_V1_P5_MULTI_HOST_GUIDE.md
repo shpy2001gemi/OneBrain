@@ -84,3 +84,13 @@ Abort when any signature, role, host, runner, commit/tree, artifact, Registry,
 P5, duration, resource or monotonic interval check fails. Preserve the attempt,
 fence distributed lanes if runtime state changed, and open a new signed request
 for any retry that changes the candidate or evidence identity.
+
+## Outbound-first P5 V2 deployment
+
+The exact relay, forced-command SSH, signer isolation, systemd, namespace,
+UFW/NAT, bootstrap/prepare, and two-phase cleanup procedure is frozen in
+[`ONEBRAIN_OUTBOUND_FIRST_RELAY_GUIDE.md`](ONEBRAIN_OUTBOUND_FIRST_RELAY_GUIDE.md).
+General nodes never require an inbound public port or operator-managed NAT.
+Only volunteers choosing to expose a permissionless relay need a remotely
+reachable UDP or TLS/TCP-443 transport. Relay operation conveys availability,
+not trust, route authority, knowledge authority, or production qualification.
