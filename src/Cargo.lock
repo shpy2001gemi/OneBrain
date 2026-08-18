@@ -2735,6 +2735,7 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]
@@ -3495,12 +3496,18 @@ dependencies = [
  "blake3",
  "ed25519-dalek",
  "ku-core",
+ "ku-net",
  "onebrain-protocol",
+ "quinn",
  "rand 0.8.6",
+ "rcgen",
  "redb",
+ "rustls",
  "serde",
  "serde_json",
  "tempfile",
+ "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]

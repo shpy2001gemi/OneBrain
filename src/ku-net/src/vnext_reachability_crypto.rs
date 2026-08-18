@@ -381,6 +381,16 @@ pub struct ValidatedPublicDialEndpoint {
 }
 
 impl ValidatedPublicDialEndpoint {
+    #[cfg(feature = "outbound-first")]
+    pub(crate) fn source_digest(&self) -> [u8; 32] {
+        self.source_digest
+    }
+
+    #[cfg(feature = "outbound-first")]
+    pub(crate) fn endpoint_index(&self) -> usize {
+        self.endpoint_index
+    }
+
     pub fn dial_addresses(&self) -> &[SocketAddr] {
         &self.dial_addresses
     }

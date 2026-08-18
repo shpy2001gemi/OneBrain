@@ -7,13 +7,19 @@ license = "MIT"
 
 [dependencies]
 blake3 = "1"
-ed25519-dalek = { version = "2", features = ["rand_core"] }
+ed25519-dalek = { version = "2.2.0", features = ["pkcs8", "rand_core"] }
 ku-core = { path = "../ku-core" }
+ku-net = { path = "../ku-net", features = ["outbound-first"] }
 onebrain-protocol = { path = "../onebrain-protocol" }
+quinn = { version = "0.11.11", default-features = false, features = ["rustls-aws-lc-rs", "runtime-tokio"] }
 rand = "0.8"
+rcgen = { version = "0.13.2", default-features = false, features = ["aws_lc_rs"] }
 redb = "2"
+rustls = { version = "0.23.41", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-util", "signal"] }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["aws-lc-rs"] }
 
 [dev-dependencies]
 tempfile = "3"

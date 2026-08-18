@@ -179,7 +179,6 @@ impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
 /// QUIC transport endpoint — can both accept and initiate connections.
 pub struct QuicTransport {
     endpoint: Endpoint,
-    config: TransportConfig,
     client_config: ClientConfig,
 }
 
@@ -194,7 +193,26 @@ impl QuicTransport {
 
         Ok(Self {
             endpoint,
-            config,
+            client_config,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn bind_abstract(
+        config: TransportConfig,
+        socket: Arc<dyn quinn::AsyncUdpSocket>,
+    ) -> Result<Self, TransportError> {
+        let server_config = build_server_config(&config)?;
+        let client_config = build_client_config(&config)?;
+        let endpoint = Endpoint::new_with_abstract_socket(
+            quinn::EndpointConfig::default(),
+            Some(server_config),
+            socket,
+            Arc::new(quinn::TokioRuntime),
+        )
+        .map_err(|error| TransportError::BindFailed(error.to_string()))?;
+        Ok(Self {
+            endpoint,
             client_config,
         })
     }
@@ -252,6 +270,10 @@ pub struct OBPConnection {
 }
 
 impl OBPConnection {
+    #[allow(dead_code)]
+    pub(crate) fn from_authenticated_quinn(inner: QuinnConnection) -> Self {
+        Self { inner }
+    }
     /// Derive a channel binding from the established TLS 1.3 session.
     /// Both endpoints obtain the same exporter bytes, while a different QUIC
     /// connection produces a different binding.
