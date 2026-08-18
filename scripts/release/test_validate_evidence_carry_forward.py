@@ -3,10 +3,13 @@ from __future__ import annotations
 import copy
 import json
 import unittest
+import tempfile
 from pathlib import Path
 
 from scripts.release.validate_evidence_carry_forward import (
     EvidenceCarryForwardError,
+    _raw_evidence_manifest,
+    _verify_p5_aggregate_v1,
     analyze_evidence_carry_forward,
 )
 
@@ -60,6 +63,17 @@ def _evidence() -> dict[str, object]:
 
 
 class EvidenceCarryForwardTests(unittest.TestCase):
+    def test_v1_verifier_remains_explicit_and_raw_v2_manifest_is_content_addressed(self) -> None:
+        self.assertTrue(callable(_verify_p5_aggregate_v1))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "receipt.json").write_bytes(b"{}")
+            first, count = _raw_evidence_manifest(root)
+            self.assertEqual(count, 1)
+            (root / "receipt.json").write_bytes(b'{"changed":true}')
+            second, _ = _raw_evidence_manifest(root)
+            self.assertNotEqual(first, second)
+
     def test_filename_only_identity_is_rejected(self) -> None:
         evidence = _evidence()
         del evidence["source_binding"]

@@ -38,6 +38,11 @@ jobs:
         with:
           ref: main
           persist-credentials: false
+      - name: Validate P5 V2 controller and V1 compatibility
+        run: |
+          python -m unittest scripts.runner.test_onebrain_p5_multi_host_v2 -v
+          python -m unittest scripts.runner.test_onebrain_p5_multi_host -v
+          python -m unittest scripts.release.test_validate_evidence_carry_forward -v
       - name: Verify the signed request with candidate-owned verifier
         run: >-
           python scripts/release/verify_base_release_request.py

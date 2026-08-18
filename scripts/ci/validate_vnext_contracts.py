@@ -7087,7 +7087,9 @@ def validate_base_v1_exact_candidate_soak(
 
     analyzer = read(ROOT / "scripts/release/validate_evidence_carry_forward.py")
     for marker in (
-        "def _verify_p5_aggregate(",
+        "def _verify_p5_aggregate_v1(",
+        "def _verify_p5_aggregate_v2(",
+        'subparsers.add_parser("verify-p5")',
         'parser.add_argument("--p5-aggregate", type=Path, required=True)',
         'parser.add_argument("--executable", type=Path, required=True)',
         '"SPDX_SBOM:sbom.spdx.json"',

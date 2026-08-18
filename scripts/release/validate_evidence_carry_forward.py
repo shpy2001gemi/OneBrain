@@ -8,8 +8,12 @@ fresh uninterrupted 72-hour run on the exact Task 27 candidate in Task 28.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
+import stat
+import sys
+import time
 from pathlib import Path
 from typing import Iterable
 
@@ -551,7 +555,7 @@ def _read_private_key(path: Path) -> Ed25519PrivateKey:
     return Ed25519PrivateKey.from_private_bytes(key_bytes)
 
 
-def _verify_p5_aggregate(
+def _verify_p5_aggregate_v1(
     aggregate_path: Path,
     verified: dict[str, object],
 ) -> str:
@@ -746,6 +750,140 @@ def _verify_p5_aggregate(
     return p5_root
 
 
+def _load_p5_v2_controller():
+    path = ROOT / "scripts/runner/onebrain-p5-multi-host-v2.py"
+    spec = importlib.util.spec_from_file_location("onebrain_p5_multi_host_v2_verify", path)
+    if spec is None or spec.loader is None:
+        raise SoakEvidenceError("P5 V2 controller implementation is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _raw_evidence_manifest(root: Path) -> tuple[str, int]:
+    if not root.is_dir() or root.is_symlink():
+        raise SoakEvidenceError("P5 raw evidence root must be a real directory")
+    rows: list[dict[str, object]] = []
+    for path in sorted(root.rglob("*")):
+        if path.is_dir():
+            continue
+        metadata = path.lstat()
+        if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
+            raise SoakEvidenceError("P5 raw evidence contains a non-regular entry")
+        encoded = path.read_bytes()
+        if len(encoded) > 1_048_576 or len(rows) >= 4096:
+            raise SoakEvidenceError("P5 raw evidence exceeds its fixed bounds")
+        rows.append({
+            "path": path.relative_to(root).as_posix(),
+            "bytes": len(encoded),
+            "blake3": blake3.blake3(encoded).hexdigest(),
+        })
+    return blake3.blake3(_canonical_json(rows)).hexdigest(), len(rows)
+
+
+def _verify_p5_aggregate_v2(
+    *,
+    release_request: Path,
+    release_signature: Path,
+    base_policy: Path,
+    base_gpg_home: Path,
+    p5_request: Path,
+    p5_signature: Path,
+    p5_approval_policy: Path,
+    inventory: Path,
+    raw_evidence_root: Path,
+    aggregate_path: Path,
+    executable: Path,
+    bundle_root: Path,
+    registry_candidate_root: Path,
+) -> dict[str, object]:
+    from scripts.release.verify_base_release_request import ReleaseRequestError, verify_release_request
+    try:
+        verify_release_request(release_request, release_signature, base_policy, base_gpg_home)
+    except ReleaseRequestError as error:
+        raise SoakEvidenceError(f"Base release request is invalid: {error}") from error
+    controller = _load_p5_v2_controller()
+    try:
+        request = controller.verify_p5_request(p5_request, p5_signature, p5_approval_policy, inventory)
+    except controller.P5ExecutionError as error:
+        raise SoakEvidenceError(str(error)) from error
+    encoded = aggregate_path.read_bytes()
+    if not encoded or len(encoded) > 4_194_304:
+        raise SoakEvidenceError("P5 V2 aggregate is empty or exceeds its bound")
+    try: aggregate = json.loads(encoded)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error: raise SoakEvidenceError("P5 V2 aggregate is invalid JSON") from error
+    if not isinstance(aggregate, dict) or aggregate.get("format") != 2:
+        raise SoakEvidenceError("P5 V2 aggregate format mismatch")
+    if aggregate.get("request_digest") != blake3.blake3(controller.canonical_json(request)).hexdigest():
+        raise SoakEvidenceError("P5 V2 aggregate request binding mismatch")
+    authority = aggregate.get("evidence_authority")
+    inv = json.loads(inventory.read_text(encoding="utf-8"))
+    if not isinstance(authority, dict) or authority.get("inventory_blake3") != blake3.blake3(controller.canonical_json(inv)).hexdigest():
+        raise SoakEvidenceError("P5 V2 evidence authority inventory mismatch")
+    if authority.get("provider_evidence_status") != inv.get("provider_evidence_status"):
+        raise SoakEvidenceError("P5 V2 provider evidence status mismatch")
+    child_receipts = aggregate.get("child_receipts")
+    if not isinstance(child_receipts, list) or len(child_receipts) < 3:
+        raise SoakEvidenceError("P5 V2 signed child receipt set is incomplete")
+    child_hosts: set[str] = set()
+    for receipt in child_receipts:
+        if not isinstance(receipt, dict) or receipt.get("format") != 2:
+            raise SoakEvidenceError("P5 V2 child receipt format mismatch")
+        if receipt.get("evidence_authority") != authority:
+            raise SoakEvidenceError("P5 V2 child evidence authority mismatch")
+        host_id = receipt.get("host_id")
+        if host_id not in {"host-a", "host-b", "host-c"}:
+            raise SoakEvidenceError("P5 V2 child host is invalid")
+        unsigned_child = {key: value for key, value in receipt.items() if key != "signature"}
+        try:
+            Ed25519PublicKey.from_public_bytes(bytes.fromhex(str(receipt["signer_public_key"]))).verify(
+                bytes.fromhex(str(receipt["signature"])),
+                b"onebrain/p5/child-receipt/v2\0" + blake3.blake3(controller.canonical_json(unsigned_child)).digest(),
+            )
+        except (KeyError, ValueError, InvalidSignature) as error:
+            raise SoakEvidenceError("P5 V2 child receipt signature is invalid") from error
+        child_hosts.add(str(host_id))
+    if child_hosts != {"host-a", "host-b", "host-c"}:
+        raise SoakEvidenceError("P5 V2 child host coverage is incomplete")
+    qualification = controller.derive_qualification(aggregate)
+    if aggregate.get("qualification") != qualification or not qualification["multi_host_qualified"]:
+        raise SoakEvidenceError("P5 V2 qualification is not derived production evidence")
+    raw_manifest, raw_count = _raw_evidence_manifest(raw_evidence_root)
+    if aggregate.get("raw_manifest_blake3") != raw_manifest:
+        raise SoakEvidenceError("P5 V2 raw evidence manifest mismatch")
+    if not executable.is_file() or not bundle_root.is_dir() or not registry_candidate_root.is_dir():
+        raise SoakEvidenceError("P5 V2 executable/bundle/Registry candidate input is unavailable")
+    unsigned_aggregate = {
+        key: value for key, value in aggregate.items()
+        if key not in {"controller_signature", "aggregate_blake3"}
+    }
+    aggregate_blake3 = blake3.blake3(controller.canonical_json(unsigned_aggregate)).hexdigest()
+    if aggregate.get("aggregate_blake3") != aggregate_blake3:
+        raise SoakEvidenceError("P5 V2 aggregate digest mismatch")
+    try:
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(str(aggregate["controller_public_key"]))).verify(
+            bytes.fromhex(str(aggregate["controller_signature"])),
+            b"onebrain/p5/multi-host-aggregate/v2\0" + bytes.fromhex(aggregate_blake3),
+        )
+    except (KeyError, ValueError, InvalidSignature) as error:
+        raise SoakEvidenceError("P5 V2 aggregate signature is invalid") from error
+    return {
+        "format": 2,
+        "request_digest": aggregate["request_digest"],
+        "evidence_authority": authority,
+        "session_id": request["session_id"],
+        "aggregate_blake3": aggregate_blake3,
+        "raw_manifest_blake3": raw_manifest,
+        "verified_child_receipts": len(child_receipts),
+        "verified_raw_objects": raw_count,
+        "multi_host_qualified": True,
+        "limitations": aggregate.get("limitations", []),
+        "verifier_implementation_blake3": blake3.blake3(Path(__file__).read_bytes()).hexdigest(),
+        "verified_at": int(time.time()),
+    }
+
+
 def _verified_binding(
     *,
     request: Path,
@@ -766,7 +904,7 @@ def _verified_binding(
         raise SoakEvidenceError(f"Base release request is invalid: {error}") from error
     run = verified["run_context"]
     release = verified["bindings"]
-    p5_aggregate_root = _verify_p5_aggregate(p5_aggregate, verified)
+    p5_aggregate_root = _verify_p5_aggregate_v1(p5_aggregate, verified)
     executable_blake3 = blake3.blake3(executable.read_bytes()).hexdigest()
     sbom_blake3 = release["candidate_payload_artifacts_blake3"][
         "SPDX_SBOM:sbom.spdx.json"
@@ -938,6 +1076,14 @@ def main(argv: list[str] | None = None) -> int:
     aggregate.add_argument("--receipts-root", type=Path, required=True)
     aggregate.add_argument("--signing-key", type=Path, required=True)
     aggregate.add_argument("--output", type=Path, required=True)
+    verify_p5 = subparsers.add_parser("verify-p5")
+    for name in (
+        "release-request", "release-signature", "base-policy", "base-gpg-home",
+        "p5-request", "p5-signature", "p5-approval-policy", "inventory",
+        "raw-evidence-root", "p5-aggregate", "executable", "bundle-root",
+        "registry-candidate-root", "output",
+    ):
+        verify_p5.add_argument(f"--{name}", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "carry-forward":
@@ -945,6 +1091,22 @@ def main(argv: list[str] | None = None) -> int:
                 json.loads(args.evidence.read_text(encoding="utf-8")),
                 json.loads(args.candidate_identity.read_text(encoding="utf-8")),
                 args.changed_path,
+            )
+        elif args.command == "verify-p5":
+            result = _verify_p5_aggregate_v2(
+                release_request=args.release_request,
+                release_signature=args.release_signature,
+                base_policy=args.base_policy,
+                base_gpg_home=args.base_gpg_home,
+                p5_request=args.p5_request,
+                p5_signature=args.p5_signature,
+                p5_approval_policy=args.p5_approval_policy,
+                inventory=args.inventory,
+                raw_evidence_root=args.raw_evidence_root,
+                aggregate_path=args.p5_aggregate,
+                executable=args.executable,
+                bundle_root=args.bundle_root,
+                registry_candidate_root=args.registry_candidate_root,
             )
         else:
             binding = _verified_binding(
