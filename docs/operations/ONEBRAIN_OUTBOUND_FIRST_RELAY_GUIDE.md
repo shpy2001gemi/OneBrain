@@ -48,9 +48,12 @@ sudo install -d -o root -g root -m 0755 /etc/onebrain
 candidate_generation="$(sudo readlink -f /opt/onebrain/base-v1/current)"
 sudo test "$candidate_generation" = "/opt/onebrain/base-v1/$EXPECTED_GENERATION"
 sudo install -o root -g root -m 0644 "$candidate_generation/config/$RELAY_CONFIG" /etc/onebrain/relay-p5.json
-sudo sed "s|@CANDIDATE_GENERATION@|$candidate_generation|g" "$candidate_generation/units/onebrain-relay-p5.service" > /tmp/onebrain-relay-p5.service
-sudo install -o root -g root -m 0644 /tmp/onebrain-relay-p5.service /etc/systemd/system/onebrain-relay-p5.service
-sudo rm -f /tmp/onebrain-relay-p5.service
+relay_unit_tmp="$(mktemp)"
+sed "s|@CANDIDATE_GENERATION@|$candidate_generation|g" "$candidate_generation/units/onebrain-relay-p5.service" > "$relay_unit_tmp"
+! grep -Fq '@CANDIDATE_GENERATION@' "$relay_unit_tmp"
+grep -Fq "ExecStart=$candidate_generation/bin/onebrain-relay " "$relay_unit_tmp"
+sudo install -o root -g root -m 0644 "$relay_unit_tmp" /etc/systemd/system/onebrain-relay-p5.service
+rm -f "$relay_unit_tmp"
 sudo -u onebrain-relay "$candidate_generation/bin/onebrain-relay" generate-identity --output /var/lib/onebrain/relay-p5/identity.key
 sudo test "$(sudo stat -c '%a %U:%G' /var/lib/onebrain/relay-p5/identity.key)" = '600 onebrain-relay:onebrain-relay'
 sudo -u onebrain-relay "$candidate_generation/bin/onebrain-relay" initialize-state --config /etc/onebrain/relay-p5.json
@@ -60,11 +63,11 @@ sudo systemctl enable --now onebrain-relay-p5.service
 sudo systemctl show onebrain-relay-p5.service --property=LoadState --property=ActiveState --property=SubState --no-pager
 ```
 
-The shipped unit is already rendered to the bundle candidate. The `sed` step
-therefore changes no byte; it remains explicit so an operator cannot silently
-substitute a different generation. Runner-c additionally needs a reviewed unit
-drop-in granting only `CAP_NET_BIND_SERVICE` for port 443. Runner-a must not
-receive that capability.
+The shipped unit is a read-only reviewed template. The `sed` step binds it to
+the verified installed manifest generation; the rendered unit must contain
+neither the placeholder nor the mutable `current` selector. Runner-c
+additionally needs a reviewed unit drop-in granting only
+`CAP_NET_BIND_SERVICE` for port 443. Runner-a must not receive that capability.
 
 ## P5 service and SSH boundary
 
@@ -85,9 +88,11 @@ the bundle, inventory, evidence, or agent process. Record only canonical
 `print-public` outputs. The agent UID must get `EACCES` opening either key while
 its fixed signer-socket clients work.
 
-Install the six files under `units/` for receipt signer, identity signer, and
-agent as root:root 0644. Their `ExecStart` values are bound to the immutable
-generation. Leave them disabled and stopped until a signed P5 session exists.
+Render and install the six files under `units/` for receipt signer, identity
+signer, and agent as root:root 0644. Service `ExecStart` values are bound to the
+verified immutable manifest generation at installation; socket files contain
+no generation placeholder. Leave them disabled and stopped until a signed P5
+session exists.
 Bootstrap only verifies authority and atomically installs
 `/run/onebrain/p5-v2/current-session.json`; it changes no unit/network state.
 A separate signed `PrepareSession` starts receipt signer, builds the namespace,
