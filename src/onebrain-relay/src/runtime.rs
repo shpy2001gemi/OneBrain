@@ -18,7 +18,10 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
-use crate::{principal_node_id, DurableRelayState, DurableStateKind};
+use crate::{
+    principal_node_id, relay_identity_certificate, DurableRelayState, DurableStateKind,
+    RelayDataPlaneError, Tcp443RelayListener, UdpRelayListener,
+};
 
 const MAX_CONFIG_BYTES: u64 = 65_536;
 const STATE_FILE: &str = "relay-state.redb";
@@ -158,6 +161,47 @@ pub fn activate_descriptor(
 }
 
 pub fn serve(config_path: &Path, preflight_only: bool) -> Result<(), RuntimeError> {
+    let config = validate_serve(config_path, preflight_only)?;
+    let signing_key = read_signing_key(&config.signer_locator)?;
+    let descriptor = descriptor_from_config(&config, &signing_key)?;
+    let identity = relay_identity_certificate(&signing_key, &descriptor)
+        .map_err(|_| RuntimeError::DataPlane)?;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|_| RuntimeError::DataPlane)?;
+    runtime.block_on(async move {
+        let mut workers = tokio::task::JoinSet::new();
+        if let Some(address) = config.udp_bind {
+            let listener =
+                UdpRelayListener::bind(address, &identity).map_err(|_| RuntimeError::DataPlane)?;
+            workers.spawn(async move { run_udp_listener(listener).await });
+        }
+        if let Some(address) = config.tcp443_bind {
+            let listener = Tcp443RelayListener::bind(address, &identity)
+                .await
+                .map_err(|_| RuntimeError::DataPlane)?;
+            workers.spawn(async move { run_tcp_listener(listener).await });
+        }
+        if workers.is_empty() {
+            return Err(RuntimeError::Config);
+        }
+        tokio::select! {
+            signal = tokio::signal::ctrl_c() => {
+                signal.map_err(|_| RuntimeError::DataPlane)?;
+                workers.abort_all();
+                while workers.join_next().await.is_some() {}
+                Ok(())
+            }
+            result = workers.join_next() => match result {
+                Some(Ok(Ok(()))) | None => Err(RuntimeError::DataPlane),
+                Some(Ok(Err(_))) | Some(Err(_)) => Err(RuntimeError::DataPlane),
+            }
+        }
+    })
+}
+
+fn validate_serve(config_path: &Path, preflight_only: bool) -> Result<RelayConfigV1, RuntimeError> {
     let config = verify_config(config_path)?;
     let state = DurableRelayState::open(&config.data_root.join(STATE_FILE))
         .map_err(|_| RuntimeError::State)?;
@@ -169,9 +213,25 @@ pub fn serve(config_path: &Path, preflight_only: bool) -> Result<(), RuntimeErro
     {
         return Err(RuntimeError::NotActivated);
     }
-    // Task 8 owns the actual UDP/TLS listeners. Task 7 deliberately proves
-    // that an unactivated process cannot enter control/data service.
-    Ok(())
+    Ok(config)
+}
+
+async fn run_udp_listener(listener: UdpRelayListener) -> Result<(), RelayDataPlaneError> {
+    loop {
+        match listener.accept_echo_once().await {
+            Ok(()) | Err(RelayDataPlaneError::Expired) => {}
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+async fn run_tcp_listener(listener: Tcp443RelayListener) -> Result<(), RelayDataPlaneError> {
+    loop {
+        match listener.accept_echo_once().await {
+            Ok(()) | Err(RelayDataPlaneError::Expired) => {}
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 fn descriptor_from_config(
@@ -389,6 +449,7 @@ pub enum RuntimeError {
     OutputExists,
     Limit,
     Io,
+    DataPlane,
 }
 
 impl std::fmt::Display for RuntimeError {
@@ -440,9 +501,9 @@ mod tests {
             initialize_state(&config_path).unwrap_err(),
             RuntimeError::State
         );
-        serve(&config_path, true).unwrap();
+        validate_serve(&config_path, true).unwrap();
         assert_eq!(
-            serve(&config_path, false).unwrap_err(),
+            validate_serve(&config_path, false).unwrap_err(),
             RuntimeError::NotActivated
         );
         let descriptor_path = directory.path().join("descriptor.cbor");
@@ -476,7 +537,7 @@ mod tests {
         let valid_probe_path = directory.path().join("valid-probes.json");
         std::fs::write(&valid_probe_path, serde_json::to_vec(&valid).unwrap()).unwrap();
         activate_descriptor(&config_path, &valid_probe_path).unwrap();
-        serve(&config_path, false).unwrap();
+        validate_serve(&config_path, false).unwrap();
     }
 
     fn encode_hex(bytes: &[u8]) -> String {
