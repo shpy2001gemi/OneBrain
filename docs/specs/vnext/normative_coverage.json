@@ -789,6 +789,44 @@
       "rationale": "The production contract freezes a three-physical-host authenticated-QUIC topology, exact signed-candidate and role-separated evidence bindings, the complete fault/recovery matrix, bounded resources and fail-closed derivation while preserving both single-host profiles as non-qualifying preflights."
     },
     {
+      "path": "docs/specs/vnext/OUTBOUND_FIRST_REACHABILITY_PROFILE_V1.md",
+      "expected_statement_lines": 19,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/outbound-first-reachability-v1.json",
+          "needle": "onebrain/outbound-first-reachability/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_vnext_outbound_reachability"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_outbound_reachability.py",
+          "needle": "test_private_candidates_and_nat_configuration_are_rejected"
+        }
+      ],
+      "rationale": "The portable reachability contract freezes outbound-only ordinary nodes, permissionless identity-bound relays, bounded discovery and replay protection, capability-based platform adapters, privacy-safe public receipts and the absence of any mandatory central service."
+    },
+    {
+      "path": "docs/specs/vnext/P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V2.md",
+      "expected_statement_lines": 12,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/p5-multi-host-production-qualification-v2.json",
+          "needle": "onebrain/p5-multi-host-production-qualification/2"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_vnext_p5_multi_host_v2"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_p5_multi_host.py",
+          "needle": "test_all_direct_and_all_relay_rings_are_rejected"
+        }
+      ],
+      "rationale": "The additive P5 V2 contract qualifies the Linux three-host reference without redefining portable OBP semantics, requires mixed path classes and failover, and repeats the owner-approved provider-evidence-pending status in every public receipt and aggregate."
+    },
+    {
       "path": "docs/specs/vnext/BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE.md",
       "expected_statement_lines": 23,
       "evidence": [

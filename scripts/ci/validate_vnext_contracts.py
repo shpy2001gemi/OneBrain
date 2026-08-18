@@ -71,6 +71,12 @@ P5_OPERATIONS_PREFLIGHT_PROFILE = (
 P5_MULTI_HOST_PRODUCTION_PROFILE = (
     ROOT / "src/test-vectors/vnext/p5-multi-host-production-qualification-v1.json"
 )
+OUTBOUND_FIRST_REACHABILITY_PROFILE = (
+    ROOT / "src/test-vectors/vnext/outbound-first-reachability-v1.json"
+)
+P5_MULTI_HOST_PRODUCTION_PROFILE_V2 = (
+    ROOT / "src/test-vectors/vnext/p5-multi-host-production-qualification-v2.json"
+)
 BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE = (
     ROOT / "src/test-vectors/vnext/base-v1-exact-candidate-soak-v1.json"
 )
@@ -5822,6 +5828,364 @@ def validate_vnext_dr_m5_soak_release(
     )
 
 
+def validate_vnext_outbound_reachability(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(OUTBOUND_FIRST_REACHABILITY_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(
+                f"invalid outbound-first reachability JSON: {error}"
+            ) from error
+    expected_root_fields = {
+        "format",
+        "profile_id",
+        "version",
+        "canonical_encoding",
+        "schema_ids",
+        "canonical_objects",
+        "signature_domains",
+        "limits",
+        "path_kinds",
+        "path_classes",
+        "failure_kinds",
+        "admission",
+        "outbound_only_baseline",
+        "relay_governance",
+        "discovery",
+        "privacy",
+        "platform_capabilities",
+        "session_authority",
+        "store_and_forward",
+        "required_mutations",
+    }
+    if not isinstance(profile, dict) or set(profile) != expected_root_fields:
+        raise ContractError("outbound-first reachability fields drift")
+    if (
+        profile.get("format") != "onebrain/outbound-first-reachability/1"
+        or profile.get("profile_id") != "OUTBOUND_FIRST_REACHABILITY_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("outbound-first reachability identity drift")
+
+    expected_encoding = {
+        "codec": "canonical-cbor-closed-schema",
+        "max_depth": 12,
+        "unknown_fields": "reject",
+        "duplicate_fields": "reject",
+        "byte_for_byte_reencode_required": True,
+    }
+    if profile.get("canonical_encoding") != expected_encoding:
+        raise ContractError("outbound-first canonical encoding drift")
+
+    expected_schema_ids = {
+        "reachability": {
+            "bootstrap-manifest": 40,
+            "relay-descriptor": 41,
+            "relay-reservation": 42,
+            "reachability-advertisement": 43,
+            "route-plan": 44,
+            "route-receipt": 45,
+        },
+        "relay_control": {
+            "reserve": 50,
+            "granted": 51,
+            "keepalive": 52,
+            "revoke": 53,
+            "possession-challenge": 54,
+            "possession-proof": 55,
+            "denied": 61,
+            "outer-client-challenge": 62,
+            "outer-client-hello": 63,
+        },
+        "connectivity_signaling": {
+            "reflexive-observation": 56,
+            "hole-punch-schedule": 57,
+            "relay-connect-request": 58,
+            "relay-association": 59,
+            "private-candidate-signal": 60,
+        },
+    }
+    if profile.get("schema_ids") != expected_schema_ids:
+        raise ContractError("outbound-first schema ID drift")
+
+    expected_objects = {
+        "bootstrap_manifest": {
+            "schema_id": 40,
+            "fields": [
+                "format", "discovery_source_id", "discovery_endpoints",
+                "protocol_versions", "sequence", "issued_at", "expires_at",
+                "source_signature",
+            ],
+        },
+        "relay_descriptor": {
+            "schema_id": 41,
+            "fields": [
+                "format", "relay_node_id", "relay_public_key", "endpoints",
+                "supported_transports", "protocol_versions",
+                "capacity_policy_digest", "previous_descriptor_blake3",
+                "sequence", "issued_at", "expires_at", "relay_signature",
+            ],
+        },
+        "relay_reservation": {
+            "schema_id": 42,
+            "fields": [
+                "format", "relay_node_id", "target_node_id", "reservation_id",
+                "transport_scope", "issued_at", "expires_at", "target_signature",
+                "relay_signature",
+            ],
+        },
+        "reachability_advertisement": {
+            "schema_id": 43,
+            "fields": [
+                "format", "target_node_id", "relay_reservations",
+                "optional_public_candidates", "capability_ceiling", "sequence",
+                "issued_at", "expires_at", "target_signature",
+            ],
+        },
+        "route_plan": {
+            "schema_id": 44,
+            "local_only": True,
+            "fields": [
+                "expected_peer", "direct_candidates", "relay_candidates",
+                "deadline", "attempt_budget", "resource_budget",
+                "privacy_policy_digest",
+            ],
+        },
+        "route_receipt": {
+            "schema_id": 45,
+            "local_only": True,
+            "fields": [
+                "expected_peer", "authenticated_peer", "selected_path_kind",
+                "selected_carrier_identity", "attempts",
+                "transport_binding_digest", "session_id", "started_at",
+                "authenticated_at", "terminal_outcome", "limitations",
+                "local_signature",
+            ],
+        },
+    }
+    if profile.get("canonical_objects") != expected_objects:
+        raise ContractError("outbound-first canonical object drift")
+
+    expected_domains = {
+        "bootstrap_manifest": "onebrain/reachability/bootstrap-manifest/v1",
+        "relay_descriptor": "onebrain/reachability/relay-descriptor/v1",
+        "relay_reservation_target": "onebrain/reachability/relay-reservation-target/v1",
+        "relay_reservation_relay": "onebrain/reachability/relay-reservation-relay/v1",
+        "advertisement": "onebrain/reachability/advertisement/v1",
+        "route_receipt": "onebrain/reachability/route-receipt/v1",
+        "relay_reserve_request": "onebrain/reachability/relay-reserve-request/v1",
+        "relay_keepalive": "onebrain/reachability/relay-keepalive/v1",
+        "relay_revoke": "onebrain/reachability/relay-revoke/v1",
+        "relay_denial": "onebrain/reachability/relay-denial/v1",
+        "relay_possession_challenge": "onebrain/reachability/relay-possession-challenge/v1",
+        "relay_possession_proof": "onebrain/reachability/relay-possession-proof/v1",
+        "reflexive_observation": "onebrain/reachability/reflexive-observation/v1",
+        "hole_punch_schedule": "onebrain/reachability/hole-punch-schedule/v1",
+        "relay_connect_request": "onebrain/reachability/relay-connect-request/v1",
+        "relay_association": "onebrain/reachability/relay-association/v1",
+        "private_candidate_signal": "onebrain/reachability/private-candidate-signal/v1",
+        "relay_outer_client_challenge": "onebrain/reachability/relay-outer-client-challenge/v1",
+        "relay_outer_client_hello": "onebrain/reachability/relay-outer-client-hello/v1",
+    }
+    if profile.get("signature_domains") != expected_domains:
+        raise ContractError("outbound-first signature domain drift")
+
+    expected_limits = {
+        "bootstrap_manifest_bytes": 65536,
+        "relay_descriptor_bytes": 16384,
+        "relay_reservation_bytes": 8192,
+        "reachability_advertisement_bytes": 32768,
+        "endpoints_per_object": 8,
+        "protocol_versions_per_object": 8,
+        "transports_per_object": 2,
+        "resolved_addresses_per_endpoint": 8,
+        "resolved_addresses_per_object": 32,
+        "discovery_source_keys": 8,
+        "records_per_source": 64,
+        "bytes_per_source": 1048576,
+        "total_records": 256,
+        "signature_checks_per_source": 64,
+        "signature_checks_total": 256,
+        "canonical_parse_depth": 12,
+        "bootstrap_fetch_concurrency": 4,
+        "pex_peers": 8,
+        "direct_candidates": 8,
+        "relay_candidates": 6,
+        "attempts": 12,
+        "concurrent_checks": 4,
+        "relay_reservations_min": 2,
+        "relay_reservations_target": 3,
+        "relay_reservations_max": 3,
+        "pending_possession_descriptors": 32,
+        "pending_possession_challenges": 256,
+        "possession_challenge_validity_s": 30,
+        "rendezvous_records": 256,
+        "relay_control_nonce_cache": 4096,
+        "route_deadline_ms": 20000,
+        "direct_timeout_ms": 2500,
+        "hole_punch_timeout_ms": 5000,
+        "route_probe_bytes": 1048576,
+        "relay_connect_timeout_ms": 5000,
+        "route_journal_receipts": 4096,
+        "route_journal_bytes": 16777216,
+        "receipt_attempts": 16,
+        "bootstrap_validity_s": 86400,
+        "descriptor_validity_s": 600,
+        "reservation_validity_s": 900,
+        "advertisement_validity_s": 300,
+        "clock_skew_s": 30,
+        "candidate_signal_candidates": 8,
+        "relay_datagram_bytes": 1350,
+        "relay_frame_bytes": 1408,
+        "relay_fragment_count": 8,
+        "relay_reassemblies": 64,
+        "relay_reassembly_bytes": 1048576,
+        "relay_reassembly_timeout_ms": 2000,
+        "relay_send_queue_frames": 64,
+        "relay_receive_queue_frames": 64,
+        "relay_queue_bytes": 1048576,
+        "relay_global_queue_frames": 1024,
+        "relay_global_queue_bytes": 16777216,
+        "relay_global_reassemblies": 512,
+        "relay_global_reassembly_bytes": 8388608,
+        "relay_bytes_per_second_per_reservation": 1048576,
+        "relay_burst_bytes": 2097152,
+        "relay_pending_handshakes": 64,
+        "relay_active_outer_connections": 256,
+        "relay_outer_connections_per_source": 8,
+        "relay_handshake_timeout_ms": 5000,
+        "relay_partial_frame_timeout_ms": 3000,
+        "relay_preauth_bytes_per_source": 65536,
+        "keepalive_interval_s": 20,
+        "probe_interval_s": 2,
+        "reservation_refresh_margin_s": 180,
+        "hole_punch_start_delay_ms": 500,
+        "hole_punch_interval_ms": 200,
+        "hole_punch_attempts": 10,
+        "control_message_bytes": 65536,
+    }
+    if profile.get("limits") != expected_limits:
+        raise ContractError("outbound-first limits drift")
+
+    expected_paths = ["direct", "hole-punched", "relay-udp", "relay-tcp-443"]
+    if profile.get("path_kinds") != expected_paths or profile.get("path_classes") != {
+        "direct_class": ["direct", "hole-punched"],
+        "relay_class": ["relay-udp", "relay-tcp-443"],
+    }:
+        raise ContractError("outbound-first path class drift")
+    expected_failures = [
+        "NoBootstrapReachable", "CandidateExpired", "DirectTimeout",
+        "HolePunchFailed", "RelayDenied", "RelayUnavailable",
+        "PeerIdentityMismatch", "NetworkChanged", "BudgetExceeded", "PathLimited",
+    ]
+    if profile.get("failure_kinds") != expected_failures:
+        raise ContractError("outbound-first failure kind drift")
+
+    if profile.get("admission") != {
+        "node_id_derives_from_public_key": True,
+        "expiry_required": True,
+        "monotonic_sequence_required": True,
+        "replay_rejected": True,
+        "proof_of_possession_per_endpoint": True,
+        "dial_time_dns_revalidation": "exact-admitted-global-address-set",
+    }:
+        raise ContractError("outbound-first admission drift")
+    if profile.get("outbound_only_baseline") != {
+        "ordinary_node_inbound_required": False,
+        "operator_nat_configuration": "forbidden-requirement",
+        "upnp_pcp_nat_pmp_required": False,
+        "direct_path": "optional-optimization",
+        "relay_path": "outbound-fallback",
+    }:
+        raise ContractError("outbound-only baseline drift")
+    if profile.get("relay_governance") != {
+        "owner_approval_required": False,
+        "global_membership_registry": False,
+        "self_certifying_identity": True,
+        "local_selection_only": True,
+        "relay_is_protocol_authority": False,
+    }:
+        raise ContractError("permissionless relay governance drift")
+    if profile.get("discovery") != {
+        "sources": [
+            "rendezvous-dht", "authenticated-peer-exchange",
+            "replaceable-bootstrap-manifest", "manual-signed-invitation",
+        ],
+        "mandatory_onebrain_service": None,
+        "fresh_node_bootstrap_limitation_explicit": True,
+        "relay_liveness_probe_required": True,
+    }:
+        raise ContractError("federated discovery drift")
+    if profile.get("privacy") != {
+        "public_candidate_kinds": ["server-reflexive", "provider-mapped"],
+        "private_candidates_public": False,
+        "public_receipt_contains_endpoint": False,
+        "target_scoped_private_signaling_only": True,
+    }:
+        raise ContractError("outbound-first privacy drift")
+
+    expected_capabilities = [
+        "outbound-datagram", "outbound-stream-443", "webtransport",
+        "websocket-tls", "direct-listen", "lan-discovery", "hole-punch",
+        "durable-resume",
+    ]
+    expected_platform = {
+        "serialized": False,
+        "os_name_present": False,
+        "may_create_authority": False,
+        "capabilities": expected_capabilities,
+        "required_bindings": [
+            "observed_monotonic_time", "network_epoch",
+            "execution_grant_deadline", "byte_budget", "work_budget",
+            "cancellation_token",
+        ],
+        "web_path_projection": {
+            "webtransport": "relay-udp",
+            "websocket-tls": "relay-tcp-443",
+        },
+        "fixtures": [
+            "native-full", "outbound-stream-only", "web-only",
+            "foreground-mobile", "suspended-mobile", "expired-revoked-grant",
+        ],
+    }
+    if profile.get("platform_capabilities") != expected_platform:
+        raise ContractError("platform capability drift")
+    if profile.get("session_authority") != {
+        "selected_carrier_is_authority": False,
+        "expected_node_id_authentication_required": True,
+        "fresh_transport_binding_required": True,
+        "reauthenticate_after_carrier_change": True,
+    }:
+        raise ContractError("session authority drift")
+    if profile.get("store_and_forward") != {
+        "live_session_required_for_immediate_delivery": True,
+        "durable_outbound_intent_when_target_absent": True,
+        "mailbox_optional": True,
+        "mailbox_payload": "recipient-bound-end-to-end-ciphertext",
+        "mailbox_is_authority_or_custody": False,
+    }:
+        raise ContractError("store-and-forward boundary drift")
+
+    expected_mutations = [
+        "unknown-field", "missing-field", "noncanonical-encoding",
+        "wrong-signature-domain", "over-limit", "invalid-expiry-or-sequence",
+        "private-candidate-publication", "central-service-required",
+        "owner-approved-relay-only", "carrier-authority-substitution",
+        "path-class-substitution", "checkpoint-mismatch",
+    ]
+    if profile.get("required_mutations") != expected_mutations:
+        raise ContractError("outbound-first mutation catalog drift")
+    return (
+        len(expected_objects),
+        len(expected_domains),
+        len(expected_paths),
+        len(expected_capabilities),
+        len(expected_mutations),
+    )
+
+
 def validate_vnext_p5_multi_host(
     profile: dict[str, object] | None = None,
 ) -> tuple[int, int, int, int, int]:
@@ -6251,6 +6615,236 @@ def validate_vnext_p5_multi_host(
         len(expected_faults),
         len(expected_exit),
         len(expected_role_bindings),
+    )
+
+
+def validate_vnext_p5_multi_host_v2(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(P5_MULTI_HOST_PRODUCTION_PROFILE_V2))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid P5 V2 profile JSON: {error}") from error
+    expected_root_fields = {
+        "format",
+        "profile_id",
+        "version",
+        "scope",
+        "path_classes",
+        "topology",
+        "qualification",
+        "route_failover",
+        "fault_matrix",
+        "evidence_authority",
+        "evidence",
+        "admin_operations",
+        "lifecycle",
+        "resource_bounds",
+        "privacy",
+        "exit_oracles",
+        "required_limitations",
+    }
+    if not isinstance(profile, dict) or set(profile) != expected_root_fields:
+        raise ContractError("P5 V2 fields drift")
+    if (
+        profile.get("format")
+        != "onebrain/p5-multi-host-production-qualification/2"
+        or profile.get("profile_id")
+        != "P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V2"
+        or profile.get("version") != 2
+    ):
+        raise ContractError("P5 V2 identity drift")
+
+    if profile.get("scope") != {
+        "physical_host_count": 3,
+        "logical_node_count": 3,
+        "reference_os": "linux",
+        "reference_target": "x86_64-unknown-linux-gnu",
+        "production_reachability_source": "production-reachability-manager",
+        "portable_core_qualifying": True,
+        "other_platform_lanes_qualifying": False,
+        "single_host_preflight_may_qualify": False,
+    }:
+        raise ContractError("P5 V2 scope drift")
+    expected_paths = ["direct", "hole-punched", "relay-udp", "relay-tcp-443"]
+    expected_path_classes = {
+        "path_kinds": expected_paths,
+        "direct_class": ["direct", "hole-punched"],
+        "relay_class": ["relay-udp", "relay-tcp-443"],
+    }
+    if profile.get("path_classes") != expected_path_classes:
+        raise ContractError("P5 V2 path class drift")
+    expected_hosts = ["host-a", "host-b", "host-c"]
+    if profile.get("topology") != {
+        "hosts": expected_hosts,
+        "ring": ["host-a->host-b", "host-b->host-c", "host-c->host-a"],
+        "independent_durable_roots": 3,
+        "independent_principals": 3,
+        "signed_inventory_required": True,
+        "owner_topology_attestation_required": True,
+    }:
+        raise ContractError("P5 V2 topology drift")
+
+    qualification = profile.get("qualification")
+    if qualification != {
+        "golden_ring_paths": ["direct", "relay-udp", "hole-punched"],
+        "all_expected_peers_authenticated": True,
+        "mixed_path_required": True,
+        "observe_only_may_qualify": False,
+        "preflight_may_qualify": False,
+        "qualification_tier": "production-reference",
+    }:
+        if isinstance(qualification, dict) and qualification.get(
+            "golden_ring_paths"
+        ) != ["direct", "relay-udp", "hole-punched"]:
+            raise ContractError("P5 V2 path mix drift")
+        raise ContractError("P5 V2 qualification drift")
+
+    if profile.get("route_failover") != {
+        "pre_failure_reservations_min": 2,
+        "selected_and_alternate_signed_before_failure": True,
+        "alternate_must_differ": True,
+        "selected_failure": "RelayUnavailable",
+        "fresh_transport_binding_required": True,
+        "fresh_session_required": True,
+        "exact_checkpoint_resume_required": True,
+        "application_replay_rejected": True,
+    }:
+        raise ContractError("P5 V2 failover drift")
+    expected_faults = [
+        "partition",
+        "drop",
+        "reorder",
+        "duplicate",
+        "restart",
+        "address-change",
+        "seed-outage",
+        "signer-outage",
+        "disk-pressure",
+        "slow-peer",
+        "base-obarv002-archive-restore",
+        "rollback",
+        "explicit-re-enable",
+    ]
+    if profile.get("fault_matrix") != expected_faults:
+        raise ContractError("P5 V2 fault matrix drift")
+
+    if profile.get("evidence_authority") != {
+        "provider_evidence_status": "owner-telephone-verified-provider-document-pending",
+        "qualification_tier": "production-reference",
+        "inventory_digest_required": True,
+        "public_probe_set_digest_required": True,
+        "topology_attestation_digest_required": True,
+        "provider_evidence_digest_required": True,
+        "repeat_in_every_receipt_and_aggregate": True,
+        "provider_status_derived_from_typed_entries": True,
+    }:
+        raise ContractError("P5 V2 provider evidence authority drift")
+    if profile.get("evidence") != {
+        "signed_controller_frame_required": True,
+        "signed_child_receipt_required": True,
+        "signed_admin_operation_receipt_required": True,
+        "signed_multi_host_aggregate_required": True,
+        "handcrafted_receipt_policy": "reject",
+        "raw_evidence": "encrypted-restricted-digest-bound",
+        "raw_archive_encryption": "hpke-x25519-hkdf-sha256-chacha20-poly1305",
+        "public_receipt_private_endpoint_policy": "digest-and-privacy-safe-projection-only",
+        "exact_candidate_commit_tree_bundle_binding": True,
+    }:
+        raise ContractError("P5 V2 evidence drift")
+    if profile.get("admin_operations") != {
+        "actions": [
+            "prepare-session", "cleanup-session", "observe", "apply", "clear"
+        ],
+        "action_phase_map": {
+            "prepare-session": None,
+            "cleanup-session": None,
+            "observe": "before",
+            "apply": "during",
+            "clear": "after",
+        },
+        "fault_and_phase_optional_only_for_lifecycle": True,
+        "controller_signature_required": True,
+        "host_receipt_signature_required": True,
+        "request_digest_embedded_in_receipt": True,
+        "dynamic_target_dual_signature_required": True,
+        "replay_key": ["request_digest", "session_id", "host_id", "operation_id"],
+        "replay_policy": "reject-create-new-before-mutation",
+        "caller_supplied_shell_or_path": False,
+    }:
+        raise ContractError("P5 V2 admin operation drift")
+    if profile.get("lifecycle") != {
+        "bootstrap_installs_session_config_only": True,
+        "bootstrap_network_or_unit_mutation": False,
+        "prepare_session_is_separately_signed": True,
+        "cleanup_receipt_before_finalization": True,
+        "finalizer_removes_session_after_receipt": True,
+        "immutable_candidate_generation_paths_for_control": True,
+    }:
+        raise ContractError("P5 V2 lifecycle drift")
+
+    expected_bounds = {
+        "p5_snapshot_reservations": 6,
+        "p5_snapshot_associations": 1,
+        "p5_bootstrap_frame_bytes": 1048576,
+        "p5_admin_frame_bytes": 131072,
+        "p5_finalize_frame_bytes": 131072,
+        "p5_authority_request_bytes": 262144,
+        "p5_signature_bytes": 16384,
+        "p5_inventory_bytes": 262144,
+        "p5_trust_policy_bytes": 65536,
+        "p5_verifier_keyring_bytes": 131072,
+        "p5_session_config_bytes": 262144,
+        "p5_public_probe_set_bytes": 131072,
+        "p5_topology_attestation_bytes": 131072,
+        "p5_provider_evidence_bytes": 131072,
+        "p5_signed_control_frame_bytes": 131072,
+        "p5_child_receipt_bytes": 262144,
+        "p5_aggregate_bytes": 4194304,
+        "p5_admin_response_bytes": 1048576,
+        "p5_raw_evidence_objects": 32,
+        "p5_raw_evidence_object_bytes": 262144,
+        "p5_encrypted_raw_archive_bytes": 67108864,
+        "p5_bootstrap_response_bytes": 262144,
+        "p5_finalization_response_bytes": 262144,
+    }
+    if profile.get("resource_bounds") != expected_bounds:
+        raise ContractError("P5 V2 resource bound drift")
+    if profile.get("privacy") != {
+        "public_endpoint_or_interface_bytes": False,
+        "public_arbitrary_limitation_text": False,
+        "raw_endpoint_evidence_restricted": True,
+        "raw_archive_randomized_encryption_required": True,
+        "public_artifact_secret_scan_required": True,
+    }:
+        raise ContractError("P5 V2 privacy drift")
+    expected_exit_oracles = [
+        "request-authority-verified",
+        "three-host-inventory-verified",
+        "mixed-ring-authenticated",
+        "faults-complete",
+        "selected-relay-failed",
+        "alternate-relay-authenticated",
+        "checkpoint-resumed-exactly",
+        "resource-bounds-observed",
+        "privacy-scan-clean",
+        "aggregate-signature-verified",
+    ]
+    if profile.get("exit_oracles") != expected_exit_oracles:
+        raise ContractError("P5 V2 exit oracle drift")
+    if profile.get("required_limitations") != [
+        "provider-document-pending",
+        "non-linux-platform-lanes-pending",
+        "mobile-carrier-mailbox-pending",
+    ]:
+        raise ContractError("P5 V2 limitation drift")
+    return (
+        len(expected_hosts),
+        len(expected_faults),
+        len(expected_paths),
+        len(expected_path_classes) - 1,
+        len(expected_exit_oracles),
     )
 
 
@@ -8112,6 +8706,20 @@ def main() -> int:
             p5_evidence_roles,
         ) = validate_vnext_p5_multi_host()
         (
+            reachability_objects,
+            reachability_domains,
+            reachability_paths,
+            reachability_capabilities,
+            reachability_mutations,
+        ) = validate_vnext_outbound_reachability()
+        (
+            p5_v2_hosts,
+            p5_v2_faults,
+            p5_v2_paths,
+            p5_v2_path_classes,
+            p5_v2_exit_oracles,
+        ) = validate_vnext_p5_multi_host_v2()
+        (
             base_soak_runners,
             base_soak_roles,
             base_soak_receipt_kinds,
@@ -8202,6 +8810,11 @@ def main() -> int:
         f"{p5_physical_hosts} P5 production hosts/{p5_inventory_hosts} inventory hosts/"
         f"{p5_production_faults} production faults/{p5_production_exit_oracles} exit oracles/"
         f"{p5_evidence_roles} evidence roles, "
+        f"{reachability_objects} outbound-first objects/{reachability_domains} signature domains/"
+        f"{reachability_paths} paths/{reachability_capabilities} platform capabilities/"
+        f"{reachability_mutations} mutations, "
+        f"{p5_v2_hosts} P5 V2 hosts/{p5_v2_faults} faults/{p5_v2_paths} paths/"
+        f"{p5_v2_path_classes} path classes/{p5_v2_exit_oracles} exit oracles, "
         f"{base_soak_runners} Base exact-soak runners/{base_soak_roles} roles/"
         f"{base_soak_receipt_kinds} receipt kinds/{base_soak_exit_oracles} exit oracles, "
         f"{p5_canary_nodes} P5-01 nodes/{p5_ring_deliveries} ring deliveries/"

@@ -1,0 +1,242 @@
+{
+  "format": "onebrain/outbound-first-reachability/1",
+  "profile_id": "OUTBOUND_FIRST_REACHABILITY_PROFILE_V1",
+  "version": 1,
+  "canonical_encoding": {
+    "codec": "canonical-cbor-closed-schema",
+    "max_depth": 12,
+    "unknown_fields": "reject",
+    "duplicate_fields": "reject",
+    "byte_for_byte_reencode_required": true
+  },
+  "schema_ids": {
+    "reachability": {
+      "bootstrap-manifest": 40,
+      "relay-descriptor": 41,
+      "relay-reservation": 42,
+      "reachability-advertisement": 43,
+      "route-plan": 44,
+      "route-receipt": 45
+    },
+    "relay_control": {
+      "reserve": 50,
+      "granted": 51,
+      "keepalive": 52,
+      "revoke": 53,
+      "possession-challenge": 54,
+      "possession-proof": 55,
+      "denied": 61,
+      "outer-client-challenge": 62,
+      "outer-client-hello": 63
+    },
+    "connectivity_signaling": {
+      "reflexive-observation": 56,
+      "hole-punch-schedule": 57,
+      "relay-connect-request": 58,
+      "relay-association": 59,
+      "private-candidate-signal": 60
+    }
+  },
+  "canonical_objects": {
+    "bootstrap_manifest": {
+      "schema_id": 40,
+      "fields": ["format", "discovery_source_id", "discovery_endpoints", "protocol_versions", "sequence", "issued_at", "expires_at", "source_signature"]
+    },
+    "relay_descriptor": {
+      "schema_id": 41,
+      "fields": ["format", "relay_node_id", "relay_public_key", "endpoints", "supported_transports", "protocol_versions", "capacity_policy_digest", "previous_descriptor_blake3", "sequence", "issued_at", "expires_at", "relay_signature"]
+    },
+    "relay_reservation": {
+      "schema_id": 42,
+      "fields": ["format", "relay_node_id", "target_node_id", "reservation_id", "transport_scope", "issued_at", "expires_at", "target_signature", "relay_signature"]
+    },
+    "reachability_advertisement": {
+      "schema_id": 43,
+      "fields": ["format", "target_node_id", "relay_reservations", "optional_public_candidates", "capability_ceiling", "sequence", "issued_at", "expires_at", "target_signature"]
+    },
+    "route_plan": {
+      "schema_id": 44,
+      "local_only": true,
+      "fields": ["expected_peer", "direct_candidates", "relay_candidates", "deadline", "attempt_budget", "resource_budget", "privacy_policy_digest"]
+    },
+    "route_receipt": {
+      "schema_id": 45,
+      "local_only": true,
+      "fields": ["expected_peer", "authenticated_peer", "selected_path_kind", "selected_carrier_identity", "attempts", "transport_binding_digest", "session_id", "started_at", "authenticated_at", "terminal_outcome", "limitations", "local_signature"]
+    }
+  },
+  "signature_domains": {
+    "bootstrap_manifest": "onebrain/reachability/bootstrap-manifest/v1",
+    "relay_descriptor": "onebrain/reachability/relay-descriptor/v1",
+    "relay_reservation_target": "onebrain/reachability/relay-reservation-target/v1",
+    "relay_reservation_relay": "onebrain/reachability/relay-reservation-relay/v1",
+    "advertisement": "onebrain/reachability/advertisement/v1",
+    "route_receipt": "onebrain/reachability/route-receipt/v1",
+    "relay_reserve_request": "onebrain/reachability/relay-reserve-request/v1",
+    "relay_keepalive": "onebrain/reachability/relay-keepalive/v1",
+    "relay_revoke": "onebrain/reachability/relay-revoke/v1",
+    "relay_denial": "onebrain/reachability/relay-denial/v1",
+    "relay_possession_challenge": "onebrain/reachability/relay-possession-challenge/v1",
+    "relay_possession_proof": "onebrain/reachability/relay-possession-proof/v1",
+    "reflexive_observation": "onebrain/reachability/reflexive-observation/v1",
+    "hole_punch_schedule": "onebrain/reachability/hole-punch-schedule/v1",
+    "relay_connect_request": "onebrain/reachability/relay-connect-request/v1",
+    "relay_association": "onebrain/reachability/relay-association/v1",
+    "private_candidate_signal": "onebrain/reachability/private-candidate-signal/v1",
+    "relay_outer_client_challenge": "onebrain/reachability/relay-outer-client-challenge/v1",
+    "relay_outer_client_hello": "onebrain/reachability/relay-outer-client-hello/v1"
+  },
+  "limits": {
+    "bootstrap_manifest_bytes": 65536,
+    "relay_descriptor_bytes": 16384,
+    "relay_reservation_bytes": 8192,
+    "reachability_advertisement_bytes": 32768,
+    "endpoints_per_object": 8,
+    "protocol_versions_per_object": 8,
+    "transports_per_object": 2,
+    "resolved_addresses_per_endpoint": 8,
+    "resolved_addresses_per_object": 32,
+    "discovery_source_keys": 8,
+    "records_per_source": 64,
+    "bytes_per_source": 1048576,
+    "total_records": 256,
+    "signature_checks_per_source": 64,
+    "signature_checks_total": 256,
+    "canonical_parse_depth": 12,
+    "bootstrap_fetch_concurrency": 4,
+    "pex_peers": 8,
+    "direct_candidates": 8,
+    "relay_candidates": 6,
+    "attempts": 12,
+    "concurrent_checks": 4,
+    "relay_reservations_min": 2,
+    "relay_reservations_target": 3,
+    "relay_reservations_max": 3,
+    "pending_possession_descriptors": 32,
+    "pending_possession_challenges": 256,
+    "possession_challenge_validity_s": 30,
+    "rendezvous_records": 256,
+    "relay_control_nonce_cache": 4096,
+    "route_deadline_ms": 20000,
+    "direct_timeout_ms": 2500,
+    "hole_punch_timeout_ms": 5000,
+    "route_probe_bytes": 1048576,
+    "relay_connect_timeout_ms": 5000,
+    "route_journal_receipts": 4096,
+    "route_journal_bytes": 16777216,
+    "receipt_attempts": 16,
+    "bootstrap_validity_s": 86400,
+    "descriptor_validity_s": 600,
+    "reservation_validity_s": 900,
+    "advertisement_validity_s": 300,
+    "clock_skew_s": 30,
+    "candidate_signal_candidates": 8,
+    "relay_datagram_bytes": 1350,
+    "relay_frame_bytes": 1408,
+    "relay_fragment_count": 8,
+    "relay_reassemblies": 64,
+    "relay_reassembly_bytes": 1048576,
+    "relay_reassembly_timeout_ms": 2000,
+    "relay_send_queue_frames": 64,
+    "relay_receive_queue_frames": 64,
+    "relay_queue_bytes": 1048576,
+    "relay_global_queue_frames": 1024,
+    "relay_global_queue_bytes": 16777216,
+    "relay_global_reassemblies": 512,
+    "relay_global_reassembly_bytes": 8388608,
+    "relay_bytes_per_second_per_reservation": 1048576,
+    "relay_burst_bytes": 2097152,
+    "relay_pending_handshakes": 64,
+    "relay_active_outer_connections": 256,
+    "relay_outer_connections_per_source": 8,
+    "relay_handshake_timeout_ms": 5000,
+    "relay_partial_frame_timeout_ms": 3000,
+    "relay_preauth_bytes_per_source": 65536,
+    "keepalive_interval_s": 20,
+    "probe_interval_s": 2,
+    "reservation_refresh_margin_s": 180,
+    "hole_punch_start_delay_ms": 500,
+    "hole_punch_interval_ms": 200,
+    "hole_punch_attempts": 10,
+    "control_message_bytes": 65536
+  },
+  "path_kinds": ["direct", "hole-punched", "relay-udp", "relay-tcp-443"],
+  "path_classes": {
+    "direct_class": ["direct", "hole-punched"],
+    "relay_class": ["relay-udp", "relay-tcp-443"]
+  },
+  "failure_kinds": ["NoBootstrapReachable", "CandidateExpired", "DirectTimeout", "HolePunchFailed", "RelayDenied", "RelayUnavailable", "PeerIdentityMismatch", "NetworkChanged", "BudgetExceeded", "PathLimited"],
+  "admission": {
+    "node_id_derives_from_public_key": true,
+    "expiry_required": true,
+    "monotonic_sequence_required": true,
+    "replay_rejected": true,
+    "proof_of_possession_per_endpoint": true,
+    "dial_time_dns_revalidation": "exact-admitted-global-address-set"
+  },
+  "outbound_only_baseline": {
+    "ordinary_node_inbound_required": false,
+    "operator_nat_configuration": "forbidden-requirement",
+    "upnp_pcp_nat_pmp_required": false,
+    "direct_path": "optional-optimization",
+    "relay_path": "outbound-fallback"
+  },
+  "relay_governance": {
+    "owner_approval_required": false,
+    "global_membership_registry": false,
+    "self_certifying_identity": true,
+    "local_selection_only": true,
+    "relay_is_protocol_authority": false
+  },
+  "discovery": {
+    "sources": ["rendezvous-dht", "authenticated-peer-exchange", "replaceable-bootstrap-manifest", "manual-signed-invitation"],
+    "mandatory_onebrain_service": null,
+    "fresh_node_bootstrap_limitation_explicit": true,
+    "relay_liveness_probe_required": true
+  },
+  "privacy": {
+    "public_candidate_kinds": ["server-reflexive", "provider-mapped"],
+    "private_candidates_public": false,
+    "public_receipt_contains_endpoint": false,
+    "target_scoped_private_signaling_only": true
+  },
+  "platform_capabilities": {
+    "serialized": false,
+    "os_name_present": false,
+    "may_create_authority": false,
+    "capabilities": ["outbound-datagram", "outbound-stream-443", "webtransport", "websocket-tls", "direct-listen", "lan-discovery", "hole-punch", "durable-resume"],
+    "required_bindings": ["observed_monotonic_time", "network_epoch", "execution_grant_deadline", "byte_budget", "work_budget", "cancellation_token"],
+    "web_path_projection": {
+      "webtransport": "relay-udp",
+      "websocket-tls": "relay-tcp-443"
+    },
+    "fixtures": ["native-full", "outbound-stream-only", "web-only", "foreground-mobile", "suspended-mobile", "expired-revoked-grant"]
+  },
+  "session_authority": {
+    "selected_carrier_is_authority": false,
+    "expected_node_id_authentication_required": true,
+    "fresh_transport_binding_required": true,
+    "reauthenticate_after_carrier_change": true
+  },
+  "store_and_forward": {
+    "live_session_required_for_immediate_delivery": true,
+    "durable_outbound_intent_when_target_absent": true,
+    "mailbox_optional": true,
+    "mailbox_payload": "recipient-bound-end-to-end-ciphertext",
+    "mailbox_is_authority_or_custody": false
+  },
+  "required_mutations": [
+    "unknown-field",
+    "missing-field",
+    "noncanonical-encoding",
+    "wrong-signature-domain",
+    "over-limit",
+    "invalid-expiry-or-sequence",
+    "private-candidate-publication",
+    "central-service-required",
+    "owner-approved-relay-only",
+    "carrier-authority-substitution",
+    "path-class-substitution",
+    "checkpoint-mismatch"
+  ]
+}

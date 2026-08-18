@@ -7,12 +7,18 @@ import unittest
 from scripts.ci.validate_vnext_contracts import (
     ContractError,
     P5_MULTI_HOST_PRODUCTION_PROFILE,
+    P5_MULTI_HOST_PRODUCTION_PROFILE_V2,
     validate_vnext_p5_multi_host,
+    validate_vnext_p5_multi_host_v2,
 )
 
 
 def frozen_profile() -> dict[str, object]:
     return json.loads(P5_MULTI_HOST_PRODUCTION_PROFILE.read_text(encoding="utf-8"))
+
+
+def frozen_profile_v2() -> dict[str, object]:
+    return json.loads(P5_MULTI_HOST_PRODUCTION_PROFILE_V2.read_text(encoding="utf-8"))
 
 
 class VNextP5MultiHostProductionTests(unittest.TestCase):
@@ -138,6 +144,64 @@ class VNextP5MultiHostProductionTests(unittest.TestCase):
         profile = copy.deepcopy(frozen_profile())
         profile["archive_restore"]["preflight_profile_may_qualify"] = True
         self.assert_rejected(profile, "archive")
+
+
+class VNextP5MultiHostProductionV2Tests(unittest.TestCase):
+    def assert_rejected(self, profile: dict[str, object], message: str) -> None:
+        with self.assertRaisesRegex(ContractError, message):
+            validate_vnext_p5_multi_host_v2(profile)
+
+    def test_frozen_v2_profile_is_accepted(self) -> None:
+        self.assertEqual(
+            validate_vnext_p5_multi_host_v2(frozen_profile_v2()),
+            (3, 13, 4, 2, 10),
+        )
+
+    def test_all_direct_and_all_relay_rings_are_rejected(self) -> None:
+        for mix in (["direct", "hole-punched", "direct"], ["relay-udp"] * 3):
+            with self.subTest(mix=mix):
+                profile = copy.deepcopy(frozen_profile_v2())
+                profile["qualification"]["golden_ring_paths"] = mix
+                self.assert_rejected(profile, "path mix")
+
+    def test_observe_only_and_handcrafted_receipts_are_rejected(self) -> None:
+        profile = copy.deepcopy(frozen_profile_v2())
+        profile["qualification"]["observe_only_may_qualify"] = True
+        self.assert_rejected(profile, "qualification")
+
+        profile = copy.deepcopy(frozen_profile_v2())
+        profile["evidence"]["handcrafted_receipt_policy"] = "accept"
+        self.assert_rejected(profile, "evidence")
+
+    def test_same_relay_fallback_is_rejected(self) -> None:
+        profile = copy.deepcopy(frozen_profile_v2())
+        profile["route_failover"]["alternate_must_differ"] = False
+        self.assert_rejected(profile, "failover")
+
+    def test_stale_binding_session_and_checkpoint_are_rejected(self) -> None:
+        for key in (
+            "fresh_transport_binding_required",
+            "fresh_session_required",
+            "exact_checkpoint_resume_required",
+        ):
+            with self.subTest(key=key):
+                profile = copy.deepcopy(frozen_profile_v2())
+                profile["route_failover"][key] = False
+                self.assert_rejected(profile, "failover")
+
+    def test_provider_pending_is_explicit_in_every_public_receipt(self) -> None:
+        profile = copy.deepcopy(frozen_profile_v2())
+        profile["evidence_authority"]["repeat_in_every_receipt_and_aggregate"] = False
+        self.assert_rejected(profile, "provider evidence")
+
+    def test_admin_action_phase_and_replay_contract_is_closed(self) -> None:
+        profile = copy.deepcopy(frozen_profile_v2())
+        profile["admin_operations"]["action_phase_map"]["apply"] = "after"
+        self.assert_rejected(profile, "admin")
+
+        profile = copy.deepcopy(frozen_profile_v2())
+        profile["admin_operations"]["replay_policy"] = "allow-idempotent"
+        self.assert_rejected(profile, "admin")
 
 
 if __name__ == "__main__":
