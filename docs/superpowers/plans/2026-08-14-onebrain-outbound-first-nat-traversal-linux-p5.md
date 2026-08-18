@@ -1,12 +1,12 @@
-# OneBrain Outbound-First NAT Traversal Linux/P5 Implementation Plan
+# OneBrain Cross-Platform Outbound-First Core and Linux/P5 Reference Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Deliver a permissionless, outbound-first OneBrain reachability stack that authenticates the expected NodeID across direct, hole-punched, relay-UDP, and relay-TCP-443 carriers, then prove real mixed-path relay failover on the three Linux P5 runners.
+**Goal:** Deliver a platform-independent, permissionless, outbound-first OneBrain reachability core that authenticates the expected NodeID across capability-admitted direct, hole-punched, and relay carriers without user NAT/port configuration or mandatory central infrastructure; then prove the first real mixed-path relay failover on the three Linux P5 reference runners.
 
-**Architecture:** Add closed canonical reachability objects to `onebrain-protocol`, bounded verification/discovery/carrier machinery to `ku-net`, a new non-authoritative `onebrain-relay` service, and a production Reachability Manager plus route journal in `onebrain-node`. Keep the frozen OBP authenticated-session transcript unchanged: every selected carrier feeds a fresh transport binding into the existing handshake, and route authority is promoted only after the expected peer authenticates. P5 V2 consumes manager-owned receipts from concurrently running agents; P5 V1 remains byte- and meaning-stable.
+**Architecture:** Add closed canonical reachability objects to `onebrain-protocol`, bounded verification/discovery/carrier machinery and a platform-neutral carrier capability boundary to `ku-net`, a new non-authoritative `onebrain-relay` service, and a production Reachability Manager plus route journal in `onebrain-node`. Platform adapters own sockets, lifecycle grants, DNS execution, secure-key handles, and durable-file primitives; they do not own OBP identity or route authority. Keep the frozen OBP authenticated-session transcript unchanged: every selected carrier feeds a fresh transport binding into the existing handshake, and route authority is promoted only after the expected peer authenticates. P5 V2 consumes manager-owned receipts from concurrently running Linux reference agents; P5 V1 remains byte- and meaning-stable.
 
-**Tech Stack:** Rust 2021, Tokio 1.52, Quinn 0.11.11, Rustls 0.23.41, tokio-rustls 0.26.4, Ed25519, canonical CBOR through ciborium, BLAKE3, redb, Python 3 `unittest`, OpenSSH, systemd, Ubuntu 24.04/amd64.
+**Tech Stack:** Portable Rust 2021 core; Tokio 1.52, Quinn 0.11.11, Rustls 0.23.41, tokio-rustls 0.26.4, Ed25519, canonical CBOR through ciborium, BLAKE3, and redb for the first native adapter; platform transport/lifecycle adapters for Windows, macOS, Android, iOS, and browser/WASM in their separately gated lanes; Python 3 `unittest`, OpenSSH, systemd, and Ubuntu 24.04/amd64 only for Linux/P5 orchestration and qualification.
 
 ## Global Constraints
 
@@ -19,7 +19,11 @@
 - No public record, public receipt, public aggregate, or log may contain LAN/private candidates, interface names, SSIDs, carrier/router identity, signing secrets, or unrelated peer/session lists. Access-controlled `p5/raw/` may retain only the session-scoped actual carrier endpoints and kernel observations required to prove a signed fault target, including a co-resident veth dial address; those bytes are encrypted/restricted in transfer and represented in public receipts/aggregate only by canonical digest and privacy-safe projection.
 - Local operation must start without waiting for discovery or reachability. A failed bounded route attempt returns `PathLimited`; it never claims global offline/unreachable status.
 - Shared objects and interfaces must not encode Linux, VPS, public-IP, fixed public port, or operator NAT configuration assumptions.
-- Phase 7 mobile lifecycle work is excluded from this plan. Before that separate implementation, run `python scripts/ci/validate_mobile_build_contracts.py`, read the mobile manifest's complete required set, and create an owner-approved mobile plan. General public relay-fleet operations beyond the self-hostable service and P5 sidecars are also a separate operations plan.
+- Ordinary nodes initiate every baseline connection outbound. Direct listen, LAN discovery, UDP hole punching, and inbound reachability are optional capability-gated optimizations; failure or absence never asks a user to configure NAT, UPnP, PCP/NAT-PMP, a provider mapping, or a public port.
+- No OneBrain-operated relay, DNS name, rendezvous service, bootstrap manifest, or directory is mandatory. Manual signed invitations, authenticated peer exchange, replaceable community sources, cached descriptors, and user-operated relays are first-class bootstrap inputs; every discovered relay remains independently verified and locally selected.
+- Tasks 1–12 implement the portable protocol/core and Linux-native reference adapter without OS names in canonical schemas. Tasks 13–16 qualify only the Linux/P5 lane. Windows/macOS adapter qualification, browser/WASM transport integration, and mobile lifecycle implementation are separate evidence lanes that reuse the same core rather than fork its protocol.
+- Mobile implementation is excluded from this plan, but the shared boundary must remain compatible with work package `MOB-00` and `MOB-FND-004`, `MOB-NET-001`, `MOB-NET-004`, `MOB-NET-007`, `MOB-NET-009`, `MOB-NET-010`, `MOB-SYS-003`, `MOB-SYS-004`, `MOB-SYS-008`, and `MOB-GATE-CARRIER`. No `MOB-SCR-*`, `OBM-CMP-*`, or `OBM-PAT-*` contract changes here. Before mobile implementation, run `python scripts/ci/validate_mobile_build_contracts.py`, read the manifest's complete required set, and create the owner-approved mobile work-package plan. General public relay-fleet operations beyond the self-hostable service and P5 sidecars are also a separate operations plan.
+- Tasks 7–8 implement the live opaque relay carrier and rendezvous controls only. They do not claim the optional SeedInbox/store-and-forward mailbox, APNs/FCM wake hints, mobile custody, or background delivery. Those remain separate gated lanes; when no target reservation is live, this milestone persists a local outbound intent and reports the limitation honestly.
 - TDD is literal: every named RED case below is a separate test method, implemented and rerun one at a time in listed order. Do not batch multiple behavioral changes behind one GREEN run; each micro-cycle should remain a 2–5 minute edit/test step before the task-level gate.
 
 ## File Structure
@@ -39,6 +43,8 @@
 - Create `src/ku-net/src/vnext_route_plan.rs` — pure bounded route state machine.
 - Create `src/ku-net/src/vnext_relay_tunnel.rs` — opaque relay datagram socket and TCP-443 framing.
 - Create `src/ku-net/src/vnext_secure_session_adapter.rs` — selected-carrier authentication.
+- Create `src/ku-net/src/vnext_platform_capabilities.rs` — sealed, non-authoritative execution grants for outbound datagram, outbound stream, web carrier, direct listen, LAN discovery, hole punch, lifecycle deadline, and durable resume support; canonical protocol objects never serialize an OS name.
+- Create `src/ku-net/src/vnext_carrier.rs` — bounded cancellation-safe carrier interface used by native and web adapters; every implementation returns a fresh authenticated transport binding.
 
 ### Relay service
 
@@ -170,6 +176,18 @@ onebrain/p5/signed-control-frame/v2
 onebrain/p5/child-receipt/v2
 onebrain/p5/multi-host-aggregate/v2
 ```
+
+Freeze a local, nonserialized platform-capability model alongside the route
+profile. Its closed capability names are `outbound-datagram`,
+`outbound-stream-443`, `webtransport`, `websocket-tls`, `direct-listen`,
+`lan-discovery`, `hole-punch`, and `durable-resume`. A capability snapshot is
+bound to a monotonic observation time, network epoch, execution-grant deadline,
+byte/work budget, and cancellation token. It carries no OS name and grants no
+protocol authority. The planner may only remove unsupported actions; it may
+never synthesize a candidate, reservation, successful receipt, or peer
+identity from a platform capability. Exact vectors cover native full,
+outbound-stream-only, web-only, foreground-mobile, suspended-mobile, and
+expired/revoked-grant snapshots.
 
 Freeze the P5 V2 admin-operation request schema and exact allowlist in the V2 profile/vector. The canonical fields are `format,request_digest,session_id,host_id,operation_id,action,fault,phase,issued_at,expires_at,parameters_digest,controller_signature`, and the full request digest is embedded in `P5OperationReceiptV2`. The only actions are `prepare-session|cleanup-session|observe|apply|clear`. For prepare/cleanup, `fault` and `phase` are null and the Rust receipt fields are `None`; otherwise both are `Some`, `fault` is exactly one of the fourteen `P5FaultKindV2` values, and the cross-field map is exact: `observe` requires `before`, `apply` requires `during`, and `clear` requires `after`. `apply` plus the three Base fault names bijectively selects the fixed `vnext_p5_recovery_ops_v2::{obarv002_restore,rollback,explicit_re_enable}` functions; no recovery command/subcommand is supplied separately. Each `apply` receipt includes the post-effect observation and each `clear` receipt includes the post-cleanup observation. Freeze a canonical dual-authenticated `P5FaultTargetV2`: the agent derives one through eight canonical raw peer endpoints, selected relay, and route-receipt digest from its current verified carrier/private manager journal, and the inventory-bound host receipt signer authenticates that draft; only then may the controller verify it, add the signed-inventory host mapping, and countersign the final target. The helper receives those bounded raw endpoints inside the signed frame and can therefore construct the exact peer-scoped nft rules; it rejects either signature, endpoint/digest, route-receipt, inventory, or binding disagreement. For dynamic faults, `parameters_digest` is exactly that target's digest; for fixed lifecycle/Base actions it is the frozen empty-parameters digest. The raw target is never a CLI argument or public aggregate field: it is embedded in the signed admin frame, retained in the raw evidence root, and represented publicly only by its privacy-safe digest/projection.
 
@@ -1037,6 +1055,17 @@ git commit -m "feat(node): route by authenticated peer identity"
 
 Implement bounded fixtures for full-cone, restricted, port-restricted, symmetric NAT, CGNAT, upstream inbound UDP drop, UDP-total-block/TCP-443 fallback, direct-to-relay migration, relay-to-direct migration, address churn, suspend/resume, all current relays down while a signed manifest/manual/PEX discovery path remains, and all bootstrap unavailable.
 
+The in-process matrix also runs the same planner/state-machine vectors against
+six adapter fixtures: Linux/native, Windows/native, macOS/native,
+Android/finite-grant, iOS/suspendable, and browser/web-only. The fixtures prove
+that missing direct-listen/LAN/UDP capabilities remove only those attempts,
+that the outbound relay route remains eligible, and that no canonical object,
+NodeID, session transcript, or route authority changes by platform. Browser
+fixtures map WebTransport to the relay-UDP path class and secure WebSocket
+framing to relay-TCP-443 while retaining adapter-specific diagnostics only in
+the private journal. Android/iOS fixtures kill the adapter at every await
+boundary and resume only from durable intent/checkpoint state.
+
 Add a separate privileged Linux namespace integration suite; the unprivileged 512-MiB matrix does not substitute for it. `run_vnext_namespace_matrix.py` creates only uniquely session-prefixed netns/veth/nft objects inside a pinned Ubuntu 24.04/amd64 container launched with `--network=none --cap-drop=ALL --cap-add=NET_ADMIN --cap-add=SYS_ADMIN --security-opt seccomp=<resolved-reviewed-profile> --tmpfs /run/netns:rw,nosuid,nodev,noexec,mode=0755`; on AppArmor-enabled Linux it also requires `--security-opt apparmor=unconfined` for only this disposable network-none test container. The checked-in minimal seccomp profile is the pinned Docker default plus only the mount/unmount/setns/unshare calls required by `ip netns`; it is hash-checked by the Python runner. Before the matrix, the container must successfully create, enter, leave, and delete one uniquely named probe netns and restore `/run/netns`; failure is a hard gate before product tests. One topology per test implements full-cone, address-restricted, port-restricted, symmetric NAT, two-level CGNAT, public IP with upstream UDP drop, UDP-total-block/TCP-443 fallback, and address migration. It drives the real candidate gatherer, punch schedule, planner, relay carrier, and expected-peer authentication through the topology, asserts observed mappings/filter behavior before asserting route selection, and verifies cleanup leaves the host/container ruleset byte-identical. Missing netns/nft/capability/mount support is a hard release-gate failure, not a skip; Windows unit tests validate Docker argv, seccomp digest, and fixture generation, while Linux CI executes the real suite.
 
 - [ ] **Step 2: Add adversarial relays and discovery**
@@ -1538,6 +1567,7 @@ Write the exact aggregate digest, typed limitations, encrypted raw-archive envel
 
 | Approved design section | Implemented by |
 |---|---|
+| §2.1–2.2 portable core and platform capability profiles | Tasks 1, 5, 8, 10–12; platform qualification lanes remain separate |
 | §3 permissionless/non-authoritative relay governance | Tasks 1, 3, 7, 15–16 |
 | §4 federated discovery and bootstrap limits | Tasks 1, 4, 12, 16 |
 | §5 signed protocol objects | Tasks 1–3, 6–7 |
@@ -1548,6 +1578,7 @@ Write the exact aggregate digest, typed limitations, encrypted raw-archive envel
 | §10 typed failure semantics and durable resume | Tasks 5, 10–11, 14, 16 |
 | §11 low-resource bounds | Tasks 1, 4–5, 8–9, 12 |
 | §12 deterministic matrix and three-host P5 | Tasks 12–16 |
+| §12.3 honest per-platform qualification | Task 12 conformance separation; Linux/P5 evidence in Tasks 13–16; other platform evidence pending |
 | §13 phases 1–6 | Tasks 1–16 |
 | §13 phase 7 mobile | Explicitly deferred to the mobile build contract |
 | §13 phase 8 general relay operations | Self-hostable service in Tasks 7–8 and 15; public fleet plan deferred |
