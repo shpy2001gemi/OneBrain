@@ -37,6 +37,8 @@ pub mod text;
 pub mod types;
 pub mod upnp;
 pub mod verifier_service;
+#[cfg(feature = "vnext-bootstrap-https")]
+pub mod vnext_bootstrap_client;
 #[cfg(feature = "vnext-canary-harness")]
 pub mod vnext_canary_operations;
 pub mod vnext_companion;

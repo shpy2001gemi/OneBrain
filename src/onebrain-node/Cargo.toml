@@ -43,6 +43,7 @@ vnext-network-runtime = [
     "dep:rand",
     "dep:redb",
 ]
+vnext-bootstrap-https = ["dep:reqwest", "dep:rustls"]
 vnext-crash-harness = [
     "vnext-network-runtime",
     "ku-core/dr-m5-crash-harness",
@@ -93,6 +94,8 @@ ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = { version = "0.8", optional = true }
 redb = { version = "2", optional = true }
 sha2 = { version = "0.10", optional = true }
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-webpki-roots-no-provider"], optional = true }
+rustls = { version = "0.23.41", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"], optional = true }
 
 [dev-dependencies]
 ed25519-dalek = "2"

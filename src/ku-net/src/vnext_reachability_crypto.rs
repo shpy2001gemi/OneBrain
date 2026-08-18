@@ -238,6 +238,12 @@ pub struct PreparedRelayDescriptorAdmission {
     prepared_at: u64,
 }
 
+impl PreparedRelayDescriptorAdmission {
+    pub fn digest(&self) -> &[u8; 32] {
+        &self.digest
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PendingRelayDescriptorAdmission {
     canonical: RelayDescriptorV1,
@@ -377,6 +383,26 @@ pub struct ValidatedPublicDialEndpoint {
 impl ValidatedPublicDialEndpoint {
     pub fn dial_addresses(&self) -> &[SocketAddr] {
         &self.dial_addresses
+    }
+
+    pub fn signed_host(&self) -> &HostAddressV1 {
+        &self.signed_host
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    pub fn transport(&self) -> ValidatedPublicDialTransportV1 {
+        self.transport
+    }
+
+    pub fn signed_path(&self) -> Option<&str> {
+        self.signed_path.as_deref()
+    }
+
+    pub fn expires_at(&self) -> u64 {
+        self.expires_at
     }
 }
 
