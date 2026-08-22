@@ -6,6 +6,8 @@ use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -520,11 +522,11 @@ fn read_bounded(path: &Path) -> Result<Vec<u8>, RuntimeError> {
 }
 
 fn write_create_new(path: &Path, bytes: &[u8]) -> Result<(), RuntimeError> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|_| RuntimeError::OutputExists)?;
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(path).map_err(|_| RuntimeError::OutputExists)?;
     file.write_all(bytes).map_err(|_| RuntimeError::Io)?;
     file.sync_all().map_err(|_| RuntimeError::Io)?;
     sync_parent(path)?;
@@ -618,6 +620,14 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let key_path = directory.path().join("relay.key");
         generate_identity(&key_path).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&key_path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
         assert_eq!(
             generate_identity(&key_path).unwrap_err(),
             RuntimeError::OutputExists

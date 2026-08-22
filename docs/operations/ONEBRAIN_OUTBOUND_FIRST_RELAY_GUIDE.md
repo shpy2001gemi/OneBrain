@@ -8,16 +8,19 @@ UPnP, manual NAT, or a central OneBrain server.
 
 ## Closed three-runner topology
 
-- runner-a: relay UDP `0.0.0.0:41000`, externally observed provider mapping
-  `204.12.245.228:10042`; TCP-443 is not claimed.
+- runner-a: outbound-only node behind provider NAT. Real bidirectional probing
+  proved that `204.12.245.228:10042 -> 192.168.122.4:41000` admits inbound UDP
+  but does not return traffic on the same public tuple, so it is not a valid
+  relay advertisement.
+- runner-b: relay TLS/TCP `163.61.111.23:443`; both other physical hosts proved
+  bidirectional reachability before this topology was selected.
 - runner-c: relay UDP `103.77.214.30:41000` and TLS/TCP
   `103.77.214.30:443`.
-- runner-b: node only for this qualification. It reaches both public relays.
-- every node reserves at both relay NodeIDs. On a/c, the signed P5 session may
-  use the descriptor-key-pinned private host-veth dial
-  `10.254.28.1:41000` for its co-resident relay. This endpoint is never
-  advertised or written to public evidence and does not weaken NodeID/SPKI or
-  reservation authentication.
+- all three runners remain ordinary OBP nodes and reach both public relays
+  through outbound connections.
+- every node reserves at both relay NodeIDs. No private or NAT-derived endpoint
+  is advertised: the co-resident nodes on runner-b/c must authenticate the same
+  descriptor keys as remote nodes, while runner-a reaches both relays outbound.
 
 Only endpoints proven remotely from both other physical hosts enter the signed
 inventory. A relay descriptor is non-authoritative and expires; the controller
@@ -36,10 +39,10 @@ sudo "$candidate_generation/bin/p5_multi_host_agent_v2" --print-compiled-binding
 sudo "$candidate_generation/bin/relay_preflight_probe" --print-compiled-binding
 ```
 
-## Install relay-a or relay-c
+## Install relay-b or relay-c
 
 Copy exactly one reviewed bundle config to a temporary mode-0644 file, compare
-it byte-for-byte with `config/relay-a.json` or `config/relay-c.json`, then run:
+it byte-for-byte with `config/relay-b.json` or `config/relay-c.json`, then run:
 
 ```bash
 sudo useradd --system --home /var/lib/onebrain/relay-p5 --shell /usr/sbin/nologin onebrain-relay
@@ -65,9 +68,9 @@ sudo systemctl show onebrain-relay-p5.service --property=LoadState --property=Ac
 
 The shipped unit is a read-only reviewed template. The `sed` step binds it to
 the verified installed manifest generation; the rendered unit must contain
-neither the placeholder nor the mutable `current` selector. Runner-c
-additionally needs a reviewed unit drop-in granting only
-`CAP_NET_BIND_SERVICE` for port 443. Runner-a must not receive that capability.
+neither the placeholder nor the mutable `current` selector. Both selected
+relay hosts bind TCP 443, so the reviewed unit grants only
+`CAP_NET_BIND_SERVICE`; runner-a does not install the relay unit.
 
 ## P5 service and SSH boundary
 
