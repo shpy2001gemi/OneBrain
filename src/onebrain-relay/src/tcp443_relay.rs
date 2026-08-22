@@ -90,20 +90,35 @@ impl Tcp443RelayListener {
     }
 
     pub async fn accept_echo_once(&self) -> Result<(), RelayDataPlaneError> {
-        let (stream, _) = timeout(Duration::from_secs(5), self.listener.accept())
-            .await
-            .map_err(|_| RelayDataPlaneError::Expired)?
-            .map_err(|_| RelayDataPlaneError::Closed)?;
-        let mut tls = timeout(Duration::from_secs(5), self.acceptor.accept(stream))
-            .await
-            .map_err(|_| RelayDataPlaneError::Expired)?
-            .map_err(|_| RelayDataPlaneError::IdentityMismatch)?;
+        let (mut tls, _) = self.accept_connection().await?;
         let payload = read_frame(&mut tls).await?;
         let response = Tcp443FrameCodec::encode(&payload)?;
         tls.write_all(&response)
             .await
             .map_err(|_| RelayDataPlaneError::Closed)?;
         tls.flush().await.map_err(|_| RelayDataPlaneError::Closed)
+    }
+
+    pub(crate) async fn accept_connection(
+        &self,
+    ) -> Result<(tokio_rustls::server::TlsStream<TcpStream>, SocketAddr), RelayDataPlaneError> {
+        let (stream, peer) = timeout(Duration::from_secs(5), self.listener.accept())
+            .await
+            .map_err(|_| RelayDataPlaneError::Expired)?
+            .map_err(|_| RelayDataPlaneError::Closed)?;
+        let tls = timeout(Duration::from_secs(5), self.acceptor.accept(stream))
+            .await
+            .map_err(|_| RelayDataPlaneError::Expired)?
+            .map_err(|_| RelayDataPlaneError::IdentityMismatch)?;
+        Ok((tls, peer))
+    }
+
+    pub async fn serve_production_once(
+        &self,
+        service: Arc<crate::RelayProductionService>,
+    ) -> Result<(), RelayDataPlaneError> {
+        let (stream, peer) = self.accept_connection().await?;
+        service.serve_tcp_connection(stream, peer).await
     }
 }
 

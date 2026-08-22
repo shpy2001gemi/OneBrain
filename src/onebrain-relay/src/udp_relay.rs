@@ -63,14 +63,7 @@ impl UdpRelayListener {
     }
 
     pub async fn accept_echo_once(&self) -> Result<(), RelayDataPlaneError> {
-        let incoming = timeout(Duration::from_secs(5), self.endpoint.accept())
-            .await
-            .map_err(|_| RelayDataPlaneError::Expired)?
-            .ok_or(RelayDataPlaneError::Closed)?;
-        let connection = timeout(Duration::from_secs(5), incoming)
-            .await
-            .map_err(|_| RelayDataPlaneError::Expired)?
-            .map_err(|_| RelayDataPlaneError::IdentityMismatch)?;
+        let connection = self.accept_connection().await?;
         let payload = timeout(Duration::from_secs(5), connection.read_datagram())
             .await
             .map_err(|_| RelayDataPlaneError::Expired)?
@@ -84,6 +77,26 @@ impl UdpRelayListener {
         // alive long enough for the endpoint driver to flush the packet.
         tokio::time::sleep(Duration::from_millis(20)).await;
         Ok(())
+    }
+
+    pub(crate) async fn accept_connection(&self) -> Result<quinn::Connection, RelayDataPlaneError> {
+        let incoming = timeout(Duration::from_secs(5), self.endpoint.accept())
+            .await
+            .map_err(|_| RelayDataPlaneError::Expired)?
+            .ok_or(RelayDataPlaneError::Closed)?;
+        timeout(Duration::from_secs(5), incoming)
+            .await
+            .map_err(|_| RelayDataPlaneError::Expired)?
+            .map_err(|_| RelayDataPlaneError::IdentityMismatch)
+    }
+
+    pub async fn serve_production_once(
+        &self,
+        service: Arc<crate::RelayProductionService>,
+    ) -> Result<(), RelayDataPlaneError> {
+        service
+            .serve_quic_connection(self.accept_connection().await?)
+            .await
     }
 }
 

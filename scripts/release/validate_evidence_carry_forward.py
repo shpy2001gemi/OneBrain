@@ -827,6 +827,10 @@ def _verify_p5_aggregate_v2(
     if not isinstance(child_receipts, list) or len(child_receipts) < 3:
         raise SoakEvidenceError("P5 V2 signed child receipt set is incomplete")
     child_hosts: set[str] = set()
+    inventory_signers = {
+        str(row.get("host_id", row.get("physical_host_id", ""))): str(row.get("receipt_public_key", ""))
+        for row in inv.get("hosts", []) if isinstance(row, dict)
+    }
     for receipt in child_receipts:
         if not isinstance(receipt, dict) or receipt.get("format") != 2:
             raise SoakEvidenceError("P5 V2 child receipt format mismatch")
@@ -835,11 +839,20 @@ def _verify_p5_aggregate_v2(
         host_id = receipt.get("host_id")
         if host_id not in {"host-a", "host-b", "host-c"}:
             raise SoakEvidenceError("P5 V2 child host is invalid")
-        unsigned_child = {key: value for key, value in receipt.items() if key != "signature"}
+        if receipt.get("request_digest") != aggregate.get("request_digest"):
+            raise SoakEvidenceError("P5 V2 child request binding mismatch")
+        if receipt.get("inventory_blake3") != authority.get("inventory_blake3"):
+            raise SoakEvidenceError("P5 V2 child inventory binding mismatch")
+        if receipt.get("signer_public_key") != inventory_signers.get(str(host_id)):
+            raise SoakEvidenceError("P5 V2 child signer is not inventory-bound")
+        unsigned_child = {
+            key: value for key, value in receipt.items()
+            if key not in {"signature", "signer_public_key"}
+        }
         try:
             Ed25519PublicKey.from_public_bytes(bytes.fromhex(str(receipt["signer_public_key"]))).verify(
                 bytes.fromhex(str(receipt["signature"])),
-                b"onebrain/p5/child-receipt/v2\0" + blake3.blake3(controller.canonical_json(unsigned_child)).digest(),
+                b"onebrain/p5/child-receipt/v2" + controller.canonical_json(unsigned_child),
             )
         except (KeyError, ValueError, InvalidSignature) as error:
             raise SoakEvidenceError("P5 V2 child receipt signature is invalid") from error

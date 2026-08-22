@@ -3,23 +3,31 @@
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use ku_core::foundation::NodeId;
 use onebrain_protocol::{
+    decode_connectivity_signaling, encode_connectivity_signaling, ConnectivitySignalingV1,
     DirectCandidateKindV1, DirectCandidateV1, HostAddressV1, ReachabilityEndpointV1,
-    RelayConnectRequestV1, RelayEndpointV1, RelayTransportV1, RouteAttemptOutcomeV1,
-    RouteAttemptV1, RoutePathKindV1, MAX_ROUTE_PLAN_ATTEMPTS,
+    RelayConnectRequestV1, RelayEndpointV1, RelayTransportV1, RelayWireFrameV1, RelayWireKindV1,
+    RouteAttemptOutcomeV1, RouteAttemptV1, RoutePathKindV1, MAX_ROUTE_PLAN_ATTEMPTS,
 };
+use rand::rngs::OsRng;
+use rand::RngCore;
 
-use crate::transport::{OBPConnection, QuicTransport};
-use crate::vnext_connectivity_signaling::{ValidatedPunchedCarrier, ValidatedRelayAssociation};
+use crate::transport::{OBPConnection, QuicTransport, TransportConfig};
+use crate::vnext_connectivity_signaling::{
+    ConnectivitySignalingValidator, ValidatedPunchedCarrier, ValidatedRelayAssociation,
+};
 use crate::vnext_reachability_crypto::{
-    ValidatedPublicDialEndpoint, ValidatedPublicDialTransportV1, ValidatedRelayDescriptor,
-    ValidatedRelayReservation,
+    InMemoryReachabilityReplayStore, KnownPeerIdentity, ValidatedPublicDialEndpoint,
+    ValidatedPublicDialTransportV1, ValidatedRelayDescriptor, ValidatedRelayReservation,
 };
 use crate::vnext_relay_discovery::ReachabilityFuture;
-use crate::vnext_relay_tunnel::AuthenticatedOuterRelayConnection;
+use crate::vnext_relay_tunnel::{
+    AuthenticatedOuterRelayConnection, RelayDatagramSocket, RelayInboundDatagram,
+    RelaySocketDriver, RelaySocketGlobalBudget,
+};
 use crate::vnext_route_plan::{PlannerAction, RouteFailure};
 use crate::vnext_session::AuthenticatedSession;
 
@@ -167,6 +175,42 @@ impl fmt::Debug for SelectedCarrier {
             .debug_struct("SelectedCarrier")
             .field("selection", &self.selection)
             .finish_non_exhaustive()
+    }
+}
+
+impl SelectedCarrier {
+    /// Returns the socket measured by the concrete carrier adapter. Callers
+    /// may use it for admission accounting, but it is not peer authority.
+    pub fn connected_socket(&self) -> SocketAddr {
+        match self.selection.path_kind {
+            RoutePathKindV1::Direct => match self.selection.direct.as_ref() {
+                Some(VerifiedDirectSelectionV1::OutboundCandidate {
+                    connected_socket, ..
+                })
+                | Some(VerifiedDirectSelectionV1::InboundObserved { connected_socket }) => {
+                    *connected_socket
+                }
+                None => unreachable!("sealed direct selection has direct provenance"),
+            },
+            RoutePathKindV1::HolePunched => {
+                self.selection
+                    .hole_punch
+                    .as_ref()
+                    .expect("sealed hole-punch selection has provenance")
+                    .connected_socket
+            }
+            RoutePathKindV1::RelayUdp | RoutePathKindV1::RelayTcp443 => {
+                self.selection
+                    .relay
+                    .as_ref()
+                    .expect("sealed relay selection has provenance")
+                    .connected_socket
+            }
+        }
+    }
+
+    pub fn selection(&self) -> &VerifiedPlannerSelection {
+        &self.selection
     }
 }
 
@@ -348,7 +392,7 @@ pub trait RelayCarrierDialer: Send + Sync {
         &'a self,
         relay: &'a ValidatedRelayDescriptor,
         association: &'a ValidatedRelayAssociation,
-        outer: &'a AuthenticatedOuterRelayConnection,
+        outer: Arc<AuthenticatedOuterRelayConnection>,
         deadline: Instant,
     ) -> ReachabilityFuture<'a, Result<OBPConnection, RouteFailure>>;
 }
@@ -359,9 +403,264 @@ pub trait RelayAssociationClient: Send + Sync {
         request: &'a RelayConnectRequestV1,
         local: &'a ValidatedRelayReservation,
         remote: &'a ValidatedRelayReservation,
-        outer: &'a AuthenticatedOuterRelayConnection,
+        outer: Arc<AuthenticatedOuterRelayConnection>,
         deadline: Instant,
     ) -> ReachabilityFuture<'a, Result<ValidatedRelayAssociation, RouteFailure>>;
+
+    fn accept_inbound<'a>(
+        &'a self,
+        initiator_reservation: &'a ValidatedRelayReservation,
+        target_reservation: &'a ValidatedRelayReservation,
+        initiator: KnownPeerIdentity,
+        outer: Arc<AuthenticatedOuterRelayConnection>,
+        deadline: Instant,
+    ) -> ReachabilityFuture<'a, Result<ValidatedRelayAssociation, RouteFailure>>;
+}
+
+/// Production association client for an already authenticated outer relay
+/// connection. Both the caller request and relay response are re-admitted
+/// through the canonical connectivity validator; the relay wire response is
+/// never accepted as authority by itself.
+pub struct ProductionRelayAssociationClient {
+    local_public_key: [u8; 32],
+    validator: ConnectivitySignalingValidator,
+}
+
+impl ProductionRelayAssociationClient {
+    pub fn new(local_public_key: [u8; 32]) -> Self {
+        Self {
+            local_public_key,
+            validator: ConnectivitySignalingValidator::new(Arc::new(
+                InMemoryReachabilityReplayStore::default(),
+            )),
+        }
+    }
+}
+
+impl RelayAssociationClient for ProductionRelayAssociationClient {
+    fn associate<'a>(
+        &'a self,
+        request: &'a RelayConnectRequestV1,
+        local: &'a ValidatedRelayReservation,
+        remote: &'a ValidatedRelayReservation,
+        outer: Arc<AuthenticatedOuterRelayConnection>,
+        deadline: Instant,
+    ) -> ReachabilityFuture<'a, Result<ValidatedRelayAssociation, RouteFailure>> {
+        Box::pin(async move {
+            if Instant::now() >= deadline
+                || !outer.is_open()
+                || outer.client_node_id() != request.initiator_node_id
+                || local.canonical().target_node_id != request.initiator_node_id
+                || remote.canonical().target_node_id != request.target_node_id
+                || local.canonical().relay_node_id != outer.relay_node_id()
+                || remote.canonical().relay_node_id != outer.relay_node_id()
+            {
+                return Err(RouteFailure::PeerIdentityMismatch);
+            }
+            let request_root = ConnectivitySignalingV1::RelayConnectRequest(request.clone());
+            let request_bytes = encode_connectivity_signaling(&request_root)
+                .map_err(|_| RouteFailure::PeerIdentityMismatch)?;
+            let initiator = KnownPeerIdentity::from_public_key(self.local_public_key);
+            let admitted_request = self
+                .validator
+                .validate_connect_request(
+                    &request_bytes,
+                    &initiator,
+                    request.target_node_id,
+                    local,
+                    remote,
+                    unix_now_seconds().map_err(|_| RouteFailure::PeerIdentityMismatch)?,
+                )
+                .map_err(|_| RouteFailure::PeerIdentityMismatch)?;
+            let request_id = random_request_id();
+            let frame =
+                RelayWireFrameV1::new(RelayWireKindV1::ConnectRequest, request_id, request_bytes)
+                    .map_err(|_| RouteFailure::RelayDenied)?;
+            let response = tokio::time::timeout_at(
+                tokio::time::Instant::from_std(deadline),
+                outer.request_control_frame(&frame),
+            )
+            .await
+            .map_err(|_| RouteFailure::RelayUnavailable)?
+            .map_err(|_| RouteFailure::RelayDenied)?;
+            if response.kind() != RelayWireKindV1::Association
+                || response.request_id() != request_id
+            {
+                return Err(RouteFailure::RelayDenied);
+            }
+            let root = decode_connectivity_signaling(response.payload())
+                .map_err(|_| RouteFailure::RelayDenied)?;
+            if !matches!(root, ConnectivitySignalingV1::RelayAssociation(_)) {
+                return Err(RouteFailure::RelayDenied);
+            }
+            let descriptor = outer.route().descriptor().canonical();
+            let relay = KnownPeerIdentity {
+                node_id: descriptor.relay_node_id,
+                public_key: descriptor.relay_public_key,
+            };
+            self.validator
+                .validate_association(
+                    response.payload(),
+                    &relay,
+                    &admitted_request,
+                    local,
+                    remote,
+                    unix_now_seconds().map_err(|_| RouteFailure::RelayDenied)?,
+                )
+                .map_err(|_| RouteFailure::RelayDenied)
+        })
+    }
+
+    fn accept_inbound<'a>(
+        &'a self,
+        initiator_reservation: &'a ValidatedRelayReservation,
+        target_reservation: &'a ValidatedRelayReservation,
+        initiator: KnownPeerIdentity,
+        outer: Arc<AuthenticatedOuterRelayConnection>,
+        deadline: Instant,
+    ) -> ReachabilityFuture<'a, Result<ValidatedRelayAssociation, RouteFailure>> {
+        Box::pin(async move {
+            if Instant::now() >= deadline
+                || !outer.is_open()
+                || outer.client_node_id() != target_reservation.canonical().target_node_id
+                || initiator.node_id != initiator_reservation.canonical().target_node_id
+                || initiator_reservation.canonical().relay_node_id != outer.relay_node_id()
+                || target_reservation.canonical().relay_node_id != outer.relay_node_id()
+            {
+                return Err(RouteFailure::PeerIdentityMismatch);
+            }
+            let request_frame = tokio::time::timeout_at(
+                tokio::time::Instant::from_std(deadline),
+                outer.receive_control_frame(),
+            )
+            .await
+            .map_err(|_| RouteFailure::RelayUnavailable)?
+            .map_err(|_| RouteFailure::RelayDenied)?;
+            if request_frame.kind() != RelayWireKindV1::ConnectRequest {
+                return Err(RouteFailure::RelayDenied);
+            }
+            let request_root = decode_connectivity_signaling(request_frame.payload())
+                .map_err(|_| RouteFailure::RelayDenied)?;
+            let ConnectivitySignalingV1::RelayConnectRequest(_request) = request_root else {
+                return Err(RouteFailure::RelayDenied);
+            };
+            let admitted_request = self
+                .validator
+                .validate_connect_request(
+                    request_frame.payload(),
+                    &initiator,
+                    target_reservation.canonical().target_node_id,
+                    initiator_reservation,
+                    target_reservation,
+                    unix_now_seconds().map_err(|_| RouteFailure::RelayDenied)?,
+                )
+                .map_err(|_| RouteFailure::RelayDenied)?;
+            let association_frame = tokio::time::timeout_at(
+                tokio::time::Instant::from_std(deadline),
+                outer.receive_control_frame(),
+            )
+            .await
+            .map_err(|_| RouteFailure::RelayUnavailable)?
+            .map_err(|_| RouteFailure::RelayDenied)?;
+            if association_frame.kind() != RelayWireKindV1::Association
+                || association_frame.request_id() != request_frame.request_id()
+            {
+                return Err(RouteFailure::RelayDenied);
+            }
+            let descriptor = outer.route().descriptor().canonical();
+            let relay = KnownPeerIdentity {
+                node_id: descriptor.relay_node_id,
+                public_key: descriptor.relay_public_key,
+            };
+            self.validator
+                .validate_association(
+                    association_frame.payload(),
+                    &relay,
+                    &admitted_request,
+                    initiator_reservation,
+                    target_reservation,
+                    unix_now_seconds().map_err(|_| RouteFailure::RelayDenied)?,
+                )
+                .map_err(|_| RouteFailure::RelayDenied)
+        })
+    }
+}
+
+/// Production inner-QUIC carrier over one admitted relay association. The
+/// association initiator opens the inner QUIC connection and the target
+/// accepts it, avoiding a second, ambiguous connection race.
+pub struct ProductionRelayCarrierDialer {
+    global_budget: RelaySocketGlobalBudget,
+}
+
+impl ProductionRelayCarrierDialer {
+    pub fn standard() -> Self {
+        Self {
+            global_budget: RelaySocketGlobalBudget::standard(),
+        }
+    }
+}
+
+impl Default for ProductionRelayCarrierDialer {
+    fn default() -> Self {
+        Self::standard()
+    }
+}
+
+impl RelayCarrierDialer for ProductionRelayCarrierDialer {
+    fn dial<'a>(
+        &'a self,
+        relay: &'a ValidatedRelayDescriptor,
+        association: &'a ValidatedRelayAssociation,
+        outer: Arc<AuthenticatedOuterRelayConnection>,
+        deadline: Instant,
+    ) -> ReachabilityFuture<'a, Result<OBPConnection, RouteFailure>> {
+        Box::pin(async move {
+            let value = association.canonical();
+            if Instant::now() >= deadline
+                || !outer.is_open()
+                || value.relay_node_id != relay.canonical().relay_node_id
+                || value.relay_node_id != outer.relay_node_id()
+                || (outer.client_node_id() != value.initiator_node_id
+                    && outer.client_node_id() != value.target_node_id)
+            {
+                return Err(RouteFailure::PeerIdentityMismatch);
+            }
+            let initiator = outer.client_node_id() == value.initiator_node_id;
+            let local_addr: SocketAddr = if initiator {
+                "127.0.0.1:41011".parse().expect("fixed relay socket")
+            } else {
+                "127.0.0.1:41012".parse().expect("fixed relay socket")
+            };
+            let peer_addr: SocketAddr = if initiator {
+                "127.0.0.1:41012".parse().expect("fixed relay socket")
+            } else {
+                "127.0.0.1:41011".parse().expect("fixed relay socket")
+            };
+            let (socket, driver) =
+                RelayDatagramSocket::pair(local_addr, self.global_budget.clone());
+            let transport = QuicTransport::bind_abstract(TransportConfig::default(), socket)
+                .map_err(|_| RouteFailure::RelayDenied)?;
+            spawn_relay_socket_pump(
+                driver,
+                Arc::clone(&outer),
+                value.association_id,
+                initiator,
+                peer_addr,
+            );
+            let operation = async {
+                if initiator {
+                    transport.connect(peer_addr).await
+                } else {
+                    transport.accept().await
+                }
+            };
+            tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), operation)
+                .await
+                .map_err(|_| RouteFailure::RelayUnavailable)?
+                .map_err(|_| RouteFailure::RelayDenied)
+        })
+    }
 }
 
 pub struct AdmittedDirectExecution {
@@ -435,6 +734,16 @@ pub struct ExpectedInboundCarrier {
     pub(crate) selection: VerifiedPlannerSelection,
 }
 
+impl ExpectedInboundCarrier {
+    pub fn connected_socket(&self) -> SocketAddr {
+        self.connection.remote_addr()
+    }
+
+    pub fn expected_peer(&self) -> NodeId {
+        self.expected_peer
+    }
+}
+
 pub enum AdmittedInboundCarrier {
     UnboundDirect(UnboundDirectInboundCarrier),
     Expected(ExpectedInboundCarrier),
@@ -466,6 +775,80 @@ impl ConnectionPlannerExecutor {
         }
     }
 
+    pub async fn associate_relay(
+        &self,
+        request: &RelayConnectRequestV1,
+        local: &ValidatedRelayReservation,
+        remote: &ValidatedRelayReservation,
+        outer: Arc<AuthenticatedOuterRelayConnection>,
+        deadline: Instant,
+    ) -> Result<ValidatedRelayAssociation, RouteFailure> {
+        self.association
+            .associate(request, local, remote, outer, deadline)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn accept_relay_inbound(
+        &self,
+        descriptor: ValidatedRelayDescriptor,
+        initiator_reservation: ValidatedRelayReservation,
+        target_reservation: ValidatedRelayReservation,
+        initiator: KnownPeerIdentity,
+        candidate: onebrain_protocol::RelayCandidateV1,
+        outer: Arc<AuthenticatedOuterRelayConnection>,
+        deadline: Instant,
+    ) -> Result<ExpectedInboundCarrier, RouteFailure> {
+        let association = self
+            .association
+            .accept_inbound(
+                &initiator_reservation,
+                &target_reservation,
+                initiator,
+                Arc::clone(&outer),
+                deadline,
+            )
+            .await?;
+        validate_relay_target_parts(
+            &descriptor,
+            &initiator_reservation,
+            &target_reservation,
+            &association,
+            &outer,
+        )?;
+        let connection = self
+            .relay
+            .dial(&descriptor, &association, Arc::clone(&outer), deadline)
+            .await?;
+        let expected_peer = association.canonical().initiator_node_id;
+        let selected =
+            Self::seal_validated_relay(candidate, association, &outer, connection, Vec::new())?;
+        Self::expect_inbound(selected, expected_peer)
+    }
+
+    pub fn admitted_relay_action(
+        candidate: onebrain_protocol::RelayCandidateV1,
+        association: &ValidatedRelayAssociation,
+    ) -> Result<PlannerAction, RouteFailure> {
+        let admitted = crate::vnext_route_plan::AdmittedRelayPath::from_validated_association(
+            candidate,
+            association,
+        )
+        .map_err(|_| RouteFailure::RelayDenied)?;
+        Ok(PlannerAction::ConnectRelay(admitted))
+    }
+
+    pub fn seal_validated_relay(
+        candidate: onebrain_protocol::RelayCandidateV1,
+        association: ValidatedRelayAssociation,
+        outer: &AuthenticatedOuterRelayConnection,
+        connection: OBPConnection,
+        attempts: Vec<RouteAttemptV1>,
+    ) -> Result<SelectedCarrier, RouteFailure> {
+        let action = Self::admitted_relay_action(candidate, &association)?;
+        Self::seal_relay(action, association, outer, connection, attempts)
+    }
+
     pub async fn execute(
         &self,
         action: PlannerAction,
@@ -494,7 +877,13 @@ impl ConnectionPlannerExecutor {
                     None => {
                         let request = input.request.as_ref().ok_or(RouteFailure::RelayDenied)?;
                         self.association
-                            .associate(request, &input.local, &input.remote, &input.outer, deadline)
+                            .associate(
+                                request,
+                                &input.local,
+                                &input.remote,
+                                Arc::clone(&input.outer),
+                                deadline,
+                            )
                             .await?
                     }
                 };
@@ -507,7 +896,12 @@ impl ConnectionPlannerExecutor {
                 )?;
                 let connection = self
                     .relay
-                    .dial(&input.descriptor, &association, &input.outer, deadline)
+                    .dial(
+                        &input.descriptor,
+                        &association,
+                        Arc::clone(&input.outer),
+                        deadline,
+                    )
                     .await?;
                 Self::seal_relay(action, association, &input.outer, connection, attempts)
             }
@@ -744,6 +1138,36 @@ fn validate_relay_parts(
     Ok(())
 }
 
+fn validate_relay_target_parts(
+    descriptor: &ValidatedRelayDescriptor,
+    initiator: &ValidatedRelayReservation,
+    target: &ValidatedRelayReservation,
+    association: &ValidatedRelayAssociation,
+    outer: &AuthenticatedOuterRelayConnection,
+) -> Result<(), RouteFailure> {
+    let relay = descriptor.canonical().relay_node_id;
+    let initiator = initiator.canonical();
+    let target = target.canonical();
+    let association = association.canonical();
+    if !outer.is_open()
+        || outer.relay_node_id() != relay
+        || outer.route().descriptor().digest() != descriptor.digest()
+        || initiator.relay_node_id != relay
+        || target.relay_node_id != relay
+        || outer.client_node_id() != target.target_node_id
+        || !initiator.transport_scope.contains(&outer.transport())
+        || !target.transport_scope.contains(&outer.transport())
+        || initiator.reservation_id != association.initiator_reservation_id
+        || target.reservation_id != association.target_reservation_id
+        || initiator.target_node_id != association.initiator_node_id
+        || target.target_node_id != association.target_node_id
+        || association.relay_node_id != relay
+    {
+        return Err(RouteFailure::PeerIdentityMismatch);
+    }
+    Ok(())
+}
+
 fn build_selection(
     path_kind: RoutePathKindV1,
     carrier_identity: Option<NodeId>,
@@ -899,6 +1323,177 @@ fn validate_attempts(attempts: &[RouteAttemptV1]) -> Result<(), RouteFailure> {
     } else {
         Ok(())
     }
+}
+
+const OPAQUE_RELAY_MAGIC: [u8; 4] = *b"OBPR";
+const OPAQUE_RELAY_VERSION: u8 = 1;
+const OPAQUE_RELAY_HEADER_BYTES: usize = 60;
+const OPAQUE_RELAY_FRAGMENT_BYTES: usize = 1_024;
+const OPAQUE_RELAY_MAX_INNER_BYTES: usize = 1_350;
+
+fn spawn_relay_socket_pump(
+    mut driver: RelaySocketDriver,
+    outer: Arc<AuthenticatedOuterRelayConnection>,
+    association_id: [u8; 32],
+    initiator: bool,
+    peer_addr: SocketAddr,
+) {
+    tokio::spawn(async move {
+        let mut sequence = random_nonzero_u64();
+        let mut message_id = random_nonzero_u64();
+        loop {
+            tokio::select! {
+                outbound = driver.recv_outbound() => {
+                    let Some(outbound) = outbound else { break; };
+                    if outbound.contents.is_empty()
+                        || outbound.contents.len() > OPAQUE_RELAY_MAX_INNER_BYTES
+                    {
+                        driver.fail(std::io::ErrorKind::InvalidData);
+                        break;
+                    }
+                    let fragments = encode_relay_fragments(
+                        association_id,
+                        initiator,
+                        sequence,
+                        message_id,
+                        &outbound.contents,
+                    );
+                    let Ok(fragments) = fragments else {
+                        driver.fail(std::io::ErrorKind::InvalidData);
+                        break;
+                    };
+                    for fragment in fragments {
+                        if send_outer_opaque(&outer, fragment).await.is_err() {
+                            driver.fail(std::io::ErrorKind::BrokenPipe);
+                            return;
+                        }
+                    }
+                    let Some(next_sequence) = sequence.checked_add(1) else {
+                        driver.fail(std::io::ErrorKind::InvalidData);
+                        break;
+                    };
+                    let Some(next_message) = message_id.checked_add(1) else {
+                        driver.fail(std::io::ErrorKind::InvalidData);
+                        break;
+                    };
+                    sequence = next_sequence;
+                    message_id = next_message;
+                }
+                inbound = receive_outer_opaque(&outer) => {
+                    match inbound {
+                        Ok(contents) if !contents.is_empty()
+                            && contents.len() <= OPAQUE_RELAY_MAX_INNER_BYTES => {
+                                if driver.push_inbound(RelayInboundDatagram {
+                                    source: peer_addr,
+                                    destination_ip: None,
+                                    ecn: None,
+                                    contents,
+                                }).is_err() {
+                                    driver.fail(std::io::ErrorKind::WouldBlock);
+                                    break;
+                                }
+                            }
+                        _ => {
+                            driver.fail(std::io::ErrorKind::BrokenPipe);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+async fn send_outer_opaque(
+    outer: &AuthenticatedOuterRelayConnection,
+    payload: Vec<u8>,
+) -> Result<(), ()> {
+    match outer.transport() {
+        RelayTransportV1::QuicUdp => outer.send_opaque_datagram(payload).await.map_err(|_| ()),
+        RelayTransportV1::TlsTcp443 => {
+            let frame = RelayWireFrameV1::new(
+                RelayWireKindV1::OpaqueDatagram,
+                random_request_id(),
+                payload,
+            )
+            .map_err(|_| ())?;
+            outer.send_control_frame(&frame).await.map_err(|_| ())
+        }
+    }
+}
+
+async fn receive_outer_opaque(outer: &AuthenticatedOuterRelayConnection) -> Result<Vec<u8>, ()> {
+    match outer.transport() {
+        RelayTransportV1::QuicUdp => outer.receive_opaque_datagram().await.map_err(|_| ()),
+        RelayTransportV1::TlsTcp443 => loop {
+            let frame = outer.receive_control_frame().await.map_err(|_| ())?;
+            if frame.kind() == RelayWireKindV1::OpaqueDatagram {
+                return Ok(frame.payload().to_vec());
+            }
+        },
+    }
+}
+
+fn encode_relay_fragments(
+    association_id: [u8; 32],
+    initiator: bool,
+    datagram_sequence: u64,
+    message_id: u64,
+    payload: &[u8],
+) -> Result<Vec<Vec<u8>>, ()> {
+    if association_id == [0; 32]
+        || datagram_sequence == 0
+        || message_id == 0
+        || payload.is_empty()
+        || payload.len() > OPAQUE_RELAY_MAX_INNER_BYTES
+    {
+        return Err(());
+    }
+    let count = payload.len().div_ceil(OPAQUE_RELAY_FRAGMENT_BYTES);
+    if count == 0 || count > 8 {
+        return Err(());
+    }
+    payload
+        .chunks(OPAQUE_RELAY_FRAGMENT_BYTES)
+        .enumerate()
+        .map(|(index, part)| {
+            let mut output = Vec::with_capacity(OPAQUE_RELAY_HEADER_BYTES + part.len());
+            output.extend_from_slice(&OPAQUE_RELAY_MAGIC);
+            output.push(OPAQUE_RELAY_VERSION);
+            output.extend_from_slice(&association_id);
+            output.push(if initiator { 0 } else { 1 });
+            output.extend_from_slice(&datagram_sequence.to_be_bytes());
+            output.extend_from_slice(&message_id.to_be_bytes());
+            output.push(index as u8);
+            output.push(count as u8);
+            output.extend_from_slice(&(payload.len() as u16).to_be_bytes());
+            output.extend_from_slice(&(part.len() as u16).to_be_bytes());
+            output.extend_from_slice(part);
+            Ok(output)
+        })
+        .collect()
+}
+
+fn random_request_id() -> [u8; 16] {
+    let mut value = [0u8; 16];
+    OsRng.fill_bytes(&mut value);
+    value
+}
+
+fn random_nonzero_u64() -> u64 {
+    loop {
+        let value = OsRng.next_u64();
+        if value != 0 {
+            return value;
+        }
+    }
+}
+
+fn unix_now_seconds() -> Result<u64, ()> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_secs())
+        .map_err(|_| ())
 }
 
 fn endpoint_socket(endpoint: &ReachabilityEndpointV1) -> Option<SocketAddr> {

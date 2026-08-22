@@ -13,7 +13,7 @@ use ku_net::vnext_reachability_crypto::{
     ReachabilityAdmissionPreparer, ReachabilityDialValidator, ReachabilityLockFreeDialValidation,
     ReachabilityLockFreePreparation, ReachabilityNonceDomainV1, ReachabilityRecordAdmission,
     ReachabilityReplayStore, ReachabilitySequenceKeyV1, ReachabilitySequenceKindV1,
-    RelayAdmissionError,
+    RelayAdmissionError, SystemPublicEndpointResolver,
 };
 use ku_net::vnext_session::principal_node_id;
 use onebrain_protocol::{
@@ -480,4 +480,24 @@ fn trusted_bootstrap_authority_cannot_be_constructed_from_network_bytes() {
     .unwrap();
     let source = ConfiguredBootstrapSource::load_from_trusted_local_file(&path).unwrap();
     assert_eq!(source.fetch_endpoint().port, 443);
+}
+
+#[test]
+fn system_resolver_is_bounded_and_preserves_literal_addresses() {
+    assert!(SystemPublicEndpointResolver::new(0).is_err());
+    assert!(SystemPublicEndpointResolver::new(5).is_err());
+    let resolver = SystemPublicEndpointResolver::new(2).unwrap();
+    assert_eq!(
+        resolver
+            .resolve(
+                &HostAddressV1::Ipv4([8, 8, 8, 8]),
+                Instant::now() + Duration::from_secs(1),
+            )
+            .unwrap(),
+        vec![IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))]
+    );
+    assert_eq!(
+        resolver.resolve(&HostAddressV1::Ipv4([8, 8, 4, 4]), Instant::now()),
+        Err(RelayAdmissionError::DnsResolutionFailed)
+    );
 }

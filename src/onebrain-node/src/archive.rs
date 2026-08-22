@@ -86,6 +86,72 @@ pub trait StagedArchiveBackendFactory: Send + Sync {
     ) -> Result<Vec<Arc<dyn SnapshotVerifiedBackend>>, NodeError>;
 }
 
+/// Opens the five durable logical stores owned by the vNext network runtime
+/// inside a dataset generation.  The same factory is used for the active
+/// source generation and the unactivated restore target, so an OBARV002
+/// restore can never accidentally write back into the generation being
+/// replaced.
+#[cfg(feature = "vnext-network-runtime")]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct VNextStagedArchiveBackendFactory;
+
+#[cfg(feature = "vnext-network-runtime")]
+impl StagedArchiveBackendFactory for VNextStagedArchiveBackendFactory {
+    fn open_for_staged_generation(
+        &self,
+        resolver: &dyn DatasetPathResolver,
+    ) -> Result<Vec<Arc<dyn SnapshotVerifiedBackend>>, NodeError> {
+        use ku_core::foundation::RedbVerifiedBackend;
+        use ku_net::vnext_inventory_forest::RedbInventoryForestBackend;
+        use ku_net::vnext_reconciliation_journal::RedbReconciliationJournalBackend;
+
+        use crate::dataset_path::BaseStorageOwnerId;
+        use crate::vnext_outbox::OutboundOutbox;
+        use crate::vnext_record_provenance::RedbRecordProvenance;
+        use crate::vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};
+
+        let canonical = resolver
+            .owner_path(BaseStorageOwnerId::CANONICAL)
+            .map_err(|error| NodeError::Storage(error.to_string()))?
+            .join("vnext_verified.redb");
+        let reconciliation = resolver
+            .owner_path(BaseStorageOwnerId::RECONCILIATION)
+            .map_err(|error| NodeError::Storage(error.to_string()))?
+            .join("vnext_reconciliation.redb");
+        let inventory = resolver
+            .owner_path(BaseStorageOwnerId::INVENTORY)
+            .map_err(|error| NodeError::Storage(error.to_string()))?
+            .join("vnext_inventory.redb");
+        let outbox = resolver
+            .owner_path(BaseStorageOwnerId::OUTBOX)
+            .map_err(|error| NodeError::Storage(error.to_string()))?
+            .join("vnext_outbox.redb");
+        let provenance = resolver
+            .owner_path(BaseStorageOwnerId::PROVENANCE)
+            .map_err(|error| NodeError::Storage(error.to_string()))?
+            .join("vnext_record_provenance.redb");
+
+        let sink = SharedVNextValidatedSink::new(VNextValidatedSink::new(
+            RedbVerifiedBackend::open(&canonical).map_err(NodeError::Storage)?,
+        ));
+        let reconciliation =
+            RedbReconciliationJournalBackend::open(&reconciliation).map_err(NodeError::Storage)?;
+        let inventory = RedbInventoryForestBackend::open(&inventory)
+            .map_err(|error| NodeError::Storage(format!("{error:?}")))?;
+        let outbox =
+            OutboundOutbox::open(&outbox).map_err(|error| NodeError::Storage(error.to_string()))?;
+        let provenance = RedbRecordProvenance::open(&provenance).map_err(NodeError::Storage)?;
+
+        Ok(vec![
+            Arc::new(ValidatedCanonicalArchiveBackend::new(sink)),
+            Arc::new(ReconciliationArchiveBackend::new(reconciliation)),
+            Arc::new(InventoryArchiveBackend::new(inventory)),
+            Arc::new(LogicalRowsArchiveBackend::new(outbox)),
+            Arc::new(LogicalRowsArchiveBackend::new(provenance)),
+        ])
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PortableArchiveRow {
     pub table: u8,

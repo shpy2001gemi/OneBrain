@@ -1,5 +1,6 @@
 //! Bounded datagram adaptation for an opaque authenticated relay carrier.
 
+use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::fmt;
 use std::io::{self, IoSliceMut};
@@ -8,16 +9,34 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
+use std::time::{Duration, Instant};
 
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use quinn::udp::{EcnCodepoint, RecvMeta, Transmit};
-use quinn::{AsyncUdpSocket, UdpPoller};
-use tokio::sync::mpsc;
+use quinn::{AsyncUdpSocket, ClientConfig, Endpoint, UdpPoller};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, WebPkiSupportedAlgorithms};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{DigitallySignedStruct, SignatureScheme};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::sync::{mpsc, oneshot, Mutex as AsyncMutex};
+use tokio_rustls::client::TlsStream;
 
 use ku_core::foundation::NodeId;
-use onebrain_protocol::RelayTransportV1;
+use onebrain_protocol::{
+    decode_relay_control, encode_relay_control, relay_control_signing_bytes,
+    relay_control_signing_parts, RelayControlSignatureRoleV1, RelayControlV1,
+    RelayOuterClientHelloV1, RelayPossessionProofV1, RelayTransportV1, RelayWireFrameV1,
+    RelayWireKindV1, MAX_RELAY_WIRE_PAYLOAD_BYTES,
+};
+use rand::rngs::OsRng;
+use rand::RngCore;
 
+use crate::transport::QuicTransport;
 use crate::vnext_reachability_crypto::{
-    ValidatedPublicDialEndpoint, ValidatedPublicDialTransportV1, ValidatedRelayDescriptor,
+    ReachabilityIdentitySigner, ValidatedPossessionDialEndpoint, ValidatedPublicDialEndpoint,
+    ValidatedPublicDialTransportV1, ValidatedRelayDescriptor,
 };
 
 pub const RELAY_SOCKET_FRAME_LIMIT: usize = 64;
@@ -211,11 +230,9 @@ impl ValidatedRelayDialSet {
         primary: ValidatedRelayDialRoute,
         tcp_fallback: Option<ValidatedRelayDialRoute>,
     ) -> Result<Self, RelayRouteError> {
-        if primary.transport() != RelayTransportV1::QuicUdp {
-            return Err(RelayRouteError::TransportMismatch);
-        }
         if let Some(fallback) = &tcp_fallback {
-            if fallback.transport() != RelayTransportV1::TlsTcp443
+            if primary.transport() != RelayTransportV1::QuicUdp
+                || fallback.transport() != RelayTransportV1::TlsTcp443
                 || fallback.descriptor_digest() != primary.descriptor_digest()
                 || fallback.relay_node_id() != primary.relay_node_id()
                 || fallback.relay_public_key() != primary.relay_public_key()
@@ -242,6 +259,9 @@ impl ValidatedRelayDialSet {
         max_datagram_size: Option<usize>,
         encoded_header_len: usize,
     ) -> Result<&ValidatedRelayDialRoute, RelayRouteError> {
+        if self.primary.transport() == RelayTransportV1::TlsTcp443 {
+            return Ok(&self.primary);
+        }
         let usable = max_datagram_size.and_then(|size| size.checked_sub(encoded_header_len));
         if usable.is_some_and(|value| value > 0) {
             Ok(&self.primary)
@@ -266,7 +286,6 @@ pub enum RelayRouteError {
 /// Identity and measured transport binding for one live outer relay carrier.
 /// Construction remains inside ku-net's authenticated handshake path; node
 /// policy can inspect but cannot relabel the connection.
-#[derive(Debug)]
 pub struct AuthenticatedOuterRelayConnection {
     route: ValidatedRelayDialRoute,
     client_node_id: NodeId,
@@ -276,18 +295,52 @@ pub struct AuthenticatedOuterRelayConnection {
     transport: RelayTransportV1,
     established_at: u64,
     expires_at: u64,
-    open: AtomicBool,
+    open: Arc<AtomicBool>,
+    inner: OuterRelayConnection,
+    control_transaction: AsyncMutex<()>,
+    pending_control: Arc<Mutex<BTreeMap<[u8; 16], oneshot::Sender<RelayWireFrameV1>>>>,
+    notifications: AsyncMutex<mpsc::Receiver<RelayWireFrameV1>>,
+    reader_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+}
+
+enum OuterRelayConnection {
+    Quic {
+        _endpoint: Endpoint,
+        connection: quinn::Connection,
+        control_send: AsyncMutex<quinn::SendStream>,
+    },
+    TlsTcp443 {
+        control_send: AsyncMutex<tokio::io::WriteHalf<TlsStream<TcpStream>>>,
+    },
+}
+
+impl fmt::Debug for AuthenticatedOuterRelayConnection {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("AuthenticatedOuterRelayConnection")
+            .field("client_node_id", &self.client_node_id)
+            .field("relay_node_id", &self.relay_node_id)
+            .field("connected_socket", &self.connected_socket)
+            .field("connection_binding", &self.connection_binding)
+            .field("transport", &self.transport)
+            .field("established_at", &self.established_at)
+            .field("expires_at", &self.expires_at)
+            .field("open", &self.is_open())
+            .finish_non_exhaustive()
+    }
 }
 
 impl AuthenticatedOuterRelayConnection {
     #[allow(dead_code)]
-    pub(crate) fn from_verified_handshake(
+    fn from_verified_handshake(
         route: ValidatedRelayDialRoute,
         client_node_id: NodeId,
         connected_socket: SocketAddr,
         connection_binding: [u8; 32],
         established_at: u64,
         expires_at: u64,
+        inner: OuterRelayConnection,
+        control_recv: Pin<Box<dyn tokio::io::AsyncRead + Send>>,
     ) -> Result<Self, RelayRouteError> {
         if connection_binding == [0; 32]
             || established_at >= expires_at
@@ -295,6 +348,14 @@ impl AuthenticatedOuterRelayConnection {
         {
             return Err(RelayRouteError::InvalidHandshake);
         }
+        let open = Arc::new(AtomicBool::new(true));
+        let pending_control = Arc::new(Mutex::new(BTreeMap::new()));
+        let (notification_tx, notification_rx) = mpsc::channel(64);
+        let reader_open = open.clone();
+        let reader_pending = pending_control.clone();
+        let reader_task = tokio::spawn(async move {
+            run_control_reader(control_recv, reader_pending, notification_tx, reader_open).await;
+        });
         Ok(Self {
             relay_node_id: route.relay_node_id(),
             transport: route.transport(),
@@ -304,8 +365,65 @@ impl AuthenticatedOuterRelayConnection {
             connection_binding,
             established_at,
             expires_at,
-            open: AtomicBool::new(true),
+            open,
+            inner,
+            control_transaction: AsyncMutex::new(()),
+            pending_control,
+            notifications: AsyncMutex::new(notification_rx),
+            reader_task: Mutex::new(Some(reader_task)),
         })
+    }
+
+    pub(crate) fn from_verified_quic_handshake(
+        route: ValidatedRelayDialRoute,
+        client_node_id: NodeId,
+        connection_binding: [u8; 32],
+        established_at: u64,
+        expires_at: u64,
+        endpoint: Endpoint,
+        connection: quinn::Connection,
+        control_send: quinn::SendStream,
+        control_recv: quinn::RecvStream,
+    ) -> Result<Self, RelayRouteError> {
+        let connected_socket = connection.remote_address();
+        Self::from_verified_handshake(
+            route,
+            client_node_id,
+            connected_socket,
+            connection_binding,
+            established_at,
+            expires_at,
+            OuterRelayConnection::Quic {
+                _endpoint: endpoint,
+                connection,
+                control_send: AsyncMutex::new(control_send),
+            },
+            Box::pin(control_recv),
+        )
+    }
+
+    pub(crate) fn from_verified_tls_handshake(
+        route: ValidatedRelayDialRoute,
+        client_node_id: NodeId,
+        connected_socket: SocketAddr,
+        connection_binding: [u8; 32],
+        established_at: u64,
+        expires_at: u64,
+        stream: TlsStream<TcpStream>,
+    ) -> Result<Self, RelayRouteError> {
+        let (recv, send) = tokio::io::split(stream);
+        Self::from_verified_handshake(
+            route,
+            client_node_id,
+            connected_socket,
+            connection_binding,
+            established_at,
+            expires_at,
+            OuterRelayConnection::TlsTcp443 {
+                control_send: AsyncMutex::new(send),
+            },
+            Box::pin(recv),
+        )
     }
 
     pub fn client_node_id(&self) -> NodeId {
@@ -351,7 +469,903 @@ impl AuthenticatedOuterRelayConnection {
 
     pub fn close(&self) {
         self.open.store(false, Ordering::Release);
+        if let OuterRelayConnection::Quic { connection, .. } = &self.inner {
+            connection.close(0u32.into(), b"outer relay closed");
+        }
+        if let Ok(mut reader) = self.reader_task.lock() {
+            if let Some(reader) = reader.take() {
+                reader.abort();
+            }
+        }
     }
+
+    pub fn max_datagram_size(&self) -> Option<usize> {
+        match &self.inner {
+            OuterRelayConnection::Quic { connection, .. } => connection.max_datagram_size(),
+            OuterRelayConnection::TlsTcp443 { .. } => None,
+        }
+    }
+
+    pub async fn send_control_frame(
+        &self,
+        frame: &RelayWireFrameV1,
+    ) -> Result<(), OuterRelayIoError> {
+        if !self.is_open() {
+            return Err(OuterRelayIoError::Closed);
+        }
+        let bytes = frame.encode();
+        match &self.inner {
+            OuterRelayConnection::Quic { control_send, .. } => {
+                let mut send = control_send.lock().await;
+                write_stream_frame(&mut *send, &bytes).await
+            }
+            OuterRelayConnection::TlsTcp443 { control_send } => {
+                let mut send = control_send.lock().await;
+                write_stream_frame(&mut *send, &bytes).await
+            }
+        }
+    }
+
+    pub async fn receive_control_frame(&self) -> Result<RelayWireFrameV1, OuterRelayIoError> {
+        if !self.is_open() {
+            return Err(OuterRelayIoError::Closed);
+        }
+        self.notifications
+            .lock()
+            .await
+            .recv()
+            .await
+            .ok_or(OuterRelayIoError::Closed)
+    }
+
+    pub async fn request_control_frame(
+        &self,
+        frame: &RelayWireFrameV1,
+    ) -> Result<RelayWireFrameV1, OuterRelayIoError> {
+        let _transaction = self.control_transaction.lock().await;
+        let (sender, receiver) = oneshot::channel();
+        self.pending_control
+            .lock()
+            .map_err(|_| OuterRelayIoError::Closed)?
+            .insert(frame.request_id(), sender);
+        if let Err(error) = self.send_control_frame(frame).await {
+            if let Ok(mut pending) = self.pending_control.lock() {
+                pending.remove(&frame.request_id());
+            }
+            return Err(error);
+        }
+        let response = match tokio::time::timeout(Duration::from_secs(5), receiver).await {
+            Ok(Ok(response)) => response,
+            Ok(Err(_)) => return Err(OuterRelayIoError::Closed),
+            Err(_) => {
+                if let Ok(mut pending) = self.pending_control.lock() {
+                    pending.remove(&frame.request_id());
+                }
+                return Err(OuterRelayIoError::Deadline);
+            }
+        };
+        if response.request_id() != frame.request_id() {
+            return Err(OuterRelayIoError::InvalidFrame);
+        }
+        Ok(response)
+    }
+
+    pub async fn send_opaque_datagram(&self, payload: Vec<u8>) -> Result<(), OuterRelayIoError> {
+        if payload.is_empty() || payload.len() > MAX_RELAY_WIRE_PAYLOAD_BYTES {
+            return Err(OuterRelayIoError::InvalidFrame);
+        }
+        match &self.inner {
+            OuterRelayConnection::Quic { connection, .. } => connection
+                .send_datagram_wait(payload.into())
+                .await
+                .map_err(|_| OuterRelayIoError::Closed),
+            OuterRelayConnection::TlsTcp443 { .. } => Err(OuterRelayIoError::WrongTransport),
+        }
+    }
+
+    pub async fn receive_opaque_datagram(&self) -> Result<Vec<u8>, OuterRelayIoError> {
+        match &self.inner {
+            OuterRelayConnection::Quic { connection, .. } => connection
+                .read_datagram()
+                .await
+                .map(|value| value.to_vec())
+                .map_err(|_| OuterRelayIoError::Closed),
+            OuterRelayConnection::TlsTcp443 { .. } => Err(OuterRelayIoError::WrongTransport),
+        }
+    }
+}
+
+async fn run_control_reader(
+    mut recv: Pin<Box<dyn tokio::io::AsyncRead + Send>>,
+    pending: Arc<Mutex<BTreeMap<[u8; 16], oneshot::Sender<RelayWireFrameV1>>>>,
+    notifications: mpsc::Sender<RelayWireFrameV1>,
+    open: Arc<AtomicBool>,
+) {
+    while open.load(Ordering::Acquire) {
+        let bytes = match read_stream_frame(&mut recv).await {
+            Ok(bytes) => bytes,
+            Err(_) => break,
+        };
+        let frame = match RelayWireFrameV1::decode(&bytes) {
+            Ok(frame) => frame,
+            Err(_) => break,
+        };
+        let waiter = pending
+            .lock()
+            .ok()
+            .and_then(|mut pending| pending.remove(&frame.request_id()));
+        if let Some(waiter) = waiter {
+            let _ = waiter.send(frame);
+        } else if notifications.send(frame).await.is_err() {
+            break;
+        }
+    }
+    open.store(false, Ordering::Release);
+    if let Ok(mut pending) = pending.lock() {
+        pending.clear();
+    }
+}
+
+async fn write_stream_frame<W>(stream: &mut W, bytes: &[u8]) -> Result<(), OuterRelayIoError>
+where
+    W: AsyncWriteExt + Unpin,
+{
+    let length = u32::try_from(bytes.len()).map_err(|_| OuterRelayIoError::InvalidFrame)?;
+    stream
+        .write_all(&length.to_be_bytes())
+        .await
+        .and_then(|_| Ok(()))
+        .map_err(|_| OuterRelayIoError::Closed)?;
+    stream
+        .write_all(bytes)
+        .await
+        .map_err(|_| OuterRelayIoError::Closed)?;
+    stream.flush().await.map_err(|_| OuterRelayIoError::Closed)
+}
+
+async fn read_stream_frame<R>(stream: &mut R) -> Result<Vec<u8>, OuterRelayIoError>
+where
+    R: AsyncReadExt + Unpin,
+{
+    let mut prefix = [0u8; 4];
+    stream
+        .read_exact(&mut prefix)
+        .await
+        .map_err(|_| OuterRelayIoError::Closed)?;
+    let length = u32::from_be_bytes(prefix) as usize;
+    if length == 0 || length > MAX_RELAY_WIRE_PAYLOAD_BYTES + 26 {
+        return Err(OuterRelayIoError::InvalidFrame);
+    }
+    let mut bytes = vec![0; length];
+    stream
+        .read_exact(&mut bytes)
+        .await
+        .map_err(|_| OuterRelayIoError::Closed)?;
+    Ok(bytes)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OuterRelayIoError {
+    Closed,
+    InvalidFrame,
+    WrongTransport,
+    Connect,
+    Handshake,
+    Deadline,
+}
+
+impl std::fmt::Display for OuterRelayIoError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "OBP_OUTER_RELAY_IO: {self:?}")
+    }
+}
+
+impl std::error::Error for OuterRelayIoError {}
+
+const OUTER_EXPORTER_LABEL: &[u8] = b"EXPORTER-OneBrain-Relay-V1";
+const OUTER_ALPN: &[u8] = b"obp-relay/1";
+
+/// Open the selected relay carrier, pin its descriptor key, complete the
+/// challenge/hello handshake, and return the only handle accepted by later
+/// control and data-plane clients.
+pub async fn connect_authenticated_outer(
+    routes: &ValidatedRelayDialSet,
+    signer: &dyn ReachabilityIdentitySigner,
+    now: u64,
+    deadline: Instant,
+) -> Result<AuthenticatedOuterRelayConnection, OuterRelayIoError> {
+    if Instant::now() >= deadline {
+        return Err(OuterRelayIoError::Deadline);
+    }
+    connect_authenticated_outer_inner(routes, signer, now, deadline, None).await
+}
+
+/// Use an existing OBP QUIC endpoint for the relay's UDP outer carrier. This
+/// keeps the node's NAT mapping and its direct-listener socket identical while
+/// preserving the descriptor-key-pinned relay TLS policy.
+pub async fn connect_authenticated_outer_on_transport(
+    routes: &ValidatedRelayDialSet,
+    signer: &dyn ReachabilityIdentitySigner,
+    now: u64,
+    deadline: Instant,
+    transport: &QuicTransport,
+) -> Result<AuthenticatedOuterRelayConnection, OuterRelayIoError> {
+    connect_authenticated_outer_inner(routes, signer, now, deadline, Some(transport)).await
+}
+
+async fn connect_authenticated_outer_inner(
+    routes: &ValidatedRelayDialSet,
+    signer: &dyn ReachabilityIdentitySigner,
+    now: u64,
+    deadline: Instant,
+    transport: Option<&QuicTransport>,
+) -> Result<AuthenticatedOuterRelayConnection, OuterRelayIoError> {
+    if Instant::now() >= deadline {
+        return Err(OuterRelayIoError::Deadline);
+    }
+    let primary = connect_route(routes.primary(), signer, now, deadline, transport).await;
+    match primary {
+        Ok(connection)
+            if routes.primary().transport() == RelayTransportV1::TlsTcp443
+                || connection.max_datagram_size().is_some() =>
+        {
+            Ok(connection)
+        }
+        Ok(connection) => {
+            connection.close();
+            let fallback = routes
+                .tcp_fallback()
+                .ok_or(OuterRelayIoError::WrongTransport)?;
+            connect_route(fallback, signer, now, deadline, transport).await
+        }
+        Err(error) => {
+            let Some(fallback) = routes.tcp_fallback() else {
+                return Err(error);
+            };
+            connect_route(fallback, signer, now, deadline, transport).await
+        }
+    }
+}
+
+trait RelayHandshakeRoute: Sync {
+    fn relay_node_id(&self) -> NodeId;
+    fn relay_public_key(&self) -> [u8; 32];
+    fn expires_at(&self) -> u64;
+}
+
+impl RelayHandshakeRoute for ValidatedRelayDialRoute {
+    fn relay_node_id(&self) -> NodeId {
+        self.relay_node_id()
+    }
+    fn relay_public_key(&self) -> [u8; 32] {
+        self.relay_public_key()
+    }
+    fn expires_at(&self) -> u64 {
+        self.expires_at()
+    }
+}
+
+impl RelayHandshakeRoute for ValidatedPossessionDialEndpoint {
+    fn relay_node_id(&self) -> NodeId {
+        self.relay_node_id()
+    }
+    fn relay_public_key(&self) -> [u8; 32] {
+        self.relay_public_key()
+    }
+    fn expires_at(&self) -> u64 {
+        self.expires_at()
+    }
+}
+
+/// Prove that each descriptor endpoint terminates at the relay identity that
+/// signed the pending descriptor. The purpose-limited token cannot be used
+/// for reservations or data-plane traffic.
+pub async fn prove_relay_possession(
+    route: &ValidatedPossessionDialEndpoint,
+    signer: &dyn ReachabilityIdentitySigner,
+    now: u64,
+    deadline: Instant,
+) -> Result<RelayPossessionProofV1, OuterRelayIoError> {
+    install_aws_lc_provider()?;
+    let address = *route
+        .dial_addresses()
+        .first()
+        .ok_or(OuterRelayIoError::Connect)?;
+    let client_node_id = crate::vnext_session::principal_node_id(&signer.public_key());
+    let mut request_id = [0u8; 16];
+    OsRng.fill_bytes(&mut request_id);
+    match route.transport() {
+        RelayTransportV1::QuicUdp => {
+            let bind: SocketAddr = if address.is_ipv6() {
+                "[::]:0".parse().map_err(|_| OuterRelayIoError::Connect)?
+            } else {
+                "0.0.0.0:0"
+                    .parse()
+                    .map_err(|_| OuterRelayIoError::Connect)?
+            };
+            let mut endpoint = Endpoint::client(bind).map_err(|_| OuterRelayIoError::Connect)?;
+            endpoint.set_default_client_config(quic_client_config(route.relay_public_key())?);
+            let connection = tokio::time::timeout_at(
+                deadline.into(),
+                endpoint
+                    .connect(address, "relay.onebrain")
+                    .map_err(|_| OuterRelayIoError::Connect)?,
+            )
+            .await
+            .map_err(|_| OuterRelayIoError::Deadline)?
+            .map_err(|_| OuterRelayIoError::Connect)?;
+            let (mut send, mut recv) = connection
+                .open_bi()
+                .await
+                .map_err(|_| OuterRelayIoError::Connect)?;
+            send.write_all(&[0])
+                .await
+                .map_err(|_| OuterRelayIoError::Connect)?;
+            send.flush().await.map_err(|_| OuterRelayIoError::Connect)?;
+            let mut binding = [0u8; 32];
+            connection
+                .export_keying_material(&mut binding, OUTER_EXPORTER_LABEL, &[])
+                .map_err(|_| OuterRelayIoError::Handshake)?;
+            client_handshake(
+                &mut send,
+                &mut recv,
+                route,
+                signer,
+                client_node_id,
+                binding,
+                now,
+                deadline,
+            )
+            .await?;
+            let proof = possession_exchange_split(
+                &mut send, &mut recv, route, binding, request_id, deadline,
+            )
+            .await?;
+            connection.close(0u32.into(), b"possession proof complete");
+            endpoint.close(0u32.into(), b"possession proof complete");
+            Ok(proof)
+        }
+        RelayTransportV1::TlsTcp443 => {
+            let tcp = tokio::time::timeout_at(deadline.into(), TcpStream::connect(address))
+                .await
+                .map_err(|_| OuterRelayIoError::Deadline)?
+                .map_err(|_| OuterRelayIoError::Connect)?;
+            let name =
+                ServerName::try_from("relay.onebrain").map_err(|_| OuterRelayIoError::Connect)?;
+            let connector = tokio_rustls::TlsConnector::from(Arc::new(tls_client_config(
+                route.relay_public_key(),
+            )));
+            let mut stream = tokio::time::timeout_at(deadline.into(), connector.connect(name, tcp))
+                .await
+                .map_err(|_| OuterRelayIoError::Deadline)?
+                .map_err(|_| OuterRelayIoError::Connect)?;
+            let mut binding = [0u8; 32];
+            stream
+                .get_ref()
+                .1
+                .export_keying_material(&mut binding, OUTER_EXPORTER_LABEL, None)
+                .map_err(|_| OuterRelayIoError::Handshake)?;
+            client_handshake_single(
+                &mut stream,
+                route,
+                signer,
+                client_node_id,
+                binding,
+                now,
+                deadline,
+            )
+            .await?;
+            possession_exchange_single(&mut stream, route, binding, request_id, deadline).await
+        }
+    }
+}
+
+async fn possession_exchange_split<W, R>(
+    send: &mut W,
+    recv: &mut R,
+    route: &ValidatedPossessionDialEndpoint,
+    binding: [u8; 32],
+    request_id: [u8; 16],
+    deadline: Instant,
+) -> Result<RelayPossessionProofV1, OuterRelayIoError>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let frame = RelayWireFrameV1::new(
+        RelayWireKindV1::Control,
+        request_id,
+        encode_relay_control(&RelayControlV1::PossessionChallenge(
+            route.challenge().clone(),
+        ))
+        .map_err(|_| OuterRelayIoError::InvalidFrame)?,
+    )
+    .map_err(|_| OuterRelayIoError::InvalidFrame)?;
+    tokio::time::timeout_at(deadline.into(), write_stream_frame(send, &frame.encode()))
+        .await
+        .map_err(|_| OuterRelayIoError::Deadline)??;
+    let response = tokio::time::timeout_at(deadline.into(), read_stream_frame(recv))
+        .await
+        .map_err(|_| OuterRelayIoError::Deadline)??;
+    validate_possession_response(route, binding, request_id, &response)
+}
+
+async fn possession_exchange_single<S>(
+    stream: &mut S,
+    route: &ValidatedPossessionDialEndpoint,
+    binding: [u8; 32],
+    request_id: [u8; 16],
+    deadline: Instant,
+) -> Result<RelayPossessionProofV1, OuterRelayIoError>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let frame = RelayWireFrameV1::new(
+        RelayWireKindV1::Control,
+        request_id,
+        encode_relay_control(&RelayControlV1::PossessionChallenge(
+            route.challenge().clone(),
+        ))
+        .map_err(|_| OuterRelayIoError::InvalidFrame)?,
+    )
+    .map_err(|_| OuterRelayIoError::InvalidFrame)?;
+    tokio::time::timeout_at(deadline.into(), write_stream_frame(stream, &frame.encode()))
+        .await
+        .map_err(|_| OuterRelayIoError::Deadline)??;
+    let response = tokio::time::timeout_at(deadline.into(), read_stream_frame(stream))
+        .await
+        .map_err(|_| OuterRelayIoError::Deadline)??;
+    validate_possession_response(route, binding, request_id, &response)
+}
+
+fn validate_possession_response(
+    route: &ValidatedPossessionDialEndpoint,
+    binding: [u8; 32],
+    request_id: [u8; 16],
+    bytes: &[u8],
+) -> Result<RelayPossessionProofV1, OuterRelayIoError> {
+    let frame = RelayWireFrameV1::decode(bytes).map_err(|_| OuterRelayIoError::InvalidFrame)?;
+    if frame.kind() != RelayWireKindV1::Control || frame.request_id() != request_id {
+        return Err(OuterRelayIoError::InvalidFrame);
+    }
+    let proof =
+        match decode_relay_control(frame.payload()).map_err(|_| OuterRelayIoError::InvalidFrame)? {
+            RelayControlV1::PossessionProof(value) => value,
+            _ => return Err(OuterRelayIoError::InvalidFrame),
+        };
+    if proof.challenge_digest != route.challenge_digest()
+        || proof.connection_binding_digest != binding
+    {
+        return Err(OuterRelayIoError::Handshake);
+    }
+    Ok(proof)
+}
+
+async fn connect_route(
+    route: &ValidatedRelayDialRoute,
+    signer: &dyn ReachabilityIdentitySigner,
+    now: u64,
+    deadline: Instant,
+    shared_transport: Option<&QuicTransport>,
+) -> Result<AuthenticatedOuterRelayConnection, OuterRelayIoError> {
+    install_aws_lc_provider()?;
+    let address = *route
+        .dial_addresses()
+        .first()
+        .ok_or(OuterRelayIoError::Connect)?;
+    let client_node_id = crate::vnext_session::principal_node_id(&signer.public_key());
+    match route.transport() {
+        RelayTransportV1::QuicUdp => {
+            let bind: SocketAddr = if address.is_ipv6() {
+                "[::]:0".parse().map_err(|_| OuterRelayIoError::Connect)?
+            } else {
+                "0.0.0.0:0"
+                    .parse()
+                    .map_err(|_| OuterRelayIoError::Connect)?
+            };
+            let client_config = quic_client_config(route.relay_public_key())?;
+            let (endpoint, connection) = if let Some(transport) = shared_transport {
+                tokio::time::timeout_at(
+                    deadline.into(),
+                    transport.connect_quinn_with_config(address, "relay.onebrain", client_config),
+                )
+                .await
+                .map_err(|_| OuterRelayIoError::Deadline)?
+                .map_err(|_| OuterRelayIoError::Connect)?
+            } else {
+                let mut endpoint =
+                    Endpoint::client(bind).map_err(|_| OuterRelayIoError::Connect)?;
+                endpoint.set_default_client_config(client_config);
+                let connection = tokio::time::timeout_at(
+                    deadline.into(),
+                    endpoint
+                        .connect(address, "relay.onebrain")
+                        .map_err(|_| OuterRelayIoError::Connect)?,
+                )
+                .await
+                .map_err(|_| OuterRelayIoError::Deadline)?
+                .map_err(|_| OuterRelayIoError::Connect)?;
+                (endpoint, connection)
+            };
+            let (mut send, mut recv) =
+                tokio::time::timeout_at(deadline.into(), connection.open_bi())
+                    .await
+                    .map_err(|_| OuterRelayIoError::Deadline)?
+                    .map_err(|_| OuterRelayIoError::Connect)?;
+            // Quinn announces a locally-opened stream only after the first
+            // bytes are written. This fixed preface lets the relay send the
+            // first authenticated challenge without a stream-open deadlock.
+            send.write_all(&[0])
+                .await
+                .map_err(|_| OuterRelayIoError::Connect)?;
+            send.flush().await.map_err(|_| OuterRelayIoError::Connect)?;
+            let mut binding = [0u8; 32];
+            connection
+                .export_keying_material(&mut binding, OUTER_EXPORTER_LABEL, &[])
+                .map_err(|_| OuterRelayIoError::Handshake)?;
+            let expires_at = client_handshake(
+                &mut send,
+                &mut recv,
+                route,
+                signer,
+                client_node_id,
+                binding,
+                now,
+                deadline,
+            )
+            .await?;
+            AuthenticatedOuterRelayConnection::from_verified_quic_handshake(
+                route.clone(),
+                client_node_id,
+                binding,
+                now,
+                expires_at,
+                endpoint,
+                connection,
+                send,
+                recv,
+            )
+            .map_err(|_| OuterRelayIoError::Handshake)
+        }
+        RelayTransportV1::TlsTcp443 => {
+            let tcp = tokio::time::timeout_at(deadline.into(), TcpStream::connect(address))
+                .await
+                .map_err(|_| OuterRelayIoError::Deadline)?
+                .map_err(|_| OuterRelayIoError::Connect)?;
+            let connected_socket = tcp.peer_addr().map_err(|_| OuterRelayIoError::Connect)?;
+            let name =
+                ServerName::try_from("relay.onebrain").map_err(|_| OuterRelayIoError::Connect)?;
+            let connector = tokio_rustls::TlsConnector::from(Arc::new(tls_client_config(
+                route.relay_public_key(),
+            )));
+            let mut stream = tokio::time::timeout_at(deadline.into(), connector.connect(name, tcp))
+                .await
+                .map_err(|_| OuterRelayIoError::Deadline)?
+                .map_err(|_| OuterRelayIoError::Connect)?;
+            let mut binding = [0u8; 32];
+            stream
+                .get_ref()
+                .1
+                .export_keying_material(&mut binding, OUTER_EXPORTER_LABEL, None)
+                .map_err(|_| OuterRelayIoError::Handshake)?;
+            let expires_at = client_handshake_single(
+                &mut stream,
+                route,
+                signer,
+                client_node_id,
+                binding,
+                now,
+                deadline,
+            )
+            .await?;
+            AuthenticatedOuterRelayConnection::from_verified_tls_handshake(
+                route.clone(),
+                client_node_id,
+                connected_socket,
+                binding,
+                now,
+                expires_at,
+                stream,
+            )
+            .map_err(|_| OuterRelayIoError::Handshake)
+        }
+    }
+}
+
+async fn client_handshake<W, R>(
+    send: &mut W,
+    recv: &mut R,
+    route: &dyn RelayHandshakeRoute,
+    signer: &dyn ReachabilityIdentitySigner,
+    client_node_id: NodeId,
+    binding: [u8; 32],
+    now: u64,
+    deadline: Instant,
+) -> Result<u64, OuterRelayIoError>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let challenge = tokio::time::timeout_at(deadline.into(), read_stream_frame(recv))
+        .await
+        .map_err(|_| OuterRelayIoError::Deadline)??;
+    let challenge_frame =
+        RelayWireFrameV1::decode(&challenge).map_err(|_| OuterRelayIoError::InvalidFrame)?;
+    if challenge_frame.kind() != RelayWireKindV1::Control {
+        return Err(OuterRelayIoError::Handshake);
+    }
+    let challenge = match decode_relay_control(challenge_frame.payload())
+        .map_err(|_| OuterRelayIoError::Handshake)?
+    {
+        RelayControlV1::OuterClientChallenge(value) => value,
+        _ => return Err(OuterRelayIoError::Handshake),
+    };
+    if challenge.relay_node_id != route.relay_node_id()
+        || challenge.outer_connection_binding != binding
+        || challenge.issued_at > now.saturating_add(30)
+        || challenge.expires_at.saturating_add(30) < now
+    {
+        return Err(OuterRelayIoError::Handshake);
+    }
+    verify_relay_control_signature(
+        &RelayControlV1::OuterClientChallenge(challenge.clone()),
+        RelayControlSignatureRoleV1::OuterChallengeRelay,
+        route.relay_public_key(),
+        challenge.relay_signature,
+    )?;
+    let mut hello = RelayOuterClientHelloV1 {
+        format: 1,
+        relay_node_id: route.relay_node_id(),
+        client_node_id,
+        client_public_key: signer.public_key(),
+        challenge_nonce: challenge.challenge_nonce,
+        outer_connection_binding: binding,
+        issued_at: now,
+        expires_at: challenge.expires_at.min(now.saturating_add(30)),
+        client_signature: [0; 64],
+    };
+    let unsigned = RelayControlV1::OuterClientHello(hello.clone());
+    let (domain, message) =
+        relay_control_signing_parts(&unsigned, RelayControlSignatureRoleV1::OuterHelloClient)
+            .map_err(|_| OuterRelayIoError::Handshake)?;
+    hello.client_signature = signer
+        .sign_reachability_message(domain, &message)
+        .map_err(|_| OuterRelayIoError::Handshake)?;
+    let payload = encode_relay_control(&RelayControlV1::OuterClientHello(hello))
+        .map_err(|_| OuterRelayIoError::Handshake)?;
+    let response = RelayWireFrameV1::new(
+        RelayWireKindV1::Control,
+        challenge_frame.request_id(),
+        payload,
+    )
+    .map_err(|_| OuterRelayIoError::Handshake)?;
+    tokio::time::timeout_at(
+        deadline.into(),
+        write_stream_frame(send, &response.encode()),
+    )
+    .await
+    .map_err(|_| OuterRelayIoError::Deadline)??;
+    let ack = tokio::time::timeout_at(deadline.into(), read_stream_frame(recv))
+        .await
+        .map_err(|_| OuterRelayIoError::Deadline)??;
+    let ack = RelayWireFrameV1::decode(&ack).map_err(|_| OuterRelayIoError::InvalidFrame)?;
+    if ack.kind() != RelayWireKindV1::Authenticated
+        || ack.request_id() != challenge_frame.request_id()
+        || ack.payload() != binding
+    {
+        return Err(OuterRelayIoError::Handshake);
+    }
+    Ok(challenge.expires_at.min(route.expires_at()))
+}
+
+async fn client_handshake_single<S>(
+    stream: &mut S,
+    route: &dyn RelayHandshakeRoute,
+    signer: &dyn ReachabilityIdentitySigner,
+    client_node_id: NodeId,
+    binding: [u8; 32],
+    now: u64,
+    deadline: Instant,
+) -> Result<u64, OuterRelayIoError>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    // A single TLS stream cannot be mutably borrowed twice at the call site;
+    // perform the same closed exchange in-place.
+    let challenge = tokio::time::timeout_at(deadline.into(), read_stream_frame(stream))
+        .await
+        .map_err(|_| OuterRelayIoError::Deadline)??;
+    let frame =
+        RelayWireFrameV1::decode(&challenge).map_err(|_| OuterRelayIoError::InvalidFrame)?;
+    let value =
+        match decode_relay_control(frame.payload()).map_err(|_| OuterRelayIoError::Handshake)? {
+            RelayControlV1::OuterClientChallenge(value) => value,
+            _ => return Err(OuterRelayIoError::Handshake),
+        };
+    if frame.kind() != RelayWireKindV1::Control
+        || value.relay_node_id != route.relay_node_id()
+        || value.outer_connection_binding != binding
+        || value.issued_at > now.saturating_add(30)
+        || value.expires_at.saturating_add(30) < now
+    {
+        return Err(OuterRelayIoError::Handshake);
+    }
+    verify_relay_control_signature(
+        &RelayControlV1::OuterClientChallenge(value.clone()),
+        RelayControlSignatureRoleV1::OuterChallengeRelay,
+        route.relay_public_key(),
+        value.relay_signature,
+    )?;
+    let mut hello = RelayOuterClientHelloV1 {
+        format: 1,
+        relay_node_id: route.relay_node_id(),
+        client_node_id,
+        client_public_key: signer.public_key(),
+        challenge_nonce: value.challenge_nonce,
+        outer_connection_binding: binding,
+        issued_at: now,
+        expires_at: value.expires_at.min(now.saturating_add(30)),
+        client_signature: [0; 64],
+    };
+    let unsigned = RelayControlV1::OuterClientHello(hello.clone());
+    let (domain, message) =
+        relay_control_signing_parts(&unsigned, RelayControlSignatureRoleV1::OuterHelloClient)
+            .map_err(|_| OuterRelayIoError::Handshake)?;
+    hello.client_signature = signer
+        .sign_reachability_message(domain, &message)
+        .map_err(|_| OuterRelayIoError::Handshake)?;
+    let response = RelayWireFrameV1::new(
+        RelayWireKindV1::Control,
+        frame.request_id(),
+        encode_relay_control(&RelayControlV1::OuterClientHello(hello))
+            .map_err(|_| OuterRelayIoError::Handshake)?,
+    )
+    .map_err(|_| OuterRelayIoError::Handshake)?;
+    tokio::time::timeout_at(
+        deadline.into(),
+        write_stream_frame(stream, &response.encode()),
+    )
+    .await
+    .map_err(|_| OuterRelayIoError::Deadline)??;
+    let ack = tokio::time::timeout_at(deadline.into(), read_stream_frame(stream))
+        .await
+        .map_err(|_| OuterRelayIoError::Deadline)??;
+    let ack = RelayWireFrameV1::decode(&ack).map_err(|_| OuterRelayIoError::InvalidFrame)?;
+    if ack.kind() != RelayWireKindV1::Authenticated
+        || ack.request_id() != frame.request_id()
+        || ack.payload() != binding
+    {
+        return Err(OuterRelayIoError::Handshake);
+    }
+    Ok(value.expires_at.min(route.expires_at()))
+}
+
+fn verify_relay_control_signature(
+    value: &RelayControlV1,
+    role: RelayControlSignatureRoleV1,
+    public_key: [u8; 32],
+    signature: [u8; 64],
+) -> Result<(), OuterRelayIoError> {
+    let preimage =
+        relay_control_signing_bytes(value, role).map_err(|_| OuterRelayIoError::Handshake)?;
+    let key = VerifyingKey::from_bytes(&public_key).map_err(|_| OuterRelayIoError::Handshake)?;
+    key.verify(&preimage, &Signature::from_bytes(&signature))
+        .map_err(|_| OuterRelayIoError::Handshake)
+}
+
+fn install_aws_lc_provider() -> Result<(), OuterRelayIoError> {
+    let provider = rustls::crypto::aws_lc_rs::default_provider();
+    match provider.install_default() {
+        Ok(()) => Ok(()),
+        Err(_) if rustls::crypto::CryptoProvider::get_default().is_some() => Ok(()),
+        Err(_) => Err(OuterRelayIoError::Connect),
+    }
+}
+
+fn tls_client_config(expected_spki: [u8; 32]) -> rustls::ClientConfig {
+    let mut config = rustls::ClientConfig::builder()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(RelaySpkiVerifier::new(expected_spki)))
+        .with_no_client_auth();
+    config.alpn_protocols = vec![OUTER_ALPN.to_vec()];
+    config
+}
+
+fn quic_client_config(expected_spki: [u8; 32]) -> Result<ClientConfig, OuterRelayIoError> {
+    let config = tls_client_config(expected_spki);
+    let mut client = ClientConfig::new(Arc::new(
+        quinn::crypto::rustls::QuicClientConfig::try_from(config)
+            .map_err(|_| OuterRelayIoError::Connect)?,
+    ));
+    let mut transport = quinn::TransportConfig::default();
+    transport.datagram_receive_buffer_size(Some(1024 * 1024));
+    transport.datagram_send_buffer_size(1024 * 1024);
+    client.transport_config(Arc::new(transport));
+    Ok(client)
+}
+
+#[derive(Clone)]
+struct RelaySpkiVerifier {
+    expected: [u8; 32],
+    algorithms: WebPkiSupportedAlgorithms,
+}
+
+impl RelaySpkiVerifier {
+    fn new(expected: [u8; 32]) -> Self {
+        Self {
+            expected,
+            algorithms: rustls::crypto::aws_lc_rs::default_provider()
+                .signature_verification_algorithms,
+        }
+    }
+}
+
+impl fmt::Debug for RelaySpkiVerifier {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RelaySpkiVerifier")
+            .finish_non_exhaustive()
+    }
+}
+
+impl ServerCertVerifier for RelaySpkiVerifier {
+    fn verify_server_cert(
+        &self,
+        end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        let observed = extract_ed25519_spki(end_entity)
+            .ok_or_else(|| rustls::Error::General("invalid relay Ed25519 SPKI".into()))?;
+        if observed != self.expected {
+            return Err(rustls::Error::General("relay SPKI mismatch".into()));
+        }
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        verify_tls12_signature(message, cert, dss, &self.algorithms)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        verify_tls13_signature(message, cert, dss, &self.algorithms)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.algorithms.supported_schemes()
+    }
+}
+
+fn extract_ed25519_spki(certificate: &CertificateDer<'_>) -> Option<[u8; 32]> {
+    const PREFIX: &[u8] = &[
+        0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+    ];
+    let bytes = certificate.as_ref();
+    let mut matches = bytes
+        .windows(PREFIX.len())
+        .enumerate()
+        .filter_map(|(index, value)| {
+            (value == PREFIX && index + PREFIX.len() + 32 <= bytes.len()).then_some(index)
+        });
+    let index = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    bytes[index + PREFIX.len()..index + PREFIX.len() + 32]
+        .try_into()
+        .ok()
 }
 
 #[derive(Clone, Debug)]

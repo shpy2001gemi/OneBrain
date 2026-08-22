@@ -222,13 +222,13 @@ fn complete_live_possession_is_required_before_relay_becomes_visible() {
         Instant::now() + Duration::from_secs(1),
     ))
     .unwrap();
-    let staged = discovery
+    let mut staged = discovery
         .stage_prepared(permit, prepared, now)
         .unwrap()
         .pop()
         .unwrap();
-    let staged = block_on_ready(
-        preparer.prepare_possession(staged, Instant::now() + Duration::from_secs(1)),
+    block_on_ready(
+        preparer.prepare_possession(&mut staged, Instant::now() + Duration::from_secs(1)),
     )
     .unwrap();
     assert_eq!(discovery.verified_relays().count(), 0);

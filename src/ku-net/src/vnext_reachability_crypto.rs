@@ -7,11 +7,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use ku_core::foundation::NodeId;
@@ -268,6 +269,7 @@ impl PendingRelayDescriptorAdmission {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedPossessionDialEndpoint {
     pending_descriptor_digest: [u8; 32],
+    pending_relay_public_key: [u8; 32],
     challenge: RelayPossessionChallengeV1,
     challenge_digest: [u8; 32],
     endpoint_index: usize,
@@ -288,6 +290,22 @@ impl ValidatedPossessionDialEndpoint {
     }
     pub fn dial_addresses(&self) -> &[SocketAddr] {
         &self.dial_addresses
+    }
+
+    pub(crate) fn relay_node_id(&self) -> NodeId {
+        self.challenge.relay_node_id
+    }
+
+    pub(crate) fn relay_public_key(&self) -> [u8; 32] {
+        self.pending_relay_public_key
+    }
+
+    pub(crate) fn transport(&self) -> RelayTransportV1 {
+        self.transport
+    }
+
+    pub(crate) fn expires_at(&self) -> u64 {
+        self.expires_at
     }
 }
 
@@ -348,6 +366,10 @@ impl ValidatedReachabilityAdvertisement {
     pub fn digest(&self) -> &[u8; 32] {
         &self.digest
     }
+
+    pub fn reservations(&self) -> &[ValidatedRelayReservation] {
+        &self.reservations
+    }
 }
 
 pub trait PublicEndpointResolver: Send + Sync {
@@ -356,6 +378,88 @@ pub trait PublicEndpointResolver: Send + Sync {
         host: &HostAddressV1,
         deadline: Instant,
     ) -> Result<Vec<IpAddr>, RelayAdmissionError>;
+}
+
+/// Cross-platform, bounded resolver for production dial validation. DNS work
+/// runs outside the async runtime, has an exact concurrency ceiling and stays
+/// charged until the OS resolver call returns even if the caller deadline
+/// expires.
+pub struct SystemPublicEndpointResolver {
+    active_dns_jobs: Arc<AtomicUsize>,
+    max_concurrent_dns_jobs: usize,
+}
+
+impl SystemPublicEndpointResolver {
+    pub fn new(max_concurrent_dns_jobs: usize) -> Result<Self, RelayAdmissionError> {
+        if max_concurrent_dns_jobs == 0 || max_concurrent_dns_jobs > 4 {
+            return Err(RelayAdmissionError::BudgetExceeded);
+        }
+        Ok(Self {
+            active_dns_jobs: Arc::new(AtomicUsize::new(0)),
+            max_concurrent_dns_jobs,
+        })
+    }
+
+    fn acquire_dns_job(&self) -> Result<(), RelayAdmissionError> {
+        self.active_dns_jobs
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |active| {
+                (active < self.max_concurrent_dns_jobs).then_some(active + 1)
+            })
+            .map(|_| ())
+            .map_err(|_| RelayAdmissionError::BudgetExceeded)
+    }
+}
+
+impl PublicEndpointResolver for SystemPublicEndpointResolver {
+    fn resolve(
+        &self,
+        host: &HostAddressV1,
+        deadline: Instant,
+    ) -> Result<Vec<IpAddr>, RelayAdmissionError> {
+        if Instant::now() >= deadline {
+            return Err(RelayAdmissionError::DnsResolutionFailed);
+        }
+        match host {
+            HostAddressV1::Ipv4(value) => Ok(vec![IpAddr::V4(Ipv4Addr::from(*value))]),
+            HostAddressV1::Ipv6(value) => Ok(vec![IpAddr::V6(Ipv6Addr::from(*value))]),
+            HostAddressV1::Dns(name) => {
+                self.acquire_dns_job()?;
+                let active = Arc::clone(&self.active_dns_jobs);
+                let name = name.clone();
+                let (sender, receiver) = mpsc::sync_channel(1);
+                std::thread::spawn(move || {
+                    let result = (name.as_str(), 0)
+                        .to_socket_addrs()
+                        .map(|values| {
+                            let mut output = Vec::new();
+                            for value in values {
+                                if !output.contains(&value.ip()) {
+                                    output.push(value.ip());
+                                    if output.len() > MAX_RESOLVED_PER_ENDPOINT {
+                                        break;
+                                    }
+                                }
+                            }
+                            output
+                        })
+                        .map_err(|_| RelayAdmissionError::DnsResolutionFailed);
+                    let _ = sender.send(result);
+                    active.fetch_sub(1, Ordering::AcqRel);
+                });
+                let remaining = deadline
+                    .checked_duration_since(Instant::now())
+                    .unwrap_or(Duration::ZERO);
+                let addresses = receiver
+                    .recv_timeout(remaining)
+                    .map_err(|_| RelayAdmissionError::DnsResolutionFailed)??;
+                if addresses.is_empty() || addresses.len() > MAX_RESOLVED_PER_ENDPOINT {
+                    Err(RelayAdmissionError::DnsResolutionFailed)
+                } else {
+                    Ok(addresses)
+                }
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1174,6 +1278,7 @@ impl ReachabilityLockFreeDialValidation for ReachabilityDialValidator {
             ensure_same_addresses(admitted, &current)?;
             Ok(ValidatedPossessionDialEndpoint {
                 pending_descriptor_digest: pending.digest,
+                pending_relay_public_key: pending.canonical.relay_public_key,
                 challenge_digest: possession_challenge_digest(&challenge),
                 challenge,
                 endpoint_index,

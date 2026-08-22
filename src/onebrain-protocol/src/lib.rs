@@ -12,6 +12,7 @@ pub mod reachability_signaling_codec;
 pub mod reachability_types;
 pub mod reconciliation_codec;
 pub mod relay_codec;
+pub mod relay_wire;
 pub mod session_codec;
 pub mod types;
 
@@ -24,12 +25,12 @@ pub use legacy_adapter::{
 };
 pub use reachability_codec::{
     decode_reachability_object, encode_reachability_object, reachability_signing_bytes,
-    ReachabilityCodecError,
+    reachability_signing_parts, ReachabilityCodecError,
 };
 pub use reachability_signaling::*;
 pub use reachability_signaling_codec::{
-    connectivity_signing_bytes, decode_connectivity_signaling, encode_connectivity_signaling,
-    ConnectivitySignalingCodecError,
+    connectivity_signing_bytes, connectivity_signing_parts, decode_connectivity_signaling,
+    encode_connectivity_signaling, ConnectivitySignalingCodecError,
 };
 pub use reachability_types::*;
 pub use reconciliation_codec::{
@@ -39,6 +40,7 @@ pub use reconciliation_codec::{
     validate_reconciliation_context, ReconciliationCodecError,
 };
 pub use relay_codec::*;
+pub use relay_wire::*;
 pub use session_codec::{
     decode_session_message, encode_session_message, session_signing_bytes, SessionCodecError,
 };

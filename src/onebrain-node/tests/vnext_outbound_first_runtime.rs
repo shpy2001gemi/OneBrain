@@ -6,7 +6,10 @@ use ku_core::foundation::{DisclosureClass, NamespaceCommitment, NodeId, Selector
 use onebrain_node::vnext_config::VNextNetworkPolicy;
 use onebrain_node::vnext_network_runtime::VNextNetworkRuntime;
 use onebrain_node::vnext_outbox::{OutboundIntentState, OutboundOutbox, OutboundTransferIntent};
-use onebrain_protocol::{ReconcileManifestKind, ReconcileReceiptStatus};
+use onebrain_protocol::{
+    DirectCandidateKindV1, DirectCandidateV1, HostAddressV1, ReachabilityEndpointV1,
+    ReconcileManifestKind, ReconcileReceiptStatus, RoutePathKindV1,
+};
 
 fn intent(peer: NodeId) -> OutboundTransferIntent {
     OutboundTransferIntent::new(
@@ -111,6 +114,18 @@ fn route_journal_is_bounded_and_content_addressed() {
 }
 
 #[test]
+fn route_journal_preserves_the_authenticated_carrier_class() {
+    use onebrain_node::vnext_route_journal::{RouteJournal, RouteJournalEntryV1};
+
+    let journal = RouteJournal::new(4, 4096).unwrap();
+    let peer = NodeId::from_bytes([25; 32]);
+    let entry = RouteJournalEntryV1::routed(peer, RoutePathKindV1::RelayUdp, [26; 32], 1, 103);
+    assert_eq!(entry.path_kind(), RoutePathKindV1::RelayUdp);
+    journal.append(entry).unwrap();
+    assert_ne!(journal.root().unwrap(), [0; 32]);
+}
+
+#[test]
 fn route_journal_survives_restart_with_the_same_root() {
     use onebrain_node::vnext_route_journal::{RouteJournal, RouteJournalEntryV1};
 
@@ -196,6 +211,114 @@ async fn expected_peer_identity_is_checked_before_route_authority_mutates() {
     assert_eq!(authority.session_id, routed.authenticated().session_id);
 
     routed.close();
+    left.shutdown().await;
+    right.shutdown().await;
+}
+
+#[tokio::test]
+async fn armed_direct_inbound_is_single_use_peer_bound_and_preserves_the_connection() {
+    let left_dir = tempfile::tempdir().unwrap();
+    let right_dir = tempfile::tempdir().unwrap();
+    let mut left = VNextNetworkRuntime::start(
+        left_dir.path(),
+        "127.0.0.1:0".parse().unwrap(),
+        VNextNetworkPolicy::default(),
+    )
+    .await
+    .unwrap();
+    let mut right = VNextNetworkRuntime::start(
+        right_dir.path(),
+        "127.0.0.1:0".parse().unwrap(),
+        VNextNetworkPolicy::default(),
+    )
+    .await
+    .unwrap();
+    let left_peer = NodeId::from_bytes(left.status().principal);
+    let right_peer = NodeId::from_bytes(right.status().principal);
+    let armed = right.arm_expected_direct(left_peer).unwrap();
+    assert!(right.arm_expected_direct(left_peer).is_err());
+
+    let (outbound, inbound) = tokio::join!(
+        left.connect_expected(right_peer, right.local_addr()),
+        right.accept_armed_direct(armed),
+    );
+    let outbound = outbound.unwrap();
+    let inbound = inbound.unwrap();
+    assert_eq!(outbound.carrier().path_kind(), RoutePathKindV1::Direct);
+    assert_eq!(inbound.carrier().path_kind(), RoutePathKindV1::Direct);
+    assert_eq!(
+        outbound.authenticated().session_id,
+        inbound.authenticated().session_id
+    );
+    outbound.send_uni(b"armed-direct-marker").await.unwrap();
+    assert_eq!(inbound.recv_uni(64).await.unwrap(), b"armed-direct-marker");
+    assert_eq!(right.authenticated_routed_route_count().unwrap(), 1);
+
+    outbound.close();
+    inbound.close();
+    left.shutdown().await;
+    right.shutdown().await;
+}
+
+#[tokio::test]
+async fn sealed_selected_carrier_uses_the_same_identity_first_promotion_gate() {
+    use ku_net::transport::{QuicTransport, TransportConfig};
+    use ku_net::vnext_connection_executor::ConnectionPlannerExecutor;
+    use ku_net::vnext_route_plan::PlannerAction;
+
+    let left_dir = tempfile::tempdir().unwrap();
+    let right_dir = tempfile::tempdir().unwrap();
+    let mut left = VNextNetworkRuntime::start(
+        left_dir.path(),
+        "127.0.0.1:0".parse().unwrap(),
+        VNextNetworkPolicy::default(),
+    )
+    .await
+    .unwrap();
+    let mut right = VNextNetworkRuntime::start(
+        right_dir.path(),
+        "127.0.0.1:0".parse().unwrap(),
+        VNextNetworkPolicy::default(),
+    )
+    .await
+    .unwrap();
+    let dialer = QuicTransport::bind(TransportConfig {
+        bind_addr: "127.0.0.1:0".parse().unwrap(),
+        ..TransportConfig::default()
+    })
+    .await
+    .unwrap();
+    let address = right.local_addr();
+    let connection = dialer.connect(address).await.unwrap();
+    let candidate = DirectCandidateV1 {
+        endpoint: ReachabilityEndpointV1 {
+            host: match address.ip() {
+                std::net::IpAddr::V4(value) => HostAddressV1::Ipv4(value.octets()),
+                std::net::IpAddr::V6(value) => HostAddressV1::Ipv6(value.octets()),
+            },
+            port: address.port(),
+        },
+        kind: DirectCandidateKindV1::Host,
+        priority: 1,
+        network_epoch: 1,
+        expires_at: u64::MAX,
+    };
+    let selected = ConnectionPlannerExecutor::seal_connected_direct(
+        PlannerAction::CheckDirect(candidate),
+        connection,
+        Vec::new(),
+    )
+    .unwrap();
+    let right_peer = NodeId::from_bytes(right.status().principal);
+    let routed = left
+        .connect_expected_selected(right_peer, selected)
+        .await
+        .unwrap();
+    assert_eq!(routed.carrier().path_kind(), RoutePathKindV1::Direct);
+    assert_eq!(left.authenticated_routed_route_count().unwrap(), 1);
+
+    routed.close();
+    dialer.shutdown().await;
     left.shutdown().await;
     right.shutdown().await;
 }

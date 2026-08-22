@@ -66,6 +66,19 @@ pub fn reachability_signing_bytes(
     value: &ReachabilityObjectV1,
     role: ReachabilitySignatureRoleV1,
 ) -> Result<Vec<u8>, ReachabilityCodecError> {
+    let (domain, canonical) = reachability_signing_parts(value, role)?;
+    let mut output = Vec::with_capacity(domain.len() + canonical.len());
+    output.extend_from_slice(domain);
+    output.extend_from_slice(&canonical);
+    Ok(output)
+}
+
+/// Returns the fixed signature domain separately from the canonical unsigned
+/// message so an external identity signer can preserve domain separation.
+pub fn reachability_signing_parts(
+    value: &ReachabilityObjectV1,
+    role: ReachabilitySignatureRoleV1,
+) -> Result<(&'static [u8], Vec<u8>), ReachabilityCodecError> {
     validate(value)?;
     let (expected, domain, mode) = match (value, role) {
         (
@@ -97,10 +110,7 @@ pub fn reachability_signing_bytes(
         return Err(ReachabilityCodecError::WrongSignatureRole);
     }
     let canonical = encode_root(value, mode)?;
-    let mut output = Vec::with_capacity(domain.len() + canonical.len());
-    output.extend_from_slice(domain);
-    output.extend_from_slice(&canonical);
-    Ok(output)
+    Ok((domain, canonical))
 }
 
 #[derive(Clone, Copy)]

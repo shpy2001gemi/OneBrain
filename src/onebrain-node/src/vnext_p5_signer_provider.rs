@@ -2,6 +2,8 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -26,10 +28,7 @@ pub enum P5SignerDomainV2 {
 }
 
 impl P5SignerDomainV2 {
-    pub fn bytes(
-        self,
-        reachability_domain: Option<&'static [u8]>,
-    ) -> Result<Vec<u8>, P5SignerError> {
+    pub fn bytes(self, reachability_domain: Option<&[u8]>) -> Result<Vec<u8>, P5SignerError> {
         Ok(match self {
             Self::ChildReceipt => CHILD_RECEIPT_DOMAIN_V2.to_vec(),
             Self::FaultTarget => FAULT_TARGET_DOMAIN_V2.to_vec(),
@@ -157,7 +156,7 @@ pub trait P5SigningProvider: Send + Sync {
         domain: P5SignerDomainV2,
         sequence: u64,
         message: &[u8],
-        reachability_domain: Option<&'static [u8]>,
+        reachability_domain: Option<&[u8]>,
     ) -> Result<[u8; 64], P5SignerError>;
 }
 
@@ -198,7 +197,7 @@ impl P5SigningProvider for InProcessP5SignerService {
         domain: P5SignerDomainV2,
         sequence: u64,
         message: &[u8],
-        reachability_domain: Option<&'static [u8]>,
+        reachability_domain: Option<&[u8]>,
     ) -> Result<[u8; 64], P5SignerError> {
         if !*self.running.lock().map_err(|_| P5SignerError::Stopped)? {
             return Err(P5SignerError::Stopped);
@@ -247,7 +246,7 @@ impl ExternalP5Signer {
         &self,
         domain: P5SignerDomainV2,
         message: &[u8],
-        reachability_domain: Option<&'static [u8]>,
+        reachability_domain: Option<&[u8]>,
     ) -> Result<[u8; 64], P5SignerError> {
         if self.timeout.is_zero() {
             return Err(P5SignerError::Timeout);
@@ -259,6 +258,124 @@ impl ExternalP5Signer {
         *guard = guard.checked_add(1).ok_or(P5SignerError::Replay)?;
         self.provider
             .sign(domain, *guard, message, reachability_domain)
+    }
+}
+
+/// Blocking Unix-socket client used by the Linux agent. The synchronous OBP
+/// signer traits remain unchanged; hard socket deadlines prevent a stopped or
+/// wedged signer service from blocking a Tokio worker indefinitely.
+#[cfg(unix)]
+pub struct UnixSocketP5SigningProvider {
+    socket: PathBuf,
+    expected_public_key: [u8; 32],
+    timeout: Duration,
+    cursor: Option<DurableSequenceCursor>,
+}
+
+#[cfg(unix)]
+impl UnixSocketP5SigningProvider {
+    pub fn new(
+        socket: impl AsRef<Path>,
+        expected_public_key: [u8; 32],
+        timeout: Duration,
+    ) -> Result<Self, P5SignerError> {
+        if expected_public_key == [0; 32] || timeout.is_zero() {
+            return Err(P5SignerError::SignatureRejected);
+        }
+        Ok(Self {
+            socket: socket.as_ref().to_path_buf(),
+            expected_public_key,
+            timeout,
+            cursor: None,
+        })
+    }
+
+    pub fn with_cursor(mut self, cursor: DurableSequenceCursor) -> Self {
+        self.cursor = Some(cursor);
+        self
+    }
+}
+
+#[cfg(unix)]
+impl P5SigningProvider for UnixSocketP5SigningProvider {
+    fn public_key(&self) -> [u8; 32] {
+        self.expected_public_key
+    }
+
+    fn sign(
+        &self,
+        domain: P5SignerDomainV2,
+        sequence: u64,
+        message: &[u8],
+        reachability_domain: Option<&[u8]>,
+    ) -> Result<[u8; 64], P5SignerError> {
+        if sequence == 0 || message.len() > MAX_SIGN_REQUEST_BYTES {
+            return Err(P5SignerError::RequestTooLarge);
+        }
+        if let Some(cursor) = &self.cursor {
+            cursor.advance(sequence)?;
+        }
+        let mut payload = Vec::with_capacity(message.len() + 130);
+        if domain == P5SignerDomainV2::ReachabilityIdentity {
+            let value = reachability_domain.ok_or(P5SignerError::DomainRejected)?;
+            let length = u16::try_from(value.len()).map_err(|_| P5SignerError::DomainRejected)?;
+            if value.is_empty() || value.len() > 128 {
+                return Err(P5SignerError::DomainRejected);
+            }
+            payload.extend_from_slice(&length.to_be_bytes());
+            payload.extend_from_slice(value);
+        } else if reachability_domain.is_some() {
+            return Err(P5SignerError::DomainRejected);
+        }
+        payload.extend_from_slice(message);
+        if payload.len() > MAX_SIGN_REQUEST_BYTES {
+            return Err(P5SignerError::RequestTooLarge);
+        }
+        let mut stream = UnixStream::connect(&self.socket).map_err(|_| P5SignerError::Stopped)?;
+        stream
+            .set_read_timeout(Some(self.timeout))
+            .and_then(|_| stream.set_write_timeout(Some(self.timeout)))
+            .map_err(|_| P5SignerError::Io)?;
+        let tag = match domain {
+            P5SignerDomainV2::ChildReceipt => 1,
+            P5SignerDomainV2::FaultTarget => 2,
+            P5SignerDomainV2::AdminOperation => 3,
+            P5SignerDomainV2::SessionIdentity => 4,
+            P5SignerDomainV2::ReachabilityIdentity => 5,
+        };
+        stream
+            .write_all(&[tag])
+            .and_then(|_| stream.write_all(&sequence.to_be_bytes()))
+            .and_then(|_| stream.write_all(&(payload.len() as u32).to_be_bytes()))
+            .and_then(|_| stream.write_all(&payload))
+            .and_then(|_| stream.flush())
+            .map_err(|error| {
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) {
+                    P5SignerError::Timeout
+                } else {
+                    P5SignerError::Io
+                }
+            })?;
+        let mut response = [0u8; 96];
+        stream.read_exact(&mut response).map_err(|error| {
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+            ) {
+                P5SignerError::Timeout
+            } else {
+                P5SignerError::Io
+            }
+        })?;
+        if response[..32] != self.expected_public_key {
+            return Err(P5SignerError::SignatureRejected);
+        }
+        response[32..]
+            .try_into()
+            .map_err(|_| P5SignerError::SignatureRejected)
     }
 }
 
@@ -356,7 +473,7 @@ pub fn run_signer_service_cli(
                     P5SignerDomainV2::ReachabilityIdentity,
                 ],
             };
-            let binding = *blake3::hash(config.as_bytes()).as_bytes();
+            let binding = *blake3::hash(&fs::read(config)?).as_bytes();
             let cursor =
                 DurableSequenceCursor::open(key_path.with_extension("cursor-v2"), binding)?;
             serve_signer_fd3(InProcessP5SignerService::service_side(
@@ -406,12 +523,26 @@ fn serve_signer_fd3(service: InProcessP5SignerService) -> Result<(), Box<dyn std
         }
         let mut message = vec![0; length];
         stream.read_exact(&mut message)?;
+        let (message, reachability_domain) = if domain == P5SignerDomainV2::ReachabilityIdentity {
+            if message.len() < 3 {
+                return Err("reachability signer domain is truncated".into());
+            }
+            let domain_length = u16::from_be_bytes([message[0], message[1]]) as usize;
+            if domain_length == 0 || domain_length > 128 || message.len() <= 2 + domain_length {
+                return Err("reachability signer domain is invalid".into());
+            }
+            (
+                &message[2 + domain_length..],
+                Some(&message[2..2 + domain_length]),
+            )
+        } else {
+            (message.as_slice(), None)
+        };
         let signature = service.sign(
             domain,
             u64::from_be_bytes(seq),
-            &message,
-            (domain == P5SignerDomainV2::ReachabilityIdentity)
-                .then_some(b"external" as &'static [u8]),
+            message,
+            reachability_domain,
         )?;
         stream.write_all(&service.public_key())?;
         stream.write_all(&signature)?;
@@ -486,5 +617,48 @@ mod tests {
             Err(P5SignerError::DomainRejected)
         );
         assert_eq!(service.public_key().len(), 32);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_signer_client_binds_dynamic_reachability_domain_and_public_key() {
+        use std::os::unix::net::UnixListener;
+        use std::thread;
+
+        let temp = tempfile::tempdir().unwrap();
+        let socket = temp.path().join("signer.sock");
+        let listener = UnixListener::bind(&socket).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut header = [0u8; 13];
+            stream.read_exact(&mut header).unwrap();
+            assert_eq!(header[0], 5);
+            assert_eq!(u64::from_be_bytes(header[1..9].try_into().unwrap()), 9);
+            let length = u32::from_be_bytes(header[9..13].try_into().unwrap()) as usize;
+            let mut payload = vec![0; length];
+            stream.read_exact(&mut payload).unwrap();
+            let domain_length = u16::from_be_bytes(payload[..2].try_into().unwrap()) as usize;
+            assert_eq!(
+                &payload[2..2 + domain_length],
+                b"onebrain/test/reachability/v1"
+            );
+            assert_eq!(&payload[2 + domain_length..], b"canonical-message");
+            stream.write_all(&[0xA1; 32]).unwrap();
+            stream.write_all(&[0xB2; 64]).unwrap();
+        });
+        let client =
+            UnixSocketP5SigningProvider::new(&socket, [0xA1; 32], Duration::from_secs(1)).unwrap();
+        assert_eq!(
+            client
+                .sign(
+                    P5SignerDomainV2::ReachabilityIdentity,
+                    9,
+                    b"canonical-message",
+                    Some(b"onebrain/test/reachability/v1"),
+                )
+                .unwrap(),
+            [0xB2; 64]
+        );
+        server.join().unwrap();
     }
 }

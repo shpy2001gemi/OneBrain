@@ -65,6 +65,20 @@ pub fn connectivity_signing_bytes(
     value: &ConnectivitySignalingV1,
     role: ConnectivitySignatureRoleV1,
 ) -> Result<Vec<u8>, ConnectivitySignalingCodecError> {
+    let (domain, canonical) = connectivity_signing_parts(value, role)?;
+    let mut output = Vec::with_capacity(domain.len() + canonical.len());
+    output.extend_from_slice(domain);
+    output.extend_from_slice(&canonical);
+    Ok(output)
+}
+
+/// Return the fixed signature domain and unsigned canonical payload
+/// separately so external signers can enforce the domain without requiring a
+/// private key in the node process.
+pub fn connectivity_signing_parts(
+    value: &ConnectivitySignalingV1,
+    role: ConnectivitySignatureRoleV1,
+) -> Result<(&'static [u8], Vec<u8>), ConnectivitySignalingCodecError> {
     validate(value)?;
     let domain = match (value, role) {
         (
@@ -90,10 +104,7 @@ pub fn connectivity_signing_bytes(
         _ => return Err(ConnectivitySignalingCodecError::WrongSignatureRole),
     };
     let canonical = encode_root(value, false)?;
-    let mut output = Vec::with_capacity(domain.len() + canonical.len());
-    output.extend_from_slice(domain);
-    output.extend_from_slice(&canonical);
-    Ok(output)
+    Ok((domain, canonical))
 }
 
 fn encode_root(

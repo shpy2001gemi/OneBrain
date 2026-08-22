@@ -26,19 +26,35 @@ pub struct RouteJournalEntryV1 {
 }
 
 impl RouteJournalEntryV1 {
-    pub fn direct(
+    pub fn routed(
         peer: NodeId,
+        path_kind: RoutePathKindV1,
         route_receipt_digest: [u8; 32],
         route_sequence: u64,
         observed_at_unix_seconds: u64,
     ) -> Self {
         Self {
             peer,
-            path_kind: RoutePathKindV1::Direct,
+            path_kind,
             route_receipt_digest,
             route_sequence,
             observed_at_unix_seconds,
         }
+    }
+
+    pub fn direct(
+        peer: NodeId,
+        route_receipt_digest: [u8; 32],
+        route_sequence: u64,
+        observed_at_unix_seconds: u64,
+    ) -> Self {
+        Self::routed(
+            peer,
+            RoutePathKindV1::Direct,
+            route_receipt_digest,
+            route_sequence,
+            observed_at_unix_seconds,
+        )
     }
 
     pub fn peer(&self) -> NodeId {
@@ -47,6 +63,10 @@ impl RouteJournalEntryV1 {
 
     pub fn route_sequence(&self) -> u64 {
         self.route_sequence
+    }
+
+    pub fn path_kind(&self) -> RoutePathKindV1 {
+        self.path_kind
     }
 
     pub fn canonical_bytes(&self) -> Result<Vec<u8>, RouteJournalError> {

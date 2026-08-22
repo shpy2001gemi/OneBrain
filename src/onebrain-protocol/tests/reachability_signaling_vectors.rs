@@ -1,9 +1,9 @@
 use ku_core::foundation::NodeId;
 use onebrain_protocol::{
-    connectivity_signing_bytes, decode_connectivity_signaling, encode_connectivity_signaling,
-    ConnectivitySignalingV1, ConnectivitySignatureRoleV1, HolePunchScheduleV1, HostAddressV1,
-    PrivateCandidateSignalV1, PrivateCandidateV1, ReachabilityEndpointV1, ReflexiveObservationV1,
-    RelayAssociationV1, RelayConnectRequestV1,
+    connectivity_signing_bytes, connectivity_signing_parts, decode_connectivity_signaling,
+    encode_connectivity_signaling, ConnectivitySignalingV1, ConnectivitySignatureRoleV1,
+    HolePunchScheduleV1, HostAddressV1, PrivateCandidateSignalV1, PrivateCandidateV1,
+    ReachabilityEndpointV1, ReflexiveObservationV1, RelayAssociationV1, RelayConnectRequestV1,
 };
 
 fn node(byte: u8) -> NodeId {
@@ -120,6 +120,12 @@ fn five_schema_ids_round_trip_canonically_and_have_exact_domains() {
         assert_eq!(
             &connectivity_signing_bytes(&object, role).unwrap()[..domain.len()],
             domain
+        );
+        let (split_domain, unsigned) = connectivity_signing_parts(&object, role).unwrap();
+        assert_eq!(split_domain, domain);
+        assert_eq!(
+            connectivity_signing_bytes(&object, role).unwrap(),
+            [split_domain, unsigned.as_slice()].concat()
         );
     }
 }

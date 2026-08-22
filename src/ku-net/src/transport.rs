@@ -204,8 +204,12 @@ impl QuicTransport {
     ) -> Result<Self, TransportError> {
         let server_config = build_server_config(&config)?;
         let client_config = build_client_config(&config)?;
+        let mut endpoint_config = quinn::EndpointConfig::default();
+        endpoint_config
+            .max_udp_payload_size(1_350)
+            .map_err(|error| TransportError::BindFailed(error.to_string()))?;
         let endpoint = Endpoint::new_with_abstract_socket(
-            quinn::EndpointConfig::default(),
+            endpoint_config,
             Some(server_config),
             socket,
             Arc::new(quinn::TokioRuntime),
@@ -227,6 +231,24 @@ impl QuicTransport {
             .map_err(|e| TransportError::ConnectionFailed(format!("{}", e)))?;
 
         Ok(OBPConnection { inner: conn })
+    }
+
+    /// Open a purpose-specific QUIC client connection from this exact bound
+    /// endpoint. The caller supplies a separately validated TLS policy; the
+    /// returned endpoint clone keeps the shared UDP socket alive.
+    pub(crate) async fn connect_quinn_with_config(
+        &self,
+        addr: SocketAddr,
+        server_name: &str,
+        client_config: ClientConfig,
+    ) -> Result<(Endpoint, QuinnConnection), TransportError> {
+        let connection = self
+            .endpoint
+            .connect_with(client_config, addr, server_name)
+            .map_err(|error| TransportError::ConnectionFailed(error.to_string()))?
+            .await
+            .map_err(|error| TransportError::ConnectionFailed(error.to_string()))?;
+        Ok((self.endpoint.clone(), connection))
     }
 
     /// Accept an incoming connection.

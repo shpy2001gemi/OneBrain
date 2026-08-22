@@ -1,6 +1,7 @@
 //! Authenticated outer-client admission and bounded reservation state.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
@@ -27,6 +28,7 @@ pub struct AuthenticatedOuterClient {
     outer_connection_binding: [u8; 32],
     authenticated_at: u64,
     expires_at: u64,
+    observed_socket: Option<SocketAddr>,
 }
 
 impl AuthenticatedOuterClient {
@@ -40,6 +42,15 @@ impl AuthenticatedOuterClient {
 
     pub fn expires_at(&self) -> u64 {
         self.expires_at
+    }
+
+    pub fn observed_socket(&self) -> Option<SocketAddr> {
+        self.observed_socket
+    }
+
+    pub(crate) fn bind_observed_socket(mut self, observed_socket: SocketAddr) -> Self {
+        self.observed_socket = Some(observed_socket);
+        self
     }
 
     pub(crate) fn client_public_key(&self) -> [u8; 32] {
@@ -155,6 +166,7 @@ impl OuterClientAuthenticator {
             outer_connection_binding,
             authenticated_at: now,
             expires_at: hello.expires_at,
+            observed_socket: None,
         })
     }
 }

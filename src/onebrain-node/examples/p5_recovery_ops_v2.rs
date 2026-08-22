@@ -15,13 +15,15 @@ fn main() {
 
 fn run() -> Result<(), onebrain_node::vnext_p5_recovery_ops_v2::P5RecoveryErrorV2> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
-    if args.len() < 13
+    if args.len() < 17
         || args[1] != "--request-digest"
         || args[3] != "--session-id"
         || args[5] != "--host-id"
         || args[7] != "--operation-id"
         || args[9] != "--runner-data-root"
-        || args[11] != "--evidence-output"
+        || args[11] != "--activation-root"
+        || args[13] != "--evidence-output"
+        || args[15] != "--identity-public-key"
     {
         return Err(onebrain_node::vnext_p5_recovery_ops_v2::P5RecoveryErrorV2::UnexpectedInput);
     }
@@ -38,27 +40,35 @@ fn run() -> Result<(), onebrain_node::vnext_p5_recovery_ops_v2::P5RecoveryErrorV
         session_id: parse32(&args[4])?,
         host_id: args[6].clone(),
         operation_id: parse32(&args[8])?,
+        identity_public_key: parse32(&args[16])?,
         runner_data_root: PathBuf::from(&args[10]),
-        evidence_output: PathBuf::from(&args[12]),
+        activation_root: PathBuf::from(&args[12]),
+        evidence_output: PathBuf::from(&args[14]),
         archive_input: None,
+        archive_recovery_key: None,
+        base_dataset_root: None,
         previous_generation: None,
     };
-    if args.len() == 15 {
-        match (operation, args[13].as_str()) {
-            (P5RecoveryOperationV2::Obarv002Restore, "--archive-input") => {
-                input.archive_input = Some(PathBuf::from(&args[14]))
-            }
-            (P5RecoveryOperationV2::Rollback, "--previous-generation") => {
-                input.previous_generation = Some(PathBuf::from(&args[14]))
-            }
-            _ => {
-                return Err(
-                    onebrain_node::vnext_p5_recovery_ops_v2::P5RecoveryErrorV2::UnexpectedInput,
-                )
-            }
+    match operation {
+        P5RecoveryOperationV2::Obarv002Restore
+            if args.len() == 23
+                && args[17] == "--archive-input"
+                && args[19] == "--archive-recovery-key"
+                && args[21] == "--base-dataset-root" =>
+        {
+            input.archive_input = Some(PathBuf::from(&args[18]));
+            input.archive_recovery_key = Some(PathBuf::from(&args[20]));
+            input.base_dataset_root = Some(PathBuf::from(&args[22]));
         }
-    } else if args.len() != 13 {
-        return Err(onebrain_node::vnext_p5_recovery_ops_v2::P5RecoveryErrorV2::UnexpectedInput);
+        P5RecoveryOperationV2::Rollback
+            if args.len() == 19 && args[17] == "--previous-generation" =>
+        {
+            input.previous_generation = Some(PathBuf::from(&args[18]));
+        }
+        P5RecoveryOperationV2::ExplicitReEnable if args.len() == 17 => {}
+        _ => {
+            return Err(onebrain_node::vnext_p5_recovery_ops_v2::P5RecoveryErrorV2::UnexpectedInput)
+        }
     }
     let verified = verify_inputs(operation, &input)?;
     let receipt = match operation {

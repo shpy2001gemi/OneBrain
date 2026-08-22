@@ -7,6 +7,7 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use ed25519_dalek::{Signer, SigningKey};
 use onebrain_protocol::{
@@ -20,7 +21,7 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 
 use crate::{
     principal_node_id, relay_identity_certificate, DurableRelayState, DurableStateKind,
-    RelayDataPlaneError, Tcp443RelayListener, UdpRelayListener,
+    RelayDataPlaneError, RelayProductionService, Tcp443RelayListener, UdpRelayListener,
 };
 
 const MAX_CONFIG_BYTES: u64 = 65_536;
@@ -228,6 +229,19 @@ pub fn serve(config_path: &Path, preflight_only: bool) -> Result<(), RuntimeErro
     let descriptor = descriptor_from_config(&config, &signing_key)?;
     let identity = relay_identity_certificate(&signing_key, &descriptor)
         .map_err(|_| RuntimeError::DataPlane)?;
+    let durable = Arc::new(
+        DurableRelayState::open(&config.data_root.join(STATE_FILE))
+            .map_err(|_| RuntimeError::State)?,
+    );
+    let service = Arc::new(
+        RelayProductionService::new(
+            signing_key,
+            config.max_reservations,
+            config.max_reservations_per_target,
+            durable,
+        )
+        .map_err(|_| RuntimeError::DataPlane)?,
+    );
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -237,13 +251,15 @@ pub fn serve(config_path: &Path, preflight_only: bool) -> Result<(), RuntimeErro
         if let Some(address) = config.udp_bind {
             let listener =
                 UdpRelayListener::bind(address, &identity).map_err(|_| RuntimeError::DataPlane)?;
-            workers.spawn(async move { run_udp_listener(listener).await });
+            let service = service.clone();
+            workers.spawn(async move { run_udp_listener(listener, service).await });
         }
         if let Some(address) = config.tcp443_bind {
             let listener = Tcp443RelayListener::bind(address, &identity)
                 .await
                 .map_err(|_| RuntimeError::DataPlane)?;
-            workers.spawn(async move { run_tcp_listener(listener).await });
+            let service = service.clone();
+            workers.spawn(async move { run_tcp_listener(listener, service).await });
         }
         if workers.is_empty() {
             return Err(RuntimeError::Config);
@@ -278,20 +294,56 @@ fn validate_serve(config_path: &Path, preflight_only: bool) -> Result<RelayConfi
     Ok(config)
 }
 
-async fn run_udp_listener(listener: UdpRelayListener) -> Result<(), RelayDataPlaneError> {
+async fn run_udp_listener(
+    listener: UdpRelayListener,
+    service: Arc<RelayProductionService>,
+) -> Result<(), RelayDataPlaneError> {
+    let mut connections = tokio::task::JoinSet::new();
     loop {
-        match listener.accept_echo_once().await {
-            Ok(()) | Err(RelayDataPlaneError::Expired) => {}
+        match listener.accept_connection().await {
+            Ok(connection) => {
+                let service = service.clone();
+                connections.spawn(async move { service.serve_quic_connection(connection).await });
+            }
+            Err(RelayDataPlaneError::Expired) => {}
             Err(error) => return Err(error),
+        }
+        while let Some(result) = connections.try_join_next() {
+            if let Ok(Err(error)) = result {
+                if !matches!(
+                    error,
+                    RelayDataPlaneError::Closed | RelayDataPlaneError::Expired
+                ) {
+                    return Err(error);
+                }
+            }
         }
     }
 }
 
-async fn run_tcp_listener(listener: Tcp443RelayListener) -> Result<(), RelayDataPlaneError> {
+async fn run_tcp_listener(
+    listener: Tcp443RelayListener,
+    service: Arc<RelayProductionService>,
+) -> Result<(), RelayDataPlaneError> {
+    let mut connections = tokio::task::JoinSet::new();
     loop {
-        match listener.accept_echo_once().await {
-            Ok(()) | Err(RelayDataPlaneError::Expired) => {}
+        match listener.accept_connection().await {
+            Ok((stream, peer)) => {
+                let service = service.clone();
+                connections.spawn(async move { service.serve_tcp_connection(stream, peer).await });
+            }
+            Err(RelayDataPlaneError::Expired) => {}
             Err(error) => return Err(error),
+        }
+        while let Some(result) = connections.try_join_next() {
+            if let Ok(Err(error)) = result {
+                if !matches!(
+                    error,
+                    RelayDataPlaneError::Closed | RelayDataPlaneError::Expired
+                ) {
+                    return Err(error);
+                }
+            }
         }
     }
 }

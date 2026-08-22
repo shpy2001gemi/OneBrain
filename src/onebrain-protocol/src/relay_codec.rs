@@ -203,6 +203,19 @@ pub fn relay_control_signing_bytes(
     value: &RelayControlV1,
     role: RelayControlSignatureRoleV1,
 ) -> Result<Vec<u8>, RelayCodecError> {
+    let (domain, canonical) = relay_control_signing_parts(value, role)?;
+    let mut output = Vec::with_capacity(domain.len() + canonical.len());
+    output.extend_from_slice(domain);
+    output.extend_from_slice(&canonical);
+    Ok(output)
+}
+
+/// Return the exact signature domain and canonical unsigned message separately.
+/// External signers use this form so the domain is applied exactly once.
+pub fn relay_control_signing_parts(
+    value: &RelayControlV1,
+    role: RelayControlSignatureRoleV1,
+) -> Result<(&'static [u8], Vec<u8>), RelayCodecError> {
     validate(value)?;
     let domain = match (value, role) {
         (RelayControlV1::Reserve(_), RelayControlSignatureRoleV1::ReserveRequestTarget) => {
@@ -222,11 +235,7 @@ pub fn relay_control_signing_bytes(
         }
         _ => return Err(RelayCodecError::WrongSignatureRole),
     };
-    let canonical = encode_root(value, SignatureMode::OmitRequest)?;
-    let mut output = Vec::with_capacity(domain.len() + canonical.len());
-    output.extend_from_slice(domain);
-    output.extend_from_slice(&canonical);
-    Ok(output)
+    Ok((domain, encode_root(value, SignatureMode::OmitRequest)?))
 }
 
 fn encode_root(value: &RelayControlV1, mode: SignatureMode) -> Result<Vec<u8>, RelayCodecError> {

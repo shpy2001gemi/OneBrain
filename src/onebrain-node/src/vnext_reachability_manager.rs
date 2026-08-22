@@ -3,20 +3,37 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::sync::Mutex;
+use std::sync::RwLock as StdRwLock;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use ku_core::foundation::NodeId;
+use ku_net::transport::QuicTransport;
 use ku_net::vnext_reachability_crypto::{
-    ReachabilityIdentitySigner, RelayAdmissionError, ValidatedRelayDescriptor,
-    ValidatedRelayReservation,
+    InMemoryReachabilityReplayStore, KnownPeerIdentity, ReachabilityAdmission,
+    ReachabilityIdentitySigner, ReachabilityRecordAdmission, RelayAdmissionError,
+    ValidatedRelayDescriptor, ValidatedRelayReservation,
 };
 use ku_net::vnext_reachability_resolver::ReachabilityAdvertisementResolver;
-use ku_net::vnext_relay_discovery::{ReachabilityFuture, RelayDiscovery, RelayDiscoveryLimitation};
-use ku_net::vnext_relay_tunnel::{AuthenticatedOuterRelayConnection, ValidatedRelayDialSet};
-use onebrain_protocol::{
-    DirectCandidateV1, PrivateCandidateV1, PublicCandidateV1, ReachabilityAdvertisementV1,
-    RelayCandidateV1, RelayDenialCodeV1, RelayReserveRequestV1,
+use ku_net::vnext_relay_discovery::{
+    ReachabilityFuture, RelayDiscovery, RelayDiscoveryDelta, RelayDiscoveryLimitation,
+    RelayDiscoveryPreparer, RelayDiscoverySource, RelayPossessionClient, StagedRelayAdmission,
+    VerifiedRelayDiscovery,
 };
+use ku_net::vnext_relay_tunnel::{
+    connect_authenticated_outer, connect_authenticated_outer_on_transport, prove_relay_possession,
+    AuthenticatedOuterRelayConnection, ValidatedRelayDialRoute, ValidatedRelayDialSet,
+};
+use onebrain_protocol::{
+    decode_relay_control, encode_reachability_object, encode_relay_control,
+    relay_control_signing_parts, DirectCandidateV1, PrivateCandidateV1, PublicCandidateV1,
+    ReachabilityAdvertisementV1, ReachabilityObjectV1, RelayCandidateV1,
+    RelayControlSignatureRoleV1, RelayControlV1, RelayDenialCodeV1, RelayKeepaliveV1,
+    RelayPossessionProofV1, RelayReserveRequestV1, RelayRevocationActorV1, RelayRevocationReasonV1,
+    RelayRevokeV1, RelayTransportV1, RelayWireFrameV1, RelayWireKindV1,
+};
+use rand::rngs::OsRng;
+use rand::RngCore;
 use tokio::sync::{watch, RwLock};
 
 pub const MAX_DIRECT_CANDIDATES: usize = 8;
@@ -215,6 +232,164 @@ pub trait RelayDialRouteProvider: Send + Sync {
     ) -> ReachabilityFuture<'a, Result<ValidatedRelayDialSet, ReachabilityError>>;
 }
 
+/// Production route provider: every descriptor endpoint is re-resolved and
+/// converted to a sealed dial route immediately before use. UDP is preferred;
+/// a descriptor may also be TCP-443-only.
+pub struct ProductionRelayDialRouteProvider {
+    validator: Arc<ku_net::vnext_reachability_crypto::ReachabilityDialValidator>,
+}
+
+impl ProductionRelayDialRouteProvider {
+    pub fn new(
+        validator: Arc<ku_net::vnext_reachability_crypto::ReachabilityDialValidator>,
+    ) -> Self {
+        Self { validator }
+    }
+}
+
+impl RelayDialRouteProvider for ProductionRelayDialRouteProvider {
+    fn route_set_for<'a>(
+        &'a self,
+        relay: &'a ValidatedRelayDescriptor,
+        deadline: Instant,
+    ) -> ReachabilityFuture<'a, Result<ValidatedRelayDialSet, ReachabilityError>> {
+        use ku_net::vnext_reachability_crypto::ReachabilityLockFreeDialValidation;
+        Box::pin(async move {
+            let mut udp = None;
+            let mut tcp = None;
+            for (index, endpoint) in relay.canonical().endpoints.iter().enumerate() {
+                if Instant::now() >= deadline {
+                    return Err(ReachabilityError::Deadline);
+                }
+                let token = self
+                    .validator
+                    .validate_relay_dial(relay, index, deadline)
+                    .await
+                    .map_err(ReachabilityError::Admission)?;
+                let route = ValidatedRelayDialRoute::public(relay, token)
+                    .map_err(|_| ReachabilityError::CorruptState)?;
+                match endpoint.transport {
+                    RelayTransportV1::QuicUdp if udp.is_none() => udp = Some(route),
+                    RelayTransportV1::TlsTcp443 if tcp.is_none() => tcp = Some(route),
+                    _ => {}
+                }
+            }
+            let (primary, fallback) = match (udp, tcp) {
+                (Some(primary), fallback) => (primary, fallback),
+                (None, Some(primary)) => (primary, None),
+                (None, None) => return Err(ReachabilityError::Io),
+            };
+            ValidatedRelayDialSet::from_admitted_descriptor(primary, fallback)
+                .map_err(|_| ReachabilityError::CorruptState)
+        })
+    }
+}
+
+pub struct ProductionRelayPossessionClient {
+    signer: Arc<dyn ReachabilityIdentitySigner>,
+}
+
+impl ProductionRelayPossessionClient {
+    pub fn new(signer: Arc<dyn ReachabilityIdentitySigner>) -> Self {
+        Self { signer }
+    }
+}
+
+impl RelayPossessionClient for ProductionRelayPossessionClient {
+    fn prove<'a>(
+        &'a self,
+        staged: &'a StagedRelayAdmission,
+        deadline: Instant,
+    ) -> ReachabilityFuture<'a, Result<Vec<RelayPossessionProofV1>, RelayDiscoveryLimitation>> {
+        Box::pin(async move {
+            let now = unix_now().map_err(|_| RelayDiscoveryLimitation::PoisonedSource)?;
+            let mut proofs = Vec::with_capacity(staged.possession_dials().len());
+            for dial in staged.possession_dials() {
+                proofs.push(
+                    prove_relay_possession(dial, self.signer.as_ref(), now, deadline)
+                        .await
+                        .map_err(|_| RelayDiscoveryLimitation::PoisonedSource)?,
+                );
+            }
+            Ok(proofs)
+        })
+    }
+}
+
+/// Admit signed relay descriptors without retaining a discovery lock across
+/// DNS resolution or live proof-of-possession network I/O. Every uncommitted
+/// permit/staged descriptor is explicitly aborted on failure.
+pub async fn admit_relay_records(
+    discovery: &Arc<RwLock<RelayDiscovery>>,
+    preparer: &RelayDiscoveryPreparer,
+    possession: &dyn RelayPossessionClient,
+    source: RelayDiscoverySource,
+    records: &[Vec<u8>],
+    now: u64,
+    deadline: Instant,
+) -> Result<RelayDiscoveryDelta, ReachabilityError> {
+    if records.is_empty() || Instant::now() >= deadline {
+        return Err(ReachabilityError::Deadline);
+    }
+    let lengths: Vec<_> = records.iter().map(Vec::len).collect();
+    let permit = discovery
+        .write()
+        .await
+        .reserve_preparation(source, &lengths, now)
+        .map_err(ReachabilityError::Discovery)?;
+    let prepared = match preparer
+        .prepare_records(&permit, records, now, deadline)
+        .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            discovery
+                .write()
+                .await
+                .abort_preparation(permit, now)
+                .map_err(ReachabilityError::Discovery)?;
+            return Err(ReachabilityError::Discovery(error));
+        }
+    };
+    let staged = discovery
+        .write()
+        .await
+        .stage_prepared(permit, prepared, now)
+        .map_err(ReachabilityError::Discovery)?;
+    let mut aggregate = RelayDiscoveryDelta::default();
+    for mut descriptor in staged {
+        if let Err(error) = preparer.prepare_possession(&mut descriptor, deadline).await {
+            discovery
+                .write()
+                .await
+                .abort_descriptor(descriptor, now)
+                .map_err(ReachabilityError::Discovery)?;
+            return Err(ReachabilityError::Discovery(error));
+        }
+        let proofs = match possession.prove(&descriptor, deadline).await {
+            Ok(value) => value,
+            Err(error) => {
+                discovery
+                    .write()
+                    .await
+                    .abort_descriptor(descriptor, now)
+                    .map_err(ReachabilityError::Discovery)?;
+                return Err(ReachabilityError::Discovery(error));
+            }
+        };
+        let delta = discovery
+            .write()
+            .await
+            .commit_descriptor(descriptor, &proofs, now)
+            .map_err(ReachabilityError::Discovery)?;
+        aggregate.admitted.extend(delta.admitted);
+        aggregate.refreshed.extend(delta.refreshed);
+        aggregate.rejected = aggregate.rejected.saturating_add(delta.rejected);
+        aggregate.limitations.extend(delta.limitations);
+    }
+    Ok(aggregate)
+}
+
 pub trait RelayReservationClient: Send + Sync {
     fn authenticate<'a>(
         &'a self,
@@ -240,6 +415,268 @@ pub trait RelayReservationClient: Send + Sync {
         outer: &'a AuthenticatedOuterRelayConnection,
         sequence: u64,
     ) -> ReachabilityFuture<'a, Result<(), ReachabilityError>>;
+    fn observe_reflexive<'a>(
+        &'a self,
+        reservation: &'a ValidatedRelayReservation,
+        outer: &'a AuthenticatedOuterRelayConnection,
+        network_epoch: u64,
+    ) -> ReachabilityFuture<'a, Result<Vec<u8>, ReachabilityError>>;
+}
+
+/// Production relay client. It can be shared by every platform adapter; only
+/// the injected identity signer and admitted dial routes are platform-owned.
+pub struct ProductionRelayReservationClient {
+    signer: Arc<dyn ReachabilityIdentitySigner>,
+    admission: Mutex<ReachabilityAdmission>,
+    shared_quic_transport: StdRwLock<Option<Arc<QuicTransport>>>,
+}
+
+impl ProductionRelayReservationClient {
+    pub fn new(signer: Arc<dyn ReachabilityIdentitySigner>) -> Self {
+        Self {
+            signer,
+            admission: Mutex::new(ReachabilityAdmission::new(Arc::new(
+                InMemoryReachabilityReplayStore::default(),
+            ))),
+            shared_quic_transport: StdRwLock::new(None),
+        }
+    }
+
+    pub fn with_admission(
+        signer: Arc<dyn ReachabilityIdentitySigner>,
+        admission: ReachabilityAdmission,
+    ) -> Self {
+        Self {
+            signer,
+            admission: Mutex::new(admission),
+            shared_quic_transport: StdRwLock::new(None),
+        }
+    }
+
+    /// Attach the node's already-bound direct QUIC endpoint before the first
+    /// reservation. Replacement after attachment is rejected so a live
+    /// reservation can never migrate to a different outer socket.
+    pub fn attach_shared_quic_transport(
+        &self,
+        transport: Arc<QuicTransport>,
+    ) -> Result<(), ReachabilityError> {
+        let mut current = self
+            .shared_quic_transport
+            .write()
+            .map_err(|_| ReachabilityError::CorruptState)?;
+        if current.is_some() {
+            return Err(ReachabilityError::CorruptState);
+        }
+        *current = Some(transport);
+        Ok(())
+    }
+
+    async fn exchange(
+        outer: &AuthenticatedOuterRelayConnection,
+        control: RelayControlV1,
+    ) -> Result<RelayControlV1, ReachabilityError> {
+        let mut request_id = [0u8; 16];
+        OsRng.fill_bytes(&mut request_id);
+        let frame = RelayWireFrameV1::new(
+            RelayWireKindV1::Control,
+            request_id,
+            encode_relay_control(&control).map_err(|_| ReachabilityError::CorruptState)?,
+        )
+        .map_err(|_| ReachabilityError::CorruptState)?;
+        let response = outer
+            .request_control_frame(&frame)
+            .await
+            .map_err(|_| ReachabilityError::Io)?;
+        if response.kind() != RelayWireKindV1::Control {
+            return Err(ReachabilityError::CorruptState);
+        }
+        decode_relay_control(response.payload()).map_err(|_| ReachabilityError::CorruptState)
+    }
+
+    fn sign_control(
+        &self,
+        control: &RelayControlV1,
+        role: RelayControlSignatureRoleV1,
+    ) -> Result<[u8; 64], ReachabilityError> {
+        let (domain, message) = relay_control_signing_parts(control, role)
+            .map_err(|_| ReachabilityError::CorruptState)?;
+        self.signer
+            .sign_reachability_message(domain, &message)
+            .map_err(|_| ReachabilityError::Io)
+    }
+}
+
+impl RelayReservationClient for ProductionRelayReservationClient {
+    fn authenticate<'a>(
+        &'a self,
+        relay: &'a ValidatedRelayDescriptor,
+        routes: &'a ValidatedRelayDialSet,
+        deadline: Instant,
+    ) -> ReachabilityFuture<'a, Result<Arc<AuthenticatedOuterRelayConnection>, ReachabilityError>>
+    {
+        Box::pin(async move {
+            let shared = self
+                .shared_quic_transport
+                .read()
+                .map_err(|_| ReachabilityError::CorruptState)?
+                .clone();
+            let connection = match shared {
+                Some(transport) => {
+                    connect_authenticated_outer_on_transport(
+                        routes,
+                        self.signer.as_ref(),
+                        unix_now()?,
+                        deadline,
+                        transport.as_ref(),
+                    )
+                    .await
+                }
+                None => {
+                    connect_authenticated_outer(routes, self.signer.as_ref(), unix_now()?, deadline)
+                        .await
+                }
+            }
+            .map_err(|_| ReachabilityError::Io)?;
+            if connection.relay_node_id() != relay.canonical().relay_node_id
+                || connection.client_node_id()
+                    != ku_net::vnext_session::principal_node_id(&self.signer.public_key())
+            {
+                return Err(ReachabilityError::CorruptState);
+            }
+            Ok(Arc::new(connection))
+        })
+    }
+
+    fn reserve<'a>(
+        &'a self,
+        relay: &'a ValidatedRelayDescriptor,
+        outer: &'a AuthenticatedOuterRelayConnection,
+        request: RelayReserveRequestV1,
+    ) -> ReachabilityFuture<'a, Result<ValidatedRelayReservation, ReachabilityError>> {
+        Box::pin(async move {
+            match Self::exchange(outer, RelayControlV1::Reserve(request)).await? {
+                RelayControlV1::Granted(grant) => {
+                    let bytes =
+                        encode_reachability_object(&ReachabilityObjectV1::RelayReservation(grant))
+                            .map_err(|_| ReachabilityError::CorruptState)?;
+                    let target = KnownPeerIdentity::from_public_key(self.signer.public_key());
+                    let relay_identity = KnownPeerIdentity {
+                        node_id: relay.canonical().relay_node_id,
+                        public_key: relay.canonical().relay_public_key,
+                    };
+                    self.admission
+                        .lock()
+                        .map_err(|_| ReachabilityError::CorruptState)?
+                        .admit_reservation(&bytes, &target, &relay_identity, unix_now()?)
+                        .map_err(ReachabilityError::Admission)
+                }
+                RelayControlV1::Denied(value) => {
+                    Err(ReachabilityError::ReservationDenied(value.code))
+                }
+                _ => Err(ReachabilityError::CorruptState),
+            }
+        })
+    }
+
+    fn keepalive<'a>(
+        &'a self,
+        reservation: &'a ValidatedRelayReservation,
+        outer: &'a AuthenticatedOuterRelayConnection,
+        sequence: u64,
+    ) -> ReachabilityFuture<'a, Result<(), ReachabilityError>> {
+        Box::pin(async move {
+            let now = unix_now()?;
+            let mut value = RelayKeepaliveV1 {
+                format: 1,
+                relay_node_id: reservation.canonical().relay_node_id,
+                target_node_id: reservation.canonical().target_node_id,
+                reservation_id: reservation.canonical().reservation_id,
+                sequence,
+                issued_at: now,
+                expires_at: reservation
+                    .canonical()
+                    .expires_at
+                    .min(now.saturating_add(30)),
+                target_signature: [0; 64],
+            };
+            value.target_signature = self.sign_control(
+                &RelayControlV1::Keepalive(value.clone()),
+                RelayControlSignatureRoleV1::KeepaliveTarget,
+            )?;
+            match Self::exchange(outer, RelayControlV1::Keepalive(value.clone())).await? {
+                RelayControlV1::Keepalive(ack) if ack == value => Ok(()),
+                _ => Err(ReachabilityError::CorruptState),
+            }
+        })
+    }
+
+    fn revoke<'a>(
+        &'a self,
+        reservation: &'a ValidatedRelayReservation,
+        outer: &'a AuthenticatedOuterRelayConnection,
+        sequence: u64,
+    ) -> ReachabilityFuture<'a, Result<(), ReachabilityError>> {
+        Box::pin(async move {
+            let now = unix_now()?;
+            let mut value = RelayRevokeV1 {
+                format: 1,
+                relay_node_id: reservation.canonical().relay_node_id,
+                target_node_id: reservation.canonical().target_node_id,
+                reservation_id: reservation.canonical().reservation_id,
+                actor: RelayRevocationActorV1::Target,
+                reason: RelayRevocationReasonV1::TargetClosed,
+                sequence,
+                issued_at: now,
+                expires_at: reservation
+                    .canonical()
+                    .expires_at
+                    .min(now.saturating_add(30)),
+                actor_signature: [0; 64],
+            };
+            value.actor_signature = self.sign_control(
+                &RelayControlV1::Revoke(value.clone()),
+                RelayControlSignatureRoleV1::RevokeActor,
+            )?;
+            match Self::exchange(outer, RelayControlV1::Revoke(value.clone())).await? {
+                RelayControlV1::Revoke(ack) if ack == value => Ok(()),
+                _ => Err(ReachabilityError::CorruptState),
+            }
+        })
+    }
+
+    fn observe_reflexive<'a>(
+        &'a self,
+        reservation: &'a ValidatedRelayReservation,
+        outer: &'a AuthenticatedOuterRelayConnection,
+        network_epoch: u64,
+    ) -> ReachabilityFuture<'a, Result<Vec<u8>, ReachabilityError>> {
+        Box::pin(async move {
+            if network_epoch == 0
+                || reservation.canonical().relay_node_id != outer.relay_node_id()
+                || reservation.canonical().target_node_id != outer.client_node_id()
+            {
+                return Err(ReachabilityError::CorruptState);
+            }
+            let mut request_id = [0u8; 16];
+            OsRng.fill_bytes(&mut request_id);
+            let mut payload = Vec::with_capacity(40);
+            payload.extend_from_slice(&reservation.canonical().reservation_id);
+            payload.extend_from_slice(&network_epoch.to_be_bytes());
+            let request =
+                RelayWireFrameV1::new(RelayWireKindV1::ReflexiveObservation, request_id, payload)
+                    .map_err(|_| ReachabilityError::CorruptState)?;
+            let response = outer
+                .request_control_frame(&request)
+                .await
+                .map_err(|_| ReachabilityError::Io)?;
+            if response.kind() != RelayWireKindV1::ReflexiveObservation
+                || response.request_id() != request_id
+            {
+                return Err(ReachabilityError::CorruptState);
+            }
+            Ok(response.payload().to_vec())
+        })
+    }
 }
 
 pub struct ActiveRelayReservation {
@@ -325,6 +762,62 @@ impl RelayReservationManager {
 
     pub async fn active_count(&self) -> usize {
         self.active.read().await.len()
+    }
+
+    pub async fn active_reservations(&self) -> Vec<ValidatedRelayReservation> {
+        self.active
+            .read()
+            .await
+            .values()
+            .filter(|active| active.outer.is_open())
+            .map(|active| active.reservation.clone())
+            .collect()
+    }
+
+    pub async fn active_for(
+        &self,
+        relay: NodeId,
+    ) -> Option<(
+        ValidatedRelayReservation,
+        Arc<AuthenticatedOuterRelayConnection>,
+    )> {
+        self.active.read().await.get(&relay).and_then(|active| {
+            active
+                .outer
+                .is_open()
+                .then(|| (active.reservation.clone(), Arc::clone(&active.outer)))
+        })
+    }
+
+    /// Obtain relay-signed server-reflexive observations for every live UDP
+    /// reservation. The caller must still validate each canonical object
+    /// against its admitted relay descriptor and reservation.
+    pub async fn reflexive_observations(
+        &self,
+        network_epoch: u64,
+    ) -> Result<Vec<(ValidatedRelayReservation, Vec<u8>)>, ReachabilityError> {
+        if network_epoch == 0 {
+            return Err(ReachabilityError::CorruptState);
+        }
+        let active: Vec<_> = self
+            .active
+            .read()
+            .await
+            .values()
+            .filter(|value| {
+                value.outer.is_open() && value.outer.transport() == RelayTransportV1::QuicUdp
+            })
+            .map(|value| (value.reservation.clone(), Arc::clone(&value.outer)))
+            .collect();
+        let mut output = Vec::with_capacity(active.len());
+        for (reservation, outer) in active {
+            let bytes = self
+                .client
+                .observe_reflexive(&reservation, &outer, network_epoch)
+                .await?;
+            output.push((reservation, bytes));
+        }
+        Ok(output)
     }
 
     pub async fn keepalive_all(&self, sequence: u64) -> Result<usize, ReachabilityError> {
@@ -491,4 +984,11 @@ pub enum ReachabilityError {
     InvalidPolicy,
     InvalidCandidates,
     ReservationCapacity,
+}
+
+fn unix_now() -> Result<u64, ReachabilityError> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|value| value.as_secs())
+        .map_err(|_| ReachabilityError::CorruptState)
 }

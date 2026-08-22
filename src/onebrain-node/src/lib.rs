@@ -69,8 +69,10 @@ pub mod vnext_observability;
 pub mod vnext_operational_compaction;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_outbox;
+pub mod vnext_p5_disk_pressure;
 #[cfg(feature = "vnext-production-canary-harness")]
 pub mod vnext_p5_fault_proxy;
+pub mod vnext_p5_linux_admin;
 #[cfg(feature = "vnext-production-canary-harness")]
 pub mod vnext_p5_multi_host;
 #[cfg(feature = "vnext-production-canary-harness")]

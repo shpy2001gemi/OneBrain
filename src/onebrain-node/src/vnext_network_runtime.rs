@@ -20,11 +20,16 @@ use ku_core::foundation::{
 use ku_net::transport::{OBPConnection, QuicTransport, TransportConfig};
 use ku_net::vnext_carrier::CarrierRecord;
 #[cfg(feature = "vnext-outbound-first")]
-use ku_net::vnext_connection_executor::ConnectionPlannerExecutor;
+use ku_net::vnext_connection_executor::{
+    AuthenticatedRouteConnection, ConnectionPlannerExecutor, ExpectedInboundCarrier,
+    SelectedCarrier,
+};
 use ku_net::vnext_inventory_forest::{InventoryLeaf, RedbInventoryForestBackend};
+#[cfg(not(feature = "vnext-outbound-first"))]
+use ku_net::vnext_quic_session::accept_authenticated_session;
 use ku_net::vnext_quic_session::{
-    accept_authenticated_session, initiate_authenticated_session, send_carrier_record,
-    AuthenticatedCarrierRecord, AuthenticatedCarrierSession,
+    initiate_authenticated_session, send_carrier_record, AuthenticatedCarrierRecord,
+    AuthenticatedCarrierSession,
 };
 use ku_net::vnext_reconciliation::{
     BoundPayloadFrame, PayloadIngestOutcome, PayloadRejectReason, PayloadSinkOutcome,
@@ -41,7 +46,9 @@ use ku_net::vnext_resource_gate::{
 #[cfg(feature = "vnext-outbound-first")]
 use ku_net::vnext_route_plan::{PlannerAction, RouteFailure};
 #[cfg(feature = "vnext-outbound-first")]
-use ku_net::vnext_secure_session_adapter::authenticate_expected_outbound;
+use ku_net::vnext_secure_session_adapter::{
+    accept_authenticated_direct, accept_expected_inbound, authenticate_expected_outbound,
+};
 use ku_net::vnext_session::{
     principal_node_id, AuthenticatedSession, SessionIdentitySigner, SessionReplayGuard,
 };
@@ -59,7 +66,7 @@ use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tokio::sync::{watch, Mutex as AsyncMutex, Notify};
+use tokio::sync::{oneshot, watch, Mutex as AsyncMutex, Notify};
 use tokio::task::JoinHandle;
 
 use crate::archive::{
@@ -68,7 +75,7 @@ use crate::archive::{
 };
 use crate::vnext_config::VNextNetworkPolicy;
 #[cfg(feature = "vnext-outbound-first")]
-use crate::vnext_connection_planner::RoutedVNextSession;
+use crate::vnext_connection_planner::{ExpectedPeerCarrierSelector, RoutedVNextSession};
 use crate::vnext_observability::{
     VNextJournalObservation, VNextObservability, VNextObservabilitySnapshot, VNextReasonCode,
     VNextRegistryTelemetryState,
@@ -277,6 +284,36 @@ struct OutboundDeliveryEngine {
     route_journal: RouteJournal,
 }
 
+#[cfg(feature = "vnext-outbound-first")]
+struct DirectInboundReady {
+    authenticated: AuthenticatedRouteConnection,
+    admission: SessionAdmission,
+}
+
+#[cfg(feature = "vnext-outbound-first")]
+#[derive(Default)]
+struct DirectInboundBroker {
+    waiters: Mutex<BTreeMap<NodeId, oneshot::Sender<DirectInboundReady>>>,
+}
+
+/// A single-use, peer-bound authorization to receive one direct inbound
+/// carrier. The coordinator arms it before any peer begins dialing.
+#[cfg(feature = "vnext-outbound-first")]
+pub struct ArmedDirectInbound {
+    expected_peer: NodeId,
+    receiver: Option<oneshot::Receiver<DirectInboundReady>>,
+    broker: Arc<DirectInboundBroker>,
+}
+
+#[cfg(feature = "vnext-outbound-first")]
+impl Drop for ArmedDirectInbound {
+    fn drop(&mut self) {
+        if let Ok(mut waiters) = self.broker.waiters.lock() {
+            waiters.remove(&self.expected_peer);
+        }
+    }
+}
+
 /// Owns the real QUIC endpoint, persistent validated store, persistent
 /// reconciliation journal, session replay guard, and bounded accept loop.
 pub struct VNextNetworkRuntime {
@@ -291,6 +328,8 @@ pub struct VNextNetworkRuntime {
     provenance: RedbRecordProvenance,
     routes: AuthenticatedRouteDirectory,
     outbound: Arc<OutboundDeliveryEngine>,
+    #[cfg(feature = "vnext-outbound-first")]
+    direct_inbound: Arc<DirectInboundBroker>,
     outbound_notify: Arc<Notify>,
     outbound_shutdown: watch::Sender<bool>,
     outbound_task: Option<JoinHandle<()>>,
@@ -486,6 +525,37 @@ impl VNextNetworkRuntime {
         .await
     }
 
+    /// Start the production P5 network process behind the same durable
+    /// generation fence used by the product runtime.  The caller owns the
+    /// rollout object and therefore can perform a real, durable rollback or
+    /// explicit generation-advancing re-enable without placing a private key
+    /// in this process.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub async fn start_with_signer_and_rollout(
+        data_dir: &Path,
+        bind_addr: SocketAddr,
+        policy: VNextNetworkPolicy,
+        identity: Arc<dyn SessionIdentitySigner>,
+        rollout: VNextRuntimeRollout,
+    ) -> Result<Self, VNextNetworkRuntimeError> {
+        let identity = prepare_vnext_identity(data_dir, Some(identity))?;
+        policy
+            .validate()
+            .map_err(|error| VNextNetworkRuntimeError::Config(error.to_string()))?;
+        std::fs::create_dir_all(data_dir)?;
+        Self::start_initialized(
+            data_dir,
+            bind_addr,
+            policy,
+            true,
+            DEFAULT_NETWORK_STORAGE_HARD_WATERMARK_BYTES,
+            identity.signer,
+            identity.public_key,
+            Some(rollout),
+        )
+        .await
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn start_initialized(
         data_dir: &Path,
@@ -582,6 +652,8 @@ impl VNextNetworkRuntime {
         );
         let admission = RuntimeAdmissionController::new(admission_limits(policy))
             .map_err(|error| VNextNetworkRuntimeError::Config(format!("{error:?}")))?;
+        #[cfg(feature = "vnext-outbound-first")]
+        let direct_inbound = Arc::new(DirectInboundBroker::default());
         let accept_task = tokio::spawn(accept_loop(
             Arc::clone(&transport),
             Arc::clone(&identity),
@@ -598,6 +670,8 @@ impl VNextNetworkRuntime {
             storage_admission,
             policy,
             rollout.clone(),
+            #[cfg(feature = "vnext-outbound-first")]
+            Arc::clone(&direct_inbound),
         ));
         let outbound = Arc::new(OutboundDeliveryEngine {
             transport: Arc::clone(&transport),
@@ -636,6 +710,8 @@ impl VNextNetworkRuntime {
             provenance,
             routes,
             outbound,
+            #[cfg(feature = "vnext-outbound-first")]
+            direct_inbound,
             outbound_notify,
             outbound_shutdown,
             outbound_task,
@@ -646,6 +722,42 @@ impl VNextNetworkRuntime {
 
     pub fn local_addr(&self) -> SocketAddr {
         self.listen_addr
+    }
+
+    /// P5 and platform adapters may share the already-bound OBP endpoint with
+    /// authenticated relay control so the relay-observed NAT mapping belongs
+    /// to the same direct listener. No private key or route authority crosses
+    /// this boundary.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub fn shared_transport(&self) -> Arc<QuicTransport> {
+        Arc::clone(&self.transport)
+    }
+
+    /// Send bounded direct QUIC attempts from the exact shared listener. This
+    /// opens the local NAT mapping for a peer that is concurrently dialing the
+    /// relay-observed reflexive address. The attempts grant no route authority
+    /// and every successful carrier is immediately closed.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub fn prime_direct_path(&self, peer: SocketAddr) -> Result<(), VNextNetworkRuntimeError> {
+        if peer.port() == 0 || peer.ip().is_unspecified() || peer.ip().is_loopback() {
+            return Err(VNextNetworkRuntimeError::Session(
+                "invalid direct prime endpoint".into(),
+            ));
+        }
+        let transport = Arc::clone(&self.transport);
+        tokio::spawn(async move {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+            while tokio::time::Instant::now() < deadline {
+                if let Ok(Ok(connection)) =
+                    tokio::time::timeout(Duration::from_millis(750), transport.connect(peer)).await
+                {
+                    connection.close("direct NAT prime complete");
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        });
+        Ok(())
     }
 
     /// Return Node-owned logical archive adapters for every durable network
@@ -879,6 +991,111 @@ impl VNextNetworkRuntime {
         addr: SocketAddr,
     ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
         self.outbound.connect_expected(expected_peer, addr).await
+    }
+
+    /// Authenticate a carrier already selected by the sealed direct,
+    /// hole-punch, or relay executor. The measured socket is used only for
+    /// resource admission; route authority is granted from the OBP handshake.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub async fn connect_expected_selected(
+        &self,
+        expected_peer: NodeId,
+        selected: SelectedCarrier,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        self.outbound
+            .connect_expected_selected(expected_peer, selected)
+            .await
+    }
+
+    /// Accept a target-side relay carrier that was sealed from a verified
+    /// association, then grant route authority only after the initiator proves
+    /// the expected OBP identity.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub async fn accept_expected_selected(
+        &self,
+        expected_peer: NodeId,
+        carrier: ExpectedInboundCarrier,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        self.outbound
+            .accept_expected_selected(expected_peer, carrier)
+            .await
+    }
+
+    /// Register one exact peer before it starts a direct dial. The returned
+    /// capability is private, single-use, and cannot be relabelled.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub fn arm_expected_direct(
+        &self,
+        expected_peer: NodeId,
+    ) -> Result<ArmedDirectInbound, VNextNetworkRuntimeError> {
+        if expected_peer.as_bytes() == &[0; 32] || expected_peer == self.principal {
+            return Err(VNextNetworkRuntimeError::Session(
+                "invalid direct inbound peer".into(),
+            ));
+        }
+        let (sender, receiver) = oneshot::channel();
+        let mut waiters = self
+            .direct_inbound
+            .waiters
+            .lock()
+            .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?;
+        if waiters.contains_key(&expected_peer) {
+            return Err(VNextNetworkRuntimeError::Session(
+                "direct inbound peer is already armed".into(),
+            ));
+        }
+        waiters.insert(expected_peer, sender);
+        drop(waiters);
+        Ok(ArmedDirectInbound {
+            expected_peer,
+            receiver: Some(receiver),
+            broker: Arc::clone(&self.direct_inbound),
+        })
+    }
+
+    /// Wait for an armed direct carrier and promote it only after the normal
+    /// OBP handshake proved the expected initiator identity.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub async fn accept_armed_direct(
+        &self,
+        mut armed: ArmedDirectInbound,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        let expected_peer = armed.expected_peer;
+        let ready = tokio::time::timeout(
+            Duration::from_secs(self.outbound.policy.handshake_timeout_seconds),
+            armed.receiver.take().ok_or_else(|| {
+                VNextNetworkRuntimeError::Session("direct inbound arm was already consumed".into())
+            })?,
+        )
+        .await
+        .map_err(|_| VNextNetworkRuntimeError::HandshakeTimeout)?
+        .map_err(|_| {
+            VNextNetworkRuntimeError::Session("direct inbound arm was cancelled".into())
+        })?;
+        self.outbound.promote_authenticated_routed(
+            expected_peer,
+            ready.authenticated,
+            ready.admission,
+        )
+    }
+
+    /// Select a carrier only from an admitted reachability advertisement, then
+    /// perform the same resource admission and OBP identity handshake used by
+    /// every other routed connection. No raw controller-supplied address is
+    /// accepted by this API.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub async fn connect_expected_advertisement(
+        &self,
+        selector: &dyn ExpectedPeerCarrierSelector,
+        expected_peer: NodeId,
+        advertisement: &ku_net::vnext_reachability_crypto::ValidatedReachabilityAdvertisement,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        let selected = selector
+            .select_expected(expected_peer, advertisement)
+            .await
+            .map_err(route_failure)?;
+        self.connect_expected_selected(expected_peer, selected)
+            .await
     }
 
     #[cfg(feature = "vnext-outbound-first")]
@@ -1313,6 +1530,104 @@ impl OutboundDeliveryEngine {
             Vec::new(),
         )
         .map_err(route_failure)?;
+        self.authenticate_expected_selected(expected_peer, selected, handshake_admission)
+            .await
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    async fn connect_expected_selected(
+        &self,
+        expected_peer: NodeId,
+        selected: SelectedCarrier,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        let handshake_admission = self
+            .admission
+            .try_begin_handshake(selected.connected_socket().ip())
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
+        self.authenticate_expected_selected(expected_peer, selected, handshake_admission)
+            .await
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    async fn accept_expected_selected(
+        &self,
+        expected_peer: NodeId,
+        carrier: ExpectedInboundCarrier,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        if carrier.expected_peer() != expected_peer {
+            return Err(VNextNetworkRuntimeError::Session(
+                "inbound expected-peer substitution".into(),
+            ));
+        }
+        let handshake_admission = self
+            .admission
+            .try_begin_handshake(carrier.connected_socket().ip())
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
+        let authenticated = tokio::time::timeout(
+            Duration::from_secs(self.policy.handshake_timeout_seconds),
+            accept_expected_inbound(
+                carrier,
+                self.identity.as_ref(),
+                random_nonce(),
+                &[reconciliation_profile()],
+                &[reconciliation_capability()],
+                Vec::new(),
+            ),
+        )
+        .await
+        .map_err(|_| VNextNetworkRuntimeError::HandshakeTimeout)?
+        .map_err(route_failure)?;
+        let session_admission = handshake_admission
+            .promote(expected_peer)
+            .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
+        self.replay_guard
+            .lock()
+            .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?
+            .accept(authenticated.session())
+            .map_err(|error| VNextNetworkRuntimeError::Session(format!("{error:?}")))?;
+        let mut routed = RoutedVNextSession::promote(expected_peer, authenticated)
+            .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
+        routed.attach_admission(session_admission);
+        self.routes
+            .observe_routed(&routed)
+            .map_err(VNextNetworkRuntimeError::RouteDirectory)?;
+        let next_sequence = self
+            .route_journal
+            .len()
+            .map_err(|error| VNextNetworkRuntimeError::Journal(error.to_string()))?
+            .checked_add(1)
+            .ok_or_else(|| VNextNetworkRuntimeError::Journal("route sequence exhausted".into()))?
+            as u64;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| VNextNetworkRuntimeError::Config("system clock before epoch".into()))?
+            .as_secs();
+        if let Err(error) = self.route_journal.append(RouteJournalEntryV1::routed(
+            expected_peer,
+            routed.carrier().path_kind(),
+            routed.route_receipt_digest(),
+            next_sequence,
+            now,
+        )) {
+            let _ = self
+                .routes
+                .remove_routed(expected_peer, routed.authenticated().session_id);
+            routed.close();
+            return Err(VNextNetworkRuntimeError::Journal(error.to_string()));
+        }
+        self.counters
+            .authenticated_sessions
+            .fetch_add(1, Ordering::Relaxed);
+        Ok(routed)
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    async fn authenticate_expected_selected(
+        &self,
+        expected_peer: NodeId,
+        selected: SelectedCarrier,
+        handshake_admission: HandshakeAdmission,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
         let authenticated = tokio::time::timeout(
             Duration::from_secs(self.policy.handshake_timeout_seconds),
             authenticate_expected_outbound(
@@ -1353,8 +1668,57 @@ impl OutboundDeliveryEngine {
             .duration_since(UNIX_EPOCH)
             .map_err(|_| VNextNetworkRuntimeError::Config("system clock before epoch".into()))?
             .as_secs();
-        if let Err(error) = self.route_journal.append(RouteJournalEntryV1::direct(
+        if let Err(error) = self.route_journal.append(RouteJournalEntryV1::routed(
             expected_peer,
+            routed.carrier().path_kind(),
+            routed.route_receipt_digest(),
+            next_sequence,
+            now,
+        )) {
+            let _ = self
+                .routes
+                .remove_routed(expected_peer, routed.authenticated().session_id);
+            routed.close();
+            return Err(VNextNetworkRuntimeError::Journal(error.to_string()));
+        }
+        self.counters
+            .authenticated_sessions
+            .fetch_add(1, Ordering::Relaxed);
+        Ok(routed)
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    fn promote_authenticated_routed(
+        &self,
+        expected_peer: NodeId,
+        authenticated: AuthenticatedRouteConnection,
+        session_admission: SessionAdmission,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        if authenticated.authenticated_peer() != expected_peer {
+            return Err(VNextNetworkRuntimeError::Session(
+                "direct inbound expected-peer substitution".into(),
+            ));
+        }
+        let mut routed = RoutedVNextSession::promote(expected_peer, authenticated)
+            .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
+        routed.attach_admission(session_admission);
+        self.routes
+            .observe_routed(&routed)
+            .map_err(VNextNetworkRuntimeError::RouteDirectory)?;
+        let next_sequence = self
+            .route_journal
+            .len()
+            .map_err(|error| VNextNetworkRuntimeError::Journal(error.to_string()))?
+            .checked_add(1)
+            .ok_or_else(|| VNextNetworkRuntimeError::Journal("route sequence exhausted".into()))?
+            as u64;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| VNextNetworkRuntimeError::Config("system clock before epoch".into()))?
+            .as_secs();
+        if let Err(error) = self.route_journal.append(RouteJournalEntryV1::routed(
+            expected_peer,
+            routed.carrier().path_kind(),
             routed.route_receipt_digest(),
             next_sequence,
             now,
@@ -1655,6 +2019,7 @@ async fn accept_loop(
     storage: NetworkStorageAdmission,
     policy: VNextNetworkPolicy,
     rollout: Option<VNextRuntimeRollout>,
+    #[cfg(feature = "vnext-outbound-first")] direct_inbound: Arc<DirectInboundBroker>,
 ) {
     loop {
         let connection = match transport.accept().await {
@@ -1707,6 +2072,8 @@ async fn accept_loop(
         let inventory = inventory.clone();
         let provenance = provenance.clone();
         let storage = storage.clone();
+        #[cfg(feature = "vnext-outbound-first")]
+        let direct_inbound = Arc::clone(&direct_inbound);
         tokio::spawn(async move {
             if handle_inbound_connection(
                 connection,
@@ -1724,6 +2091,8 @@ async fn accept_loop(
                 storage,
                 policy,
                 runtime_generation,
+                #[cfg(feature = "vnext-outbound-first")]
+                direct_inbound,
             )
             .await
             .is_err()
@@ -1751,7 +2120,65 @@ async fn handle_inbound_connection(
     storage: NetworkStorageAdmission,
     policy: VNextNetworkPolicy,
     runtime_generation: Option<VNextRuntimeGenerationLease>,
+    #[cfg(feature = "vnext-outbound-first")] direct_inbound: Arc<DirectInboundBroker>,
 ) -> Result<(), VNextNetworkRuntimeError> {
+    #[cfg(feature = "vnext-outbound-first")]
+    let (authenticated, connection, session_admission) = {
+        let unbound =
+            ConnectionPlannerExecutor::seal_unbound_direct_inbound(connection, Vec::new())
+                .map_err(route_failure)?;
+        let authenticated_route = tokio::time::timeout(
+            Duration::from_secs(policy.handshake_timeout_seconds),
+            accept_authenticated_direct(
+                unbound,
+                identity.as_ref(),
+                random_nonce(),
+                &[reconciliation_profile()],
+                &[reconciliation_capability()],
+                Vec::new(),
+            ),
+        )
+        .await
+        .map_err(|_| VNextNetworkRuntimeError::HandshakeTimeout)?
+        .map_err(route_failure)?;
+        let authenticated = authenticated_route.session().clone();
+        let session_admission = handshake_admission
+            .promote(authenticated.initiator)
+            .map_err(|error| observable_resource_admission_error(&observability, error))?;
+        replay_guard
+            .lock()
+            .map_err(|_| {
+                observability.record(VNextReasonCode::RejectedReplay, 0, 1);
+                VNextNetworkRuntimeError::ReplayGuard
+            })?
+            .accept(&authenticated)
+            .map_err(|error| {
+                observability.record(VNextReasonCode::RejectedReplay, 0, 1);
+                VNextNetworkRuntimeError::Session(format!("{error:?}"))
+            })?;
+        let waiter = direct_inbound
+            .waiters
+            .lock()
+            .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?
+            .remove(&authenticated.initiator);
+        if let Some(waiter) = waiter {
+            waiter
+                .send(DirectInboundReady {
+                    authenticated: authenticated_route,
+                    admission: session_admission,
+                })
+                .map_err(|_| {
+                    VNextNetworkRuntimeError::Session(
+                        "armed direct inbound consumer disappeared".into(),
+                    )
+                })?;
+            return Ok(());
+        }
+        let (authenticated, connection, _) = authenticated_route.into_parts();
+        (authenticated, connection, session_admission)
+    };
+
+    #[cfg(not(feature = "vnext-outbound-first"))]
     let authenticated = tokio::time::timeout(
         Duration::from_secs(policy.handshake_timeout_seconds),
         accept_authenticated_session(
@@ -1766,9 +2193,11 @@ async fn handle_inbound_connection(
     .await
     .map_err(|_| VNextNetworkRuntimeError::HandshakeTimeout)?
     .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
+    #[cfg(not(feature = "vnext-outbound-first"))]
     let session_admission = handshake_admission
         .promote(authenticated.initiator)
         .map_err(|error| observable_resource_admission_error(&observability, error))?;
+    #[cfg(not(feature = "vnext-outbound-first"))]
     replay_guard
         .lock()
         .map_err(|_| {

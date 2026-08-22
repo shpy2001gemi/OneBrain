@@ -315,9 +315,9 @@ impl RelayDiscoveryPreparer {
 
     pub fn prepare_possession<'a>(
         &'a self,
-        mut staged: StagedRelayAdmission,
+        staged: &'a mut StagedRelayAdmission,
         deadline: Instant,
-    ) -> ReachabilityFuture<'a, Result<StagedRelayAdmission, RelayDiscoveryLimitation>> {
+    ) -> ReachabilityFuture<'a, Result<(), RelayDiscoveryLimitation>> {
         Box::pin(async move {
             let mut dials = Vec::with_capacity(staged.pending.challenges().len());
             for endpoint_index in 0..staged.pending.challenges().len() {
@@ -329,7 +329,7 @@ impl RelayDiscoveryPreparer {
                 );
             }
             staged.possession_dials = dials;
-            Ok(staged)
+            Ok(())
         })
     }
 }
