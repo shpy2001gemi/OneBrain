@@ -14,8 +14,10 @@ UPnP, manual NAT, or a central OneBrain server.
   relay advertisement.
 - runner-b: relay TLS/TCP `163.61.111.23:443`; both other physical hosts proved
   bidirectional reachability before this topology was selected.
-- runner-c: relay UDP `103.77.214.30:41000` and TLS/TCP
-  `103.77.214.30:443`.
+- runner-c: relay TLS/TCP `103.77.214.30:443`. A real probe proved that
+  runner-b can send UDP to runner-c but cannot receive the echoed UDP response
+  on its ephemeral source port, so UDP/41000 is not advertised or claimed by
+  this three-runner production-reference topology.
 - all three runners remain ordinary OBP nodes and reach both public relays
   through outbound connections.
 - every node reserves at both relay NodeIDs. No private or NAT-derived endpoint
@@ -25,6 +27,10 @@ UPnP, manual NAT, or a central OneBrain server.
 Only endpoints proven remotely from both other physical hosts enter the signed
 inventory. A relay descriptor is non-authoritative and expires; the controller
 retains its contiguous same-key/same-config sequence chain.
+
+The implementation still supports QUIC/UDP and tests it independently. This
+deployment selects the common TLS/TCP-443 fallback that all three real hosts
+can use; it does not downgrade or remove the optional UDP carrier from OBP.
 
 ## Verify the immutable bundle
 
