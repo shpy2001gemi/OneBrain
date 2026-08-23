@@ -16,11 +16,15 @@ import io
 import json
 import os
 import subprocess
+import sys
 import tarfile
 import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable, Mapping, Protocol
+
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import blake3
 from cryptography.hazmat.primitives import serialization
