@@ -2392,6 +2392,18 @@ def verify_p5_request(request_path: Path, signature_path: Path, policy_path: Pat
     return request
 
 
+def verify_base_authority(args: argparse.Namespace) -> None:
+    """Verify the immutable Task-28 Base V2 request on its dedicated authority path."""
+    from scripts.release.create_base_release_request import verify_task28_release_request
+
+    verify_task28_release_request(
+        args.release_request,
+        args.release_signature,
+        args.base_policy,
+        gpg_home=args.base_gpg_home,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="mode", required=True)
@@ -2431,8 +2443,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.mode in {"verify-request", "run"}:
             verified_request = verify_p5_request(args.p5_request, args.p5_signature, args.p5_approval_policy, args.inventory)
             # Base OpenPGP verification remains a separate unchanged authority path.
-            from scripts.release.verify_base_release_request import verify_release_request
-            verify_release_request(args.release_request, args.release_signature, args.base_policy, args.base_gpg_home)
+            verify_base_authority(args)
             if args.mode == "run":
                 run_production_preflight(args, verified_request, full_qualification=True)
     except (OSError, ValueError, P5ExecutionError) as error:

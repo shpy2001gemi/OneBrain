@@ -116,6 +116,24 @@ class FakeAgent:
 
 
 class P5MultiHostV2Tests(unittest.TestCase):
+    @mock.patch("scripts.release.create_base_release_request.verify_task28_release_request")
+    def test_base_authority_uses_task28_v2_verifier(self, verify_task28) -> None:
+        args = SimpleNamespace(
+            release_request=Path("release-request.json"),
+            release_signature=Path("release-request.json.asc"),
+            base_policy=Path("base-v1-release-signers-v1.json"),
+            base_gpg_home=Path("qualification-approver-gnupg"),
+        )
+
+        runner.verify_base_authority(args)
+
+        verify_task28.assert_called_once_with(
+            args.release_request,
+            args.release_signature,
+            args.base_policy,
+            gpg_home=args.base_gpg_home,
+        )
+
     def test_bootstrap_frame_is_inventory_bound_signed_and_effect_free(self) -> None:
         controller = Ed25519PrivateKey.generate()
         public = controller.public_key().public_bytes_raw().hex()
