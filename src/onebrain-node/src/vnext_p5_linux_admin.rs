@@ -796,9 +796,8 @@ fn cleanup_network_commands(egress: &str, ufw_active: bool) -> Vec<(&'static str
         commands.push((
             "/usr/sbin/ufw",
             vec![
-                "--force",
-                "delete",
                 "route",
+                "delete",
                 "allow",
                 "in",
                 "on",
@@ -816,7 +815,6 @@ fn cleanup_network_commands(egress: &str, ufw_active: bool) -> Vec<(&'static str
             .collect(),
         ));
         commands.push(fixed_ufw(&[
-            "--force",
             "delete",
             "allow",
             "in",
@@ -834,7 +832,6 @@ fn cleanup_network_commands(egress: &str, ufw_active: bool) -> Vec<(&'static str
             "onebrain-p5-v2-relay-udp",
         ]));
         commands.push(fixed_ufw(&[
-            "--force",
             "delete",
             "allow",
             "in",
@@ -1278,6 +1275,26 @@ mod tests {
                 .count(),
             3
         );
+        assert_eq!(
+            cleanup[4].1,
+            vec![
+                "route",
+                "delete",
+                "allow",
+                "in",
+                "on",
+                P5_HOST_INTERFACE,
+                "out",
+                "on",
+                "ens160",
+                "from",
+                "10.254.28.0/29",
+                "comment",
+                "onebrain-p5-v2-route",
+            ]
+        );
+        assert_eq!(cleanup[5].1[0..2], ["delete", "allow"]);
+        assert_eq!(cleanup[6].1[0..2], ["delete", "allow"]);
         assert_eq!(
             cleanup.last().unwrap().1,
             vec!["netns", "delete", P5_NAMESPACE]
