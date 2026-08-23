@@ -134,6 +134,32 @@ class P5MultiHostV2Tests(unittest.TestCase):
             gpg_home=args.base_gpg_home,
         )
 
+    def test_inventory_known_hosts_uses_plain_default_port_and_bracketed_nondefault_port(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inventory = {
+                "hosts": [
+                    {
+                        "host_id": host_id,
+                        "runner_id": f"runner-{suffix}",
+                        "ssh_destination": f"controller@192.0.2.{index}",
+                        "ssh_port": port,
+                        "ssh_host_public_key": "ssh-ed25519 AAAA",
+                        "receipt_public_key": "11" * 32,
+                    }
+                    for index, (host_id, suffix, port) in enumerate(
+                        (("host-a", "a", 10041), ("host-b", "b", 22), ("host-c", "c", 22)),
+                        start=1,
+                    )
+                ],
+            }
+
+            _, _, known_hosts = runner._inventory_host_configs(inventory, root)
+
+            self.assertEqual(known_hosts["host-a"].read_text(), "[192.0.2.1]:10041 ssh-ed25519 AAAA\n")
+            self.assertEqual(known_hosts["host-b"].read_text(), "192.0.2.2 ssh-ed25519 AAAA\n")
+            self.assertEqual(known_hosts["host-c"].read_text(), "192.0.2.3 ssh-ed25519 AAAA\n")
+
     def test_bootstrap_frame_is_inventory_bound_signed_and_effect_free(self) -> None:
         controller = Ed25519PrivateKey.generate()
         public = controller.public_key().public_bytes_raw().hex()

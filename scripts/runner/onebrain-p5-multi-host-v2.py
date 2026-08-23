@@ -642,15 +642,17 @@ def _inventory_host_configs(
             raise P5ExecutionError(f"{host_id} receipt key is invalid") from error
         if len(receipt_key) != 32 or not host_public_key.startswith("ssh-ed25519 "):
             raise P5ExecutionError(f"{host_id} lacks signed service/host public keys")
+        ssh_port = int(row.get("ssh_port", 22))
+        known_host = ssh_host if ssh_port == 22 else f"[{ssh_host}]:{ssh_port}"
         known_path = known_root / host_id
-        _write_create_new(known_path, f"[{ssh_host}]:{int(row.get('ssh_port', 22))} {host_public_key}\n".encode())
+        _write_create_new(known_path, f"{known_host} {host_public_key}\n".encode())
         known_hosts[host_id] = known_path
         receipt_keys[host_id] = receipt_key
         hosts.append(HostConfigV2(
             host_id=host_id,
             runner_id=str(row.get("runner_id", row.get("runner_identity", ""))),
             ssh_host=ssh_host,
-            ssh_port=int(row.get("ssh_port", 22)),
+            ssh_port=ssh_port,
             runner_ssh_user=str(row.get("runner_ssh_user", default_user)),
             admin_ssh_user=str(row.get("admin_ssh_user", default_user)),
             ssh_host_public_key=host_public_key,
