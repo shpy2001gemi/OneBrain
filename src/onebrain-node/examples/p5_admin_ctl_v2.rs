@@ -9,6 +9,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(unix)]
+use std::{ffi::CString, os::unix::ffi::OsStrExt};
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use onebrain_node::vnext_p5_disk_pressure::P5DiskPressureBackend;
@@ -27,6 +29,8 @@ use serde::{Deserialize, Serialize};
 
 const MAX_ADMIN_FRAME: u64 = 4_194_304;
 const SESSION_CONFIG: &str = "/run/onebrain/p5-v2/current-session.json";
+#[cfg(unix)]
+const SIGNER_GROUP: &str = "onebrain-p5-sign-client";
 const ADMIN_CURSOR: &str = "/var/lib/onebrain/p5-v2/admin-command.cursor";
 const CLEANUP_RECEIPT_DIGEST: &str = "/var/lib/onebrain/p5-v2/cleanup-receipt.digest";
 const ADMIN_DOMAIN: &[u8] = b"onebrain/p5/signed-admin-frame/v2\0";
@@ -599,10 +603,32 @@ fn base_policy_fingerprint(
 
 fn install_session_config(bytes: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
     let path = Path::new(SESSION_CONFIG);
+    #[cfg(unix)]
+    let signer_gid = Some(lookup_group_gid(SIGNER_GROUP)?);
+    #[cfg(not(unix))]
+    let signer_gid = None;
+    install_session_config_at(path, bytes, signer_gid)
+}
+
+fn install_session_config_at(
+    path: &Path,
+    bytes: &[u8],
+    signer_gid: Option<u32>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let parent = path.parent().ok_or("session config has no parent")?;
     fs::create_dir_all(parent)?;
-    set_mode(parent, 0o700)?;
+    // The admin boundary owns and writes the session, while the two dedicated
+    // unprivileged signer services must read it to bind their durable cursors.
+    // Grant only the closed signer-client group traversal/read access.
+    if let Some(gid) = signer_gid {
+        set_group_id(parent, gid)?;
+    }
+    set_mode(parent, 0o750)?;
     write_private_create_new(path, bytes)?;
+    if let Some(gid) = signer_gid {
+        set_group_id(path, gid)?;
+    }
+    set_mode(path, 0o640)?;
     fs::File::open(parent)?.sync_all()?;
     Ok(())
 }
@@ -628,6 +654,31 @@ fn set_mode(_path: &Path, mode: u32) -> Result<(), Box<dyn std::error::Error>> {
         fs::set_permissions(_path, fs::Permissions::from_mode(mode))?;
     }
     let _ = mode;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn lookup_group_gid(group: &str) -> Result<u32, Box<dyn std::error::Error>> {
+    let group = CString::new(group)?;
+    let entry = unsafe { libc::getgrnam(group.as_ptr()) };
+    if entry.is_null() {
+        return Err("P5 signer client group is unavailable".into());
+    }
+    Ok(unsafe { (*entry).gr_gid })
+}
+
+#[cfg(unix)]
+fn set_group_id(path: &Path, gid: u32) -> Result<(), Box<dyn std::error::Error>> {
+    let encoded_path = CString::new(path.as_os_str().as_bytes())?;
+    let result = unsafe { libc::chown(encoded_path.as_ptr(), !0, gid) };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_group_id(_path: &Path, _gid: u32) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
@@ -1083,4 +1134,27 @@ fn decode_hex<const N: usize>(value: &str) -> Result<[u8; N], Box<dyn std::error
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    #[test]
+    fn session_config_is_readable_only_by_root_and_the_signer_group() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("p5-v2/current-session.json");
+        let gid = unsafe { libc::getegid() };
+
+        install_session_config_at(&path, br#"{"format":2}"#, Some(gid)).unwrap();
+
+        let parent = path.parent().unwrap().metadata().unwrap();
+        let session = path.metadata().unwrap();
+        assert_eq!(parent.permissions().mode() & 0o777, 0o750);
+        assert_eq!(session.permissions().mode() & 0o777, 0o640);
+        assert_eq!(parent.gid(), gid);
+        assert_eq!(session.gid(), gid);
+        assert_eq!(fs::read(path).unwrap(), br#"{"format":2}"#);
+    }
 }
