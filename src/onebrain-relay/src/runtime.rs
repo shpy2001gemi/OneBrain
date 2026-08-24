@@ -307,19 +307,10 @@ async fn run_udp_listener(
                 let service = service.clone();
                 connections.spawn(async move { service.serve_quic_connection(connection).await });
             }
-            Err(RelayDataPlaneError::Expired) => {}
-            Err(error) => return Err(error),
+            Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
+            Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
         }
-        while let Some(result) = connections.try_join_next() {
-            if let Ok(Err(error)) = result {
-                if !matches!(
-                    error,
-                    RelayDataPlaneError::Closed | RelayDataPlaneError::Expired
-                ) {
-                    return Err(error);
-                }
-            }
-        }
+        drain_completed_connections(&mut connections)?;
     }
 }
 
@@ -334,20 +325,34 @@ async fn run_tcp_listener(
                 let service = service.clone();
                 connections.spawn(async move { service.serve_tcp_connection(stream, peer).await });
             }
-            Err(RelayDataPlaneError::Expired) => {}
-            Err(error) => return Err(error),
+            Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
+            Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
         }
-        while let Some(result) = connections.try_join_next() {
-            if let Ok(Err(error)) = result {
-                if !matches!(
-                    error,
-                    RelayDataPlaneError::Closed | RelayDataPlaneError::Expired
-                ) {
-                    return Err(error);
-                }
-            }
+        drain_completed_connections(&mut connections)?;
+    }
+}
+
+fn accept_error_is_listener_fatal(error: &RelayDataPlaneError) -> bool {
+    matches!(error, RelayDataPlaneError::Closed)
+}
+
+fn connection_error_is_listener_fatal(_error: &RelayDataPlaneError) -> bool {
+    // A connected peer must not be able to terminate the shared relay listener.
+    false
+}
+
+fn drain_completed_connections(
+    connections: &mut tokio::task::JoinSet<Result<(), RelayDataPlaneError>>,
+) -> Result<(), RelayDataPlaneError> {
+    while let Some(result) = connections.try_join_next() {
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) if connection_error_is_listener_fatal(&error) => return Err(error),
+            Ok(Err(error)) => eprintln!("OBP_RELAY_CONNECTION_REJECTED: {error}"),
+            Err(error) => eprintln!("OBP_RELAY_CONNECTION_TASK_FAILED: {error}"),
         }
     }
+    Ok(())
 }
 
 fn descriptor_from_config(
@@ -590,6 +595,58 @@ impl std::error::Error for RuntimeError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn peer_failures_are_isolated_from_shared_listeners() {
+        let peer_errors = [
+            RelayDataPlaneError::InvalidEnvelope,
+            RelayDataPlaneError::InvalidAssociation,
+            RelayDataPlaneError::DuplicateAssociation,
+            RelayDataPlaneError::UnknownAssociation,
+            RelayDataPlaneError::ConnectionMismatch,
+            RelayDataPlaneError::DuplicateFragment,
+            RelayDataPlaneError::ConflictingFragment,
+            RelayDataPlaneError::TooManyFragments,
+            RelayDataPlaneError::Truncated,
+            RelayDataPlaneError::Oversize,
+            RelayDataPlaneError::Capacity,
+            RelayDataPlaneError::Expired,
+            RelayDataPlaneError::Closed,
+            RelayDataPlaneError::IdentityMismatch,
+            RelayDataPlaneError::NoDatagramSupport,
+        ];
+
+        for error in peer_errors {
+            assert!(!connection_error_is_listener_fatal(&error));
+        }
+    }
+
+    #[tokio::test]
+    async fn completed_peer_failure_does_not_escape_connection_drain() {
+        let mut connections = tokio::task::JoinSet::new();
+        connections.spawn(async { Err(RelayDataPlaneError::Truncated) });
+
+        for _ in 0..100 {
+            drain_completed_connections(&mut connections).unwrap();
+            if connections.is_empty() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+
+        panic!("peer connection task did not complete");
+    }
+
+    #[test]
+    fn only_closed_acceptor_is_a_fatal_listener_error() {
+        assert!(accept_error_is_listener_fatal(&RelayDataPlaneError::Closed));
+        assert!(!accept_error_is_listener_fatal(
+            &RelayDataPlaneError::Expired
+        ));
+        assert!(!accept_error_is_listener_fatal(
+            &RelayDataPlaneError::IdentityMismatch
+        ));
+    }
 
     #[test]
     fn public_operations_config_normalizes_to_the_closed_runtime_shape() {
