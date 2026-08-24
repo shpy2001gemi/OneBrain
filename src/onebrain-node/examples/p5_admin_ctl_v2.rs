@@ -619,11 +619,13 @@ fn install_session_config_at(
     fs::create_dir_all(parent)?;
     // The admin boundary owns and writes the session, while the two dedicated
     // unprivileged signer services must read it to bind their durable cursors.
-    // Grant only the closed signer-client group traversal/read access.
+    // The SSH control bridge also needs traverse-only access to reach the
+    // group-protected agent socket in this directory.  Keep the session file
+    // unreadable outside the closed signer-client group.
     if let Some(gid) = signer_gid {
         set_group_id(parent, gid)?;
     }
-    set_mode(parent, 0o750)?;
+    set_mode(parent, 0o751)?;
     write_private_create_new(path, bytes)?;
     if let Some(gid) = signer_gid {
         set_group_id(path, gid)?;
@@ -1142,7 +1144,7 @@ mod tests {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
     #[test]
-    fn session_config_is_readable_only_by_root_and_the_signer_group() {
+    fn session_config_allows_socket_traversal_without_exposing_session_bytes() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("p5-v2/current-session.json");
         let gid = unsafe { libc::getegid() };
@@ -1151,7 +1153,7 @@ mod tests {
 
         let parent = path.parent().unwrap().metadata().unwrap();
         let session = path.metadata().unwrap();
-        assert_eq!(parent.permissions().mode() & 0o777, 0o750);
+        assert_eq!(parent.permissions().mode() & 0o777, 0o751);
         assert_eq!(session.permissions().mode() & 0o777, 0o640);
         assert_eq!(parent.gid(), gid);
         assert_eq!(session.gid(), gid);
