@@ -635,7 +635,7 @@ class P5MultiHostV2Tests(unittest.TestCase):
         credentials = runner.ControllerCredentialsV2(Path("app.key"), Path("ssh.key"), {"host-a": Path("known-hosts")})
         argv = runner.build_ssh_argv(host, credentials, admin=False, ssh_binary="ssh")
         joined = " ".join(argv)
-        for token in ("-F /dev/null", "GlobalKnownHostsFile=none", "UpdateHostKeys=no", "VerifyHostKeyDNS=no", "PreferredAuthentications=publickey", "PasswordAuthentication=no", "KbdInteractiveAuthentication=no", "GSSAPIAuthentication=no", "HostbasedAuthentication=no", "IdentityAgent=none", "CertificateFile=none", "IdentitiesOnly=yes"):
+        for token in ("-F /dev/null", "GlobalKnownHostsFile=none", "UpdateHostKeys=no", "VerifyHostKeyDNS=no", "PreferredAuthentications=publickey", "PasswordAuthentication=no", "KbdInteractiveAuthentication=no", "GSSAPIAuthentication=no", "HostbasedAuthentication=no", "IdentityAgent=none", "CertificateFile=none", "IdentitiesOnly=yes", "TCPKeepAlive=yes", "ServerAliveInterval=2", "ServerAliveCountMax=15"):
             self.assertIn(token, joined)
         self.assertEqual(argv[-1], "p5-runner@example.test")
         self.assertNotIn("app.key", argv)

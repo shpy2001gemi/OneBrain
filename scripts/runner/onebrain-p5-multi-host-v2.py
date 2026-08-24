@@ -123,7 +123,8 @@ SSH_OPTIONS = (
     "IdentitiesOnly=yes", "PreferredAuthentications=publickey",
     "PasswordAuthentication=no", "KbdInteractiveAuthentication=no",
     "GSSAPIAuthentication=no", "HostbasedAuthentication=no", "IdentityAgent=none",
-    "CertificateFile=none",
+    "CertificateFile=none", "TCPKeepAlive=yes", "ServerAliveInterval=2",
+    "ServerAliveCountMax=15",
 )
 
 
