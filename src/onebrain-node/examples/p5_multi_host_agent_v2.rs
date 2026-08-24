@@ -7,7 +7,7 @@ use std::fs;
 use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
-#[cfg(unix)]
+#[cfg(any(unix, test))]
 use std::path::PathBuf;
 #[cfg(unix)]
 use std::sync::Arc;
@@ -78,14 +78,36 @@ use serde::{Deserialize, Serialize};
 const SESSION_CONFIG: &str = "/run/onebrain/p5-v2/current-session.json";
 const IDENTITY_SOCKET: &str = "/run/onebrain/p5-v2/identity-signer.sock";
 const RECEIPT_SOCKET: &str = "/run/onebrain/p5-v2/receipt-signer.sock";
-#[cfg(unix)]
-const COMMAND_CURSOR: &str = "/var/lib/onebrain/p5-v2/agent-command.cursor";
+#[cfg(any(unix, test))]
+const AGENT_STATE_ROOT: &str = "/var/lib/onebrain/p5-v2-agent";
+#[cfg(any(unix, test))]
+const COMMAND_CURSOR: &str = "/var/lib/onebrain/p5-v2-agent/agent-command.cursor";
 #[cfg(unix)]
 const MAX_FRAME: usize = 65_536;
 #[cfg(unix)]
 const CONTROL_DOMAIN: &[u8] = b"onebrain/p5/signed-control-frame/v2\0";
 #[cfg(unix)]
 const ADMIN_RECEIPT_DOMAIN: &[u8] = b"onebrain/p5/admin-operation-receipt/v2";
+
+#[cfg(any(unix, test))]
+fn identity_client_cursor(host_id: &str) -> PathBuf {
+    PathBuf::from(AGENT_STATE_ROOT).join(format!("{host_id}-identity-client.cursor"))
+}
+
+#[cfg(any(unix, test))]
+fn advertisement_cursor(host_id: &str) -> PathBuf {
+    PathBuf::from(AGENT_STATE_ROOT).join(format!("{host_id}-advertisement.cursor"))
+}
+
+#[cfg(any(unix, test))]
+fn runner_data_root(host_id: &str) -> PathBuf {
+    PathBuf::from(AGENT_STATE_ROOT).join(host_id)
+}
+
+#[cfg(any(unix, test))]
+fn relay_reservation_cursor(relay_key: &str) -> PathBuf {
+    PathBuf::from(AGENT_STATE_ROOT).join(format!("relay-reservation-{relay_key}.cursor"))
+}
 
 #[cfg(unix)]
 #[derive(Deserialize, Serialize)]
@@ -159,13 +181,7 @@ impl AgentRuntimeState {
         config: &AgentSessionConfig,
         binding: [u8; 32],
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let cursor = DurableSequenceCursor::open(
-            format!(
-                "/var/lib/onebrain/p5-v2/{}-identity-client.cursor",
-                config.host_id
-            ),
-            binding,
-        )?;
+        let cursor = DurableSequenceCursor::open(identity_client_cursor(&config.host_id), binding)?;
         let initial_sequence = cursor.highest()?;
         let provider = UnixSocketP5SigningProvider::new(
             IDENTITY_SOCKET,
@@ -238,14 +254,9 @@ impl AgentRuntimeState {
             1,
         )
         .map_err(|error| format!("relay selector init failed: {error:?}"))?;
-        let advertisement_sequence = DurableSequenceCursor::open(
-            format!(
-                "/var/lib/onebrain/p5-v2/{}-advertisement.cursor",
-                config.host_id
-            ),
-            binding,
-        )?;
-        let runner_data_root = PathBuf::from(format!("/var/lib/onebrain/p5-v2/{}", config.host_id));
+        let advertisement_sequence =
+            DurableSequenceCursor::open(advertisement_cursor(&config.host_id), binding)?;
+        let runner_data_root = runner_data_root(&config.host_id);
         let network_data_root = runner_data_root.join("network");
         let rollout = VNextRuntimeRollout::open(
             &runner_data_root.join("rollout"),
@@ -1299,7 +1310,7 @@ fn ensure_reservations(
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
                 entry.insert(DurableSequenceCursor::open(
-                    format!("/var/lib/onebrain/p5-v2/relay-reservation-{relay_key}.cursor"),
+                    relay_reservation_cursor(&relay_key),
                     state.cursor_binding,
                 )?)
             }
@@ -1698,6 +1709,30 @@ fn print_compiled_binding() -> Result<(), Box<dyn std::error::Error>> {
     });
     println!("{}", serde_json::to_string(&value)?);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn durable_agent_state_stays_inside_the_agent_owned_root() {
+        let paths = [
+            PathBuf::from(COMMAND_CURSOR),
+            identity_client_cursor("host-a"),
+            advertisement_cursor("host-a"),
+            runner_data_root("host-a"),
+            relay_reservation_cursor(&"ab".repeat(32)),
+        ];
+        let owned_root = std::path::Path::new(AGENT_STATE_ROOT);
+        for path in paths {
+            assert!(
+                path.starts_with(owned_root),
+                "escaped agent state root: {path:?}"
+            );
+            assert!(!path.starts_with("/var/lib/onebrain/p5-v2/"));
+        }
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {
