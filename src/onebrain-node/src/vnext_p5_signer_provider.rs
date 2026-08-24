@@ -44,15 +44,22 @@ impl P5SignerDomainV2 {
             Self::ChildReceipt => CHILD_RECEIPT_DOMAIN_V2.to_vec(),
             Self::FaultTarget => FAULT_TARGET_DOMAIN_V2.to_vec(),
             Self::AdminOperation => ADMIN_OPERATION_DOMAIN_V2.to_vec(),
-            Self::SessionIdentity => SESSION_IDENTITY_DOMAIN_V2.to_vec(),
+            // `SessionIdentitySigner` receives an already-domain-separated
+            // protocol preimage.  Adding the P5 service-routing domain here
+            // would produce a signature that the session verifier can never
+            // accept.  The closed signer tag and its dedicated durable cursor
+            // still isolate this service operation from every other domain.
+            Self::SessionIdentity => Vec::new(),
             Self::ReachabilityIdentity => {
                 let domain = reachability_domain.ok_or(P5SignerError::DomainRejected)?;
                 if domain.is_empty() || domain.len() > 128 {
                     return Err(P5SignerError::DomainRejected);
                 }
-                let mut out = b"onebrain/p5/reachability-identity/v2\0".to_vec();
-                out.extend_from_slice(domain);
-                out
+                // Reachability verification is defined over exactly
+                // `protocol_domain || canonical_message`.  The dynamic domain
+                // is carried separately across the signer socket so it cannot
+                // be substituted by message bytes.
+                domain.to_vec()
             }
         })
     }
@@ -735,5 +742,53 @@ mod tests {
             [0xB2; 64]
         );
         server.join().unwrap();
+    }
+
+    #[test]
+    fn external_identity_signer_matches_session_and_reachability_verifiers() {
+        use ed25519_dalek::Signature;
+
+        let temp = tempfile::tempdir().unwrap();
+        let binding = [0xC3; 32];
+        let key = SigningKey::from_bytes(&[0xD4; 32]);
+        let public = key.verifying_key();
+        let mut cursors = BTreeMap::new();
+        cursors.insert(
+            P5SignerDomainV2::SessionIdentity,
+            DurableSequenceCursor::open(temp.path().join("session.cursor"), binding).unwrap(),
+        );
+        cursors.insert(
+            P5SignerDomainV2::ReachabilityIdentity,
+            DurableSequenceCursor::open(temp.path().join("reachability.cursor"), binding).unwrap(),
+        );
+        let service = Arc::new(InProcessP5SignerService::service_side_with_domain_cursors(
+            key,
+            cursors,
+            vec![
+                P5SignerDomainV2::SessionIdentity,
+                P5SignerDomainV2::ReachabilityIdentity,
+            ],
+        ));
+        let signer = ExternalP5Signer::new(service, 0, Duration::from_secs(1));
+
+        let session_preimage = b"onebrain:test:session-preimage:1\0canonical";
+        let session_signature = signer.sign_session_message(session_preimage).unwrap();
+        public
+            .verify_strict(session_preimage, &Signature::from_bytes(&session_signature))
+            .unwrap();
+
+        let reachability_domain = b"onebrain/test/reachability/v1\0";
+        let reachability_message = b"canonical-reachability-message";
+        let reachability_signature = signer
+            .sign_reachability_message(reachability_domain, reachability_message)
+            .unwrap();
+        let mut reachability_preimage = reachability_domain.to_vec();
+        reachability_preimage.extend_from_slice(reachability_message);
+        public
+            .verify_strict(
+                &reachability_preimage,
+                &Signature::from_bytes(&reachability_signature),
+            )
+            .unwrap();
     }
 }
