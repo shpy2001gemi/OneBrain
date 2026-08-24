@@ -761,7 +761,9 @@ impl RelayReservationManager {
     }
 
     pub async fn active_count(&self) -> usize {
-        self.active.read().await.len()
+        // Keep the reservation postcondition aligned with publication: a
+        // cached grant whose outer carrier has closed is not a live route.
+        self.active_reservations().await.len()
     }
 
     pub async fn active_reservations(&self) -> Vec<ValidatedRelayReservation> {

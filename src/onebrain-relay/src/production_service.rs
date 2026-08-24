@@ -757,7 +757,13 @@ async fn read_wire_loop<R>(
     R: AsyncRead + Unpin,
 {
     loop {
-        let frame = read_wire(&mut stream).await;
+        // An authenticated outer carrier is intentionally long-lived.  The
+        // regular `read_wire` deadline is appropriate while authenticating a
+        // new peer, but applying it while waiting for the next control frame
+        // tears down healthy reservations whenever the carrier is idle for
+        // five seconds.  Wait indefinitely for a new frame prefix and retain
+        // the bounded deadline only after a peer has announced a payload.
+        let frame = read_persistent_wire(&mut stream).await;
         let stop = frame.is_err();
         if sender.send(frame).await.is_err() || stop {
             break;
@@ -765,9 +771,61 @@ async fn read_wire_loop<R>(
     }
 }
 
+async fn read_persistent_wire<R>(stream: &mut R) -> Result<RelayWireFrameV1, RelayDataPlaneError>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut prefix = [0u8; 4];
+    stream
+        .read_exact(&mut prefix)
+        .await
+        .map_err(|_| RelayDataPlaneError::Closed)?;
+    let length = u32::from_be_bytes(prefix) as usize;
+    if length == 0 || length > MAX_RELAY_WIRE_PAYLOAD_BYTES + 26 {
+        return Err(RelayDataPlaneError::Oversize);
+    }
+    let mut bytes = vec![0; length];
+    timeout(IO_DEADLINE, stream.read_exact(&mut bytes))
+        .await
+        .map_err(|_| RelayDataPlaneError::Expired)?
+        .map_err(|_| RelayDataPlaneError::Closed)?;
+    RelayWireFrameV1::decode(&bytes).map_err(|_| RelayDataPlaneError::InvalidEnvelope)
+}
+
 fn unix_now() -> Result<u64, RelayDataPlaneError> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|value| value.as_secs())
         .map_err(|_| RelayDataPlaneError::Expired)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn authenticated_control_carrier_survives_idle_read_deadline() {
+        let (mut client, mut server) = tokio::io::duplex(4096);
+        let reader = tokio::spawn(async move { read_persistent_wire(&mut server).await });
+
+        tokio::time::sleep(IO_DEADLINE + Duration::from_millis(100)).await;
+        assert!(
+            !reader.is_finished(),
+            "an idle authenticated carrier must remain available for later commands"
+        );
+
+        let frame =
+            RelayWireFrameV1::new(RelayWireKindV1::Control, [7; 16], vec![1, 2, 3]).unwrap();
+        let bytes = frame.encode();
+        client
+            .write_all(&(bytes.len() as u32).to_be_bytes())
+            .await
+            .unwrap();
+        client.write_all(&bytes).await.unwrap();
+
+        let received = reader.await.unwrap().unwrap();
+        assert_eq!(received.kind(), RelayWireKindV1::Control);
+        assert_eq!(received.request_id(), [7; 16]);
+        assert_eq!(received.payload(), frame.payload());
+    }
 }
