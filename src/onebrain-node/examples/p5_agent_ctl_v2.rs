@@ -7,6 +7,13 @@ use std::io::{Read, Write};
 const SOCKET: &str = "/run/onebrain/p5-v2/agent.sock";
 #[cfg(unix)]
 const MAX_FRAME: usize = 65_536;
+#[cfg(unix)]
+const FRAME_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+// Reservation admission can legitimately use a shared 20-second deadline for
+// two or three relays.  The local SSH bridge must outlive that bounded command
+// without making an unbounded Unix-socket read possible.
+#[cfg(unix)]
+const RESPONSE_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 fn main() {
     if std::env::args().len() != 1 {
@@ -41,8 +48,8 @@ fn bridge() -> Result<(), Box<dyn std::error::Error>> {
             break;
         };
         let mut stream = UnixStream::connect(SOCKET)?;
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
-        stream.set_write_timeout(Some(std::time::Duration::from_secs(5)))?;
+        stream.set_read_timeout(Some(RESPONSE_READ_TIMEOUT))?;
+        stream.set_write_timeout(Some(FRAME_WRITE_TIMEOUT))?;
         stream.write_all(&(frame.len() as u32).to_be_bytes())?;
         stream.write_all(&frame)?;
         let response = read_frame(&mut stream)?.ok_or("agent closed before response")?;
@@ -73,4 +80,17 @@ fn read_frame(input: &mut impl Read) -> Result<Option<Vec<u8>>, Box<dyn std::err
     let mut bytes = vec![0; length];
     input.read_exact(&mut bytes)?;
     Ok(Some(bytes))
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::{FRAME_WRITE_TIMEOUT, RESPONSE_READ_TIMEOUT};
+    use std::time::Duration;
+
+    #[test]
+    fn response_budget_covers_the_bounded_reservation_window() {
+        assert_eq!(FRAME_WRITE_TIMEOUT, Duration::from_secs(5));
+        assert!(RESPONSE_READ_TIMEOUT >= Duration::from_secs(20));
+        assert!(RESPONSE_READ_TIMEOUT <= Duration::from_secs(30));
+    }
 }

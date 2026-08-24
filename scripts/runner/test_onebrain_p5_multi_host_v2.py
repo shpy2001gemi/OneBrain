@@ -680,6 +680,19 @@ class P5MultiHostV2Tests(unittest.TestCase):
         for mode in expected: self.assertIn(f'add_parser("{mode}")', source)
         self.assertNotIn('add_parser("derive-qualification")', source)
 
+    def test_agent_bridge_response_budget_covers_reservation_window(self) -> None:
+        source = (
+            MODULE_PATH.parents[2]
+            / "src/onebrain-node/examples/p5_agent_ctl_v2.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "RESPONSE_READ_TIMEOUT: std::time::Duration = "
+            "std::time::Duration::from_secs(30)",
+            source,
+        )
+        self.assertIn("stream.set_read_timeout(Some(RESPONSE_READ_TIMEOUT))", source)
+        self.assertIn("stream.set_write_timeout(Some(FRAME_WRITE_TIMEOUT))", source)
+
     def test_raw_archive_hpke_is_randomized_authenticated_and_round_trips(self) -> None:
         recipient = X25519PrivateKey.generate()
         private = recipient.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption())
