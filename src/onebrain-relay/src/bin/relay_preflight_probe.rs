@@ -30,6 +30,8 @@ struct ProbeRequestV1 {
 #[derive(Serialize)]
 struct ProbeReceiptV2 {
     descriptor_blake3: String,
+    descriptor_expires_at: u64,
+    descriptor_issued_at: u64,
     format: u64,
     probes: Vec<EndpointProbeV2>,
     relay_descriptor_hex: String,
@@ -137,8 +139,12 @@ async fn probe(
         proofs.push(proof);
     }
     let validated = admission.complete_descriptor_admission(pending, &proofs, unix_now()?)?;
+    let descriptor_issued_at = validated.canonical().issued_at;
+    let descriptor_expires_at = validated.canonical().expires_at;
     Ok(ProbeReceiptV2 {
         descriptor_blake3: blake3::hash(&descriptor).to_hex().to_string(),
+        descriptor_expires_at,
+        descriptor_issued_at,
         format: 2,
         probes: observations,
         relay_descriptor_hex: encode_hex(&descriptor),

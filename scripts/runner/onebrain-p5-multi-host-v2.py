@@ -671,6 +671,7 @@ def _inventory_relay_descriptors(inventory: Mapping[str, object]) -> tuple[str, 
     if not isinstance(probes, list) or not 4 <= len(probes) <= 24:
         raise P5ExecutionError("inventory must carry bounded cross-host relay probe receipts")
     descriptors: dict[str, set[str]] = {}
+    validity: dict[str, tuple[int, int]] = {}
     for row in probes:
         value = row.get("relay_descriptor_hex") if isinstance(row, dict) else None
         if (
@@ -688,6 +689,8 @@ def _inventory_relay_descriptors(inventory: Mapping[str, object]) -> tuple[str, 
         source_host = row.get("source_host_id")
         relay_host = row.get("relay_host_id")
         endpoint_probes = row.get("probes")
+        issued_at = row.get("descriptor_issued_at")
+        expires_at = row.get("descriptor_expires_at")
         if (
             source_host not in REQUIRED_HOSTS
             or relay_host not in REQUIRED_HOSTS
@@ -697,10 +700,49 @@ def _inventory_relay_descriptors(inventory: Mapping[str, object]) -> tuple[str, 
             or any(not isinstance(probe, dict) or probe.get("success") is not True for probe in endpoint_probes)
         ):
             raise P5ExecutionError("relay probe is not a successful distinct-host transcript")
+        if (
+            not isinstance(issued_at, int)
+            or isinstance(issued_at, bool)
+            or not isinstance(expires_at, int)
+            or isinstance(expires_at, bool)
+            or issued_at < 0
+            or expires_at <= issued_at
+            or expires_at - issued_at > 600
+        ):
+            raise P5ExecutionError("relay probe lacks bounded descriptor validity metadata")
+        descriptor_validity = (issued_at, expires_at)
+        if value in validity and validity[value] != descriptor_validity:
+            raise P5ExecutionError("relay descriptor validity metadata disagrees across probe receipts")
+        validity[value] = descriptor_validity
         descriptors.setdefault(value, set()).add(str(source_host))
     if not 2 <= len(descriptors) <= 3 or any(len(sources) < 2 for sources in descriptors.values()):
         raise P5ExecutionError("each relay descriptor requires two distinct remote probe hosts")
     return tuple(sorted(descriptors))
+
+
+def _require_relay_descriptor_freshness(
+    inventory: Mapping[str, object],
+    now: int,
+    minimum_remaining_seconds: int = 180,
+) -> None:
+    if now < 0 or minimum_remaining_seconds < 1:
+        raise P5ExecutionError("relay descriptor freshness boundary is invalid")
+    descriptors = _inventory_relay_descriptors(inventory)
+    validity: dict[str, tuple[int, int]] = {}
+    for row in inventory["public_probe_sets"]:
+        descriptor = str(row["relay_descriptor_hex"])
+        validity[descriptor] = (
+            int(row["descriptor_issued_at"]),
+            int(row["descriptor_expires_at"]),
+        )
+    for descriptor in descriptors:
+        issued_at, expires_at = validity[descriptor]
+        if issued_at > now + 30:
+            raise P5ExecutionError("relay descriptor is issued in the future")
+        if expires_at - now < minimum_remaining_seconds:
+            raise P5ExecutionError(
+                "relay descriptor freshness window is too short for a production wave"
+            )
 
 
 def _ring_neighbors(host_id: str) -> tuple[str, str]:
@@ -1438,6 +1480,7 @@ def run_production_preflight(
 ) -> None:
     inventory = _read_json(args.inventory, "P5 inventory")
     relay_descriptors = _inventory_relay_descriptors(inventory)
+    _require_relay_descriptor_freshness(inventory, int(time.time()))
     hosts, receipt_keys, known_hosts = _inventory_host_configs(inventory, args.evidence_root)
     controller = _raw_private_key(args.controller_signing_key)
     credentials = ControllerCredentialsV2(
@@ -2361,6 +2404,7 @@ def prepare_inventory(args: argparse.Namespace) -> dict[str, object]:
     if not registry_manifest.is_file(): raise P5ExecutionError("Registry candidate manifest is missing")
     inventory = {"format": 2, "qualification_tier": "production-reference", "hosts": hosts, "public_probe_sets": probes, "topology_attestation": topology, "provider_evidence": providers, "provider_evidence_status": provider_status, "controller_application_public_key": public.hex(), "controller_ssh_key_sha256": hashlib.sha256(ssh_public).hexdigest(), "bundle_manifest_blake3": blake3.blake3(bundle_manifest.read_bytes()).hexdigest(), "registry_candidate_manifest_blake3": blake3.blake3(registry_manifest.read_bytes()).hexdigest()}
     _inventory_relay_descriptors(inventory)
+    _require_relay_descriptor_freshness(inventory, int(time.time()))
     _relay_host_map(inventory)
     inventory["inventory_blake3"] = blake3.blake3(canonical_json(inventory)).hexdigest()
     return inventory

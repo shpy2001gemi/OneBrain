@@ -81,12 +81,15 @@ def _aggregate() -> dict[str, object]:
 
 def _probe_receipts() -> list[dict[str, object]]:
     rows = []
+    issued_at = int(time.time()) - 10
     for descriptor, relay, sources in (
         ("01", "host-a", ("host-b", "host-c")),
         ("02", "host-c", ("host-a", "host-b")),
     ):
         for source in sources:
             rows.append({
+                "descriptor_expires_at": issued_at + 600,
+                "descriptor_issued_at": issued_at,
                 "probes": [{"success": True}],
                 "relay_descriptor_hex": descriptor,
                 "relay_host_id": relay,
@@ -334,6 +337,27 @@ class P5MultiHostV2Tests(unittest.TestCase):
         with self.assertRaises(runner.P5ExecutionError):
             runner._inventory_relay_descriptors({"public_probe_sets": [{"relay_descriptor_hex": "AA"}, {"relay_descriptor_hex": "bb"}]})
         self.assertEqual(runner._inventory_relay_descriptors({"public_probe_sets": _probe_receipts()}), ("01", "02"))
+
+    def test_relay_descriptor_freshness_fails_before_remote_waves(self) -> None:
+        inventory = {"public_probe_sets": _probe_receipts()}
+        expires_at = int(inventory["public_probe_sets"][0]["descriptor_expires_at"])
+        runner._require_relay_descriptor_freshness(inventory, expires_at - 180, 180)
+        with self.assertRaisesRegex(runner.P5ExecutionError, "freshness window"):
+            runner._require_relay_descriptor_freshness(inventory, expires_at - 179, 180)
+
+    def test_relay_descriptor_validity_must_match_across_probe_receipts(self) -> None:
+        receipts = _probe_receipts()
+        receipts[1]["descriptor_expires_at"] = int(receipts[1]["descriptor_expires_at"]) - 1
+        with self.assertRaisesRegex(runner.P5ExecutionError, "validity metadata"):
+            runner._inventory_relay_descriptors({"public_probe_sets": receipts})
+
+    def test_relay_probe_without_descriptor_validity_is_rejected(self) -> None:
+        receipts = _probe_receipts()
+        for receipt in receipts:
+            receipt.pop("descriptor_issued_at")
+            receipt.pop("descriptor_expires_at")
+        with self.assertRaisesRegex(runner.P5ExecutionError, "bounded descriptor validity"):
+            runner._inventory_relay_descriptors({"public_probe_sets": receipts})
 
     def test_admin_response_requires_inventory_receipt_key_and_exact_signature(self) -> None:
         key = Ed25519PrivateKey.generate()
