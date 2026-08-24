@@ -1,5 +1,6 @@
 //! External P5 signer boundary and durable anti-replay cursor.
 
+use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 #[cfg(unix)]
@@ -18,7 +19,7 @@ pub const ADMIN_OPERATION_DOMAIN_V2: &[u8] = b"onebrain/p5/admin-operation-recei
 pub const SESSION_IDENTITY_DOMAIN_V2: &[u8] = b"onebrain/p5/session-identity/v2";
 pub const MAX_SIGN_REQUEST_BYTES: usize = 65_536;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum P5SignerDomainV2 {
     ChildReceipt,
     FaultTarget,
@@ -28,6 +29,16 @@ pub enum P5SignerDomainV2 {
 }
 
 impl P5SignerDomainV2 {
+    fn cursor_label(self) -> &'static str {
+        match self {
+            Self::ChildReceipt => "child-receipt",
+            Self::FaultTarget => "fault-target",
+            Self::AdminOperation => "admin-operation",
+            Self::SessionIdentity => "session-identity",
+            Self::ReachabilityIdentity => "reachability-identity",
+        }
+    }
+
     pub fn bytes(self, reachability_domain: Option<&[u8]>) -> Result<Vec<u8>, P5SignerError> {
         Ok(match self {
             Self::ChildReceipt => CHILD_RECEIPT_DOMAIN_V2.to_vec(),
@@ -162,7 +173,8 @@ pub trait P5SigningProvider: Send + Sync {
 
 pub struct InProcessP5SignerService {
     key: SigningKey,
-    cursor: DurableSequenceCursor,
+    cursor: Option<DurableSequenceCursor>,
+    domain_cursors: BTreeMap<P5SignerDomainV2, DurableSequenceCursor>,
     running: Mutex<bool>,
     allowed: Vec<P5SignerDomainV2>,
 }
@@ -177,7 +189,22 @@ impl InProcessP5SignerService {
     ) -> Self {
         Self {
             key,
-            cursor,
+            cursor: Some(cursor),
+            domain_cursors: BTreeMap::new(),
+            running: Mutex::new(true),
+            allowed,
+        }
+    }
+
+    fn service_side_with_domain_cursors(
+        key: SigningKey,
+        domain_cursors: BTreeMap<P5SignerDomainV2, DurableSequenceCursor>,
+        allowed: Vec<P5SignerDomainV2>,
+    ) -> Self {
+        Self {
+            key,
+            cursor: None,
+            domain_cursors,
             running: Mutex::new(true),
             allowed,
         }
@@ -208,8 +235,13 @@ impl P5SigningProvider for InProcessP5SignerService {
         if message.len() > MAX_SIGN_REQUEST_BYTES {
             return Err(P5SignerError::RequestTooLarge);
         }
+        let cursor = self
+            .domain_cursors
+            .get(&domain)
+            .or(self.cursor.as_ref())
+            .ok_or(P5SignerError::DomainRejected)?;
+        cursor.advance(sequence)?;
         let domain = domain.bytes(reachability_domain)?;
-        self.cursor.advance(sequence)?;
         let mut preimage = Vec::with_capacity(domain.len() + message.len());
         preimage.extend_from_slice(&domain);
         preimage.extend_from_slice(message);
@@ -474,11 +506,17 @@ pub fn run_signer_service_cli(
                 ],
             };
             let binding = *blake3::hash(&fs::read(config)?).as_bytes();
-            let cursor =
-                DurableSequenceCursor::open(key_path.with_extension("cursor-v2"), binding)?;
-            serve_signer_fd3(InProcessP5SignerService::service_side(
+            let mut domain_cursors = BTreeMap::new();
+            for domain in &allowed {
+                let extension = format!("{}.cursor-v2", domain.cursor_label());
+                domain_cursors.insert(
+                    *domain,
+                    DurableSequenceCursor::open(key_path.with_extension(extension), binding)?,
+                );
+            }
+            serve_signer_fd3(InProcessP5SignerService::service_side_with_domain_cursors(
                 signing_key,
-                cursor,
+                domain_cursors,
                 allowed,
             ))
         }
@@ -617,6 +655,43 @@ mod tests {
             Err(P5SignerError::DomainRejected)
         );
         assert_eq!(service.public_key().len(), 32);
+    }
+
+    #[test]
+    fn vnext_p5_multi_host_v2_signer_replay_is_scoped_per_domain() {
+        let temp = tempfile::tempdir().unwrap();
+        let binding = [7; 32];
+        let mut cursors = BTreeMap::new();
+        cursors.insert(
+            P5SignerDomainV2::AdminOperation,
+            DurableSequenceCursor::open(temp.path().join("admin.cursor"), binding).unwrap(),
+        );
+        cursors.insert(
+            P5SignerDomainV2::ChildReceipt,
+            DurableSequenceCursor::open(temp.path().join("child.cursor"), binding).unwrap(),
+        );
+        let service = InProcessP5SignerService::service_side_with_domain_cursors(
+            SigningKey::from_bytes(&[8; 32]),
+            cursors,
+            vec![
+                P5SignerDomainV2::AdminOperation,
+                P5SignerDomainV2::ChildReceipt,
+            ],
+        );
+
+        assert!(service
+            .sign(P5SignerDomainV2::AdminOperation, 1, b"admin", None)
+            .is_ok());
+        assert!(service
+            .sign(P5SignerDomainV2::ChildReceipt, 1, b"child", None)
+            .is_ok());
+        assert_eq!(
+            service.sign(P5SignerDomainV2::AdminOperation, 1, b"replay", None),
+            Err(P5SignerError::Replay)
+        );
+        assert!(service
+            .sign(P5SignerDomainV2::ChildReceipt, 2, b"next", None)
+            .is_ok());
     }
 
     #[cfg(unix)]
