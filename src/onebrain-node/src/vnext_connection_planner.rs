@@ -115,6 +115,7 @@ impl ProductionExpectedPeerCarrierSelector {
         deadline: Instant,
     ) -> Result<SelectedCarrier, RouteFailure> {
         let context = self.relay.as_ref().ok_or(RouteFailure::RelayUnavailable)?;
+        let mut attempts = tokio::task::JoinSet::new();
         for remote in advertisement.reservations() {
             if Instant::now() >= deadline {
                 return Err(RouteFailure::RelayUnavailable);
@@ -182,10 +183,6 @@ impl ProductionExpectedPeerCarrierSelector {
                 .signer
                 .sign_reachability_message(domain, &unsigned)
                 .map_err(|_| RouteFailure::RelayDenied)?;
-            let association = self
-                .executor
-                .associate_relay(&request, &local, remote, Arc::clone(&outer), deadline)
-                .await?;
             let public = outer.public_endpoint();
             let candidate = RelayCandidateV1 {
                 relay_node_id: relay_id,
@@ -198,26 +195,87 @@ impl ProductionExpectedPeerCarrierSelector {
                 priority: 1,
                 expires_at,
             };
-            let action =
-                ConnectionPlannerExecutor::admitted_relay_action(candidate.clone(), &association)?;
-            let admitted = AdmittedRelayExecution::from_validated_association(
-                descriptor,
-                local,
-                remote.clone(),
-                association,
-                outer,
-            )?;
-            return self
-                .executor
-                .execute(
-                    action,
-                    AdmittedExecutionInput::Relay(admitted),
-                    Vec::new(),
-                    deadline,
-                )
-                .await;
+            let executor = Arc::clone(&self.executor);
+            let remote = remote.clone();
+            attempts.spawn(async move {
+                let association = executor
+                    .associate_relay(&request, &local, &remote, Arc::clone(&outer), deadline)
+                    .await?;
+                let action = ConnectionPlannerExecutor::admitted_relay_action(
+                    candidate.clone(),
+                    &association,
+                )?;
+                let admitted = AdmittedRelayExecution::from_validated_association(
+                    descriptor,
+                    local,
+                    remote,
+                    association,
+                    outer,
+                )?;
+                executor
+                    .execute(
+                        action,
+                        AdmittedExecutionInput::Relay(admitted),
+                        Vec::new(),
+                        deadline,
+                    )
+                    .await
+            });
         }
-        Err(RouteFailure::RelayUnavailable)
+        if attempts.is_empty() {
+            return Err(RouteFailure::RelayUnavailable);
+        }
+        await_first_relay_attempt(attempts, deadline).await
+    }
+}
+
+/// Relay candidates are independently authenticated paths. A failed or closed
+/// relay must not suppress the remaining owner-admitted candidates, while
+/// identity, network-epoch, and budget failures remain fail-closed.
+fn record_relay_attempt_failure(
+    last_failure: &mut RouteFailure,
+    error: RouteFailure,
+) -> Result<(), RouteFailure> {
+    if matches!(
+        error,
+        RouteFailure::PeerIdentityMismatch
+            | RouteFailure::NetworkChanged
+            | RouteFailure::BudgetExceeded
+            | RouteFailure::PathLimited { .. }
+    ) {
+        return Err(error);
+    }
+    *last_failure = error;
+    Ok(())
+}
+
+async fn await_first_relay_attempt<T: Send + 'static>(
+    mut attempts: tokio::task::JoinSet<Result<T, RouteFailure>>,
+    deadline: Instant,
+) -> Result<T, RouteFailure> {
+    let deadline = tokio::time::Instant::from_std(deadline);
+    let mut last_failure = RouteFailure::RelayUnavailable;
+    loop {
+        match tokio::time::timeout_at(deadline, attempts.join_next()).await {
+            Ok(Some(Ok(Ok(value)))) => {
+                attempts.abort_all();
+                return Ok(value);
+            }
+            Ok(Some(Ok(Err(error)))) => {
+                if let Err(error) = record_relay_attempt_failure(&mut last_failure, error) {
+                    attempts.abort_all();
+                    return Err(error);
+                }
+            }
+            Ok(Some(Err(_))) => {
+                last_failure = RouteFailure::RelayUnavailable;
+            }
+            Ok(None) => return Err(last_failure),
+            Err(_) => {
+                attempts.abort_all();
+                return Err(last_failure);
+            }
+        }
     }
 }
 
@@ -638,4 +696,43 @@ pub enum RoutedSessionError {
     InvalidStateTransition,
     #[error("routed carrier transport failed: {0}")]
     Transport(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relay_candidate_failure_policy_retries_transport_failure_and_fails_closed_on_identity() {
+        let mut last = RouteFailure::RelayUnavailable;
+        assert_eq!(
+            record_relay_attempt_failure(&mut last, RouteFailure::RelayDenied),
+            Ok(())
+        );
+        assert_eq!(last, RouteFailure::RelayDenied);
+        assert_eq!(
+            record_relay_attempt_failure(&mut last, RouteFailure::RelayUnavailable),
+            Ok(())
+        );
+        assert_eq!(last, RouteFailure::RelayUnavailable);
+        assert_eq!(
+            record_relay_attempt_failure(&mut last, RouteFailure::PeerIdentityMismatch),
+            Err(RouteFailure::PeerIdentityMismatch)
+        );
+    }
+
+    #[tokio::test]
+    async fn outbound_relay_race_keeps_working_when_the_first_candidate_fails() {
+        let mut attempts = tokio::task::JoinSet::new();
+        attempts.spawn(async { Err::<u8, _>(RouteFailure::RelayDenied) });
+        attempts.spawn(async {
+            tokio::task::yield_now().await;
+            Ok::<u8, RouteFailure>(7)
+        });
+
+        assert_eq!(
+            await_first_relay_attempt(attempts, Instant::now() + Duration::from_secs(1)).await,
+            Ok(7)
+        );
+    }
 }
