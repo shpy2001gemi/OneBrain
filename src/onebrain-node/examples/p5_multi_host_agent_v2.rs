@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(unix)]
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-#[cfg(unix)]
+#[cfg(any(unix, test))]
 use ku_core::foundation::NodeId;
 #[cfg(unix)]
 use ku_net::transport::{QuicTransport, TransportConfig};
@@ -1157,7 +1157,7 @@ async fn accept_expected_relay(
         };
         if initiator_reservation.canonical().target_node_id != expected_peer
             || target_reservation.canonical().target_node_id
-                != ku_net::vnext_session::principal_node_id(&network.status().principal)
+                != status_principal_node_id(network.status().principal)
         {
             return Err("relay inbound reservation identity mismatch".into());
         }
@@ -1194,6 +1194,11 @@ async fn accept_expected_relay(
             .map_err(|error| format!("relay inbound OBP authentication failed: {error}"));
     }
     Err("no common live relay reservation for inbound peer".into())
+}
+
+#[cfg(any(unix, test))]
+fn status_principal_node_id(principal: [u8; 32]) -> NodeId {
+    NodeId::from_bytes(principal)
 }
 
 #[cfg(unix)]
@@ -1729,6 +1734,20 @@ mod tests {
             );
             assert!(!path.starts_with("/var/lib/onebrain/p5-v2/"));
         }
+    }
+
+    #[test]
+    fn runtime_status_principal_is_already_a_node_id() {
+        let public_key = [23; 32];
+        let expected = ku_net::vnext_session::principal_node_id(&public_key);
+        let status_principal = *expected.as_bytes();
+
+        assert_eq!(status_principal_node_id(status_principal), expected);
+        assert_ne!(
+            ku_net::vnext_session::principal_node_id(&status_principal),
+            expected,
+            "rehashing a runtime status principal changes the reservation identity"
+        );
     }
 }
 
