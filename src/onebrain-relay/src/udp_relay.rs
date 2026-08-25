@@ -345,11 +345,16 @@ impl AssociationBinding {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeliveredOpaqueDatagram {
+    association_id: [u8; 32],
     recipient_connection: [u8; 32],
     payload: Vec<u8>,
 }
 
 impl DeliveredOpaqueDatagram {
+    pub fn association_id(&self) -> [u8; 32] {
+        self.association_id
+    }
+
     pub fn recipient_connection(&self) -> [u8; 32] {
         self.recipient_connection
     }
@@ -507,6 +512,7 @@ impl RelayDataPlane {
         }
         self.completed.insert(key);
         Ok(Some(DeliveredOpaqueDatagram {
+            association_id: envelope.association_id,
             recipient_connection: recipient,
             payload,
         }))

@@ -630,12 +630,15 @@ impl RelayProductionService {
             .get(&delivered.recipient_connection())
             .cloned()
             .ok_or(RelayDataPlaneError::Closed)?;
-        let frame = RelayWireFrameV1::new(
-            RelayWireKindV1::OpaqueDatagram,
-            [1; 16],
-            delivered.payload().to_vec(),
-        )
-        .map_err(|_| RelayDataPlaneError::InvalidEnvelope)?;
+        // Preserve the association authority across the shared outer carrier.
+        // A client may have several simultaneous inner sessions over one
+        // reservation, so delivering only the opaque inner bytes would make
+        // safe client-side demultiplexing impossible.
+        let mut payload = Vec::with_capacity(32 + delivered.payload().len());
+        payload.extend_from_slice(&delivered.association_id());
+        payload.extend_from_slice(delivered.payload());
+        let frame = RelayWireFrameV1::new(RelayWireKindV1::OpaqueDatagram, [1; 16], payload)
+            .map_err(|_| RelayDataPlaneError::InvalidEnvelope)?;
         target
             .outbound
             .try_send(frame)

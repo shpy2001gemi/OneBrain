@@ -1379,7 +1379,7 @@ fn spawn_relay_socket_pump(
                     sequence = next_sequence;
                     message_id = next_message;
                 }
-                inbound = receive_outer_opaque(&outer) => {
+                inbound = receive_outer_opaque(&outer, association_id) => {
                     match inbound {
                         Ok(contents) if !contents.is_empty()
                             && contents.len() <= OPAQUE_RELAY_MAX_INNER_BYTES => {
@@ -1422,16 +1422,14 @@ async fn send_outer_opaque(
     }
 }
 
-async fn receive_outer_opaque(outer: &AuthenticatedOuterRelayConnection) -> Result<Vec<u8>, ()> {
-    match outer.transport() {
-        RelayTransportV1::QuicUdp => outer.receive_opaque_datagram().await.map_err(|_| ()),
-        RelayTransportV1::TlsTcp443 => loop {
-            let frame = outer.receive_control_frame().await.map_err(|_| ())?;
-            if frame.kind() == RelayWireKindV1::OpaqueDatagram {
-                return Ok(frame.payload().to_vec());
-            }
-        },
-    }
+async fn receive_outer_opaque(
+    outer: &AuthenticatedOuterRelayConnection,
+    association_id: [u8; 32],
+) -> Result<Vec<u8>, ()> {
+    outer
+        .receive_opaque_for(association_id)
+        .await
+        .map_err(|_| ())
 }
 
 fn encode_relay_fragments(

@@ -461,7 +461,7 @@ async fn production_udp_outer_authenticates_and_grants_a_signed_reservation() {
 }
 
 #[tokio::test]
-async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams() {
+async fn production_relay_multiplexes_two_associations_on_one_outer_connection() {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -469,6 +469,7 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
     let relay_key = SigningKey::from_bytes(&[91; 32]);
     let initiator_key = SigningKey::from_bytes(&[92; 32]);
     let target_key = SigningKey::from_bytes(&[93; 32]);
+    let third_key = SigningKey::from_bytes(&[94; 32]);
     let relay_public = *relay_key.verifying_key().as_bytes();
     let mut descriptor = RelayDescriptorV1 {
         format: 1,
@@ -547,6 +548,11 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
         let service = service.clone();
         async move { listener.serve_production_once(service).await }
     });
+    let server_c = tokio::spawn({
+        let listener = listener.clone();
+        let service = service.clone();
+        async move { listener.serve_production_once(service).await }
+    });
     let route = ValidatedRelayDialRoute::alternate_from_verified_probe(
         &validated,
         AlternateRelayProbeObservation::new(
@@ -562,7 +568,7 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
     )
     .unwrap();
     let routes = ValidatedRelayDialSet::from_admitted_descriptor(route, None).unwrap();
-    let (initiator, target) = tokio::join!(
+    let (initiator, target, third) = tokio::join!(
         connect_authenticated_outer(
             &routes,
             &initiator_key,
@@ -575,13 +581,22 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
             now,
             Instant::now() + Duration::from_secs(5)
         ),
+        connect_authenticated_outer(
+            &routes,
+            &third_key,
+            now,
+            Instant::now() + Duration::from_secs(5)
+        ),
     );
     let initiator = Arc::new(initiator.unwrap());
     let target = Arc::new(target.unwrap());
+    let third = Arc::new(third.unwrap());
     let initiator_node = principal_node_id(initiator_key.verifying_key().as_bytes());
     let target_node = principal_node_id(target_key.verifying_key().as_bytes());
+    let third_node = principal_node_id(third_key.verifying_key().as_bytes());
     let initiator_reservation = [98; 32];
     let target_reservation = [99; 32];
+    let third_reservation = [103; 32];
     let initiator_grant = reserve_for_test(
         &initiator,
         &initiator_key,
@@ -600,6 +615,15 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
         now,
     )
     .await;
+    let third_grant = reserve_for_test(
+        &third,
+        &third_key,
+        descriptor.relay_node_id,
+        third_node,
+        third_reservation,
+        now,
+    )
+    .await;
     let relay_identity = KnownPeerIdentity {
         node_id: descriptor.relay_node_id,
         public_key: relay_public,
@@ -608,6 +632,7 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
         KnownPeerIdentity::from_public_key(*initiator_key.verifying_key().as_bytes());
     let target_identity =
         KnownPeerIdentity::from_public_key(*target_key.verifying_key().as_bytes());
+    let third_identity = KnownPeerIdentity::from_public_key(*third_key.verifying_key().as_bytes());
     let mut reservation_admission =
         ReachabilityAdmission::new(Arc::new(InMemoryReachabilityReplayStore::default()));
     let initiator_reservation_admitted = reservation_admission
@@ -624,6 +649,15 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
             &encode_reachability_object(&ReachabilityObjectV1::RelayReservation(target_grant))
                 .unwrap(),
             &target_identity,
+            &relay_identity,
+            now,
+        )
+        .unwrap();
+    let third_reservation_admitted = reservation_admission
+        .admit_reservation(
+            &encode_reachability_object(&ReachabilityObjectV1::RelayReservation(third_grant))
+                .unwrap(),
+            &third_identity,
             &relay_identity,
             now,
         )
@@ -654,6 +688,8 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
         ProductionRelayAssociationClient::new(*initiator_key.verifying_key().as_bytes());
     let target_association_client =
         ProductionRelayAssociationClient::new(*target_key.verifying_key().as_bytes());
+    let third_association_client =
+        ProductionRelayAssociationClient::new(*third_key.verifying_key().as_bytes());
     let deadline = Instant::now() + Duration::from_secs(5);
     let (initiator_association, target_association) = tokio::join!(
         association_client.associate(
@@ -666,7 +702,7 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
         target_association_client.accept_inbound(
             &initiator_reservation_admitted,
             &target_reservation_admitted,
-            initiator_identity,
+            initiator_identity.clone(),
             Arc::clone(&target),
             deadline,
         ),
@@ -674,28 +710,99 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
     let initiator_association = initiator_association.unwrap();
     let target_association = target_association.unwrap();
     assert_eq!(initiator_association, target_association);
-    let association = initiator_association.canonical();
-    let fragment = OpaqueDatagramEnvelopeV1::fragment(
-        association.association_id,
+    let association_ab = initiator_association.canonical();
+
+    let mut connect_bc = RelayConnectRequestV1 {
+        format: 1,
+        initiator_node_id: target_node,
+        target_node_id: third_node,
+        initiator_reservation_id: target_reservation,
+        target_reservation_id: third_reservation,
+        nonce: [104; 32],
+        sequence: 1,
+        issued_at: now,
+        expires_at: now + 30,
+        initiator_signature: [0; 64],
+    };
+    connect_bc.initiator_signature = target_key
+        .sign(
+            &connectivity_signing_bytes(
+                &ConnectivitySignalingV1::RelayConnectRequest(connect_bc.clone()),
+                ConnectivitySignatureRoleV1::RelayConnectInitiator,
+            )
+            .unwrap(),
+        )
+        .to_bytes();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let (target_initiated_association, third_association) = tokio::join!(
+        target_association_client.associate(
+            &connect_bc,
+            &target_reservation_admitted,
+            &third_reservation_admitted,
+            Arc::clone(&target),
+            deadline,
+        ),
+        third_association_client.accept_inbound(
+            &target_reservation_admitted,
+            &third_reservation_admitted,
+            target_identity,
+            Arc::clone(&third),
+            deadline,
+        ),
+    );
+    let target_initiated_association = target_initiated_association.unwrap();
+    let third_association = third_association.unwrap();
+    assert_eq!(target_initiated_association, third_association);
+    let association_bc = target_initiated_association.canonical();
+
+    let fragment_ab = OpaqueDatagramEnvelopeV1::fragment(
+        association_ab.association_id,
         DatagramDirectionV1::InitiatorToTarget,
         1,
         1,
-        b"inner-obp-packet",
+        b"inner-obp-packet-ab",
         1200,
     )
     .unwrap()
     .remove(0)
     .encode()
     .unwrap();
-    initiator.send_opaque_datagram(fragment).await.unwrap();
+    let fragment_cb = OpaqueDatagramEnvelopeV1::fragment(
+        association_bc.association_id,
+        DatagramDirectionV1::TargetToInitiator,
+        1,
+        1,
+        b"inner-obp-packet-cb",
+        1200,
+    )
+    .unwrap()
+    .remove(0)
+    .encode()
+    .unwrap();
+    let (send_ab, send_cb) = tokio::join!(
+        initiator.send_opaque_datagram(fragment_ab),
+        third.send_opaque_datagram(fragment_cb),
+    );
+    send_ab.unwrap();
+    send_cb.unwrap();
+    let (received_ab, received_cb) = tokio::join!(
+        target.receive_opaque_for(association_ab.association_id),
+        target.receive_opaque_for(association_bc.association_id),
+    );
     assert_eq!(
-        target.receive_opaque_datagram().await.unwrap(),
-        b"inner-obp-packet"
+        received_ab.unwrap(),
+        b"inner-obp-packet-ab",
+        "shared target outer must retain the A-to-B association identity"
+    );
+    assert_eq!(
+        received_cb.unwrap(),
+        b"inner-obp-packet-cb",
+        "shared target outer must retain the C-to-B association identity"
     );
 
     let carrier = ProductionRelayCarrierDialer::standard();
     let deadline = Instant::now() + Duration::from_secs(10);
-    let (initiator_inner, target_inner) = tokio::join!(
+    let (initiator_inner, target_inner_ab, target_inner_bc, third_inner) = tokio::join!(
         carrier.dial(
             &validated,
             &initiator_association,
@@ -708,15 +815,32 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
             Arc::clone(&target),
             deadline
         ),
+        carrier.dial(
+            &validated,
+            &target_initiated_association,
+            Arc::clone(&target),
+            deadline
+        ),
+        carrier.dial(
+            &validated,
+            &target_initiated_association,
+            Arc::clone(&third),
+            deadline
+        ),
     );
     assert!(
-        initiator_inner.is_ok() && target_inner.is_ok(),
-        "inner carriers: initiator={:?} target={:?}",
+        initiator_inner.is_ok()
+            && target_inner_ab.is_ok()
+            && target_inner_bc.is_ok()
+            && third_inner.is_ok(),
+        "inner carriers: a={:?} b_ab={:?} b_bc={:?} c={:?}",
         initiator_inner.as_ref().err(),
-        target_inner.as_ref().err()
+        target_inner_ab.as_ref().err(),
+        target_inner_bc.as_ref().err(),
+        third_inner.as_ref().err(),
     );
     let initiator_inner = initiator_inner.unwrap();
-    let target_inner = target_inner.unwrap();
+    let target_inner = target_inner_ab.unwrap();
     let relay_candidate = RelayCandidateV1 {
         relay_node_id: descriptor.relay_node_id,
         reservation_id: initiator_reservation,
@@ -726,7 +850,7 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
             port: descriptor.endpoints[0].port,
         },
         priority: 100,
-        expires_at: association.expires_at,
+        expires_at: association_ab.expires_at,
     };
     let outbound = ConnectionPlannerExecutor::seal_validated_relay(
         relay_candidate.clone(),
@@ -785,8 +909,10 @@ async fn production_relay_associates_two_clients_and_forwards_opaque_datagrams()
     );
     initiator.close();
     target.close();
+    third.close();
     server_a.abort();
     server_b.abort();
+    server_c.abort();
 }
 
 async fn reserve_for_test(

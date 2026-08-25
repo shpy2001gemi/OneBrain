@@ -300,6 +300,9 @@ pub struct AuthenticatedOuterRelayConnection {
     control_transaction: AsyncMutex<()>,
     pending_control: Arc<Mutex<BTreeMap<[u8; 16], oneshot::Sender<RelayWireFrameV1>>>>,
     notifications: AsyncMutex<mpsc::Receiver<RelayWireFrameV1>>,
+    opaque_notifications: AsyncMutex<mpsc::Receiver<Vec<u8>>>,
+    opaque_receive: AsyncMutex<()>,
+    opaque_backlog: AsyncMutex<BTreeMap<[u8; 32], VecDeque<Vec<u8>>>>,
     reader_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
@@ -351,10 +354,18 @@ impl AuthenticatedOuterRelayConnection {
         let open = Arc::new(AtomicBool::new(true));
         let pending_control = Arc::new(Mutex::new(BTreeMap::new()));
         let (notification_tx, notification_rx) = mpsc::channel(64);
+        let (opaque_tx, opaque_rx) = mpsc::channel(64);
         let reader_open = open.clone();
         let reader_pending = pending_control.clone();
         let reader_task = tokio::spawn(async move {
-            run_control_reader(control_recv, reader_pending, notification_tx, reader_open).await;
+            run_control_reader(
+                control_recv,
+                reader_pending,
+                notification_tx,
+                opaque_tx,
+                reader_open,
+            )
+            .await;
         });
         Ok(Self {
             relay_node_id: route.relay_node_id(),
@@ -370,6 +381,9 @@ impl AuthenticatedOuterRelayConnection {
             control_transaction: AsyncMutex::new(()),
             pending_control,
             notifications: AsyncMutex::new(notification_rx),
+            opaque_notifications: AsyncMutex::new(opaque_rx),
+            opaque_receive: AsyncMutex::new(()),
+            opaque_backlog: AsyncMutex::new(BTreeMap::new()),
             reader_task: Mutex::new(Some(reader_task)),
         })
     }
@@ -564,13 +578,68 @@ impl AuthenticatedOuterRelayConnection {
     }
 
     pub async fn receive_opaque_datagram(&self) -> Result<Vec<u8>, OuterRelayIoError> {
+        let _receive = self.opaque_receive.lock().await;
+        let raw = self.receive_raw_opaque().await?;
+        split_delivered_opaque(raw).map(|(_, payload)| payload)
+    }
+
+    /// Receive only payloads for one relay association. One outer carrier can
+    /// serve several simultaneous routed sessions; association identity must
+    /// therefore be demultiplexed before an inner QUIC driver sees bytes.
+    pub async fn receive_opaque_for(
+        &self,
+        association_id: [u8; 32],
+    ) -> Result<Vec<u8>, OuterRelayIoError> {
+        if association_id == [0; 32] {
+            return Err(OuterRelayIoError::InvalidFrame);
+        }
+        loop {
+            if let Some(payload) = self.pop_opaque_backlog(association_id).await {
+                return Ok(payload);
+            }
+            let _receive = self.opaque_receive.lock().await;
+            if let Some(payload) = self.pop_opaque_backlog(association_id).await {
+                return Ok(payload);
+            }
+            let (observed, payload) = split_delivered_opaque(self.receive_raw_opaque().await?)?;
+            if observed == association_id {
+                return Ok(payload);
+            }
+            let mut backlog = self.opaque_backlog.lock().await;
+            let total = backlog.values().map(VecDeque::len).sum::<usize>();
+            let queue = backlog.entry(observed).or_default();
+            if total >= 256 || queue.len() >= 64 {
+                return Err(OuterRelayIoError::InvalidFrame);
+            }
+            queue.push_back(payload);
+        }
+    }
+
+    async fn pop_opaque_backlog(&self, association_id: [u8; 32]) -> Option<Vec<u8>> {
+        let mut backlog = self.opaque_backlog.lock().await;
+        let payload = backlog
+            .get_mut(&association_id)
+            .and_then(VecDeque::pop_front);
+        if backlog.get(&association_id).is_some_and(VecDeque::is_empty) {
+            backlog.remove(&association_id);
+        }
+        payload
+    }
+
+    async fn receive_raw_opaque(&self) -> Result<Vec<u8>, OuterRelayIoError> {
         match &self.inner {
             OuterRelayConnection::Quic { connection, .. } => connection
                 .read_datagram()
                 .await
                 .map(|value| value.to_vec())
                 .map_err(|_| OuterRelayIoError::Closed),
-            OuterRelayConnection::TlsTcp443 { .. } => Err(OuterRelayIoError::WrongTransport),
+            OuterRelayConnection::TlsTcp443 { .. } => self
+                .opaque_notifications
+                .lock()
+                .await
+                .recv()
+                .await
+                .ok_or(OuterRelayIoError::Closed),
         }
     }
 }
@@ -579,6 +648,7 @@ async fn run_control_reader(
     mut recv: Pin<Box<dyn tokio::io::AsyncRead + Send>>,
     pending: Arc<Mutex<BTreeMap<[u8; 16], oneshot::Sender<RelayWireFrameV1>>>>,
     notifications: mpsc::Sender<RelayWireFrameV1>,
+    opaque: mpsc::Sender<Vec<u8>>,
     open: Arc<AtomicBool>,
 ) {
     while open.load(Ordering::Acquire) {
@@ -590,6 +660,12 @@ async fn run_control_reader(
             Ok(frame) => frame,
             Err(_) => break,
         };
+        if frame.kind() == RelayWireKindV1::OpaqueDatagram {
+            if opaque.send(frame.payload().to_vec()).await.is_err() {
+                break;
+            }
+            continue;
+        }
         let waiter = pending
             .lock()
             .ok()
@@ -604,6 +680,19 @@ async fn run_control_reader(
     if let Ok(mut pending) = pending.lock() {
         pending.clear();
     }
+}
+
+fn split_delivered_opaque(bytes: Vec<u8>) -> Result<([u8; 32], Vec<u8>), OuterRelayIoError> {
+    if bytes.len() <= 32 {
+        return Err(OuterRelayIoError::InvalidFrame);
+    }
+    let association_id = bytes[..32]
+        .try_into()
+        .map_err(|_| OuterRelayIoError::InvalidFrame)?;
+    if association_id == [0; 32] {
+        return Err(OuterRelayIoError::InvalidFrame);
+    }
+    Ok((association_id, bytes[32..].to_vec()))
 }
 
 async fn write_stream_frame<W>(stream: &mut W, bytes: &[u8]) -> Result<(), OuterRelayIoError>
