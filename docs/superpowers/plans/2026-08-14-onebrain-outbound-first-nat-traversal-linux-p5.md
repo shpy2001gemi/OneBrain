@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Deliver a platform-independent, permissionless, outbound-first OneBrain reachability core that authenticates the expected NodeID across capability-admitted direct, hole-punched, and relay carriers without user NAT/port configuration or mandatory central infrastructure; then prove the first real mixed-path relay failover on the three Linux P5 reference runners.
+**Goal:** Deliver a platform-independent, permissionless, outbound-first OneBrain reachability core that authenticates the expected NodeID across capability-admitted direct, hole-punched, and relay carriers without user NAT/port configuration or mandatory central infrastructure; then prove real outbound-only relay failover on the three Linux P5 reference runners.
 
 **Architecture:** Add closed canonical reachability objects to `onebrain-protocol`, bounded verification/discovery/carrier machinery and a platform-neutral carrier capability boundary to `ku-net`, a new non-authoritative `onebrain-relay` service, and a production Reachability Manager plus route journal in `onebrain-node`. Platform adapters own sockets, lifecycle grants, DNS execution, secure-key handles, and durable-file primitives; they do not own OBP identity or route authority. Keep the frozen OBP authenticated-session transcript unchanged: every selected carrier feeds a fresh transport binding into the existing handshake, and route authority is promoted only after the expected peer authenticates. P5 V2 consumes manager-owned receipts from concurrently running Linux reference agents; P5 V1 remains byte- and meaning-stable.
 
@@ -99,7 +99,7 @@ Expected: profile `b3c3697cd749ce078883f4478d3250f9ad6ad4f34fa9283f6bdb58d617fd7
 
 - [ ] **Step 2: Write failing contract mutations**
 
-Add tests that reject unknown/missing fields, noncanonical encodings, wrong signature domains, over-limit arrays/bytes, invalid expiry/sequence, private candidates, all-direct/all-relay P5 rings, observe-only evidence, handcrafted receipts, same-relay fallback, stale binding/session, and checkpoint mismatch.
+Add tests that reject unknown/missing fields, noncanonical encodings, wrong signature domains, over-limit arrays/bytes, invalid expiry/sequence, private candidates, direct or mixed P5 qualification rings, observe-only evidence, handcrafted receipts, same-relay fallback, stale binding/session, and checkpoint mismatch.
 
 Run:
 
@@ -222,7 +222,7 @@ The only V2 tier is canonical string `production-reference`; `prepare-request` s
 
 - [ ] **Step 4: Implement strict validators and V2 derivation rules**
 
-V2 is a strict superset of V1. It requires all thirteen V1 real faults (`partition`, `drop`, `reorder`, `duplicate`, `restart`, `address-change`, `seed-outage`, `signer-outage`, `disk-pressure`, `slow-peer`, `base-obarv002-archive-restore`, `rollback`, `explicit-re-enable`) with the existing before/during/after roots and resource oracles. The profile defines `direct_class = {Direct,HolePunched}` and `relay_class = {RelayUdp,RelayTcp443}` exactly; no implementation-local grouping is accepted. In addition, all three expected peers authenticate in A→B→C→A, at least one edge is direct-class, at least one is relay-class, the source is `production-reachability-manager`, two distinct reservations existed before failure, the selected relay reports `RelayUnavailable`, and a different pre-reserved relay yields a fresh session/binding while resuming the exact acknowledged checkpoint. Golden/mutation vectors cover each path kind and all-direct/all-relay/mixed classification.
+V2 is a strict superset of V1. It requires all thirteen V1 real faults (`partition`, `drop`, `reorder`, `duplicate`, `restart`, `address-change`, `seed-outage`, `signer-outage`, `disk-pressure`, `slow-peer`, `base-obarv002-archive-restore`, `rollback`, `explicit-re-enable`) with the existing before/during/after roots and resource oracles. The profile defines `direct_class = {Direct,HolePunched}` and `relay_class = {RelayUdp,RelayTcp443}` exactly; no implementation-local grouping is accepted. In addition, all three expected peers authenticate in A→B→C→A using relay-class paths created outbound, the source is `production-reachability-manager`, two distinct reservations existed before failure, the selected relay reports `RelayUnavailable`, and a different pre-reserved relay yields a fresh session/binding while resuming the exact acknowledged checkpoint. Direct and mixed rings reject this specific Linux/P5 outbound-first qualification lane; they remain valid runtime capabilities subject to their own platform evidence. Golden/mutation vectors cover each path kind and relay-only/direct/mixed classification.
 
 - [ ] **Step 5: Run contract gates and recheck V1 bytes**
 
@@ -1226,7 +1226,7 @@ git commit -m "feat(p5): collect production route evidence"
 
 - [ ] **Step 1: Add concurrent-wave RED tests**
 
-Cover exact mixed ring; all-direct/all-relay; missing edge; wrong peer; local simulation; `socat`; WireGuard; observe-only; handcrafted receipt; missing alternate; same relay identity; alternate reserved after failure; unchanged binding/session; wrong checkpoint; every missing V1 fault; one agent timeout; and partial evidence persistence.
+Cover the exact outbound-first relay ring; all-direct/mixed qualification attempts; missing edge; wrong peer; local simulation; `socat`; WireGuard; observe-only; handcrafted receipt; missing alternate; same relay identity; alternate reserved after failure; unchanged binding/session; wrong checkpoint; every missing V1 fault; one agent timeout; and partial evidence persistence.
 
 - [ ] **Step 2: Implement concurrent long-lived SSH sessions**
 
@@ -1512,7 +1512,7 @@ For each bootstrap frame, the controller exports only the existing Base qualific
 
 After all three signed bootstrap/`prepare-session` operations create the namespaces, treat each inventory descriptor as the immutable chain root, fetch the complete contiguous same-key/same-config/same-endpoint descendant chain, and use only the freshest unexpired descendant. Every descendant byte/digest is retained in raw evidence; a gap, fork, rollback, key/config/endpoint change, or unevidenced advance requires a new inventory/request. Repeat descriptor-key-bound public probes from both other physical hosts. Publish the verified current descendants, complete PoP, and have every target create dual-signed reservations at both relay NodeIDs before ring traffic using the same authenticated outer handles for control/reservation/association/data. Require public TLS/TCP-443 at both selected relay identities; every runner uses the exact public descriptor endpoints, with runner-a proving outbound-only operation behind provider NAT. Record the runner-b UDP-return filter as a nonqualifying capability observation rather than claiming a public UDP route.
 
-- [ ] **Step 3: Prove the mixed authenticated ring**
+- [ ] **Step 3: Prove the outbound-first authenticated relay ring**
 
 Run the exact controller entry point. It first opens the three pinned admin channels concurrently, sends/validates `P5BootstrapAdminFrameV2`, completes signed `prepare-session`, and proves receipt→identity→agent unit order on each host. Only then does it start the three concurrent runner SSH control bridges; it never launches an agent binary over SSH and drives only the installed systemd agents through fixed authenticated Unix sockets:
 
@@ -1520,7 +1520,7 @@ Run the exact controller entry point. It first opens the three pinned admin chan
 python scripts/runner/onebrain-p5-multi-host-v2.py run --release-request $release_request --release-signature $release_signature --base-policy $base_policy --base-gpg-home $base_gpg_home --p5-request $p5_request --p5-signature $p5_signature --p5-approval-policy $p5_approval_policy --inventory $inventory --controller-signing-key $controller_key --ssh-identity-key $ssh_identity --raw-evidence-recipient-private $raw_recipient_private --bundle-root $bundle_root --registry-candidate-root $registry_candidate_root --evidence-root $evidence_root
 ```
 
-Complete A→B→C→A using the production Reachability Manager. Require manager-signed receipts showing all expected peers, at least one direct-class edge and at least one relay-class edge, exact session IDs/bindings, and acknowledged checkpoints. The CLI derives every remote binary, socket, service, namespace, and evidence path from the verified bundle manifest plus signed inventory; it accepts no remote executable, socket, shell, interface, qdisc, nft, mount, or service argument.
+Complete A→B→C→A using the production Reachability Manager. Require manager-signed receipts showing all expected peers over relay-class paths created outbound, exact session IDs/bindings, and acknowledged checkpoints. No ordinary node may be required to publish a direct candidate or expose/configure an inbound public port. The CLI derives every remote binary, socket, service, namespace, and evidence path from the verified bundle manifest plus signed inventory; it accepts no remote executable, socket, shell, interface, qdisc, nft, mount, or service argument.
 
 - [ ] **Step 4: Disable the actually selected relay and fail over**
 

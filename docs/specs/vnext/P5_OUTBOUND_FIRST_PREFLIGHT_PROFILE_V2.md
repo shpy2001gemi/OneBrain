@@ -12,8 +12,12 @@ and relay-class is the last two. Relays are permissionless, descriptor-key
 pinned carriers. They are not identity, discovery, ordering, or truth
 authorities.
 
-The qualifying ring is exactly `host-a -> host-b -> host-c -> host-a`. It must
-contain at least one direct-class and one relay-class path. Simulation, socat,
+The qualifying ring is exactly `host-a -> host-b -> host-c -> host-a`. For the
+Linux/P5 outbound-first reference lane, every selected path must be relay-class
+and every node must establish it without inbound NAT or public-listener
+configuration. Direct and hole-punched paths remain portable runtime
+capabilities, but they are not required by this topology and cannot be
+fabricated from a provider mapping or local carrier. Simulation, socat,
 WireGuard, single-host, preflight-only, and observe-only runs cannot qualify.
 
 ## Fail-closed evidence
@@ -60,4 +64,3 @@ python -m unittest scripts.release.test_validate_evidence_carry_forward -v
 python -m unittest scripts.ci.test_validate_vnext_p5_multi_host -v
 python scripts/ci/validate_vnext_contracts.py
 ```
-

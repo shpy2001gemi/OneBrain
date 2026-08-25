@@ -1448,7 +1448,7 @@ fn publish_advertisement(
         };
         let digest = validated.digest();
         validated_observations.push(hex(&bytes));
-        if state.host_id == "host-c" && candidates.is_empty() {
+        if candidates.is_empty() {
             let mut foundation = [0u8; 16];
             foundation.copy_from_slice(&digest[..16]);
             candidates.push(PublicCandidateV1 {
@@ -1458,9 +1458,6 @@ fn publish_advertisement(
                 foundation,
             });
         }
-    }
-    if state.host_id == "host-c" && candidates.is_empty() {
-        return Err("host-c lacks a relay-signed public reflexive candidate".into());
     }
     let mut advertisement = ReachabilityAdvertisementV1 {
         format: 1,

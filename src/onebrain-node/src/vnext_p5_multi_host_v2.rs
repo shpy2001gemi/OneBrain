@@ -551,6 +551,7 @@ pub struct P5ChildReceiptV2 {
 pub struct P5QualificationDerivationV2 {
     pub all_expected_peers: bool,
     pub mixed_path_classes: bool,
+    pub relay_only_path_classes: bool,
     pub all_real_faults: bool,
     pub selected_relay_failed: bool,
     pub alternate_pre_reserved: bool,
@@ -854,6 +855,7 @@ impl P5QualificationDerivationV2 {
     pub fn derive(
         all_expected_peers: bool,
         mixed_path_classes: bool,
+        relay_only_path_classes: bool,
         all_real_faults: bool,
         selected_relay_failed: bool,
         alternate_pre_reserved: bool,
@@ -863,7 +865,7 @@ impl P5QualificationDerivationV2 {
         cleanup_complete: bool,
     ) -> Self {
         let multi_host_qualified = all_expected_peers
-            && mixed_path_classes
+            && relay_only_path_classes
             && all_real_faults
             && selected_relay_failed
             && alternate_pre_reserved
@@ -874,6 +876,7 @@ impl P5QualificationDerivationV2 {
         Self {
             all_expected_peers,
             mixed_path_classes,
+            relay_only_path_classes,
             all_real_faults,
             selected_relay_failed,
             alternate_pre_reserved,
@@ -889,6 +892,7 @@ impl P5QualificationDerivationV2 {
         let derived = Self::derive(
             self.all_expected_peers,
             self.mixed_path_classes,
+            self.relay_only_path_classes,
             self.all_real_faults,
             self.selected_relay_failed,
             self.alternate_pre_reserved,
@@ -1023,7 +1027,7 @@ mod tests {
     #[test]
     fn vnext_p5_multi_host_v2_qualification_is_derived_not_caller_authored() {
         let mut q = P5QualificationDerivationV2::derive(
-            true, true, true, true, true, true, true, true, true,
+            true, false, true, true, true, true, true, true, true, true,
         );
         assert!(q.multi_host_qualified && q.validate().is_ok());
         q.cleanup_complete = false;

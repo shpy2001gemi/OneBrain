@@ -157,12 +157,12 @@ class VNextP5MultiHostProductionV2Tests(unittest.TestCase):
             (3, 13, 4, 2, 10),
         )
 
-    def test_all_direct_and_all_relay_rings_are_rejected(self) -> None:
-        for mix in (["direct", "hole-punched", "direct"], ["relay-udp"] * 3):
+    def test_direct_and_mixed_rings_are_rejected_by_outbound_first_lane(self) -> None:
+        for mix in (["direct"] * 3, ["relay-tcp-443", "direct", "relay-tcp-443"]):
             with self.subTest(mix=mix):
                 profile = copy.deepcopy(frozen_profile_v2())
                 profile["qualification"]["golden_ring_paths"] = mix
-                self.assert_rejected(profile, "path mix")
+                self.assert_rejected(profile, "path policy")
 
     def test_observe_only_and_handcrafted_receipts_are_rejected(self) -> None:
         profile = copy.deepcopy(frozen_profile_v2())

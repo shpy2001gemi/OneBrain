@@ -809,7 +809,7 @@
     },
     {
       "path": "docs/specs/vnext/P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V2.md",
-      "expected_statement_lines": 12,
+      "expected_statement_lines": 13,
       "evidence": [
         {
           "path": "src/test-vectors/vnext/p5-multi-host-production-qualification-v2.json",
@@ -821,10 +821,10 @@
         },
         {
           "path": "scripts/ci/test_validate_vnext_p5_multi_host.py",
-          "needle": "test_all_direct_and_all_relay_rings_are_rejected"
+          "needle": "test_direct_and_mixed_rings_are_rejected_by_outbound_first_lane"
         }
       ],
-      "rationale": "The additive P5 V2 contract qualifies the Linux three-host reference without redefining portable OBP semantics, requires mixed path classes and failover, and repeats the owner-approved provider-evidence-pending status in every public receipt and aggregate."
+      "rationale": "The additive P5 V2 contract qualifies the Linux three-host reference without redefining portable OBP semantics, requires an outbound-first relay-only ring plus distinct relay failover, and repeats the owner-approved provider-evidence-pending status in every public receipt and aggregate."
     },
     {
       "path": "docs/specs/vnext/BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE.md",

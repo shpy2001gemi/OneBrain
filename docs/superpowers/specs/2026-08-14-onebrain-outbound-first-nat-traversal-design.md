@@ -556,16 +556,20 @@ build lanes. Platform-specific integration evidence additionally proves:
 
 The current physical topology is an intentional real-world case:
 
-- runner-a uses a provider-assigned external UDP port mapped to an internal
-  bind port;
+- runner-a is outbound-only behind a provider mapping whose UDP return path is
+  not usable as a stable public carrier;
 - runner-b has a directly assigned public IP but upstream inbound UDP is not
   observable at the guest interface;
 - runner-c is independently hosted and networked.
 
 P5 must use the production Reachability Manager and complete an authenticated
-three-node QUIC ring over a mixed direct/relay plan. It must then disable the
-selected relay and demonstrate authenticated failover to a reserved alternate
-from a durable checkpoint.
+three-node ring over outbound-created, independently authenticated relay
+carriers. It must not require any ordinary node to expose or configure an
+inbound public port. It must then disable the selected relay and demonstrate
+authenticated failover to a reserved alternate from a durable checkpoint.
+Direct and hole-punched carriers remain capability-gated optimizations for
+platforms and networks that can prove them; their absence does not disqualify
+this outbound-first reference topology.
 
 Every receipt records the exact path kind: `direct`, `hole-punched`,
 `relay-udp`, or `relay-tcp-443`. Local simulation, `socat`, WireGuard, a

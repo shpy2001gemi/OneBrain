@@ -774,7 +774,7 @@ def _require_ring_result(
             raise P5ExecutionError(f"{host_id} did not prove the expected routed ring")
 
 
-def _require_mixed_ring(ring: Mapping[str, Mapping[str, object]]) -> None:
+def _require_relay_ring(ring: Mapping[str, Mapping[str, object]]) -> None:
     if set(ring) != set(REQUIRED_HOSTS):
         raise P5ExecutionError("routed ring does not contain the three required hosts")
     outgoing_kinds = {
@@ -782,10 +782,9 @@ def _require_mixed_ring(ring: Mapping[str, Mapping[str, object]]) -> None:
         for row in ring.values()
         if isinstance(row.get("outgoing"), dict)
     }
-    direct = {"Direct", "HolePunched"}
     relay = {"RelayUdp", "RelayTcp443"}
-    if not outgoing_kinds.intersection(direct) or not outgoing_kinds.intersection(relay):
-        raise P5ExecutionError("routed ring must contain both direct-class and relay-class edges")
+    if len(outgoing_kinds) == 0 or not outgoing_kinds <= relay:
+        raise P5ExecutionError("outbound-first routed ring must contain only relay-class edges")
 
 
 def _arm_mixed_direct_edge(
@@ -1051,16 +1050,6 @@ def rehydrate_relay_ring(
     )
     advertisements = _agent_result_map(published, "publish-advertisement")
     agent_sequence += 1
-    agent_sequence = _arm_mixed_direct_edge(
-        executor,
-        hosts,
-        agents,
-        request,
-        controller,
-        advertisements,
-        agent_sequence=agent_sequence,
-        deadline_monotonic_ns=deadline_monotonic_ns,
-    )
     commands = []
     for host in hosts:
         outgoing_host, incoming_host = _ring_neighbors(host.host_id)
@@ -1082,7 +1071,7 @@ def rehydrate_relay_ring(
     for host_id, row in ring.items():
         outgoing_host, incoming_host = _ring_neighbors(host_id)
         _require_ring_result(host_id, row, str(advertisements[outgoing_host]["peer_node_id"]), str(advertisements[incoming_host]["peer_node_id"]))
-    _require_mixed_ring(ring)
+    _require_relay_ring(ring)
     return agents, agent_sequence + 1, advertisements, ring
 
 
@@ -1097,16 +1086,6 @@ def reconnect_existing_ring(
     agent_sequence: int,
     deadline_monotonic_ns: int,
 ) -> tuple[tuple[RunningAgent, ...], int, dict[str, dict[str, object]]]:
-    agent_sequence = _arm_mixed_direct_edge(
-        executor,
-        hosts,
-        agents,
-        request,
-        controller,
-        advertisements,
-        agent_sequence=agent_sequence,
-        deadline_monotonic_ns=deadline_monotonic_ns,
-    )
     commands = []
     for host in hosts:
         outgoing_host, incoming_host = _ring_neighbors(host.host_id)
@@ -1128,7 +1107,7 @@ def reconnect_existing_ring(
     for host_id, row in ring.items():
         outgoing_host, incoming_host = _ring_neighbors(host_id)
         _require_ring_result(host_id, row, str(advertisements[outgoing_host]["peer_node_id"]), str(advertisements[incoming_host]["peer_node_id"]))
-    _require_mixed_ring(ring)
+    _require_relay_ring(ring)
     return agents, agent_sequence + 1, ring
 
 
@@ -1237,7 +1216,7 @@ def _selected_relay_failover(
         and isinstance(row["outgoing"].get("selected_relay"), str)
     ]
     if not relay_sources:
-        raise P5ExecutionError("mixed ring has no selected relay route to fail")
+        raise P5ExecutionError("relay ring has no selected relay route to fail")
     source = relay_sources[0]
     source_index = next(index for index, host in enumerate(hosts) if host.host_id == source)
     source_host = hosts[source_index]
@@ -1581,16 +1560,7 @@ def run_production_preflight(
             for row in advertisements.values()
         ):
             raise P5ExecutionError("agent publication is incomplete")
-        next_sequence = _arm_mixed_direct_edge(
-            executor,
-            hosts,
-            agents,
-            request,
-            controller,
-            advertisements,
-            agent_sequence=5,
-            deadline_monotonic_ns=deadline,
-        )
+        next_sequence = 5
         ring_commands = []
         for host in hosts:
             outgoing_host, incoming_host = _ring_neighbors(host.host_id)
@@ -1624,7 +1594,7 @@ def run_production_preflight(
                 str(advertisements[outgoing_host]["peer_node_id"]),
                 str(advertisements[incoming_host]["peer_node_id"]),
             )
-        _require_mixed_ring(ring_rows)
+        _require_relay_ring(ring_rows)
         markers = {
             host.host_id: f"onebrain-p5-v2:{request['session_id']}:{host.host_id}".encode()
             for host in hosts
@@ -2120,16 +2090,18 @@ def derive_qualification(aggregate: dict[str, object]) -> dict[str, bool]:
     all_expected = set(edge_map) == set(REQUIRED_EDGES) and all(row.get("authenticated_peer") == target for (_, target), row in edge_map.items())
     paths = {str(row.get("path_kind")) for row in edge_map.values()}
     mixed = bool(paths & DIRECT_CLASS and paths & RELAY_CLASS and paths <= DIRECT_CLASS | RELAY_CLASS)
+    relay_only = bool(paths) and paths <= RELAY_CLASS
     all_faults = bool(edge_map) and all(set(row.get("faults", ())) == set(REQUIRED_FAULTS) for row in edge_map.values())
     failovers = [row for row in edge_map.values() if isinstance(row.get("failover"), dict)]
     relay_failed = len(failovers) == 1 and _failover_valid(failovers[0])
     real = aggregate.get("transport") == ALLOWED_REAL_TRANSPORT and aggregate.get("preflight_only") is False
     resource = aggregate.get("resource_bounds") is True
     cleanup = aggregate.get("cleanup_complete") is True
-    qualified = all_expected and mixed and all_faults and relay_failed and real and resource and cleanup
+    qualified = all_expected and relay_only and all_faults and relay_failed and real and resource and cleanup
     return {
         "all_expected_peers": all_expected,
         "mixed_path_classes": mixed,
+        "relay_only_path_classes": relay_only,
         "all_real_faults": all_faults,
         "selected_relay_failed": relay_failed,
         "alternate_pre_reserved": relay_failed,
@@ -2254,7 +2226,11 @@ def build_signed_production_aggregate(
         "controller_public_key": controller.public_key().public_bytes_raw().hex(),
         "evidence_authority": _evidence_authority(inventory),
         "format": 2,
-        "limitations": ["provider-document-pending"],
+        "limitations": [
+            "provider-document-pending",
+            "non-linux-platform-lanes-pending",
+            "mobile-carrier-mailbox-pending",
+        ],
         "preflight_only": False,
         "raw_manifest_blake3": raw_manifest_blake3,
         "raw_object_count": raw_object_count,

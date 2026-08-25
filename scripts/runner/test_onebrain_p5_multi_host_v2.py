@@ -62,9 +62,9 @@ def _route(source: str, target: str, path: str, *, failed: bool = False) -> dict
 
 def _aggregate() -> dict[str, object]:
     routes = [
-        _route("host-a", "host-b", "direct"),
-        _route("host-b", "host-c", "relay-udp", failed=True),
-        _route("host-c", "host-a", "hole-punched"),
+        _route("host-a", "host-b", "relay-tcp-443"),
+        _route("host-b", "host-c", "relay-tcp-443", failed=True),
+        _route("host-c", "host-a", "relay-tcp-443"),
     ]
     return {
         "format": 2,
@@ -216,7 +216,7 @@ class P5MultiHostV2Tests(unittest.TestCase):
         }) + b"\n"
         self.assertTrue(runner.verify_finalization_response("host-a", finalization, cleanup_digest)["signer_stopped"])
 
-    def test_production_preflight_drives_mixed_real_ring_and_bidirectional_markers(self) -> None:
+    def test_production_preflight_drives_relay_only_ring_and_bidirectional_markers(self) -> None:
         class FakeWaveExecutor:
             waves: list[list[str]] = []
 
@@ -261,8 +261,8 @@ class P5MultiHostV2Tests(unittest.TestCase):
                         observation_blake3="21" * 32,
                     )
                     elif name == "connect-ring": result.update(
-                        outgoing={"expected_peer": parameters["outgoing_expected_peer"], "path_kind": "Direct" if host_id == "host-b" else "RelayUdp", "route_receipt_blake3": "31" * 32, "session_id": "41" * 32},
-                        incoming={"expected_peer": parameters["incoming_expected_peer"], "path_kind": "Direct" if host_id == "host-c" else "RelayTcp443", "route_receipt_blake3": "32" * 32, "session_id": "42" * 32},
+                        outgoing={"expected_peer": parameters["outgoing_expected_peer"], "path_kind": "RelayTcp443", "route_receipt_blake3": "31" * 32, "session_id": "41" * 32},
+                        incoming={"expected_peer": parameters["incoming_expected_peer"], "path_kind": "RelayTcp443", "route_receipt_blake3": "32" * 32, "session_id": "42" * 32},
                     )
                     elif name in ("deliver-marker", "receive-marker"):
                         result.update(marker_blake3=parameters.get("expected_blake3", "51" * 32), marker_bytes=parameters.get("expected_bytes", 8))
@@ -310,12 +310,12 @@ class P5MultiHostV2Tests(unittest.TestCase):
             self.assertEqual(
                 FakeWaveExecutor.waves,
                 [["status"] * 3, ["start-reachability"] * 3, ["ensure-reservations"] * 3,
-                 ["publish-advertisement"] * 3, ["arm-direct-inbound"], ["connect-ring"] * 3,
+                 ["publish-advertisement"] * 3, ["connect-ring"] * 3,
                  ["deliver-marker"] * 3, ["receive-marker"] * 3, ["status"] * 3,
                  ["shutdown"] * 3],
             )
 
-    def test_mixed_ring_rejects_all_relay_or_all_direct(self) -> None:
+    def test_outbound_first_ring_accepts_all_relay_and_rejects_direct(self) -> None:
         relay = {
             host: {"outgoing": {"path_kind": "RelayUdp"}}
             for host in runner.REQUIRED_HOSTS
@@ -324,10 +324,9 @@ class P5MultiHostV2Tests(unittest.TestCase):
             host: {"outgoing": {"path_kind": "Direct"}}
             for host in runner.REQUIRED_HOSTS
         }
+        runner._require_relay_ring(relay)
         with self.assertRaises(runner.P5ExecutionError):
-            runner._require_mixed_ring(relay)
-        with self.assertRaises(runner.P5ExecutionError):
-            runner._require_mixed_ring(direct)
+            runner._require_relay_ring(direct)
 
     def test_relay_descriptor_inventory_rejects_missing_duplicate_and_noncanonical_hex(self) -> None:
         with self.assertRaises(runner.P5ExecutionError):
@@ -557,10 +556,11 @@ class P5MultiHostV2Tests(unittest.TestCase):
             for marker in forbidden:
                 self.assertNotIn(marker, source, f"{label} still contains placeholder backend {marker}")
 
-    def test_mixed_real_ring_and_selected_relay_failover_qualifies(self) -> None:
+    def test_relay_only_real_ring_and_selected_relay_failover_qualifies(self) -> None:
         result = runner.derive_qualification(_aggregate())
         self.assertTrue(result["multi_host_qualified"])
-        self.assertTrue(result["mixed_path_classes"])
+        self.assertFalse(result["mixed_path_classes"])
+        self.assertTrue(result["relay_only_path_classes"])
 
     def test_signed_aggregate_is_derived_from_raw_receipts_and_real_route_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -577,9 +577,9 @@ class P5MultiHostV2Tests(unittest.TestCase):
                 "topology_attestation": {"format": 2},
             }
             ring = {
-                "host-a": {"outgoing": {"path_kind": "Direct", "route_receipt_blake3": "10" * 32}},
-                "host-b": {"outgoing": {"path_kind": "RelayUdp", "route_receipt_blake3": "11" * 32}},
-                "host-c": {"outgoing": {"path_kind": "HolePunched", "route_receipt_blake3": "12" * 32}},
+                "host-a": {"outgoing": {"path_kind": "RelayTcp443", "route_receipt_blake3": "10" * 32}},
+                "host-b": {"outgoing": {"path_kind": "RelayTcp443", "route_receipt_blake3": "11" * 32}},
+                "host-c": {"outgoing": {"path_kind": "RelayTcp443", "route_receipt_blake3": "12" * 32}},
             }
             checkpoints = {
                 host: {"sequence": 7, "intent": "55" * 32, "roots": "66" * 32}
@@ -600,12 +600,11 @@ class P5MultiHostV2Tests(unittest.TestCase):
             self.assertEqual(len(aggregate["child_receipts"]), 3)
             self.assertEqual(aggregate["evidence_authority"]["provider_evidence_status"], "owner-telephone-verified-provider-document-pending")
 
-    def test_all_direct_all_relay_missing_edge_and_wrong_peer_reject(self) -> None:
-        for paths in (("direct",) * 3, ("relay-udp",) * 3):
-            value = _aggregate()
-            for route, path in zip(value["routes"], paths, strict=True):
-                route["path_kind"] = path
-            self.assertFalse(runner.derive_qualification(value)["multi_host_qualified"])
+    def test_all_direct_missing_edge_and_wrong_peer_reject(self) -> None:
+        value = _aggregate()
+        for route in value["routes"]:
+            route["path_kind"] = "direct"
+        self.assertFalse(runner.derive_qualification(value)["multi_host_qualified"])
         missing = _aggregate(); missing["routes"].pop()
         self.assertFalse(runner.derive_qualification(missing)["multi_host_qualified"])
         wrong = _aggregate(); wrong["routes"][0]["authenticated_peer"] = "host-c"

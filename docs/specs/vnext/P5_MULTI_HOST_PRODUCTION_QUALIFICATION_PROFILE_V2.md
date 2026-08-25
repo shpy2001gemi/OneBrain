@@ -7,13 +7,17 @@
 ## 1. Additive scope
 
 V2 is additive and does not reinterpret V1. It qualifies the production
-Reachability Manager, mixed direct/relay routing and alternate-relay resume on
+Reachability Manager, outbound-first relay routing and alternate-relay resume on
 three physical Linux reference hosts. It MUST NOT promote unexecuted Windows,
 macOS, Android, iOS or browser lanes.
 
 The ring is `host-a -> host-b -> host-c -> host-a`. Every edge MUST
-authenticate its expected NodeID. The qualified ring requires at least one
-direct-class and one relay-class edge; all-direct and all-relay rings reject.
+authenticate its expected NodeID. For the owner-approved NAT-independent lane,
+every edge MUST be relay-class and every node MUST originate its connections;
+no node-side inbound mapping, public listener or direct candidate is required.
+An all-direct or partially direct ring rejects this lane. Direct/hole-punched
+qualification remains a separate future profile and cannot be inferred from
+relay evidence.
 
 ## 2. Candidate and authority roots
 
@@ -128,8 +132,8 @@ NOT leak into public strings or arbitrary limitations.
 
 ## 8. Qualification derivation
 
-All thirteen faults, ten exit oracles, three authenticated hosts, mixed path
-classes, distinct failover, exact checkpoint resume, resource bounds, privacy
+All thirteen faults, ten exit oracles, three authenticated hosts, the exact
+relay-only path policy, distinct failover, exact checkpoint resume, resource bounds, privacy
 scan and signatures are mandatory. Missing evidence is failure, not a skip.
 
 The final tier is `production-reference` with explicit limitations

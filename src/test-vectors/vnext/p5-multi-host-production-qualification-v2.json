@@ -26,9 +26,10 @@
     "owner_topology_attestation_required": true
   },
   "qualification": {
-    "golden_ring_paths": ["direct", "relay-udp", "hole-punched"],
+    "golden_ring_paths": ["relay-tcp-443", "relay-tcp-443", "relay-tcp-443"],
     "all_expected_peers_authenticated": true,
-    "mixed_path_required": true,
+    "mixed_path_required": false,
+    "relay_only_outbound_first_required": true,
     "observe_only_may_qualify": false,
     "preflight_may_qualify": false,
     "qualification_tier": "production-reference"
@@ -140,7 +141,7 @@
   "exit_oracles": [
     "request-authority-verified",
     "three-host-inventory-verified",
-    "mixed-ring-authenticated",
+    "relay-only-ring-authenticated",
     "faults-complete",
     "selected-relay-failed",
     "alternate-relay-authenticated",

@@ -6688,17 +6688,18 @@ def validate_vnext_p5_multi_host_v2(
 
     qualification = profile.get("qualification")
     if qualification != {
-        "golden_ring_paths": ["direct", "relay-udp", "hole-punched"],
+        "golden_ring_paths": ["relay-tcp-443", "relay-tcp-443", "relay-tcp-443"],
         "all_expected_peers_authenticated": True,
-        "mixed_path_required": True,
+        "mixed_path_required": False,
+        "relay_only_outbound_first_required": True,
         "observe_only_may_qualify": False,
         "preflight_may_qualify": False,
         "qualification_tier": "production-reference",
     }:
         if isinstance(qualification, dict) and qualification.get(
             "golden_ring_paths"
-        ) != ["direct", "relay-udp", "hole-punched"]:
-            raise ContractError("P5 V2 path mix drift")
+        ) != ["relay-tcp-443", "relay-tcp-443", "relay-tcp-443"]:
+            raise ContractError("P5 V2 outbound-first path policy drift")
         raise ContractError("P5 V2 qualification drift")
 
     if profile.get("route_failover") != {
@@ -6822,7 +6823,7 @@ def validate_vnext_p5_multi_host_v2(
     expected_exit_oracles = [
         "request-authority-verified",
         "three-host-inventory-verified",
-        "mixed-ring-authenticated",
+        "relay-only-ring-authenticated",
         "faults-complete",
         "selected-relay-failed",
         "alternate-relay-authenticated",
