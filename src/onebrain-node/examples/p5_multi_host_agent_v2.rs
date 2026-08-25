@@ -1,7 +1,7 @@
 //! Long-lived P5 V2 agent process. Private keys are intentionally absent.
 
 #[cfg(unix)]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 #[cfg(unix)]
 use std::io::{Read, Write};
@@ -1059,7 +1059,7 @@ fn connect_ring(
                 network.connect_expected_advertisement(&state.selector, outgoing_peer, &outgoing,),
                 accept_expected_relay(
                     network,
-                    state.executor.as_ref(),
+                    Arc::clone(&state.executor),
                     &state.discovery,
                     &state.reservations,
                     incoming_peer,
@@ -1128,7 +1128,7 @@ fn connect_ring(
 #[allow(clippy::too_many_arguments)]
 async fn accept_expected_relay(
     network: &VNextNetworkRuntime,
-    executor: &ConnectionPlannerExecutor,
+    executor: Arc<ConnectionPlannerExecutor>,
     discovery: &Arc<tokio::sync::RwLock<RelayDiscovery>>,
     reservations: &Arc<RelayReservationManager>,
     expected_peer: NodeId,
@@ -1136,11 +1136,16 @@ async fn accept_expected_relay(
     advertisement: &ValidatedReachabilityAdvertisement,
     deadline: std::time::Instant,
 ) -> Result<RoutedVNextSession, String> {
+    let mut attempts = tokio::task::JoinSet::new();
+    let mut attempted_relays = BTreeSet::new();
     for initiator_reservation in advertisement.reservations() {
         if std::time::Instant::now() >= deadline {
             return Err("relay inbound deadline elapsed".into());
         }
         let relay_id = initiator_reservation.canonical().relay_node_id;
+        if !attempted_relays.insert(relay_id) {
+            continue;
+        }
         let descriptor = {
             discovery
                 .read()
@@ -1176,24 +1181,65 @@ async fn accept_expected_relay(
                 .expires_at
                 .min(target_reservation.canonical().expires_at),
         };
-        let carrier = executor
-            .accept_relay_inbound(
-                descriptor,
-                initiator_reservation.clone(),
-                target_reservation,
-                expected_identity.clone(),
-                candidate,
-                outer,
-                deadline,
-            )
-            .await
-            .map_err(|error| format!("relay association/inner carrier rejected: {error:?}"))?;
-        return network
-            .accept_expected_selected(expected_peer, carrier)
-            .await
-            .map_err(|error| format!("relay inbound OBP authentication failed: {error}"));
+        let executor = Arc::clone(&executor);
+        let initiator_reservation = initiator_reservation.clone();
+        let expected_identity = expected_identity.clone();
+        attempts.spawn(async move {
+            executor
+                .accept_relay_inbound(
+                    descriptor,
+                    initiator_reservation,
+                    target_reservation,
+                    expected_identity,
+                    candidate,
+                    outer,
+                    deadline,
+                )
+                .await
+                .map_err(|error| format!("{relay_id:?}: {error:?}"))
+        });
     }
-    Err("no common live relay reservation for inbound peer".into())
+    if attempts.is_empty() {
+        return Err("no common live relay reservation for inbound peer".into());
+    }
+
+    let carrier = await_first_relay_success(attempts, deadline).await?;
+    network
+        .accept_expected_selected(expected_peer, carrier)
+        .await
+        .map_err(|error| format!("relay inbound OBP authentication failed: {error}"))
+}
+
+#[cfg(any(unix, test))]
+async fn await_first_relay_success<T: Send + 'static>(
+    mut attempts: tokio::task::JoinSet<Result<T, String>>,
+    deadline: std::time::Instant,
+) -> Result<T, String> {
+    let deadline = tokio::time::Instant::from_std(deadline);
+    let mut failures = Vec::new();
+    loop {
+        match tokio::time::timeout_at(deadline, attempts.join_next()).await {
+            Ok(Some(Ok(Ok(value)))) => {
+                attempts.abort_all();
+                return Ok(value);
+            }
+            Ok(Some(Ok(Err(error)))) => failures.push(error),
+            Ok(Some(Err(error))) => failures.push(format!("relay inbound task failed: {error}")),
+            Ok(None) => {
+                return Err(format!(
+                    "all common relay associations failed: {}",
+                    failures.join("; ")
+                ));
+            }
+            Err(_) => {
+                attempts.abort_all();
+                return Err(format!(
+                    "relay inbound deadline elapsed; attempts: {}",
+                    failures.join("; ")
+                ));
+            }
+        }
+    }
 }
 
 #[cfg(any(unix, test))]
@@ -1716,6 +1762,25 @@ fn print_compiled_binding() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn relay_inbound_acceptance_is_not_pinned_to_the_first_common_relay() {
+        let mut attempts = tokio::task::JoinSet::new();
+        attempts.spawn(async { Err::<u8, _>("relay-b rejected association".to_owned()) });
+        attempts.spawn(async {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            Ok::<u8, String>(7)
+        });
+
+        let selected = await_first_relay_success(
+            attempts,
+            std::time::Instant::now() + std::time::Duration::from_secs(1),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(selected, 7);
+    }
 
     #[test]
     fn durable_agent_state_stays_inside_the_agent_owned_root() {
