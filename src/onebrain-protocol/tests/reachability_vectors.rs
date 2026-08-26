@@ -6,7 +6,7 @@ use onebrain_protocol::{
     ReachabilityEndpointV1, ReachabilityObjectV1, ReachabilitySignatureRoleV1, RelayCandidateV1,
     RelayDescriptorV1, RelayEndpointV1, RelayReservationV1, RelayTransportV1, RouteFailureCodeV1,
     RouteLimitationCodeV1, RouteLimitationV1, RoutePathKindV1, RoutePlanV1, RouteReceiptV1,
-    RouteResourceBudgetV1, RouteTerminalOutcomeV1,
+    RouteResourceBudgetV1, RouteTerminalOutcomeV1, MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS,
 };
 
 fn node(byte: u8) -> NodeId {
@@ -224,6 +224,25 @@ fn failure_codes_remain_protocol_local() {
     assert_ne!(
         RouteFailureCodeV1::RelayUnavailable,
         RouteFailureCodeV1::DirectTimeout
+    );
+}
+
+#[test]
+fn relay_descriptor_accepts_thirty_minutes_but_rejects_one_second_more() {
+    let mut descriptor = match roots().remove(1) {
+        ReachabilityObjectV1::RelayDescriptor(value) => value,
+        _ => unreachable!(),
+    };
+    descriptor.issued_at = 1_000;
+    descriptor.expires_at = descriptor.issued_at + MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS;
+    assert!(
+        encode_reachability_object(&ReachabilityObjectV1::RelayDescriptor(descriptor.clone()))
+            .is_ok()
+    );
+
+    descriptor.expires_at += 1;
+    assert!(
+        encode_reachability_object(&ReachabilityObjectV1::RelayDescriptor(descriptor)).is_err()
     );
 }
 

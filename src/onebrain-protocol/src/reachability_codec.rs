@@ -698,7 +698,11 @@ fn validate(v: &ReachabilityObjectV1) -> Result<(), ReachabilityCodecError> {
             bounded(&x.protocol_versions, 1, MAX_PROTOCOL_VERSIONS)?;
             strictly_sorted(&x.supported_transports, "descriptor.transports")?;
             strictly_sorted(&x.protocol_versions, "descriptor.versions")?;
-            validity(x.issued_at, x.expires_at, 600)?;
+            validity(
+                x.issued_at,
+                x.expires_at,
+                MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS,
+            )?;
             let a = x
                 .endpoints
                 .iter()

@@ -8,6 +8,8 @@ use ku_core::foundation::NodeId;
 
 pub const MAX_REACHABILITY_OBJECT_BYTES: usize = 262_144;
 pub const MAX_RELAY_ENDPOINTS: usize = 8;
+/// Maximum lifetime of a signed relay descriptor.
+pub const MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS: u64 = 1_800;
 pub const MAX_DISCOVERY_ENDPOINTS: usize = 16;
 pub const MAX_PROTOCOL_VERSIONS: usize = 8;
 pub const MAX_RELAY_RESERVATIONS: usize = 3;

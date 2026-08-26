@@ -15,7 +15,7 @@ use ed25519_dalek::{Signer, SigningKey};
 use onebrain_protocol::{
     encode_reachability_object, reachability_signing_bytes, HostAddressV1, ProtocolVersionV1,
     ReachabilityObjectV1, ReachabilitySignatureRoleV1, RelayDescriptorV1, RelayEndpointV1,
-    RelayTransportV1,
+    RelayTransportV1, MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS,
 };
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -376,7 +376,7 @@ fn descriptor_from_config(
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|_| RuntimeError::Descriptor)?
                 .as_secs();
-            (issued_at, issued_at + 600)
+            (issued_at, issued_at + MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS)
         } else {
             (config.descriptor_issued_at, config.descriptor_expires_at)
         };
@@ -411,7 +411,8 @@ fn validate_config_shape(config: &RelayConfigV1) -> Result<(), RuntimeError> {
         || config.descriptor_sequence == 0
         || !((config.descriptor_issued_at == 0 && config.descriptor_expires_at == 0)
             || (config.descriptor_issued_at < config.descriptor_expires_at
-                && config.descriptor_expires_at - config.descriptor_issued_at <= 600))
+                && config.descriptor_expires_at - config.descriptor_issued_at
+                    <= MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS))
         || (config.udp_bind.is_none() && config.tcp443_bind.is_none())
     {
         return Err(RuntimeError::Config);
@@ -670,6 +671,45 @@ mod tests {
         assert_eq!(config.descriptor_expires_at, 0);
         assert_eq!(config.advertised_endpoints[0].transport, "quic-udp");
         assert_eq!(config.advertised_endpoints[1].transport, "tls-tcp-443");
+    }
+
+    #[test]
+    fn descriptor_default_and_explicit_validity_are_bounded_to_thirty_minutes() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = RelayConfigV1 {
+            format: 1,
+            data_root: directory.path().join("data"),
+            signer_locator: directory.path().join("relay.key"),
+            udp_bind: Some("0.0.0.0:41000".parse().unwrap()),
+            tcp443_bind: None,
+            advertised_endpoints: vec![RelayConfiguredEndpointV1 {
+                transport: "quic-udp".into(),
+                host: "1.1.1.1".into(),
+                port: 41000,
+            }],
+            capacity_policy_digest: [7; 32],
+            max_reservations: 8,
+            max_reservations_per_target: 3,
+            max_rendezvous_records: 64,
+            descriptor_sequence: 1,
+            descriptor_issued_at: 0,
+            descriptor_expires_at: 0,
+            log_destination: directory.path().join("relay.log"),
+        };
+        let descriptor =
+            descriptor_from_config(&config, &SigningKey::from_bytes(&[3; 32])).unwrap();
+        assert_eq!(
+            descriptor.expires_at - descriptor.issued_at,
+            MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS
+        );
+
+        config.descriptor_issued_at = 1_000;
+        config.descriptor_expires_at =
+            config.descriptor_issued_at + MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS;
+        assert_eq!(validate_config_shape(&config), Ok(()));
+
+        config.descriptor_expires_at += 1;
+        assert_eq!(validate_config_shape(&config), Err(RuntimeError::Config));
     }
 
     #[test]
