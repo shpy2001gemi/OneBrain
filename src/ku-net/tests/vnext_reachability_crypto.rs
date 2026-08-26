@@ -218,7 +218,13 @@ fn wrong_node_key_signature_and_time_reject_before_possession() {
         Err(RelayAdmissionError::Expired)
     );
 
-    let not_yet_valid = signed_descriptor(&key, 1, now + 1);
+    let within_clock_skew = signed_descriptor(&key, 1, now + 30);
+    let bytes =
+        encode_reachability_object(&ReachabilityObjectV1::RelayDescriptor(within_clock_skew))
+            .unwrap();
+    assert!(block_on_ready(preparer.prepare_descriptor(&bytes, now, Instant::now())).is_ok());
+
+    let not_yet_valid = signed_descriptor(&key, 1, now + 31);
     let bytes =
         encode_reachability_object(&ReachabilityObjectV1::RelayDescriptor(not_yet_valid)).unwrap();
     assert_eq!(

@@ -32,6 +32,7 @@ const MAX_RESOLVED_PER_OBJECT: usize = 32;
 const MAX_PENDING_DESCRIPTORS: usize = 32;
 const MAX_PENDING_CHALLENGES: usize = 256;
 const POSSESSION_VALIDITY_SECONDS: u64 = 30;
+const MAX_CLOCK_SKEW_SECONDS: u64 = 30;
 const POSSESSION_DOMAIN: &[u8] = b"onebrain/reachability/relay-possession-proof/v1\0";
 
 pub type AdmissionFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -1681,7 +1682,7 @@ fn verify_signature(
         .map_err(|_| RelayAdmissionError::SignatureInvalid)
 }
 fn freshness(issued: u64, expires: u64, now: u64) -> Result<(), RelayAdmissionError> {
-    if now < issued {
+    if issued > now.saturating_add(MAX_CLOCK_SKEW_SECONDS) {
         Err(RelayAdmissionError::NotYetValid)
     } else if now > expires {
         Err(RelayAdmissionError::Expired)
