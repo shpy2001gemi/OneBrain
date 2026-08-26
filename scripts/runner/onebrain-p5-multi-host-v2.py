@@ -46,6 +46,7 @@ REQUIRED_FAULTS = (
 ALLOWED_REAL_TRANSPORT = "real-obp"
 MAX_CONTROL_BYTES = 131_072
 MAX_RECEIPT_BYTES = 262_144
+MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS = 1_800
 BOOTSTRAP_DOMAIN = b"onebrain/p5/bootstrap-admin-frame/v2\0"
 
 
@@ -708,7 +709,7 @@ def _inventory_relay_descriptors(inventory: Mapping[str, object]) -> tuple[str, 
             or isinstance(expires_at, bool)
             or issued_at < 0
             or expires_at <= issued_at
-            or expires_at - issued_at > 600
+            or expires_at - issued_at > MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS
         ):
             raise P5ExecutionError("relay probe lacks bounded descriptor validity metadata")
         descriptor_validity = (issued_at, expires_at)

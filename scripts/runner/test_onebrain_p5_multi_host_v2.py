@@ -350,6 +350,19 @@ class P5MultiHostV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(runner.P5ExecutionError, "validity metadata"):
             runner._inventory_relay_descriptors({"public_probe_sets": receipts})
 
+    def test_relay_descriptor_validity_accepts_1800_seconds_and_rejects_more(self) -> None:
+        receipts = _probe_receipts()
+        for receipt in receipts:
+            receipt["descriptor_expires_at"] = int(receipt["descriptor_issued_at"]) + 1_800
+        self.assertEqual(
+            runner._inventory_relay_descriptors({"public_probe_sets": receipts}),
+            ("01", "02"),
+        )
+        for receipt in receipts:
+            receipt["descriptor_expires_at"] = int(receipt["descriptor_issued_at"]) + 1_801
+        with self.assertRaisesRegex(runner.P5ExecutionError, "bounded descriptor validity"):
+            runner._inventory_relay_descriptors({"public_probe_sets": receipts})
+
     def test_relay_probe_without_descriptor_validity_is_rejected(self) -> None:
         receipts = _probe_receipts()
         for receipt in receipts:
