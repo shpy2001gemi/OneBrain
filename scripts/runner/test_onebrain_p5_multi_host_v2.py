@@ -248,6 +248,17 @@ class P5MultiHostV2Tests(unittest.TestCase):
                     result = {"accepted": True, "command": name}
                     if name == "status": result["network_started"] = True
                     elif name == "start-reachability": result.update(bind="0.0.0.0:41010", local_node_id=node)
+                    elif name == "diagnose-relay-matrix": result.update(
+                        success=True,
+                        probes=[
+                            {
+                                "descriptor_blake3": runner.blake3.blake3(bytes.fromhex(descriptor)).hexdigest(),
+                                "relay_node_id": "dd" * 32,
+                                "success": True,
+                            }
+                            for descriptor in parameters["relay_descriptors"]
+                        ],
+                    )
                     elif name == "ensure-reservations": result["grant_digests"] = ["11" * 32, "22" * 32]
                     elif name == "publish-advertisement": result.update(
                         advertisement_hex={"host-a": "01", "host-b": "02", "host-c": "03"}[host_id],
@@ -309,11 +320,35 @@ class P5MultiHostV2Tests(unittest.TestCase):
             self.assertEqual(set(output["ring"]), set(runner.REQUIRED_HOSTS))
             self.assertEqual(
                 FakeWaveExecutor.waves,
-                [["status"] * 3, ["start-reachability"] * 3, ["ensure-reservations"] * 3,
+                [["status"] * 3, ["start-reachability"] * 3, ["diagnose-relay-matrix"] * 3,
+                 ["ensure-reservations"] * 3,
                  ["publish-advertisement"] * 3, ["connect-ring"] * 3,
                  ["deliver-marker"] * 3, ["receive-marker"] * 3, ["status"] * 3,
                  ["shutdown"] * 3],
             )
+
+    def test_relay_matrix_reports_exact_host_relay_failure(self) -> None:
+        descriptors = ("01", "02")
+        good_probes = [
+            {
+                "descriptor_blake3": runner.blake3.blake3(bytes.fromhex(value)).hexdigest(),
+                "relay_node_id": "aa" * 32,
+                "success": True,
+            }
+            for value in descriptors
+        ]
+        matrix = {
+            host: {"success": True, "probes": [dict(probe) for probe in good_probes]}
+            for host in runner.REQUIRED_HOSTS
+        }
+        runner._require_relay_matrix(matrix, descriptors)
+        matrix["host-b"]["success"] = False
+        matrix["host-b"]["probes"][1].update(
+            success=False,
+            error="Discovery(PossessionFailed { endpoint_index: 1, transport: Tcp443, reason: Handshake })",
+        )
+        with self.assertRaisesRegex(runner.P5ExecutionError, "host-b.*Handshake"):
+            runner._require_relay_matrix(matrix, descriptors)
 
     def test_outbound_first_ring_accepts_all_relay_and_rejects_direct(self) -> None:
         relay = {

@@ -293,7 +293,7 @@ impl ValidatedPossessionDialEndpoint {
         &self.dial_addresses
     }
 
-    pub(crate) fn relay_node_id(&self) -> NodeId {
+    pub fn relay_node_id(&self) -> NodeId {
         self.challenge.relay_node_id
     }
 
@@ -301,7 +301,11 @@ impl ValidatedPossessionDialEndpoint {
         self.pending_relay_public_key
     }
 
-    pub(crate) fn transport(&self) -> RelayTransportV1 {
+    pub fn endpoint_index(&self) -> usize {
+        self.endpoint_index
+    }
+
+    pub fn transport(&self) -> RelayTransportV1 {
         self.transport
     }
 

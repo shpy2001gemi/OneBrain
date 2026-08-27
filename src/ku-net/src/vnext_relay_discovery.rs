@@ -14,7 +14,7 @@ use ku_core::foundation::NodeId;
 use onebrain_protocol::{
     decode_reachability_object, reachability_signing_bytes, ReachabilityAdvertisementV1,
     ReachabilityObjectV1, ReachabilitySignatureRoleV1, RelayPossessionChallengeV1,
-    RelayPossessionProofV1,
+    RelayPossessionProofV1, RelayTransportV1,
 };
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -58,8 +58,24 @@ pub enum RelayDiscoveryLimitation {
     Deadline,
     NoBootstrapReachable,
     PoisonedSource,
+    PossessionFailed {
+        relay_node_id: NodeId,
+        endpoint_index: usize,
+        transport: RelayTransportV1,
+        reason: RelayPossessionFailureReason,
+    },
     SessionNotLive,
     StateUnavailable,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RelayPossessionFailureReason {
+    Closed,
+    InvalidFrame,
+    WrongTransport,
+    Connect,
+    Handshake,
+    Deadline,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

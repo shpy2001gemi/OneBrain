@@ -636,6 +636,7 @@ fn execute_closed_command(
             "command": "wait-barrier",
             "parameters_blake3": blake3::hash(&serde_json::to_vec(&command.parameters)?).to_hex().to_string(),
         }),
+        "diagnose-relay-matrix" => diagnose_relay_matrix(command, state)?,
         "ensure-reservations" => ensure_reservations(command, state)?,
         "publish-advertisement" => publish_advertisement(state)?,
         "record-checkpoint" => record_checkpoint(command, state)?,
@@ -1312,6 +1313,80 @@ fn admit_peer_advertisement(
         .map_err(|_| "advertisement admission state unavailable")?
         .register_prepared_advertisement(prepared, identity, &reservations, now)
         .map_err(Into::into)
+}
+
+#[cfg(unix)]
+fn diagnose_relay_matrix(
+    command: &AgentCommandFrame,
+    state: &mut AgentRuntimeState,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let records = command_parameter_string_array(command, "relay_descriptors")?
+        .iter()
+        .map(|value| decode_hex_vec(value))
+        .collect::<Result<Vec<_>, _>>()?;
+    if records.len() < 2 || records.len() > 3 {
+        return Err("production relay matrix must contain two or three relays".into());
+    }
+
+    let mut probes = Vec::with_capacity(records.len());
+    for record in records {
+        let descriptor_blake3 = blake3::hash(&record).to_hex().to_string();
+        let descriptor = match decode_reachability_object(&record)? {
+            ReachabilityObjectV1::RelayDescriptor(value) => value,
+            _ => return Err("relay matrix input is not a relay descriptor".into()),
+        };
+        let relay_node_id = hex(descriptor.relay_node_id.as_bytes());
+        let transports = descriptor
+            .endpoints
+            .iter()
+            .map(|endpoint| format!("{:?}", endpoint.transport))
+            .collect::<Vec<_>>();
+        let isolated_discovery = Arc::new(tokio::sync::RwLock::new(RelayDiscovery::new(
+            RelayDiscoveryPolicy::default(),
+            ReachabilityAdmission::new(Arc::new(InMemoryReachabilityReplayStore::default())),
+            Arc::new(InMemoryAuthenticatedSessionRegistry::default()),
+        )));
+        let now = unix_now()?;
+        let result = state.runtime.block_on(admit_relay_records(
+            &isolated_discovery,
+            state.discovery_preparer.as_ref(),
+            state.possession_client.as_ref(),
+            RelayDiscoverySource::manual_relay(),
+            &[record],
+            now,
+            std::time::Instant::now() + Duration::from_secs(20),
+        ));
+        match result {
+            Ok(delta) => probes.push(serde_json::json!({
+                "admitted": delta.admitted.iter().map(|value| hex(value.as_bytes())).collect::<Vec<_>>(),
+                "descriptor_blake3": descriptor_blake3,
+                "endpoint_count": descriptor.endpoints.len(),
+                "error": serde_json::Value::Null,
+                "relay_node_id": relay_node_id,
+                "success": delta.admitted.len() == 1,
+                "transports": transports,
+            })),
+            Err(error) => probes.push(serde_json::json!({
+                "admitted": Vec::<String>::new(),
+                "descriptor_blake3": descriptor_blake3,
+                "endpoint_count": descriptor.endpoints.len(),
+                "error": format!("{error:?}"),
+                "relay_node_id": relay_node_id,
+                "success": false,
+                "transports": transports,
+            })),
+        }
+    }
+    let success = probes
+        .iter()
+        .all(|probe| probe.get("success").and_then(serde_json::Value::as_bool) == Some(true));
+    Ok(serde_json::json!({
+        "accepted": true,
+        "command": "diagnose-relay-matrix",
+        "host_id": state.host_id.clone(),
+        "probes": probes,
+        "success": success,
+    }))
 }
 
 #[cfg(unix)]

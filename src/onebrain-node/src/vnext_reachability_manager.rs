@@ -17,12 +17,13 @@ use ku_net::vnext_reachability_crypto::{
 use ku_net::vnext_reachability_resolver::ReachabilityAdvertisementResolver;
 use ku_net::vnext_relay_discovery::{
     ReachabilityFuture, RelayDiscovery, RelayDiscoveryDelta, RelayDiscoveryLimitation,
-    RelayDiscoveryPreparer, RelayDiscoverySource, RelayPossessionClient, StagedRelayAdmission,
-    VerifiedRelayDiscovery,
+    RelayDiscoveryPreparer, RelayDiscoverySource, RelayPossessionClient,
+    RelayPossessionFailureReason, StagedRelayAdmission, VerifiedRelayDiscovery,
 };
 use ku_net::vnext_relay_tunnel::{
     connect_authenticated_outer, connect_authenticated_outer_on_transport, prove_relay_possession,
-    AuthenticatedOuterRelayConnection, ValidatedRelayDialRoute, ValidatedRelayDialSet,
+    AuthenticatedOuterRelayConnection, OuterRelayIoError, ValidatedRelayDialRoute,
+    ValidatedRelayDialSet,
 };
 use onebrain_protocol::{
     decode_relay_control, encode_reachability_object, encode_relay_control,
@@ -302,17 +303,33 @@ impl RelayPossessionClient for ProductionRelayPossessionClient {
         deadline: Instant,
     ) -> ReachabilityFuture<'a, Result<Vec<RelayPossessionProofV1>, RelayDiscoveryLimitation>> {
         Box::pin(async move {
-            let now = unix_now().map_err(|_| RelayDiscoveryLimitation::PoisonedSource)?;
+            let now = unix_now().map_err(|_| RelayDiscoveryLimitation::StateUnavailable)?;
             let mut proofs = Vec::with_capacity(staged.possession_dials().len());
             for dial in staged.possession_dials() {
                 proofs.push(
                     prove_relay_possession(dial, self.signer.as_ref(), now, deadline)
                         .await
-                        .map_err(|_| RelayDiscoveryLimitation::PoisonedSource)?,
+                        .map_err(|error| RelayDiscoveryLimitation::PossessionFailed {
+                            relay_node_id: dial.relay_node_id(),
+                            endpoint_index: dial.endpoint_index(),
+                            transport: dial.transport(),
+                            reason: possession_failure_reason(error),
+                        })?,
                 );
             }
             Ok(proofs)
         })
+    }
+}
+
+fn possession_failure_reason(error: OuterRelayIoError) -> RelayPossessionFailureReason {
+    match error {
+        OuterRelayIoError::Closed => RelayPossessionFailureReason::Closed,
+        OuterRelayIoError::InvalidFrame => RelayPossessionFailureReason::InvalidFrame,
+        OuterRelayIoError::WrongTransport => RelayPossessionFailureReason::WrongTransport,
+        OuterRelayIoError::Connect => RelayPossessionFailureReason::Connect,
+        OuterRelayIoError::Handshake => RelayPossessionFailureReason::Handshake,
+        OuterRelayIoError::Deadline => RelayPossessionFailureReason::Deadline,
     }
 }
 

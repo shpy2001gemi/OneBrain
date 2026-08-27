@@ -102,9 +102,12 @@ impl Tcp443RelayListener {
     pub(crate) async fn accept_connection(
         &self,
     ) -> Result<(tokio_rustls::server::TlsStream<TcpStream>, SocketAddr), RelayDataPlaneError> {
-        let (stream, peer) = timeout(Duration::from_secs(5), self.listener.accept())
+        // Waiting for a new peer is an idle listener state, not an expired
+        // relay operation.  Only bound work that starts after a peer connects.
+        let (stream, peer) = self
+            .listener
+            .accept()
             .await
-            .map_err(|_| RelayDataPlaneError::Expired)?
             .map_err(|_| RelayDataPlaneError::Closed)?;
         let tls = timeout(Duration::from_secs(5), self.acceptor.accept(stream))
             .await

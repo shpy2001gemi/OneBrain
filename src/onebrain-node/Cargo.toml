@@ -133,3 +133,4 @@ libc = { version = "0.2", optional = true }
 ed25519-dalek = "2"
 tempfile = "3"
 ku-net = { path = "../ku-net", features = ["persist"] }
+onebrain-relay = { path = "../onebrain-relay" }

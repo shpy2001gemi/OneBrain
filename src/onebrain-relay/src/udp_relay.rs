@@ -80,9 +80,12 @@ impl UdpRelayListener {
     }
 
     pub(crate) async fn accept_connection(&self) -> Result<quinn::Connection, RelayDataPlaneError> {
-        let incoming = timeout(Duration::from_secs(5), self.endpoint.accept())
+        // An idle QUIC listener may legitimately wait indefinitely.  The
+        // handshake below remains bounded once an incoming peer exists.
+        let incoming = self
+            .endpoint
+            .accept()
             .await
-            .map_err(|_| RelayDataPlaneError::Expired)?
             .ok_or(RelayDataPlaneError::Closed)?;
         timeout(Duration::from_secs(5), incoming)
             .await

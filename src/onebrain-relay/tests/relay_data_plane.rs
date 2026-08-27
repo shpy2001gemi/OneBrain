@@ -248,6 +248,48 @@ async fn real_udp_quic_datagram_round_trip_pins_descriptor_spki() {
 }
 
 #[tokio::test]
+async fn idle_production_listeners_remain_pending_instead_of_reporting_expired() {
+    let signer = SigningKey::from_bytes(&[75; 32]);
+    let public = *signer.verifying_key().as_bytes();
+    let descriptor = RelayDescriptorV1 {
+        format: 1,
+        relay_node_id: principal_node_id(&public),
+        relay_public_key: public,
+        endpoints: vec![],
+        supported_transports: vec![RelayTransportV1::QuicUdp, RelayTransportV1::TlsTcp443],
+        protocol_versions: vec![ProtocolVersionV1 { major: 1, minor: 0 }],
+        capacity_policy_digest: [76; 32],
+        previous_descriptor_blake3: None,
+        sequence: 1,
+        issued_at: 100,
+        expires_at: 130,
+        relay_signature: [0; 64],
+    };
+    let identity = relay_identity_certificate(&signer, &descriptor).unwrap();
+    let tcp = Tcp443RelayListener::bind("127.0.0.1:0".parse().unwrap(), &identity)
+        .await
+        .unwrap();
+    let udp = UdpRelayListener::bind("127.0.0.1:0".parse().unwrap(), &identity).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let durable =
+        Arc::new(DurableRelayState::initialize(&directory.path().join("relay.redb")).unwrap());
+    let service = Arc::new(RelayProductionService::new(signer, 8, 3, durable).unwrap());
+
+    assert!(tokio::time::timeout(
+        Duration::from_millis(150),
+        tcp.serve_production_once(Arc::clone(&service)),
+    )
+    .await
+    .is_err());
+    assert!(tokio::time::timeout(
+        Duration::from_millis(150),
+        udp.serve_production_once(service),
+    )
+    .await
+    .is_err());
+}
+
+#[tokio::test]
 async fn production_udp_outer_authenticates_and_grants_a_signed_reservation() {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)

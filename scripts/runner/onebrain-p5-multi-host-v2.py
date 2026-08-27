@@ -788,6 +788,41 @@ def _require_relay_ring(ring: Mapping[str, Mapping[str, object]]) -> None:
         raise P5ExecutionError("outbound-first routed ring must contain only relay-class edges")
 
 
+def _require_relay_matrix(
+    matrix: Mapping[str, Mapping[str, object]], relay_descriptors: tuple[str, ...]
+) -> None:
+    expected = {
+        blake3.blake3(bytes.fromhex(descriptor)).hexdigest()
+        for descriptor in relay_descriptors
+    }
+    failures: list[str] = []
+    if set(matrix) != set(REQUIRED_HOSTS):
+        raise P5ExecutionError("relay diagnostic matrix does not contain the three required hosts")
+    for host_id, row in matrix.items():
+        probes = row.get("probes")
+        if not isinstance(probes, list):
+            failures.append(f"{host_id}: matrix command did not succeed")
+            continue
+        if row.get("success") is not True:
+            failures.append(f"{host_id}: matrix aggregate failed")
+        observed: set[str] = set()
+        for probe in probes:
+            if not isinstance(probe, dict):
+                failures.append(f"{host_id}: malformed probe row")
+                continue
+            digest = probe.get("descriptor_blake3")
+            if isinstance(digest, str):
+                observed.add(digest)
+            if probe.get("success") is not True:
+                failures.append(
+                    f"{host_id}:{probe.get('relay_node_id', 'unknown')}:{probe.get('error', 'unknown')}"
+                )
+        if observed != expected:
+            failures.append(f"{host_id}: descriptor set mismatch")
+    if failures:
+        raise P5ExecutionError("relay diagnostic matrix failed: " + "; ".join(failures))
+
+
 def _arm_mixed_direct_edge(
     executor: "OpenSshWaveExecutor",
     hosts: tuple[HostConfigV2, ...],
@@ -1032,6 +1067,23 @@ def rehydrate_relay_ring(
     started_rows = _agent_result_map(started, "start-reachability")
     if any(row.get("bind") != "0.0.0.0:41010" for row in started_rows.values()):
         raise P5ExecutionError("rehydrated runtime did not bind the frozen endpoint")
+    agent_sequence += 1
+    diagnosed = executor.execute_wave(
+        agents,
+        tuple(
+            _signed_agent_command(
+                host,
+                request,
+                controller,
+                agent_sequence,
+                "diagnose-relay-matrix",
+                {"relay_descriptors": relay_descriptors},
+            )
+            for host in hosts
+        ),
+        deadline_monotonic_ns,
+    )
+    _require_relay_matrix(_agent_result_map(diagnosed, "diagnose-relay-matrix"), relay_descriptors)
     agent_sequence += 1
     reserved = executor.execute_wave(
         agents,
@@ -1526,12 +1578,26 @@ def run_production_preflight(
             for row in started_rows
         ):
             raise P5ExecutionError("agent did not start the real reachability runtime")
-        reservations = tuple(
+        diagnostics = tuple(
             _signed_agent_command(
                 host,
                 request,
                 controller,
                 3,
+                "diagnose-relay-matrix",
+                {"relay_descriptors": relay_descriptors},
+            )
+            for host in hosts
+        )
+        diagnosed = executor.execute_wave(agents, diagnostics, deadline)
+        relay_matrix = _agent_result_map(diagnosed, "diagnose-relay-matrix")
+        _require_relay_matrix(relay_matrix, relay_descriptors)
+        reservations = tuple(
+            _signed_agent_command(
+                host,
+                request,
+                controller,
+                4,
                 "ensure-reservations",
                 {"relay_descriptors": relay_descriptors},
             )
@@ -1545,7 +1611,7 @@ def run_production_preflight(
         ):
             raise P5ExecutionError("agent did not establish every required relay reservation")
         publications = tuple(
-            _signed_agent_command(host, request, controller, 4, "publish-advertisement")
+            _signed_agent_command(host, request, controller, 5, "publish-advertisement")
             for host in hosts
         )
         published = executor.execute_wave(agents, publications, deadline)
@@ -1561,7 +1627,7 @@ def run_production_preflight(
             for row in advertisements.values()
         ):
             raise P5ExecutionError("agent publication is incomplete")
-        next_sequence = 5
+        next_sequence = 6
         ring_commands = []
         for host in hosts:
             outgoing_host, incoming_host = _ring_neighbors(host.host_id)
@@ -1669,6 +1735,7 @@ def run_production_preflight(
                 for host, response in zip(hosts, prepared, strict=True)
             },
             "reachability_runtime_started": True,
+            "relay_diagnostic_matrix": relay_matrix,
             "relay_descriptor_digests": [blake3.blake3(bytes.fromhex(value)).hexdigest() for value in relay_descriptors],
             "ring": ring_rows,
             "request_digest": blake3.blake3(canonical_json(dict(request))).hexdigest(),

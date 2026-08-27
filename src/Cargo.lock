@@ -3465,6 +3465,7 @@ dependencies = [
  "onebrain-archive",
  "onebrain-base-contract",
  "onebrain-protocol",
+ "onebrain-relay",
  "rand 0.8.6",
  "redb",
  "reqwest 0.12.28",
