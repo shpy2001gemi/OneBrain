@@ -99,7 +99,7 @@ class CreateBaseReleaseRequestTests(unittest.TestCase):
                 "candidate_manifest": "76" * 32,
             },
         }
-        self.created = datetime(2026, 8, 11, 6, tzinfo=timezone.utc)
+        self.created = datetime(2026, 8, 27, 6, tzinfo=timezone.utc)
 
     def tearDown(self) -> None:
         self.temp.cleanup()

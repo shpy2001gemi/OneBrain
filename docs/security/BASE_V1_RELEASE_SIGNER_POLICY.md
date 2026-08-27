@@ -6,9 +6,9 @@ the `base-release` role signs the derived evidence manifest and the annotated
 `base-v1.0.0` tag. A valid signature from the wrong role or any unlisted key is
 rejected.
 
-The owner-approved qualification approver is
-`CB3FF16A1A2C8B017B5D83DF59DC9C079E00928B`. Its canonical trust-policy digest
-is `2e7cc2dacafad658ab5fe4e1536a4b92590f788c9c9e5a450d123930d65cfbd6`
+The owner-approved replacement qualification approver is
+`A9BFDC59364354F954ABD26947FCF15DD9C32781`. Its canonical trust-policy digest
+is `0710845f71ca7aca7ce89a0377a31ce293c6dd99778c0ff3decf9e04745528be`
 under derive-key context
 `onebrain:base-v1:qualification-approver-policy:1`.
 

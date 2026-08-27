@@ -2755,7 +2755,7 @@ def validate_base_v1_freeze() -> int:
         "owner_approval"
     ) != {
         "status": "owner-approved",
-        "approved_utc": "2026-08-11",
+        "approved_utc": "2026-08-27",
         "sample_or_default_keys_allowed": False,
     }:
         raise ContractError("Base v1 release signer approval drift")
@@ -2765,8 +2765,8 @@ def validate_base_v1_freeze() -> int:
     by_role = {row.get("policy", {}).get("role"): row for row in policies}
     expected_policies = {
         "qualification-approver": (
-            "CB3FF16A1A2C8B017B5D83DF59DC9C079E00928B",
-            "2e7cc2dacafad658ab5fe4e1536a4b92590f788c9c9e5a450d123930d65cfbd6",
+            "A9BFDC59364354F954ABD26947FCF15DD9C32781",
+            "0710845f71ca7aca7ce89a0377a31ce293c6dd99778c0ff3decf9e04745528be",
             ["base-release-request"],
         ),
         "base-release": (

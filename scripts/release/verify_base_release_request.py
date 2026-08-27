@@ -26,18 +26,18 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 
 APPROVER_POLICY_DIGEST_CONTEXT = "onebrain:base-v1:qualification-approver-policy:1"
-APPROVER_POLICY_DIGEST = "2e7cc2dacafad658ab5fe4e1536a4b92590f788c9c9e5a450d123930d65cfbd6"
+APPROVER_POLICY_DIGEST = "0710845f71ca7aca7ce89a0377a31ce293c6dd99778c0ff3decf9e04745528be"
 FROZEN_APPROVER_POLICY: dict[str, object] = {
     "algorithm": "OpenPGP-Ed25519",
     "allowed_usages": ["base-release-request"],
     "format": "onebrain/base-v1-qualification-approver-policy/1",
     "role": "qualification-approver",
     "signers": [{
-        "created_utc": "2026-08-09T13:27:27Z",
-        "expires_utc": "2028-08-08T13:27:27Z",
-        "fingerprint": "CB3FF16A1A2C8B017B5D83DF59DC9C079E00928B",
-        "key_id": "59DC9C079E00928B",
-        "public_key_packet_blake3": "ecee4527ed22908e0afc3a859492f7e0be7d4f4ccef087dd2781673364f39108",
+        "created_utc": "2026-08-27T04:49:51Z",
+        "expires_utc": "2028-08-26T04:49:51Z",
+        "fingerprint": "A9BFDC59364354F954ABD26947FCF15DD9C32781",
+        "key_id": "47FCF15DD9C32781",
+        "public_key_packet_blake3": "228d43ea4f3cc0b7548124682e353544ae9549e5458456016242cfa738a5575e",
     }],
     "valid_unlisted_signature": "reject",
     "verification": {
