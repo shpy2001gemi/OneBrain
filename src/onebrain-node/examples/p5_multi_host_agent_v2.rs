@@ -17,6 +17,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 #[cfg(unix)]
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 #[cfg(any(unix, test))]
+use futures::{stream::FuturesUnordered, Stream, StreamExt};
+#[cfg(any(unix, test))]
 use ku_core::foundation::NodeId;
 #[cfg(unix)]
 use ku_net::transport::{QuicTransport, TransportConfig};
@@ -1137,7 +1139,7 @@ async fn accept_expected_relay(
     advertisement: &ValidatedReachabilityAdvertisement,
     deadline: std::time::Instant,
 ) -> Result<RoutedVNextSession, String> {
-    let mut attempts = tokio::task::JoinSet::new();
+    let attempts = FuturesUnordered::new();
     let mut attempted_relays = BTreeSet::new();
     for initiator_reservation in advertisement.reservations() {
         if std::time::Instant::now() >= deadline {
@@ -1185,8 +1187,13 @@ async fn accept_expected_relay(
         let executor = Arc::clone(&executor);
         let initiator_reservation = initiator_reservation.clone();
         let expected_identity = expected_identity.clone();
-        attempts.spawn(async move {
-            executor
+        // Carrier readiness is not route authority. The outbound peer races
+        // every common relay and keeps only its winner, so this side must race
+        // the complete association + OBP authentication pipeline as well.
+        // Selecting the first raw carrier here can select a different relay
+        // from the outbound winner and deterministically deadlock the ring.
+        attempts.push(async move {
+            let carrier = executor
                 .accept_relay_inbound(
                     descriptor,
                     initiator_reservation,
@@ -1197,43 +1204,41 @@ async fn accept_expected_relay(
                     deadline,
                 )
                 .await
-                .map_err(|error| format!("{relay_id:?}: {error:?}"))
+                .map_err(|error| format!("{relay_id:?}: association/carrier: {error:?}"))?;
+            network
+                .accept_expected_selected(expected_peer, carrier)
+                .await
+                .map_err(|error| format!("{relay_id:?}: OBP authentication: {error}"))
         });
     }
     if attempts.is_empty() {
         return Err("no common live relay reservation for inbound peer".into());
     }
 
-    let carrier = await_first_relay_success(attempts, deadline).await?;
-    network
-        .accept_expected_selected(expected_peer, carrier)
-        .await
-        .map_err(|error| format!("relay inbound OBP authentication failed: {error}"))
+    await_first_relay_success(attempts, deadline).await
 }
 
 #[cfg(any(unix, test))]
-async fn await_first_relay_success<T: Send + 'static>(
-    mut attempts: tokio::task::JoinSet<Result<T, String>>,
+async fn await_first_relay_success<S, T>(
+    mut attempts: S,
     deadline: std::time::Instant,
-) -> Result<T, String> {
+) -> Result<T, String>
+where
+    S: Stream<Item = Result<T, String>> + Unpin,
+{
     let deadline = tokio::time::Instant::from_std(deadline);
     let mut failures = Vec::new();
     loop {
-        match tokio::time::timeout_at(deadline, attempts.join_next()).await {
-            Ok(Some(Ok(Ok(value)))) => {
-                attempts.abort_all();
-                return Ok(value);
-            }
-            Ok(Some(Ok(Err(error)))) => failures.push(error),
-            Ok(Some(Err(error))) => failures.push(format!("relay inbound task failed: {error}")),
+        match tokio::time::timeout_at(deadline, attempts.next()).await {
+            Ok(Some(Ok(value))) => return Ok(value),
+            Ok(Some(Err(error))) => failures.push(error),
             Ok(None) => {
                 return Err(format!(
-                    "all common relay associations failed: {}",
+                    "all common relay associations or authentications failed: {}",
                     failures.join("; ")
                 ));
             }
             Err(_) => {
-                attempts.abort_all();
                 return Err(format!(
                     "relay inbound deadline elapsed; attempts: {}",
                     failures.join("; ")
@@ -1839,13 +1844,20 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn relay_inbound_acceptance_is_not_pinned_to_the_first_common_relay() {
-        let mut attempts = tokio::task::JoinSet::new();
-        attempts.spawn(async { Err::<u8, _>("relay-b rejected association".to_owned()) });
-        attempts.spawn(async {
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-            Ok::<u8, String>(7)
-        });
+    async fn relay_inbound_acceptance_is_not_pinned_to_the_first_authenticated_relay_failure() {
+        let attempts = FuturesUnordered::new();
+        for (delay_millis, result) in [
+            (
+                0,
+                Err("relay-b authenticated the wrong association".to_owned()),
+            ),
+            (10, Ok(7)),
+        ] {
+            attempts.push(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(delay_millis)).await;
+                result
+            });
+        }
 
         let selected = await_first_relay_success(
             attempts,

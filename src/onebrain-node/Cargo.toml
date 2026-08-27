@@ -71,6 +71,7 @@ vnext-bootstrap-https = ["dep:reqwest", "dep:rustls"]
 vnext-outbound-first = [
     "vnext-network-runtime",
     "vnext-bootstrap-https",
+    "dep:futures",
     "ku-net/outbound-first",
     "dep:libc",
 ]
@@ -119,6 +120,7 @@ blake3 = "1"
 tracing = "0.1"
 getrandom = "0.3"
 fs2 = "0.4"
+futures = { version = "0.3", optional = true }
 zeroize = "1"
 unicode-segmentation = "1.13"
 ed25519-dalek = { version = "2", features = ["rand_core"] }
