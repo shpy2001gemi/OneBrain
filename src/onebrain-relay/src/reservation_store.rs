@@ -11,7 +11,7 @@ use onebrain_protocol::{
     ReachabilityObjectV1, ReachabilitySignatureRoleV1, RelayControlSignatureRoleV1, RelayControlV1,
     RelayDenialCodeV1, RelayDenialV1, RelayKeepaliveV1, RelayOuterClientChallengeV1,
     RelayOuterClientHelloV1, RelayReservationV1, RelayReserveRequestV1, RelayRevocationActorV1,
-    RelayRevokeV1,
+    RelayRevokeV1, MAX_RELAY_CONTROL_VALIDITY_SECONDS,
 };
 
 use crate::{DurableRelayState, DurableStateKind};
@@ -160,12 +160,21 @@ impl OuterClientAuthenticator {
         }
         self.pending.remove(&hello.challenge_nonce);
         self.consumed.insert(hello.challenge_nonce);
+        // The challenge is a short-lived, single-use proof against handshake
+        // replay.  It must not also become the lifetime of the authenticated
+        // outer carrier: reservations and relay associations intentionally
+        // continue after the 30-second challenge window.  Bound the client-
+        // asserted session lifetime independently by the canonical relay-
+        // control lifetime.
+        let session_expires_at = hello
+            .expires_at
+            .min(now.saturating_add(MAX_RELAY_CONTROL_VALIDITY_SECONDS));
         Ok(AuthenticatedOuterClient {
             client_node_id: hello.client_node_id,
             client_public_key: hello.client_public_key,
             outer_connection_binding,
             authenticated_at: now,
-            expires_at: hello.expires_at,
+            expires_at: session_expires_at,
             observed_socket: None,
         })
     }
@@ -743,6 +752,80 @@ mod tests {
                 .authenticate(hello, [19; 32], 110)
                 .unwrap_err(),
             ReservationError::ChallengeMissing
+        );
+    }
+
+    #[test]
+    fn challenge_expiry_does_not_truncate_authenticated_outer_session() {
+        let relay_key = SigningKey::from_bytes(&[21; 32]);
+        let client_key = SigningKey::from_bytes(&[22; 32]);
+        let binding = [23; 32];
+        let nonce = [24; 32];
+        let mut authenticator = OuterClientAuthenticator::new(relay_key.clone());
+        let challenge = authenticator.issue_challenge(nonce, binding, 100).unwrap();
+        assert_eq!(challenge.expires_at, 130);
+
+        let requested_session_expiry = 900;
+        let mut hello = RelayOuterClientHelloV1 {
+            format: 1,
+            relay_node_id: principal_node_id(relay_key.verifying_key().as_bytes()),
+            client_node_id: principal_node_id(client_key.verifying_key().as_bytes()),
+            client_public_key: *client_key.verifying_key().as_bytes(),
+            challenge_nonce: nonce,
+            outer_connection_binding: binding,
+            issued_at: 110,
+            expires_at: requested_session_expiry,
+            client_signature: [0; 64],
+        };
+        hello.client_signature = client_key
+            .sign(
+                &relay_control_signing_bytes(
+                    &RelayControlV1::OuterClientHello(hello.clone()),
+                    RelayControlSignatureRoleV1::OuterHelloClient,
+                )
+                .unwrap(),
+            )
+            .to_bytes();
+
+        let authenticated = authenticator.authenticate(hello, binding, 110).unwrap();
+        assert_eq!(authenticated.expires_at(), requested_session_expiry);
+        assert!(authenticated.expires_at() > challenge.expires_at);
+    }
+
+    #[test]
+    fn authenticated_outer_session_accepts_canonical_maximum_lifetime() {
+        let relay_key = SigningKey::from_bytes(&[25; 32]);
+        let client_key = SigningKey::from_bytes(&[26; 32]);
+        let binding = [27; 32];
+        let nonce = [28; 32];
+        let now = 110;
+        let mut authenticator = OuterClientAuthenticator::new(relay_key.clone());
+        authenticator.issue_challenge(nonce, binding, 100).unwrap();
+        let mut hello = RelayOuterClientHelloV1 {
+            format: 1,
+            relay_node_id: principal_node_id(relay_key.verifying_key().as_bytes()),
+            client_node_id: principal_node_id(client_key.verifying_key().as_bytes()),
+            client_public_key: *client_key.verifying_key().as_bytes(),
+            challenge_nonce: nonce,
+            outer_connection_binding: binding,
+            issued_at: now,
+            expires_at: now + MAX_RELAY_CONTROL_VALIDITY_SECONDS,
+            client_signature: [0; 64],
+        };
+        hello.client_signature = client_key
+            .sign(
+                &relay_control_signing_bytes(
+                    &RelayControlV1::OuterClientHello(hello.clone()),
+                    RelayControlSignatureRoleV1::OuterHelloClient,
+                )
+                .unwrap(),
+            )
+            .to_bytes();
+
+        let authenticated = authenticator.authenticate(hello, binding, now).unwrap();
+        assert_eq!(
+            authenticated.expires_at(),
+            now + MAX_RELAY_CONTROL_VALIDITY_SECONDS
         );
     }
 }

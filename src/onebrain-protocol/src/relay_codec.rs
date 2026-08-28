@@ -9,6 +9,10 @@ use crate::{
 };
 
 pub const MAX_RELAY_CONTROL_BYTES: usize = 65_536;
+/// Maximum lifetime of a canonical relay control object. Short-lived
+/// challenge objects may choose a smaller value, while authenticated outer
+/// sessions use this full bound independently of the challenge TTL.
+pub const MAX_RELAY_CONTROL_VALIDITY_SECONDS: u64 = 900;
 
 pub mod relay_control_schema_id {
     pub const RESERVE: u64 = 50;
@@ -625,7 +629,7 @@ fn base(format: u64, issued: u64, expires: u64) -> Result<(), RelayCodecError> {
 }
 
 fn validity(issued: u64, expires: u64) -> Result<(), RelayCodecError> {
-    if issued < expires && expires - issued <= 900 {
+    if issued < expires && expires - issued <= MAX_RELAY_CONTROL_VALIDITY_SECONDS {
         Ok(())
     } else {
         Err(RelayCodecError::InvalidField("validity"))

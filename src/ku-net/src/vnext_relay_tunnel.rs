@@ -28,7 +28,7 @@ use onebrain_protocol::{
     decode_relay_control, encode_relay_control, relay_control_signing_bytes,
     relay_control_signing_parts, RelayControlSignatureRoleV1, RelayControlV1,
     RelayOuterClientHelloV1, RelayPossessionProofV1, RelayTransportV1, RelayWireFrameV1,
-    RelayWireKindV1, MAX_RELAY_WIRE_PAYLOAD_BYTES,
+    RelayWireKindV1, MAX_RELAY_CONTROL_VALIDITY_SECONDS, MAX_RELAY_WIRE_PAYLOAD_BYTES,
 };
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -1202,6 +1202,7 @@ where
         route.relay_public_key(),
         challenge.relay_signature,
     )?;
+    let session_expires_at = authenticated_outer_session_expiry(route.expires_at(), now)?;
     let mut hello = RelayOuterClientHelloV1 {
         format: 1,
         relay_node_id: route.relay_node_id(),
@@ -1210,7 +1211,7 @@ where
         challenge_nonce: challenge.challenge_nonce,
         outer_connection_binding: binding,
         issued_at: now,
-        expires_at: challenge.expires_at.min(now.saturating_add(30)),
+        expires_at: session_expires_at,
         client_signature: [0; 64],
     };
     let unsigned = RelayControlV1::OuterClientHello(hello.clone());
@@ -1244,7 +1245,7 @@ where
     {
         return Err(OuterRelayIoError::Handshake);
     }
-    Ok(challenge.expires_at.min(route.expires_at()))
+    Ok(session_expires_at)
 }
 
 async fn client_handshake_single<S>(
@@ -1285,6 +1286,7 @@ where
         route.relay_public_key(),
         value.relay_signature,
     )?;
+    let session_expires_at = authenticated_outer_session_expiry(route.expires_at(), now)?;
     let mut hello = RelayOuterClientHelloV1 {
         format: 1,
         relay_node_id: route.relay_node_id(),
@@ -1293,7 +1295,7 @@ where
         challenge_nonce: value.challenge_nonce,
         outer_connection_binding: binding,
         issued_at: now,
-        expires_at: value.expires_at.min(now.saturating_add(30)),
+        expires_at: session_expires_at,
         client_signature: [0; 64],
     };
     let unsigned = RelayControlV1::OuterClientHello(hello.clone());
@@ -1326,7 +1328,18 @@ where
     {
         return Err(OuterRelayIoError::Handshake);
     }
-    Ok(value.expires_at.min(route.expires_at()))
+    Ok(session_expires_at)
+}
+
+fn authenticated_outer_session_expiry(
+    route_expires_at: u64,
+    now: u64,
+) -> Result<u64, OuterRelayIoError> {
+    let expires_at = route_expires_at.min(now.saturating_add(MAX_RELAY_CONTROL_VALIDITY_SECONDS));
+    if expires_at <= now {
+        return Err(OuterRelayIoError::Handshake);
+    }
+    Ok(expires_at)
 }
 
 fn verify_relay_control_signature(
@@ -1861,6 +1874,24 @@ fn wake_all(waiters: &Mutex<Vec<Waker>>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn authenticated_outer_session_outlives_single_use_challenge_window() {
+        let now = 100;
+        let expires_at =
+            authenticated_outer_session_expiry(now + MAX_RELAY_CONTROL_VALIDITY_SECONDS, now)
+                .unwrap();
+        assert_eq!(expires_at, now + MAX_RELAY_CONTROL_VALIDITY_SECONDS);
+        assert!(expires_at > now + 30);
+    }
+
+    #[test]
+    fn authenticated_outer_session_rejects_expired_route() {
+        assert_eq!(
+            authenticated_outer_session_expiry(100, 100).unwrap_err(),
+            OuterRelayIoError::Handshake
+        );
+    }
 
     #[tokio::test]
     async fn vnext_relay_tunnel_copies_bounds_drains_and_recovers() {
