@@ -290,6 +290,15 @@ struct DirectInboundReady {
     admission: SessionAdmission,
 }
 
+/// An expected-peer carrier that completed the OBP handshake but has not yet
+/// been promoted into the route directory. Multi-path selection keeps a
+/// candidate in this state until it is the single authenticated winner.
+#[cfg(feature = "vnext-outbound-first")]
+pub(crate) struct PendingAuthenticatedRoute {
+    authenticated: AuthenticatedRouteConnection,
+    admission: HandshakeAdmission,
+}
+
 #[cfg(feature = "vnext-outbound-first")]
 #[derive(Default)]
 struct DirectInboundBroker {
@@ -1007,6 +1016,27 @@ impl VNextNetworkRuntime {
             .await
     }
 
+    #[cfg(feature = "vnext-outbound-first")]
+    pub(crate) async fn authenticate_expected_candidate(
+        &self,
+        expected_peer: NodeId,
+        selected: SelectedCarrier,
+    ) -> Result<PendingAuthenticatedRoute, VNextNetworkRuntimeError> {
+        self.outbound
+            .authenticate_expected_candidate(expected_peer, selected)
+            .await
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub(crate) fn promote_expected_candidate(
+        &self,
+        expected_peer: NodeId,
+        pending: PendingAuthenticatedRoute,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        self.outbound
+            .promote_expected_candidate(expected_peer, pending)
+    }
+
     /// Accept a target-side relay carrier that was sealed from a verified
     /// association, then grant route authority only after the initiator proves
     /// the expected OBP identity.
@@ -1090,11 +1120,8 @@ impl VNextNetworkRuntime {
         expected_peer: NodeId,
         advertisement: &ku_net::vnext_reachability_crypto::ValidatedReachabilityAdvertisement,
     ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
-        let selected = selector
-            .select_expected(expected_peer, advertisement)
-            .await
-            .map_err(route_failure)?;
-        self.connect_expected_selected(expected_peer, selected)
+        selector
+            .connect_expected(self, expected_peer, advertisement)
             .await
     }
 
@@ -1540,12 +1567,41 @@ impl OutboundDeliveryEngine {
         expected_peer: NodeId,
         selected: SelectedCarrier,
     ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        let pending = self
+            .authenticate_expected_candidate(expected_peer, selected)
+            .await?;
+        self.promote_expected_candidate(expected_peer, pending)
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    async fn authenticate_expected_candidate(
+        &self,
+        expected_peer: NodeId,
+        selected: SelectedCarrier,
+    ) -> Result<PendingAuthenticatedRoute, VNextNetworkRuntimeError> {
         let handshake_admission = self
             .admission
             .try_begin_handshake(selected.connected_socket().ip())
             .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
-        self.authenticate_expected_selected(expected_peer, selected, handshake_admission)
-            .await
+        let authenticated = tokio::time::timeout(
+            Duration::from_secs(self.policy.handshake_timeout_seconds),
+            authenticate_expected_outbound(
+                selected,
+                expected_peer,
+                self.identity.as_ref(),
+                random_nonce(),
+                &[reconciliation_profile()],
+                &[reconciliation_capability()],
+                Vec::new(),
+            ),
+        )
+        .await
+        .map_err(|_| VNextNetworkRuntimeError::HandshakeTimeout)?
+        .map_err(route_failure)?;
+        Ok(PendingAuthenticatedRoute {
+            authenticated,
+            admission: handshake_admission,
+        })
     }
 
     #[cfg(feature = "vnext-outbound-first")]
@@ -1628,30 +1684,43 @@ impl OutboundDeliveryEngine {
         selected: SelectedCarrier,
         handshake_admission: HandshakeAdmission,
     ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
-        let authenticated = tokio::time::timeout(
-            Duration::from_secs(self.policy.handshake_timeout_seconds),
-            authenticate_expected_outbound(
-                selected,
-                expected_peer,
-                self.identity.as_ref(),
-                random_nonce(),
-                &[reconciliation_profile()],
-                &[reconciliation_capability()],
-                Vec::new(),
-            ),
-        )
-        .await
-        .map_err(|_| VNextNetworkRuntimeError::HandshakeTimeout)?
-        .map_err(route_failure)?;
-        let session_admission = handshake_admission
+        let pending = PendingAuthenticatedRoute {
+            authenticated: tokio::time::timeout(
+                Duration::from_secs(self.policy.handshake_timeout_seconds),
+                authenticate_expected_outbound(
+                    selected,
+                    expected_peer,
+                    self.identity.as_ref(),
+                    random_nonce(),
+                    &[reconciliation_profile()],
+                    &[reconciliation_capability()],
+                    Vec::new(),
+                ),
+            )
+            .await
+            .map_err(|_| VNextNetworkRuntimeError::HandshakeTimeout)?
+            .map_err(route_failure)?,
+            admission: handshake_admission,
+        };
+        self.promote_expected_candidate(expected_peer, pending)
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    fn promote_expected_candidate(
+        &self,
+        expected_peer: NodeId,
+        pending: PendingAuthenticatedRoute,
+    ) -> Result<RoutedVNextSession, VNextNetworkRuntimeError> {
+        let session_admission = pending
+            .admission
             .promote(expected_peer)
             .map_err(|error| observable_resource_admission_error(&self.observability, error))?;
         self.replay_guard
             .lock()
             .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?
-            .accept(authenticated.session())
+            .accept(pending.authenticated.session())
             .map_err(|error| VNextNetworkRuntimeError::Session(format!("{error:?}")))?;
-        let mut routed = RoutedVNextSession::promote(expected_peer, authenticated)
+        let mut routed = RoutedVNextSession::promote(expected_peer, pending.authenticated)
             .map_err(|error| VNextNetworkRuntimeError::Session(error.to_string()))?;
         routed.attach_admission(session_admission);
         self.routes
