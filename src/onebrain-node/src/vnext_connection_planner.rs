@@ -229,17 +229,18 @@ impl ProductionExpectedPeerCarrierSelector {
     }
 }
 
-/// Relay candidates are independently authenticated paths. A failed or closed
-/// relay must not suppress the remaining owner-admitted candidates, while
-/// identity, network-epoch, and budget failures remain fail-closed.
+/// Relay candidates are independently authenticated paths. A failed, closed,
+/// or peer-mismatched relay must not suppress the remaining owner-admitted
+/// candidates. A mismatch never grants authority: that path is discarded and
+/// the race only succeeds if another path authenticates the expected peer.
+/// Network-epoch and budget failures remain global and fail closed.
 fn record_relay_attempt_failure(
     last_failure: &mut RouteFailure,
     error: RouteFailure,
 ) -> Result<(), RouteFailure> {
     if matches!(
         error,
-        RouteFailure::PeerIdentityMismatch
-            | RouteFailure::NetworkChanged
+        RouteFailure::NetworkChanged
             | RouteFailure::BudgetExceeded
             | RouteFailure::PathLimited { .. }
     ) {
@@ -703,7 +704,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn relay_candidate_failure_policy_retries_transport_failure_and_fails_closed_on_identity() {
+    fn relay_candidate_failure_policy_retries_path_local_failures() {
         let mut last = RouteFailure::RelayUnavailable;
         assert_eq!(
             record_relay_attempt_failure(&mut last, RouteFailure::RelayDenied),
@@ -717,7 +718,13 @@ mod tests {
         assert_eq!(last, RouteFailure::RelayUnavailable);
         assert_eq!(
             record_relay_attempt_failure(&mut last, RouteFailure::PeerIdentityMismatch),
-            Err(RouteFailure::PeerIdentityMismatch)
+            Ok(())
+        );
+        assert_eq!(last, RouteFailure::PeerIdentityMismatch);
+
+        assert_eq!(
+            record_relay_attempt_failure(&mut last, RouteFailure::NetworkChanged),
+            Err(RouteFailure::NetworkChanged)
         );
     }
 
@@ -733,6 +740,36 @@ mod tests {
         assert_eq!(
             await_first_relay_attempt(attempts, Instant::now() + Duration::from_secs(1)).await,
             Ok(7)
+        );
+    }
+
+    #[tokio::test]
+    async fn outbound_relay_race_keeps_working_after_peer_mismatch() {
+        let mut attempts = tokio::task::JoinSet::new();
+        attempts.spawn(async { Err::<u8, _>(RouteFailure::PeerIdentityMismatch) });
+        attempts.spawn(async {
+            tokio::task::yield_now().await;
+            Ok::<u8, RouteFailure>(9)
+        });
+
+        assert_eq!(
+            await_first_relay_attempt(attempts, Instant::now() + Duration::from_secs(1)).await,
+            Ok(9)
+        );
+    }
+
+    #[tokio::test]
+    async fn outbound_relay_race_fails_closed_when_every_peer_mismatches() {
+        let mut attempts = tokio::task::JoinSet::new();
+        attempts.spawn(async { Err::<u8, _>(RouteFailure::PeerIdentityMismatch) });
+        attempts.spawn(async {
+            tokio::task::yield_now().await;
+            Err::<u8, _>(RouteFailure::PeerIdentityMismatch)
+        });
+
+        assert_eq!(
+            await_first_relay_attempt(attempts, Instant::now() + Duration::from_secs(1)).await,
+            Err(RouteFailure::PeerIdentityMismatch)
         );
     }
 }
