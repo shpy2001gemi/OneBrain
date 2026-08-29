@@ -2,8 +2,8 @@
 
 #![cfg(feature = "vnext-outbound-first")]
 
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -94,7 +94,66 @@ struct ProductionRelaySelectionContext {
     discovery: Arc<RwLock<RelayDiscovery>>,
     reservations: Arc<RelayReservationManager>,
     signer: Arc<dyn ReachabilityIdentitySigner>,
-    next_sequence: AtomicU64,
+    connect_sequences: Arc<RelayConnectSequenceAllocator>,
+}
+
+type RelayConnectSequenceScope = ([u8; 32], [u8; 32], [u8; 32], [u8; 32]);
+
+const MAX_RELAY_CONNECT_SEQUENCE_SCOPES: usize = 65_536;
+
+struct RelayConnectSequenceAllocator {
+    max_scopes: usize,
+    next_by_scope: Mutex<BTreeMap<RelayConnectSequenceScope, (u64, u64)>>,
+}
+
+impl RelayConnectSequenceAllocator {
+    fn new(initial_sequence: u64) -> Result<Self, RouteFailure> {
+        Self::new_with_limit(initial_sequence, MAX_RELAY_CONNECT_SEQUENCE_SCOPES)
+    }
+
+    fn new_with_limit(initial_sequence: u64, max_scopes: usize) -> Result<Self, RouteFailure> {
+        // The connectivity replay store requires the first request in every
+        // exact reservation scope to start at one. A non-one global cursor
+        // cannot safely initialize a newly encountered scope.
+        if initial_sequence != 1 || max_scopes == 0 {
+            return Err(RouteFailure::BudgetExceeded);
+        }
+        Ok(Self {
+            max_scopes,
+            next_by_scope: Mutex::new(BTreeMap::new()),
+        })
+    }
+
+    fn next(
+        &self,
+        scope: RelayConnectSequenceScope,
+        expires_at: u64,
+        now: u64,
+    ) -> Result<u64, RouteFailure> {
+        if expires_at <= now {
+            return Err(RouteFailure::CandidateExpired);
+        }
+        let mut next_by_scope = self
+            .next_by_scope
+            .lock()
+            .map_err(|_| RouteFailure::RelayUnavailable)?;
+        if let Some((next, retained_until)) = next_by_scope.get_mut(&scope) {
+            let sequence = *next;
+            *next = sequence
+                .checked_add(1)
+                .ok_or(RouteFailure::BudgetExceeded)?;
+            *retained_until = (*retained_until).max(expires_at);
+            return Ok(sequence);
+        }
+        if next_by_scope.len() >= self.max_scopes {
+            next_by_scope.retain(|_, (_, retained_until)| *retained_until > now);
+        }
+        if next_by_scope.len() >= self.max_scopes {
+            return Err(RouteFailure::BudgetExceeded);
+        }
+        next_by_scope.insert(scope, (2, expires_at));
+        Ok(1)
+    }
 }
 
 impl ProductionExpectedPeerCarrierSelector {
@@ -121,14 +180,12 @@ impl ProductionExpectedPeerCarrierSelector {
         signer: Arc<dyn ReachabilityIdentitySigner>,
         initial_sequence: u64,
     ) -> Result<Self, RouteFailure> {
-        if initial_sequence == 0 {
-            return Err(RouteFailure::BudgetExceeded);
-        }
+        let connect_sequences = Arc::new(RelayConnectSequenceAllocator::new(initial_sequence)?);
         self.relay = Some(ProductionRelaySelectionContext {
             discovery,
             reservations,
             signer,
-            next_sequence: AtomicU64::new(initial_sequence),
+            connect_sequences,
         });
         Ok(self)
     }
@@ -231,57 +288,66 @@ impl ProductionExpectedPeerCarrierSelector {
             {
                 return Err(RouteFailure::PeerIdentityMismatch);
             }
-            let now = unix_now_seconds()?;
-            let expires_at = local_value
-                .expires_at
-                .min(remote_value.expires_at)
-                .min(now.saturating_add(30));
-            if expires_at <= now {
-                continue;
-            }
-            let sequence = context.next_sequence.fetch_add(1, Ordering::AcqRel);
-            if sequence == 0 || sequence == u64::MAX {
-                return Err(RouteFailure::BudgetExceeded);
-            }
-            let mut nonce = [0u8; 32];
-            OsRng.fill_bytes(&mut nonce);
-            let mut request = RelayConnectRequestV1 {
-                format: 1,
-                initiator_node_id: local_value.target_node_id,
-                target_node_id: expected_peer,
-                initiator_reservation_id: local_value.reservation_id,
-                target_reservation_id: remote_value.reservation_id,
-                nonce,
-                sequence,
-                issued_at: now,
-                expires_at,
-                initiator_signature: [0; 64],
-            };
-            let root = ConnectivitySignalingV1::RelayConnectRequest(request.clone());
-            let (domain, unsigned) = connectivity_signing_parts(
-                &root,
-                ConnectivitySignatureRoleV1::RelayConnectInitiator,
-            )
-            .map_err(|_| RouteFailure::RelayDenied)?;
-            request.initiator_signature = context
-                .signer
-                .sign_reachability_message(domain, &unsigned)
-                .map_err(|_| RouteFailure::RelayDenied)?;
-            let public = outer.public_endpoint();
-            let candidate = RelayCandidateV1 {
-                relay_node_id: relay_id,
-                reservation_id: local_value.reservation_id,
-                transport: outer.transport(),
-                endpoint: ReachabilityEndpointV1 {
-                    host: public.host.clone(),
-                    port: public.port,
-                },
-                priority: 1,
-                expires_at,
-            };
             let executor = Arc::clone(&self.executor);
+            let signer = Arc::clone(&context.signer);
+            let connect_sequences = Arc::clone(&context.connect_sequences);
             let remote = remote.clone();
             attempts.push(Box::pin(async move {
+                // Allocate only when this candidate is actually attempted.
+                // Each relay reservation pair is a distinct replay scope, so
+                // a second relay must start at sequence one independently.
+                let local_value = local.canonical();
+                let remote_value = remote.canonical();
+                let scope = (
+                    *local_value.target_node_id.as_bytes(),
+                    *expected_peer.as_bytes(),
+                    local_value.reservation_id,
+                    remote_value.reservation_id,
+                );
+                let now = unix_now_seconds()?;
+                let expires_at = local_value
+                    .expires_at
+                    .min(remote_value.expires_at)
+                    .min(now.saturating_add(30));
+                if expires_at <= now {
+                    return Err(RouteFailure::CandidateExpired);
+                }
+                let sequence = connect_sequences.next(scope, expires_at, now)?;
+                let mut nonce = [0u8; 32];
+                OsRng.fill_bytes(&mut nonce);
+                let mut request = RelayConnectRequestV1 {
+                    format: 1,
+                    initiator_node_id: local_value.target_node_id,
+                    target_node_id: expected_peer,
+                    initiator_reservation_id: local_value.reservation_id,
+                    target_reservation_id: remote_value.reservation_id,
+                    nonce,
+                    sequence,
+                    issued_at: now,
+                    expires_at,
+                    initiator_signature: [0; 64],
+                };
+                let root = ConnectivitySignalingV1::RelayConnectRequest(request.clone());
+                let (domain, unsigned) = connectivity_signing_parts(
+                    &root,
+                    ConnectivitySignatureRoleV1::RelayConnectInitiator,
+                )
+                .map_err(|_| RouteFailure::RelayDenied)?;
+                request.initiator_signature = signer
+                    .sign_reachability_message(domain, &unsigned)
+                    .map_err(|_| RouteFailure::RelayDenied)?;
+                let public = outer.public_endpoint();
+                let candidate = RelayCandidateV1 {
+                    relay_node_id: relay_id,
+                    reservation_id: local_value.reservation_id,
+                    transport: outer.transport(),
+                    endpoint: ReachabilityEndpointV1 {
+                        host: public.host.clone(),
+                        port: public.port,
+                    },
+                    priority: 1,
+                    expires_at,
+                };
                 let association = executor
                     .associate_relay(&request, &local, &remote, Arc::clone(&outer), deadline)
                     .await
@@ -860,6 +926,42 @@ pub enum RoutedSessionError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    fn relay_connect_sequences_start_at_one_per_exact_reservation_scope() {
+        let allocator = RelayConnectSequenceAllocator::new(1).expect("valid replay sequence");
+        let first_scope = ([1; 32], [2; 32], [3; 32], [4; 32]);
+        let second_scope = ([1; 32], [2; 32], [5; 32], [6; 32]);
+
+        assert_eq!(allocator.next(first_scope, 200, 100), Ok(1));
+        assert_eq!(allocator.next(second_scope, 200, 100), Ok(1));
+        assert_eq!(allocator.next(first_scope, 200, 100), Ok(2));
+        assert_eq!(allocator.next(second_scope, 200, 100), Ok(2));
+    }
+
+    #[test]
+    fn relay_connect_sequences_reject_noncanonical_initial_value() {
+        assert!(matches!(
+            RelayConnectSequenceAllocator::new(2),
+            Err(RouteFailure::BudgetExceeded)
+        ));
+    }
+
+    #[test]
+    fn relay_connect_sequence_scopes_are_bounded_and_expiry_reclaims_capacity() {
+        let allocator =
+            RelayConnectSequenceAllocator::new_with_limit(1, 1).expect("bounded allocator");
+        let first_scope = ([1; 32], [2; 32], [3; 32], [4; 32]);
+        let second_scope = ([1; 32], [2; 32], [5; 32], [6; 32]);
+
+        assert_eq!(allocator.next(first_scope, 200, 100), Ok(1));
+        assert_eq!(
+            allocator.next(second_scope, 300, 150),
+            Err(RouteFailure::BudgetExceeded)
+        );
+        assert_eq!(allocator.next(second_scope, 300, 201), Ok(1));
+    }
 
     #[test]
     fn relay_candidate_failure_policy_retries_path_local_failures() {
