@@ -939,8 +939,13 @@ impl ConnectionPlannerExecutor {
             .await
             .map_err(|error| RouteFailure::RelayPathFailed(format!("inner carrier: {error:?}")))?;
         let expected_peer = association.canonical().initiator_node_id;
-        let selected =
-            Self::seal_validated_relay(candidate, association, &outer, connection, Vec::new())?;
+        let selected = Self::seal_validated_inbound_relay(
+            candidate,
+            association,
+            &outer,
+            connection,
+            Vec::new(),
+        )?;
         Self::expect_inbound(selected, expected_peer)
     }
 
@@ -965,6 +970,24 @@ impl ConnectionPlannerExecutor {
     ) -> Result<SelectedCarrier, RouteFailure> {
         let action = Self::admitted_relay_action(candidate, &association)?;
         Self::seal_relay(action, association, outer, connection, attempts)
+    }
+
+    /// Seal the target side of an admitted relay association.
+    ///
+    /// The inbound candidate is derived before the initiator's connect request
+    /// arrives, so its initial lifetime is bounded by the two reservations.
+    /// The signed association can be shorter because it is also bounded by the
+    /// connect request. Reducing the derived candidate to that signed lifetime
+    /// preserves fail-closed authority while avoiding a false binding denial.
+    pub fn seal_validated_inbound_relay(
+        mut candidate: onebrain_protocol::RelayCandidateV1,
+        association: ValidatedRelayAssociation,
+        outer: &AuthenticatedOuterRelayConnection,
+        connection: OBPConnection,
+        attempts: Vec<RouteAttemptV1>,
+    ) -> Result<SelectedCarrier, RouteFailure> {
+        candidate.expires_at = candidate.expires_at.min(association.canonical().expires_at);
+        Self::seal_validated_relay(candidate, association, outer, connection, attempts)
     }
 
     pub async fn execute(

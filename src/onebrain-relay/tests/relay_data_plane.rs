@@ -951,9 +951,11 @@ async fn production_tls_relay_multiplexes_full_ring_on_shared_outer_connections(
         Vec::new(),
     )
     .unwrap();
+    let mut inbound_candidate_ab = relay_candidate_ab;
+    inbound_candidate_ab.expires_at = association_ab.expires_at.saturating_add(120);
     let inbound_ab = ConnectionPlannerExecutor::expect_inbound(
-        ConnectionPlannerExecutor::seal_validated_relay(
-            relay_candidate_ab,
+        ConnectionPlannerExecutor::seal_validated_inbound_relay(
+            inbound_candidate_ab,
             initiator_association,
             &target,
             target_inner_ab,
