@@ -791,4 +791,62 @@ mod tests {
             )
             .unwrap();
     }
+
+    #[test]
+    fn external_identity_signer_matches_canonical_relay_connect_request() {
+        use ed25519_dalek::{Signature, Verifier};
+        use onebrain_protocol::{
+            connectivity_signing_bytes, connectivity_signing_parts, ConnectivitySignalingV1,
+            ConnectivitySignatureRoleV1, RelayConnectRequestV1,
+        };
+
+        let temp = tempfile::tempdir().unwrap();
+        let binding = [0x35; 32];
+        let key = SigningKey::from_bytes(&[0x46; 32]);
+        let public = key.verifying_key();
+        let mut cursors = BTreeMap::new();
+        cursors.insert(
+            P5SignerDomainV2::ReachabilityIdentity,
+            DurableSequenceCursor::open(temp.path().join("reachability.cursor"), binding).unwrap(),
+        );
+        let service = Arc::new(InProcessP5SignerService::service_side_with_domain_cursors(
+            key,
+            cursors,
+            vec![P5SignerDomainV2::ReachabilityIdentity],
+        ));
+        let signer = ExternalP5Signer::new(service, 0, Duration::from_secs(1));
+        let mut request = RelayConnectRequestV1 {
+            format: 1,
+            initiator_node_id: ku_net::vnext_session::principal_node_id(public.as_bytes()),
+            target_node_id: ku_net::vnext_session::principal_node_id(&[0x57; 32]),
+            initiator_reservation_id: [0x68; 32],
+            target_reservation_id: [0x79; 32],
+            nonce: [0x8A; 32],
+            sequence: 1,
+            issued_at: 100,
+            expires_at: 130,
+            initiator_signature: [0; 64],
+        };
+        let unsigned = ConnectivitySignalingV1::RelayConnectRequest(request.clone());
+        let (domain, canonical) = connectivity_signing_parts(
+            &unsigned,
+            ConnectivitySignatureRoleV1::RelayConnectInitiator,
+        )
+        .unwrap();
+        request.initiator_signature = signer
+            .sign_reachability_message(domain, &canonical)
+            .unwrap();
+        let signed = ConnectivitySignalingV1::RelayConnectRequest(request.clone());
+
+        public
+            .verify(
+                &connectivity_signing_bytes(
+                    &signed,
+                    ConnectivitySignatureRoleV1::RelayConnectInitiator,
+                )
+                .unwrap(),
+                &Signature::from_bytes(&request.initiator_signature),
+            )
+            .unwrap();
+    }
 }

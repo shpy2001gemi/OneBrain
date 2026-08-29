@@ -302,15 +302,19 @@ async fn run_udp_listener(
 ) -> Result<(), RelayDataPlaneError> {
     let mut connections = tokio::task::JoinSet::new();
     loop {
-        match listener.accept_connection().await {
-            Ok(connection) => {
-                let service = service.clone();
-                connections.spawn(async move { service.serve_quic_connection(connection).await });
+        tokio::select! {
+            accepted = listener.accept_connection() => match accepted {
+                Ok(connection) => {
+                    let service = service.clone();
+                    connections.spawn(async move { service.serve_quic_connection(connection).await });
+                }
+                Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
+                Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
+            },
+            completed = connections.join_next(), if !connections.is_empty() => {
+                report_completed_connection(completed);
             }
-            Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
-            Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
         }
-        drain_completed_connections(&mut connections)?;
     }
 }
 
@@ -320,15 +324,19 @@ async fn run_tcp_listener(
 ) -> Result<(), RelayDataPlaneError> {
     let mut connections = tokio::task::JoinSet::new();
     loop {
-        match listener.accept_connection().await {
-            Ok((stream, peer)) => {
-                let service = service.clone();
-                connections.spawn(async move { service.serve_tcp_connection(stream, peer).await });
+        tokio::select! {
+            accepted = listener.accept_connection() => match accepted {
+                Ok((stream, peer)) => {
+                    let service = service.clone();
+                    connections.spawn(async move { service.serve_tcp_connection(stream, peer).await });
+                }
+                Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
+                Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
+            },
+            completed = connections.join_next(), if !connections.is_empty() => {
+                report_completed_connection(completed);
             }
-            Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
-            Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
         }
-        drain_completed_connections(&mut connections)?;
     }
 }
 
@@ -336,23 +344,16 @@ fn accept_error_is_listener_fatal(error: &RelayDataPlaneError) -> bool {
     matches!(error, RelayDataPlaneError::Closed)
 }
 
-fn connection_error_is_listener_fatal(_error: &RelayDataPlaneError) -> bool {
-    // A connected peer must not be able to terminate the shared relay listener.
-    false
-}
-
-fn drain_completed_connections(
-    connections: &mut tokio::task::JoinSet<Result<(), RelayDataPlaneError>>,
-) -> Result<(), RelayDataPlaneError> {
-    while let Some(result) = connections.try_join_next() {
-        match result {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) if connection_error_is_listener_fatal(&error) => return Err(error),
-            Ok(Err(error)) => eprintln!("OBP_RELAY_CONNECTION_REJECTED: {error}"),
-            Err(error) => eprintln!("OBP_RELAY_CONNECTION_TASK_FAILED: {error}"),
-        }
+fn report_completed_connection(
+    result: Option<Result<Result<(), RelayDataPlaneError>, tokio::task::JoinError>>,
+) {
+    match result {
+        Some(Ok(Ok(()))) | None => {}
+        // A connected peer must not be able to terminate the shared relay
+        // listener. Report its exact failure as soon as the task completes.
+        Some(Ok(Err(error))) => eprintln!("OBP_RELAY_CONNECTION_REJECTED: {error}"),
+        Some(Err(error)) => eprintln!("OBP_RELAY_CONNECTION_TASK_FAILED: {error}"),
     }
-    Ok(())
 }
 
 fn descriptor_from_config(
@@ -618,7 +619,7 @@ mod tests {
         ];
 
         for error in peer_errors {
-            assert!(!connection_error_is_listener_fatal(&error));
+            report_completed_connection(Some(Ok(Err(error))));
         }
     }
 
@@ -626,16 +627,8 @@ mod tests {
     async fn completed_peer_failure_does_not_escape_connection_drain() {
         let mut connections = tokio::task::JoinSet::new();
         connections.spawn(async { Err(RelayDataPlaneError::Truncated) });
-
-        for _ in 0..100 {
-            drain_completed_connections(&mut connections).unwrap();
-            if connections.is_empty() {
-                return;
-            }
-            tokio::task::yield_now().await;
-        }
-
-        panic!("peer connection task did not complete");
+        report_completed_connection(connections.join_next().await);
+        assert!(connections.is_empty());
     }
 
     #[test]

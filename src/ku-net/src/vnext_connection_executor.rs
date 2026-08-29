@@ -447,19 +447,45 @@ impl RelayAssociationClient for ProductionRelayAssociationClient {
         deadline: Instant,
     ) -> ReachabilityFuture<'a, Result<ValidatedRelayAssociation, RouteFailure>> {
         Box::pin(async move {
-            if Instant::now() >= deadline
-                || !outer.is_open()
-                || outer.client_node_id() != request.initiator_node_id
-                || local.canonical().target_node_id != request.initiator_node_id
-                || remote.canonical().target_node_id != request.target_node_id
-                || local.canonical().relay_node_id != outer.relay_node_id()
-                || remote.canonical().relay_node_id != outer.relay_node_id()
-            {
-                return Err(RouteFailure::PeerIdentityMismatch);
+            if Instant::now() >= deadline {
+                return Err(RouteFailure::RelayPathFailed(
+                    "association preflight: deadline elapsed".into(),
+                ));
+            }
+            if !outer.is_open() {
+                return Err(RouteFailure::RelayPathFailed(
+                    "association preflight: outer relay closed".into(),
+                ));
+            }
+            if outer.client_node_id() != request.initiator_node_id {
+                return Err(RouteFailure::RelayPathFailed(
+                    "association preflight: outer client identity mismatch".into(),
+                ));
+            }
+            if local.canonical().target_node_id != request.initiator_node_id {
+                return Err(RouteFailure::RelayPathFailed(
+                    "association preflight: local reservation identity mismatch".into(),
+                ));
+            }
+            if remote.canonical().target_node_id != request.target_node_id {
+                return Err(RouteFailure::RelayPathFailed(
+                    "association preflight: remote reservation identity mismatch".into(),
+                ));
+            }
+            if local.canonical().relay_node_id != outer.relay_node_id() {
+                return Err(RouteFailure::RelayPathFailed(
+                    "association preflight: local reservation relay mismatch".into(),
+                ));
+            }
+            if remote.canonical().relay_node_id != outer.relay_node_id() {
+                return Err(RouteFailure::RelayPathFailed(
+                    "association preflight: remote reservation relay mismatch".into(),
+                ));
             }
             let request_root = ConnectivitySignalingV1::RelayConnectRequest(request.clone());
-            let request_bytes = encode_connectivity_signaling(&request_root)
-                .map_err(|_| RouteFailure::PeerIdentityMismatch)?;
+            let request_bytes = encode_connectivity_signaling(&request_root).map_err(|error| {
+                RouteFailure::RelayPathFailed(format!("association request encode: {error:?}"))
+            })?;
             let initiator = KnownPeerIdentity::from_public_key(self.local_public_key);
             let admitted_request = self
                 .validator
@@ -469,9 +495,17 @@ impl RelayAssociationClient for ProductionRelayAssociationClient {
                     request.target_node_id,
                     local,
                     remote,
-                    unix_now_seconds().map_err(|_| RouteFailure::PeerIdentityMismatch)?,
+                    unix_now_seconds().map_err(|error| {
+                        RouteFailure::RelayPathFailed(format!(
+                            "association request clock: {error:?}"
+                        ))
+                    })?,
                 )
-                .map_err(|_| RouteFailure::PeerIdentityMismatch)?;
+                .map_err(|error| {
+                    RouteFailure::RelayPathFailed(format!(
+                        "association request validation: {error:?}"
+                    ))
+                })?;
             let request_id = random_request_id();
             let frame =
                 RelayWireFrameV1::new(RelayWireKindV1::ConnectRequest, request_id, request_bytes)
@@ -481,17 +515,26 @@ impl RelayAssociationClient for ProductionRelayAssociationClient {
                 outer.request_control_frame(&frame),
             )
             .await
-            .map_err(|_| RouteFailure::RelayUnavailable)?
-            .map_err(|_| RouteFailure::RelayDenied)?;
+            .map_err(|_| {
+                RouteFailure::RelayPathFailed("association response: deadline elapsed".into())
+            })?
+            .map_err(|error| {
+                RouteFailure::RelayPathFailed(format!("association response I/O: {error:?}"))
+            })?;
             if response.kind() != RelayWireKindV1::Association
                 || response.request_id() != request_id
             {
-                return Err(RouteFailure::RelayDenied);
+                return Err(RouteFailure::RelayPathFailed(
+                    "association response: kind or request-id mismatch".into(),
+                ));
             }
-            let root = decode_connectivity_signaling(response.payload())
-                .map_err(|_| RouteFailure::RelayDenied)?;
+            let root = decode_connectivity_signaling(response.payload()).map_err(|error| {
+                RouteFailure::RelayPathFailed(format!("association response decode: {error:?}"))
+            })?;
             if !matches!(root, ConnectivitySignalingV1::RelayAssociation(_)) {
-                return Err(RouteFailure::RelayDenied);
+                return Err(RouteFailure::RelayPathFailed(
+                    "association response: non-association payload".into(),
+                ));
             }
             let descriptor = outer.route().descriptor().canonical();
             let relay = KnownPeerIdentity {
@@ -505,9 +548,17 @@ impl RelayAssociationClient for ProductionRelayAssociationClient {
                     &admitted_request,
                     local,
                     remote,
-                    unix_now_seconds().map_err(|_| RouteFailure::RelayDenied)?,
+                    unix_now_seconds().map_err(|error| {
+                        RouteFailure::RelayPathFailed(format!(
+                            "association response clock: {error:?}"
+                        ))
+                    })?,
                 )
-                .map_err(|_| RouteFailure::RelayDenied)
+                .map_err(|error| {
+                    RouteFailure::RelayPathFailed(format!(
+                        "association response validation: {error:?}"
+                    ))
+                })
         })
     }
 
@@ -520,29 +571,63 @@ impl RelayAssociationClient for ProductionRelayAssociationClient {
         deadline: Instant,
     ) -> ReachabilityFuture<'a, Result<ValidatedRelayAssociation, RouteFailure>> {
         Box::pin(async move {
-            if Instant::now() >= deadline
-                || !outer.is_open()
-                || outer.client_node_id() != target_reservation.canonical().target_node_id
-                || initiator.node_id != initiator_reservation.canonical().target_node_id
-                || initiator_reservation.canonical().relay_node_id != outer.relay_node_id()
-                || target_reservation.canonical().relay_node_id != outer.relay_node_id()
-            {
-                return Err(RouteFailure::PeerIdentityMismatch);
+            if Instant::now() >= deadline {
+                return Err(RouteFailure::RelayPathFailed(
+                    "inbound association preflight: deadline elapsed".into(),
+                ));
+            }
+            if !outer.is_open() {
+                return Err(RouteFailure::RelayPathFailed(
+                    "inbound association preflight: outer relay closed".into(),
+                ));
+            }
+            if outer.client_node_id() != target_reservation.canonical().target_node_id {
+                return Err(RouteFailure::RelayPathFailed(
+                    "inbound association preflight: outer client identity mismatch".into(),
+                ));
+            }
+            if initiator.node_id != initiator_reservation.canonical().target_node_id {
+                return Err(RouteFailure::RelayPathFailed(
+                    "inbound association preflight: initiator reservation identity mismatch".into(),
+                ));
+            }
+            if initiator_reservation.canonical().relay_node_id != outer.relay_node_id() {
+                return Err(RouteFailure::RelayPathFailed(
+                    "inbound association preflight: initiator reservation relay mismatch".into(),
+                ));
+            }
+            if target_reservation.canonical().relay_node_id != outer.relay_node_id() {
+                return Err(RouteFailure::RelayPathFailed(
+                    "inbound association preflight: target reservation relay mismatch".into(),
+                ));
             }
             let request_frame = tokio::time::timeout_at(
                 tokio::time::Instant::from_std(deadline),
                 outer.receive_control_frame(),
             )
             .await
-            .map_err(|_| RouteFailure::RelayUnavailable)?
-            .map_err(|_| RouteFailure::RelayDenied)?;
+            .map_err(|_| {
+                RouteFailure::RelayPathFailed("inbound connect request: deadline elapsed".into())
+            })?
+            .map_err(|error| {
+                RouteFailure::RelayPathFailed(format!("inbound connect request I/O: {error:?}"))
+            })?;
             if request_frame.kind() != RelayWireKindV1::ConnectRequest {
-                return Err(RouteFailure::RelayDenied);
+                return Err(RouteFailure::RelayPathFailed(format!(
+                    "inbound connect request: unexpected frame kind {:?}",
+                    request_frame.kind()
+                )));
             }
-            let request_root = decode_connectivity_signaling(request_frame.payload())
-                .map_err(|_| RouteFailure::RelayDenied)?;
+            let request_root =
+                decode_connectivity_signaling(request_frame.payload()).map_err(|error| {
+                    RouteFailure::RelayPathFailed(format!(
+                        "inbound connect request decode: {error:?}"
+                    ))
+                })?;
             let ConnectivitySignalingV1::RelayConnectRequest(_request) = request_root else {
-                return Err(RouteFailure::RelayDenied);
+                return Err(RouteFailure::RelayPathFailed(
+                    "inbound connect request: non-connect payload".into(),
+                ));
             };
             let admitted_request = self
                 .validator
@@ -552,20 +637,38 @@ impl RelayAssociationClient for ProductionRelayAssociationClient {
                     target_reservation.canonical().target_node_id,
                     initiator_reservation,
                     target_reservation,
-                    unix_now_seconds().map_err(|_| RouteFailure::RelayDenied)?,
+                    unix_now_seconds().map_err(|error| {
+                        RouteFailure::RelayPathFailed(format!(
+                            "inbound connect request clock: {error:?}"
+                        ))
+                    })?,
                 )
-                .map_err(|_| RouteFailure::RelayDenied)?;
+                .map_err(|error| {
+                    RouteFailure::RelayPathFailed(format!(
+                        "inbound connect request validation: {error:?}"
+                    ))
+                })?;
             let association_frame = tokio::time::timeout_at(
                 tokio::time::Instant::from_std(deadline),
                 outer.receive_control_frame(),
             )
             .await
-            .map_err(|_| RouteFailure::RelayUnavailable)?
-            .map_err(|_| RouteFailure::RelayDenied)?;
+            .map_err(|_| {
+                RouteFailure::RelayPathFailed(
+                    "inbound association response: deadline elapsed".into(),
+                )
+            })?
+            .map_err(|error| {
+                RouteFailure::RelayPathFailed(format!(
+                    "inbound association response I/O: {error:?}"
+                ))
+            })?;
             if association_frame.kind() != RelayWireKindV1::Association
                 || association_frame.request_id() != request_frame.request_id()
             {
-                return Err(RouteFailure::RelayDenied);
+                return Err(RouteFailure::RelayPathFailed(
+                    "inbound association response: kind or request-id mismatch".into(),
+                ));
             }
             let descriptor = outer.route().descriptor().canonical();
             let relay = KnownPeerIdentity {
@@ -579,9 +682,17 @@ impl RelayAssociationClient for ProductionRelayAssociationClient {
                     &admitted_request,
                     initiator_reservation,
                     target_reservation,
-                    unix_now_seconds().map_err(|_| RouteFailure::RelayDenied)?,
+                    unix_now_seconds().map_err(|error| {
+                        RouteFailure::RelayPathFailed(format!(
+                            "inbound association response clock: {error:?}"
+                        ))
+                    })?,
                 )
-                .map_err(|_| RouteFailure::RelayDenied)
+                .map_err(|error| {
+                    RouteFailure::RelayPathFailed(format!(
+                        "inbound association response validation: {error:?}"
+                    ))
+                })
         })
     }
 }
