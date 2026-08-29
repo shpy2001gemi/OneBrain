@@ -305,13 +305,17 @@ impl ProductionExpectedPeerCarrierSelector {
                     remote_value.reservation_id,
                 );
                 let now = unix_now_seconds()?;
-                let expires_at = local_value
-                    .expires_at
-                    .min(remote_value.expires_at)
-                    .min(now.saturating_add(30));
-                if expires_at <= now {
-                    return Err(RouteFailure::CandidateExpired);
-                }
+                // The relay binds the association to both reservations and
+                // both authenticated outer sessions. Do not additionally
+                // reduce that data-plane lifetime to the 30-second replay
+                // skew window: a routed session is expected to outlive its
+                // connect handshake and the relay enforces the authoritative
+                // upper bounds when it signs the association.
+                let expires_at = relay_association_request_expiry(
+                    local_value.expires_at,
+                    remote_value.expires_at,
+                    now,
+                )?;
                 let sequence = connect_sequences.next(scope, expires_at, now)?;
                 let mut nonce = [0u8; 32];
                 OsRng.fill_bytes(&mut nonce);
@@ -585,6 +589,18 @@ fn unix_now_seconds() -> Result<u64, RouteFailure> {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|value| value.as_secs())
         .map_err(|_| RouteFailure::NetworkChanged)
+}
+
+fn relay_association_request_expiry(
+    local_reservation_expires_at: u64,
+    remote_reservation_expires_at: u64,
+    now: u64,
+) -> Result<u64, RouteFailure> {
+    let expires_at = local_reservation_expires_at.min(remote_reservation_expires_at);
+    if expires_at <= now {
+        return Err(RouteFailure::CandidateExpired);
+    }
+    Ok(expires_at)
 }
 
 pub trait RoutedNetworkRuntime: Send + Sync {
@@ -946,6 +962,32 @@ mod tests {
             RelayConnectSequenceAllocator::new(2),
             Err(RouteFailure::BudgetExceeded)
         ));
+    }
+
+    #[test]
+    fn relay_association_request_uses_full_shared_reservation_lifetime() {
+        let now = 1_000;
+        assert_eq!(
+            relay_association_request_expiry(now + 300, now + 240, now),
+            Ok(now + 240)
+        );
+        assert!(
+            relay_association_request_expiry(now + 300, now + 240, now)
+                .expect("live relay reservations")
+                > now + 30
+        );
+    }
+
+    #[test]
+    fn relay_association_request_fails_closed_at_either_reservation_expiry() {
+        assert_eq!(
+            relay_association_request_expiry(1_000, 1_300, 1_000),
+            Err(RouteFailure::CandidateExpired)
+        );
+        assert_eq!(
+            relay_association_request_expiry(1_300, 999, 1_000),
+            Err(RouteFailure::CandidateExpired)
+        );
     }
 
     #[test]
