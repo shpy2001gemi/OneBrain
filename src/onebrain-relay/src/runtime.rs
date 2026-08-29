@@ -4,11 +4,13 @@ use std::collections::BTreeSet;
 #[cfg(unix)]
 use std::fs::File;
 use std::fs::OpenOptions;
+use std::future::Future;
 use std::io::Write;
 use std::net::{IpAddr, SocketAddr};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 
 use ed25519_dalek::{Signer, SigningKey};
@@ -301,19 +303,27 @@ async fn run_udp_listener(
     service: Arc<RelayProductionService>,
 ) -> Result<(), RelayDataPlaneError> {
     let mut connections = tokio::task::JoinSet::new();
+    let accepting = listener.accept_connection();
+    tokio::pin!(accepting);
     loop {
-        tokio::select! {
-            accepted = listener.accept_connection() => match accepted {
-                Ok(connection) => {
-                    let service = service.clone();
-                    connections.spawn(async move { service.serve_quic_connection(connection).await });
+        match next_listener_event(accepting.as_mut(), &mut connections).await {
+            ListenerEvent::Accepted(accepted) => {
+                // Keep exactly one accept future alive.  A TLS/QUIC accept may
+                // already own a peer socket while its handshake is pending;
+                // dropping that future when another connection completes
+                // closes the unrelated peer without an accept-side error.
+                accepting.set(listener.accept_connection());
+                match accepted {
+                    Ok(connection) => {
+                        let service = service.clone();
+                        connections
+                            .spawn(async move { service.serve_quic_connection(connection).await });
+                    }
+                    Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
+                    Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
                 }
-                Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
-                Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
-            },
-            completed = connections.join_next(), if !connections.is_empty() => {
-                report_completed_connection(completed);
             }
+            ListenerEvent::Completed(completed) => report_completed_connection(completed),
         }
     }
 }
@@ -323,19 +333,43 @@ async fn run_tcp_listener(
     service: Arc<RelayProductionService>,
 ) -> Result<(), RelayDataPlaneError> {
     let mut connections = tokio::task::JoinSet::new();
+    let accepting = listener.accept_connection();
+    tokio::pin!(accepting);
     loop {
-        tokio::select! {
-            accepted = listener.accept_connection() => match accepted {
-                Ok((stream, peer)) => {
-                    let service = service.clone();
-                    connections.spawn(async move { service.serve_tcp_connection(stream, peer).await });
+        match next_listener_event(accepting.as_mut(), &mut connections).await {
+            ListenerEvent::Accepted(accepted) => {
+                accepting.set(listener.accept_connection());
+                match accepted {
+                    Ok((stream, peer)) => {
+                        let service = service.clone();
+                        connections
+                            .spawn(async move { service.serve_tcp_connection(stream, peer).await });
+                    }
+                    Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
+                    Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
                 }
-                Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
-                Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
-            },
-            completed = connections.join_next(), if !connections.is_empty() => {
-                report_completed_connection(completed);
             }
+            ListenerEvent::Completed(completed) => report_completed_connection(completed),
+        }
+    }
+}
+
+enum ListenerEvent<T> {
+    Accepted(T),
+    Completed(Option<Result<Result<(), RelayDataPlaneError>, tokio::task::JoinError>>),
+}
+
+async fn next_listener_event<F>(
+    mut accepting: Pin<&mut F>,
+    connections: &mut tokio::task::JoinSet<Result<(), RelayDataPlaneError>>,
+) -> ListenerEvent<F::Output>
+where
+    F: Future,
+{
+    tokio::select! {
+        accepted = &mut accepting => ListenerEvent::Accepted(accepted),
+        completed = connections.join_next(), if !connections.is_empty() => {
+            ListenerEvent::Completed(completed)
         }
     }
 }
@@ -597,6 +631,28 @@ impl std::error::Error for RuntimeError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct PendingAccept {
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Future for PendingAccept {
+        type Output = Result<(), RelayDataPlaneError>;
+
+        fn poll(
+            self: Pin<&mut Self>,
+            _context: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Self::Output> {
+            std::task::Poll::Pending
+        }
+    }
+
+    impl Drop for PendingAccept {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
 
     #[test]
     fn peer_failures_are_isolated_from_shared_listeners() {
@@ -629,6 +685,26 @@ mod tests {
         connections.spawn(async { Err(RelayDataPlaneError::Truncated) });
         report_completed_connection(connections.join_next().await);
         assert!(connections.is_empty());
+    }
+
+    #[tokio::test]
+    async fn completed_connection_does_not_cancel_pending_accept() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let mut accepting = Box::pin(PendingAccept {
+            dropped: dropped.clone(),
+        });
+        let mut connections = tokio::task::JoinSet::new();
+        connections.spawn(async { Err(RelayDataPlaneError::Truncated) });
+
+        let event = next_listener_event(accepting.as_mut(), &mut connections).await;
+        assert!(matches!(
+            event,
+            ListenerEvent::Completed(Some(Ok(Err(RelayDataPlaneError::Truncated))))
+        ));
+        assert!(!dropped.load(Ordering::SeqCst));
+
+        drop(accepting);
+        assert!(dropped.load(Ordering::SeqCst));
     }
 
     #[test]
