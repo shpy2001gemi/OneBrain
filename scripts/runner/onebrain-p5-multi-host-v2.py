@@ -761,6 +761,92 @@ def _ring_neighbors(host_id: str) -> tuple[str, str]:
     return order[(index + 1) % len(order)], order[(index - 1) % len(order)]
 
 
+def _connect_ring_edge_waves(
+    executor: "OpenSshWaveExecutor",
+    hosts: tuple[HostConfigV2, ...],
+    agents: tuple[RunningAgent, ...],
+    request: Mapping[str, object],
+    controller: Ed25519PrivateKey,
+    advertisements: Mapping[str, Mapping[str, object]],
+    *,
+    agent_sequence: int,
+    deadline_monotonic_ns: int,
+    reconnect: bool = False,
+) -> tuple[int, dict[str, dict[str, object]]]:
+    """Build A->B, B->C, C->A in separate waves without skipping any host cursor."""
+    if tuple(host.host_id for host in hosts) != REQUIRED_HOSTS:
+        raise P5ExecutionError("ring edge waves require canonical host order")
+    command_name = "reconnect-ring-edge" if reconnect else "connect-ring-edge"
+    ring: dict[str, dict[str, object]] = {
+        host.host_id: {"accepted": True} for host in hosts
+    }
+    for source_id in REQUIRED_HOSTS:
+        target_id, _ = _ring_neighbors(source_id)
+        commands: list[CanonicalCommandV2] = []
+        for host in hosts:
+            if host.host_id == source_id:
+                peer = advertisements[target_id]
+                parameters = {
+                    "ring_role": "outbound",
+                    "advertisement_hex": peer["advertisement_hex"],
+                    "expected_peer": peer["peer_node_id"],
+                    "peer_public_key": peer["peer_public_key"],
+                }
+            elif host.host_id == target_id:
+                peer = advertisements[source_id]
+                parameters = {
+                    "ring_role": "inbound",
+                    "advertisement_hex": peer["advertisement_hex"],
+                    "expected_peer": peer["peer_node_id"],
+                    "peer_public_key": peer["peer_public_key"],
+                }
+            else:
+                parameters = {"ring_role": "idle"}
+            commands.append(
+                _signed_agent_command(
+                    host,
+                    request,
+                    controller,
+                    agent_sequence,
+                    command_name,
+                    parameters,
+                )
+            )
+        receipts = executor.execute_wave(agents, tuple(commands), deadline_monotonic_ns)
+        rows = _agent_result_map(receipts, command_name)
+        for host_id, expected_role in (
+            (source_id, "outbound"),
+            (target_id, "inbound"),
+        ):
+            row = rows[host_id]
+            route = row.get("route")
+            if row.get("role") != expected_role or not isinstance(route, dict):
+                raise P5ExecutionError(
+                    f"{host_id} did not prove the {expected_role} ring edge"
+                )
+            direction = "outgoing" if expected_role == "outbound" else "incoming"
+            ring[host_id][direction] = route
+        idle_id = next(
+            host_id
+            for host_id in REQUIRED_HOSTS
+            if host_id not in (source_id, target_id)
+        )
+        if rows[idle_id].get("role") != "idle":
+            raise P5ExecutionError(f"{idle_id} did not prove the idle ring edge role")
+        agent_sequence += 1
+
+    for host_id, row in ring.items():
+        outgoing_host, incoming_host = _ring_neighbors(host_id)
+        _require_ring_result(
+            host_id,
+            row,
+            str(advertisements[outgoing_host]["peer_node_id"]),
+            str(advertisements[incoming_host]["peer_node_id"]),
+        )
+    _require_relay_ring(ring)
+    return agent_sequence, ring
+
+
 def _require_ring_result(
     host_id: str,
     row: Mapping[str, object],
@@ -1111,29 +1197,17 @@ def rehydrate_relay_ring(
     )
     advertisements = _agent_result_map(published, "publish-advertisement")
     agent_sequence += 1
-    commands = []
-    for host in hosts:
-        outgoing_host, incoming_host = _ring_neighbors(host.host_id)
-        outgoing = advertisements[outgoing_host]
-        incoming = advertisements[incoming_host]
-        commands.append(_signed_agent_command(
-            host, request, controller, agent_sequence, "connect-ring",
-            {
-                "incoming_advertisement_hex": incoming["advertisement_hex"],
-                "incoming_expected_peer": incoming["peer_node_id"],
-                "incoming_peer_public_key": incoming["peer_public_key"],
-                "outgoing_advertisement_hex": outgoing["advertisement_hex"],
-                "outgoing_expected_peer": outgoing["peer_node_id"],
-                "outgoing_peer_public_key": outgoing["peer_public_key"],
-            },
-        ))
-    connected = executor.execute_wave(agents, tuple(commands), deadline_monotonic_ns)
-    ring = _agent_result_map(connected, "connect-ring")
-    for host_id, row in ring.items():
-        outgoing_host, incoming_host = _ring_neighbors(host_id)
-        _require_ring_result(host_id, row, str(advertisements[outgoing_host]["peer_node_id"]), str(advertisements[incoming_host]["peer_node_id"]))
-    _require_relay_ring(ring)
-    return agents, agent_sequence + 1, advertisements, ring
+    agent_sequence, ring = _connect_ring_edge_waves(
+        executor,
+        hosts,
+        agents,
+        request,
+        controller,
+        advertisements,
+        agent_sequence=agent_sequence,
+        deadline_monotonic_ns=deadline_monotonic_ns,
+    )
+    return agents, agent_sequence, advertisements, ring
 
 
 def reconnect_existing_ring(
@@ -1147,29 +1221,18 @@ def reconnect_existing_ring(
     agent_sequence: int,
     deadline_monotonic_ns: int,
 ) -> tuple[tuple[RunningAgent, ...], int, dict[str, dict[str, object]]]:
-    commands = []
-    for host in hosts:
-        outgoing_host, incoming_host = _ring_neighbors(host.host_id)
-        outgoing = advertisements[outgoing_host]
-        incoming = advertisements[incoming_host]
-        commands.append(_signed_agent_command(
-            host, request, controller, agent_sequence, "reconnect-ring",
-            {
-                "incoming_advertisement_hex": incoming["advertisement_hex"],
-                "incoming_expected_peer": incoming["peer_node_id"],
-                "incoming_peer_public_key": incoming["peer_public_key"],
-                "outgoing_advertisement_hex": outgoing["advertisement_hex"],
-                "outgoing_expected_peer": outgoing["peer_node_id"],
-                "outgoing_peer_public_key": outgoing["peer_public_key"],
-            },
-        ))
-    connected = executor.execute_wave(agents, tuple(commands), deadline_monotonic_ns)
-    ring = _agent_result_map(connected, "reconnect-ring")
-    for host_id, row in ring.items():
-        outgoing_host, incoming_host = _ring_neighbors(host_id)
-        _require_ring_result(host_id, row, str(advertisements[outgoing_host]["peer_node_id"]), str(advertisements[incoming_host]["peer_node_id"]))
-    _require_relay_ring(ring)
-    return agents, agent_sequence + 1, ring
+    agent_sequence, ring = _connect_ring_edge_waves(
+        executor,
+        hosts,
+        agents,
+        request,
+        controller,
+        advertisements,
+        agent_sequence=agent_sequence,
+        deadline_monotonic_ns=deadline_monotonic_ns,
+        reconnect=True,
+    )
+    return agents, agent_sequence, ring
 
 
 def _relay_host_map(inventory: Mapping[str, object]) -> dict[str, str]:
@@ -1636,40 +1699,16 @@ def run_production_preflight(
         ):
             raise P5ExecutionError("agent publication is incomplete")
         next_sequence = 6
-        ring_commands = []
-        for host in hosts:
-            outgoing_host, incoming_host = _ring_neighbors(host.host_id)
-            outgoing = advertisements[outgoing_host]
-            incoming = advertisements[incoming_host]
-            ring_commands.append(_signed_agent_command(
-                host,
-                request,
-                controller,
-                next_sequence,
-                "connect-ring",
-                {
-                    "incoming_advertisement_hex": incoming["advertisement_hex"],
-                    "incoming_expected_peer": incoming["peer_node_id"],
-                    "incoming_peer_public_key": incoming["peer_public_key"],
-                    "outgoing_advertisement_hex": outgoing["advertisement_hex"],
-                    "outgoing_expected_peer": outgoing["peer_node_id"],
-                    "outgoing_peer_public_key": outgoing["peer_public_key"],
-                },
-            ))
-        connected = executor.execute_wave(agents, tuple(ring_commands), deadline)
-        ring_rows = {
-            receipt.host_id: _receipt_result(receipt, "connect-ring")
-            for receipt in connected
-        }
-        for host_id, row in ring_rows.items():
-            outgoing_host, incoming_host = _ring_neighbors(host_id)
-            _require_ring_result(
-                host_id,
-                row,
-                str(advertisements[outgoing_host]["peer_node_id"]),
-                str(advertisements[incoming_host]["peer_node_id"]),
-            )
-        _require_relay_ring(ring_rows)
+        next_sequence, ring_rows = _connect_ring_edge_waves(
+            executor,
+            hosts,
+            agents,
+            request,
+            controller,
+            advertisements,
+            agent_sequence=next_sequence,
+            deadline_monotonic_ns=deadline,
+        )
         markers = {
             host.host_id: f"onebrain-p5-v2:{request['session_id']}:{host.host_id}".encode()
             for host in hosts
@@ -1681,7 +1720,7 @@ def run_production_preflight(
                     host,
                     request,
                     controller,
-                    next_sequence + 1,
+                    next_sequence,
                     "deliver-marker",
                     {
                         "expected_peer": advertisements[_ring_neighbors(host.host_id)[0]]["peer_node_id"],
@@ -1699,7 +1738,7 @@ def run_production_preflight(
                     host,
                     request,
                     controller,
-                    next_sequence + 2,
+                    next_sequence + 1,
                     "receive-marker",
                     {
                         "expected_blake3": blake3.blake3(markers[_ring_neighbors(host.host_id)[1]]).hexdigest(),
@@ -1712,7 +1751,7 @@ def run_production_preflight(
             deadline,
         )
         status = tuple(
-            _signed_agent_command(host, request, controller, next_sequence + 3, "status") for host in hosts
+            _signed_agent_command(host, request, controller, next_sequence + 2, "status") for host in hosts
         )
         running = executor.execute_wave(agents, status, deadline)
         if any(
@@ -1756,7 +1795,7 @@ def run_production_preflight(
         matrix_checkpoints: dict[str, dict[str, object]] | None = None
         matrix_failover: dict[str, object] | None = None
         matrix_faults: list[dict[str, object]] | None = None
-        final_agent_sequence = next_sequence + 4
+        final_agent_sequence = next_sequence + 3
         final_admin_sequence = 2
         if full_qualification:
             (

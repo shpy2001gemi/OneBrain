@@ -29,7 +29,14 @@ pub enum RouteFailure {
     HolePunchFailed,
     RelayDenied,
     RelayUnavailable,
+    /// A relay path failed at a named internal stage. This diagnostic stays
+    /// local and remains fail-closed like the underlying relay failure.
+    RelayPathFailed(String),
     PeerIdentityMismatch,
+    /// The selected carrier reached the peer-authentication stage but the
+    /// signed OBP handshake failed. Keep the internal cause for operational
+    /// diagnosis; it never grants route authority or crosses the protocol.
+    PeerAuthenticationFailed(String),
     NetworkChanged,
     BudgetExceeded,
     PathLimited {

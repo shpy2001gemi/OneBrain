@@ -223,6 +223,8 @@ class P5MultiHostV2Tests(unittest.TestCase):
     def test_production_preflight_drives_relay_only_ring_and_bidirectional_markers(self) -> None:
         class FakeWaveExecutor:
             waves: list[list[str]] = []
+            wave_sequences: list[list[int]] = []
+            ring_roles: list[list[str]] = []
 
             def __init__(self, evidence_root, *, verify_child_receipt):
                 self.evidence_root = evidence_root
@@ -242,12 +244,17 @@ class P5MultiHostV2Tests(unittest.TestCase):
             def execute_wave(self, agents, commands, deadline):
                 rows = []
                 names = []
+                sequences = []
+                roles = []
                 for command in commands:
                     frame = json.loads(command.canonical_bytes)
                     name = frame["command"]
                     names.append(name)
+                    sequences.append(frame["sequence"])
                     host_id = frame["host_id"]
                     parameters = frame["parameters"]
+                    if name in ("connect-ring-edge", "reconnect-ring-edge"):
+                        roles.append(parameters["ring_role"])
                     node = {"host-a": "aa" * 32, "host-b": "bb" * 32, "host-c": "cc" * 32}[host_id]
                     result = {"accepted": True, "command": name}
                     if name == "status": result["network_started"] = True
@@ -279,11 +286,24 @@ class P5MultiHostV2Tests(unittest.TestCase):
                         outgoing={"expected_peer": parameters["outgoing_expected_peer"], "path_kind": "RelayTcp443", "route_receipt_blake3": "31" * 32, "session_id": "41" * 32},
                         incoming={"expected_peer": parameters["incoming_expected_peer"], "path_kind": "RelayTcp443", "route_receipt_blake3": "32" * 32, "session_id": "42" * 32},
                     )
+                    elif name in ("connect-ring-edge", "reconnect-ring-edge"):
+                        role = parameters["ring_role"]
+                        result["role"] = role
+                        if role != "idle":
+                            result["route"] = {
+                                "expected_peer": parameters["expected_peer"],
+                                "path_kind": "RelayTcp443",
+                                "route_receipt_blake3": "31" * 32,
+                                "session_id": "41" * 32,
+                            }
                     elif name in ("deliver-marker", "receive-marker"):
                         result.update(marker_blake3=parameters.get("expected_blake3", "51" * 32), marker_bytes=parameters.get("expected_bytes", 8))
                     receipt = {"format": 2, "host_id": host_id, "sequence": frame["sequence"], "result": result, "signature": "11" * 64}
                     rows.append(runner.SignedChildReceiptV2(host_id, frame["sequence"], runner.canonical_json(receipt)))
                 self.waves.append(names)
+                self.wave_sequences.append(sequences)
+                if roles:
+                    self.ring_roles.append(roles)
                 return tuple(rows)
 
             @staticmethod
@@ -326,9 +346,23 @@ class P5MultiHostV2Tests(unittest.TestCase):
                 FakeWaveExecutor.waves,
                 [["status"] * 3, ["start-reachability"] * 3, ["diagnose-relay-matrix"] * 3,
                  ["ensure-reservations"] * 3,
-                 ["publish-advertisement"] * 3, ["connect-ring"] * 3,
+                 ["publish-advertisement"] * 3,
+                 ["connect-ring-edge"] * 3, ["connect-ring-edge"] * 3,
+                 ["connect-ring-edge"] * 3,
                  ["deliver-marker"] * 3, ["receive-marker"] * 3, ["status"] * 3,
                  ["shutdown"] * 3],
+            )
+            self.assertEqual(
+                FakeWaveExecutor.wave_sequences[5:8],
+                [[6] * 3, [7] * 3, [8] * 3],
+            )
+            self.assertEqual(
+                FakeWaveExecutor.ring_roles,
+                [
+                    ["outbound", "inbound", "idle"],
+                    ["idle", "outbound", "inbound"],
+                    ["inbound", "idle", "outbound"],
+                ],
             )
 
     def test_relay_matrix_reports_exact_host_relay_failure(self) -> None:

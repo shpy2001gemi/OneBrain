@@ -503,7 +503,7 @@ async fn production_udp_outer_authenticates_and_grants_a_signed_reservation() {
 }
 
 #[tokio::test]
-async fn production_relay_multiplexes_two_associations_on_one_outer_connection() {
+async fn production_tls_relay_multiplexes_full_ring_on_shared_outer_connections() {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -518,11 +518,11 @@ async fn production_relay_multiplexes_two_associations_on_one_outer_connection()
         relay_node_id: principal_node_id(&relay_public),
         relay_public_key: relay_public,
         endpoints: vec![RelayEndpointV1 {
-            transport: RelayTransportV1::QuicUdp,
+            transport: RelayTransportV1::TlsTcp443,
             host: HostAddressV1::Ipv4([1, 1, 1, 1]),
-            port: 41000,
+            port: 443,
         }],
-        supported_transports: vec![RelayTransportV1::QuicUdp],
+        supported_transports: vec![RelayTransportV1::TlsTcp443],
         protocol_versions: vec![ProtocolVersionV1 { major: 1, minor: 0 }],
         capacity_policy_digest: [94; 32],
         previous_descriptor_blake3: None,
@@ -573,8 +573,11 @@ async fn production_relay_multiplexes_two_associations_on_one_outer_connection()
         .unwrap();
 
     let identity = relay_identity_certificate(&relay_key, &descriptor).unwrap();
-    let listener =
-        Arc::new(UdpRelayListener::bind("127.0.0.1:0".parse().unwrap(), &identity).unwrap());
+    let listener = Arc::new(
+        Tcp443RelayListener::bind("127.0.0.1:0".parse().unwrap(), &identity)
+            .await
+            .unwrap(),
+    );
     let address = listener.local_addr().unwrap();
     let directory = tempfile::tempdir().unwrap();
     let durable =
@@ -600,7 +603,7 @@ async fn production_relay_multiplexes_two_associations_on_one_outer_connection()
         AlternateRelayProbeObservation::new(
             0,
             address,
-            RelayTransportV1::QuicUdp,
+            RelayTransportV1::TlsTcp443,
             relay_public,
             [97; 32],
             now,
@@ -732,28 +735,6 @@ async fn production_relay_multiplexes_two_associations_on_one_outer_connection()
         ProductionRelayAssociationClient::new(*target_key.verifying_key().as_bytes());
     let third_association_client =
         ProductionRelayAssociationClient::new(*third_key.verifying_key().as_bytes());
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let (initiator_association, target_association) = tokio::join!(
-        association_client.associate(
-            &connect,
-            &initiator_reservation_admitted,
-            &target_reservation_admitted,
-            Arc::clone(&initiator),
-            deadline,
-        ),
-        target_association_client.accept_inbound(
-            &initiator_reservation_admitted,
-            &target_reservation_admitted,
-            initiator_identity.clone(),
-            Arc::clone(&target),
-            deadline,
-        ),
-    );
-    let initiator_association = initiator_association.unwrap();
-    let target_association = target_association.unwrap();
-    assert_eq!(initiator_association, target_association);
-    let association_ab = initiator_association.canonical();
-
     let mut connect_bc = RelayConnectRequestV1 {
         format: 1,
         initiator_node_id: target_node,
@@ -775,8 +756,50 @@ async fn production_relay_multiplexes_two_associations_on_one_outer_connection()
             .unwrap(),
         )
         .to_bytes();
+    let mut connect_ca = RelayConnectRequestV1 {
+        format: 1,
+        initiator_node_id: third_node,
+        target_node_id: initiator_node,
+        initiator_reservation_id: third_reservation,
+        target_reservation_id: initiator_reservation,
+        nonce: [108; 32],
+        sequence: 1,
+        issued_at: now,
+        expires_at: now + 30,
+        initiator_signature: [0; 64],
+    };
+    connect_ca.initiator_signature = third_key
+        .sign(
+            &connectivity_signing_bytes(
+                &ConnectivitySignalingV1::RelayConnectRequest(connect_ca.clone()),
+                ConnectivitySignatureRoleV1::RelayConnectInitiator,
+            )
+            .unwrap(),
+        )
+        .to_bytes();
     let deadline = Instant::now() + Duration::from_secs(5);
-    let (target_initiated_association, third_association) = tokio::join!(
+    let (
+        initiator_association,
+        target_association,
+        target_initiated_association,
+        third_association,
+        third_initiated_association,
+        initiator_target_association,
+    ) = tokio::join!(
+        association_client.associate(
+            &connect,
+            &initiator_reservation_admitted,
+            &target_reservation_admitted,
+            Arc::clone(&initiator),
+            deadline,
+        ),
+        target_association_client.accept_inbound(
+            &initiator_reservation_admitted,
+            &target_reservation_admitted,
+            initiator_identity.clone(),
+            Arc::clone(&target),
+            deadline,
+        ),
         target_association_client.associate(
             &connect_bc,
             &target_reservation_admitted,
@@ -787,64 +810,48 @@ async fn production_relay_multiplexes_two_associations_on_one_outer_connection()
         third_association_client.accept_inbound(
             &target_reservation_admitted,
             &third_reservation_admitted,
-            target_identity,
+            target_identity.clone(),
             Arc::clone(&third),
             deadline,
         ),
+        third_association_client.associate(
+            &connect_ca,
+            &third_reservation_admitted,
+            &initiator_reservation_admitted,
+            Arc::clone(&third),
+            deadline,
+        ),
+        association_client.accept_inbound(
+            &third_reservation_admitted,
+            &initiator_reservation_admitted,
+            third_identity.clone(),
+            Arc::clone(&initiator),
+            deadline,
+        ),
     );
+    let initiator_association = initiator_association.unwrap();
+    let target_association = target_association.unwrap();
+    assert_eq!(initiator_association, target_association);
+    let association_ab = initiator_association.canonical();
     let target_initiated_association = target_initiated_association.unwrap();
     let third_association = third_association.unwrap();
     assert_eq!(target_initiated_association, third_association);
     let association_bc = target_initiated_association.canonical();
-
-    let fragment_ab = OpaqueDatagramEnvelopeV1::fragment(
-        association_ab.association_id,
-        DatagramDirectionV1::InitiatorToTarget,
-        1,
-        1,
-        b"inner-obp-packet-ab",
-        1200,
-    )
-    .unwrap()
-    .remove(0)
-    .encode()
-    .unwrap();
-    let fragment_cb = OpaqueDatagramEnvelopeV1::fragment(
-        association_bc.association_id,
-        DatagramDirectionV1::TargetToInitiator,
-        1,
-        1,
-        b"inner-obp-packet-cb",
-        1200,
-    )
-    .unwrap()
-    .remove(0)
-    .encode()
-    .unwrap();
-    let (send_ab, send_cb) = tokio::join!(
-        initiator.send_opaque_datagram(fragment_ab),
-        third.send_opaque_datagram(fragment_cb),
-    );
-    send_ab.unwrap();
-    send_cb.unwrap();
-    let (received_ab, received_cb) = tokio::join!(
-        target.receive_opaque_for(association_ab.association_id),
-        target.receive_opaque_for(association_bc.association_id),
-    );
-    assert_eq!(
-        received_ab.unwrap(),
-        b"inner-obp-packet-ab",
-        "shared target outer must retain the A-to-B association identity"
-    );
-    assert_eq!(
-        received_cb.unwrap(),
-        b"inner-obp-packet-cb",
-        "shared target outer must retain the C-to-B association identity"
-    );
+    let third_initiated_association = third_initiated_association.unwrap();
+    let initiator_target_association = initiator_target_association.unwrap();
+    assert_eq!(third_initiated_association, initiator_target_association);
+    let association_ca = third_initiated_association.canonical();
 
     let carrier = ProductionRelayCarrierDialer::standard();
     let deadline = Instant::now() + Duration::from_secs(10);
-    let (initiator_inner, target_inner_ab, target_inner_bc, third_inner) = tokio::join!(
+    let (
+        initiator_inner_ab,
+        target_inner_ab,
+        target_inner_bc,
+        third_inner_bc,
+        third_inner_ca,
+        initiator_inner_ca,
+    ) = tokio::join!(
         carrier.dial(
             &validated,
             &initiator_association,
@@ -869,24 +876,44 @@ async fn production_relay_multiplexes_two_associations_on_one_outer_connection()
             Arc::clone(&third),
             deadline
         ),
+        carrier.dial(
+            &validated,
+            &third_initiated_association,
+            Arc::clone(&third),
+            deadline
+        ),
+        carrier.dial(
+            &validated,
+            &third_initiated_association,
+            Arc::clone(&initiator),
+            deadline
+        ),
     );
     assert!(
-        initiator_inner.is_ok()
+        initiator_inner_ab.is_ok()
             && target_inner_ab.is_ok()
             && target_inner_bc.is_ok()
-            && third_inner.is_ok(),
-        "inner carriers: a={:?} b_ab={:?} b_bc={:?} c={:?}",
-        initiator_inner.as_ref().err(),
+            && third_inner_bc.is_ok()
+            && third_inner_ca.is_ok()
+            && initiator_inner_ca.is_ok(),
+        "inner carriers: a_ab={:?} b_ab={:?} b_bc={:?} c_bc={:?} c_ca={:?} a_ca={:?}",
+        initiator_inner_ab.as_ref().err(),
         target_inner_ab.as_ref().err(),
         target_inner_bc.as_ref().err(),
-        third_inner.as_ref().err(),
+        third_inner_bc.as_ref().err(),
+        third_inner_ca.as_ref().err(),
+        initiator_inner_ca.as_ref().err(),
     );
-    let initiator_inner = initiator_inner.unwrap();
-    let target_inner = target_inner_ab.unwrap();
-    let relay_candidate = RelayCandidateV1 {
+    let initiator_inner_ab = initiator_inner_ab.unwrap();
+    let target_inner_ab = target_inner_ab.unwrap();
+    let target_inner_bc = target_inner_bc.unwrap();
+    let third_inner_bc = third_inner_bc.unwrap();
+    let third_inner_ca = third_inner_ca.unwrap();
+    let initiator_inner_ca = initiator_inner_ca.unwrap();
+    let relay_candidate_ab = RelayCandidateV1 {
         relay_node_id: descriptor.relay_node_id,
         reservation_id: initiator_reservation,
-        transport: RelayTransportV1::QuicUdp,
+        transport: RelayTransportV1::TlsTcp443,
         endpoint: ReachabilityEndpointV1 {
             host: descriptor.endpoints[0].host.clone(),
             port: descriptor.endpoints[0].port,
@@ -894,32 +921,103 @@ async fn production_relay_multiplexes_two_associations_on_one_outer_connection()
         priority: 100,
         expires_at: association_ab.expires_at,
     };
-    let outbound = ConnectionPlannerExecutor::seal_validated_relay(
-        relay_candidate.clone(),
+    let relay_candidate_bc = RelayCandidateV1 {
+        relay_node_id: descriptor.relay_node_id,
+        reservation_id: target_reservation,
+        transport: RelayTransportV1::TlsTcp443,
+        endpoint: ReachabilityEndpointV1 {
+            host: descriptor.endpoints[0].host.clone(),
+            port: descriptor.endpoints[0].port,
+        },
+        priority: 100,
+        expires_at: association_bc.expires_at,
+    };
+    let relay_candidate_ca = RelayCandidateV1 {
+        relay_node_id: descriptor.relay_node_id,
+        reservation_id: third_reservation,
+        transport: RelayTransportV1::TlsTcp443,
+        endpoint: ReachabilityEndpointV1 {
+            host: descriptor.endpoints[0].host.clone(),
+            port: descriptor.endpoints[0].port,
+        },
+        priority: 100,
+        expires_at: association_ca.expires_at,
+    };
+    let outbound_ab = ConnectionPlannerExecutor::seal_validated_relay(
+        relay_candidate_ab.clone(),
         initiator_association.clone(),
         &initiator,
-        initiator_inner,
+        initiator_inner_ab,
         Vec::new(),
     )
     .unwrap();
-    let inbound = ConnectionPlannerExecutor::expect_inbound(
+    let inbound_ab = ConnectionPlannerExecutor::expect_inbound(
         ConnectionPlannerExecutor::seal_validated_relay(
-            relay_candidate,
+            relay_candidate_ab,
             initiator_association,
             &target,
-            target_inner,
+            target_inner_ab,
             Vec::new(),
         )
         .unwrap(),
         initiator_node,
     )
     .unwrap();
+    let outbound_bc = ConnectionPlannerExecutor::seal_validated_relay(
+        relay_candidate_bc.clone(),
+        target_initiated_association.clone(),
+        &target,
+        target_inner_bc,
+        Vec::new(),
+    )
+    .unwrap();
+    let inbound_bc = ConnectionPlannerExecutor::expect_inbound(
+        ConnectionPlannerExecutor::seal_validated_relay(
+            relay_candidate_bc,
+            target_initiated_association,
+            &third,
+            third_inner_bc,
+            Vec::new(),
+        )
+        .unwrap(),
+        target_node,
+    )
+    .unwrap();
+    let outbound_ca = ConnectionPlannerExecutor::seal_validated_relay(
+        relay_candidate_ca.clone(),
+        third_initiated_association.clone(),
+        &third,
+        third_inner_ca,
+        Vec::new(),
+    )
+    .unwrap();
+    let inbound_ca = ConnectionPlannerExecutor::expect_inbound(
+        ConnectionPlannerExecutor::seal_validated_relay(
+            relay_candidate_ca,
+            third_initiated_association,
+            &initiator,
+            initiator_inner_ca,
+            Vec::new(),
+        )
+        .unwrap(),
+        third_node,
+    )
+    .unwrap();
     let profiles = [reconciliation_profile()];
     let capabilities = [reconciliation_capability()];
     let expected_target = session_principal_node_id(target_key.verifying_key().as_bytes());
-    let (accepted, authenticated) = tokio::join!(
+    let expected_third = session_principal_node_id(third_key.verifying_key().as_bytes());
+    let expected_initiator = session_principal_node_id(initiator_key.verifying_key().as_bytes());
+    let (
+        accepted_ab,
+        authenticated_ab,
+        accepted_bc,
+        authenticated_bc,
+        accepted_ca,
+        authenticated_ca,
+    ) = tokio::join!(
         accept_expected_inbound(
-            inbound,
+            inbound_ab,
             &target_key,
             [102; 32],
             &profiles,
@@ -927,7 +1025,7 @@ async fn production_relay_multiplexes_two_associations_on_one_outer_connection()
             Vec::new(),
         ),
         authenticate_expected_outbound(
-            outbound,
+            outbound_ab,
             expected_target,
             &initiator_key,
             [101; 32],
@@ -935,19 +1033,76 @@ async fn production_relay_multiplexes_two_associations_on_one_outer_connection()
             &capabilities,
             Vec::new(),
         ),
+        accept_expected_inbound(
+            inbound_bc,
+            &third_key,
+            [106; 32],
+            &profiles,
+            &capabilities,
+            Vec::new(),
+        ),
+        authenticate_expected_outbound(
+            outbound_bc,
+            expected_third,
+            &target_key,
+            [105; 32],
+            &profiles,
+            &capabilities,
+            Vec::new(),
+        ),
+        accept_expected_inbound(
+            inbound_ca,
+            &initiator_key,
+            [110; 32],
+            &profiles,
+            &capabilities,
+            Vec::new(),
+        ),
+        authenticate_expected_outbound(
+            outbound_ca,
+            expected_initiator,
+            &third_key,
+            [109; 32],
+            &profiles,
+            &capabilities,
+            Vec::new(),
+        ),
     );
     assert!(
-        accepted.is_ok() && authenticated.is_ok(),
-        "relay OBP auth: accepted={:?} authenticated={:?}",
-        accepted.as_ref().err(),
-        authenticated.as_ref().err(),
+        accepted_ab.is_ok()
+            && authenticated_ab.is_ok()
+            && accepted_bc.is_ok()
+            && authenticated_bc.is_ok()
+            && accepted_ca.is_ok()
+            && authenticated_ca.is_ok(),
+        "relay OBP auth: accepted_ab={:?} authenticated_ab={:?} accepted_bc={:?} authenticated_bc={:?} accepted_ca={:?} authenticated_ca={:?}",
+        accepted_ab.as_ref().err(),
+        authenticated_ab.as_ref().err(),
+        accepted_bc.as_ref().err(),
+        authenticated_bc.as_ref().err(),
+        accepted_ca.as_ref().err(),
+        authenticated_ca.as_ref().err(),
     );
-    let accepted = accepted.unwrap();
-    let authenticated = authenticated.unwrap();
-    assert_eq!(accepted.session(), authenticated.session());
+    let accepted_ab = accepted_ab.unwrap();
+    let authenticated_ab = authenticated_ab.unwrap();
+    let accepted_bc = accepted_bc.unwrap();
+    let authenticated_bc = authenticated_bc.unwrap();
+    let accepted_ca = accepted_ca.unwrap();
+    let authenticated_ca = authenticated_ca.unwrap();
+    assert_eq!(accepted_ab.session(), authenticated_ab.session());
+    assert_eq!(accepted_bc.session(), authenticated_bc.session());
+    assert_eq!(accepted_ca.session(), authenticated_ca.session());
     assert_eq!(
-        authenticated.selection().path_kind(),
-        onebrain_protocol::RoutePathKindV1::RelayUdp
+        authenticated_ab.selection().path_kind(),
+        onebrain_protocol::RoutePathKindV1::RelayTcp443
+    );
+    assert_eq!(
+        authenticated_bc.selection().path_kind(),
+        onebrain_protocol::RoutePathKindV1::RelayTcp443
+    );
+    assert_eq!(
+        authenticated_ca.selection().path_kind(),
+        onebrain_protocol::RoutePathKindV1::RelayTcp443
     );
     initiator.close();
     target.close();

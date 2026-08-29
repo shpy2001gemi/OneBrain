@@ -29,7 +29,7 @@ pub async fn authenticate_expected_outbound(
         feed_proofs,
     )
     .await
-    .map_err(|_| RouteFailure::PeerIdentityMismatch)?;
+    .map_err(|error| RouteFailure::PeerAuthenticationFailed(error.to_string()))?;
     if session.responder != expected_peer
         || session.transport_binding
             != carrier
@@ -66,7 +66,7 @@ pub async fn accept_authenticated_direct(
         feed_proofs,
     )
     .await
-    .map_err(|_| RouteFailure::PeerIdentityMismatch)?;
+    .map_err(|error| RouteFailure::PeerAuthenticationFailed(error.to_string()))?;
     if session.transport_binding
         != carrier
             .carrier
@@ -104,7 +104,7 @@ pub async fn accept_expected_inbound(
         feed_proofs,
     )
     .await
-    .map_err(|_| RouteFailure::PeerIdentityMismatch)?;
+    .map_err(|error| RouteFailure::PeerAuthenticationFailed(error.to_string()))?;
     if session.initiator != carrier.expected_peer
         || session.transport_binding
             != carrier

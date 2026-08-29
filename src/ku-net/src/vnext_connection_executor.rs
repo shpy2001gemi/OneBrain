@@ -808,18 +808,25 @@ impl ConnectionPlannerExecutor {
                 Arc::clone(&outer),
                 deadline,
             )
-            .await?;
+            .await
+            .map_err(|error| {
+                RouteFailure::RelayPathFailed(format!("association acceptance: {error:?}"))
+            })?;
         validate_relay_target_parts(
             &descriptor,
             &initiator_reservation,
             &target_reservation,
             &association,
             &outer,
-        )?;
+        )
+        .map_err(|error| {
+            RouteFailure::RelayPathFailed(format!("association binding: {error:?}"))
+        })?;
         let connection = self
             .relay
             .dial(&descriptor, &association, Arc::clone(&outer), deadline)
-            .await?;
+            .await
+            .map_err(|error| RouteFailure::RelayPathFailed(format!("inner carrier: {error:?}")))?;
         let expected_peer = association.canonical().initiator_node_id;
         let selected =
             Self::seal_validated_relay(candidate, association, &outer, connection, Vec::new())?;

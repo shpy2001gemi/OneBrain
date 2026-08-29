@@ -586,6 +586,8 @@ fn execute_closed_command(
         "arm-direct-inbound" => arm_direct_inbound(command, state)?,
         "connect-ring" => connect_ring(command, state, false)?,
         "reconnect-ring" => connect_ring(command, state, true)?,
+        "connect-ring-edge" => connect_ring_edge(command, state, false)?,
+        "reconnect-ring-edge" => connect_ring_edge(command, state, true)?,
         "deliver-marker" => {
             let expected_peer = command_parameter_string(command, "expected_peer")?;
             let payload = decode_hex_vec(command_parameter_string(command, "payload_hex")?)?;
@@ -1124,6 +1126,106 @@ fn connect_ring(
         "command": command.command,
         "incoming": incoming_result,
         "outgoing": outgoing_result,
+    }))
+}
+
+#[cfg(unix)]
+fn routed_session_result(expected_peer: &str, session: &RoutedVNextSession) -> serde_json::Value {
+    let selected_relay = match session.carrier() {
+        onebrain_node::vnext_connection_planner::VerifiedCarrierIdentity::Relay {
+            relay_node_id,
+            ..
+        } => Some(hex(relay_node_id.as_bytes())),
+        _ => None,
+    };
+    serde_json::json!({
+        "expected_peer": expected_peer,
+        "path_kind": format!("{:?}", session.carrier().path_kind()),
+        "route_receipt_blake3": hex(&session.route_receipt_digest()),
+        "selected_relay": selected_relay,
+        "session_id": hex(&session.authenticated().session_id),
+        "transport_binding_blake3": hex(&session.transport_binding_digest()),
+    })
+}
+
+#[cfg(unix)]
+fn connect_ring_edge(
+    command: &AgentCommandFrame,
+    state: &mut AgentRuntimeState,
+    replace_existing: bool,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let role = command_parameter_string(command, "ring_role")?;
+    if role == "idle" {
+        return Ok(serde_json::json!({
+            "accepted": true,
+            "command": command.command,
+            "role": "idle",
+        }));
+    }
+    if role != "outbound" && role != "inbound" {
+        return Err("ring edge role must be outbound, inbound, or idle".into());
+    }
+
+    let expected_name = command_parameter_string(command, "expected_peer")?;
+    let expected_peer = NodeId::from_bytes(decode_hex::<32>(expected_name)?);
+    let peer_public = decode_hex::<32>(command_parameter_string(command, "peer_public_key")?)?;
+    let peer_identity = KnownPeerIdentity::from_public_key(peer_public);
+    if peer_identity.node_id != expected_peer {
+        return Err("ring edge peer/public-key mismatch".into());
+    }
+    let advertisement_bytes =
+        decode_hex_vec(command_parameter_string(command, "advertisement_hex")?)?;
+    let advertisement = admit_peer_advertisement(state, &advertisement_bytes, &peer_identity)?;
+
+    if replace_existing {
+        if let Some(previous) = state.sessions.remove(expected_name) {
+            previous.close();
+        }
+    } else if state.sessions.contains_key(expected_name) {
+        return Err("ring edge peer already has a routed session".into());
+    }
+
+    let network = state
+        .network
+        .as_ref()
+        .ok_or("reachability runtime is not started")?;
+    let session = if role == "outbound" {
+        state
+            .runtime
+            .block_on(network.connect_expected_advertisement(
+                &state.selector,
+                expected_peer,
+                &advertisement,
+            ))
+            .map_err(|error| format!("ring edge outbound failed: {error}"))?
+    } else if let Some(armed) = state.direct_inbound_arms.remove(expected_name) {
+        state
+            .runtime
+            .block_on(network.accept_armed_direct(armed))
+            .map_err(|error| format!("ring edge direct inbound failed: {error}"))?
+    } else {
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        state
+            .runtime
+            .block_on(accept_expected_relay(
+                network,
+                Arc::clone(&state.executor),
+                &state.discovery,
+                &state.reservations,
+                expected_peer,
+                peer_identity,
+                &advertisement,
+                deadline,
+            ))
+            .map_err(|error| format!("ring edge inbound failed: {error}"))?
+    };
+    let route = routed_session_result(expected_name, &session);
+    state.sessions.insert(expected_name.to_owned(), session);
+    Ok(serde_json::json!({
+        "accepted": true,
+        "command": command.command,
+        "role": role,
+        "route": route,
     }))
 }
 

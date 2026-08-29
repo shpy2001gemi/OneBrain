@@ -284,18 +284,29 @@ impl ProductionExpectedPeerCarrierSelector {
             attempts.push(Box::pin(async move {
                 let association = executor
                     .associate_relay(&request, &local, &remote, Arc::clone(&outer), deadline)
-                    .await?;
+                    .await
+                    .map_err(|error| {
+                        RouteFailure::RelayPathFailed(format!("outbound association: {error:?}"))
+                    })?;
                 let action = ConnectionPlannerExecutor::admitted_relay_action(
                     candidate.clone(),
                     &association,
-                )?;
+                )
+                .map_err(|error| {
+                    RouteFailure::RelayPathFailed(format!(
+                        "outbound association binding: {error:?}"
+                    ))
+                })?;
                 let admitted = AdmittedRelayExecution::from_validated_association(
                     descriptor,
                     local,
                     remote,
                     association,
                     outer,
-                )?;
+                )
+                .map_err(|error| {
+                    RouteFailure::RelayPathFailed(format!("outbound admitted path: {error:?}"))
+                })?;
                 executor
                     .execute(
                         action,
@@ -304,6 +315,9 @@ impl ProductionExpectedPeerCarrierSelector {
                         deadline,
                     )
                     .await
+                    .map_err(|error| {
+                        RouteFailure::RelayPathFailed(format!("outbound inner carrier: {error:?}"))
+                    })
             })
                 as ReachabilityFuture<'static, Result<SelectedCarrier, RouteFailure>>);
         }
