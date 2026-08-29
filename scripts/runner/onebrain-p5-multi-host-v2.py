@@ -48,6 +48,11 @@ MAX_CONTROL_BYTES = 131_072
 MAX_RECEIPT_BYTES = 262_144
 MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS = 1_800
 BOOTSTRAP_DOMAIN = b"onebrain/p5/bootstrap-admin-frame/v2\0"
+BOOTSTRAP_MAX_CLOCK_SKEW_SECONDS = 30
+BOOTSTRAP_REMOTE_FUTURE_LIMIT_SECONDS = 300
+BOOTSTRAP_TTL_SECONDS = (
+    BOOTSTRAP_REMOTE_FUTURE_LIMIT_SECONDS - BOOTSTRAP_MAX_CLOCK_SKEW_SECONDS
+)
 
 
 class P5ExecutionError(RuntimeError):
@@ -396,7 +401,10 @@ def _signed_bootstrap_command(
         "base_keyring_hex": base_keyring.hex(),
         "base_policy_hex": base_policy.hex(),
         "bundle_manifest_hex": bundle_manifest.hex(),
-        "expires_at": min(int(request["expires_at"]), issued_at + 300),
+        # The remote validator permits the controller clock to lead by 30s,
+        # but also rejects expiries more than 300s beyond its local clock.
+        # Leave that skew budget here instead of consuming the full 300s.
+        "expires_at": min(int(request["expires_at"]), issued_at + BOOTSTRAP_TTL_SECONDS),
         "format": 2,
         "host_id": host.host_id,
         "inventory_hex": canonical_json(dict(inventory)).hex(),

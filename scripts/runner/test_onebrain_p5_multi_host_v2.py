@@ -196,6 +196,10 @@ class P5MultiHostV2Tests(unittest.TestCase):
         signature = bytes.fromhex(frame.pop("signature"))
         controller.public_key().verify(signature, runner.BOOTSTRAP_DOMAIN + runner.canonical_json(frame))
         self.assertEqual(frame["kind"], "bootstrap")
+        self.assertEqual(
+            frame["expires_at"] - frame["issued_at"],
+            runner.BOOTSTRAP_REMOTE_FUTURE_LIMIT_SECONDS - runner.BOOTSTRAP_MAX_CLOCK_SKEW_SECONDS,
+        )
         self.assertEqual(frame["session_config"]["controller_application_public_key"], public)
         self.assertEqual(frame["session_config"]["candidate_commit"], "66" * 20)
         self.assertEqual(frame["session_config"]["evidence_authority"]["provider_evidence_status"], "owner-telephone-verified-provider-document-pending")
