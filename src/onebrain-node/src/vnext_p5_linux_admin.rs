@@ -382,26 +382,9 @@ impl<R: FixedLinuxCommandRunner> P5LinuxAdminBackend<R> {
             P5FaultKindV2::Duplicate => vec![netem(&["duplicate", "5%"])],
             P5FaultKindV2::SlowPeer => vec![netem(&["delay", "250ms", "25ms", "rate", "512kbit"])],
             P5FaultKindV2::Restart => vec![fixed_systemctl(&["restart", P5_AGENT_SERVICE])],
-            P5FaultKindV2::AddressChange => vec![
-                fixed_ip(&[
-                    "-n",
-                    P5_NAMESPACE,
-                    "addr",
-                    "del",
-                    "10.254.28.2/29",
-                    "dev",
-                    P5_NAMESPACE_INTERFACE,
-                ]),
-                fixed_ip(&[
-                    "-n",
-                    P5_NAMESPACE,
-                    "addr",
-                    "add",
-                    "10.254.28.3/29",
-                    "dev",
-                    P5_NAMESPACE_INTERFACE,
-                ]),
-            ],
+            P5FaultKindV2::AddressChange => {
+                return self.change_namespace_address("10.254.28.2/29", "10.254.28.3/29")
+            }
             P5FaultKindV2::SeedOutage | P5FaultKindV2::SelectedRelayShutdown => {
                 vec![fixed_systemctl(&["stop", P5_RELAY_SERVICE])]
             }
@@ -446,26 +429,9 @@ impl<R: FixedLinuxCommandRunner> P5LinuxAdminBackend<R> {
                 "root",
             ])],
             P5FaultKindV2::Restart => vec![fixed_systemctl(&["start", P5_AGENT_SERVICE])],
-            P5FaultKindV2::AddressChange => vec![
-                fixed_ip(&[
-                    "-n",
-                    P5_NAMESPACE,
-                    "addr",
-                    "del",
-                    "10.254.28.3/29",
-                    "dev",
-                    P5_NAMESPACE_INTERFACE,
-                ]),
-                fixed_ip(&[
-                    "-n",
-                    P5_NAMESPACE,
-                    "addr",
-                    "add",
-                    "10.254.28.2/29",
-                    "dev",
-                    P5_NAMESPACE_INTERFACE,
-                ]),
-            ],
+            P5FaultKindV2::AddressChange => {
+                return self.change_namespace_address("10.254.28.3/29", "10.254.28.2/29")
+            }
             P5FaultKindV2::SeedOutage | P5FaultKindV2::SelectedRelayShutdown => {
                 vec![fixed_systemctl(&["start", P5_RELAY_SERVICE])]
             }
@@ -481,6 +447,60 @@ impl<R: FixedLinuxCommandRunner> P5LinuxAdminBackend<R> {
             }
         };
         self.execute_commands(&commands)
+    }
+
+    fn change_namespace_address(
+        &self,
+        previous: &'static str,
+        replacement: &'static str,
+    ) -> Result<LinuxFaultObservation, String> {
+        let commands = [
+            fixed_ip(&[
+                "-n",
+                P5_NAMESPACE,
+                "addr",
+                "del",
+                previous,
+                "dev",
+                P5_NAMESPACE_INTERFACE,
+            ]),
+            fixed_ip(&[
+                "-n",
+                P5_NAMESPACE,
+                "addr",
+                "add",
+                replacement,
+                "dev",
+                P5_NAMESPACE_INTERFACE,
+            ]),
+            fixed_ip(&[
+                "-n",
+                P5_NAMESPACE,
+                "route",
+                "replace",
+                "default",
+                "via",
+                "10.254.28.1",
+                "dev",
+                P5_NAMESPACE_INTERFACE,
+            ]),
+            fixed_ip(&["-j", "-n", P5_NAMESPACE, "route", "get", "1.1.1.1"]),
+        ];
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        for (index, (program, args)) in commands.iter().enumerate() {
+            let output = self.runner.run(program, args)?;
+            if index + 1 == commands.len() {
+                validate_namespace_route(&output.stdout, replacement)?;
+            }
+            stdout.extend_from_slice(&output.stdout);
+            stderr.extend_from_slice(&output.stderr);
+        }
+        Ok(LinuxFaultObservation {
+            command_count: commands.len(),
+            stdout_blake3: blake3::hash(&stdout).to_hex().to_string(),
+            stderr_blake3: blake3::hash(&stderr).to_hex().to_string(),
+        })
     }
 
     fn execute_commands(
@@ -576,6 +596,26 @@ fn parse_egress_interface(bytes: &[u8]) -> Result<String, String> {
         .to_owned();
     validate_interface_name(&value)?;
     Ok(value)
+}
+
+fn validate_namespace_route(bytes: &[u8], expected_source_cidr: &str) -> Result<(), String> {
+    let rows: Vec<serde_json::Value> = serde_json::from_slice(bytes)
+        .map_err(|_| "P5 namespace route read-back is not canonical JSON")?;
+    if rows.len() != 1 {
+        return Err("P5 namespace route read-back is absent or ambiguous".into());
+    }
+    let expected_source = expected_source_cidr
+        .split_once('/')
+        .map(|(address, _)| address)
+        .ok_or("P5 namespace replacement address has no prefix")?;
+    let row = &rows[0];
+    if row.get("dev").and_then(serde_json::Value::as_str) != Some(P5_NAMESPACE_INTERFACE)
+        || row.get("gateway").and_then(serde_json::Value::as_str) != Some("10.254.28.1")
+        || row.get("prefsrc").and_then(serde_json::Value::as_str) != Some(expected_source)
+    {
+        return Err("P5 namespace route read-back does not match restored egress".into());
+    }
+    Ok(())
 }
 
 fn validate_interface_name(value: &str) -> Result<(), String> {
@@ -1074,6 +1114,54 @@ mod tests {
         }
     }
 
+    struct RouteReadbackRunner {
+        calls: Mutex<Vec<(&'static str, Vec<String>)>>,
+        readbacks: Mutex<Vec<Vec<u8>>>,
+    }
+
+    impl RouteReadbackRunner {
+        fn new(sources: &[&str]) -> Self {
+            Self {
+                calls: Mutex::new(Vec::new()),
+                readbacks: Mutex::new(
+                    sources
+                        .iter()
+                        .map(|source| {
+                            format!(
+                                r#"[{{"dst":"1.1.1.1","gateway":"10.254.28.1","dev":"obp5n0","prefsrc":"{source}"}}]"#
+                            )
+                            .into_bytes()
+                        })
+                        .collect(),
+                ),
+            }
+        }
+    }
+
+    impl FixedLinuxCommandRunner for RouteReadbackRunner {
+        fn run(
+            &self,
+            program: &'static str,
+            args: &[String],
+        ) -> Result<FixedCommandOutput, String> {
+            self.calls.lock().unwrap().push((program, args.to_vec()));
+            let stdout = if args == ["-j", "-n", P5_NAMESPACE, "route", "get", "1.1.1.1"] {
+                let mut readbacks = self.readbacks.lock().unwrap();
+                if readbacks.is_empty() {
+                    b"[]".to_vec()
+                } else {
+                    readbacks.remove(0)
+                }
+            } else {
+                Vec::new()
+            };
+            Ok(FixedCommandOutput {
+                stdout,
+                stderr: Vec::new(),
+            })
+        }
+    }
+
     #[derive(Clone)]
     struct FakeHostState(Arc<Mutex<FakeHostInner>>);
 
@@ -1211,6 +1299,62 @@ mod tests {
             calls[0].1.join(" "),
             "netns exec onebrain-p5-v2 tc qdisc replace dev obp5n0 root netem loss 10%"
         );
+    }
+
+    #[test]
+    fn address_change_replaces_and_verifies_default_route_on_apply_and_clear() {
+        let backend =
+            P5LinuxAdminBackend::new(RouteReadbackRunner::new(&["10.254.28.3", "10.254.28.2"]));
+        assert_eq!(
+            backend
+                .apply(P5FaultKindV2::AddressChange, &[])
+                .unwrap()
+                .command_count,
+            4
+        );
+        assert_eq!(
+            backend
+                .clear(P5FaultKindV2::AddressChange)
+                .unwrap()
+                .command_count,
+            4
+        );
+        let calls = backend.runner.calls.lock().unwrap();
+        assert_eq!(
+            calls[2].1,
+            vec![
+                "-n",
+                P5_NAMESPACE,
+                "route",
+                "replace",
+                "default",
+                "via",
+                "10.254.28.1",
+                "dev",
+                P5_NAMESPACE_INTERFACE,
+            ]
+        );
+        assert_eq!(
+            calls[3].1,
+            vec!["-j", "-n", P5_NAMESPACE, "route", "get", "1.1.1.1",]
+        );
+        assert_eq!(calls[6].1, calls[2].1);
+        assert_eq!(calls[7].1, calls[3].1);
+    }
+
+    #[test]
+    fn address_change_fails_closed_when_route_readback_is_missing_or_stale() {
+        let missing = P5LinuxAdminBackend::new(RouteReadbackRunner::new(&[]));
+        assert!(missing
+            .apply(P5FaultKindV2::AddressChange, &[])
+            .unwrap_err()
+            .contains("absent or ambiguous"));
+
+        let stale = P5LinuxAdminBackend::new(RouteReadbackRunner::new(&["10.254.28.2"]));
+        assert!(stale
+            .apply(P5FaultKindV2::AddressChange, &[])
+            .unwrap_err()
+            .contains("does not match restored egress"));
     }
 
     #[test]
