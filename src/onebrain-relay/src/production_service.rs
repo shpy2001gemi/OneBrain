@@ -32,13 +32,83 @@ use crate::{
 
 const IO_DEADLINE: Duration = Duration::from_secs(5);
 const OUTER_EXPORTER_LABEL: &[u8] = b"EXPORTER-OneBrain-Relay-V1";
+const MAX_RELAY_CONNECT_SEQUENCE_SCOPES: usize = 65_536;
+
+type RelayConnectSequenceScope = ([u8; 32], [u8; 32], [u8; 32], [u8; 32]);
+
+struct RelayConnectReplayGuard {
+    max_scopes: usize,
+    last_by_scope: BTreeMap<RelayConnectSequenceScope, (u64, u64)>,
+}
+
+impl RelayConnectReplayGuard {
+    fn new(max_scopes: usize) -> Result<Self, RelayDataPlaneError> {
+        if max_scopes == 0 {
+            return Err(RelayDataPlaneError::Capacity);
+        }
+        Ok(Self {
+            max_scopes,
+            last_by_scope: BTreeMap::new(),
+        })
+    }
+
+    fn validate(
+        &mut self,
+        scope: RelayConnectSequenceScope,
+        sequence: u64,
+        expires_at: u64,
+        now: u64,
+    ) -> Result<(), RelayDataPlaneError> {
+        if expires_at <= now || sequence == 0 {
+            return Err(RelayDataPlaneError::InvalidAssociation);
+        }
+        if self
+            .last_by_scope
+            .get(&scope)
+            .is_some_and(|(_, retained_until)| *retained_until <= now)
+        {
+            self.last_by_scope.remove(&scope);
+        }
+        if let Some((last_sequence, _)) = self.last_by_scope.get(&scope) {
+            return match last_sequence.checked_add(1) {
+                Some(expected) if sequence == expected => Ok(()),
+                _ => Err(RelayDataPlaneError::InvalidAssociation),
+            };
+        }
+
+        // The node-side allocator starts at one for each exact reservation
+        // pair. A fresh reservation epoch must not inherit the cursor from a
+        // previous pair owned by the same initiator.
+        if sequence != 1 {
+            return Err(RelayDataPlaneError::InvalidAssociation);
+        }
+        if self.last_by_scope.len() >= self.max_scopes {
+            self.last_by_scope
+                .retain(|_, (_, retained_until)| *retained_until > now);
+        }
+        if self.last_by_scope.len() >= self.max_scopes {
+            return Err(RelayDataPlaneError::Capacity);
+        }
+        Ok(())
+    }
+
+    fn record(&mut self, scope: RelayConnectSequenceScope, sequence: u64, expires_at: u64) {
+        let retained_until = self
+            .last_by_scope
+            .get(&scope)
+            .map_or(expires_at, |(_, retained_until)| {
+                (*retained_until).max(expires_at)
+            });
+        self.last_by_scope.insert(scope, (sequence, retained_until));
+    }
+}
 
 pub struct RelayProductionService {
     relay_signer: SigningKey,
     authenticator: Mutex<OuterClientAuthenticator>,
     reservations: Mutex<ReservationStore>,
     connections: Mutex<BTreeMap<[u8; 32], ConnectedClient>>,
-    connect_sequences: Mutex<BTreeMap<NodeId, u64>>,
+    connect_sequences: Mutex<RelayConnectReplayGuard>,
     reflexive_sequences: Mutex<BTreeMap<NodeId, u64>>,
     data_plane: Mutex<RelayDataPlane>,
     limiter: OuterConnectionLimiter,
@@ -70,7 +140,9 @@ impl RelayProductionService {
             authenticator: Mutex::new(authenticator),
             reservations: Mutex::new(reservations),
             connections: Mutex::new(BTreeMap::new()),
-            connect_sequences: Mutex::new(BTreeMap::new()),
+            connect_sequences: Mutex::new(RelayConnectReplayGuard::new(
+                MAX_RELAY_CONNECT_SEQUENCE_SCOPES,
+            )?),
             reflexive_sequences: Mutex::new(BTreeMap::new()),
             data_plane: Mutex::new(RelayDataPlane::new(RelayGlobalBudget::standard())),
             limiter: OuterConnectionLimiter::standard(),
@@ -505,6 +577,20 @@ impl RelayProductionService {
         if expires_at <= now {
             return Err(RelayDataPlaneError::Expired);
         }
+        let sequence_scope = (
+            *request.initiator_node_id.as_bytes(),
+            *request.target_node_id.as_bytes(),
+            request.initiator_reservation_id,
+            request.target_reservation_id,
+        );
+        // Keep replay validation, association registration, and cursor commit
+        // in one critical section. Concurrent requests for the same exact
+        // reservation scope cannot both validate against the same cursor.
+        let mut connect_sequences = self
+            .connect_sequences
+            .lock()
+            .map_err(|_| RelayDataPlaneError::Closed)?;
+        connect_sequences.validate(sequence_scope, request.sequence, expires_at, now)?;
         let mut association_id = [0u8; 32];
         OsRng.fill_bytes(&mut association_id);
         let mut association = RelayAssociationV1 {
@@ -540,10 +626,7 @@ impl RelayProductionService {
                 target.client.outer_connection_binding(),
                 expires_at,
             )?)?;
-        self.connect_sequences
-            .lock()
-            .map_err(|_| RelayDataPlaneError::Closed)?
-            .insert(request.initiator_node_id, request.sequence);
+        connect_sequences.record(sequence_scope, request.sequence, expires_at);
         let request_notification = RelayWireFrameV1::new(
             RelayWireKindV1::ConnectRequest,
             frame.request_id(),
@@ -587,12 +670,6 @@ impl RelayProductionService {
             || request.issued_at > now.saturating_add(30)
             || request.expires_at.saturating_add(30) < now
             || request.sequence == 0
-            || self
-                .connect_sequences
-                .lock()
-                .map_err(|_| RelayDataPlaneError::Closed)?
-                .get(&request.initiator_node_id)
-                .is_some_and(|value| request.sequence != value + 1)
         {
             return Err(RelayDataPlaneError::InvalidAssociation);
         }
@@ -805,6 +882,67 @@ fn unix_now() -> Result<u64, RelayDataPlaneError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn connect_scope(
+        initiator: u8,
+        target: u8,
+        initiator_reservation: u8,
+        target_reservation: u8,
+    ) -> RelayConnectSequenceScope {
+        (
+            [initiator; 32],
+            [target; 32],
+            [initiator_reservation; 32],
+            [target_reservation; 32],
+        )
+    }
+
+    #[test]
+    fn connect_replay_scope_restarts_at_one_for_fresh_reservations() {
+        let mut guard = RelayConnectReplayGuard::new(8).expect("bounded replay guard");
+        let first = connect_scope(1, 2, 3, 4);
+        let fresh = connect_scope(1, 2, 5, 6);
+
+        assert_eq!(guard.validate(first, 1, 200, 100), Ok(()));
+        guard.record(first, 1, 200);
+        assert_eq!(guard.validate(fresh, 1, 200, 100), Ok(()));
+        guard.record(fresh, 1, 200);
+        assert_eq!(guard.validate(first, 2, 200, 100), Ok(()));
+        assert_eq!(guard.validate(fresh, 2, 200, 100), Ok(()));
+    }
+
+    #[test]
+    fn connect_replay_scope_rejects_replay_and_noncanonical_first_sequence() {
+        let mut guard = RelayConnectReplayGuard::new(8).expect("bounded replay guard");
+        let scope = connect_scope(1, 2, 3, 4);
+
+        assert_eq!(
+            guard.validate(scope, 2, 200, 100),
+            Err(RelayDataPlaneError::InvalidAssociation)
+        );
+        assert_eq!(guard.validate(scope, 1, 200, 100), Ok(()));
+        guard.record(scope, 1, 200);
+        assert_eq!(
+            guard.validate(scope, 1, 200, 100),
+            Err(RelayDataPlaneError::InvalidAssociation)
+        );
+        assert_eq!(guard.validate(scope, 2, 200, 100), Ok(()));
+    }
+
+    #[test]
+    fn connect_replay_scopes_are_bounded_and_expiry_reclaims_capacity() {
+        let mut guard = RelayConnectReplayGuard::new(1).expect("bounded replay guard");
+        let first = connect_scope(1, 2, 3, 4);
+        let second = connect_scope(1, 2, 5, 6);
+
+        assert_eq!(guard.validate(first, 1, 200, 100), Ok(()));
+        guard.record(first, 1, 200);
+        assert_eq!(
+            guard.validate(second, 1, 300, 150),
+            Err(RelayDataPlaneError::Capacity)
+        );
+        assert_eq!(guard.validate(second, 1, 300, 201), Ok(()));
+    }
 
     #[tokio::test]
     async fn authenticated_control_carrier_survives_idle_read_deadline() {

@@ -648,6 +648,7 @@ async fn production_tls_relay_multiplexes_full_ring_on_shared_outer_connections(
         descriptor.relay_node_id,
         initiator_node,
         initiator_reservation,
+        1,
         now,
     )
     .await;
@@ -657,6 +658,7 @@ async fn production_tls_relay_multiplexes_full_ring_on_shared_outer_connections(
         descriptor.relay_node_id,
         target_node,
         target_reservation,
+        1,
         now,
     )
     .await;
@@ -666,6 +668,7 @@ async fn production_tls_relay_multiplexes_full_ring_on_shared_outer_connections(
         descriptor.relay_node_id,
         third_node,
         third_reservation,
+        1,
         now,
     )
     .await;
@@ -841,6 +844,93 @@ async fn production_tls_relay_multiplexes_full_ring_on_shared_outer_connections(
     let initiator_target_association = initiator_target_association.unwrap();
     assert_eq!(third_initiated_association, initiator_target_association);
     let association_ca = third_initiated_association.canonical();
+
+    // Rehydrate creates fresh relay reservations while the relay process and
+    // its replay state remain live. The new exact reservation scope must start
+    // at sequence one even though the same A -> B node pair connected above.
+    let fresh_initiator_reservation = [111; 32];
+    let fresh_target_reservation = [112; 32];
+    let fresh_initiator_grant = reserve_for_test(
+        &initiator,
+        &initiator_key,
+        descriptor.relay_node_id,
+        initiator_node,
+        fresh_initiator_reservation,
+        2,
+        now,
+    )
+    .await;
+    let fresh_target_grant = reserve_for_test(
+        &target,
+        &target_key,
+        descriptor.relay_node_id,
+        target_node,
+        fresh_target_reservation,
+        2,
+        now,
+    )
+    .await;
+    let fresh_initiator_admitted = reservation_admission
+        .admit_reservation(
+            &encode_reachability_object(&ReachabilityObjectV1::RelayReservation(
+                fresh_initiator_grant,
+            ))
+            .unwrap(),
+            &initiator_identity,
+            &relay_identity,
+            now,
+        )
+        .unwrap();
+    let fresh_target_admitted = reservation_admission
+        .admit_reservation(
+            &encode_reachability_object(&ReachabilityObjectV1::RelayReservation(
+                fresh_target_grant,
+            ))
+            .unwrap(),
+            &target_identity,
+            &relay_identity,
+            now,
+        )
+        .unwrap();
+    let mut fresh_connect = RelayConnectRequestV1 {
+        format: 1,
+        initiator_node_id: initiator_node,
+        target_node_id: target_node,
+        initiator_reservation_id: fresh_initiator_reservation,
+        target_reservation_id: fresh_target_reservation,
+        nonce: [113; 32],
+        sequence: 1,
+        issued_at: now,
+        expires_at: now + 30,
+        initiator_signature: [0; 64],
+    };
+    fresh_connect.initiator_signature = initiator_key
+        .sign(
+            &connectivity_signing_bytes(
+                &ConnectivitySignalingV1::RelayConnectRequest(fresh_connect.clone()),
+                ConnectivitySignatureRoleV1::RelayConnectInitiator,
+            )
+            .unwrap(),
+        )
+        .to_bytes();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let (fresh_outbound, fresh_inbound) = tokio::join!(
+        association_client.associate(
+            &fresh_connect,
+            &fresh_initiator_admitted,
+            &fresh_target_admitted,
+            Arc::clone(&initiator),
+            deadline,
+        ),
+        target_association_client.accept_inbound(
+            &fresh_initiator_admitted,
+            &fresh_target_admitted,
+            initiator_identity.clone(),
+            Arc::clone(&target),
+            deadline,
+        ),
+    );
+    assert_eq!(fresh_outbound.unwrap(), fresh_inbound.unwrap());
 
     let carrier = ProductionRelayCarrierDialer::standard();
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -1120,6 +1210,7 @@ async fn reserve_for_test(
     relay_node_id: ku_core::foundation::NodeId,
     target_node_id: ku_core::foundation::NodeId,
     reservation_id: [u8; 32],
+    sequence: u64,
     now: u64,
 ) -> RelayReservationV1 {
     let unsigned = RelayReservationV1 {
@@ -1148,7 +1239,7 @@ async fn reserve_for_test(
         target_node_id,
         reservation_id,
         transport_scope: vec![RelayTransportV1::QuicUdp],
-        sequence: 1,
+        sequence,
         issued_at: now,
         expires_at: now + 30,
         target_reservation_signature,
