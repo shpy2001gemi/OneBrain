@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import sys
 import tempfile
@@ -725,6 +726,22 @@ class P5MultiHostV2Tests(unittest.TestCase):
         self.assertEqual(argv[-1], "p5-runner@example.test")
         self.assertNotIn("app.key", argv)
 
+    def test_exited_bridge_reports_bounded_remote_stderr(self) -> None:
+        process = SimpleNamespace(
+            stdin=io.BytesIO(),
+            stdout=io.BytesIO(),
+            stderr=io.BytesIO(b"P5 V2 agent failed: File exists (os error 17)\n"),
+            poll=lambda: 1,
+        )
+        agent = runner.OpenSshRunningAgent("host-a", process)
+        command = runner.CanonicalCommandV2.create(12, {"command": "record-checkpoint"})
+
+        with self.assertRaisesRegex(
+            runner.P5ExecutionError,
+            r"truncated frame.*File exists \(os error 17\)",
+        ):
+            agent.execute(command, time.monotonic_ns() + 5_000_000_000)
+
     def test_partial_receipt_is_durable_before_other_failure_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -732,7 +749,10 @@ class P5MultiHostV2Tests(unittest.TestCase):
             executor = runner.OpenSshWaveExecutor(root, verify_child_receipt=runner.verify_minimal_child_receipt)
             agents = (FakeAgent("host-a", receipt), FakeAgent("host-b", RuntimeError("boom")))
             commands = tuple(runner.CanonicalCommandV2.create(i + 1, {"host": agent.host_id}) for i, agent in enumerate(agents))
-            with self.assertRaisesRegex(runner.P5ExecutionError, "child failure"):
+            with self.assertRaisesRegex(
+                runner.P5ExecutionError,
+                "child failure: host-b sequence 2: boom",
+            ):
                 executor.execute_wave(agents, commands, time.monotonic_ns() + 5_000_000_000)
             persisted = list((root / "p5" / "raw").glob("*.json"))
             self.assertEqual(len(persisted), 1)

@@ -167,14 +167,28 @@ class OpenSshRunningAgent:
         self._process.stdin.write(frame); self._process.stdin.flush()
         header = self._process.stdout.read(4)
         if len(header) != 4:
-            raise P5ExecutionError("SSH bridge returned a truncated frame")
+            raise P5ExecutionError(
+                "SSH bridge returned a truncated frame" + self._exited_stderr()
+            )
         size = int.from_bytes(header, "big")
         if not 0 < size <= MAX_RECEIPT_BYTES:
             raise P5ExecutionError("SSH bridge receipt size is invalid")
         body = self._process.stdout.read(size)
         if len(body) != size:
-            raise P5ExecutionError("SSH bridge receipt is truncated")
+            raise P5ExecutionError(
+                "SSH bridge receipt is truncated" + self._exited_stderr()
+            )
         return body
+
+    def _exited_stderr(self) -> str:
+        returncode = self._process.poll()
+        if returncode is None or self._process.stderr is None:
+            return ""
+        detail = self._process.stderr.read(4096).decode(errors="replace").strip()
+        suffix = f" (ssh exit {returncode}"
+        if detail:
+            suffix += f": {detail}"
+        return suffix + ")"
 
     def terminate(self) -> None: self._process.terminate()
     def wait(self, timeout: float) -> int: return self._process.wait(timeout=timeout)
@@ -1971,10 +1985,16 @@ class OpenSshWaveExecutor:
                 self._persist_verified_partial_receipt(receipt)
                 verified[index] = receipt
             except BaseException as error:
-                errors.append(error)
+                errors.append(P5ExecutionError(
+                    f"{agents[index].host_id} sequence {commands[index].sequence}: {error}"
+                ))
         if pending or errors:
             self._terminate_wait_kill(agents)
-            raise P5ExecutionError("P5 wave failed closed: deadline" if pending else "P5 wave failed closed: child failure") from (errors[0] if errors else None)
+            raise P5ExecutionError(
+                "P5 wave failed closed: deadline"
+                if pending
+                else f"P5 wave failed closed: child failure: {errors[0]}"
+            ) from (errors[0] if errors else None)
         receipts = tuple(verified[index] for index in range(len(agents)))
         if len({receipt.host_id for receipt in receipts}) != len(receipts):
             raise P5ExecutionError("duplicate host receipt")

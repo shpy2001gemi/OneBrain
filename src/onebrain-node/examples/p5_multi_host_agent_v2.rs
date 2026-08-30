@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 #[cfg(any(unix, test))]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use std::sync::Arc;
 #[cfg(unix)]
@@ -703,12 +703,21 @@ fn record_checkpoint(
         .to_hex()
         .to_string();
     let checkpoint_bytes = serde_json::to_vec(&checkpoint)?;
-    let checkpoint_root = state.network_data_root.join("p5-checkpoints");
+    // Peer identities and acknowledged sequences are intentionally stable
+    // across qualification attempts.  Keep create-new durability semantics,
+    // but scope the filename to the signed qualification session so an
+    // immutable checkpoint from an earlier attempt cannot collide with the
+    // first checkpoint of a later attempt.
+    let checkpoint_path = checkpoint_artifact_path(
+        &state.network_data_root,
+        &command.session_id,
+        expected_peer,
+        acknowledged_sequence,
+    )?;
+    let checkpoint_root = checkpoint_path
+        .parent()
+        .ok_or("checkpoint artifact has no parent")?;
     fs::create_dir_all(&checkpoint_root)?;
-    let checkpoint_path = checkpoint_root.join(format!(
-        "{}-{:020}.json",
-        expected_peer, acknowledged_sequence
-    ));
     let mut options = fs::OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -729,6 +738,27 @@ fn record_checkpoint(
         "checkpoint": checkpoint,
         "command": "record-checkpoint",
     }))
+}
+
+#[cfg(any(unix, test))]
+fn checkpoint_artifact_path(
+    network_data_root: &Path,
+    qualification_session_id: &str,
+    expected_peer: &str,
+    acknowledged_sequence: u64,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    decode_hex::<32>(qualification_session_id)?;
+    decode_hex::<32>(expected_peer)?;
+    if acknowledged_sequence == 0 {
+        return Err("checkpoint sequence must be nonzero".into());
+    }
+    Ok(network_data_root
+        .join("p5-checkpoints")
+        .join(qualification_session_id)
+        .join(format!(
+            "{}-{:020}.json",
+            expected_peer, acknowledged_sequence
+        )))
 }
 
 #[cfg(unix)]
@@ -1897,7 +1927,7 @@ fn rollout_json(
     ))
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, test))]
 fn decode_hex<const N: usize>(value: &str) -> Result<[u8; N], Box<dyn std::error::Error>> {
     if value.len() != N * 2 {
         return Err("invalid lowercase hex length".into());
@@ -1988,6 +2018,34 @@ mod tests {
             );
             assert!(!path.starts_with("/var/lib/onebrain/p5-v2/"));
         }
+    }
+
+    #[test]
+    fn checkpoint_artifacts_are_isolated_by_qualification_session() {
+        let root = runner_data_root("host-a").join("network");
+        let peer = "11".repeat(32);
+        let first_session = "22".repeat(32);
+        let second_session = "33".repeat(32);
+        let first = checkpoint_artifact_path(&root, &first_session, &peer, 1).unwrap();
+        let second = checkpoint_artifact_path(&root, &second_session, &peer, 1).unwrap();
+
+        assert_ne!(first, second);
+        assert!(first.starts_with(root.join("p5-checkpoints").join(first_session)));
+        assert!(second.starts_with(root.join("p5-checkpoints").join(second_session)));
+        assert_eq!(
+            first.file_name().unwrap().to_str().unwrap(),
+            format!("{}-{:020}.json", peer, 1)
+        );
+    }
+
+    #[test]
+    fn checkpoint_artifact_path_rejects_untrusted_components() {
+        let root = runner_data_root("host-a").join("network");
+        let peer = "11".repeat(32);
+
+        assert!(checkpoint_artifact_path(&root, "../old-session", &peer, 1).is_err());
+        assert!(checkpoint_artifact_path(&root, &"22".repeat(32), "../peer", 1).is_err());
+        assert!(checkpoint_artifact_path(&root, &"22".repeat(32), &peer, 0).is_err());
     }
 
     #[test]
