@@ -742,6 +742,30 @@ class P5MultiHostV2Tests(unittest.TestCase):
         ):
             agent.execute(command, time.monotonic_ns() + 5_000_000_000)
 
+    def test_bridge_waits_briefly_for_exit_before_reading_remote_stderr(self) -> None:
+        waits: list[float] = []
+
+        def wait(*, timeout: float) -> int:
+            waits.append(timeout)
+            return 1
+
+        process = SimpleNamespace(
+            stdin=io.BytesIO(),
+            stdout=io.BytesIO(),
+            stderr=io.BytesIO(b"P5 V2 agent failed: OBP_REACHABILITY_ADMISSION: SequenceRollback\n"),
+            poll=lambda: None,
+            wait=wait,
+        )
+        agent = runner.OpenSshRunningAgent("host-a", process)
+        command = runner.CanonicalCommandV2.create(44, {"command": "connect-ring-edge"})
+
+        with self.assertRaisesRegex(
+            runner.P5ExecutionError,
+            r"truncated frame.*SequenceRollback",
+        ):
+            agent.execute(command, time.monotonic_ns() + 5_000_000_000)
+        self.assertEqual(waits, [0.25])
+
     def test_partial_receipt_is_durable_before_other_failure_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

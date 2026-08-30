@@ -60,6 +60,8 @@ use onebrain_node::vnext_reachability_manager::{
     admit_relay_records, ProductionRelayDialRouteProvider, ProductionRelayPossessionClient,
     ProductionRelayReservationClient, RelayReservationManager, VNextReachabilityPolicy,
 };
+#[cfg(any(unix, test))]
+use onebrain_node::vnext_reachability_replay_store::RedbReachabilityReplayStore;
 #[cfg(unix)]
 use onebrain_node::vnext_runtime_rollout::{VNextRuntimeLaneRequest, VNextRuntimeRollout};
 #[cfg(unix)]
@@ -109,6 +111,26 @@ fn runner_data_root(host_id: &str) -> PathBuf {
 #[cfg(any(unix, test))]
 fn relay_reservation_cursor(relay_key: &str) -> PathBuf {
     PathBuf::from(AGENT_STATE_ROOT).join(format!("relay-reservation-{relay_key}.cursor"))
+}
+
+#[cfg(any(unix, test))]
+fn advertisement_replay_store_path(
+    root: &Path,
+    host_id: &str,
+    qualification_session_id: &str,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if host_id.is_empty()
+        || host_id.len() > 128
+        || !host_id
+            .bytes()
+            .all(|value| value.is_ascii_lowercase() || value.is_ascii_digit() || value == b'-')
+    {
+        return Err("invalid advertisement replay host".into());
+    }
+    decode_hex::<32>(qualification_session_id)?;
+    Ok(root.join(format!(
+        "{host_id}-advertisement-admission-{qualification_session_id}.redb"
+    )))
 }
 
 #[cfg(unix)]
@@ -258,6 +280,18 @@ impl AgentRuntimeState {
         .map_err(|error| format!("relay selector init failed: {error:?}"))?;
         let advertisement_sequence =
             DurableSequenceCursor::open(advertisement_cursor(&config.host_id), binding)?;
+        // A restart rebuilds the in-process admission object while peer
+        // advertisement publishers correctly continue their durable sequence.
+        // Persist the receiver floor for this signed qualification session so
+        // sequence N+1 remains admissible after restart without carrying an
+        // unrelated prior session's replay authority into a new run.
+        let advertisement_replay = Arc::new(RedbReachabilityReplayStore::open(
+            advertisement_replay_store_path(
+                Path::new(AGENT_STATE_ROOT),
+                &config.host_id,
+                &config.session_id,
+            )?,
+        )?);
         let runner_data_root = runner_data_root(&config.host_id);
         let network_data_root = runner_data_root.join("network");
         let rollout = VNextRuntimeRollout::open(
@@ -279,9 +313,9 @@ impl AgentRuntimeState {
             advertisements: BTreeMap::new(),
             identity,
             advertisement_preparer,
-            advertisement_admission: std::sync::Mutex::new(ReachabilityAdmission::new(Arc::new(
-                InMemoryReachabilityReplayStore::default(),
-            ))),
+            advertisement_admission: std::sync::Mutex::new(ReachabilityAdmission::new(
+                advertisement_replay,
+            )),
             connectivity_validator: std::sync::Mutex::new(ConnectivitySignalingValidator::new(
                 Arc::new(InMemoryReachabilityReplayStore::default()),
             )),
@@ -1974,6 +2008,7 @@ fn print_compiled_binding() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ku_net::vnext_reachability_crypto::ReachabilityReplayStore;
 
     #[tokio::test]
     async fn relay_inbound_acceptance_is_not_pinned_to_the_first_authenticated_relay_failure() {
@@ -2003,10 +2038,17 @@ mod tests {
 
     #[test]
     fn durable_agent_state_stays_inside_the_agent_owned_root() {
+        let session = "11".repeat(32);
         let paths = [
             PathBuf::from(COMMAND_CURSOR),
             identity_client_cursor("host-a"),
             advertisement_cursor("host-a"),
+            advertisement_replay_store_path(
+                std::path::Path::new(AGENT_STATE_ROOT),
+                "host-a",
+                &session,
+            )
+            .unwrap(),
             runner_data_root("host-a"),
             relay_reservation_cursor(&"ab".repeat(32)),
         ];
@@ -2018,6 +2060,41 @@ mod tests {
             );
             assert!(!path.starts_with("/var/lib/onebrain/p5-v2/"));
         }
+    }
+
+    #[test]
+    fn peer_advertisement_replay_floor_survives_agent_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let session = "22".repeat(32);
+        let path = advertisement_replay_store_path(directory.path(), "host-a", &session).unwrap();
+        let key = ku_net::vnext_reachability_crypto::ReachabilitySequenceKeyV1 {
+            kind: ku_net::vnext_reachability_crypto::ReachabilitySequenceKindV1::Advertisement,
+            signer: [7; 32],
+            scope: [0; 32],
+        };
+
+        {
+            let store = RedbReachabilityReplayStore::open(&path).unwrap();
+            store
+                .check_and_advance_sequence(key, 1, [8; 32], 500)
+                .unwrap();
+        }
+        let reopened = RedbReachabilityReplayStore::open(&path).unwrap();
+        reopened
+            .check_and_advance_sequence(key, 2, [9; 32], 600)
+            .unwrap();
+        assert_eq!(
+            reopened.check_and_advance_sequence(key, 1, [8; 32], 500),
+            Err(ku_net::vnext_reachability_crypto::RelayAdmissionError::SequenceRollback)
+        );
+
+        let other_session =
+            advertisement_replay_store_path(directory.path(), "host-a", &"33".repeat(32)).unwrap();
+        assert_ne!(path, other_session);
+        assert!(advertisement_replay_store_path(directory.path(), "../host-a", &session).is_err());
+        assert!(
+            advertisement_replay_store_path(directory.path(), "host-a", "not-a-session").is_err()
+        );
     }
 
     #[test]

@@ -182,7 +182,16 @@ class OpenSshRunningAgent:
 
     def _exited_stderr(self) -> str:
         returncode = self._process.poll()
-        if returncode is None or self._process.stderr is None:
+        if returncode is None:
+            # stdout EOF can become visible a few scheduler ticks before
+            # Popen.poll() observes the SSH child exit.  Wait only a tightly
+            # bounded interval so the exact forced-command stderr is not lost
+            # behind a generic truncated-frame error.
+            try:
+                returncode = self._process.wait(timeout=0.25)
+            except subprocess.TimeoutExpired:
+                return ""
+        if self._process.stderr is None:
             return ""
         detail = self._process.stderr.read(4096).decode(errors="replace").strip()
         suffix = f" (ssh exit {returncode}"
