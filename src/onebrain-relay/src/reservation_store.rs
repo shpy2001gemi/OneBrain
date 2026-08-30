@@ -245,6 +245,12 @@ impl ReservationStore {
     ) -> Result<ReservationDecision, ReservationError> {
         self.verify_client(client, now)?;
         fresh(request.issued_at, request.expires_at, now)?;
+        // A reservation is usable only while its exact authenticated outer
+        // carrier is alive and until its signed expiry.  Reclaim expired
+        // entries before applying the bounded total/per-target admission;
+        // otherwise dead grants permanently consume capacity until the relay
+        // process is restarted.
+        self.prune_expired(now);
         if request.relay_node_id != self.relay_node_id
             || request.target_node_id != client.client_node_id
         {
@@ -421,14 +427,31 @@ impl ReservationStore {
                 )
                 .map_err(|_| ReservationError::State)?;
         }
-        let removed = self.reservations.remove(&revoke.reservation_id).unwrap();
-        if let Some(count) = self.per_target.get_mut(&revoke.target_node_id) {
-            *count -= 1;
-            if *count == 0 {
-                self.per_target.remove(&revoke.target_node_id);
-            }
-        }
+        let removed = self
+            .remove_reservation(revoke.reservation_id)
+            .expect("validated reservation must still exist");
         Ok(removed.canonical)
+    }
+
+    /// Reclaim every reservation bound to a carrier that has closed.
+    ///
+    /// Reservations cannot migrate to another authenticated outer connection:
+    /// keepalive, revoke, reflexive observation, and association all bind the
+    /// grant to `bound_outer_connection`.  Retaining such a grant after that
+    /// carrier closes therefore creates an unusable capacity leak.
+    pub fn release_connection(&mut self, binding: [u8; 32]) -> usize {
+        let reservation_ids = self
+            .reservations
+            .iter()
+            .filter_map(|(reservation_id, stored)| {
+                (stored.bound_outer_connection == binding).then_some(*reservation_id)
+            })
+            .collect::<Vec<_>>();
+        let released = reservation_ids.len();
+        for reservation_id in reservation_ids {
+            self.remove_reservation(reservation_id);
+        }
+        released
     }
 
     pub fn get(&self, reservation_id: [u8; 32]) -> Option<&StoredReservation> {
@@ -441,6 +464,33 @@ impl ReservationStore {
 
     pub fn is_empty(&self) -> bool {
         self.reservations.is_empty()
+    }
+
+    fn prune_expired(&mut self, now: u64) -> usize {
+        let reservation_ids = self
+            .reservations
+            .iter()
+            .filter_map(|(reservation_id, stored)| {
+                (stored.canonical.expires_at <= now).then_some(*reservation_id)
+            })
+            .collect::<Vec<_>>();
+        let released = reservation_ids.len();
+        for reservation_id in reservation_ids {
+            self.remove_reservation(reservation_id);
+        }
+        released
+    }
+
+    fn remove_reservation(&mut self, reservation_id: [u8; 32]) -> Option<StoredReservation> {
+        let removed = self.reservations.remove(&reservation_id)?;
+        let target = removed.canonical.target_node_id;
+        if let Some(count) = self.per_target.get_mut(&target) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                self.per_target.remove(&target);
+            }
+        }
+        Some(removed)
     }
 
     fn verify_client(
@@ -614,6 +664,17 @@ mod tests {
         reservation_id: [u8; 32],
         sequence: u64,
     ) -> RelayReserveRequestV1 {
+        request_at(relay_key, client_key, reservation_id, sequence, 100, 130)
+    }
+
+    fn request_at(
+        relay_key: &SigningKey,
+        client_key: &SigningKey,
+        reservation_id: [u8; 32],
+        sequence: u64,
+        issued_at: u64,
+        expires_at: u64,
+    ) -> RelayReserveRequestV1 {
         let mut request = RelayReserveRequestV1 {
             format: 1,
             relay_node_id: principal_node_id(relay_key.verifying_key().as_bytes()),
@@ -621,8 +682,8 @@ mod tests {
             reservation_id,
             transport_scope: vec![RelayTransportV1::QuicUdp],
             sequence,
-            issued_at: 100,
-            expires_at: 130,
+            issued_at,
+            expires_at,
             target_reservation_signature: [0; 64],
             target_request_signature: [0; 64],
         };
@@ -684,6 +745,59 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn closed_connection_reclaims_per_target_capacity_without_resetting_sequence() {
+        let relay_key = SigningKey::from_bytes(&[31; 32]);
+        let client_key = SigningKey::from_bytes(&[32; 32]);
+        let first_binding = [33; 32];
+        let first = authenticated_client(&relay_key, &client_key, first_binding, [34; 32]);
+        let mut store = ReservationStore::new(relay_key.clone(), 1, 1).unwrap();
+
+        assert!(matches!(
+            store
+                .reserve(request(&relay_key, &client_key, [35; 32], 1), &first, 110)
+                .unwrap(),
+            ReservationDecision::Granted(_)
+        ));
+        assert_eq!(store.release_connection(first_binding), 1);
+        assert!(store.is_empty());
+
+        let second = authenticated_client(&relay_key, &client_key, [36; 32], [37; 32]);
+        assert!(matches!(
+            store
+                .reserve(request(&relay_key, &client_key, [38; 32], 2), &second, 110)
+                .unwrap(),
+            ReservationDecision::Granted(_)
+        ));
+    }
+
+    #[test]
+    fn expired_reservation_is_pruned_before_capacity_admission() {
+        let relay_key = SigningKey::from_bytes(&[41; 32]);
+        let client_key = SigningKey::from_bytes(&[42; 32]);
+        let client = authenticated_client(&relay_key, &client_key, [43; 32], [44; 32]);
+        let mut store = ReservationStore::new(relay_key.clone(), 1, 1).unwrap();
+
+        assert!(matches!(
+            store
+                .reserve(request(&relay_key, &client_key, [45; 32], 1), &client, 110)
+                .unwrap(),
+            ReservationDecision::Granted(_)
+        ));
+        assert!(matches!(
+            store
+                .reserve(
+                    request_at(&relay_key, &client_key, [46; 32], 2, 131, 160),
+                    &client,
+                    131,
+                )
+                .unwrap(),
+            ReservationDecision::Granted(_)
+        ));
+        assert_eq!(store.len(), 1);
+        assert!(store.get([46; 32]).is_some());
     }
 
     #[test]

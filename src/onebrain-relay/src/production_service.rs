@@ -407,6 +407,12 @@ impl RelayProductionService {
         if let Ok(mut connections) = self.connections.lock() {
             connections.remove(&binding);
         }
+        if let Ok(mut reservations) = self.reservations.lock() {
+            reservations.release_connection(binding);
+        }
+        if let Ok(mut data_plane) = self.data_plane.lock() {
+            data_plane.release_connection(binding);
+        }
     }
 
     async fn handle_frame(
@@ -882,6 +888,92 @@ fn unix_now() -> Result<u64, RelayDataPlaneError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use onebrain_protocol::{
+        reachability_signing_bytes, relay_control_signing_bytes, ReachabilityObjectV1,
+        ReachabilitySignatureRoleV1, RelayControlSignatureRoleV1, RelayOuterClientHelloV1,
+        RelayReservationV1, RelayReserveRequestV1, RelayTransportV1,
+    };
+
+    fn authenticated_client_for_test(
+        relay_key: &SigningKey,
+        client_key: &SigningKey,
+        binding: [u8; 32],
+        nonce: [u8; 32],
+    ) -> AuthenticatedOuterClient {
+        let mut authenticator = OuterClientAuthenticator::new(relay_key.clone());
+        authenticator.issue_challenge(nonce, binding, 100).unwrap();
+        let mut hello = RelayOuterClientHelloV1 {
+            format: 1,
+            relay_node_id: principal_node_id(relay_key.verifying_key().as_bytes()),
+            client_node_id: principal_node_id(client_key.verifying_key().as_bytes()),
+            client_public_key: *client_key.verifying_key().as_bytes(),
+            challenge_nonce: nonce,
+            outer_connection_binding: binding,
+            issued_at: 100,
+            expires_at: 130,
+            client_signature: [0; 64],
+        };
+        hello.client_signature = client_key
+            .sign(
+                &relay_control_signing_bytes(
+                    &RelayControlV1::OuterClientHello(hello.clone()),
+                    RelayControlSignatureRoleV1::OuterHelloClient,
+                )
+                .unwrap(),
+            )
+            .to_bytes();
+        authenticator.authenticate(hello, binding, 110).unwrap()
+    }
+
+    fn reservation_request_for_test(
+        relay_key: &SigningKey,
+        client_key: &SigningKey,
+        reservation_id: [u8; 32],
+        sequence: u64,
+    ) -> RelayReserveRequestV1 {
+        let mut request = RelayReserveRequestV1 {
+            format: 1,
+            relay_node_id: principal_node_id(relay_key.verifying_key().as_bytes()),
+            target_node_id: principal_node_id(client_key.verifying_key().as_bytes()),
+            reservation_id,
+            transport_scope: vec![RelayTransportV1::TlsTcp443],
+            sequence,
+            issued_at: 100,
+            expires_at: 130,
+            target_reservation_signature: [0; 64],
+            target_request_signature: [0; 64],
+        };
+        let unsigned = RelayReservationV1 {
+            format: 1,
+            relay_node_id: request.relay_node_id,
+            target_node_id: request.target_node_id,
+            reservation_id,
+            transport_scope: request.transport_scope.clone(),
+            issued_at: request.issued_at,
+            expires_at: request.expires_at,
+            target_signature: [0; 64],
+            relay_signature: [0; 64],
+        };
+        request.target_reservation_signature = client_key
+            .sign(
+                &reachability_signing_bytes(
+                    &ReachabilityObjectV1::RelayReservation(unsigned),
+                    ReachabilitySignatureRoleV1::ReservationTarget,
+                )
+                .unwrap(),
+            )
+            .to_bytes();
+        request.target_request_signature = client_key
+            .sign(
+                &relay_control_signing_bytes(
+                    &RelayControlV1::Reserve(request.clone()),
+                    RelayControlSignatureRoleV1::ReserveRequestTarget,
+                )
+                .unwrap(),
+            )
+            .to_bytes();
+        request
+    }
 
     fn connect_scope(
         initiator: u8,
@@ -942,6 +1034,43 @@ mod tests {
             Err(RelayDataPlaneError::Capacity)
         );
         assert_eq!(guard.validate(second, 1, 300, 201), Ok(()));
+    }
+
+    #[test]
+    fn production_disconnect_reclaims_reservation_for_same_target_rehydrate() {
+        let relay_key = SigningKey::from_bytes(&[51; 32]);
+        let client_key = SigningKey::from_bytes(&[52; 32]);
+        let directory = tempfile::tempdir().unwrap();
+        let durable =
+            Arc::new(DurableRelayState::initialize(&directory.path().join("relay.redb")).unwrap());
+        let service = RelayProductionService::new(relay_key.clone(), 1, 1, durable).unwrap();
+        let first_binding = [53; 32];
+        let first = authenticated_client_for_test(&relay_key, &client_key, first_binding, [54; 32]);
+        let (outbound, _incoming) = mpsc::channel(1);
+        service
+            .register_connection(first.clone(), outbound)
+            .unwrap();
+        assert!(matches!(
+            service.reservations.lock().unwrap().reserve(
+                reservation_request_for_test(&relay_key, &client_key, [55; 32], 1),
+                &first,
+                110,
+            ),
+            Ok(ReservationDecision::Granted(_))
+        ));
+
+        service.unregister_connection(first_binding);
+        assert!(service.reservations.lock().unwrap().is_empty());
+
+        let second = authenticated_client_for_test(&relay_key, &client_key, [56; 32], [57; 32]);
+        assert!(matches!(
+            service.reservations.lock().unwrap().reserve(
+                reservation_request_for_test(&relay_key, &client_key, [58; 32], 2),
+                &second,
+                110,
+            ),
+            Ok(ReservationDecision::Granted(_))
+        ));
     }
 
     #[tokio::test]

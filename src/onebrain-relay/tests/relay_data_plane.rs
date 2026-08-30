@@ -89,6 +89,32 @@ fn opaque_udp_round_trip_reorders_and_never_decodes_inner_bytes() {
 }
 
 #[test]
+fn closed_outer_connection_reclaims_association_state() {
+    let budget = RelayGlobalBudget::new_for_test(16, 16_384, 8, 16_384);
+    let mut relay = RelayDataPlane::new(budget);
+    relay.register(binding()).unwrap();
+    assert_eq!(relay.release_connection([4; 32]), 1);
+    assert_eq!(relay.release_connection([4; 32]), 0);
+
+    let fragment = OpaqueDatagramEnvelopeV1::fragment(
+        [1; 32],
+        DatagramDirectionV1::InitiatorToTarget,
+        1,
+        1,
+        b"closed carrier",
+        1_000,
+    )
+    .unwrap()
+    .remove(0)
+    .encode()
+    .unwrap();
+    assert_eq!(
+        relay.accept_fragment([4; 32], &fragment, 110).unwrap_err(),
+        RelayDataPlaneError::UnknownAssociation
+    );
+}
+
+#[test]
 fn wrong_connection_duplicate_oversize_timeout_and_capacity_reject() {
     let budget = RelayGlobalBudget::new_for_test(1, 1_400, 1, 1_400);
     let mut relay = RelayDataPlane::new(budget);

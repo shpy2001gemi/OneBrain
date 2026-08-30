@@ -409,6 +409,22 @@ impl RelayDataPlane {
         Ok(())
     }
 
+    /// Remove every association and partial datagram owned by a closed outer
+    /// carrier.  Association bindings are exact connection capabilities and
+    /// cannot remain usable after either endpoint disconnects.
+    pub fn release_connection(&mut self, connection: [u8; 32]) -> usize {
+        let previous = self.associations.len();
+        self.associations.retain(|_, binding| {
+            binding.initiator_connection != connection && binding.target_connection != connection
+        });
+        let live_associations = self.associations.keys().copied().collect::<BTreeSet<_>>();
+        self.reassemblies
+            .retain(|key, _| live_associations.contains(&key.association_id));
+        self.completed
+            .retain(|key| live_associations.contains(&key.association_id));
+        previous - self.associations.len()
+    }
+
     pub fn accept_fragment(
         &mut self,
         sender_connection: [u8; 32],
