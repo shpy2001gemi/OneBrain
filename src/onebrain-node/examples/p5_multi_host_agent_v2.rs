@@ -701,7 +701,14 @@ fn record_checkpoint(
         .sessions
         .get(expected_peer)
         .ok_or("checkpoint peer has no authenticated routed session")?;
-    if let Some(previous) = state.checkpoints.get(expected_peer) {
+    let previous = checkpoint_predecessor_for_resume(
+        &state.checkpoints,
+        &state.network_data_root,
+        &command.session_id,
+        expected_peer,
+        acknowledged_sequence,
+    )?;
+    if let Some(previous) = previous.as_ref() {
         if acknowledged_sequence != previous.acknowledged_sequence.saturating_add(1)
             || intent_blake3 != previous.intent_blake3
             || roots_blake3 != previous.roots_blake3
@@ -723,9 +730,7 @@ fn record_checkpoint(
         transport_binding_blake3: hex(&session.transport_binding_digest()),
         checkpoint_blake3: String::new(),
     };
-    checkpoint.checkpoint_blake3 = blake3::hash(&serde_json::to_vec(&checkpoint)?)
-        .to_hex()
-        .to_string();
+    checkpoint.checkpoint_blake3 = checkpoint_digest(&checkpoint)?;
     let checkpoint_bytes = serde_json::to_vec(&checkpoint)?;
     // Peer identities and acknowledged sequences are intentionally stable
     // across qualification attempts.  Keep create-new durability semantics,
@@ -783,6 +788,88 @@ fn checkpoint_artifact_path(
             "{}-{:020}.json",
             expected_peer, acknowledged_sequence
         )))
+}
+
+#[cfg(any(unix, test))]
+fn checkpoint_digest(checkpoint: &AgentCheckpointV2) -> Result<String, Box<dyn std::error::Error>> {
+    let mut unsigned = checkpoint.clone();
+    unsigned.checkpoint_blake3.clear();
+    Ok(blake3::hash(&serde_json::to_vec(&unsigned)?)
+        .to_hex()
+        .to_string())
+}
+
+#[cfg(any(unix, test))]
+fn checkpoint_predecessor_for_resume(
+    checkpoints: &BTreeMap<String, AgentCheckpointV2>,
+    network_data_root: &Path,
+    qualification_session_id: &str,
+    expected_peer: &str,
+    acknowledged_sequence: u64,
+) -> Result<Option<AgentCheckpointV2>, Box<dyn std::error::Error>> {
+    if let Some(previous) = checkpoints.get(expected_peer) {
+        return Ok(Some(previous.clone()));
+    }
+    if acknowledged_sequence == 1 {
+        return Ok(None);
+    }
+    Ok(Some(load_checkpoint_artifact(
+        network_data_root,
+        qualification_session_id,
+        expected_peer,
+        acknowledged_sequence.saturating_sub(1),
+    )?))
+}
+
+#[cfg(any(unix, test))]
+fn load_checkpoint_artifact(
+    network_data_root: &Path,
+    qualification_session_id: &str,
+    expected_peer: &str,
+    acknowledged_sequence: u64,
+) -> Result<AgentCheckpointV2, Box<dyn std::error::Error>> {
+    let path = checkpoint_artifact_path(
+        network_data_root,
+        qualification_session_id,
+        expected_peer,
+        acknowledged_sequence,
+    )?;
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|error| format!("durable checkpoint predecessor is unavailable: {error}"))?;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.len() == 0
+        || metadata.len() > 4_096
+    {
+        return Err("durable checkpoint predecessor is not a bounded regular file".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if metadata.mode() & 0o777 != 0o600 || metadata.nlink() != 1 {
+            return Err("durable checkpoint predecessor permissions are invalid".into());
+        }
+    }
+    let bytes = fs::read(&path)?;
+    let checkpoint: AgentCheckpointV2 = serde_json::from_slice(&bytes)
+        .map_err(|_| "durable checkpoint predecessor is invalid JSON")?;
+    let mut canonical = serde_json::to_vec(&checkpoint)?;
+    canonical.push(b'\n');
+    if bytes != canonical {
+        return Err("durable checkpoint predecessor is not canonical JSON".into());
+    }
+    if checkpoint.expected_peer != expected_peer
+        || checkpoint.acknowledged_sequence != acknowledged_sequence
+        || decode_hex::<32>(&checkpoint.intent_blake3).is_err()
+        || decode_hex::<32>(&checkpoint.roots_blake3).is_err()
+        || decode_hex::<32>(&checkpoint.route_receipt_blake3).is_err()
+        || decode_hex::<32>(&checkpoint.session_id).is_err()
+        || decode_hex::<32>(&checkpoint.transport_binding_blake3).is_err()
+        || checkpoint.checkpoint_blake3 != checkpoint_digest(&checkpoint)?
+    {
+        return Err("durable checkpoint predecessor binding is invalid".into());
+    }
+    Ok(checkpoint)
 }
 
 #[cfg(unix)]
@@ -2168,6 +2255,130 @@ mod tests {
         assert!(checkpoint_artifact_path(&root, "../old-session", &peer, 1).is_err());
         assert!(checkpoint_artifact_path(&root, &"22".repeat(32), "../peer", 1).is_err());
         assert!(checkpoint_artifact_path(&root, &"22".repeat(32), &peer, 0).is_err());
+    }
+
+    fn write_test_checkpoint(
+        root: &Path,
+        qualification_session: &str,
+        peer: &str,
+        acknowledged_sequence: u64,
+    ) -> PathBuf {
+        let mut checkpoint = AgentCheckpointV2 {
+            expected_peer: peer.to_owned(),
+            acknowledged_sequence,
+            intent_blake3: "44".repeat(32),
+            roots_blake3: "55".repeat(32),
+            route_receipt_blake3: "66".repeat(32),
+            session_id: "77".repeat(32),
+            transport_binding_blake3: "88".repeat(32),
+            checkpoint_blake3: String::new(),
+        };
+        checkpoint.checkpoint_blake3 = checkpoint_digest(&checkpoint).unwrap();
+        let path =
+            checkpoint_artifact_path(root, qualification_session, peer, acknowledged_sequence)
+                .unwrap();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut bytes = serde_json::to_vec(&checkpoint).unwrap();
+        bytes.push(b'\n');
+        fs::write(&path, bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        path
+    }
+
+    #[test]
+    fn checkpoint_resume_loads_the_exact_durable_predecessor_after_agent_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let qualification_session = "22".repeat(32);
+        let peer = "11".repeat(32);
+        write_test_checkpoint(directory.path(), &qualification_session, &peer, 1);
+
+        let loaded = checkpoint_predecessor_for_resume(
+            &BTreeMap::new(),
+            directory.path(),
+            &qualification_session,
+            &peer,
+            2,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(loaded.expected_peer, peer);
+        assert_eq!(loaded.acknowledged_sequence, 1);
+        assert_eq!(loaded.intent_blake3, "44".repeat(32));
+        assert_eq!(loaded.roots_blake3, "55".repeat(32));
+        assert_eq!(
+            loaded.checkpoint_blake3,
+            checkpoint_digest(&loaded).unwrap()
+        );
+        assert!(checkpoint_predecessor_for_resume(
+            &BTreeMap::new(),
+            directory.path(),
+            &"33".repeat(32),
+            &peer,
+            2
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn checkpoint_resume_rejects_tampered_or_noncanonical_predecessors() {
+        let directory = tempfile::tempdir().unwrap();
+        let qualification_session = "22".repeat(32);
+        let peer = "11".repeat(32);
+        let path = write_test_checkpoint(directory.path(), &qualification_session, &peer, 1);
+        let mut checkpoint: AgentCheckpointV2 =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        checkpoint.checkpoint_blake3 = "99".repeat(32);
+        let mut bytes = serde_json::to_vec(&checkpoint).unwrap();
+        bytes.push(b'\n');
+        fs::write(&path, bytes).unwrap();
+        assert!(
+            load_checkpoint_artifact(directory.path(), &qualification_session, &peer, 1).is_err()
+        );
+
+        let valid = write_test_checkpoint(directory.path(), &qualification_session, &peer, 2);
+        let mut noncanonical = fs::read(&valid).unwrap();
+        noncanonical.push(b'\n');
+        fs::write(&valid, noncanonical).unwrap();
+        assert!(
+            load_checkpoint_artifact(directory.path(), &qualification_session, &peer, 2).is_err()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn checkpoint_resume_rejects_a_symlink_predecessor() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let peer = "11".repeat(32);
+        let source_session = "22".repeat(32);
+        let target_session = "33".repeat(32);
+        let source = write_test_checkpoint(directory.path(), &source_session, &peer, 1);
+        let target = checkpoint_artifact_path(directory.path(), &target_session, &peer, 1).unwrap();
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        symlink(source, &target).unwrap();
+
+        assert!(load_checkpoint_artifact(directory.path(), &target_session, &peer, 1).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn checkpoint_resume_rejects_a_hard_linked_predecessor() {
+        let directory = tempfile::tempdir().unwrap();
+        let peer = "11".repeat(32);
+        let source_session = "22".repeat(32);
+        let target_session = "33".repeat(32);
+        let source = write_test_checkpoint(directory.path(), &source_session, &peer, 1);
+        let target = checkpoint_artifact_path(directory.path(), &target_session, &peer, 1).unwrap();
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::hard_link(source, &target).unwrap();
+
+        assert!(load_checkpoint_artifact(directory.path(), &target_session, &peer, 1).is_err());
     }
 
     #[test]
