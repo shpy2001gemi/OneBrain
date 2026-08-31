@@ -685,6 +685,9 @@ jobs:
           printf '%s\n' "$BASELINE_RECEIPT_JSON" > "$receipt"
           git fetch --no-tags origin refs/heads/base-v1-idl-baseline:refs/heads/base-v1-idl-baseline
           printf 'BASE_V1_IDL_BASELINE_RECEIPT=%s\n' "$receipt" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

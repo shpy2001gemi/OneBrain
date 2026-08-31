@@ -181,6 +181,10 @@ jobs:
           "CARGO_TARGET_DIR=$env:CARGO_TARGET_DIR" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "EVIDENCE_DIR=$env:EVIDENCE_DIR" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "BASE_V1_IDL_BASELINE_RECEIPT=$env:BASE_V1_IDL_BASELINE_RECEIPT" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          if ('${{ matrix.os_name }}' -eq 'macos') {
+            if (-not (Test-Path -LiteralPath '/private/tmp' -PathType Container)) { throw 'canonical macOS temporary root is unavailable' }
+            "TMPDIR=/private/tmp" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          }
           if (-not $env:BASELINE_RECEIPT_JSON) { throw 'immutable Task 14 baseline receipt repository variable is missing' }
           $env:BASELINE_RECEIPT_JSON | Out-File $env:BASE_V1_IDL_BASELINE_RECEIPT -Encoding utf8
           git fetch --no-tags origin refs/heads/base-v1-idl-baseline:refs/heads/base-v1-idl-baseline

@@ -8597,6 +8597,7 @@ def validate_base_v1_candidate_workflow(
         "ONEBRAIN_BASE_V1_IDL_BASELINE_RECEIPT",
         "BASE_V1_IDL_BASELINE_RECEIPT=$env:BASE_V1_IDL_BASELINE_RECEIPT",
         "refs/heads/base-v1-idl-baseline:refs/heads/base-v1-idl-baseline",
+        "TMPDIR=/private/tmp",
         "rustc-vV.txt",
         "ImageVersion",
         "'qualification_mode':os.environ['QUALIFICATION_MODE']",
