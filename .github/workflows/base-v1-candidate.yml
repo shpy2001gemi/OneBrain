@@ -193,7 +193,13 @@ jobs:
           if ((dart --version 2>&1) -notmatch '3.11.3') { throw 'Dart version drift' }
           'blake3==1.0.8 --hash=sha256:d17eb6382634b3a5bc0c0e0454d5265b0becaeeadb6801ed25150b39a999d0cc --hash=sha256:e4072196547484c95a5a09adbb952e9bb501949f03f9e2a85e7249ef85faaba8 --hash=sha256:1af0e5a29aa56d4fba904452ae784740997440afd477a15e583c38338e641f41 --hash=sha256:9456c829601d72852d8ba0af8dae0610f7def1d59f5942efde1e2ef93e8a8b57 --hash=sha256:3cec94ed5676821cf371e9c9d25a41b4f3ebdb5724719b31b2749653b7cc1dfa --hash=sha256:3168c457255b5d2a2fc356ba696996fcaff5d38284f968210d54376312107662' | Out-File "$env:RUNNER_TEMP/blake3-requirements.txt" -Encoding ascii
           python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$env:RUNNER_TEMP/blake3-requirements.txt"
+          python -m pip install --disable-pip-version-check --requirement scripts/concept_registry/requirements.txt
           New-Item -ItemType Directory -Force $env:EVIDENCE_DIR | Out-Null
+          rustc -vV | Out-File "$env:EVIDENCE_DIR/rustc-vV.txt" -Encoding utf8
+          $toolchainDigest = (python -c "import blake3,os,pathlib; print(blake3.blake3((pathlib.Path(os.environ['EVIDENCE_DIR'])/'rustc-vV.txt').read_bytes()).hexdigest())").Trim()
+          if ($toolchainDigest -notmatch '^[0-9a-f]{64}$') { throw 'Rust toolchain digest is invalid' }
+          "ONEBRAIN_BASE_COMMIT=${{ needs.verify-candidate-identity.outputs.candidate_commit }}" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          "ONEBRAIN_TOOLCHAIN_DIGEST=$toolchainDigest" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
       - name: Format, check, clippy, and test the default Base workspace
         shell: pwsh
         run: |
@@ -263,7 +269,6 @@ jobs:
           cargo build --locked --release --manifest-path src/Cargo.toml -p onebrain-cli
           $executable = Join-Path $env:CARGO_TARGET_DIR 'release/${{ matrix.executable }}'
           & $executable --version --verbose | Out-File "$env:EVIDENCE_DIR/base-status.json" -Encoding utf8
-          rustc -vV | Out-File "$env:EVIDENCE_DIR/rustc-vV.txt" -Encoding utf8
           if (-not $env:ImageOS -or -not $env:ImageVersion) { throw 'immutable hosted-runner image identity is unavailable' }
           cargo metadata --locked --manifest-path src/Cargo.toml --format-version 1 | Out-File "$env:EVIDENCE_DIR/cargo-metadata.json" -Encoding utf8
           $status = Get-Content "$env:EVIDENCE_DIR/base-status.json" -Raw | ConvertFrom-Json

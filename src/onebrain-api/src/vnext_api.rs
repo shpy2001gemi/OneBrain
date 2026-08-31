@@ -2368,7 +2368,7 @@ mod tests {
     async fn test_node(directory: &tempfile::TempDir) -> onebrain_node::OneBrainNode {
         let config = onebrain_node::NodeConfig {
             port: 0,
-            data_dir: directory.path().to_path_buf(),
+            data_dir: directory.path().canonicalize().unwrap(),
             concept_registry_mode: onebrain_node::ConceptRegistryMode::Disabled,
             ..Default::default()
         };

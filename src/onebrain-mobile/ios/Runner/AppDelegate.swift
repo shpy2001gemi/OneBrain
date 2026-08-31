@@ -249,6 +249,15 @@ private final class IOSMobileHost: MobileHostApi {
     completion(.failure(registryTrustUnavailableError()))
   }
 
+  func pickAndImportRegistryArtifact(
+    operationId: String,
+    manifestDigest: String,
+    artifactRole: HostRegistryArtifactRole,
+    completion: @escaping (Result<HostRegistryImportProgress, Error>) -> Void
+  ) {
+    completion(.failure(registryTrustUnavailableError()))
+  }
+
   private func registryTrustUnavailableError() -> PigeonError {
     PigeonError(
       code: "REGISTRY_TRUST_UNAVAILABLE",
