@@ -24,7 +24,7 @@ use crate::signer_ports::{
 };
 use crate::{
     compiled_base_runtime_config, ArchiveCapabilityRegistry, BaseStorageOwnerId,
-    DatasetGenerationStore, DatasetPathResolver, NodeError,
+    DatasetGenerationId, DatasetGenerationStore, DatasetPathResolver, NodeError,
 };
 
 use crate::vnext_runtime_rollout::{
@@ -447,7 +447,15 @@ pub fn prepare_obarv002_fixture(
         return Err(P5RecoveryErrorV2::PathEscapesRoot);
     }
     match (archive_path.exists(), key_path.exists()) {
-        (true, true) => return inspect_fixture(archive_path, key_path, &dataset_root),
+        (true, true) => {
+            let (archive_blake3, archive_bytes) = inspect_fixture_files(archive_path, key_path)?;
+            reset_fixture_restore_target(&fixture_root, &dataset_root)?;
+            return Ok(P5RecoveryFixtureReceiptV2 {
+                archive_blake3,
+                archive_bytes,
+                dataset_generation: DatasetGenerationId::BOOTSTRAP.0,
+            });
+        }
         (false, false) => {}
         _ => return Err(P5RecoveryErrorV2::Archive),
     }
@@ -578,30 +586,45 @@ pub fn prepare_obarv002_fixture(
     result
 }
 
+/// Returns the P5-only restore target to its bootstrap generation before a new
+/// prepared session. A successful restore publishes the archive generation
+/// into this target, so reusing the target across qualification sessions would
+/// make the next restore fail with `TARGET_NON_EMPTY` before the fault can be
+/// exercised. The fixed basename and canonical parent checks keep this reset
+/// confined to the synthetic recovery fixture; it can never address the live
+/// Base dataset.
+fn reset_fixture_restore_target(
+    fixture_root: &Path,
+    dataset_root: &Path,
+) -> Result<(), P5RecoveryErrorV2> {
+    if dataset_root != fixture_root.join("base-dataset") {
+        return Err(P5RecoveryErrorV2::PathEscapesRoot);
+    }
+    let metadata =
+        std::fs::symlink_metadata(dataset_root).map_err(|_| P5RecoveryErrorV2::Archive)?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(P5RecoveryErrorV2::PathEscapesRoot);
+    }
+    std::fs::remove_dir_all(dataset_root).map_err(|_| P5RecoveryErrorV2::Archive)?;
+    create_private_directory(dataset_root)?;
+    let generations = DatasetGenerationStore::open_exclusive(dataset_root)
+        .map_err(|_| P5RecoveryErrorV2::Archive)?;
+    if generations
+        .current_resolver()
+        .map_err(|_| P5RecoveryErrorV2::Archive)?
+        .current_generation()
+        != DatasetGenerationId::BOOTSTRAP
+    {
+        return Err(P5RecoveryErrorV2::Archive);
+    }
+    Ok(())
+}
+
 fn fixture_archive_error(stage: &str) -> P5RecoveryErrorV2 {
     #[cfg(test)]
     eprintln!("P5 recovery fixture failed at {stage}");
     let _ = stage;
     P5RecoveryErrorV2::Archive
-}
-
-fn inspect_fixture(
-    archive_path: &Path,
-    key_path: &Path,
-    dataset_root: &Path,
-) -> Result<P5RecoveryFixtureReceiptV2, P5RecoveryErrorV2> {
-    let (archive_blake3, archive_bytes) = inspect_fixture_files(archive_path, key_path)?;
-    let generation = DatasetGenerationStore::open_exclusive(dataset_root)
-        .map_err(|_| P5RecoveryErrorV2::Archive)?
-        .current_resolver()
-        .map_err(|_| P5RecoveryErrorV2::Archive)?
-        .current_generation()
-        .0;
-    Ok(P5RecoveryFixtureReceiptV2 {
-        archive_blake3,
-        archive_bytes,
-        dataset_generation: generation,
-    })
 }
 
 fn inspect_fixture_files(
@@ -1115,7 +1138,7 @@ mod tests {
     }
 
     #[test]
-    fn vnext_p5_multi_host_v2_obarv002_restore_activates_a_verified_generation() {
+    fn vnext_p5_multi_host_v2_obarv002_restore_is_repeatable_across_prepared_sessions() {
         let temp = tempfile::tempdir().unwrap();
         let runner = temp.path().join("runner");
         let activation = temp.path().join("activation");
@@ -1144,8 +1167,8 @@ mod tests {
             runner_data_root: runner.clone(),
             activation_root: activation,
             evidence_output: runner.join("restore-receipt"),
-            archive_input: Some(archive_path),
-            archive_recovery_key: Some(key_path),
+            archive_input: Some(archive_path.clone()),
+            archive_recovery_key: Some(key_path.clone()),
             base_dataset_root: Some(target_dataset.clone()),
             previous_generation: None,
         };
@@ -1159,6 +1182,52 @@ mod tests {
         assert_ne!(
             restored.current_resolver().unwrap().current_generation(),
             crate::DatasetGenerationId::BOOTSTRAP
+        );
+        drop(restored);
+
+        let prepared_again =
+            prepare_obarv002_fixture(&runner, &archive_path, &key_path, &target_dataset, [7; 32])
+                .unwrap();
+        assert_eq!(prepared_again.archive_blake3, prepared.archive_blake3);
+        assert_eq!(prepared_again.archive_bytes, prepared.archive_bytes);
+
+        let second_input = P5RecoveryInputsV2 {
+            request_digest: [4; 32],
+            session_id: [5; 32],
+            host_id: "runner-a".into(),
+            operation_id: [6; 32],
+            identity_public_key: [7; 32],
+            runner_data_root: runner,
+            activation_root: input.activation_root,
+            evidence_output: temp.path().join("runner/restore-receipt-second-session"),
+            archive_input: input.archive_input,
+            archive_recovery_key: input.archive_recovery_key,
+            base_dataset_root: input.base_dataset_root,
+            previous_generation: None,
+        };
+        obarv002_restore(
+            verify_inputs(P5RecoveryOperationV2::Obarv002Restore, &second_input).unwrap(),
+        )
+        .unwrap();
+        assert!(second_input.evidence_output.is_file());
+    }
+
+    #[test]
+    fn vnext_p5_multi_host_v2_fixture_reset_rejects_every_other_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let fixture_root = temp.path().join("recovery-input");
+        let live_dataset = temp.path().join("live-base-dataset");
+        fs::create_dir(&fixture_root).unwrap();
+        fs::create_dir(&live_dataset).unwrap();
+        fs::write(live_dataset.join("must-survive"), b"live").unwrap();
+
+        assert_eq!(
+            reset_fixture_restore_target(&fixture_root, &live_dataset),
+            Err(P5RecoveryErrorV2::PathEscapesRoot)
+        );
+        assert_eq!(
+            fs::read(live_dataset.join("must-survive")).unwrap(),
+            b"live"
         );
     }
 
