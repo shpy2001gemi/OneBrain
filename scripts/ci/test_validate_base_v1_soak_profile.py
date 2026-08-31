@@ -161,6 +161,8 @@ class ExactCandidateSoakProfileTests(unittest.TestCase):
             "candidate_tree": "44" * 20,
             "candidate_semantic_digest": "55" * 32,
             "linux_artifact_tuple_digest": "66" * 32,
+            "toolchain_digest": "ab" * 32,
+            "runner_bundle_manifest_digest": "cd" * 32,
             "agent_binary_digest": "77" * 32,
             "agent_signature_digest": "88" * 32,
             "registry_root": "99" * 32,
@@ -241,7 +243,7 @@ class ExactCandidateSoakProfileTests(unittest.TestCase):
             ROOT / "scripts/release/validate_evidence_carry_forward.py"
         ).read_text(encoding="utf-8")
         for marker in (
-            "def _verify_p5_aggregate(",
+            "def _verify_p5_aggregate_v2(",
             'parser.add_argument("--p5-aggregate", type=Path, required=True)',
             'parser.add_argument("--executable", type=Path, required=True)',
             '"SPDX_SBOM:sbom.spdx.json"',

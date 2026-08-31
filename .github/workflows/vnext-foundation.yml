@@ -189,6 +189,8 @@ jobs:
   foundation-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      BASELINE_RECEIPT_JSON: ${{ vars.ONEBRAIN_BASE_V1_IDL_BASELINE_RECEIPT }}
     defaults:
       run:
         working-directory: src
@@ -208,6 +210,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src
+
+      - name: Prepare immutable Task 14 baseline
+        working-directory: .
+        run: |
+          test -n "$BASELINE_RECEIPT_JSON"
+          receipt="$RUNNER_TEMP/base-v1-idl-baseline-receipt.json"
+          printf '%s\n' "$BASELINE_RECEIPT_JSON" > "$receipt"
+          git fetch --no-tags origin refs/heads/base-v1-idl-baseline:refs/heads/base-v1-idl-baseline
+          printf 'BASE_V1_IDL_BASELINE_RECEIPT=%s\n' "$receipt" >> "$GITHUB_ENV"
+
+      - name: Install reviewed Python contract dependency
+        working-directory: .
+        run: |
+          printf '%s\n' 'blake3==1.0.8 --hash=sha256:d17eb6382634b3a5bc0c0e0454d5265b0becaeeadb6801ed25150b39a999d0cc --hash=sha256:e4072196547484c95a5a09adbb952e9bb501949f03f9e2a85e7249ef85faaba8 --hash=sha256:1af0e5a29aa56d4fba904452ae784740997440afd477a15e583c38338e641f41 --hash=sha256:9456c829601d72852d8ba0af8dae0610f7def1d59f5942efde1e2ef93e8a8b57 --hash=sha256:3cec94ed5676821cf371e9c9d25a41b4f3ebdb5724719b31b2749653b7cc1dfa --hash=sha256:3168c457255b5d2a2fc356ba696996fcaff5d38284f968210d54376312107662' > "$RUNNER_TEMP/blake3-requirements.txt"
+          python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/blake3-requirements.txt"
 
       - name: Validate task graph, traceability, vectors, and links
         working-directory: .
@@ -649,11 +666,21 @@ jobs:
     name: Default-feature workspace baseline (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      BASELINE_RECEIPT_JSON: ${{ vars.ONEBRAIN_BASE_V1_IDL_BASELINE_RECEIPT }}
     defaults:
       run:
         working-directory: src
     steps:
       - uses: actions/checkout@v5
+      - name: Prepare immutable Task 14 baseline
+        working-directory: .
+        run: |
+          test -n "$BASELINE_RECEIPT_JSON"
+          receipt="$RUNNER_TEMP/base-v1-idl-baseline-receipt.json"
+          printf '%s\n' "$BASELINE_RECEIPT_JSON" > "$receipt"
+          git fetch --no-tags origin refs/heads/base-v1-idl-baseline:refs/heads/base-v1-idl-baseline
+          printf 'BASE_V1_IDL_BASELINE_RECEIPT=%s\n' "$receipt" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:

@@ -5,7 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$packageUrl = "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-cbindgen-0.29.4-1-any.pkg.tar.zst"
+$packageUrl = "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-cbindgen-0.29.4-1-any.pkg.tar.zst"
 $packageSha256 = "64069c8e30f35dabc3eadf1643dcfced3779711d4d3d865fb39c4190a2e4a96d"
 $executableSha256 = "b25d4385c002c428ed63b87e84ac8a479ac863c8125730073303b9c50086b1e5"
 

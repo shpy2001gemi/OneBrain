@@ -8547,6 +8547,7 @@ def validate_base_v1_candidate_workflow(
         "approver-public-key.gpg",
         "approver-policy.json",
         "verify_base_release_request.py",
+        "github.event.pull_request.head.sha",
         "needs.verify-candidate-identity.outputs.candidate_commit",
         "needs.verify-candidate-identity.outputs.candidate_tree",
         "ubuntu-24.04",

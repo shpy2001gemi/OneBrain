@@ -1,3 +1,5 @@
+#![cfg(feature = "vnext-outbound-first")]
+
 use std::sync::{Arc, Barrier};
 use std::time::Duration;
 

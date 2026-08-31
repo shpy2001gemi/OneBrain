@@ -1,3 +1,5 @@
+#![cfg(feature = "vnext-outbound-first")]
+
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 
