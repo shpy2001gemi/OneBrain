@@ -8435,6 +8435,10 @@ def validate_base_v1_packaging() -> int:
     ):
         if marker not in workflow:
             raise ContractError(f"Base packaging workflow is missing marker: {marker}")
+    if workflow.count("fetch-depth: 0") < 2:
+        raise ContractError(
+            "Base baseline consumers must fetch complete candidate ancestry"
+        )
     if "--skip-tool-verification" in workflow:
         raise ContractError("Base ABI CI may not bypass the pinned executable hash")
     integration_test = read(
