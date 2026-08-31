@@ -9,6 +9,7 @@ license = "MIT"
 default = []
 # Enable QUIC transport (requires C compiler for TLS crypto)
 quic = ["dep:quinn", "dep:rustls", "dep:tokio", "dep:rcgen"]
+outbound-first = ["quic", "dep:tokio-rustls", "tokio/io-util"]
 # Enable DHT persistence (redb-backed storage for DHT entries + replica metadata)
 persist = ["dep:redb", "ku-core/persist"]
 dr-m5-crash-harness = ["ku-core/dr-m5-crash-harness"]
@@ -38,6 +39,7 @@ redb = { version = "2", optional = true }
 quinn = { version = "0.11", default-features = false, features = ["rustls-aws-lc-rs", "runtime-tokio"], optional = true }
 rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"], optional = true }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"], optional = true }
+tokio-rustls = { version = "0.26.4", default-features = false, features = ["aws-lc-rs"], optional = true }
 rcgen = { version = "0.13", default-features = false, features = ["aws_lc_rs"], optional = true }
 
 [dev-dependencies]

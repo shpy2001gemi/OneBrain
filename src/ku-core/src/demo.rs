@@ -149,10 +149,7 @@ impl ConceptRegistry {
             tier,
         };
         self.concepts.insert(id, entry);
-        self.labels
-            .entry(label.to_string())
-            .or_insert_with(Vec::new)
-            .push(id);
+        self.labels.entry(label.to_string()).or_default().push(id);
     }
 
     /// Resolve a label to its ConceptID (returns the first match).

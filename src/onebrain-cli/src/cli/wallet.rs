@@ -105,8 +105,8 @@ pub(crate) fn cmd_wallet(node: &OneBrainNode, args: &str) {
                         transactions.len()
                     );
                     println!(
-                        "  {:>3}  {:<8} {:>14}  {:<12}  {}",
-                        "#", "Type", "Amount", "When", "Detail"
+                        "  {:>3}  {:<8} {:>14}  {:<12}  Detail",
+                        "#", "Type", "Amount", "When"
                     );
                     for (i, tx) in transactions.iter().enumerate() {
                         println!(

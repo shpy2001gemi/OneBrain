@@ -208,7 +208,7 @@ pub(crate) fn cmd_peers(node: &OneBrainNode) {
             let elapsed = rp
                 .last_seen
                 .elapsed()
-                .map(|d| format_elapsed(d))
+                .map(format_elapsed)
                 .unwrap_or_else(|_| "unknown".to_string());
             let short_id = if rp.peer_id.len() >= 8 {
                 &rp.peer_id[..8]

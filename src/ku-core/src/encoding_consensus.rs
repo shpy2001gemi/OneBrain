@@ -36,7 +36,7 @@ use std::collections::HashMap;
 ///
 /// This is separate from `EpistemicStatus` (which tracks knowledge quality).
 /// EncodingStatus tracks encoding quality: "Was the raw text encoded correctly?"
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum EncodingStatus {
     /// Raw text submitted, no AI encoding yet.
@@ -45,6 +45,7 @@ pub enum EncodingStatus {
 
     /// Owner's local AI has produced an initial CoreDna encoding.
     /// May be inaccurate if the AI is weak or tampered with.
+    #[default]
     Self_ = 0x01,
 
     /// Some verifier AIs have confirmed, but below consensus threshold.
@@ -54,12 +55,6 @@ pub enum EncodingStatus {
     /// Consensus reached — final KU. Immutable.
     /// All intermediate data (raw text, alternate encodings) is deleted.
     Full = 0x03,
-}
-
-impl Default for EncodingStatus {
-    fn default() -> Self {
-        EncodingStatus::Self_
-    }
 }
 
 impl EncodingStatus {
@@ -531,13 +526,8 @@ mod tests {
         let dna_a = decode_core_dna(a);
         let dna_b = decode_core_dna(b);
         match (dna_a, dna_b) {
-            (Ok(a), Ok(b)) => {
-                if a.header.gene_type == b.header.gene_type {
-                    0.9
-                } else {
-                    0.0
-                }
-            }
+            (Ok(a), Ok(b)) if a.header.gene_type == b.header.gene_type => 0.9,
+            (Ok(_), Ok(_)) => 0.0,
             _ => 0.0,
         }
     }

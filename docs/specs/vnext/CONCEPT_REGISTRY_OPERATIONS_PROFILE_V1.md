@@ -2,7 +2,7 @@
 
 > **Plan lane:** Section 11 — Concept Registry operations
 >
-> **Status:** Signed release, atomic activation, bounded CCID stability, resource harness, and truncated-index/disk-shortage failure harness implemented; full-size storage/resource and recurring qualification evidence remains open
+> **Status:** Signed release, atomic activation, bounded CCID stability, resource harness, and truncated-index/disk-shortage failure harness implemented; the [production qualification contract](CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1.md) is frozen and its measured evidence remains open
 >
 > **Machine contract:** [`concept-registry-operations-v1.json`](../../../src/test-vectors/vnext/concept-registry-operations-v1.json)
 
@@ -153,15 +153,18 @@ records `production_qualified=false`. Closing the production gates still
 requires the full-size Registry on the declared target filesystem and storage
 profile.
 
-## 8. Distribution boundary and remaining gates
+## 8. Distribution boundary and production qualification
 
 The signed distribution value is
 `MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP`. The large registry artifact is outside
 the OBP gossip lane; distribution uses a mirror, offline media, or a separately
 specified content-addressed chunk transport.
 
-This foundation does not claim full Section 11 qualification. Full-size cold-
-cache, constrained-resource, SSD/HDD, truncated-index and disk-shortage reports
-plus the quarterly build/update/rollback dry-run remain required. Production
-canary remains blocked until those gates and the external canary evidence are
-complete.
+This foundation does not claim full WS-21 qualification. The exact full-size
+budgets, reference environment, owner-approved signer, release context,
+process-kill/live-reader drills, CCID gate, and signed release cycle are now
+defined by the
+[Concept Registry Production Qualification Profile v1](CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1.md).
+Its frozen state is `contract-frozen-evidence-open`; it does not claim measured
+completion. Production canary remains blocked until Tasks 20–21 produce the
+fresh candidate-bound evidence required by that profile.

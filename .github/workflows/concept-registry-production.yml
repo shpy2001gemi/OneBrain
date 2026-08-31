@@ -1,0 +1,143 @@
+name: Concept Registry production qualification
+
+on:
+  workflow_dispatch:
+    inputs:
+      qualification_mode:
+        description: Closed evidence lane; release requires a signed Base request
+        required: true
+        default: prequalification
+        type: choice
+        options:
+          - prequalification
+          - release
+
+permissions:
+  contents: read
+
+concurrency:
+  group: concept-registry-${{ github.sha }}-${{ inputs.qualification_mode }}
+  cancel-in-progress: false
+
+env:
+  ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE: ${{ secrets.ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE }}
+  ONEBRAIN_QUALIFICATION_GPG_HOME: ${{ secrets.ONEBRAIN_QUALIFICATION_GPG_HOME }}
+
+jobs:
+  resource-profiles:
+    name: Registry ${{ matrix.profile }} (${{ inputs.qualification_mode }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: cold-cache
+            runner_label: onebrain-registry-cold-cache
+          - profile: low-ram
+            runner_label: onebrain-registry-low-ram
+          - profile: ssd
+            runner_label: onebrain-registry-ssd
+          - profile: hdd
+            runner_label: onebrain-registry-hdd
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - onebrain-registry-image-v1
+      - ${{ matrix.runner_label }}
+    timeout-minutes: 180
+    env:
+      ONEBRAIN_REGISTRY_RUNNER_LABELS: self-hosted,linux,x64,onebrain-registry-image-v1,${{ matrix.runner_label }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          clean: false
+      - name: Verify immutable host and exact staged inputs
+        run: >-
+          bash scripts/runner/onebrain-registry-runner.sh preflight
+          --mode "${{ inputs.qualification_mode }}"
+      - name: Build the exact candidate-owned release tools
+        run: >-
+          bash scripts/runner/onebrain-registry-runner.sh build
+          --mode "${{ inputs.qualification_mode }}"
+      - name: Compute the exact Registry closure
+        run: >-
+          bash scripts/runner/onebrain-registry-runner.sh closure
+          --mode "${{ inputs.qualification_mode }}"
+      - name: Run the bounded resource producer
+        run: >-
+          bash scripts/runner/onebrain-registry-runner.sh resource
+          --mode "${{ inputs.qualification_mode }}"
+          --profile "${{ matrix.profile }}"
+      - name: Retain raw profile report and closure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registry-raw-resource-${{ matrix.profile }}-${{ github.run_attempt }}
+          path: target/base-v1/evidence/${{ inputs.qualification_mode }}/registry/raw/resource-${{ matrix.profile }}.json
+          if-no-files-found: error
+          retention-days: 90
+
+  failure-ccid-generation:
+    name: Registry failure, CCID, and live-reader kernel
+    runs-on: [self-hosted, linux, x64, onebrain-registry-image-v1, onebrain-registry-controller]
+    timeout-minutes: 240
+    env:
+      ONEBRAIN_REGISTRY_RUNNER_LABELS: self-hosted,linux,x64,onebrain-registry-image-v1,onebrain-registry-controller
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          clean: false
+      - name: Verify exact inputs and compute Registry closure
+        run: |
+          bash scripts/runner/onebrain-registry-runner.sh preflight --mode "${{ inputs.qualification_mode }}"
+          bash scripts/runner/onebrain-registry-runner.sh build --mode "${{ inputs.qualification_mode }}"
+          bash scripts/runner/onebrain-registry-runner.sh closure --mode "${{ inputs.qualification_mode }}"
+      - name: Run fixed first-party failure, CCID, and generation producers
+        run: >-
+          bash scripts/runner/onebrain-registry-runner.sh kernel
+          --mode "${{ inputs.qualification_mode }}"
+      - name: Retain every raw kernel report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registry-raw-kernel-${{ github.run_attempt }}
+          path: target/base-v1/evidence/${{ inputs.qualification_mode }}/registry/raw/**
+          if-no-files-found: error
+          retention-days: 90
+
+  aggregate:
+    name: Registry component closure
+    needs: [resource-profiles, failure-ccid-generation]
+    runs-on: [self-hosted, linux, x64, onebrain-registry-image-v1, onebrain-registry-controller]
+    timeout-minutes: 60
+    env:
+      ONEBRAIN_REGISTRY_RUNNER_LABELS: self-hosted,linux,x64,onebrain-registry-image-v1,onebrain-registry-controller
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          clean: false
+      - name: Download raw reports without trusting producer summaries
+        uses: actions/download-artifact@v5
+        with:
+          pattern: registry-raw-*
+          path: target/base-v1/evidence/${{ inputs.qualification_mode }}/registry/raw
+          merge-multiple: true
+      - name: Recompute closure and derive the bounded component result
+        run: >-
+          bash scripts/runner/onebrain-registry-runner.sh aggregate
+          --mode "${{ inputs.qualification_mode }}"
+      - name: Retain raw reports and derived result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registry-qualification-${{ inputs.qualification_mode }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            target/base-v1/evidence/${{ inputs.qualification_mode }}/registry/**
+          if-no-files-found: error
+          retention-days: 90

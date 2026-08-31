@@ -247,9 +247,12 @@ where
         &input.release_id,
         &signing_key.verifying_key(),
     )?;
+    qualification_failpoint("release-publication-before")?;
     fs::rename(staging.path(), &final_dir)?;
     staging.disarm();
+    qualification_failpoint("release-publication-during")?;
     sync_directory(&releases_dir)?;
+    qualification_failpoint("release-publication-after")?;
     verify_concept_registry_release(&final_dir, &signing_key.verifying_key())
 }
 
@@ -473,7 +476,7 @@ fn append_state(
     }
     state.state_root = state_root(&state)?;
     let path = state_dir.join(format!("state-{generation:020}.json"));
-    write_new_json_sync(&path, &state)?;
+    write_state_json_sync(&path, &state)?;
     sync_directory(&state_dir)?;
     Ok(state)
 }
@@ -1052,6 +1055,52 @@ impl From<ConceptRegistryManifestError> for ConceptRegistryReleaseError {
     }
 }
 
+fn write_state_json_sync(
+    path: &Path,
+    value: &ConceptRegistryReleaseState,
+) -> Result<(), ConceptRegistryReleaseError> {
+    let mut bytes = serde_json::to_vec_pretty(value)?;
+    bytes.push(b'\n');
+    qualification_failpoint("state-append-before")?;
+    let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
+    let midpoint = bytes.len() / 2;
+    file.write_all(&bytes[..midpoint])?;
+    file.sync_all()?;
+    qualification_failpoint("state-append-during")?;
+    file.write_all(&bytes[midpoint..])?;
+    file.sync_all()?;
+    qualification_failpoint("state-append-after")?;
+    Ok(())
+}
+
+#[cfg(any(test, feature = "concept-registry-failure-harness"))]
+fn qualification_failpoint(phase: &str) -> Result<(), ConceptRegistryReleaseError> {
+    if std::env::var("ONEBRAIN_REGISTRY_KILL_PHASE")
+        .ok()
+        .as_deref()
+        != Some(phase)
+    {
+        return Ok(());
+    }
+    let marker = std::env::var_os("ONEBRAIN_REGISTRY_KILL_MARKER").ok_or_else(|| {
+        ConceptRegistryReleaseError::InvalidField("qualification kill marker is missing".to_owned())
+    })?;
+    let mut file = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(PathBuf::from(marker))?;
+    file.write_all(phase.as_bytes())?;
+    file.sync_all()?;
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+}
+
+#[cfg(not(any(test, feature = "concept-registry-failure-harness")))]
+fn qualification_failpoint(_phase: &str) -> Result<(), ConceptRegistryReleaseError> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1410,5 +1459,129 @@ mod tests {
         assert!(releases.is_dir());
         assert_eq!(fs::read_dir(releases).unwrap().count(), 0);
         assert!(latest_concept_registry_state(&registry).unwrap().is_none());
+    }
+
+    #[test]
+    fn process_kills_around_release_publication_leave_only_complete_releases() {
+        for phase in [
+            "release-publication-before",
+            "release-publication-during",
+            "release-publication-after",
+        ] {
+            run_process_kill_case(phase, false);
+        }
+    }
+
+    #[test]
+    fn process_kills_around_activation_append_reopen_old_or_new_exact_state() {
+        for phase in [
+            "state-append-before",
+            "state-append-during",
+            "state-append-after",
+        ] {
+            run_process_kill_case(phase, true);
+        }
+    }
+
+    #[test]
+    fn concept_registry_release_process_kill_worker() {
+        let Ok(root) = std::env::var("ONEBRAIN_REGISTRY_KILL_ROOT") else {
+            return;
+        };
+        let root = PathBuf::from(root);
+        let registry = root.join("registry");
+        let key = SigningKey::from_bytes(&[88; 32]);
+        match std::env::var("ONEBRAIN_REGISTRY_KILL_OPERATION")
+            .unwrap()
+            .as_str()
+        {
+            "package" => {
+                package(
+                    &root.join("candidate-fixture"),
+                    &registry,
+                    "candidate",
+                    2,
+                    &key,
+                );
+            }
+            "activate" => {
+                activate_concept_registry_release(&registry, "candidate", &key.verifying_key())
+                    .unwrap();
+            }
+            other => panic!("unknown kill operation: {other}"),
+        }
+    }
+
+    fn run_process_kill_case(phase: &str, activation: bool) {
+        use std::process::{Command, Stdio};
+        use std::thread;
+        use std::time::{Duration, Instant};
+
+        let directory = tempfile::tempdir().unwrap();
+        let registry = directory.path().join("registry");
+        let key = SigningKey::from_bytes(&[88; 32]);
+        package(
+            &directory.path().join("stable-fixture"),
+            &registry,
+            "stable",
+            1,
+            &key,
+        );
+        activate_concept_registry_release(&registry, "stable", &key.verifying_key()).unwrap();
+        if activation {
+            package(
+                &directory.path().join("candidate-fixture"),
+                &registry,
+                "candidate",
+                2,
+                &key,
+            );
+        }
+        let marker = directory.path().join(format!("{phase}.marker"));
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "concept_registry_release::tests::concept_registry_release_process_kill_worker",
+                "--nocapture",
+            ])
+            .env("ONEBRAIN_REGISTRY_KILL_ROOT", directory.path())
+            .env("ONEBRAIN_REGISTRY_KILL_PHASE", phase)
+            .env("ONEBRAIN_REGISTRY_KILL_MARKER", &marker)
+            .env(
+                "ONEBRAIN_REGISTRY_KILL_OPERATION",
+                if activation { "activate" } else { "package" },
+            )
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !marker.exists() {
+            if child.try_wait().unwrap().is_some() {
+                panic!("kill worker exited before {phase} marker");
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timeout waiting for {phase} marker"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+        child.kill().unwrap();
+        child.wait().unwrap();
+
+        let active =
+            resolve_active_concept_registry_release(&registry, &key.verifying_key()).unwrap();
+        assert!(matches!(active.release_id.as_str(), "stable" | "candidate"));
+        verify_concept_registry_release(&active.release_dir, &key.verifying_key()).unwrap();
+        let latest = latest_concept_registry_state(&registry).unwrap().unwrap();
+        assert_eq!(latest.active_release, active.release_id);
+        assert_eq!(latest.generation, active.generation);
+        for entry in fs::read_dir(registry.join("releases")).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
+            verify_concept_registry_release(&entry.path(), &key.verifying_key()).unwrap();
+        }
     }
 }

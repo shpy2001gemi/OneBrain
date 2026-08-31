@@ -49,18 +49,34 @@ pub mod transport;
 pub mod vacuum; // ★ v7 NEW: ConceptRegistry delta gossip + bloom anti-entropy
 
 pub mod vnext_bridge_merge;
+pub mod vnext_candidates;
 pub mod vnext_carrier;
 pub mod vnext_carrier_adapter;
 #[cfg(feature = "dr-m5-chaos-harness")]
 pub mod vnext_chaos;
+#[cfg(feature = "outbound-first")]
+pub mod vnext_connection_executor;
+pub mod vnext_connectivity_signaling;
 pub mod vnext_inventory_forest;
 pub mod vnext_provider_view;
 #[cfg(feature = "quic")]
 pub mod vnext_quic_session;
 pub mod vnext_reachability;
+pub mod vnext_reachability_crypto;
+pub mod vnext_reachability_resolver;
 pub mod vnext_reconciliation;
 pub mod vnext_reconciliation_journal;
+pub mod vnext_relay_discovery;
+#[cfg(feature = "outbound-first")]
+pub mod vnext_relay_reservation;
+#[cfg(feature = "outbound-first")]
+pub mod vnext_relay_tunnel;
+#[cfg(feature = "outbound-first")]
+pub mod vnext_rendezvous_client;
 pub mod vnext_resource_gate;
+pub mod vnext_route_plan;
+#[cfg(feature = "outbound-first")]
+pub mod vnext_secure_session_adapter;
 pub mod vnext_session;
 
 #[cfg(test)]

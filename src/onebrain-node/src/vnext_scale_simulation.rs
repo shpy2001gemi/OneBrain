@@ -491,7 +491,7 @@ fn reunion_case(
                         accepted.insert(cid, bytes_digest);
                     }
                 }
-                if cid[0] as u64 % assumptions.duplicate_every_records == 0 {
+                if (cid[0] as u64).is_multiple_of(assumptions.duplicate_every_records) {
                     duplicate_deliveries += 1;
                 }
             }
@@ -658,8 +658,10 @@ mod tests {
 
     #[test]
     fn qa007_invalid_unbounded_or_unrepresentative_configs_fail_closed() {
-        let mut invalid = ScaleAssumptionsV1::default();
-        invalid.max_records_per_selector = 0;
+        let invalid = ScaleAssumptionsV1 {
+            max_records_per_selector: 0,
+            ..ScaleAssumptionsV1::default()
+        };
         assert_eq!(
             run_scale_simulation(
                 ScaleSimulationConfig {

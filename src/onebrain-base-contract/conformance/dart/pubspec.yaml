@@ -1,0 +1,8 @@
+name: onebrain_base_v1_conformance
+description: Pre-gate Dart conformance harness for the generated Base v1 contract.
+publish_to: none
+version: 1.0.0
+environment:
+  sdk: ">=3.11.0 <4.0.0"
+dev_dependencies:
+  test: 1.31.0

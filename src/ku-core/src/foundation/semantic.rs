@@ -791,16 +791,17 @@ impl SemanticFrameSet {
                 &mut normalized.qualifiers.time,
                 &mut normalized.qualifiers.location,
                 &mut normalized.qualifiers.perspective,
-            ] {
-                if let Some(term) = term {
-                    normalize_term(
-                        term,
-                        &statement_map,
-                        &variable_types,
-                        &mut variable_map,
-                        &mut receptor_map,
-                    )?;
-                }
+            ]
+            .into_iter()
+            .flatten()
+            {
+                normalize_term(
+                    term,
+                    &statement_map,
+                    &variable_types,
+                    &mut variable_map,
+                    &mut receptor_map,
+                )?;
             }
             statements.push(normalized);
         }
@@ -1229,10 +1230,11 @@ fn visit_statement_terms(
         &statement.qualifiers.time,
         &statement.qualifiers.location,
         &statement.qualifiers.perspective,
-    ] {
-        if let Some(term) = term {
-            visitor(term)?;
-        }
+    ]
+    .into_iter()
+    .flatten()
+    {
+        visitor(term)?;
     }
     Ok(())
 }

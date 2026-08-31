@@ -21,8 +21,8 @@ Normative precedence remains:
 
 ## 2. Machine-checked coverage
 
-The [normative coverage manifest](normative_coverage.json) maps all 595 current
-uppercase requirement lines to an executable evidence needle or an explicit
+The [normative coverage manifest](normative_coverage.json) maps every current
+uppercase requirement line to an executable evidence needle or an explicit
 rationale. The dependency-free [contract validator](../../../scripts/ci/validate_vnext_contracts.py)
 also checks 99 unique task IDs, dependency cycles, 18 ADR mappings, 37 negative
 assertions, frozen vector counts and local Markdown links.
@@ -56,6 +56,10 @@ The semantic guardrails are indexed in the [Normative Vocabulary](NORMATIVE_VOCA
 | optimized soak and release qualification | [M5-07 soak/release profile](SOAK_PERFORMANCE_RELEASE_GATE_PROFILE_V1.md) |
 | single-host three-node real-QUIC canary preflight | [P5 canary preflight profile](P5_CANARY_PREFLIGHT_PROFILE_V1.md) |
 | signer/disk/slow-peer drills, backup/restore, rollback and operator dashboard | [P5 operations preflight profile](P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md) |
+| portable outbound-only reachability, permissionless relays and capability-based platform adapters | [Outbound-first reachability profile](OUTBOUND_FIRST_REACHABILITY_PROFILE_V1.md) |
+| three-host outbound-first relay-only and relay-failover production reference | [P5 multi-host production qualification V2](P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V2.md) |
+| source-free permissionless relay deployment, immutable units and NAT-free node operations | [Outbound-first relay operator guide](../../operations/ONEBRAIN_OUTBOUND_FIRST_RELAY_GUIDE.md) |
+| concurrent pinned-SSH orchestration, partial evidence durability and V2 carry-forward | [P5 outbound-first preflight V2](P5_OUTBOUND_FIRST_PREFLIGHT_PROFILE_V2.md) |
 | signed Registry release, capacity admission, truncated-index and disk-shortage qualification | [Concept Registry operations profile](CONCEPT_REGISTRY_OPERATIONS_PROFILE_V1.md) |
 | operator-visible scope and consent | [Scoped Runtime Status](SCOPED_RUNTIME_STATUS_PROFILE_V1.md) |
 | migration and legacy preservation | [Migration profile](ADDITIVE_MIGRATION_STORAGE_PROFILE_V1.md), [backfill profile](LEGACY_DATA_BACKFILL_PROFILE_V1.md), [operator guide](VNEXT_MIGRATION_AND_ROLLBACK_GUIDE_V1.md) |
@@ -82,6 +86,8 @@ partition operation, reunion or migration.
 
 ```text
 python scripts/ci/validate_vnext_contracts.py
+python -m unittest scripts.ci.test_validate_vnext_outbound_reachability scripts.ci.test_validate_vnext_p5_multi_host -v
+python -m unittest scripts.runner.test_onebrain_p5_multi_host_v2 scripts.release.test_validate_evidence_carry_forward -v
 cargo fmt --all -- --check
 cargo check --workspace
 cargo test -p ku-core qa006_ --lib

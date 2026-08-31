@@ -6,7 +6,13 @@
 pub mod codec;
 pub mod legacy;
 pub mod legacy_adapter;
+pub mod reachability_codec;
+pub mod reachability_signaling;
+pub mod reachability_signaling_codec;
+pub mod reachability_types;
 pub mod reconciliation_codec;
+pub mod relay_codec;
+pub mod relay_wire;
 pub mod session_codec;
 pub mod types;
 
@@ -17,12 +23,24 @@ pub use legacy_adapter::{
     NormalizedLegacyEncoding, NormalizedLegacyQuery, LEGACY_ADAPTER_MAJOR, LEGACY_ENCODING_FULL,
     LEGACY_ENCODING_PART, LEGACY_SCOPE_GLOBAL,
 };
+pub use reachability_codec::{
+    decode_reachability_object, encode_reachability_object, reachability_signing_bytes,
+    reachability_signing_parts, ReachabilityCodecError,
+};
+pub use reachability_signaling::*;
+pub use reachability_signaling_codec::{
+    connectivity_signing_bytes, connectivity_signing_parts, decode_connectivity_signaling,
+    encode_connectivity_signaling, ConnectivitySignalingCodecError,
+};
+pub use reachability_types::*;
 pub use reconciliation_codec::{
     bind_reconciliation_message, decode_reconciliation_message, encode_reconciliation_message,
     make_peer_bound_resume_token, make_resume_token, reconciliation_binding_digest,
     reconciliation_capability, reconciliation_profile, reconciliation_resume_scope_digest,
     validate_reconciliation_context, ReconciliationCodecError,
 };
+pub use relay_codec::*;
+pub use relay_wire::*;
 pub use session_codec::{
     decode_session_message, encode_session_message, session_signing_bytes, SessionCodecError,
 };

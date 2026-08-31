@@ -1,7 +1,7 @@
 //! Identity and multi-device commands: identity, recover, devices, sync, profile.
 
 use onebrain_node::node::OneBrainNode;
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::BufReader;
 
 use super::helpers::*;
 
@@ -49,65 +49,14 @@ pub(crate) fn cmd_identity(node: &OneBrainNode) {
 }
 
 pub(crate) async fn cmd_recover(node: &mut OneBrainNode, reader: &mut BufReader<tokio::io::Stdin>) {
-    println!();
-    println!("  ⚠ This will REPLACE the current identity on this device.");
-
-    // Show current identity if available
-    if let Ok(info) = node.get_identity_info() {
-        println!("    Current NodeId: {}...", short_cid(&info.node_id));
-    }
-
-    // Confirm
-    println!();
-    eprint!("  Continue? (y/N): ");
-    let mut confirm = String::new();
-    if reader.read_line(&mut confirm).await.is_err() {
-        eprintln!("  ✗ Failed to read input.");
-        println!();
-        return;
-    }
-    if confirm.trim().to_lowercase() != "y" {
-        println!("  Cancelled.");
-        println!();
-        return;
-    }
-
-    // Read the recovery phrase
-    println!();
-    eprint!("  Enter your 24-word recovery phrase:\n  > ");
-    let mut phrase = String::new();
-    if reader.read_line(&mut phrase).await.is_err() {
-        eprintln!("  ✗ Failed to read input.");
-        println!();
-        return;
-    }
-    let phrase = phrase.trim();
-
-    if phrase.is_empty() {
-        eprintln!("  ✗ Recovery phrase cannot be empty.");
-        println!();
-        return;
-    }
-
-    println!();
-    println!("  Verifying phrase...");
-
-    let words: Vec<String> = phrase.split_whitespace().map(|s| s.to_string()).collect();
-
-    match node.recover_identity(&words, "") {
-        Ok(identity) => {
-            println!("  ✓ Valid BIP39 phrase");
-            println!("  Deriving keypair... ✓");
-            println!();
-            println!("  ✓ Identity recovered!");
-            println!("  NodeId: {}", identity.node_id);
-            println!();
-        }
-        Err(e) => {
-            eprintln!("  ✗ {}", e);
-            println!();
-        }
-    }
+    let _ = reader;
+    let error = node
+        .recover_identity_legacy()
+        .expect_err("legacy recovery must remain disabled");
+    eprintln!();
+    eprintln!("  ✗ {error}");
+    eprintln!("    Import a verified encrypted Base recovery package instead.");
+    eprintln!();
 }
 
 pub(crate) fn cmd_devices(node: &mut OneBrainNode) {
@@ -116,8 +65,8 @@ pub(crate) fn cmd_devices(node: &mut OneBrainNode) {
     println!();
     println!("  ── Devices ({}) ──", devices.len());
     println!(
-        "  {:<16}  {:<20}  {:<8}  {:<12}  {:<6}  {}",
-        "Device ID", "Name", "Type", "Last Seen", "KUs", "Status"
+        "  {:<16}  {:<20}  {:<8}  {:<12}  {:<6}  Status",
+        "Device ID", "Name", "Type", "Last Seen", "KUs"
     );
     println!("  {}", "─".repeat(80));
 

@@ -142,7 +142,7 @@ pub fn decode_varint(bytes: &[u8]) -> Result<(u64, usize), KuError> {
             | ((bytes[2] as u64) << 16)
             | ((bytes[3] as u64) << 8)
             | (bytes[4] as u64);
-        Ok((adjusted as u64 + TIER3P_OFFSET, 5))
+        Ok((adjusted + TIER3P_OFFSET, 5))
     } else if first & 0xFC == 0xF8 {
         // Tier 5: 111110xx → 6 bytes — RESERVED for future
         Err(KuError::InvalidData(

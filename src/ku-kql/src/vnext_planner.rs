@@ -86,7 +86,7 @@ pub trait CandidateGenerator {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CandidateValidation {
-    Proposal(BindingProposal),
+    Proposal(Box<BindingProposal>),
     Rejected { reason: &'static str },
     Deferred { reason: &'static str },
 }
@@ -282,7 +282,7 @@ impl ComplementPlanner {
                 result.usage.validations += 1;
                 match validator.validate(&candidate)? {
                     CandidateValidation::Proposal(proposal) => {
-                        if result.portfolio.insert(proposal)? {
+                        if result.portfolio.insert(*proposal)? {
                             result.usage.accepted_proposals += 1;
                         }
                     }
@@ -419,9 +419,9 @@ mod tests {
             &mut self,
             candidate: &CandidateSeed,
         ) -> Result<CandidateValidation, PlannerError> {
-            Ok(CandidateValidation::Proposal(proposal(
+            Ok(CandidateValidation::Proposal(Box::new(proposal(
                 candidate.candidate_id[0],
-            )))
+            ))))
         }
     }
 

@@ -1,0 +1,99 @@
+{
+  "format": "onebrain/base-v1-release-signers/1",
+  "profile_id": "BASE_V1_RELEASE_SIGNERS_V1",
+  "canonicalization": {
+    "encoding": "UTF-8",
+    "ensure_ascii": false,
+    "key_order": "sorted",
+    "separators": [",", ":"],
+    "whitespace": "none"
+  },
+  "policies": [
+    {
+      "digest": {
+        "algorithm": "BLAKE3 derive-key",
+        "context": "onebrain:base-v1:qualification-approver-policy:1",
+        "expected_hex": "0710845f71ca7aca7ce89a0377a31ce293c6dd99778c0ff3decf9e04745528be"
+      },
+      "policy": {
+        "algorithm": "OpenPGP-Ed25519",
+        "allowed_usages": ["base-release-request"],
+        "format": "onebrain/base-v1-qualification-approver-policy/1",
+        "role": "qualification-approver",
+        "signers": [
+          {
+            "created_utc": "2026-08-27T04:49:51Z",
+            "expires_utc": "2028-08-26T04:49:51Z",
+            "fingerprint": "A9BFDC59364354F954ABD26947FCF15DD9C32781",
+            "key_id": "47FCF15DD9C32781",
+            "public_key_packet_blake3": "228d43ea4f3cc0b7548124682e353544ae9549e5458456016242cfa738a5575e"
+          }
+        ],
+        "valid_unlisted_signature": "reject",
+        "verification": {
+          "fingerprint_source": "gpg-status-fd-VALIDSIG-full-primary-fingerprint",
+          "trust_model": "explicit-allowlist"
+        }
+      }
+    },
+    {
+      "digest": {
+        "algorithm": "BLAKE3 derive-key",
+        "context": "onebrain:base-v1:release-signer-policy:1",
+        "expected_hex": "443534ac4f583368cc5e07b1c4dbddf1ac66c63eba32bcf9e565b07f07a80d88"
+      },
+      "policy": {
+        "algorithm": "OpenPGP-Ed25519",
+        "allowed_usages": ["base-evidence-manifest", "base-release-tag"],
+        "format": "onebrain/base-v1-release-signer-policy/1",
+        "role": "base-release",
+        "signers": [
+          {
+            "created_utc": "2026-08-11T04:50:30Z",
+            "expires_utc": "2028-08-10T04:50:30Z",
+            "fingerprint": "F9DDAFB46FB6603E14B21B4DB0D9DBF23DBE8ED2",
+            "key_id": "B0D9DBF23DBE8ED2",
+            "public_key_packet_blake3": "d28acd703d6bb7addad30de1e9cd0c05d1ca84dfd1e41ad5963458913382d0db"
+          }
+        ],
+        "valid_unlisted_signature": "reject",
+        "verification": {
+          "fingerprint_source": "gpg-status-fd-VALIDSIG-full-primary-fingerprint",
+          "trust_model": "explicit-allowlist"
+        }
+      }
+    },
+    {
+      "digest": {
+        "algorithm": "BLAKE3 derive-key",
+        "context": "onebrain:base-v1:evidence-approver-policy:1",
+        "expected_hex": "01f5989e96ca840b2ddc53781bd57dad18bf52fb332046543bfb1dbd42fb0df8"
+      },
+      "policy": {
+        "algorithm": "Ed25519",
+        "allowed_usages": [
+          "gate-receipt-approval",
+          "target-receipt-approval"
+        ],
+        "format": "onebrain/base-v1-evidence-approver-policy/1",
+        "role": "base-evidence-approver",
+        "signature_domain": "onebrain:base-v1:evidence-receipt-approval:1",
+        "signers": [
+          {
+            "created_utc": "2026-08-11T07:40:40Z",
+            "expires_utc": "2028-08-10T07:40:40Z",
+            "fingerprint_context": "onebrain:base-v1:evidence-approver-fingerprint:1",
+            "fingerprint_hex": "a5f274124c48fdc9c9c50a504733ac731e67a7dfdbcfe59d83bf5ed0c8944009",
+            "public_key_hex": "c40d8892b480f80b78cb1acddaa5a85c571ac5adfac71ff1ccebd6c3f6abce42"
+          }
+        ],
+        "valid_unlisted_signature": "reject"
+      }
+    }
+  ],
+  "owner_approval": {
+    "status": "owner-approved",
+    "approved_utc": "2026-08-27",
+    "sample_or_default_keys_allowed": false
+  }
+}

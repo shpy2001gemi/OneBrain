@@ -289,10 +289,7 @@ mod integration {
         println!("\n══════════════════════════════════════════════════");
         println!("  TEST: Varint Round-Trip — All Tiers");
         println!("══════════════════════════════════════════════════");
-        println!(
-            "  {:>15}  {:>5}  {:>10}  {}",
-            "Value", "Bytes", "Hex", "Label"
-        );
+        println!("  {:>15}  {:>5}  {:>10}  Label", "Value", "Bytes", "Hex");
         println!("  {:─>15}  {:─>5}  {:─>10}  {:─>30}", "", "", "", "");
 
         for (value, expected_len, label) in &test_cases {

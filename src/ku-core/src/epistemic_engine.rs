@@ -184,11 +184,8 @@ pub fn evaluate_max_status(
 ) -> EpistemicStatus {
     let mut status = current;
     // Walk up the ladder as far as thresholds allow
-    loop {
-        match evaluate_transition(status, metabolism, now, half_life_secs) {
-            Some(next) => status = next,
-            None => break,
-        }
+    while let Some(next) = evaluate_transition(status, metabolism, now, half_life_secs) {
+        status = next;
     }
     status
 }
@@ -205,8 +202,6 @@ mod tests {
     const NODE_A: u64 = 1;
     const NODE_B: u64 = 2;
     const NODE_C: u64 = 3;
-    const NODE_D: u64 = 4;
-    const NODE_E: u64 = 5;
     const T0: u64 = 1_000_000;
     const HL: u64 = DEFAULT_HALF_LIFE_SECS;
 

@@ -1,0 +1,65 @@
+{
+  "format": "onebrain/base-v1-archive/1",
+  "profile": "OBARV002",
+  "domains": {
+    "entry_id": "onebrain:base:archive-entry-id:1",
+    "entry_root": "onebrain:base:archive-entry-root:1",
+    "manifest": "onebrain:base:archive-manifest:1\\0",
+    "high_water": "onebrain:base:archive-high-water:1\\0",
+    "dataset": "onebrain:base:archive-dataset:1\\0"
+  },
+  "limits": { "logical_key_bytes": 256, "manifest_entries": 1000000, "dataset_bytes": 17179869184 },
+  "owner_codes": {
+    "canonical": 1, "vault": 2, "quarantine": 3, "blob": 4,
+    "pending_blob_intent": 5, "source_capture_intent": 6, "reconciliation": 7,
+    "inventory": 8, "outbox": 9, "provenance": 10, "private_kql": 11,
+    "private_pomv": 12, "operational": 13, "rollout": 14, "optional_network": 15,
+    "migration": 16, "base_operations": 17, "interpretation_config": 18,
+    "identity": 19, "registry_metadata": 20, "derived_index_excluded": 21,
+    "retriever_projection_excluded": 22
+  },
+  "entry_kinds": [
+    "CanonicalObject", "CanonicalEvent", "FeedInception", "AuthorityEvent",
+    "AuthorityHighWater", "VaultRecord", "QuarantineRecord", "OwnedBlob",
+    "IdentityEnvelope", "ReconciliationJournalRecord", "InventoryRecord",
+    "OutboxRecord", "ProvenanceRecord", "PrivateNeedRecord", "ReceivedUseRecord",
+    "OperationalRecord", "RolloutRecord", "BaseOperationRecord", "PendingBlobUploadIntent",
+    "SourceCaptureIntent", "MigrationState", "InterpretationConfig", "RegistryHighWater",
+    "SignerRecoveryPolicy"
+  ],
+  "required_metadata": [
+    "AuthorityHighWater", "MigrationState", "InterpretationConfig",
+    "RegistryHighWater", "SignerRecoveryPolicy"
+  ],
+  "stable_entry_id_vector": {
+    "kind": "CanonicalObject", "owner": 1, "namespace": 1,
+    "logical_key_utf8": "object-01",
+    "entry_id_blake3_hex": "b83be45eda7ce7bcdbc3e6f9f0eeccfe4febdd7f471b4240c92046b73bf7210d"
+  },
+  "fixture_aggregate_root_hex": "847fefafdc853d6ef6c02e67eadd86f2d3fbdc73e37a9601692f46e24dc639f5",
+  "restore_gate": [
+    "canonical_schema_digest", "domain_registry_digest", "resource_registry_digest",
+    "storage_schema_version", "archive_profile", "migration_profile"
+  ],
+  "provenance_only": ["producer_artifact_identity", "target_triple", "toolchain_digest"],
+  "base_operation_records": {
+    "owner": "base_operations",
+    "entry_kind": "BaseOperationRecord",
+    "boundary": "TX-BASE-OPS-001",
+    "states": ["reserved", "prepared", "confirming", "committed", "canceled", "failed", "unknown_outcome"],
+    "generation_bindings": ["process_generation", "dataset_generation"],
+    "migration_bindings": ["vector_id", "vector_blake3", "trust_policy_digest"],
+    "restore_nonterminal": "unknown_outcome_reconcile_required_never_replay",
+    "activation_receipt_plane": "non-switched-control-and-selected-generation",
+    "authority_journal": {
+      "tables": ["management_grant", "management_handle", "archive_capability", "signer_provision"],
+      "restart_disposition": "revoked_never_reactivated",
+      "archive_disposition": "revoked_evidence_only"
+    }
+  },
+  "excluded_payloads": [
+    "derived_index", "retriever_projection", "graph_projection", "search_projection",
+    "registry_payload", "model_payload"
+  ],
+  "non_exportable_signer_restore": "reprovision_required"
+}

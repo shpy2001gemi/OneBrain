@@ -1,0 +1,158 @@
+{
+  "format": "onebrain/p5-multi-host-production-qualification/2",
+  "profile_id": "P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V2",
+  "version": 2,
+  "scope": {
+    "physical_host_count": 3,
+    "logical_node_count": 3,
+    "reference_os": "linux",
+    "reference_target": "x86_64-unknown-linux-gnu",
+    "production_reachability_source": "production-reachability-manager",
+    "portable_core_qualifying": true,
+    "other_platform_lanes_qualifying": false,
+    "single_host_preflight_may_qualify": false
+  },
+  "path_classes": {
+    "path_kinds": ["direct", "hole-punched", "relay-udp", "relay-tcp-443"],
+    "direct_class": ["direct", "hole-punched"],
+    "relay_class": ["relay-udp", "relay-tcp-443"]
+  },
+  "topology": {
+    "hosts": ["host-a", "host-b", "host-c"],
+    "ring": ["host-a->host-b", "host-b->host-c", "host-c->host-a"],
+    "independent_durable_roots": 3,
+    "independent_principals": 3,
+    "signed_inventory_required": true,
+    "owner_topology_attestation_required": true
+  },
+  "qualification": {
+    "golden_ring_paths": ["relay-tcp-443", "relay-tcp-443", "relay-tcp-443"],
+    "all_expected_peers_authenticated": true,
+    "mixed_path_required": false,
+    "relay_only_outbound_first_required": true,
+    "observe_only_may_qualify": false,
+    "preflight_may_qualify": false,
+    "qualification_tier": "production-reference"
+  },
+  "route_failover": {
+    "pre_failure_reservations_min": 2,
+    "selected_and_alternate_signed_before_failure": true,
+    "alternate_must_differ": true,
+    "selected_failure": "RelayUnavailable",
+    "fresh_transport_binding_required": true,
+    "fresh_session_required": true,
+    "exact_checkpoint_resume_required": true,
+    "application_replay_rejected": true
+  },
+  "fault_matrix": [
+    "partition",
+    "drop",
+    "reorder",
+    "duplicate",
+    "restart",
+    "address-change",
+    "seed-outage",
+    "signer-outage",
+    "disk-pressure",
+    "slow-peer",
+    "base-obarv002-archive-restore",
+    "rollback",
+    "explicit-re-enable"
+  ],
+  "evidence_authority": {
+    "provider_evidence_status": "owner-telephone-verified-provider-document-pending",
+    "qualification_tier": "production-reference",
+    "inventory_digest_required": true,
+    "public_probe_set_digest_required": true,
+    "topology_attestation_digest_required": true,
+    "provider_evidence_digest_required": true,
+    "repeat_in_every_receipt_and_aggregate": true,
+    "provider_status_derived_from_typed_entries": true
+  },
+  "evidence": {
+    "signed_controller_frame_required": true,
+    "signed_child_receipt_required": true,
+    "signed_admin_operation_receipt_required": true,
+    "signed_multi_host_aggregate_required": true,
+    "handcrafted_receipt_policy": "reject",
+    "raw_evidence": "encrypted-restricted-digest-bound",
+    "raw_archive_encryption": "hpke-x25519-hkdf-sha256-chacha20-poly1305",
+    "public_receipt_private_endpoint_policy": "digest-and-privacy-safe-projection-only",
+    "exact_candidate_commit_tree_bundle_binding": true
+  },
+  "admin_operations": {
+    "actions": ["prepare-session", "cleanup-session", "observe", "apply", "clear"],
+    "action_phase_map": {
+      "prepare-session": null,
+      "cleanup-session": null,
+      "observe": "before",
+      "apply": "during",
+      "clear": "after"
+    },
+    "fault_and_phase_optional_only_for_lifecycle": true,
+    "controller_signature_required": true,
+    "host_receipt_signature_required": true,
+    "request_digest_embedded_in_receipt": true,
+    "dynamic_target_dual_signature_required": true,
+    "replay_key": ["request_digest", "session_id", "host_id", "operation_id"],
+    "replay_policy": "reject-create-new-before-mutation",
+    "caller_supplied_shell_or_path": false
+  },
+  "lifecycle": {
+    "bootstrap_installs_session_config_only": true,
+    "bootstrap_network_or_unit_mutation": false,
+    "prepare_session_is_separately_signed": true,
+    "cleanup_receipt_before_finalization": true,
+    "finalizer_removes_session_after_receipt": true,
+    "immutable_candidate_generation_paths_for_control": true
+  },
+  "resource_bounds": {
+    "p5_snapshot_reservations": 6,
+    "p5_snapshot_associations": 1,
+    "p5_bootstrap_frame_bytes": 1048576,
+    "p5_admin_frame_bytes": 131072,
+    "p5_finalize_frame_bytes": 131072,
+    "p5_authority_request_bytes": 262144,
+    "p5_signature_bytes": 16384,
+    "p5_inventory_bytes": 262144,
+    "p5_trust_policy_bytes": 65536,
+    "p5_verifier_keyring_bytes": 131072,
+    "p5_session_config_bytes": 262144,
+    "p5_public_probe_set_bytes": 131072,
+    "p5_topology_attestation_bytes": 131072,
+    "p5_provider_evidence_bytes": 131072,
+    "p5_signed_control_frame_bytes": 131072,
+    "p5_child_receipt_bytes": 262144,
+    "p5_aggregate_bytes": 4194304,
+    "p5_admin_response_bytes": 1048576,
+    "p5_raw_evidence_objects": 32,
+    "p5_raw_evidence_object_bytes": 262144,
+    "p5_encrypted_raw_archive_bytes": 67108864,
+    "p5_bootstrap_response_bytes": 262144,
+    "p5_finalization_response_bytes": 262144
+  },
+  "privacy": {
+    "public_endpoint_or_interface_bytes": false,
+    "public_arbitrary_limitation_text": false,
+    "raw_endpoint_evidence_restricted": true,
+    "raw_archive_randomized_encryption_required": true,
+    "public_artifact_secret_scan_required": true
+  },
+  "exit_oracles": [
+    "request-authority-verified",
+    "three-host-inventory-verified",
+    "relay-only-ring-authenticated",
+    "faults-complete",
+    "selected-relay-failed",
+    "alternate-relay-authenticated",
+    "checkpoint-resumed-exactly",
+    "resource-bounds-observed",
+    "privacy-scan-clean",
+    "aggregate-signature-verified"
+  ],
+  "required_limitations": [
+    "provider-document-pending",
+    "non-linux-platform-lanes-pending",
+    "mobile-carrier-mailbox-pending"
+  ]
+}

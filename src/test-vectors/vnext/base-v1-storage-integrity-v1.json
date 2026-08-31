@@ -1,0 +1,191 @@
+{
+  "format": "onebrain/base-v1-storage-integrity/1",
+  "authoritative_boundaries": [
+    "full-cid-blob-layout",
+    "full-read-blob-integrity",
+    "bounded-capacity-admission",
+    "journaled-filesystem-commit",
+    "same-transaction-secondary-indexes",
+    "generation-swapped-derived-projections",
+    "character-safe-preview",
+    "exact-canonical-import-export",
+    "owned-blob-reference-authority",
+    "closed-storage-owner-mapping"
+  ],
+  "blob_layout": {
+    "cid_bytes": 34,
+    "cid_hex_characters": 68,
+    "hex_case": "lower",
+    "relative_path": "v2/<digest-byte-0-hex>/<digest-byte-1-hex>/<full-68-lower-hex-cid>",
+    "shard_source": "two-leading-digest-bytes-not-version-or-type",
+    "short_cid_use": "display-only"
+  },
+  "blob_read_integrity": {
+    "required_checks": [
+      "declared-type",
+      "declared-length",
+      "each-chunk-blake3",
+      "full-payload-blake3",
+      "full-typed-cid"
+    ],
+    "check_before_returning_bytes": true,
+    "legacy_missing_chunk_hash": "typed-migration-required"
+  },
+  "capacity_admission": {
+    "chunk_max_bytes": 262144,
+    "per_object_max_bytes": 104857600,
+    "total_quota_bytes": "required-configured-nonzero-u64",
+    "free_space_reserve_bytes": "required-configured-nonzero-u64",
+    "accounting": "unique-owned-physical-bytes",
+    "arithmetic": "checked-add-and-subtract-reject-overflow-underflow",
+    "admission_order": "limits-and-space-before-write-side-effect"
+  },
+  "filesystem_commit": {
+    "protocol": "durable-intent-stage-fsync-atomic-publish-metadata-commit-cleanup",
+    "reopen": "reconcile-every-nonterminal-intent-idempotently",
+    "unsafe_overwrite": false
+  },
+  "secondary_index_policy": {
+    "class": "same-redb-transaction",
+    "required_indexes": [
+      "feed-inception-by-feed-id",
+      "authority-event-by-principal-frontier"
+    ],
+    "parity": "canonical-write-and-index-row-commit-or-abort-together"
+  },
+  "derived_store_policy": {
+    "stores": [
+      "graph",
+      "search",
+      "retriever"
+    ],
+    "class": "disposable-generation-swapped",
+    "row_binding": [
+      "source-root",
+      "mapping-id",
+      "reducer-version",
+      "index-root",
+      "projection-root"
+    ],
+    "corrupt_reopen": "mark-dirty-rebuild-from-validated-canonical-records",
+    "publication_failure_state": "canonical-available-derived-degraded-dirty-generation",
+    "parity_operations": [
+      "create",
+      "update",
+      "delete",
+      "rebuild"
+    ],
+    "empty_projection": "allowed-only-when-source-kind-coverage-proves-no-output",
+    "archive_bytes": "excluded-rebuildable"
+  },
+  "text_preview": {
+    "input": "validated-utf8",
+    "truncation_unit": "unicode-scalar-value",
+    "maximum_scalars": 80,
+    "invalid_utf8": "reject",
+    "byte_slice": "forbidden"
+  },
+  "canonical_exchange": {
+    "export": "exact-validated-canonical-bytes-with-full-typed-reference",
+    "import": "decode-validate-reencode-byte-equality-and-recompute-cid-before-commit",
+    "round_trip": "same-bytes-same-cid-same-type-same-length",
+    "partial_success": "explicit-per-record-result-never-silent"
+  },
+  "owned_blob_reference": {
+    "format": "onebrain/owned-blob-reference/1",
+    "authority_source": "validated-vnext-object-event-bytes-only",
+    "owner": "full-typed-ObjectReference",
+    "required_fields": [
+      "owner",
+      "blob-cid",
+      "role",
+      "retention-state"
+    ],
+    "roles": [
+      "owned-original",
+      "attachment",
+      "source-artifact"
+    ],
+    "retention_states": [
+      "live",
+      "terminal-retain",
+      "terminal-release"
+    ],
+    "terminal_event_binding": "terminal-states-require-full-validated-EventCID-live-state-omits",
+    "terminal_event_semantics": "validated-owner-terminal-event-reduces-retention-never-rewrites-history",
+    "legacy_ku_metadata": "read-only-migration-evidence-never-authority"
+  },
+  "storage_owner_table": {
+    "encoding": "big-endian-u16",
+    "base_storage_owner_type": "BaseStorageOwnerId",
+    "archive_owner_type": "ArchiveOwner",
+    "conversion_owner": "onebrain-node-adapter-only",
+    "reserved": [
+      "0x0000",
+      "0x0017..0xFFFF"
+    ],
+    "unknown_reserved_reused": "fail-closed",
+    "owners": [
+      {"name": "canonical", "code_u16": 1, "code_hex": "0x0001", "base_storage_owner": "canonical", "archive_owner": "canonical", "base_storage_owner_bytes": "0001", "archive_owner_bytes": "0001"},
+      {"name": "vault", "code_u16": 2, "code_hex": "0x0002", "base_storage_owner": "vault", "archive_owner": "vault", "base_storage_owner_bytes": "0002", "archive_owner_bytes": "0002"},
+      {"name": "quarantine", "code_u16": 3, "code_hex": "0x0003", "base_storage_owner": "quarantine", "archive_owner": "quarantine", "base_storage_owner_bytes": "0003", "archive_owner_bytes": "0003"},
+      {"name": "blob", "code_u16": 4, "code_hex": "0x0004", "base_storage_owner": "blob", "archive_owner": "blob", "base_storage_owner_bytes": "0004", "archive_owner_bytes": "0004"},
+      {"name": "pending_blob_intent", "code_u16": 5, "code_hex": "0x0005", "base_storage_owner": "pending_blob_intent", "archive_owner": "pending_blob_intent", "base_storage_owner_bytes": "0005", "archive_owner_bytes": "0005"},
+      {"name": "source_capture_intent", "code_u16": 6, "code_hex": "0x0006", "base_storage_owner": "source_capture_intent", "archive_owner": "source_capture_intent", "base_storage_owner_bytes": "0006", "archive_owner_bytes": "0006"},
+      {"name": "reconciliation", "code_u16": 7, "code_hex": "0x0007", "base_storage_owner": "reconciliation", "archive_owner": "reconciliation", "base_storage_owner_bytes": "0007", "archive_owner_bytes": "0007"},
+      {"name": "inventory", "code_u16": 8, "code_hex": "0x0008", "base_storage_owner": "inventory", "archive_owner": "inventory", "base_storage_owner_bytes": "0008", "archive_owner_bytes": "0008"},
+      {"name": "outbox", "code_u16": 9, "code_hex": "0x0009", "base_storage_owner": "outbox", "archive_owner": "outbox", "base_storage_owner_bytes": "0009", "archive_owner_bytes": "0009"},
+      {"name": "provenance", "code_u16": 10, "code_hex": "0x000A", "base_storage_owner": "provenance", "archive_owner": "provenance", "base_storage_owner_bytes": "000a", "archive_owner_bytes": "000a"},
+      {"name": "private_kql", "code_u16": 11, "code_hex": "0x000B", "base_storage_owner": "private_kql", "archive_owner": "private_kql", "base_storage_owner_bytes": "000b", "archive_owner_bytes": "000b"},
+      {"name": "private_pomv", "code_u16": 12, "code_hex": "0x000C", "base_storage_owner": "private_pomv", "archive_owner": "private_pomv", "base_storage_owner_bytes": "000c", "archive_owner_bytes": "000c"},
+      {"name": "operational", "code_u16": 13, "code_hex": "0x000D", "base_storage_owner": "operational", "archive_owner": "operational", "base_storage_owner_bytes": "000d", "archive_owner_bytes": "000d"},
+      {"name": "rollout", "code_u16": 14, "code_hex": "0x000E", "base_storage_owner": "rollout", "archive_owner": "rollout", "base_storage_owner_bytes": "000e", "archive_owner_bytes": "000e"},
+      {"name": "optional_network", "code_u16": 15, "code_hex": "0x000F", "base_storage_owner": "optional_network", "archive_owner": "optional_network", "base_storage_owner_bytes": "000f", "archive_owner_bytes": "000f"},
+      {"name": "migration", "code_u16": 16, "code_hex": "0x0010", "base_storage_owner": "migration", "archive_owner": "migration", "base_storage_owner_bytes": "0010", "archive_owner_bytes": "0010"},
+      {"name": "base_operations", "code_u16": 17, "code_hex": "0x0011", "base_storage_owner": "base_operations", "archive_owner": "base_operations", "base_storage_owner_bytes": "0011", "archive_owner_bytes": "0011"},
+      {"name": "interpretation_config", "code_u16": 18, "code_hex": "0x0012", "base_storage_owner": "interpretation_config", "archive_owner": "interpretation_config", "base_storage_owner_bytes": "0012", "archive_owner_bytes": "0012"},
+      {"name": "identity", "code_u16": 19, "code_hex": "0x0013", "base_storage_owner": "identity", "archive_owner": "identity", "base_storage_owner_bytes": "0013", "archive_owner_bytes": "0013"},
+      {"name": "registry_metadata", "code_u16": 20, "code_hex": "0x0014", "base_storage_owner": "registry_metadata", "archive_owner": "registry_metadata", "base_storage_owner_bytes": "0014", "archive_owner_bytes": "0014"},
+      {"name": "derived_index", "code_u16": 21, "code_hex": "0x0015", "base_storage_owner": "derived_index", "archive_owner": "derived_index", "base_storage_owner_bytes": "0015", "archive_owner_bytes": "0015"},
+      {"name": "retriever_projection", "code_u16": 22, "code_hex": "0x0016", "base_storage_owner": "retriever_projection", "archive_owner": "retriever_projection", "base_storage_owner_bytes": "0016", "archive_owner_bytes": "0016"}
+    ]
+  },
+  "failpoint_phases": [
+    "before_begin_write",
+    "after_begin_write_before_mutation",
+    "after_mutation_before_commit",
+    "after_commit_before_next_side_effect",
+    "after_next_side_effect_before_ack"
+  ],
+  "transaction_boundaries": [
+    "TX-BLOB-001",
+    "TX-IDX-001",
+    "TX-ARCH-001",
+    "TX-RESTORE-001",
+    "TX-RECOVERY-001"
+  ],
+  "crash_oracle": {
+    "runner": "child-process-real-files-kill-reopen",
+    "every_boundary_every_phase": true,
+    "reopen_outcome": "exact-pre-state-or-exact-post-state-never-partial",
+    "expected_oracle_location": "outside-store-under-test",
+    "recorded_fields": [
+      "boundary-id",
+      "phase",
+      "process-exit",
+      "restart-result",
+      "oracle-digest"
+    ]
+  },
+  "negative_oracles": [
+    "short-cid-path-rejected",
+    "missing-full-read-hash-rejected",
+    "missing-total-quota-rejected",
+    "best-effort-without-dirty-generation-rejected",
+    "unknown-or-vacuous-projection-rejected",
+    "legacy-blob-reference-authority-rejected",
+    "corrupt-retriever-rebuilds-with-canonical-startup-available",
+    "missing-update-delete-parity-rejected",
+    "byte-sliced-utf8-rejected"
+  ]
+}

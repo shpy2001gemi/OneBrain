@@ -1,0 +1,871 @@
+//! Closed relay-service configuration and offline lifecycle modes.
+
+use std::collections::BTreeSet;
+#[cfg(unix)]
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::future::Future;
+use std::io::Write;
+use std::net::{IpAddr, SocketAddr};
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::sync::Arc;
+
+use ed25519_dalek::{Signer, SigningKey};
+use onebrain_protocol::{
+    encode_reachability_object, reachability_signing_bytes, HostAddressV1, ProtocolVersionV1,
+    ReachabilityObjectV1, ReachabilitySignatureRoleV1, RelayDescriptorV1, RelayEndpointV1,
+    RelayTransportV1, MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS,
+};
+use rand::rngs::OsRng;
+use rand::RngCore;
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
+
+use crate::{
+    principal_node_id, relay_identity_certificate, DurableRelayState, DurableStateKind,
+    RelayDataPlaneError, RelayProductionService, Tcp443RelayListener, UdpRelayListener,
+};
+
+const MAX_CONFIG_BYTES: u64 = 65_536;
+const STATE_FILE: &str = "relay-state.redb";
+const ACTIVATION_KEY: &[u8] = b"descriptor-activation-v1";
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RelayConfigV1 {
+    #[serde(deserialize_with = "deserialize_config_format")]
+    pub format: u64,
+    pub data_root: PathBuf,
+    #[serde(alias = "identity_key_locator")]
+    pub signer_locator: PathBuf,
+    pub udp_bind: Option<SocketAddr>,
+    pub tcp443_bind: Option<SocketAddr>,
+    #[serde(deserialize_with = "deserialize_configured_endpoints")]
+    pub advertised_endpoints: Vec<RelayConfiguredEndpointV1>,
+    #[serde(default)]
+    pub capacity_policy_digest: [u8; 32],
+    pub max_reservations: usize,
+    pub max_reservations_per_target: usize,
+    #[serde(alias = "rendezvous_max_records")]
+    pub max_rendezvous_records: usize,
+    #[serde(default = "default_descriptor_sequence")]
+    pub descriptor_sequence: u64,
+    #[serde(default)]
+    pub descriptor_issued_at: u64,
+    #[serde(default)]
+    pub descriptor_expires_at: u64,
+    pub log_destination: PathBuf,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RelayConfiguredEndpointV1 {
+    pub transport: String,
+    pub host: String,
+    pub port: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ConfigFormatInput {
+    Integer(u64),
+    Text(String),
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ConfiguredEndpointInput {
+    Structured(RelayConfiguredEndpointV1),
+    Uri(String),
+}
+
+fn deserialize_config_format<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    match ConfigFormatInput::deserialize(deserializer)? {
+        ConfigFormatInput::Integer(1) => Ok(1),
+        ConfigFormatInput::Text(value) if value == "onebrain/relay-config/1" => Ok(1),
+        _ => Err(D::Error::custom("unsupported relay config format")),
+    }
+}
+
+fn deserialize_configured_endpoints<'de, D>(
+    deserializer: D,
+) -> Result<Vec<RelayConfiguredEndpointV1>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Vec::<ConfiguredEndpointInput>::deserialize(deserializer)?
+        .into_iter()
+        .map(|value| match value {
+            ConfiguredEndpointInput::Structured(value) => Ok(value),
+            ConfiguredEndpointInput::Uri(value) => parse_configured_endpoint(&value)
+                .ok_or_else(|| D::Error::custom("invalid relay endpoint URI")),
+        })
+        .collect()
+}
+
+fn parse_configured_endpoint(value: &str) -> Option<RelayConfiguredEndpointV1> {
+    let (scheme, authority) = value.split_once("://")?;
+    let (host, port) = authority.rsplit_once(':')?;
+    let transport = match scheme {
+        "udp" => "quic-udp",
+        "tls" => "tls-tcp-443",
+        _ => return None,
+    };
+    if host.is_empty() || host.contains('/') {
+        return None;
+    }
+    Some(RelayConfiguredEndpointV1 {
+        transport: transport.into(),
+        host: host.trim_matches(['[', ']']).into(),
+        port: port.parse().ok()?,
+    })
+}
+
+const fn default_descriptor_sequence() -> u64 {
+    1
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RelayActivationProbeSetV1 {
+    pub format: u64,
+    pub descriptor_blake3: String,
+    pub probes: Vec<RelayActivationProbeV1>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RelayActivationProbeV1 {
+    pub source_host_id: String,
+    pub endpoint_index: usize,
+    pub transport: String,
+    pub success: bool,
+    pub transcript_blake3: String,
+}
+
+pub fn generate_identity(output: &Path) -> Result<[u8; 32], RuntimeError> {
+    let mut secret = [0u8; 32];
+    OsRng.fill_bytes(&mut secret);
+    let key = SigningKey::from_bytes(&secret);
+    write_create_new(output, &secret)?;
+    Ok(*key.verifying_key().as_bytes())
+}
+
+pub fn initialize_state(config_path: &Path) -> Result<(), RuntimeError> {
+    let config = read_config(config_path)?;
+    validate_config_shape(&config)?;
+    std::fs::create_dir_all(&config.data_root).map_err(|_| RuntimeError::Io)?;
+    DurableRelayState::initialize(&config.data_root.join(STATE_FILE))
+        .map_err(|_| RuntimeError::State)?;
+    Ok(())
+}
+
+pub fn verify_config(config_path: &Path) -> Result<RelayConfigV1, RuntimeError> {
+    let config = read_config(config_path)?;
+    validate_config_shape(&config)?;
+    if !config.signer_locator.is_file() || !config.data_root.join(STATE_FILE).is_file() {
+        return Err(RuntimeError::MissingState);
+    }
+    read_signing_key(&config.signer_locator)?;
+    DurableRelayState::open(&config.data_root.join(STATE_FILE)).map_err(|_| RuntimeError::State)?;
+    Ok(config)
+}
+
+pub fn export_candidate_descriptor(
+    config_path: &Path,
+    output: &Path,
+) -> Result<[u8; 32], RuntimeError> {
+    let config = verify_config(config_path)?;
+    let signing_key = read_signing_key(&config.signer_locator)?;
+    let mut descriptor = descriptor_from_config(&config, &signing_key)?;
+    descriptor.relay_signature = signing_key
+        .sign(
+            &reachability_signing_bytes(
+                &ReachabilityObjectV1::RelayDescriptor(descriptor.clone()),
+                ReachabilitySignatureRoleV1::RelayDescriptor,
+            )
+            .map_err(|_| RuntimeError::Descriptor)?,
+        )
+        .to_bytes();
+    let bytes = encode_reachability_object(&ReachabilityObjectV1::RelayDescriptor(descriptor))
+        .map_err(|_| RuntimeError::Descriptor)?;
+    write_create_new(output, &bytes)?;
+    let digest = *blake3::hash(&bytes).as_bytes();
+    let state = DurableRelayState::open(&config.data_root.join(STATE_FILE))
+        .map_err(|_| RuntimeError::State)?;
+    state
+        .create_new(DurableStateKind::DescriptorFloor, b"candidate-v1", &bytes)
+        .map_err(|_| RuntimeError::State)?;
+    Ok(digest)
+}
+
+pub fn activate_descriptor(
+    config_path: &Path,
+    probe_set_path: &Path,
+) -> Result<[u8; 32], RuntimeError> {
+    let config = verify_config(config_path)?;
+    let state = DurableRelayState::open(&config.data_root.join(STATE_FILE))
+        .map_err(|_| RuntimeError::State)?;
+    let bytes = state
+        .get(DurableStateKind::DescriptorFloor, b"candidate-v1")
+        .map_err(|_| RuntimeError::State)?
+        .ok_or(RuntimeError::Descriptor)?;
+    let descriptor_digest = *blake3::hash(&bytes).as_bytes();
+    let probe_bytes = read_bounded(probe_set_path)?;
+    let probes: RelayActivationProbeSetV1 =
+        serde_json::from_slice(&probe_bytes).map_err(|_| RuntimeError::ProbeSet)?;
+    validate_probe_set(&config, &probes, descriptor_digest)?;
+    let digest = *blake3::hash(&probe_bytes).as_bytes();
+    state
+        .create_new(DurableStateKind::ControlFloor, ACTIVATION_KEY, &digest)
+        .map_err(|_| RuntimeError::State)?;
+    Ok(digest)
+}
+
+pub fn serve(config_path: &Path, preflight_only: bool) -> Result<(), RuntimeError> {
+    let config = validate_serve(config_path, preflight_only)?;
+    let signing_key = read_signing_key(&config.signer_locator)?;
+    let descriptor = descriptor_from_config(&config, &signing_key)?;
+    let identity = relay_identity_certificate(&signing_key, &descriptor)
+        .map_err(|_| RuntimeError::DataPlane)?;
+    let durable = Arc::new(
+        DurableRelayState::open(&config.data_root.join(STATE_FILE))
+            .map_err(|_| RuntimeError::State)?,
+    );
+    let service = Arc::new(
+        RelayProductionService::new(
+            signing_key,
+            config.max_reservations,
+            config.max_reservations_per_target,
+            durable,
+        )
+        .map_err(|_| RuntimeError::DataPlane)?,
+    );
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|_| RuntimeError::DataPlane)?;
+    runtime.block_on(async move {
+        let mut workers = tokio::task::JoinSet::new();
+        if let Some(address) = config.udp_bind {
+            let listener =
+                UdpRelayListener::bind(address, &identity).map_err(|_| RuntimeError::DataPlane)?;
+            let service = service.clone();
+            workers.spawn(async move { run_udp_listener(listener, service).await });
+        }
+        if let Some(address) = config.tcp443_bind {
+            let listener = Tcp443RelayListener::bind(address, &identity)
+                .await
+                .map_err(|_| RuntimeError::DataPlane)?;
+            let service = service.clone();
+            workers.spawn(async move { run_tcp_listener(listener, service).await });
+        }
+        if workers.is_empty() {
+            return Err(RuntimeError::Config);
+        }
+        tokio::select! {
+            signal = tokio::signal::ctrl_c() => {
+                signal.map_err(|_| RuntimeError::DataPlane)?;
+                workers.abort_all();
+                while workers.join_next().await.is_some() {}
+                Ok(())
+            }
+            result = workers.join_next() => match result {
+                Some(Ok(Ok(()))) | None => Err(RuntimeError::DataPlane),
+                Some(Ok(Err(_))) | Some(Err(_)) => Err(RuntimeError::DataPlane),
+            }
+        }
+    })
+}
+
+fn validate_serve(config_path: &Path, preflight_only: bool) -> Result<RelayConfigV1, RuntimeError> {
+    let config = verify_config(config_path)?;
+    let state = DurableRelayState::open(&config.data_root.join(STATE_FILE))
+        .map_err(|_| RuntimeError::State)?;
+    if !preflight_only
+        && state
+            .get(DurableStateKind::ControlFloor, ACTIVATION_KEY)
+            .map_err(|_| RuntimeError::State)?
+            .is_none()
+    {
+        return Err(RuntimeError::NotActivated);
+    }
+    Ok(config)
+}
+
+async fn run_udp_listener(
+    listener: UdpRelayListener,
+    service: Arc<RelayProductionService>,
+) -> Result<(), RelayDataPlaneError> {
+    let mut connections = tokio::task::JoinSet::new();
+    let accepting = listener.accept_connection();
+    tokio::pin!(accepting);
+    loop {
+        match next_listener_event(accepting.as_mut(), &mut connections).await {
+            ListenerEvent::Accepted(accepted) => {
+                // Keep exactly one accept future alive.  A TLS/QUIC accept may
+                // already own a peer socket while its handshake is pending;
+                // dropping that future when another connection completes
+                // closes the unrelated peer without an accept-side error.
+                accepting.set(listener.accept_connection());
+                match accepted {
+                    Ok(connection) => {
+                        let service = service.clone();
+                        connections
+                            .spawn(async move { service.serve_quic_connection(connection).await });
+                    }
+                    Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
+                    Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
+                }
+            }
+            ListenerEvent::Completed(completed) => report_completed_connection(completed),
+        }
+    }
+}
+
+async fn run_tcp_listener(
+    listener: Tcp443RelayListener,
+    service: Arc<RelayProductionService>,
+) -> Result<(), RelayDataPlaneError> {
+    let mut connections = tokio::task::JoinSet::new();
+    let accepting = listener.accept_connection();
+    tokio::pin!(accepting);
+    loop {
+        match next_listener_event(accepting.as_mut(), &mut connections).await {
+            ListenerEvent::Accepted(accepted) => {
+                accepting.set(listener.accept_connection());
+                match accepted {
+                    Ok((stream, peer)) => {
+                        let service = service.clone();
+                        connections
+                            .spawn(async move { service.serve_tcp_connection(stream, peer).await });
+                    }
+                    Err(error) if accept_error_is_listener_fatal(&error) => return Err(error),
+                    Err(error) => eprintln!("OBP_RELAY_ACCEPT_REJECTED: {error}"),
+                }
+            }
+            ListenerEvent::Completed(completed) => report_completed_connection(completed),
+        }
+    }
+}
+
+enum ListenerEvent<T> {
+    Accepted(T),
+    Completed(Option<Result<Result<(), RelayDataPlaneError>, tokio::task::JoinError>>),
+}
+
+async fn next_listener_event<F>(
+    mut accepting: Pin<&mut F>,
+    connections: &mut tokio::task::JoinSet<Result<(), RelayDataPlaneError>>,
+) -> ListenerEvent<F::Output>
+where
+    F: Future,
+{
+    tokio::select! {
+        accepted = &mut accepting => ListenerEvent::Accepted(accepted),
+        completed = connections.join_next(), if !connections.is_empty() => {
+            ListenerEvent::Completed(completed)
+        }
+    }
+}
+
+fn accept_error_is_listener_fatal(error: &RelayDataPlaneError) -> bool {
+    matches!(error, RelayDataPlaneError::Closed)
+}
+
+fn report_completed_connection(
+    result: Option<Result<Result<(), RelayDataPlaneError>, tokio::task::JoinError>>,
+) {
+    match result {
+        Some(Ok(Ok(()))) | None => {}
+        // A connected peer must not be able to terminate the shared relay
+        // listener. Report its exact failure as soon as the task completes.
+        Some(Ok(Err(error))) => eprintln!("OBP_RELAY_CONNECTION_REJECTED: {error}"),
+        Some(Err(error)) => eprintln!("OBP_RELAY_CONNECTION_TASK_FAILED: {error}"),
+    }
+}
+
+fn descriptor_from_config(
+    config: &RelayConfigV1,
+    signing_key: &SigningKey,
+) -> Result<RelayDescriptorV1, RuntimeError> {
+    let endpoints = config
+        .advertised_endpoints
+        .iter()
+        .map(configured_endpoint)
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut transports = endpoints
+        .iter()
+        .map(|value| value.transport)
+        .collect::<Vec<_>>();
+    transports.sort();
+    transports.dedup();
+    let (issued_at, expires_at) =
+        if config.descriptor_issued_at == 0 && config.descriptor_expires_at == 0 {
+            let issued_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| RuntimeError::Descriptor)?
+                .as_secs();
+            (issued_at, issued_at + MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS)
+        } else {
+            (config.descriptor_issued_at, config.descriptor_expires_at)
+        };
+    Ok(RelayDescriptorV1 {
+        format: 1,
+        relay_node_id: principal_node_id(signing_key.verifying_key().as_bytes()),
+        relay_public_key: *signing_key.verifying_key().as_bytes(),
+        endpoints,
+        supported_transports: transports,
+        protocol_versions: vec![ProtocolVersionV1 { major: 1, minor: 0 }],
+        capacity_policy_digest: config.capacity_policy_digest,
+        previous_descriptor_blake3: None,
+        sequence: config.descriptor_sequence,
+        issued_at,
+        expires_at,
+        relay_signature: [0; 64],
+    })
+}
+
+fn validate_config_shape(config: &RelayConfigV1) -> Result<(), RuntimeError> {
+    if config.format != 1
+        || config.data_root.as_os_str().is_empty()
+        || config.signer_locator.as_os_str().is_empty()
+        || config.log_destination.as_os_str().is_empty()
+        || config.advertised_endpoints.is_empty()
+        || config.advertised_endpoints.len() > 8
+        || config.max_reservations == 0
+        || config.max_reservations_per_target == 0
+        || config.max_reservations_per_target > config.max_reservations
+        || config.max_rendezvous_records == 0
+        || config.max_rendezvous_records > 256
+        || config.descriptor_sequence == 0
+        || !((config.descriptor_issued_at == 0 && config.descriptor_expires_at == 0)
+            || (config.descriptor_issued_at < config.descriptor_expires_at
+                && config.descriptor_expires_at - config.descriptor_issued_at
+                    <= MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS))
+        || (config.udp_bind.is_none() && config.tcp443_bind.is_none())
+    {
+        return Err(RuntimeError::Config);
+    }
+    for endpoint in &config.advertised_endpoints {
+        configured_endpoint(endpoint)?;
+    }
+    Ok(())
+}
+
+fn configured_endpoint(value: &RelayConfiguredEndpointV1) -> Result<RelayEndpointV1, RuntimeError> {
+    if value.port == 0 {
+        return Err(RuntimeError::Config);
+    }
+    let transport = match value.transport.as_str() {
+        "quic-udp" => RelayTransportV1::QuicUdp,
+        "tls-tcp-443" if value.port == 443 => RelayTransportV1::TlsTcp443,
+        _ => return Err(RuntimeError::Config),
+    };
+    let host = match value.host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(address)) if ipv4_is_global(address.octets()) => {
+            HostAddressV1::Ipv4(address.octets())
+        }
+        Ok(IpAddr::V6(address)) if ipv6_is_global(address.octets()) => {
+            HostAddressV1::Ipv6(address.octets())
+        }
+        Ok(_) => return Err(RuntimeError::Config),
+        Err(_) if valid_dns(&value.host) => HostAddressV1::Dns(value.host.clone()),
+        Err(_) => return Err(RuntimeError::Config),
+    };
+    Ok(RelayEndpointV1 {
+        transport,
+        host,
+        port: value.port,
+    })
+}
+
+fn validate_probe_set(
+    config: &RelayConfigV1,
+    probes: &RelayActivationProbeSetV1,
+    descriptor_digest: [u8; 32],
+) -> Result<(), RuntimeError> {
+    if probes.format != 1 || decode_hex32(&probes.descriptor_blake3)? != descriptor_digest {
+        return Err(RuntimeError::ProbeSet);
+    }
+    let mut hosts = BTreeSet::new();
+    let mut covered = BTreeSet::new();
+    for probe in &probes.probes {
+        if !probe.success
+            || probe.endpoint_index >= config.advertised_endpoints.len()
+            || probe.transport != config.advertised_endpoints[probe.endpoint_index].transport
+            || decode_hex32(&probe.transcript_blake3)? == [0; 32]
+        {
+            return Err(RuntimeError::ProbeSet);
+        }
+        hosts.insert(probe.source_host_id.as_str());
+        covered.insert(probe.endpoint_index);
+    }
+    if hosts.len() < 2 || covered.len() != config.advertised_endpoints.len() {
+        return Err(RuntimeError::ProbeSet);
+    }
+    Ok(())
+}
+
+fn valid_dns(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 253
+        && value.is_ascii()
+        && !value.starts_with('.')
+        && !value.ends_with('.')
+}
+
+fn ipv4_is_global([a, b, c, d]: [u8; 4]) -> bool {
+    !(a == 0
+        || a == 10
+        || a == 127
+        || (a == 100 && (64..=127).contains(&b))
+        || (a == 169 && b == 254)
+        || (a == 172 && (16..=31).contains(&b))
+        || (a == 192 && b == 168)
+        || (a == 192 && b == 0 && c == 0)
+        || (a == 198 && (b == 18 || b == 19))
+        || a >= 224
+        || [a, b, c, d] == [255, 255, 255, 255])
+}
+
+fn ipv6_is_global(octets: [u8; 16]) -> bool {
+    let unspecified = octets.iter().all(|byte| *byte == 0);
+    let loopback = octets[..15].iter().all(|byte| *byte == 0) && octets[15] == 1;
+    let multicast = octets[0] == 0xff;
+    let unique_local = octets[0] & 0xfe == 0xfc;
+    let link_local = octets[0] == 0xfe && octets[1] & 0xc0 == 0x80;
+    let global_unicast = octets[0] & 0xe0 == 0x20;
+    global_unicast && !unspecified && !loopback && !multicast && !unique_local && !link_local
+}
+
+fn read_config(path: &Path) -> Result<RelayConfigV1, RuntimeError> {
+    serde_json::from_slice(&read_bounded(path)?).map_err(|_| RuntimeError::Config)
+}
+
+fn read_signing_key(path: &Path) -> Result<SigningKey, RuntimeError> {
+    let bytes = read_bounded(path)?;
+    let secret: [u8; 32] = bytes.try_into().map_err(|_| RuntimeError::Identity)?;
+    Ok(SigningKey::from_bytes(&secret))
+}
+
+fn read_bounded(path: &Path) -> Result<Vec<u8>, RuntimeError> {
+    let metadata = std::fs::metadata(path).map_err(|_| RuntimeError::Io)?;
+    if !metadata.is_file() || metadata.len() == 0 || metadata.len() > MAX_CONFIG_BYTES {
+        return Err(RuntimeError::Limit);
+    }
+    std::fs::read(path).map_err(|_| RuntimeError::Io)
+}
+
+fn write_create_new(path: &Path, bytes: &[u8]) -> Result<(), RuntimeError> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(path).map_err(|_| RuntimeError::OutputExists)?;
+    file.write_all(bytes).map_err(|_| RuntimeError::Io)?;
+    file.sync_all().map_err(|_| RuntimeError::Io)?;
+    sync_parent(path)?;
+    Ok(())
+}
+
+fn sync_parent(path: &Path) -> Result<(), RuntimeError> {
+    let parent = path.parent().ok_or(RuntimeError::Io)?;
+    #[cfg(unix)]
+    {
+        File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|_| RuntimeError::Io)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = parent;
+        Ok(())
+    }
+}
+
+fn decode_hex32(value: &str) -> Result<[u8; 32], RuntimeError> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+    {
+        return Err(RuntimeError::ProbeSet);
+    }
+    let mut output = [0; 32];
+    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+        let text = std::str::from_utf8(pair).map_err(|_| RuntimeError::ProbeSet)?;
+        output[index] = u8::from_str_radix(text, 16).map_err(|_| RuntimeError::ProbeSet)?;
+    }
+    Ok(output)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RuntimeError {
+    Config,
+    Identity,
+    Descriptor,
+    ProbeSet,
+    State,
+    MissingState,
+    NotActivated,
+    OutputExists,
+    Limit,
+    Io,
+    DataPlane,
+}
+
+impl std::fmt::Display for RuntimeError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "OBP_RELAY_RUNTIME: {self:?}")
+    }
+}
+
+impl std::error::Error for RuntimeError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct PendingAccept {
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Future for PendingAccept {
+        type Output = Result<(), RelayDataPlaneError>;
+
+        fn poll(
+            self: Pin<&mut Self>,
+            _context: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Self::Output> {
+            std::task::Poll::Pending
+        }
+    }
+
+    impl Drop for PendingAccept {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn peer_failures_are_isolated_from_shared_listeners() {
+        let peer_errors = [
+            RelayDataPlaneError::InvalidEnvelope,
+            RelayDataPlaneError::InvalidAssociation,
+            RelayDataPlaneError::DuplicateAssociation,
+            RelayDataPlaneError::UnknownAssociation,
+            RelayDataPlaneError::ConnectionMismatch,
+            RelayDataPlaneError::DuplicateFragment,
+            RelayDataPlaneError::ConflictingFragment,
+            RelayDataPlaneError::TooManyFragments,
+            RelayDataPlaneError::Truncated,
+            RelayDataPlaneError::Oversize,
+            RelayDataPlaneError::Capacity,
+            RelayDataPlaneError::Expired,
+            RelayDataPlaneError::Closed,
+            RelayDataPlaneError::IdentityMismatch,
+            RelayDataPlaneError::NoDatagramSupport,
+        ];
+
+        for error in peer_errors {
+            report_completed_connection(Some(Ok(Err(error))));
+        }
+    }
+
+    #[tokio::test]
+    async fn completed_peer_failure_does_not_escape_connection_drain() {
+        let mut connections = tokio::task::JoinSet::new();
+        connections.spawn(async { Err(RelayDataPlaneError::Truncated) });
+        report_completed_connection(connections.join_next().await);
+        assert!(connections.is_empty());
+    }
+
+    #[tokio::test]
+    async fn completed_connection_does_not_cancel_pending_accept() {
+        let dropped = Arc::new(AtomicBool::new(false));
+        let mut accepting = Box::pin(PendingAccept {
+            dropped: dropped.clone(),
+        });
+        let mut connections = tokio::task::JoinSet::new();
+        connections.spawn(async { Err(RelayDataPlaneError::Truncated) });
+
+        let event = next_listener_event(accepting.as_mut(), &mut connections).await;
+        assert!(matches!(
+            event,
+            ListenerEvent::Completed(Some(Ok(Err(RelayDataPlaneError::Truncated))))
+        ));
+        assert!(!dropped.load(Ordering::SeqCst));
+
+        drop(accepting);
+        assert!(dropped.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn only_closed_acceptor_is_a_fatal_listener_error() {
+        assert!(accept_error_is_listener_fatal(&RelayDataPlaneError::Closed));
+        assert!(!accept_error_is_listener_fatal(
+            &RelayDataPlaneError::Expired
+        ));
+        assert!(!accept_error_is_listener_fatal(
+            &RelayDataPlaneError::IdentityMismatch
+        ));
+    }
+
+    #[test]
+    fn public_operations_config_normalizes_to_the_closed_runtime_shape() {
+        let directory = tempfile::tempdir().unwrap();
+        let config_path = directory.path().join("relay-public.json");
+        std::fs::write(
+            &config_path,
+            br#"{"format":"onebrain/relay-config/1","data_root":"/var/lib/onebrain/relay-p5","identity_key_locator":"/var/lib/onebrain/relay-p5/identity.key","udp_bind":"0.0.0.0:41000","tcp443_bind":"0.0.0.0:443","advertised_endpoints":["udp://103.77.214.30:41000","tls://103.77.214.30:443"],"max_reservations":256,"max_reservations_per_target":3,"rendezvous_max_records":256,"log_destination":"journald"}"#,
+        )
+        .unwrap();
+        let config = read_config(&config_path).unwrap();
+        assert_eq!(config.format, 1);
+        assert_eq!(
+            config.signer_locator,
+            Path::new("/var/lib/onebrain/relay-p5/identity.key")
+        );
+        assert_eq!(config.udp_bind, Some("0.0.0.0:41000".parse().unwrap()));
+        assert_eq!(config.tcp443_bind, Some("0.0.0.0:443".parse().unwrap()));
+        assert_eq!(config.max_rendezvous_records, 256);
+        assert_eq!(config.descriptor_sequence, 1);
+        assert_eq!(config.descriptor_expires_at, 0);
+        assert_eq!(config.advertised_endpoints[0].transport, "quic-udp");
+        assert_eq!(config.advertised_endpoints[1].transport, "tls-tcp-443");
+    }
+
+    #[test]
+    fn descriptor_default_and_explicit_validity_are_bounded_to_thirty_minutes() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = RelayConfigV1 {
+            format: 1,
+            data_root: directory.path().join("data"),
+            signer_locator: directory.path().join("relay.key"),
+            udp_bind: Some("0.0.0.0:41000".parse().unwrap()),
+            tcp443_bind: None,
+            advertised_endpoints: vec![RelayConfiguredEndpointV1 {
+                transport: "quic-udp".into(),
+                host: "1.1.1.1".into(),
+                port: 41000,
+            }],
+            capacity_policy_digest: [7; 32],
+            max_reservations: 8,
+            max_reservations_per_target: 3,
+            max_rendezvous_records: 64,
+            descriptor_sequence: 1,
+            descriptor_issued_at: 0,
+            descriptor_expires_at: 0,
+            log_destination: directory.path().join("relay.log"),
+        };
+        let descriptor =
+            descriptor_from_config(&config, &SigningKey::from_bytes(&[3; 32])).unwrap();
+        assert_eq!(
+            descriptor.expires_at - descriptor.issued_at,
+            MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS
+        );
+
+        config.descriptor_issued_at = 1_000;
+        config.descriptor_expires_at =
+            config.descriptor_issued_at + MAX_RELAY_DESCRIPTOR_VALIDITY_SECONDS;
+        assert_eq!(validate_config_shape(&config), Ok(()));
+
+        config.descriptor_expires_at += 1;
+        assert_eq!(validate_config_shape(&config), Err(RuntimeError::Config));
+    }
+
+    #[test]
+    fn lifecycle_is_create_new_and_activation_requires_two_remote_hosts() {
+        let directory = tempfile::tempdir().unwrap();
+        let key_path = directory.path().join("relay.key");
+        generate_identity(&key_path).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&key_path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        assert_eq!(
+            generate_identity(&key_path).unwrap_err(),
+            RuntimeError::OutputExists
+        );
+        let data_root = directory.path().join("data");
+        let config_path = directory.path().join("relay.json");
+        let config = RelayConfigV1 {
+            format: 1,
+            data_root: data_root.clone(),
+            signer_locator: key_path,
+            udp_bind: Some("0.0.0.0:41000".parse().unwrap()),
+            tcp443_bind: None,
+            advertised_endpoints: vec![RelayConfiguredEndpointV1 {
+                transport: "quic-udp".into(),
+                host: "1.1.1.1".into(),
+                port: 41000,
+            }],
+            capacity_policy_digest: [7; 32],
+            max_reservations: 8,
+            max_reservations_per_target: 3,
+            max_rendezvous_records: 64,
+            descriptor_sequence: 1,
+            descriptor_issued_at: 100,
+            descriptor_expires_at: 700,
+            log_destination: directory.path().join("relay.log"),
+        };
+        std::fs::write(&config_path, serde_json::to_vec(&config).unwrap()).unwrap();
+        initialize_state(&config_path).unwrap();
+        assert_eq!(
+            initialize_state(&config_path).unwrap_err(),
+            RuntimeError::State
+        );
+        validate_serve(&config_path, true).unwrap();
+        assert_eq!(
+            validate_serve(&config_path, false).unwrap_err(),
+            RuntimeError::NotActivated
+        );
+        let descriptor_path = directory.path().join("descriptor.cbor");
+        let descriptor_digest =
+            export_candidate_descriptor(&config_path, &descriptor_path).unwrap();
+        let one_host = RelayActivationProbeSetV1 {
+            format: 1,
+            descriptor_blake3: encode_hex(&descriptor_digest),
+            probes: vec![RelayActivationProbeV1 {
+                source_host_id: "runner-b".into(),
+                endpoint_index: 0,
+                transport: "quic-udp".into(),
+                success: true,
+                transcript_blake3: encode_hex(&[8; 32]),
+            }],
+        };
+        let bad_probe_path = directory.path().join("bad-probes.json");
+        std::fs::write(&bad_probe_path, serde_json::to_vec(&one_host).unwrap()).unwrap();
+        assert_eq!(
+            activate_descriptor(&config_path, &bad_probe_path).unwrap_err(),
+            RuntimeError::ProbeSet
+        );
+        let mut valid = one_host;
+        valid.probes.push(RelayActivationProbeV1 {
+            source_host_id: "runner-c".into(),
+            endpoint_index: 0,
+            transport: "quic-udp".into(),
+            success: true,
+            transcript_blake3: encode_hex(&[9; 32]),
+        });
+        let valid_probe_path = directory.path().join("valid-probes.json");
+        std::fs::write(&valid_probe_path, serde_json::to_vec(&valid).unwrap()).unwrap();
+        activate_descriptor(&config_path, &valid_probe_path).unwrap();
+        validate_serve(&config_path, false).unwrap();
+    }
+
+    fn encode_hex(bytes: &[u8]) -> String {
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+}

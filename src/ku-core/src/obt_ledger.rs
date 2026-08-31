@@ -947,32 +947,37 @@ pub fn create_receive_block(
 // Tests
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
+/// Inputs for constructing a signed transfer block.
+pub struct SignedBlockFields {
+    pub previous: [u8; 32],
+    pub account: [u8; 32],
+    pub sequence: u64,
+    pub balance: u64,
+    pub operation: TransferOp,
+    pub clock: VectorClock,
+    pub timestamp: u64,
+}
+
 /// Creates a signed TransferBlock using an Ed25519 signing key.
 ///
 /// The block is first constructed with a stub signature to compute the
 /// signing payload, then signed with the provided key, and finally the
 /// block_hash is computed over the real signature.
 pub fn create_signed_block(
-    previous: [u8; 32],
-    account: [u8; 32],
-    sequence: u64,
-    balance: u64,
-    operation: TransferOp,
-    clock: VectorClock,
-    timestamp: u64,
+    fields: SignedBlockFields,
     signing_key: &ed25519_dalek::SigningKey,
 ) -> TransferBlock {
     use ed25519_dalek::Signer;
 
     // Create block without signature first to compute signing payload
     let mut block = TransferBlock {
-        previous,
-        account,
-        sequence,
-        balance,
-        operation,
-        clock,
-        timestamp,
+        previous: fields.previous,
+        account: fields.account,
+        sequence: fields.sequence,
+        balance: fields.balance,
+        operation: fields.operation,
+        clock: fields.clock,
+        timestamp: fields.timestamp,
         signature: vec![0u8; 64],
         block_hash: [0u8; 32],
     };
@@ -996,13 +1001,15 @@ pub fn create_signed_open_block(
     let mut clock = VectorClock::new();
     clock.tick(node_id);
     create_signed_block(
-        GENESIS_BLOCK_PREVIOUS,
-        pubkey,
-        0,
-        0,
-        TransferOp::Open,
-        clock,
-        timestamp,
+        SignedBlockFields {
+            previous: GENESIS_BLOCK_PREVIOUS,
+            account: pubkey,
+            sequence: 0,
+            balance: 0,
+            operation: TransferOp::Open,
+            clock,
+            timestamp,
+        },
         signing_key,
     )
 }

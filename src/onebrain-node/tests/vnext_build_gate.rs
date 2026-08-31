@@ -5,9 +5,11 @@ async fn active_obp_rp_fails_before_runtime_side_effects_when_build_support_is_a
 
     let directory = tempfile::tempdir().unwrap();
     let data_dir = directory.path().join("must-not-be-created");
-    let mut config = NodeConfig::default();
-    config.data_dir = data_dir.clone();
-    config.concept_registry_mode = ConceptRegistryMode::Disabled;
+    let mut config = NodeConfig {
+        data_dir: data_dir.clone(),
+        concept_registry_mode: ConceptRegistryMode::Disabled,
+        ..NodeConfig::default()
+    };
     config.vnext.enabled.object_event_v1 = true;
     config.vnext.enabled.obp_rp = true;
 

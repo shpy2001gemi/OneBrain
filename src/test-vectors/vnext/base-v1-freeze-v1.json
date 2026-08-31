@@ -1,0 +1,208 @@
+{
+  "format": "onebrain/base-v1-freeze/1",
+  "profile_id": "BASE_V1_FREEZE_AND_EVIDENCE_PROFILE_V1",
+  "candidate": {
+    "version": "1.0.0",
+    "qualification_state_before_task_28": "Unqualified",
+    "only_eligible_commit": "task-27-commit",
+    "task_25_is_ancestor_checkpoint_only": true,
+    "tag": "base-v1.0.0",
+    "tag_must_be_absent_before_verified_atomic_publication": true
+  },
+  "targets": [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin"
+  ],
+  "base_gate_v1": [
+    "contract-validators",
+    "canonical-and-negative-vectors",
+    "three-os-build-matrix",
+    "blob-and-derived-index-integrity",
+    "archive-recovery-and-kill-windows",
+    "authoritative-transaction-boundaries",
+    "cross-language-and-n-minus-one-conformance",
+    "fresh-production-registry",
+    "fresh-multi-host-p5",
+    "fresh-exact-candidate-72h-soak",
+    "dependency-security-and-sbom",
+    "product-default-and-release-documents"
+  ],
+  "manifest": {
+    "format": "onebrain/base-v1-evidence-manifest/1",
+    "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+    "digest_algorithm": "BLAKE3",
+    "qualification_boolean_input_trusted": false,
+    "qualification_derived_only_after_all_gates": true,
+    "outer_signature_excluded_from_manifest_bytes": true,
+    "required_top_level_fields": [
+      "format",
+      "qualification_tier",
+      "freeze_profile_blake3",
+      "release_request_digest",
+      "qualification_session_id",
+      "candidate",
+      "compatibility",
+      "feature_matrix",
+      "target_receipts",
+      "gate_evidence",
+      "child_signatures",
+      "evidence_signatures",
+      "raw_evidence",
+      "documents",
+      "limitations",
+      "qualified"
+    ],
+    "required_candidate_fields": [
+      "commit",
+      "tree",
+      "object_format",
+      "semantic_digest"
+    ],
+    "required_compatibility_fields": [
+      "per_target_tuples",
+      "per_target_artifact_digests",
+      "schema_digest",
+      "domain_registry_digest",
+      "resource_registry_digest",
+      "storage_schema_version",
+      "archive_profile_version",
+      "migration_profile_version",
+      "registry_profile_version",
+      "registry_profile_digest",
+      "wire_session_version",
+      "product_api_version",
+      "c_abi_version",
+      "feature_set_digest"
+    ],
+    "required_gate_evidence": [
+      "contract-validators",
+      "canonical-and-negative-vectors",
+      "three-os-build-matrix",
+      "blob-and-derived-index-integrity",
+      "archive-recovery-and-kill-windows",
+      "authoritative-transaction-boundaries",
+      "cross-language-and-n-minus-one-conformance",
+      "fresh-production-registry",
+      "fresh-multi-host-p5",
+      "fresh-exact-candidate-72h-soak",
+      "dependency-security-and-sbom",
+      "product-default-and-release-documents"
+    ],
+    "fresh_evidence_required": ["fresh-production-registry", "fresh-multi-host-p5", "fresh-exact-candidate-72h-soak"],
+    "carry_forward_forbidden": ["fresh-production-registry", "fresh-exact-candidate-72h-soak"],
+    "duplicate_target_or_evidence_policy": "reject",
+    "unknown_field_policy": "reject",
+    "mixed_candidate_session_semantic_artifact_or_root_policy": "reject"
+  },
+  "machine_receipts": {
+    "gate_format": "onebrain/base-v1-gate-receipt/1",
+    "target_format": "onebrain/base-v1-target-receipt/1",
+    "outer_result_claim_allowed": false,
+    "pass_derivation": "closed-frozen-check-contract-and-substantive-output-oracle",
+    "command_and_output_hashes_required": true,
+    "runner_provenance_required": true,
+    "substantive_output_oracle_required": true,
+    "target_binary_sbom_provenance_relation_required": true,
+    "spdx_package_verification_code": "sha1-of-concatenated-sorted-analyzed-file-sha1-no-excludes",
+    "slsa_builder_id": "absolute-TypeURI-distinct-from-runner_identity"
+  },
+  "gate_check_contracts": {
+    "contract-validators": [{"name": "contract-validators", "command": ["python", "scripts/ci/validate_vnext_contracts.py"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["validator-exit", "contract-counts"]}],
+    "canonical-and-negative-vectors": [{"name": "canonical-and-negative-vectors", "command": ["cargo", "test", "-p", "onebrain-base-contract", "--test", "cross_consumer"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["canonical-vectors", "negative-vectors"]}],
+    "three-os-build-matrix": [{"name": "three-os-build-matrix", "command": ["python", "scripts/ci/validate_vnext_contracts.py"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["linux-receipt", "windows-receipt", "macos-receipt"]}],
+    "blob-and-derived-index-integrity": [{"name": "blob-and-derived-index-integrity", "command": ["cargo", "test", "-p", "onebrain-node", "blob"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["blob-integrity", "index-rebuild"]}],
+    "archive-recovery-and-kill-windows": [{"name": "archive-recovery-and-kill-windows", "command": ["cargo", "test", "-p", "onebrain-node", "archive"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["archive-restore", "recovery-window", "kill-window"]}],
+    "authoritative-transaction-boundaries": [{"name": "authoritative-transaction-boundaries", "command": ["cargo", "test", "-p", "onebrain-node", "transaction"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["transaction-boundary", "authority-boundary"]}],
+    "cross-language-and-n-minus-one-conformance": [{"name": "cross-language-and-n-minus-one-conformance", "command": ["cargo", "test", "-p", "onebrain-base-contract", "--test", "negotiation"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["cross-language", "n-minus-one"]}],
+    "fresh-production-registry": [{"name": "fresh-production-registry", "command": ["python", "scripts/concept_registry/production_qualification.py"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-registry-production-runner", "required_assertion_ids": ["fresh-registry", "aggregate-root", "signer-policy"]}],
+    "fresh-multi-host-p5": [{"name": "fresh-multi-host-p5", "command": ["python", "scripts/runner/onebrain-p5-multi-host.py"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-p5-production-orchestrator", "required_assertion_ids": ["three-physical-hosts", "multi-host-root", "signer-policy"]}],
+    "fresh-exact-candidate-72h-soak": [{"name": "fresh-exact-candidate-72h-soak", "command": ["bash", "scripts/runner/onebrain-soak-runner.sh"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-soak-production-aggregator", "required_assertion_ids": ["uninterrupted-72h", "exact-candidate", "soak-root"]}],
+    "dependency-security-and-sbom": [{"name": "dependency-security-and-sbom", "command": ["cargo", "clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["cargo-audit", "cargo-deny", "npm-audit", "sbom"]}],
+    "product-default-and-release-documents": [{"name": "product-default-and-release-documents", "command": ["cargo", "test", "-p", "onebrain-node", "task25_integrates_archive_restart_registry_tuple_and_default_off_lanes"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["base-default", "legacy-default-off", "network-default-off", "release-documents"]}]
+  },
+  "target_check_contracts": {
+    "x86_64-unknown-linux-gnu": [{"name": "target-job", "command": ["cargo", "build", "--locked", "--release", "--target", "x86_64-unknown-linux-gnu"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-linux-release-runner", "builder_id": "https://onebrain.dev/builders/base-v1/linux-release-runner/v1", "required_assertion_ids": ["binary-built", "tests-passed", "sbom-generated", "provenance-generated"]}],
+    "x86_64-pc-windows-msvc": [{"name": "target-job", "command": ["cargo", "build", "--locked", "--release", "--target", "x86_64-pc-windows-msvc"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-windows-release-runner", "builder_id": "https://onebrain.dev/builders/base-v1/windows-release-runner/v1", "required_assertion_ids": ["binary-built", "tests-passed", "sbom-generated", "provenance-generated"]}],
+    "aarch64-apple-darwin": [{"name": "target-job", "command": ["cargo", "build", "--locked", "--release", "--target", "aarch64-apple-darwin"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-macos-release-runner", "builder_id": "https://onebrain.dev/builders/base-v1/macos-release-runner/v1", "required_assertion_ids": ["binary-built", "tests-passed", "sbom-generated", "provenance-generated"]}]
+  },
+  "signer_roles": {
+    "release_request": "qualification-approver",
+    "manifest_and_tag": "base-release",
+    "child_evidence": "role-and-policy-bound",
+    "wrong_but_valid_or_unlisted_key": "reject"
+  },
+  "child_evidence_policies": {
+    "fresh-production-registry": {
+      "role": "registry-production-aggregator",
+      "public_key_hex": "bef8e2b9d8ae7a38b3753a7d756a39c20948f128a66ca71ed04799e7a5d5177c",
+      "fingerprint_context": "onebrain:concept-registry:signer-fingerprint:1",
+      "fingerprint_hex": "dcc09574ac53ec8b95585cad5e2e88cbdfbe44841ad46b3709f73c989b4316d4",
+      "trust_policy_digest": "e0a2551a39823c3f2cb088defe60484c8a33ffe0f3aab9df9493b52557ab55fe"
+    },
+    "fresh-multi-host-p5": {
+      "role": "p5-orchestrator",
+      "public_key_hex": "cce7da80b255ed3a67a8414f79e700bb0fdc4944abe3793d9c23e8ca1699fc27",
+      "fingerprint_context": "onebrain:p5:evidence-signer-fingerprint:1",
+      "fingerprint_hex": "6d018ba3d7224bc5a415a54c226f81db1139d950aedf0ef5dfb9b9da441b01ca",
+      "trust_policy_digest": "deac187c74148dbeb9db4c29590b862121cff44506be2efc79f30d688868987b"
+    },
+    "fresh-exact-candidate-72h-soak": {
+      "role": "soak-aggregator",
+      "public_key_hex": "888cf37977b179b78aff9045a0ce599cd090172d38ec04e4d462cf70eee454b3",
+      "fingerprint_context": "onebrain:base-v1:soak-evidence-signer-fingerprint:1",
+      "fingerprint_hex": "8ab8e70864bd2258042dc4e5d18d271680df2566092317363b1064b6f1fa2ae9",
+      "trust_policy_digest": "f2ef9e95575c47a25a1809ba580b70eac1413bc5d147f9f021987c393ba778d6"
+    }
+  },
+  "base_evidence_approver_policy": {
+    "status": "owner-approved",
+    "trust_policy_context": "onebrain:base-v1:evidence-approver-policy:1",
+    "trust_policy_digest": "01f5989e96ca840b2ddc53781bd57dad18bf52fb332046543bfb1dbd42fb0df8",
+    "policy": {
+      "algorithm": "Ed25519",
+      "allowed_usages": [
+        "gate-receipt-approval",
+        "target-receipt-approval"
+      ],
+      "format": "onebrain/base-v1-evidence-approver-policy/1",
+      "role": "base-evidence-approver",
+      "signature_domain": "onebrain:base-v1:evidence-receipt-approval:1",
+      "signers": [
+        {
+          "created_utc": "2026-08-11T07:40:40Z",
+          "expires_utc": "2028-08-10T07:40:40Z",
+          "fingerprint_context": "onebrain:base-v1:evidence-approver-fingerprint:1",
+          "fingerprint_hex": "a5f274124c48fdc9c9c50a504733ac731e67a7dfdbcfe59d83bf5ed0c8944009",
+          "public_key_hex": "c40d8892b480f80b78cb1acddaa5a85c571ac5adfac71ff1ccebd6c3f6abce42"
+        }
+      ],
+      "valid_unlisted_signature": "reject"
+    }
+  },
+  "upgrade_policy": {
+    "1.0.x": "correctness-or-security-fix-without-semantic-break",
+    "1.x.0": "additive-optional-capability-with-old-client-behavior-preserved",
+    "2.0.0": "new-design-migration-rollback-vectors-and-product-requalification"
+  },
+  "legacy_policy": {
+    "legacy_storage": "read-only-migration-evidence-only",
+    "legacy_runtime": "explicit-default-off",
+    "silent_fallback": "forbidden"
+  },
+  "base_v2_reopen_triggers": [
+    "canonical-schema-break",
+    "storage-or-archive-break",
+    "wire-or-api-or-abi-major-break",
+    "authority-semantic-break",
+    "incompatible-product-finding"
+  ],
+  "release_publication": {
+    "request_validity_hours": 168,
+    "manifest_signature": "detached-create-new-content-addressed-envelope",
+    "tag_object": "unreferenced-until-fully-verified",
+    "tag_ref_publication": "single-compare-and-swap-from-absent",
+    "existing_foreign_ref": "hard-fail",
+    "exact_retry": "idempotent-already-published"
+  }
+}

@@ -10,6 +10,10 @@ use ku_core::foundation::{NodeId, SelectorCid};
 use onebrain_protocol::ReconcileManifestKind;
 use redb::{Database, ReadableTable, ReadableTableMetadata, TableDefinition};
 
+use crate::archive::{PortableArchiveRow, PortableArchiveRows};
+use crate::error::NodeError;
+use onebrain_archive::{ArchiveEntryKind, ArchiveOwner};
+
 const OBSERVATIONS: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_record_source_observations_v1");
 const TYPED_RECORDS: TableDefinition<&[u8], &[u8]> =
@@ -378,6 +382,134 @@ impl RedbRecordProvenance {
         peers.dedup();
         Ok(peers)
     }
+}
+
+impl PortableArchiveRows for RedbRecordProvenance {
+    fn archive_owner(&self) -> ArchiveOwner {
+        ArchiveOwner::PROVENANCE
+    }
+
+    fn archive_entry_kind(&self) -> ArchiveEntryKind {
+        ArchiveEntryKind::ProvenanceRecord
+    }
+
+    fn archive_rows(&self) -> Result<Vec<PortableArchiveRow>, NodeError> {
+        let read = self
+            .database
+            .begin_read()
+            .map_err(provenance_archive_error)?;
+        let mut rows = Vec::new();
+        for (table_id, table) in [
+            (
+                1u8,
+                read.open_table(OBSERVATIONS)
+                    .map_err(provenance_archive_error)?,
+            ),
+            (
+                2u8,
+                read.open_table(TYPED_RECORDS)
+                    .map_err(provenance_archive_error)?,
+            ),
+            (
+                3u8,
+                read.open_table(TYPED_RECORD_KEYS)
+                    .map_err(provenance_archive_error)?,
+            ),
+            (
+                4u8,
+                read.open_table(TYPED_RECORD_HEADS)
+                    .map_err(provenance_archive_error)?,
+            ),
+            (
+                5u8,
+                read.open_table(TYPED_RECORD_PEERS)
+                    .map_err(provenance_archive_error)?,
+            ),
+        ] {
+            for row in table.iter().map_err(provenance_archive_error)? {
+                let (key, value) = row.map_err(provenance_archive_error)?;
+                let row = PortableArchiveRow {
+                    table: table_id,
+                    key: key.value().to_vec(),
+                    value: value.value().to_vec(),
+                };
+                validate_provenance_archive_row(&row)?;
+                rows.push(row);
+            }
+        }
+        rows.sort_by(|left, right| (left.table, &left.key).cmp(&(right.table, &right.key)));
+        Ok(rows)
+    }
+
+    fn restore_row(&self, row: &PortableArchiveRow) -> Result<(), NodeError> {
+        validate_provenance_archive_row(row)?;
+        let write = self
+            .database
+            .begin_write()
+            .map_err(provenance_archive_error)?;
+        match row.table {
+            1 => restore_provenance_value(&write, OBSERVATIONS, row)?,
+            2 => restore_provenance_value(&write, TYPED_RECORDS, row)?,
+            3 => restore_provenance_value(&write, TYPED_RECORD_KEYS, row)?,
+            4 => restore_provenance_value(&write, TYPED_RECORD_HEADS, row)?,
+            5 => restore_provenance_value(&write, TYPED_RECORD_PEERS, row)?,
+            _ => {
+                return Err(NodeError::ArchiveCapability(
+                    "provenance archive table is unknown".into(),
+                ))
+            }
+        }
+        write.commit().map_err(provenance_archive_error)
+    }
+}
+
+fn validate_provenance_archive_row(row: &PortableArchiveRow) -> Result<(), NodeError> {
+    let valid = match row.table {
+        1 => row.key.len() == KEY_BYTES && row.value.is_empty(),
+        2 => row.key.len() == TYPED_RECORD_KEY_BYTES && row.value.len() > 32,
+        3 => row.key.len() == TYPED_LOOKUP_KEY_BYTES && row.value.len() == 8,
+        4 => row.key.len() == TYPED_PREFIX_BYTES && row.value.len() == 8,
+        5 => row.key.len() == TYPED_PEER_KEY_BYTES && row.value.is_empty(),
+        _ => false,
+    };
+    if !valid {
+        return Err(NodeError::ArchiveCapability(
+            "provenance archive row is invalid".into(),
+        ));
+    }
+    if matches!(row.table, 3 | 4) {
+        decode_sequence(&row.value).map_err(NodeError::Storage)?;
+    }
+    Ok(())
+}
+
+fn restore_provenance_value(
+    write: &redb::WriteTransaction,
+    definition: TableDefinition<&[u8], &[u8]>,
+    row: &PortableArchiveRow,
+) -> Result<(), NodeError> {
+    let mut table = write
+        .open_table(definition)
+        .map_err(provenance_archive_error)?;
+    if let Some(existing) = table
+        .get(row.key.as_slice())
+        .map_err(provenance_archive_error)?
+    {
+        if existing.value() == row.value.as_slice() {
+            return Ok(());
+        }
+        return Err(NodeError::ArchiveCapability(
+            "provenance archive restore conflict".into(),
+        ));
+    }
+    table
+        .insert(row.key.as_slice(), row.value.as_slice())
+        .map_err(provenance_archive_error)?;
+    Ok(())
+}
+
+fn provenance_archive_error(error: impl std::fmt::Display) -> NodeError {
+    NodeError::Storage(error.to_string())
 }
 
 fn typed_prefix(

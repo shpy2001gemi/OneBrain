@@ -81,7 +81,7 @@ impl JobPheromone {
     pub fn tick(&mut self, now: u64) {
         let elapsed_hours = (now.saturating_sub(self.last_updated)) as f32 / 3600.0;
         self.activity_level *= (1.0 - EVAPORATION_RATE).powf(elapsed_hours);
-        self.waiting_seconds = now.saturating_sub(self.last_updated) + self.waiting_seconds;
+        self.waiting_seconds += now.saturating_sub(self.last_updated);
         self.last_updated = now;
     }
 
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn test_activity_dampens_attractiveness() {
-        let mut quiet = make_pheromone(3600, 3, 5);
+        let quiet = make_pheromone(3600, 3, 5);
         let mut busy = make_pheromone(3600, 3, 5);
         busy.activity_level = 5.0;
 

@@ -348,10 +348,7 @@ mod tests {
         let decoded = DreamReportMessage::from_cbor(&bytes).unwrap();
         assert_eq!(decoded.peer_id, original.peer_id);
         assert_eq!(decoded.bonds_reinforced, 500);
-        assert_eq!(
-            (decoded.total_weight_added - 12.75).abs() < f64::EPSILON,
-            true
-        );
+        assert!((decoded.total_weight_added - 12.75).abs() < f64::EPSILON);
         assert_eq!(decoded.associations_created, 30);
         assert_eq!(decoded.bonds_pruned, 120);
     }

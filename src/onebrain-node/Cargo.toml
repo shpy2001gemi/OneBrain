@@ -25,15 +25,55 @@ required-features = ["vnext-canary-harness"]
 name = "p5_operations_preflight"
 required-features = ["vnext-canary-harness"]
 
+[[example]]
+name = "p5_multi_host_agent"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "p5_multi_host_agent_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "p5_agent_ctl_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "p5_receipt_signer_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "p5_identity_signer_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "p5_admin_ctl_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "p5_recovery_ops_v2"
+required-features = ["vnext-production-canary-harness"]
+
+[[example]]
+name = "concept_registry_production_qualification"
+
 [features]
-default = []
+default = ["base-v1"]
+base-v1 = []
+legacy-read-compat = []
 vnext-network-runtime = [
     "ku-core/persist",
     "ku-net/persist",
     "ku-net/quic",
-    "dep:ed25519-dalek",
     "dep:rand",
     "dep:redb",
+]
+vnext-bootstrap-https = ["dep:reqwest", "dep:rustls"]
+vnext-outbound-first = [
+    "vnext-network-runtime",
+    "vnext-bootstrap-https",
+    "dep:futures",
+    "ku-net/outbound-first",
+    "dep:libc",
 ]
 vnext-crash-harness = [
     "vnext-network-runtime",
@@ -59,6 +99,7 @@ vnext-soak-harness = [
     "ku-net/dr-m5-chaos-harness",
 ]
 vnext-canary-harness = ["vnext-network-runtime"]
+vnext-production-canary-harness = ["vnext-canary-harness", "vnext-outbound-first"]
 
 [dependencies]
 ku-core = { path = "../ku-core" }
@@ -68,18 +109,30 @@ ku-ai = { path = "../ku-ai" }
 ku-encoder = { path = "../ku-encoder" }
 ku-mediator = { path = "../ku-mediator" }
 onebrain-protocol = { path = "../onebrain-protocol" }
+onebrain-archive = { path = "../onebrain-archive" }
+onebrain-base-contract = { path = "../onebrain-base-contract" }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros", "io-std", "io-util"] }
 serde = { version = "1", features = ["derive"] }
+ciborium = "0.2"
 serde_json = "1"
 thiserror = "1"
 blake3 = "1"
 tracing = "0.1"
-ed25519-dalek = { version = "2", features = ["rand_core"], optional = true }
+getrandom = "0.3"
+fs2 = "0.4"
+futures = { version = "0.3", optional = true }
+zeroize = "1"
+unicode-segmentation = "1.13"
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand = { version = "0.8", optional = true }
 redb = { version = "2", optional = true }
 sha2 = { version = "0.10", optional = true }
+reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-webpki-roots-no-provider"], optional = true }
+rustls = { version = "0.23.41", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"], optional = true }
+libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
 ed25519-dalek = "2"
 tempfile = "3"
 ku-net = { path = "../ku-net", features = ["persist"] }
+onebrain-relay = { path = "../onebrain-relay" }

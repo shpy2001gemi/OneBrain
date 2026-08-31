@@ -3,7 +3,7 @@
 > **Work package:** `DR-P1.1`
 > **Status:** Frozen
 > **Profile ID:** `VNEXT_PRODUCT_INTEGRATION_PROFILE_V1`
-> **Version:** 1
+> **Version:** 1.1
 > **Freeze date:** 2026-07-26
 > **Machine contract:** [`product-integration-profile-v1.json`](../../../src/test-vectors/vnext/product-integration-profile-v1.json)
 > **Implementation:** the twelve routes marked `reserved` at freeze time are
@@ -29,6 +29,12 @@ Every endpoint requires the local Bearer-auth boundary. Need management and
 Public Use prepare/confirm endpoints are additionally classified
 `authenticated_local_private`; their private identifiers are not eligible for
 WebSocket broadcast, telemetry, public inventory, or peer payloads.
+
+Profile minor `1` additively reserves the product projection of Base
+negotiation at `/api/vnext/base/negotiate`. It does not change any earlier
+endpoint, mint management authority, or activate a runtime. The product route
+projects only the bounded, product-neutral machine interface frozen by the
+[Base v1 Runtime Interface Profile](BASE_V1_RUNTIME_INTERFACE_PROFILE.md).
 
 ## 2. Wire representation
 
@@ -84,6 +90,7 @@ MUST preserve its assessed scope and MUST NOT claim network-wide absence.
 | POST | `/api/vnext/pomv/public-use/confirm` | `PublicUseConfirmRequestV1` | `PublicationViewV1` | reserved |
 | GET | `/api/vnext/pomv/publications/{id}` | — | `PublicationViewV1` | reserved |
 | GET | `/api/vnext/pomv/views/{target}` | — | `MetabolicEvidenceViewV1` | reserved |
+| POST | `/api/vnext/base/negotiate` | `BaseNegotiationRequestV1` | `BaseNegotiationViewV1` | reserved |
 | GET | `/api/vnext/runtime/status` | — | `RuntimeStatusV1` | reserved |
 
 P2/P3 may implement a reserved endpoint without changing its method, path,
@@ -110,6 +117,7 @@ security ownership:
 | `PreparedPublicUseV1` | Exact canonical payload preview, target, recipient, selector, namespace, disclosure, idempotency key, and expiry are visible before confirmation. |
 | `PublicUseConfirmRequestV1`, `PublicationViewV1` | Confirmation binds a single prepared intent and single-use receipt; publication state/revision is separate from confirmation. |
 | `MetabolicEvidenceViewV1` | Target, policy, assessed frontier, revision, evidence root, conflicts, coverage, and limitations remain visible with all truth/benefit/reward/global flags false. |
+| `BaseNegotiationRequestV1`, `BaseNegotiationViewV1` | Profile major/minor, bounded capabilities, compatibility tuple/digest, lifecycle, coverage, and limitations are explicit; no raw runtime, store, path, signer, or management handle is projected. |
 | `RuntimeStatusV1` | Compiled, requested, active, kill-switch, signer readiness, lifecycle, coverage, and limitations are separate fields. |
 
 The runtime semantics behind `PreparedPublicUseV1` and

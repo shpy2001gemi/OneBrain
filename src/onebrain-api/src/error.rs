@@ -27,11 +27,21 @@ impl IntoResponse for ApiError {
             NodeError::RateLimit(_) => (StatusCode::TOO_MANY_REQUESTS, "RATE_LIMIT_EXCEEDED"),
             NodeError::QualityGate(_) => (StatusCode::BAD_REQUEST, "KU_LOW_QUALITY"),
             NodeError::IdentityExists(_) => (StatusCode::CONFLICT, "IDENTITY_EXISTS"),
-            NodeError::InvalidPhrase(_) => (StatusCode::BAD_REQUEST, "RECOVERY_INVALID"),
+            NodeError::UnsupportedLegacyRecovery => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "UNSUPPORTED_LEGACY_RECOVERY",
+            ),
+            NodeError::UnsupportedLegacyBackup => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "UNSUPPORTED_LEGACY_BACKUP",
+            ),
             NodeError::InvalidArgument(_) => (StatusCode::BAD_REQUEST, "INVALID_ARGUMENT"),
             NodeError::Kql(_) => (StatusCode::BAD_REQUEST, "KQL_ERROR"),
             NodeError::Config(_) => (StatusCode::BAD_REQUEST, "CONFIG_ERROR"),
             NodeError::Backup(_) => (StatusCode::INTERNAL_SERVER_ERROR, "BACKUP_ERROR"),
+            NodeError::Archive(_) | NodeError::ArchiveCapability(_) => {
+                (StatusCode::UNPROCESSABLE_ENTITY, "ARCHIVE_ERROR")
+            }
             NodeError::Encoder(_) => (StatusCode::INTERNAL_SERVER_ERROR, "ENCODING_FAILED"),
             NodeError::Mediator(_) => (StatusCode::INTERNAL_SERVER_ERROR, "MEDIATOR_ERROR"),
             NodeError::Storage(_) => (StatusCode::INTERNAL_SERVER_ERROR, "STORAGE_ERROR"),
@@ -50,3 +60,25 @@ impl IntoResponse for ApiError {
 
 /// Convenience result type for API handlers.
 pub type ApiResult<T> = Result<Json<ApiSuccess<T>>, ApiError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn legacy_recovery_is_a_typed_non_secret_error() {
+        let response = ApiError(NodeError::UnsupportedLegacyRecovery).into_response();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(value["error"]["code"], "UNSUPPORTED_LEGACY_RECOVERY");
+        assert!(value["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("encrypted Base recovery package"));
+        assert!(!value.to_string().contains("recovery_phrase"));
+        assert!(!value.to_string().contains("new_password"));
+    }
+}

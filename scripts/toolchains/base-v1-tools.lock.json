@@ -1,0 +1,19 @@
+{
+  "format": "onebrain/base-v1-tools-lock/1",
+  "cbindgen": {
+    "version": "0.29.4",
+    "hosts": {
+      "windows-x86_64": {
+        "distribution": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-cbindgen-0.29.4-1-any.pkg.tar.zst",
+        "distribution_sha256": "64069c8e30f35dabc3eadf1643dcfced3779711d4d3d865fb39c4190a2e4a96d",
+        "sha256": "b25d4385c002c428ed63b87e84ac8a479ac863c8125730073303b9c50086b1e5",
+        "install": "pwsh -File scripts/toolchains/install_base_v1_cbindgen.ps1 -Destination <session-tool-directory>"
+      }
+    }
+  },
+  "conformance": {
+    "node": "22.20.0",
+    "npm": "10.9.3",
+    "dart": "3.11.3"
+  }
+}

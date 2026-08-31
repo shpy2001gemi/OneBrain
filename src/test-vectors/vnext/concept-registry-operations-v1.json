@@ -154,13 +154,13 @@
     "truncated-ccid-index-before-activation",
     "disk-shortage-before-staging"
   ],
+  "production_qualification": {
+    "profile": "onebrain/concept-registry-production-qualification/1",
+    "machine_contract": "concept-registry-production-qualification-v1.json",
+    "status": "contract-frozen-evidence-open",
+    "completion_claimed": false
+  },
   "remaining_qualification_gates": [
-    "cold-cache-profile",
-    "low-ram-profile",
-    "ssd-profile",
-    "hdd-profile",
-    "truncated-index-profile",
-    "disk-shortage-profile",
-    "quarterly-build-update-rollback-dry-run"
+    "CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1"
   ]
 }

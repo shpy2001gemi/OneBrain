@@ -81,6 +81,21 @@ pub trait ReconciliationJournalBackend: Send + Sync {
     ) -> Result<bool, String>;
 }
 
+/// Substrate-neutral logical journal row for the Node-owned archive adapter.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PortableReconciliationJournalRecord {
+    pub binding: [u8; 32],
+    pub canonical_snapshot: Vec<u8>,
+}
+
+pub trait ReconciliationJournalArchivePort {
+    fn archive_journal_records(&self) -> Result<Vec<PortableReconciliationJournalRecord>, String>;
+    fn restore_journal_record(
+        &self,
+        record: &PortableReconciliationJournalRecord,
+    ) -> Result<(), String>;
+}
+
 #[derive(Default)]
 pub struct InMemoryReconciliationJournalBackend {
     snapshots: Mutex<BTreeMap<[u8; 32], Vec<u8>>>,
@@ -935,7 +950,7 @@ pub mod persistent {
 
     use ku_core::foundation::{dr_m5_failpoint, OperationalCompactionPermit};
 
-    use super::ReconciliationJournalBackend;
+    use super::{JournalProjection, ReconciliationJournalBackend};
 
     const JOURNALS: TableDefinition<&[u8], &[u8]> =
         TableDefinition::new("vnext_reconciliation_journals");
@@ -1075,7 +1090,65 @@ pub mod persistent {
             Ok(swapped)
         }
     }
+
+    impl super::ReconciliationJournalArchivePort for RedbReconciliationJournalBackend {
+        fn archive_journal_records(
+            &self,
+        ) -> Result<Vec<super::PortableReconciliationJournalRecord>, String> {
+            let read = self.db.begin_read().map_err(|error| error.to_string())?;
+            let table = read
+                .open_table(JOURNALS)
+                .map_err(|error| error.to_string())?;
+            let mut records = Vec::new();
+            for row in table.iter().map_err(|error| error.to_string())? {
+                let (key, value) = row.map_err(|error| error.to_string())?;
+                let binding: [u8; 32] = key
+                    .value()
+                    .try_into()
+                    .map_err(|_| "JOURNAL_ARCHIVE_KEY".to_owned())?;
+                let canonical_snapshot = value.value().to_vec();
+                let projection = JournalProjection::decode(&canonical_snapshot)
+                    .map_err(|error| format!("{error:?}"))?;
+                if projection.binding != binding
+                    || projection.encode().map_err(|error| format!("{error:?}"))?
+                        != canonical_snapshot
+                {
+                    return Err("JOURNAL_ARCHIVE_NON_CANONICAL".to_owned());
+                }
+                records.push(super::PortableReconciliationJournalRecord {
+                    binding,
+                    canonical_snapshot,
+                });
+            }
+            records.sort_by_key(|record| record.binding);
+            Ok(records)
+        }
+
+        fn restore_journal_record(
+            &self,
+            record: &super::PortableReconciliationJournalRecord,
+        ) -> Result<(), String> {
+            let projection = JournalProjection::decode(&record.canonical_snapshot)
+                .map_err(|error| format!("{error:?}"))?;
+            if projection.binding != record.binding
+                || projection.encode().map_err(|error| format!("{error:?}"))?
+                    != record.canonical_snapshot
+            {
+                return Err("JOURNAL_ARCHIVE_NON_CANONICAL".to_owned());
+            }
+            if let Some(existing) = self.load(&record.binding)? {
+                if existing == record.canonical_snapshot {
+                    return Ok(());
+                }
+                return Err("JOURNAL_ARCHIVE_CONFLICT".to_owned());
+            }
+            self.store_atomically(&record.binding, &record.canonical_snapshot)
+        }
+    }
 }
+
+#[cfg(feature = "persist")]
+pub use persistent::RedbReconciliationJournalBackend;
 
 fn parse_kind(value: u64) -> Result<ReconcileManifestKind, ReconciliationJournalError> {
     match value {
@@ -1235,9 +1308,11 @@ mod tests {
     use super::*;
     use crate::vnext_reconciliation::{PayloadRejectReason, PayloadSinkOutcome};
 
+    type SharedSinkState = Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>;
+
     #[derive(Clone, Default)]
     struct SharedSink {
-        state: Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>,
+        state: SharedSinkState,
         insertions: Arc<Mutex<u64>>,
         reject: bool,
         defer_missing_dependency: Arc<AtomicBool>,
@@ -1258,12 +1333,12 @@ mod tests {
             }
             let mut state = self.state.lock().unwrap();
             let key = (kind as u64, cid);
-            if state.contains_key(&key) {
-                return Ok(PayloadSinkOutcome::AlreadyPresent);
+            if let std::collections::btree_map::Entry::Vacant(entry) = state.entry(key) {
+                entry.insert(bytes.to_vec());
+                *self.insertions.lock().unwrap() += 1;
+                return Ok(PayloadSinkOutcome::ValidatedStored);
             }
-            state.insert(key, bytes.to_vec());
-            *self.insertions.lock().unwrap() += 1;
-            Ok(PayloadSinkOutcome::ValidatedStored)
+            Ok(PayloadSinkOutcome::AlreadyPresent)
         }
     }
 
@@ -1582,8 +1657,10 @@ mod tests {
     #[test]
     fn retry_and_backpressure_are_bounded_and_persisted() {
         let backend = SharedMemoryBackend::default();
-        let mut rejecting = SharedSink::default();
-        rejecting.reject = true;
+        let rejecting = SharedSink {
+            reject: true,
+            ..SharedSink::default()
+        };
         let frame = frame();
         let mut session = JournaledReconciliationSession::open(
             backend.clone(),

@@ -629,7 +629,7 @@
         },
         {
           "path": "src/onebrain-node/src/vnext_fuzz_targets.rs",
-          "needle": "pub const FUZZ_TARGETS: [&str; 6]"
+          "needle": "pub const FUZZ_TARGETS: [&str; 7]"
         },
         {
           "path": "src/onebrain-node/examples/dr_m5_fuzz_corpus_smoke.rs",
@@ -729,7 +729,7 @@
     },
     {
       "path": "docs/specs/vnext/P5_CANARY_PREFLIGHT_PROFILE_V1.md",
-      "expected_statement_lines": 8,
+      "expected_statement_lines": 9,
       "evidence": [
         {
           "path": "src/onebrain-node/src/vnext_canary_operations.rs",
@@ -748,7 +748,7 @@
     },
     {
       "path": "docs/specs/vnext/P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md",
-      "expected_statement_lines": 18,
+      "expected_statement_lines": 19,
       "evidence": [
         {
           "path": "src/onebrain-node/src/vnext_p5_operations.rs",
@@ -768,6 +768,209 @@
         }
       ],
       "rationale": "The single-host operational preflight exercises actual signer, storage, authenticated-QUIC, durable backup/restore, rollback and dashboard boundaries while its frozen scope forbids 72-hour, multi-host or production qualification claims."
+    },
+    {
+      "path": "docs/specs/vnext/P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1.md",
+      "expected_statement_lines": 35,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/p5-multi-host-production-qualification-v1.json",
+          "needle": "onebrain/p5-multi-host-production-qualification/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_vnext_p5_multi_host"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_p5_multi_host.py",
+          "needle": "test_one_physical_host_cannot_claim_multi_host"
+        }
+      ],
+      "rationale": "The production contract freezes a three-physical-host authenticated-QUIC topology, exact signed-candidate and role-separated evidence bindings, the complete fault/recovery matrix, bounded resources and fail-closed derivation while preserving both single-host profiles as non-qualifying preflights."
+    },
+    {
+      "path": "docs/specs/vnext/OUTBOUND_FIRST_REACHABILITY_PROFILE_V1.md",
+      "expected_statement_lines": 19,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/outbound-first-reachability-v1.json",
+          "needle": "onebrain/outbound-first-reachability/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_vnext_outbound_reachability"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_outbound_reachability.py",
+          "needle": "test_private_candidates_and_nat_configuration_are_rejected"
+        }
+      ],
+      "rationale": "The portable reachability contract freezes outbound-only ordinary nodes, permissionless identity-bound relays, bounded discovery and replay protection, capability-based platform adapters, privacy-safe public receipts and the absence of any mandatory central service."
+    },
+    {
+      "path": "docs/specs/vnext/P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V2.md",
+      "expected_statement_lines": 13,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/p5-multi-host-production-qualification-v2.json",
+          "needle": "onebrain/p5-multi-host-production-qualification/2"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_vnext_p5_multi_host_v2"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_p5_multi_host.py",
+          "needle": "test_direct_and_mixed_rings_are_rejected_by_outbound_first_lane"
+        }
+      ],
+      "rationale": "The additive P5 V2 contract qualifies the Linux three-host reference without redefining portable OBP semantics, requires an outbound-first relay-only ring plus distinct relay failover, and repeats the owner-approved provider-evidence-pending status in every public receipt and aggregate."
+    },
+    {
+      "path": "docs/specs/vnext/BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE.md",
+      "expected_statement_lines": 23,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/base-v1-exact-candidate-soak-v1.json",
+          "needle": "onebrain/base-v1-exact-candidate-soak/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_base_v1_exact_candidate_soak"
+        },
+        {
+          "path": "scripts/ci/test_validate_base_v1_soak_profile.py",
+          "needle": "test_three_local_process_p5_dry_run_cannot_claim_multi_host"
+        }
+      ],
+      "rationale": "The exact-candidate profile makes Task 27 the only eligible SHA, requires a fresh Task 28 72-hour run, binds role-separated signed interval evidence to the release request plus Registry/P5/artifact identity, preserves raw receipts and forbids old or synthetic carry-forward evidence from qualifying Base v1."
+    },
+    {
+      "path": "docs/specs/vnext/CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1.md",
+      "expected_statement_lines": 30,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/concept-registry-production-qualification-v1.json",
+          "needle": "onebrain/concept-registry-production-qualification/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_concept_registry_production_qualification"
+        },
+        {
+          "path": "scripts/ci/test_validate_concept_registry_production_qualification.py",
+          "needle": "test_valid_but_unlisted_signer_is_rejected"
+        }
+      ],
+      "rationale": "The closed machine profile and mutation suite freeze the exact production release set/root, 2.2 GB-class bounds, four resource profiles, signed-request environment identity, owner-approved Registry signer, candidate binding and failure/release-cycle gates without claiming measured qualification."
+    },
+    {
+      "path": "docs/specs/vnext/BASE_V1_AUTHORITY_AND_RECOVERY_PROFILE.md",
+      "expected_statement_lines": 13,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/base-v1-authority-recovery-v1.json",
+          "needle": "onebrain/base-v1-authority-recovery/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_base_v1_authority_recovery"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_base_authority.py",
+          "needle": "test_non_exportable_signers_require_reprovisioning"
+        }
+      ],
+      "rationale": "The closed machine profile and mutation suite freeze Base canonical/legacy authority, encrypted recovery, archive crypto/scope, signer separation, Registry readiness, network defaults and immutable-history deletion before product implementation begins."
+    },
+    {
+      "path": "docs/specs/vnext/BASE_V1_STORAGE_INTEGRITY_PROFILE.md",
+      "expected_statement_lines": 22,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/base-v1-storage-integrity-v1.json",
+          "needle": "onebrain/base-v1-storage-integrity/1"
+        },
+        {
+          "path": "src/test-vectors/vnext/base-v1-derived-projection-v1.json",
+          "needle": "base-v1-derived-projection-reducer/1"
+        },
+        {
+          "path": "src/test-vectors/vnext/base-v1-archive-v1.json",
+          "needle": "onebrain/base-v1-archive/1"
+        },
+        {
+          "path": "src/onebrain-archive/tests/dataset_roundtrip.rs",
+          "needle": "portable_data_gates_restore_while_producer_identity_is_provenance"
+        },
+        {
+          "path": "scripts/ci/test_validate_vnext_base_storage.py",
+          "needle": "test_endian_swapped_owner_code_is_rejected"
+        },
+        {
+          "path": "docs/specs/vnext/DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md",
+          "needle": "TX-RECOVERY-001"
+        }
+      ],
+      "rationale": "Two closed machine vectors and mutation tests freeze blob identity/integrity/capacity, canonical exchange, owner IDs, complete mapping coverage, derived parity and the exact five-phase crash vocabulary before storage implementation begins."
+    },
+    {
+      "path": "docs/specs/vnext/BASE_V1_RUNTIME_INTERFACE_PROFILE.md",
+      "expected_statement_lines": 66,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/base-v1-runtime-interface-v1.json",
+          "needle": "onebrain/base-v1-runtime-interface/1"
+        },
+        {
+          "path": "src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json",
+          "needle": "bdfb630138e6c4dbb012825c47a59aec176d093ea828d0d52609bedb632feba7"
+        },
+        {
+          "path": "src/test-vectors/vnext/base-v1-compatibility-v1.json",
+          "needle": "onebrain/base-v1-compatibility/1"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_base_v1_runtime_interface"
+        },
+        {
+          "path": "scripts/ci/test_validate_base_v1_runtime_interface.py",
+          "needle": "test_baseline_history_is_an_immutable_prefix"
+        },
+        {
+          "path": "scripts/ci/test_validate_base_v1_compatibility.py",
+          "needle": "test_target_and_toolchain_are_artifact_only"
+        }
+      ],
+      "rationale": "The closed IDL, append-only discriminator chain, exact cross-language projection map and mutation suites freeze all Base operations, finite bounds, durable reserve/prepare/confirm/reconcile flow, management authority, archive capability custody, subscriptions, drain/close semantics, compatibility digest separation and field-by-field negotiation before facade implementation begins."
+    },
+    {
+      "path": "docs/specs/vnext/BASE_V1_FREEZE_AND_EVIDENCE_PROFILE.md",
+      "expected_statement_lines": 15,
+      "evidence": [
+        {
+          "path": "src/test-vectors/vnext/base-v1-freeze-v1.json",
+          "needle": "onebrain/base-v1-freeze/1"
+        },
+        {
+          "path": "src/test-vectors/vnext/base-v1-release-signers-v1.json",
+          "needle": "F9DDAFB46FB6603E14B21B4DB0D9DBF23DBE8ED2"
+        },
+        {
+          "path": "scripts/base/test_qualify_base.py",
+          "needle": "test_removing_or_falsifying_every_gate_fails"
+        },
+        {
+          "path": "scripts/release/test_create_verified_base_release.py",
+          "needle": "test_failure_boundaries_never_publish_unverified_ref_and_recover_after_cas"
+        },
+        {
+          "path": "scripts/ci/validate_vnext_contracts.py",
+          "needle": "validate_base_v1_freeze"
+        }
+      ],
+      "rationale": "The closed freeze and signer vectors, pure mutation-tested qualifier, pristine candidate tool, immutable request, verified tag CAS wrapper and operational documents freeze the only Task 27 candidate without claiming Task 28 production qualification."
     },
     {
       "path": "docs/specs/vnext/TRACEABILITY_MATRIX_V1.md",

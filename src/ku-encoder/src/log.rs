@@ -191,8 +191,8 @@ mod tests {
         let loaded = EncodingLog::load(&path).expect("load should succeed");
 
         assert_eq!(loaded.entries.len(), 2);
-        assert_eq!(loaded.entries[0].success, true);
-        assert_eq!(loaded.entries[1].success, false);
+        assert!(loaded.entries[0].success);
+        assert!(!loaded.entries[1].success);
 
         // Cleanup
         let _ = std::fs::remove_file(&path);

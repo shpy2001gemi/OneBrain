@@ -7,7 +7,7 @@
 mod ai;
 mod blob;
 mod config;
-mod data;
+pub(crate) mod data;
 mod help;
 pub mod helpers;
 mod identity;
@@ -91,6 +91,7 @@ fn drain_and_display_events(node: &mut OneBrainNode) {
 /// `run_repl` and `run_repl_shared`.
 async fn dispatch(
     node: &mut OneBrainNode,
+    base_host_proof: &str,
     cmd: &str,
     args: &str,
     full_input: &str,
@@ -156,8 +157,8 @@ async fn dispatch(
         // Data
         "export" => data::cmd_export(node, args),
         "import" => data::cmd_import(node, args).await,
-        "backup" => data::cmd_backup(node, args, reader).await,
-        "restore" => data::cmd_restore(node, args, reader).await,
+        "backup" => data::cmd_backup(node, base_host_proof, args, reader).await,
+        "restore" => data::cmd_restore(node, base_host_proof, args, reader).await,
 
         // Config
         "config" => config::cmd_config(node, args),
@@ -172,7 +173,7 @@ async fn dispatch(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Run the interactive REPL loop.
-pub async fn run_repl(node: &mut OneBrainNode) -> Result<(), NodeError> {
+pub async fn run_repl(node: &mut OneBrainNode, base_host_proof: &str) -> Result<(), NodeError> {
     let stdin = tokio::io::stdin();
     let mut reader = BufReader::new(stdin);
     let mut line = String::new();
@@ -211,7 +212,7 @@ pub async fn run_repl(node: &mut OneBrainNode) -> Result<(), NodeError> {
                 break;
             }
             "help" => help::cmd_help(args),
-            _ => dispatch(node, &cmd, args, trimmed, &mut reader).await,
+            _ => dispatch(node, base_host_proof, &cmd, args, trimmed, &mut reader).await,
         }
     }
 
@@ -224,7 +225,10 @@ pub async fn run_repl(node: &mut OneBrainNode) -> Result<(), NodeError> {
 /// command execution** and releases it between commands.  This allows the
 /// API server (which shares the same `Arc<Mutex>`) to serve web-dashboard
 /// requests while the REPL is waiting for user input.
-pub async fn run_repl_shared(shared_node: Arc<Mutex<OneBrainNode>>) -> Result<(), NodeError> {
+pub async fn run_repl_shared(
+    shared_node: Arc<Mutex<OneBrainNode>>,
+    base_host_proof: &str,
+) -> Result<(), NodeError> {
     let stdin = tokio::io::stdin();
     let mut reader = BufReader::new(stdin);
     let mut line = String::new();
@@ -264,7 +268,15 @@ pub async fn run_repl_shared(shared_node: Arc<Mutex<OneBrainNode>>) -> Result<()
             _ => {
                 // Lock for the duration of the command, then release
                 let mut node = shared_node.lock().await;
-                dispatch(&mut node, &cmd, &args_str, &full_input, &mut reader).await;
+                dispatch(
+                    &mut node,
+                    base_host_proof,
+                    &cmd,
+                    &args_str,
+                    &full_input,
+                    &mut reader,
+                )
+                .await;
             }
         }
     }

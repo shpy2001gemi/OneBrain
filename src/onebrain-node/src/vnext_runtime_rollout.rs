@@ -14,6 +14,10 @@ use ku_core::foundation::dr_m5_failpoint;
 use redb::{Database, ReadableTable, TableDefinition};
 use thiserror::Error;
 
+use crate::archive::{PortableArchiveRow, PortableArchiveRows};
+use crate::error::NodeError;
+use onebrain_archive::{ArchiveEntryKind, ArchiveOwner};
+
 const ROLLOUT: TableDefinition<&str, &[u8]> = TableDefinition::new("vnext_runtime_rollout_v1");
 const ROLLOUT_DATABASE: &str = "vnext_runtime_rollout.redb";
 const TX_RUNTIME_ROLLBACK: &str = "TX-ROL-001";
@@ -330,6 +334,102 @@ impl VNextRuntimeRollout {
         dr_m5_failpoint::hit(TX_RUNTIME_ROLLBACK, "after_next_side_effect_before_ack");
         Ok(())
     }
+}
+
+impl PortableArchiveRows for VNextRuntimeRollout {
+    fn archive_owner(&self) -> ArchiveOwner {
+        ArchiveOwner::ROLLOUT
+    }
+
+    fn archive_entry_kind(&self) -> ArchiveEntryKind {
+        ArchiveEntryKind::RolloutRecord
+    }
+
+    fn archive_rows(&self) -> Result<Vec<PortableArchiveRow>, NodeError> {
+        let read = self
+            .inner
+            .database
+            .begin_read()
+            .map_err(rollout_archive_error)?;
+        let table = read.open_table(ROLLOUT).map_err(rollout_archive_error)?;
+        let mut rows = Vec::new();
+        for row in table.iter().map_err(rollout_archive_error)? {
+            let (key, value) = row.map_err(rollout_archive_error)?;
+            let lane = VNextRuntimeLane::ALL
+                .into_iter()
+                .find(|lane| lane.name() == key.value())
+                .ok_or_else(|| NodeError::ArchiveCapability("unknown rollout lane".into()))?;
+            let stored = decode_lane(value.value())
+                .map_err(|error| NodeError::Storage(error.to_string()))?;
+            if stored.generation == 0 || encode_lane(stored).as_slice() != value.value() {
+                return Err(NodeError::ArchiveCapability(
+                    "rollout row is non-canonical".into(),
+                ));
+            }
+            rows.push(PortableArchiveRow {
+                table: 1,
+                key: lane.name().as_bytes().to_vec(),
+                value: value.value().to_vec(),
+            });
+        }
+        rows.sort_by(|left, right| left.key.cmp(&right.key));
+        Ok(rows)
+    }
+
+    fn restore_row(&self, row: &PortableArchiveRow) -> Result<(), NodeError> {
+        if row.table != 1 {
+            return Err(NodeError::ArchiveCapability(
+                "rollout archive table is unknown".into(),
+            ));
+        }
+        let key = std::str::from_utf8(&row.key)
+            .map_err(|_| NodeError::ArchiveCapability("rollout lane is not UTF-8".into()))?;
+        let lane = VNextRuntimeLane::ALL
+            .into_iter()
+            .find(|lane| lane.name() == key)
+            .ok_or_else(|| NodeError::ArchiveCapability("unknown rollout lane".into()))?;
+        let stored =
+            decode_lane(&row.value).map_err(|error| NodeError::Storage(error.to_string()))?;
+        if stored.generation == 0 || encode_lane(stored).as_slice() != row.value.as_slice() {
+            return Err(NodeError::ArchiveCapability(
+                "rollout row is non-canonical".into(),
+            ));
+        }
+        let write = self
+            .inner
+            .database
+            .begin_write()
+            .map_err(rollout_archive_error)?;
+        {
+            let mut table = write.open_table(ROLLOUT).map_err(rollout_archive_error)?;
+            let existing = table
+                .get(lane.name())
+                .map_err(rollout_archive_error)?
+                .map(|value| value.value().to_vec());
+            if let Some(existing) = existing {
+                if existing.as_slice() != row.value.as_slice() {
+                    return Err(NodeError::ArchiveCapability(
+                        "rollout archive restore conflict".into(),
+                    ));
+                }
+            } else {
+                table
+                    .insert(lane.name(), row.value.as_slice())
+                    .map_err(rollout_archive_error)?;
+            }
+        }
+        write.commit().map_err(rollout_archive_error)?;
+        self.inner
+            .state
+            .lock()
+            .map_err(|_| NodeError::ArchiveCapability("rollout state lock".into()))?
+            .lanes[lane.index()] = stored;
+        Ok(())
+    }
+}
+
+fn rollout_archive_error(error: impl std::fmt::Display) -> NodeError {
+    NodeError::Storage(error.to_string())
 }
 
 fn encode_lane(lane: StoredLane) -> [u8; STORED_LANE_BYTES] {

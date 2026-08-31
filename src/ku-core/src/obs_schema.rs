@@ -175,6 +175,8 @@ pub mod redb_schema {
     /// Unlike `Migration` (which is feature-agnostic), `RedbMigration` can carry
     /// a concrete `fn(&Database) -> Result<(), String>` that runs inside the
     /// upgrade transaction.
+    pub type RedbMigrationFn = fn(&Database) -> Result<(), String>;
+
     pub struct RedbMigration {
         /// Version this migration upgrades FROM (target = from_version + 1).
         pub from_version: u32,
@@ -182,14 +184,14 @@ pub mod redb_schema {
         pub description: &'static str,
         /// Optional data-transform function.  `None` for schema-only changes
         /// (e.g. initial v0→v1 where tables are created by the storage module).
-        pub migrate_fn: Option<fn(&Database) -> Result<(), String>>,
+        pub migrate_fn: Option<RedbMigrationFn>,
     }
 
     impl RedbMigration {
         pub fn new(
             from_version: u32,
             description: &'static str,
-            migrate_fn: Option<fn(&Database) -> Result<(), String>>,
+            migrate_fn: Option<RedbMigrationFn>,
         ) -> Self {
             Self {
                 from_version,

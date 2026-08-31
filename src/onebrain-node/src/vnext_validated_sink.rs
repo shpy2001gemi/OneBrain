@@ -7,11 +7,12 @@ use ku_core::foundation::schema_registry::{EVENT_TYPES_V1, OBJECT_KINDS_V1};
 use ku_core::foundation::{
     authority_event_descriptor, decode_actor_delegation, decode_actor_revocation,
     decode_actor_root_delegation, decode_feed_inception, decode_knowledge_event,
-    decode_knowledge_object, event_author_feed, validate_successor_structure,
+    decode_knowledge_object, event_author_feed, validate_successor_structure, AcceptedRecordEntry,
     AtomicVerifiedBackend, AuthorityEventDescriptor, EventCid, EventType, FeedAuthorityDecision,
     FeedId, FeedProjection, KeyStateApplyOutcome, KeyStateReducer, KnowledgeAffordance,
-    KnownObjectKind, ObjectCid, ObjectKind, ObjectSemantics, PutVerifiedOutcome, ReservedDomain,
-    ResourceProfile, UseEvidencePayload, ValidatedFeedStore, ValidatedStore,
+    KnownObjectKind, ObjectCid, ObjectKind, ObjectSemantics, PortableVerifiedSnapshot,
+    PutVerifiedOutcome, QuarantineRecord, ReservedDomain, ResourceProfile, StoredRecordKind,
+    UseEvidencePayload, ValidatedFeedStore, ValidatedStore, VerifiedStoreSnapshotPort,
     KNOWLEDGE_AFFORDANCE_KIND, USE_EVIDENCE_KIND,
 };
 use ku_net::vnext_reconciliation::{PayloadSinkOutcome, ValidateThenAcceptSink};
@@ -58,6 +59,54 @@ impl<B: AtomicVerifiedBackend> SharedVNextValidatedSink<B> {
             .store()
             .feed_inceptions(feed_id)
             .map_err(|error| error.to_string())
+    }
+
+    pub fn accepted_record_snapshot(
+        &self,
+    ) -> Result<Vec<ku_core::foundation::AcceptedRecordEntry>, String> {
+        self.0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .accepted_record_snapshot()
+    }
+
+    pub fn portable_verified_snapshot(&self) -> Result<PortableVerifiedSnapshot, String> {
+        self.0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .store()
+            .portable_verified_snapshot()
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn restore_quarantine_evidence(&self, record: &QuarantineRecord) -> Result<(), String> {
+        self.0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .store()
+            .restore_quarantine_evidence(record)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn restore_accepted_record(&self, record: &AcceptedRecordEntry) -> Result<(), String> {
+        let kind = match record.record_kind {
+            StoredRecordKind::Object => ReconcileManifestKind::Object,
+            StoredRecordKind::Event => ReconcileManifestKind::Event,
+            StoredRecordKind::FeedInception => ReconcileManifestKind::FeedInception,
+            StoredRecordKind::AuthorityEvent => ReconcileManifestKind::AuthorityEvent,
+        };
+        let outcome = self
+            .0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .validate_then_accept(kind, record.claimed_cid, &record.canonical_bytes)?;
+        match outcome {
+            PayloadSinkOutcome::ValidatedStored | PayloadSinkOutcome::AlreadyPresent => Ok(()),
+            PayloadSinkOutcome::DeferredMissingDependency => {
+                Err("ARCHIVE_RESTORE_MISSING_DEPENDENCY".to_owned())
+            }
+            PayloadSinkOutcome::RejectedInvalid => Err("ARCHIVE_RESTORE_INVALID_RECORD".to_owned()),
+        }
     }
 
     #[cfg(feature = "vnext-network-runtime")]
@@ -126,6 +175,26 @@ impl<B: AtomicVerifiedBackend> VNextValidatedSink<B> {
 
     pub fn store(&self) -> &ValidatedStore<B> {
         &self.store
+    }
+
+    pub fn accepted_record_snapshot(
+        &self,
+    ) -> Result<Vec<ku_core::foundation::AcceptedRecordEntry>, String> {
+        let mut records = Vec::new();
+        for kind in [
+            ku_core::foundation::StoredRecordKind::Object,
+            ku_core::foundation::StoredRecordKind::Event,
+            ku_core::foundation::StoredRecordKind::FeedInception,
+            ku_core::foundation::StoredRecordKind::AuthorityEvent,
+        ] {
+            records.extend(
+                self.store
+                    .accepted_entries(kind)
+                    .map_err(|error| error.to_string())?,
+            );
+        }
+        records.sort_by_key(|entry| (entry.record_kind as u8, entry.claimed_cid));
+        Ok(records)
     }
 
     #[cfg(feature = "vnext-network-runtime")]
@@ -454,7 +523,12 @@ impl<B: AtomicVerifiedBackend> VNextValidatedSink<B> {
                 match reducer.submit_child(child.scoped_delegation()) {
                     KeyStateApplyOutcome::Accepted | KeyStateApplyOutcome::AlreadyPresent => self
                         .store
-                        .put_validated_authority_event(claimed, child.cid, child.original_bytes())
+                        .put_validated_authority_event(
+                            claimed,
+                            child.cid,
+                            *child.signed.delegation.actor.as_bytes(),
+                            child.original_bytes(),
+                        )
                         .map(Self::outcome)
                         .map_err(|error| error.to_string()),
                     KeyStateApplyOutcome::RejectedAttenuation => self.reject_authority_event(
@@ -524,6 +598,7 @@ impl<B: AtomicVerifiedBackend> VNextValidatedSink<B> {
                         .put_validated_authority_event(
                             claimed,
                             revocation.cid,
+                            *revocation.signed.revocation.actor.as_bytes(),
                             revocation.original_bytes(),
                         )
                         .map(Self::outcome)
@@ -832,7 +907,9 @@ mod tests {
         (feed_bytes, feed_cid, event_bytes, event_cid.into_bytes())
     }
 
-    fn feed_object_and_event() -> (Vec<u8>, [u8; 32], Vec<u8>, [u8; 32], Vec<u8>, [u8; 32]) {
+    type FeedObjectEventFixture = (Vec<u8>, [u8; 32], Vec<u8>, [u8; 32], Vec<u8>, [u8; 32]);
+
+    fn feed_object_and_event() -> FeedObjectEventFixture {
         let key = SigningKey::from_bytes(&[0x61; 32]);
         let signed_feed = FeedInception::new(
             *key.verifying_key().as_bytes(),

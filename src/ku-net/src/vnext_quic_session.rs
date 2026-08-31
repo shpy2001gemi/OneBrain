@@ -333,7 +333,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn two_real_quic_peers_share_one_authenticated_transcript() {
+    async fn real_quic_transport_completes_authenticated_session() {
         let server = QuicTransport::bind(TransportConfig {
             bind_addr: "127.0.0.1:0".parse().unwrap(),
             ..TransportConfig::default()

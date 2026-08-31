@@ -315,7 +315,7 @@ impl DhtEntry {
 
     /// Whether this entry has expired.
     pub fn is_expired(&self, now: u64) -> bool {
-        self.expires_at.map_or(false, |exp| now >= exp)
+        self.expires_at.is_some_and(|exp| now >= exp)
     }
 }
 

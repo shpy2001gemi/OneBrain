@@ -1,0 +1,39 @@
+{
+  "canonicalization": {
+    "encoding": "UTF-8",
+    "ensure_ascii": false,
+    "key_order": "sorted",
+    "separators": [
+      ",",
+      ":"
+    ],
+    "whitespace": "none"
+  },
+  "digest": {
+    "algorithm": "BLAKE3 derive-key",
+    "context": "onebrain:base-v1:qualification-approver-policy:1",
+    "expected_hex": "0710845f71ca7aca7ce89a0377a31ce293c6dd99778c0ff3decf9e04745528be"
+  },
+  "policy": {
+    "algorithm": "OpenPGP-Ed25519",
+    "allowed_usages": [
+      "base-release-request"
+    ],
+    "format": "onebrain/base-v1-qualification-approver-policy/1",
+    "role": "qualification-approver",
+    "signers": [
+      {
+        "created_utc": "2026-08-27T04:49:51Z",
+        "expires_utc": "2028-08-26T04:49:51Z",
+        "fingerprint": "A9BFDC59364354F954ABD26947FCF15DD9C32781",
+        "key_id": "47FCF15DD9C32781",
+        "public_key_packet_blake3": "228d43ea4f3cc0b7548124682e353544ae9549e5458456016242cfa738a5575e"
+      }
+    ],
+    "valid_unlisted_signature": "reject",
+    "verification": {
+      "fingerprint_source": "gpg-status-fd-VALIDSIG-full-primary-fingerprint",
+      "trust_model": "explicit-allowlist"
+    }
+  }
+}

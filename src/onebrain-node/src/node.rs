@@ -5,13 +5,32 @@
 //! anti-gaming guard, and peer networking.
 
 use crate::anti_gaming_guard::AntiGamingGuard;
+use crate::base_runtime::{
+    BaseManagementGrant, BaseManagementScope, BaseRuntime, BaseRuntimeConfig, BaseServices,
+};
+use crate::blob_authority::{
+    BlobAuthority, OsPendingUploadIdSource, PendingBlobUploadId, PendingOwnedBlobUpload,
+    UnavailableValidatedBlobReferenceSource,
+};
+use crate::canonical_exchange::{
+    read_canonical_exchange, write_canonical_exchange, BaseExchangeEntryV1,
+};
 use crate::concept_registry_runtime::{
     initialize_concept_registry, ConceptRegistryRuntimeState, ConceptRegistryStatus,
 };
 use crate::config::NodeConfig;
+use crate::dataset_generation::DatasetGenerationStore;
+use crate::dataset_path::{BaseStorageOwnerId, DatasetPathResolver};
+use crate::derived_index::{
+    AcceptedRecordScan, DerivedIndexOpenState, RedbAcceptedRecordScan, VNextDerivedIndexManager,
+};
+use crate::derived_projection::{DerivedProjectionOpenState, RetrieverProjectionService};
 use crate::error::NodeError;
+use crate::identity_recovery::SignerReprovisionRequirement;
 use crate::network::{recv_message, send_message, NetMessage, NodeEvent, PeerInfo};
 use crate::peer_manager::PeerManager;
+use crate::signer_ports::{SignerPossessionProof, SignerProviderRegistry};
+use crate::text::truncate_preview;
 use crate::verifier_service;
 #[cfg(feature = "vnext-network-runtime")]
 use crate::vnext_network_runtime::OutboundVNextSession;
@@ -22,25 +41,29 @@ use crate::vnext_product_runtime::{
 };
 #[cfg(feature = "vnext-network-runtime")]
 use crate::vnext_runtime_rollout::{VNextRuntimeLane, VNextRuntimeRolloutSnapshot};
+use crate::vnext_validated_sink::{SharedVNextValidatedSink, VNextValidatedSink};
 #[cfg(feature = "vnext-network-runtime")]
 use ku_net::vnext_session::SessionIdentitySigner;
 
 use crate::types::*;
 use ku_ai::OllamaBackend;
-use ku_core::blob_store::{BlobCid, BlobMeta};
+use ku_core::blob_store::{BlobCid, BlobMeta, BlobType};
 use ku_core::concept_registry::ConceptLookup;
+use ku_core::foundation::{ObjectReference, RedbVerifiedBackend, StoredRecordKind};
 use ku_core::text_parser::{default_dict, ConceptDict};
 use ku_core::KuRuntime;
 use ku_encoder::{AiEncoder, EncoderConfig, EncodingResult};
-use ku_kql::blob_storage::BlobStorage;
+use ku_kql::blob_storage::{BlobStorage, BlobStorageConfig};
 use ku_kql::storage::KuStorage;
 use ku_mediator::input::UserInput;
 use ku_mediator::mediator::{Mediator, MediatorConfig};
 use ku_mediator::retriever::KuRetriever;
+use ku_net::vnext_reconciliation::{PayloadSinkOutcome, ValidateThenAcceptSink};
+use onebrain_protocol::ReconcileManifestKind;
 
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
@@ -65,14 +88,39 @@ pub struct EncodeStoreResult {
     pub peers_reached: usize,
 }
 
+/// Candidate-integration evidence assembled from the live Node boundary.
+///
+/// This is deliberately not a qualification receipt: Task 28 is the only
+/// authority that may attach production qualification to the Base candidate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BaseIntegrationReceipt {
+    pub candidate_semantic_digest: [u8; 32],
+    pub artifact_tuple_digest: [u8; 32],
+    pub canonical_root_before_restart: [u8; 32],
+    pub canonical_root_after_restart: [u8; 32],
+    pub archive_restore_root: [u8; 32],
+    pub registry_release_root: [u8; 32],
+    pub default_active_network_lanes: u16,
+    pub legacy_write_enabled: bool,
+}
+
 /// Shared state accessible from both the REPL and background tasks.
 pub struct SharedState {
     /// Persistent KU storage.
     pub storage: KuStorage,
     /// Persistent blob storage.
     pub blob_store: BlobStorage,
-    /// Keyword-based KU retriever.
-    pub retriever: KuRetriever,
+    /// Canonical reference oracle and durable pending upload leases.
+    pub blob_authority: Arc<BlobAuthority>,
+    /// Rebuildable vNext graph/search generation; never a write authority.
+    pub derived_index: Arc<VNextDerivedIndexManager>,
+    pub derived_index_state: DerivedIndexOpenState,
+    /// Rebuildable retriever projection shared with the Mediator.
+    pub retriever: Arc<RwLock<KuRetriever>>,
+    pub retriever_projection: Arc<RetrieverProjectionService>,
+    pub retriever_projection_state: DerivedProjectionOpenState,
+    /// Active generation path authority shared by every Base-owned store.
+    pub dataset_paths: Arc<dyn DatasetPathResolver>,
     /// Connected peers.
     pub peer_manager: PeerManager,
     /// Node configuration (for data paths, Ollama URL, etc.).
@@ -82,6 +130,12 @@ pub struct SharedState {
 /// The top-level OneBrain node.
 pub struct OneBrainNode {
     config: NodeConfig,
+    /// Holds the lifetime OS root lease and non-switched activation journal.
+    _dataset_generations: Arc<DatasetGenerationStore>,
+    dataset_paths: Arc<dyn DatasetPathResolver>,
+    /// Sole owner of the product-neutral Base facade. Service clones are weak
+    /// and remain usable without holding the node mutex.
+    base_runtime: Option<BaseRuntime>,
     mediator: Mediator,
     guard: AntiGamingGuard,
     /// Concept dictionary (shared across encoder and mediator).
@@ -149,12 +203,11 @@ impl OneBrainNode {
     /// 1. AI backends (chat + encoding + mediator encoding)
     /// 2. The Mediator pipeline
     /// 3. Persistent KU storage (redb)
-    /// 4. KU retriever (keyword index, loaded from disk)
+    /// 4. Vault-derived retriever projection (or typed degraded state)
     /// 5. Anti-gaming guard (rate limiting + quality gates)
     ///
-    /// On startup, all existing KUs are loaded from storage into the
-    /// retriever's keyword index (using stored wire bytes to reconstruct
-    /// source text for keyword search).
+    /// Source prose is never reconstructed from legacy wire bytes. A retriever
+    /// becomes healthy only from exact Vault source records.
     pub async fn new(config: NodeConfig) -> Result<Self, NodeError> {
         config
             .vnext
@@ -200,35 +253,90 @@ impl OneBrainNode {
         // Create chat backend
         let chat_backend =
             OllamaBackend::new(&config.ollama_url, &config.model, "nomic-embed-text", 120)
-                .map_err(|e| NodeError::Ai(e))?;
+                .map_err(NodeError::Ai)?;
 
         // Create encoder backend for mediator
         let mediator_encoder_backend =
             OllamaBackend::new(&config.ollama_url, &config.model, "nomic-embed-text", 120)
-                .map_err(|e| NodeError::Ai(e))?;
+                .map_err(NodeError::Ai)?;
 
         // Create concept dictionary
         let dict: ConceptDict = default_dict();
 
-        // Create mediator
-        let mediator = Mediator::new(
+        // Open persistent storage
+        let storage = KuStorage::open_base_read_only(&config.storage_path())
+            .map_err(|e| NodeError::Storage(format!("{}", e)))?;
+
+        let dataset_generations = Arc::new(
+            DatasetGenerationStore::open_exclusive(&config.base_dataset_root())
+                .map_err(|error| NodeError::Storage(error.to_string()))?,
+        );
+        let dataset_paths: Arc<dyn DatasetPathResolver> = dataset_generations.clone();
+        let blob_authority = Arc::new(BlobAuthority::new(
+            dataset_paths.clone(),
+            Arc::new(OsPendingUploadIdSource),
+            Arc::new(UnavailableValidatedBlobReferenceSource),
+        ));
+        blob_authority
+            .pending()
+            .reconcile_generation()
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let blob_store = BlobStorage::open_with_config(
+            &dataset_paths
+                .owner_path(BaseStorageOwnerId::BLOB)
+                .map_err(|error| NodeError::Storage(error.to_string()))?
+                .join("ku.blob.redb"),
+            BlobStorageConfig {
+                total_quota_bytes: 10 * 1024 * 1024 * 1024,
+                free_space_reserve_bytes: 64 * 1024 * 1024,
+            },
+            blob_authority.oracle(),
+        )
+        .map_err(|e| NodeError::Storage(format!("{}", e)))?;
+        blob_store
+            .migrate_blob_metadata_v2()
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+
+        let derived_index = Arc::new(
+            VNextDerivedIndexManager::new(
+                dataset_paths
+                    .owner_path(BaseStorageOwnerId::DERIVED_INDEX)
+                    .map_err(|error| NodeError::Storage(error.to_string()))?,
+            )
+            .map_err(|error| NodeError::Storage(error.to_string()))?,
+        );
+        let canonical_scan = RedbAcceptedRecordScan::new(
+            dataset_paths
+                .owner_path(BaseStorageOwnerId::CANONICAL)
+                .map_err(|error| NodeError::Storage(error.to_string()))?
+                .join("vnext_verified.redb"),
+        );
+        let (derived_index_state, derived_report) = derived_index.open_or_rebuild(&canonical_scan);
+        let accepted_vnext_root = derived_report
+            .as_ref()
+            .map(|report| report.source_root)
+            .unwrap_or([0; 32]);
+        // Task 12 will inject the platform Vault/key provider. Until that
+        // source snapshot is available, never publish an empty projection as
+        // healthy; canonical reads remain available in typed degraded mode.
+        let (retriever_projection, retriever_projection_state) =
+            RetrieverProjectionService::unavailable(
+                dataset_paths
+                    .owner_path(BaseStorageOwnerId::RETRIEVER_PROJECTION)
+                    .map_err(|error| NodeError::Storage(error.to_string()))?,
+                accepted_vnext_root,
+                "VAULT_SOURCE_SNAPSHOT_UNAVAILABLE",
+            );
+        let retriever_projection = Arc::new(retriever_projection);
+        let retriever = retriever_projection.retriever();
+
+        let mediator = Mediator::new_with_retriever(
             Box::new(chat_backend),
             Box::new(mediator_encoder_backend),
             dict.clone(),
             MediatorConfig::default(),
+            retriever.clone(),
         );
-
-        // Open persistent storage
-        let storage = KuStorage::open(&config.storage_path())
-            .map_err(|e| NodeError::Storage(format!("{}", e)))?;
-
-        // Open blob storage
-        let blob_store = BlobStorage::open(&config.blob_storage_path())
-            .map_err(|e| NodeError::Storage(format!("{}", e)))?;
-
-        // Load or create retriever index
-        let retriever = KuRetriever::load(&config.retriever_path())
-            .map_err(|e| NodeError::Storage(format!("Retriever load failed: {}", e)))?;
 
         // Report startup KU count
         let ku_count = storage
@@ -236,11 +344,13 @@ impl OneBrainNode {
             .map_err(|e| NodeError::Storage(format!("{}", e)))?;
         if ku_count > 0 {
             eprintln!("  ✓ Storage contains {} KU(s)", ku_count);
-            // Note: retriever index is loaded from disk (retriever_path),
-            // so already populated from previous sessions' index_ku() calls.
             eprintln!(
-                "  ✓ Retriever index loaded ({} entries)",
-                retriever.index_size()
+                "  ✓ Retriever projection state: {:?} ({} entries)",
+                retriever_projection_state,
+                retriever
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .index_size()
             );
         }
 
@@ -251,7 +361,13 @@ impl OneBrainNode {
         let shared = Arc::new(Mutex::new(SharedState {
             storage,
             blob_store,
+            blob_authority,
+            derived_index,
+            derived_index_state,
             retriever,
+            retriever_projection,
+            retriever_projection_state,
+            dataset_paths: dataset_paths.clone(),
             peer_manager: PeerManager::new(),
             config: config.clone(),
         }));
@@ -264,6 +380,9 @@ impl OneBrainNode {
 
         Ok(Self {
             config,
+            _dataset_generations: dataset_generations,
+            dataset_paths: dataset_paths.clone(),
+            base_runtime: None,
             mediator,
             guard,
             dict,
@@ -305,8 +424,9 @@ impl OneBrainNode {
         })
     }
 
-    /// Inject a caller-owned signer before starting the network. When omitted,
-    /// the compatibility/development file signer is used.
+    /// Inject a caller-owned signer before starting the network. A generation
+    /// restore may also supply this handle through typed identity recovery;
+    /// the Base dataset path never creates a compatibility key file.
     #[cfg(feature = "vnext-network-runtime")]
     pub fn set_vnext_identity_signer(&mut self, signer: Arc<dyn SessionIdentitySigner>) {
         self.vnext_identity_signer = Some(signer);
@@ -350,13 +470,20 @@ impl OneBrainNode {
                         .into(),
                 )
             })?;
+            let identity_signer = match self.vnext_identity_signer.clone() {
+                Some(signer) => Some(signer),
+                None => self
+                    ._dataset_generations
+                    .session_identity_signer()
+                    .map_err(|error| NodeError::Storage(error.to_string()))?,
+            };
             Some(
-                VNextProductRuntime::start(
-                    &self.config.data_dir,
+                VNextProductRuntime::start_in_dataset(
+                    self.dataset_paths.as_ref(),
                     bind_addr,
                     &self.config.vnext,
                     dependencies,
-                    self.vnext_identity_signer.clone(),
+                    identity_signer,
                 )
                 .await
                 .map_err(|error| {
@@ -533,42 +660,39 @@ impl OneBrainNode {
             let event_tx = event_tx.clone();
             let cid_hex = cid_hex.to_string();
             tokio::spawn(async move {
-                match TcpStream::connect(addr).await {
-                    Ok(mut stream) => {
-                        if send_message(&mut stream, &msg).await.is_ok() {
-                            // Wait for response (with timeout)
-                            match tokio::time::timeout(
-                                std::time::Duration::from_secs(60),
-                                recv_message(&mut stream),
-                            )
-                            .await
-                            {
-                                Ok(Ok(NetMessage::VerifyResponse {
-                                    agreement_score,
-                                    verified,
-                                    ..
-                                })) => {
-                                    let _ = event_tx
-                                        .send(NodeEvent::VerifyResult {
-                                            cid_hex,
-                                            agreement_score,
-                                            verified,
-                                            from: format!("{}", addr),
-                                        })
-                                        .await;
-                                }
-                                _ => {
-                                    let _ = event_tx
-                                        .send(NodeEvent::Notification(format!(
-                                            "  ⚠ Verification timeout from {}",
-                                            addr
-                                        )))
-                                        .await;
-                                }
+                if let Ok(mut stream) = TcpStream::connect(addr).await {
+                    if send_message(&mut stream, &msg).await.is_ok() {
+                        // Wait for response (with timeout)
+                        match tokio::time::timeout(
+                            std::time::Duration::from_secs(60),
+                            recv_message(&mut stream),
+                        )
+                        .await
+                        {
+                            Ok(Ok(NetMessage::VerifyResponse {
+                                agreement_score,
+                                verified,
+                                ..
+                            })) => {
+                                let _ = event_tx
+                                    .send(NodeEvent::VerifyResult {
+                                        cid_hex,
+                                        agreement_score,
+                                        verified,
+                                        from: format!("{}", addr),
+                                    })
+                                    .await;
+                            }
+                            _ => {
+                                let _ = event_tx
+                                    .send(NodeEvent::Notification(format!(
+                                        "  ⚠ Verification timeout from {}",
+                                        addr
+                                    )))
+                                    .await;
                             }
                         }
                     }
-                    Err(_) => {}
                 }
             });
         }
@@ -627,9 +751,7 @@ impl OneBrainNode {
                 message: "Rate limit check...".into(),
             })
             .await;
-        self.guard
-            .check_rate_limit()
-            .map_err(|e| NodeError::Pipeline(e))?;
+        self.guard.check_rate_limit().map_err(NodeError::Pipeline)?;
 
         // 2. Create a fresh encoder backend (OllamaBackend doesn't impl Clone)
         send_progress(
@@ -650,7 +772,7 @@ impl OneBrainNode {
             "nomic-embed-text",
             300,
         )
-        .map_err(|e| NodeError::Ai(e))?;
+        .map_err(NodeError::Ai)?;
 
         let encoder = AiEncoder::new(
             Box::new(encoder_backend),
@@ -716,7 +838,7 @@ impl OneBrainNode {
         // 4b. Quality gate check
         self.guard
             .check_quality(wire_bytes, instruction_count)
-            .map_err(|e| NodeError::Pipeline(e))?;
+            .map_err(NodeError::Pipeline)?;
 
         // 4c-4e. Store, index, record (using shared state)
         send_progress(5, "Storing KU and indexing...".into());
@@ -731,7 +853,7 @@ impl OneBrainNode {
         let cid;
         let cid_hex;
         {
-            let mut state = self.shared.lock().await;
+            let state = self.shared.lock().await;
 
             // 4c. Store in redb
             cid = state
@@ -739,12 +861,9 @@ impl OneBrainNode {
                 .put(&ku)
                 .map_err(|e| NodeError::Storage(format!("{}", e)))?;
 
-            // 4d. Index source text in retriever (for keyword search)
+            // Legacy KU persistence is fenced in Base mode. It never grants
+            // retriever authority; only a proven Vault source binding may do so.
             cid_hex = hex_cid(&cid);
-            state.retriever.index_ku(cid_hex.clone(), text.to_string());
-
-            // Save retriever index to disk
-            let _ = state.retriever.save(&state.config.retriever_path());
         }
 
         // 4e. Record creation in rate tracker
@@ -752,15 +871,12 @@ impl OneBrainNode {
 
         // 5. Also process any additional KUs (if encoding produced multiple)
         {
-            let mut state = self.shared.lock().await;
+            let state = self.shared.lock().await;
             for extra_bytes in encoding_result.wire_bytes.iter().skip(1) {
                 if let Ok(extra_ku) = KuRuntime::from_wire(extra_bytes.clone()) {
                     let extra_instr = extra_ku.dna.instructions.len();
                     if self.guard.check_quality(extra_bytes, extra_instr).is_ok() {
-                        if let Ok(extra_cid) = state.storage.put(&extra_ku) {
-                            let extra_hex = hex_cid(&extra_cid);
-                            state.retriever.index_ku(extra_hex, text.to_string());
-                        }
+                        let _ = state.storage.put(&extra_ku);
                     }
                 }
             }
@@ -829,6 +945,61 @@ impl OneBrainNode {
         &self.registry_status
     }
 
+    /// Close the Task 25 integration receipt from independently measured
+    /// archive/restart roots and live Node-owned tuple, Registry, rollout, and
+    /// legacy-fence state. Root disagreement is rejected instead of being
+    /// recorded as apparently successful evidence.
+    pub fn base_integration_receipt(
+        &self,
+        canonical_root_before_restart: [u8; 32],
+        canonical_root_after_restart: [u8; 32],
+        archive_restore_root: [u8; 32],
+    ) -> Result<BaseIntegrationReceipt, NodeError> {
+        if canonical_root_before_restart != canonical_root_after_restart
+            || canonical_root_before_restart != archive_restore_root
+        {
+            return Err(NodeError::Storage(
+                "Base integration canonical/archive roots disagree".into(),
+            ));
+        }
+        let status = self
+            .base_services()
+            .ok_or_else(|| NodeError::Config("Base runtime is not installed".into()))?
+            .snapshot()
+            .map_err(|error| NodeError::Config(error.to_string()))?;
+        let registry_release_root = self
+            .registry_status
+            .release_aggregate_root
+            .as_deref()
+            .ok_or_else(|| {
+                NodeError::Config("signed Concept Registry release is not active".into())
+            })
+            .and_then(decode_integration_root)?;
+        let features = self.vnext_status().features;
+        let default_active_network_lanes = [
+            features.obp_rp,
+            features.distributed_kql_one_hop,
+            features.public_use_evidence_publish,
+            features.distributed_pomv_view,
+        ]
+        .into_iter()
+        .filter(|active| *active)
+        .count() as u16;
+
+        Ok(BaseIntegrationReceipt {
+            candidate_semantic_digest: status.version.candidate_semantic_digest.0,
+            artifact_tuple_digest: status.version.artifact_tuple_digest.0,
+            canonical_root_before_restart,
+            canonical_root_after_restart,
+            archive_restore_root,
+            registry_release_root,
+            default_active_network_lanes,
+            // KuStorage is opened through the read-only compatibility port;
+            // no feature combination restores legacy write authority.
+            legacy_write_enabled: false,
+        })
+    }
+
     /// Build a scope-aware, display-only vNext status projection.
     pub fn vnext_status(&self) -> crate::vnext_status::VNextStatusSnapshot {
         #[cfg(feature = "vnext-network-runtime")]
@@ -873,13 +1044,18 @@ impl OneBrainNode {
         let runtime = None;
         #[cfg(not(feature = "vnext-network-runtime"))]
         let effective_vnext = self.config.vnext.clone();
-        crate::vnext_status::VNextStatusSnapshot::local_runtime_with_network(
+        let mut snapshot = crate::vnext_status::VNextStatusSnapshot::local_runtime_with_network(
             self.ku_count().unwrap_or(0),
             self.peer_count(),
             &effective_vnext,
             true,
             runtime,
-        )
+        );
+        snapshot.base_runtime = self
+            .base_services()
+            .and_then(|services| services.snapshot().ok())
+            .map(crate::vnext_status::BaseRuntimeStatusView::from_base);
+        snapshot
     }
 
     /// Address of the real UDP/QUIC OBP-RP listener, if it is running.
@@ -999,7 +1175,7 @@ impl OneBrainNode {
         // Read identity from file if exists
         let identity_path = self.config.identity_path();
         let (node_id, created) = if identity_path.exists() {
-            let data = std::fs::read_to_string(&identity_path).map_err(|e| NodeError::Io(e))?;
+            let data = std::fs::read_to_string(&identity_path).map_err(NodeError::Io)?;
             let json: serde_json::Value = serde_json::from_str(&data)
                 .map_err(|e| NodeError::Config(format!("Invalid identity file: {}", e)))?;
             let nid = json["node_id"].as_str().unwrap_or("unknown").to_string();
@@ -1023,38 +1199,74 @@ impl OneBrainNode {
         })
     }
 
-    /// Recover identity from BIP39 phrase.
-    pub fn recover_identity(
-        &mut self,
-        phrase: &[String],
-        _password: &str,
-    ) -> Result<IdentityInfo, NodeError> {
-        // Validate BIP39 phrase (24 words)
-        if phrase.len() != 24 {
-            return Err(NodeError::InvalidPhrase(format!(
-                "Expected 24 words, got {}",
-                phrase.len()
-            )));
+    /// The mnemonic-shaped prototype never implemented BIP39 and is not a
+    /// recovery authority. Base recovery accepts only a verified encrypted
+    /// package through the archive/restore service.
+    pub fn recover_identity_legacy(&mut self) -> Result<IdentityInfo, NodeError> {
+        Err(NodeError::UnsupportedLegacyRecovery)
+    }
+
+    /// Compose the product-neutral Base facade exactly once around the
+    /// already lease-protected dataset generation owner.
+    pub fn install_base_runtime(&mut self, config: BaseRuntimeConfig) -> Result<(), NodeError> {
+        if self.base_runtime.is_some() {
+            return Err(NodeError::Config(
+                "OneBrainNode already owns a Base runtime".into(),
+            ));
         }
-        // TODO: Actual BIP39 derivation + keypair generation
-        // For now, create a placeholder identity
-        let hash_input = phrase.join(" ");
-        let hash_bytes: [u8; 32] = blake3::hash(hash_input.as_bytes()).into();
-        let identity = serde_json::json!({
-            "node_id": hex_cid(&hash_bytes),
-            "created": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default().as_secs(),
-            "recovered": true
-        });
-        let identity_path = self.config.identity_path();
-        std::fs::write(
-            &identity_path,
-            serde_json::to_string_pretty(&identity)
-                .map_err(|e| NodeError::Config(format!("Serialize error: {}", e)))?,
-        )
-        .map_err(|e| NodeError::Io(e))?;
-        self.get_identity_info()
+        let runtime = BaseRuntime::open(self._dataset_generations.clone(), config)
+            .map_err(|error| NodeError::Config(error.to_string()))?;
+        self.base_runtime = Some(runtime);
+        Ok(())
+    }
+
+    /// Product-neutral weak service handle. The node mutex may be released as
+    /// soon as this value has been cloned.
+    pub fn base_services(&self) -> Option<BaseServices> {
+        self.base_runtime
+            .as_ref()
+            .and_then(|runtime| runtime.services().ok())
+    }
+
+    pub fn issue_base_management_grant(
+        &self,
+        principal: [u8; 32],
+        authentication_proof: &[u8],
+        scopes: impl IntoIterator<Item = BaseManagementScope>,
+        ttl: std::time::Duration,
+    ) -> Result<BaseManagementGrant, NodeError> {
+        self.base_runtime
+            .as_ref()
+            .ok_or_else(|| NodeError::Config("Base runtime is not installed".into()))?
+            .issue_management_grant(principal, authentication_proof, scopes, ttl)
+            .map_err(|error| NodeError::Config(error.to_string()))
+    }
+
+    pub fn register_base_signer_provision(
+        &self,
+        principal: [u8; 32],
+        authentication_proof: &[u8],
+        requirement: SignerReprovisionRequirement,
+        proof: SignerPossessionProof,
+        registry: Arc<dyn SignerProviderRegistry>,
+    ) -> Result<onebrain_base_contract::SignerProvisionHandleV1, NodeError> {
+        self.base_runtime
+            .as_ref()
+            .ok_or_else(|| NodeError::Config("Base runtime is not installed".into()))?
+            .register_signer_provision(
+                principal,
+                authentication_proof,
+                requirement,
+                proof,
+                registry,
+            )
+            .map_err(|error| NodeError::Config(error.to_string()))
+    }
+
+    /// Detach the aggregate without waiting. Callers release any node mutex
+    /// before awaiting `BaseRuntime::close` on the returned owner.
+    pub fn detach_base_runtime(&mut self) -> Option<BaseRuntime> {
+        self.base_runtime.take()
     }
 
     // ═══════════════════════════════════════════════════════
@@ -1089,7 +1301,13 @@ impl OneBrainNode {
                     .expr
                     .as_ref()
                     .map(|e| e.text.clone())
-                    .or_else(|| state.retriever.get_expression(&cid_hex))
+                    .or_else(|| {
+                        state
+                            .retriever
+                            .read()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .get_expression(&cid_hex)
+                    })
                     .unwrap_or_else(|| {
                         format!(
                             "[{} KU, {} instructions]",
@@ -1097,11 +1315,7 @@ impl OneBrainNode {
                             ku.instruction_count()
                         )
                     });
-                let preview = if preview.len() > 80 {
-                    format!("{}...", &preview[..77])
-                } else {
-                    preview
-                };
+                let preview = truncate_preview(&preview, 80);
                 let trust = ku.epi.trust.trust_score as f64 / 10000.0;
                 let pomv = ku.epi.pomv_score();
                 let created = ku
@@ -1143,7 +1357,7 @@ impl OneBrainNode {
                     .partial_cmp(&a.trust)
                     .unwrap_or(std::cmp::Ordering::Equal)
             }),
-            _ => items.sort_by(|a, b| b.created.cmp(&a.created)), // default: newest first
+            _ => items.sort_by_key(|item| std::cmp::Reverse(item.created)), // default: newest first
         }
 
         // Paginate
@@ -1179,7 +1393,13 @@ impl OneBrainNode {
             .expr
             .as_ref()
             .map(|e| e.text.clone())
-            .or_else(|| state.retriever.get_expression(cid_hex))
+            .or_else(|| {
+                state
+                    .retriever
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .get_expression(cid_hex)
+            })
             .unwrap_or_else(|| {
                 format!(
                     "[{} KU, {} instructions]",
@@ -1500,13 +1720,15 @@ impl OneBrainNode {
                     .expr
                     .as_ref()
                     .map(|e| e.text.clone())
-                    .or_else(|| state.retriever.get_expression(&cid_hex))
+                    .or_else(|| {
+                        state
+                            .retriever
+                            .read()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .get_expression(&cid_hex)
+                    })
                     .unwrap_or_else(|| format!("[{} KU]", gene_type));
-                let preview = if preview.len() > 80 {
-                    format!("{}...", &preview[..77])
-                } else {
-                    preview
-                };
+                let preview = truncate_preview(&preview, 80);
                 let trust = ku.epi.trust.trust_score as f64 / 10000.0;
                 let pomv = ku.epi.pomv_score();
                 let created = ku
@@ -1558,6 +1780,8 @@ impl OneBrainNode {
                     .or_else(|| {
                         state
                             .retriever
+                            .read()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
                             .get_expression(&cid_hex_tmp)
                             .map(|t| t.to_lowercase())
                     })
@@ -1572,13 +1796,15 @@ impl OneBrainNode {
                     .expr
                     .as_ref()
                     .map(|e| e.text.clone())
-                    .or_else(|| state.retriever.get_expression(&cid_hex))
+                    .or_else(|| {
+                        state
+                            .retriever
+                            .read()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .get_expression(&cid_hex)
+                    })
                     .unwrap_or_else(|| format!("[{} KU]", gene_type));
-                let preview = if preview.len() > 80 {
-                    format!("{}...", &preview[..77])
-                } else {
-                    preview
-                };
+                let preview = truncate_preview(&preview, 80);
                 let trust = ku.epi.trust.trust_score as f64 / 10000.0;
                 let pomv = ku.epi.pomv_score();
                 let created = ku
@@ -1633,13 +1859,13 @@ impl OneBrainNode {
         // Outgoing bonds: this KU → targets
         if let Ok(outgoing) = state.storage.graph().outgoing_bonds(&cid_bytes) {
             for (rel, target_cid, meta) in &outgoing {
-                let target_hex = hex_cid(&target_cid);
+                let target_hex = hex_cid(target_cid);
                 let (preview, gene_type, pomv, is_local) = match state.storage.get(target_cid) {
                     Ok(target_ku) => {
                         let preview = target_ku
                             .expr
                             .as_ref()
-                            .map(|e| e.text.chars().take(80).collect::<String>())
+                            .map(|e| truncate_preview(&e.text, 80))
                             .unwrap_or_default();
                         let gt = target_ku
                             .extract_field("gene_type")
@@ -1668,13 +1894,13 @@ impl OneBrainNode {
         // Incoming bonds: sources → this KU
         if let Ok(incoming) = state.storage.graph().incoming_bonds(&cid_bytes) {
             for (rel, source_cid) in &incoming {
-                let source_hex = hex_cid(&source_cid);
+                let source_hex = hex_cid(source_cid);
                 let (preview, gene_type, pomv, is_local) = match state.storage.get(source_cid) {
                     Ok(source_ku) => {
                         let preview = source_ku
                             .expr
                             .as_ref()
-                            .map(|e| e.text.chars().take(80).collect::<String>())
+                            .map(|e| truncate_preview(&e.text, 80))
                             .unwrap_or_default();
                         let gt = source_ku
                             .extract_field("gene_type")
@@ -1786,11 +2012,11 @@ impl OneBrainNode {
         // Create new backends with the new model
         let new_chat_backend =
             OllamaBackend::new(&self.config.ollama_url, model_name, "nomic-embed-text", 120)
-                .map_err(|e| NodeError::Ai(e))?;
+                .map_err(NodeError::Ai)?;
 
         let new_encoder_backend =
             OllamaBackend::new(&self.config.ollama_url, model_name, "nomic-embed-text", 120)
-                .map_err(|e| NodeError::Ai(e))?;
+                .map_err(NodeError::Ai)?;
 
         // Replace backends in mediator
         self.mediator
@@ -1963,8 +2189,8 @@ impl OneBrainNode {
     // Step 7: Data Portability
     // ═══════════════════════════════════════════════════════
 
-    /// Export KUs to a file.
-    pub fn export_kus(&self, format: &str, path: &std::path::Path) -> Result<usize, NodeError> {
+    /// Export a non-restorable human/machine-readable view.
+    pub fn export_view(&self, mode: &str, path: &std::path::Path) -> Result<usize, NodeError> {
         let state = match self.shared.try_lock() {
             Ok(s) => s,
             Err(_) => return Err(NodeError::Storage("Storage busy".into())),
@@ -1976,8 +2202,8 @@ impl OneBrainNode {
 
         let count = all_kus.len();
 
-        match format {
-            "json" => {
+        match mode {
+            "json-view-v1" => {
                 let items: Vec<serde_json::Value> = all_kus
                     .iter()
                     .map(|ku| {
@@ -1995,7 +2221,7 @@ impl OneBrainNode {
                     .map_err(|e| NodeError::Storage(format!("JSON serialize error: {}", e)))?;
                 std::fs::write(path, json)?;
             }
-            "csv" => {
+            "csv-view-v1" => {
                 let mut csv = String::from("cid,gene_type,content,trust,pomv,wire_size\n");
                 for ku in &all_kus {
                     let content = ku
@@ -2017,8 +2243,8 @@ impl OneBrainNode {
             }
             _ => {
                 return Err(NodeError::InvalidArgument(format!(
-                    "Unknown export format: '{}'. Options: json, csv",
-                    format
+                    "Unknown view mode: '{}'. Options: json-view-v1, csv-view-v1",
+                    mode
                 )))
             }
         }
@@ -2026,8 +2252,45 @@ impl OneBrainNode {
         Ok(count)
     }
 
-    /// Import KUs from a text file (one paragraph per KU).
-    pub async fn import_file(&mut self, path: &std::path::Path) -> Result<ImportResult, NodeError> {
+    /// Export exact validated public vNext bytes. Legacy KU rows are not
+    /// silently promoted into this namespace.
+    pub fn export_canonical_exchange(&self, path: &std::path::Path) -> Result<usize, NodeError> {
+        let canonical_root = self
+            .dataset_paths
+            .owner_path(BaseStorageOwnerId::CANONICAL)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let scan = RedbAcceptedRecordScan::new(canonical_root.join("vnext_verified.redb"));
+        let entries = scan
+            .accepted_records()
+            .map_err(|error| NodeError::Storage(error.to_string()))?
+            .into_iter()
+            .map(|entry| BaseExchangeEntryV1::VNextPublic {
+                kind: entry.record_kind,
+                cid: entry.claimed_cid,
+                canonical_bytes: entry.canonical_bytes,
+            })
+            .collect::<Vec<_>>();
+        let file = std::fs::File::create(path)?;
+        write_canonical_exchange(&entries, file)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        Ok(entries.len())
+    }
+
+    pub fn export_data(&self, mode: &str, path: &std::path::Path) -> Result<usize, NodeError> {
+        match mode {
+            "canonical-v1" => self.export_canonical_exchange(path),
+            "json-view-v1" | "csv-view-v1" => self.export_view(mode, path),
+            _ => Err(NodeError::InvalidArgument(format!(
+                "Unsupported export mode '{mode}'. Expected canonical-v1, json-view-v1, or csv-view-v1"
+            ))),
+        }
+    }
+
+    /// Encode text paragraphs as new drafts. This is not a canonical restore.
+    pub async fn import_text_drafts(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<ImportResult, NodeError> {
         let content = std::fs::read_to_string(path)?;
         let paragraphs: Vec<&str> = content
             .split("\n\n")
@@ -2058,220 +2321,183 @@ impl OneBrainNode {
         })
     }
 
-    /// Create a backup of all node data.
-    ///
-    /// Includes identity, profile, peers, KU wire bytes, and in-memory state
-    /// (tags, pins, follows, watches, deprecated KUs).
-    pub fn create_backup(
-        &self,
+    /// Validate and admit exact public vNext records. Explicit legacy evidence
+    /// remains read-only and is reported as skipped.
+    pub fn import_canonical_exchange(
+        &mut self,
         path: &std::path::Path,
-        _password: &str,
-    ) -> Result<BackupInfo, NodeError> {
-        let mut backup = serde_json::Map::new();
-
-        // Identity
-        let identity_path = self.config.identity_path();
-        if identity_path.exists() {
-            let data = std::fs::read_to_string(&identity_path)?;
-            backup.insert("identity".to_string(), serde_json::Value::String(data));
-        }
-
-        // Profile
-        let profile_path = self.config.profile_path();
-        if profile_path.exists() {
-            let data = std::fs::read_to_string(&profile_path)?;
-            backup.insert("profile".to_string(), serde_json::Value::String(data));
-        }
-
-        // Peers
-        let peers_path = self.config.peer_memory_path();
-        if peers_path.exists() {
-            let data = std::fs::read_to_string(&peers_path)?;
-            backup.insert("peers".to_string(), serde_json::Value::String(data));
-        }
-
-        // KU data — export all KU wire bytes as hex strings
-        let ku_count = self.ku_count().unwrap_or(0);
-        backup.insert(
-            "ku_count".to_string(),
-            serde_json::Value::Number(ku_count.into()),
-        );
-
-        let mut ku_data = Vec::new();
-        if let Ok((kus, _)) = self.list_kus(1, 100_000, None, "created") {
-            for ku in &kus {
-                ku_data.push(serde_json::json!({
-                    "cid_hex": ku.cid_hex,
-                    "gene_type": ku.gene_type,
-                    "preview": ku.preview,
-                    "pomv": ku.pomv,
-                    "trust": ku.trust,
-                    "created": ku.created,
-                    "wire_size": ku.wire_size,
-                }));
-            }
-        }
-        backup.insert("kus".to_string(), serde_json::Value::Array(ku_data));
-
-        // In-memory state: tags
-        let tags_map: serde_json::Map<String, serde_json::Value> = self
-            .ku_tags
+    ) -> Result<ImportResult, NodeError> {
+        let entries = read_canonical_exchange(std::fs::File::open(path)?)
+            .map_err(|error| NodeError::InvalidArgument(error.to_string()))?;
+        let legacy_count = entries
             .iter()
-            .map(|(cid, tags)| {
-                let tag_arr: Vec<serde_json::Value> = tags
-                    .iter()
-                    .map(|t| serde_json::Value::String(t.clone()))
-                    .collect();
-                (cid.clone(), serde_json::Value::Array(tag_arr))
+            .filter(|entry| matches!(entry, BaseExchangeEntryV1::LegacyReadOnlyEvidence { .. }))
+            .count();
+        let canonical_root = self
+            .dataset_paths
+            .owner_path(BaseStorageOwnerId::CANONICAL)
+            .map_err(|error| NodeError::Storage(error.to_string()))?;
+        let backend = RedbVerifiedBackend::open(&canonical_root.join("vnext_verified.redb"))
+            .map_err(NodeError::Storage)?;
+        let mut sink = SharedVNextValidatedSink::new(VNextValidatedSink::new(backend));
+        let mut pending = entries
+            .into_iter()
+            .filter_map(|entry| match entry {
+                BaseExchangeEntryV1::VNextPublic {
+                    kind,
+                    cid,
+                    canonical_bytes,
+                } => Some((kind, cid, canonical_bytes)),
+                BaseExchangeEntryV1::LegacyReadOnlyEvidence { .. } => None,
             })
-            .collect();
-        backup.insert("tags".to_string(), serde_json::Value::Object(tags_map));
+            .collect::<Vec<_>>();
+        pending.sort_by_key(|(kind, cid, _)| (admission_priority(*kind), *cid));
+        let public_count = pending.len();
+        let mut imported = 0usize;
+        let mut skipped = legacy_count;
+        let mut errors = 0usize;
 
-        // In-memory state: pinned KUs
-        let pinned: Vec<serde_json::Value> = self
-            .pinned_kus
-            .iter()
-            .map(|c| serde_json::Value::String(c.clone()))
-            .collect();
-        backup.insert("pinned_kus".to_string(), serde_json::Value::Array(pinned));
-
-        // In-memory state: follows
-        backup.insert(
-            "following".to_string(),
-            serde_json::to_value(&self.following).unwrap_or(serde_json::Value::Array(vec![])),
-        );
-
-        // In-memory state: watches
-        backup.insert(
-            "watches".to_string(),
-            serde_json::to_value(&self.watches).unwrap_or(serde_json::Value::Array(vec![])),
-        );
-
-        // In-memory state: deprecated KUs
-        let deprecated: Vec<serde_json::Value> = self
-            .deprecated_kus
-            .iter()
-            .map(|c| serde_json::Value::String(c.clone()))
-            .collect();
-        backup.insert(
-            "deprecated_kus".to_string(),
-            serde_json::Value::Array(deprecated),
-        );
-
-        let json = serde_json::to_string_pretty(&backup)
-            .map_err(|e| NodeError::Backup(format!("Serialize error: {}", e)))?;
-        let size = json.len() as u64;
-        std::fs::write(path, &json)?;
-
-        Ok(BackupInfo {
-            path: path.display().to_string(),
-            size,
-            ku_count,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
+        while !pending.is_empty() {
+            let mut deferred = Vec::new();
+            let mut progressed = false;
+            for (kind, cid, bytes) in pending {
+                let manifest_kind = reconcile_kind(kind);
+                match sink.validate_then_accept(manifest_kind, cid, &bytes) {
+                    Ok(PayloadSinkOutcome::ValidatedStored) => {
+                        imported += 1;
+                        progressed = true;
+                    }
+                    Ok(PayloadSinkOutcome::AlreadyPresent) => {
+                        skipped += 1;
+                        progressed = true;
+                    }
+                    Ok(PayloadSinkOutcome::DeferredMissingDependency) => {
+                        deferred.push((kind, cid, bytes));
+                    }
+                    Ok(PayloadSinkOutcome::RejectedInvalid) | Err(_) => {
+                        errors += 1;
+                        progressed = true;
+                    }
+                }
+            }
+            if !progressed {
+                errors += deferred.len();
+                break;
+            }
+            pending = deferred;
+        }
+        debug_assert_eq!(public_count + legacy_count, imported + skipped + errors);
+        Ok(ImportResult {
+            imported,
+            skipped,
+            errors,
         })
     }
 
-    /// Restore from a backup file.
-    ///
-    /// Restores identity, profile, peers, and in-memory state (tags, pins,
-    /// follows, watches, deprecated KUs).
+    /// The historical JSON "backup" copied plaintext identity/profile state
+    /// and ignored its password. It is permanently fenced from Base writes;
+    /// Task 18 projects the opaque encrypted archive capability workflow.
+    pub fn create_backup(
+        &self,
+        _path: &std::path::Path,
+        _password: &str,
+    ) -> Result<BackupInfo, NodeError> {
+        Err(NodeError::UnsupportedLegacyBackup)
+    }
+
+    /// Legacy JSON is decode-only migration evidence and can never activate a
+    /// dataset. This method performs no read, password processing, or write.
     pub fn restore_backup(
         &mut self,
-        path: &std::path::Path,
+        _path: &std::path::Path,
         _password: &str,
     ) -> Result<(), NodeError> {
-        let content = std::fs::read_to_string(path)?;
-        let backup: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&content)
-            .map_err(|e| NodeError::Backup(format!("Invalid backup file: {}", e)))?;
-
-        // Restore identity
-        if let Some(serde_json::Value::String(identity)) = backup.get("identity") {
-            std::fs::write(self.config.identity_path(), identity)?;
-        }
-
-        // Restore profile
-        if let Some(serde_json::Value::String(profile)) = backup.get("profile") {
-            std::fs::write(self.config.profile_path(), profile)?;
-        }
-
-        // Restore peers
-        if let Some(serde_json::Value::String(peers)) = backup.get("peers") {
-            std::fs::write(self.config.peer_memory_path(), peers)?;
-        }
-
-        // Restore tags
-        if let Some(serde_json::Value::Object(tags_map)) = backup.get("tags") {
-            self.ku_tags.clear();
-            for (cid, tags_val) in tags_map {
-                if let serde_json::Value::Array(tags_arr) = tags_val {
-                    let mut tag_set = HashSet::new();
-                    for t in tags_arr {
-                        if let serde_json::Value::String(tag) = t {
-                            tag_set.insert(tag.clone());
-                        }
-                    }
-                    if !tag_set.is_empty() {
-                        self.ku_tags.insert(cid.clone(), tag_set);
-                    }
-                }
-            }
-        }
-
-        // Restore pinned KUs
-        if let Some(serde_json::Value::Array(pinned)) = backup.get("pinned_kus") {
-            self.pinned_kus.clear();
-            for p in pinned {
-                if let serde_json::Value::String(cid) = p {
-                    self.pinned_kus.insert(cid.clone());
-                }
-            }
-        }
-
-        // Restore follows
-        if let Some(following_val) = backup.get("following") {
-            if let Ok(following) =
-                serde_json::from_value::<Vec<FollowedNode>>(following_val.clone())
-            {
-                self.following = following;
-            }
-        }
-
-        // Restore watches
-        if let Some(watches_val) = backup.get("watches") {
-            if let Ok(watches) = serde_json::from_value::<Vec<WatchInfo>>(watches_val.clone()) {
-                self.watches = watches;
-            }
-        }
-
-        // Restore deprecated KUs
-        if let Some(serde_json::Value::Array(deprecated)) = backup.get("deprecated_kus") {
-            self.deprecated_kus.clear();
-            for d in deprecated {
-                if let serde_json::Value::String(cid) = d {
-                    self.deprecated_kus.insert(cid.clone());
-                }
-            }
-        }
-
-        Ok(())
+        Err(NodeError::UnsupportedLegacyBackup)
     }
 
     // ═══════════════════════════════════════════════════════
     // Blob Storage
     // ═══════════════════════════════════════════════════════
 
-    /// Store a file as a blob and return its metadata.
+    /// Legacy unbound blob ingestion is fenced from Base admission.
     pub fn store_blob(&self, file_path: &std::path::Path) -> Result<BlobMeta, NodeError> {
+        let _ = file_path;
+        Err(NodeError::InvalidArgument(
+            "blob upload must be prepared with an exact owner, CID, type, and length".into(),
+        ))
+    }
+
+    /// Durably reserve an exact future canonical owner before accepting bytes.
+    pub fn prepare_blob_upload(
+        &self,
+        intended_owner: ObjectReference,
+        expected_blob: BlobCid,
+        expected_type: BlobType,
+        expected_length: u64,
+    ) -> Result<PendingOwnedBlobUpload, NodeError> {
         let state = match self.shared.try_lock() {
             Ok(s) => s,
             Err(_) => return Err(NodeError::Storage("Storage busy".into())),
         };
         state
+            .blob_authority
+            .prepare(
+                intended_owner,
+                expected_blob,
+                expected_type,
+                expected_length,
+            )
+            .map_err(|e| NodeError::Storage(format!("{}", e)))
+    }
+
+    /// Stream a file into storage only if it matches a durable pending lease.
+    pub fn store_prepared_blob(
+        &self,
+        upload_id: PendingBlobUploadId,
+        file_path: &std::path::Path,
+    ) -> Result<BlobMeta, NodeError> {
+        let state = match self.shared.try_lock() {
+            Ok(s) => s,
+            Err(_) => return Err(NodeError::Storage("Storage busy".into())),
+        };
+        let pending = state
+            .blob_authority
+            .pending()
+            .get(upload_id)
+            .map_err(|e| NodeError::Storage(format!("{}", e)))?
+            .ok_or_else(|| NodeError::InvalidArgument("unknown pending blob upload".into()))?;
+        state
             .blob_store
-            .store_file(file_path)
+            .store_file_bound(
+                file_path,
+                &pending.expected_blob,
+                pending.expected_type,
+                pending.expected_length,
+            )
+            .map_err(|e| NodeError::Storage(format!("{}", e)))
+    }
+
+    /// Abort a pending lease; any now-unowned bytes become GC-eligible.
+    pub fn abort_blob_upload(&self, upload_id: PendingBlobUploadId) -> Result<bool, NodeError> {
+        let state = match self.shared.try_lock() {
+            Ok(s) => s,
+            Err(_) => return Err(NodeError::Storage("Storage busy".into())),
+        };
+        state
+            .blob_authority
+            .abort(upload_id)
+            .map_err(|e| NodeError::Storage(format!("{}", e)))
+    }
+
+    /// Release the lease only after the exact canonical owner is observable.
+    pub fn confirm_blob_upload(&self, upload_id: PendingBlobUploadId) -> Result<(), NodeError> {
+        let state = match self.shared.try_lock() {
+            Ok(s) => s,
+            Err(_) => return Err(NodeError::Storage("Storage busy".into())),
+        };
+        state
+            .blob_authority
+            .confirm_canonical_owner(upload_id)
             .map_err(|e| NodeError::Storage(format!("{}", e)))
     }
 
@@ -2434,7 +2660,7 @@ impl OneBrainNode {
     /// List all saved drafts, newest first.
     pub fn list_drafts(&self) -> Vec<Draft> {
         let mut drafts: Vec<Draft> = self.drafts.values().cloned().collect();
-        drafts.sort_by(|a, b| b.updated.cmp(&a.updated));
+        drafts.sort_by_key(|draft| std::cmp::Reverse(draft.updated));
         drafts
     }
 
@@ -2459,7 +2685,7 @@ impl OneBrainNode {
             .ok_or_else(|| NodeError::NotFound(format!("Draft not found: {}", draft_id)))?;
         draft.text = text.to_string();
         if let Some(t) = title {
-            draft.title = t.chars().take(80).collect();
+            draft.title = truncate_preview(t, 80);
         }
         draft.updated = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -2782,7 +3008,7 @@ impl OneBrainNode {
         }
         self.ku_tags
             .entry(cid_hex.to_string())
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(tag.to_string());
         Ok(())
     }
@@ -2846,7 +3072,7 @@ impl OneBrainNode {
                 result.push(KuListItem {
                     cid_hex: detail.cid_hex,
                     gene_type: detail.gene_type,
-                    preview: detail.content.chars().take(80).collect(),
+                    preview: truncate_preview(&detail.content, 80),
                     pomv: detail.pomv,
                     pomv_profile: detail.pomv_profile,
                     pomv_is_economic: detail.pomv_is_economic,
@@ -2856,7 +3082,7 @@ impl OneBrainNode {
                 });
             }
         }
-        result.sort_by(|a, b| b.created.cmp(&a.created));
+        result.sort_by_key(|item| std::cmp::Reverse(item.created));
         result
     }
 
@@ -3197,7 +3423,7 @@ impl OneBrainNode {
                 chain.push(KuVersionEntry {
                     cid_hex: d.cid_hex,
                     gene_type: d.gene_type,
-                    preview: d.content.chars().take(80).collect(),
+                    preview: truncate_preview(&d.content, 80),
                     version: 0,
                     created: d.created,
                 });
@@ -3406,7 +3632,7 @@ impl OneBrainNode {
             0.0
         };
         let mut kus_by_type: Vec<(String, usize)> = type_counts.into_iter().collect();
-        kus_by_type.sort_by(|a, b| b.1.cmp(&a.1));
+        kus_by_type.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         let top_gene_type = kus_by_type
             .first()
             .map(|(t, _)| t.clone())
@@ -3495,7 +3721,7 @@ impl OneBrainNode {
                 example_cids: examples,
             })
             .collect();
-        result.sort_by(|a, b| b.ku_count.cmp(&a.ku_count));
+        result.sort_by_key(|item| std::cmp::Reverse(item.ku_count));
         Ok(result)
     }
 
@@ -3613,23 +3839,20 @@ async fn handle_connection(
         }
 
         NetMessage::KuPush {
-            cid_hex,
+            cid_hex: _peer_claimed_cid,
             wire_bytes,
             source_text,
         } => {
             // Decode and store the KU
             match KuRuntime::from_wire(wire_bytes.clone()) {
                 Ok(ku) => {
-                    let mut state = shared.lock().await;
+                    let state = shared.lock().await;
                     match state.storage.put(&ku) {
-                        Ok(_cid) => {
-                            state
-                                .retriever
-                                .index_ku(cid_hex.clone(), source_text.clone());
-                            let _ = state.retriever.save(&state.config.retriever_path());
+                        Ok(actual_cid) => {
+                            let verified_cid_hex = hex_cid(&actual_cid);
                             let _ = event_tx
                                 .send(NodeEvent::KuReceived {
-                                    cid_hex,
+                                    cid_hex: verified_cid_hex,
                                     wire_bytes,
                                     source_text,
                                     from: format!("{}", peer_addr),
@@ -3734,9 +3957,42 @@ async fn handle_connection(
     }
 }
 
+fn admission_priority(kind: StoredRecordKind) -> u8 {
+    match kind {
+        StoredRecordKind::FeedInception => 0,
+        StoredRecordKind::Object => 1,
+        StoredRecordKind::AuthorityEvent => 2,
+        StoredRecordKind::Event => 3,
+    }
+}
+
+fn reconcile_kind(kind: StoredRecordKind) -> ReconcileManifestKind {
+    match kind {
+        StoredRecordKind::Object => ReconcileManifestKind::Object,
+        StoredRecordKind::Event => ReconcileManifestKind::Event,
+        StoredRecordKind::FeedInception => ReconcileManifestKind::FeedInception,
+        StoredRecordKind::AuthorityEvent => ReconcileManifestKind::AuthorityEvent,
+    }
+}
+
 /// Format a 32-byte CID as a hex string.
 pub fn hex_cid(cid: &[u8; 32]) -> String {
     cid.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+fn decode_integration_root(value: &str) -> Result<[u8; 32], NodeError> {
+    if value.len() != 64 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(NodeError::Config(
+            "Concept Registry release root is not 32-byte hex".into(),
+        ));
+    }
+    let mut decoded = [0_u8; 32];
+    for (index, output) in decoded.iter_mut().enumerate() {
+        *output = u8::from_str_radix(&value[index * 2..index * 2 + 2], 16).map_err(|_| {
+            NodeError::Config("Concept Registry release root is not valid hex".into())
+        })?;
+    }
+    Ok(decoded)
 }
 
 /// Parse a hex CID string (prefix match) to 32-byte array.

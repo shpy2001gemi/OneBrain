@@ -1,0 +1,816 @@
+{
+  "format": "onebrain/base-v1-runtime-interface/1",
+  "profile_id": "BASE_V1_RUNTIME_INTERFACE_V1",
+  "profile_version": {
+    "major": 1,
+    "minor": 1
+  },
+  "product_api_profile": {
+    "major": 1,
+    "minor": 1
+  },
+  "wire": {
+    "field_case": "snake_case",
+    "integer_encoding": "fixed-width-little-endian-or-language-native-checked",
+    "unknown_discriminator": "reject",
+    "unknown_required_field": "reject",
+    "extensions": "none-in-v1"
+  },
+  "limits": {
+    "max_payload_bytes": 1048576,
+    "max_continuation_bytes": 4096,
+    "max_continuation_encoded_chars": 5462,
+    "max_string_bytes": 4096,
+    "max_limitations": 64,
+    "max_limitation_bytes": 128,
+    "max_capabilities": 64,
+    "max_resource_budget_dimensions": 16,
+    "max_query_items": 256,
+    "max_subscription_batch_items": 256,
+    "max_event_payload_bytes": 65536,
+    "max_archive_chunk_bytes": 1048576,
+    "max_archive_total_bytes": 1099511627776,
+    "max_management_scopes": 16,
+    "max_active_operations": 1024
+  },
+  "scalar_types": [
+    {"name": "ProfileMajorV1", "wire": "u16", "ownership": "value"},
+    {"name": "ProfileMinorV1", "wire": "u16", "ownership": "value"},
+    {"name": "ProcessGenerationV1", "wire": "u64", "ownership": "value"},
+    {"name": "DatasetGenerationV1", "wire": "u64", "ownership": "value"},
+    {"name": "RequestIdV1", "wire": "opaque_bytes", "exact_bytes": 32, "ownership": "owned"},
+    {"name": "OperationIdV1", "wire": "opaque_bytes", "exact_bytes": 32, "ownership": "owned"},
+    {"name": "OperationReservationIdV1", "wire": "opaque_bytes", "exact_bytes": 32, "ownership": "owned"},
+    {"name": "IdempotencyKeyV1", "wire": "opaque_bytes", "exact_bytes": 32, "ownership": "owned"},
+    {"name": "OpaqueContinuationV1", "wire": "opaque_bytes", "max_bytes": 4096, "ownership": "owned", "constructor": "private_checked"},
+    {"name": "CompatibilityDigestV1", "wire": "blake3_digest", "exact_bytes": 32, "ownership": "owned"},
+    {"name": "LimitationCodeV1", "wire": "ascii_token", "max_bytes": 128, "ownership": "owned"},
+    {"name": "SubscriptionHandleV1", "wire": "opaque_handle", "exact_bytes": 32, "ownership": "service_handle"},
+    {"name": "ManagementHandleV1", "wire": "opaque_handle", "exact_bytes": 32, "ownership": "host_principal"},
+    {"name": "EventCursorV1", "wire": "u64", "ownership": "value"},
+    {"name": "CapabilitySetV1", "wire": "bounded_set", "max_items": 64, "ownership": "owned"},
+    {"name": "TypedPayloadV1", "wire": "bounded_bytes", "max_bytes": 1048576, "ownership": "owned"},
+    {"name": "BasePrerelease", "wire": "ascii_token", "max_bytes": 32, "ownership": "owned"},
+    {"name": "TargetTriple", "wire": "ascii_token", "max_bytes": 96, "ownership": "owned"},
+    {"name": "MigrationVectorIdV1", "wire": "ascii_token", "max_bytes": 64, "ownership": "owned"},
+    {"name": "BaseCapabilitySet", "wire": "bounded_set", "max_items": 64, "ownership": "owned"},
+    {"name": "StorageSchemaVersion", "wire": "u32", "ownership": "value"}
+  ],
+  "common_cross_projection_fields": [
+    "profile_major",
+    "profile_minor",
+    "process_generation",
+    "dataset_generation",
+    "request_id",
+    "operation_id",
+    "idempotency_key",
+    "lifecycle",
+    "coverage",
+    "limitations",
+    "retryable",
+    "resource_budget",
+    "payload_discriminator",
+    "compatibility_digest"
+  ],
+  "requests": [
+    {"id": 1, "name": "OpenRequestV1"},
+    {"id": 2, "name": "NegotiateRequestV1"},
+    {"id": 3, "name": "StatusRequestV1"},
+    {"id": 4, "name": "SnapshotRequestV1"},
+    {"id": 5, "name": "QueryRequestV1"},
+    {"id": 6, "name": "ReserveOperationRequestV1"},
+    {"id": 7, "name": "PrepareRequestV1"},
+    {"id": 8, "name": "ConfirmRequestV1"},
+    {"id": 9, "name": "CancelRequestV1"},
+    {"id": 10, "name": "ReconcileRequestV1"},
+    {"id": 11, "name": "SubscribeRequestV1"},
+    {"id": 12, "name": "PollEventsRequestV1"},
+    {"id": 13, "name": "CloseSubscriptionRequestV1"},
+    {"id": 14, "name": "DrainRequestV1"},
+    {"id": 15, "name": "CloseRequestV1"},
+    {"id": 101, "name": "ManagementOpenRequestV1"},
+    {"id": 102, "name": "ArchiveSourceBeginRequestV1"},
+    {"id": 103, "name": "ArchiveSourcePushChunkRequestV1"},
+    {"id": 104, "name": "ArchiveSourceSealRequestV1"},
+    {"id": 105, "name": "ArchiveSinkBeginRequestV1"},
+    {"id": 106, "name": "ArchiveSinkReadChunkRequestV1"},
+    {"id": 107, "name": "ArchiveSinkCommitRequestV1"},
+    {"id": 108, "name": "ArchiveSecretRegisterRequestV1"},
+    {"id": 109, "name": "ArchiveCapabilityAbortRequestV1"},
+    {"id": 110, "name": "ArchiveCapabilityDestroyRequestV1"},
+    {"id": 111, "name": "CompleteSignerReprovisionRequestV1"},
+    {"id": 112, "name": "ManagementCloseRequestV1"}
+  ],
+  "responses": [
+    {"id": 1, "name": "OpenResponseV1"},
+    {"id": 2, "name": "NegotiateResponseV1"},
+    {"id": 3, "name": "StatusResponseV1"},
+    {"id": 4, "name": "SnapshotResponseV1"},
+    {"id": 5, "name": "QueryResponseV1"},
+    {"id": 6, "name": "OperationReservationV1"},
+    {"id": 7, "name": "PreparedIntentV1"},
+    {"id": 8, "name": "OperationReceiptV1"},
+    {"id": 9, "name": "CancelResponseV1"},
+    {"id": 10, "name": "ReconcileResponseV1"},
+    {"id": 11, "name": "SubscriptionHandleResponseV1"},
+    {"id": 12, "name": "EventBatchV1"},
+    {"id": 13, "name": "CloseSubscriptionResponseV1"},
+    {"id": 14, "name": "DrainResponseV1"},
+    {"id": 15, "name": "CloseResponseV1"},
+    {"id": 101, "name": "ManagementHandleResponseV1"},
+    {"id": 102, "name": "ArchiveSourceHandleResponseV1"},
+    {"id": 103, "name": "ArchiveChunkAcceptedV1"},
+    {"id": 104, "name": "ArchiveSourceSealedV1"},
+    {"id": 105, "name": "ArchiveSinkHandleResponseV1"},
+    {"id": 106, "name": "ArchiveChunkV1"},
+    {"id": 107, "name": "ArchiveSinkCommittedV1"},
+    {"id": 108, "name": "ArchiveSecretHandleResponseV1"},
+    {"id": 109, "name": "ArchiveCapabilityAbortedV1"},
+    {"id": 110, "name": "ArchiveCapabilityDestroyedV1"},
+    {"id": 111, "name": "SignerReprovisionReceiptV1"},
+    {"id": 112, "name": "ManagementCloseResponseV1"}
+  ],
+  "errors": [
+    {"id": 1, "name": "InvalidRequest", "retryable": false, "reconcile_before_retry": false},
+    {"id": 2, "name": "NotFound", "retryable": false, "reconcile_before_retry": false},
+    {"id": 3, "name": "Conflict", "retryable": false, "reconcile_before_retry": false},
+    {"id": 4, "name": "Expired", "retryable": false, "reconcile_before_retry": false},
+    {"id": 5, "name": "RateLimited", "retryable": true, "reconcile_before_retry": true},
+    {"id": 6, "name": "CapabilityDisabled", "retryable": false, "reconcile_before_retry": false},
+    {"id": 7, "name": "DependencyUnavailable", "retryable": true, "reconcile_before_retry": true},
+    {"id": 8, "name": "IncompatibleProfile", "retryable": false, "reconcile_before_retry": false},
+    {"id": 9, "name": "ResourceExhausted", "retryable": true, "reconcile_before_retry": true},
+    {"id": 10, "name": "CorruptState", "retryable": false, "reconcile_before_retry": false},
+    {"id": 11, "name": "ReprovisionRequired", "retryable": false, "reconcile_before_retry": false},
+    {"id": 12, "name": "UnknownOutcome", "retryable": true, "reconcile_before_retry": true},
+    {"id": 13, "name": "InternalError", "retryable": false, "reconcile_before_retry": true}
+  ],
+  "command_kinds": [
+    {"id": 1, "name": "ExistingLocalCommand"},
+    {"id": 2, "name": "CreateArchive"},
+    {"id": 3, "name": "RestoreArchive"}
+  ],
+  "topic_kinds": [
+    {"id": 1, "name": "RuntimeStatus"},
+    {"id": 2, "name": "OperationReceipts"},
+    {"id": 3, "name": "QueryResults"},
+    {"id": 4, "name": "ArchiveProgress"},
+    {"id": 5, "name": "Compatibility"}
+  ],
+  "type_definitions": {
+    "ResourceBudgetV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "max_items", "type": "u32", "required": true, "ownership": "value", "max_value": 256},
+        {"id": 2, "name": "max_bytes", "type": "u64", "required": true, "ownership": "value", "max_value": 1048576},
+        {"id": 3, "name": "max_work_units", "type": "u64", "required": true, "ownership": "value", "max_value": 1000000}
+      ]
+    },
+    "BaseLocalCommandV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "kind", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 2, "name": "payload", "type": "TypedPayloadV1", "required": true, "ownership": "owned", "max_bytes": 1048576}
+      ]
+    },
+    "ArchiveSourceHandleV1": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "management_handle"},
+    "ArchiveSinkHandleV1": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "management_handle"},
+    "ArchiveSecretHandleV1": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "management_handle"},
+    "ArchiveCapabilityHandleV1": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "management_handle", "runtime_kind_checked": true},
+    "ArchiveChunkV1": {"kind": "newtype", "wire": "bounded_bytes", "max_bytes": 1048576, "ownership": "owned", "constructor": "private_checked"},
+    "CreateArchiveCommandV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "sink", "type": "ArchiveSinkHandleV1", "required": true, "ownership": "management_handle"},
+        {"id": 2, "name": "secret", "type": "ArchiveSecretHandleV1", "required": true, "ownership": "management_handle"},
+        {"id": 3, "name": "budget", "type": "ResourceBudgetV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "RestoreArchiveCommandV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "source", "type": "ArchiveSourceHandleV1", "required": true, "ownership": "management_handle"},
+        {"id": 2, "name": "secret", "type": "ArchiveSecretHandleV1", "required": true, "ownership": "management_handle"},
+        {"id": 3, "name": "budget", "type": "ResourceBudgetV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseOperationKindV1": {
+      "kind": "enum",
+      "repr": "u16",
+      "closed": true,
+      "variants": [
+        {"id": 1, "name": "ExistingLocalCommand"},
+        {"id": 2, "name": "CreateArchive"},
+        {"id": 3, "name": "RestoreArchive"}
+      ]
+    },
+    "BaseOperationId": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "owned"},
+    "BaseOperationReservationId": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "owned"},
+    "BaseIdempotencyKey": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "owned"},
+    "BaseOpaqueContinuation": {"kind": "newtype", "wire": "bounded_bytes", "max_bytes": 4096, "ownership": "owned", "constructor": "private_checked"},
+    "BaseSubscriptionId": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "service_handle"},
+    "TopicKindV1": {"kind": "enum", "repr": "u16", "closed": true, "variants_from": "topic_kinds"},
+    "BaseQueryRequestV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "payload", "type": "TypedPayloadV1", "required": true, "ownership": "owned", "max_bytes": 1048576},
+        {"id": 2, "name": "continuation", "type": "BaseOpaqueContinuation", "required": false, "ownership": "owned"},
+        {"id": 3, "name": "budget", "type": "ResourceBudgetV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BasePrepareRequestV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "reservation_id", "type": "BaseOperationReservationId", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "command", "type": "BaseCommandV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseConfirmRequestV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "operation_id", "type": "BaseOperationId", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "idempotency_key", "type": "BaseIdempotencyKey", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseSubscriptionRequestV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "topic", "type": "TopicKindV1", "required": true, "ownership": "value"},
+        {"id": 2, "name": "cursor", "type": "u64", "required": false, "ownership": "value"}
+      ]
+    },
+    "BasePollEventsRequestV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "subscription_id", "type": "BaseSubscriptionId", "required": true, "ownership": "service_handle"},
+        {"id": 2, "name": "after_cursor", "type": "u64", "required": true, "ownership": "value"},
+        {"id": 3, "name": "max_items", "type": "u32", "required": true, "ownership": "value", "max_value": 256}
+      ]
+    },
+    "BaseCommandV1": {
+      "kind": "enum",
+      "repr": "u16",
+      "closed": true,
+      "variants": [
+        {"id": 1, "name": "ExistingLocalCommand", "payload": "BaseLocalCommandV1"},
+        {"id": 2, "name": "CreateArchive", "payload": "CreateArchiveCommandV1"},
+        {"id": 3, "name": "RestoreArchive", "payload": "RestoreArchiveCommandV1"}
+      ]
+    },
+    "ArchiveCredentialKindV1": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "variants": [
+        {"id": 1, "name": "Password"},
+        {"id": 2, "name": "RecoveryKey"}
+      ]
+    },
+    "BoundedSecretIngressV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "kind", "type": "ArchiveCredentialKindV1", "required": true, "ownership": "value"},
+        {"id": 2, "name": "bytes", "type": "SecretBytes", "required": true, "ownership": "zeroizing_one_way_ingress", "max_bytes": 1024}
+      ],
+      "response_serializable": false,
+      "loggable": false
+    },
+    "BaseManagementGrantV1": {"kind": "opaque_registry_id", "exact_bytes": 32, "ownership": "host_principal", "constructible_by_service": false},
+    "ArchiveSourceBeginV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "reservation_id", "type": "BaseOperationReservationId", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "declared_total_bytes", "type": "u64", "required": true, "ownership": "value", "max_value": 1099511627776}
+      ]
+    },
+    "ArchiveSourcePushV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "handle", "type": "ArchiveSourceHandleV1", "required": true, "ownership": "management_handle"},
+        {"id": 2, "name": "offset", "type": "u64", "required": true, "ownership": "value", "max_value": 1099511627776},
+        {"id": 3, "name": "chunk", "type": "ArchiveChunkV1", "required": true, "ownership": "owned", "max_bytes": 1048576}
+      ]
+    },
+    "ArchiveSinkBeginV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "reservation_id", "type": "BaseOperationReservationId", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "max_total_bytes", "type": "u64", "required": true, "ownership": "value", "max_value": 1099511627776}
+      ]
+    },
+    "ArchiveSinkReadV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "handle", "type": "ArchiveSinkHandleV1", "required": true, "ownership": "management_handle"},
+        {"id": 2, "name": "offset", "type": "u64", "required": true, "ownership": "value", "max_value": 1099511627776},
+        {"id": 3, "name": "max_bytes", "type": "u32", "required": true, "ownership": "value", "max_value": 1048576}
+      ]
+    },
+    "SignerDomainV1": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "variants": [
+        {"id": 1, "name": "NodeTransport"},
+        {"id": 2, "name": "ActorRoot"},
+        {"id": 3, "name": "FeedAuthor"}
+      ]
+    },
+    "NodeTransportPublicIdV1": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "owned"},
+    "ActorRootPublicIdV1": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "owned"},
+    "FeedAuthorPublicIdV1": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "owned"},
+    "SignerPublicIdV1": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "variants": [
+        {"id": 1, "name": "NodeTransport", "payload": "NodeTransportPublicIdV1"},
+        {"id": 2, "name": "ActorRoot", "payload": "ActorRootPublicIdV1"},
+        {"id": 3, "name": "FeedAuthor", "payload": "FeedAuthorPublicIdV1"}
+      ]
+    },
+    "SignerProvisionHandleV1": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "host_principal"},
+    "CompleteSignerReprovisionV1": {
+      "kind": "struct",
+      "fields": [
+        {"id": 1, "name": "domain", "type": "SignerDomainV1", "required": true, "ownership": "value"},
+        {"id": 2, "name": "expected_public_id", "type": "SignerPublicIdV1", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "provision_handle", "type": "SignerProvisionHandleV1", "required": true, "ownership": "host_principal"}
+      ]
+    },
+    "BaseRequestV1": {
+      "kind": "enum",
+      "repr": "u16",
+      "closed": true,
+      "variants": [
+        {"id": 3, "name": "Status", "payload": null},
+        {"id": 5, "name": "Query", "payload": "BaseQueryRequestV1"},
+        {"id": 6, "name": "ReserveOperation", "payload": "BaseOperationKindV1"},
+        {"id": 7, "name": "Prepare", "payload": "BasePrepareRequestV1"},
+        {"id": 8, "name": "Confirm", "payload": "BaseConfirmRequestV1"},
+        {"id": 9, "name": "Cancel", "payload": "BaseOperationId"},
+        {"id": 10, "name": "Reconcile", "payload": "BaseOperationId"},
+        {"id": 11, "name": "Subscribe", "payload": "BaseSubscriptionRequestV1"},
+        {"id": 12, "name": "PollEvents", "payload": "BasePollEventsRequestV1"},
+        {"id": 13, "name": "CloseSubscription", "payload": "BaseSubscriptionId"},
+        {"id": 14, "name": "Drain", "payload": null},
+        {"id": 15, "name": "Close", "payload": null}
+      ]
+    },
+    "BaseManagementRequestV1": {
+      "kind": "enum",
+      "repr": "u16",
+      "closed": true,
+      "variants": [
+        {"id": 102, "name": "ArchiveSourceBegin", "payload": "ArchiveSourceBeginV1"},
+        {"id": 103, "name": "ArchiveSourcePush", "payload": "ArchiveSourcePushV1"},
+        {"id": 104, "name": "ArchiveSourceSeal", "payload": "ArchiveCapabilityHandleV1"},
+        {"id": 105, "name": "ArchiveSinkBegin", "payload": "ArchiveSinkBeginV1"},
+        {"id": 106, "name": "ArchiveSinkRead", "payload": "ArchiveSinkReadV1"},
+        {"id": 107, "name": "ArchiveSinkCommit", "payload": "ArchiveCapabilityHandleV1"},
+        {"id": 108, "name": "ArchiveSecretRegister", "payload": "BoundedSecretIngressV1"},
+        {"id": 109, "name": "ArchiveCapabilityAbort", "payload": "ArchiveCapabilityHandleV1"},
+        {"id": 110, "name": "ArchiveCapabilityDestroy", "payload": "ArchiveCapabilityHandleV1"},
+        {"id": 111, "name": "CompleteSignerReprovision", "payload": "CompleteSignerReprovisionV1"},
+        {"id": 112, "name": "Close", "payload": null}
+      ]
+    },
+    "ProfileVersion": {
+      "kind": "struct",
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "major", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 2, "name": "minor", "type": "u16", "required": true, "ownership": "value"}
+      ]
+    },
+    "BaseReleaseVersion": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "major", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 2, "name": "minor", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 3, "name": "patch", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 4, "name": "prerelease", "type": "BasePrerelease", "required": false, "ownership": "owned"}
+      ]
+    },
+    "SourceCommitSha1": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 20, "ownership": "owned"},
+    "SourceCommitSha256": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "owned"},
+    "ToolchainDigest": {"kind": "newtype", "wire": "fixed_bytes", "exact_bytes": 32, "ownership": "owned"},
+    "SourceCommitId": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "variants": [
+        {"id": 1, "name": "Sha1", "payload": "SourceCommitSha1"},
+        {"id": 2, "name": "Sha256", "payload": "SourceCommitSha256"}
+      ]
+    },
+    "SourceCommitIdentity": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "variants": [
+        {"id": 1, "name": "Known", "payload": "SourceCommitId"},
+        {"id": 2, "name": "Unknown", "payload": null}
+      ]
+    },
+    "ToolchainIdentity": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "variants": [
+        {"id": 1, "name": "Known", "payload": "ToolchainDigest"},
+        {"id": 2, "name": "Unknown", "payload": null}
+      ]
+    },
+    "BaseQualifiedEvidence": {
+      "kind": "struct",
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "candidate_commit", "type": "SourceCommitId", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "candidate_semantic_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "evidence_blake3", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseQualificationState": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "variants": [
+        {"id": 1, "name": "Unqualified", "payload": null},
+        {"id": 2, "name": "Qualified", "payload": "BaseQualifiedEvidence"}
+      ]
+    },
+    "ArchiveRestorePolicyV1": {
+      "kind": "struct",
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "canonical_schema_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "domain_registry_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "resource_registry_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 4, "name": "storage_schema", "type": "StorageSchemaVersion", "required": true, "ownership": "value"},
+        {"id": 5, "name": "archive_profile", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 6, "name": "migration_profile", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 7, "name": "max_dataset_bytes", "type": "u64", "required": true, "ownership": "value", "max_value": 17179869184}
+      ]
+    },
+    "BaseCompatibilityTuple": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "base_version", "type": "BaseReleaseVersion", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "base_commit", "type": "SourceCommitIdentity", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "canonical_schema_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 4, "name": "domain_registry_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 5, "name": "resource_registry_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 6, "name": "storage_schema", "type": "StorageSchemaVersion", "required": true, "ownership": "value"},
+        {"id": 7, "name": "archive_profile", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 8, "name": "migration_profile", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 9, "name": "registry_profile", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 10, "name": "registry_profile_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 11, "name": "wire_session", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 12, "name": "product_api", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 13, "name": "c_abi", "type": "ProfileVersion", "required": true, "ownership": "value"},
+        {"id": 14, "name": "feature_set_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 15, "name": "target_triple", "type": "TargetTriple", "required": true, "ownership": "owned"},
+        {"id": 16, "name": "toolchain", "type": "ToolchainIdentity", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseVersionStatus": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "compatibility", "type": "BaseCompatibilityTuple", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "candidate_semantic_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "artifact_tuple_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 4, "name": "qualification", "type": "BaseQualificationState", "required": true, "ownership": "owned"}
+      ]
+    },
+    "NegotiatedVersions": {
+      "kind": "struct",
+      "derives": ["Clone", "Copy", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "base_minor", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 2, "name": "wire_session_minor", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 3, "name": "product_api_minor", "type": "u16", "required": true, "ownership": "value"},
+        {"id": 4, "name": "c_abi_minor", "type": "u16", "required": true, "ownership": "value"}
+      ]
+    },
+    "MigrationVectorBindingV1": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "vector_id", "type": "MigrationVectorIdV1", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "vector_blake3", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "trust_policy_digest", "type": "CompatibilityDigestV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseCompatibilityPolicy": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "current", "type": "BaseCompatibilityTuple", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "minimum_additive", "type": "NegotiatedVersions", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "archive_restore", "type": "ArchiveRestorePolicyV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseCapabilityRequirements": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "supported", "type": "BaseCapabilitySet", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "required", "type": "BaseCapabilitySet", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseCompatibleNegotiationV1": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "versions", "type": "NegotiatedVersions", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "capabilities", "type": "BaseCapabilitySet", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseMigrationRequiredNegotiationV1": {
+      "kind": "struct",
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "fields": [
+        {"id": 1, "name": "from", "type": "BaseReleaseVersion", "required": true, "ownership": "owned"},
+        {"id": 2, "name": "to", "type": "BaseReleaseVersion", "required": true, "ownership": "owned"},
+        {"id": 3, "name": "vector", "type": "MigrationVectorBindingV1", "required": true, "ownership": "owned"}
+      ]
+    },
+    "BaseCompatibilityError": {
+      "kind": "enum",
+      "repr": "u16",
+      "closed": true,
+      "variants": [
+        {"id": 1, "name": "BaseMajorMismatch"},
+        {"id": 2, "name": "BaseMinorBelowMinimum"},
+        {"id": 3, "name": "CanonicalSchemaMismatch"},
+        {"id": 4, "name": "DomainRegistryMismatch"},
+        {"id": 5, "name": "ResourceRegistryMismatch"},
+        {"id": 6, "name": "RegistryProfileMismatch"},
+        {"id": 7, "name": "RegistryProfileDigestMismatch"},
+        {"id": 8, "name": "WireSessionMajorMismatch"},
+        {"id": 9, "name": "WireSessionMinorBelowMinimum"},
+        {"id": 10, "name": "ProductApiMajorMismatch"},
+        {"id": 11, "name": "ProductApiMinorBelowMinimum"},
+        {"id": 12, "name": "CAbiMajorMismatch"},
+        {"id": 13, "name": "CAbiMinorBelowMinimum"},
+        {"id": 14, "name": "MigrationVectorRequired"},
+        {"id": 15, "name": "MissingRequiredCapability"},
+        {"id": 16, "name": "InvalidPolicy"}
+      ]
+    },
+    "BaseNegotiationOutcome": {
+      "kind": "enum",
+      "repr": "u8",
+      "closed": true,
+      "derives": ["Clone", "Debug", "PartialEq", "Eq"],
+      "variants": [
+        {"id": 1, "name": "Compatible", "payload": "BaseCompatibleNegotiationV1"},
+        {"id": 2, "name": "MigrationRequired", "payload": "BaseMigrationRequiredNegotiationV1"},
+        {"id": 3, "name": "Incompatible", "payload": "BaseCompatibilityError"}
+      ]
+    },
+    "BaseErrorCodeV1": {
+      "kind": "enum",
+      "repr": "u16",
+      "closed": true,
+      "variants_from": "errors"
+    }
+  },
+  "operations": [
+    {"id": 1, "name": "open", "request_id": 1, "response_id": 1, "authority": "host", "durability": "session"},
+    {"id": 2, "name": "negotiate", "request_id": 2, "response_id": 2, "authority": "service", "durability": "session"},
+    {"id": 3, "name": "status", "request_id": 3, "response_id": 3, "authority": "service", "durability": "snapshot"},
+    {"id": 4, "name": "snapshot", "request_id": 4, "response_id": 4, "authority": "service", "durability": "snapshot"},
+    {"id": 5, "name": "query", "request_id": 5, "response_id": 5, "authority": "service", "durability": "bounded-read"},
+    {"id": 6, "name": "reserve_operation", "request_id": 6, "response_id": 6, "authority": "service", "durability": "fsync-before-return"},
+    {"id": 7, "name": "prepare", "request_id": 7, "response_id": 7, "authority": "service", "durability": "fsync-before-return"},
+    {"id": 8, "name": "confirm", "request_id": 8, "response_id": 8, "authority": "service", "durability": "fsync-before-side-effect"},
+    {"id": 9, "name": "cancel", "request_id": 9, "response_id": 9, "authority": "service", "durability": "fsync-before-return"},
+    {"id": 10, "name": "reconcile", "request_id": 10, "response_id": 10, "authority": "service", "durability": "durable-read"},
+    {"id": 11, "name": "subscribe", "request_id": 11, "response_id": 11, "authority": "service", "durability": "session"},
+    {"id": 12, "name": "poll_events", "request_id": 12, "response_id": 12, "authority": "service", "durability": "bounded-read"},
+    {"id": 13, "name": "close_subscription", "request_id": 13, "response_id": 13, "authority": "service", "durability": "session"},
+    {"id": 14, "name": "drain", "request_id": 14, "response_id": 14, "authority": "service", "durability": "fsync-before-return"},
+    {"id": 15, "name": "close", "request_id": 15, "response_id": 15, "authority": "service", "durability": "fsync-before-return"},
+    {"id": 101, "name": "management.open", "request_id": 101, "response_id": 101, "authority": "host_grant", "durability": "session"},
+    {"id": 102, "name": "management.archive_source_begin", "request_id": 102, "response_id": 102, "authority": "management", "durability": "fsync-before-return"},
+    {"id": 103, "name": "management.archive_source_push_chunk", "request_id": 103, "response_id": 103, "authority": "management", "durability": "fsync-before-return"},
+    {"id": 104, "name": "management.archive_source_seal", "request_id": 104, "response_id": 104, "authority": "management", "durability": "fsync-before-return"},
+    {"id": 105, "name": "management.archive_sink_begin", "request_id": 105, "response_id": 105, "authority": "management", "durability": "fsync-before-return"},
+    {"id": 106, "name": "management.archive_sink_read_chunk", "request_id": 106, "response_id": 106, "authority": "management", "durability": "bounded-read"},
+    {"id": 107, "name": "management.archive_sink_commit", "request_id": 107, "response_id": 107, "authority": "management", "durability": "fsync-before-return"},
+    {"id": 108, "name": "management.archive_secret_register", "request_id": 108, "response_id": 108, "authority": "management", "durability": "zeroizing-session"},
+    {"id": 109, "name": "management.archive_capability_abort", "request_id": 109, "response_id": 109, "authority": "management", "durability": "fsync-before-return"},
+    {"id": 110, "name": "management.archive_capability_destroy", "request_id": 110, "response_id": 110, "authority": "management", "durability": "fsync-before-return"},
+    {"id": 111, "name": "management.complete_signer_reprovision", "request_id": 111, "response_id": 111, "authority": "management", "durability": "fsync-before-return"},
+    {"id": 112, "name": "management.close", "request_id": 112, "response_id": 112, "authority": "management", "durability": "session"}
+  ],
+  "operation_protocol": {
+    "durable_order": [
+      "reserve_operation",
+      "management_capability_registration",
+      "prepare",
+      "confirm_or_cancel",
+      "reconcile"
+    ],
+    "reservation_binds": ["operation_id", "operation_kind", "process_generation", "dataset_generation", "principal_id"],
+    "prepare_requires_reservation": true,
+    "confirm_requires_idempotency_key": true,
+    "retry_requires_reconcile": true,
+    "unknown_outcome_requires_reconcile": true,
+    "states": ["reserved", "prepared", "confirming", "committed", "canceled", "failed", "unknown_outcome"],
+    "transitions": [
+      "reserved->prepared",
+      "reserved->canceled",
+      "prepared->confirming",
+      "prepared->canceled",
+      "confirming->committed",
+      "confirming->failed",
+      "confirming->unknown_outcome",
+      "unknown_outcome->committed",
+      "unknown_outcome->failed"
+    ]
+  },
+  "generation_fence": {
+    "required_fields": ["process_generation", "dataset_generation"],
+    "checked_on_every_operation": true,
+    "stale_handle_result": "Conflict",
+    "stale_handle_reason": "generation_mismatch",
+    "cross_generation_reuse": "reject"
+  },
+  "subscriptions": {
+    "required_operations": ["subscribe", "poll_events", "close_subscription"],
+    "handle_ownership": "owned_by_service_session",
+    "handle_bindings": ["principal_id", "process_generation", "dataset_generation", "topic"],
+    "max_batch_items": 256,
+    "max_event_payload_bytes": 65536,
+    "cursor_type": "u64",
+    "cursor_rule": "strictly_monotonic_non_regressing",
+    "gap_response": "typed_resync_required_with_earliest_available_cursor",
+    "slow_consumer": "bounded_buffer_then_typed_disconnect_with_resync",
+    "close_is_idempotent": true,
+    "poll_after_close": "NotFound"
+  },
+  "management": {
+    "grant_type": "BaseManagementGrantV1",
+    "grant_authentication": "host_authenticated_unforgeable_single_use",
+    "grant_bindings": ["principal_id", "exact_scopes", "process_generation", "dataset_generation", "expires_at", "revocation_epoch"],
+    "open_consumes_grant": true,
+    "ordinary_service_can_mint_grant": false,
+    "required_operations": [
+      "management.open",
+      "management.archive_source_begin",
+      "management.archive_source_push_chunk",
+      "management.archive_source_seal",
+      "management.archive_sink_begin",
+      "management.archive_sink_read_chunk",
+      "management.archive_sink_commit",
+      "management.archive_secret_register",
+      "management.archive_capability_abort",
+      "management.archive_capability_destroy",
+      "management.complete_signer_reprovision",
+      "management.close"
+    ],
+    "scopes": ["archive_source", "archive_sink", "archive_secret", "signer_reprovision"],
+    "close_revokes_capabilities": true
+  },
+  "archive_capabilities": {
+    "opaque_handles_only": true,
+    "ownership_binding": ["management_handle", "principal_id", "operation_id", "process_generation", "dataset_generation", "capability_kind"],
+    "reserve_before_registration": true,
+    "max_chunk_bytes": 1048576,
+    "max_total_bytes": 1099511627776,
+    "source_states": ["registered", "streaming", "sealed", "consumed", "aborted", "destroyed"],
+    "sink_states": ["registered", "streaming", "committed", "aborted", "destroyed"],
+    "secret_states": ["registered", "consumed", "aborted", "destroyed"],
+    "lifecycle_operations": [
+      "management.archive_source_begin",
+      "management.archive_source_push_chunk",
+      "management.archive_source_seal",
+      "management.archive_sink_begin",
+      "management.archive_sink_read_chunk",
+      "management.archive_sink_commit",
+      "management.archive_secret_register",
+      "management.archive_capability_abort",
+      "management.archive_capability_destroy"
+    ],
+    "secret_custody": "zeroizing_non_exportable",
+    "terminal_reuse": "reject",
+    "drop_behavior": "abort_then_destroy"
+  },
+  "runtime_lifecycle": {
+    "states": ["open", "draining", "closed"],
+    "drain_blocks_new_operations": true,
+    "drain_preserves_poll_cancel_reconcile": true,
+    "close_requires_drain": true,
+    "close_aborts_open_capabilities": true,
+    "close_closes_subscriptions": true,
+    "close_is_idempotent": true,
+    "management_close_is_explicit": true
+  },
+  "compatibility": {
+    "candidate_digest_domain": "onebrain:base:candidate-semantic:1\\0",
+    "artifact_digest_domain": "onebrain:base:artifact-tuple:1\\0",
+    "candidate_fields": [
+      "base_version",
+      "base_commit",
+      "canonical_schema_digest",
+      "domain_registry_digest",
+      "resource_registry_digest",
+      "storage_schema",
+      "archive_profile",
+      "migration_profile",
+      "registry_profile",
+      "registry_profile_digest",
+      "wire_session",
+      "product_api",
+      "c_abi",
+      "feature_set_digest"
+    ],
+    "artifact_only_fields": ["target_triple", "toolchain"],
+    "qualification_is_external": true,
+    "qualification_participates_in_digest": false,
+    "unknown_identity_encoding": "typed-zero-payload-discriminator",
+    "unknown_identity_qualification": "unqualified-only",
+    "migration_requires": ["vector_id", "vector_blake3", "trust_policy_digest"],
+    "minor_negotiation_fields": ["base_version", "wire_session", "product_api", "c_abi"],
+    "exact_incompatible_fields": [
+      "base_version.major",
+      "canonical_schema_digest",
+      "domain_registry_digest",
+      "resource_registry_digest",
+      "registry_profile",
+      "registry_profile_digest",
+      "wire_session.major",
+      "product_api.major",
+      "c_abi.major"
+    ],
+    "migration_fields": ["storage_schema", "archive_profile", "migration_profile"],
+    "provenance_only_fields": [
+      "base_version.patch",
+      "base_version.prerelease",
+      "base_commit",
+      "target_triple",
+      "toolchain"
+    ],
+    "feature_difference": "capability-intersection-require-both-required-subsets"
+  },
+  "projection_rules": {
+    "source": "machine_idl_only",
+    "generated": true,
+    "handwritten_declarations_allowed": false,
+    "targets": [
+      {"name": "rust", "naming": "snake_case", "struct_size_required": false},
+      {"name": "typescript", "naming": "camelCase", "struct_size_required": false},
+      {"name": "dart", "naming": "camelCase", "struct_size_required": false},
+      {"name": "c_abi", "naming": "ob_base_snake_case_v1", "struct_size_required": true}
+    ],
+    "operation_mapping": [
+      {"operation": "open", "rust": "open", "typescript": "open", "dart": "open", "c_abi": "ob_base_open_v1"},
+      {"operation": "negotiate", "rust": "negotiate", "typescript": "negotiate", "dart": "negotiate", "c_abi": "ob_base_negotiate_v1"},
+      {"operation": "status", "rust": "status", "typescript": "status", "dart": "status", "c_abi": "ob_base_status_v1"},
+      {"operation": "snapshot", "rust": "snapshot", "typescript": "snapshot", "dart": "snapshot", "c_abi": "ob_base_snapshot_v1"},
+      {"operation": "query", "rust": "query", "typescript": "query", "dart": "query", "c_abi": "ob_base_query_v1"},
+      {"operation": "reserve_operation", "rust": "reserve_operation", "typescript": "reserveOperation", "dart": "reserveOperation", "c_abi": "ob_base_reserve_operation_v1"},
+      {"operation": "prepare", "rust": "prepare", "typescript": "prepare", "dart": "prepare", "c_abi": "ob_base_prepare_v1"},
+      {"operation": "confirm", "rust": "confirm", "typescript": "confirm", "dart": "confirm", "c_abi": "ob_base_confirm_v1"},
+      {"operation": "cancel", "rust": "cancel", "typescript": "cancel", "dart": "cancel", "c_abi": "ob_base_cancel_v1"},
+      {"operation": "reconcile", "rust": "reconcile", "typescript": "reconcile", "dart": "reconcile", "c_abi": "ob_base_reconcile_v1"},
+      {"operation": "subscribe", "rust": "subscribe", "typescript": "subscribe", "dart": "subscribe", "c_abi": "ob_base_subscribe_v1"},
+      {"operation": "poll_events", "rust": "poll_events", "typescript": "pollEvents", "dart": "pollEvents", "c_abi": "ob_base_poll_events_v1"},
+      {"operation": "close_subscription", "rust": "close_subscription", "typescript": "closeSubscription", "dart": "closeSubscription", "c_abi": "ob_base_close_subscription_v1"},
+      {"operation": "drain", "rust": "drain", "typescript": "drain", "dart": "drain", "c_abi": "ob_base_drain_v1"},
+      {"operation": "close", "rust": "close", "typescript": "close", "dart": "close", "c_abi": "ob_base_close_v1"},
+      {"operation": "management.open", "rust": "management_open", "typescript": "managementOpen", "dart": "managementOpen", "c_abi": "ob_base_management_open_v1"},
+      {"operation": "management.archive_source_begin", "rust": "archive_source_begin", "typescript": "archiveSourceBegin", "dart": "archiveSourceBegin", "c_abi": "ob_base_archive_source_begin_v1"},
+      {"operation": "management.archive_source_push_chunk", "rust": "archive_source_push_chunk", "typescript": "archiveSourcePushChunk", "dart": "archiveSourcePushChunk", "c_abi": "ob_base_archive_source_push_chunk_v1"},
+      {"operation": "management.archive_source_seal", "rust": "archive_source_seal", "typescript": "archiveSourceSeal", "dart": "archiveSourceSeal", "c_abi": "ob_base_archive_source_seal_v1"},
+      {"operation": "management.archive_sink_begin", "rust": "archive_sink_begin", "typescript": "archiveSinkBegin", "dart": "archiveSinkBegin", "c_abi": "ob_base_archive_sink_begin_v1"},
+      {"operation": "management.archive_sink_read_chunk", "rust": "archive_sink_read_chunk", "typescript": "archiveSinkReadChunk", "dart": "archiveSinkReadChunk", "c_abi": "ob_base_archive_sink_read_chunk_v1"},
+      {"operation": "management.archive_sink_commit", "rust": "archive_sink_commit", "typescript": "archiveSinkCommit", "dart": "archiveSinkCommit", "c_abi": "ob_base_archive_sink_commit_v1"},
+      {"operation": "management.archive_secret_register", "rust": "archive_secret_register", "typescript": "archiveSecretRegister", "dart": "archiveSecretRegister", "c_abi": "ob_base_archive_secret_register_v1"},
+      {"operation": "management.archive_capability_abort", "rust": "archive_capability_abort", "typescript": "archiveCapabilityAbort", "dart": "archiveCapabilityAbort", "c_abi": "ob_base_archive_capability_abort_v1"},
+      {"operation": "management.archive_capability_destroy", "rust": "archive_capability_destroy", "typescript": "archiveCapabilityDestroy", "dart": "archiveCapabilityDestroy", "c_abi": "ob_base_archive_capability_destroy_v1"},
+      {"operation": "management.complete_signer_reprovision", "rust": "complete_signer_reprovision", "typescript": "completeSignerReprovision", "dart": "completeSignerReprovision", "c_abi": "ob_base_complete_signer_reprovision_v1"},
+      {"operation": "management.close", "rust": "management_close", "typescript": "managementClose", "dart": "managementClose", "c_abi": "ob_base_management_close_v1"}
+    ],
+    "abi_struct_rule": "every_input_output_and_error_struct_starts_with_u32_struct_size",
+    "forbidden_exposures": ["raw_path", "runtime_handle", "store_handle", "private_key", "authority_implementation", "borrowed_reader", "borrowed_writer", "unbounded_string"]
+  },
+  "baseline_contract": {
+    "ref": "refs/heads/base-v1-idl-baseline",
+    "receipt_format": "onebrain/base-v1-idl-baseline-receipt/1",
+    "required_fields": ["format", "ref", "commit_sha1", "tree_sha1", "idl_sha256", "history_chain_root_sha256"],
+    "load": "git_show_exact_commit",
+    "candidate_relation": "baseline_is_ancestor",
+    "missing_or_moved": "fail_closed"
+  }
+}

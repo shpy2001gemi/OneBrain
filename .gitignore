@@ -4,6 +4,7 @@
 
 # Dependencies
 node_modules/
+.dart_tool/
 vendor/
 .pnp/
 .pnp.js
@@ -121,3 +122,4 @@ onebrain_data/
 *.obr
 *.redb
 src/onebrain-mobile/.dart_tool/
+.superpowers/brainstorm/

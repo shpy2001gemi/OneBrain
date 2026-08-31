@@ -60,13 +60,15 @@ pub const DEPRECATE_THRESHOLD: f64 = 0.05; // below 5% of original → Deprecate
 /// Batch decay runner.
 pub struct DecayRunner;
 
+pub type DecayBond = (([u8; 32], [u8; 32]), Bond);
+
 impl DecayRunner {
     /// Process decay for a list of bonds at the given timestamp.
     ///
     /// Returns a DecayReport with state transitions and events.
     /// Does NOT modify the bonds — caller uses the report to update storage.
     pub fn run_decay(
-        bonds: &[(([u8; 32], [u8; 32]), Bond)], // ((source, target), bond)
+        bonds: &[DecayBond], // ((source, target), bond)
         now_secs: u64,
     ) -> DecayReport {
         let mut report = DecayReport::default();

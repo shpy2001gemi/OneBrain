@@ -15,18 +15,21 @@ use ku_core::foundation::{
 };
 use ku_net::vnext_carrier_adapter::QuicRecordAdapter;
 use onebrain_protocol::{
-    decode_reconciliation_message, decode_session_message, encode_reconciliation_message,
-    encode_session_message, legacy, LegacyAdapter, LegacyAdapterOffer, LEGACY_ENCODING_FULL,
-    LEGACY_SCOPE_GLOBAL,
+    decode_reachability_object, decode_reconciliation_message, decode_session_message,
+    encode_reachability_object, encode_reconciliation_message, encode_session_message, legacy,
+    DirectCandidateKindV1, DirectCandidateV1, HostAddressV1, LegacyAdapter, LegacyAdapterOffer,
+    ReachabilityEndpointV1, ReachabilityObjectV1, RoutePlanV1, RouteResourceBudgetV1,
+    LEGACY_ENCODING_FULL, LEGACY_SCOPE_GLOBAL,
 };
 
-pub const FUZZ_TARGETS: [&str; 6] = [
+pub const FUZZ_TARGETS: [&str; 7] = [
     "canonical_codec",
     "session_reconciliation_codec",
     "carrier_frame",
     "journal_token_snapshot",
     "domain_records",
     "legacy_adapter",
+    "reachability_codec",
 ];
 
 pub const MAX_FUZZ_INPUT_BYTES: usize = 4_096;
@@ -43,6 +46,7 @@ pub fn run_target(target: &str, data: &[u8]) {
         "journal_token_snapshot" => journal_token_snapshot(data),
         "domain_records" => domain_records(data),
         "legacy_adapter" => legacy_adapter(data),
+        "reachability_codec" => reachability_codec(data),
         other => panic!("unknown frozen fuzz target: {other}"),
     }
 }
@@ -177,6 +181,64 @@ fn legacy_adapter(data: &[u8]) {
     assert!(!adapter.grants_vnext_authority());
 }
 
+fn reachability_codec(data: &[u8]) {
+    if let Ok(value) = decode_reachability_object(data) {
+        let encoded = encode_reachability_object(&value)
+            .expect("accepted reachability object re-encodes within frozen bounds");
+        assert_eq!(encoded, data);
+    }
+}
+
+/// Frozen invalid classes from the outbound-first profile. These are small on
+/// purpose: the decoder must reject them before any profile-sized allocation.
+pub const REACHABILITY_INVALID_CORPUS: [(&str, &[u8]); 19] = [
+    ("unknown-schema", &[0xff, 0x00]),
+    ("unknown-field", br#"{\"unknown\":true}"#),
+    ("noncanonical-order", &[0xa2, 0x02, 0x00, 0x01, 0x00]),
+    ("oversize-endpoints", br#"{\"endpoints\":9}"#),
+    ("expired", br#"{\"expires_at\":0}"#),
+    ("replayed-sequence", br#"{\"sequence\":0}"#),
+    ("wrong-signature-domain", br#"{\"domain\":\"wrong\"}"#),
+    ("wrong-node-id", br#"{\"node_id\":\"00\"}"#),
+    ("private-ipv4", br#"{\"host\":\"192.168.1.1\"}"#),
+    ("link-local-ipv4", br#"{\"host\":\"169.254.1.1\"}"#),
+    ("link-local-ipv6", br#"{\"host\":\"fe80::1\"}"#),
+    ("zero-budget", br#"{\"max_probe_bytes\":0}"#),
+    ("duplicate-reservation", br#"{\"reservation\":[1,1]}"#),
+    ("route-substitution", br#"{\"expected_peer\":\"other\"}"#),
+    ("transcript-substitution", br#"{\"binding\":\"other\"}"#),
+    ("unknown-transport", br#"{\"transport\":99}"#),
+    ("missing-proof", br#"{\"proof\":null}"#),
+    ("dns-rebinding", br#"{\"resolved\":\"10.0.0.1\"}"#),
+    ("trailing-bytes", &[0xa0, 0x00]),
+];
+
+pub fn valid_reachability_corpus_seed() -> Vec<u8> {
+    encode_reachability_object(&ReachabilityObjectV1::RoutePlan(RoutePlanV1 {
+        expected_peer: ku_core::foundation::NodeId::from_bytes([0x61; 32]),
+        direct_candidates: vec![DirectCandidateV1 {
+            endpoint: ReachabilityEndpointV1 {
+                host: HostAddressV1::Ipv4([8, 8, 4, 4]),
+                port: 41_000,
+            },
+            kind: DirectCandidateKindV1::ServerReflexive,
+            priority: 10,
+            network_epoch: 1,
+            expires_at: 600,
+        }],
+        relay_candidates: Vec::new(),
+        deadline: 500,
+        attempt_budget: 4,
+        resource_budget: RouteResourceBudgetV1 {
+            max_concurrent_checks: 1,
+            max_signature_checks: 8,
+            max_probe_bytes: 4_096,
+        },
+        privacy_policy_digest: [0x62; 32],
+    }))
+    .expect("frozen valid reachability corpus seed encodes")
+}
+
 fn fixed_author() -> ValidatedFeedInception {
     let key = SigningKey::from_bytes(&[0x81; 32]);
     let inception = FeedInception::new(
@@ -207,5 +269,9 @@ mod tests {
                 run_target(target, input);
             }
         }
+        for (_, input) in REACHABILITY_INVALID_CORPUS {
+            run_target("reachability_codec", input);
+        }
+        run_target("reachability_codec", &valid_reachability_corpus_seed());
     }
 }

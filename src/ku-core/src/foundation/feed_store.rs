@@ -207,7 +207,7 @@ impl ValidatedFeedStore {
         FeedProjection {
             feed_id,
             contiguous_through,
-            contiguous_tips: sorted_cids(reachable.into_iter()),
+            contiguous_tips: sorted_cids(reachable),
             gaps,
             unresolved_consistency,
             equivocations,

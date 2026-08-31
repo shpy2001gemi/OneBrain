@@ -808,9 +808,36 @@ pub async fn get_runtime_status(State(state): State<AppState>) -> VNextResult<Ru
             || config.kill_switches.distributed_pomv_view;
         (requested, kill_switch, node.vnext_status())
     };
-    let compiled = cfg!(feature = "vnext-network-runtime");
+    #[cfg(feature = "base-v1")]
+    let base_status = match state.base_services().await {
+        Some(services) => services.snapshot().ok(),
+        None => None,
+    };
+    let compiled = {
+        #[cfg(feature = "base-v1")]
+        {
+            base_status
+                .as_ref()
+                .map_or(cfg!(feature = "vnext-network-runtime"), |status| {
+                    status.network_compiled
+                })
+        }
+        #[cfg(not(feature = "base-v1"))]
+        {
+            cfg!(feature = "vnext-network-runtime")
+        }
+    };
     #[cfg(feature = "vnext-network-runtime")]
-    let active = state.vnext_product_services().await.is_some();
+    let active = {
+        #[cfg(feature = "base-v1")]
+        if let Some(status) = &base_status {
+            status.network_enabled
+        } else {
+            state.vnext_product_services().await.is_some()
+        }
+        #[cfg(not(feature = "base-v1"))]
+        state.vnext_product_services().await.is_some()
+    };
     #[cfg(not(feature = "vnext-network-runtime"))]
     let active = false;
     let coverage = if status.reachability.standalone {
@@ -1199,10 +1226,10 @@ pub async fn prepare_need(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, request);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1316,10 +1343,10 @@ pub async fn activate_need(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, request);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1392,10 +1419,10 @@ pub async fn list_needs(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, query);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1438,10 +1465,10 @@ pub async fn get_need(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, id);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1473,10 +1500,10 @@ pub async fn retire_need(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, id);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1622,10 +1649,10 @@ pub async fn scan_need(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, id, headers, request);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1776,10 +1803,10 @@ pub async fn list_need_matches(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, id, query);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed KQL runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -1900,10 +1927,10 @@ pub async fn prepare_public_use(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, request);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "Public UseEvidence publication runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -2077,10 +2104,10 @@ pub async fn confirm_public_use(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, headers, request);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "Public UseEvidence publication runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -2178,10 +2205,10 @@ pub async fn get_publication(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, id);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "Public UseEvidence publication runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -2224,10 +2251,10 @@ pub async fn get_metabolic_view(
     #[cfg(not(feature = "vnext-network-runtime"))]
     {
         let _ = (state, target, headers);
-        return Err(VNextHttpError::disabled(
+        Err(VNextHttpError::disabled(
             "distributed PoMV view runtime is not compiled",
             false,
-        ));
+        ))
     }
     #[cfg(feature = "vnext-network-runtime")]
     {
@@ -2341,7 +2368,7 @@ mod tests {
     async fn test_node(directory: &tempfile::TempDir) -> onebrain_node::OneBrainNode {
         let config = onebrain_node::NodeConfig {
             port: 0,
-            data_dir: directory.path().to_path_buf(),
+            data_dir: directory.path().canonicalize().unwrap(),
             concept_registry_mode: onebrain_node::ConceptRegistryMode::Disabled,
             ..Default::default()
         };
@@ -2611,6 +2638,7 @@ mod tests {
         config.vnext.enabled.public_use_evidence_publish = true;
         config.vnext.enabled.distributed_pomv_view = true;
         let mut node = onebrain_node::OneBrainNode::new(config).await.unwrap();
+        node.set_vnext_identity_signer(Arc::new(SigningKey::from_bytes(&[0x30; 32])));
         node.set_vnext_product_dependencies(product_dependencies())
             .unwrap();
         node.start_network().await.unwrap();

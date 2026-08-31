@@ -44,7 +44,7 @@ pub(crate) fn cmd_help(args: &str) {
         println!("  ║                                                               ║");
         println!("  ║  ── Identity & Profile ──                                     ║");
         println!("  ║  identity                Show identity info                   ║");
-        println!("  ║  recover                 Recover from BIP39 phrase            ║");
+        println!("  ║  recover                 Show secure recovery guidance        ║");
         println!("  ║  profile                 View/edit profile                    ║");
         println!("  ║                                                               ║");
         println!("  ║  ── Multi-Device ──                                           ║");
@@ -61,10 +61,10 @@ pub(crate) fn cmd_help(args: &str) {
         println!("  ║  wallet history          Show simulated activity history      ║");
         println!("  ║                                                               ║");
         println!("  ║  ── Data ──                                                   ║");
-        println!("  ║  export [--format json]  Export KUs to file                   ║");
-        println!("  ║  import <file>           Import file into knowledge base      ║");
-        println!("  ║  backup                  Full encrypted backup                ║");
-        println!("  ║  restore <file>          Restore from backup                  ║");
+        println!("  ║  export --mode <mode>    Export canonical data or a view      ║");
+        println!("  ║  import --mode <mode>    Import canonical data or text drafts ║");
+        println!("  ║  backup                  Create a scoped Base archive         ║");
+        println!("  ║  restore <file>          Verify/activate a Base archive       ║");
         println!("  ║                                                               ║");
         println!("  ║  ── Blob ──                                                   ║");
         println!("  ║  blob list               List stored blobs                    ║");
@@ -263,8 +263,8 @@ pub(crate) fn cmd_help(args: &str) {
                 println!();
                 println!("  recover");
                 println!();
-                println!("  Recover identity from a 24-word BIP39 recovery phrase.");
-                println!("  ⚠ This will REPLACE the current identity on this device.");
+                println!("  Legacy phrase recovery is disabled.");
+                println!("  Import a verified encrypted Base recovery package instead.");
                 println!();
             }
             "profile" => {
@@ -305,45 +305,45 @@ pub(crate) fn cmd_help(args: &str) {
             }
             "export" => {
                 println!();
-                println!("  export [--format FORMAT] [--output FILE]");
+                println!("  export --mode MODE [--output FILE]");
                 println!();
-                println!("  Export KUs to a file.");
-                println!("  Formats: json (default), csv");
+                println!("  Modes: canonical-v1, json-view-v1, csv-view-v1.");
+                println!("  JSON/CSV are non-restorable views.");
                 println!();
                 println!("  Examples:");
-                println!("    export");
-                println!("    export --format json --output my_knowledge.json");
+                println!("    export --mode canonical-v1 --output public.obx");
+                println!("    export --mode json-view-v1 --output knowledge.json");
                 println!();
             }
             "import" => {
                 println!();
-                println!("  import <file>");
+                println!("  import --mode MODE <file>");
                 println!();
-                println!("  Import KUs from a JSON file.");
-                println!("  Duplicates are automatically skipped.");
+                println!("  Modes: canonical-v1 or text-drafts-v1.");
+                println!("  JSON/CSV views are never importable.");
                 println!();
                 println!("  Example:");
-                println!("    import knowledge_backup.json");
+                println!("    import --mode canonical-v1 public.obx");
                 println!();
             }
             "backup" => {
                 println!();
                 println!("  backup");
                 println!();
-                println!("  Create a full encrypted backup of all node data:");
-                println!("  identity, KUs, profile, peers, and retriever index.");
-                println!("  You will be prompted for a password.");
+                println!("  Create one authenticated .obar Base dataset archive.");
+                println!("  The CLI uses a short-lived scoped management handle and");
+                println!("  destroys it after the archive sink is committed.");
                 println!();
             }
             "restore" => {
                 println!();
                 println!("  restore <file>");
                 println!();
-                println!("  Restore from an encrypted backup (.obk) file.");
+                println!("  Verify, stage, activate, and reconcile a Base archive (.obar).");
                 println!("  ⚠ This will REPLACE all local data.");
                 println!();
                 println!("  Example:");
-                println!("    restore onebrain_backup_20260707.obk");
+                println!("    restore onebrain_archive_20260809.obar");
                 println!();
             }
             "config" => {

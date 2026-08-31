@@ -100,7 +100,7 @@ impl KuBuilder {
             let mut instructions: Vec<Instruction> = Vec::new();
 
             // Determine gene type per triple
-            let gene_type = determine_gene_type(&[rt.analyzed.raw.clone()]);
+            let gene_type = determine_gene_type(std::slice::from_ref(&rt.analyzed.raw));
 
             // Build instructions for this single triple
             build_instructions_for_triple(rt, &mut allocator, &mut instructions);
@@ -248,10 +248,10 @@ fn f64_to_numeric(v: f64) -> NumericValue {
     // Try integer representations first (smaller encoding)
     if v.fract() == 0.0 && v.is_finite() {
         let i = v as i64;
-        if i >= 0 && i <= 255 {
+        if (0..=255).contains(&i) {
             return NumericValue::U8(i as u8);
         }
-        if i >= 0 && i <= 65535 {
+        if (0..=65535).contains(&i) {
             return NumericValue::U16(i as u16);
         }
         if i >= i16::MIN as i64 && i <= i16::MAX as i64 {
@@ -476,7 +476,7 @@ mod tests {
 
     #[test]
     fn test_f64_to_numeric_f64_for_fractions() {
-        match f64_to_numeric(3.14159) {
+        match f64_to_numeric(std::f64::consts::PI) {
             NumericValue::F32(_) | NumericValue::F64(_) => {} // either is fine
             other => panic!("Expected float, got {:?}", other),
         }

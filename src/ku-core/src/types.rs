@@ -291,34 +291,24 @@ impl std::fmt::Display for RelationType {
 }
 
 /// Edge State — lifecycle of a bond.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum EdgeState {
+    #[default]
     Active = 0,
     Weakened = 1,
     Deprecated = 2,
 }
 
-impl Default for EdgeState {
-    fn default() -> Self {
-        Self::Active
-    }
-}
-
 /// Decay rate classification for edge weight decay.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum DecayRate {
+    #[default]
     None = 0, // Never decays
     Slow = 1, // Half-life 1 year
     Med = 2,  // Half-life 3 months
     Fast = 3, // Half-life 1 week
-}
-
-impl Default for DecayRate {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 /// Creator enum — who created this edge.
@@ -454,9 +444,10 @@ impl GeneType {
 }
 
 /// EpistemicStatus — 11-level epistemic classification (★ v4 Trust layer).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum EpistemicStatus {
+    #[default]
     Rumor = 0x00,
     Hearsay = 0x01,
     Testimony = 0x02,
@@ -471,9 +462,10 @@ pub enum EpistemicStatus {
 }
 
 /// EvidenceType — 9 types aligned with Cochrane/GRADE pyramid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum EvidenceType {
+    #[default]
     None = 0x00,
     Anecdotal = 0x01,
     CaseStudy = 0x02,
@@ -483,12 +475,6 @@ pub enum EvidenceType {
     MetaAnalysis = 0x06,
     FormalProof = 0x07,
     Computational = 0x08,
-}
-
-impl Default for EpistemicStatus {
-    fn default() -> Self {
-        Self::Rumor
-    }
 }
 
 impl EpistemicStatus {
@@ -507,12 +493,6 @@ impl EpistemicStatus {
             0x0A => Some(Self::Axiomatic),
             _ => None,
         }
-    }
-}
-
-impl Default for EvidenceType {
-    fn default() -> Self {
-        Self::None
     }
 }
 
@@ -541,7 +521,7 @@ impl EvidenceType {
 ///
 /// Comprehensive trust framework replacing the single `certainty: float16` from v3.
 /// Size: ~19 bytes mandatory, ~60-100 bytes with optional fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TrustSection {
     /// Epistemic status level (0x00-0x0A)
     #[serde(rename = "es")]
@@ -619,31 +599,6 @@ pub struct TrustSection {
     pub niche_fitness: u16,
 }
 
-impl Default for TrustSection {
-    fn default() -> Self {
-        Self {
-            epistemic_status: EpistemicStatus::default(),
-            evidence_type: EvidenceType::default(),
-            verification_level: 0,
-            corroboration_count: 0,
-            challenge_count: 0,
-            error_susceptibility: 0,
-            trust_score: 0,
-            confidence: 0,
-            domain_codes: Vec::new(),
-            verifications: Vec::new(),
-            challenges: Vec::new(),
-            // PoK v2 PoMV fields
-            metabolic_rate: 0,
-            prediction_score: 0,
-            entropy_at_creation: 0,
-            survival_score: 0,
-            synaptic_centrality: 0,
-            niche_fitness: 0,
-        }
-    }
-}
-
 // ============================================================================
 // Layer 4: Epigenetic Metadata (v4 spec §6)
 // ============================================================================
@@ -653,7 +608,7 @@ impl Default for TrustSection {
 /// Contains semantic embeddings (int8[512] + binary[1024]), temporal validity,
 /// knowledge maturity (KRL), cultural context, and rendering hints.
 /// Size: variable, ~640-900 bytes typical.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct EpigeneticSection {
     /// Semantic embedding (int8[512] stored as bytes)
     #[serde(
@@ -762,34 +717,6 @@ pub struct EpigeneticSection {
     pub superseded_by: Option<Vec<u8>>,
 }
 
-impl Default for EpigeneticSection {
-    fn default() -> Self {
-        Self {
-            embedding: Vec::new(),
-            embedding_binary: Vec::new(),
-            embed_version: None,
-            valid_from: None,
-            valid_until: None,
-            recorded_at: None,
-            temporal_precision: None,
-            temporal_uncertainty: None,
-            half_life: None,
-            krl: None,
-            language: None,
-            template: None,
-            difficulty: None,
-            categories: Vec::new(),
-            tags: Vec::new(),
-            simhash: Vec::new(),
-            lsh_buckets: Vec::new(),
-            schema_ver: None,
-            version: None,
-            prev_cid: None,
-            superseded_by: None,
-        }
-    }
-}
-
 /// SPO Triple — Subject-Predicate-Object for FactGene/HypothesisGene.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Triple {
@@ -863,7 +790,7 @@ pub struct Perspective {
 /// Structural roles for CompositeEntry members.
 ///
 /// Defines the hierarchical role of a member within a Composite KU.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum StructuralRole {
     /// Top-level division (e.g., a chapter in a book)
@@ -873,6 +800,7 @@ pub enum StructuralRole {
     /// Fine-grained division (e.g., a subsection)
     Subsection = 2,
     /// Atomic knowledge unit (leaf node)
+    #[default]
     Detail = 3,
     /// Supplementary material (e.g., appendix)
     Appendix = 4,
@@ -900,16 +828,11 @@ impl StructuralRole {
     }
 }
 
-impl Default for StructuralRole {
-    fn default() -> Self {
-        Self::Detail
-    }
-}
-
 /// Composite type hint — categorizes the purpose of a Composite KU.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum CompositeType {
+    #[default]
     Document = 0,
     Chapter = 1,
     Section = 2,
@@ -936,16 +859,11 @@ impl CompositeType {
     }
 }
 
-impl Default for CompositeType {
-    fn default() -> Self {
-        Self::Document
-    }
-}
-
 /// Completeness status for a Composite KU.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Completeness {
+    #[default]
     Draft = 0,
     Partial = 1,
     Complete = 2,
@@ -963,12 +881,6 @@ impl Completeness {
             4 => Some(Self::Certified),
             _ => None,
         }
-    }
-}
-
-impl Default for Completeness {
-    fn default() -> Self {
-        Self::Draft
     }
 }
 
@@ -1251,7 +1163,7 @@ impl Gene {
 // ============================================================================
 
 /// Wire format header flags.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct HeaderFlags {
     pub has_ecc: bool,
     pub has_bbs: bool,
@@ -1295,18 +1207,6 @@ impl HeaderFlags {
         };
         let gene_base = (byte >> 5) & 0x07;
         (flags, gene_base)
-    }
-}
-
-impl Default for HeaderFlags {
-    fn default() -> Self {
-        Self {
-            has_ecc: false,
-            has_bbs: false,
-            has_merkle: false,
-            has_media: false,
-            is_encrypted: false,
-        }
     }
 }
 

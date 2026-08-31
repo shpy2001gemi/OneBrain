@@ -679,17 +679,21 @@ mod tests {
 
     #[test]
     fn test_confirmation_levels_ordered() {
-        assert!(LEVEL_PENDING < LEVEL_TENTATIVE);
-        assert!(LEVEL_TENTATIVE < LEVEL_CONFIRMED);
-        assert!(LEVEL_CONFIRMED < LEVEL_SETTLED);
+        const {
+            assert!(LEVEL_PENDING < LEVEL_TENTATIVE);
+            assert!(LEVEL_TENTATIVE < LEVEL_CONFIRMED);
+            assert!(LEVEL_CONFIRMED < LEVEL_SETTLED);
+        }
         assert_eq!(MIN_LEVEL_FOR_MINT, LEVEL_CONFIRMED);
         assert_eq!(MIN_LEVEL_FOR_TRANSFER, LEVEL_CONFIRMED);
     }
 
     #[test]
     fn test_penalty_jail_range() {
-        assert!(PENALTY_JAIL_MIN_DAYS <= PENALTY_JAIL_MAX_DAYS);
-        assert!(PENALTY_JAIL_MIN_DAYS > 0);
+        const {
+            assert!(PENALTY_JAIL_MIN_DAYS <= PENALTY_JAIL_MAX_DAYS);
+            assert!(PENALTY_JAIL_MIN_DAYS > 0);
+        }
     }
 
     #[test]
@@ -699,13 +703,12 @@ mod tests {
 
     #[test]
     fn test_quality_gates_non_zero() {
-        assert!(MIN_KU_RAW_SIZE > 0);
-        assert!(MIN_GENE_COUNT > 0);
-        assert!(MIN_POMV_7D > 0.0);
-        assert!(
-            MIN_POMV_30D > MIN_POMV_7D,
-            "30-day threshold should exceed 7-day"
-        );
+        const {
+            assert!(MIN_KU_RAW_SIZE > 0);
+            assert!(MIN_GENE_COUNT > 0);
+            assert!(MIN_POMV_7D > 0.0);
+            assert!(MIN_POMV_30D > MIN_POMV_7D);
+        }
     }
 
     #[test]

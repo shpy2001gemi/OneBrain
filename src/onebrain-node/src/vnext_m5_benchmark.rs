@@ -341,7 +341,7 @@ fn enforce_limits(input: &M5BenchmarkInput) -> Result<(), M5BenchmarkError> {
     }
 }
 
-fn normalize_gap_cases(cases: &mut Vec<GapFillCase>) -> Result<(), M5BenchmarkError> {
+fn normalize_gap_cases(cases: &mut [GapFillCase]) -> Result<(), M5BenchmarkError> {
     for case in cases.iter_mut() {
         if case.case_id == [0; 32] {
             return Err(M5BenchmarkError::InvalidCase);
@@ -354,7 +354,7 @@ fn normalize_gap_cases(cases: &mut Vec<GapFillCase>) -> Result<(), M5BenchmarkEr
     normalize_unique_by(cases, |case| case.case_id, M5BenchmarkError::DuplicateCase)
 }
 
-fn normalize_privacy(cases: &mut Vec<PrivacyLeakageProbe>) -> Result<(), M5BenchmarkError> {
+fn normalize_privacy(cases: &mut [PrivacyLeakageProbe]) -> Result<(), M5BenchmarkError> {
     for case in cases.iter_mut() {
         if case.probe_id == [0; 32]
             || case

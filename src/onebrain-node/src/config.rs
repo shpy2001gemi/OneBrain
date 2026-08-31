@@ -12,21 +12,16 @@ use crate::vnext_config::VNextFeatureConfig;
 
 /// Controls whether the node may fall back to the legacy encoder when the
 /// external Concept Registry is unavailable.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ConceptRegistryMode {
     /// Registry load failures stop node initialization before side effects.
     Required,
     /// Registry load failures are exposed in status and encoder v1 is used.
+    #[default]
     Optional,
     /// Do not attempt to open the registry; encoder v1 is selected explicitly.
     Disabled,
-}
-
-impl Default for ConceptRegistryMode {
-    fn default() -> Self {
-        Self::Optional
-    }
 }
 
 impl std::fmt::Display for ConceptRegistryMode {
@@ -91,6 +86,13 @@ pub struct NodeConfig {
 }
 
 impl NodeConfig {
+    /// Non-switched Base control plane and generation root. Base-owned stores
+    /// are resolved beneath its selected generation, never joined directly to
+    /// `data_dir`.
+    pub fn base_dataset_root(&self) -> PathBuf {
+        self.data_dir.join("base")
+    }
+
     /// Path to the redb storage file.
     pub fn storage_path(&self) -> PathBuf {
         self.data_dir.join("ku.redb")
@@ -178,8 +180,10 @@ mod tests {
 
     #[test]
     fn explicit_registry_path_is_not_relative_to_the_working_directory() {
-        let mut config = NodeConfig::default();
-        config.concept_registry_path = Some(PathBuf::from("D:/registry/concepts.obr"));
+        let config = NodeConfig {
+            concept_registry_path: Some(PathBuf::from("D:/registry/concepts.obr")),
+            ..NodeConfig::default()
+        };
         assert_eq!(config.obr_path(), PathBuf::from("D:/registry/concepts.obr"));
     }
 

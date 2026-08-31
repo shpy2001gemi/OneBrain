@@ -1068,6 +1068,9 @@ mod tests {
             ..Default::default()
         };
         let mut node = onebrain_node::OneBrainNode::new(config).await.unwrap();
+        node.set_vnext_identity_signer(Arc::new(ed25519_dalek::SigningKey::from_bytes(
+            &[0x30; 32],
+        )));
         node.set_vnext_product_dependencies(
             prepare_runtime_dependencies(directory.path()).unwrap(),
         )

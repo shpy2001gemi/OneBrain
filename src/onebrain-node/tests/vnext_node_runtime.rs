@@ -1,5 +1,8 @@
 #![cfg(feature = "vnext-network-runtime")]
 
+use std::sync::Arc;
+
+use ed25519_dalek::SigningKey;
 use ku_core::foundation::{MetabolicViewPolicy, ObjectReference};
 use ku_kql::vnext_private_need::LocalNeedVaultKey;
 use onebrain_node::{
@@ -39,6 +42,7 @@ async fn feature_flags_start_a_real_node_owned_product_runtime_and_status_tracks
     assert!(config.vnext.is_active(VNextFeature::ObpRp));
 
     let mut node = OneBrainNode::new(config).await.unwrap();
+    node.set_vnext_identity_signer(Arc::new(SigningKey::from_bytes(&[0x31; 32])));
     node.set_vnext_product_dependencies(product_dependencies())
         .unwrap();
     let before = node.vnext_status();
@@ -106,6 +110,33 @@ async fn active_product_runtime_requires_vault_and_policy_dependencies() {
 }
 
 #[tokio::test]
+async fn missing_caller_owned_signer_degrades_network_without_creating_a_key_file() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut config = NodeConfig::default();
+    config.port = 0;
+    config.data_dir = directory.path().to_path_buf();
+    config.concept_registry_mode = ConceptRegistryMode::Disabled;
+    config.vnext.enabled.object_event_v1 = true;
+    config.vnext.enabled.obp_rp = true;
+
+    let mut node = OneBrainNode::new(config).await.unwrap();
+    node.set_vnext_product_dependencies(product_dependencies())
+        .unwrap();
+    let error = node.start_network().await.unwrap_err().to_string();
+    assert!(error.contains("requires caller-owned reprovisioning"));
+    assert!(
+        node.get_identity_info().is_ok(),
+        "local status must remain usable"
+    );
+    assert!(!directory
+        .path()
+        .join("base/datasets/generations")
+        .join("00".repeat(32))
+        .join("owners/identity/vnext_identity.key")
+        .exists());
+}
+
+#[tokio::test]
 async fn inactive_vnext_creates_no_product_runtime_resources() {
     let directory = tempfile::tempdir().unwrap();
     let mut config = NodeConfig::default();
@@ -148,6 +179,8 @@ async fn legacy_tcp_and_vnext_quic_exchange_concurrently_on_real_loopback() {
 
     let mut left = OneBrainNode::new(left_config).await.unwrap();
     let mut right = OneBrainNode::new(right_config).await.unwrap();
+    left.set_vnext_identity_signer(Arc::new(SigningKey::from_bytes(&[0x41; 32])));
+    right.set_vnext_identity_signer(Arc::new(SigningKey::from_bytes(&[0x42; 32])));
     left.set_vnext_product_dependencies(product_dependencies())
         .unwrap();
     right
@@ -207,6 +240,7 @@ async fn legacy_tcp_bind_failure_rolls_back_successful_vnext_startup() {
     config.vnext.enabled.distributed_pomv_view = true;
 
     let mut node = OneBrainNode::new(config).await.unwrap();
+    node.set_vnext_identity_signer(Arc::new(SigningKey::from_bytes(&[0x51; 32])));
     node.set_vnext_product_dependencies(product_dependencies())
         .unwrap();
     let error = node.start_network().await.unwrap_err().to_string();

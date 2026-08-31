@@ -1,0 +1,315 @@
+name: Base v1 exact-candidate P5 and 72-hour soak
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: base-v1-production-canary-${{ github.run_id }}
+  cancel-in-progress: false
+
+env:
+  REQUEST_FILE: ${{ secrets.ONEBRAIN_BASE_RELEASE_REQUEST }}
+  REQUEST_SIGNATURE: ${{ secrets.ONEBRAIN_BASE_RELEASE_REQUEST_SIGNATURE }}
+  APPROVER_POLICY: ${{ secrets.ONEBRAIN_QUALIFICATION_APPROVER_POLICY }}
+  QUALIFICATION_GPG_HOME: ${{ secrets.ONEBRAIN_QUALIFICATION_GPG_HOME }}
+
+jobs:
+  verify-exact-release-request:
+    name: Verify immutable Task 28 release request
+    if: github.ref == 'refs/heads/main'
+    environment: base-v1-production-qualification
+    runs-on: [self-hosted, linux, x64, onebrain-base-v1-controller]
+    outputs:
+      release_request_digest: ${{ steps.identity.outputs.release_request_digest }}
+      qualification_session_id: ${{ steps.identity.outputs.qualification_session_id }}
+      candidate_commit: ${{ steps.identity.outputs.candidate_commit }}
+      candidate_tree: ${{ steps.identity.outputs.candidate_tree }}
+      candidate_semantic_digest: ${{ steps.identity.outputs.candidate_semantic_digest }}
+      frozen_target_artifact_digest: ${{ steps.identity.outputs.frozen_target_artifact_digest }}
+      registry_root: ${{ steps.identity.outputs.registry_root }}
+      runner_image_digest: ${{ steps.identity.outputs.runner_image_digest }}
+      sbom_blake3: ${{ steps.identity.outputs.sbom_blake3 }}
+      provenance_blake3: ${{ steps.identity.outputs.provenance_blake3 }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Validate P5 V2 controller and V1 compatibility
+        run: |
+          python -m unittest scripts.runner.test_onebrain_p5_multi_host_v2 -v
+          python -m unittest scripts.runner.test_onebrain_p5_multi_host -v
+          python -m unittest scripts.release.test_validate_evidence_carry_forward -v
+      - name: Verify the signed request with candidate-owned verifier
+        run: >-
+          python scripts/release/verify_base_release_request.py
+          --request "$REQUEST_FILE"
+          --signature "$REQUEST_SIGNATURE"
+          --policy "$APPROVER_POLICY"
+          --gpg-home "$QUALIFICATION_GPG_HOME"
+          > "$RUNNER_TEMP/verified-release-request.json"
+      - name: Derive immutable identity without caller overrides
+        id: identity
+        shell: bash
+        run: |
+          python - "$RUNNER_TEMP/verified-release-request.json" "$GITHUB_OUTPUT" <<'PY'
+          import blake3, json, sys
+          from pathlib import Path
+          verified = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          run = verified["run_context"]
+          binding = verified["bindings"]
+          sbom = binding["candidate_payload_artifacts_blake3"]["SPDX_SBOM:sbom.spdx.json"]
+          provenance = blake3.blake3(json.dumps(
+              verified["tooling_blake3"], sort_keys=True, separators=(",", ":")
+          ).encode()).hexdigest()
+          values = {
+              "release_request_digest": run["release_request_digest"],
+              "qualification_session_id": run["qualification_session_id"],
+              "candidate_commit": run["candidate_commit"],
+              "candidate_tree": run["candidate_tree"],
+              "candidate_semantic_digest": binding["candidate_semantic_digest"],
+              "frozen_target_artifact_digest": binding["artifact_tuple_digest"],
+              "registry_root": binding["release_aggregate_root"],
+              "runner_image_digest": binding["runner_image_digest"],
+              "sbom_blake3": sbom,
+              "provenance_blake3": provenance,
+          }
+          with Path(sys.argv[2]).open("a", encoding="utf-8") as stream:
+              for key, value in values.items():
+                  stream.write(f"{key}={value}\n")
+          PY
+      - name: Preserve verified request context
+        uses: actions/upload-artifact@v4
+        with:
+          name: verified-base-release-request-${{ steps.identity.outputs.release_request_digest }}
+          path: ${{ runner.temp }}/verified-release-request.json
+          if-no-files-found: error
+          retention-days: 90
+
+  build-reference:
+    name: Build exact Task 27 release executable
+    needs: verify-exact-release-request
+    runs-on: [self-hosted, linux, x64, onebrain-base-v1-builder]
+    outputs:
+      executable_blake3: ${{ steps.hash.outputs.executable_blake3 }}
+      p5_agent_blake3: ${{ steps.hash.outputs.p5_agent_blake3 }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
+          persist-credentials: false
+      - name: Verify exact candidate commit and tree
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ needs.verify-exact-release-request.outputs.candidate_commit }}"
+          test "$(git rev-parse HEAD^{tree})" = "${{ needs.verify-exact-release-request.outputs.candidate_tree }}"
+          git diff --exit-code
+          git diff --cached --exit-code
+      - name: Build exact optimized soak executable
+        working-directory: src
+        run: |
+          cargo build --locked --release -p onebrain-node \
+            --features vnext-soak-harness \
+            --example dr_m5_soak_release
+          cargo build --locked --release -p onebrain-node \
+            --features vnext-production-canary-harness \
+            --example p5_multi_host_agent
+      - name: Hash exact release executable
+        id: hash
+        shell: bash
+        run: |
+          digest="$(b3sum src/target/release/examples/dr_m5_soak_release | awk '{print $1}')"
+          echo "executable_blake3=$digest" >> "$GITHUB_OUTPUT"
+          p5_digest="$(b3sum src/target/release/examples/p5_multi_host_agent | awk '{print $1}')"
+          echo "p5_agent_blake3=$p5_digest" >> "$GITHUB_OUTPUT"
+      - name: Retain byte-identical reference executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-v1-reference-soak-executable
+          path: |
+            src/target/release/examples/dr_m5_soak_release
+            src/target/release/examples/p5_multi_host_agent
+          if-no-files-found: error
+          retention-days: 14
+
+  p5-multi-host:
+    name: Exact-candidate P5 multi-host qualification
+    needs: [verify-exact-release-request, build-reference]
+    environment: base-v1-production-qualification
+    runs-on: [self-hosted, linux, x64, onebrain-p5-controller]
+    outputs:
+      p5_aggregate_root: ${{ steps.p5.outputs.p5_aggregate_root }}
+      p5_multi_host_qualified: ${{ steps.p5.outputs.p5_multi_host_qualified }}
+    env:
+      P5_INVENTORY: ${{ secrets.ONEBRAIN_P5_INVENTORY }}
+      P5_AGENT_SIGNATURE: ${{ secrets.ONEBRAIN_P5_AGENT_SIGNATURE }}
+      P5_ORCHESTRATOR_PRIVATE_KEY: ${{ secrets.ONEBRAIN_P5_ORCHESTRATOR_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v5
+        with:
+          name: base-v1-reference-soak-executable
+          path: ${{ runner.temp }}/reference
+      - name: Run signed three-physical-host P5 harness
+        run: >-
+          python scripts/runner/onebrain-p5-multi-host.py
+          --inventory "$P5_INVENTORY"
+          --request "$REQUEST_FILE"
+          --signature "$REQUEST_SIGNATURE"
+          --policy "$APPROVER_POLICY"
+          --gpg-home "$QUALIFICATION_GPG_HOME"
+          --agent "$RUNNER_TEMP/reference/p5_multi_host_agent"
+          --agent-signature "$P5_AGENT_SIGNATURE"
+          --orchestrator-signing-key "$P5_ORCHESTRATOR_PRIVATE_KEY"
+          --output "$RUNNER_TEMP/p5-multi-host-aggregate.json"
+      - name: Derive P5 result from signed aggregate
+        id: p5
+        shell: bash
+        run: |
+          python - "$RUNNER_TEMP/p5-multi-host-aggregate.json" "$GITHUB_OUTPUT" <<'PY'
+          import json, sys
+          from pathlib import Path
+          report = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if report["binding"]["candidate_commit"] != "${{ needs.verify-exact-release-request.outputs.candidate_commit }}":
+              raise SystemExit("P5 candidate-commit equality failed")
+          if not report["multi_host_qualified"]:
+              raise SystemExit("P5 multi-host qualification failed")
+          with Path(sys.argv[2]).open("a", encoding="utf-8") as stream:
+              stream.write(f"p5_aggregate_root={report['aggregate_root']}\n")
+              stream.write("p5_multi_host_qualified=true\n")
+          PY
+      - name: retain-signed-raw-receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p5-multi-host-aggregate-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
+          path: ${{ runner.temp }}/p5-multi-host-aggregate.json
+          if-no-files-found: error
+          retention-days: 90
+
+  soak-runners:
+    name: Fresh 72-hour soak ${{ matrix.runner_id }}
+    needs: [verify-exact-release-request, build-reference, p5-multi-host]
+    environment: base-v1-production-qualification
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner_id: runner-a
+            runner_label: onebrain-soak-a
+            signing_key_secret: ONEBRAIN_SOAK_RUNNER_A_PRIVATE_KEY
+          - runner_id: runner-b
+            runner_label: onebrain-soak-b
+            signing_key_secret: ONEBRAIN_SOAK_RUNNER_B_PRIVATE_KEY
+          - runner_id: runner-c
+            runner_label: onebrain-soak-c
+            signing_key_secret: ONEBRAIN_SOAK_RUNNER_C_PRIVATE_KEY
+    runs-on: [self-hosted, linux, x64, onebrain-soak, "${{ matrix.runner_label }}"]
+    timeout-minutes: 4440
+    env:
+      SOAK_RUNNER_PRIVATE_KEY: ${{ secrets[matrix.signing_key_secret] }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v5
+        with:
+          name: base-v1-reference-soak-executable
+          path: ${{ runner.temp }}/reference
+      - uses: actions/download-artifact@v5
+        with:
+          name: p5-multi-host-aggregate-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
+          path: ${{ runner.temp }}/p5
+      - name: compare-release-executable-hashes
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "${{ needs.verify-exact-release-request.outputs.candidate_commit }}"
+          test "$(git rev-parse HEAD^{tree})" = "${{ needs.verify-exact-release-request.outputs.candidate_tree }}"
+          test "$(b3sum "$RUNNER_TEMP/reference/dr_m5_soak_release" | awk '{print $1}')" = "${{ needs.build-reference.outputs.executable_blake3 }}"
+      - name: Run fresh uninterrupted exact-candidate 72-hour soak
+        shell: bash
+        run: |
+          python -c 'import time; print(time.monotonic_ns())' > "$RUNNER_TEMP/monotonic-start-ns"
+          "$RUNNER_TEMP/reference/dr_m5_soak_release" \
+            --profile pre-release-72h \
+            --data-dir "$RUNNER_TEMP/base-v1-soak" \
+            --output "$RUNNER_TEMP/base-v1-soak-report.json"
+          python -c 'import time; print(time.monotonic_ns())' > "$RUNNER_TEMP/monotonic-end-ns"
+      - name: Create candidate binding and signed runner receipt
+        shell: bash
+        run: |
+          python scripts/release/validate_evidence_carry_forward.py sign-child \
+            --request "$REQUEST_FILE" --signature "$REQUEST_SIGNATURE" \
+            --policy "$APPROVER_POLICY" --gpg-home "$QUALIFICATION_GPG_HOME" \
+            --runner-id "${{ matrix.runner_id }}" --runner-identity "$RUNNER_NAME" \
+            --p5-aggregate "$RUNNER_TEMP/p5/p5-multi-host-aggregate.json" \
+            --executable "$RUNNER_TEMP/reference/dr_m5_soak_release" \
+            --monotonic-start-file "$RUNNER_TEMP/monotonic-start-ns" \
+            --monotonic-end-file "$RUNNER_TEMP/monotonic-end-ns" \
+            --raw-report "$RUNNER_TEMP/base-v1-soak-report.json" \
+            --signing-key "$SOAK_RUNNER_PRIVATE_KEY" \
+            --output "$RUNNER_TEMP/base-v1-soak-child-receipt.json"
+      - name: retain-signed-raw-receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-v1-soak-raw-${{ matrix.runner_id }}-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
+          path: |
+            ${{ runner.temp }}/base-v1-soak-report.json
+            ${{ runner.temp }}/base-v1-soak-child-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+
+  aggregate:
+    name: Separate P5 and exact-candidate soak outputs
+    needs: [verify-exact-release-request, build-reference, p5-multi-host, soak-runners]
+    environment: base-v1-production-qualification
+    runs-on: [self-hosted, linux, x64, onebrain-base-v1-controller]
+    env:
+      SOAK_AGGREGATOR_PRIVATE_KEY: ${{ secrets.ONEBRAIN_SOAK_AGGREGATOR_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: base-v1-soak-raw-*
+          path: ${{ runner.temp }}/soak-raw
+      - uses: actions/download-artifact@v5
+        with:
+          name: p5-multi-host-aggregate-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
+          path: ${{ runner.temp }}/p5
+      - uses: actions/download-artifact@v5
+        with:
+          name: base-v1-reference-soak-executable
+          path: ${{ runner.temp }}/reference
+      - name: Aggregate signed child bytes without self-reference
+        run: >-
+          python scripts/release/validate_evidence_carry_forward.py aggregate-soak
+          --request "$REQUEST_FILE" --signature "$REQUEST_SIGNATURE"
+          --policy "$APPROVER_POLICY" --gpg-home "$QUALIFICATION_GPG_HOME"
+          --p5-aggregate "$RUNNER_TEMP/p5/p5-multi-host-aggregate.json"
+          --executable "$RUNNER_TEMP/reference/dr_m5_soak_release"
+          --receipts-root "$RUNNER_TEMP/soak-raw"
+          --signing-key "$SOAK_AGGREGATOR_PRIVATE_KEY"
+          --output "$RUNNER_TEMP/base-v1-exact-candidate-soak-aggregate.json"
+      - name: Retain separate final qualification outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: base-v1-production-canary-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
+          path: |
+            ${{ runner.temp }}/base-v1-exact-candidate-soak-aggregate.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Report distinct artifact names
+        run: |
+          echo "p5-multi-host-aggregate"
+          echo "base-v1-exact-candidate-soak-aggregate"

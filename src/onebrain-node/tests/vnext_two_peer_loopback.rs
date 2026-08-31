@@ -43,9 +43,11 @@ struct CapturedTraffic {
     errors: Vec<String>,
 }
 
+type SharedValidatedRecords = Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>;
+
 #[derive(Clone, Default)]
 struct SharedValidatedSink {
-    records: Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>,
+    records: SharedValidatedRecords,
     insertions: Arc<Mutex<u64>>,
 }
 

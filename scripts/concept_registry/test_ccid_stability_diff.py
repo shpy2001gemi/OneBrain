@@ -245,6 +245,5 @@ class CcidStabilityDiffTests(unittest.TestCase):
             self.assertTrue(json.loads(output.read_text(encoding="utf-8"))["qualified"])
             self.assertEqual(list(work_dir.iterdir()), [])
 
-
 if __name__ == "__main__":
     unittest.main()

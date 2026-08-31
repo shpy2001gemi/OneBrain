@@ -1,0 +1,314 @@
+{
+  "format": "onebrain/p5-multi-host-production-qualification/1",
+  "profile_id": "P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1",
+  "version": 1,
+  "scope": {
+    "physical_host_count": 3,
+    "logical_node_count": 3,
+    "target_triple": "x86_64-unknown-linux-gnu",
+    "transport": "authenticated-real-quic",
+    "control_transport": "ssh-stdio-control-only",
+    "portability_qualifying": false,
+    "single_host_preflight_may_qualify": false
+  },
+  "reference_environment": {
+    "identity_source": "verified-task28-request-v2-plus-compiled-agent-and-measured-registry-candidate",
+    "required_pinned_fields": [
+      "candidate_commit",
+      "candidate_tree",
+      "candidate_semantic_digest",
+      "linux_artifact_tuple_digest",
+      "toolchain_digest",
+      "runner_bundle_manifest_digest",
+      "agent_binary_digest",
+      "agent_signature_digest",
+      "registry_root",
+      "profile_digest"
+    ],
+    "cross_host_byte_equality": [
+      "target_triple",
+      "candidate_commit",
+      "candidate_tree",
+      "linux_artifact_tuple_digest",
+      "toolchain_digest",
+      "runner_bundle_manifest_digest",
+      "agent_binary_digest",
+      "agent_signature_digest",
+      "registry_root",
+      "profile_digest"
+    ],
+    "byte_identical_cryptographically_signed_release_agent": true,
+    "producer_override": false
+  },
+  "topology": {
+    "hosts": [
+      {
+        "physical_host_id": "host-a",
+        "receipt_role": "p5-host:host-a",
+        "durable_root_slot": "p5-host-a-root",
+        "principal_slot": "p5-host-a-principal"
+      },
+      {
+        "physical_host_id": "host-b",
+        "receipt_role": "p5-host:host-b",
+        "durable_root_slot": "p5-host-b-root",
+        "principal_slot": "p5-host-b-principal"
+      },
+      {
+        "physical_host_id": "host-c",
+        "receipt_role": "p5-host:host-c",
+        "durable_root_slot": "p5-host-c-root",
+        "principal_slot": "p5-host-c-principal"
+      }
+    ],
+    "ring": ["host-a->host-b", "host-b->host-c", "host-c->host-a"],
+    "independent_durable_roots": 3,
+    "independent_principals": 3,
+    "shared_root_or_principal_policy": "reject",
+    "accepted_placement_authorities": [
+      "provider-signed-placement",
+      "bare-metal-lease-inventory",
+      "owner-signed-out-of-band-provider-verification"
+    ],
+    "owner_attestation_binding": "signed-inventory-plus-exact-host-and-placement-evidence-sha256"
+  },
+  "inventory": {
+    "required_host_fields": [
+      "physical_host_id",
+      "runner_identity",
+      "ssh_host_key_algorithm",
+      "ssh_host_key_fingerprint",
+      "observed_ssh_host_key_fingerprint",
+      "receipt_role",
+      "receipt_signer_fingerprint",
+      "durable_root_locator",
+      "expected_principal",
+      "ssh_port",
+      "physical_machine_fingerprint",
+      "host_evidence_sha256",
+      "placement_evidence_sha256"
+    ],
+    "required_orchestrator_fields": [
+      "runner_identity",
+      "receipt_role",
+      "receipt_signer_fingerprint"
+    ],
+    "ssh_host_key_pin_required": true,
+    "duplicate_host_runner_root_principal_or_key_policy": "reject"
+  },
+  "control_plane": {
+    "ssh_use": "control-only",
+    "application_bytes_over_ssh": false,
+    "bounded_json_stdio": true,
+    "signed_agent_receipt_required": true,
+    "command_sequence_monotonic": true,
+    "replay_or_stale_command_policy": "reject"
+  },
+  "fault_proxy": {
+    "default_enabled": false,
+    "changes_delivery_conditions_only": true,
+    "may_validate_or_create_knowledge": false,
+    "may_claim_authority_truth_completion_reward_or_wallet": false
+  },
+  "fault_matrix": [
+    "partition",
+    "drop",
+    "reorder",
+    "duplicate",
+    "restart",
+    "address-change",
+    "seed-outage",
+    "signer-outage",
+    "disk-pressure",
+    "slow-peer",
+    "base-obarv002-archive-restore",
+    "rollback",
+    "explicit-re-enable"
+  ],
+  "archive_restore": {
+    "production_profile": "OBARV002",
+    "preflight_profile": "onebrain/p5-offline-backup/1",
+    "preflight_profile_unchanged": true,
+    "preflight_profile_may_qualify": false,
+    "restore_target": "new-dataset-generation",
+    "activation": "verify-parity-health-then-atomic-switch"
+  },
+  "trust_policy": {
+    "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+    "digest_algorithm": "BLAKE3-derive-key-v1",
+    "digest_context": "onebrain:p5:trust-policy:1",
+    "digest_hex": "9aa666fedfc1ee3ee76cf814b9027d06dc1e243a0937001f8df10e996bf7572d",
+    "fingerprint_algorithm": "BLAKE3-derive-key-v1",
+    "fingerprint_context": "onebrain:p5:evidence-signer-fingerprint:1",
+    "policy": {
+      "algorithm": "Ed25519",
+      "allowed_usages": [
+        "p5-host-receipt",
+        "p5-orchestrator-aggregate",
+        "p5-release-agent-signature"
+      ],
+      "format": "onebrain/p5-multi-host-trust-policy/1",
+      "role_bindings": [
+        {
+          "role": "p5-host:host-a",
+          "public_key_hex": "aca5c9fcdd081df1611245fce93bf906bf80de3c8e032f342d435a8070808fdd",
+          "fingerprint_hex": "b3e1630cc673e711b90a494fe26d6ad413382f299f83913a006e175916002474"
+        },
+        {
+          "role": "p5-host:host-b",
+          "public_key_hex": "deadb04f785432147f18e6dcd53b802a3fcca4071bd77eb82f29a96a9b5edbbb",
+          "fingerprint_hex": "72167d8e93c6b28dd2ba6684d818b457d8547bd8e44235795b8427d9dd27fff7"
+        },
+        {
+          "role": "p5-host:host-c",
+          "public_key_hex": "fb075ebeedd80680987165d2e7c32d3595dc421fcd057cdbc60a15f9dbeab67d",
+          "fingerprint_hex": "c63b2b4d4ab09b5a49e42b3c547c04d6e7aa81cc72423ed8f7ef70c254afedfa"
+        },
+        {
+          "role": "p5-orchestrator",
+          "public_key_hex": "cce7da80b255ed3a67a8414f79e700bb0fdc4944abe3793d9c23e8ca1699fc27",
+          "fingerprint_hex": "6d018ba3d7224bc5a415a54c226f81db1139d950aedf0ef5dfb9b9da441b01ca"
+        }
+      ]
+    },
+    "valid_unlisted_signature": "reject",
+    "wrong_role_signature": "reject",
+    "cross_host_key_reuse": "reject"
+  },
+  "child_receipt": {
+    "format": "onebrain/p5-multi-host-child-receipt/1",
+    "signature_domain": "onebrain:p5:multi-host-child-receipt:1\\0",
+    "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+    "unknown_field_policy": "reject",
+    "binding_match": "exact-verified-signed-release-request",
+    "missing_or_wrong_binding_policy": "reject",
+    "required_bindings": [
+      "role",
+      "physical_host_id",
+      "release_request_digest",
+      "qualification_session_id",
+      "candidate_commit",
+      "candidate_tree",
+      "candidate_semantic_digest",
+      "linux_artifact_tuple_digest",
+      "toolchain_digest",
+      "runner_bundle_manifest_digest",
+      "agent_binary_digest",
+      "agent_signature_digest",
+      "registry_root",
+      "profile_digest",
+      "trust_policy_digest",
+      "runner_identity",
+      "ssh_host_key_fingerprint",
+      "physical_machine_fingerprint",
+      "host_evidence_sha256",
+      "placement_evidence_sha256",
+      "command_sequence",
+      "command",
+      "fault_id",
+      "before_roots",
+      "after_roots",
+      "resource_observation",
+      "result",
+      "limitations"
+    ],
+    "required_root_fields": [
+      "canonical_root",
+      "journal_root",
+      "outbox_root",
+      "operational_root"
+    ]
+  },
+  "aggregate": {
+    "format": "onebrain/p5-multi-host-production-aggregate/1",
+    "signer_role": "p5-orchestrator",
+    "signature_domain": "onebrain:p5:multi-host-production-aggregate:1\\0",
+    "root_algorithm": "BLAKE3",
+    "root_domain": "onebrain:p5:multi-host-child-receipt-root:1\\0",
+    "root_order": "physical-host-id-then-fault-order-then-command-sequence",
+    "root_inputs": ["canonical-ordered-child-receipt-bytes"],
+    "root_excludes": ["aggregate_report", "aggregate_signature"],
+    "identical_child_bindings": [
+      "release_request_digest",
+      "qualification_session_id",
+      "candidate_commit",
+      "candidate_tree",
+      "candidate_semantic_digest",
+      "linux_artifact_tuple_digest",
+      "toolchain_digest",
+      "runner_bundle_manifest_digest",
+      "agent_binary_digest",
+      "agent_signature_digest",
+      "registry_root",
+      "profile_digest",
+      "trust_policy_digest"
+    ],
+    "mixed_binding_policy": "reject",
+    "minimum_distinct_physical_hosts": 3,
+    "derive_multi_host_qualified_from_verified_evidence": true,
+    "input_boolean_trusted": false
+  },
+  "resource_bounds": {
+    "max_peak_rss_bytes_per_host": 1073741824,
+    "max_durable_growth_bytes_per_host": 4294967296,
+    "max_task_count_per_host": 256,
+    "max_active_sessions_per_host": 16,
+    "max_control_message_bytes": 1048576,
+    "max_fault_duration_ms": 300000,
+    "max_reunion_ms": 60000,
+    "max_quiescence_ms": 30000
+  },
+  "exit_oracles": [
+    "durable-reunion-idempotency",
+    "principal-preserved-per-host",
+    "canonical-root-preserved-or-exactly-advanced",
+    "journal-root-reconciled",
+    "outbox-root-reconciled",
+    "operational-root-reconciled",
+    "zero-active-session-after-quiescence",
+    "memory-disk-and-task-bounds-hold",
+    "local-kql-works-with-all-network-lanes-off",
+    "zero-truth-authority-completion-reward-wallet-amplification"
+  ],
+  "preflight_boundary": {
+    "single_host_profiles": [
+      "onebrain/p5-canary-preflight/1",
+      "onebrain/p5-operations-preflight/1"
+    ],
+    "single_host_multi_host_qualified": false,
+    "three_process_single_host_multi_host_qualified": false,
+    "preflight_receipt_evidence_tier": "prequalification",
+    "production_receipt_evidence_tier": "production-reference"
+  },
+  "qualification_state": {
+    "contract_frozen": true,
+    "measured_evidence_committed": false,
+    "multi_host_qualified": false,
+    "portability_qualified": false,
+    "registry_production_qualified": false,
+    "base_gate_v1_qualified": false
+  },
+  "required_limitations": [
+    "aggregate-qualification-is-orchestrator-owned",
+    "base-gate-v1-not-claimed",
+    "receipt-is-evidence-not-authority",
+    "real-quic-ring-and-fault-injection-pending",
+    "registry-candidate-bytes-bound-without-full-profile-qualification",
+    "registry-production-qualification-not-claimed",
+    "registry-production-resource-profiles-pending"
+  ],
+  "registry_candidate_binding": {
+    "format": "onebrain/p5-registry-candidate-binding/1",
+    "files": [
+      "concepts.obr",
+      "concepts.obr.ccids.idx",
+      "concepts.obr.labels.idx",
+      "concepts.obr.manifest.json",
+      "concepts.obr.verification.json"
+    ],
+    "root_domain": "onebrain:p5:registry-candidate-binding:1\\0",
+    "full_registry_profile_required_for_p5_subgate": false,
+    "registry_production_qualified": false,
+    "base_gate_v1_qualified": false
+  }
+}

@@ -3,6 +3,11 @@ src/fuzz/corpus/** -text
 
 # Shell entrypoints are downloaded and executed directly on Linux.
 *.sh text eol=lf
+scripts/ci/vnext_namespace_seccomp.json text eol=lf
+
+# Generated ABI input and output are byte-compared on Linux, Windows, and macOS.
+src/onebrain-base-abi/cbindgen.toml text eol=lf
+src/onebrain-base-abi/include/onebrain_base_v1.h text eol=lf
 
 # Third-party mobile assets are pinned and verified byte-for-byte.
 src/onebrain-mobile/assets/fonts/*.ttf -text

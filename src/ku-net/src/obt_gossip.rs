@@ -58,6 +58,12 @@ impl std::fmt::Display for ForkWarrantError {
 
 impl std::error::Error for ForkWarrantError {}
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ForkWarrantTimes {
+    pub detected_at: u64,
+    pub current_ts: u64,
+}
+
 /// Validate a received fork warrant before relaying.
 pub fn validate_fork_warrant(
     offender: &[u8; 32],
@@ -66,9 +72,12 @@ pub fn validate_fork_warrant(
     sequence: u64,
     warrant_hash: &[u8; 32],
     signature: &[u8],
-    detected_at: u64,
-    current_ts: u64,
+    times: ForkWarrantTimes,
 ) -> Result<(), ForkWarrantError> {
+    let ForkWarrantTimes {
+        detected_at,
+        current_ts,
+    } = times;
     if block_a_hash == block_b_hash {
         return Err(ForkWarrantError::IdenticalBlocks);
     }
@@ -184,9 +193,11 @@ mod tests {
             &block_b,
             seq,
             &wh,
-            &vec![0u8; 64],
-            1000,
-            1000
+            &[0u8; 64],
+            ForkWarrantTimes {
+                detected_at: 1000,
+                current_ts: 1000,
+            }
         )
         .is_ok());
     }
@@ -201,9 +212,11 @@ mod tests {
                 &b,
                 42,
                 &[0u8; 32],
-                &vec![0u8; 64],
-                1000,
-                1000
+                &[0u8; 64],
+                ForkWarrantTimes {
+                    detected_at: 1000,
+                    current_ts: 1000,
+                }
             ),
             Err(ForkWarrantError::IdenticalBlocks)
         );
@@ -218,9 +231,11 @@ mod tests {
                 &[3u8; 32],
                 42,
                 &[0u8; 32],
-                &vec![0u8; 64],
-                1000,
-                1000
+                &[0u8; 64],
+                ForkWarrantTimes {
+                    detected_at: 1000,
+                    current_ts: 1000,
+                }
             ),
             Err(ForkWarrantError::InvalidWarrantHash)
         );
@@ -245,9 +260,11 @@ mod tests {
                 &block_b,
                 seq,
                 &wh,
-                &vec![0u8; 32],
-                1000,
-                1000
+                &[0u8; 32],
+                ForkWarrantTimes {
+                    detected_at: 1000,
+                    current_ts: 1000,
+                }
             ),
             Err(ForkWarrantError::InvalidSignatureLength {
                 expected: 64,
@@ -275,9 +292,11 @@ mod tests {
                 &block_b,
                 seq,
                 &wh,
-                &vec![0u8; 64],
-                2000,
-                1000
+                &[0u8; 64],
+                ForkWarrantTimes {
+                    detected_at: 2000,
+                    current_ts: 1000,
+                }
             ),
             Err(ForkWarrantError::FutureTimestamp {
                 detected_at: 2000,

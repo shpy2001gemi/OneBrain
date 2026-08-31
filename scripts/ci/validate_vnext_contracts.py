@@ -4,10 +4,18 @@
 from __future__ import annotations
 
 import hashlib
+import ast
 import json
+import os
 import re
+import subprocess
 import sys
+import tomllib
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit
+
+import blake3
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,9 +68,49 @@ P5_CANARY_PREFLIGHT_PROFILE = (
 P5_OPERATIONS_PREFLIGHT_PROFILE = (
     ROOT / "src/test-vectors/vnext/p5-operations-preflight-v1.json"
 )
+P5_MULTI_HOST_PRODUCTION_PROFILE = (
+    ROOT / "src/test-vectors/vnext/p5-multi-host-production-qualification-v1.json"
+)
+OUTBOUND_FIRST_REACHABILITY_PROFILE = (
+    ROOT / "src/test-vectors/vnext/outbound-first-reachability-v1.json"
+)
+P5_MULTI_HOST_PRODUCTION_PROFILE_V2 = (
+    ROOT / "src/test-vectors/vnext/p5-multi-host-production-qualification-v2.json"
+)
+BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-exact-candidate-soak-v1.json"
+)
 CONCEPT_REGISTRY_OPERATIONS_PROFILE = (
     ROOT / "src/test-vectors/vnext/concept-registry-operations-v1.json"
 )
+CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE = (
+    ROOT
+    / "src/test-vectors/vnext/concept-registry-production-qualification-v1.json"
+)
+BASE_V1_AUTHORITY_RECOVERY_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-authority-recovery-v1.json"
+)
+BASE_V1_STORAGE_INTEGRITY_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-storage-integrity-v1.json"
+)
+BASE_V1_DERIVED_PROJECTION_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-derived-projection-v1.json"
+)
+BASE_V1_ARCHIVE_PROFILE = ROOT / "src/test-vectors/vnext/base-v1-archive-v1.json"
+BASE_V1_RUNTIME_INTERFACE_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-runtime-interface-v1.json"
+)
+BASE_V1_RUNTIME_INTERFACE_HISTORY = (
+    ROOT / "src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json"
+)
+BASE_V1_COMPATIBILITY_PROFILE = (
+    ROOT / "src/test-vectors/vnext/base-v1-compatibility-v1.json"
+)
+BASE_V1_FREEZE_PROFILE = ROOT / "src/test-vectors/vnext/base-v1-freeze-v1.json"
+BASE_V1_RELEASE_SIGNERS = (
+    ROOT / "src/test-vectors/vnext/base-v1-release-signers-v1.json"
+)
+BASE_V1_FREEZE_DOCUMENT = VNEXT / "BASE_V1_FREEZE_AND_EVIDENCE_PROFILE.md"
 DR_M5_TRANSACTION_INVENTORY = (
     VNEXT / "DISTRIBUTED_RUNTIME_TRANSACTION_BOUNDARY_INVENTORY_V1.md"
 )
@@ -77,6 +125,19 @@ VNEXT_SOAK_RUNNER_GUIDE = (
 )
 VNEXT_MACOS_SOAK_RUNNER_GUIDE = (
     ROOT / "docs/operations/ONEBRAIN_SOAK_RUNNER_MAC_M2_GUIDE_V1.md"
+)
+CONCEPT_REGISTRY_PRODUCTION_WORKFLOW = (
+    ROOT / ".github/workflows/concept-registry-production.yml"
+)
+BASE_V1_P5_PRODUCTION_WORKFLOW = (
+    ROOT / ".github/workflows/vnext-p5-production-canary.yml"
+)
+BASE_V1_CANDIDATE_WORKFLOW = ROOT / ".github/workflows/base-v1-candidate.yml"
+CONCEPT_REGISTRY_RUNNER_SCRIPT = (
+    ROOT / "scripts/runner/onebrain-registry-runner.sh"
+)
+CONCEPT_REGISTRY_RUNNER_GUIDE = (
+    ROOT / "docs/operations/ONEBRAIN_REGISTRY_RUNNER_GUIDE_V1.md"
 )
 
 TASK_ROW = re.compile(r"^\|\s*\[[ x~]\]\s*`([A-Z][A-Z0-9]*-\d{3})`")
@@ -160,6 +221,2708 @@ def validate_traceability(tasks: set[str]) -> int:
     if len(adrs) < 18:
         raise ContractError(f"expected at least 18 traced ADRs, found {len(adrs)}")
     return len(adrs)
+
+
+def validate_base_v1_authority_recovery(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(BASE_V1_AUTHORITY_RECOVERY_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base v1 authority profile JSON: {error}") from error
+    if not isinstance(profile, dict):
+        raise ContractError("Base v1 authority profile must be an object")
+
+    expected_top_level = {
+        "format": "onebrain/base-v1-authority-recovery/1",
+        "canonical_write_path": "vnext-object-event-feed",
+        "legacy_boundary": "explicit-read-only-migration",
+        "recovery_profile": "encrypted-recovery-package-v1",
+        "archive_profiles": ["password-argon2id-v1", "recovery-key-v1"],
+        "registry_required_states": ["registry-dependent-encoding", "ready-offline"],
+        "network_default_active_lane_count": 0,
+        "delete_semantics": "event-or-local-retention-never-history-rewrite",
+        "authority_order": [
+            "distributed-runtime-plan",
+            "mobile-architecture-constraints",
+            "base-v1-authority-recovery-profile",
+            "product-projections",
+        ],
+        "recovery_decision": {
+            "selected": "encrypted-recovery-package-v1",
+            "rejected": ["mnemonic-derivation", "bip39-shaped-placeholder"],
+        },
+    }
+    for field, expected in expected_top_level.items():
+        if profile.get(field) != expected:
+            raise ContractError(f"unexpected Base v1 {field}")
+
+    expected_archive_crypto = {
+        "password_argon2id_v1": {
+            "algorithm": "argon2id",
+            "memory_kib": 65536,
+            "iterations": 3,
+            "parallelism": 1,
+            "salt_bytes": 16,
+            "output_bytes": 32,
+            "domain": "onebrain:base-v1:archive:password-argon2id-v1",
+        },
+        "recovery_key_v1": {
+            "key_bytes": 32,
+            "derivation": "blake3-derive-key",
+            "separately_verified": True,
+            "domain": "onebrain:base-v1:archive:recovery-key-v1",
+        },
+        "aead": "xchacha20-poly1305",
+        "nonce_bytes": 24,
+        "manifest": "encrypted-and-authenticated",
+        "profiles_use_distinct_domains": True,
+    }
+    archive_crypto = profile.get("archive_crypto")
+    if not isinstance(archive_crypto, dict):
+        raise ContractError("invalid Base v1 archive crypto")
+    if archive_crypto.get("password_argon2id_v1") != expected_archive_crypto[
+        "password_argon2id_v1"
+    ]:
+        raise ContractError("unexpected Base v1 password Argon2id parameters")
+    if archive_crypto != expected_archive_crypto:
+        raise ContractError("unexpected Base v1 archive crypto")
+
+    expected_archive_scope = {
+        "included": [
+            "canonical-object-event-feed",
+            "owned-original-blobs",
+            "private-vault",
+            "quarantine",
+            "correctness-journals",
+            "pending-outbox",
+            "migration-state",
+            "interpretation-configuration",
+            "permitted-recovery-metadata",
+            "signed-authority-high-water-metadata",
+        ],
+        "excluded_rebuildable_or_refetchable": [
+            "derived-indexes",
+            "concept-registry-bytes",
+            "local-model-bytes",
+            "remote-media-cache",
+            "stale-delivery-caches",
+        ],
+        "restore_activation": (
+            "verify-entire-archive-stage-new-generation-parity-health-then-atomic-switch"
+        ),
+    }
+    archive_scope = profile.get("archive_scope")
+    if archive_scope != expected_archive_scope:
+        raise ContractError("unexpected Base v1 archive scope")
+
+    signer_recovery = profile.get("signer_recovery")
+    expected_domains = {
+        "node_transport": "onebrain:base-v1:recovery:node-transport:1",
+        "actor_root": "onebrain:base-v1:recovery:actor-root:1",
+        "feed_author": "onebrain:base-v1:recovery:feed-author:1",
+    }
+    if not isinstance(signer_recovery, dict) or set(signer_recovery) != set(
+        expected_domains
+    ):
+        raise ContractError("unexpected Base v1 signer recovery domains")
+    actual_domains: list[str] = []
+    for signer, domain in expected_domains.items():
+        policy = signer_recovery.get(signer)
+        if not isinstance(policy, dict) or policy.get("domain") != domain:
+            raise ContractError("unexpected Base v1 signer recovery domains")
+        if policy.get("non_exportable_unavailable") != "ReprovisionRequired":
+            raise ContractError("unexpected Base v1 non-exportable signer disposition")
+        if set(policy) != {"domain", "non_exportable_unavailable"}:
+            raise ContractError("unexpected Base v1 signer recovery policy")
+        actual_domains.append(domain)
+    if len(set(actual_domains)) != len(actual_domains):
+        raise ContractError("Base v1 signer recovery domains must be distinct")
+
+    expected_registry_policy = {
+        "bootstrap_limited_without_active_release": True,
+        "missing_exact_release": "fail-closed",
+        "registry_dependent_encoding_requires_exact_release": True,
+        "ready_offline_requires_exact_release": True,
+    }
+    if profile.get("registry_policy") != expected_registry_policy:
+        raise ContractError("unexpected Base v1 Registry policy")
+
+    allowed_fields = set(expected_top_level) | {
+        "archive_crypto",
+        "archive_scope",
+        "signer_recovery",
+        "registry_policy",
+    }
+    if set(profile) != allowed_fields:
+        raise ContractError("unexpected Base v1 authority profile fields")
+    return len(expected_domains), len(expected_archive_scope["included"])
+
+
+def validate_base_v1_storage_integrity(
+    profile: dict[str, object] | None = None,
+    projection: dict[str, object] | None = None,
+) -> tuple[int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(BASE_V1_STORAGE_INTEGRITY_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base v1 storage profile JSON: {error}") from error
+    if projection is None:
+        try:
+            projection = json.loads(read(BASE_V1_DERIVED_PROJECTION_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(
+                f"invalid Base v1 derived projection JSON: {error}"
+            ) from error
+    if not isinstance(profile, dict) or not isinstance(projection, dict):
+        raise ContractError("Base v1 storage profiles must be objects")
+
+    expected_boundaries = [
+        "full-cid-blob-layout",
+        "full-read-blob-integrity",
+        "bounded-capacity-admission",
+        "journaled-filesystem-commit",
+        "same-transaction-secondary-indexes",
+        "generation-swapped-derived-projections",
+        "character-safe-preview",
+        "exact-canonical-import-export",
+        "owned-blob-reference-authority",
+        "closed-storage-owner-mapping",
+    ]
+    if (
+        profile.get("format") != "onebrain/base-v1-storage-integrity/1"
+        or profile.get("authoritative_boundaries") != expected_boundaries
+    ):
+        raise ContractError("unexpected Base v1 storage integrity profile")
+
+    expected_blob_layout = {
+        "cid_bytes": 34,
+        "cid_hex_characters": 68,
+        "hex_case": "lower",
+        "relative_path": (
+            "v2/<digest-byte-0-hex>/<digest-byte-1-hex>/"
+            "<full-68-lower-hex-cid>"
+        ),
+        "shard_source": "two-leading-digest-bytes-not-version-or-type",
+        "short_cid_use": "display-only",
+    }
+    if profile.get("blob_layout") != expected_blob_layout:
+        raise ContractError("unexpected Base v1 blob layout")
+
+    expected_read_integrity = {
+        "required_checks": [
+            "declared-type",
+            "declared-length",
+            "each-chunk-blake3",
+            "full-payload-blake3",
+            "full-typed-cid",
+        ],
+        "check_before_returning_bytes": True,
+        "legacy_missing_chunk_hash": "typed-migration-required",
+    }
+    if profile.get("blob_read_integrity") != expected_read_integrity:
+        raise ContractError("unexpected Base v1 blob read integrity")
+
+    expected_capacity = {
+        "chunk_max_bytes": 262144,
+        "per_object_max_bytes": 104857600,
+        "total_quota_bytes": "required-configured-nonzero-u64",
+        "free_space_reserve_bytes": "required-configured-nonzero-u64",
+        "accounting": "unique-owned-physical-bytes",
+        "arithmetic": "checked-add-and-subtract-reject-overflow-underflow",
+        "admission_order": "limits-and-space-before-write-side-effect",
+    }
+    if profile.get("capacity_admission") != expected_capacity:
+        raise ContractError("unexpected Base v1 capacity admission")
+
+    expected_filesystem_commit = {
+        "protocol": (
+            "durable-intent-stage-fsync-atomic-publish-metadata-commit-cleanup"
+        ),
+        "reopen": "reconcile-every-nonterminal-intent-idempotently",
+        "unsafe_overwrite": False,
+    }
+    if profile.get("filesystem_commit") != expected_filesystem_commit:
+        raise ContractError("unexpected Base v1 filesystem commit")
+
+    expected_secondary = {
+        "class": "same-redb-transaction",
+        "required_indexes": [
+            "feed-inception-by-feed-id",
+            "authority-event-by-principal-frontier",
+        ],
+        "parity": "canonical-write-and-index-row-commit-or-abort-together",
+    }
+    if profile.get("secondary_index_policy") != expected_secondary:
+        raise ContractError("unexpected Base v1 secondary index policy")
+
+    expected_derived = {
+        "stores": ["graph", "search", "retriever"],
+        "class": "disposable-generation-swapped",
+        "row_binding": [
+            "source-root",
+            "mapping-id",
+            "reducer-version",
+            "index-root",
+            "projection-root",
+        ],
+        "corrupt_reopen": "mark-dirty-rebuild-from-validated-canonical-records",
+        "publication_failure_state": (
+            "canonical-available-derived-degraded-dirty-generation"
+        ),
+        "parity_operations": ["create", "update", "delete", "rebuild"],
+        "empty_projection": (
+            "allowed-only-when-source-kind-coverage-proves-no-output"
+        ),
+        "archive_bytes": "excluded-rebuildable",
+    }
+    if profile.get("derived_store_policy") != expected_derived:
+        raise ContractError("unexpected Base v1 derived store policy")
+
+    expected_preview = {
+        "input": "validated-utf8",
+        "truncation_unit": "unicode-scalar-value",
+        "maximum_scalars": 80,
+        "invalid_utf8": "reject",
+        "byte_slice": "forbidden",
+    }
+    if profile.get("text_preview") != expected_preview:
+        raise ContractError("unexpected Base v1 text preview")
+
+    expected_exchange = {
+        "export": "exact-validated-canonical-bytes-with-full-typed-reference",
+        "import": (
+            "decode-validate-reencode-byte-equality-and-recompute-cid-before-commit"
+        ),
+        "round_trip": "same-bytes-same-cid-same-type-same-length",
+        "partial_success": "explicit-per-record-result-never-silent",
+    }
+    if profile.get("canonical_exchange") != expected_exchange:
+        raise ContractError("unexpected Base v1 canonical exchange")
+
+    expected_blob_reference = {
+        "format": "onebrain/owned-blob-reference/1",
+        "authority_source": "validated-vnext-object-event-bytes-only",
+        "owner": "full-typed-ObjectReference",
+        "required_fields": [
+            "owner",
+            "blob-cid",
+            "role",
+            "retention-state",
+        ],
+        "roles": ["owned-original", "attachment", "source-artifact"],
+        "retention_states": ["live", "terminal-retain", "terminal-release"],
+        "terminal_event_binding": (
+            "terminal-states-require-full-validated-EventCID-live-state-omits"
+        ),
+        "terminal_event_semantics": (
+            "validated-owner-terminal-event-reduces-retention-never-rewrites-history"
+        ),
+        "legacy_ku_metadata": "read-only-migration-evidence-never-authority",
+    }
+    if profile.get("owned_blob_reference") != expected_blob_reference:
+        raise ContractError("unexpected Base v1 owned blob reference")
+
+    owner_names = [
+        "canonical",
+        "vault",
+        "quarantine",
+        "blob",
+        "pending_blob_intent",
+        "source_capture_intent",
+        "reconciliation",
+        "inventory",
+        "outbox",
+        "provenance",
+        "private_kql",
+        "private_pomv",
+        "operational",
+        "rollout",
+        "optional_network",
+        "migration",
+        "base_operations",
+        "interpretation_config",
+        "identity",
+        "registry_metadata",
+        "derived_index",
+        "retriever_projection",
+    ]
+    expected_owner_rows = []
+    for code, name in enumerate(owner_names, start=1):
+        encoded = code.to_bytes(2, "big").hex()
+        expected_owner_rows.append(
+            {
+                "name": name,
+                "code_u16": code,
+                "code_hex": f"0x{code:04X}",
+                "base_storage_owner": name,
+                "archive_owner": name,
+                "base_storage_owner_bytes": encoded,
+                "archive_owner_bytes": encoded,
+            }
+        )
+    expected_owner_table = {
+        "encoding": "big-endian-u16",
+        "base_storage_owner_type": "BaseStorageOwnerId",
+        "archive_owner_type": "ArchiveOwner",
+        "conversion_owner": "onebrain-node-adapter-only",
+        "reserved": ["0x0000", "0x0017..0xFFFF"],
+        "unknown_reserved_reused": "fail-closed",
+        "owners": expected_owner_rows,
+    }
+    if profile.get("storage_owner_table") != expected_owner_table:
+        raise ContractError("unexpected Base v1 storage owner table")
+
+    expected_phases = [
+        "before_begin_write",
+        "after_begin_write_before_mutation",
+        "after_mutation_before_commit",
+        "after_commit_before_next_side_effect",
+        "after_next_side_effect_before_ack",
+    ]
+    if profile.get("failpoint_phases") != expected_phases:
+        raise ContractError("unexpected Base v1 failpoint phases")
+    expected_tx_boundaries = [
+        "TX-BLOB-001",
+        "TX-IDX-001",
+        "TX-ARCH-001",
+        "TX-RESTORE-001",
+        "TX-RECOVERY-001",
+    ]
+    if profile.get("transaction_boundaries") != expected_tx_boundaries:
+        raise ContractError("unexpected Base v1 transaction boundaries")
+    inventory = read(DR_M5_TRANSACTION_INVENTORY)
+    for boundary_id in expected_tx_boundaries:
+        if f"| `{boundary_id}` |" not in inventory:
+            raise ContractError(f"Base v1 transaction inventory lacks {boundary_id}")
+    for index, phase in enumerate(expected_phases, start=1):
+        if f"{index}. `{phase}`" not in inventory:
+            raise ContractError(f"Base v1 failpoint phase missing: {phase}")
+
+    expected_crash_oracle = {
+        "runner": "child-process-real-files-kill-reopen",
+        "every_boundary_every_phase": True,
+        "reopen_outcome": "exact-pre-state-or-exact-post-state-never-partial",
+        "expected_oracle_location": "outside-store-under-test",
+        "recorded_fields": [
+            "boundary-id",
+            "phase",
+            "process-exit",
+            "restart-result",
+            "oracle-digest",
+        ],
+    }
+    if profile.get("crash_oracle") != expected_crash_oracle:
+        raise ContractError("unexpected Base v1 crash oracle")
+
+    expected_negative_oracles = [
+        "short-cid-path-rejected",
+        "missing-full-read-hash-rejected",
+        "missing-total-quota-rejected",
+        "best-effort-without-dirty-generation-rejected",
+        "unknown-or-vacuous-projection-rejected",
+        "legacy-blob-reference-authority-rejected",
+        "corrupt-retriever-rebuilds-with-canonical-startup-available",
+        "missing-update-delete-parity-rejected",
+        "byte-sliced-utf8-rejected",
+    ]
+    if profile.get("negative_oracles") != expected_negative_oracles:
+        raise ContractError("unexpected Base v1 negative oracles")
+    if set(profile) != {
+        "format",
+        "authoritative_boundaries",
+        "blob_layout",
+        "blob_read_integrity",
+        "capacity_admission",
+        "filesystem_commit",
+        "secondary_index_policy",
+        "derived_store_policy",
+        "text_preview",
+        "canonical_exchange",
+        "owned_blob_reference",
+        "storage_owner_table",
+        "failpoint_phases",
+        "transaction_boundaries",
+        "crash_oracle",
+        "negative_oracles",
+    }:
+        raise ContractError("unexpected Base v1 storage profile fields")
+
+    expected_projection_header = {
+        "format": "onebrain/base-v1-derived-projection/1",
+        "accepted_record_families": [
+            "object",
+            "event",
+            "feed-inception",
+            "authority-event",
+        ],
+        "mapping_reducer_id": "base-v1-derived-projection-reducer/1",
+        "projection_root_domain": "onebrain:base-v1:derived-projection-root:1",
+        "row_binding": [
+            "source-root",
+            "canonical-record-reference",
+            "mapping-id",
+            "reducer-version",
+            "output-key",
+            "output-value",
+            "index-root",
+        ],
+        "branch_handling": (
+            "retain-all-canonical-branches-no-winner-from-count-order-or-score"
+        ),
+        "tombstone_handling": (
+            "apply-validated-terminal-reducer-never-rewrite-canonical-history"
+        ),
+        "unknown_kind_exclusion": (
+            "canonical-opaque-or-quarantine-by-criticality-no-derived-row"
+        ),
+        "empty_projection_rule": (
+            "coverage-must-name-every-input-and-prove-zero-output-per-mapping"
+        ),
+    }
+    for field, expected in expected_projection_header.items():
+        if projection.get(field) != expected:
+            raise ContractError(f"unexpected Base v1 projection {field}")
+
+    object_kinds = [
+        "legacy-evidence",
+        "semantic-kernel",
+        "receptor-definition",
+        "assembly-manifest",
+        "knowledge-affordance",
+        "mapping-envelope",
+        "query-definition",
+        "capability-definition",
+        "implementation-manifest",
+        "conformance-fixture",
+        "receptor-claim-envelope",
+        "receptor-resolution-action",
+        "use-evidence",
+        "derivation-evidence",
+        "encoding-attempt",
+        "fidelity-policy",
+        "encoding-fidelity-attestation",
+        "sanitized-public-problem",
+        "outcome-observation",
+        "benefit-evidence",
+        "exploration-policy",
+        "source-artifact",
+        "observation-event-payload",
+    ]
+    object_exclusions = [
+        "never-authority-or-blob-retention-source",
+        "none-after-schema-and-disclosure-validation",
+        "none-after-schema-and-disclosure-validation",
+        "none-after-schema-and-disclosure-validation",
+        "none-after-schema-and-disclosure-validation",
+        "inactive-without-materialization-and-adoption",
+        "private-vault-only-never-public-index",
+        "projection-never-grants-capability",
+        "projection-never-authorizes-execution",
+        "never-production-authority",
+        "claim-is-not-resolution",
+        "consume-reduced-resolution-view-not-raw-action",
+        "does-not-prove-benefit-truth-or-reward",
+        "does-not-prove-benefit-truth-or-reward",
+        "attempt-is-not-success-or-authority",
+        "policy-relative-not-global-truth",
+        "attestation-does-not-rewrite-source",
+        "never-reconstruct-private-source",
+        "observation-is-not-benefit-or-truth",
+        "conflicts-coexist-no-score-authority",
+        "policy-cannot-change-eligibility",
+        "private-or-disclosure-scoped-content-only",
+        "payload-needs-validated-event-for-exercise-view",
+    ]
+    schema_registry = read(ROOT / "src/ku-core/src/foundation/schema_registry.rs")
+    object_registry_match = re.search(
+        r"(?s)pub const OBJECT_KINDS_V1:.*?= &\[(.*?)\];", schema_registry
+    )
+    event_registry_match = re.search(
+        r"(?s)pub const EVENT_TYPES_V1:.*?= &\[(.*?)\];", schema_registry
+    )
+    object_constants = {
+        name: int(value)
+        for name, value in re.findall(
+            r"pub const (OBJECT_KIND_[A-Z0-9_]+): u64 = (\d+);",
+            schema_registry,
+        )
+    }
+    event_constants = {
+        name: int(value)
+        for name, value in re.findall(
+            r"pub const (EVENT_TYPE_[A-Z0-9_]+): u64 = (\d+);",
+            schema_registry,
+        )
+    }
+    if not object_registry_match or not event_registry_match:
+        raise ContractError("Base v1 projection cannot read the schema registry")
+    source_object_rows = [
+        (object_constants.get(constant), name)
+        for constant, name in re.findall(
+            r'id:\s*(OBJECT_KIND_[A-Z0-9_]+),\s*name:\s*"([^"]+)"',
+            object_registry_match.group(1),
+        )
+    ]
+    source_event_rows = [
+        (event_constants.get(constant), name)
+        for constant, name in re.findall(
+            r'id:\s*(EVENT_TYPE_[A-Z0-9_]+),\s*name:\s*"([^"]+)"',
+            event_registry_match.group(1),
+        )
+    ]
+    if source_object_rows != list(enumerate(object_kinds, start=1)):
+        raise ContractError("Base v1 object mapping drifts from the schema registry")
+    expected_object_rows = []
+    for object_id, (kind, exclusion) in enumerate(
+        zip(object_kinds, object_exclusions, strict=True), start=1
+    ):
+        expected_object_rows.append(
+            {
+                "id": object_id,
+                "kind": kind,
+                "mapping_id": f"base-v1/object/{object_id}-{kind}/1",
+                "reducer_version": 1,
+                "graph_key": "object-reference",
+                "graph_output": "validated-declared-object-references",
+                "search_key": "object-reference",
+                "search_output": (
+                    "schema-declared-normalized-text-subject-to-disclosure"
+                ),
+                "exclusion": exclusion,
+            }
+        )
+    if projection.get("object_mappings") != expected_object_rows:
+        raise ContractError("unexpected Base v1 object mapping")
+
+    event_kinds = [
+        "receptor-resolution",
+        "use-evidence",
+        "derivation-evidence",
+        "encoding-fidelity-attestation",
+        "outcome-observation",
+        "benefit-evidence",
+        "observation",
+    ]
+    event_exclusions = [
+        "retain-branches-use-frozen-resolution-reducer",
+        "retrieval-or-exposure-is-not-use",
+        "does-not-prove-benefit-truth-or-reward",
+        "attestation-is-policy-and-frontier-relative",
+        "observation-is-not-benefit-or-truth",
+        "conflicts-coexist-no-score-authority",
+        "private-context-never-public-projection",
+    ]
+    if source_event_rows != list(enumerate(event_kinds, start=1)):
+        raise ContractError("Base v1 event mapping drifts from the schema registry")
+    expected_event_rows = []
+    for event_id, (kind, exclusion) in enumerate(
+        zip(event_kinds, event_exclusions, strict=True), start=1
+    ):
+        expected_event_rows.append(
+            {
+                "id": event_id,
+                "kind": kind,
+                "mapping_id": f"base-v1/event/{event_id}-{kind}/1",
+                "reducer_version": 1,
+                "graph_key": "event-cid",
+                "graph_output": "payload-object-and-causal-references",
+                "search_key": "event-cid",
+                "search_output": (
+                    "schema-declared-normalized-text-subject-to-disclosure"
+                ),
+                "exclusion": exclusion,
+            }
+        )
+    if projection.get("event_mappings") != expected_event_rows:
+        raise ContractError("unexpected Base v1 event mapping")
+    if set(projection) != set(expected_projection_header) | {
+        "object_mappings",
+        "event_mappings",
+    }:
+        raise ContractError("unexpected Base v1 projection fields")
+
+    return len(expected_boundaries), len(expected_negative_oracles)
+
+
+def validate_base_v1_archive() -> tuple[int, int]:
+    try:
+        profile = json.loads(read(BASE_V1_ARCHIVE_PROFILE))
+    except json.JSONDecodeError as error:
+        raise ContractError(f"invalid Base v1 archive JSON: {error}") from error
+    if profile.get("format") != "onebrain/base-v1-archive/1":
+        raise ContractError("unexpected Base v1 archive format")
+    if profile.get("profile") != "OBARV002":
+        raise ContractError("Base v1 archive must emit OBARV002")
+    expected_domains = {
+        "entry_id": "onebrain:base:archive-entry-id:1",
+        "entry_root": "onebrain:base:archive-entry-root:1",
+        "manifest": "onebrain:base:archive-manifest:1\\0",
+        "high_water": "onebrain:base:archive-high-water:1\\0",
+        "dataset": "onebrain:base:archive-dataset:1\\0",
+    }
+    if profile.get("domains") != expected_domains:
+        raise ContractError("Base v1 archive domain drift")
+    if profile.get("limits") != {
+        "logical_key_bytes": 256,
+        "manifest_entries": 1_000_000,
+        "dataset_bytes": 16 * 1024 * 1024 * 1024,
+    }:
+        raise ContractError("Base v1 archive limit drift")
+    owners = profile.get("owner_codes")
+    if not isinstance(owners, dict) or list(owners.values()) != list(range(1, 23)):
+        raise ContractError("Base v1 archive owner table drift")
+    kinds = profile.get("entry_kinds")
+    if not isinstance(kinds, list) or len(kinds) != 24 or len(set(kinds)) != 24:
+        raise ContractError("Base v1 archive entry-kind set drift")
+    required = profile.get("required_metadata")
+    if required != [
+        "AuthorityHighWater",
+        "MigrationState",
+        "InterpretationConfig",
+        "RegistryHighWater",
+        "SignerRecoveryPolicy",
+    ]:
+        raise ContractError("Base v1 archive required metadata drift")
+    if profile.get("stable_entry_id_vector") != {
+        "kind": "CanonicalObject",
+        "owner": 1,
+        "namespace": 1,
+        "logical_key_utf8": "object-01",
+        "entry_id_blake3_hex": "b83be45eda7ce7bcdbc3e6f9f0eeccfe4febdd7f471b4240c92046b73bf7210d",
+    }:
+        raise ContractError("Base v1 archive stable entry-ID vector drift")
+    if profile.get("restore_gate") != [
+        "canonical_schema_digest",
+        "domain_registry_digest",
+        "resource_registry_digest",
+        "storage_schema_version",
+        "archive_profile",
+        "migration_profile",
+    ]:
+        raise ContractError("Base v1 archive portable restore gate drift")
+    if profile.get("non_exportable_signer_restore") != "reprovision_required":
+        raise ContractError("Base v1 signer restore policy drift")
+    expected_base_operations = {
+        "owner": "base_operations",
+        "entry_kind": "BaseOperationRecord",
+        "boundary": "TX-BASE-OPS-001",
+        "states": [
+            "reserved",
+            "prepared",
+            "confirming",
+            "committed",
+            "canceled",
+            "failed",
+            "unknown_outcome",
+        ],
+        "generation_bindings": ["process_generation", "dataset_generation"],
+        "migration_bindings": [
+            "vector_id",
+            "vector_blake3",
+            "trust_policy_digest",
+        ],
+        "restore_nonterminal": "unknown_outcome_reconcile_required_never_replay",
+        "activation_receipt_plane": "non-switched-control-and-selected-generation",
+        "authority_journal": {
+            "tables": [
+                "management_grant",
+                "management_handle",
+                "archive_capability",
+                "signer_provision",
+            ],
+            "restart_disposition": "revoked_never_reactivated",
+            "archive_disposition": "revoked_evidence_only",
+        },
+    }
+    if profile.get("base_operation_records") != expected_base_operations:
+        raise ContractError("Base operation archive contract drift")
+    inventory = read(DR_M5_TRANSACTION_INVENTORY)
+    if "| `TX-BASE-OPS-001` |" not in inventory:
+        raise ContractError("Base operation transaction boundary is absent")
+    operation_store = read(ROOT / "src/onebrain-node/src/base_operation_store.rs")
+    runtime = read(ROOT / "src/onebrain-node/src/base_runtime.rs")
+    for phase in [
+        "before_begin_write",
+        "after_begin_write_before_mutation",
+        "after_mutation_before_commit",
+        "after_commit_before_next_side_effect",
+        "after_next_side_effect_before_ack",
+    ]:
+        if phase not in operation_store:
+            raise ContractError(f"Base operation failpoint phase is absent: {phase}")
+    for needle in [
+        "ProcessGenerationLease::allocate",
+        "reserve_operation",
+        "begin_confirm",
+        "mark_unknown",
+        "register_authority",
+        "transition_authority",
+        "BaseAuthorityStateV1::Revoked",
+        "register_signer_provision",
+        "complete_signer_reprovision",
+        "signer_request_matches",
+        "import_activation_receipt",
+        "restore_archive_for_base",
+        "MigrationVectorBindingV1",
+    ]:
+        if needle not in operation_store and needle not in runtime:
+            raise ContractError(f"Base runtime implementation evidence missing: {needle}")
+    return len(kinds), len(required)
+
+
+def _closed_discriminators(
+    rows: object, namespace: str
+) -> dict[int, dict[str, object]]:
+    if not isinstance(rows, list) or not rows:
+        raise ContractError(f"closed discriminator inventory is absent: {namespace}")
+    by_id: dict[int, dict[str, object]] = {}
+    names: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ContractError(f"invalid closed discriminator: {namespace}")
+        identifier = row.get("id")
+        name = row.get("name")
+        if (
+            not isinstance(identifier, int)
+            or identifier <= 0
+            or not isinstance(name, str)
+            or not name
+            or identifier in by_id
+            or name in names
+        ):
+            raise ContractError(
+                f"closed discriminator ID/name is missing, duplicated, or reused: {namespace}"
+            )
+        by_id[identifier] = row
+        names.add(name)
+    return by_id
+
+
+def _runtime_history_root(entries: list[dict[str, object]]) -> str:
+    digest = bytes(32)
+    domain = b"onebrain/base-v1-runtime-interface-history/1\x00"
+    for entry in entries:
+        canonical = json.dumps(
+            entry, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+        digest = hashlib.sha256(domain + digest + canonical).digest()
+    return digest.hex()
+
+
+def _runtime_live_discriminators(
+    profile: dict[str, object],
+) -> set[tuple[str, int, str]]:
+    sources = {
+        "request": profile.get("requests"),
+        "response": profile.get("responses"),
+        "error": profile.get("errors"),
+        "command": profile.get("command_kinds"),
+        "topic": profile.get("topic_kinds"),
+        "operation": profile.get("operations"),
+    }
+    live: set[tuple[str, int, str]] = set()
+    for namespace, rows in sources.items():
+        for identifier, row in _closed_discriminators(rows, namespace).items():
+            live.add((namespace, identifier, str(row["name"])))
+    definitions = profile.get("type_definitions")
+    if not isinstance(definitions, dict):
+        raise ContractError("runtime type definition inventory is absent")
+    for name, definition in definitions.items():
+        if (
+            isinstance(name, str)
+            and isinstance(definition, dict)
+            and definition.get("kind") == "enum"
+            and isinstance(definition.get("variants"), list)
+        ):
+            namespace = f"type:{name}"
+            for identifier, row in _closed_discriminators(
+                definition["variants"], namespace
+            ).items():
+                live.add((namespace, identifier, str(row["name"])))
+    return live
+
+
+def _validate_runtime_baseline(
+    profile: dict[str, object],
+    history: dict[str, object],
+    baseline_profile: dict[str, object],
+    baseline_history: dict[str, object],
+) -> None:
+    current_entries = history.get("entries")
+    baseline_entries = baseline_history.get("entries")
+    if not isinstance(current_entries, list) or not isinstance(baseline_entries, list):
+        raise ContractError("baseline history is absent")
+    if current_entries[: len(baseline_entries)] != baseline_entries:
+        raise ContractError("baseline history is not an immutable prefix")
+
+    current_version = profile.get("profile_version")
+    baseline_version = baseline_profile.get("profile_version")
+    if not isinstance(current_version, dict) or not isinstance(baseline_version, dict):
+        raise ContractError("baseline profile version is absent")
+    if current_version.get("major") != baseline_version.get("major"):
+        return
+    current_minor = current_version.get("minor")
+    baseline_minor = baseline_version.get("minor")
+    if (
+        not isinstance(current_minor, int)
+        or not isinstance(baseline_minor, int)
+        or current_minor < baseline_minor
+    ):
+        raise ContractError("Base runtime profile minor regressed")
+    if len(current_entries) > len(baseline_entries) and current_minor <= baseline_minor:
+        raise ContractError("additive discriminator history requires a profile minor bump")
+
+    for field, namespace in (
+        ("requests", "request"),
+        ("responses", "response"),
+        ("errors", "error"),
+        ("command_kinds", "command"),
+        ("topic_kinds", "topic"),
+        ("operations", "operation"),
+    ):
+        current = _closed_discriminators(profile.get(field), namespace)
+        baseline = _closed_discriminators(baseline_profile.get(field), namespace)
+        for identifier, old_row in baseline.items():
+            new_row = current.get(identifier)
+            if new_row is None or new_row.get("name") != old_row.get("name"):
+                raise ContractError(
+                    f"breaking-major discriminator removal/retype: {namespace}/{identifier}"
+                )
+            if namespace == "operation" and new_row != old_row:
+                raise ContractError(
+                    f"breaking-major operation ownership/type change: {identifier}"
+                )
+
+    current_limits = profile.get("limits")
+    baseline_limits = baseline_profile.get("limits")
+    if not isinstance(current_limits, dict) or not isinstance(baseline_limits, dict):
+        raise ContractError("baseline limit inventory is absent")
+    for name, old_value in baseline_limits.items():
+        new_value = current_limits.get(name)
+        if isinstance(old_value, int) and (
+            not isinstance(new_value, int) or new_value > old_value
+        ):
+            raise ContractError(f"bound widening is a breaking-major change: {name}")
+
+    baseline_scalars = {
+        row.get("name"): row
+        for row in baseline_profile.get("scalar_types", [])
+        if isinstance(row, dict)
+    }
+    current_scalars = {
+        row.get("name"): row
+        for row in profile.get("scalar_types", [])
+        if isinstance(row, dict)
+    }
+    for name, old_row in baseline_scalars.items():
+        new_row = current_scalars.get(name)
+        if new_row is None or new_row.get("ownership") != old_row.get("ownership"):
+            raise ContractError(f"breaking-major ownership change: {name}")
+        for bound_name in ("exact_bytes", "max_bytes", "max_items"):
+            old_bound = old_row.get(bound_name)
+            new_bound = new_row.get(bound_name) if new_row is not None else None
+            if isinstance(old_bound, int) and (
+                not isinstance(new_bound, int)
+                or bound_name == "exact_bytes"
+                and new_bound != old_bound
+                or bound_name != "exact_bytes"
+                and new_bound > old_bound
+            ):
+                raise ContractError(
+                    f"bound widening is a breaking-major change: {name}/{bound_name}"
+                )
+
+    baseline_definitions = baseline_profile.get("type_definitions")
+    current_definitions = profile.get("type_definitions")
+    if not isinstance(baseline_definitions, dict) or not isinstance(
+        current_definitions, dict
+    ):
+        raise ContractError("baseline type definition inventory is absent")
+    for name, old_definition in baseline_definitions.items():
+        new_definition = current_definitions.get(name)
+        if not isinstance(old_definition, dict) or not isinstance(
+            new_definition, dict
+        ) or new_definition.get("kind") != old_definition.get("kind"):
+            raise ContractError(f"breaking-major type removal/retype: {name}")
+        kind = old_definition.get("kind")
+        if kind == "struct":
+            old_fields = _closed_discriminators(
+                old_definition.get("fields"), f"baseline/type/{name}/field"
+            )
+            new_fields = _closed_discriminators(
+                new_definition.get("fields"), f"type/{name}/field"
+            )
+            for identifier, old_field in old_fields.items():
+                new_field = new_fields.get(identifier)
+                if (
+                    new_field is None
+                    or new_field.get("name") != old_field.get("name")
+                    or new_field.get("type") != old_field.get("type")
+                    or new_field.get("ownership") != old_field.get("ownership")
+                    or old_field.get("required") is False
+                    and new_field.get("required") is True
+                ):
+                    raise ContractError(
+                        f"breaking-major field retype/optionality/ownership: {name}/{identifier}"
+                    )
+                for bound_name in ("exact_bytes", "max_bytes", "max_value"):
+                    old_bound = old_field.get(bound_name)
+                    new_bound = new_field.get(bound_name)
+                    if isinstance(old_bound, int) and (
+                        not isinstance(new_bound, int)
+                        or bound_name == "exact_bytes"
+                        and new_bound != old_bound
+                        or bound_name != "exact_bytes"
+                        and new_bound > old_bound
+                    ):
+                        raise ContractError(
+                            f"bound widening is a breaking-major change: {name}/{identifier}/{bound_name}"
+                        )
+        elif kind == "enum" and "variants" in old_definition:
+            old_variants = _closed_discriminators(
+                old_definition.get("variants"), f"baseline/type/{name}"
+            )
+            new_variants = _closed_discriminators(
+                new_definition.get("variants"), f"type/{name}"
+            )
+            for identifier, old_variant in old_variants.items():
+                new_variant = new_variants.get(identifier)
+                if (
+                    new_variant is None
+                    or new_variant.get("name") != old_variant.get("name")
+                    or new_variant.get("payload") != old_variant.get("payload")
+                ):
+                    raise ContractError(
+                        f"breaking-major enum removal/retype: {name}/{identifier}"
+                    )
+        elif kind in {"newtype", "opaque_registry_id"}:
+            if new_definition.get("wire") != old_definition.get("wire") or new_definition.get(
+                "ownership"
+            ) != old_definition.get("ownership"):
+                raise ContractError(f"breaking-major newtype/ownership change: {name}")
+            for bound_name in ("exact_bytes", "max_bytes"):
+                old_bound = old_definition.get(bound_name)
+                new_bound = new_definition.get(bound_name)
+                if isinstance(old_bound, int) and (
+                    not isinstance(new_bound, int)
+                    or bound_name == "exact_bytes"
+                    and new_bound != old_bound
+                    or bound_name != "exact_bytes"
+                    and new_bound > old_bound
+                ):
+                    raise ContractError(
+                        f"bound widening is a breaking-major change: {name}/{bound_name}"
+                    )
+
+
+def validate_base_v1_runtime_baseline_receipt(
+    receipt: dict[str, object],
+    *,
+    resolved_commit: str,
+    resolved_tree: str,
+    baseline_idl_bytes: bytes,
+    baseline_history_bytes: bytes,
+    candidate_is_descendant: bool,
+) -> tuple[dict[str, object], dict[str, object]]:
+    required = {
+        "format",
+        "ref",
+        "commit_sha1",
+        "tree_sha1",
+        "idl_sha256",
+        "history_chain_root_sha256",
+    }
+    if set(receipt) != required or receipt.get("format") != (
+        "onebrain/base-v1-idl-baseline-receipt/1"
+    ) or receipt.get("ref") != "refs/heads/base-v1-idl-baseline":
+        raise ContractError("invalid Base runtime baseline receipt")
+    sha1 = re.compile(r"[0-9a-f]{40}")
+    sha256 = re.compile(r"[0-9a-f]{64}")
+    if not sha1.fullmatch(str(receipt.get("commit_sha1", ""))) or not sha1.fullmatch(
+        str(receipt.get("tree_sha1", ""))
+    ) or not sha256.fullmatch(str(receipt.get("idl_sha256", ""))) or not sha256.fullmatch(
+        str(receipt.get("history_chain_root_sha256", ""))
+    ):
+        raise ContractError("invalid Base runtime baseline receipt digest")
+    if receipt.get("commit_sha1") != resolved_commit:
+        raise ContractError("Base runtime baseline ref moved from receipt commit")
+    if receipt.get("tree_sha1") != resolved_tree:
+        raise ContractError("Base runtime baseline tree digest mismatch")
+    if not candidate_is_descendant:
+        raise ContractError("Base runtime baseline is not a candidate ancestor")
+    if receipt.get("idl_sha256") != hashlib.sha256(baseline_idl_bytes).hexdigest():
+        raise ContractError("Base runtime baseline IDL digest mismatch")
+    try:
+        baseline_profile = json.loads(baseline_idl_bytes.decode("utf-8"))
+        baseline_history = json.loads(baseline_history_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ContractError(f"invalid Base runtime baseline payload: {error}") from error
+    chain = baseline_history.get("history_chain")
+    if not isinstance(chain, dict) or receipt.get(
+        "history_chain_root_sha256"
+    ) != chain.get("root_sha256") or not isinstance(
+        baseline_history.get("entries"), list
+    ) or chain.get("root_sha256") != _runtime_history_root(
+        baseline_history["entries"]
+    ):
+        raise ContractError("Base runtime baseline history digest mismatch")
+    return baseline_profile, baseline_history
+
+
+def load_base_v1_runtime_baseline(
+    receipt_path: Path,
+    *,
+    candidate_ref: str = "HEAD",
+) -> tuple[dict[str, object], dict[str, object]]:
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ContractError(f"cannot load Base runtime baseline receipt: {error}") from error
+
+    def git_bytes(*arguments: str) -> bytes:
+        try:
+            return subprocess.run(
+                ["git", *arguments],
+                cwd=ROOT,
+                check=True,
+                capture_output=True,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise ContractError(
+                f"cannot load protected Base runtime baseline with git {' '.join(arguments)}"
+            ) from error
+
+    baseline_ref = "refs/heads/base-v1-idl-baseline"
+    resolved_commit = git_bytes("rev-parse", f"{baseline_ref}^{{commit}}").decode(
+        "ascii"
+    ).strip()
+    resolved_tree = git_bytes("rev-parse", f"{resolved_commit}^{{tree}}").decode(
+        "ascii"
+    ).strip()
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", resolved_commit, candidate_ref],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+    ).returncode == 0
+    idl_path = "src/test-vectors/vnext/base-v1-runtime-interface-v1.json"
+    history_path = (
+        "src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json"
+    )
+    baseline_profile, baseline_history = validate_base_v1_runtime_baseline_receipt(
+        receipt,
+        resolved_commit=resolved_commit,
+        resolved_tree=resolved_tree,
+        baseline_idl_bytes=git_bytes("show", f"{resolved_commit}:{idl_path}"),
+        baseline_history_bytes=git_bytes("show", f"{resolved_commit}:{history_path}"),
+        candidate_is_descendant=ancestor,
+    )
+    return baseline_profile, baseline_history
+
+
+def validate_base_v1_runtime_interface(
+    profile: dict[str, object] | None = None,
+    history: dict[str, object] | None = None,
+    *,
+    baseline_profile: dict[str, object] | None = None,
+    baseline_history: dict[str, object] | None = None,
+) -> tuple[int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(BASE_V1_RUNTIME_INTERFACE_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base runtime interface JSON: {error}") from error
+    if history is None:
+        try:
+            history = json.loads(read(BASE_V1_RUNTIME_INTERFACE_HISTORY))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base runtime history JSON: {error}") from error
+
+    if profile.get("format") != "onebrain/base-v1-runtime-interface/1":
+        raise ContractError("unexpected Base runtime interface format")
+    if profile.get("profile_id") != "BASE_V1_RUNTIME_INTERFACE_V1":
+        raise ContractError("unexpected Base runtime interface ID")
+    version = profile.get("profile_version")
+    product_version = profile.get("product_api_profile")
+    if (
+        not isinstance(version, dict)
+        or version.get("major") != 1
+        or not isinstance(version.get("minor"), int)
+        or not 0 <= version["minor"] <= 65535
+    ):
+        raise ContractError("unexpected Base runtime interface version")
+    if product_version != {"major": 1, "minor": 1}:
+        raise ContractError("Base product API minor was not bumped additively")
+
+    baseline_contract = profile.get("baseline_contract")
+    if baseline_contract != {
+        "ref": "refs/heads/base-v1-idl-baseline",
+        "receipt_format": "onebrain/base-v1-idl-baseline-receipt/1",
+        "required_fields": [
+            "format",
+            "ref",
+            "commit_sha1",
+            "tree_sha1",
+            "idl_sha256",
+            "history_chain_root_sha256",
+        ],
+        "load": "git_show_exact_commit",
+        "candidate_relation": "baseline_is_ancestor",
+        "missing_or_moved": "fail_closed",
+    }:
+        raise ContractError("Base runtime protected baseline contract drift")
+
+    if (baseline_profile is None) != (baseline_history is None):
+        raise ContractError("baseline profile/history must be supplied together")
+    if baseline_profile is not None and baseline_history is not None:
+        _validate_runtime_baseline(
+            profile, history, baseline_profile, baseline_history
+        )
+
+    limits = profile.get("limits")
+    if not isinstance(limits, dict):
+        raise ContractError("runtime payload bound inventory is absent")
+    required_limits = {
+        "max_payload_bytes": 1048576,
+        "max_continuation_bytes": 4096,
+        "max_continuation_encoded_chars": 5462,
+        "max_string_bytes": 4096,
+        "max_limitations": 64,
+        "max_limitation_bytes": 128,
+        "max_capabilities": 64,
+        "max_resource_budget_dimensions": 16,
+        "max_query_items": 256,
+        "max_subscription_batch_items": 256,
+        "max_event_payload_bytes": 65536,
+        "max_archive_chunk_bytes": 1048576,
+        "max_archive_total_bytes": 1099511627776,
+        "max_management_scopes": 16,
+        "max_active_operations": 1024,
+    }
+    if limits.get("max_payload_bytes") != required_limits["max_payload_bytes"]:
+        raise ContractError("runtime payload bound drift")
+    if any(limits.get(name) != value for name, value in required_limits.items()):
+        if not isinstance(limits.get("max_continuation_bytes"), int) or limits.get(
+            "max_continuation_bytes", 0
+        ) <= 0:
+            raise ContractError("opaque continuation bound drift")
+        raise ContractError("runtime resource bound drift")
+
+    scalar_types = profile.get("scalar_types")
+    if not isinstance(scalar_types, list) or not scalar_types:
+        raise ContractError("runtime scalar type inventory is absent")
+    forbidden = {
+        "raw_path",
+        "runtime_handle",
+        "store_handle",
+        "private_key",
+        "authority_implementation",
+        "borrowed_reader",
+        "borrowed_writer",
+        "unbounded_string",
+    }
+    for scalar in scalar_types:
+        if not isinstance(scalar, dict):
+            raise ContractError("invalid runtime scalar type")
+        wire = scalar.get("wire")
+        if wire in forbidden:
+            raise ContractError(f"forbidden exposure in machine IDL: {wire}")
+        if isinstance(wire, str) and (
+            "utf8" in wire
+            or wire
+            in {"ascii_token", "bounded_bytes", "opaque_bytes", "secret_bytes"}
+        ):
+            if not isinstance(scalar.get("max_bytes", scalar.get("exact_bytes")), int):
+                raise ContractError("unbounded string/bytes type in machine IDL")
+
+    required_common = {
+        "profile_major",
+        "profile_minor",
+        "process_generation",
+        "dataset_generation",
+        "request_id",
+        "operation_id",
+        "idempotency_key",
+        "lifecycle",
+        "coverage",
+        "limitations",
+        "retryable",
+        "resource_budget",
+        "payload_discriminator",
+        "compatibility_digest",
+    }
+    if set(profile.get("common_cross_projection_fields", [])) != required_common:
+        raise ContractError("cross-projection common field inventory drift")
+
+    definitions = profile.get("type_definitions")
+    required_definition_names = {
+        "BaseOperationId",
+        "BaseOperationReservationId",
+        "BaseIdempotencyKey",
+        "BaseOpaqueContinuation",
+        "BaseCommandV1",
+        "ArchiveCredentialKindV1",
+        "BoundedSecretIngressV1",
+        "BaseManagementGrantV1",
+        "BaseRequestV1",
+        "BaseManagementRequestV1",
+        "BaseErrorCodeV1",
+    }
+    if not isinstance(definitions, dict) or not required_definition_names <= set(
+        definitions
+    ):
+        raise ContractError("generator-ready core type inventory drift")
+    scalar_names = {
+        row.get("name") for row in scalar_types if isinstance(row, dict)
+    }
+    permitted_references = set(definitions) | scalar_names | {
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+        "bool",
+        "SecretBytes",
+    }
+    permitted_ownership = {
+        "value",
+        "owned",
+        "service_handle",
+        "management_handle",
+        "host_principal",
+        "zeroizing_one_way_ingress",
+    }
+    for name, definition in definitions.items():
+        if not isinstance(name, str) or not isinstance(definition, dict):
+            raise ContractError("invalid generator-ready type definition")
+        kind = definition.get("kind")
+        if kind == "struct":
+            fields = _closed_discriminators(
+                definition.get("fields"), f"type/{name}/field"
+            )
+            for field in fields.values():
+                if field.get("type") not in permitted_references:
+                    raise ContractError(
+                        f"generator-ready type has unresolved reference: {name}"
+                    )
+                if field.get("required") not in {True, False} or field.get(
+                    "ownership"
+                ) not in permitted_ownership:
+                    raise ContractError(
+                        f"generator-ready field optionality/ownership drift: {name}"
+                    )
+        elif kind == "enum":
+            if definition.get("closed") is not True:
+                raise ContractError(f"generator-ready enum is not closed: {name}")
+            if "variants_from" not in definition:
+                variants = _closed_discriminators(
+                    definition.get("variants"), f"type/{name}"
+                )
+                for variant in variants.values():
+                    payload = variant.get("payload")
+                    if payload is not None and payload not in permitted_references:
+                        raise ContractError(
+                            f"generator-ready enum has unresolved payload: {name}"
+                        )
+        elif kind in {"newtype", "opaque_registry_id"}:
+            bound = definition.get("exact_bytes", definition.get("max_bytes"))
+            if not isinstance(bound, int) or bound <= 0 or definition.get(
+                "ownership"
+            ) not in permitted_ownership:
+                raise ContractError(f"generator-ready newtype is unbounded: {name}")
+        else:
+            raise ContractError(f"unsupported generator-ready type kind: {name}")
+    for name in (
+        "BaseOperationId",
+        "BaseOperationReservationId",
+        "BaseIdempotencyKey",
+    ):
+        if definitions.get(name) != {
+            "kind": "newtype",
+            "wire": "fixed_bytes",
+            "exact_bytes": 32,
+            "ownership": "owned",
+        }:
+            raise ContractError(f"generator-ready fixed ID type drift: {name}")
+    if definitions.get("BaseOpaqueContinuation") != {
+        "kind": "newtype",
+        "wire": "bounded_bytes",
+        "max_bytes": 4096,
+        "ownership": "owned",
+        "constructor": "private_checked",
+    }:
+        raise ContractError("generator-ready private continuation type drift")
+    command_definition = definitions.get("BaseCommandV1")
+    credential_definition = definitions.get("ArchiveCredentialKindV1")
+    request_definition = definitions.get("BaseRequestV1")
+    management_request_definition = definitions.get("BaseManagementRequestV1")
+    for definition, name in (
+        (command_definition, "BaseCommandV1"),
+        (credential_definition, "ArchiveCredentialKindV1"),
+        (request_definition, "BaseRequestV1"),
+        (management_request_definition, "BaseManagementRequestV1"),
+    ):
+        if (
+            not isinstance(definition, dict)
+            or definition.get("kind") != "enum"
+            or definition.get("closed") is not True
+        ):
+            raise ContractError(f"generator-ready closed enum drift: {name}")
+        _closed_discriminators(definition.get("variants"), f"type/{name}")
+    command_variants = _closed_discriminators(
+        command_definition.get("variants"), "type/BaseCommandV1"
+    )
+    if {
+        identifier: (row.get("name"), row.get("payload"))
+        for identifier, row in command_variants.items()
+    } != {
+        1: ("ExistingLocalCommand", "BaseLocalCommandV1"),
+        2: ("CreateArchive", "CreateArchiveCommandV1"),
+        3: ("RestoreArchive", "RestoreArchiveCommandV1"),
+    }:
+        raise ContractError("generator-ready Base command variants drift")
+    credential_variants = _closed_discriminators(
+        credential_definition.get("variants"), "type/ArchiveCredentialKindV1"
+    )
+    if {identifier: row.get("name") for identifier, row in credential_variants.items()} != {
+        1: "Password",
+        2: "RecoveryKey",
+    }:
+        raise ContractError("generator-ready archive credential variants drift")
+    secret_definition = definitions.get("BoundedSecretIngressV1")
+    if not isinstance(secret_definition, dict) or secret_definition.get(
+        "response_serializable"
+    ) is not False or secret_definition.get("loggable") is not False:
+        raise ContractError("generator-ready secret ingress firewall drift")
+    secret_fields = _closed_discriminators(
+        secret_definition.get("fields"), "type/BoundedSecretIngressV1/field"
+    )
+    if secret_fields.get(2, {}).get("max_bytes") != 1024 or secret_fields.get(
+        2, {}
+    ).get("ownership") != "zeroizing_one_way_ingress":
+        raise ContractError("generator-ready secret ingress bound/custody drift")
+    if definitions.get("BaseManagementGrantV1") != {
+        "kind": "opaque_registry_id",
+        "exact_bytes": 32,
+        "ownership": "host_principal",
+        "constructible_by_service": False,
+    }:
+        raise ContractError("generator-ready management grant type drift")
+    expected_request_variants = {
+        3: "Status",
+        5: "Query",
+        6: "ReserveOperation",
+        7: "Prepare",
+        8: "Confirm",
+        9: "Cancel",
+        10: "Reconcile",
+        11: "Subscribe",
+        12: "PollEvents",
+        13: "CloseSubscription",
+        14: "Drain",
+        15: "Close",
+    }
+    if {
+        identifier: row.get("name")
+        for identifier, row in _closed_discriminators(
+            request_definition.get("variants"), "type/BaseRequestV1"
+        ).items()
+    } != expected_request_variants:
+        raise ContractError("generator-ready Base request variants drift")
+    expected_management_variants = {
+        102: "ArchiveSourceBegin",
+        103: "ArchiveSourcePush",
+        104: "ArchiveSourceSeal",
+        105: "ArchiveSinkBegin",
+        106: "ArchiveSinkRead",
+        107: "ArchiveSinkCommit",
+        108: "ArchiveSecretRegister",
+        109: "ArchiveCapabilityAbort",
+        110: "ArchiveCapabilityDestroy",
+        111: "CompleteSignerReprovision",
+        112: "Close",
+    }
+    if {
+        identifier: row.get("name")
+        for identifier, row in _closed_discriminators(
+            management_request_definition.get("variants"),
+            "type/BaseManagementRequestV1",
+        ).items()
+    } != expected_management_variants:
+        raise ContractError("generator-ready Base management request variants drift")
+    if definitions.get("BaseErrorCodeV1") != {
+        "kind": "enum",
+        "repr": "u16",
+        "closed": True,
+        "variants_from": "errors",
+    }:
+        raise ContractError("generator-ready Base error declaration drift")
+
+    requests = _closed_discriminators(profile.get("requests"), "request")
+    responses = _closed_discriminators(profile.get("responses"), "response")
+    errors = _closed_discriminators(profile.get("errors"), "error")
+    commands = _closed_discriminators(profile.get("command_kinds"), "command")
+    topics = _closed_discriminators(profile.get("topic_kinds"), "topic")
+    operations = _closed_discriminators(profile.get("operations"), "operation")
+
+    expected_operations = {
+        1: "open",
+        2: "negotiate",
+        3: "status",
+        4: "snapshot",
+        5: "query",
+        6: "reserve_operation",
+        7: "prepare",
+        8: "confirm",
+        9: "cancel",
+        10: "reconcile",
+        11: "subscribe",
+        12: "poll_events",
+        13: "close_subscription",
+        14: "drain",
+        15: "close",
+        101: "management.open",
+        102: "management.archive_source_begin",
+        103: "management.archive_source_push_chunk",
+        104: "management.archive_source_seal",
+        105: "management.archive_sink_begin",
+        106: "management.archive_sink_read_chunk",
+        107: "management.archive_sink_commit",
+        108: "management.archive_secret_register",
+        109: "management.archive_capability_abort",
+        110: "management.archive_capability_destroy",
+        111: "management.complete_signer_reprovision",
+        112: "management.close",
+    }
+    if {identifier: row["name"] for identifier, row in operations.items()} != expected_operations:
+        raise ContractError("Base runtime operation inventory drift")
+    if set(requests) != set(operations) or set(responses) != set(operations):
+        raise ContractError("request/response discriminator inventory drift")
+    for identifier, operation in operations.items():
+        if operation.get("request_id") != identifier or operation.get(
+            "response_id"
+        ) != identifier:
+            raise ContractError("operation request/response projection drift")
+
+    if {row["name"] for row in commands.values()} != {
+        "ExistingLocalCommand",
+        "CreateArchive",
+        "RestoreArchive",
+    }:
+        raise ContractError("required archive command discriminator is absent")
+    if {row["name"] for row in topics.values()} != {
+        "RuntimeStatus",
+        "OperationReceipts",
+        "QueryResults",
+        "ArchiveProgress",
+        "Compatibility",
+    }:
+        raise ContractError("subscription topic vocabulary drift")
+    expected_errors = {
+        1: "InvalidRequest",
+        2: "NotFound",
+        3: "Conflict",
+        4: "Expired",
+        5: "RateLimited",
+        6: "CapabilityDisabled",
+        7: "DependencyUnavailable",
+        8: "IncompatibleProfile",
+        9: "ResourceExhausted",
+        10: "CorruptState",
+        11: "ReprovisionRequired",
+        12: "UnknownOutcome",
+        13: "InternalError",
+    }
+    if {identifier: row["name"] for identifier, row in errors.items()} != expected_errors:
+        raise ContractError("closed discriminator error inventory drift")
+    for error in errors.values():
+        if error.get("retryable") is True and error.get(
+            "reconcile_before_retry"
+        ) is not True:
+            raise ContractError("retryable error lacks reconcile requirement")
+
+    protocol = profile.get("operation_protocol")
+    if not isinstance(protocol, dict):
+        raise ContractError("operation protocol is absent")
+    if protocol.get("durable_order") != [
+        "reserve_operation",
+        "management_capability_registration",
+        "prepare",
+        "confirm_or_cancel",
+        "reconcile",
+    ] or protocol.get("prepare_requires_reservation") is not True:
+        raise ContractError("durable reserve-before-capability flow drift")
+    if protocol.get("confirm_requires_idempotency_key") is not True:
+        raise ContractError("confirm idempotency requirement drift")
+    if protocol.get("retry_requires_reconcile") is not True or protocol.get(
+        "unknown_outcome_requires_reconcile"
+    ) is not True:
+        raise ContractError("retry must reconcile unknown outcome")
+    if set(protocol.get("states", [])) != {
+        "reserved",
+        "prepared",
+        "confirming",
+        "committed",
+        "canceled",
+        "failed",
+        "unknown_outcome",
+    } or set(protocol.get("transitions", [])) != {
+        "reserved->prepared",
+        "reserved->canceled",
+        "prepared->confirming",
+        "prepared->canceled",
+        "confirming->committed",
+        "confirming->failed",
+        "confirming->unknown_outcome",
+        "unknown_outcome->committed",
+        "unknown_outcome->failed",
+    }:
+        raise ContractError("asynchronous operation state machine drift")
+
+    generation = profile.get("generation_fence")
+    if not isinstance(generation, dict) or set(
+        generation.get("required_fields", [])
+    ) != {"process_generation", "dataset_generation"} or generation.get(
+        "checked_on_every_operation"
+    ) is not True:
+        raise ContractError("process/dataset generation fence drift")
+
+    subscriptions = profile.get("subscriptions")
+    if not isinstance(subscriptions, dict):
+        raise ContractError("subscription contract is absent")
+    if set(subscriptions.get("required_operations", [])) != {
+        "subscribe",
+        "poll_events",
+        "close_subscription",
+    } or subscriptions.get("handle_ownership") != "owned_by_service_session":
+        raise ContractError("subscription ownership/close contract drift")
+    if subscriptions.get("max_batch_items") != 256 or subscriptions.get(
+        "max_event_payload_bytes"
+    ) != 65536:
+        raise ContractError("bounded subscription batch drift")
+    if subscriptions.get("cursor_rule") != "strictly_monotonic_non_regressing":
+        raise ContractError("subscription cursor regression rule drift")
+    if subscriptions.get("gap_response") != (
+        "typed_resync_required_with_earliest_available_cursor"
+    ):
+        raise ContractError("retention gap lacks explicit resync response")
+    if subscriptions.get("slow_consumer") != (
+        "bounded_buffer_then_typed_disconnect_with_resync"
+    ):
+        raise ContractError("slow-consumer backpressure behavior drift")
+
+    management = profile.get("management")
+    if not isinstance(management, dict):
+        raise ContractError("management contract is absent")
+    required_grant_bindings = {
+        "principal_id",
+        "exact_scopes",
+        "process_generation",
+        "dataset_generation",
+        "expires_at",
+        "revocation_epoch",
+    }
+    if set(management.get("grant_bindings", [])) != required_grant_bindings or management.get(
+        "open_consumes_grant"
+    ) is not True or management.get("ordinary_service_can_mint_grant") is not False:
+        raise ContractError("management grant principal/scope binding drift")
+    required_management = {
+        name for name in expected_operations.values() if name.startswith("management.")
+    }
+    if set(management.get("required_operations", [])) != required_management:
+        if "management.complete_signer_reprovision" not in management.get(
+            "required_operations", []
+        ):
+            raise ContractError("management reprovision lifecycle drift")
+        raise ContractError("management operation lifecycle drift")
+
+    archive = profile.get("archive_capabilities")
+    if not isinstance(archive, dict):
+        raise ContractError("archive capability contract is absent")
+    if set(archive.get("ownership_binding", [])) != {
+        "management_handle",
+        "principal_id",
+        "operation_id",
+        "process_generation",
+        "dataset_generation",
+        "capability_kind",
+    }:
+        raise ContractError("archive capability ownership is ambiguous")
+    if archive.get("max_chunk_bytes") != 1048576 or archive.get(
+        "max_total_bytes"
+    ) != 1099511627776:
+        raise ContractError("bounded archive chunk/total drift")
+    required_archive_lifecycle = {
+        "management.archive_source_begin",
+        "management.archive_source_push_chunk",
+        "management.archive_source_seal",
+        "management.archive_sink_begin",
+        "management.archive_sink_read_chunk",
+        "management.archive_sink_commit",
+        "management.archive_secret_register",
+        "management.archive_capability_abort",
+        "management.archive_capability_destroy",
+    }
+    if set(archive.get("lifecycle_operations", [])) != required_archive_lifecycle:
+        raise ContractError("archive lifecycle register/seal/commit/abort/destroy drift")
+    if (
+        archive.get("opaque_handles_only") is not True
+        or archive.get("reserve_before_registration") is not True
+        or archive.get("secret_custody") != "zeroizing_non_exportable"
+        or archive.get("terminal_reuse") != "reject"
+        or archive.get("drop_behavior") != "abort_then_destroy"
+        or set(archive.get("source_states", []))
+        != {"registered", "streaming", "sealed", "consumed", "aborted", "destroyed"}
+        or set(archive.get("sink_states", []))
+        != {"registered", "streaming", "committed", "aborted", "destroyed"}
+        or set(archive.get("secret_states", []))
+        != {"registered", "consumed", "aborted", "destroyed"}
+    ):
+        raise ContractError("archive capability state/custody drift")
+
+    lifecycle = profile.get("runtime_lifecycle")
+    if not isinstance(lifecycle, dict) or lifecycle.get(
+        "drain_blocks_new_operations"
+    ) is not True or lifecycle.get("drain_preserves_poll_cancel_reconcile") is not True:
+        raise ContractError("runtime drain behavior drift")
+    if lifecycle.get("close_requires_drain") is not True or lifecycle.get(
+        "management_close_is_explicit"
+    ) is not True:
+        raise ContractError("runtime close authority drift")
+
+    projections = profile.get("projection_rules")
+    if not isinstance(projections, dict) or projections.get("source") != (
+        "machine_idl_only"
+    ) or projections.get("generated") is not True or projections.get(
+        "handwritten_declarations_allowed"
+    ) is not False:
+        raise ContractError("projection source must be generated machine IDL only")
+    targets = projections.get("targets")
+    if not isinstance(targets, list):
+        raise ContractError("projection target inventory is absent")
+    targets_by_name = {
+        row.get("name"): row for row in targets if isinstance(row, dict)
+    }
+    if set(targets_by_name) != {"rust", "typescript", "dart", "c_abi"}:
+        raise ContractError("projection target inventory drift")
+    if targets_by_name["c_abi"].get("struct_size_required") is not True:
+        raise ContractError("C ABI structs require struct_size")
+    mappings = projections.get("operation_mapping")
+    if not isinstance(mappings, list) or {
+        row.get("operation") for row in mappings if isinstance(row, dict)
+    } != set(expected_operations.values()):
+        raise ContractError("exact operation projection mapping drift")
+    if set(projections.get("forbidden_exposures", [])) != forbidden:
+        raise ContractError("forbidden exposure inventory drift")
+    mapping_by_operation = {
+        row.get("operation"): row for row in mappings if isinstance(row, dict)
+    }
+
+    def camel(name: str) -> str:
+        head, *tail = name.split("_")
+        return head + "".join(part[:1].upper() + part[1:] for part in tail)
+
+    for operation_name, row in mapping_by_operation.items():
+        if not isinstance(operation_name, str):
+            raise ContractError("invalid operation projection mapping")
+        if operation_name in {"management.open", "management.close"}:
+            suffix = operation_name.replace(".", "_")
+        else:
+            suffix = operation_name.removeprefix("management.")
+        rust_name = suffix
+        expected_mapping = {
+            "operation": operation_name,
+            "rust": rust_name,
+            "typescript": camel(rust_name),
+            "dart": camel(rust_name),
+            "c_abi": f"ob_base_{rust_name}_v1",
+        }
+        if row != expected_mapping:
+            raise ContractError(f"exact projection name drift: {operation_name}")
+
+    if history.get("format") != "onebrain/base-v1-runtime-interface-history/1" or history.get(
+        "profile_id"
+    ) != "BASE_V1_RUNTIME_INTERFACE_V1" or history.get("append_only") is not True:
+        raise ContractError("unexpected runtime discriminator history format")
+    entries = history.get("entries")
+    if not isinstance(entries, list) or not entries:
+        raise ContractError("runtime discriminator history is absent")
+    seen_ids: dict[tuple[str, int], str] = {}
+    seen_names: dict[tuple[str, str], int] = {}
+    active: set[tuple[str, int, str]] = set()
+    for expected_sequence, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict) or entry.get("sequence") != expected_sequence:
+            raise ContractError("runtime history sequence is not append-only")
+        namespace = entry.get("namespace")
+        identifier = entry.get("id")
+        name = entry.get("name")
+        state = entry.get("state")
+        if (
+            not (
+                namespace
+                in {"request", "response", "error", "command", "topic", "operation"}
+                or isinstance(namespace, str)
+                and namespace.startswith("type:")
+            )
+            or not isinstance(identifier, int)
+            or identifier <= 0
+            or not isinstance(name, str)
+            or state not in {"active", "tombstone"}
+        ):
+            raise ContractError("invalid runtime history entry")
+        id_key = (namespace, identifier)
+        name_key = (namespace, name)
+        prior_name = seen_ids.get(id_key)
+        prior_id = seen_names.get(name_key)
+        if (prior_name is not None and prior_name != name) or (
+            prior_id is not None and prior_id != identifier
+        ):
+            raise ContractError("runtime history discriminator reuse detected")
+        if prior_name is not None and state != "tombstone":
+            raise ContractError("runtime history active discriminator was rewritten")
+        seen_ids[id_key] = name
+        seen_names[name_key] = identifier
+        key = (str(namespace), identifier, name)
+        if state == "active":
+            active.add(key)
+        else:
+            active.discard(key)
+    if active != _runtime_live_discriminators(profile):
+        raise ContractError("runtime discriminator history coverage drift")
+    chain = history.get("history_chain")
+    if not isinstance(chain, dict) or chain.get("algorithm") != "sha256-chain-v1" or chain.get(
+        "canonicalization"
+    ) != "json-sort-keys-utf8-no-whitespace" or chain.get(
+        "root_sha256"
+    ) != _runtime_history_root(entries):
+        raise ContractError("runtime discriminator history chain root mismatch")
+
+    return len(operations), len(topics), len(errors)
+
+
+def validate_base_v1_compatibility(
+    profile: dict[str, object] | None = None,
+    runtime_profile: dict[str, object] | None = None,
+) -> int:
+    if profile is None:
+        try:
+            profile = json.loads(read(BASE_V1_COMPATIBILITY_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base compatibility JSON: {error}") from error
+    if profile.get("format") != "onebrain/base-v1-compatibility/1" or profile.get(
+        "profile_id"
+    ) != "BASE_V1_COMPATIBILITY_V1":
+        raise ContractError("unexpected Base compatibility profile")
+    if profile.get("domains") != {
+        "candidate_semantic": "onebrain:base:candidate-semantic:1\\0",
+        "artifact_tuple": "onebrain:base:artifact-tuple:1\\0",
+    }:
+        raise ContractError("Base compatibility digest domain drift")
+    if profile.get("identity_inputs") != {
+        "source_commit": "ONEBRAIN_BASE_COMMIT",
+        "toolchain_digest": "ONEBRAIN_TOOLCHAIN_DIGEST",
+        "missing_or_malformed": "typed_unknown",
+    }:
+        raise ContractError("Base compatibility build identity contract drift")
+
+    tuple_fields = [
+        "base_version",
+        "base_commit",
+        "canonical_schema_digest",
+        "domain_registry_digest",
+        "resource_registry_digest",
+        "storage_schema",
+        "archive_profile",
+        "migration_profile",
+        "registry_profile",
+        "registry_profile_digest",
+        "wire_session",
+        "product_api",
+        "c_abi",
+        "feature_set_digest",
+        "target_triple",
+        "toolchain",
+    ]
+    candidate_fields = tuple_fields[:-2]
+    if profile.get("tuple_fields") != tuple_fields or profile.get(
+        "candidate_fields"
+    ) != candidate_fields or profile.get("artifact_only_fields") != [
+        "target_triple",
+        "toolchain",
+    ]:
+        raise ContractError("Base compatibility tuple field order drift")
+
+    if runtime_profile is None:
+        try:
+            runtime_profile = json.loads(read(BASE_V1_RUNTIME_INTERFACE_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base runtime interface JSON: {error}") from error
+    runtime = runtime_profile
+    runtime_compatibility = runtime.get("compatibility")
+    if not isinstance(runtime_compatibility, dict) or runtime_compatibility.get(
+        "candidate_fields"
+    ) != candidate_fields or runtime_compatibility.get("artifact_only_fields") != [
+        "target_triple",
+        "toolchain",
+    ] or runtime_compatibility.get(
+        "qualification_participates_in_digest"
+    ) is not False or runtime_compatibility.get(
+        "qualification_is_external"
+    ) is not True:
+        raise ContractError("Base compatibility IDL binding drift")
+
+    scalar_rows = runtime.get("scalar_types")
+    if not isinstance(scalar_rows, list):
+        raise ContractError("Base compatibility scalar declarations are absent")
+    scalars = {
+        row.get("name"): row for row in scalar_rows if isinstance(row, dict)
+    }
+    expected_scalars = {
+        "BasePrerelease": {
+            "name": "BasePrerelease",
+            "wire": "ascii_token",
+            "max_bytes": 32,
+            "ownership": "owned",
+        },
+        "TargetTriple": {
+            "name": "TargetTriple",
+            "wire": "ascii_token",
+            "max_bytes": 96,
+            "ownership": "owned",
+        },
+        "MigrationVectorIdV1": {
+            "name": "MigrationVectorIdV1",
+            "wire": "ascii_token",
+            "max_bytes": 64,
+            "ownership": "owned",
+        },
+        "BaseCapabilitySet": {
+            "name": "BaseCapabilitySet",
+            "wire": "bounded_set",
+            "max_items": 64,
+            "ownership": "owned",
+        },
+        "StorageSchemaVersion": {
+            "name": "StorageSchemaVersion",
+            "wire": "u32",
+            "ownership": "value",
+        },
+    }
+    if any(scalars.get(name) != row for name, row in expected_scalars.items()):
+        raise ContractError("Base compatibility scalar declaration drift")
+
+    definitions = runtime.get("type_definitions")
+    if not isinstance(definitions, dict):
+        raise ContractError("Base compatibility type declarations are absent")
+
+    def fields(name: str) -> list[tuple[object, ...]]:
+        definition = definitions.get(name)
+        if not isinstance(definition, dict) or definition.get("kind") != "struct":
+            raise ContractError(f"Base compatibility struct declaration drift: {name}")
+        rows = definition.get("fields")
+        if not isinstance(rows, list):
+            raise ContractError(f"Base compatibility field declaration drift: {name}")
+        return [
+            (
+                row.get("id"),
+                row.get("name"),
+                row.get("type"),
+                row.get("required"),
+                row.get("ownership"),
+                row.get("max_value"),
+            )
+            for row in rows
+            if isinstance(row, dict)
+        ]
+
+    expected_struct_fields = {
+        "ProfileVersion": [
+            (1, "major", "u16", True, "value", None),
+            (2, "minor", "u16", True, "value", None),
+        ],
+        "BaseReleaseVersion": [
+            (1, "major", "u16", True, "value", None),
+            (2, "minor", "u16", True, "value", None),
+            (3, "patch", "u16", True, "value", None),
+            (4, "prerelease", "BasePrerelease", False, "owned", None),
+        ],
+        "BaseQualifiedEvidence": [
+            (1, "candidate_commit", "SourceCommitId", True, "owned", None),
+            (
+                2,
+                "candidate_semantic_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (3, "evidence_blake3", "CompatibilityDigestV1", True, "owned", None),
+        ],
+        "ArchiveRestorePolicyV1": [
+            (
+                1,
+                "canonical_schema_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                2,
+                "domain_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                3,
+                "resource_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (4, "storage_schema", "StorageSchemaVersion", True, "value", None),
+            (5, "archive_profile", "ProfileVersion", True, "value", None),
+            (6, "migration_profile", "ProfileVersion", True, "value", None),
+            (7, "max_dataset_bytes", "u64", True, "value", 17_179_869_184),
+        ],
+        "BaseCompatibilityTuple": [
+            (1, "base_version", "BaseReleaseVersion", True, "owned", None),
+            (2, "base_commit", "SourceCommitIdentity", True, "owned", None),
+            (
+                3,
+                "canonical_schema_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                4,
+                "domain_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                5,
+                "resource_registry_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (6, "storage_schema", "StorageSchemaVersion", True, "value", None),
+            (7, "archive_profile", "ProfileVersion", True, "value", None),
+            (8, "migration_profile", "ProfileVersion", True, "value", None),
+            (9, "registry_profile", "ProfileVersion", True, "value", None),
+            (
+                10,
+                "registry_profile_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (11, "wire_session", "ProfileVersion", True, "value", None),
+            (12, "product_api", "ProfileVersion", True, "value", None),
+            (13, "c_abi", "ProfileVersion", True, "value", None),
+            (
+                14,
+                "feature_set_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (15, "target_triple", "TargetTriple", True, "owned", None),
+            (16, "toolchain", "ToolchainIdentity", True, "owned", None),
+        ],
+        "BaseVersionStatus": [
+            (1, "compatibility", "BaseCompatibilityTuple", True, "owned", None),
+            (
+                2,
+                "candidate_semantic_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (
+                3,
+                "artifact_tuple_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+            (4, "qualification", "BaseQualificationState", True, "owned", None),
+        ],
+        "NegotiatedVersions": [
+            (1, "base_minor", "u16", True, "value", None),
+            (2, "wire_session_minor", "u16", True, "value", None),
+            (3, "product_api_minor", "u16", True, "value", None),
+            (4, "c_abi_minor", "u16", True, "value", None),
+        ],
+        "MigrationVectorBindingV1": [
+            (1, "vector_id", "MigrationVectorIdV1", True, "owned", None),
+            (2, "vector_blake3", "CompatibilityDigestV1", True, "owned", None),
+            (
+                3,
+                "trust_policy_digest",
+                "CompatibilityDigestV1",
+                True,
+                "owned",
+                None,
+            ),
+        ],
+        "BaseCompatibilityPolicy": [
+            (1, "current", "BaseCompatibilityTuple", True, "owned", None),
+            (2, "minimum_additive", "NegotiatedVersions", True, "owned", None),
+            (3, "archive_restore", "ArchiveRestorePolicyV1", True, "owned", None),
+        ],
+        "BaseCapabilityRequirements": [
+            (1, "supported", "BaseCapabilitySet", True, "owned", None),
+            (2, "required", "BaseCapabilitySet", True, "owned", None),
+        ],
+        "BaseCompatibleNegotiationV1": [
+            (1, "versions", "NegotiatedVersions", True, "owned", None),
+            (2, "capabilities", "BaseCapabilitySet", True, "owned", None),
+        ],
+        "BaseMigrationRequiredNegotiationV1": [
+            (1, "from", "BaseReleaseVersion", True, "owned", None),
+            (2, "to", "BaseReleaseVersion", True, "owned", None),
+            (3, "vector", "MigrationVectorBindingV1", True, "owned", None),
+        ],
+    }
+    for name, expected in expected_struct_fields.items():
+        if fields(name) != expected:
+            raise ContractError(f"Base compatibility field declaration drift: {name}")
+
+    for name, expected in {
+        "SourceCommitSha1": {
+            "kind": "newtype",
+            "wire": "fixed_bytes",
+            "exact_bytes": 20,
+            "ownership": "owned",
+        },
+        "SourceCommitSha256": {
+            "kind": "newtype",
+            "wire": "fixed_bytes",
+            "exact_bytes": 32,
+            "ownership": "owned",
+        },
+        "ToolchainDigest": {
+            "kind": "newtype",
+            "wire": "fixed_bytes",
+            "exact_bytes": 32,
+            "ownership": "owned",
+        },
+    }.items():
+        if definitions.get(name) != expected:
+            raise ContractError(f"Base compatibility identity declaration drift: {name}")
+
+    expected_enums = {
+        "SourceCommitId": (
+            "u8",
+            [(1, "Sha1", "SourceCommitSha1"), (2, "Sha256", "SourceCommitSha256")],
+        ),
+        "SourceCommitIdentity": (
+            "u8",
+            [(1, "Known", "SourceCommitId"), (2, "Unknown", None)],
+        ),
+        "ToolchainIdentity": (
+            "u8",
+            [(1, "Known", "ToolchainDigest"), (2, "Unknown", None)],
+        ),
+        "BaseQualificationState": (
+            "u8",
+            [
+                (1, "Unqualified", None),
+                (2, "Qualified", "BaseQualifiedEvidence"),
+            ],
+        ),
+        "BaseNegotiationOutcome": (
+            "u8",
+            [
+                (1, "Compatible", "BaseCompatibleNegotiationV1"),
+                (2, "MigrationRequired", "BaseMigrationRequiredNegotiationV1"),
+                (3, "Incompatible", "BaseCompatibilityError"),
+            ],
+        ),
+    }
+    for name, (expected_repr, expected) in expected_enums.items():
+        definition = definitions.get(name)
+        variants = definition.get("variants") if isinstance(definition, dict) else None
+        actual = [
+            (row.get("id"), row.get("name"), row.get("payload"))
+            for row in variants
+            if isinstance(row, dict)
+        ] if isinstance(variants, list) else []
+        if not isinstance(definition, dict) or definition.get(
+            "kind"
+        ) != "enum" or definition.get("closed") is not True or definition.get(
+            "repr"
+        ) != expected_repr or actual != expected:
+            raise ContractError(f"Base compatibility enum declaration drift: {name}")
+    error_definition = definitions.get("BaseCompatibilityError")
+    error_variants = (
+        error_definition.get("variants")
+        if isinstance(error_definition, dict)
+        else None
+    )
+    expected_error_names = [
+        "BaseMajorMismatch",
+        "BaseMinorBelowMinimum",
+        "CanonicalSchemaMismatch",
+        "DomainRegistryMismatch",
+        "ResourceRegistryMismatch",
+        "RegistryProfileMismatch",
+        "RegistryProfileDigestMismatch",
+        "WireSessionMajorMismatch",
+        "WireSessionMinorBelowMinimum",
+        "ProductApiMajorMismatch",
+        "ProductApiMinorBelowMinimum",
+        "CAbiMajorMismatch",
+        "CAbiMinorBelowMinimum",
+        "MigrationVectorRequired",
+        "MissingRequiredCapability",
+        "InvalidPolicy",
+    ]
+    if not isinstance(error_definition, dict) or error_definition.get(
+        "kind"
+    ) != "enum" or error_definition.get("closed") is not True or error_definition.get(
+        "repr"
+    ) != "u16" or not isinstance(error_variants, list) or [
+        (row.get("id"), row.get("name"), row.get("payload"))
+        for row in error_variants
+        if isinstance(row, dict)
+    ] != [
+        (identifier, name, None)
+        for identifier, name in enumerate(expected_error_names, start=1)
+    ]:
+        raise ContractError("Base compatibility error declaration drift")
+
+    baseline = profile.get("baseline")
+    if not isinstance(baseline, dict) or list(baseline) != tuple_fields:
+        raise ContractError("Base compatibility baseline tuple drift")
+    release = baseline.get("base_version")
+    if not isinstance(release, dict) or set(release) != {
+        "major",
+        "minor",
+        "patch",
+        "prerelease",
+    } or any(
+        not isinstance(release.get(field), int)
+        for field in ("major", "minor", "patch")
+    ):
+        raise ContractError("Base compatibility release version drift")
+
+    digest_fields = {
+        "canonical_schema_digest",
+        "domain_registry_digest",
+        "resource_registry_digest",
+        "registry_profile_digest",
+        "feature_set_digest",
+    }
+    digest_pattern = re.compile(r"[0-9a-f]{64}")
+    for field in digest_fields:
+        if not digest_pattern.fullmatch(str(baseline.get(field, ""))):
+            raise ContractError(f"Base compatibility digest field drift: {field}")
+    commit = baseline.get("base_commit")
+    toolchain = baseline.get("toolchain")
+    if not isinstance(commit, dict) or commit.get("kind") != "sha1" or not re.fullmatch(
+        r"[0-9a-f]{40}", str(commit.get("hex", ""))
+    ) or not isinstance(toolchain, dict) or toolchain.get(
+        "kind"
+    ) != "known" or not digest_pattern.fullmatch(str(toolchain.get("hex", ""))):
+        raise ContractError("Base compatibility known identity vector drift")
+    if not isinstance(baseline.get("storage_schema"), int) or not isinstance(
+        baseline.get("target_triple"), str
+    ) or not 0 < len(baseline["target_triple"].encode("ascii")) <= 96:
+        raise ContractError("Base compatibility storage/target vector drift")
+    for field in ("archive_profile", "migration_profile", "registry_profile", "wire_session", "product_api", "c_abi"):
+        value = baseline.get(field)
+        if not isinstance(value, dict) or set(value) != {"major", "minor"} or any(
+            not isinstance(value.get(part), int) for part in ("major", "minor")
+        ):
+            raise ContractError(f"Base compatibility profile version drift: {field}")
+
+    minimum = profile.get("minimum_additive")
+    if not isinstance(minimum, dict) or set(minimum) != {
+        "base_minor",
+        "wire_session_minor",
+        "product_api_minor",
+        "c_abi_minor",
+    } or any(not isinstance(value, int) for value in minimum.values()):
+        raise ContractError("Base compatibility independent minor floors drift")
+    archive_restore = profile.get("archive_restore")
+    if archive_restore != {"max_dataset_bytes": 17_179_869_184}:
+        raise ContractError("Base compatibility archive limit drift")
+
+    capabilities = profile.get("capabilities")
+    if not isinstance(capabilities, dict):
+        raise ContractError("Base compatibility capability vectors are absent")
+    for side in ("local", "peer"):
+        offer = capabilities.get(side)
+        if not isinstance(offer, dict) or set(offer) != {"supported", "required"}:
+            raise ContractError("Base compatibility capability offer drift")
+        supported = offer.get("supported")
+        required = offer.get("required")
+        if not isinstance(supported, list) or not isinstance(required, list) or (
+            supported != sorted(set(supported))
+            or required != sorted(set(required))
+            or not set(required) <= set(supported)
+            or len(supported) > 64
+        ):
+            raise ContractError("Base compatibility capability bounds drift")
+    if capabilities.get("expected_intersection") != [1, 2]:
+        raise ContractError("Base compatibility capability intersection drift")
+
+    vector = profile.get("migration_vector")
+    if not isinstance(vector, dict) or set(vector) != {
+        "vector_id",
+        "vector_blake3",
+        "trust_policy_digest",
+    } or not isinstance(vector.get("vector_id"), str) or not 0 < len(
+        vector["vector_id"].encode("ascii")
+    ) <= 64 or not digest_pattern.fullmatch(str(vector.get("vector_blake3", ""))) or not digest_pattern.fullmatch(
+        str(vector.get("trust_policy_digest", ""))
+    ):
+        raise ContractError("Base compatibility migration binding drift")
+
+    golden = profile.get("golden_digests")
+    if not isinstance(golden, dict) or set(golden) != {
+        "candidate_semantic",
+        "artifact_tuple",
+    } or any(
+        not digest_pattern.fullmatch(str(golden.get(field, "")))
+        for field in golden
+    ):
+        raise ContractError("Base compatibility golden digest drift")
+
+    cases = profile.get("cases")
+    if not isinstance(cases, list) or len(cases) != 34:
+        raise ContractError("Base compatibility vector count drift")
+    expected_outcomes = {
+        "exact": "compatible",
+        "base-major": "incompatible:BaseMajorMismatch",
+        "base-minor": "compatible",
+        "base-minor-below-floor": "incompatible:BaseMinorBelowMinimum",
+        "base-patch": "compatible",
+        "base-prerelease": "compatible",
+        "commit-known": "compatible",
+        "commit-unknown": "compatible",
+        "canonical-schema": "incompatible:CanonicalSchemaMismatch",
+        "domain-registry": "incompatible:DomainRegistryMismatch",
+        "resource-registry": "incompatible:ResourceRegistryMismatch",
+        "storage-with-vector": "migration_required",
+        "storage-without-vector": "incompatible:MigrationVectorRequired",
+        "archive-profile": "migration_required",
+        "archive-profile-without-vector": "incompatible:MigrationVectorRequired",
+        "migration-profile": "migration_required",
+        "migration-profile-without-vector": "incompatible:MigrationVectorRequired",
+        "registry-profile": "incompatible:RegistryProfileMismatch",
+        "registry-profile-digest": "incompatible:RegistryProfileDigestMismatch",
+        "wire-major": "incompatible:WireSessionMajorMismatch",
+        "wire-minor": "compatible",
+        "wire-minor-below-floor": "incompatible:WireSessionMinorBelowMinimum",
+        "product-major": "incompatible:ProductApiMajorMismatch",
+        "product-minor": "compatible",
+        "product-minor-below-floor": "incompatible:ProductApiMinorBelowMinimum",
+        "c-abi-major": "incompatible:CAbiMajorMismatch",
+        "c-abi-minor": "compatible",
+        "c-abi-minor-below-floor": "incompatible:CAbiMinorBelowMinimum",
+        "optional-feature": "compatible",
+        "required-feature": "incompatible:MissingRequiredCapability",
+        "target": "compatible",
+        "toolchain-known": "compatible",
+        "toolchain-unknown": "compatible",
+        "commit-toolchain-unknown": "compatible",
+    }
+    by_id: dict[str, dict[str, object]] = {}
+    for case in cases:
+        if not isinstance(case, dict) or set(case) != {
+            "id",
+            "field",
+            "change",
+            "migration_vector",
+            "outcome",
+            "semantic_digest_changed",
+            "artifact_digest_changed",
+            "qualification",
+        } or not isinstance(case.get("id"), str) or case["id"] in by_id:
+            raise ContractError("Base compatibility case schema/ID drift")
+        by_id[case["id"]] = case
+    if set(by_id) != set(expected_outcomes) or any(
+        by_id[identifier].get("outcome") != outcome
+        for identifier, outcome in expected_outcomes.items()
+    ):
+        raise ContractError("Base compatibility decision vector drift")
+    covered = {
+        str(case.get("field")).split(".", 1)[0].split("+", 1)[0]
+        for case in cases
+    }
+    if not set(tuple_fields) <= covered | {"all"}:
+        raise ContractError("Base compatibility tuple field coverage drift")
+    if by_id["target"].get("semantic_digest_changed") is not False or by_id[
+        "target"
+    ].get("artifact_digest_changed") is not True or by_id[
+        "toolchain-known"
+    ].get("semantic_digest_changed") is not False or by_id[
+        "toolchain-known"
+    ].get("artifact_digest_changed") is not True:
+        raise ContractError("Base artifact-only digest separation drift")
+    for identifier in ("commit-unknown", "toolchain-unknown", "commit-toolchain-unknown"):
+        if by_id[identifier].get("qualification") != "unqualified":
+            raise ContractError("unknown build identity must remain unqualified")
+    return len(cases)
+
+
+def validate_base_v1_freeze() -> int:
+    try:
+        profile = json.loads(read(BASE_V1_FREEZE_PROFILE))
+        signers = json.loads(read(BASE_V1_RELEASE_SIGNERS))
+    except json.JSONDecodeError as error:
+        raise ContractError(f"invalid Base v1 freeze JSON: {error}") from error
+    if profile.get("format") != "onebrain/base-v1-freeze/1" or profile.get(
+        "profile_id"
+    ) != "BASE_V1_FREEZE_AND_EVIDENCE_PROFILE_V1":
+        raise ContractError("unexpected Base v1 freeze profile")
+    candidate = profile.get("candidate")
+    if candidate != {
+        "version": "1.0.0",
+        "qualification_state_before_task_28": "Unqualified",
+        "only_eligible_commit": "task-27-commit",
+        "task_25_is_ancestor_checkpoint_only": True,
+        "tag": "base-v1.0.0",
+        "tag_must_be_absent_before_verified_atomic_publication": True,
+    }:
+        raise ContractError("Base v1 candidate freeze drift")
+    targets = profile.get("targets")
+    if targets != [
+        "x86_64-unknown-linux-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-apple-darwin",
+    ]:
+        raise ContractError("Base v1 exact target map drift")
+    gates = profile.get("base_gate_v1")
+    expected_gates = {
+        "contract-validators",
+        "canonical-and-negative-vectors",
+        "three-os-build-matrix",
+        "blob-and-derived-index-integrity",
+        "archive-recovery-and-kill-windows",
+        "authoritative-transaction-boundaries",
+        "cross-language-and-n-minus-one-conformance",
+        "fresh-production-registry",
+        "fresh-multi-host-p5",
+        "fresh-exact-candidate-72h-soak",
+        "dependency-security-and-sbom",
+        "product-default-and-release-documents",
+    }
+    if not isinstance(gates, list) or len(gates) != 12 or set(gates) != expected_gates:
+        raise ContractError("BASE-GATE-V1 gate set drift")
+    child = profile.get("child_evidence_policies")
+    expected_child = {
+        "fresh-production-registry": {
+            "role": "registry-production-aggregator",
+            "public_key_hex": "bef8e2b9d8ae7a38b3753a7d756a39c20948f128a66ca71ed04799e7a5d5177c",
+            "fingerprint_context": "onebrain:concept-registry:signer-fingerprint:1",
+            "fingerprint_hex": "dcc09574ac53ec8b95585cad5e2e88cbdfbe44841ad46b3709f73c989b4316d4",
+            "trust_policy_digest": "e0a2551a39823c3f2cb088defe60484c8a33ffe0f3aab9df9493b52557ab55fe",
+        },
+        "fresh-multi-host-p5": {
+            "role": "p5-orchestrator",
+            "public_key_hex": "cce7da80b255ed3a67a8414f79e700bb0fdc4944abe3793d9c23e8ca1699fc27",
+            "fingerprint_context": "onebrain:p5:evidence-signer-fingerprint:1",
+            "fingerprint_hex": "6d018ba3d7224bc5a415a54c226f81db1139d950aedf0ef5dfb9b9da441b01ca",
+            "trust_policy_digest": "deac187c74148dbeb9db4c29590b862121cff44506be2efc79f30d688868987b",
+        },
+        "fresh-exact-candidate-72h-soak": {
+            "role": "soak-aggregator",
+            "public_key_hex": "888cf37977b179b78aff9045a0ce599cd090172d38ec04e4d462cf70eee454b3",
+            "fingerprint_context": "onebrain:base-v1:soak-evidence-signer-fingerprint:1",
+            "fingerprint_hex": "8ab8e70864bd2258042dc4e5d18d271680df2566092317363b1064b6f1fa2ae9",
+            "trust_policy_digest": "f2ef9e95575c47a25a1809ba580b70eac1413bc5d147f9f021987c393ba778d6",
+        },
+    }
+    if child != expected_child:
+        raise ContractError("Base v1 child evidence signer policy drift")
+    evidence_approver = profile.get("base_evidence_approver_policy")
+    evidence_policy_context = "onebrain:base-v1:evidence-approver-policy:1"
+    evidence_fingerprint_context = (
+        "onebrain:base-v1:evidence-approver-fingerprint:1"
+    )
+    evidence_approver_fields = {
+        "status", "trust_policy_context", "trust_policy_digest", "policy",
+    }
+    evidence_policy_fields = {
+        "algorithm", "allowed_usages", "format", "role", "signature_domain",
+        "signers", "valid_unlisted_signature",
+    }
+    evidence_signer_fields = {
+        "created_utc", "expires_utc", "fingerprint_context",
+        "fingerprint_hex", "public_key_hex",
+    }
+    if (
+        not isinstance(evidence_approver, dict)
+        or set(evidence_approver) != evidence_approver_fields
+        or evidence_approver.get("status") != "owner-approved"
+        or evidence_approver.get("trust_policy_context")
+        != evidence_policy_context
+    ):
+        raise ContractError("Base v1 evidence approver policy fields drift")
+    evidence_policy = evidence_approver.get("policy")
+    if (
+        not isinstance(evidence_policy, dict)
+        or set(evidence_policy) != evidence_policy_fields
+        or evidence_policy.get("algorithm") != "Ed25519"
+        or evidence_policy.get("allowed_usages")
+        != ["gate-receipt-approval", "target-receipt-approval"]
+        or evidence_policy.get("format")
+        != "onebrain/base-v1-evidence-approver-policy/1"
+        or evidence_policy.get("role") != "base-evidence-approver"
+        or evidence_policy.get("signature_domain")
+        != "onebrain:base-v1:evidence-receipt-approval:1"
+        or evidence_policy.get("valid_unlisted_signature") != "reject"
+    ):
+        raise ContractError("Base v1 evidence approver public policy drift")
+    evidence_signers = evidence_policy.get("signers")
+    if (
+        not isinstance(evidence_signers, list)
+        or len(evidence_signers) != 1
+        or not isinstance(evidence_signers[0], dict)
+        or set(evidence_signers[0]) != evidence_signer_fields
+    ):
+        raise ContractError("Base v1 evidence approver signer allowlist drift")
+    evidence_signer = evidence_signers[0]
+    public_key = evidence_signer.get("public_key_hex")
+    fingerprint = evidence_signer.get("fingerprint_hex")
+    trust_digest = evidence_approver.get("trust_policy_digest")
+    if (
+        evidence_signer.get("fingerprint_context")
+        != evidence_fingerprint_context
+        or not all(
+            isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+            for value in (public_key, fingerprint, trust_digest)
+        )
+    ):
+        raise ContractError("approved Base v1 evidence approver values are invalid")
+    measured_fingerprint = blake3.blake3(
+        bytes.fromhex(public_key),
+        derive_key_context=evidence_fingerprint_context,
+    ).hexdigest()
+    if measured_fingerprint != fingerprint:
+        raise ContractError("Base v1 evidence approver fingerprint does not derive")
+    canonical_evidence_policy = json.dumps(
+        evidence_policy, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    measured_trust_digest = blake3.blake3(
+        canonical_evidence_policy,
+        derive_key_context=evidence_policy_context,
+    ).hexdigest()
+    if measured_trust_digest != trust_digest:
+        raise ContractError("Base v1 evidence approver trust policy does not derive")
+    try:
+        created_utc = datetime.fromisoformat(
+            evidence_signer["created_utc"].removesuffix("Z") + "+00:00"
+        )
+        expires_utc = datetime.fromisoformat(
+            evidence_signer["expires_utc"].removesuffix("Z") + "+00:00"
+        )
+    except (TypeError, ValueError) as error:
+        raise ContractError(
+            "Base v1 evidence approver validity is invalid"
+        ) from error
+    if (
+        not str(evidence_signer["created_utc"]).endswith("Z")
+        or not str(evidence_signer["expires_utc"]).endswith("Z")
+        or created_utc.microsecond
+        or expires_utc.microsecond
+        or created_utc.tzinfo != timezone.utc
+        or expires_utc.tzinfo != timezone.utc
+        or created_utc >= expires_utc
+        or not (created_utc <= datetime.now(timezone.utc) < expires_utc)
+    ):
+        raise ContractError("Base v1 evidence approver is not currently valid")
+    if signers.get("format") != "onebrain/base-v1-release-signers/1" or signers.get(
+        "owner_approval"
+    ) != {
+        "status": "owner-approved",
+        "approved_utc": "2026-08-27",
+        "sample_or_default_keys_allowed": False,
+    }:
+        raise ContractError("Base v1 release signer approval drift")
+    policies = signers.get("policies")
+    if not isinstance(policies, list) or len(policies) != 3:
+        raise ContractError("Base v1 release signer role count drift")
+    by_role = {row.get("policy", {}).get("role"): row for row in policies}
+    expected_policies = {
+        "qualification-approver": (
+            "A9BFDC59364354F954ABD26947FCF15DD9C32781",
+            "0710845f71ca7aca7ce89a0377a31ce293c6dd99778c0ff3decf9e04745528be",
+            ["base-release-request"],
+        ),
+        "base-release": (
+            "F9DDAFB46FB6603E14B21B4DB0D9DBF23DBE8ED2",
+            "443534ac4f583368cc5e07b1c4dbddf1ac66c63eba32bcf9e565b07f07a80d88",
+            ["base-evidence-manifest", "base-release-tag"],
+        ),
+    }
+    if set(by_role) != {*expected_policies, "base-evidence-approver"}:
+        raise ContractError("Base v1 release signer roles drift")
+    for role, (fingerprint, digest, usages) in expected_policies.items():
+        row = by_role[role]
+        policy = row.get("policy", {})
+        if (
+            policy.get("algorithm") != "OpenPGP-Ed25519"
+            or policy.get("allowed_usages") != usages
+            or policy.get("signers", [{}])[0].get("fingerprint") != fingerprint
+            or row.get("digest", {}).get("expected_hex") != digest
+        ):
+            raise ContractError(f"Base v1 {role} signer policy drift")
+    evidence_policy_row = by_role["base-evidence-approver"]
+    if (
+        evidence_policy_row.get("policy") != evidence_policy
+        or evidence_policy_row.get("digest")
+        != {
+            "algorithm": "BLAKE3 derive-key",
+            "context": evidence_policy_context,
+            "expected_hex": trust_digest,
+        }
+    ):
+        raise ContractError("Base v1 evidence approver vector policy drift")
+    source = read(ROOT / "src/onebrain-base-contract/src/compatibility.rs")
+    runtime = read(ROOT / "src/onebrain-node/src/base_runtime.rs")
+    qualifier = read(ROOT / "scripts/base/qualify_base.py")
+    frozen_binding = None
+    for statement in ast.parse(qualifier).body:
+        if (
+            isinstance(statement, ast.Assign)
+            and any(isinstance(target, ast.Name) and target.id == "FROZEN_PROFILE_BLAKE3" for target in statement.targets)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            frozen_binding = statement.value.value
+    canonical_profile = json.dumps(
+        profile, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    measured_profile = blake3.blake3(canonical_profile).hexdigest()
+    if frozen_binding != measured_profile:
+        raise ContractError("Base v1 frozen-profile digest binding drift")
+    if profile.get("release_publication", {}).get("request_validity_hours") != 168:
+        raise ContractError("Base v1 release request validity drift")
+    if profile.get("machine_receipts") != {
+        "gate_format": "onebrain/base-v1-gate-receipt/1",
+        "target_format": "onebrain/base-v1-target-receipt/1",
+        "outer_result_claim_allowed": False,
+        "pass_derivation": "closed-frozen-check-contract-and-substantive-output-oracle",
+        "command_and_output_hashes_required": True,
+        "runner_provenance_required": True,
+        "substantive_output_oracle_required": True,
+        "target_binary_sbom_provenance_relation_required": True,
+        "spdx_package_verification_code": (
+            "sha1-of-concatenated-sorted-analyzed-file-sha1-no-excludes"
+        ),
+        "slsa_builder_id": "absolute-TypeURI-distinct-from-runner_identity",
+    }:
+        raise ContractError("Base v1 machine receipt contract drift")
+    gate_contracts = profile.get("gate_check_contracts")
+    target_contracts = profile.get("target_check_contracts")
+    if not isinstance(gate_contracts, dict) or set(gate_contracts) != expected_gates:
+        raise ContractError("Base v1 frozen gate check contract set drift")
+    if not isinstance(target_contracts, dict) or set(target_contracts) != set(targets):
+        raise ContractError("Base v1 frozen target check contract set drift")
+    expected_builder_ids = {
+        "x86_64-unknown-linux-gnu": (
+            "https://onebrain.dev/builders/base-v1/linux-release-runner/v1"
+        ),
+        "x86_64-pc-windows-msvc": (
+            "https://onebrain.dev/builders/base-v1/windows-release-runner/v1"
+        ),
+        "aarch64-apple-darwin": (
+            "https://onebrain.dev/builders/base-v1/macos-release-runner/v1"
+        ),
+    }
+    for owner, contracts in {**gate_contracts, **target_contracts}.items():
+        if not isinstance(contracts, list) or not contracts:
+            raise ContractError(f"Base v1 {owner} has no frozen substantive checks")
+        names: set[str] = set()
+        is_target_contract = owner in target_contracts
+        expected_contract_fields = {
+            "name", "command", "runner_kind", "runner_identity",
+            "required_assertion_ids",
+        }
+        if is_target_contract:
+            expected_contract_fields.add("builder_id")
+        for contract in contracts:
+            if not isinstance(contract, dict) or set(contract) != expected_contract_fields:
+                raise ContractError(f"Base v1 {owner} check contract fields drift")
+            name = contract.get("name")
+            command = contract.get("command")
+            assertions = contract.get("required_assertion_ids")
+            if (
+                not isinstance(name, str)
+                or not name
+                or name in names
+                or not isinstance(command, list)
+                or not command
+                or not all(isinstance(argument, str) and argument for argument in command)
+                or contract.get("runner_kind") != "candidate-bound-runner"
+                or not isinstance(contract.get("runner_identity"), str)
+                or not contract["runner_identity"]
+                or not isinstance(assertions, list)
+                or not assertions
+                or len(assertions) != len(set(assertions))
+                or not all(isinstance(assertion, str) and assertion for assertion in assertions)
+            ):
+                raise ContractError(f"Base v1 {owner} check contract is not substantive")
+            if is_target_contract:
+                builder_id = contract.get("builder_id")
+                try:
+                    parsed_builder_id = urlsplit(builder_id)
+                    builder_port = parsed_builder_id.port
+                except (TypeError, ValueError) as error:
+                    raise ContractError(
+                        f"Base v1 {owner} SLSA builder ID is not an absolute TypeURI"
+                    ) from error
+                if (
+                    builder_port is not None and builder_port <= 0
+                    or not isinstance(builder_id, str)
+                    or any(character.isspace() for character in builder_id)
+                    or parsed_builder_id.scheme != "https"
+                    or parsed_builder_id.netloc != "onebrain.dev"
+                    or builder_id != expected_builder_ids.get(owner)
+                    or builder_id == contract.get("runner_identity")
+                ):
+                    raise ContractError(
+                        f"Base v1 {owner} SLSA builder ID is not target-frozen"
+                    )
+            names.add(name)
+    if "pub const BASE_V1_RELEASE_VERSION" not in source or not all(
+        needle in source for needle in ("major: 1", "minor: 0", "patch: 0", "prerelease: None")
+    ) or "base_version: BASE_V1_RELEASE_VERSION" not in runtime:
+        raise ContractError("compiled Base v1.0.0 candidate version drift")
+    for path in (
+        BASE_V1_FREEZE_DOCUMENT,
+        ROOT / "docs/security/BASE_V1_RELEASE_SIGNER_POLICY.md",
+        ROOT / "docs/operations/ONEBRAIN_BASE_V1_MIGRATION_GUIDE.md",
+        ROOT / "docs/operations/ONEBRAIN_BASE_V1_ROLLBACK_GUIDE.md",
+        ROOT / "docs/operations/ONEBRAIN_BASE_V1_CHANGELOG.md",
+        ROOT / "scripts/base/qualify_base.py",
+        ROOT / "scripts/release/create_base_release_request.py",
+        ROOT / "scripts/release/prepare_clean_candidate.py",
+        ROOT / "scripts/release/create_verified_base_release.py",
+    ):
+        if not path.is_file():
+            raise ContractError(f"Base v1 freeze artifact missing: {path.relative_to(ROOT)}")
+    return len(gates)
 
 
 def validate_negative_assertions() -> int:
@@ -273,7 +3036,12 @@ def validate_product_integration_profile(
         raise ContractError("unexpected product integration profile format")
     if profile.get("profile_id") != "VNEXT_PRODUCT_INTEGRATION_PROFILE_V1":
         raise ContractError("unexpected product integration profile ID")
-    if profile.get("version") != 1 or profile.get("base_path") != "/api/vnext":
+    if (
+        profile.get("version") != 1
+        or profile.get("profile_major") != 1
+        or profile.get("profile_minor") != 1
+        or profile.get("base_path") != "/api/vnext"
+    ):
         raise ContractError("unexpected product integration version/base path")
 
     wire = profile.get("wire")
@@ -376,6 +3144,7 @@ def validate_product_integration_profile(
         ("POST", "/api/vnext/pomv/public-use/confirm"),
         ("GET", "/api/vnext/pomv/publications/{id}"),
         ("GET", "/api/vnext/pomv/views/{target}"),
+        ("POST", "/api/vnext/base/negotiate"),
         ("GET", "/api/vnext/runtime/status"),
     }
     endpoints = profile.get("endpoints")
@@ -1745,7 +4514,7 @@ def validate_vnext_dr_m5_crash_harness(
 
     node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
     if (
-        "default = []" not in node_manifest
+        'default = ["base-v1"]' not in node_manifest
         or "vnext-crash-harness = [" not in node_manifest
         or '"ku-core/dr-m5-crash-harness"' not in node_manifest
         or '"ku-net/dr-m5-crash-harness"' not in node_manifest
@@ -1999,7 +4768,7 @@ def validate_vnext_dr_m5_chaos_fuzz(
 
     node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
     if (
-        "default = []" not in node_manifest
+        'default = ["base-v1"]' not in node_manifest
         or "vnext-chaos-harness = [" not in node_manifest
         or '"ku-net/dr-m5-chaos-harness"' not in node_manifest
         or 'required-features = ["vnext-chaos-harness"]' not in node_manifest
@@ -2238,7 +5007,7 @@ def validate_vnext_dr_m5_operational_compaction(
 
     node_manifest = read(ROOT / "src/onebrain-node/Cargo.toml")
     if (
-        "default = []" not in node_manifest
+        'default = ["base-v1"]' not in node_manifest
         or "vnext-compaction-harness = [" not in node_manifest
         or '"ku-core/dr-m5-crash-harness"' not in node_manifest
         or '"ku-net/dr-m5-crash-harness"' not in node_manifest
@@ -2572,6 +5341,210 @@ def validate_vnext_soak_runner_kit(
     return len(script_needles), len(guide_needles), len(workflow_needles)
 
 
+def validate_concept_registry_runner_kit(
+    runner_script: str | None = None,
+    runner_guide: str | None = None,
+    production_workflow: str | None = None,
+    foundation_workflow: str | None = None,
+) -> tuple[int, int, int, int]:
+    if runner_script is None:
+        runner_script = read(CONCEPT_REGISTRY_RUNNER_SCRIPT)
+    if runner_guide is None:
+        runner_guide = read(CONCEPT_REGISTRY_RUNNER_GUIDE)
+    if production_workflow is None:
+        production_workflow = read(CONCEPT_REGISTRY_PRODUCTION_WORKFLOW)
+    if foundation_workflow is None:
+        foundation_workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+
+    runner_needles = (
+        'readonly RUNNER_FORMAT="onebrain/concept-registry-runner/1"',
+        'readonly TARGET_TRIPLE="x86_64-unknown-linux-gnu"',
+        '[[ "$QUALIFICATION_MODE" == "prequalification" || "$QUALIFICATION_MODE" == "release" ]]',
+        "verify_base_release_request.py",
+        "/usr/bin/python3",
+        "/usr/bin/gpg",
+        '"previous/input.jsonl"',
+        '"previous/concepts.obr"',
+        '"previous/release.stamp.json"',
+        '"previous/state.json"',
+        '"candidate/input.jsonl"',
+        '"candidate/concepts.obr"',
+        '"candidate/release.stamp.json"',
+        '"candidate/state.json"',
+        '"environment/runner-image.json"',
+        '"environment/rust-toolchain.json"',
+        '"environment/registry_probe.sig"',
+        '"environment/registry-trust-policy.json"',
+        "onebrain:concept-registry-closure:1\\0",
+        'readonly REGISTRY_CLOSURE_DIGEST_FILE=',
+        "fixture fallback is forbidden",
+        "ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE:?external",
+        '"base_candidate_bound": False',
+        '"registry_production_qualified": False',
+        "ccid_stability_diff.py",
+        "concept_registry_failure_qualification",
+        "concept_registry_production_qualification",
+        "release_cycle_qualification",
+        "production_qualification.py",
+        "raw_report_blake3",
+        "_verify_receipt",
+        "STAMP_SIGNATURE_DOMAIN",
+        'readonly CANDIDATE_RELEASE_WRAPPER_TOOL="${RELEASE_OPS}"',
+    )
+    for needle in runner_needles:
+        if needle not in runner_script:
+            if "QUALIFICATION_MODE" in needle:
+                raise ContractError(
+                    "Concept Registry runner closed qualification mode is missing"
+                )
+            if "release.stamp.json" in needle or "closure" in needle:
+                raise ContractError(
+                    f"Concept Registry runner closure input is missing: {needle}"
+                )
+            if "verify_base_release_request" in needle:
+                raise ContractError(
+                    "Concept Registry runner signed release request verification is missing"
+                )
+            if "fixture fallback" in needle:
+                raise ContractError(
+                    "Concept Registry runner fixture fallback fence is missing"
+                )
+            if "PRIVATE_KEY" in needle:
+                raise ContractError(
+                    "Concept Registry runner external signing key fence is missing"
+                )
+            if "base_candidate_bound" in needle or "registry_production" in needle:
+                raise ContractError(
+                    "Concept Registry runner non-production summary fence is missing"
+                )
+            if needle == "_verify_receipt":
+                raise ContractError(
+                    "Concept Registry prequalification receipt signature verification is missing"
+                )
+            if needle == "STAMP_SIGNATURE_DOMAIN":
+                raise ContractError(
+                    "Concept Registry staged release signature verification is missing"
+                )
+            if "CANDIDATE_RELEASE_WRAPPER_TOOL" in needle:
+                raise ContractError(
+                    "Concept Registry release-cycle wrapper is not the fixed candidate binary"
+                )
+            raise ContractError(f"Concept Registry runner contract missing: {needle}")
+    if "ONEBRAIN_REGISTRY_CLOSURE_DIGEST" in runner_script:
+        raise ContractError("Concept Registry runner permits a closure override")
+    for forbidden in (
+        "--candidate-root)",
+        "--previous-root)",
+        "--release-request-digest)",
+        "--qualification-session-id)",
+        "--candidate-commit)",
+        "--candidate-tree)",
+        "ci-small-fixture-v1",
+        "target/private-key.hex",
+    ):
+        if forbidden in runner_script:
+            raise ContractError(
+                f"Concept Registry runner contains forbidden override/fallback: {forbidden}"
+            )
+
+    guide_needles = (
+        "Task 21 prequalification is not `BASE-GATE-V1`",
+        "registry_production_qualified=true",
+        "fixture-only",
+        "Never commit measured reports",
+        "ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE",
+        "ONEBRAIN_QUALIFICATION_GPG_HOME",
+        "x86_64-unknown-linux-gnu",
+        "onebrain-registry-image-v1",
+        "onebrain-registry-cold-cache",
+        "onebrain-registry-low-ram",
+        "onebrain-registry-ssd",
+        "onebrain-registry-hdd",
+        "onebrain-registry-controller",
+        "2,200,000,000",
+        "registry_closure_digest",
+        "90 days",
+        "raw report",
+        '"base_candidate_bound": false',
+        '"registry_production_qualified": false',
+        "Task 28",
+    )
+    for needle in guide_needles:
+        if needle not in runner_guide:
+            raise ContractError(
+                f"Concept Registry operations guide missing: {needle}"
+            )
+
+    workflow_needles = (
+        "  workflow_dispatch:",
+        "permissions:\n  contents: read",
+        "qualification_mode:",
+        "onebrain-registry-image-v1",
+        "onebrain-registry-cold-cache",
+        "onebrain-registry-low-ram",
+        "onebrain-registry-ssd",
+        "onebrain-registry-hdd",
+        "onebrain-registry-controller",
+        "actions/upload-artifact@v4",
+        "retention-days: 90",
+        "scripts/runner/onebrain-registry-runner.sh",
+    )
+    for needle in workflow_needles:
+        if needle not in production_workflow:
+            if "onebrain-registry" in needle:
+                raise ContractError(
+                    f"Concept Registry immutable runner labels missing: {needle}"
+                )
+            if "retention-days" in needle:
+                raise ContractError("Concept Registry raw report retention is missing")
+            raise ContractError(
+                f"Concept Registry production workflow missing: {needle}"
+            )
+    for forbidden_trigger in (
+        "  pull_request:",
+        "  push:",
+        "  schedule:",
+        "  workflow_call:",
+    ):
+        if forbidden_trigger in production_workflow:
+            raise ContractError(
+                "Concept Registry production workflow must remain manual-only"
+            )
+    for forbidden_identity in (
+        "release_request_digest:",
+        "qualification_session_id:",
+        "candidate_commit:",
+        "candidate_tree:",
+        "runner_label:",
+    ):
+        if forbidden_identity in production_workflow and forbidden_identity != "runner_label:":
+            raise ContractError(
+                "Concept Registry workflow exposes a release identity override"
+            )
+    if "${{ inputs.runner_label }}" in production_workflow:
+        raise ContractError(
+            "Concept Registry workflow immutable runner labels are caller-controlled"
+        )
+
+    foundation_needles = (
+        "ONEBRAIN_REGISTRY_EVIDENCE_TIER: fixture",
+        "Build and verify a small Concept Registry fixture",
+        "python -m unittest scripts.ci.test_validate_concept_registry_runner",
+        "bash -n scripts/runner/onebrain-registry-runner.sh",
+    )
+    for needle in foundation_needles:
+        if needle not in foundation_workflow:
+            raise ContractError(
+                f"Concept Registry fixture-only foundation lane missing: {needle}"
+            )
+    return (
+        len(runner_needles),
+        len(guide_needles),
+        len(workflow_needles),
+        len(foundation_needles),
+    )
+
+
 def validate_vnext_macos_soak_runner_kit(
     runner_script: str | None = None,
     runner_guide: str | None = None,
@@ -2853,6 +5826,1299 @@ def validate_vnext_dr_m5_soak_release(
         len(expected_faults),
         len(expected_exit),
     )
+
+
+def validate_vnext_outbound_reachability(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(OUTBOUND_FIRST_REACHABILITY_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(
+                f"invalid outbound-first reachability JSON: {error}"
+            ) from error
+    expected_root_fields = {
+        "format",
+        "profile_id",
+        "version",
+        "canonical_encoding",
+        "schema_ids",
+        "canonical_objects",
+        "signature_domains",
+        "limits",
+        "path_kinds",
+        "path_classes",
+        "failure_kinds",
+        "admission",
+        "outbound_only_baseline",
+        "relay_governance",
+        "discovery",
+        "privacy",
+        "platform_capabilities",
+        "session_authority",
+        "store_and_forward",
+        "required_mutations",
+    }
+    if not isinstance(profile, dict) or set(profile) != expected_root_fields:
+        raise ContractError("outbound-first reachability fields drift")
+    if (
+        profile.get("format") != "onebrain/outbound-first-reachability/1"
+        or profile.get("profile_id") != "OUTBOUND_FIRST_REACHABILITY_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("outbound-first reachability identity drift")
+
+    expected_encoding = {
+        "codec": "canonical-cbor-closed-schema",
+        "max_depth": 12,
+        "unknown_fields": "reject",
+        "duplicate_fields": "reject",
+        "byte_for_byte_reencode_required": True,
+    }
+    if profile.get("canonical_encoding") != expected_encoding:
+        raise ContractError("outbound-first canonical encoding drift")
+
+    expected_schema_ids = {
+        "reachability": {
+            "bootstrap-manifest": 40,
+            "relay-descriptor": 41,
+            "relay-reservation": 42,
+            "reachability-advertisement": 43,
+            "route-plan": 44,
+            "route-receipt": 45,
+        },
+        "relay_control": {
+            "reserve": 50,
+            "granted": 51,
+            "keepalive": 52,
+            "revoke": 53,
+            "possession-challenge": 54,
+            "possession-proof": 55,
+            "denied": 61,
+            "outer-client-challenge": 62,
+            "outer-client-hello": 63,
+        },
+        "connectivity_signaling": {
+            "reflexive-observation": 56,
+            "hole-punch-schedule": 57,
+            "relay-connect-request": 58,
+            "relay-association": 59,
+            "private-candidate-signal": 60,
+        },
+    }
+    if profile.get("schema_ids") != expected_schema_ids:
+        raise ContractError("outbound-first schema ID drift")
+
+    expected_objects = {
+        "bootstrap_manifest": {
+            "schema_id": 40,
+            "fields": [
+                "format", "discovery_source_id", "discovery_endpoints",
+                "protocol_versions", "sequence", "issued_at", "expires_at",
+                "source_signature",
+            ],
+        },
+        "relay_descriptor": {
+            "schema_id": 41,
+            "fields": [
+                "format", "relay_node_id", "relay_public_key", "endpoints",
+                "supported_transports", "protocol_versions",
+                "capacity_policy_digest", "previous_descriptor_blake3",
+                "sequence", "issued_at", "expires_at", "relay_signature",
+            ],
+        },
+        "relay_reservation": {
+            "schema_id": 42,
+            "fields": [
+                "format", "relay_node_id", "target_node_id", "reservation_id",
+                "transport_scope", "issued_at", "expires_at", "target_signature",
+                "relay_signature",
+            ],
+        },
+        "reachability_advertisement": {
+            "schema_id": 43,
+            "fields": [
+                "format", "target_node_id", "relay_reservations",
+                "optional_public_candidates", "capability_ceiling", "sequence",
+                "issued_at", "expires_at", "target_signature",
+            ],
+        },
+        "route_plan": {
+            "schema_id": 44,
+            "local_only": True,
+            "fields": [
+                "expected_peer", "direct_candidates", "relay_candidates",
+                "deadline", "attempt_budget", "resource_budget",
+                "privacy_policy_digest",
+            ],
+        },
+        "route_receipt": {
+            "schema_id": 45,
+            "local_only": True,
+            "fields": [
+                "expected_peer", "authenticated_peer", "selected_path_kind",
+                "selected_carrier_identity", "attempts",
+                "transport_binding_digest", "session_id", "started_at",
+                "authenticated_at", "terminal_outcome", "limitations",
+                "local_signature",
+            ],
+        },
+    }
+    if profile.get("canonical_objects") != expected_objects:
+        raise ContractError("outbound-first canonical object drift")
+
+    expected_domains = {
+        "bootstrap_manifest": "onebrain/reachability/bootstrap-manifest/v1",
+        "relay_descriptor": "onebrain/reachability/relay-descriptor/v1",
+        "relay_reservation_target": "onebrain/reachability/relay-reservation-target/v1",
+        "relay_reservation_relay": "onebrain/reachability/relay-reservation-relay/v1",
+        "advertisement": "onebrain/reachability/advertisement/v1",
+        "route_receipt": "onebrain/reachability/route-receipt/v1",
+        "relay_reserve_request": "onebrain/reachability/relay-reserve-request/v1",
+        "relay_keepalive": "onebrain/reachability/relay-keepalive/v1",
+        "relay_revoke": "onebrain/reachability/relay-revoke/v1",
+        "relay_denial": "onebrain/reachability/relay-denial/v1",
+        "relay_possession_challenge": "onebrain/reachability/relay-possession-challenge/v1",
+        "relay_possession_proof": "onebrain/reachability/relay-possession-proof/v1",
+        "reflexive_observation": "onebrain/reachability/reflexive-observation/v1",
+        "hole_punch_schedule": "onebrain/reachability/hole-punch-schedule/v1",
+        "relay_connect_request": "onebrain/reachability/relay-connect-request/v1",
+        "relay_association": "onebrain/reachability/relay-association/v1",
+        "private_candidate_signal": "onebrain/reachability/private-candidate-signal/v1",
+        "relay_outer_client_challenge": "onebrain/reachability/relay-outer-client-challenge/v1",
+        "relay_outer_client_hello": "onebrain/reachability/relay-outer-client-hello/v1",
+    }
+    if profile.get("signature_domains") != expected_domains:
+        raise ContractError("outbound-first signature domain drift")
+
+    expected_limits = {
+        "bootstrap_manifest_bytes": 65536,
+        "relay_descriptor_bytes": 16384,
+        "relay_reservation_bytes": 8192,
+        "reachability_advertisement_bytes": 32768,
+        "endpoints_per_object": 8,
+        "protocol_versions_per_object": 8,
+        "transports_per_object": 2,
+        "resolved_addresses_per_endpoint": 8,
+        "resolved_addresses_per_object": 32,
+        "discovery_source_keys": 8,
+        "records_per_source": 64,
+        "bytes_per_source": 1048576,
+        "total_records": 256,
+        "signature_checks_per_source": 64,
+        "signature_checks_total": 256,
+        "canonical_parse_depth": 12,
+        "bootstrap_fetch_concurrency": 4,
+        "pex_peers": 8,
+        "direct_candidates": 8,
+        "relay_candidates": 6,
+        "attempts": 12,
+        "concurrent_checks": 4,
+        "relay_reservations_min": 2,
+        "relay_reservations_target": 3,
+        "relay_reservations_max": 3,
+        "pending_possession_descriptors": 32,
+        "pending_possession_challenges": 256,
+        "possession_challenge_validity_s": 30,
+        "rendezvous_records": 256,
+        "relay_control_nonce_cache": 4096,
+        "route_deadline_ms": 20000,
+        "direct_timeout_ms": 2500,
+        "hole_punch_timeout_ms": 5000,
+        "route_probe_bytes": 1048576,
+        "relay_connect_timeout_ms": 5000,
+        "route_journal_receipts": 4096,
+        "route_journal_bytes": 16777216,
+        "receipt_attempts": 16,
+        "bootstrap_validity_s": 86400,
+        "descriptor_validity_s": 600,
+        "reservation_validity_s": 900,
+        "advertisement_validity_s": 300,
+        "clock_skew_s": 30,
+        "candidate_signal_candidates": 8,
+        "relay_datagram_bytes": 1350,
+        "relay_frame_bytes": 1408,
+        "relay_fragment_count": 8,
+        "relay_reassemblies": 64,
+        "relay_reassembly_bytes": 1048576,
+        "relay_reassembly_timeout_ms": 2000,
+        "relay_send_queue_frames": 64,
+        "relay_receive_queue_frames": 64,
+        "relay_queue_bytes": 1048576,
+        "relay_global_queue_frames": 1024,
+        "relay_global_queue_bytes": 16777216,
+        "relay_global_reassemblies": 512,
+        "relay_global_reassembly_bytes": 8388608,
+        "relay_bytes_per_second_per_reservation": 1048576,
+        "relay_burst_bytes": 2097152,
+        "relay_pending_handshakes": 64,
+        "relay_active_outer_connections": 256,
+        "relay_outer_connections_per_source": 8,
+        "relay_handshake_timeout_ms": 5000,
+        "relay_partial_frame_timeout_ms": 3000,
+        "relay_preauth_bytes_per_source": 65536,
+        "keepalive_interval_s": 20,
+        "probe_interval_s": 2,
+        "reservation_refresh_margin_s": 180,
+        "hole_punch_start_delay_ms": 500,
+        "hole_punch_interval_ms": 200,
+        "hole_punch_attempts": 10,
+        "control_message_bytes": 65536,
+    }
+    if profile.get("limits") != expected_limits:
+        raise ContractError("outbound-first limits drift")
+
+    expected_paths = ["direct", "hole-punched", "relay-udp", "relay-tcp-443"]
+    if profile.get("path_kinds") != expected_paths or profile.get("path_classes") != {
+        "direct_class": ["direct", "hole-punched"],
+        "relay_class": ["relay-udp", "relay-tcp-443"],
+    }:
+        raise ContractError("outbound-first path class drift")
+    expected_failures = [
+        "NoBootstrapReachable", "CandidateExpired", "DirectTimeout",
+        "HolePunchFailed", "RelayDenied", "RelayUnavailable",
+        "PeerIdentityMismatch", "NetworkChanged", "BudgetExceeded", "PathLimited",
+    ]
+    if profile.get("failure_kinds") != expected_failures:
+        raise ContractError("outbound-first failure kind drift")
+
+    if profile.get("admission") != {
+        "node_id_derives_from_public_key": True,
+        "expiry_required": True,
+        "monotonic_sequence_required": True,
+        "replay_rejected": True,
+        "proof_of_possession_per_endpoint": True,
+        "dial_time_dns_revalidation": "exact-admitted-global-address-set",
+    }:
+        raise ContractError("outbound-first admission drift")
+    if profile.get("outbound_only_baseline") != {
+        "ordinary_node_inbound_required": False,
+        "operator_nat_configuration": "forbidden-requirement",
+        "upnp_pcp_nat_pmp_required": False,
+        "direct_path": "optional-optimization",
+        "relay_path": "outbound-fallback",
+    }:
+        raise ContractError("outbound-only baseline drift")
+    if profile.get("relay_governance") != {
+        "owner_approval_required": False,
+        "global_membership_registry": False,
+        "self_certifying_identity": True,
+        "local_selection_only": True,
+        "relay_is_protocol_authority": False,
+    }:
+        raise ContractError("permissionless relay governance drift")
+    if profile.get("discovery") != {
+        "sources": [
+            "rendezvous-dht", "authenticated-peer-exchange",
+            "replaceable-bootstrap-manifest", "manual-signed-invitation",
+        ],
+        "mandatory_onebrain_service": None,
+        "fresh_node_bootstrap_limitation_explicit": True,
+        "relay_liveness_probe_required": True,
+    }:
+        raise ContractError("federated discovery drift")
+    if profile.get("privacy") != {
+        "public_candidate_kinds": ["server-reflexive", "provider-mapped"],
+        "private_candidates_public": False,
+        "public_receipt_contains_endpoint": False,
+        "target_scoped_private_signaling_only": True,
+    }:
+        raise ContractError("outbound-first privacy drift")
+
+    expected_capabilities = [
+        "outbound-datagram", "outbound-stream-443", "webtransport",
+        "websocket-tls", "direct-listen", "lan-discovery", "hole-punch",
+        "durable-resume",
+    ]
+    expected_platform = {
+        "serialized": False,
+        "os_name_present": False,
+        "may_create_authority": False,
+        "capabilities": expected_capabilities,
+        "required_bindings": [
+            "observed_monotonic_time", "network_epoch",
+            "execution_grant_deadline", "byte_budget", "work_budget",
+            "cancellation_token",
+        ],
+        "web_path_projection": {
+            "webtransport": "relay-udp",
+            "websocket-tls": "relay-tcp-443",
+        },
+        "fixtures": [
+            "native-full", "outbound-stream-only", "web-only",
+            "foreground-mobile", "suspended-mobile", "expired-revoked-grant",
+        ],
+    }
+    if profile.get("platform_capabilities") != expected_platform:
+        raise ContractError("platform capability drift")
+    if profile.get("session_authority") != {
+        "selected_carrier_is_authority": False,
+        "expected_node_id_authentication_required": True,
+        "fresh_transport_binding_required": True,
+        "reauthenticate_after_carrier_change": True,
+    }:
+        raise ContractError("session authority drift")
+    if profile.get("store_and_forward") != {
+        "live_session_required_for_immediate_delivery": True,
+        "durable_outbound_intent_when_target_absent": True,
+        "mailbox_optional": True,
+        "mailbox_payload": "recipient-bound-end-to-end-ciphertext",
+        "mailbox_is_authority_or_custody": False,
+    }:
+        raise ContractError("store-and-forward boundary drift")
+
+    expected_mutations = [
+        "unknown-field", "missing-field", "noncanonical-encoding",
+        "wrong-signature-domain", "over-limit", "invalid-expiry-or-sequence",
+        "private-candidate-publication", "central-service-required",
+        "owner-approved-relay-only", "carrier-authority-substitution",
+        "path-class-substitution", "checkpoint-mismatch",
+    ]
+    if profile.get("required_mutations") != expected_mutations:
+        raise ContractError("outbound-first mutation catalog drift")
+    return (
+        len(expected_objects),
+        len(expected_domains),
+        len(expected_paths),
+        len(expected_capabilities),
+        len(expected_mutations),
+    )
+
+
+def validate_vnext_p5_multi_host(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(P5_MULTI_HOST_PRODUCTION_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid P5 multi-host profile JSON: {error}") from error
+    if (
+        profile.get("format")
+        != "onebrain/p5-multi-host-production-qualification/1"
+        or profile.get("profile_id")
+        != "P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("P5 multi-host profile identity drift")
+
+    expected_scope = {
+        "physical_host_count": 3,
+        "logical_node_count": 3,
+        "target_triple": "x86_64-unknown-linux-gnu",
+        "transport": "authenticated-real-quic",
+        "control_transport": "ssh-stdio-control-only",
+        "portability_qualifying": False,
+        "single_host_preflight_may_qualify": False,
+    }
+    if profile.get("scope") != expected_scope:
+        raise ContractError("P5 multi-host scope drift")
+
+    expected_reference = {
+        "identity_source": "verified-task28-request-v2-plus-compiled-agent-and-measured-registry-candidate",
+        "required_pinned_fields": [
+            "candidate_commit",
+            "candidate_tree",
+            "candidate_semantic_digest",
+            "linux_artifact_tuple_digest",
+            "toolchain_digest",
+            "runner_bundle_manifest_digest",
+            "agent_binary_digest",
+            "agent_signature_digest",
+            "registry_root",
+            "profile_digest",
+        ],
+        "cross_host_byte_equality": [
+            "target_triple",
+            "candidate_commit",
+            "candidate_tree",
+            "linux_artifact_tuple_digest",
+            "toolchain_digest",
+            "runner_bundle_manifest_digest",
+            "agent_binary_digest",
+            "agent_signature_digest",
+            "registry_root",
+            "profile_digest",
+        ],
+        "byte_identical_cryptographically_signed_release_agent": True,
+        "producer_override": False,
+    }
+    if profile.get("reference_environment") != expected_reference:
+        raise ContractError("P5 reference environment drift")
+
+    expected_hosts = [
+        {
+            "physical_host_id": "host-a",
+            "receipt_role": "p5-host:host-a",
+            "durable_root_slot": "p5-host-a-root",
+            "principal_slot": "p5-host-a-principal",
+        },
+        {
+            "physical_host_id": "host-b",
+            "receipt_role": "p5-host:host-b",
+            "durable_root_slot": "p5-host-b-root",
+            "principal_slot": "p5-host-b-principal",
+        },
+        {
+            "physical_host_id": "host-c",
+            "receipt_role": "p5-host:host-c",
+            "durable_root_slot": "p5-host-c-root",
+            "principal_slot": "p5-host-c-principal",
+        },
+    ]
+    topology = profile.get("topology")
+    if not isinstance(topology, dict):
+        raise ContractError("P5 multi-host topology missing")
+    hosts = topology.get("hosts")
+    if not isinstance(hosts, list) or len(hosts) != 3:
+        raise ContractError("P5 multi-host topology requires three hosts")
+    roots = [host.get("durable_root_slot") for host in hosts if isinstance(host, dict)]
+    principals = [host.get("principal_slot") for host in hosts if isinstance(host, dict)]
+    if len(set(roots)) != 3 or len(set(principals)) != 3:
+        raise ContractError("P5 multi-host topology root/principal reuse")
+    if topology != {
+        "hosts": expected_hosts,
+        "ring": ["host-a->host-b", "host-b->host-c", "host-c->host-a"],
+        "independent_durable_roots": 3,
+        "independent_principals": 3,
+        "shared_root_or_principal_policy": "reject",
+        "accepted_placement_authorities": [
+            "provider-signed-placement",
+            "bare-metal-lease-inventory",
+            "owner-signed-out-of-band-provider-verification",
+        ],
+        "owner_attestation_binding": "signed-inventory-plus-exact-host-and-placement-evidence-sha256",
+    }:
+        raise ContractError("P5 multi-host topology drift")
+
+    expected_inventory = {
+        "required_host_fields": [
+            "physical_host_id",
+            "runner_identity",
+            "ssh_host_key_algorithm",
+            "ssh_host_key_fingerprint",
+            "observed_ssh_host_key_fingerprint",
+            "receipt_role",
+            "receipt_signer_fingerprint",
+            "durable_root_locator",
+            "expected_principal",
+            "ssh_port",
+            "physical_machine_fingerprint",
+            "host_evidence_sha256",
+            "placement_evidence_sha256",
+        ],
+        "required_orchestrator_fields": [
+            "runner_identity",
+            "receipt_role",
+            "receipt_signer_fingerprint",
+        ],
+        "ssh_host_key_pin_required": True,
+        "duplicate_host_runner_root_principal_or_key_policy": "reject",
+    }
+    if profile.get("inventory") != expected_inventory:
+        raise ContractError("P5 multi-host inventory drift")
+
+    if profile.get("control_plane") != {
+        "ssh_use": "control-only",
+        "application_bytes_over_ssh": False,
+        "bounded_json_stdio": True,
+        "signed_agent_receipt_required": True,
+        "command_sequence_monotonic": True,
+        "replay_or_stale_command_policy": "reject",
+    }:
+        raise ContractError("P5 multi-host control plane drift")
+
+    if profile.get("fault_proxy") != {
+        "default_enabled": False,
+        "changes_delivery_conditions_only": True,
+        "may_validate_or_create_knowledge": False,
+        "may_claim_authority_truth_completion_reward_or_wallet": False,
+    }:
+        raise ContractError("P5 multi-host fault proxy authority drift")
+
+    expected_faults = [
+        "partition",
+        "drop",
+        "reorder",
+        "duplicate",
+        "restart",
+        "address-change",
+        "seed-outage",
+        "signer-outage",
+        "disk-pressure",
+        "slow-peer",
+        "base-obarv002-archive-restore",
+        "rollback",
+        "explicit-re-enable",
+    ]
+    if profile.get("fault_matrix") != expected_faults:
+        raise ContractError("P5 multi-host fault matrix drift")
+
+    if profile.get("archive_restore") != {
+        "production_profile": "OBARV002",
+        "preflight_profile": "onebrain/p5-offline-backup/1",
+        "preflight_profile_unchanged": True,
+        "preflight_profile_may_qualify": False,
+        "restore_target": "new-dataset-generation",
+        "activation": "verify-parity-health-then-atomic-switch",
+    }:
+        raise ContractError("P5 multi-host archive boundary drift")
+
+    expected_roles = [
+        "p5-host:host-a",
+        "p5-host:host-b",
+        "p5-host:host-c",
+        "p5-orchestrator",
+    ]
+    expected_role_bindings = [
+        {
+            "role": "p5-host:host-a",
+            "public_key_hex": "aca5c9fcdd081df1611245fce93bf906bf80de3c8e032f342d435a8070808fdd",
+            "fingerprint_hex": "b3e1630cc673e711b90a494fe26d6ad413382f299f83913a006e175916002474",
+        },
+        {
+            "role": "p5-host:host-b",
+            "public_key_hex": "deadb04f785432147f18e6dcd53b802a3fcca4071bd77eb82f29a96a9b5edbbb",
+            "fingerprint_hex": "72167d8e93c6b28dd2ba6684d818b457d8547bd8e44235795b8427d9dd27fff7",
+        },
+        {
+            "role": "p5-host:host-c",
+            "public_key_hex": "fb075ebeedd80680987165d2e7c32d3595dc421fcd057cdbc60a15f9dbeab67d",
+            "fingerprint_hex": "c63b2b4d4ab09b5a49e42b3c547c04d6e7aa81cc72423ed8f7ef70c254afedfa",
+        },
+        {
+            "role": "p5-orchestrator",
+            "public_key_hex": "cce7da80b255ed3a67a8414f79e700bb0fdc4944abe3793d9c23e8ca1699fc27",
+            "fingerprint_hex": "6d018ba3d7224bc5a415a54c226f81db1139d950aedf0ef5dfb9b9da441b01ca",
+        },
+    ]
+    trust = profile.get("trust_policy")
+    if not isinstance(trust, dict):
+        raise ContractError("P5 multi-host trust policy missing")
+    policy = trust.get("policy")
+    if not isinstance(policy, dict):
+        raise ContractError("P5 multi-host trust policy bytes missing")
+    role_bindings = policy.get("role_bindings")
+    if not isinstance(role_bindings, list) or [
+        row.get("role") for row in role_bindings if isinstance(row, dict)
+    ] != expected_roles:
+        raise ContractError("P5 multi-host signer role drift")
+    public_keys = [
+        row.get("public_key_hex") for row in role_bindings if isinstance(row, dict)
+    ]
+    fingerprints = [
+        row.get("fingerprint_hex") for row in role_bindings if isinstance(row, dict)
+    ]
+    if len(set(public_keys)) != 4 or len(set(fingerprints)) != 4:
+        raise ContractError("P5 multi-host cross-host key reuse")
+    if trust != {
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "digest_algorithm": "BLAKE3-derive-key-v1",
+        "digest_context": "onebrain:p5:trust-policy:1",
+        "digest_hex": "9aa666fedfc1ee3ee76cf814b9027d06dc1e243a0937001f8df10e996bf7572d",
+        "fingerprint_algorithm": "BLAKE3-derive-key-v1",
+        "fingerprint_context": "onebrain:p5:evidence-signer-fingerprint:1",
+        "policy": {
+            "algorithm": "Ed25519",
+            "allowed_usages": [
+                "p5-host-receipt",
+                "p5-orchestrator-aggregate",
+                "p5-release-agent-signature",
+            ],
+            "format": "onebrain/p5-multi-host-trust-policy/1",
+            "role_bindings": expected_role_bindings,
+        },
+        "valid_unlisted_signature": "reject",
+        "wrong_role_signature": "reject",
+        "cross_host_key_reuse": "reject",
+    }:
+        raise ContractError("P5 multi-host trust policy drift")
+
+    expected_receipt_bindings = [
+        "role",
+        "physical_host_id",
+        "release_request_digest",
+        "qualification_session_id",
+        "candidate_commit",
+        "candidate_tree",
+        "candidate_semantic_digest",
+        "linux_artifact_tuple_digest",
+        "toolchain_digest",
+        "runner_bundle_manifest_digest",
+        "agent_binary_digest",
+        "agent_signature_digest",
+        "registry_root",
+        "profile_digest",
+        "trust_policy_digest",
+        "runner_identity",
+        "ssh_host_key_fingerprint",
+        "physical_machine_fingerprint",
+        "host_evidence_sha256",
+        "placement_evidence_sha256",
+        "command_sequence",
+        "command",
+        "fault_id",
+        "before_roots",
+        "after_roots",
+        "resource_observation",
+        "result",
+        "limitations",
+    ]
+    expected_root_fields = [
+        "canonical_root",
+        "journal_root",
+        "outbox_root",
+        "operational_root",
+    ]
+    if profile.get("child_receipt") != {
+        "format": "onebrain/p5-multi-host-child-receipt/1",
+        "signature_domain": "onebrain:p5:multi-host-child-receipt:1\\0",
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "unknown_field_policy": "reject",
+        "binding_match": "exact-verified-signed-release-request",
+        "missing_or_wrong_binding_policy": "reject",
+        "required_bindings": expected_receipt_bindings,
+        "required_root_fields": expected_root_fields,
+    }:
+        raise ContractError("P5 multi-host child receipt drift")
+
+    identical_bindings = [
+        "release_request_digest",
+        "qualification_session_id",
+        "candidate_commit",
+        "candidate_tree",
+        "candidate_semantic_digest",
+        "linux_artifact_tuple_digest",
+        "toolchain_digest",
+        "runner_bundle_manifest_digest",
+        "agent_binary_digest",
+        "agent_signature_digest",
+        "registry_root",
+        "profile_digest",
+        "trust_policy_digest",
+    ]
+    if profile.get("aggregate") != {
+        "format": "onebrain/p5-multi-host-production-aggregate/1",
+        "signer_role": "p5-orchestrator",
+        "signature_domain": "onebrain:p5:multi-host-production-aggregate:1\\0",
+        "root_algorithm": "BLAKE3",
+        "root_domain": "onebrain:p5:multi-host-child-receipt-root:1\\0",
+        "root_order": "physical-host-id-then-fault-order-then-command-sequence",
+        "root_inputs": ["canonical-ordered-child-receipt-bytes"],
+        "root_excludes": ["aggregate_report", "aggregate_signature"],
+        "identical_child_bindings": identical_bindings,
+        "mixed_binding_policy": "reject",
+        "minimum_distinct_physical_hosts": 3,
+        "derive_multi_host_qualified_from_verified_evidence": True,
+        "input_boolean_trusted": False,
+    }:
+        raise ContractError("P5 multi-host aggregate drift")
+
+    expected_bounds = {
+        "max_peak_rss_bytes_per_host": 1073741824,
+        "max_durable_growth_bytes_per_host": 4294967296,
+        "max_task_count_per_host": 256,
+        "max_active_sessions_per_host": 16,
+        "max_control_message_bytes": 1048576,
+        "max_fault_duration_ms": 300000,
+        "max_reunion_ms": 60000,
+        "max_quiescence_ms": 30000,
+    }
+    if profile.get("resource_bounds") != expected_bounds:
+        raise ContractError("P5 multi-host resource bound drift")
+
+    expected_exit = [
+        "durable-reunion-idempotency",
+        "principal-preserved-per-host",
+        "canonical-root-preserved-or-exactly-advanced",
+        "journal-root-reconciled",
+        "outbox-root-reconciled",
+        "operational-root-reconciled",
+        "zero-active-session-after-quiescence",
+        "memory-disk-and-task-bounds-hold",
+        "local-kql-works-with-all-network-lanes-off",
+        "zero-truth-authority-completion-reward-wallet-amplification",
+    ]
+    if profile.get("exit_oracles") != expected_exit:
+        raise ContractError("P5 multi-host exit oracle drift")
+
+    if profile.get("preflight_boundary") != {
+        "single_host_profiles": [
+            "onebrain/p5-canary-preflight/1",
+            "onebrain/p5-operations-preflight/1",
+        ],
+        "single_host_multi_host_qualified": False,
+        "three_process_single_host_multi_host_qualified": False,
+        "preflight_receipt_evidence_tier": "prequalification",
+        "production_receipt_evidence_tier": "production-reference",
+    }:
+        raise ContractError("P5 multi-host preflight boundary drift")
+
+    if profile.get("qualification_state") != {
+        "contract_frozen": True,
+        "measured_evidence_committed": False,
+        "multi_host_qualified": False,
+        "portability_qualified": False,
+        "registry_production_qualified": False,
+        "base_gate_v1_qualified": False,
+    }:
+        raise ContractError("P5 multi-host qualification state drift")
+
+    if profile.get("required_limitations") != [
+        "aggregate-qualification-is-orchestrator-owned",
+        "base-gate-v1-not-claimed",
+        "receipt-is-evidence-not-authority",
+        "real-quic-ring-and-fault-injection-pending",
+        "registry-candidate-bytes-bound-without-full-profile-qualification",
+        "registry-production-qualification-not-claimed",
+        "registry-production-resource-profiles-pending",
+    ]:
+        raise ContractError("P5 multi-host limitations drift")
+    if profile.get("registry_candidate_binding") != {
+        "format": "onebrain/p5-registry-candidate-binding/1",
+        "files": [
+            "concepts.obr",
+            "concepts.obr.ccids.idx",
+            "concepts.obr.labels.idx",
+            "concepts.obr.manifest.json",
+            "concepts.obr.verification.json",
+        ],
+        "root_domain": "onebrain:p5:registry-candidate-binding:1\\0",
+        "full_registry_profile_required_for_p5_subgate": False,
+        "registry_production_qualified": False,
+        "base_gate_v1_qualified": False,
+    }:
+        raise ContractError("P5 Registry candidate binding drift")
+
+    spec = read(VNEXT / "P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1.md")
+    for needle in (
+        "p5-multi-host-production-qualification-v1.json",
+        "x86_64-unknown-linux-gnu",
+        "OBARV002",
+        "onebrain/p5-offline-backup/1",
+        "multi_host_qualified=false",
+    ):
+        if needle not in spec:
+            raise ContractError(f"P5 multi-host normative profile missing: {needle}")
+    for preflight_name in (
+        "P5_CANARY_PREFLIGHT_PROFILE_V1.md",
+        "P5_OPERATIONS_PREFLIGHT_PROFILE_V1.md",
+    ):
+        preflight = read(VNEXT / preflight_name)
+        if "P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1.md" not in preflight:
+            raise ContractError(f"P5 preflight production boundary missing: {preflight_name}")
+
+    return (
+        expected_scope["physical_host_count"],
+        len(expected_hosts),
+        len(expected_faults),
+        len(expected_exit),
+        len(expected_role_bindings),
+    )
+
+
+def validate_vnext_p5_multi_host_v2(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(P5_MULTI_HOST_PRODUCTION_PROFILE_V2))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid P5 V2 profile JSON: {error}") from error
+    expected_root_fields = {
+        "format",
+        "profile_id",
+        "version",
+        "scope",
+        "path_classes",
+        "topology",
+        "qualification",
+        "route_failover",
+        "fault_matrix",
+        "evidence_authority",
+        "evidence",
+        "admin_operations",
+        "lifecycle",
+        "resource_bounds",
+        "privacy",
+        "exit_oracles",
+        "required_limitations",
+    }
+    if not isinstance(profile, dict) or set(profile) != expected_root_fields:
+        raise ContractError("P5 V2 fields drift")
+    if (
+        profile.get("format")
+        != "onebrain/p5-multi-host-production-qualification/2"
+        or profile.get("profile_id")
+        != "P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V2"
+        or profile.get("version") != 2
+    ):
+        raise ContractError("P5 V2 identity drift")
+
+    if profile.get("scope") != {
+        "physical_host_count": 3,
+        "logical_node_count": 3,
+        "reference_os": "linux",
+        "reference_target": "x86_64-unknown-linux-gnu",
+        "production_reachability_source": "production-reachability-manager",
+        "portable_core_qualifying": True,
+        "other_platform_lanes_qualifying": False,
+        "single_host_preflight_may_qualify": False,
+    }:
+        raise ContractError("P5 V2 scope drift")
+    expected_paths = ["direct", "hole-punched", "relay-udp", "relay-tcp-443"]
+    expected_path_classes = {
+        "path_kinds": expected_paths,
+        "direct_class": ["direct", "hole-punched"],
+        "relay_class": ["relay-udp", "relay-tcp-443"],
+    }
+    if profile.get("path_classes") != expected_path_classes:
+        raise ContractError("P5 V2 path class drift")
+    expected_hosts = ["host-a", "host-b", "host-c"]
+    if profile.get("topology") != {
+        "hosts": expected_hosts,
+        "ring": ["host-a->host-b", "host-b->host-c", "host-c->host-a"],
+        "independent_durable_roots": 3,
+        "independent_principals": 3,
+        "signed_inventory_required": True,
+        "owner_topology_attestation_required": True,
+    }:
+        raise ContractError("P5 V2 topology drift")
+
+    qualification = profile.get("qualification")
+    if qualification != {
+        "golden_ring_paths": ["relay-tcp-443", "relay-tcp-443", "relay-tcp-443"],
+        "all_expected_peers_authenticated": True,
+        "mixed_path_required": False,
+        "relay_only_outbound_first_required": True,
+        "observe_only_may_qualify": False,
+        "preflight_may_qualify": False,
+        "qualification_tier": "production-reference",
+    }:
+        if isinstance(qualification, dict) and qualification.get(
+            "golden_ring_paths"
+        ) != ["relay-tcp-443", "relay-tcp-443", "relay-tcp-443"]:
+            raise ContractError("P5 V2 outbound-first path policy drift")
+        raise ContractError("P5 V2 qualification drift")
+
+    if profile.get("route_failover") != {
+        "pre_failure_reservations_min": 2,
+        "selected_and_alternate_signed_before_failure": True,
+        "alternate_must_differ": True,
+        "selected_failure": "RelayUnavailable",
+        "fresh_transport_binding_required": True,
+        "fresh_session_required": True,
+        "exact_checkpoint_resume_required": True,
+        "application_replay_rejected": True,
+    }:
+        raise ContractError("P5 V2 failover drift")
+    expected_faults = [
+        "partition",
+        "drop",
+        "reorder",
+        "duplicate",
+        "restart",
+        "address-change",
+        "seed-outage",
+        "signer-outage",
+        "disk-pressure",
+        "slow-peer",
+        "base-obarv002-archive-restore",
+        "rollback",
+        "explicit-re-enable",
+    ]
+    if profile.get("fault_matrix") != expected_faults:
+        raise ContractError("P5 V2 fault matrix drift")
+
+    if profile.get("evidence_authority") != {
+        "provider_evidence_status": "owner-telephone-verified-provider-document-pending",
+        "qualification_tier": "production-reference",
+        "inventory_digest_required": True,
+        "public_probe_set_digest_required": True,
+        "topology_attestation_digest_required": True,
+        "provider_evidence_digest_required": True,
+        "repeat_in_every_receipt_and_aggregate": True,
+        "provider_status_derived_from_typed_entries": True,
+    }:
+        raise ContractError("P5 V2 provider evidence authority drift")
+    if profile.get("evidence") != {
+        "signed_controller_frame_required": True,
+        "signed_child_receipt_required": True,
+        "signed_admin_operation_receipt_required": True,
+        "signed_multi_host_aggregate_required": True,
+        "handcrafted_receipt_policy": "reject",
+        "raw_evidence": "encrypted-restricted-digest-bound",
+        "raw_archive_encryption": "hpke-x25519-hkdf-sha256-chacha20-poly1305",
+        "public_receipt_private_endpoint_policy": "digest-and-privacy-safe-projection-only",
+        "exact_candidate_commit_tree_bundle_binding": True,
+    }:
+        raise ContractError("P5 V2 evidence drift")
+    if profile.get("admin_operations") != {
+        "actions": [
+            "prepare-session", "cleanup-session", "observe", "apply", "clear"
+        ],
+        "action_phase_map": {
+            "prepare-session": None,
+            "cleanup-session": None,
+            "observe": "before",
+            "apply": "during",
+            "clear": "after",
+        },
+        "fault_and_phase_optional_only_for_lifecycle": True,
+        "controller_signature_required": True,
+        "host_receipt_signature_required": True,
+        "request_digest_embedded_in_receipt": True,
+        "dynamic_target_dual_signature_required": True,
+        "replay_key": ["request_digest", "session_id", "host_id", "operation_id"],
+        "replay_policy": "reject-create-new-before-mutation",
+        "caller_supplied_shell_or_path": False,
+    }:
+        raise ContractError("P5 V2 admin operation drift")
+    if profile.get("lifecycle") != {
+        "bootstrap_installs_session_config_only": True,
+        "bootstrap_network_or_unit_mutation": False,
+        "prepare_session_is_separately_signed": True,
+        "cleanup_receipt_before_finalization": True,
+        "finalizer_removes_session_after_receipt": True,
+        "immutable_candidate_generation_paths_for_control": True,
+    }:
+        raise ContractError("P5 V2 lifecycle drift")
+
+    expected_bounds = {
+        "p5_snapshot_reservations": 6,
+        "p5_snapshot_associations": 1,
+        "p5_bootstrap_frame_bytes": 1048576,
+        "p5_admin_frame_bytes": 131072,
+        "p5_finalize_frame_bytes": 131072,
+        "p5_authority_request_bytes": 262144,
+        "p5_signature_bytes": 16384,
+        "p5_inventory_bytes": 262144,
+        "p5_trust_policy_bytes": 65536,
+        "p5_verifier_keyring_bytes": 131072,
+        "p5_session_config_bytes": 262144,
+        "p5_public_probe_set_bytes": 131072,
+        "p5_topology_attestation_bytes": 131072,
+        "p5_provider_evidence_bytes": 131072,
+        "p5_signed_control_frame_bytes": 131072,
+        "p5_child_receipt_bytes": 262144,
+        "p5_aggregate_bytes": 4194304,
+        "p5_admin_response_bytes": 1048576,
+        "p5_raw_evidence_objects": 32,
+        "p5_raw_evidence_object_bytes": 262144,
+        "p5_encrypted_raw_archive_bytes": 67108864,
+        "p5_bootstrap_response_bytes": 262144,
+        "p5_finalization_response_bytes": 262144,
+    }
+    if profile.get("resource_bounds") != expected_bounds:
+        raise ContractError("P5 V2 resource bound drift")
+    if profile.get("privacy") != {
+        "public_endpoint_or_interface_bytes": False,
+        "public_arbitrary_limitation_text": False,
+        "raw_endpoint_evidence_restricted": True,
+        "raw_archive_randomized_encryption_required": True,
+        "public_artifact_secret_scan_required": True,
+    }:
+        raise ContractError("P5 V2 privacy drift")
+    expected_exit_oracles = [
+        "request-authority-verified",
+        "three-host-inventory-verified",
+        "relay-only-ring-authenticated",
+        "faults-complete",
+        "selected-relay-failed",
+        "alternate-relay-authenticated",
+        "checkpoint-resumed-exactly",
+        "resource-bounds-observed",
+        "privacy-scan-clean",
+        "aggregate-signature-verified",
+    ]
+    if profile.get("exit_oracles") != expected_exit_oracles:
+        raise ContractError("P5 V2 exit oracle drift")
+    if profile.get("required_limitations") != [
+        "provider-document-pending",
+        "non-linux-platform-lanes-pending",
+        "mobile-carrier-mailbox-pending",
+    ]:
+        raise ContractError("P5 V2 limitation drift")
+    return (
+        len(expected_hosts),
+        len(expected_faults),
+        len(expected_paths),
+        len(expected_path_classes) - 1,
+        len(expected_exit_oracles),
+    )
+
+
+def validate_base_v1_exact_candidate_soak(
+    profile: dict[str, object] | None = None,
+    workflow: str | None = None,
+) -> tuple[int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(read(BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE))
+        except json.JSONDecodeError as error:
+            raise ContractError(f"invalid Base v1 exact-candidate soak JSON: {error}") from error
+    if (
+        profile.get("format") != "onebrain/base-v1-exact-candidate-soak/1"
+        or profile.get("profile_id") != "BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError("Base v1 exact-candidate soak identity drift")
+
+    expected_scope = {
+        "minimum_uninterrupted_elapsed_seconds": 259200,
+        "minimum_distinct_physical_runners": 3,
+        "target_triple": "x86_64-unknown-linux-gnu",
+        "cargo_profile": "release",
+        "transport": "authenticated-real-quic",
+        "candidate_source": "verified-signed-task-28-release-request",
+        "only_eligible_candidate": "exact-task-27-commit-and-tree",
+        "task_25_is_ancestor_checkpoint_only": True,
+        "fresh_run_required": True,
+        "prior_m5_07_may_qualify": False,
+        "synthetic_unchanged_closure_may_qualify": False,
+    }
+    if profile.get("scope") != expected_scope:
+        raise ContractError("Base v1 exact-candidate soak scope drift")
+
+    required_bindings = [
+        "release_request_digest",
+        "qualification_session_id",
+        "candidate_commit",
+        "candidate_tree",
+        "candidate_semantic_digest",
+        "frozen_target_artifact_digest",
+        "registry_root",
+        "p5_aggregate_root",
+        "executable_blake3",
+        "sbom_blake3",
+        "provenance_blake3",
+        "runner_image_digest",
+        "trust_policy_digest",
+    ]
+    reference_pins = required_bindings[:-1]
+    reference = profile.get("reference_environment")
+    if reference != {
+        "identity_source": "verified-signed-release-request",
+        "producer_override": False,
+        "required_pinned_fields": reference_pins,
+        "cross_runner_byte_equality": reference_pins[2:],
+        "identical_release_executable_hash_required": True,
+    }:
+        raise ContractError("Base v1 exact-candidate reference identity drift")
+
+    expected_runners = [
+        {
+            "runner_id": "runner-a",
+            "role": "soak-runner:runner-a",
+            "required_labels": [
+                "self-hosted",
+                "linux",
+                "x64",
+                "onebrain-soak",
+                "onebrain-soak-a",
+            ],
+        },
+        {
+            "runner_id": "runner-b",
+            "role": "soak-runner:runner-b",
+            "required_labels": [
+                "self-hosted",
+                "linux",
+                "x64",
+                "onebrain-soak",
+                "onebrain-soak-b",
+            ],
+        },
+        {
+            "runner_id": "runner-c",
+            "role": "soak-runner:runner-c",
+            "required_labels": [
+                "self-hosted",
+                "linux",
+                "x64",
+                "onebrain-soak",
+                "onebrain-soak-c",
+            ],
+        },
+    ]
+    if profile.get("runners") != expected_runners:
+        raise ContractError("Base v1 exact-candidate soak runner topology drift")
+
+    expected_roles = [
+        {
+            "role": "soak-runner:runner-a",
+            "public_key_hex": "f6dcfda9ff046728bd9ffec69f38db909f6198e46b3eb6c208411c3fef95fd27",
+            "fingerprint_hex": "af9ec4df16d41ab7700c3428f12430c95c8ada4d2c0ca5ac8353af42fcb755ad",
+        },
+        {
+            "role": "soak-runner:runner-b",
+            "public_key_hex": "9b415457ea3f9a794670c55387d4742bd6105dea6f95780c6cf6c3d9ae7c4907",
+            "fingerprint_hex": "160ce310b3c99f1f30d21f3ad2206b638cb391bfe057058155a2355998a1e08f",
+        },
+        {
+            "role": "soak-runner:runner-c",
+            "public_key_hex": "d4295546c6818dacf38758d75f70867ea06a50f12c8800bcae532f76e737ac9e",
+            "fingerprint_hex": "2069e547629b1551c505becebf4da5cabe6c61b92b9465aba328fb8258065ae1",
+        },
+        {
+            "role": "soak-aggregator",
+            "public_key_hex": "888cf37977b179b78aff9045a0ce599cd090172d38ec04e4d462cf70eee454b3",
+            "fingerprint_hex": "8ab8e70864bd2258042dc4e5d18d271680df2566092317363b1064b6f1fa2ae9",
+        },
+    ]
+    trust = profile.get("trust_policy")
+    if not isinstance(trust, dict):
+        raise ContractError("Base v1 exact-candidate soak trust policy missing")
+    expected_trust_without_approval = {
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "digest_algorithm": "BLAKE3-derive-key-v1",
+        "digest_context": "onebrain:base-v1:soak-trust-policy:1",
+        "digest_hex": "f2ef9e95575c47a25a1809ba580b70eac1413bc5d147f9f021987c393ba778d6",
+        "fingerprint_algorithm": "BLAKE3-derive-key-v1",
+        "fingerprint_context": "onebrain:base-v1:soak-evidence-signer-fingerprint:1",
+        "policy": {
+            "algorithm": "Ed25519",
+            "allowed_usages": [
+                "base-v1-soak-child-receipt",
+                "base-v1-soak-aggregate",
+            ],
+            "format": "onebrain/base-v1-exact-candidate-soak-trust-policy/1",
+            "role_bindings": expected_roles,
+        },
+        "valid_unlisted_signature": "reject",
+        "wrong_or_cross_runner_role": "reject",
+        "changed_trust_policy": "reject",
+    }
+    actual_without_approval = dict(trust)
+    approval = actual_without_approval.pop("owner_approval", None)
+    if actual_without_approval != expected_trust_without_approval:
+        raise ContractError("Base v1 exact-candidate soak trust-policy drift")
+    if approval not in (
+        {"status": "pending-owner-approval", "approved_utc": None},
+        {"status": "owner-approved", "approved_utc": "2026-08-11"},
+    ):
+        raise ContractError("Base v1 exact-candidate soak owner approval state drift")
+    public_keys = {row["public_key_hex"] for row in expected_roles}
+    fingerprints = {row["fingerprint_hex"] for row in expected_roles}
+    if len(public_keys) != 4 or len(fingerprints) != 4:
+        raise ContractError("Base v1 exact-candidate soak reuses a signer across roles")
+
+    payload_fields = [
+        "role",
+        "runner_id",
+        "runner_identity",
+        "interval_sequence",
+        "receipt_kind",
+        "monotonic_start_ns",
+        "monotonic_end_ns",
+        "command",
+        "result",
+        "limitations",
+    ]
+    if profile.get("child_receipt") != {
+        "format": "onebrain/base-v1-exact-candidate-soak-child-receipt/1",
+        "signature_domain": "onebrain:base-v1:exact-candidate-soak-child-receipt:1\\0",
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "unknown_field_policy": "reject",
+        "receipt_kinds": ["interval", "fault"],
+        "required_bindings": required_bindings,
+        "required_payload_fields": payload_fields,
+    }:
+        raise ContractError("Base v1 exact-candidate soak child-receipt drift")
+    if profile.get("aggregate") != {
+        "format": "onebrain/base-v1-exact-candidate-soak-aggregate/1",
+        "signer_role": "soak-aggregator",
+        "signature_domain": "onebrain:base-v1:exact-candidate-soak-aggregate:1\\0",
+        "root_algorithm": "BLAKE3",
+        "root_domain": "onebrain:base-v1:exact-candidate-soak-child-root:1\\0",
+        "root_order": "runner-id-then-monotonic-start-then-sequence-then-receipt-kind",
+        "root_inputs": ["canonical-ordered-interval-and-fault-child-receipt-bytes"],
+        "root_excludes": ["aggregate_report", "aggregate_signature"],
+        "mixed_binding_policy": "reject",
+        "input_qualification_boolean_trusted": False,
+    }:
+        raise ContractError("Base v1 exact-candidate soak aggregate-root drift")
+    if profile.get("fault_cycle") != [
+        "slow-peer",
+        "bounded-session-flood",
+        "partition-reunion",
+    ]:
+        raise ContractError("Base v1 exact-candidate soak fault-cycle drift")
+    exit_oracles = profile.get("exit_oracles")
+    if not isinstance(exit_oracles, list) or len(exit_oracles) != 13:
+        raise ContractError("Base v1 exact-candidate soak exit-oracle drift")
+    if profile.get("carry_forward") != {
+        "analyzer_purpose": "staleness-demonstration-only",
+        "analytically_reusable_when_closure_unchanged": True,
+        "base_v1_reusable": False,
+        "fresh_task_28_soak_required": True,
+    }:
+        raise ContractError("Base v1 exact-candidate carry-forward boundary drift")
+    expected_state = {
+        "contract_frozen": approval["status"] == "owner-approved",
+        "measured_evidence_committed": False,
+        "soak_qualified": False,
+        "production_qualified": False,
+    }
+    if profile.get("qualification_state") != expected_state:
+        raise ContractError("Base v1 exact-candidate qualification state drift")
+
+    if workflow is None:
+        workflow = read(BASE_V1_P5_PRODUCTION_WORKFLOW)
+    markers = (
+        "workflow_dispatch:",
+        "if: github.ref == 'refs/heads/main'",
+        "verify_base_release_request.py",
+        "ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}",
+        "git rev-parse HEAD^{tree}",
+        "compare-release-executable-hashes",
+        "retain-signed-raw-receipts",
+        "p5-multi-host-aggregate",
+        "base-v1-exact-candidate-soak-aggregate",
+        "timeout-minutes: 4440",
+        "pre-release-72h",
+    )
+    for marker in markers:
+        if marker not in workflow:
+            raise ContractError(f"Base v1 production canary workflow missing: {marker}")
+    for forbidden in ("pull_request:", "schedule:", "candidate_commit:\n        description:"):
+        if forbidden in workflow:
+            raise ContractError(f"Base v1 production canary workflow exposes: {forbidden}")
+
+    analyzer = read(ROOT / "scripts/release/validate_evidence_carry_forward.py")
+    for marker in (
+        "def _verify_p5_aggregate_v1(",
+        "def _verify_p5_aggregate_v2(",
+        'subparsers.add_parser("verify-p5")',
+        'parser.add_argument("--p5-aggregate", type=Path, required=True)',
+        'parser.add_argument("--executable", type=Path, required=True)',
+        '"SPDX_SBOM:sbom.spdx.json"',
+        'fresh exact-candidate soak evidence is incomplete',
+    ):
+        if marker not in analyzer:
+            raise ContractError(f"Base v1 evidence analyzer missing: {marker}")
+    for forbidden in (
+        'parser.add_argument("--p5-aggregate-root"',
+        'parser.add_argument("--executable-blake3"',
+        'parser.add_argument("--sbom-blake3"',
+        'parser.add_argument("--provenance-blake3"',
+    ):
+        if forbidden in analyzer:
+            raise ContractError(f"Base v1 evidence analyzer accepts override: {forbidden}")
+
+    spec = read(VNEXT / "BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE.md")
+    for marker in (
+        "base-v1-exact-candidate-soak-v1.json",
+        "fresh, uninterrupted 259,200-second soak",
+        "Task 27",
+        "Task 28",
+        "fresh_soak_required=true",
+        "production_qualified=false",
+    ):
+        if marker not in spec:
+            raise ContractError(f"Base v1 exact-candidate soak spec missing: {marker}")
+    return (len(expected_runners), len(expected_roles), 2, len(exit_oracles))
 
 
 def validate_vnext_p5_canary_preflight(
@@ -3203,6 +7469,441 @@ def validate_vnext_p5_operations_preflight(
     )
 
 
+def validate_concept_registry_production_qualification(
+    profile: dict[str, object] | None = None,
+) -> tuple[int, int, int, int]:
+    if profile is None:
+        try:
+            profile = json.loads(
+                read(CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE)
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            raise ContractError(
+                "invalid Concept Registry production qualification profile JSON: "
+                f"{error}"
+            ) from error
+
+    if (
+        profile.get("format")
+        != "onebrain/concept-registry-production-qualification/1"
+        or profile.get("profile_id")
+        != "CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1"
+        or profile.get("version") != 1
+    ):
+        raise ContractError(
+            "Concept Registry production qualification profile identity drift"
+        )
+    if profile.get("profile_digest") != {
+        "algorithm": "BLAKE3",
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "input": "complete-profile-object-without-an-embedded-digest-value",
+        "receipt_field": "production_profile_blake3",
+    }:
+        raise ContractError("Concept Registry production profile digest drift")
+
+    release = profile.get("release_package")
+    expected_artifacts = [
+        ["OBR", "concepts.obr"],
+        ["LABEL_INDEX", "concepts.obr.labels.idx"],
+        ["CCID_INDEX", "concepts.obr.ccids.idx"],
+        ["MANIFEST", "concepts.obr.manifest.json"],
+        ["SPDX_SBOM", "sbom.spdx.json"],
+    ]
+    if not isinstance(release, dict):
+        raise ContractError("Concept Registry production release package missing")
+    if release.get("payload_artifacts") != expected_artifacts:
+        raise ContractError("Concept Registry production artifact set drift")
+    if release.get("verification_stamp") != {
+        "filename": "release.stamp.json",
+        "signature_algorithm": "Ed25519",
+        "signature_domain_hex": (
+            "6f6e65627261696e3a636f6e636570742d72656769737472792d"
+            "72656c656173652d7374616d703a3100"
+        ),
+        "signature_message": (
+            "domain-bytes-then-blake3-of-serde-json-struct-order-unsigned-stamp"
+        ),
+        "unsigned_transform": "clone-then-set-signature-to-empty-string",
+        "json_encoding": "serde-json-compact-rust-struct-field-order-utf8",
+        "signed_fields": [
+            "profile",
+            "release_id",
+            "builder_version",
+            "dedup_policy_version",
+            "artifacts",
+            "artifact_root",
+            "sources",
+            "source_root",
+            "distribution",
+            "signer_public_key",
+            "signature",
+        ],
+        "signature_field_value_during_message": "",
+        "activation_metadata_fields": ["release_id"],
+    }:
+        raise ContractError("Concept Registry production verification stamp drift")
+    if release.get("obr_size_bytes") != {
+        "artifact": "concepts.obr",
+        "minimum": 2_200_000_000,
+        "maximum": 2_500_000_000,
+    }:
+        raise ContractError("Concept Registry production OBR size bounds drift")
+    if release.get("aggregate_root") != {
+        "algorithm": "BLAKE3",
+        "domain_hex": (
+            "6f6e65627261696e3a636f6e636570742d72656769737472792d"
+            "6172746966616374733a3100"
+        ),
+        "order": "role-then-relative-path-bytewise",
+        "fields": [
+            "role",
+            "relative_path",
+            "exact_length_u64_be",
+            "blake3_hex",
+        ],
+        "string_framing": "u64-be-length-then-utf8-bytes",
+        "digest_encoding": "lowercase-hex-ascii",
+        "includes_verification_stamp": False,
+    }:
+        raise ContractError("Concept Registry production aggregate root drift")
+    if (
+        release.get("root_match_policy")
+        != "stamp-reports-and-aggregate-must-match-exactly"
+    ):
+        raise ContractError("Concept Registry production aggregate root match drift")
+
+    resources = profile.get("resource_profiles")
+    if not isinstance(resources, dict) or set(resources) != {
+        "cold-cache",
+        "low-ram",
+        "ssd",
+        "hdd",
+    }:
+        raise ContractError("Concept Registry production resource profile set drift")
+    expected_budgets = {
+        "cold-cache": (180_000, 250_000, 536_870_912, None),
+        "low-ram": (300_000, 500_000, 268_435_456, 3_221_225_472),
+        "ssd": (120_000, 100_000, 536_870_912, None),
+        "hdd": (300_000, 750_000, 536_870_912, None),
+    }
+    for name, expected in expected_budgets.items():
+        row = resources.get(name)
+        if not isinstance(row, dict):
+            raise ContractError(
+                f"Concept Registry production resource budget missing: {name}"
+            )
+        actual = (
+            row.get("max_ready_ms"),
+            row.get("max_lookup_p95_us"),
+            row.get("max_peak_rss_bytes"),
+            row.get("address_space_limit_bytes"),
+        )
+        if actual != expected:
+            raise ContractError(
+                f"Concept Registry production resource budget drift: {name}"
+            )
+    if resources["cold-cache"].get("cache_evidence") != [
+        "linux-posix-fadvise-dontneed",
+        "vmtouch-evict",
+    ]:
+        raise ContractError("Concept Registry cold-cache evidence drift")
+    if resources["low-ram"].get("enforcement_evidence") != ["linux-rlimit-as"]:
+        raise ContractError("Concept Registry low-RAM enforcement evidence drift")
+    if resources["ssd"].get("storage_evidence") != [
+        "linux-findmnt-source-and-fstype",
+        "linux-sysfs-block-device",
+        "linux-sysfs-rotational-equals-0",
+    ]:
+        raise ContractError("Concept Registry SSD storage evidence drift")
+    if resources["hdd"].get("storage_evidence") != [
+        "linux-findmnt-source-and-fstype",
+        "linux-sysfs-block-device",
+        "linux-sysfs-rotational-equals-1",
+    ]:
+        raise ContractError("Concept Registry HDD storage evidence drift")
+
+    if profile.get("reference_environment") != {
+        "target_triple": "x86_64-unknown-linux-gnu",
+        "identity_source": "verified-signed-release-request",
+        "required_pinned_fields": [
+            "rust_toolchain_digest",
+            "runner_image_digest",
+            "probe_blake3",
+            "probe_signature",
+            "probe_signer_fingerprint",
+            "python_executable_blake3",
+            "gpg_executable_blake3",
+        ],
+        "cross_host_equality": [
+            "target_triple",
+            "rust_toolchain_digest",
+            "runner_image_digest",
+            "probe_blake3",
+            "python_executable_blake3",
+            "gpg_executable_blake3",
+        ],
+        "producer_override": False,
+        "portability_collectors": ["windows-preflight", "macos-preflight"],
+        "portability_collectors_are_production_reference": False,
+    }:
+        raise ContractError("Concept Registry production reference environment drift")
+
+    if profile.get("trust_policy") != {
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "digest_algorithm": "BLAKE3-derive-key-v1",
+        "digest_context": "onebrain:concept-registry:trust-policy:1",
+        "digest_hex": (
+            "e0a2551a39823c3f2cb088defe60484c8a33ffe0f3aab9df9493b52557ab55fe"
+        ),
+        "policy": {
+            "algorithm": "Ed25519",
+            "allowed_usages": [
+                "registry-release-stamp",
+                "registry-qualification-receipt",
+            ],
+            "format": "onebrain/concept-registry-trust-policy/1",
+            "signers": [
+                {
+                    "fingerprint_algorithm": "blake3-derive-key-v1",
+                    "fingerprint_context": (
+                        "onebrain:concept-registry:signer-fingerprint:1"
+                    ),
+                    "fingerprint_hex": (
+                        "dcc09574ac53ec8b95585cad5e2e88cbdfbe44841ad46b3709f73c989b4316d4"
+                    ),
+                    "public_key_hex": (
+                        "bef8e2b9d8ae7a38b3753a7d756a39c20948f128a66ca71ed04799e7a5d5177c"
+                    ),
+                }
+            ],
+        },
+        "valid_unlisted_signature": "reject",
+        "verification_required_for": [
+            "release.stamp.json",
+            "every-registry-evidence-receipt",
+        ],
+    }:
+        raise ContractError("Concept Registry production signer trust policy drift")
+
+    if profile.get("qualification_receipt_envelope") != {
+        "format": "onebrain/concept-registry-qualification-receipt/1",
+        "signature_algorithm": "Ed25519",
+        "signature_domain_hex": (
+            "6f6e65627261696e3a636f6e636570742d72656769737472792d"
+            "7175616c696669636174696f6e2d726563656970743a3100"
+        ),
+        "signature_message": (
+            "domain-bytes-then-blake3-of-canonical-unsigned-envelope"
+        ),
+        "canonicalization": "utf8-json-sorted-keys-no-whitespace",
+        "unsigned_transform": "clone-then-set-signature-to-empty-string",
+        "envelope_fields": [
+            "format",
+            "receipt_kind",
+            "usage",
+            "payload",
+            "signer_public_key",
+            "signer_fingerprint",
+            "trust_policy_digest",
+            "signature",
+        ],
+        "signature_field_value_during_message": "",
+        "usage": "registry-qualification-receipt",
+        "closed_receipt_kinds": [
+            "resource-qualification",
+            "failure-qualification",
+            "generation-swap",
+            "ccid-stability",
+            "signed-release-cycle",
+            "production-aggregate",
+        ],
+        "payload_binding_sets": {
+            "common": [
+                "qualification_context_variant",
+                "release_aggregate_root",
+                "registry_generation",
+                "production_profile_blake3",
+                "trust_policy_digest",
+                "signer_fingerprint",
+                "probe_blake3",
+                "executable_blake3",
+                "candidate_payload_artifacts_blake3",
+                "release_stamp_blake3",
+                "command",
+                "result",
+                "exit_oracles",
+                "limitations",
+                "evidence_tier",
+            ],
+            "prequalification": {
+                "required": ["closure_digest", "base_candidate_bound", "evidence_tier"],
+                "base_candidate_bound": False,
+                "evidence_tier": "prequalification",
+                "forbidden": [
+                    "release_request_digest",
+                    "qualification_session_id",
+                    "candidate_commit",
+                    "candidate_tree",
+                ],
+            },
+            "release": {
+                "required": [
+                    "release_request_digest",
+                    "qualification_session_id",
+                    "candidate_commit",
+                    "candidate_tree",
+                    "candidate_semantic_digest",
+                    "artifact_tuple_digest",
+                    "base_candidate_bound",
+                    "evidence_tier",
+                ],
+                "base_candidate_bound": True,
+                "production_evidence_tier": "production-reference",
+                "nonproduction_test_evidence_tier": "nonproduction-test",
+            },
+        },
+        "unknown_field_policy": "reject",
+        "valid_unlisted_signature": "reject",
+    }:
+        raise ContractError(
+            "Concept Registry production qualification receipt envelope drift"
+        )
+
+    context = profile.get("qualification_run_context")
+    if not isinstance(context, dict):
+        raise ContractError("Concept Registry qualification run context missing")
+    if (
+        context.get("format") != "onebrain/qualification-run-context/1"
+        or context.get("closed_variants") != ["Prequalification", "Release"]
+        or context.get("prequalification")
+        != {
+            "required_fields": ["closure_digest"],
+            "base_candidate_bound": False,
+            "production_aggregate_allowed": False,
+        }
+    ):
+        raise ContractError("Concept Registry prequalification context drift")
+    if context.get("release") != {
+        "required_fields": [
+            "release_request_digest",
+            "qualification_session_id",
+            "candidate_commit",
+            "candidate_tree",
+        ],
+        "verified_signed_request_required": True,
+        "request_match": "exact",
+        "producer_override": False,
+        "missing_context_policy": "reject",
+        "mixed_context_policy": "reject",
+        "base_candidate_bound": True,
+        "production_aggregate_allowed": True,
+    }:
+        raise ContractError("Concept Registry release context drift")
+
+    if profile.get("evidence_classes") != {
+        "fixture": {
+            "production_eligible": False,
+            "base_candidate_bound": False,
+        },
+        "prequalification": {
+            "production_eligible": False,
+            "base_candidate_bound": False,
+        },
+        "release": {
+            "production_eligible": True,
+            "base_candidate_bound": True,
+            "fresh_reports_required": True,
+        },
+    }:
+        raise ContractError("Concept Registry production evidence classification drift")
+
+    if profile.get("production_report_binding") != {
+        "identical_fields": [
+            "release_request_digest",
+            "qualification_session_id",
+            "candidate_commit",
+            "candidate_tree",
+            "candidate_semantic_digest",
+            "artifact_tuple_digest",
+            "release_aggregate_root",
+            "registry_generation",
+            "production_profile_blake3",
+            "trust_policy_digest",
+            "signer_fingerprint",
+            "probe_blake3",
+            "executable_blake3",
+            "candidate_payload_artifacts_blake3",
+            "release_stamp_blake3",
+            "evidence_tier",
+        ],
+        "component_mismatch_policy": "reject",
+        "carry_forward_allowed_for_base_v1": False,
+        "registry_subgate_only": True,
+    }:
+        raise ContractError("Concept Registry production report binding drift")
+
+    expected_failure_gates = [
+        "truncated-index",
+        "disk-shortage",
+        "update-interruption-process-kill",
+        "live-reader-generation-swap",
+        "rollback",
+        "ccid-stability",
+        "signed-release-cycle",
+    ]
+    if profile.get("failure_gates") != expected_failure_gates:
+        raise ContractError("Concept Registry production failure gate drift")
+
+    if profile.get("signed_release_cycle") != {
+        "accepted_harnesses": ["release_cycle_qualification.py"],
+        "rejected_substitutes": ["quarterly_update.py"],
+        "required_steps": [
+            "package",
+            "verify",
+            "activate",
+            "query",
+            "build-new-signed-generation",
+            "ccid-diff",
+            "activate-new",
+            "rollback",
+            "reactivate-new",
+        ],
+        "complete_cycle_required": True,
+        "signed_receipt_required": True,
+    }:
+        raise ContractError("Concept Registry signed release cycle drift")
+
+    if profile.get("qualification_state") != {
+        "contract_frozen": True,
+        "measured_evidence_committed": False,
+        "production_qualified": False,
+    }:
+        raise ContractError("Concept Registry qualification state drift")
+
+    spec = read(
+        VNEXT / "CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1.md"
+    )
+    if "concept-registry-production-qualification-v1.json" not in spec:
+        raise ContractError(
+            "Concept Registry production profile is not linked to machine contract"
+        )
+    workflow = read(VNEXT_FOUNDATION_WORKFLOW)
+    if (
+        "python -m unittest "
+        "scripts.ci.test_validate_concept_registry_production_qualification"
+        not in workflow
+    ):
+        raise ContractError(
+            "Concept Registry production negative validator CI gate missing"
+        )
+    return (
+        len(expected_artifacts),
+        len(expected_budgets),
+        len(expected_failure_gates),
+        len(profile["trust_policy"]["policy"]["signers"]),
+    )
+
+
 def validate_concept_registry_operations(
     profile: dict[str, object] | None = None,
 ) -> tuple[int, int, int, int]:
@@ -3427,15 +8128,14 @@ def validate_concept_registry_operations(
     remaining = profile.get("remaining_qualification_gates")
     if not isinstance(drills, list) or len(drills) != 11:
         raise ContractError("Concept Registry implemented failure drills drift")
-    if remaining != [
-        "cold-cache-profile",
-        "low-ram-profile",
-        "ssd-profile",
-        "hdd-profile",
-        "truncated-index-profile",
-        "disk-shortage-profile",
-        "quarterly-build-update-rollback-dry-run",
-    ]:
+    if profile.get("production_qualification") != {
+        "profile": "onebrain/concept-registry-production-qualification/1",
+        "machine_contract": "concept-registry-production-qualification-v1.json",
+        "status": "contract-frozen-evidence-open",
+        "completion_claimed": False,
+    }:
+        raise ContractError("Concept Registry production qualification link drift")
+    if remaining != ["CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1"]:
         raise ContractError("Concept Registry remaining qualification gates drift")
 
     release_source = read(ROOT / "src/ku-core/src/concept_registry_release.rs")
@@ -3646,10 +8346,321 @@ def validate_normative_coverage() -> int:
     return sum(actual.values())
 
 
+def validate_base_v1_packaging() -> int:
+    """Validate Base-default features and fail-closed legacy/harness fences."""
+
+    packages = {
+        "onebrain-node": ROOT / "src/onebrain-node/Cargo.toml",
+        "onebrain-api": ROOT / "src/onebrain-api/Cargo.toml",
+        "onebrain-cli": ROOT / "src/onebrain-cli/Cargo.toml",
+    }
+    for name, path in packages.items():
+        document = tomllib.loads(path.read_text(encoding="utf-8"))
+        features = document.get("features", {})
+        if features.get("default") != ["base-v1"]:
+            raise ContractError(f"{name} must default to base-v1 only")
+        if "base-v1" not in features or "legacy-read-compat" not in features:
+            raise ContractError(f"{name} is missing Base/legacy feature declarations")
+        if "base-v1" in features["legacy-read-compat"]:
+            raise ContractError(
+                f"{name} legacy-read-compat must not silently auto-enable base-v1"
+            )
+    feature_guards = {
+        ROOT / "src/onebrain-node/src/lib.rs": "legacy-read-compat requires base-v1",
+        ROOT / "src/onebrain-api/src/lib.rs": "legacy-read-compat requires base-v1",
+        ROOT / "src/onebrain-cli/src/main.rs": "legacy-read-compat requires base-v1",
+    }
+    for path, guard in feature_guards.items():
+        if guard not in path.read_text(encoding="utf-8"):
+            raise ContractError(f"missing forbidden-combination guard in {path}")
+    cli_archive = (ROOT / "src/onebrain-cli/src/cli/data.rs").read_text(
+        encoding="utf-8"
+    )
+    for forbidden in ("node.create_backup(", "node.restore_backup("):
+        if forbidden in cli_archive:
+            raise ContractError(
+                f"CLI archive path bypasses the Base scoped facade: {forbidden}"
+            )
+    api_archive = (ROOT / "src/onebrain-api/src/handlers.rs").read_text(
+        encoding="utf-8"
+    )
+    for forbidden in ("node.create_backup(", "node.restore_backup("):
+        if forbidden in api_archive:
+            raise ContractError(
+                f"API archive path bypasses the Base scoped facade: {forbidden}"
+            )
+    for required in (
+        "issue_base_management_grant",
+        "ArchiveSinkBegin",
+        "ArchiveSourceBegin",
+        "ArchiveCapabilityHandleV1",
+        "management.close().await",
+    ):
+        if required not in cli_archive:
+            raise ContractError(f"CLI Base archive lifecycle is missing {required}")
+    abi = tomllib.loads(
+        (ROOT / "src/onebrain-base-abi/Cargo.toml").read_text(encoding="utf-8")
+    )
+    if abi.get("lib", {}).get("crate-type") != ["cdylib", "staticlib", "rlib"]:
+        raise ContractError("onebrain-base-abi crate types drifted")
+    node_features = tomllib.loads(
+        (ROOT / "src/onebrain-node/Cargo.toml").read_text(encoding="utf-8")
+    )["features"]
+    for forbidden in (
+        "vnext-canary-harness",
+        "vnext-crash-harness",
+        "vnext-chaos-harness",
+        "vnext-compaction-harness",
+        "vnext-soak-harness",
+    ):
+        if forbidden in node_features["default"] or forbidden in node_features["base-v1"]:
+            raise ContractError(f"production Base feature includes {forbidden}")
+    workflow = (ROOT / ".github/workflows/vnext-foundation.yml").read_text(
+        encoding="utf-8"
+    )
+    for marker in (
+        "base-v1-projections",
+        "Run the Base v1 integrated root and tuple gate",
+        "-p onebrain-node --test base_gate_integration",
+        "-p onebrain-base-contract --test cross_consumer_tuple",
+        "-p onebrain-api --test base_contract",
+        "-p onebrain-cli --test version",
+        "--no-default-features --features base-v1",
+        "--no-default-features --features base-v1,legacy-read-compat",
+        "onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime",
+        "validate_base_abi_header.py",
+        "dart pub get --enforce-lockfile",
+        "install_base_v1_cbindgen.ps1",
+        "ONEBRAIN_BASE_CBINDGEN",
+    ):
+        if marker not in workflow:
+            raise ContractError(f"Base packaging workflow is missing marker: {marker}")
+    if workflow.count("fetch-depth: 0") < 2:
+        raise ContractError(
+            "Base baseline consumers must fetch complete candidate ancestry"
+        )
+    if "--skip-tool-verification" in workflow:
+        raise ContractError("Base ABI CI may not bypass the pinned executable hash")
+    integration_test = read(
+        ROOT / "src/onebrain-node/tests/base_gate_integration.rs"
+    )
+    for marker in (
+        "BaseIntegrationReceipt",
+        "canonical_root_before_restart",
+        "canonical_root_after_restart",
+        "archive_restore_root",
+        "registry_release_root",
+        "default_active_network_lanes",
+        "legacy_write_enabled",
+    ):
+        if marker not in integration_test:
+            raise ContractError(f"Base integration fixture is missing marker: {marker}")
+    cross_consumer = read(
+        ROOT / "src/onebrain-base-contract/tests/cross_consumer_tuple.rs"
+    )
+    for marker in (
+        "candidate_semantic_digest",
+        "artifact_tuple_digest",
+        "generated TypeScript",
+        "generated Dart",
+        "Axum API",
+        "CLI verbose version",
+        "C ABI",
+    ):
+        if marker not in cross_consumer:
+            raise ContractError(f"Base cross-consumer gate is missing marker: {marker}")
+    return len(packages) + 1
+
+
+def validate_base_v1_candidate_workflow(
+    workflow: str | None = None,
+    runbook: str | None = None,
+) -> tuple[int, int]:
+    """Validate the closed Task 26 workflow without executing qualification."""
+    if workflow is None:
+        workflow = read(BASE_V1_CANDIDATE_WORKFLOW)
+    if runbook is None:
+        runbook = read(ROOT / "docs/operations/ONEBRAIN_BASE_V1_CANDIDATE_RUNBOOK.md")
+
+    required_actions = {
+        "actions/checkout": "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+        "actions/setup-python": "ece7cb06caefa5fff74198d8649806c4678c61a1",
+        "actions/setup-node": "a0853c24544627f65ddf259abe73b1d18a591444",
+        "dart-lang/setup-dart": "65eb853c7ba17dde3be364c3d2858773e7144260",
+        "actions/upload-artifact": "ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "actions/download-artifact": "634f93cb2916e3fdff6788551b99b062d0335ce0",
+    }
+    required_action_counts = {
+        "actions/checkout": 3,
+        "actions/setup-python": 3,
+        "actions/setup-node": 1,
+        "dart-lang/setup-dart": 1,
+        "actions/upload-artifact": 2,
+        "actions/download-artifact": 2,
+    }
+    references = re.findall(
+        r"^\s*(?:-\s+)?uses:\s*([^\s#]+)", workflow, re.MULTILINE
+    )
+    seen_actions: set[str] = set()
+    for reference in references:
+        if reference.startswith("./"):
+            continue
+        if "@" not in reference:
+            raise ContractError(f"Base candidate action has no revision: {reference}")
+        action, revision = reference.rsplit("@", 1)
+        if not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise ContractError(f"Base candidate action is not pinned by full SHA: {reference}")
+        if required_actions.get(action) != revision:
+            raise ContractError(f"Base candidate action is unknown or unreviewed: {reference}")
+        seen_actions.add(action)
+    if seen_actions != set(required_actions):
+        raise ContractError(
+            f"Base candidate reviewed action set drift: {sorted(seen_actions)}"
+        )
+    for action, count in required_action_counts.items():
+        reference = f"{action}@{required_actions[action]}"
+        if references.count(reference) != count:
+            raise ContractError(
+                f"Base candidate action occurrence drift: {action}"
+            )
+    for action, revision in required_actions.items():
+        if f"`{action}`" not in runbook or f"`{revision}`" not in runbook:
+            raise ContractError(f"Base candidate action mapping missing from runbook: {action}")
+
+    dispatch = workflow.split("workflow_dispatch:", 1)
+    if len(dispatch) != 2:
+        raise ContractError("Base candidate workflow_dispatch is missing")
+    dispatch_inputs = dispatch[1].split("\npermissions:", 1)[0]
+    for forbidden in (
+        "release_request_digest",
+        "qualification_session_id",
+        "candidate_commit",
+        "candidate_tree",
+        "candidate_semantic_digest",
+        "artifact_tuple_digest",
+    ):
+        if re.search(rf"^\s{{6}}{forbidden}:\s*$", dispatch_inputs, re.MULTILINE):
+            raise ContractError(f"Base candidate workflow exposes identity input: {forbidden}")
+
+    required_markers = (
+        "pull_request:",
+        "push:",
+        "qualification_mode:",
+        "signed_request_run_id:",
+        "base-v1-signed-release-request",
+        "approver-public-key.gpg",
+        "approver-policy.json",
+        "verify_base_release_request.py",
+        "github.event.pull_request.head.sha",
+        "needs.verify-candidate-identity.outputs.candidate_commit",
+        "needs.verify-candidate-identity.outputs.candidate_tree",
+        "ubuntu-24.04",
+        "windows-2025",
+        "macos-15",
+        "python-version: '3.13'",
+        "--only-binary=:all: --require-hashes",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-pc-windows-msvc",
+        "aarch64-apple-darwin",
+        "linux_artifact_tuple_digest",
+        "windows_artifact_tuple_digest",
+        "macos_artifact_tuple_digest",
+        "EXPECTED_ARTIFACT_TUPLE",
+        "cargo fmt --all --manifest-path src/Cargo.toml -- --check",
+        "cargo check --workspace --locked --manifest-path src/Cargo.toml",
+        "cargo clippy --workspace --all-targets --locked --manifest-path src/Cargo.toml -- -D warnings",
+        "cargo test --workspace --locked --manifest-path src/Cargo.toml",
+        "onebrain-node/vnext-network-runtime,onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime",
+        "python scripts/ci/validate_vnext_contracts.py",
+        "python scripts/ci/validate_mobile_build_contracts.py",
+        "python scripts/base/generate_contract.py --check",
+        "npm test --prefix src/onebrain-base-contract/conformance/typescript",
+        "dart pub get --enforce-lockfile",
+        "dart analyze",
+        "dart test",
+        "-p onebrain-archive",
+        "--test archive_roundtrip --test dataset_generation_failpoints",
+        "test_validate_concept_registry_operations",
+        "test_validate_vnext_p5_canary_preflight",
+        "test_validate_vnext_p5_operations_preflight",
+        "--no-default-features --features base-v1",
+        "cargo audit --file src/Cargo.lock --json",
+        "cargo install --locked --version 0.22.2 cargo-audit",
+        "npm audit --package-lock-only --json",
+        "generate_base_sbom.py",
+        "verify_base_provenance.py",
+        "--ignored=matching",
+        "compression-level: 0",
+        "overwrite: false",
+        "retention-days: 90",
+        "CARGO_TARGET_DIR=$env:CARGO_TARGET_DIR",
+        "ONEBRAIN_BASE_V1_IDL_BASELINE_RECEIPT",
+        "BASE_V1_IDL_BASELINE_RECEIPT=$env:BASE_V1_IDL_BASELINE_RECEIPT",
+        "refs/heads/base-v1-idl-baseline:refs/heads/base-v1-idl-baseline",
+        "TMPDIR=/private/tmp",
+        "rustc-vV.txt",
+        "ImageVersion",
+        "'qualification_mode':os.environ['QUALIFICATION_MODE']",
+    )
+    for marker in required_markers:
+        if marker not in workflow:
+            raise ContractError(f"Base candidate workflow is missing marker: {marker}")
+    for marker, count in (
+        ("python-version: '3.13'", 3),
+        ("--only-binary=:all: --require-hashes", 3),
+    ):
+        if workflow.count(marker) != count:
+            raise ContractError(f"Base candidate workflow marker count drift: {marker}")
+    for forbidden in (
+        "permissions:\n  contents: write",
+        "continue-on-error: true",
+        "overwrite: true",
+        "actions/checkout@v",
+        "actions/setup-python@v",
+        "actions/upload-artifact@v",
+        "actions/download-artifact@v",
+    ):
+        if forbidden in workflow:
+            raise ContractError(f"Base candidate workflow contains forbidden marker: {forbidden}")
+    return (3, len(required_actions))
+
+
 def main() -> int:
     try:
         tasks, _ = plan_tasks()
         adrs = validate_traceability(tasks)
+        base_signer_domains, base_archive_classes = (
+            validate_base_v1_authority_recovery()
+        )
+        base_storage_boundaries, base_storage_negative_oracles = (
+            validate_base_v1_storage_integrity()
+        )
+        base_archive_kinds, base_archive_required = validate_base_v1_archive()
+        baseline_receipt = os.environ.get("BASE_V1_IDL_BASELINE_RECEIPT")
+        if baseline_receipt:
+            baseline_profile, baseline_history = load_base_v1_runtime_baseline(
+                Path(baseline_receipt)
+            )
+            (
+                base_runtime_operations,
+                base_runtime_topics,
+                base_runtime_errors,
+            ) = validate_base_v1_runtime_interface(
+                baseline_profile=baseline_profile,
+                baseline_history=baseline_history,
+            )
+        else:
+            (
+                base_runtime_operations,
+                base_runtime_topics,
+                base_runtime_errors,
+            ) = validate_base_v1_runtime_interface()
+        base_compatibility_vectors = validate_base_v1_compatibility()
+        base_freeze_gates = validate_base_v1_freeze()
+        base_packaging_surfaces = validate_base_v1_packaging()
+        base_candidate_os_lanes, base_candidate_actions = (
+            validate_base_v1_candidate_workflow()
+        )
         assertions = validate_negative_assertions()
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
@@ -3697,6 +8708,33 @@ def main() -> int:
             m5_soak_exit_oracles,
         ) = validate_vnext_dr_m5_soak_release()
         (
+            p5_physical_hosts,
+            p5_inventory_hosts,
+            p5_production_faults,
+            p5_production_exit_oracles,
+            p5_evidence_roles,
+        ) = validate_vnext_p5_multi_host()
+        (
+            reachability_objects,
+            reachability_domains,
+            reachability_paths,
+            reachability_capabilities,
+            reachability_mutations,
+        ) = validate_vnext_outbound_reachability()
+        (
+            p5_v2_hosts,
+            p5_v2_faults,
+            p5_v2_paths,
+            p5_v2_path_classes,
+            p5_v2_exit_oracles,
+        ) = validate_vnext_p5_multi_host_v2()
+        (
+            base_soak_runners,
+            base_soak_roles,
+            base_soak_receipt_kinds,
+            base_soak_exit_oracles,
+        ) = validate_base_v1_exact_candidate_soak()
+        (
             p5_canary_nodes,
             p5_ring_deliveries,
             p5_route_observations,
@@ -3718,6 +8756,18 @@ def main() -> int:
             registry_failure_drills,
             registry_remaining_gates,
         ) = validate_concept_registry_operations()
+        (
+            registry_production_artifacts,
+            registry_production_resources,
+            registry_production_failure_gates,
+            registry_production_signers,
+        ) = validate_concept_registry_production_qualification()
+        (
+            registry_runner_checks,
+            registry_runner_guide_checks,
+            registry_runner_workflow_checks,
+            registry_runner_fixture_checks,
+        ) = validate_concept_registry_runner_kit()
         links = validate_markdown_links()
         normative_lines = validate_normative_coverage()
     except ContractError as error:
@@ -3728,6 +8778,18 @@ def main() -> int:
         "vNext contracts OK: "
         f"{len(tasks)} tasks, {adrs} ADRs, {assertions} negative assertions, "
         f"{vector_count} foundation vectors/{domains} domains, "
+        f"{base_signer_domains} Base signer domains/{base_archive_classes} archive classes, "
+        f"{base_storage_boundaries} Base storage boundaries/"
+        f"{base_storage_negative_oracles} negative oracles, "
+        f"{base_archive_kinds} Base archive kinds/"
+        f"{base_archive_required} required metadata, "
+        f"{base_runtime_operations} Base runtime operations/"
+        f"{base_runtime_topics} topics/{base_runtime_errors} errors, "
+        f"{base_compatibility_vectors} Base compatibility vectors/"
+        f"{base_freeze_gates} Base freeze gates/"
+        f"{base_packaging_surfaces} packaging surfaces, "
+        f"{base_candidate_os_lanes} Base candidate OS lanes/"
+        f"{base_candidate_actions} pinned actions, "
         f"{schema_vectors} identity-object vectors, "
         f"{event_vectors} feed-event vectors, {normative_lines} normative lines, "
         f"{product_endpoints} product endpoints/{product_dtos} DTOs, "
@@ -3754,6 +8816,16 @@ def main() -> int:
         f"{m5_soak_profiles} M5-07 profiles/{m5_performance_metrics} performance metrics/"
         f"{m5_growth_metrics} growth metrics/{m5_fault_cycles} fault cycles/"
         f"{m5_soak_exit_oracles} exit oracles, "
+        f"{p5_physical_hosts} P5 production hosts/{p5_inventory_hosts} inventory hosts/"
+        f"{p5_production_faults} production faults/{p5_production_exit_oracles} exit oracles/"
+        f"{p5_evidence_roles} evidence roles, "
+        f"{reachability_objects} outbound-first objects/{reachability_domains} signature domains/"
+        f"{reachability_paths} paths/{reachability_capabilities} platform capabilities/"
+        f"{reachability_mutations} mutations, "
+        f"{p5_v2_hosts} P5 V2 hosts/{p5_v2_faults} faults/{p5_v2_paths} paths/"
+        f"{p5_v2_path_classes} path classes/{p5_v2_exit_oracles} exit oracles, "
+        f"{base_soak_runners} Base exact-soak runners/{base_soak_roles} roles/"
+        f"{base_soak_receipt_kinds} receipt kinds/{base_soak_exit_oracles} exit oracles, "
         f"{p5_canary_nodes} P5-01 nodes/{p5_ring_deliveries} ring deliveries/"
         f"{p5_route_observations} route observations/{p5_fault_drills} fault drills/"
         f"{p5_exit_oracles} exit oracles, "
@@ -3763,6 +8835,14 @@ def main() -> int:
         f"{p5_external_gates} external gates, "
         f"{registry_release_artifacts} registry artifacts/{registry_sources} sources/"
         f"{registry_failure_drills} failure drills/{registry_remaining_gates} remaining gates, "
+        f"{registry_production_artifacts} production registry payloads/"
+        f"{registry_production_resources} resource profiles/"
+        f"{registry_production_failure_gates} failure gates/"
+        f"{registry_production_signers} approved signer, "
+        f"{registry_runner_checks} Registry runner checks/"
+        f"{registry_runner_guide_checks} guide checks/"
+        f"{registry_runner_workflow_checks} workflow checks/"
+        f"{registry_runner_fixture_checks} fixture checks, "
         f"{links} local links"
     )
     return 0

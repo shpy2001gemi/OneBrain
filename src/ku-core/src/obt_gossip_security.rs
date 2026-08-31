@@ -256,8 +256,8 @@ mod tests {
         d.record_offline(3, 30);
         d.cleanup_old(20);
         // Only entries with ts >= 20 remain
-        assert!(d.offline_events.get(&10).is_none());
-        assert!(d.offline_events.get(&20).is_some());
+        assert!(!d.offline_events.contains_key(&10));
+        assert!(d.offline_events.contains_key(&20));
     }
 
     // ── Connectivity Proof ──────────────────────────────────────────

@@ -3,9 +3,11 @@
 //! Configures the axum 0.8 router with all REST routes,
 //! WebSocket endpoint, CORS, and Bearer-token auth middleware.
 
+#[cfg(feature = "base-v1")]
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::extract::Request;
 use axum::http::{header, HeaderName, HeaderValue, Method, StatusCode};
@@ -22,10 +24,111 @@ use tracing;
 
 use onebrain_node::OneBrainNode;
 
+#[cfg(feature = "base-v1")]
+use rand::rngs::OsRng;
+#[cfg(feature = "base-v1")]
+use rand::RngCore;
+
 use crate::handlers;
 use crate::types::ApiErrorResponse;
 use crate::vnext_api::VNextRestCoordinator;
 use crate::vnext_ws::{VNextWsHub, VNEXT_WS_CLIENT_SESSION_HEADER};
+
+struct ApiTokenBaseAuthorizer {
+    proof: Vec<u8>,
+}
+
+impl onebrain_node::BaseHostAuthorizer for ApiTokenBaseAuthorizer {
+    fn authenticate(&self, principal: [u8; 32], proof: &[u8]) -> bool {
+        principal == [0; 32] && constant_time_eq(proof, &self.proof)
+    }
+}
+
+/// Build the compiled Base config with one immutable local host trust policy.
+pub fn base_runtime_config_for_api_token(token: &str) -> onebrain_node::BaseRuntimeConfig {
+    let mut config = onebrain_node::compiled_base_runtime_config();
+    config.host_authorizer = Arc::new(ApiTokenBaseAuthorizer {
+        proof: token.as_bytes().to_vec(),
+    });
+    config
+}
+
+#[cfg(feature = "base-v1")]
+const MAX_BASE_REST_MANAGEMENT_HANDLES: usize = 32;
+
+/// Local REST owns only opaque management-session identifiers. The actual
+/// capabilities and credentials remain inside the Base runtime and are
+/// revoked when this registry removes a session.
+#[cfg(feature = "base-v1")]
+#[derive(Clone, Default)]
+struct BaseRestManagementCoordinator {
+    sessions: Arc<Mutex<BTreeMap<[u8; 32], onebrain_node::BaseManagementServices>>>,
+}
+
+#[cfg(feature = "base-v1")]
+impl BaseRestManagementCoordinator {
+    async fn insert(
+        &self,
+        services: onebrain_node::BaseManagementServices,
+    ) -> Result<[u8; 32], onebrain_node::BaseServiceError> {
+        let mut sessions = self.sessions.lock().await;
+        if sessions.len() >= MAX_BASE_REST_MANAGEMENT_HANDLES {
+            return Err(onebrain_node::BaseServiceError::new(
+                onebrain_base_contract::BaseErrorCodeV1::ResourceExhausted,
+                "rest_management_handle_limit_reached",
+            ));
+        }
+        for _ in 0..8 {
+            let mut id = [0; 32];
+            OsRng.fill_bytes(&mut id);
+            if id != [0; 32] && !sessions.contains_key(&id) {
+                sessions.insert(id, services);
+                return Ok(id);
+            }
+        }
+        Err(onebrain_node::BaseServiceError::new(
+            onebrain_base_contract::BaseErrorCodeV1::InternalError,
+            "rest_management_handle_collision_budget_exhausted",
+        ))
+    }
+
+    async fn get(
+        &self,
+        id: [u8; 32],
+    ) -> Result<onebrain_node::BaseManagementServices, onebrain_node::BaseServiceError> {
+        self.sessions.lock().await.get(&id).cloned().ok_or_else(|| {
+            onebrain_node::BaseServiceError::new(
+                onebrain_base_contract::BaseErrorCodeV1::NotFound,
+                "unknown_rest_management_handle",
+            )
+        })
+    }
+
+    async fn remove(
+        &self,
+        id: [u8; 32],
+    ) -> Result<onebrain_node::BaseManagementServices, onebrain_node::BaseServiceError> {
+        self.sessions.lock().await.remove(&id).ok_or_else(|| {
+            onebrain_node::BaseServiceError::new(
+                onebrain_base_contract::BaseErrorCodeV1::NotFound,
+                "unknown_rest_management_handle",
+            )
+        })
+    }
+
+    async fn close_all(&self) -> Result<(), onebrain_node::BaseServiceError> {
+        let sessions = {
+            let mut sessions = self.sessions.lock().await;
+            std::mem::take(&mut *sessions)
+                .into_values()
+                .collect::<Vec<_>>()
+        };
+        for services in sessions {
+            services.close().await?;
+        }
+        Ok(())
+    }
+}
 
 // ─── App State ─────────────────────────────────────────────────────────────
 
@@ -43,9 +146,75 @@ pub struct AppState {
     pub vnext_rest: VNextRestCoordinator,
     /// Bounded, per-client vNext WebSocket tickets and event queues.
     pub vnext_ws: VNextWsHub,
+    /// Runtime gate for the separately compiled bounded legacy read view.
+    pub legacy_read_compat_enabled: bool,
+    #[cfg(feature = "base-v1")]
+    base_management: BaseRestManagementCoordinator,
 }
 
 impl AppState {
+    /// Clone the weak Base facade under the node lock, then release that lock
+    /// before storage, archive, or network work.
+    #[cfg(feature = "base-v1")]
+    pub async fn base_services(&self) -> Option<onebrain_node::BaseServices> {
+        self.node.lock().await.base_services()
+    }
+
+    /// Mint a one-shot host-authorized grant and immediately consume it into a
+    /// bounded REST-owned scoped management session.
+    #[cfg(feature = "base-v1")]
+    pub async fn open_base_management(
+        &self,
+        scopes: Vec<onebrain_node::BaseManagementScope>,
+    ) -> Result<[u8; 32], onebrain_node::BaseServiceError> {
+        let services_and_grant = {
+            let node = self.node.lock().await;
+            let services = node.base_services().ok_or_else(|| {
+                onebrain_node::BaseServiceError::new(
+                    onebrain_base_contract::BaseErrorCodeV1::DependencyUnavailable,
+                    "base_runtime_not_installed",
+                )
+            })?;
+            let grant = node
+                .issue_base_management_grant(
+                    [0; 32],
+                    self.api_token.as_bytes(),
+                    scopes,
+                    Duration::from_secs(300),
+                )
+                .map_err(|_| {
+                    onebrain_node::BaseServiceError::new(
+                        onebrain_base_contract::BaseErrorCodeV1::InvalidRequest,
+                        "management_grant_issue_failed",
+                    )
+                })?;
+            (services, grant)
+        };
+        let management = services_and_grant.0.management(services_and_grant.1)?;
+        self.base_management.insert(management).await
+    }
+
+    #[cfg(feature = "base-v1")]
+    pub async fn base_management(
+        &self,
+        id: [u8; 32],
+    ) -> Result<onebrain_node::BaseManagementServices, onebrain_node::BaseServiceError> {
+        self.base_management.get(id).await
+    }
+
+    #[cfg(feature = "base-v1")]
+    pub async fn close_base_management(
+        &self,
+        id: [u8; 32],
+    ) -> Result<onebrain_node::BaseManagementCloseReceiptV1, onebrain_node::BaseServiceError> {
+        self.base_management.remove(id).await?.close().await
+    }
+
+    #[cfg(feature = "base-v1")]
+    pub async fn close_all_base_management(&self) -> Result<(), onebrain_node::BaseServiceError> {
+        self.base_management.close_all().await
+    }
+
     /// Snapshot the cloneable vNext service handle under the aggregate node
     /// mutex. Callers release that mutex before long-running subsystem work.
     #[cfg(feature = "vnext-network-runtime")]
@@ -64,7 +233,12 @@ pub struct ApiServer {
 
 impl ApiServer {
     /// Create a new server, wrapping the node in an `Arc<Mutex<_>>`.
-    pub fn new(node: OneBrainNode, api_token: String, port: u16) -> Self {
+    pub fn new(mut node: OneBrainNode, api_token: String, port: u16) -> Self {
+        #[cfg(feature = "base-v1")]
+        if node.base_services().is_none() {
+            node.install_base_runtime(base_runtime_config_for_api_token(&api_token))
+                .expect("Base v1 runtime installation must succeed before API admission");
+        }
         let (event_broadcast, _) = broadcast::channel(256);
         Self {
             state: AppState {
@@ -75,6 +249,9 @@ impl ApiServer {
                 event_broadcast,
                 vnext_rest: VNextRestCoordinator::default(),
                 vnext_ws: VNextWsHub::default(),
+                legacy_read_compat_enabled: false,
+                #[cfg(feature = "base-v1")]
+                base_management: BaseRestManagementCoordinator::default(),
             },
             port,
         }
@@ -92,6 +269,9 @@ impl ApiServer {
                 event_broadcast,
                 vnext_rest: VNextRestCoordinator::default(),
                 vnext_ws: VNextWsHub::default(),
+                legacy_read_compat_enabled: false,
+                #[cfg(feature = "base-v1")]
+                base_management: BaseRestManagementCoordinator::default(),
             },
             port,
         }
@@ -107,6 +287,15 @@ impl ApiServer {
     pub fn with_web_dir(mut self, path: PathBuf) -> Self {
         self.state.web_dir = Some(path);
         self
+    }
+
+    /// Enable only the bounded read/migration compatibility projection.
+    pub fn with_legacy_read_compat(mut self, enabled: bool) -> Result<Self, &'static str> {
+        if enabled && !cfg!(feature = "legacy-read-compat") {
+            return Err("legacy_read_compat_not_compiled");
+        }
+        self.state.legacy_read_compat_enabled = enabled;
+        Ok(self)
     }
 
     /// Attach a caller-owned Feed author/signer provider for explicit Public
@@ -182,7 +371,7 @@ impl ApiServer {
             .allow_credentials(true);
 
         // Build route tree
-        let api_routes = Router::new()
+        let mut api_routes = Router::new()
             // Identity
             .route("/api/identity", get(handlers::get_identity))
             .route("/api/identity/recover", post(handlers::recover_identity))
@@ -373,6 +562,28 @@ impl ApiServer {
             // Phase 1 Tier C: Domain Taxonomy
             .route("/api/domains", get(handlers::list_domains))
             .route("/api/domains/{domain}/kus", get(handlers::kus_by_domain));
+
+        #[cfg(feature = "base-v1")]
+        {
+            api_routes = api_routes
+                .route(
+                    "/api/base/v1/capabilities",
+                    get(handlers::get_base_capabilities),
+                )
+                .route("/api/base/v1/status", get(handlers::get_base_status))
+                .route(
+                    "/api/base/v1/operations",
+                    post(handlers::invoke_base_operation),
+                );
+        }
+
+        #[cfg(feature = "legacy-read-compat")]
+        if self.state.legacy_read_compat_enabled {
+            api_routes = api_routes.route(
+                "/api/base/v1/legacy/status",
+                get(handlers::get_legacy_read_compat_status),
+            );
+        }
 
         // WebSockets perform their own upgrade-compatible authentication.
         // The legacy path retains its query-token boundary; the vNext path

@@ -44,3 +44,13 @@ must preserve every existing byte.
 
 Production rollout remains blocked until the pinned `pre-release-72h` artifact,
 multi-host canary, backup/restore, fault, rollback and operator gates pass.
+
+## 4. Production-profile relationship
+
+This single-host profile MUST always emit `multi_host_qualified=false` and MUST
+NOT be relabeled as production evidence.
+
+The distinct production contract is
+[`P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1.md`](P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1.md);
+it requires three physical Linux hosts, candidate-bound signed receipts and an
+owner-approved role-separated trust policy.

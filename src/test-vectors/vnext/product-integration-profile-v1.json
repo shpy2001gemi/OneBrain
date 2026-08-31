@@ -2,6 +2,8 @@
   "format": "onebrain/vnext-product-integration-profile/1",
   "profile_id": "VNEXT_PRODUCT_INTEGRATION_PROFILE_V1",
   "version": 1,
+  "profile_major": 1,
+  "profile_minor": 1,
   "base_path": "/api/vnext",
   "wire": {
     "json_field_case": "snake_case",
@@ -260,6 +262,25 @@
         "claims_global_completion"
       ]
     },
+    "BaseNegotiationRequestV1": {
+      "required": [
+        "profile_major",
+        "profile_minor",
+        "capabilities",
+        "compatibility_tuple"
+      ]
+    },
+    "BaseNegotiationViewV1": {
+      "required": [
+        "profile_major",
+        "profile_minor",
+        "capabilities",
+        "compatibility_digest",
+        "lifecycle",
+        "coverage",
+        "limitations"
+      ]
+    },
     "RuntimeStatusV1": {
       "required": [
         "compiled",
@@ -398,6 +419,21 @@
       "authorizes_reward": "literal:false",
       "claims_global_completion": "literal:false"
     },
+    "BaseNegotiationRequestV1": {
+      "profile_major": "u16",
+      "profile_minor": "u16",
+      "capabilities": "BoundedCapabilitySetV1",
+      "compatibility_tuple": "BaseCompatibilityTupleV1"
+    },
+    "BaseNegotiationViewV1": {
+      "profile_major": "u16",
+      "profile_minor": "u16",
+      "capabilities": "BoundedCapabilitySetV1",
+      "compatibility_digest": "Blake3DigestHexV1",
+      "lifecycle": "LifecycleV1",
+      "coverage": "CoverageV1",
+      "limitations": "array:string"
+    },
     "RuntimeStatusV1": {
       "compiled": "boolean",
       "requested": "boolean",
@@ -513,6 +549,14 @@
       "visibility": "authenticated_local",
       "request": null,
       "response": "MetabolicEvidenceViewV1"
+    },
+    {
+      "method": "POST",
+      "path": "/api/vnext/base/negotiate",
+      "status": "reserved",
+      "visibility": "authenticated_local",
+      "request": "BaseNegotiationRequestV1",
+      "response": "BaseNegotiationViewV1"
     },
     {
       "method": "GET",

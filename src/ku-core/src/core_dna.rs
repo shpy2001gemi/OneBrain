@@ -2062,7 +2062,6 @@ mod tests {
         const C_THICKNESS_RATIO: ConceptId = 2007;
         const C_SPAN: ConceptId = 2008;
         const C_MAC: ConceptId = 2009; // Mean Aerodynamic Chord
-        const C_DEGREES: ConceptId = 3000;
         const C_SQ_METER: ConceptId = 3001;
         const C_MACH: ConceptId = 3002;
         const C_RATIO: ConceptId = 3003;
@@ -2153,7 +2152,7 @@ mod tests {
         // Verify float precision survived
         if let Instruction::Tolerance { s, value, delta } = &decoded.instructions[1] {
             assert_eq!(*s, C_SWEEP_ANGLE);
-            assert_eq!(value.as_f64(), 35.200000762939453); // f32 precision
+            assert_eq!(value.as_f64(), 35.200_000_762_939_45); // f32 precision
             assert!(delta.as_f64() < 0.2); // delta ~0.1
         } else {
             panic!("Expected Tolerance instruction");
@@ -2194,7 +2193,7 @@ mod tests {
             Instruction::Quality { s: 100, q: 400 },
             Instruction::Quantity {
                 s: 100,
-                value: NumericValue::F32(3.14),
+                value: NumericValue::F32(std::f32::consts::PI),
                 unit: 500,
             },
             Instruction::Sequence {
@@ -2679,7 +2678,7 @@ hoặc đầu đạn tùy theo mục đích sử dụng";
         dict.insert("vệ tinh", 631);
         dict.insert("đầu đạn", 632);
 
-        let auto_dna = crate::text_parser::parse_text_to_core_dna(text, &mut dict).unwrap();
+        let auto_dna = crate::text_parser::parse_text_to_core_dna(text, &dict).unwrap();
         let auto_wire = auto_dna.encode().unwrap();
 
         println!("  Instructions: {}", auto_dna.len());

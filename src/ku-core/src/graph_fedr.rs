@@ -96,20 +96,12 @@ impl Default for FedRConfig {
 /// Federated RotatE training protocol.
 ///
 /// Orchestrates local training, delta computation, and peer delta application.
+#[derive(Default)]
 pub struct FedRProtocol {
     /// Protocol configuration.
     pub config: FedRConfig,
     /// Current training epoch.
     pub current_epoch: u64,
-}
-
-impl Default for FedRProtocol {
-    fn default() -> Self {
-        Self {
-            config: FedRConfig::default(),
-            current_epoch: 0,
-        }
-    }
 }
 
 impl FedRProtocol {

@@ -5,7 +5,7 @@
 //!
 //! ## Design Principle
 //! > "Pillar sau build bridges, đừng break foundations."
-//! OBKG (P7) adapts to P1-P5, not the other way around.
+//! > OBKG (P7) adapts to P1-P5, not the other way around.
 
 use crate::graph_bio::{CoAccess, ConsolidationCandidate};
 use crate::graph_dream::AccessRecord;
@@ -14,6 +14,10 @@ use crate::graph_types::{BondEvent, BondMeta};
 use crate::ku_runtime::KuRuntime;
 use crate::types::{Bond, RelationType};
 use std::collections::HashMap;
+
+pub type BondMetaTuple = ([u8; 32], [u8; 32], RelationType, BondMeta);
+pub type BondMetaMap = HashMap<([u8; 32], [u8; 32], RelationType), BondMeta>;
+pub type DecayBondTuple = (([u8; 32], [u8; 32]), Bond);
 
 // ============================================================================
 // 1. Bond Conversion Functions
@@ -45,7 +49,7 @@ pub fn cid_from_bond_target(target: &[u8]) -> [u8; 32] {
 }
 
 /// Collect all bonds from a KuRuntime as (source, target, relation, BondMeta) tuples.
-pub fn collect_bond_metas(ku: &KuRuntime) -> Vec<([u8; 32], [u8; 32], RelationType, BondMeta)> {
+pub fn collect_bond_metas(ku: &KuRuntime) -> Vec<BondMetaTuple> {
     ku.epi
         .bonds
         .iter()
@@ -61,9 +65,7 @@ pub fn collect_bond_metas(ku: &KuRuntime) -> Vec<([u8; 32], [u8; 32], RelationTy
 }
 
 /// Collect bonds from multiple KUs into a HashMap suitable for DreamEngine/DecayRunner.
-pub fn collect_all_bonds(
-    kus: &HashMap<[u8; 32], KuRuntime>,
-) -> HashMap<([u8; 32], [u8; 32], RelationType), BondMeta> {
+pub fn collect_all_bonds(kus: &HashMap<[u8; 32], KuRuntime>) -> BondMetaMap {
     let mut map = HashMap::new();
     for ku in kus.values() {
         for bond in &ku.epi.bonds {
@@ -79,9 +81,7 @@ pub fn collect_all_bonds(
 }
 
 /// Collect bonds as (source_target_pair, Bond) tuples for DecayRunner.
-pub fn collect_bonds_for_decay(
-    kus: &HashMap<[u8; 32], KuRuntime>,
-) -> Vec<(([u8; 32], [u8; 32]), Bond)> {
+pub fn collect_bonds_for_decay(kus: &HashMap<[u8; 32], KuRuntime>) -> Vec<DecayBondTuple> {
     let mut result = Vec::new();
     for ku in kus.values() {
         for bond in &ku.epi.bonds {
@@ -108,7 +108,7 @@ pub fn ku_to_entity_embedding(ku: &KuRuntime) -> ([u8; 32], EntityEmbedding) {
 pub fn collect_entity_embeddings(
     kus: &HashMap<[u8; 32], KuRuntime>,
 ) -> Vec<([u8; 32], EntityEmbedding)> {
-    kus.values().map(|ku| ku_to_entity_embedding(ku)).collect()
+    kus.values().map(ku_to_entity_embedding).collect()
 }
 
 // ============================================================================
@@ -547,7 +547,7 @@ mod tests {
         let co_accesses = build_co_accesses(&kus);
         // Pairs within 24h: (0,1)=500s, (1,2)=98500s ✓
         // Pair (0,2)=99000s > 86400 → excluded
-        assert!(co_accesses.len() >= 1);
+        assert!(!co_accesses.is_empty());
         // At least bond pair (0,1) should be present
         let has_close_pair = co_accesses.iter().any(|ca| ca.delta_t.abs() < 1000.0);
         assert!(has_close_pair, "should have at least one close pair");

@@ -71,3 +71,13 @@ storage pressure, and finite incident/action codes.
 
 The dashboard MUST NOT serialize NodeID, selector, private Need, free-form peer
 labels, wallet/OBT mutation, or network-completion claims.
+
+## 6. Production-profile relationship
+
+This single-host profile and `onebrain/p5-offline-backup/1` MUST remain
+preflight-only, unchanged and incapable of setting `multi_host_qualified=true`.
+
+Production recovery and multi-host evidence are governed by
+[`P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1.md`](P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V1.md),
+which uses Base `OBARV002`, three physical Linux hosts and owner-approved
+role-separated receipt keys.

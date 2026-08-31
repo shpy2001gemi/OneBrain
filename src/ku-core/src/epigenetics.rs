@@ -38,7 +38,7 @@ use serde::{Deserialize, Serialize};
 /// source of truth for all quality/reputation data.
 ///
 /// This struct is serialized separately from Core DNA (e.g., to SQLite as CBOR).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Epigenetics {
     /// Trust & PoMV scores — the core quality/reputation data.
@@ -57,16 +57,6 @@ pub struct Epigenetics {
     /// Optional because new KUs may not yet have embedding/temporal data.
     #[serde(rename = "ep", skip_serializing_if = "Option::is_none", default)]
     pub epigenetic: Option<EpigeneticSection>,
-}
-
-impl Default for Epigenetics {
-    fn default() -> Self {
-        Self {
-            trust: TrustSection::default(),
-            bonds: Vec::new(),
-            epigenetic: None,
-        }
-    }
 }
 
 impl Epigenetics {

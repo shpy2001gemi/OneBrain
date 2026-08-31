@@ -58,10 +58,7 @@ pub enum BootstrapLayer {
 impl BootstrapLayer {
     /// Whether this layer requires internet connectivity.
     pub fn requires_internet(&self) -> bool {
-        match self {
-            Self::Social | Self::Local => false,
-            _ => true,
-        }
+        !matches!(self, Self::Social | Self::Local)
     }
 
     /// Display name for logging.
@@ -255,6 +252,12 @@ impl BootstrapEngine {
     }
 }
 
+impl Default for BootstrapEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // ─── PEX Protocol (SPEC A §6.7) ──────────────────────────────────────────
 
 /// Peer Exchange (PEX) — ongoing peer discovery after bootstrap.
@@ -290,7 +293,7 @@ impl PexState {
     pub fn select_for_exchange(&self) -> Vec<&PexPeerInfo> {
         let mut selected: Vec<&PexPeerInfo> = self.known_peers.iter().collect();
         // Sort by fitness (higher first), then take max_exchange
-        selected.sort_by(|a, b| b.fitness.cmp(&a.fitness));
+        selected.sort_by_key(|peer| std::cmp::Reverse(peer.fitness));
         selected.truncate(self.max_exchange);
         selected
     }
@@ -309,5 +312,11 @@ impl PexState {
         } else {
             self.known_peers.push(peer);
         }
+    }
+}
+
+impl Default for PexState {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -754,15 +754,12 @@ fn parse_edge_types(input: &str) -> IResult<&str, Vec<String>> {
     let (input, first) = identifier(input)?;
     let mut types = vec![first.to_string()];
     let mut remaining = input;
-    loop {
-        match tag::<&str, &str, nom::error::Error<&str>>("|")(remaining) {
-            Ok((rest, _)) => match identifier(rest) {
-                Ok((rest2, next)) => {
-                    types.push(next.to_string());
-                    remaining = rest2;
-                }
-                Err(_) => break,
-            },
+    while let Ok((rest, _)) = tag::<&str, &str, nom::error::Error<&str>>("|")(remaining) {
+        match identifier(rest) {
+            Ok((rest2, next)) => {
+                types.push(next.to_string());
+                remaining = rest2;
+            }
             Err(_) => break,
         }
     }

@@ -498,8 +498,9 @@ impl ResolutionReducer {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 enum BranchMode {
+    #[default]
     Normal,
     Waived,
     Deferred,
@@ -515,12 +516,6 @@ struct ActiveBinding {
 struct BranchState {
     mode: BranchMode,
     adoptions: BTreeMap<[u8; 32], ActiveBinding>,
-}
-
-impl Default for BranchMode {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 impl BranchState {

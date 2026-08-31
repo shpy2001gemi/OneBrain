@@ -85,7 +85,7 @@ async fn handle_client(
         // Read message
         let msg: SeedMessage = {
             let mut guard = stream.lock().await;
-            match recv_message(&mut *guard).await {
+            match recv_message(&mut guard).await {
                 Ok(m) => m,
                 Err(_) => break, // connection closed
             }
@@ -124,11 +124,11 @@ async fn handle_client(
                         seed_name: s.name.clone(),
                     };
                     let mut guard = stream.lock().await;
-                    let _ = send_message(&mut *guard, &response).await;
+                    let _ = send_message(&mut guard, &response).await;
                 } else {
                     let mut guard = stream.lock().await;
                     let _ = send_message(
-                        &mut *guard,
+                        &mut guard,
                         &SeedMessage::SeedError {
                             message: "Registry full".to_string(),
                         },
@@ -141,14 +141,14 @@ async fn handle_client(
                 let mut s = state.lock().await;
                 s.registry.heartbeat(&peer_id, ku_count);
                 let mut guard = stream.lock().await;
-                let _ = send_message(&mut *guard, &SeedMessage::HeartbeatAck).await;
+                let _ = send_message(&mut guard, &SeedMessage::HeartbeatAck).await;
             }
 
             SeedMessage::GetPeers => {
                 let s = state.lock().await;
                 let peers = s.registry.get_peer_list();
                 let mut guard = stream.lock().await;
-                let _ = send_message(&mut *guard, &SeedMessage::PeerList { peers }).await;
+                let _ = send_message(&mut guard, &SeedMessage::PeerList { peers }).await;
             }
 
             SeedMessage::RelayToPeer {

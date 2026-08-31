@@ -120,8 +120,10 @@ impl MixedVersionConformanceReport {
     }
 }
 
+type MatrixRecords = Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>;
+
 #[derive(Clone, Default)]
-struct MatrixSink(Arc<Mutex<BTreeMap<(u64, [u8; 32]), Vec<u8>>>>);
+struct MatrixSink(MatrixRecords);
 
 impl ValidateThenAcceptSink for MatrixSink {
     fn validate_then_accept(
@@ -135,11 +137,14 @@ impl ValidateThenAcceptSink for MatrixSink {
             .lock()
             .map_err(|_| "MIXED_MATRIX_SINK_LOCK".to_string())?;
         let key = (kind as u64, cid);
-        if records.contains_key(&key) {
-            Ok(PayloadSinkOutcome::AlreadyPresent)
-        } else {
-            records.insert(key, bytes.to_vec());
-            Ok(PayloadSinkOutcome::ValidatedStored)
+        match records.entry(key) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(bytes.to_vec());
+                Ok(PayloadSinkOutcome::ValidatedStored)
+            }
+            std::collections::btree_map::Entry::Occupied(_) => {
+                Ok(PayloadSinkOutcome::AlreadyPresent)
+            }
         }
     }
 }

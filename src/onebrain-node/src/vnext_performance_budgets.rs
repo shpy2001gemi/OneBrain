@@ -156,11 +156,7 @@ pub fn run_performance_budget_suite(
             (1, CanonicalValue::Unsigned(8)),
             (
                 2,
-                CanonicalValue::Array(
-                    (0..16)
-                        .map(|value| CanonicalValue::Unsigned(value))
-                        .collect(),
-                ),
+                CanonicalValue::Array((0..16).map(CanonicalValue::Unsigned).collect()),
             ),
         ]),
     );
@@ -355,8 +351,10 @@ mod tests {
 
     #[test]
     fn qa008_zero_or_unbounded_workload_config_fails_closed() {
-        let mut budget = PerformanceBudgetV1::default();
-        budget.hot_provider_retained_cap = 0;
+        let budget = PerformanceBudgetV1 {
+            hot_provider_retained_cap: 0,
+            ..PerformanceBudgetV1::default()
+        };
         assert_eq!(
             run_performance_budget_suite(&budget),
             Err(PerformanceSuiteError::InvalidBudget)

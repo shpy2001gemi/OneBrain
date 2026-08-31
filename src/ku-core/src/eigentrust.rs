@@ -126,7 +126,7 @@ impl EigenTrustCalculator {
         for _ in 0..EIGENTRUST_ITERATIONS {
             let mut new_scores: HashMap<u64, f64> = HashMap::new();
 
-            for (&node_i, _) in profiles {
+            for &node_i in profiles.keys() {
                 let local = Self::local_trust(&profiles[&node_i]);
                 let weighted_sum: f64 = profiles
                     .iter()

@@ -168,7 +168,6 @@ pub fn default_dict() -> ConceptDict {
     d.insert("hour", UNIT_HOUR);
 
     // ---- Sports / Swimming (Vietnamese + English) ----
-    let mut id: ConceptId = 200;
     let sports_words = [
         // Vietnamese
         "bơi",
@@ -281,9 +280,8 @@ pub fn default_dict() -> ConceptDict {
         "acceleration",
         "gia tốc",
     ];
-    for w in &sports_words {
+    for (id, w) in (200_u64..).zip(sports_words.iter()) {
         d.insert(w, id);
-        id += 1;
     }
 
     d
@@ -337,9 +335,9 @@ fn parse_numeric(s: &str) -> Option<NumericValue> {
 
     // Try integer first
     if let Ok(v) = s.parse::<i64>() {
-        return Some(if v >= 0 && v <= 255 {
+        return Some(if (0..=255).contains(&v) {
             NumericValue::U8(v as u8)
-        } else if v >= 0 && v <= 65535 {
+        } else if (0..=65535).contains(&v) {
             NumericValue::U16(v as u16)
         } else if v >= i16::MIN as i64 && v < 0 {
             NumericValue::I16(v as i16)
@@ -471,12 +469,11 @@ fn try_parse_step(line: &str, dict: &mut ConceptDict) -> Option<Instruction> {
 
     // Extract step number
     let (num_str, after_num) = split_first_token(rest);
-    let num_str = num_str.trim_end_matches(|c: char| c == ':' || c == '.' || c == ')');
+    let num_str = num_str.trim_end_matches([':', '.', ')']);
     let ord: u8 = num_str.parse().unwrap_or(1);
 
     // The rest is "action target"
-    let after_num =
-        after_num.trim_start_matches(|c: char| c == ':' || c == '.' || c == ')' || c == ' ');
+    let after_num = after_num.trim_start_matches([':', '.', ')', ' ']);
 
     let words: Vec<&str> = after_num.split_whitespace().collect();
     let (action_text, target_text) = if words.len() >= 2 {
@@ -605,7 +602,7 @@ fn try_parse_consists_of(line: &str, dict: &mut ConceptDict) -> Option<Vec<Instr
     // Split parts by comma, "và", "and"
     let parts_text = parts_text.trim_end_matches('.');
     let parts: Vec<&str> = parts_text
-        .split(|c: char| c == ',' || c == ';')
+        .split([',', ';'])
         .flat_map(|s| {
             // Further split by "và" / "and"
             let s = s.trim();

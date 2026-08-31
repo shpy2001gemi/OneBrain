@@ -179,7 +179,6 @@ impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
 /// QUIC transport endpoint — can both accept and initiate connections.
 pub struct QuicTransport {
     endpoint: Endpoint,
-    config: TransportConfig,
     client_config: ClientConfig,
 }
 
@@ -194,7 +193,30 @@ impl QuicTransport {
 
         Ok(Self {
             endpoint,
-            config,
+            client_config,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn bind_abstract(
+        config: TransportConfig,
+        socket: Arc<dyn quinn::AsyncUdpSocket>,
+    ) -> Result<Self, TransportError> {
+        let server_config = build_server_config(&config)?;
+        let client_config = build_client_config(&config)?;
+        let mut endpoint_config = quinn::EndpointConfig::default();
+        endpoint_config
+            .max_udp_payload_size(1_350)
+            .map_err(|error| TransportError::BindFailed(error.to_string()))?;
+        let endpoint = Endpoint::new_with_abstract_socket(
+            endpoint_config,
+            Some(server_config),
+            socket,
+            Arc::new(quinn::TokioRuntime),
+        )
+        .map_err(|error| TransportError::BindFailed(error.to_string()))?;
+        Ok(Self {
+            endpoint,
             client_config,
         })
     }
@@ -209,6 +231,24 @@ impl QuicTransport {
             .map_err(|e| TransportError::ConnectionFailed(format!("{}", e)))?;
 
         Ok(OBPConnection { inner: conn })
+    }
+
+    /// Open a purpose-specific QUIC client connection from this exact bound
+    /// endpoint. The caller supplies a separately validated TLS policy; the
+    /// returned endpoint clone keeps the shared UDP socket alive.
+    pub(crate) async fn connect_quinn_with_config(
+        &self,
+        addr: SocketAddr,
+        server_name: &str,
+        client_config: ClientConfig,
+    ) -> Result<(Endpoint, QuinnConnection), TransportError> {
+        let connection = self
+            .endpoint
+            .connect_with(client_config, addr, server_name)
+            .map_err(|error| TransportError::ConnectionFailed(error.to_string()))?
+            .await
+            .map_err(|error| TransportError::ConnectionFailed(error.to_string()))?;
+        Ok((self.endpoint.clone(), connection))
     }
 
     /// Accept an incoming connection.
@@ -252,6 +292,16 @@ pub struct OBPConnection {
 }
 
 impl OBPConnection {
+    #[allow(dead_code)]
+    pub(crate) fn from_authenticated_quinn(inner: QuinnConnection) -> Self {
+        Self { inner }
+    }
+
+    /// Return the peer address measured by Quinn for this exact connection.
+    /// Callers cannot supply or rewrite this value.
+    pub fn remote_address(&self) -> SocketAddr {
+        self.inner.remote_address()
+    }
     /// Derive a channel binding from the established TLS 1.3 session.
     /// Both endpoints obtain the same exporter bytes, while a different QUIC
     /// connection produces a different binding.

@@ -7,6 +7,7 @@ on:
       - ".github/workflows/vnext-fuzz-nightly.yml"
       - ".github/workflows/vnext-soak.yml"
       - ".github/workflows/vnext-soak-macos-arm64.yml"
+      - ".github/workflows/concept-registry-production.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/operations/**"
@@ -36,6 +37,7 @@ on:
       - ".github/workflows/vnext-fuzz-nightly.yml"
       - ".github/workflows/vnext-soak.yml"
       - ".github/workflows/vnext-soak-macos-arm64.yml"
+      - ".github/workflows/concept-registry-production.yml"
       - "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
       - "docs/research/WIP_DISTRIBUTED_RUNTIME_IMPLEMENTATION_PLAN_V2.md"
       - "docs/operations/**"
@@ -63,6 +65,95 @@ permissions:
   contents: read
 
 jobs:
+  base-v1-projections:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.20.0"
+          cache: npm
+          cache-dependency-path: src/onebrain-base-contract/conformance/typescript/package-lock.json
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: "3.11.3"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src
+      - name: Install the reviewed C header generator
+        shell: pwsh
+        run: |
+          $toolRoot = Join-Path $env:RUNNER_TEMP "onebrain-base-v1-tools"
+          $executable = & ./scripts/toolchains/install_base_v1_cbindgen.ps1 -Destination $toolRoot
+          "ONEBRAIN_BASE_CBINDGEN=$executable" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Verify pinned language tools and generated header
+        shell: pwsh
+        run: |
+          if ((node --version) -ne "v22.20.0") { throw "Node version drift" }
+          if ((npm --version) -ne "10.9.3") { throw "npm version drift" }
+          if ((dart --version 2>&1) -notmatch "3.11.3") { throw "Dart version drift" }
+          python scripts/ci/validate_base_abi_header.py
+          $generated = Join-Path $env:RUNNER_TEMP "onebrain_base_v1.h"
+          Push-Location src
+          & $env:ONEBRAIN_BASE_CBINDGEN --config onebrain-base-abi/cbindgen.toml --crate onebrain-base-abi --output $generated
+          Pop-Location
+          if ((Get-FileHash $generated).Hash -ne (Get-FileHash src/onebrain-base-abi/include/onebrain_base_v1.h).Hash) {
+            throw "Generated Base header drift"
+          }
+      - name: Run Rust, TypeScript, and Dart projection conformance
+        shell: pwsh
+        run: |
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-base-abi
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-base-contract --test projection_conformance
+          npm ci --prefix src/onebrain-base-contract/conformance/typescript
+          npm test --prefix src/onebrain-base-contract/conformance/typescript
+          Push-Location src/onebrain-base-contract/conformance/dart
+          dart pub get --enforce-lockfile
+          dart analyze
+          dart test
+          Pop-Location
+      - name: Run the Base v1 integrated root and tuple gate
+        shell: pwsh
+        run: |
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-node --test base_gate_integration
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-base-contract --test cross_consumer_tuple
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-api --test base_contract
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-cli --test version
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-node -p onebrain-api -p onebrain-cli --features onebrain-node/vnext-network-runtime,onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime
+      - name: Run Base-default and optional-feature packaging matrix
+        shell: pwsh
+        run: |
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node -p onebrain-api -p onebrain-cli
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node --no-default-features --features base-v1
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-api --no-default-features --features base-v1
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-cli --no-default-features --features base-v1
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node --no-default-features --features base-v1,legacy-read-compat
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-api --no-default-features --features base-v1,legacy-read-compat
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-cli --no-default-features --features base-v1,legacy-read-compat
+          cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node -p onebrain-api -p onebrain-cli --features onebrain-node/vnext-network-runtime,onebrain-api/vnext-network-runtime,onebrain-cli/vnext-network-runtime
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-api --features legacy-read-compat --test base_contract
+          cargo test --locked --manifest-path src/Cargo.toml -p onebrain-cli --test version
+          $nativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+          $PSNativeCommandUseErrorActionPreference = $false
+          try {
+            cargo check --locked --manifest-path src/Cargo.toml -p onebrain-node --no-default-features --features legacy-read-compat
+            if ($LASTEXITCODE -eq 0) { throw "forbidden Node feature combination compiled" }
+            cargo check --locked --manifest-path src/Cargo.toml -p onebrain-api --no-default-features --features legacy-read-compat
+            if ($LASTEXITCODE -eq 0) { throw "forbidden API feature combination compiled" }
+            cargo check --locked --manifest-path src/Cargo.toml -p onebrain-cli --no-default-features --features legacy-read-compat
+            if ($LASTEXITCODE -eq 0) { throw "forbidden CLI feature combination compiled" }
+          } finally {
+            $PSNativeCommandUseErrorActionPreference = $nativeErrorPreference
+            $global:LASTEXITCODE = 0
+          }
+
   macos-arm64-soak-smoke:
     runs-on: macos-15
     timeout-minutes: 90
@@ -98,11 +189,15 @@ jobs:
   foundation-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      BASELINE_RECEIPT_JSON: ${{ vars.ONEBRAIN_BASE_V1_IDL_BASELINE_RECEIPT }}
     defaults:
       run:
         working-directory: src
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
@@ -117,6 +212,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src
+
+      - name: Prepare immutable Task 14 baseline
+        working-directory: .
+        run: |
+          test -n "$BASELINE_RECEIPT_JSON"
+          receipt="$RUNNER_TEMP/base-v1-idl-baseline-receipt.json"
+          printf '%s\n' "$BASELINE_RECEIPT_JSON" > "$receipt"
+          git fetch --no-tags origin refs/heads/base-v1-idl-baseline:refs/heads/base-v1-idl-baseline
+          printf 'BASE_V1_IDL_BASELINE_RECEIPT=%s\n' "$receipt" >> "$GITHUB_ENV"
+
+      - name: Install reviewed Python contract dependency
+        working-directory: .
+        run: |
+          printf '%s\n' 'blake3==1.0.8 --hash=sha256:d17eb6382634b3a5bc0c0e0454d5265b0becaeeadb6801ed25150b39a999d0cc --hash=sha256:e4072196547484c95a5a09adbb952e9bb501949f03f9e2a85e7249ef85faaba8 --hash=sha256:1af0e5a29aa56d4fba904452ae784740997440afd477a15e583c38338e641f41 --hash=sha256:9456c829601d72852d8ba0af8dae0610f7def1d59f5942efde1e2ef93e8a8b57 --hash=sha256:3cec94ed5676821cf371e9c9d25a41b4f3ebdb5724719b31b2749653b7cc1dfa --hash=sha256:3168c457255b5d2a2fc356ba696996fcaff5d38284f968210d54376312107662' > "$RUNNER_TEMP/blake3-requirements.txt"
+          python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/blake3-requirements.txt"
 
       - name: Validate task graph, traceability, vectors, and links
         working-directory: .
@@ -137,9 +247,12 @@ jobs:
           python -m unittest scripts.ci.test_validate_vnext_p5_canary_preflight
           python -m unittest scripts.ci.test_validate_vnext_p5_operations_preflight
           python -m unittest scripts.ci.test_validate_concept_registry_operations
+          python -m unittest scripts.ci.test_validate_concept_registry_production_qualification
+          python -m unittest scripts.ci.test_validate_concept_registry_runner
           python -m unittest scripts.ci.test_validate_vnext_soak_runner_kit
           python -m unittest scripts.ci.test_validate_vnext_macos_soak_runner_kit
           bash -n scripts/runner/onebrain-soak-runner.sh
+          bash -n scripts/runner/onebrain-registry-runner.sh
           bash scripts/ci/test_onebrain_soak_runner_macos.sh
 
       - name: P3.4 Web UX build, lint, and receipt contract
@@ -152,6 +265,8 @@ jobs:
 
       - name: Build and verify a small Concept Registry fixture
         working-directory: .
+        env:
+          ONEBRAIN_REGISTRY_EVIDENCE_TIER: fixture
         run: |
           python -m pip install --requirement scripts/concept_registry/requirements.txt
           python -m unittest scripts/concept_registry/test_build_obr.py
@@ -178,6 +293,7 @@ jobs:
           ku-core/src/foundation/affordance.rs
           ku-core/src/foundation/assembly.rs
           ku-core/src/foundation/authority.rs
+          ku-core/src/foundation/base_profile.rs
           ku-core/src/foundation/mod.rs
           ku-core/src/foundation/canonical.rs
           ku-core/src/foundation/capability.rs
@@ -220,6 +336,7 @@ jobs:
           ku-core/examples/concept_registry_release.rs
           ku-core/examples/registry_probe.rs
           ku-core/examples/foundation_vector_digests.rs
+          ku-core/tests/base_profile_conformance.rs
           ku-ai/src/vnext_manifest.rs
           ku-ai/src/vnext_executor.rs
           ku-ai/src/vnext_fidelity.rs
@@ -339,6 +456,9 @@ jobs:
 
       - name: Test canonical foundation
         run: cargo test --locked -p ku-core foundation
+
+      - name: Test frozen Base profile registry
+        run: cargo test --locked -p ku-core --test base_profile_conformance
 
       - name: Test feed signer custody and pre-side-effect failures
         run: >-
@@ -548,15 +668,35 @@ jobs:
     name: Default-feature workspace baseline (Linux)
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      BASELINE_RECEIPT_JSON: ${{ vars.ONEBRAIN_BASE_V1_IDL_BASELINE_RECEIPT }}
     defaults:
       run:
         working-directory: src
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Prepare immutable Task 14 baseline
+        working-directory: .
+        run: |
+          test -n "$BASELINE_RECEIPT_JSON"
+          receipt="$RUNNER_TEMP/base-v1-idl-baseline-receipt.json"
+          printf '%s\n' "$BASELINE_RECEIPT_JSON" > "$receipt"
+          git fetch --no-tags origin refs/heads/base-v1-idl-baseline:refs/heads/base-v1-idl-baseline
+          printf 'BASE_V1_IDL_BASELINE_RECEIPT=%s\n' "$receipt" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src
+      - name: Install generated-contract hash dependency
+        working-directory: .
+        run: |
+          printf '%s\n' 'blake3==1.0.8 --hash=sha256:d17eb6382634b3a5bc0c0e0454d5265b0becaeeadb6801ed25150b39a999d0cc --hash=sha256:e4072196547484c95a5a09adbb952e9bb501949f03f9e2a85e7249ef85faaba8 --hash=sha256:1af0e5a29aa56d4fba904452ae784740997440afd477a15e583c38338e641f41 --hash=sha256:9456c829601d72852d8ba0af8dae0610f7def1d59f5942efde1e2ef93e8a8b57 --hash=sha256:3cec94ed5676821cf371e9c9d25a41b4f3ebdb5724719b31b2749653b7cc1dfa --hash=sha256:3168c457255b5d2a2fc356ba696996fcaff5d38284f968210d54376312107662' > "$RUNNER_TEMP/blake3-requirements.txt"
+          python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/blake3-requirements.txt"
       - name: Test the full workspace with default features
         run: cargo test --workspace --locked -- --test-threads=2
 
@@ -678,8 +818,31 @@ jobs:
       - name: M5.4 deterministic parser corpus smoke
         run: >-
           cargo run --locked -p onebrain-node
-          --features vnext-chaos-harness
+          --features vnext-chaos-harness,vnext-outbound-first
           --example dr_m5_fuzz_corpus_smoke
+      - name: Outbound-first runner contract unit tests
+        working-directory: .
+        run: >-
+          python -m unittest
+          scripts.ci.test_run_vnext_low_resource_matrix
+          scripts.ci.test_run_vnext_namespace_matrix -v
+      - name: Outbound-first deterministic adversarial and platform matrix
+        working-directory: .
+        run: >-
+          cargo test --locked --manifest-path src/Cargo.toml
+          -p onebrain-node --features vnext-outbound-first
+          --test vnext_outbound_first_matrix -- --test-threads=1
+      - name: Outbound-first constrained 512-MiB matrix
+        working-directory: .
+        run: >-
+          python scripts/ci/run_vnext_low_resource_matrix.py
+          --manifest-path src/Cargo.toml --test vnext_outbound_first_matrix
+      - name: Outbound-first privileged namespace matrix
+        working-directory: .
+        run: >-
+          python scripts/ci/run_vnext_namespace_matrix.py
+          --manifest-path src/Cargo.toml --test vnext_outbound_first_matrix
+          --apparmor-unconfined
       - name: M5.5 operational compaction and process-kill recovery
         run: >-
           cargo test --locked -p ku-net

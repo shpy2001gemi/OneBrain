@@ -533,7 +533,7 @@ mod tests {
         ];
         let results = engine.find_consolidation_candidates(&candidates, 0.4);
         // cid(2) should be excluded (too low), others should pass
-        assert!(results.len() >= 1, "should find at least 1 candidate");
+        assert!(!results.is_empty(), "should find at least 1 candidate");
         assert!(
             results.iter().all(|r| r.cid != cid(2)),
             "low-activity candidate should be excluded"

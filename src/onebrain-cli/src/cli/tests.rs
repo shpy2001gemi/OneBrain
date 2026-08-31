@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod cases {
     use crate::cli::helpers::*;
 
     // ── format_timestamp ─────────────────────────────────────────────────

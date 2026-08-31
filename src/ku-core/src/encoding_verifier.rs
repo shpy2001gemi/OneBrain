@@ -67,16 +67,8 @@ pub fn decomposition_agreement(a: &DecompositionResult, b: &DecompositionResult)
     }
 
     // Factor 2: Opcode type overlap (0.3)
-    let opcodes_a: HashSet<u8> = a
-        .instructions
-        .iter()
-        .map(|i| instruction_opcode(i))
-        .collect();
-    let opcodes_b: HashSet<u8> = b
-        .instructions
-        .iter()
-        .map(|i| instruction_opcode(i))
-        .collect();
+    let opcodes_a: HashSet<u8> = a.instructions.iter().map(instruction_opcode).collect();
+    let opcodes_b: HashSet<u8> = b.instructions.iter().map(instruction_opcode).collect();
     let opcode_sim = jaccard_similarity(&opcodes_a, &opcodes_b);
     score += 0.3 * opcode_sim;
 

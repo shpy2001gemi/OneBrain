@@ -179,7 +179,7 @@ impl OBPNode {
     pub fn corroborate(&mut self, cid: &[u8; 32]) {
         let node_num = u64::from_be_bytes(self.node_id.0[0..8].try_into().unwrap());
         if let Some(counter) = self.trust_crdts.get_mut(cid) {
-            counter.increment(node_num);
+            let _ = counter.increment(node_num);
         }
     }
 
@@ -187,18 +187,13 @@ impl OBPNode {
     pub fn challenge(&mut self, cid: &[u8; 32]) {
         let node_num = u64::from_be_bytes(self.node_id.0[0..8].try_into().unwrap());
         if let Some(counter) = self.trust_crdts.get_mut(cid) {
-            counter.decrement(node_num);
+            let _ = counter.decrement(node_num);
         }
     }
 
     /// Get trust score for a KU.
     pub fn trust_score(&self, cid: &[u8; 32]) -> i64 {
         self.trust_crdts.get(cid).map(|c| c.value()).unwrap_or(0)
-    }
-
-    /// Subscribe to a topic domain code.
-    pub fn subscribe_topic(&mut self, domain_code: u16) {
-        self.pubsub.subscribe(domain_code);
     }
 
     /// Summary string for display.
