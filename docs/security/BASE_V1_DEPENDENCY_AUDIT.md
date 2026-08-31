@@ -38,7 +38,7 @@ candidate evidence; Task 27 may impose a stricter no-acceptance rule.
 
 ## Current reviewed snapshot
 
-Review date: 2026-08-11. Candidate integration commit at the start of Task 26:
+Review date: 2026-08-31. Candidate integration commit at the start of Task 26:
 `6f5c44a1940919995c351efbc4a46ef310f21ee3`.
 
 The locked TypeScript audit reports zero vulnerabilities (23 total packages,
@@ -54,6 +54,7 @@ closed set.
 | Advisory | Ecosystem | Base class | Disposition | Owner / expiry / evidence |
 | --- | --- | --- | --- | --- |
 | _none in reviewed npm lock_ | npm | N/A | resolved | raw local npm audit, 2026-08-11 |
+| `RUSTSEC-2026-0258` | Cargo (`h2` via `hyper`/`axum` and `reqwest`) | P2 | resolved | default Base API/Node/CLI path; upgraded locked `h2` from `0.4.15` to patched `0.4.16` on 2026-08-31; `cargo-audit 0.22.2` then reports zero vulnerabilities |
 | `RUSTSEC-2026-0221` | Cargo (`event-listener` via desktop notification/single-instance) | P2 | documented-non-base | desktop-only target-all tree; revisit before desktop release |
 | `RUSTSEC-2024-0429` | Cargo (`glib` via Tauri GTK) | P2 | documented-non-base | desktop-only target-all tree; revisit before desktop release |
 | `RUSTSEC-2024-0411`, `0412`, `0413`, `0414`, `0415`, `0416`, `0417`, `0418`, `0419`, `0420` | Cargo (GTK3 bindings) | P3 | documented-non-base | unmaintained desktop-only GTK stack |
