@@ -388,8 +388,12 @@ impl<R: FixedLinuxCommandRunner> P5LinuxAdminBackend<R> {
             P5FaultKindV2::SeedOutage | P5FaultKindV2::SelectedRelayShutdown => {
                 vec![fixed_systemctl(&["stop", P5_RELAY_SERVICE])]
             }
+            // Keep the socket unit active so the agent's Requires= dependency
+            // cannot propagate this typed signer fault into an agent stop.
+            // Runtime-masking the service prevents the live socket from
+            // activating a replacement signer while the fault is applied.
             P5FaultKindV2::SignerOutage => vec![
-                fixed_systemctl(&["stop", P5_IDENTITY_SOCKET]),
+                fixed_systemctl(&["mask", "--runtime", P5_IDENTITY_SERVICE]),
                 fixed_systemctl(&["stop", P5_IDENTITY_SERVICE]),
             ],
             P5FaultKindV2::DiskPressure
@@ -436,7 +440,7 @@ impl<R: FixedLinuxCommandRunner> P5LinuxAdminBackend<R> {
                 vec![fixed_systemctl(&["start", P5_RELAY_SERVICE])]
             }
             P5FaultKindV2::SignerOutage => vec![
-                fixed_systemctl(&["start", P5_IDENTITY_SOCKET]),
+                fixed_systemctl(&["unmask", "--runtime", P5_IDENTITY_SERVICE]),
                 fixed_systemctl(&["start", P5_IDENTITY_SERVICE]),
             ],
             P5FaultKindV2::DiskPressure
@@ -1358,15 +1362,32 @@ mod tests {
     }
 
     #[test]
-    fn signer_outage_stops_socket_before_service_and_restores_in_order() {
+    fn signer_outage_masks_only_service_and_preserves_agent_socket_dependency() {
         let backend = P5LinuxAdminBackend::new(RecordingRunner::default());
-        backend.apply(P5FaultKindV2::SignerOutage, &[]).unwrap();
-        backend.clear(P5FaultKindV2::SignerOutage).unwrap();
+        assert_eq!(
+            backend
+                .apply(P5FaultKindV2::SignerOutage, &[])
+                .unwrap()
+                .command_count,
+            2
+        );
+        assert_eq!(
+            backend
+                .clear(P5FaultKindV2::SignerOutage)
+                .unwrap()
+                .command_count,
+            2
+        );
         let calls = backend.runner.0.lock().unwrap();
-        assert_eq!(calls[0].1, vec!["stop", P5_IDENTITY_SOCKET]);
+        assert_eq!(calls[0].1, vec!["mask", "--runtime", P5_IDENTITY_SERVICE]);
         assert_eq!(calls[1].1, vec!["stop", P5_IDENTITY_SERVICE]);
-        assert_eq!(calls[2].1, vec!["start", P5_IDENTITY_SOCKET]);
+        assert_eq!(calls[2].1, vec!["unmask", "--runtime", P5_IDENTITY_SERVICE]);
         assert_eq!(calls[3].1, vec!["start", P5_IDENTITY_SERVICE]);
+        assert!(calls.iter().all(|(_, args)| {
+            !args
+                .iter()
+                .any(|argument| argument == P5_IDENTITY_SOCKET || argument == P5_AGENT_SERVICE)
+        }));
     }
 
     #[test]
