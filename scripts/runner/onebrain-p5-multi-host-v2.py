@@ -1411,28 +1411,50 @@ def _selected_relay_failover(
         admin_responses[phase] = response
         admin_sequence += 1
     failure_observed_at = int(time.time())
-    _, agent_sequence, resumed_ring = reconnect_existing_ring(
-        executor, hosts, agents, request, controller, advertisements,
-        agent_sequence=agent_sequence,
-        deadline_monotonic_ns=deadline_monotonic_ns,
-    )
-    resumed_outgoing = resumed_ring[source]["outgoing"]
-    alternate_relay = resumed_outgoing.get("selected_relay")
-    if not isinstance(alternate_relay, str) or alternate_relay == selected_relay:
-        raise P5ExecutionError("route did not fail over to a distinct pre-reserved relay")
-    reservations = advertisements[source].get("reservation_records")
-    if not isinstance(reservations, list):
-        raise P5ExecutionError("source advertisement lacks reservation evidence")
-    by_relay = {str(value.get("relay_node_id")): value for value in reservations if isinstance(value, dict)}
-    if selected_relay not in by_relay or alternate_relay not in by_relay:
-        raise P5ExecutionError("selected/alternate relay was not pre-reserved")
-    agent_sequence, resumed_checkpoints = _record_checkpoints(
-        executor, hosts, agents, request, controller, advertisements, resumed_ring,
-        acknowledged_sequence=2,
-        basis=checkpoints,
-        agent_sequence=agent_sequence,
-        deadline_monotonic_ns=deadline_monotonic_ns,
-    )
+    try:
+        _, agent_sequence, resumed_ring = reconnect_existing_ring(
+            executor, hosts, agents, request, controller, advertisements,
+            agent_sequence=agent_sequence,
+            deadline_monotonic_ns=deadline_monotonic_ns,
+        )
+        resumed_outgoing = resumed_ring[source]["outgoing"]
+        alternate_relay = resumed_outgoing.get("selected_relay")
+        if not isinstance(alternate_relay, str) or alternate_relay == selected_relay:
+            raise P5ExecutionError("route did not fail over to a distinct pre-reserved relay")
+        reservations = advertisements[source].get("reservation_records")
+        if not isinstance(reservations, list):
+            raise P5ExecutionError("source advertisement lacks reservation evidence")
+        by_relay = {
+            str(value.get("relay_node_id")): value
+            for value in reservations
+            if isinstance(value, dict)
+        }
+        if selected_relay not in by_relay or alternate_relay not in by_relay:
+            raise P5ExecutionError("selected/alternate relay was not pre-reserved")
+        agent_sequence, resumed_checkpoints = _record_checkpoints(
+            executor, hosts, agents, request, controller, advertisements, resumed_ring,
+            acknowledged_sequence=2,
+            basis=checkpoints,
+            agent_sequence=agent_sequence,
+            deadline_monotonic_ns=deadline_monotonic_ns,
+        )
+    except Exception as failure:
+        try:
+            executor.execute_admin_wave(
+                (relay_host,),
+                (_signed_admin_command(
+                    relay_host, request, controller, admin_sequence, "clear",
+                    fault="selected-relay-shutdown", phase="after",
+                    parameters={"peer_endpoints": endpoints},
+                ),),
+                credentials, receipt_public_keys, deadline_monotonic_ns,
+            )
+        except Exception as cleanup_failure:
+            raise P5ExecutionError(
+                "selected relay failover failed and compensating clear also failed: "
+                f"primary={failure}; cleanup={cleanup_failure}"
+            ) from failure
+        raise
     after = executor.execute_admin_wave(
         (relay_host,),
         (_signed_admin_command(

@@ -33,8 +33,8 @@ use ku_net::vnext_connectivity_signaling::ConnectivitySignalingValidator;
 use ku_net::vnext_reachability_crypto::{
     InMemoryReachabilityReplayStore, KnownPeerIdentity, ReachabilityAdmission,
     ReachabilityAdmissionPreparer, ReachabilityDialValidator, ReachabilityIdentitySigner,
-    ReachabilityLockFreePreparation, ReachabilityRecordAdmission, SystemPublicEndpointResolver,
-    ValidatedReachabilityAdvertisement,
+    ReachabilityLockFreePreparation, ReachabilityRecordAdmission, RelayAdmissionError,
+    SystemPublicEndpointResolver, ValidatedReachabilityAdvertisement,
 };
 #[cfg(unix)]
 use ku_net::vnext_relay_discovery::{
@@ -570,22 +570,12 @@ fn execute_closed_command(
             }
             let advertisement_bytes =
                 decode_hex_vec(command_parameter_string(command, "advertisement_hex")?)?;
-            let advertisement_digest = *blake3::hash(&advertisement_bytes).as_bytes();
-            let advertisement = if let Some((cached_digest, cached)) =
-                state.advertisements.get(expected_peer)
-            {
-                if *cached_digest != advertisement_digest {
-                    return Err("peer advertisement changed without a new session command".into());
-                }
-                cached.clone()
-            } else {
-                let admitted = admit_peer_advertisement(state, &advertisement_bytes, &identity)?;
-                state.advertisements.insert(
-                    expected_peer.to_owned(),
-                    (advertisement_digest, admitted.clone()),
-                );
-                admitted
-            };
+            let advertisement = admit_or_reuse_peer_advertisement(
+                state,
+                expected_peer,
+                &advertisement_bytes,
+                &identity,
+            )?;
             let network = state
                 .network
                 .as_ref()
@@ -980,7 +970,12 @@ fn arm_direct_inbound(
     }
     let advertisement_bytes =
         decode_hex_vec(command_parameter_string(command, "peer_advertisement_hex")?)?;
-    let advertisement = admit_peer_advertisement(state, &advertisement_bytes, &peer_identity)?;
+    let advertisement = admit_or_reuse_peer_advertisement(
+        state,
+        expected_name,
+        &advertisement_bytes,
+        &peer_identity,
+    )?;
     let observation_bytes = decode_hex_vec(command_parameter_string(
         command,
         "peer_reflexive_observation_hex",
@@ -1074,7 +1069,12 @@ fn connect_ring(
         command,
         "outgoing_advertisement_hex",
     )?)?;
-    let outgoing = admit_peer_advertisement(state, &outgoing_bytes, &outgoing_identity)?;
+    let outgoing = admit_or_reuse_peer_advertisement(
+        state,
+        outgoing_name,
+        &outgoing_bytes,
+        &outgoing_identity,
+    )?;
 
     let incoming_name = command_parameter_string(command, "incoming_expected_peer")?;
     let incoming_peer = NodeId::from_bytes(decode_hex::<32>(incoming_name)?);
@@ -1090,7 +1090,12 @@ fn connect_ring(
         command,
         "incoming_advertisement_hex",
     )?)?;
-    let incoming = admit_peer_advertisement(state, &incoming_bytes, &incoming_identity)?;
+    let incoming = admit_or_reuse_peer_advertisement(
+        state,
+        incoming_name,
+        &incoming_bytes,
+        &incoming_identity,
+    )?;
 
     if replace_existing {
         if let Some(previous) = state.sessions.remove(outgoing_name) {
@@ -1239,7 +1244,12 @@ fn connect_ring_edge(
     }
     let advertisement_bytes =
         decode_hex_vec(command_parameter_string(command, "advertisement_hex")?)?;
-    let advertisement = admit_peer_advertisement(state, &advertisement_bytes, &peer_identity)?;
+    let advertisement = admit_or_reuse_peer_advertisement(
+        state,
+        expected_name,
+        &advertisement_bytes,
+        &peer_identity,
+    )?;
 
     if replace_existing {
         if let Some(previous) = state.sessions.remove(expected_name) {
@@ -1484,6 +1494,41 @@ fn admit_peer_advertisement(
         .map_err(|_| "advertisement admission state unavailable")?
         .register_prepared_advertisement(prepared, identity, &reservations, now)
         .map_err(Into::into)
+}
+
+#[cfg(unix)]
+fn admit_or_reuse_peer_advertisement(
+    state: &mut AgentRuntimeState,
+    expected_peer: &str,
+    advertisement_bytes: &[u8],
+    identity: &KnownPeerIdentity,
+) -> Result<ValidatedReachabilityAdvertisement, Box<dyn std::error::Error>> {
+    let advertisement_digest = *blake3::hash(advertisement_bytes).as_bytes();
+    if let Some((cached_digest, cached)) = state.advertisements.get(expected_peer) {
+        if *cached_digest != advertisement_digest {
+            return Err("peer advertisement changed without a new session command".into());
+        }
+        // A controller-authorized reconnect reuses the already admitted
+        // immutable advertisement. Re-registering it would incorrectly cross
+        // the replay boundary a second time and kill the agent.
+        let now = unix_now()?;
+        if cached.canonical().expires_at < now
+            || cached
+                .reservations()
+                .iter()
+                .any(|reservation| reservation.canonical().expires_at < now)
+        {
+            return Err(RelayAdmissionError::Expired.into());
+        }
+        return Ok(cached.clone());
+    }
+
+    let admitted = admit_peer_advertisement(state, advertisement_bytes, identity)?;
+    state.advertisements.insert(
+        expected_peer.to_owned(),
+        (advertisement_digest, admitted.clone()),
+    );
+    Ok(admitted)
 }
 
 #[cfg(unix)]

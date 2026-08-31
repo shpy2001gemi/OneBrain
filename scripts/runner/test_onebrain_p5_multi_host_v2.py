@@ -622,6 +622,97 @@ class P5MultiHostV2Tests(unittest.TestCase):
         self.assertEqual(result[4], failover)
         self.assertTrue(all(row["recovery_marker_verified"] for row in result[5]))
 
+    def test_selected_relay_failure_always_compensates_the_applied_shutdown(self) -> None:
+        hosts = tuple(
+            runner.HostConfigV2(
+                host_id,
+                f"runner-{host_id[-1]}",
+                f"{host_id}.example",
+                22,
+                "runner",
+                "admin",
+                "ssh-ed25519 AAAA",
+                "11" * 32,
+                b"r" * 32,
+                b"a" * 32,
+                "/evidence",
+            )
+            for host_id in runner.REQUIRED_HOSTS
+        )
+        relay_b = "51" * 32
+        relay_c = "61" * 32
+        target = {
+            "peer_endpoints": ["203.0.113.30:443"],
+            "selected_relay": relay_c,
+        }
+        target_receipt = runner.SignedChildReceiptV2(
+            "host-a",
+            140,
+            runner.canonical_json({
+                "result": {
+                    "accepted": True,
+                    "command": "prepare-fault-target",
+                    "target": target,
+                }
+            }),
+        )
+
+        class Executor:
+            def __init__(self) -> None:
+                self.admin_actions: list[str] = []
+
+            def execute_wave(self, agents, commands, deadline):
+                return (target_receipt,)
+
+            def execute_admin_wave(self, hosts, commands, credentials, keys, deadline):
+                frame = json.loads(commands[0].canonical_bytes)
+                self.admin_actions.append(frame["action"])
+                return ({"accepted": True},)
+
+        executor = Executor()
+        ring = {
+            "host-a": {"outgoing": {"path_kind": "RelayTcp443", "selected_relay": relay_c}},
+            "host-b": {"outgoing": {"path_kind": "RelayTcp443", "selected_relay": relay_b}},
+            "host-c": {"outgoing": {"path_kind": "RelayTcp443", "selected_relay": relay_b}},
+        }
+        advertisements = {
+            "host-a": {"peer_node_id": "a1" * 32},
+            "host-b": {"peer_node_id": "b1" * 32},
+            "host-c": {"peer_node_id": "c1" * 32},
+        }
+        inventory = {
+            "hosts": [
+                {"host_id": "host-b", "relay_node_id": relay_b},
+                {"host_id": "host-c", "relay_node_id": relay_c},
+            ]
+        }
+        credentials = runner.ControllerCredentialsV2(Path("app"), Path("ssh"), {})
+
+        with mock.patch.object(
+            runner,
+            "reconnect_existing_ring",
+            side_effect=runner.P5ExecutionError("reconnect replay"),
+        ):
+            with self.assertRaisesRegex(runner.P5ExecutionError, "reconnect replay"):
+                runner._selected_relay_failover(
+                    executor,
+                    hosts,
+                    tuple(FakeAgent(host.host_id, b"") for host in hosts),
+                    credentials,
+                    {host.host_id: b"k" * 32 for host in hosts},
+                    {"expires_at": int(time.time()) + 600, "session_id": "44" * 32},
+                    Ed25519PrivateKey.generate(),
+                    inventory,
+                    advertisements,
+                    ring,
+                    {},
+                    agent_sequence=140,
+                    admin_sequence=41,
+                    deadline_monotonic_ns=time.monotonic_ns() + 1_000_000_000,
+                )
+
+        self.assertEqual(executor.admin_actions, ["observe", "apply", "clear"])
+
     def test_production_entrypoints_do_not_ship_placeholder_backends(self) -> None:
         repository = MODULE_PATH.parents[2]
         sources = {
@@ -642,6 +733,31 @@ class P5MultiHostV2Tests(unittest.TestCase):
         for label, source in sources.items():
             for marker in forbidden:
                 self.assertNotIn(marker, source, f"{label} still contains placeholder backend {marker}")
+
+    def test_ring_reconnect_reuses_the_admitted_peer_advertisement(self) -> None:
+        repository = MODULE_PATH.parents[2]
+        source = (
+            repository / "src/onebrain-node/examples/p5_multi_host_agent_v2.rs"
+        ).read_text(encoding="utf-8")
+        ring_edge = source.split("fn connect_ring_edge(", 1)[1].split(
+            "async fn accept_expected_relay(", 1
+        )[0]
+        cache_helper = source.split(
+            "fn admit_or_reuse_peer_advertisement(", 1
+        )[1].split("fn diagnose_relay_matrix(", 1)[0]
+
+        self.assertIn("admit_or_reuse_peer_advertisement(", ring_edge)
+        self.assertNotIn(
+            "admit_peer_advertisement(state, &advertisement_bytes, &peer_identity)",
+            ring_edge,
+        )
+        self.assertIn("*cached_digest != advertisement_digest", cache_helper)
+        self.assertIn(
+            "peer advertisement changed without a new session command",
+            cache_helper,
+        )
+        self.assertIn("return Ok(cached.clone())", cache_helper)
+        self.assertIn("RelayAdmissionError::Expired", cache_helper)
 
     def test_relay_only_real_ring_and_selected_relay_failover_qualifies(self) -> None:
         result = runner.derive_qualification(_aggregate())
