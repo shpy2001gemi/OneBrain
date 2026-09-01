@@ -112,9 +112,6 @@ jobs:
     timeout-minutes: 240
     env:
       ONEBRAIN_REGISTRY_STAGE_ROOT: ${{ secrets.ONEBRAIN_TASK28_REGISTRY_STAGE_ROOT }}
-      ONEBRAIN_REGISTRY_WORK_ROOT: ${{ runner.temp }}/registry-work-${{ matrix.profile }}
-      ONEBRAIN_REGISTRY_CARGO_TARGET_DIR: ${{ runner.temp }}/registry-cargo-${{ matrix.profile }}
-      ONEBRAIN_REGISTRY_EVIDENCE_ROOT: ${{ runner.temp }}/registry-evidence-${{ matrix.profile }}
       ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE: ${{ secrets.ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE }}
       ONEBRAIN_QUALIFICATION_GPG_HOME: ${{ secrets.ONEBRAIN_QUALIFICATION_GPG_HOME }}
       ONEBRAIN_REGISTRY_RUNNER_LABELS: self-hosted,linux,x64,onebrain-registry-image-v1,${{ matrix.runner_label }}
@@ -125,6 +122,10 @@ jobs:
           persist-credentials: false
           clean: true
       - name: Run fresh candidate-bound resource receipt
+        env:
+          ONEBRAIN_REGISTRY_WORK_ROOT: ${{ runner.temp }}/registry-work-${{ matrix.profile }}
+          ONEBRAIN_REGISTRY_CARGO_TARGET_DIR: ${{ runner.temp }}/registry-cargo-${{ matrix.profile }}
+          ONEBRAIN_REGISTRY_EVIDENCE_ROOT: ${{ runner.temp }}/registry-evidence-${{ matrix.profile }}
         run: |
           bash scripts/runner/onebrain-registry-runner.sh preflight --mode release
           bash scripts/runner/onebrain-registry-runner.sh build --mode release
@@ -134,7 +135,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: registry-raw-resource-${{ matrix.profile }}-${{ github.run_attempt }}
-          path: ${{ env.ONEBRAIN_REGISTRY_EVIDENCE_ROOT }}/raw/resource-${{ matrix.profile }}.json
+          path: ${{ runner.temp }}/registry-evidence-${{ matrix.profile }}/raw/resource-${{ matrix.profile }}.json
           if-no-files-found: error
           retention-days: 90
 
@@ -146,9 +147,6 @@ jobs:
     timeout-minutes: 300
     env:
       ONEBRAIN_REGISTRY_STAGE_ROOT: ${{ secrets.ONEBRAIN_TASK28_REGISTRY_STAGE_ROOT }}
-      ONEBRAIN_REGISTRY_WORK_ROOT: ${{ runner.temp }}/registry-work-kernel
-      ONEBRAIN_REGISTRY_CARGO_TARGET_DIR: ${{ runner.temp }}/registry-cargo-kernel
-      ONEBRAIN_REGISTRY_EVIDENCE_ROOT: ${{ runner.temp }}/registry-evidence-kernel
       ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE: ${{ secrets.ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE }}
       ONEBRAIN_QUALIFICATION_GPG_HOME: ${{ secrets.ONEBRAIN_QUALIFICATION_GPG_HOME }}
       ONEBRAIN_REGISTRY_RUNNER_LABELS: self-hosted,linux,x64,onebrain-registry-image-v1,onebrain-registry-controller
@@ -159,6 +157,10 @@ jobs:
           persist-credentials: false
           clean: true
       - name: Run all non-resource Registry producers
+        env:
+          ONEBRAIN_REGISTRY_WORK_ROOT: ${{ runner.temp }}/registry-work-kernel
+          ONEBRAIN_REGISTRY_CARGO_TARGET_DIR: ${{ runner.temp }}/registry-cargo-kernel
+          ONEBRAIN_REGISTRY_EVIDENCE_ROOT: ${{ runner.temp }}/registry-evidence-kernel
         run: |
           bash scripts/runner/onebrain-registry-runner.sh preflight --mode release
           bash scripts/runner/onebrain-registry-runner.sh kernel --mode release
@@ -167,14 +169,14 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: registry-raw-kernel-${{ github.run_attempt }}
-          path: ${{ env.ONEBRAIN_REGISTRY_EVIDENCE_ROOT }}/raw/*.json
+          path: ${{ runner.temp }}/registry-evidence-kernel/raw/*.json
           if-no-files-found: error
           retention-days: 90
       - name: Retain closed Task 28 Registry measurement binding
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: registry-binding-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
-          path: ${{ env.ONEBRAIN_REGISTRY_EVIDENCE_ROOT }}/task28-registry-binding.json
+          path: ${{ runner.temp }}/registry-evidence-kernel/task28-registry-binding.json
           if-no-files-found: error
           retention-days: 90
 
@@ -186,9 +188,6 @@ jobs:
     timeout-minutes: 120
     env:
       ONEBRAIN_REGISTRY_STAGE_ROOT: ${{ secrets.ONEBRAIN_TASK28_REGISTRY_STAGE_ROOT }}
-      ONEBRAIN_REGISTRY_WORK_ROOT: ${{ runner.temp }}/registry-work-aggregate
-      ONEBRAIN_REGISTRY_CARGO_TARGET_DIR: ${{ runner.temp }}/registry-cargo-aggregate
-      ONEBRAIN_REGISTRY_EVIDENCE_ROOT: ${{ runner.temp }}/registry-evidence-aggregate
       ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE: ${{ secrets.ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE }}
       ONEBRAIN_QUALIFICATION_GPG_HOME: ${{ secrets.ONEBRAIN_QUALIFICATION_GPG_HOME }}
       ONEBRAIN_REGISTRY_RUNNER_LABELS: self-hosted,linux,x64,onebrain-registry-image-v1,onebrain-registry-controller
@@ -201,21 +200,25 @@ jobs:
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with:
           pattern: registry-raw-*
-          path: ${{ env.ONEBRAIN_REGISTRY_EVIDENCE_ROOT }}/raw
+          path: ${{ runner.temp }}/registry-evidence-aggregate/raw
           merge-multiple: true
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with:
           name: registry-binding-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
-          path: ${{ env.ONEBRAIN_REGISTRY_EVIDENCE_ROOT }}
+          path: ${{ runner.temp }}/registry-evidence-aggregate
       - name: Derive Registry production qualification from signed children
+        env:
+          ONEBRAIN_REGISTRY_WORK_ROOT: ${{ runner.temp }}/registry-work-aggregate
+          ONEBRAIN_REGISTRY_CARGO_TARGET_DIR: ${{ runner.temp }}/registry-cargo-aggregate
+          ONEBRAIN_REGISTRY_EVIDENCE_ROOT: ${{ runner.temp }}/registry-evidence-aggregate
         run: bash scripts/runner/onebrain-registry-runner.sh aggregate --mode release
       - name: Retain Registry aggregate and its measured binding
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: registry-production-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
           path: |
-            ${{ env.ONEBRAIN_REGISTRY_EVIDENCE_ROOT }}/production-aggregate.json
-            ${{ env.ONEBRAIN_REGISTRY_EVIDENCE_ROOT }}/task28-registry-binding.json
+            ${{ runner.temp }}/registry-evidence-aggregate/production-aggregate.json
+            ${{ runner.temp }}/registry-evidence-aggregate/task28-registry-binding.json
           if-no-files-found: error
           retention-days: 90
 
