@@ -8690,6 +8690,8 @@ def validate_base_v1_candidate_workflow(
         "expected_task28_targets",
         "candidate-semantic-evidence.json",
         "COMPATIBILITY_TUPLE_FIELDS",
+        "canonical_compatibility_tuple_from_runtime_status",
+        "canonical compatibility tuple field set drift",
         "base-status candidate semantic digest is not reproducible",
         "base-status artifact tuple digest is not reproducible",
         "candidate-semantic-evidence-linux.json",

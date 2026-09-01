@@ -30,6 +30,7 @@ from verify_base_release_request import (  # noqa: E402
     FROZEN_APPROVER_POLICY,
     ReleaseRequestError,
     canonical_json,
+    canonical_compatibility_tuple_from_runtime_status,
     canonical_compatibility_tuple_bytes,
     bind_task28_registry_measurements,
     verify_release_request,
@@ -274,6 +275,44 @@ class SignedReleaseRequestTests(unittest.TestCase):
             blake3.blake3(artifact, derive_key_context="onebrain:base:artifact-tuple:1\0").hexdigest(),
             vector["golden_digests"]["artifact_tuple"],
         )
+
+    def test_runtime_status_projection_converts_digest_keys_to_frozen_hex_keys(self) -> None:
+        vector = json.loads(
+            (SCRIPT_DIR.parents[1] / "src/test-vectors/vnext/base-v1-compatibility-v1.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        expected = vector["baseline"]
+        status = json.loads(json.dumps(expected))
+        status["base_commit"] = {
+            "kind": expected["base_commit"]["kind"],
+            "digest": expected["base_commit"]["hex"],
+        }
+        status["toolchain"] = {
+            "kind": expected["toolchain"]["kind"],
+            "digest": expected["toolchain"]["hex"],
+        }
+        status["candidate_semantic_digest"] = "aa" * 32
+        status["artifact_tuple_digest"] = "bb" * 32
+
+        self.assertEqual(
+            canonical_compatibility_tuple_from_runtime_status(status), expected
+        )
+
+    def test_runtime_status_projection_rejects_ambiguous_commit_shape(self) -> None:
+        vector = json.loads(
+            (SCRIPT_DIR.parents[1] / "src/test-vectors/vnext/base-v1-compatibility-v1.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        status = json.loads(json.dumps(vector["baseline"]))
+        status["base_commit"]["digest"] = status["base_commit"]["hex"]
+        status["toolchain"] = {
+            "kind": "known",
+            "digest": status["toolchain"]["hex"],
+        }
+        with self.assertRaisesRegex(ReleaseRequestError, "runtime base_commit"):
+            canonical_compatibility_tuple_from_runtime_status(status)
 
     def test_production_verifier_api_has_no_executable_or_policy_mode_injection(self) -> None:
         parameters = inspect.signature(verify_release_request).parameters

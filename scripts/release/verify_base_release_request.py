@@ -575,6 +575,45 @@ COMPATIBILITY_TUPLE_FIELDS = (
 )
 
 
+def canonical_compatibility_tuple_from_runtime_status(
+    value: object,
+) -> dict[str, object]:
+    """Convert the CLI runtime-status JSON projection to the frozen tuple JSON."""
+    if not isinstance(value, dict):
+        raise ReleaseRequestError("Base runtime status must be an object")
+    missing = set(COMPATIBILITY_TUPLE_FIELDS) - set(value)
+    if missing:
+        raise ReleaseRequestError(
+            f"Base runtime status is missing compatibility fields: {sorted(missing)}"
+        )
+    result = {field: value[field] for field in COMPATIBILITY_TUPLE_FIELDS}
+
+    commit = _closed(result["base_commit"], {"kind", "digest"}, "runtime base_commit")
+    sizes = {"sha1": 40, "sha256": 64}
+    kind = commit["kind"]
+    if not isinstance(kind, str) or kind not in sizes:
+        raise ReleaseRequestError("runtime base_commit kind is invalid")
+    result["base_commit"] = {
+        "kind": kind,
+        "hex": _hex(commit["digest"], "runtime base_commit.digest", (sizes[kind],)),
+    }
+
+    toolchain = _closed(
+        result["toolchain"], {"kind", "digest"}, "runtime toolchain"
+    )
+    if toolchain["kind"] != "known":
+        raise ReleaseRequestError("qualification runtime toolchain must be known")
+    result["toolchain"] = {
+        "kind": "known",
+        "hex": _hex(toolchain["digest"], "runtime toolchain.digest"),
+    }
+
+    # Validate every remaining nested field and scalar using the same frozen
+    # encoder that consumes the returned object.
+    canonical_compatibility_tuple_bytes(result, include_artifact_fields=True)
+    return result
+
+
 def canonical_compatibility_tuple_bytes(
     value: object, *, include_artifact_fields: bool
 ) -> bytes:

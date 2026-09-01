@@ -298,6 +298,7 @@ jobs:
 
           from scripts.release.verify_base_release_request import (
               COMPATIBILITY_TUPLE_FIELDS,
+              canonical_compatibility_tuple_from_runtime_status,
               canonical_compatibility_tuple_bytes,
               canonical_json,
           )
@@ -306,7 +307,9 @@ jobs:
           status = json.loads(
               (root / "base-status.json").read_text(encoding="utf-8-sig")
           )
-          value = {field: status[field] for field in COMPATIBILITY_TUPLE_FIELDS}
+          value = canonical_compatibility_tuple_from_runtime_status(status)
+          if set(value) != set(COMPATIBILITY_TUPLE_FIELDS):
+              raise SystemExit("canonical compatibility tuple field set drift")
           semantic = blake3.blake3(
               canonical_compatibility_tuple_bytes(
                   value, include_artifact_fields=False
