@@ -11,6 +11,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  RELEASE_VERIFIER_REQUIREMENTS: |
+    blake3==1.0.8 --hash=sha256:d17eb6382634b3a5bc0c0e0454d5265b0becaeeadb6801ed25150b39a999d0cc --hash=sha256:e4072196547484c95a5a09adbb952e9bb501949f03f9e2a85e7249ef85faaba8 --hash=sha256:1af0e5a29aa56d4fba904452ae784740997440afd477a15e583c38338e641f41 --hash=sha256:9456c829601d72852d8ba0af8dae0610f7def1d59f5942efde1e2ef93e8a8b57 --hash=sha256:3cec94ed5676821cf371e9c9d25a41b4f3ebdb5724719b31b2749653b7cc1dfa --hash=sha256:3168c457255b5d2a2fc356ba696996fcaff5d38284f968210d54376312107662
+    cryptography==46.0.7 --hash=sha256:42a1e5f98abb6391717978baf9f90dc28a743b7d9be7f0751a6f56a75d14065b
+    cffi==2.0.0 --hash=sha256:c8d3b5532fc71b7a77c09192b4a5a200ea992702734a2e9279a37f2478236f26
+    pycparser==3.0 --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
   REQUEST_FILE: ${{ secrets.ONEBRAIN_BASE_RELEASE_REQUEST }}
   REQUEST_SIGNATURE: ${{ secrets.ONEBRAIN_BASE_RELEASE_REQUEST_SIGNATURE }}
   APPROVER_POLICY: ${{ secrets.ONEBRAIN_QUALIFICATION_APPROVER_POLICY }}
@@ -39,14 +45,64 @@ jobs:
           ref: main
           persist-credentials: false
           clean: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13'
+      - name: Install hash-pinned release verifier dependencies
+        shell: bash
+        run: |
+          printf '%s\n' "$RELEASE_VERIFIER_REQUIREMENTS" > "$RUNNER_TEMP/release-verifier-requirements.txt"
+          python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/release-verifier-requirements.txt"
+      - name: Authenticate signed request before candidate bootstrap
+        id: bootstrap
+        shell: bash
+        run: |
+          python - "$GITHUB_OUTPUT" "$RUNNER_TEMP/bootstrap-verified-release-request.json" <<'PY'
+          import json
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          from scripts.release.verify_base_release_request import verify_task28_release_request
+
+          output, receipt = map(Path, sys.argv[1:])
+          verified = verify_task28_release_request(
+              Path(os.environ["REQUEST_FILE"]),
+              Path(os.environ["REQUEST_SIGNATURE"]),
+              Path(os.environ["APPROVER_POLICY"]),
+              gpg_home=Path(os.environ["QUALIFICATION_GPG_HOME"]),
+              candidate_root=None,
+          ).as_dict()
+          commit = verified["run_context"]["candidate_commit"]
+          if re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+              raise SystemExit("authenticated bootstrap candidate is not a full SHA-1 commit")
+          receipt.write_text(
+              json.dumps(verified, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          with output.open("a", encoding="utf-8") as stream:
+              stream.write(f"candidate_commit={commit}\n")
+          PY
+      - name: Checkout authenticated signed candidate verifier
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ steps.bootstrap.outputs.candidate_commit }}
+          path: signed-candidate
+          persist-credentials: false
+          clean: true
       - name: Verify candidate-owned request bytes and signature
-        run: >-
-          python scripts/release/verify_base_release_request.py
-          --request "$REQUEST_FILE"
-          --signature "$REQUEST_SIGNATURE"
-          --policy "$APPROVER_POLICY"
-          --gpg-home "$QUALIFICATION_GPG_HOME"
-          > "$RUNNER_TEMP/verified-release-request.json"
+        shell: bash
+        run: |
+          python "$GITHUB_WORKSPACE/signed-candidate/scripts/release/verify_base_release_request.py" \
+            --request "$REQUEST_FILE" \
+            --signature "$REQUEST_SIGNATURE" \
+            --policy "$APPROVER_POLICY" \
+            --gpg-home "$QUALIFICATION_GPG_HOME" \
+            > "$RUNNER_TEMP/verified-release-request.json"
+          cmp --silent \
+            "$RUNNER_TEMP/bootstrap-verified-release-request.json" \
+            "$RUNNER_TEMP/verified-release-request.json"
       - name: Derive only authenticated pre-measurement identity
         id: identity
         shell: bash
@@ -65,8 +121,8 @@ jobs:
       - name: Reconfirm exact checked-out candidate identity
         shell: bash
         run: |
-          test "$(git rev-parse HEAD)" = "${{ steps.identity.outputs.candidate_commit }}"
-          test "$(git rev-parse HEAD^{tree})" = "${{ steps.identity.outputs.candidate_tree }}"
+          test "$(git -C "$GITHUB_WORKSPACE/signed-candidate" rev-parse HEAD)" = "${{ steps.identity.outputs.candidate_commit }}"
+          test "$(git -C "$GITHUB_WORKSPACE/signed-candidate" rev-parse HEAD^{tree})" = "${{ steps.identity.outputs.candidate_tree }}"
       - name: Preserve verified request context
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -87,6 +143,14 @@ jobs:
           ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
           persist-credentials: false
           clean: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13'
+      - name: Install hash-pinned release verifier dependencies
+        shell: bash
+        run: |
+          printf '%s\n' "$RELEASE_VERIFIER_REQUIREMENTS" > "$RUNNER_TEMP/release-verifier-requirements.txt"
+          python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/release-verifier-requirements.txt"
       - name: Rehash and verify final Registry output without rebuilding sources
         run: >-
           python scripts/release/task28_prebuilt_registry.py verify
@@ -128,6 +192,14 @@ jobs:
           ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
           persist-credentials: false
           clean: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13'
+      - name: Install hash-pinned release verifier dependencies
+        shell: bash
+        run: |
+          printf '%s\n' "$RELEASE_VERIFIER_REQUIREMENTS" > "$RUNNER_TEMP/release-verifier-requirements.txt"
+          python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/release-verifier-requirements.txt"
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with:
           name: registry-prebuilt-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
@@ -207,6 +279,14 @@ jobs:
           ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
           persist-credentials: false
           clean: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13'
+      - name: Install hash-pinned release verifier dependencies
+        shell: bash
+        run: |
+          printf '%s\n' "$RELEASE_VERIFIER_REQUIREMENTS" > "$RUNNER_TEMP/release-verifier-requirements.txt"
+          python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/release-verifier-requirements.txt"
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with: {name: "registry-prebuilt-${{ needs.verify-exact-release-request.outputs.release_request_digest }}", path: "${{ runner.temp }}/registry"}
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
@@ -268,6 +348,14 @@ jobs:
           ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
           persist-credentials: false
           clean: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.13'
+      - name: Install hash-pinned release verifier dependencies
+        shell: bash
+        run: |
+          printf '%s\n' "$RELEASE_VERIFIER_REQUIREMENTS" > "$RUNNER_TEMP/release-verifier-requirements.txt"
+          python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/release-verifier-requirements.txt"
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with: {pattern: base-v1-soak-raw-*, path: "${{ runner.temp }}/soak-raw"}
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0

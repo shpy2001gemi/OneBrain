@@ -26,6 +26,11 @@ Do not pass a candidate SHA, tree, Registry root or session as a dispatch
 input. The workflow derives these values from the verified request and fails
 closed when checkout or measured bytes differ.
 
+The controller first authenticates the signed request with the frozen approver
+allowlist without executing candidate code.  It then checks out the resulting
+full commit into a separate clean directory and reruns the verifier from those
+exact signed-candidate bytes before publishing any workflow identity output.
+
 ## Required external secret mounts
 
 - `ONEBRAIN_BASE_RELEASE_REQUEST`
