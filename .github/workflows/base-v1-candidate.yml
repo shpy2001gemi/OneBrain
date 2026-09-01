@@ -60,7 +60,8 @@ jobs:
           path: ${{ runner.temp }}/base-v1-signed-release-request
           run-id: ${{ inputs.signed_request_run_id }}
           github-token: ${{ github.token }}
-      - name: Verify signed Task 28 request before deriving any identity
+      - name: Authenticate signed request before candidate bootstrap
+        id: bootstrap
         if: inputs.qualification_mode == 'release'
         shell: bash
         run: |
@@ -74,12 +75,59 @@ jobs:
           install -d -m 700 "$RUNNER_TEMP/qualification-gpg-home"
           gpg --homedir "$RUNNER_TEMP/qualification-gpg-home" --batch --import \
             "$RUNNER_TEMP/base-v1-signed-release-request/approver-public-key.gpg"
-          python scripts/release/verify_base_release_request.py \
+          PYTHONDONTWRITEBYTECODE=1 python - \
+            "$GITHUB_OUTPUT" \
+            "$RUNNER_TEMP/bootstrap-verified-base-release-request.json" \
+            "$RUNNER_TEMP/base-v1-signed-release-request/request.json" \
+            "$RUNNER_TEMP/base-v1-signed-release-request/request.json.asc" \
+            "$RUNNER_TEMP/base-v1-signed-release-request/approver-policy.json" \
+            "$RUNNER_TEMP/qualification-gpg-home" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          from scripts.release.verify_base_release_request import verify_task28_release_request
+
+          output, receipt, request, signature, policy, gpg_home = map(Path, sys.argv[1:])
+          verified = verify_task28_release_request(
+              request,
+              signature,
+              policy,
+              gpg_home=gpg_home,
+              candidate_root=None,
+          ).as_dict()
+          commit = verified["run_context"]["candidate_commit"]
+          if re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+              raise SystemExit("authenticated bootstrap candidate is not a full SHA-1 commit")
+          receipt.write_text(
+              json.dumps(verified, sort_keys=True, separators=(",", ":")) + "\n",
+              encoding="utf-8",
+          )
+          with output.open("a", encoding="utf-8") as stream:
+              stream.write(f"candidate_commit={commit}\n")
+          PY
+      - name: Checkout authenticated signed candidate verifier
+        if: inputs.qualification_mode == 'release'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ steps.bootstrap.outputs.candidate_commit }}
+          path: signed-candidate
+          persist-credentials: false
+      - name: Verify signed Task 28 request from the exact candidate
+        if: inputs.qualification_mode == 'release'
+        shell: bash
+        run: |
+          PYTHONDONTWRITEBYTECODE=1 python \
+            "$GITHUB_WORKSPACE/signed-candidate/scripts/release/verify_base_release_request.py" \
             --request "$RUNNER_TEMP/base-v1-signed-release-request/request.json" \
             --signature "$RUNNER_TEMP/base-v1-signed-release-request/request.json.asc" \
             --policy "$RUNNER_TEMP/base-v1-signed-release-request/approver-policy.json" \
             --gpg-home "$RUNNER_TEMP/qualification-gpg-home" \
             > "$RUNNER_TEMP/verified-base-release-request.json"
+          cmp --silent \
+            "$RUNNER_TEMP/bootstrap-verified-base-release-request.json" \
+            "$RUNNER_TEMP/verified-base-release-request.json"
       - name: Derive request, session, commit, and tree without identity inputs
         id: identity
         shell: bash

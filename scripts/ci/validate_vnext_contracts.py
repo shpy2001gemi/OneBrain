@@ -8576,7 +8576,7 @@ def validate_base_v1_candidate_workflow(
         "actions/download-artifact": "634f93cb2916e3fdff6788551b99b062d0335ce0",
     }
     required_action_counts = {
-        "actions/checkout": 3,
+        "actions/checkout": 4,
         "actions/setup-python": 3,
         "actions/setup-node": 1,
         "dart-lang/setup-dart": 1,
@@ -8636,6 +8636,13 @@ def validate_base_v1_candidate_workflow(
         "approver-public-key.gpg",
         "approver-policy.json",
         "verify_base_release_request.py",
+        "Authenticate signed request before candidate bootstrap",
+        "candidate_root=None",
+        "steps.bootstrap.outputs.candidate_commit",
+        "path: signed-candidate",
+        "$GITHUB_WORKSPACE/signed-candidate/scripts/release/verify_base_release_request.py",
+        "bootstrap-verified-base-release-request.json",
+        "PYTHONDONTWRITEBYTECODE=1",
         "github.event.pull_request.head.sha",
         "needs.verify-candidate-identity.outputs.candidate_commit",
         "needs.verify-candidate-identity.outputs.candidate_tree",
