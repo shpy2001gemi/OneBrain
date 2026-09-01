@@ -7576,12 +7576,18 @@ def validate_concept_registry_production_qualification(
         "activation_metadata_fields": ["release_id"],
     }:
         raise ContractError("Concept Registry production verification stamp drift")
-    if release.get("obr_size_bytes") != {
-        "artifact": "concepts.obr",
+    if release.get("registry_data_size_bytes") != {
+        "artifacts": [
+            "concepts.obr",
+            "concepts.obr.labels.idx",
+            "concepts.obr.ccids.idx",
+            "concepts.obr.manifest.json",
+        ],
+        "aggregation": "sum-of-exact-artifact-lengths",
         "minimum": 2_200_000_000,
         "maximum": 2_500_000_000,
     }:
-        raise ContractError("Concept Registry production OBR size bounds drift")
+        raise ContractError("Concept Registry production data size bounds drift")
     if release.get("aggregate_root") != {
         "algorithm": "BLAKE3",
         "domain_hex": (

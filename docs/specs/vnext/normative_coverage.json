@@ -847,7 +847,7 @@
     },
     {
       "path": "docs/specs/vnext/CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1.md",
-      "expected_statement_lines": 30,
+      "expected_statement_lines": 31,
       "evidence": [
         {
           "path": "src/test-vectors/vnext/concept-registry-production-qualification-v1.json",
@@ -862,7 +862,7 @@
           "needle": "test_valid_but_unlisted_signer_is_rejected"
         }
       ],
-      "rationale": "The closed machine profile and mutation suite freeze the exact production release set/root, 2.2 GB-class bounds, four resource profiles, signed-request environment identity, owner-approved Registry signer, candidate binding and failure/release-cycle gates without claiming measured qualification."
+      "rationale": "The closed machine profile and mutation suite freeze the exact production release set/root, the four-file 2.2 GB-class Registry data bounds, four resource profiles, signed-request environment identity, owner-approved Registry signer, candidate binding and failure/release-cycle gates without claiming measured qualification."
     },
     {
       "path": "docs/specs/vnext/BASE_V1_AUTHORITY_AND_RECOVERY_PROFILE.md",

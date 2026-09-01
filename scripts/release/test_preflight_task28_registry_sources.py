@@ -63,8 +63,8 @@ class Task28RegistrySourcePreflightTests(unittest.TestCase):
                 processed_root=processed,
                 checkpoint_root=checkpoints,
                 canonical_input=merged,
-                min_obr_bytes=1,
-                max_obr_bytes=100,
+                min_registry_data_bytes=1,
+                max_registry_data_bytes=10_000,
             )
             self.assertTrue(report["production_ready"])
             self.assertEqual(
@@ -76,8 +76,13 @@ class Task28RegistrySourcePreflightTests(unittest.TestCase):
                 {"processed-output"},
             )
             self.assertEqual(len(report["source_set_blake3"]), 64)
+            expected_bytes = sum(
+                (processed / name).stat().st_size
+                for name in report["registry_data_files"]
+            )
+            self.assertEqual(report["registry_data_bytes"], expected_bytes)
 
-    def test_current_size_class_is_rejected_before_qualification(self) -> None:
+    def test_current_fixture_data_size_is_rejected_before_qualification(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             processed, checkpoints, merged = self._fixture(root)
@@ -87,6 +92,29 @@ class Task28RegistrySourcePreflightTests(unittest.TestCase):
                     checkpoint_root=checkpoints,
                     canonical_input=merged,
                 )
+
+    def test_indexes_and_manifest_are_counted_with_obr(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            processed, checkpoints, merged = self._fixture(root)
+            obr_bytes = (processed / "concepts.obr").stat().st_size
+            registry_data_bytes = sum(
+                (processed / name).stat().st_size
+                for name in (
+                    "concepts.obr",
+                    "concepts.obr.labels.idx",
+                    "concepts.obr.ccids.idx",
+                    "concepts.obr.manifest.json",
+                )
+            )
+            report = inspect_registry_sources(
+                processed_root=processed,
+                checkpoint_root=checkpoints,
+                canonical_input=merged,
+                min_registry_data_bytes=obr_bytes + 1,
+                max_registry_data_bytes=registry_data_bytes,
+            )
+            self.assertEqual(report["registry_data_bytes"], registry_data_bytes)
 
     def test_processed_output_inside_candidate_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -98,8 +126,8 @@ class Task28RegistrySourcePreflightTests(unittest.TestCase):
                     checkpoint_root=checkpoints,
                     canonical_input=merged,
                     candidate_root=root,
-                    min_obr_bytes=1,
-                    max_obr_bytes=100,
+                    min_registry_data_bytes=1,
+                    max_registry_data_bytes=10_000,
                 )
 
 

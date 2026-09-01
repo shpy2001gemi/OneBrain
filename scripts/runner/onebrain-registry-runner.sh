@@ -209,14 +209,19 @@ require_stage() {
         done
     fi
 
-    python3 - "$CANDIDATE_ROOT/concepts.obr" <<'PY'
+    python3 - \
+        "$CANDIDATE_ROOT/concepts.obr" \
+        "$CANDIDATE_ROOT/concepts.obr.labels.idx" \
+        "$CANDIDATE_ROOT/concepts.obr.ccids.idx" \
+        "$CANDIDATE_ROOT/concepts.obr.manifest.json" <<'PY'
 import os
 import sys
 
-size = os.path.getsize(sys.argv[1])
+sizes = {path: os.path.getsize(path) for path in sys.argv[1:]}
+size = sum(sizes.values())
 if not 2_200_000_000 <= size <= 2_500_000_000:
     raise SystemExit(
-        f"candidate concepts.obr is not production-size: {size} bytes"
+        f"candidate Registry data payload is not production-size: {size} bytes"
     )
 PY
     verify_staged_releases

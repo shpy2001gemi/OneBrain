@@ -20,13 +20,16 @@ if __package__ in {None, ""}:
 import blake3
 
 
-MIN_PRODUCTION_OBR_BYTES = 2_200_000_000
-MAX_PRODUCTION_OBR_BYTES = 2_500_000_000
-PROCESSED_FILES = (
+MIN_PRODUCTION_REGISTRY_DATA_BYTES = 2_200_000_000
+MAX_PRODUCTION_REGISTRY_DATA_BYTES = 2_500_000_000
+REGISTRY_DATA_FILES = (
     "concepts.obr",
     "concepts.obr.labels.idx",
     "concepts.obr.ccids.idx",
     "concepts.obr.manifest.json",
+)
+PROCESSED_FILES = (
+    *REGISTRY_DATA_FILES,
     "concepts.obr.verification.json",
 )
 SOURCE_NAMES = {"chebi", "geonames", "ncbi", "wikidata", "wordnet"}
@@ -94,8 +97,8 @@ def inspect_registry_sources(
     checkpoint_root: Path,
     canonical_input: Path,
     candidate_root: Path | None = None,
-    min_obr_bytes: int = MIN_PRODUCTION_OBR_BYTES,
-    max_obr_bytes: int = MAX_PRODUCTION_OBR_BYTES,
+    min_registry_data_bytes: int = MIN_PRODUCTION_REGISTRY_DATA_BYTES,
+    max_registry_data_bytes: int = MAX_PRODUCTION_REGISTRY_DATA_BYTES,
 ) -> dict[str, object]:
     processed = _directory(processed_root, "processed Registry root")
     checkpoints = _directory(checkpoint_root, "Registry checkpoint root")
@@ -109,10 +112,14 @@ def inspect_registry_sources(
         for name in PROCESSED_FILES
     }
     obr_size = processed_paths["concepts.obr"].stat().st_size
-    if not min_obr_bytes <= obr_size <= max_obr_bytes:
+    registry_data_bytes = sum(
+        processed_paths[name].stat().st_size for name in REGISTRY_DATA_FILES
+    )
+    if not min_registry_data_bytes <= registry_data_bytes <= max_registry_data_bytes:
         raise Task28RegistrySourceError(
-            "processed concepts.obr is outside the frozen production interval: "
-            f"{obr_size} bytes (required {min_obr_bytes}..{max_obr_bytes})"
+            "processed Registry data payload is outside the frozen production interval: "
+            f"{registry_data_bytes} bytes "
+            f"(required {min_registry_data_bytes}..{max_registry_data_bytes})"
         )
 
     manifest = _json(processed_paths["concepts.obr.manifest.json"], "OBR manifest")
@@ -184,9 +191,11 @@ def inspect_registry_sources(
         "source_checkpoint_root": str(checkpoints),
         "processed_output_root": str(processed),
         "canonical_input": input_row,
+        "registry_data_bytes": registry_data_bytes,
+        "registry_data_files": list(REGISTRY_DATA_FILES),
         "limits": {
-            "minimum_obr_bytes": min_obr_bytes,
-            "maximum_obr_bytes": max_obr_bytes,
+            "minimum_registry_data_bytes": min_registry_data_bytes,
+            "maximum_registry_data_bytes": max_registry_data_bytes,
         },
         "processed_outputs": [
             {"name": name, **measured[name], "source_kind": "processed-output"}

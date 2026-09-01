@@ -30,8 +30,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 PROFILE = "onebrain/concept-registry-resource-qualification/1"
 PROBE_PROFILE = "onebrain/concept-registry-probe/1"
 QUALIFICATION_PROFILES = ("cold-cache", "low-ram", "ssd", "hdd")
-MIN_PRODUCTION_OBR_BYTES = 2_200_000_000
-MAX_PRODUCTION_OBR_BYTES = 2_500_000_000
+MIN_PRODUCTION_REGISTRY_DATA_BYTES = 2_200_000_000
+MAX_PRODUCTION_REGISTRY_DATA_BYTES = 2_500_000_000
 BUDGETS: dict[str, dict[str, object]] = {
     "ci-small-fixture-v1": {
         "qualification_profiles": ["cold-cache", "low-ram"],
@@ -350,6 +350,10 @@ def _artifact_paths(obr_path: Path) -> list[Path]:
         Path(f"{obr_path}.ccids.idx"),
         Path(f"{obr_path}.manifest.json"),
     ]
+
+
+def _registry_data_bytes(obr_path: Path) -> int:
+    return sum(path.stat().st_size for path in _artifact_paths(obr_path))
 
 
 def _artifact_evidence(
@@ -727,7 +731,7 @@ def evaluate_oracles(
     max_peak_rss_bytes: int,
     *,
     volume_evidence: dict[str, object] | None = None,
-    obr_bytes: int | None = None,
+    registry_data_bytes: int | None = None,
     production_candidate: bool = False,
 ) -> dict[str, bool]:
     probe = execution.get("probe")
@@ -789,10 +793,12 @@ def evaluate_oracles(
             f"unsupported qualification profile: {qualification_profile}"
         )
     if production_candidate:
-        oracles["production_obr_size_is_inclusive"] = (
-            isinstance(obr_bytes, int)
-            and not isinstance(obr_bytes, bool)
-            and MIN_PRODUCTION_OBR_BYTES <= obr_bytes <= MAX_PRODUCTION_OBR_BYTES
+        oracles["production_registry_data_size_is_inclusive"] = (
+            isinstance(registry_data_bytes, int)
+            and not isinstance(registry_data_bytes, bool)
+            and MIN_PRODUCTION_REGISTRY_DATA_BYTES
+            <= registry_data_bytes
+            <= MAX_PRODUCTION_REGISTRY_DATA_BYTES
         )
         oracles["production_reference_host_is_linux"] = sys.platform.startswith(
             "linux"
@@ -860,7 +866,11 @@ def run_qualification(
                 "address-space limit cannot be smaller than the peak RSS budget"
             )
 
+    production_candidate = budget_profile != "ci-small-fixture-v1"
     artifacts = _artifact_evidence(probe_path, obr_path, labels_path)
+    registry_data_bytes = (
+        _registry_data_bytes(obr_path) if production_candidate else None
+    )
     if qualification_profile == "cold-cache":
         cache_preparation = prepare_cold_cache(_artifact_paths(obr_path), cache_strategy)
     else:
@@ -889,12 +899,8 @@ def run_qualification(
         max_p95_us,
         max_peak_rss_bytes,
         volume_evidence=volume_evidence,
-        obr_bytes=(
-            obr_path.stat().st_size
-            if budget_profile != "ci-small-fixture-v1"
-            else None
-        ),
-        production_candidate=budget_profile != "ci-small-fixture-v1",
+        registry_data_bytes=registry_data_bytes,
+        production_candidate=production_candidate,
     )
     return {
         "profile": PROFILE,
@@ -916,6 +922,7 @@ def run_qualification(
         "candidate": {
             "obr_path": str(obr_path.resolve()),
             "obr_bytes": obr_path.stat().st_size if obr_path.is_file() else None,
+            "registry_data_bytes": registry_data_bytes,
         },
         "artifacts": artifacts,
         "cache_preparation": cache_preparation,

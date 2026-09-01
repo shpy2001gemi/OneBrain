@@ -1582,7 +1582,10 @@ git commit -m "feat(base): ship generated projections and default facade"
 
 - The release package has exactly five payload artifacts: `concepts.obr`, `concepts.obr.labels.idx`, `concepts.obr.ccids.idx`, `concepts.obr.manifest.json`, and `sbom.spdx.json`, plus the separate `release.stamp.json` verification stamp.
 - The release aggregate root covers the ordered five-artifact set by kind, filename, exact length, and BLAKE3. `release.stamp.json` signs/binds that root and activation metadata but is not included in the bytes it attests, avoiding self-reference.
-- `concepts.obr` is 2.2 GB-class when `2_200_000_000 <= obr_bytes <= 2_500_000_000`.
+- The Registry data payload is 2.2 GB-class when the exact combined length of
+  `concepts.obr`, `concepts.obr.labels.idx`, `concepts.obr.ccids.idx`, and
+  `concepts.obr.manifest.json` is between 2,200,000,000 and 2,500,000,000 bytes
+  inclusive. SBOM, stamp, verification, and runtime REDb bytes are excluded.
 - Cold-cache: ready ≤180 s, p95 lookup ≤250 ms, peak RSS ≤512 MiB.
 - Low-RAM: ready ≤300 s, p95 lookup ≤500 ms, peak RSS ≤256 MiB under the frozen address-space limit.
 - SSD: ready ≤120 s, p95 lookup ≤100 ms, peak RSS ≤512 MiB.

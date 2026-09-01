@@ -89,8 +89,10 @@ a duration or root gate.
 
 ## Production ordering
 
-1. Build the external full-size Registry candidate and stop if `concepts.obr`
-   is outside the frozen 2.2--2.5 GB interval.
+1. Build the external full-size Registry candidate and stop if the exact sum
+   of `concepts.obr`, its label and CCID indexes, and its manifest is outside
+   the frozen 2.2--2.5 GB interval. Do not count SBOM, stamp, verification, or
+   runtime REDb bytes.
 2. Create and sign one Task 28 request v2 for the exact clean candidate.
 3. Produce a fresh exact-request P5 V2 run on the three physical VPS hosts and
    retain its full native bundle plus protected raw evidence.
