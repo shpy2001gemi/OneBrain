@@ -2587,13 +2587,15 @@ def verify_p5_request(request_path: Path, signature_path: Path, policy_path: Pat
 
 def verify_base_authority(args: argparse.Namespace) -> None:
     """Verify the immutable Task-28 Base V2 request on its dedicated authority path."""
-    from scripts.release.create_base_release_request import verify_task28_release_request
+    from scripts.release.verify_base_release_request import verify_task28_release_request
 
     verify_task28_release_request(
         args.release_request,
         args.release_signature,
         args.base_policy,
         gpg_home=args.base_gpg_home,
+        gpg_executable=Path("/usr/bin/gpg"),
+        candidate_root=Path(__file__).resolve().parents[2],
     )
 
 

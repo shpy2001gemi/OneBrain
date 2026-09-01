@@ -120,7 +120,7 @@ class FakeAgent:
 
 
 class P5MultiHostV2Tests(unittest.TestCase):
-    @mock.patch("scripts.release.create_base_release_request.verify_task28_release_request")
+    @mock.patch("scripts.release.verify_base_release_request.verify_task28_release_request")
     def test_base_authority_uses_task28_v2_verifier(self, verify_task28) -> None:
         args = SimpleNamespace(
             release_request=Path("release-request.json"),
@@ -136,6 +136,8 @@ class P5MultiHostV2Tests(unittest.TestCase):
             args.release_signature,
             args.base_policy,
             gpg_home=args.base_gpg_home,
+            gpg_executable=Path("/usr/bin/gpg"),
+            candidate_root=MODULE_PATH.parents[2],
         )
 
     def test_inventory_known_hosts_uses_plain_default_port_and_bracketed_nondefault_port(self) -> None:

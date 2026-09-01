@@ -176,6 +176,7 @@ def _create_verified_resource_receipt(
     from verify_base_release_request import (
         ReleaseRequestError,
         VerifiedQualificationContextV1,
+        VerifiedQualificationContextV2,
         verify_registry_candidate_measurements,
         verify_registry_candidate_measurements_for_test_nonproduction,
     )
@@ -187,7 +188,9 @@ def _create_verified_resource_receipt(
         trust_policy_digest,
     )
 
-    if not isinstance(verified, VerifiedQualificationContextV1):
+    if not isinstance(
+        verified, (VerifiedQualificationContextV1, VerifiedQualificationContextV2)
+    ):
         raise QualificationError("closed verified release context is required")
     if trust_policy_digest(policy) != verified.bindings["trust_policy_digest"]:
         raise QualificationError("Registry trust policy differs from verified request")
@@ -986,6 +989,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--release-request", type=Path)
     parser.add_argument("--release-request-signature", type=Path)
     parser.add_argument("--qualification-approver-policy", type=Path)
+    parser.add_argument("--task28-registry-binding", type=Path)
     parser.add_argument("--gpg-home", type=Path)
     parser.add_argument("--candidate-root", type=Path)
     parser.add_argument("--registry-root", type=Path)
@@ -1084,14 +1088,30 @@ def main(argv: list[str] | None = None) -> int:
             release_dir = Path(__file__).resolve().parents[1] / "release"
             if str(release_dir) not in sys.path:
                 sys.path.insert(0, str(release_dir))
-            from verify_base_release_request import verify_release_request
+            from verify_base_release_request import (
+                load_task28_registry_measurement_context,
+                verify_release_request,
+                verify_task28_release_request,
+            )
             try:
-                verified = verify_release_request(
-                    args.release_request,
-                    args.release_request_signature,
-                    args.qualification_approver_policy,
-                    args.gpg_home,
-                )
+                if args.task28_registry_binding is None:
+                    verified = verify_release_request(
+                        args.release_request,
+                        args.release_request_signature,
+                        args.qualification_approver_policy,
+                        args.gpg_home,
+                    )
+                else:
+                    verified = verify_task28_release_request(
+                        args.release_request,
+                        args.release_request_signature,
+                        args.qualification_approver_policy,
+                        gpg_home=args.gpg_home,
+                        gpg_executable=Path("/usr/bin/gpg"),
+                    )
+                    verified = load_task28_registry_measurement_context(
+                        verified, args.task28_registry_binding
+                    )
             except RuntimeError as error:
                 raise QualificationError(str(error)) from error
             report = create_verified_resource_receipt(

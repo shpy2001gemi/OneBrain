@@ -14,6 +14,7 @@ import os
 import stat
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -558,7 +559,7 @@ def _read_private_key(path: Path) -> Ed25519PrivateKey:
 def _verify_p5_aggregate_v1(
     aggregate_path: Path,
     verified: dict[str, object],
-) -> str:
+) -> tuple[str, dict[str, str]]:
     encoded = aggregate_path.read_bytes()
     if len(encoded) > 16 * 1024 * 1024:
         raise SoakEvidenceError("P5 aggregate exceeds its bounded input size")
@@ -596,18 +597,20 @@ def _verify_p5_aggregate_v1(
     ):
         raise SoakEvidenceError("P5 aggregate is not production-qualified evidence")
     run = verified["run_context"]
-    release = verified["bindings"]
     binding = report.get("binding")
-    if not isinstance(binding, dict):
+    if not isinstance(binding, dict) or set(binding) != {
+        "release_request_digest", "qualification_session_id", "candidate_commit",
+        "candidate_tree", "candidate_semantic_digest", "linux_artifact_tuple_digest",
+        "toolchain_digest", "runner_bundle_manifest_digest", "agent_binary_digest",
+        "agent_signature_digest", "registry_root", "profile_digest",
+        "trust_policy_digest",
+    }:
         raise SoakEvidenceError("P5 aggregate binding is missing")
     expected_p5 = {
         "release_request_digest": run["release_request_digest"],
         "qualification_session_id": run["qualification_session_id"],
         "candidate_commit": run["candidate_commit"],
         "candidate_tree": run["candidate_tree"],
-        "candidate_semantic_digest": release["candidate_semantic_digest"],
-        "linux_artifact_tuple_digest": release["artifact_tuple_digest"],
-        "registry_root": release["release_aggregate_root"],
         "profile_digest": blake3.blake3(_canonical_json(p5_profile)).hexdigest(),
         "trust_policy_digest": p5_profile["trust_policy"]["digest_hex"],
     }
@@ -643,7 +646,7 @@ def _verify_p5_aggregate_v1(
             p5_profile["child_receipt"]["required_bindings"]
         ):
             raise SoakEvidenceError("P5 child payload has unknown or missing fields")
-        for field, expected in expected_p5.items():
+        for field, expected in binding.items():
             if payload.get(field) != expected:
                 raise SoakEvidenceError(f"P5 child {field} mismatch")
         role = p5_roles.get(payload.get("role"))
@@ -747,7 +750,13 @@ def _verify_p5_aggregate_v1(
         ).verify(bytes.fromhex(str(report["aggregate_signature"])), message)
     except (ValueError, InvalidSignature) as error:
         raise SoakEvidenceError("P5 aggregate signature is invalid") from error
-    return p5_root
+    for field in (
+        "candidate_semantic_digest", "linux_artifact_tuple_digest", "toolchain_digest",
+        "runner_bundle_manifest_digest", "agent_binary_digest", "agent_signature_digest",
+        "registry_root",
+    ):
+        _hex(binding[field], 32, f"P5 aggregate {field}")
+    return p5_root, {str(key): str(value) for key, value in binding.items()}
 
 
 def _load_p5_v2_controller():
@@ -755,6 +764,17 @@ def _load_p5_v2_controller():
     spec = importlib.util.spec_from_file_location("onebrain_p5_multi_host_v2_verify", path)
     if spec is None or spec.loader is None:
         raise SoakEvidenceError("P5 V2 controller implementation is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_p5_v1_bundle_verifier():
+    path = ROOT / "scripts/runner/onebrain-p5-multi-host.py"
+    spec = importlib.util.spec_from_file_location("onebrain_p5_multi_host_v1_bundle_verify", path)
+    if spec is None or spec.loader is None:
+        raise SoakEvidenceError("P5 native bundle verifier is unavailable")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -782,6 +802,40 @@ def _raw_evidence_manifest(root: Path) -> tuple[str, int]:
     return blake3.blake3(_canonical_json(rows)).hexdigest(), len(rows)
 
 
+def _load_canonical_p5_v2_aggregate(
+    aggregate_path: Path,
+    controller: object,
+) -> dict[str, object]:
+    encoded = aggregate_path.read_bytes()
+    if not encoded or len(encoded) > 4_194_304:
+        raise SoakEvidenceError("P5 V2 aggregate is empty or exceeds its bound")
+    try:
+        aggregate = json.loads(encoded)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SoakEvidenceError("P5 V2 aggregate is invalid JSON") from error
+    if not isinstance(aggregate, dict) or aggregate.get("format") != 2:
+        raise SoakEvidenceError("P5 V2 aggregate format mismatch")
+    canonical_json = getattr(controller, "canonical_json", None)
+    if not callable(canonical_json):
+        raise SoakEvidenceError("P5 V2 canonicalizer is unavailable")
+    if encoded not in {canonical_json(aggregate), canonical_json(aggregate) + b"\n"}:
+        raise SoakEvidenceError("P5 V2 aggregate is not canonical")
+    return aggregate
+
+
+def _verify_p5_v2_raw_binding(
+    aggregate: dict[str, object],
+    raw_evidence_root: Path,
+) -> tuple[str, int]:
+    raw_manifest, raw_count = _raw_evidence_manifest(raw_evidence_root)
+    if (
+        aggregate.get("raw_manifest_blake3") != raw_manifest
+        or aggregate.get("raw_object_count") != raw_count
+    ):
+        raise SoakEvidenceError("P5 V2 raw evidence manifest mismatch")
+    return raw_manifest, raw_count
+
+
 def _verify_p5_aggregate_v2(
     *,
     release_request: Path,
@@ -798,9 +852,19 @@ def _verify_p5_aggregate_v2(
     bundle_root: Path,
     registry_candidate_root: Path,
 ) -> dict[str, object]:
-    from scripts.release.verify_base_release_request import ReleaseRequestError, verify_release_request
+    from scripts.release.verify_base_release_request import (
+        ReleaseRequestError,
+        verify_task28_release_request,
+    )
     try:
-        verify_release_request(release_request, release_signature, base_policy, base_gpg_home)
+        verified_base = verify_task28_release_request(
+            release_request,
+            release_signature,
+            base_policy,
+            gpg_home=base_gpg_home,
+            gpg_executable=Path("/usr/bin/gpg"),
+            candidate_root=ROOT,
+        )
     except ReleaseRequestError as error:
         raise SoakEvidenceError(f"Base release request is invalid: {error}") from error
     controller = _load_p5_v2_controller()
@@ -808,21 +872,110 @@ def _verify_p5_aggregate_v2(
         request = controller.verify_p5_request(p5_request, p5_signature, p5_approval_policy, inventory)
     except controller.P5ExecutionError as error:
         raise SoakEvidenceError(str(error)) from error
-    encoded = aggregate_path.read_bytes()
-    if not encoded or len(encoded) > 4_194_304:
-        raise SoakEvidenceError("P5 V2 aggregate is empty or exceeds its bound")
-    try: aggregate = json.loads(encoded)
-    except (UnicodeDecodeError, json.JSONDecodeError) as error: raise SoakEvidenceError("P5 V2 aggregate is invalid JSON") from error
-    if not isinstance(aggregate, dict) or aggregate.get("format") != 2:
-        raise SoakEvidenceError("P5 V2 aggregate format mismatch")
+    base_request = verified_base.request
+    release_bytes = release_request.read_bytes()
+    inventory_bytes = inventory.read_bytes()
+    try:
+        inv = json.loads(inventory_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SoakEvidenceError("P5 V2 inventory is invalid JSON") from error
+    if inventory_bytes not in {
+        controller.canonical_json(inv),
+        controller.canonical_json(inv) + b"\n",
+    }:
+        raise SoakEvidenceError("P5 V2 inventory is not canonical")
+    if request.get("release_request_blake3") != blake3.blake3(release_bytes).hexdigest():
+        raise SoakEvidenceError("P5 V2 request differs from the Base request bytes")
+    try:
+        policy_value = json.loads(p5_approval_policy.read_bytes())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SoakEvidenceError("P5 V2 approval policy is invalid JSON") from error
+    if request.get("p5_approval_policy_blake3") != blake3.blake3(
+        controller.canonical_json(policy_value)
+    ).hexdigest():
+        raise SoakEvidenceError("P5 V2 request approval policy binding mismatch")
+    profile_path = ROOT / "docs/specs/vnext/P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V2.md"
+    vector_path = ROOT / "src/test-vectors/vnext/p5-multi-host-production-qualification-v2.json"
+    if (
+        request.get("profile_blake3") != blake3.blake3(profile_path.read_bytes()).hexdigest()
+        or request.get("vector_blake3") != blake3.blake3(vector_path.read_bytes()).hexdigest()
+    ):
+        raise SoakEvidenceError("P5 V2 request profile/vector differs from candidate bytes")
+    now = int(time.time())
+    if (
+        isinstance(request.get("issued_at"), bool)
+        or not isinstance(request.get("issued_at"), int)
+        or isinstance(request.get("expires_at"), bool)
+        or not isinstance(request.get("expires_at"), int)
+    ):
+        raise SoakEvidenceError("P5 V2 request validity interval is invalid")
+    if not request["issued_at"] <= now < request["expires_at"]:
+        raise SoakEvidenceError("P5 V2 request is outside its validity interval")
+    try:
+        base_created = int(
+            datetime.fromisoformat(str(base_request["created_utc"]).replace("Z", "+00:00")).timestamp()
+        )
+        base_expires = int(
+            datetime.fromisoformat(str(base_request["expires_utc"]).replace("Z", "+00:00")).timestamp()
+        )
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
+        raise SoakEvidenceError("Base request validity interval is invalid") from error
+    if not base_created <= request["issued_at"] < request["expires_at"] <= base_expires:
+        raise SoakEvidenceError("P5 V2 request is not nested in the Base request interval")
+
+    bundle = bundle_root.resolve(strict=True)
+    manifest_path = bundle / "metadata/bundle.manifest.json"
+    manifest_bytes = manifest_path.read_bytes()
+    try:
+        manifest = json.loads(manifest_bytes)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SoakEvidenceError("P5 V2 bundle manifest is invalid JSON") from error
+    if manifest_bytes != controller.canonical_json(manifest):
+        raise SoakEvidenceError("P5 V2 bundle manifest is not canonical")
+    candidate = base_request["candidate"]
+    if manifest.get("candidate") != {
+        "id": candidate["commit"],
+        "source_digest": manifest.get("candidate", {}).get("source_digest")
+        if isinstance(manifest.get("candidate"), dict)
+        else None,
+        "version": candidate["tree"],
+    }:
+        raise SoakEvidenceError("P5 V2 bundle candidate differs from the Base request")
+    bundle_verifier = _load_p5_v1_bundle_verifier()
+    try:
+        bundle_digest, _ = bundle_verifier._bundle_manifest_binding(
+            bundle,
+            bundle / "bin/p5_multi_host_agent",
+            candidate_commit=str(candidate["commit"]),
+            candidate_tree=str(candidate["tree"]),
+        )
+    except bundle_verifier.P5OrchestrationError as error:
+        raise SoakEvidenceError(f"P5 V2 native bundle is invalid: {error}") from error
+    if inv.get("bundle_manifest_blake3") != bundle_digest:
+        raise SoakEvidenceError("P5 V2 inventory bundle binding mismatch")
+    registry_manifest = registry_candidate_root.resolve(strict=True) / "concepts.obr.manifest.json"
+    if inv.get("registry_candidate_manifest_blake3") != blake3.blake3(
+        registry_manifest.read_bytes()
+    ).hexdigest():
+        raise SoakEvidenceError("P5 V2 inventory Registry binding mismatch")
+    expected_executable = (bundle / "bin/p5_multi_host_agent_v2").resolve(strict=True)
+    if executable.resolve(strict=True) != expected_executable or executable.is_symlink():
+        raise SoakEvidenceError("P5 V2 executable is not the bundle-owned agent")
+
+    aggregate = _load_canonical_p5_v2_aggregate(aggregate_path, controller)
     if aggregate.get("request_digest") != blake3.blake3(controller.canonical_json(request)).hexdigest():
         raise SoakEvidenceError("P5 V2 aggregate request binding mismatch")
     authority = aggregate.get("evidence_authority")
-    inv = json.loads(inventory.read_text(encoding="utf-8"))
     if not isinstance(authority, dict) or authority.get("inventory_blake3") != blake3.blake3(controller.canonical_json(inv)).hexdigest():
         raise SoakEvidenceError("P5 V2 evidence authority inventory mismatch")
     if authority.get("provider_evidence_status") != inv.get("provider_evidence_status"):
         raise SoakEvidenceError("P5 V2 provider evidence status mismatch")
+    if (
+        aggregate.get("session_id") != request.get("session_id")
+        or aggregate.get("controller_public_key")
+        != inv.get("controller_application_public_key")
+    ):
+        raise SoakEvidenceError("P5 V2 aggregate session/controller binding mismatch")
     child_receipts = aggregate.get("child_receipts")
     if not isinstance(child_receipts, list) or len(child_receipts) < 3:
         raise SoakEvidenceError("P5 V2 signed child receipt set is incomplete")
@@ -831,6 +984,17 @@ def _verify_p5_aggregate_v2(
         str(row.get("host_id", row.get("physical_host_id", ""))): str(row.get("receipt_public_key", ""))
         for row in inv.get("hosts", []) if isinstance(row, dict)
     }
+    try:
+        receipt_verifier = controller._production_receipt_verifier(
+            {
+                host_id: bytes.fromhex(public_key)
+                for host_id, public_key in inventory_signers.items()
+            },
+            authority,
+            str(aggregate["request_digest"]),
+        )
+    except (KeyError, ValueError) as error:
+        raise SoakEvidenceError("P5 V2 inventory child signer set is invalid") from error
     for receipt in child_receipts:
         if not isinstance(receipt, dict) or receipt.get("format") != 2:
             raise SoakEvidenceError("P5 V2 child receipt format mismatch")
@@ -843,30 +1007,26 @@ def _verify_p5_aggregate_v2(
             raise SoakEvidenceError("P5 V2 child request binding mismatch")
         if receipt.get("inventory_blake3") != authority.get("inventory_blake3"):
             raise SoakEvidenceError("P5 V2 child inventory binding mismatch")
-        if receipt.get("signer_public_key") != inventory_signers.get(str(host_id)):
-            raise SoakEvidenceError("P5 V2 child signer is not inventory-bound")
-        unsigned_child = {
-            key: value for key, value in receipt.items()
-            if key not in {"signature", "signer_public_key"}
-        }
+        issued_at = receipt.get("issued_at")
+        if (
+            isinstance(issued_at, bool)
+            or not isinstance(issued_at, int)
+            or not request["issued_at"] <= issued_at < request["expires_at"]
+        ):
+            raise SoakEvidenceError("P5 V2 child receipt lies outside its request interval")
         try:
-            Ed25519PublicKey.from_public_bytes(bytes.fromhex(str(receipt["signer_public_key"]))).verify(
-                bytes.fromhex(str(receipt["signature"])),
-                b"onebrain/p5/child-receipt/v2" + controller.canonical_json(unsigned_child),
-            )
-        except (KeyError, ValueError, InvalidSignature) as error:
-            raise SoakEvidenceError("P5 V2 child receipt signature is invalid") from error
+            receipt_verifier(str(host_id), controller.canonical_json(receipt))
+        except controller.P5ExecutionError as error:
+            raise SoakEvidenceError(f"P5 V2 child receipt is invalid: {error}") from error
         child_hosts.add(str(host_id))
     if child_hosts != {"host-a", "host-b", "host-c"}:
         raise SoakEvidenceError("P5 V2 child host coverage is incomplete")
     qualification = controller.derive_qualification(aggregate)
     if aggregate.get("qualification") != qualification or not qualification["multi_host_qualified"]:
         raise SoakEvidenceError("P5 V2 qualification is not derived production evidence")
-    raw_manifest, raw_count = _raw_evidence_manifest(raw_evidence_root)
-    if aggregate.get("raw_manifest_blake3") != raw_manifest:
-        raise SoakEvidenceError("P5 V2 raw evidence manifest mismatch")
-    if not executable.is_file() or not bundle_root.is_dir() or not registry_candidate_root.is_dir():
-        raise SoakEvidenceError("P5 V2 executable/bundle/Registry candidate input is unavailable")
+    raw_manifest, raw_count = _verify_p5_v2_raw_binding(
+        aggregate, raw_evidence_root
+    )
     unsigned_aggregate = {
         key: value for key, value in aggregate.items()
         if key not in {"controller_signature", "aggregate_blake3"}
@@ -903,41 +1063,121 @@ def _verified_binding(
     signature: Path,
     policy: Path,
     gpg_home: Path,
+    registry_aggregate: Path,
+    registry_binding: Path,
+    p5_request: Path,
+    p5_signature: Path,
+    p5_approval_policy: Path,
+    p5_inventory: Path,
+    p5_raw_evidence_root: Path,
     p5_aggregate: Path,
+    p5_executable: Path,
+    p5_bundle_root: Path,
+    p5_registry_candidate_root: Path,
     executable: Path,
+    sbom: Path,
+    provenance: Path,
+    runner_image_evidence: Path,
 ) -> dict[str, str]:
     from scripts.release.verify_base_release_request import (
         ReleaseRequestError,
-        verify_release_request,
+        load_task28_registry_measurement_context,
+        verify_task28_release_request,
     )
 
     try:
-        verified = verify_release_request(request, signature, policy, gpg_home).as_dict()
+        verified_context = verify_task28_release_request(
+            request,
+            signature,
+            policy,
+            gpg_home=gpg_home,
+            gpg_executable=Path("/usr/bin/gpg"),
+            candidate_root=ROOT,
+        )
+        registry_context = load_task28_registry_measurement_context(
+            verified_context, registry_binding
+        )
     except ReleaseRequestError as error:
         raise SoakEvidenceError(f"Base release request is invalid: {error}") from error
+    verified = verified_context.as_dict()
     run = verified["run_context"]
-    release = verified["bindings"]
-    p5_aggregate_root = _verify_p5_aggregate_v1(p5_aggregate, verified)
+    try:
+        from scripts.concept_registry.production_qualification import (
+            AggregationError,
+            PRODUCTION_EQUALITY_BINDINGS,
+            _verify_receipt,
+        )
+    except ImportError as error:
+        raise SoakEvidenceError("Registry production verifier is unavailable") from error
+    try:
+        profile = json.loads(
+            (
+                ROOT
+                / "src/test-vectors/vnext/concept-registry-production-qualification-v1.json"
+            ).read_text(encoding="utf-8")
+        )
+        registry_receipt = json.loads(registry_aggregate.read_bytes())
+        policy_value = profile.get("trust_policy", {}).get("policy")
+        if not isinstance(policy_value, dict):
+            raise SoakEvidenceError("Registry production trust policy is missing")
+        kind, registry_payload = _verify_receipt(
+            registry_receipt, profile, policy_value
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, AggregationError) as error:
+        raise SoakEvidenceError(f"Registry production aggregate is invalid: {error}") from error
+    if (
+        kind != "production-aggregate"
+        or registry_payload.get("registry_production_qualified") is not True
+        or registry_payload.get("base_candidate_bound") is not True
+        or registry_payload.get("result") is not True
+        or registry_payload.get("evidence_tier") != "production-reference"
+    ):
+        raise SoakEvidenceError("Registry production aggregate does not qualify the candidate")
+    for field in ("release_request_digest", "qualification_session_id", "candidate_commit", "candidate_tree"):
+        if registry_payload.get(field) != run[field]:
+            raise SoakEvidenceError(f"Registry production aggregate {field} mismatch")
+    for field in PRODUCTION_EQUALITY_BINDINGS:
+        if registry_payload.get(field) != registry_context.bindings.get(field):
+            raise SoakEvidenceError(f"Registry production aggregate {field} mismatch")
+    p5_verified = _verify_p5_aggregate_v2(
+        release_request=request,
+        release_signature=signature,
+        base_policy=policy,
+        base_gpg_home=gpg_home,
+        p5_request=p5_request,
+        p5_signature=p5_signature,
+        p5_approval_policy=p5_approval_policy,
+        inventory=p5_inventory,
+        raw_evidence_root=p5_raw_evidence_root,
+        aggregate_path=p5_aggregate,
+        executable=p5_executable,
+        bundle_root=p5_bundle_root,
+        registry_candidate_root=p5_registry_candidate_root,
+    )
+    p5_registry_manifest = (
+        p5_registry_candidate_root.resolve(strict=True) / "concepts.obr.manifest.json"
+    )
+    if blake3.blake3(p5_registry_manifest.read_bytes()).hexdigest() != registry_context.bindings[
+        "candidate_payload_artifacts_blake3"
+    ]["MANIFEST:concepts.obr.manifest.json"]:
+        raise SoakEvidenceError("P5 V2 and Registry aggregate candidate manifests differ")
     executable_blake3 = blake3.blake3(executable.read_bytes()).hexdigest()
-    sbom_blake3 = release["candidate_payload_artifacts_blake3"][
-        "SPDX_SBOM:sbom.spdx.json"
-    ]
-    provenance_blake3 = blake3.blake3(
-        _canonical_json(verified["tooling_blake3"])
-    ).hexdigest()
+    sbom_blake3 = blake3.blake3(sbom.read_bytes()).hexdigest()
+    provenance_blake3 = blake3.blake3(provenance.read_bytes()).hexdigest()
+    runner_image_digest = blake3.blake3(runner_image_evidence.read_bytes()).hexdigest()
     return {
         "release_request_digest": run["release_request_digest"],
         "qualification_session_id": run["qualification_session_id"],
         "candidate_commit": run["candidate_commit"],
         "candidate_tree": run["candidate_tree"],
-        "candidate_semantic_digest": release["candidate_semantic_digest"],
-        "frozen_target_artifact_digest": release["artifact_tuple_digest"],
-        "registry_root": release["release_aggregate_root"],
-        "p5_aggregate_root": p5_aggregate_root,
+        "candidate_semantic_digest": registry_context.bindings["candidate_semantic_digest"],
+        "frozen_target_artifact_digest": registry_context.bindings["artifact_tuple_digest"],
+        "registry_root": registry_payload["release_aggregate_root"],
+        "p5_aggregate_root": p5_verified["aggregate_blake3"],
         "executable_blake3": executable_blake3,
         "sbom_blake3": sbom_blake3,
         "provenance_blake3": provenance_blake3,
-        "runner_image_digest": release["runner_image_digest"],
+        "runner_image_digest": runner_image_digest,
         "trust_policy_digest": _profile()["trust_policy"]["digest_hex"],
     }
 
@@ -1063,8 +1303,21 @@ def _add_verified_binding_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--signature", type=Path, required=True)
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--gpg-home", type=Path, required=True)
+    parser.add_argument("--registry-aggregate", type=Path, required=True)
+    parser.add_argument("--registry-binding", type=Path, required=True)
+    parser.add_argument("--p5-request", type=Path, required=True)
+    parser.add_argument("--p5-signature", type=Path, required=True)
+    parser.add_argument("--p5-approval-policy", type=Path, required=True)
+    parser.add_argument("--p5-inventory", type=Path, required=True)
+    parser.add_argument("--p5-raw-evidence-root", type=Path, required=True)
     parser.add_argument("--p5-aggregate", type=Path, required=True)
+    parser.add_argument("--p5-executable", type=Path, required=True)
+    parser.add_argument("--p5-bundle-root", type=Path, required=True)
+    parser.add_argument("--p5-registry-candidate-root", type=Path, required=True)
     parser.add_argument("--executable", type=Path, required=True)
+    parser.add_argument("--sbom", type=Path, required=True)
+    parser.add_argument("--provenance", type=Path, required=True)
+    parser.add_argument("--runner-image-evidence", type=Path, required=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1127,8 +1380,21 @@ def main(argv: list[str] | None = None) -> int:
                 signature=args.signature,
                 policy=args.policy,
                 gpg_home=args.gpg_home,
+                registry_aggregate=args.registry_aggregate,
+                registry_binding=args.registry_binding,
+                p5_request=args.p5_request,
+                p5_signature=args.p5_signature,
+                p5_approval_policy=args.p5_approval_policy,
+                p5_inventory=args.p5_inventory,
+                p5_raw_evidence_root=args.p5_raw_evidence_root,
                 p5_aggregate=args.p5_aggregate,
+                p5_executable=args.p5_executable,
+                p5_bundle_root=args.p5_bundle_root,
+                p5_registry_candidate_root=args.p5_registry_candidate_root,
                 executable=args.executable,
+                sbom=args.sbom,
+                provenance=args.provenance,
+                runner_image_evidence=args.runner_image_evidence,
             )
             if args.command == "sign-child":
                 result = sign_soak_child_receipt(

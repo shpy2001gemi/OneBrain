@@ -92,7 +92,7 @@ pub fn verify_base_release_request_for_test_nonproduction(
     let verified: Value = serde_json::from_slice(&result.stdout)
         .map_err(|error| format!("release-request verifier output is invalid: {error}"))?;
     let (request_value, request_digest) = read_canonical_request(request)?;
-    let expected_fields: BTreeSet<&str> = [
+    let mut expected_fields: BTreeSet<&str> = [
         "format",
         "usage",
         "qualification_session_id",
@@ -107,11 +107,14 @@ pub fn verify_base_release_request_for_test_nonproduction(
         "expires_utc",
         "evidence_root_uri",
         "candidate_tooling_blake3",
-        "registry_candidate",
-        "reference_environment",
     ]
     .into_iter()
     .collect();
+    if request_value.get("format").and_then(Value::as_str)
+        == Some("onebrain/base-v1-release-request/1")
+    {
+        expected_fields.extend(["registry_candidate", "reference_environment"]);
+    }
     let actual_fields: BTreeSet<&str> = request_value
         .as_object()
         .ok_or("authenticated release request is not an object")?
@@ -172,27 +175,53 @@ fn authenticate_production_request(
     }
     let policy_bytes =
         fs::read(policy).map_err(|error| format!("approver policy could not be read: {error}"))?;
-    if policy_bytes != FROZEN_POLICY_JSON.as_bytes()
-        || blake3::derive_key(APPROVER_POLICY_CONTEXT, &policy_bytes).as_slice()
+    let policy_value: Value = serde_json::from_slice(&policy_bytes)
+        .map_err(|error| format!("approver policy JSON is invalid: {error}"))?;
+    let frozen_policy = if policy_value.get("format").and_then(Value::as_str)
+        == Some("onebrain/base-v1-release-signers/1")
+    {
+        let rows = policy_value
+            .get("policies")
+            .and_then(Value::as_array)
+            .ok_or("approver signer vector policies are missing")?;
+        let matches: Vec<&Value> = rows
+            .iter()
+            .filter_map(|row| row.get("policy"))
+            .filter(|candidate| {
+                candidate.get("role").and_then(Value::as_str) == Some("qualification-approver")
+            })
+            .collect();
+        if matches.len() != 1 {
+            return Err("approver signer vector role binding is not closed".to_owned());
+        }
+        matches[0].clone()
+    } else {
+        policy_value.clone()
+    };
+    let frozen_policy_bytes = serde_json::to_vec(&frozen_policy)
+        .map_err(|error| format!("approver policy could not be canonicalized: {error}"))?;
+    if frozen_policy_bytes != FROZEN_POLICY_JSON.as_bytes()
+        || blake3::derive_key(APPROVER_POLICY_CONTEXT, &frozen_policy_bytes).as_slice()
             != hex32(APPROVER_POLICY_DIGEST)?.as_slice()
     {
         return Err("production qualification approver policy is not frozen".to_owned());
     }
     let (request_value, request_digest) = read_canonical_request(request)?;
-    let environment = request_value
-        .get("reference_environment")
-        .and_then(Value::as_object)
-        .ok_or("authenticated request environment is missing")?;
     let tooling = request_value
         .get("candidate_tooling_blake3")
         .and_then(Value::as_object)
         .ok_or("authenticated request tooling is missing")?;
-    for (field, actual) in [
-        ("python_executable_blake3", file_blake3(python)?),
-        ("gpg_executable_blake3", file_blake3(gpg)?),
-    ] {
-        if environment.get(field).and_then(Value::as_str) != Some(actual.as_str()) {
-            return Err(format!("signed {field} tooling digest mismatch"));
+    if let Some(environment) = request_value
+        .get("reference_environment")
+        .and_then(Value::as_object)
+    {
+        for (field, actual) in [
+            ("python_executable_blake3", file_blake3(python)?),
+            ("gpg_executable_blake3", file_blake3(gpg)?),
+        ] {
+            if environment.get(field).and_then(Value::as_str) != Some(actual.as_str()) {
+                return Err(format!("signed {field} tooling digest mismatch"));
+            }
         }
     }
     for (field, path) in [("verifier", verifier), ("signer_policy", policy)] {
@@ -264,8 +293,8 @@ fn authenticate_production_request(
             .as_secs(),
     )
     .map_err(|_| "system clock is out of range")?;
-    let signer_created = parse_utc("2026-08-09T13:27:27Z")?;
-    let signer_expires = parse_utc("2028-08-08T13:27:27Z")?;
+    let signer_created = parse_utc("2026-08-27T04:49:51Z")?;
+    let signer_expires = parse_utc("2028-08-26T04:49:51Z")?;
     if created >= expires
         || created < signer_created
         || expires > signer_expires
@@ -656,6 +685,51 @@ fn validate_python_context(
     let candidate = request
         .get("candidate")
         .ok_or("authenticated request candidate is missing")?;
+    if request.get("format").and_then(Value::as_str) == Some("onebrain/base-v1-release-request/2") {
+        let tier = if production {
+            "production-reference"
+        } else {
+            "nonproduction-test"
+        };
+        let expected_context = json!({
+            "format": "onebrain/qualification-run-context/2",
+            "variant": "Release",
+            "release_request_digest": request_digest,
+            "qualification_session_id": request.get("qualification_session_id"),
+            "candidate_commit": candidate.get("commit"),
+            "candidate_tree": candidate.get("tree"),
+        });
+        let expected_bindings = json!({
+            "evidence_tier": tier,
+            "release_request_digest": request_digest,
+            "qualification_session_id": request.get("qualification_session_id"),
+            "candidate_commit": candidate.get("commit"),
+            "candidate_tree": candidate.get("tree"),
+            "candidate_object_format": candidate.get("object_format"),
+            "required_targets": request.get("required_targets"),
+            "production_profile_blake3": request.get("production_profile_blake3"),
+            "production_vector_blake3": request.get("production_vector_blake3"),
+            "append_only_idl_history_root": request.get("append_only_idl_history_root"),
+            "evidence_root_uri": request.get("evidence_root_uri"),
+            "qualification_approver_trust_policy_digest": request.get("trust_policy_digest"),
+            "qualification_approver_fingerprint": request.get("qualification_approver_fingerprint"),
+        });
+        let exact = verified.get("format").and_then(Value::as_str)
+            == Some("onebrain/verified-qualification-context/2")
+            && verified.get("production").and_then(Value::as_bool) == Some(production)
+            && verified.get("request_digest").and_then(Value::as_str) == Some(request_digest)
+            && verified.get("signer_fingerprint")
+                == request.get("qualification_approver_fingerprint")
+            && verified.get("trust_policy_digest") == request.get("trust_policy_digest")
+            && verified.get("run_context") == Some(&expected_context)
+            && verified.get("bindings") == Some(&expected_bindings)
+            && verified.get("tooling_blake3") == request.get("candidate_tooling_blake3")
+            && verified.as_object().is_some_and(|object| object.len() == 8);
+        if !exact {
+            return Err("Python verifier did not return the exact closed v2 context".to_owned());
+        }
+        return Ok(());
+    }
     let registry = request
         .get("registry_candidate")
         .ok_or("authenticated request Registry binding is missing")?;

@@ -28,8 +28,11 @@ if str(RELEASE_DIR) not in __import__("sys").path:
     __import__("sys").path.insert(0, str(RELEASE_DIR))
 from verify_base_release_request import (  # noqa: E402
     VerifiedQualificationContextV1,
+    VerifiedQualificationContextV2,
+    load_task28_registry_measurement_context,
     verify_release_request,
     verify_release_request_for_test_nonproduction,
+    verify_task28_release_request,
     verify_registry_candidate_measurements,
     verify_registry_candidate_measurements_for_test_nonproduction,
 )
@@ -430,7 +433,7 @@ def _verify_candidate_stamp_and_state(
 
 
 def _verify_cycle_candidate(
-    verified: VerifiedQualificationContextV1,
+    verified: VerifiedQualificationContextV1 | VerifiedQualificationContextV2,
     candidate_root: Path,
     bridge: Path,
     git_executable: Path,
@@ -438,14 +441,11 @@ def _verify_cycle_candidate(
 ) -> None:
     root = candidate_root.resolve(strict=True)
     executable_name = "concept_registry_release_ops.exe" if __import__("sys").platform == "win32" else "concept_registry_release_ops"
-    allowed_profiles = ("release",) if production else ("debug", "release")
-    expected_bridges = {
-        (root / "src/target" / profile / "examples" / executable_name).resolve(strict=True)
-        for profile in allowed_profiles
-        if (root / "src/target" / profile / "examples" / executable_name).is_file()
-    }
-    if bridge.resolve(strict=True) not in expected_bridges:
-        raise CycleError("release bridge is not the fixed candidate-owned operation")
+    resolved_bridge = bridge.resolve(strict=True)
+    if resolved_bridge.name != executable_name or not resolved_bridge.is_file():
+        raise CycleError("release bridge is not the fixed candidate operation executable")
+    if production and resolved_bridge.is_relative_to(root):
+        raise CycleError("production release bridge must be built outside the read-only candidate")
     for revision, expected in (
         ("HEAD", verified.run_context["candidate_commit"]),
         ("HEAD^{tree}", verified.run_context["candidate_tree"]),
@@ -456,8 +456,9 @@ def _verify_cycle_candidate(
         )
         if result.returncode != 0 or result.stdout.strip() != expected:
             raise CycleError("release-cycle candidate Git identity differs from signed request")
-    if _digest(bridge) != verified.tooling_blake3["release_wrapper"]:
-        raise CycleError("release-cycle bridge tooling differs from signed request")
+    release_wrapper = root / "scripts/release/create_verified_base_release.py"
+    if _digest(release_wrapper) != verified.tooling_blake3["release_wrapper"]:
+        raise CycleError("release publication wrapper differs from signed request")
 
 
 def _query_obr(path: Path, query: str) -> dict[str, object]:
@@ -489,7 +490,7 @@ def _sanitized_step(name: str, command: list[str], private_key: Path) -> tuple[l
 
 
 def _run_release_cycle(
-    verified: VerifiedQualificationContextV1,
+    verified: VerifiedQualificationContextV1 | VerifiedQualificationContextV2,
     *,
     bridge: Path,
     candidate_root: Path,
@@ -796,12 +797,26 @@ def run_release_cycle(
     *,
     candidate_release_stamp: Path,
     candidate_state: Path,
+    task28_registry_binding: Path | None = None,
+    bridge: Path | None = None,
     **inputs: object,
 ) -> dict[str, object]:
     """Production entry with fixed candidate bridge and fixed request verifier."""
-    verified = verify_release_request(request_path, signature_path, approver_policy_path, gpg_home)
     candidate_root = Path(__file__).resolve().parents[2]
-    bridge = candidate_root / "src/target/release/examples/concept_registry_release_ops"
+    if task28_registry_binding is None:
+        verified = verify_release_request(request_path, signature_path, approver_policy_path, gpg_home)
+    else:
+        verified = verify_task28_release_request(
+            request_path,
+            signature_path,
+            approver_policy_path,
+            gpg_home=gpg_home,
+            gpg_executable=Path("/usr/bin/gpg"),
+        )
+        verified = load_task28_registry_measurement_context(
+            verified, task28_registry_binding
+        )
+    bridge = bridge or candidate_root / "src/target/release/examples/concept_registry_release_ops"
     if not bridge.is_file():
         raise CycleError("fixed first-party release operation bridge is unavailable")
     _verify_cycle_candidate(verified, candidate_root, bridge, Path("/usr/bin/git"), True)

@@ -225,6 +225,10 @@ class ExactCandidateSoakProfileTests(unittest.TestCase):
             "candidate_tree",
             "release_request_digest",
             "qualification_session_id",
+            "validate_evidence_carry_forward.py verify-p5",
+            "p5_multi_host_agent_v2",
+            "p5-v2-verified",
+            "--p5-raw-evidence-root",
             "compare-release-executable-hashes",
             "retain-signed-raw-receipts",
             "p5-multi-host-aggregate",
@@ -235,6 +239,7 @@ class ExactCandidateSoakProfileTests(unittest.TestCase):
             "pull_request:",
             "candidate_commit:\n        description:",
             "candidate_tree:\n        description:",
+            "onebrain-p5-multi-host.py",
         ):
             self.assertNotIn(forbidden, workflow)
 
@@ -246,8 +251,16 @@ class ExactCandidateSoakProfileTests(unittest.TestCase):
             "def _verify_p5_aggregate_v2(",
             'parser.add_argument("--p5-aggregate", type=Path, required=True)',
             'parser.add_argument("--executable", type=Path, required=True)',
-            '"SPDX_SBOM:sbom.spdx.json"',
-            '_canonical_json(verified["tooling_blake3"])',
+            'parser.add_argument("--registry-aggregate", type=Path, required=True)',
+            'parser.add_argument("--registry-binding", type=Path, required=True)',
+            'parser.add_argument("--p5-request", type=Path, required=True)',
+            'parser.add_argument("--p5-raw-evidence-root", type=Path, required=True)',
+            'parser.add_argument("--p5-bundle-root", type=Path, required=True)',
+            "load_task28_registry_measurement_context",
+            'registry_payload.get("registry_production_qualified") is not True',
+            'parser.add_argument("--sbom", type=Path, required=True)',
+            'parser.add_argument("--provenance", type=Path, required=True)',
+            'parser.add_argument("--runner-image-evidence", type=Path, required=True)',
         ):
             self.assertIn(marker, source)
         for forbidden in (

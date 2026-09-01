@@ -94,6 +94,11 @@ fn run() -> Result<(), Box<dyn Error>> {
             let signature_path = required_path(&mut args, "RELEASE_REQUEST_SIGNATURE")?;
             let approver_policy = required_path(&mut args, "QUALIFICATION_APPROVER_POLICY")?;
             let gpg_home = required_path(&mut args, "GPG_HOME")?;
+            let task28_registry_binding = if mode == "--release" {
+                Some(required_path(&mut args, "TASK28_REGISTRY_BINDING")?)
+            } else {
+                None
+            };
             let (verified, git_executable, production) = if mode == "--release" {
                 (
                     verify_base_release_request(
@@ -136,7 +141,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             let runner_image_evidence = required_path(&mut args, "RUNNER_IMAGE_EVIDENCE")?;
             let policy_path = required_path(&mut args, "TRUST_POLICY_JSON")?;
             let output_path = required_path(&mut args, "OUTPUT_JSON")?;
-            (
+            let mut result = (
                 verified
                     .get("run_context")
                     .cloned()
@@ -163,7 +168,24 @@ fn run() -> Result<(), Box<dyn Error>> {
                     git_executable,
                     production,
                 }),
-            )
+            );
+            if let Some(path) = task28_registry_binding {
+                let measured: Value = serde_json::from_slice(&fs::read(path)?)?;
+                let target = result
+                    .1
+                    .as_object()
+                    .ok_or("verified request bindings are not an object")?;
+                let measured_object = measured
+                    .as_object()
+                    .ok_or("Task 28 Registry binding is not an object")?;
+                if measured_object.keys().any(|key| target.contains_key(key)) {
+                    return Err("Task 28 Registry binding overrides signed request fields".into());
+                }
+                let mut combined = target.clone();
+                combined.extend(measured_object.clone());
+                result.1 = Value::Object(combined);
+            }
+            result
         };
     no_more_args(args)?;
 
@@ -753,14 +775,15 @@ fn apply_run_context(
 ) -> Result<(), Box<dyn Error>> {
     let object = context
         .as_object()
-        .ok_or("QualificationRunContextV1 is not an object")?;
-    if context.get("format").and_then(Value::as_str) != Some("onebrain/qualification-run-context/1")
-    {
-        return Err("QualificationRunContextV1 format is invalid".into());
-    }
+        .ok_or("qualification run context is not an object")?;
     let target = payload.as_object_mut().expect("payload is an object");
     match context.get("variant").and_then(Value::as_str) {
         Some("Prequalification") => {
+            if context.get("format").and_then(Value::as_str)
+                != Some("onebrain/qualification-run-context/1")
+            {
+                return Err("Prequalification context format is invalid".into());
+            }
             let expected: std::collections::BTreeSet<_> = ["format", "variant", "closure_digest"]
                 .into_iter()
                 .collect();
@@ -786,6 +809,13 @@ fn apply_run_context(
             target.insert("evidence_tier".to_owned(), json!("prequalification"));
         }
         Some("Release") => {
+            if !matches!(
+                context.get("format").and_then(Value::as_str),
+                Some("onebrain/qualification-run-context/1")
+                    | Some("onebrain/qualification-run-context/2")
+            ) {
+                return Err("Release context format is invalid".into());
+            }
             let expected: std::collections::BTreeSet<_> = [
                 "format",
                 "variant",
@@ -865,7 +895,7 @@ fn apply_run_context(
                     .ok_or("verified release evidence_tier is missing")?,
             );
         }
-        _ => return Err("QualificationRunContextV1 variant is invalid".into()),
+        _ => return Err("qualification run context variant is invalid".into()),
     }
     Ok(())
 }
@@ -1156,5 +1186,5 @@ fn append_suffix(path: &Path, suffix: &str) -> PathBuf {
 }
 
 fn usage() -> &'static str {
-    "usage: concept_registry_failure_qualification (--prequalification WORK_DIR OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE PREQUALIFICATION_CONTEXT_JSON PREQUALIFICATION_BINDING_JSON TRUST_POLICY_JSON OUTPUT_JSON | --release WORK_DIR OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE RELEASE_REQUEST RELEASE_REQUEST_SIGNATURE QUALIFICATION_APPROVER_POLICY GPG_HOME INSTALLED_REGISTRY_ROOT RELEASE_ID CANDIDATE_ROOT CANDIDATE_SEMANTIC_EVIDENCE PRODUCTION_PROFILE PRODUCTION_VECTOR APPEND_ONLY_IDL_HISTORY TARGET_TRIPLE PROBE_EXECUTABLE PROBE_SIGNATURE RUST_TOOLCHAIN_EVIDENCE RUNNER_IMAGE_EVIDENCE TRUST_POLICY_JSON OUTPUT_JSON | --test-release-nonproduction WORK_DIR OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE RELEASE_REQUEST RELEASE_REQUEST_SIGNATURE QUALIFICATION_APPROVER_POLICY GPG_HOME TEST_PYTHON TEST_GPG TEST_GIT INSTALLED_REGISTRY_ROOT RELEASE_ID CANDIDATE_ROOT CANDIDATE_SEMANTIC_EVIDENCE PRODUCTION_PROFILE PRODUCTION_VECTOR APPEND_ONLY_IDL_HISTORY TARGET_TRIPLE PROBE_EXECUTABLE PROBE_SIGNATURE RUST_TOOLCHAIN_EVIDENCE RUNNER_IMAGE_EVIDENCE TRUST_POLICY_JSON OUTPUT_JSON)"
+    "usage: concept_registry_failure_qualification (--prequalification WORK_DIR OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE PREQUALIFICATION_CONTEXT_JSON PREQUALIFICATION_BINDING_JSON TRUST_POLICY_JSON OUTPUT_JSON | --release WORK_DIR OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE RELEASE_REQUEST RELEASE_REQUEST_SIGNATURE QUALIFICATION_APPROVER_POLICY GPG_HOME TASK28_REGISTRY_BINDING INSTALLED_REGISTRY_ROOT RELEASE_ID CANDIDATE_ROOT CANDIDATE_SEMANTIC_EVIDENCE PRODUCTION_PROFILE PRODUCTION_VECTOR APPEND_ONLY_IDL_HISTORY TARGET_TRIPLE PROBE_EXECUTABLE PROBE_SIGNATURE RUST_TOOLCHAIN_EVIDENCE RUNNER_IMAGE_EVIDENCE TRUST_POLICY_JSON OUTPUT_JSON | --test-release-nonproduction WORK_DIR OBR_PATH SPDX_SBOM_PATH SOURCES_JSON_PATH PRIVATE_KEY_FILE RELEASE_REQUEST RELEASE_REQUEST_SIGNATURE QUALIFICATION_APPROVER_POLICY GPG_HOME TEST_PYTHON TEST_GPG TEST_GIT INSTALLED_REGISTRY_ROOT RELEASE_ID CANDIDATE_ROOT CANDIDATE_SEMANTIC_EVIDENCE PRODUCTION_PROFILE PRODUCTION_VECTOR APPEND_ONLY_IDL_HISTORY TARGET_TRIPLE PROBE_EXECUTABLE PROBE_SIGNATURE RUST_TOOLCHAIN_EVIDENCE RUNNER_IMAGE_EVIDENCE TRUST_POLICY_JSON OUTPUT_JSON)"
 }

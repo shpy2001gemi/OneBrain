@@ -8,8 +8,11 @@ from pathlib import Path
 
 from scripts.release.validate_evidence_carry_forward import (
     EvidenceCarryForwardError,
+    SoakEvidenceError,
+    _load_canonical_p5_v2_aggregate,
     _raw_evidence_manifest,
     _verify_p5_aggregate_v1,
+    _verify_p5_v2_raw_binding,
     analyze_evidence_carry_forward,
 )
 
@@ -63,6 +66,43 @@ def _evidence() -> dict[str, object]:
 
 
 class EvidenceCarryForwardTests(unittest.TestCase):
+    class _Controller:
+        @staticmethod
+        def canonical_json(value: object) -> bytes:
+            return json.dumps(
+                value, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8")
+
+    def test_p5_v2_aggregate_requires_canonical_bytes_and_exact_raw_count(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            raw = root / "raw"
+            raw.mkdir()
+            (raw / "receipt.json").write_bytes(b"{}")
+            raw_manifest, raw_count = _raw_evidence_manifest(raw)
+            aggregate = {
+                "format": 2,
+                "raw_manifest_blake3": raw_manifest,
+                "raw_object_count": raw_count,
+            }
+            aggregate_path = root / "aggregate.json"
+            aggregate_path.write_bytes(self._Controller.canonical_json(aggregate) + b"\n")
+            loaded = _load_canonical_p5_v2_aggregate(
+                aggregate_path, self._Controller()
+            )
+            self.assertEqual(
+                _verify_p5_v2_raw_binding(loaded, raw),
+                (raw_manifest, raw_count),
+            )
+            aggregate_path.write_text(json.dumps(aggregate, indent=2), encoding="utf-8")
+            with self.assertRaisesRegex(SoakEvidenceError, "not canonical"):
+                _load_canonical_p5_v2_aggregate(
+                    aggregate_path, self._Controller()
+                )
+            loaded["raw_object_count"] = raw_count + 1
+            with self.assertRaisesRegex(SoakEvidenceError, "raw evidence manifest"):
+                _verify_p5_v2_raw_binding(loaded, raw)
+
     def test_v1_verifier_remains_explicit_and_raw_v2_manifest_is_content_addressed(self) -> None:
         self.assertTrue(callable(_verify_p5_aggregate_v1))
         with tempfile.TemporaryDirectory() as temporary:

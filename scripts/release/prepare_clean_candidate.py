@@ -21,9 +21,10 @@ import blake3
 
 from scripts.release.verify_base_release_request import (
     VerifiedQualificationContextV1,
+    VerifiedQualificationContextV2,
     verify_release_request,
+    verify_task28_release_request,
 )
-from scripts.release.create_base_release_request import verify_task28_release_request
 
 
 class CleanCandidateError(RuntimeError):
@@ -263,7 +264,7 @@ def prepare_clean_candidate(
     signature_path: Path,
     policy_path: Path,
     gpg_home: Path,
-    verify_request: Callable[..., VerifiedQualificationContextV1] = verify_release_request,
+    verify_request: Callable[..., object] = verify_release_request,
     after_checkout: Callable[[Path], object] | None = None,
     allowed_source_artifacts: tuple[Path, ...] = (),
 ) -> PreparedCandidate:
@@ -275,7 +276,9 @@ def prepare_clean_candidate(
         verified = verify_request(request_path, signature_path, policy_path, gpg_home)
     except Exception as error:
         raise CleanCandidateError("signed release request verification failed") from error
-    if not isinstance(verified, VerifiedQualificationContextV1) or not verified.production:
+    if not isinstance(
+        verified, (VerifiedQualificationContextV1, VerifiedQualificationContextV2)
+    ) or not verified.production:
         raise CleanCandidateError("production verified release context is required")
     allowed = {path.resolve(strict=True) for path in allowed_source_artifacts}
     if allowed:
@@ -375,27 +378,13 @@ def main() -> int:
     try:
         if args.release_request is None or args.signature is None or args.signer_policy is None:
             raise CleanCandidateError("release request verification arguments are incomplete")
-        request = verify_task28_release_request(
-            args.release_request, args.signature, args.signer_policy
+        context = verify_task28_release_request(
+            args.release_request,
+            args.signature,
+            args.signer_policy,
+            candidate_root=args.source_root if not args.verify_only else None,
         )
-        request_digest = blake3.blake3(args.release_request.read_bytes()).hexdigest()
-        candidate = request["candidate"]
-        context = VerifiedQualificationContextV1(
-            request_digest=request_digest,
-            signer_fingerprint=str(request["qualification_approver_fingerprint"]),
-            trust_policy_digest=str(request["trust_policy_digest"]),
-            run_context={
-                "format": "onebrain/qualification-run-context/1",
-                "variant": "Release",
-                "release_request_digest": request_digest,
-                "qualification_session_id": request["qualification_session_id"],
-                "candidate_commit": candidate["commit"],
-                "candidate_tree": candidate["tree"],
-            },
-            bindings={"required_targets": request["required_targets"]},
-            tooling_blake3=dict(request["candidate_tooling_blake3"]),
-            production=True,
-        )
+        request_digest = context.request_digest
         if args.verify_only:
             if args.candidate_root is None or args.source_root is not None or args.read_only:
                 raise CleanCandidateError("verify-only arguments are not closed")

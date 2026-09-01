@@ -325,9 +325,11 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
             obr = b"obr-candidate-bytes"
             labels = b"label-index"
             ccids = b"ccid-index"
+            sbom = b'{"spdxVersion":"SPDX-2.3"}\n'
             (root / "concepts.obr").write_bytes(obr)
             (root / "concepts.obr.labels.idx").write_bytes(labels)
             (root / "concepts.obr.ccids.idx").write_bytes(ccids)
+            (root / "sbom.spdx.json").write_bytes(sbom)
             manifest = {
                 "manifest_version": 1,
                 "obr_blake3": blake3.blake3(obr).hexdigest(),
@@ -356,8 +358,9 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
             measured = runner._registry_candidate_binding(root)
             self.assertEqual(measured["format"], "onebrain/p5-registry-candidate-binding/1")
             self.assertFalse(measured["registry_production_qualified"])
-            self.assertEqual(len(measured["files"]), 5)
+            self.assertEqual(len(measured["files"]), 6)
             self.assertEqual(len(measured["root"]), 64)
+            self.assertEqual(measured["candidate_bytes_root"], measured["root"])
 
             (root / "concepts.obr.labels.idx").write_bytes(labels + b"tamper")
             with self.assertRaisesRegex(runner.P5OrchestrationError, "label index"):
@@ -601,6 +604,7 @@ class P5MultiHostOrchestratorTests(unittest.TestCase):
                 "format": "onebrain/p5-registry-candidate-binding/1",
                 "registry_production_qualified": False,
                 "root": self.binding["registry_root"],
+                "candidate_bytes_root": "aa" * 32,
                 "files": [],
             }
             output_root = root / "configs"

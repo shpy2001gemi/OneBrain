@@ -115,6 +115,7 @@ REGISTRY_CANDIDATE_FILES = (
     "concepts.obr.labels.idx",
     "concepts.obr.manifest.json",
     "concepts.obr.verification.json",
+    "sbom.spdx.json",
 )
 REQUIRED_PRODUCTION_LIMITATIONS = [
     "aggregate-qualification-is-orchestrator-owned",
@@ -270,7 +271,10 @@ def _nonnegative_int(value: object, label: str) -> int:
     return value
 
 
-def _registry_candidate_binding(root: Path) -> dict[str, object]:
+def _registry_candidate_binding(
+    root: Path,
+    task28_registry_binding: Path | None = None,
+) -> dict[str, object]:
     try:
         candidate_root = root.resolve(strict=True)
     except OSError as error:
@@ -332,9 +336,48 @@ def _registry_candidate_binding(root: Path) -> dict[str, object]:
         digest.update(int(row["size"]).to_bytes(8, "big"))
         digest.update(bytes.fromhex(str(row["blake3"])))
         files.append(row)
+    candidate_bytes_root = digest.hexdigest()
+    release_root = candidate_bytes_root
+    if task28_registry_binding is not None:
+        encoded = _regular_file_bytes(
+            task28_registry_binding, "Task 28 Registry measurement binding"
+        )
+        try:
+            registry_binding = json.loads(encoded)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise P5OrchestrationError(
+                "Task 28 Registry measurement binding is invalid JSON"
+            ) from error
+        if encoded not in {
+            _canonical_json(registry_binding),
+            _canonical_json(registry_binding) + b"\n",
+        }:
+            raise P5OrchestrationError(
+                "Task 28 Registry measurement binding is not canonical"
+            )
+        from scripts.release.verify_base_release_request import (
+            TASK28_REGISTRY_MEASUREMENT_FIELDS,
+        )
+
+        if not isinstance(registry_binding, dict) or set(registry_binding) != TASK28_REGISTRY_MEASUREMENT_FIELDS:
+            raise P5OrchestrationError("Task 28 Registry measurement binding is not closed")
+        expected_payloads = {
+            "OBR:concepts.obr": measured["concepts.obr"]["blake3"],
+            "LABEL_INDEX:concepts.obr.labels.idx": measured["concepts.obr.labels.idx"]["blake3"],
+            "CCID_INDEX:concepts.obr.ccids.idx": measured["concepts.obr.ccids.idx"]["blake3"],
+            "MANIFEST:concepts.obr.manifest.json": measured["concepts.obr.manifest.json"]["blake3"],
+            "SPDX_SBOM:sbom.spdx.json": measured["sbom.spdx.json"]["blake3"],
+        }
+        if registry_binding.get("candidate_payload_artifacts_blake3") != expected_payloads:
+            raise P5OrchestrationError(
+                "Task 28 Registry binding differs from candidate payload bytes"
+            )
+        release_root = str(registry_binding.get("release_aggregate_root", ""))
+        _hex(release_root, 32, "Task 28 Registry release aggregate root")
     return {
         "format": "onebrain/p5-registry-candidate-binding/1",
-        "root": digest.hexdigest(),
+        "root": release_root,
+        "candidate_bytes_root": candidate_bytes_root,
         "registry_production_qualified": False,
         "files": files,
     }
@@ -1061,7 +1104,9 @@ def _verified_task28_request(args: argparse.Namespace) -> tuple[dict[str, object
         CANONICAL_PROFILE,
         CANONICAL_TOOLING,
         CANONICAL_VECTOR,
-        ReleaseRequestCreationError,
+    )
+    from scripts.release.verify_base_release_request import (
+        ReleaseRequestError,
         verify_task28_release_request,
     )
 
@@ -1072,14 +1117,16 @@ def _verified_task28_request(args: argparse.Namespace) -> tuple[dict[str, object
     if args.gpg_home.resolve(strict=True).is_relative_to(REPOSITORY_ROOT.resolve()):
         raise P5OrchestrationError("production GPG home must remain outside the repository")
     try:
-        request = verify_task28_release_request(
+        verified = verify_task28_release_request(
             args.request,
             args.signature,
             args.policy,
             gpg_home=args.gpg_home,
             gpg_executable=Path("/usr/bin/gpg"),
+            candidate_root=REPOSITORY_ROOT,
         )
-    except (OSError, ReleaseRequestCreationError) as error:
+        request = verified.request
+    except (OSError, ReleaseRequestError) as error:
         raise P5OrchestrationError(f"Base release request is invalid: {error}") from error
     payload = _regular_file_bytes(args.request, "Base release request")
     if payload != _canonical_json(request):
@@ -1317,7 +1364,10 @@ def _derive_verified_binding(
     compiled = _compiled_binding(args.agent)
     if compiled["candidate_commit"] != candidate["commit"]:
         raise P5OrchestrationError("compiled P5 agent commit differs from signed request")
-    registry_candidate = _registry_candidate_binding(args.registry_candidate_root)
+    registry_candidate = _registry_candidate_binding(
+        args.registry_candidate_root,
+        args.registry_binding,
+    )
     profile = _profile()
     derived = {
         "release_request_digest": blake3.blake3(request_bytes).hexdigest(),
@@ -1547,6 +1597,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--agent", type=Path, required=True)
     parser.add_argument("--agent-signature", type=Path, required=True)
     parser.add_argument("--registry-candidate-root", type=Path, required=True)
+    parser.add_argument("--registry-binding", type=Path, required=True)
     parser.add_argument("--orchestrator-signing-key", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=float, default=330.0)

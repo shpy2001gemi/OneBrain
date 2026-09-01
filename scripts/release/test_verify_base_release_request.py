@@ -31,9 +31,11 @@ from verify_base_release_request import (  # noqa: E402
     ReleaseRequestError,
     canonical_json,
     canonical_compatibility_tuple_bytes,
+    bind_task28_registry_measurements,
     verify_release_request,
     verify_release_request_for_test_nonproduction,
     verify_registry_candidate_measurements,
+    verify_task28_release_request_for_test_nonproduction,
     python_executable_path,
     _verify_authenticated_tooling,
 )
@@ -298,6 +300,81 @@ class SignedReleaseRequestTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(json.loads(result.stdout)["production"])
+
+    def test_task28_v2_context_excludes_future_registry_results_then_extends_without_override(self) -> None:
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        self.policy["signers"][0]["expires_utc"] = (
+            now + timedelta(days=8)
+        ).isoformat().replace("+00:00", "Z")
+        self.policy_digest = blake3.blake3(
+            canonical_json(self.policy),
+            derive_key_context=APPROVER_POLICY_DIGEST_CONTEXT,
+        ).hexdigest()
+        self.request = {
+            key: value
+            for key, value in self.request.items()
+            if key not in {"registry_candidate", "reference_environment"}
+        }
+        self.request.update({
+            "format": "onebrain/base-v1-release-request/2",
+            "trust_policy_digest": self.policy_digest,
+            "required_targets": {
+                "linux": "x86_64-unknown-linux-gnu",
+                "windows": "x86_64-pc-windows-msvc",
+                "macos": "aarch64-apple-darwin",
+            },
+            "created_utc": now.isoformat().replace("+00:00", "Z"),
+            "expires_utc": (now + timedelta(hours=168)).isoformat().replace("+00:00", "Z"),
+        })
+        request_path, signature_path, policy_path = self._signed_paths()
+        verified = verify_task28_release_request_for_test_nonproduction(
+            request_path,
+            signature_path,
+            policy_path,
+            gpg_home=self.gpg_home,
+            gpg_executable=Path(_gpg()),
+            now=now,
+        )
+        self.assertEqual(verified.as_dict()["format"], "onebrain/verified-qualification-context/2")
+        self.assertNotIn("release_aggregate_root", verified.bindings)
+        registry = {
+            "candidate_semantic_digest": "61" * 32,
+            "artifact_tuple_digest": "62" * 32,
+            "release_aggregate_root": "63" * 32,
+            "registry_generation": 7,
+            "candidate_payload_artifacts_blake3": {
+                name: f"{index:x}" * 64
+                for index, name in enumerate(sorted({
+                    "OBR:concepts.obr", "LABEL_INDEX:concepts.obr.labels.idx",
+                    "CCID_INDEX:concepts.obr.ccids.idx", "MANIFEST:concepts.obr.manifest.json",
+                    "SPDX_SBOM:sbom.spdx.json",
+                }), start=1)
+            },
+            "release_stamp_blake3": "76" * 32,
+            "trust_policy_digest": "77" * 32,
+            "signer_fingerprint": "78" * 32,
+            "ccid_inputs_blake3": {
+                name: f"{index:x}" * 64
+                for index, name in enumerate((
+                    "old_input", "old_obr", "old_manifest", "candidate_input",
+                    "candidate_obr", "candidate_manifest",
+                ), start=1)
+            },
+            "probe_blake3": "81" * 32,
+            "probe_signature": "82" * 32,
+            "probe_signer_fingerprint": "83" * 32,
+            "probe_signer_public_key": "84" * 32,
+            "executable_blake3": "85" * 32,
+            "rust_toolchain_digest": "86" * 32,
+            "runner_image_digest": "87" * 32,
+            "target_triple": "x86_64-unknown-linux-gnu",
+        }
+        bound = bind_task28_registry_measurements(verified, registry)
+        self.assertEqual(bound.bindings["release_aggregate_root"], "63" * 32)
+        mutated = dict(registry)
+        mutated["release_request_digest"] = verified.request_digest
+        with self.assertRaisesRegex(ReleaseRequestError, "fields are not closed"):
+            bind_task28_registry_measurements(verified, mutated)
 
     def test_authenticated_runtime_tooling_identity_rejects_python_and_gpg_mutations(self) -> None:
         for field, message in (

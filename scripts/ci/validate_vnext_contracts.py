@@ -5389,7 +5389,9 @@ def validate_concept_registry_runner_kit(
         "raw_report_blake3",
         "_verify_receipt",
         "STAMP_SIGNATURE_DOMAIN",
-        'readonly CANDIDATE_RELEASE_WRAPPER_TOOL="${RELEASE_OPS}"',
+        'readonly CANDIDATE_RELEASE_WRAPPER_TOOL="${REPOSITORY_ROOT}/scripts/release/create_verified_base_release.py"',
+        'readonly REGISTRY_CARGO_TARGET_DIR=',
+        "prepare_task28_registry_binding.py",
     )
     for needle in runner_needles:
         if needle not in runner_script:
@@ -7072,6 +7074,11 @@ def validate_base_v1_exact_candidate_soak(
         "verify_base_release_request.py",
         "ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}",
         "git rev-parse HEAD^{tree}",
+        "validate_evidence_carry_forward.py verify-p5",
+        "p5_multi_host_agent_v2",
+        "p5-v2-verified",
+        "--p5-raw-evidence-root",
+        "minimum_remaining_seconds = 280800",
         "compare-release-executable-hashes",
         "retain-signed-raw-receipts",
         "p5-multi-host-aggregate",
@@ -7082,7 +7089,12 @@ def validate_base_v1_exact_candidate_soak(
     for marker in markers:
         if marker not in workflow:
             raise ContractError(f"Base v1 production canary workflow missing: {marker}")
-    for forbidden in ("pull_request:", "schedule:", "candidate_commit:\n        description:"):
+    for forbidden in (
+        "pull_request:",
+        "schedule:",
+        "candidate_commit:\n        description:",
+        "onebrain-p5-multi-host.py",
+    ):
         if forbidden in workflow:
             raise ContractError(f"Base v1 production canary workflow exposes: {forbidden}")
 
@@ -7093,7 +7105,18 @@ def validate_base_v1_exact_candidate_soak(
         'subparsers.add_parser("verify-p5")',
         'parser.add_argument("--p5-aggregate", type=Path, required=True)',
         'parser.add_argument("--executable", type=Path, required=True)',
-        '"SPDX_SBOM:sbom.spdx.json"',
+        'parser.add_argument("--registry-aggregate", type=Path, required=True)',
+        'parser.add_argument("--registry-binding", type=Path, required=True)',
+        'parser.add_argument("--p5-request", type=Path, required=True)',
+        'parser.add_argument("--p5-raw-evidence-root", type=Path, required=True)',
+        'parser.add_argument("--p5-bundle-root", type=Path, required=True)',
+        "load_task28_registry_measurement_context",
+        'registry_payload.get("registry_production_qualified") is not True',
+        'parser.add_argument("--sbom", type=Path, required=True)',
+        'parser.add_argument("--provenance", type=Path, required=True)',
+        'parser.add_argument("--runner-image-evidence", type=Path, required=True)',
+        'P5 V2 request is not nested in the Base request interval',
+        'aggregate.get("raw_object_count") != raw_count',
         'fresh exact-candidate soak evidence is incomplete',
     ):
         if marker not in analyzer:
@@ -7118,6 +7141,17 @@ def validate_base_v1_exact_candidate_soak(
     ):
         if marker not in spec:
             raise ContractError(f"Base v1 exact-candidate soak spec missing: {marker}")
+    guide = read(ROOT / "docs/operations/ONEBRAIN_BASE_V1_P5_MULTI_HOST_GUIDE.md")
+    for marker in (
+        "P5_MULTI_HOST_PRODUCTION_QUALIFICATION_PROFILE_V2.md",
+        "P5 V1 remains an observe-only compatibility contract",
+        "ONEBRAIN_P5_V2_RAW_EVIDENCE_ROOT",
+        "ONEBRAIN_P5_V2_BUNDLE_ROOT",
+        "2.2--2.5 GB",
+        "protected mount; never public artifact",
+    ):
+        if marker not in guide:
+            raise ContractError(f"Base v1 P5/soak operator guide missing: {marker}")
     return (len(expected_runners), len(expected_roles), 2, len(exit_oracles))
 
 
