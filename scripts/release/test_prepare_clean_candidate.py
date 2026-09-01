@@ -141,6 +141,13 @@ class PrepareCleanCandidateTests(unittest.TestCase):
         with self.assertRaisesRegex(CleanCandidateError, "source worktree"):
             self.prepare(allowed_source_artifacts=(request, signature))
 
+    def test_source_bootstrap_accepts_verified_request_artifacts_outside_source(self) -> None:
+        prepared = self.prepare(
+            allowed_source_artifacts=(self.request, self.signature)
+        )
+        self.assertEqual(prepared.commit, self.commit)
+        self.assertFalse(self.request.is_relative_to(self.source))
+
     def test_finalizer_detects_post_return_candidate_mutation(self) -> None:
         """Dropping the post-run integrity check must make this test fail."""
         prepared = self.prepare()

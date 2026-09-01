@@ -281,13 +281,17 @@ def prepare_clean_candidate(
     ) or not verified.production:
         raise CleanCandidateError("production verified release context is required")
     allowed = {path.resolve(strict=True) for path in allowed_source_artifacts}
-    if allowed:
+    if any(not path.is_file() or path.is_symlink() for path in allowed):
+        raise CleanCandidateError("allowed request artifact is not a regular file")
+    allowed_inside_source: set[Path] = set()
+    for path in allowed:
         try:
-            for path in allowed:
-                path.relative_to(source)
-        except ValueError as error:
-            raise CleanCandidateError("allowed source artifact escapes source root") from error
-        source_status = _source_status_with_only(source, allowed)
+            path.relative_to(source)
+        except ValueError:
+            continue
+        allowed_inside_source.add(path)
+    if allowed_inside_source:
+        source_status = _source_status_with_only(source, allowed_inside_source)
     else:
         source_status = _status(source)
     if source_status:
