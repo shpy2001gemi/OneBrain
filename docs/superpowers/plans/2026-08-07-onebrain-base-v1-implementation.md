@@ -1911,7 +1911,7 @@ def qualify_base(inputs: QualificationInputs) -> BaseEvidenceManifest:
 - [ ] Run `python -m unittest scripts.base.test_qualify_base -v`. Expected: missing qualifier/profile failure.
 - [ ] Implement the pure verifier/manifest builder. It recomputes hashes and derives `qualified`; it never shells out to run tests and never trusts a target file's claim.
 - [ ] Write the freeze profile and release documents with exact upgrade/downgrade, legacy read-only migration, archive restore, Registry rollback, network kill, signer roles, and Base v2 reopening rules. Populate the signer vector only with real owner-approved full fingerprints for `qualification-approver` and `base-release`; if either is unavailable or unapproved, Task 27 stops rather than using the local default key or a sample fingerprint.
-- [ ] Implement and test `create_base_release_request.py`. After Task 27 commits, it creates canonical external bytes containing a random 256-bit qualification-session ID, exact candidate commit/tree/object format, signer/trust-policy digest, required target map, profile/vector and append-only IDL-history roots, creation/expiry policy, evidence-root URI, and BLAKE3 digests of the exact candidate-owned qualifier/request/clean-worktree/release-wrapper/verifier scripts plus signer policy. It signs with the explicit allowlisted `qualification-approver` key. New attempts live under `target/base-v1/release-requests/<request-digest>/`; no file is overwritten. `--resume` accepts only an existing byte/signature-identical request and preserves failed attempts for audit. The verifier parses `VALIDSIG`, and all later reports bind request digest/session/tooling digest.
+- [ ] Implement and test `create_base_release_request.py`. After Task 27 commits, it creates canonical external bytes containing a random 256-bit qualification-session ID, exact candidate commit/tree/object format, signer/trust-policy digest, required target map, profile/vector and append-only IDL-history roots, creation/expiry policy, evidence-root URI, and BLAKE3 digests of the exact candidate-owned qualifier/request/clean-worktree/release-wrapper/verifier scripts plus signer policy. It signs with the explicit allowlisted `qualification-approver` key. New attempts live under an external authority root at `release-requests/<request-digest>/`; no file is written beneath the candidate and no file is overwritten. `--resume` accepts only an existing byte/signature-identical request and preserves failed attempts for audit. The verifier parses `VALIDSIG`, and all later reports bind request digest/session/tooling digest.
 - [ ] Implement and test `prepare_clean_candidate.py`: verify the signed release request and bound tooling digests first, create a detached linked worktree in a newly created OS-temporary directory outside the source worktree, check out only the requested commit, verify its tree, compare the filesystem against `git ls-tree -r`/`git ls-files`, reject `git status --porcelain --untracked-files=all --ignored=matching` output other than the worktree administrative file, redirect every build/cache/evidence output outside, and make tracked source read-only for the qualification duration. Tests prove dirty/untracked/ignored/generated source files cannot enter or later mutate the candidate and every subprocess exit code is checked.
 - [ ] Implement and test `create_verified_base_release.py`: it selects the allowlisted `base-release` fingerprint explicitly, signs the immutable ready manifest to a temporary file, parses GPG `VALIDSIG`, publishes the verified detached signature in a create-new content-addressed release envelope, then atomically publishes a checksummed release-ready pointer without mutating the manifest generation. It constructs the annotated tag bytes with internal name `base-v1.0.0`, signs them, writes an **unreferenced** tag object, verifies that object and all bindings, then uses one `git update-ref` compare-and-swap from an absent final ref to the already verified object. A crash before CAS leaves no tag ref; the script never deletes or overwrites a pre-existing tag. If a retry finds an existing ref, it returns idempotent `AlreadyPublished` only when tag object, request, manifest/release-ready digests, signature, signer, and target commit all match exactly; every other existing ref hard-fails. Tests use isolated repositories/keyrings and inject failures before envelope readiness, before object write, before CAS, and after CAS receipt fsync, plus exact retry, wrong-but-valid key, wrong role, stale digest, and foreign existing-ref cases.
 - [ ] Change the candidate tuple from `1.0.0-rc.1` to `1.0.0`. Keep the separate runtime/version status `Unqualified` until a valid external manifest binds this exact commit, candidate semantic digest, and per-target artifact digests; the version change is not a completion claim and does not alter the tuple after Task 27.
@@ -1929,8 +1929,8 @@ git commit -m "chore(base): cut v1.0.0 qualification candidate"
 
 **Generated release artifacts, not candidate-source edits:**
 
-- `target/base-v1/release-requests/<request-digest>/release-request.json`
-- `target/base-v1/release-requests/<request-digest>/release-request.json.asc`
+- `<external-authority-root>/release-requests/<request-digest>/release-request.json`
+- `<external-authority-root>/release-requests/<request-digest>/release-request.json.asc`
 - `target/base-v1/evidence/sessions/<qualification-session-id>/manifest-generations/<manifest-digest>/manifest.json`
 - `target/base-v1/evidence/sessions/<qualification-session-id>/manifest-generations/<manifest-digest>/manifest.blake3`
 - `target/base-v1/evidence/sessions/<qualification-session-id>/manifest.ready.json`
@@ -1961,7 +1961,11 @@ if ($LASTEXITCODE -ne 0 -or $bootstrapStatus) { throw "bootstrap worktree is not
 $bootstrapRequestTool = Join-Path $bootstrapRoot "scripts/release/create_base_release_request.py"
 $bootstrapPrepareTool = Join-Path $bootstrapRoot "scripts/release/prepare_clean_candidate.py"
 $bootstrapSignerPolicy = Join-Path $bootstrapRoot "src/test-vectors/vnext/base-v1-release-signers-v1.json"
-$releaseRequestRoot = Join-Path $sourceRoot "target/base-v1/release-requests"
+$task28AuthorityRoot = [Environment]::GetEnvironmentVariable("ONEBRAIN_TASK28_AUTHORITY_ROOT")
+if ([string]::IsNullOrWhiteSpace($task28AuthorityRoot)) { throw "ONEBRAIN_TASK28_AUTHORITY_ROOT is required" }
+$task28AuthorityRoot = [System.IO.Path]::GetFullPath($task28AuthorityRoot)
+if ($task28AuthorityRoot.StartsWith($bootstrapRoot, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Task 28 authority root must remain outside bootstrap" }
+$releaseRequestRoot = Join-Path $task28AuthorityRoot "release-requests"
 $baseReleaseRequest = (& python $bootstrapRequestTool --new-attempt --candidate-commit $task27CandidateCommit --output-root $releaseRequestRoot --signer-policy $bootstrapSignerPolicy).Trim()
 if ($LASTEXITCODE -ne 0) { throw "release request creation failed" }
 $baseReleaseRequestSignature = "$baseReleaseRequest.asc"
@@ -1976,7 +1980,7 @@ if ($LASTEXITCODE -ne 0) { throw "session extraction failed" }
 $sessionEvidenceRoot = Join-Path ([System.IO.Path]::GetFullPath("target/base-v1/evidence/sessions")) $qualificationSessionId
 if (Test-Path -LiteralPath $sessionEvidenceRoot) { throw "qualification session directory already exists" }
 New-Item -ItemType Directory -Path $sessionEvidenceRoot -ErrorAction Stop | Out-Null
-$baseCandidateRoot = (& python $bootstrapPrepareTool --source-root $sourceRoot --release-request $baseReleaseRequest --signature $baseReleaseRequestSignature --signer-policy $bootstrapSignerPolicy --read-only).Trim()
+$baseCandidateRoot = (& python $bootstrapPrepareTool --source-root $bootstrapRoot --release-request $baseReleaseRequest --signature $baseReleaseRequestSignature --signer-policy $bootstrapSignerPolicy --read-only).Trim()
 if ($LASTEXITCODE -ne 0) { throw "clean candidate preparation failed" }
 $actualCandidateCommit = (git -C $baseCandidateRoot rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw "candidate commit read failed" }

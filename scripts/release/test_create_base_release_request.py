@@ -15,6 +15,7 @@ import blake3
 
 from scripts.release.create_base_release_request import (
     ReleaseRequestCreationError,
+    _require_external_output_root,
     create_release_request,
 )
 from scripts.release.verify_base_release_request import (
@@ -184,6 +185,14 @@ class CreateBaseReleaseRequestTests(unittest.TestCase):
         (self.root / "candidate.txt").write_text("dirty\n", encoding="utf-8")
         with self.assertRaisesRegex(ReleaseRequestCreationError, "dirty"):
             self.create()
+
+    def test_task28_request_output_must_remain_outside_candidate(self) -> None:
+        external = _require_external_output_root(self.root, self.output)
+        self.assertEqual(external, self.output.resolve())
+        with self.assertRaisesRegex(ReleaseRequestCreationError, "outside"):
+            _require_external_output_root(
+                self.root, self.root / "target/base-v1/release-requests"
+            )
 
     def test_rejects_validity_too_short_for_exact_72_hour_soak(self) -> None:
         """A 24-hour request cannot authorize a 72-hour qualifying soak."""

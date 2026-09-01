@@ -123,8 +123,10 @@ Run all four Task 28 tools by absolute path from the verified bootstrap or
 candidate worktree. The request tool has four closed modes: `--new-attempt`,
 `--verify`, `--print`, and explicit `--resume <release-request>`; resume verifies
 and reuses the byte-identical request/session/timestamps and never generates a
-new identity. Candidate preparation accepts only the exact ignored request and
-signature files in the bootstrap source, then persists
+new identity. The request output root is external to the bootstrap/candidate;
+placing it beneath an ignored `target/` directory makes the source non-pristine
+and fails closed. Candidate preparation accepts the exact verified external
+request and signature while still requiring a completely pristine source, then persists
 `prepared-candidate.json`; `--verify-only` is the mandatory finalizer.
 
 The qualifier consumes exactly `qualification-bundle.json` beneath the session

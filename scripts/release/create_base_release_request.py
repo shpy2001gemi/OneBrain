@@ -107,6 +107,18 @@ def _candidate_path(root: Path, supplied: Path, relative: Path, label: str) -> P
     return expected
 
 
+def _require_external_output_root(candidate_root: Path, output_root: Path) -> Path:
+    root = candidate_root.resolve(strict=True)
+    output = output_root.resolve()
+    try:
+        output.relative_to(root)
+    except ValueError:
+        return output
+    raise ReleaseRequestCreationError(
+        "Task 28 request output root must remain outside the candidate"
+    )
+
+
 def _approver_policy(vector: object) -> tuple[dict[str, object], str]:
     try:
         if not isinstance(vector, dict) or vector.get("format") != "onebrain/base-v1-release-signers/1":
@@ -391,6 +403,7 @@ def create_task28_release_request(
     root = candidate_root.resolve(strict=True)
     if _run_git(root, "status", "--porcelain", "--untracked-files=all", "--ignored=matching"):
         raise ReleaseRequestCreationError("Task 28 bootstrap candidate is not pristine")
+    durable_output_root = _require_external_output_root(root, output_root)
     actual_commit = _run_git(root, "rev-parse", "HEAD")
     tree = _run_git(root, "rev-parse", "HEAD^{tree}")
     object_format = _run_git(root, "rev-parse", "--show-object-format")
@@ -433,7 +446,6 @@ def create_task28_release_request(
     }
     payload = canonical_json(request)
     digest = blake3.blake3(payload).hexdigest()
-    durable_output_root = output_root.resolve()
     output_existed = durable_output_root.is_dir()
     durable_output_root.mkdir(parents=True, exist_ok=True)
     if not output_existed:
