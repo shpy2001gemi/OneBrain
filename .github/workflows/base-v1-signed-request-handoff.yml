@@ -1,0 +1,115 @@
+name: Base v1 signed request handoff
+run-name: Base v1 signed request ${{ inputs.release_request_digest }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_request_digest:
+        description: BLAKE3 digest of the detached-signed Task 28 request
+        required: true
+        type: string
+      request_sha256:
+        description: SHA-256 of request.json
+        required: true
+        type: string
+      signature_sha256:
+        description: SHA-256 of request.json.asc
+        required: true
+        type: string
+      policy_sha256:
+        description: SHA-256 of approver-policy.json
+        required: true
+        type: string
+      public_key_sha256:
+        description: SHA-256 of approver-public-key.gpg
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: base-v1-signed-request-${{ inputs.release_request_digest }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish closed public signed-request envelope
+    environment: base-v1-production-qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Materialize and verify the closed public envelope
+        shell: bash
+        env:
+          REQUEST_JSON_B64: ${{ secrets.ONEBRAIN_TASK28_REQUEST_JSON_B64 }}
+          REQUEST_SIGNATURE_B64: ${{ secrets.ONEBRAIN_TASK28_REQUEST_SIGNATURE_B64 }}
+          APPROVER_POLICY_B64: ${{ secrets.ONEBRAIN_TASK28_APPROVER_POLICY_B64 }}
+          APPROVER_PUBLIC_KEY_B64: ${{ secrets.ONEBRAIN_TASK28_APPROVER_PUBLIC_KEY_B64 }}
+          RELEASE_REQUEST_DIGEST: ${{ inputs.release_request_digest }}
+          REQUEST_SHA256: ${{ inputs.request_sha256 }}
+          SIGNATURE_SHA256: ${{ inputs.signature_sha256 }}
+          POLICY_SHA256: ${{ inputs.policy_sha256 }}
+          PUBLIC_KEY_SHA256: ${{ inputs.public_key_sha256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          envelope="$RUNNER_TEMP/base-v1-signed-release-request"
+          install -d -m 700 "$envelope"
+
+          decode() {
+            encoded="$1"
+            output="$2"
+            test -n "$encoded"
+            printf '%s' "$encoded" | base64 --decode > "$output"
+            test -s "$output"
+          }
+
+          decode "$REQUEST_JSON_B64" "$envelope/request.json"
+          decode "$REQUEST_SIGNATURE_B64" "$envelope/request.json.asc"
+          decode "$APPROVER_POLICY_B64" "$envelope/approver-policy.json"
+          decode "$APPROVER_PUBLIC_KEY_B64" "$envelope/approver-public-key.gpg"
+          unset REQUEST_JSON_B64 REQUEST_SIGNATURE_B64 APPROVER_POLICY_B64 APPROVER_PUBLIC_KEY_B64
+
+          python3 - "$envelope" <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          expected_files = {
+              "request.json": os.environ["REQUEST_SHA256"],
+              "request.json.asc": os.environ["SIGNATURE_SHA256"],
+              "approver-policy.json": os.environ["POLICY_SHA256"],
+              "approver-public-key.gpg": os.environ["PUBLIC_KEY_SHA256"],
+          }
+          if {path.name for path in root.iterdir()} != set(expected_files):
+              raise SystemExit("signed-request envelope file set is not closed")
+          for name, expected in expected_files.items():
+              if not re.fullmatch(r"[0-9a-f]{64}", expected):
+                  raise SystemExit(f"{name} expected SHA-256 is invalid")
+              actual = hashlib.sha256((root / name).read_bytes()).hexdigest()
+              if actual != expected:
+                  raise SystemExit(f"{name} SHA-256 mismatch")
+          digest = os.environ["RELEASE_REQUEST_DIGEST"]
+          if not re.fullmatch(r"[0-9a-f]{64}", digest):
+              raise SystemExit("release-request digest is invalid")
+          request = json.loads((root / "request.json").read_text(encoding="utf-8"))
+          if request.get("format") != "onebrain/base-v1-release-request/2":
+              raise SystemExit("Task 28 request format is invalid")
+          print(f"SIGNED_REQUEST_HANDOFF_OK request={digest}")
+          PY
+
+      - name: Upload immutable signed-request envelope
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: base-v1-signed-release-request
+          path: ${{ runner.temp }}/base-v1-signed-release-request
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: false
+          include-hidden-files: false
+          retention-days: 90
