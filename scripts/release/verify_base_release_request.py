@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Verify a canonical, detached-signed Base v1 release request.
+"""Verify canonical, detached-signed Base v1 release requests.
 
-The verifier owns the transition from untrusted JSON/files to a closed
-VerifiedQualificationContextV1.  Callers receive derived context and Registry
-bindings; they cannot supply or override either value.
+The verifier owns the transition from untrusted JSON/files to a closed verified
+qualification context.  Request v1 remains available for historical evidence.
+Task 28 request v2 authenticates the candidate and qualification attempt before
+fresh Registry, P5, and soak evidence exists; downstream measured evidence must
+therefore extend, never rewrite, the v2 context.
 """
 
 from __future__ import annotations
@@ -58,6 +60,18 @@ TOOLING_FIELDS = {
     "qualifier", "request", "clean_worktree", "release_wrapper", "verifier",
     "signer_policy",
 }
+TASK28_REQUEST_FIELDS = {
+    "format", "usage", "qualification_session_id", "candidate",
+    "qualification_approver_fingerprint", "trust_policy_digest",
+    "required_targets", "production_profile_blake3", "production_vector_blake3",
+    "append_only_idl_history_root", "created_utc", "expires_utc",
+    "evidence_root_uri", "candidate_tooling_blake3",
+}
+TASK28_REQUIRED_TARGETS = {
+    "linux": "x86_64-unknown-linux-gnu",
+    "windows": "x86_64-pc-windows-msvc",
+    "macos": "aarch64-apple-darwin",
+}
 CANONICAL_CANDIDATE_FILES = {
     "production_profile": Path("src/test-vectors/vnext/base-v1-freeze-v1.json"),
     "production_vector": Path("src/test-vectors/vnext/base-v1-release-signers-v1.json"),
@@ -74,6 +88,14 @@ ARTIFACT_FIELDS = {
     "OBR:concepts.obr", "LABEL_INDEX:concepts.obr.labels.idx",
     "CCID_INDEX:concepts.obr.ccids.idx", "MANIFEST:concepts.obr.manifest.json",
     "SPDX_SBOM:sbom.spdx.json",
+}
+TASK28_REGISTRY_MEASUREMENT_FIELDS = {
+    "candidate_semantic_digest", "artifact_tuple_digest", "release_aggregate_root",
+    "registry_generation", "candidate_payload_artifacts_blake3",
+    "release_stamp_blake3", "trust_policy_digest", "signer_fingerprint",
+    "ccid_inputs_blake3", "probe_blake3", "probe_signature",
+    "probe_signer_fingerprint", "probe_signer_public_key", "executable_blake3",
+    "rust_toolchain_digest", "runner_image_digest", "target_triple",
 }
 
 
@@ -104,12 +126,114 @@ class VerifiedQualificationContextV1:
         }
 
 
+@dataclass(frozen=True)
+class VerifiedQualificationContextV2:
+    """Authenticated Task 28 attempt before fresh child evidence is measured."""
+
+    request_digest: str
+    signer_fingerprint: str
+    trust_policy_digest: str
+    run_context: dict[str, object]
+    bindings: dict[str, object]
+    tooling_blake3: dict[str, str]
+    request: dict[str, object]
+    production: bool
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "format": "onebrain/verified-qualification-context/2",
+            "production": self.production,
+            "request_digest": self.request_digest,
+            "signer_fingerprint": self.signer_fingerprint,
+            "trust_policy_digest": self.trust_policy_digest,
+            "run_context": self.run_context,
+            "bindings": self.bindings,
+            "tooling_blake3": self.tooling_blake3,
+        }
+
+
 def blake3_file(path: Path) -> str:
     digest = blake3.blake3()
     with path.open("rb") as handle:
         while chunk := handle.read(1024 * 1024):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def bind_task28_registry_measurements(
+    verified: VerifiedQualificationContextV2,
+    measurements: object,
+) -> VerifiedQualificationContextV2:
+    """Close fresh Registry measurements under an authenticated v2 attempt.
+
+    The supplied values are expectations only. Registry producers must still
+    call ``verify_registry_candidate_measurements`` so every referenced byte is
+    independently remeasured before a receipt is signed.
+    """
+    if not isinstance(verified, VerifiedQualificationContextV2):
+        raise ReleaseRequestError("Task 28 verified context v2 is required")
+    binding = _closed(
+        measurements,
+        TASK28_REGISTRY_MEASUREMENT_FIELDS,
+        "Task 28 Registry measurement binding",
+    )
+    for field in (
+        "candidate_semantic_digest", "artifact_tuple_digest", "release_aggregate_root",
+        "release_stamp_blake3", "trust_policy_digest", "signer_fingerprint",
+        "probe_blake3", "probe_signature", "probe_signer_fingerprint",
+        "probe_signer_public_key", "executable_blake3", "rust_toolchain_digest",
+        "runner_image_digest",
+    ):
+        _hex(binding[field], f"Task 28 Registry {field}")
+    generation = binding["registry_generation"]
+    if isinstance(generation, bool) or not isinstance(generation, int) or generation <= 0:
+        raise ReleaseRequestError("Task 28 Registry generation must be positive")
+    target = binding["target_triple"]
+    if target != verified.request["required_targets"]["linux"]:
+        raise ReleaseRequestError("Task 28 Registry target is not the signed Linux target")
+    artifacts = _closed(
+        binding["candidate_payload_artifacts_blake3"],
+        ARTIFACT_FIELDS,
+        "Task 28 Registry payload artifacts",
+    )
+    for name, digest in artifacts.items():
+        _hex(digest, f"Task 28 Registry artifact {name}")
+    ccid = _closed(
+        binding["ccid_inputs_blake3"],
+        {"old_input", "old_obr", "old_manifest", "candidate_input", "candidate_obr", "candidate_manifest"},
+        "Task 28 Registry CCID inputs",
+    )
+    for name, digest in ccid.items():
+        _hex(digest, f"Task 28 Registry CCID input {name}")
+    combined = dict(verified.bindings)
+    overlap = set(combined).intersection(binding)
+    if overlap:
+        raise ReleaseRequestError("Task 28 Registry binding attempts to override request fields")
+    combined.update(binding)
+    return VerifiedQualificationContextV2(
+        request_digest=verified.request_digest,
+        signer_fingerprint=verified.signer_fingerprint,
+        trust_policy_digest=verified.trust_policy_digest,
+        run_context=dict(verified.run_context),
+        bindings=combined,
+        tooling_blake3=dict(verified.tooling_blake3),
+        request=dict(verified.request),
+        production=verified.production,
+    )
+
+
+def load_task28_registry_measurement_context(
+    verified: VerifiedQualificationContextV2,
+    binding_path: Path,
+) -> VerifiedQualificationContextV2:
+    try:
+        encoded = binding_path.read_bytes()
+        value = json.loads(encoded)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ReleaseRequestError("Task 28 Registry measurement binding is invalid JSON") from error
+    if encoded not in {canonical_json(value), canonical_json(value) + b"\n"}:
+        raise ReleaseRequestError("Task 28 Registry measurement binding is not canonical")
+    return bind_task28_registry_measurements(verified, value)
 
 
 def python_executable_path() -> Path:
@@ -204,7 +328,7 @@ def _verify_authenticated_tooling(
 
 
 def _verify_registry_candidate_measurements(
-    verified: VerifiedQualificationContextV1,
+    verified: VerifiedQualificationContextV1 | VerifiedQualificationContextV2,
     *,
     git_executable: Path,
     candidate_root: Path,
@@ -225,7 +349,9 @@ def _verify_registry_candidate_measurements(
     target_triple: str,
 ) -> dict[str, object]:
     """Measure every candidate-owned Registry byte named by the request."""
-    if not isinstance(verified, VerifiedQualificationContextV1):
+    if not isinstance(
+        verified, (VerifiedQualificationContextV1, VerifiedQualificationContextV2)
+    ):
         raise ReleaseRequestError("closed verified release context is required")
     root = candidate_root.resolve(strict=True)
     git_values: dict[str, str] = {}
@@ -279,12 +405,19 @@ def _verify_registry_candidate_measurements(
         artifact_tuple_bytes,
         derive_key_context="onebrain:base:artifact-tuple:1\0",
     ).hexdigest()
-    targets = verified.bindings["required_targets"]
-    if (
-        target_triple not in targets
-        or artifact_tuple != verified.bindings["artifact_tuple_digest"]
-        or artifact_tuple != targets[target_triple]
-    ):
+    if isinstance(verified, VerifiedQualificationContextV2):
+        target_matches = (
+            target_triple in verified.request["required_targets"].values()
+            and artifact_tuple == verified.bindings["artifact_tuple_digest"]
+        )
+    else:
+        targets = verified.bindings["required_targets"]
+        target_matches = (
+            target_triple in targets
+            and artifact_tuple == verified.bindings["artifact_tuple_digest"]
+            and artifact_tuple == targets[target_triple]
+        )
+    if not target_matches:
         raise ReleaseRequestError("derived target artifact tuple differs from signed request")
     try:
         profile_value = json.loads(production_profile.read_bytes())
@@ -375,7 +508,7 @@ def _verify_registry_candidate_measurements(
 
 
 def verify_registry_candidate_measurements(
-    verified: VerifiedQualificationContextV1,
+    verified: VerifiedQualificationContextV1 | VerifiedQualificationContextV2,
     *,
     candidate_root: Path,
     registry_root: Path,
@@ -414,7 +547,7 @@ def verify_registry_candidate_measurements(
 
 
 def verify_registry_candidate_measurements_for_test_nonproduction(
-    verified: VerifiedQualificationContextV1,
+    verified: VerifiedQualificationContextV1 | VerifiedQualificationContextV2,
     *,
     git_executable: Path,
     **measurements: Any,
@@ -700,6 +833,233 @@ def _validate_request(
     return request
 
 
+def _validate_task28_request(
+    value: object,
+    policy_digest: str,
+    signer: dict[str, Any],
+    now: datetime,
+) -> dict[str, Any]:
+    request = _closed(value, TASK28_REQUEST_FIELDS, "Task 28 release request")
+    if (
+        request["format"] != "onebrain/base-v1-release-request/2"
+        or request["usage"] != "base-release-request"
+    ):
+        raise ReleaseRequestError("Task 28 release request format or usage is invalid")
+    _hex(request["qualification_session_id"], "qualification_session_id")
+    candidate = _closed(request["candidate"], {"commit", "tree", "object_format"}, "candidate")
+    object_format = candidate["object_format"]
+    if object_format not in ("sha1", "sha256"):
+        raise ReleaseRequestError("candidate object format is invalid")
+    object_length = 40 if object_format == "sha1" else 64
+    _hex(candidate["commit"], "candidate commit", (object_length,))
+    _hex(candidate["tree"], "candidate tree", (object_length,))
+    fingerprint = _fingerprint(
+        request["qualification_approver_fingerprint"],
+        "request approver fingerprint",
+    )
+    if fingerprint != signer["fingerprint"]:
+        raise ReleaseRequestError("Task 28 request approver is not allowlisted")
+    if request["trust_policy_digest"] != policy_digest:
+        raise ReleaseRequestError("Task 28 request trust policy digest mismatch")
+    if request["required_targets"] != TASK28_REQUIRED_TARGETS:
+        raise ReleaseRequestError("Task 28 required target map is not frozen")
+    for field in (
+        "production_profile_blake3",
+        "production_vector_blake3",
+        "append_only_idl_history_root",
+    ):
+        _hex(request[field], field)
+    created = _instant(request["created_utc"], "request created_utc")
+    expires = _instant(request["expires_utc"], "request expires_utc")
+    signer_created = _instant(signer["created_utc"], "signer created_utc")
+    signer_expires = _instant(signer["expires_utc"], "signer expires_utc")
+    if (
+        created >= expires
+        or expires - created != FROZEN_REQUEST_VALIDITY
+        or created < signer_created
+        or expires > signer_expires
+    ):
+        raise ReleaseRequestError("Task 28 request validity is not the frozen 168-hour interval")
+    if now < created or now >= expires:
+        raise ReleaseRequestError("Task 28 request is expired or not yet valid")
+    uri = request["evidence_root_uri"]
+    if not isinstance(uri, str) or not urlparse(uri).scheme:
+        raise ReleaseRequestError("evidence_root_uri must be absolute")
+    tooling = _closed(request["candidate_tooling_blake3"], TOOLING_FIELDS, "candidate tooling")
+    for field, digest in tooling.items():
+        _hex(digest, f"candidate tooling {field}")
+    return request
+
+
+def _verify_task28_candidate_bytes(
+    request: dict[str, Any],
+    policy_bytes: bytes,
+    *,
+    candidate_root: Path | None,
+) -> None:
+    if candidate_root is None:
+        return
+    root = candidate_root.resolve(strict=True)
+    for revision, expected in (
+        ("HEAD", request["candidate"]["commit"]),
+        ("HEAD^{tree}", request["candidate"]["tree"]),
+        ("--show-object-format", request["candidate"]["object_format"]),
+    ):
+        completed = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", revision],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0 or completed.stdout.strip() != expected:
+            raise ReleaseRequestError("Task 28 verifier is not running from the signed candidate")
+    status = subprocess.run(
+        [
+            "git", "-C", str(root), "status", "--porcelain=v1",
+            "--untracked-files=all", "--ignored=matching",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if status.returncode != 0 or status.stdout:
+        raise ReleaseRequestError("Task 28 candidate is dirty, untracked, ignored or generated")
+    paths = {
+        name: (root / relative).resolve(strict=True)
+        for name, relative in CANONICAL_CANDIDATE_FILES.items()
+    }
+    for name, relative in CANONICAL_CANDIDATE_FILES.items():
+        tracked = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "--error-unmatch", "--", relative.as_posix()],
+            capture_output=True,
+            check=False,
+        )
+        if tracked.returncode != 0:
+            raise ReleaseRequestError(f"Task 28 candidate {name} is not tracked")
+    if {name: blake3_file(paths[name]) for name in TOOLING_FIELDS} != request["candidate_tooling_blake3"]:
+        raise ReleaseRequestError("Task 28 candidate tooling bytes differ from the request")
+    if blake3.blake3(policy_bytes).hexdigest() != request["candidate_tooling_blake3"]["signer_policy"]:
+        raise ReleaseRequestError("Task 28 signer policy bytes differ from candidate tooling")
+    if blake3_file(paths["production_profile"]) != request["production_profile_blake3"]:
+        raise ReleaseRequestError("Task 28 production profile bytes differ")
+    if blake3_file(paths["production_vector"]) != request["production_vector_blake3"]:
+        raise ReleaseRequestError("Task 28 production vector bytes differ")
+    try:
+        history_root = json.loads(paths["append_only_idl_history"].read_bytes())["history_chain"]["root_sha256"]
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as error:
+        raise ReleaseRequestError("Task 28 append-only history is invalid") from error
+    if history_root != request["append_only_idl_history_root"]:
+        raise ReleaseRequestError("Task 28 append-only history root differs")
+
+
+def _verify_task28_release_request(
+    request_path: Path,
+    signature_path: Path,
+    policy_path: Path,
+    *,
+    gpg_executable: Path,
+    gpg_home: Path | None,
+    candidate_root: Path | None,
+    now: datetime | None,
+    production: bool,
+) -> VerifiedQualificationContextV2:
+    try:
+        request_bytes = request_path.read_bytes()
+        policy_bytes = policy_path.read_bytes()
+        request_value = json.loads(request_bytes)
+        policy_value = json.loads(policy_bytes)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ReleaseRequestError("Task 28 release request or policy could not be read") from error
+    if request_bytes != canonical_json(request_value):
+        raise ReleaseRequestError("Task 28 release request bytes are not canonical")
+    policy, policy_digest = _policy_source(policy_value, production)
+    signer = policy["signers"][0]
+    request = _validate_task28_request(
+        request_value,
+        policy_digest,
+        signer,
+        now or datetime.now(timezone.utc),
+    )
+    command = [str(gpg_executable), "--batch", "--no-tty"]
+    if gpg_home is not None:
+        home = gpg_home.resolve(strict=True)
+        if not home.is_dir():
+            raise ReleaseRequestError("Task 28 GPG home must be a directory")
+        command.extend(["--homedir", str(home)])
+    completed = subprocess.run(
+        [*command, "--status-fd", "1", "--verify", str(signature_path), str(request_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    status = [
+        line.split()
+        for line in completed.stdout.splitlines()
+        if line.startswith("[GNUPG:] VALIDSIG ")
+    ]
+    if completed.returncode != 0 or len(status) != 1:
+        raise ReleaseRequestError("Task 28 detached signature verification failed")
+    tokens = status[0]
+    signing_fingerprint = tokens[2]
+    primary_fingerprint = tokens[-1] if len(tokens) >= 12 else signing_fingerprint
+    if len(tokens) < 12 or tokens[8] != "22" or primary_fingerprint != signer["fingerprint"]:
+        raise ReleaseRequestError("Task 28 signature is not allowlisted OpenPGP Ed25519")
+    try:
+        signature_created = datetime.fromtimestamp(int(tokens[4]), timezone.utc)
+    except (ValueError, OverflowError) as error:
+        raise ReleaseRequestError("Task 28 signature timestamp is invalid") from error
+    created = _instant(request["created_utc"], "request created_utc")
+    expires = _instant(request["expires_utc"], "request expires_utc")
+    if not created <= signature_created < expires:
+        raise ReleaseRequestError("Task 28 signature timestamp is outside request validity")
+    exported = subprocess.run(
+        [*command, "--export", str(signer["fingerprint"])],
+        capture_output=True,
+        check=False,
+    )
+    if (
+        exported.returncode != 0
+        or not exported.stdout
+        or blake3.blake3(exported.stdout).hexdigest() != signer["public_key_packet_blake3"]
+    ):
+        raise ReleaseRequestError("Task 28 approver public key packet differs")
+    _verify_task28_candidate_bytes(request, policy_bytes, candidate_root=candidate_root)
+    request_digest = blake3.blake3(request_bytes).hexdigest()
+    candidate = request["candidate"]
+    run_context = {
+        "format": "onebrain/qualification-run-context/2",
+        "variant": "Release",
+        "release_request_digest": request_digest,
+        "qualification_session_id": request["qualification_session_id"],
+        "candidate_commit": candidate["commit"],
+        "candidate_tree": candidate["tree"],
+    }
+    bindings = {
+        "evidence_tier": "production-reference" if production else "nonproduction-test",
+        "release_request_digest": request_digest,
+        "qualification_session_id": request["qualification_session_id"],
+        "candidate_commit": candidate["commit"],
+        "candidate_tree": candidate["tree"],
+        "candidate_object_format": candidate["object_format"],
+        "required_targets": dict(request["required_targets"]),
+        "production_profile_blake3": request["production_profile_blake3"],
+        "production_vector_blake3": request["production_vector_blake3"],
+        "append_only_idl_history_root": request["append_only_idl_history_root"],
+        "evidence_root_uri": request["evidence_root_uri"],
+        "qualification_approver_trust_policy_digest": policy_digest,
+        "qualification_approver_fingerprint": primary_fingerprint,
+    }
+    return VerifiedQualificationContextV2(
+        request_digest=request_digest,
+        signer_fingerprint=primary_fingerprint,
+        trust_policy_digest=policy_digest,
+        run_context=run_context,
+        bindings=bindings,
+        tooling_blake3=dict(request["candidate_tooling_blake3"]),
+        request=dict(request),
+        production=production,
+    )
+
+
 def _verify_release_request(
     request_path: Path,
     signature_path: Path,
@@ -857,6 +1217,58 @@ def verify_release_request_for_test_nonproduction(
     )
 
 
+def verify_task28_release_request(
+    request_path: Path,
+    signature_path: Path,
+    policy_path: Path,
+    *,
+    gpg_home: Path | None = None,
+    gpg_executable: Path | None = None,
+    candidate_root: Path | None = None,
+    now: datetime | None = None,
+) -> VerifiedQualificationContextV2:
+    """Verify the production Task 28 v2 request and derive its closed context."""
+    executable = gpg_executable
+    if executable is None:
+        if not sys.platform.startswith("linux"):
+            raise ReleaseRequestError("production Task 28 verification requires explicit GPG outside Linux")
+        executable = Path("/usr/bin/gpg")
+    executable = executable.resolve(strict=True)
+    return _verify_task28_release_request(
+        request_path,
+        signature_path,
+        policy_path,
+        gpg_executable=executable,
+        gpg_home=gpg_home,
+        candidate_root=candidate_root,
+        now=now,
+        production=True,
+    )
+
+
+def verify_task28_release_request_for_test_nonproduction(
+    request_path: Path,
+    signature_path: Path,
+    policy_path: Path,
+    *,
+    gpg_executable: Path,
+    gpg_home: Path | None = None,
+    candidate_root: Path | None = None,
+    now: datetime | None = None,
+) -> VerifiedQualificationContextV2:
+    """Verify v2 mechanics with a test policy; the context cannot claim production."""
+    return _verify_task28_release_request(
+        request_path,
+        signature_path,
+        policy_path,
+        gpg_executable=gpg_executable.resolve(strict=True),
+        gpg_home=gpg_home,
+        candidate_root=candidate_root,
+        now=now,
+        production=False,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request", type=Path, required=True)
@@ -870,7 +1282,30 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     try:
-        if args.test_nonproduction_gpg is None:
+        try:
+            request_format = json.loads(args.request.read_bytes()).get("format")
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, AttributeError) as error:
+            raise ReleaseRequestError("release request format could not be read") from error
+        if request_format == "onebrain/base-v1-release-request/2":
+            candidate_root = Path(__file__).resolve().parents[2]
+            if args.test_nonproduction_gpg is None:
+                verified = verify_task28_release_request(
+                    args.request,
+                    args.signature,
+                    args.policy,
+                    gpg_home=args.gpg_home,
+                    candidate_root=candidate_root,
+                )
+            else:
+                verified = verify_task28_release_request_for_test_nonproduction(
+                    args.request,
+                    args.signature,
+                    args.policy,
+                    gpg_home=args.gpg_home,
+                    gpg_executable=args.test_nonproduction_gpg,
+                    candidate_root=candidate_root,
+                )
+        elif args.test_nonproduction_gpg is None:
             verified = verify_release_request(
                 args.request, args.signature, args.policy, args.gpg_home,
             )

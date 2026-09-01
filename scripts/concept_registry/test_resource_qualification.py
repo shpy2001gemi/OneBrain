@@ -21,8 +21,8 @@ if str(SCRIPT_DIR) not in sys.path:
 from build_obr import build
 from config import SOURCE_WIKIDATA
 from resource_qualification import (
-    MAX_PRODUCTION_OBR_BYTES,
-    MIN_PRODUCTION_OBR_BYTES,
+    MAX_PRODUCTION_REGISTRY_DATA_BYTES,
+    MIN_PRODUCTION_REGISTRY_DATA_BYTES,
     PROFILE,
     PROBE_PROFILE,
     QualificationError,
@@ -140,11 +140,13 @@ class ResourceQualificationTests(unittest.TestCase):
                     1_000,
                     64 * 1024 * 1024,
                     volume_evidence=evidence,
-                    obr_bytes=MIN_PRODUCTION_OBR_BYTES,
+                    registry_data_bytes=MIN_PRODUCTION_REGISTRY_DATA_BYTES,
                     production_candidate=True,
                 )
                 self.assertTrue(oracles[oracle])
-                self.assertTrue(oracles["production_obr_size_is_inclusive"])
+                self.assertTrue(
+                    oracles["production_registry_data_size_is_inclusive"]
+                )
 
     def test_unknown_or_missing_production_volume_evidence_fails_closed(self) -> None:
         for evidence in (None, {}, {"storage_class": "unknown"}):
@@ -158,7 +160,7 @@ class ResourceQualificationTests(unittest.TestCase):
                     1_000,
                     64 * 1024 * 1024,
                     volume_evidence=evidence,
-                    obr_bytes=MIN_PRODUCTION_OBR_BYTES,
+                    registry_data_bytes=MIN_PRODUCTION_REGISTRY_DATA_BYTES,
                     production_candidate=True,
                 )
                 self.assertFalse(oracles["storage_is_ssd"])
@@ -177,7 +179,7 @@ class ResourceQualificationTests(unittest.TestCase):
                 "collector": "linux-sysfs",
                 "rotational": 1,
             },
-            obr_bytes=MIN_PRODUCTION_OBR_BYTES,
+            registry_data_bytes=MIN_PRODUCTION_REGISTRY_DATA_BYTES,
             production_candidate=True,
         )
         self.assertFalse(mismatched["storage_is_ssd"])
@@ -196,7 +198,7 @@ class ResourceQualificationTests(unittest.TestCase):
                     "storage_class": "ssd",
                     "collector": "windows-physical-disk",
                 },
-                obr_bytes=MIN_PRODUCTION_OBR_BYTES,
+                registry_data_bytes=MIN_PRODUCTION_REGISTRY_DATA_BYTES,
                 production_candidate=True,
             )
         self.assertFalse(oracles["production_reference_host_is_linux"])
@@ -204,10 +206,10 @@ class ResourceQualificationTests(unittest.TestCase):
 
     def test_production_candidate_size_bounds_are_inclusive(self) -> None:
         cases = (
-            (MIN_PRODUCTION_OBR_BYTES - 1, False),
-            (MIN_PRODUCTION_OBR_BYTES, True),
-            (MAX_PRODUCTION_OBR_BYTES, True),
-            (MAX_PRODUCTION_OBR_BYTES + 1, False),
+            (MIN_PRODUCTION_REGISTRY_DATA_BYTES - 1, False),
+            (MIN_PRODUCTION_REGISTRY_DATA_BYTES, True),
+            (MAX_PRODUCTION_REGISTRY_DATA_BYTES, True),
+            (MAX_PRODUCTION_REGISTRY_DATA_BYTES + 1, False),
         )
         for size, expected in cases:
             with self.subTest(size=size):
@@ -219,11 +221,11 @@ class ResourceQualificationTests(unittest.TestCase):
                     1_000,
                     1_000,
                     64 * 1024 * 1024,
-                    obr_bytes=size,
+                    registry_data_bytes=size,
                     production_candidate=True,
                 )
                 self.assertEqual(
-                    oracles["production_obr_size_is_inclusive"], expected
+                    oracles["production_registry_data_size_is_inclusive"], expected
                 )
 
     def test_platform_volume_collector_rejects_unknown_platform(self) -> None:

@@ -116,8 +116,11 @@ target/base-v1/registry/
     └── release-request.json.asc   # release mode only
 ```
 
-Every staged input must be a regular file, not a symlink. The candidate OBR
-must be between 2,200,000,000 and 2,500,000,000 bytes inclusive. There is no
+Every staged input must be a regular file, not a symlink. The sum of the exact
+candidate data bytes in `concepts.obr`, `concepts.obr.labels.idx`,
+`concepts.obr.ccids.idx`, and `concepts.obr.manifest.json` must be between
+2,200,000,000 and 2,500,000,000 bytes inclusive. The SBOM, release stamp,
+verification receipt, and runtime REDb files do not count. There is no
 small-fixture fallback.
 
 `registry-trust-policy.json` is the canonical `policy` object frozen by the

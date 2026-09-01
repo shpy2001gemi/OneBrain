@@ -26,16 +26,24 @@ class ConceptRegistryProductionQualificationContractTests(unittest.TestCase):
             (5, 4, 7, 1),
         )
 
-    def test_undersized_obr_is_rejected(self) -> None:
+    def test_undersized_registry_data_payload_is_rejected(self) -> None:
         profile = copy.deepcopy(frozen_profile())
-        profile["release_package"]["obr_size_bytes"]["minimum"] = 2_199_999_999
-        with self.assertRaisesRegex(ContractError, "OBR size"):
+        profile["release_package"]["registry_data_size_bytes"]["minimum"] = 2_199_999_999
+        with self.assertRaisesRegex(ContractError, "data size"):
             validate_concept_registry_production_qualification(profile)
 
-    def test_oversized_obr_is_rejected(self) -> None:
+    def test_oversized_registry_data_payload_is_rejected(self) -> None:
         profile = copy.deepcopy(frozen_profile())
-        profile["release_package"]["obr_size_bytes"]["maximum"] = 2_500_000_001
-        with self.assertRaisesRegex(ContractError, "OBR size"):
+        profile["release_package"]["registry_data_size_bytes"]["maximum"] = 2_500_000_001
+        with self.assertRaisesRegex(ContractError, "data size"):
+            validate_concept_registry_production_qualification(profile)
+
+    def test_registry_data_payload_artifact_set_is_closed(self) -> None:
+        profile = copy.deepcopy(frozen_profile())
+        profile["release_package"]["registry_data_size_bytes"]["artifacts"].append(
+            "sbom.spdx.json"
+        )
+        with self.assertRaisesRegex(ContractError, "data size"):
             validate_concept_registry_production_qualification(profile)
 
     def test_budget_cannot_be_changed(self) -> None:

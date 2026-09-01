@@ -22,11 +22,12 @@ use ku_core::foundation::{
 use ku_kql::vnext_private_need::LocalNeedVaultKey;
 use ku_kql::vnext_query::{KnowledgeNeedIr, QueryDefinition};
 use ku_net::vnext_carrier::CarrierRecord;
+use ku_net::vnext_quic_session::AuthenticatedCarrierRecord;
 use ku_net::vnext_reconciliation::BoundPayloadFrame;
 use ku_net::vnext_session::SessionIdentitySigner;
 use onebrain_protocol::{
     bind_reconciliation_message, encode_reconciliation_message, ReconcileManifestEntry,
-    ReconcileManifestKind, ReconciliationBody,
+    ReconcileManifestKind, ReconcileReceiptStatus, ReconciliationBody,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -465,8 +466,14 @@ async fn run_fault_drills(data_root: &Path) -> Result<P5FaultDrillReport, P5Oper
     .await?;
     let (disk_feed_id, disk_feed_bytes) = signed_feed(0xA2)?;
     let rejected_before = disk_receiver.status().rejected_records;
-    send_feed_without_acceptance_wait(&disk_sender, &disk_receiver, 0xA3, &disk_feed_bytes).await?;
-    wait_for_rejected_record(&disk_receiver, rejected_before).await?;
+    send_feed_and_wait_for_rejection(
+        &disk_sender,
+        &disk_receiver,
+        0xA3,
+        &disk_feed_bytes,
+        rejected_before,
+    )
+    .await?;
     let disk_status = disk_receiver.status();
     let disk_pressure_rejected_storage_reason_count =
         reason_count(&disk_status.observability, VNextReasonCode::RejectedStorage);
@@ -1057,13 +1064,14 @@ impl SessionIdentitySigner for UnavailableIdentitySigner {
     }
 }
 
-async fn send_feed_without_acceptance_wait(
+async fn send_feed_and_wait_for_rejection(
     sender: &VNextNetworkRuntime,
     receiver: &VNextNetworkRuntime,
     marker: u8,
     feed_bytes: &[u8],
+    rejected_before: u64,
 ) -> Result<(), P5OperationsError> {
-    let session = sender.connect(receiver.local_addr()).await?;
+    let mut session = sender.connect(receiver.local_addr()).await?;
     let context = canary_context(session.authenticated().session_id, marker);
     let frame = BoundPayloadFrame::new(
         &context,
@@ -1071,6 +1079,8 @@ async fn send_feed_without_acceptance_wait(
         feed_bytes.to_vec(),
     )
     .map_err(protocol)?;
+    let expected_kind = frame.kind;
+    let expected_cid = frame.cid;
     let manifest = bind_reconciliation_message(
         context,
         1,
@@ -1089,7 +1099,29 @@ async fn send_feed_without_acceptance_wait(
     .map_err(protocol)?;
     session.send(&record).await?;
     session.send(&CarrierRecord::BoundPayload(frame)).await?;
-    tokio::time::sleep(Duration::from_millis(25)).await;
+    let response = tokio::time::timeout(Duration::from_secs(5), session.recv())
+        .await
+        .map_err(|_| P5OperationsError::Timeout("storage rejection receipt"))??;
+    let AuthenticatedCarrierRecord::Reconciliation(receipt) = response else {
+        return Err(P5OperationsError::Oracle(
+            "storage rejection did not return a reconciliation receipt",
+        ));
+    };
+    let ReconciliationBody::Receipt { entries } = receipt.body else {
+        return Err(P5OperationsError::Oracle(
+            "storage rejection returned a non-receipt reconciliation message",
+        ));
+    };
+    if entries.len() != 1
+        || entries[0].kind != expected_kind
+        || entries[0].cid != expected_cid
+        || entries[0].status != ReconcileReceiptStatus::RejectedInvalid
+    {
+        return Err(P5OperationsError::Oracle(
+            "storage rejection returned an unexpected receipt",
+        ));
+    }
+    wait_for_rejected_record(receiver, rejected_before).await?;
     session.close();
     Ok(())
 }

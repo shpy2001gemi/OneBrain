@@ -22,8 +22,11 @@ if str(RELEASE_DIR) not in __import__("sys").path:
     __import__("sys").path.insert(0, str(RELEASE_DIR))
 from verify_base_release_request import (  # noqa: E402
     VerifiedQualificationContextV1,
+    VerifiedQualificationContextV2,
+    load_task28_registry_measurement_context,
     verify_release_request,
     verify_release_request_for_test_nonproduction,
+    verify_task28_release_request,
 )
 
 
@@ -40,7 +43,7 @@ def _digest(path: Path) -> str:
 
 
 def _qualify_ccid_stability_with_verified_context(
-    verified: VerifiedQualificationContextV1,
+    verified: VerifiedQualificationContextV1 | VerifiedQualificationContextV2,
     old_input: Path,
     old_obr: Path,
     old_manifest: Path,
@@ -53,7 +56,9 @@ def _qualify_ccid_stability_with_verified_context(
     signing_key: Ed25519PrivateKey,
     receipt_policy: dict[str, object],
 ) -> dict[str, object]:
-    if not isinstance(verified, VerifiedQualificationContextV1):
+    if not isinstance(
+        verified, (VerifiedQualificationContextV1, VerifiedQualificationContextV2)
+    ):
         raise CcidQualificationError("closed verified release context is required")
     paths = {
         "old_input": old_input,
@@ -139,11 +144,24 @@ def qualify_ccid_stability_from_signed_request(
     work_dir: Path | None,
     signing_key: Ed25519PrivateKey,
     receipt_policy: dict[str, object],
+    task28_registry_binding: Path | None = None,
 ) -> dict[str, object]:
     """Production entry: verify fixed-policy request before touching CCID inputs."""
-    verified = verify_release_request(
-        request_path, signature_path, approver_policy_path, gpg_home
-    )
+    if task28_registry_binding is None:
+        verified = verify_release_request(
+            request_path, signature_path, approver_policy_path, gpg_home
+        )
+    else:
+        verified = verify_task28_release_request(
+            request_path,
+            signature_path,
+            approver_policy_path,
+            gpg_home=gpg_home,
+            gpg_executable=Path("/usr/bin/gpg"),
+        )
+        verified = load_task28_registry_measurement_context(
+            verified, task28_registry_binding
+        )
     return _qualify_ccid_stability_with_verified_context(
         verified, old_input, old_obr, old_manifest,
         candidate_input, candidate_obr, candidate_manifest,

@@ -43,7 +43,7 @@ class ConceptRegistryRunnerKitTests(unittest.TestCase):
         )
 
     def test_frozen_runner_kit_is_accepted(self) -> None:
-        self.assertEqual(self.validate(), (33, 20, 12, 4))
+        self.assertEqual(self.validate(), (35, 20, 12, 4))
 
     def test_production_workflow_is_manual_only(self) -> None:
         mutated = self.production_workflow.replace(
@@ -144,7 +144,7 @@ class ConceptRegistryRunnerKitTests(unittest.TestCase):
 
     def test_release_cycle_wrapper_is_the_fixed_candidate_binary(self) -> None:
         mutated = self.runner.replace(
-            'readonly CANDIDATE_RELEASE_WRAPPER_TOOL="${RELEASE_OPS}"',
+            'readonly CANDIDATE_RELEASE_WRAPPER_TOOL="${REPOSITORY_ROOT}/scripts/release/create_verified_base_release.py"',
             'readonly CANDIDATE_RELEASE_WRAPPER_TOOL="${REPOSITORY_ROOT}/arbitrary"',
         )
         with self.assertRaisesRegex(ContractError, "release-cycle wrapper"):

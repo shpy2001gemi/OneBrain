@@ -54,9 +54,13 @@ the final serialized field. Its signed fields include the release ID used by
 activation, the five artifact rows/root, source rows/root, builder and dedup
 versions, distribution policy, signer public key, and empty signature member.
 
-`concepts.obr` is production-size only when its exact length is between
-2,200,000,000 and 2,500,000,000 bytes inclusive. An otherwise valid release
-outside this interval **MUST** fail the production gate.
+The Registry data payload is production-size only when the sum of the exact
+lengths of `concepts.obr`, `concepts.obr.labels.idx`,
+`concepts.obr.ccids.idx`, and `concepts.obr.manifest.json` is between
+2,200,000,000 and 2,500,000,000 bytes inclusive. The SBOM, release stamp,
+verification receipt, and runtime REDb files are not Registry data payload
+bytes and **MUST NOT** be counted. An otherwise valid release outside this
+interval **MUST** fail the production gate.
 
 ## 3. Frozen resource profiles
 

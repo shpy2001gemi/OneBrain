@@ -30,8 +30,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 PROFILE = "onebrain/concept-registry-resource-qualification/1"
 PROBE_PROFILE = "onebrain/concept-registry-probe/1"
 QUALIFICATION_PROFILES = ("cold-cache", "low-ram", "ssd", "hdd")
-MIN_PRODUCTION_OBR_BYTES = 2_200_000_000
-MAX_PRODUCTION_OBR_BYTES = 2_500_000_000
+MIN_PRODUCTION_REGISTRY_DATA_BYTES = 2_200_000_000
+MAX_PRODUCTION_REGISTRY_DATA_BYTES = 2_500_000_000
 BUDGETS: dict[str, dict[str, object]] = {
     "ci-small-fixture-v1": {
         "qualification_profiles": ["cold-cache", "low-ram"],
@@ -176,6 +176,7 @@ def _create_verified_resource_receipt(
     from verify_base_release_request import (
         ReleaseRequestError,
         VerifiedQualificationContextV1,
+        VerifiedQualificationContextV2,
         verify_registry_candidate_measurements,
         verify_registry_candidate_measurements_for_test_nonproduction,
     )
@@ -187,7 +188,9 @@ def _create_verified_resource_receipt(
         trust_policy_digest,
     )
 
-    if not isinstance(verified, VerifiedQualificationContextV1):
+    if not isinstance(
+        verified, (VerifiedQualificationContextV1, VerifiedQualificationContextV2)
+    ):
         raise QualificationError("closed verified release context is required")
     if trust_policy_digest(policy) != verified.bindings["trust_policy_digest"]:
         raise QualificationError("Registry trust policy differs from verified request")
@@ -347,6 +350,10 @@ def _artifact_paths(obr_path: Path) -> list[Path]:
         Path(f"{obr_path}.ccids.idx"),
         Path(f"{obr_path}.manifest.json"),
     ]
+
+
+def _registry_data_bytes(obr_path: Path) -> int:
+    return sum(path.stat().st_size for path in _artifact_paths(obr_path))
 
 
 def _artifact_evidence(
@@ -724,7 +731,7 @@ def evaluate_oracles(
     max_peak_rss_bytes: int,
     *,
     volume_evidence: dict[str, object] | None = None,
-    obr_bytes: int | None = None,
+    registry_data_bytes: int | None = None,
     production_candidate: bool = False,
 ) -> dict[str, bool]:
     probe = execution.get("probe")
@@ -786,10 +793,12 @@ def evaluate_oracles(
             f"unsupported qualification profile: {qualification_profile}"
         )
     if production_candidate:
-        oracles["production_obr_size_is_inclusive"] = (
-            isinstance(obr_bytes, int)
-            and not isinstance(obr_bytes, bool)
-            and MIN_PRODUCTION_OBR_BYTES <= obr_bytes <= MAX_PRODUCTION_OBR_BYTES
+        oracles["production_registry_data_size_is_inclusive"] = (
+            isinstance(registry_data_bytes, int)
+            and not isinstance(registry_data_bytes, bool)
+            and MIN_PRODUCTION_REGISTRY_DATA_BYTES
+            <= registry_data_bytes
+            <= MAX_PRODUCTION_REGISTRY_DATA_BYTES
         )
         oracles["production_reference_host_is_linux"] = sys.platform.startswith(
             "linux"
@@ -857,7 +866,11 @@ def run_qualification(
                 "address-space limit cannot be smaller than the peak RSS budget"
             )
 
+    production_candidate = budget_profile != "ci-small-fixture-v1"
     artifacts = _artifact_evidence(probe_path, obr_path, labels_path)
+    registry_data_bytes = (
+        _registry_data_bytes(obr_path) if production_candidate else None
+    )
     if qualification_profile == "cold-cache":
         cache_preparation = prepare_cold_cache(_artifact_paths(obr_path), cache_strategy)
     else:
@@ -886,12 +899,8 @@ def run_qualification(
         max_p95_us,
         max_peak_rss_bytes,
         volume_evidence=volume_evidence,
-        obr_bytes=(
-            obr_path.stat().st_size
-            if budget_profile != "ci-small-fixture-v1"
-            else None
-        ),
-        production_candidate=budget_profile != "ci-small-fixture-v1",
+        registry_data_bytes=registry_data_bytes,
+        production_candidate=production_candidate,
     )
     return {
         "profile": PROFILE,
@@ -913,6 +922,7 @@ def run_qualification(
         "candidate": {
             "obr_path": str(obr_path.resolve()),
             "obr_bytes": obr_path.stat().st_size if obr_path.is_file() else None,
+            "registry_data_bytes": registry_data_bytes,
         },
         "artifacts": artifacts,
         "cache_preparation": cache_preparation,
@@ -986,6 +996,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--release-request", type=Path)
     parser.add_argument("--release-request-signature", type=Path)
     parser.add_argument("--qualification-approver-policy", type=Path)
+    parser.add_argument("--task28-registry-binding", type=Path)
     parser.add_argument("--gpg-home", type=Path)
     parser.add_argument("--candidate-root", type=Path)
     parser.add_argument("--registry-root", type=Path)
@@ -1084,14 +1095,30 @@ def main(argv: list[str] | None = None) -> int:
             release_dir = Path(__file__).resolve().parents[1] / "release"
             if str(release_dir) not in sys.path:
                 sys.path.insert(0, str(release_dir))
-            from verify_base_release_request import verify_release_request
+            from verify_base_release_request import (
+                load_task28_registry_measurement_context,
+                verify_release_request,
+                verify_task28_release_request,
+            )
             try:
-                verified = verify_release_request(
-                    args.release_request,
-                    args.release_request_signature,
-                    args.qualification_approver_policy,
-                    args.gpg_home,
-                )
+                if args.task28_registry_binding is None:
+                    verified = verify_release_request(
+                        args.release_request,
+                        args.release_request_signature,
+                        args.qualification_approver_policy,
+                        args.gpg_home,
+                    )
+                else:
+                    verified = verify_task28_release_request(
+                        args.release_request,
+                        args.release_request_signature,
+                        args.qualification_approver_policy,
+                        gpg_home=args.gpg_home,
+                        gpg_executable=Path("/usr/bin/gpg"),
+                    )
+                    verified = load_task28_registry_measurement_context(
+                        verified, args.task28_registry_binding
+                    )
             except RuntimeError as error:
                 raise QualificationError(str(error)) from error
             report = create_verified_resource_receipt(

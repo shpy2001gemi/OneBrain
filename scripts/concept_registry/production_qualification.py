@@ -25,7 +25,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 
 RECEIPT_FORMAT = "onebrain/concept-registry-qualification-receipt/1"
 RECEIPT_USAGE = "registry-qualification-receipt"
-RUN_CONTEXT_FORMAT = "onebrain/qualification-run-context/1"
+PREQUALIFICATION_RUN_CONTEXT_FORMAT = "onebrain/qualification-run-context/1"
+RELEASE_RUN_CONTEXT_FORMAT = "onebrain/qualification-run-context/2"
 RECEIPT_DOMAIN = b"onebrain:concept-registry-qualification-receipt:1\0"
 FINGERPRINT_CONTEXT = "onebrain:concept-registry:signer-fingerprint:1"
 TRUST_POLICY_CONTEXT = "onebrain:concept-registry:trust-policy:1"
@@ -220,15 +221,22 @@ def _verify_receipt(
 
 
 def parse_qualification_run_context(value: object) -> dict[str, object]:
-    if not isinstance(value, dict) or value.get("format") != RUN_CONTEXT_FORMAT:
-        raise AggregationError("QualificationRunContextV1 format is invalid")
+    if not isinstance(value, dict):
+        raise AggregationError("qualification run context is not an object")
     variant = value.get("variant")
     if variant == "Prequalification":
+        if value.get("format") != PREQUALIFICATION_RUN_CONTEXT_FORMAT:
+            raise AggregationError("prequalification run context format is invalid")
         expected = {"format", "variant", "closure_digest"}
         if set(value) != expected:
             raise AggregationError("Prequalification context fields are not closed")
         _hex(value.get("closure_digest"), "closure_digest")
     elif variant == "Release":
+        if value.get("format") not in {
+            PREQUALIFICATION_RUN_CONTEXT_FORMAT,
+            RELEASE_RUN_CONTEXT_FORMAT,
+        }:
+            raise AggregationError("release run context format is invalid")
         expected = {"format", "variant", *RELEASE_CONTEXT_FIELDS}
         if set(value) != expected:
             raise AggregationError("Release context fields are not closed")
@@ -239,7 +247,7 @@ def parse_qualification_run_context(value: object) -> dict[str, object]:
         _hex(value.get("candidate_commit"), "candidate_commit", (40, 64))
         _hex(value.get("candidate_tree"), "candidate_tree", (40, 64))
     else:
-        raise AggregationError("QualificationRunContextV1 variant is invalid")
+        raise AggregationError("qualification run context variant is invalid")
     return dict(value)
 
 
@@ -426,6 +434,8 @@ def aggregate_reports(
         or aggregate_signing_key.public_key().public_bytes_raw().hex() != FROZEN_SIGNER_PUBLIC_KEY
     ):
         raise AggregationError("production aggregate signer is not frozen")
+    if not isinstance(run_context, dict) or run_context.get("format") != RELEASE_RUN_CONTEXT_FORMAT:
+        raise AggregationError("Task 28 production aggregate requires release context v2")
     return _aggregate_reports(
         reports, run_context, profile, aggregate_signing_key,
         production_claim=True, expected_evidence_tier="production-reference",

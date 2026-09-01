@@ -48,8 +48,14 @@
       "digest_encoding": "lowercase-hex-ascii",
       "includes_verification_stamp": false
     },
-    "obr_size_bytes": {
-      "artifact": "concepts.obr",
+    "registry_data_size_bytes": {
+      "artifacts": [
+        "concepts.obr",
+        "concepts.obr.labels.idx",
+        "concepts.obr.ccids.idx",
+        "concepts.obr.manifest.json"
+      ],
+      "aggregation": "sum-of-exact-artifact-lengths",
       "minimum": 2200000000,
       "maximum": 2500000000
     },

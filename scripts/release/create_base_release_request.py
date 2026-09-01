@@ -24,10 +24,12 @@ import blake3
 from scripts.release.verify_base_release_request import (
     FROZEN_APPROVER_POLICY,
     REQUEST_FIELDS,
+    TASK28_REQUEST_FIELDS,
     TOOLING_FIELDS,
     _policy,
     _validate_request,
     canonical_json,
+    verify_task28_release_request as verify_task28_release_request_context,
 )
 
 
@@ -35,13 +37,6 @@ TARGETS = {
     "x86_64-unknown-linux-gnu",
     "x86_64-pc-windows-msvc",
     "aarch64-apple-darwin",
-}
-TASK28_REQUEST_FIELDS = {
-    "format", "usage", "qualification_session_id", "candidate",
-    "qualification_approver_fingerprint", "trust_policy_digest", "required_targets",
-    "production_profile_blake3", "production_vector_blake3",
-    "append_only_idl_history_root", "created_utc", "expires_utc",
-    "evidence_root_uri", "candidate_tooling_blake3",
 }
 REQUEST_VALIDITY = timedelta(hours=168)
 CANONICAL_PROFILE = Path("src/test-vectors/vnext/base-v1-freeze-v1.json")
@@ -374,62 +369,20 @@ def verify_task28_release_request(
     gpg_home: Path | None = None,
     gpg_executable: Path | None = None,
 ) -> dict[str, object]:
-    request, payload = _task28_request_value(request_path)
-    vector, _ = _json_file(signer_policy_path.resolve(strict=True), "signer vector")
-    policy, policy_digest = _approver_policy(vector)
-    signer = policy["signers"][0]
-    if (
-        request["qualification_approver_fingerprint"] != signer["fingerprint"]
-        or request["trust_policy_digest"] != policy_digest
-    ):
-        raise ReleaseRequestCreationError("Task 28 request signer/policy binding differs")
-    created = datetime.fromisoformat(str(request["created_utc"]).replace("Z", "+00:00"))
-    expires = datetime.fromisoformat(str(request["expires_utc"]).replace("Z", "+00:00"))
-    if expires - created != REQUEST_VALIDITY:
-        raise ReleaseRequestCreationError("Task 28 request validity is not exactly 168 hours")
-    gpg = (
-        gpg_executable.resolve(strict=True)
-        if gpg_executable is not None
-        else _default_gpg()
-    )
-    gpg_prefix = [str(gpg), "--batch", "--no-tty"]
-    if gpg_home is not None:
-        resolved_home = gpg_home.resolve(strict=True)
-        if not resolved_home.is_dir():
-            raise ReleaseRequestCreationError("Task 28 GPG home must be a directory")
-        gpg_prefix.extend(["--homedir", str(resolved_home)])
-    completed = subprocess.run(
-        [*gpg_prefix, "--status-fd", "1", "--verify", str(signature_path), str(request_path)],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    valid = [line.split() for line in completed.stdout.splitlines() if line.startswith("[GNUPG:] VALIDSIG ")]
-    if (
-        completed.returncode != 0
-        or len(valid) != 1
-        or len(valid[0]) < 12
-        or valid[0][8] != "22"
-        or valid[0][-1] != signer["fingerprint"]
-    ):
-        raise ReleaseRequestCreationError("Task 28 request detached signature is invalid")
+    _task28_request_value(request_path)
+    gpg = gpg_executable.resolve(strict=True) if gpg_executable is not None else _default_gpg()
     try:
-        signed = datetime.fromtimestamp(int(valid[0][4]), timezone.utc)
-    except (ValueError, OverflowError) as error:
-        raise ReleaseRequestCreationError("Task 28 request signature timestamp is invalid") from error
-    if not created <= signed < expires:
-        raise ReleaseRequestCreationError("Task 28 request signature timestamp is outside validity")
-    exported = subprocess.run(
-        [*gpg_prefix, "--export", str(signer["fingerprint"])],
-        capture_output=True,
-        check=False,
-    )
-    if (
-        exported.returncode != 0
-        or blake3.blake3(exported.stdout).hexdigest() != signer["public_key_packet_blake3"]
-    ):
-        raise ReleaseRequestCreationError("Task 28 approver public key packet differs")
-    return request
+        verified = verify_task28_release_request_context(
+            request_path,
+            signature_path,
+            signer_policy_path,
+            gpg_home=gpg_home,
+            gpg_executable=gpg,
+            candidate_root=Path(__file__).resolve().parents[2],
+        )
+    except RuntimeError as error:
+        raise ReleaseRequestCreationError(str(error)) from error
+    return dict(verified.request)
 
 
 def create_task28_release_request(

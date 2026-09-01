@@ -12,23 +12,24 @@ readonly RUNNER_FORMAT="onebrain/concept-registry-runner/1"
 readonly TARGET_TRIPLE="x86_64-unknown-linux-gnu"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly REPOSITORY_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd -P)"
-readonly REGISTRY_STAGE_ROOT="${REPOSITORY_ROOT}/target/base-v1/registry"
+readonly REGISTRY_STAGE_ROOT="${ONEBRAIN_REGISTRY_STAGE_ROOT:-${REPOSITORY_ROOT}/target/base-v1/registry}"
 readonly CANDIDATE_ROOT="${REGISTRY_STAGE_ROOT}/candidate"
 readonly PREVIOUS_ROOT="${REGISTRY_STAGE_ROOT}/previous"
 readonly ENVIRONMENT_ROOT="${REGISTRY_STAGE_ROOT}/environment"
-readonly WORK_ROOT="${REPOSITORY_ROOT}/target/base-v1/work/registry"
+readonly WORK_ROOT="${ONEBRAIN_REGISTRY_WORK_ROOT:-${REPOSITORY_ROOT}/target/base-v1/work/registry}"
+readonly REGISTRY_CARGO_TARGET_DIR="${ONEBRAIN_REGISTRY_CARGO_TARGET_DIR:-${REPOSITORY_ROOT}/src/target}"
 readonly PRODUCTION_PROFILE="${REPOSITORY_ROOT}/src/test-vectors/vnext/concept-registry-production-qualification-v1.json"
-readonly APPROVER_POLICY="${REPOSITORY_ROOT}/src/test-vectors/vnext/base-v1-qualification-approver-policy-v1.json"
-readonly IDL_HISTORY="${ENVIRONMENT_ROOT}/append-only-idl-history-root.txt"
+readonly APPROVER_POLICY="${REPOSITORY_ROOT}/src/test-vectors/vnext/base-v1-release-signers-v1.json"
+readonly IDL_HISTORY="${REPOSITORY_ROOT}/src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json"
 readonly LABELS_FILE="${REPOSITORY_ROOT}/scripts/concept_registry/qualification-labels-v1.txt"
-readonly RELEASE_PROBE="${REPOSITORY_ROOT}/src/target/release/examples/registry_probe"
-readonly RELEASE_OPS="${REPOSITORY_ROOT}/src/target/release/examples/concept_registry_release_ops"
-readonly FAILURE_HARNESS="${REPOSITORY_ROOT}/src/target/release/examples/concept_registry_failure_qualification"
-readonly GENERATION_HARNESS="${REPOSITORY_ROOT}/src/target/release/examples/concept_registry_production_qualification"
+readonly RELEASE_PROBE="${REGISTRY_CARGO_TARGET_DIR}/release/examples/registry_probe"
+readonly RELEASE_OPS="${REGISTRY_CARGO_TARGET_DIR}/release/examples/concept_registry_release_ops"
+readonly FAILURE_HARNESS="${REGISTRY_CARGO_TARGET_DIR}/release/examples/concept_registry_failure_qualification"
+readonly GENERATION_HARNESS="${REGISTRY_CARGO_TARGET_DIR}/release/examples/concept_registry_production_qualification"
 readonly CANDIDATE_QUALIFIER_TOOL="${REPOSITORY_ROOT}/scripts/base/qualify_base.py"
 readonly CANDIDATE_REQUEST_TOOL="${REPOSITORY_ROOT}/scripts/release/create_base_release_request.py"
 readonly CANDIDATE_CLEAN_WORKTREE_TOOL="${REPOSITORY_ROOT}/scripts/release/prepare_clean_candidate.py"
-readonly CANDIDATE_RELEASE_WRAPPER_TOOL="${RELEASE_OPS}"
+readonly CANDIDATE_RELEASE_WRAPPER_TOOL="${REPOSITORY_ROOT}/scripts/release/create_verified_base_release.py"
 readonly CANDIDATE_VERIFIER_TOOL="${REPOSITORY_ROOT}/scripts/release/verify_base_release_request.py"
 readonly CANDIDATE_SIGNER_POLICY="${REPOSITORY_ROOT}/src/test-vectors/vnext/base-v1-release-signers-v1.json"
 
@@ -40,6 +41,7 @@ RAW_EVIDENCE_ROOT=""
 STAGED_CANDIDATE_REGISTRY_ROOT=""
 STAGED_CANDIDATE_STAMP=""
 STAGED_CANDIDATE_STATE=""
+TASK28_REGISTRY_BINDING=""
 readonly REGISTRY_CLOSURE_DIGEST_FILE="registry-closure.blake3"
 
 info() {
@@ -107,8 +109,19 @@ parse_arguments() {
     elif [[ -n "$RESOURCE_PROFILE" ]]; then
         die "--profile is valid only for resource"
     fi
-    EVIDENCE_ROOT="${REPOSITORY_ROOT}/target/base-v1/evidence/${QUALIFICATION_MODE}/registry"
+    EVIDENCE_ROOT="${ONEBRAIN_REGISTRY_EVIDENCE_ROOT:-${REPOSITORY_ROOT}/target/base-v1/evidence/${QUALIFICATION_MODE}/registry}"
     RAW_EVIDENCE_ROOT="${EVIDENCE_ROOT}/raw"
+    if [[ "$QUALIFICATION_MODE" == "release" ]]; then
+        local path resolved
+        for path in "$REGISTRY_STAGE_ROOT" "$WORK_ROOT" "$REGISTRY_CARGO_TARGET_DIR" "$EVIDENCE_ROOT"; do
+            resolved="$(resolved_path "$path")"
+            case "$resolved" in
+                "$REPOSITORY_ROOT" | "$REPOSITORY_ROOT"/*)
+                    die "Task 28 release staging, work, cargo, and evidence roots must be outside the candidate"
+                    ;;
+            esac
+        done
+    fi
 }
 
 require_command() {
@@ -196,14 +209,19 @@ require_stage() {
         done
     fi
 
-    python3 - "$CANDIDATE_ROOT/concepts.obr" <<'PY'
+    python3 - \
+        "$CANDIDATE_ROOT/concepts.obr" \
+        "$CANDIDATE_ROOT/concepts.obr.labels.idx" \
+        "$CANDIDATE_ROOT/concepts.obr.ccids.idx" \
+        "$CANDIDATE_ROOT/concepts.obr.manifest.json" <<'PY'
 import os
 import sys
 
-size = os.path.getsize(sys.argv[1])
+sizes = {path: os.path.getsize(path) for path in sys.argv[1:]}
+size = sum(sizes.values())
 if not 2_200_000_000 <= size <= 2_500_000_000:
     raise SystemExit(
-        f"candidate concepts.obr is not production-size: {size} bytes"
+        f"candidate Registry data payload is not production-size: {size} bytes"
     )
 PY
     verify_staged_releases
@@ -463,7 +481,7 @@ required = {
 }
 if not isinstance(context, dict) or set(context) != required:
     raise SystemExit("verified release context is not closed")
-if context.get("variant") != "Release":
+if context.get("format") != "onebrain/qualification-run-context/2" or context.get("variant") != "Release":
     raise SystemExit("signed request did not derive Release context")
 Path(sys.argv[2]).write_text(
     json.dumps(context, sort_keys=True, separators=(",", ":")) + "\n",
@@ -488,7 +506,8 @@ compute_closure() {
         "$REGISTRY_STAGE_ROOT" \
         "$EVIDENCE_ROOT/registry-closure.json" \
         "$EVIDENCE_ROOT/$REGISTRY_CLOSURE_DIGEST_FILE" \
-        "$QUALIFICATION_MODE" <<'PY'
+        "$QUALIFICATION_MODE" \
+        "$REGISTRY_CARGO_TARGET_DIR" <<'PY'
 from __future__ import annotations
 
 import json
@@ -503,6 +522,7 @@ stage = Path(sys.argv[2]).resolve()
 manifest_output = Path(sys.argv[3])
 digest_output = Path(sys.argv[4])
 mode = sys.argv[5]
+target_dir = Path(sys.argv[6]).resolve()
 
 stage_paths = [
     "previous/input.jsonl",
@@ -557,7 +577,7 @@ repo_paths = [
     "scripts/runner/onebrain-registry-runner.sh",
     "src/test-vectors/vnext/concept-registry-production-qualification-v1.json",
     "docs/specs/vnext/CONCEPT_REGISTRY_PRODUCTION_QUALIFICATION_PROFILE_V1.md",
-    "src/test-vectors/vnext/base-v1-qualification-approver-policy-v1.json",
+    "src/test-vectors/vnext/base-v1-release-signers-v1.json",
     "src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json",
 ]
 repo_paths.extend(
@@ -570,11 +590,13 @@ if mode == "release":
             "scripts/base/qualify_base.py",
             "scripts/release/create_base_release_request.py",
             "scripts/release/prepare_clean_candidate.py",
+            "scripts/release/create_verified_base_release.py",
+            "scripts/release/prepare_task28_registry_binding.py",
             "src/test-vectors/vnext/base-v1-release-signers-v1.json",
         ]
     )
-probe = repo / "src/target/release/examples/registry_probe"
-release_ops = repo / "src/target/release/examples/concept_registry_release_ops"
+probe = target_dir / "release/examples/registry_probe"
+release_ops = target_dir / "release/examples/concept_registry_release_ops"
 for executable in (probe, release_ops):
     if not executable.is_file():
         raise SystemExit(f"exact release tool has not been built: {executable.name}")
@@ -591,8 +613,8 @@ seen = set()
 for logical, path in [
     *((f"stage/{name}", stage / name) for name in stage_paths),
     *((f"repo/{name}", repo / name) for name in repo_paths),
-    ("repo/src/target/release/examples/registry_probe", probe),
-    ("repo/src/target/release/examples/concept_registry_release_ops", release_ops),
+    ("build/release/examples/registry_probe", probe),
+    ("build/release/examples/concept_registry_release_ops", release_ops),
 ]:
     if logical in seen:
         continue
@@ -649,16 +671,16 @@ PY
 
 build_release_probe() {
     require_fixed_host
-    cargo build --release --locked --manifest-path "$REPOSITORY_ROOT/src/Cargo.toml" \
+    CARGO_TARGET_DIR="$REGISTRY_CARGO_TARGET_DIR" cargo build --release --locked --manifest-path "$REPOSITORY_ROOT/src/Cargo.toml" \
         -p ku-core --example registry_probe --example concept_registry_release_ops
 }
 
 build_kernel_tools() {
     build_release_probe
-    cargo build --release --locked --manifest-path "$REPOSITORY_ROOT/src/Cargo.toml" \
+    CARGO_TARGET_DIR="$REGISTRY_CARGO_TARGET_DIR" cargo build --release --locked --manifest-path "$REPOSITORY_ROOT/src/Cargo.toml" \
         -p ku-core --features concept-registry-failure-harness \
         --example concept_registry_failure_qualification
-    cargo build --release --locked --manifest-path "$REPOSITORY_ROOT/src/Cargo.toml" \
+    CARGO_TARGET_DIR="$REGISTRY_CARGO_TARGET_DIR" cargo build --release --locked --manifest-path "$REPOSITORY_ROOT/src/Cargo.toml" \
         -p onebrain-node --example concept_registry_production_qualification
 }
 
@@ -691,6 +713,31 @@ stage_candidate_context() {
     ln "$CANDIDATE_ROOT/state.json" "$STAGED_CANDIDATE_STATE" ||
         die "candidate context state requires a same-volume hard link"
     STAGED_CANDIDATE_STAMP="$release_dir/release.stamp.json"
+}
+
+prepare_task28_registry_binding() {
+    [[ "$QUALIFICATION_MODE" == "release" ]] || return 0
+    [[ -n "$STAGED_CANDIDATE_REGISTRY_ROOT" && -n "$STAGED_CANDIDATE_STAMP" && -n "$STAGED_CANDIDATE_STATE" ]] ||
+        die "Task 28 Registry binding requires a staged candidate context"
+    local release_id installed_release
+    release_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$STAGED_CANDIDATE_STAMP")"
+    installed_release="${STAGED_CANDIDATE_REGISTRY_ROOT}/releases/${release_id}"
+    TASK28_REGISTRY_BINDING="${EVIDENCE_ROOT}/task28-registry-binding.json"
+    python3 "$REPOSITORY_ROOT/scripts/release/prepare_task28_registry_binding.py" \
+        --verified-context "$EVIDENCE_ROOT/verified-release-context.json" \
+        --candidate-root "$CANDIDATE_ROOT" \
+        --previous-root "$PREVIOUS_ROOT" \
+        --installed-release "$installed_release" \
+        --release-stamp "$STAGED_CANDIDATE_STAMP" \
+        --registry-state "$STAGED_CANDIDATE_STATE" \
+        --candidate-semantic-evidence "$ENVIRONMENT_ROOT/candidate-semantic-evidence.json" \
+        --registry-trust-policy "$ENVIRONMENT_ROOT/registry-trust-policy.json" \
+        --probe "$RELEASE_PROBE" \
+        --probe-signature "$ENVIRONMENT_ROOT/registry_probe.sig" \
+        --rust-toolchain-evidence "$ENVIRONMENT_ROOT/rust-toolchain.json" \
+        --runner-image-evidence "$ENVIRONMENT_ROOT/runner-image.json" \
+        --target-triple "$TARGET_TRIPLE" \
+        --output "$TASK28_REGISTRY_BINDING"
 }
 
 prepare_prequalification_binding() {
@@ -790,6 +837,7 @@ run_resource() {
     else
         verify_release_request
         stage_candidate_context
+        prepare_task28_registry_binding
         local gpg_home="${ONEBRAIN_QUALIFICATION_GPG_HOME:?external qualification GPG home is required}"
         local release_id
         release_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$CANDIDATE_ROOT/release.stamp.json")"
@@ -805,13 +853,14 @@ run_resource() {
             --release-request "$ENVIRONMENT_ROOT/release-request.json" \
             --release-request-signature "$ENVIRONMENT_ROOT/release-request.json.asc" \
             --qualification-approver-policy "$APPROVER_POLICY" \
+            --task28-registry-binding "$TASK28_REGISTRY_BINDING" \
             --gpg-home "$gpg_home" \
             --candidate-root "$REPOSITORY_ROOT" \
             --registry-root "$STAGED_CANDIDATE_REGISTRY_ROOT" \
             --release-id "$release_id" \
             --candidate-semantic-evidence "$ENVIRONMENT_ROOT/candidate-semantic-evidence.json" \
             --production-profile "$PRODUCTION_PROFILE" \
-            --production-vector "$PRODUCTION_PROFILE" \
+            --production-vector "$CANDIDATE_SIGNER_POLICY" \
             --append-only-idl-history "$IDL_HISTORY" \
             --candidate-tool-qualifier "$CANDIDATE_QUALIFIER_TOOL" \
             --candidate-tool-request "$CANDIDATE_REQUEST_TOOL" \
@@ -858,7 +907,7 @@ run_kernel_prequalification() {
         --new-manifest "$CANDIDATE_ROOT/concepts.obr.manifest.json" \
         --work-dir "$WORK_ROOT/ccid" \
         --output "$RAW_EVIDENCE_ROOT/ccid-stability.json"
-    cargo test --locked --release --manifest-path "$REPOSITORY_ROOT/src/Cargo.toml" \
+    CARGO_TARGET_DIR="$REGISTRY_CARGO_TARGET_DIR" cargo test --locked --release --manifest-path "$REPOSITORY_ROOT/src/Cargo.toml" \
         -p onebrain-node concept_registry_runtime --lib -- --test-threads=1 \
         | tee "$RAW_EVIDENCE_ROOT/live-reader-process-kill.log"
 }
@@ -877,6 +926,7 @@ run_kernel_release() {
     [[ "$old_release" != "$candidate_release" ]] || die "old and candidate release IDs must differ"
     mkdir -p "$RAW_EVIDENCE_ROOT" "$WORK_ROOT"
     stage_candidate_context
+    prepare_task28_registry_binding
     local cycle_root="${WORK_ROOT}/release-cycle-${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-1}"
     local generation_root="${WORK_ROOT}/generation-${GITHUB_RUN_ID:-manual}-${GITHUB_RUN_ATTEMPT:-1}"
     [[ ! -e "$cycle_root" && ! -e "$generation_root" ]] ||
@@ -895,6 +945,7 @@ run_kernel_release() {
         "$CANDIDATE_CLEAN_WORKTREE_TOOL" "$CANDIDATE_RELEASE_WRAPPER_TOOL" \
         "$CANDIDATE_VERIFIER_TOOL" "$CANDIDATE_SIGNER_POLICY" \
         "$STAGED_CANDIDATE_STAMP" "$STAGED_CANDIDATE_STATE" \
+        "$TASK28_REGISTRY_BINDING" \
         "$RAW_EVIDENCE_ROOT/signed-release-cycle.json" \
         "$RAW_EVIDENCE_ROOT/ccid-stability.json" <<'PY'
 from __future__ import annotations
@@ -923,8 +974,9 @@ release_ops = Path(sys.argv[15])
 tool_values = [Path(value) for value in sys.argv[16:22]]
 candidate_stamp = Path(sys.argv[22])
 candidate_state = Path(sys.argv[23])
-cycle_output = Path(sys.argv[24])
-ccid_output = Path(sys.argv[25])
+task28_registry_binding = Path(sys.argv[24])
+cycle_output = Path(sys.argv[25])
+ccid_output = Path(sys.argv[26])
 
 sys.path.insert(0, str(repo / "scripts/concept_registry"))
 from ccid_stability_qualification import qualify_ccid_stability_from_signed_request
@@ -952,9 +1004,11 @@ receipt = run_release_cycle(
     gpg_home,
     candidate_release_stamp=candidate_stamp,
     candidate_state=candidate_state,
+    task28_registry_binding=task28_registry_binding,
+    bridge=release_ops,
     candidate_semantic_evidence=environment / "candidate-semantic-evidence.json",
     production_profile=production_profile,
-    production_vector=production_profile,
+    production_vector=candidate_tooling["signer_policy"],
     append_only_idl_history=idl_history,
     candidate_tooling=candidate_tooling,
     probe=probe,
@@ -997,6 +1051,7 @@ ccid = qualify_ccid_stability_from_signed_request(
     work_dir=cycle_root.parent / "ccid-release",
     signing_key=signing_key,
     receipt_policy=policy,
+    task28_registry_binding=task28_registry_binding,
 )
 
 def write_atomic(path: Path, value: object) -> None:
@@ -1028,9 +1083,9 @@ PY
         "$generation_root" "$public_key" "$old_release" "$candidate_release" "$query_label" \
         "$ENVIRONMENT_ROOT/release-request.json" \
         "$ENVIRONMENT_ROOT/release-request.json.asc" \
-        "$APPROVER_POLICY" "$gpg_home" \
+        "$APPROVER_POLICY" "$gpg_home" "$TASK28_REGISTRY_BINDING" \
         "$REPOSITORY_ROOT" "$ENVIRONMENT_ROOT/candidate-semantic-evidence.json" \
-        "$PRODUCTION_PROFILE" "$PRODUCTION_PROFILE" "$IDL_HISTORY" \
+        "$PRODUCTION_PROFILE" "$CANDIDATE_SIGNER_POLICY" "$IDL_HISTORY" \
         "$RELEASE_PROBE" "$ENVIRONMENT_ROOT/registry_probe.sig" \
         "$ENVIRONMENT_ROOT/rust-toolchain.json" "$ENVIRONMENT_ROOT/runner-image.json" \
         "$TARGET_TRIPLE" "$ENVIRONMENT_ROOT/registry-trust-policy.json" \
@@ -1042,9 +1097,9 @@ PY
         "$CANDIDATE_ROOT/sources.json" "$private_key" \
         "$ENVIRONMENT_ROOT/release-request.json" \
         "$ENVIRONMENT_ROOT/release-request.json.asc" \
-        "$APPROVER_POLICY" "$gpg_home" "$cycle_root" "$candidate_release" \
+        "$APPROVER_POLICY" "$gpg_home" "$TASK28_REGISTRY_BINDING" "$cycle_root" "$candidate_release" \
         "$REPOSITORY_ROOT" "$ENVIRONMENT_ROOT/candidate-semantic-evidence.json" \
-        "$PRODUCTION_PROFILE" "$PRODUCTION_PROFILE" "$IDL_HISTORY" "$TARGET_TRIPLE" \
+        "$PRODUCTION_PROFILE" "$CANDIDATE_SIGNER_POLICY" "$IDL_HISTORY" "$TARGET_TRIPLE" \
         "$RELEASE_PROBE" "$ENVIRONMENT_ROOT/registry_probe.sig" \
         "$ENVIRONMENT_ROOT/rust-toolchain.json" "$ENVIRONMENT_ROOT/runner-image.json" \
         "$ENVIRONMENT_ROOT/registry-trust-policy.json" \
