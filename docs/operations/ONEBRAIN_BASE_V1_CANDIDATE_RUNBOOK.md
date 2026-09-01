@@ -1,7 +1,8 @@
 # OneBrain Base v1 three-OS candidate runbook
 
-This runbook operates Task 26. It creates prequalification or release-bound CI
-evidence; only Task 27/28 can derive a qualified Base release.
+This workflow originated in Task 26 and now creates either prequalification
+evidence or release-bound Task 28 evidence. Only the complete Task 28 closure
+can derive a qualified Base release.
 
 ## Reviewed action mapping
 
@@ -45,7 +46,7 @@ the implementation task authority to publish or protect it.
 
 `prequalification` is used for pull requests, `main`, and manual diagnostic
 runs. It derives a non-production request/session namespace from the checked
-out commit and tree. Its receipt can never substitute for a signed Task 27
+out commit and tree. Its receipt can never substitute for a signed Task 28
 request.
 
 `release` is manual only. Supply the run ID of a prior immutable artifact named
@@ -59,6 +60,16 @@ digest, or target digests as inputs. The candidate-owned verifier validates the
 signature/policy/tooling first and derives those values from the verified
 bytes. The job creates a fresh isolated public-key verification home; no
 signing private key or persistent GPG home is required by this workflow.
+
+A Task 28 request v2 freezes the exact candidate commit/tree and the closed
+`linux`, `windows`, and `macos` target map before the future build measurements
+exist. Therefore it does not carry a claimed semantic or artifact-tuple digest.
+Each OS lane derives those values from its exact built binary, independently
+recomputes both digests from the closed 16-field compatibility tuple, and fails
+if either value printed by the binary is not reproducible. The aggregate then
+requires one cross-OS semantic digest and publishes the exact canonical Linux
+tuple as `candidate-semantic-evidence-linux.json`; the local prebuilt Registry
+signer consumes that retained byte file later.
 
 ## Three-OS closure
 
@@ -81,6 +92,12 @@ job downloads the raw files, recomputes hashes, requires one semantic digest,
 requires three distinct target/toolchain artifact tuple digests, rechecks Git,
 and emits `onebrain/base-v1-provenance-receipt/1`.
 
+This workflow does not rerun checkpoint extraction or the Registry SSD/HDD,
+cold-cache, or low-RAM profiles. Task 28 treats the five final owner-local
+Registry files as a prebuilt package: they are rehashed, signed, and verified
+locally, then the same package and signed binding are mounted read-only for P5
+and soak on the three moderate VPS hosts.
+
 ## Failure and rerun
 
 Do not edit or replace a failed artifact. Preserve its run URL and raw logs,
@@ -91,7 +108,7 @@ SBOM, changed executable, malformed audit, or untriaged P0/P1 is a hard stop.
 
 After a successful run, record the request digest, session ID, candidate
 commit/tree, three lane artifact IDs, provenance artifact ID, workflow SHA256,
-and raw audit/SBOM/executable hashes. Task 27 must consume those exact retained
+and raw audit/SBOM/executable hashes. Task 28 must consume those exact retained
 bytes rather than a summary copied into a new file.
 
 ## Task 26 implementation validation state
@@ -105,8 +122,8 @@ Task 21-26 artifact is admissible as Task 28 qualification evidence.
 Task 28 must rerun every frozen command against the exact Task 27 commit under
 the signed request's new session. It must create new command receipts,
 substantive assertion outputs, three target binaries, SPDX 2.3 documents, SLSA
-v1 provenance, Registry/P5 aggregates, security results, and uninterrupted soak
-evidence. Every receipt and evidence-approver signature must bind the same
+v1 provenance, a signed prebuilt Registry binding, P5 aggregate, security
+results, and uninterrupted soak evidence. Every receipt and evidence-approver signature must bind the same
 request digest, session, commit, tree, semantic digest, artifact map, and roots.
 Historical green output, a copied digest, or an edited/rehashed result is never
 fresh evidence.

@@ -1,4 +1,4 @@
-name: Base v1 Task 28 Registry, P5, and 72-hour soak
+name: Base v1 Task 28 prebuilt Registry, P5, and 72-hour soak
 
 on:
   workflow_dispatch:
@@ -15,7 +15,12 @@ env:
   REQUEST_SIGNATURE: ${{ secrets.ONEBRAIN_BASE_RELEASE_REQUEST_SIGNATURE }}
   APPROVER_POLICY: ${{ secrets.ONEBRAIN_QUALIFICATION_APPROVER_POLICY }}
   QUALIFICATION_GPG_HOME: ${{ secrets.ONEBRAIN_QUALIFICATION_GPG_HOME }}
-  REGISTRY_STAGE_ROOT: ${{ secrets.ONEBRAIN_TASK28_REGISTRY_STAGE_ROOT }}
+  REGISTRY_PREBUILT_ROOT: ${{ secrets.ONEBRAIN_TASK28_REGISTRY_PREBUILT_ROOT }}
+  REGISTRY_PREBUILT_BINDING: ${{ secrets.ONEBRAIN_TASK28_REGISTRY_PREBUILT_BINDING }}
+  CANDIDATE_SEMANTIC_EVIDENCE: ${{ secrets.ONEBRAIN_CANDIDATE_SEMANTIC_EVIDENCE }}
+  BASE_SBOM_FILE: ${{ secrets.ONEBRAIN_BASE_SBOM_FILE }}
+  BASE_PROVENANCE_FILE: ${{ secrets.ONEBRAIN_BASE_PROVENANCE_FILE }}
+  RUNNER_IMAGE_EVIDENCE_FILE: ${{ secrets.ONEBRAIN_RUNNER_IMAGE_EVIDENCE_FILE }}
 
 jobs:
   verify-exact-release-request:
@@ -70,161 +75,41 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  registry-source-preflight:
-    name: Bind checkpoint sources and processed OBR output
+  verify-prebuilt-registry:
+    name: Verify signed owner-local prebuilt Registry bytes
     needs: verify-exact-release-request
     environment: base-v1-production-qualification
-    runs-on: [self-hosted, linux, x64, onebrain-registry-image-v1, onebrain-registry-controller]
+    runs-on: [self-hosted, linux, x64, onebrain-base-v1-controller]
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
           persist-credentials: false
           clean: true
-      - name: Refuse undersized, mixed, copied, or unbound Registry data
+      - name: Rehash and verify final Registry output without rebuilding sources
         run: >-
-          python scripts/release/preflight_task28_registry_sources.py
-          --processed-root "${{ secrets.ONEBRAIN_REGISTRY_PROCESSED_ROOT }}"
-          --checkpoint-root "${{ secrets.ONEBRAIN_REGISTRY_CHECKPOINT_ROOT }}"
-          --canonical-input "${{ secrets.ONEBRAIN_REGISTRY_CANONICAL_INPUT }}"
+          python scripts/release/task28_prebuilt_registry.py verify
+          --release-request "$REQUEST_FILE" --release-signature "$REQUEST_SIGNATURE"
+          --base-policy "$APPROVER_POLICY" --base-gpg-home "$QUALIFICATION_GPG_HOME"
+          --registry-root "$REGISTRY_PREBUILT_ROOT" --binding "$REGISTRY_PREBUILT_BINDING"
+          --candidate-semantic-evidence "$CANDIDATE_SEMANTIC_EVIDENCE"
           --candidate-root "$GITHUB_WORKSPACE"
-          --output "$RUNNER_TEMP/task28-registry-source-preflight.json"
+          --output "$RUNNER_TEMP/registry/prebuilt-registry-verified.json"
+      - name: Preserve signed binding without private material
+        shell: bash
+        run: |
+          install -m 0444 "$REGISTRY_PREBUILT_BINDING" "$RUNNER_TEMP/registry/prebuilt-registry-binding.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: registry-source-preflight-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
-          path: ${{ runner.temp }}/task28-registry-source-preflight.json
-          if-no-files-found: error
-          retention-days: 90
-
-  registry-resource-profiles:
-    name: Fresh Registry ${{ matrix.profile }}
-    needs: [verify-exact-release-request, registry-source-preflight]
-    environment: base-v1-production-qualification
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {profile: cold-cache, runner_label: onebrain-registry-cold-cache}
-          - {profile: low-ram, runner_label: onebrain-registry-low-ram}
-          - {profile: ssd, runner_label: onebrain-registry-ssd}
-          - {profile: hdd, runner_label: onebrain-registry-hdd}
-    runs-on: [self-hosted, linux, x64, onebrain-registry-image-v1, "${{ matrix.runner_label }}"]
-    timeout-minutes: 240
-    env:
-      ONEBRAIN_REGISTRY_STAGE_ROOT: ${{ secrets.ONEBRAIN_TASK28_REGISTRY_STAGE_ROOT }}
-      ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE: ${{ secrets.ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE }}
-      ONEBRAIN_QUALIFICATION_GPG_HOME: ${{ secrets.ONEBRAIN_QUALIFICATION_GPG_HOME }}
-      ONEBRAIN_REGISTRY_RUNNER_LABELS: self-hosted,linux,x64,onebrain-registry-image-v1,${{ matrix.runner_label }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
-          persist-credentials: false
-          clean: true
-      - name: Run fresh candidate-bound resource receipt
-        env:
-          ONEBRAIN_REGISTRY_WORK_ROOT: ${{ runner.temp }}/registry-work-${{ matrix.profile }}
-          ONEBRAIN_REGISTRY_CARGO_TARGET_DIR: ${{ runner.temp }}/registry-cargo-${{ matrix.profile }}
-          ONEBRAIN_REGISTRY_EVIDENCE_ROOT: ${{ runner.temp }}/registry-evidence-${{ matrix.profile }}
-        run: |
-          bash scripts/runner/onebrain-registry-runner.sh preflight --mode release
-          bash scripts/runner/onebrain-registry-runner.sh build --mode release
-          bash scripts/runner/onebrain-registry-runner.sh resource --mode release --profile "${{ matrix.profile }}"
-      - name: retain-signed-raw-receipts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: registry-raw-resource-${{ matrix.profile }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/registry-evidence-${{ matrix.profile }}/raw/resource-${{ matrix.profile }}.json
-          if-no-files-found: error
-          retention-days: 90
-
-  registry-kernel:
-    name: Fresh Registry failure, CCID, release, and generation kernel
-    needs: [verify-exact-release-request, registry-source-preflight]
-    environment: base-v1-production-qualification
-    runs-on: [self-hosted, linux, x64, onebrain-registry-image-v1, onebrain-registry-controller]
-    timeout-minutes: 300
-    env:
-      ONEBRAIN_REGISTRY_STAGE_ROOT: ${{ secrets.ONEBRAIN_TASK28_REGISTRY_STAGE_ROOT }}
-      ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE: ${{ secrets.ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE }}
-      ONEBRAIN_QUALIFICATION_GPG_HOME: ${{ secrets.ONEBRAIN_QUALIFICATION_GPG_HOME }}
-      ONEBRAIN_REGISTRY_RUNNER_LABELS: self-hosted,linux,x64,onebrain-registry-image-v1,onebrain-registry-controller
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
-          persist-credentials: false
-          clean: true
-      - name: Run all non-resource Registry producers
-        env:
-          ONEBRAIN_REGISTRY_WORK_ROOT: ${{ runner.temp }}/registry-work-kernel
-          ONEBRAIN_REGISTRY_CARGO_TARGET_DIR: ${{ runner.temp }}/registry-cargo-kernel
-          ONEBRAIN_REGISTRY_EVIDENCE_ROOT: ${{ runner.temp }}/registry-evidence-kernel
-        run: |
-          bash scripts/runner/onebrain-registry-runner.sh preflight --mode release
-          bash scripts/runner/onebrain-registry-runner.sh kernel --mode release
-      - name: retain-signed-raw-receipts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: registry-raw-kernel-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/registry-evidence-kernel/raw/*.json
-          if-no-files-found: error
-          retention-days: 90
-      - name: Retain closed Task 28 Registry measurement binding
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: registry-binding-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
-          path: ${{ runner.temp }}/registry-evidence-kernel/task28-registry-binding.json
-          if-no-files-found: error
-          retention-days: 90
-
-  registry-aggregate:
-    name: Verify fresh Registry receipts and sign aggregate
-    needs: [verify-exact-release-request, registry-resource-profiles, registry-kernel]
-    environment: base-v1-production-qualification
-    runs-on: [self-hosted, linux, x64, onebrain-registry-image-v1, onebrain-registry-controller]
-    timeout-minutes: 120
-    env:
-      ONEBRAIN_REGISTRY_STAGE_ROOT: ${{ secrets.ONEBRAIN_TASK28_REGISTRY_STAGE_ROOT }}
-      ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE: ${{ secrets.ONEBRAIN_REGISTRY_PRIVATE_KEY_FILE }}
-      ONEBRAIN_QUALIFICATION_GPG_HOME: ${{ secrets.ONEBRAIN_QUALIFICATION_GPG_HOME }}
-      ONEBRAIN_REGISTRY_RUNNER_LABELS: self-hosted,linux,x64,onebrain-registry-image-v1,onebrain-registry-controller
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
-        with:
-          ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}
-          persist-credentials: false
-          clean: true
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with:
-          pattern: registry-raw-*
-          path: ${{ runner.temp }}/registry-evidence-aggregate/raw
-          merge-multiple: true
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with:
-          name: registry-binding-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
-          path: ${{ runner.temp }}/registry-evidence-aggregate
-      - name: Derive Registry production qualification from signed children
-        env:
-          ONEBRAIN_REGISTRY_WORK_ROOT: ${{ runner.temp }}/registry-work-aggregate
-          ONEBRAIN_REGISTRY_CARGO_TARGET_DIR: ${{ runner.temp }}/registry-cargo-aggregate
-          ONEBRAIN_REGISTRY_EVIDENCE_ROOT: ${{ runner.temp }}/registry-evidence-aggregate
-        run: bash scripts/runner/onebrain-registry-runner.sh aggregate --mode release
-      - name: Retain Registry aggregate and its measured binding
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: registry-production-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
-          path: |
-            ${{ runner.temp }}/registry-evidence-aggregate/production-aggregate.json
-            ${{ runner.temp }}/registry-evidence-aggregate/task28-registry-binding.json
+          name: registry-prebuilt-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
+          path: ${{ runner.temp }}/registry
           if-no-files-found: error
           retention-days: 90
 
   p5-v2:
     name: Verify fresh exact-candidate P5 V2 production evidence
-    needs: [verify-exact-release-request, registry-aggregate]
+    needs: [verify-exact-release-request, verify-prebuilt-registry]
     environment: base-v1-production-qualification
     runs-on: [self-hosted, linux, x64, onebrain-p5-controller]
     outputs:
@@ -245,7 +130,7 @@ jobs:
           clean: true
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with:
-          name: registry-production-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
+          name: registry-prebuilt-${{ needs.verify-exact-release-request.outputs.release_request_digest }}
           path: ${{ runner.temp }}/registry
       - name: Independently verify P5 V2 request, raw receipts, and aggregate
         run: >-
@@ -256,7 +141,7 @@ jobs:
           --p5-approval-policy "$P5_APPROVAL_POLICY" --inventory "$P5_INVENTORY_FILE"
           --raw-evidence-root "$P5_RAW_EVIDENCE_ROOT" --p5-aggregate "$P5_AGGREGATE_FILE"
           --executable "$P5_BUNDLE_ROOT/bin/p5_multi_host_agent_v2"
-          --bundle-root "$P5_BUNDLE_ROOT" --registry-candidate-root "$REGISTRY_STAGE_ROOT/candidate"
+          --bundle-root "$P5_BUNDLE_ROOT" --registry-candidate-root "$REGISTRY_PREBUILT_ROOT"
           --output "$RUNNER_TEMP/p5-v2-verified.json"
       - name: compare-release-executable-hashes
         id: p5
@@ -301,7 +186,7 @@ jobs:
 
   soak-runners:
     name: Fresh 72-hour soak ${{ matrix.runner_id }}
-    needs: [verify-exact-release-request, registry-aggregate, p5-v2]
+    needs: [verify-exact-release-request, verify-prebuilt-registry, p5-v2]
     environment: base-v1-production-qualification
     strategy:
       fail-fast: false
@@ -323,7 +208,7 @@ jobs:
           persist-credentials: false
           clean: true
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with: {name: "registry-production-${{ needs.verify-exact-release-request.outputs.release_request_digest }}", path: "${{ runner.temp }}/registry"}
+        with: {name: "registry-prebuilt-${{ needs.verify-exact-release-request.outputs.release_request_digest }}", path: "${{ runner.temp }}/registry"}
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with: {name: "p5-v2-verified-${{ needs.verify-exact-release-request.outputs.release_request_digest }}", path: "${{ runner.temp }}/p5"}
       - name: Run fresh uninterrupted exact-candidate 72-hour soak
@@ -338,8 +223,9 @@ jobs:
           python scripts/release/validate_evidence_carry_forward.py sign-child
           --request "$REQUEST_FILE" --signature "$REQUEST_SIGNATURE"
           --policy "$APPROVER_POLICY" --gpg-home "$QUALIFICATION_GPG_HOME"
-          --registry-aggregate "$RUNNER_TEMP/registry/production-aggregate.json"
-          --registry-binding "$RUNNER_TEMP/registry/task28-registry-binding.json"
+          --registry-binding "$RUNNER_TEMP/registry/prebuilt-registry-binding.json"
+          --registry-prebuilt-root "$REGISTRY_PREBUILT_ROOT"
+          --candidate-semantic-evidence "$CANDIDATE_SEMANTIC_EVIDENCE"
           --p5-request "$RUNNER_TEMP/p5/p5-request.json"
           --p5-signature "$RUNNER_TEMP/p5/p5-request.sig"
           --p5-approval-policy "$RUNNER_TEMP/p5/p5-approval-policy.json"
@@ -348,11 +234,10 @@ jobs:
           --p5-aggregate "$RUNNER_TEMP/p5/p5-multi-host-aggregate.json"
           --p5-executable "$P5_BUNDLE_ROOT/bin/p5_multi_host_agent_v2"
           --p5-bundle-root "$P5_BUNDLE_ROOT"
-          --p5-registry-candidate-root "$REGISTRY_STAGE_ROOT/candidate"
+          --p5-registry-candidate-root "$REGISTRY_PREBUILT_ROOT"
           --executable "$P5_BUNDLE_ROOT/bin/dr_m5_soak_release"
-          --sbom "$REGISTRY_STAGE_ROOT/candidate/sbom.spdx.json"
-          --provenance "$P5_BUNDLE_ROOT/metadata/BUILD-PROVENANCE.json"
-          --runner-image-evidence "$REGISTRY_STAGE_ROOT/environment/runner-image.json"
+          --sbom "$BASE_SBOM_FILE" --provenance "$BASE_PROVENANCE_FILE"
+          --runner-image-evidence "$RUNNER_IMAGE_EVIDENCE_FILE"
           --runner-id "${{ matrix.runner_id }}" --runner-identity "$RUNNER_NAME"
           --monotonic-start-file "$RUNNER_TEMP/monotonic-start-ns" --monotonic-end-file "$RUNNER_TEMP/monotonic-end-ns"
           --raw-report "$RUNNER_TEMP/base-v1-soak-report.json" --signing-key "$SOAK_RUNNER_PRIVATE_KEY"
@@ -370,7 +255,7 @@ jobs:
 
   aggregate:
     name: Verify and aggregate exact-candidate soak outputs
-    needs: [verify-exact-release-request, registry-aggregate, p5-v2, soak-runners]
+    needs: [verify-exact-release-request, verify-prebuilt-registry, p5-v2, soak-runners]
     environment: base-v1-production-qualification
     runs-on: [self-hosted, linux, x64, onebrain-base-v1-controller]
     env:
@@ -388,14 +273,15 @@ jobs:
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
         with: {name: "p5-v2-verified-${{ needs.verify-exact-release-request.outputs.release_request_digest }}", path: "${{ runner.temp }}/p5"}
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
-        with: {name: "registry-production-${{ needs.verify-exact-release-request.outputs.release_request_digest }}", path: "${{ runner.temp }}/registry"}
+        with: {name: "registry-prebuilt-${{ needs.verify-exact-release-request.outputs.release_request_digest }}", path: "${{ runner.temp }}/registry"}
       - name: Aggregate signed child bytes without self-reference
         run: >-
           python scripts/release/validate_evidence_carry_forward.py aggregate-soak
           --request "$REQUEST_FILE" --signature "$REQUEST_SIGNATURE"
           --policy "$APPROVER_POLICY" --gpg-home "$QUALIFICATION_GPG_HOME"
-          --registry-aggregate "$RUNNER_TEMP/registry/production-aggregate.json"
-          --registry-binding "$RUNNER_TEMP/registry/task28-registry-binding.json"
+          --registry-binding "$RUNNER_TEMP/registry/prebuilt-registry-binding.json"
+          --registry-prebuilt-root "$REGISTRY_PREBUILT_ROOT"
+          --candidate-semantic-evidence "$CANDIDATE_SEMANTIC_EVIDENCE"
           --p5-request "$RUNNER_TEMP/p5/p5-request.json"
           --p5-signature "$RUNNER_TEMP/p5/p5-request.sig"
           --p5-approval-policy "$RUNNER_TEMP/p5/p5-approval-policy.json"
@@ -404,11 +290,10 @@ jobs:
           --p5-aggregate "$RUNNER_TEMP/p5/p5-multi-host-aggregate.json"
           --p5-executable "$P5_BUNDLE_ROOT/bin/p5_multi_host_agent_v2"
           --p5-bundle-root "$P5_BUNDLE_ROOT"
-          --p5-registry-candidate-root "$REGISTRY_STAGE_ROOT/candidate"
+          --p5-registry-candidate-root "$REGISTRY_PREBUILT_ROOT"
           --executable "$P5_BUNDLE_ROOT/bin/dr_m5_soak_release"
-          --sbom "$REGISTRY_STAGE_ROOT/candidate/sbom.spdx.json"
-          --provenance "$P5_BUNDLE_ROOT/metadata/BUILD-PROVENANCE.json"
-          --runner-image-evidence "$REGISTRY_STAGE_ROOT/environment/runner-image.json"
+          --sbom "$BASE_SBOM_FILE" --provenance "$BASE_PROVENANCE_FILE"
+          --runner-image-evidence "$RUNNER_IMAGE_EVIDENCE_FILE"
           --receipts-root "$RUNNER_TEMP/soak-raw" --signing-key "$SOAK_AGGREGATOR_PRIVATE_KEY"
           --output "$RUNNER_TEMP/base-v1-exact-candidate-soak-aggregate.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -419,6 +304,6 @@ jobs:
           retention-days: 90
       - name: Report distinct artifact names
         run: |
-          echo "registry-production-aggregate"
+          echo "registry-prebuilt-binding"
           echo "p5-multi-host-aggregate"
           echo "base-v1-exact-candidate-soak-aggregate"

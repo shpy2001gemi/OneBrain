@@ -48,14 +48,14 @@ GATES = (
     "archive-recovery-and-kill-windows",
     "authoritative-transaction-boundaries",
     "cross-language-and-n-minus-one-conformance",
-    "fresh-production-registry",
+    "signed-prebuilt-registry",
     "fresh-multi-host-p5",
     "fresh-exact-candidate-72h-soak",
     "dependency-security-and-sbom",
     "product-default-and-release-documents",
 )
 SIGNED_GATES = {
-    "fresh-production-registry": "registry-production-aggregator",
+    "signed-prebuilt-registry": "registry-prebuilt-artifact-signer",
     "fresh-multi-host-p5": "p5-orchestrator",
     "fresh-exact-candidate-72h-soak": "soak-aggregator",
 }
@@ -430,7 +430,7 @@ class BaseQualifierTests(unittest.TestCase):
                 }],
                 "details": details,
                 "derived_root": roots[{
-                    "fresh-production-registry": "registry",
+                    "signed-prebuilt-registry": "registry",
                     "fresh-multi-host-p5": "p5",
                     "fresh-exact-candidate-72h-soak": "soak",
                 }[gate]] if gate in SIGNED_GATES else None,
@@ -889,7 +889,7 @@ class BaseQualifierTests(unittest.TestCase):
                     freeze_profile=production_profile,
                 )
             )
-        for gate in ("fresh-production-registry", "fresh-exact-candidate-72h-soak"):
+        for gate in ("signed-prebuilt-registry", "fresh-exact-candidate-72h-soak"):
             value = copy.deepcopy(self.document)
             raw = dict(self.raw)
             self.mutate_gate_receipt(

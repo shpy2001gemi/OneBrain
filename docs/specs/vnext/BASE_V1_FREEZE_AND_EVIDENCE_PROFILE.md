@@ -26,7 +26,8 @@ and no insignificant whitespace. It binds:
 - feature defaults and kill switches;
 - three-OS job receipts and canonical/vector/blob/index/archive/recovery/
   transaction/projection evidence;
-- fresh Registry, fresh three-host P5, and fresh uninterrupted 72-hour soak
+- a freshly signed and independently rehashed binding for the owner-produced
+  prebuilt Registry, fresh three-host P5, and fresh uninterrupted 72-hour soak
   aggregates bound to the same request, session, commit, tree, semantic digest,
   and target artifact;
 - dependency audit and triage, SBOM, provenance, migration, rollback, and
@@ -49,10 +50,15 @@ be replaced with a sample, borrowed from another role, or used outside that
 interval. Production qualification and the contract validator independently
 derive both identities from the exact frozen public bytes.
 
-Registry and soak carry-forward are forbidden for Base v1. Missing, duplicate,
-unknown, mixed-session, mixed-candidate, cross-target, stale, invalidly signed,
-or false evidence fails closed. The manifest's own detached signature is an
-outer envelope and cannot participate in the bytes or digest it signs.
+The Registry data bytes may come from the already completed owner-local
+`onebrain_data` build. Task 28 does not rerun checkpoint extraction or Registry
+cold-cache, low-RAM, SSD, or HDD resource profiles on the three P5/soak VPS.
+The signed Registry binding itself and soak evidence may not be carried forward:
+each must be created for the exact request, session, commit, and tree and each
+consumer rehashes the final Registry files. Missing, duplicate, unknown,
+mixed-session, mixed-candidate, cross-target, stale, invalidly signed, or false
+evidence fails closed. The manifest's own detached signature is an outer
+envelope and cannot participate in the bytes or digest it signs.
 
 Gate and target results are derived only from closed canonical machine receipts.
 Each receipt records the exact command vector and its digest, exit code, and
@@ -132,8 +138,14 @@ and external output locations after qualification returns.
 - Every gate/target check MUST match its frozen name, command, runner identity, and substantive nonempty output oracle; `exit_code=0` alone MUST NOT qualify.
 - Every raw evidence digest MUST be recomputed from the supplied bytes.
 - Linux, Windows, and macOS target receipts MUST bind their own tuple and artifact bytes without cross-target substitution, carry the exact analyzed-file SPDX package verification code, and use the target-frozen absolute SLSA builder TypeURI rather than the operational runner label.
-- Registry, P5, and soak evidence MUST be fresh and MUST bind one request, session, candidate, semantic digest, and artifact map.
-- Registry and soak evidence MUST NOT use carry-forward for Base v1.
+- The owner-local prebuilt Registry output MUST be packaged without reprocessing
+  source checkpoints, and its newly signed binding, P5 evidence, and soak
+  evidence MUST bind one request, session, candidate, semantic digest, and
+  artifact map.
+- The three P5/soak VPS MUST NOT run Registry checkpoint extraction or the
+  cold-cache, low-RAM, SSD, or HDD Registry resource profiles.
+- The signed prebuilt-Registry binding and soak evidence MUST NOT use
+  carry-forward for Base v1; reuse of the exact Registry data bytes is allowed.
 - Every child signature MUST use its frozen signer role, full fingerprint, public key, and trust-policy digest.
 - Every target receipt and every non-child-signed gate receipt MUST carry a valid Ed25519 `base-evidence-approver` signature bound to its exact receipt digest; production qualification MUST reconstruct the owner-approved canonical policy, derive its fingerprint and trust-policy digest, and reject a candidate request outside the approved signer interval.
 - The publisher MUST finalize the exact persisted candidate receipt after requalification and before signing; any post-run tracked, untracked, ignored, generated, tooling, or filesystem mutation MUST leave the signer uncalled.

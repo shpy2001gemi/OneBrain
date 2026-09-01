@@ -22,7 +22,7 @@
     "archive-recovery-and-kill-windows",
     "authoritative-transaction-boundaries",
     "cross-language-and-n-minus-one-conformance",
-    "fresh-production-registry",
+    "signed-prebuilt-registry",
     "fresh-multi-host-p5",
     "fresh-exact-candidate-72h-soak",
     "dependency-security-and-sbom",
@@ -83,14 +83,14 @@
       "archive-recovery-and-kill-windows",
       "authoritative-transaction-boundaries",
       "cross-language-and-n-minus-one-conformance",
-      "fresh-production-registry",
+      "signed-prebuilt-registry",
       "fresh-multi-host-p5",
       "fresh-exact-candidate-72h-soak",
       "dependency-security-and-sbom",
       "product-default-and-release-documents"
     ],
-    "fresh_evidence_required": ["fresh-production-registry", "fresh-multi-host-p5", "fresh-exact-candidate-72h-soak"],
-    "carry_forward_forbidden": ["fresh-production-registry", "fresh-exact-candidate-72h-soak"],
+    "fresh_evidence_required": ["signed-prebuilt-registry", "fresh-multi-host-p5", "fresh-exact-candidate-72h-soak"],
+    "carry_forward_forbidden": ["signed-prebuilt-registry", "fresh-exact-candidate-72h-soak"],
     "duplicate_target_or_evidence_policy": "reject",
     "unknown_field_policy": "reject",
     "mixed_candidate_session_semantic_artifact_or_root_policy": "reject"
@@ -115,7 +115,7 @@
     "archive-recovery-and-kill-windows": [{"name": "archive-recovery-and-kill-windows", "command": ["cargo", "test", "-p", "onebrain-node", "archive"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["archive-restore", "recovery-window", "kill-window"]}],
     "authoritative-transaction-boundaries": [{"name": "authoritative-transaction-boundaries", "command": ["cargo", "test", "-p", "onebrain-node", "transaction"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["transaction-boundary", "authority-boundary"]}],
     "cross-language-and-n-minus-one-conformance": [{"name": "cross-language-and-n-minus-one-conformance", "command": ["cargo", "test", "-p", "onebrain-base-contract", "--test", "negotiation"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["cross-language", "n-minus-one"]}],
-    "fresh-production-registry": [{"name": "fresh-production-registry", "command": ["python", "scripts/concept_registry/production_qualification.py"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-registry-production-runner", "required_assertion_ids": ["fresh-registry", "aggregate-root", "signer-policy"]}],
+    "signed-prebuilt-registry": [{"name": "signed-prebuilt-registry", "command": ["python", "scripts/release/task28_prebuilt_registry.py", "verify"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-prebuilt-registry-verifier", "required_assertion_ids": ["signed-final-artifacts", "candidate-bound-root", "signer-policy", "source-rebuild-excluded"]}],
     "fresh-multi-host-p5": [{"name": "fresh-multi-host-p5", "command": ["python", "scripts/runner/onebrain-p5-multi-host.py"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-p5-production-orchestrator", "required_assertion_ids": ["three-physical-hosts", "multi-host-root", "signer-policy"]}],
     "fresh-exact-candidate-72h-soak": [{"name": "fresh-exact-candidate-72h-soak", "command": ["bash", "scripts/runner/onebrain-soak-runner.sh"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-soak-production-aggregator", "required_assertion_ids": ["uninterrupted-72h", "exact-candidate", "soak-root"]}],
     "dependency-security-and-sbom": [{"name": "dependency-security-and-sbom", "command": ["cargo", "clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"], "runner_kind": "candidate-bound-runner", "runner_identity": "onebrain-task28-local-runner", "required_assertion_ids": ["cargo-audit", "cargo-deny", "npm-audit", "sbom"]}],
@@ -133,8 +133,8 @@
     "wrong_but_valid_or_unlisted_key": "reject"
   },
   "child_evidence_policies": {
-    "fresh-production-registry": {
-      "role": "registry-production-aggregator",
+    "signed-prebuilt-registry": {
+      "role": "registry-prebuilt-artifact-signer",
       "public_key_hex": "bef8e2b9d8ae7a38b3753a7d756a39c20948f128a66ca71ed04799e7a5d5177c",
       "fingerprint_context": "onebrain:concept-registry:signer-fingerprint:1",
       "fingerprint_hex": "dcc09574ac53ec8b95585cad5e2e88cbdfbe44841ad46b3709f73c989b4316d4",

@@ -2620,7 +2620,7 @@ def validate_base_v1_freeze() -> int:
         "archive-recovery-and-kill-windows",
         "authoritative-transaction-boundaries",
         "cross-language-and-n-minus-one-conformance",
-        "fresh-production-registry",
+        "signed-prebuilt-registry",
         "fresh-multi-host-p5",
         "fresh-exact-candidate-72h-soak",
         "dependency-security-and-sbom",
@@ -2630,8 +2630,8 @@ def validate_base_v1_freeze() -> int:
         raise ContractError("BASE-GATE-V1 gate set drift")
     child = profile.get("child_evidence_policies")
     expected_child = {
-        "fresh-production-registry": {
-            "role": "registry-production-aggregator",
+        "signed-prebuilt-registry": {
+            "role": "registry-prebuilt-artifact-signer",
             "public_key_hex": "bef8e2b9d8ae7a38b3753a7d756a39c20948f128a66ca71ed04799e7a5d5177c",
             "fingerprint_context": "onebrain:concept-registry:signer-fingerprint:1",
             "fingerprint_hex": "dcc09574ac53ec8b95585cad5e2e88cbdfbe44841ad46b3709f73c989b4316d4",
@@ -7072,6 +7072,13 @@ def validate_base_v1_exact_candidate_soak(
         "workflow_dispatch:",
         "if: github.ref == 'refs/heads/main'",
         "verify_base_release_request.py",
+        "task28_prebuilt_registry.py verify",
+        "ONEBRAIN_TASK28_REGISTRY_PREBUILT_ROOT",
+        "ONEBRAIN_TASK28_REGISTRY_PREBUILT_BINDING",
+        "ONEBRAIN_CANDIDATE_SEMANTIC_EVIDENCE",
+        "verify-prebuilt-registry",
+        "registry-prebuilt-",
+        "--registry-prebuilt-root",
         "ref: ${{ needs.verify-exact-release-request.outputs.candidate_commit }}",
         "git rev-parse HEAD^{tree}",
         "validate_evidence_carry_forward.py verify-p5",
@@ -7094,6 +7101,13 @@ def validate_base_v1_exact_candidate_soak(
         "schedule:",
         "candidate_commit:\n        description:",
         "onebrain-p5-multi-host.py",
+        "preflight_task28_registry_sources.py",
+        "onebrain-registry-runner.sh",
+        "registry-source-preflight:",
+        "registry-resource-profiles:",
+        "registry-kernel:",
+        "ONEBRAIN_REGISTRY_CHECKPOINT_ROOT",
+        "ONEBRAIN_REGISTRY_CANONICAL_INPUT",
     ):
         if forbidden in workflow:
             raise ContractError(f"Base v1 production canary workflow exposes: {forbidden}")
@@ -7105,13 +7119,17 @@ def validate_base_v1_exact_candidate_soak(
         'subparsers.add_parser("verify-p5")',
         'parser.add_argument("--p5-aggregate", type=Path, required=True)',
         'parser.add_argument("--executable", type=Path, required=True)',
-        'parser.add_argument("--registry-aggregate", type=Path, required=True)',
+        'parser.add_argument("--registry-aggregate", type=Path)',
         'parser.add_argument("--registry-binding", type=Path, required=True)',
+        'parser.add_argument("--registry-prebuilt-root", type=Path)',
+        'parser.add_argument("--candidate-semantic-evidence", type=Path)',
         'parser.add_argument("--p5-request", type=Path, required=True)',
         'parser.add_argument("--p5-raw-evidence-root", type=Path, required=True)',
         'parser.add_argument("--p5-bundle-root", type=Path, required=True)',
-        "load_task28_registry_measurement_context",
-        'registry_payload.get("registry_production_qualified") is not True',
+        "def _verified_prebuilt_binding(",
+        "verify_prebuilt_registry_binding",
+        "prebuilt Registry mode rejects a fresh Registry aggregate",
+        "P5 and soak must use the same prebuilt Registry root",
         'parser.add_argument("--sbom", type=Path, required=True)',
         'parser.add_argument("--provenance", type=Path, required=True)',
         'parser.add_argument("--runner-image-evidence", type=Path, required=True)',
@@ -7129,6 +7147,33 @@ def validate_base_v1_exact_candidate_soak(
     ):
         if forbidden in analyzer:
             raise ContractError(f"Base v1 evidence analyzer accepts override: {forbidden}")
+
+    prebuilt_registry = read(ROOT / "scripts/release/task28_prebuilt_registry.py")
+    for marker in (
+        'BINDING_ENVELOPE_FORMAT = "onebrain/task28-prebuilt-registry-envelope/1"',
+        'BINDING_DOMAIN = b"onebrain:task28:prebuilt-registry-binding:1\\0"',
+        'ARTIFACT_NAMES = (',
+        'MIN_REGISTRY_DATA_BYTES = 2_200_000_000',
+        'MAX_REGISTRY_DATA_BYTES = 2_500_000_000',
+        '"registry_origin": "owner-local-prebuilt-output"',
+        '"source_archives_reprocessed": False',
+        'FROZEN_TRUST_POLICY_DIGEST',
+        'FROZEN_SIGNER_PUBLIC_KEY',
+        'verify_prebuilt_registry_binding',
+        'candidate_semantic_evidence',
+    ):
+        if marker not in prebuilt_registry:
+            raise ContractError(f"Task 28 prebuilt Registry verifier missing: {marker}")
+    for forbidden in (
+        "preflight_task28_registry_sources",
+        "onebrain-registry-runner.sh",
+        "checkpoint_root",
+        "canonical_input",
+    ):
+        if forbidden in prebuilt_registry:
+            raise ContractError(
+                f"Task 28 prebuilt Registry verifier rebuilds source: {forbidden}"
+            )
 
     spec = read(VNEXT / "BASE_V1_EXACT_CANDIDATE_SOAK_PROFILE.md")
     for marker in (
@@ -8641,6 +8686,13 @@ def validate_base_v1_candidate_workflow(
         "rustc-vV.txt",
         "ImageVersion",
         "'qualification_mode':os.environ['QUALIFICATION_MODE']",
+        "onebrain/verified-qualification-context/2",
+        "expected_task28_targets",
+        "candidate-semantic-evidence.json",
+        "COMPATIBILITY_TUPLE_FIELDS",
+        "base-status candidate semantic digest is not reproducible",
+        "base-status artifact tuple digest is not reproducible",
+        "candidate-semantic-evidence-linux.json",
     )
     for marker in required_markers:
         if marker not in workflow:
@@ -8662,6 +8714,13 @@ def validate_base_v1_candidate_workflow(
     ):
         if forbidden in workflow:
             raise ContractError(f"Base candidate workflow contains forbidden marker: {forbidden}")
+    for marker in (
+        "Task 28 request v2",
+        "candidate-semantic-evidence-linux.json",
+        "does not rerun checkpoint extraction",
+    ):
+        if marker not in runbook:
+            raise ContractError(f"Base candidate Task 28 runbook is missing marker: {marker}")
     return (3, len(required_actions))
 
 

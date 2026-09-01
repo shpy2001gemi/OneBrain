@@ -36,7 +36,7 @@ from scripts.release.verify_base_release_request import (
 
 
 PROFILE_ID = "BASE_V1_FREEZE_AND_EVIDENCE_PROFILE_V1"
-FROZEN_PROFILE_BLAKE3 = "6dbf768d36649ee10c7aee2b77d50d8b3069b2dc809199e0b4c2f034019c71a6"
+FROZEN_PROFILE_BLAKE3 = "b137ae7f74c35259455c27bcb191338b3a95eda270cd693fc0e342da2f6312aa"
 INPUT_FORMAT = "onebrain/base-v1-qualification-input/1"
 MANIFEST_FORMAT = "onebrain/base-v1-evidence-manifest/1"
 CHILD_FORMAT = "onebrain/base-v1-child-evidence-reference/1"
@@ -53,12 +53,12 @@ TARGETS = {
     "macos": "aarch64-apple-darwin",
 }
 SIGNED_GATES = {
-    "fresh-production-registry",
+    "signed-prebuilt-registry",
     "fresh-multi-host-p5",
     "fresh-exact-candidate-72h-soak",
 }
 NO_CARRY_FORWARD = {
-    "fresh-production-registry",
+    "signed-prebuilt-registry",
     "fresh-exact-candidate-72h-soak",
 }
 SECURITY_LANES = {"cargo-audit", "cargo-deny", "npm-audit"}
@@ -983,7 +983,7 @@ def _verify_gates(
         elif row["details"]:
             raise BaseQualificationError("gate evidence details contain unknown fields")
         root_name = {
-            "fresh-production-registry": "registry",
+            "signed-prebuilt-registry": "registry",
             "fresh-multi-host-p5": "p5",
             "fresh-exact-candidate-72h-soak": "soak",
         }.get(gate)

@@ -947,7 +947,7 @@
     },
     {
       "path": "docs/specs/vnext/BASE_V1_FREEZE_AND_EVIDENCE_PROFILE.md",
-      "expected_statement_lines": 15,
+      "expected_statement_lines": 17,
       "evidence": [
         {
           "path": "src/test-vectors/vnext/base-v1-freeze-v1.json",

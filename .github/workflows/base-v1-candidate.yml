@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       qualification_mode:
-        description: Prequalification, or release bound to one signed Task 27 request
+        description: Prequalification, or release bound to one signed Task 28 request
         required: true
         default: prequalification
         type: choice
@@ -60,7 +60,7 @@ jobs:
           path: ${{ runner.temp }}/base-v1-signed-release-request
           run-id: ${{ inputs.signed_request_run_id }}
           github-token: ${{ github.token }}
-      - name: Verify signed Task 27 request before deriving any identity
+      - name: Verify signed Task 28 request before deriving any identity
         if: inputs.qualification_mode == 'release'
         shell: bash
         run: |
@@ -97,7 +97,16 @@ jobs:
                   "x86_64-pc-windows-msvc",
                   "aarch64-apple-darwin",
               }
-              if set(targets) != expected_targets:
+              task28_v2 = verified.get("format") == "onebrain/verified-qualification-context/2"
+              expected_task28_targets = {
+                  "linux": "x86_64-unknown-linux-gnu",
+                  "windows": "x86_64-pc-windows-msvc",
+                  "macos": "aarch64-apple-darwin",
+              }
+              if task28_v2 and targets != expected_task28_targets:
+                  raise SystemExit("signed Task 28 target map is not the closed OS-to-triple map")
+              measured_targets = set(targets.values()) if task28_v2 else set(targets)
+              if measured_targets != expected_targets:
                   raise SystemExit("signed release request target map is not the closed three-OS set")
               values = {
                   "mode": mode,
@@ -105,10 +114,10 @@ jobs:
                   "qualification_session_id": run["qualification_session_id"],
                   "candidate_commit": run["candidate_commit"],
                   "candidate_tree": run["candidate_tree"],
-                  "candidate_semantic_digest": binding["candidate_semantic_digest"],
-                  "linux_artifact_tuple_digest": targets["x86_64-unknown-linux-gnu"],
-                  "windows_artifact_tuple_digest": targets["x86_64-pc-windows-msvc"],
-                  "macos_artifact_tuple_digest": targets["aarch64-apple-darwin"],
+                  "candidate_semantic_digest": "" if task28_v2 else binding["candidate_semantic_digest"],
+                  "linux_artifact_tuple_digest": "" if task28_v2 else targets["x86_64-unknown-linux-gnu"],
+                  "windows_artifact_tuple_digest": "" if task28_v2 else targets["x86_64-pc-windows-msvc"],
+                  "macos_artifact_tuple_digest": "" if task28_v2 else targets["aarch64-apple-darwin"],
               }
           else:
               commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
@@ -278,8 +287,47 @@ jobs:
           $status = Get-Content "$env:EVIDENCE_DIR/base-status.json" -Raw | ConvertFrom-Json
           if ($status.target_triple -ne '${{ matrix.target }}') { throw 'compiled target triple mismatch' }
           if ($status.qualification.state -ne 'unqualified') { throw 'candidate build may not self-claim qualification' }
-          if ('${{ needs.verify-candidate-identity.outputs.mode }}' -eq 'release' -and $status.candidate_semantic_digest -ne '${{ needs.verify-candidate-identity.outputs.candidate_semantic_digest }}') { throw 'signed-request semantic digest mismatch' }
-          if ($env:QUALIFICATION_MODE -eq 'release' -and $status.artifact_tuple_digest -ne $env:EXPECTED_ARTIFACT_TUPLE) { throw 'signed-request target artifact tuple mismatch' }
+          if ('${{ needs.verify-candidate-identity.outputs.candidate_semantic_digest }}' -and $status.candidate_semantic_digest -ne '${{ needs.verify-candidate-identity.outputs.candidate_semantic_digest }}') { throw 'signed-request semantic digest mismatch' }
+          if ($env:EXPECTED_ARTIFACT_TUPLE -and $status.artifact_tuple_digest -ne $env:EXPECTED_ARTIFACT_TUPLE) { throw 'signed-request target artifact tuple mismatch' }
+          @'
+          import json
+          import os
+          from pathlib import Path
+
+          import blake3
+
+          from scripts.release.verify_base_release_request import (
+              COMPATIBILITY_TUPLE_FIELDS,
+              canonical_compatibility_tuple_bytes,
+              canonical_json,
+          )
+
+          root = Path(os.environ["EVIDENCE_DIR"])
+          status = json.loads(
+              (root / "base-status.json").read_text(encoding="utf-8-sig")
+          )
+          value = {field: status[field] for field in COMPATIBILITY_TUPLE_FIELDS}
+          semantic = blake3.blake3(
+              canonical_compatibility_tuple_bytes(
+                  value, include_artifact_fields=False
+              ),
+              derive_key_context="onebrain:base:candidate-semantic:1\0",
+          ).hexdigest()
+          artifact = blake3.blake3(
+              canonical_compatibility_tuple_bytes(
+                  value, include_artifact_fields=True
+              ),
+              derive_key_context="onebrain:base:artifact-tuple:1\0",
+          ).hexdigest()
+          if semantic != status.get("candidate_semantic_digest"):
+              raise SystemExit("base-status candidate semantic digest is not reproducible")
+          if artifact != status.get("artifact_tuple_digest"):
+              raise SystemExit("base-status artifact tuple digest is not reproducible")
+          (root / "candidate-semantic-evidence.json").write_bytes(
+              canonical_json(value)
+          )
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw 'candidate semantic evidence derivation failed' }
           $binding = [ordered]@{
             format = 'onebrain/base-v1-candidate-binding/1'
             release_request_digest = $env:RELEASE_REQUEST_DIGEST
@@ -339,8 +387,8 @@ jobs:
         run: |
           printf '%s\n' 'blake3==1.0.8 --hash=sha256:d17eb6382634b3a5bc0c0e0454d5265b0becaeeadb6801ed25150b39a999d0cc --hash=sha256:e4072196547484c95a5a09adbb952e9bb501949f03f9e2a85e7249ef85faaba8 --hash=sha256:1af0e5a29aa56d4fba904452ae784740997440afd477a15e583c38338e641f41 --hash=sha256:9456c829601d72852d8ba0af8dae0610f7def1d59f5942efde1e2ef93e8a8b57 --hash=sha256:3cec94ed5676821cf371e9c9d25a41b4f3ebdb5724719b31b2749653b7cc1dfa --hash=sha256:3168c457255b5d2a2fc356ba696996fcaff5d38284f968210d54376312107662' > "$RUNNER_TEMP/blake3-requirements.txt"
           python -m pip install --disable-pip-version-check --no-deps --only-binary=:all: --require-hashes -r "$RUNNER_TEMP/blake3-requirements.txt"
-          python - "$RUNNER_TEMP/base-v1-lanes" "$RUNNER_TEMP/base-v1-provenance-input.json" <<'PY'
-          import hashlib, json, sys
+          python - "$RUNNER_TEMP/base-v1-lanes" "$RUNNER_TEMP/base-v1-provenance-input.json" "$RUNNER_TEMP/candidate-semantic-evidence-linux.json" <<'PY'
+          import hashlib, json, shutil, sys
           from pathlib import Path
 
           root = Path(sys.argv[1])
@@ -358,6 +406,16 @@ jobs:
               lanes.append(lane)
           if not lanes:
               raise SystemExit("no Base candidate lanes were downloaded")
+          linux = [lane for lane in lanes if lane["os"] == "linux"]
+          if len(linux) != 1:
+              raise SystemExit("exactly one Linux Base candidate lane is required")
+          candidates = [
+              path for path in root.glob("*/candidate-semantic-evidence.json")
+              if json.loads((path.parent / "lane.json").read_text(encoding="utf-8"))["os"] == "linux"
+          ]
+          if len(candidates) != 1:
+              raise SystemExit("Linux candidate semantic evidence is missing or duplicated")
+          shutil.copyfile(candidates[0], sys.argv[3])
           first = lanes[0]
           aggregate = {
               "format": "onebrain/base-v1-provenance/1",
@@ -390,7 +448,9 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: base-v1-provenance-${{ needs.verify-candidate-identity.outputs.release_request_digest }}
-          path: ${{ runner.temp }}/base-v1-provenance-receipt.json
+          path: |
+            ${{ runner.temp }}/base-v1-provenance-receipt.json
+            ${{ runner.temp }}/candidate-semantic-evidence-linux.json
           if-no-files-found: error
           compression-level: 0
           overwrite: false

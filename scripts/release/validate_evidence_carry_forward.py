@@ -1182,6 +1182,101 @@ def _verified_binding(
     }
 
 
+def _verified_prebuilt_binding(
+    *,
+    request: Path,
+    signature: Path,
+    policy: Path,
+    gpg_home: Path,
+    registry_binding: Path,
+    registry_prebuilt_root: Path,
+    candidate_semantic_evidence: Path,
+    p5_request: Path,
+    p5_signature: Path,
+    p5_approval_policy: Path,
+    p5_inventory: Path,
+    p5_raw_evidence_root: Path,
+    p5_aggregate: Path,
+    p5_executable: Path,
+    p5_bundle_root: Path,
+    executable: Path,
+    sbom: Path,
+    provenance: Path,
+    runner_image_evidence: Path,
+) -> dict[str, str]:
+    """Bind fresh P5/soak evidence to owner-produced final Registry bytes."""
+
+    from scripts.release.task28_prebuilt_registry import (
+        PrebuiltRegistryError,
+        verify_prebuilt_registry_binding,
+    )
+    from scripts.release.verify_base_release_request import (
+        ReleaseRequestError,
+        verify_task28_release_request,
+    )
+
+    try:
+        verified_context = verify_task28_release_request(
+            request,
+            signature,
+            policy,
+            gpg_home=gpg_home,
+            gpg_executable=Path("/usr/bin/gpg"),
+            candidate_root=ROOT,
+        )
+        registry_bytes = registry_binding.read_bytes()
+        registry_receipt = json.loads(registry_bytes)
+        if registry_bytes not in {
+            _canonical_json(registry_receipt),
+            _canonical_json(registry_receipt) + b"\n",
+        }:
+            raise SoakEvidenceError("prebuilt Registry binding is not canonical")
+        registry_payload = verify_prebuilt_registry_binding(
+            verified_context,
+            registry_prebuilt_root,
+            candidate_semantic_evidence,
+            registry_receipt,
+        )
+    except (ReleaseRequestError, PrebuiltRegistryError) as error:
+        raise SoakEvidenceError(f"prebuilt Registry binding is invalid: {error}") from error
+
+    p5_verified = _verify_p5_aggregate_v2(
+        release_request=request,
+        release_signature=signature,
+        base_policy=policy,
+        base_gpg_home=gpg_home,
+        p5_request=p5_request,
+        p5_signature=p5_signature,
+        p5_approval_policy=p5_approval_policy,
+        inventory=p5_inventory,
+        raw_evidence_root=p5_raw_evidence_root,
+        aggregate_path=p5_aggregate,
+        executable=p5_executable,
+        bundle_root=p5_bundle_root,
+        registry_candidate_root=registry_prebuilt_root,
+    )
+    manifest = registry_prebuilt_root.resolve(strict=True) / "concepts.obr.manifest.json"
+    if blake3.blake3(manifest.read_bytes()).hexdigest() != registry_payload[
+        "candidate_payload_artifacts_blake3"
+    ]["MANIFEST:concepts.obr.manifest.json"]:
+        raise SoakEvidenceError("P5 V2 and prebuilt Registry manifests differ")
+    return {
+        "release_request_digest": str(registry_payload["release_request_digest"]),
+        "qualification_session_id": str(registry_payload["qualification_session_id"]),
+        "candidate_commit": str(registry_payload["candidate_commit"]),
+        "candidate_tree": str(registry_payload["candidate_tree"]),
+        "candidate_semantic_digest": str(registry_payload["candidate_semantic_digest"]),
+        "frozen_target_artifact_digest": str(registry_payload["artifact_tuple_digest"]),
+        "registry_root": str(registry_payload["release_aggregate_root"]),
+        "p5_aggregate_root": str(p5_verified["aggregate_blake3"]),
+        "executable_blake3": blake3.blake3(executable.read_bytes()).hexdigest(),
+        "sbom_blake3": blake3.blake3(sbom.read_bytes()).hexdigest(),
+        "provenance_blake3": blake3.blake3(provenance.read_bytes()).hexdigest(),
+        "runner_image_digest": blake3.blake3(runner_image_evidence.read_bytes()).hexdigest(),
+        "trust_policy_digest": _profile()["trust_policy"]["digest_hex"],
+    }
+
+
 def sign_soak_child_receipt(
     *,
     binding: dict[str, str],
@@ -1303,8 +1398,10 @@ def _add_verified_binding_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--signature", type=Path, required=True)
     parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--gpg-home", type=Path, required=True)
-    parser.add_argument("--registry-aggregate", type=Path, required=True)
+    parser.add_argument("--registry-aggregate", type=Path)
     parser.add_argument("--registry-binding", type=Path, required=True)
+    parser.add_argument("--registry-prebuilt-root", type=Path)
+    parser.add_argument("--candidate-semantic-evidence", type=Path)
     parser.add_argument("--p5-request", type=Path, required=True)
     parser.add_argument("--p5-signature", type=Path, required=True)
     parser.add_argument("--p5-approval-policy", type=Path, required=True)
@@ -1375,27 +1472,73 @@ def main(argv: list[str] | None = None) -> int:
                 registry_candidate_root=args.registry_candidate_root,
             )
         else:
-            binding = _verified_binding(
-                request=args.request,
-                signature=args.signature,
-                policy=args.policy,
-                gpg_home=args.gpg_home,
-                registry_aggregate=args.registry_aggregate,
-                registry_binding=args.registry_binding,
-                p5_request=args.p5_request,
-                p5_signature=args.p5_signature,
-                p5_approval_policy=args.p5_approval_policy,
-                p5_inventory=args.p5_inventory,
-                p5_raw_evidence_root=args.p5_raw_evidence_root,
-                p5_aggregate=args.p5_aggregate,
-                p5_executable=args.p5_executable,
-                p5_bundle_root=args.p5_bundle_root,
-                p5_registry_candidate_root=args.p5_registry_candidate_root,
-                executable=args.executable,
-                sbom=args.sbom,
-                provenance=args.provenance,
-                runner_image_evidence=args.runner_image_evidence,
-            )
+            if args.registry_prebuilt_root is not None:
+                if args.registry_aggregate is not None:
+                    raise SoakEvidenceError(
+                        "prebuilt Registry mode rejects a fresh Registry aggregate"
+                    )
+                if (
+                    args.p5_registry_candidate_root.resolve(strict=True)
+                    != args.registry_prebuilt_root.resolve(strict=True)
+                ):
+                    raise SoakEvidenceError(
+                        "P5 and soak must use the same prebuilt Registry root"
+                    )
+                if args.candidate_semantic_evidence is None:
+                    raise SoakEvidenceError(
+                        "prebuilt Registry mode requires --candidate-semantic-evidence"
+                    )
+                binding = _verified_prebuilt_binding(
+                    request=args.request,
+                    signature=args.signature,
+                    policy=args.policy,
+                    gpg_home=args.gpg_home,
+                    registry_binding=args.registry_binding,
+                    registry_prebuilt_root=args.registry_prebuilt_root,
+                    candidate_semantic_evidence=args.candidate_semantic_evidence,
+                    p5_request=args.p5_request,
+                    p5_signature=args.p5_signature,
+                    p5_approval_policy=args.p5_approval_policy,
+                    p5_inventory=args.p5_inventory,
+                    p5_raw_evidence_root=args.p5_raw_evidence_root,
+                    p5_aggregate=args.p5_aggregate,
+                    p5_executable=args.p5_executable,
+                    p5_bundle_root=args.p5_bundle_root,
+                    executable=args.executable,
+                    sbom=args.sbom,
+                    provenance=args.provenance,
+                    runner_image_evidence=args.runner_image_evidence,
+                )
+            else:
+                if args.candidate_semantic_evidence is not None:
+                    raise SoakEvidenceError(
+                        "fresh Registry mode rejects --candidate-semantic-evidence"
+                    )
+                if args.registry_aggregate is None:
+                    raise SoakEvidenceError(
+                        "fresh Registry mode requires --registry-aggregate"
+                    )
+                binding = _verified_binding(
+                    request=args.request,
+                    signature=args.signature,
+                    policy=args.policy,
+                    gpg_home=args.gpg_home,
+                    registry_aggregate=args.registry_aggregate,
+                    registry_binding=args.registry_binding,
+                    p5_request=args.p5_request,
+                    p5_signature=args.p5_signature,
+                    p5_approval_policy=args.p5_approval_policy,
+                    p5_inventory=args.p5_inventory,
+                    p5_raw_evidence_root=args.p5_raw_evidence_root,
+                    p5_aggregate=args.p5_aggregate,
+                    p5_executable=args.p5_executable,
+                    p5_bundle_root=args.p5_bundle_root,
+                    p5_registry_candidate_root=args.p5_registry_candidate_root,
+                    executable=args.executable,
+                    sbom=args.sbom,
+                    provenance=args.provenance,
+                    runner_image_evidence=args.runner_image_evidence,
+                )
             if args.command == "sign-child":
                 result = sign_soak_child_receipt(
                     binding=binding,
