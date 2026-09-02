@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import subprocess
+import sys
 import unittest
 import tempfile
 from pathlib import Path
@@ -72,6 +75,29 @@ class EvidenceCarryForwardTests(unittest.TestCase):
             return json.dumps(
                 value, ensure_ascii=True, sort_keys=True, separators=(",", ":")
             ).encode("utf-8")
+
+    def test_direct_script_execution_bootstraps_repository_import_root(self) -> None:
+        script = ROOT / "scripts/release/validate_evidence_carry_forward.py"
+        with tempfile.TemporaryDirectory() as temporary:
+            environment = os.environ.copy()
+            environment.pop("PYTHONPATH", None)
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import runpy; "
+                        f"runpy.run_path({str(script)!r}, run_name='task28_verifier'); "
+                        "from scripts.release.verify_base_release_request "
+                        "import verify_task28_release_request"
+                    ),
+                ],
+                cwd=temporary,
+                env=environment,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
     def test_p5_v2_aggregate_requires_canonical_bytes_and_exact_raw_count(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

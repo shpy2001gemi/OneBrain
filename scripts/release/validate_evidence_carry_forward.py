@@ -27,6 +27,13 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 
 
 ROOT = Path(__file__).resolve().parents[2]
+# This file is invoked both as a package module and as a repository-relative
+# script by production qualification workflows.  In the latter form Python
+# places ``scripts/release`` (not the repository root) on sys.path, so the
+# fail-closed verifier's lazy ``scripts.release`` imports would otherwise fail
+# after all inputs have already been staged.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 PROFILE_PATH = ROOT / "src/test-vectors/vnext/base-v1-exact-candidate-soak-v1.json"
 HEX_32_FIELDS = {
     "candidate_semantic_digest",

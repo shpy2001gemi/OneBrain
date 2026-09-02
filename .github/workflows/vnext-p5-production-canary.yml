@@ -12,6 +12,10 @@ concurrency:
 
 env:
   PYTHONDONTWRITEBYTECODE: '1'
+  # Jobs deliberately replace the workflow checkout with the immutable signed
+  # candidate. Keep repository-package imports anchored to that checkout when
+  # verifier entrypoints are executed as scripts.
+  PYTHONPATH: ${{ github.workspace }}
   RELEASE_VERIFIER_REQUIREMENTS: |
     blake3==1.0.8 --hash=sha256:d17eb6382634b3a5bc0c0e0454d5265b0becaeeadb6801ed25150b39a999d0cc --hash=sha256:e4072196547484c95a5a09adbb952e9bb501949f03f9e2a85e7249ef85faaba8 --hash=sha256:1af0e5a29aa56d4fba904452ae784740997440afd477a15e583c38338e641f41 --hash=sha256:9456c829601d72852d8ba0af8dae0610f7def1d59f5942efde1e2ef93e8a8b57 --hash=sha256:3cec94ed5676821cf371e9c9d25a41b4f3ebdb5724719b31b2749653b7cc1dfa --hash=sha256:3168c457255b5d2a2fc356ba696996fcaff5d38284f968210d54376312107662
     cryptography==46.0.7 --hash=sha256:42a1e5f98abb6391717978baf9f90dc28a743b7d9be7f0751a6f56a75d14065b
