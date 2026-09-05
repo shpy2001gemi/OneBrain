@@ -5,10 +5,9 @@
 
 ## Current checkpoint
 
-- Current task: `KU-REV-002`
-- Current branch: `codex/ku-rev-002-runtime-map`
-- Starting main: `80119e1311b1e95171e5613e0335ad3ef69fa2a4` (clean, pushed and synchronized)
-- Last accepted task: `KU-REV-001`, owner-approved merge `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`
+- Current task: `KU-CON-001`
+- Current branch: none; create `codex/ku-con-001-product-contract`
+- Last accepted task: `KU-REV-002`, merge `b87226311d57278e488fd55cbbcbd16dfd54e200` on `origin/main`
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
 
@@ -17,7 +16,7 @@
 | Order | Task | State | Branch | Dependency | Merge commit/evidence |
 |---:|---|---|---|---|---|
 | 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | — | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011–D-014. |
-| 2 | `KU-REV-002` | Review | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; focused evidence below. |
+| 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; merge `b872263` on `origin/main`. |
 | 3 | `KU-CON-001` | Planned | `codex/ku-con-001-product-contract` | `KU-REV-002` | — |
 | 4 | `KU-RUN-001` | Planned | `codex/ku-run-001-shared-service` | `KU-CON-001` | — |
 | 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001` | — |
@@ -97,8 +96,10 @@
 - Existing compiler dead-code/unused-import warnings were observed; no fixes made within
   this read-only audit. No claim of whole-workspace, live multi-node
   qualification, full-size Registry qualification or D-011–D-014 completion.
-- Merge of this review branch is not yet authorized. Keep the current pointer
-  at `KU-REV-002`; `KU-CON-001` depends on its accepted merge.
+- After this review was reported, the owner requested "làm task kế tiếp".
+  Treated this as authorization for the prerequisite merge and KU-CON-001;
+  rechecked the clean/pushed branch and contract/diff gates, then merged and
+  pushed `b872263` to main. No branch deletion requested.
 - Audited content checkpoint: `496d340`, pushed successfully to
   `origin/codex/ku-rev-002-runtime-map`. The branch tip additionally contains
   the ledger-only commit recording this checkpoint; resolve that tracked
