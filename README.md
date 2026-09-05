@@ -15,7 +15,13 @@ OneBrain is an open-source project building a **shared, decentralized, and verif
 The project encodes knowledge into compact **Knowledge Units (KUs)** with content identity, semantics, provenance, and epistemic state. KUs can be stored locally, queried, connected into graphs, and exchanged between peer nodes without a central server acting as the source of truth.
 
 > [!IMPORTANT]
-> OneBrain is currently an active research and engineering project. Local KUs, KQL, storage, AI through Ollama, CLI, API, Web, and Desktop have working execution paths. OBP vNext, distributed PoMV, operational OBT, and BCI remain at different stages of integration, experimentation, or research. The project is not yet a mainnet or a complete financial system.
+> OneBrain is an active research and engineering project. The vNext foundation,
+> product-integration work through P3, and DR-M5 hardening are implemented with
+> recorded evidence. Base v1 has an owner-approved release with disclosed
+> exceptions, but the strict `base-v1.0.0` tag is not published. Mobile is now a
+> BootstrapOnly/Limited implementation rather than a scaffold; its offline and
+> production gates remain open. OneBrain is not yet a mainnet or a complete
+> financial system. See the dated [project status](docs/PROJECT_STATUS.md).
 
 Today, a major problem may require thousands of people across many fields, yet their knowledge remains separated by organizations, languages, data formats, and time. Imagine if no one had to start from zero; if a small discovery in one place could meet the right question somewhere else; if millions of independent brains could think about a problem together without surrendering control to a centralized “superbrain.”
 
@@ -25,6 +31,7 @@ That is the future OneBrain seeks to help create: **every brain is an autonomous
 
 ## Table of contents
 
+- [Project status](#project-status)
 - [What is OneBrain?](#what-is-onebrain)
 - [Origins of the project](#origins-of-the-project)
 - [Why must OneBrain be built now?](#why-must-onebrain-be-built-now)
@@ -40,6 +47,25 @@ That is the future OneBrain seeks to help create: **every brain is an autonomous
 - [Documentation](#documentation)
 - [Roadmap](#roadmap)
 - [An invitation to build OneBrain together](#an-invitation-to-build-onebrain-together)
+
+---
+
+## Project status
+
+Snapshot: **2026-09-05**, audited at `main` commit `c65f1739fcd0`.
+
+| Workstream | Current status | Main open boundary |
+|---|---|---|
+| vNext foundation | Contract/foundation scope complete; validators pass | Product defaults and operator rollout are separate gates |
+| P0-P3 + DR-M5 | Implementation and recorded CI evidence complete | vNext lanes remain opt-in/default-off; legacy live transport is not fully retired |
+| Base v1 | `base-v1.0.0-owner-waiver.1` released with disclosed exceptions | Strict `base-v1.0.0` / `BASE-GATE-V1 qualified=true` is not claimed |
+| Mobile | BootstrapOnly/Limited; MOB-05A and Android MOB-05B through Local Import implemented | MOB-05C, private KU completion, iOS/peer providers, physical-device gates, networking, and store release |
+| M6 / M7 / BCI | Future gated milestones | Active distributed KQL, Outcome/Benefit, production OBT, and BCI safety/implementation |
+
+All **46 local branch tips are already contained in `origin/main`**; there is no
+local branch with unmerged commits. The detailed progress, remaining work,
+release caveats, and worktree inventory are maintained in
+[`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
 
 ---
 
@@ -453,7 +479,7 @@ This is a **target architecture**, not a claim that every edge in the diagram ru
 - Import/export, backup/restore, and manage blobs.
 - Run a node through CLI or API, and use the Web Dashboard and Tauri Desktop.
 
-### Available in the vNext foundation and test harness
+### Implemented in vNext/Base paths and test harnesses
 
 - Canonical codecs, typed CIDs, full-width identity, and signed events/feeds.
 - Authority, delegation, revocation, and capability permits.
@@ -463,16 +489,28 @@ This is a **target architecture**, not a claim that every edge in the diagram ru
 - Authenticated sessions, scoped inventories, persisted reconciliation journals, and partition/reunion canaries.
 - Use/Derivation/Outcome/Benefit evidence and a reward firewall.
 - Checkpoint proofs, restore drills, local retention/GC policy, and bounded formal models.
+- Product-neutral Base v1 contracts, generated Rust/TypeScript/Dart projections,
+  a stable C ABI, encrypted archives, dataset recovery, and qualification tooling.
+- Optional product surfaces for bounded one-hop distributed KQL and explicitly
+  confirmed Public UseEvidence, with default-off runtime lanes.
 
 ### Not yet a complete production path
 
-- The live node still uses legacy TCP/JSON; OBP vNext has not replaced the default transport.
-- Runtime KQL is currently local; Standing Need, private multipath, and knowledge/expert discovery over OBP exist in the vNext foundation and test harness.
-- Distributed PoMV and fidelity are not connected end-to-end.
+- vNext product integration exists behind opt-in/default-off gates; legacy
+  TCP/JSON has not been fully retired as the default live transport.
+- Bounded one-hop distributed KQL exists, but active multipath/provider and
+  knowledge/expert discovery have not completed the M6 production path.
+- Public UseEvidence exists behind explicit consent, but distributed fidelity
+  and the end-to-end Use -> Outcome -> Benefit flow remain incomplete.
+- Base v1 is released only under the disclosed owner waiver; strict
+  `BASE-GATE-V1 qualified=true` is not claimed.
 - OBT wallet, transfer, and finality are not operational.
 - Interface identity recovery and multi-device synchronization remain incomplete.
 - Dream/FedR/STDP orchestration does not run continuously in the node.
-- Mobile, browser extension, bot, and glasses clients remain scaffolds.
+- Mobile is a BootstrapOnly/Limited implementation with substantial Android
+  emulator evidence, but `ReadyOffline`, physical-device, networking, and store
+  release gates remain open.
+- Browser extension, bot, and glasses clients remain scaffolds.
 - BCI remains a research direction.
 
 ### Current interfaces
@@ -483,7 +521,8 @@ This is a **target architecture**, not a claim that every edge in the diagram ru
 | **REST/WebSocket API** | Operational locally | APIs for knowledge, AI, network, graph, data, and runtime events |
 | **Web Dashboard** | Operational | Dashboard, Explorer, Encode, Chat, Graph, PoMV, Network, Files, Analytics... |
 | **Desktop** | Operational from source | Tauri-embedded node/API, system tray, setup wizard, and event bridge |
-| **Mobile / Extension / Bot / Glasses** | Scaffold | Design and future integration points |
+| **Mobile** | BootstrapOnly/Limited | Flutter + native host + Rust core; private capture/media and Android Registry Local Import are partial, with production gates still open |
+| **Extension / Bot / Glasses** | Scaffold | Design and future integration points |
 
 ---
 
@@ -580,6 +619,13 @@ OneBrain/
 │   ├── onebrain-api/         # Local REST/WebSocket API
 │   ├── onebrain-desktop/     # Tauri Desktop
 │   ├── onebrain-web/         # React/Vite Web Dashboard
+│   ├── onebrain-mobile/      # Flutter autonomous mobile node UI/native hosts
+│   ├── onebrain-mobile-core/ # Mobile Rust runtime/bootstrap/storage profile
+│   ├── onebrain-mobile-bridge/ # Stable mobile C ABI/JNI bridge
+│   ├── onebrain-base-contract/ # Generated Base v1 semantic contract
+│   ├── onebrain-base-abi/    # Stable Base v1 C ABI projection
+│   ├── onebrain-archive/     # Encrypted Base archive/restore container
+│   ├── onebrain-relay/       # Outbound-first relay service
 │   └── onebrain-seed/        # Discovery/relay seed prototype
 ├── docs/
 │   ├── specs/                # Legacy and vNext specifications
@@ -598,6 +644,7 @@ OneBrain/
 
 | Document | Contents |
 |---|---|
+| [Current Project Status](docs/PROJECT_STATUS.md) | Dated progress, remaining work, release caveats, local branch/worktree audit, and validation evidence |
 | [Technical overview](docs/README.md) | Crates, modules, and code ↔ specification links |
 | [Research Baseline v7.1](docs/research/ONEBRAIN_RESEARCH_BASELINE_V7_1.md) | Research foundation and architectural decisions |
 | [Foundation Implementation Plan](docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md) | Milestones, tasks, gates, and evidence |
@@ -613,11 +660,17 @@ OneBrain/
 
 ### Phase 1—Foundation
 
+**Status:** implemented and frozen at repository scope; the strict Base v1
+release gate remains open because the current release is owner-waiver only.
+
 - Standardize KUs, typed identity, object/event/feed, and storage boundaries.
 - Complete the local KU/KQL/AI vertical slice.
 - Freeze vNext contracts and evidence gates.
 
 ### Phase 2—Runtime integration
+
+**Status:** P0-P3 and DR-M5 implementation/evidence are complete; adoption as
+the default live product path remains open.
 
 - Connect the vNext foundation to `OneBrainNode` behind feature flags and canaries.
 - Replace the live TCP demo with authenticated OBP reconciliation.
@@ -626,6 +679,9 @@ OneBrain/
 - Add end-to-end tests for node, seed, API, Web, and Desktop.
 
 ### Phase 3—Open network
+
+**Status:** production-reference P5/Registry evidence exists under the owner
+waiver, while strict qualification limitations and operator rollout remain open.
 
 - Operate a test network across multiple carriers and real partition conditions.
 - Complete provider discovery, reconciliation, fidelity, and observability.

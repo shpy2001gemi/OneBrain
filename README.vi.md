@@ -13,7 +13,14 @@ OneBrain là một dự án mã nguồn mở nhằm xây dựng **lớp tri th�
 Dự án mã hóa tri thức thành những **Knowledge Unit (KU)** nhỏ gọn, có định danh nội dung, ngữ nghĩa, nguồn gốc và trạng thái nhận thức. Các KU có thể được lưu cục bộ, truy vấn, kết nối thành đồ thị và trao đổi giữa những node ngang hàng mà không cần một máy chủ trung tâm giữ vai trò nguồn chân lý.
 
 > [!IMPORTANT]
-> OneBrain hiện là một dự án nghiên cứu và kỹ thuật đang phát triển. KU local, KQL, lưu trữ, AI qua Ollama, CLI, API, Web và Desktop đã có đường chạy thực tế. OBP vNext, PoMV phân tán, OBT vận hành và BCI vẫn đang ở các mức tích hợp, thử nghiệm hoặc nghiên cứu khác nhau. Dự án chưa phải mainnet hay một hệ thống tài chính hoàn chỉnh.
+> OneBrain hiện là một dự án nghiên cứu và kỹ thuật đang phát triển. Foundation
+> vNext, phần tích hợp sản phẩm đến P3 và hardening DR-M5 đã được triển khai với
+> bằng chứng đã ghi nhận. Base v1 đã có bản phát hành được chủ dự án chấp thuận
+> với các ngoại lệ công khai, nhưng tag strict `base-v1.0.0` chưa được phát hành.
+> Mobile hiện là bản triển khai BootstrapOnly/Limited thay vì chỉ là scaffold;
+> các gate offline và production vẫn còn mở. Dự án chưa phải mainnet hay một hệ
+> thống tài chính hoàn chỉnh. Xem [trạng thái dự án có ngày
+> chốt](docs/PROJECT_STATUS.vi.md).
 
 Ngày nay, một vấn đề lớn có thể cần hàng nghìn con người ở nhiều lĩnh vực, nhưng tri thức của họ vẫn bị ngăn cách bởi tổ chức, ngôn ngữ, định dạng dữ liệu và thời gian. Hãy hình dung nếu mỗi người không còn phải bắt đầu từ con số không; nếu một phát hiện nhỏ ở nơi này có thể gặp đúng câu hỏi ở nơi khác; nếu hàng triệu bộ não độc lập có thể cùng suy nghĩ về một vấn đề mà không phải giao quyền kiểm soát cho một “siêu não” trung tâm.
 
@@ -23,6 +30,7 @@ Ngày nay, một vấn đề lớn có thể cần hàng nghìn con người ở
 
 ## Mục lục
 
+- [Trạng thái dự án](#trạng-thái-dự-án)
 - [OneBrain là gì?](#onebrain-là-gì)
 - [Nguồn gốc của dự án](#nguồn-gốc-của-dự-án)
 - [Vì sao OneBrain cần được xây dựng ngay bây giờ?](#vì-sao-onebrain-cần-được-xây-dựng-ngay-bây-giờ)
@@ -38,6 +46,25 @@ Ngày nay, một vấn đề lớn có thể cần hàng nghìn con người ở
 - [Tài liệu](#tài-liệu)
 - [Lộ trình](#lộ-trình)
 - [Lời mời cùng xây dựng OneBrain](#lời-mời-cùng-xây-dựng-onebrain)
+
+---
+
+## Trạng thái dự án
+
+Snapshot: **2026-09-05**, audit tại commit `main` `c65f1739fcd0`.
+
+| Luồng công việc | Trạng thái hiện tại | Ranh giới chính còn mở |
+|---|---|---|
+| Foundation vNext | Hoàn tất ở phạm vi contract/foundation; validator xanh | Product default và operator rollout là các gate riêng |
+| P0-P3 + DR-M5 | Implementation và bằng chứng CI đã ghi nhận hoàn tất | Các lane vNext vẫn opt-in/default-off; live transport legacy chưa được thay hoàn toàn |
+| Base v1 | Đã phát hành `base-v1.0.0-owner-waiver.1` với các ngoại lệ công khai | Chưa tuyên bố strict `base-v1.0.0` / `BASE-GATE-V1 qualified=true` |
+| Mobile | BootstrapOnly/Limited; đã triển khai MOB-05A và phần Android MOB-05B đến Local Import | MOB-05C, private KU, iOS/peer provider, physical-device, networking và store release |
+| M6 / M7 / BCI | Các milestone tương lai có gate riêng | Active distributed KQL, Outcome/Benefit, OBT production và an toàn/triển khai BCI |
+
+Toàn bộ **46 đầu nhánh local đều đã nằm trong `origin/main`**; không có nhánh
+local nào còn commit chưa merge. Tiến độ chi tiết, phần việc còn lại, ngoại lệ
+release và kiểm kê worktree được duy trì tại
+[`docs/PROJECT_STATUS.vi.md`](docs/PROJECT_STATUS.vi.md).
 
 ---
 
@@ -451,7 +478,7 @@ flowchart LR
 - Import/export, backup/restore và quản lý blob.
 - Chạy node qua CLI hoặc API; sử dụng Web Dashboard và Tauri Desktop.
 
-### Đã có ở foundation vNext và test harness
+### Đã triển khai trong các đường vNext/Base và test harness
 
 - Canonical codec, typed CID, full-width identity và signed event/feed.
 - Authority, delegation, revocation và capability permits.
@@ -461,16 +488,28 @@ flowchart LR
 - Authenticated session, scoped inventory, persisted reconciliation journal và partition/reunion canary.
 - Use/Derivation/Outcome/Benefit evidence và reward firewall.
 - Checkpoint proofs, restore drill, local retention/GC policy và bounded formal models.
+- Contract Base v1 trung lập sản phẩm, projection Rust/TypeScript/Dart được sinh
+  tự động, stable C ABI, archive mã hóa, khôi phục dataset và qualification tooling.
+- Product surface tùy chọn cho distributed KQL one-hop có giới hạn và Public
+  UseEvidence được xác nhận rõ ràng, với các runtime lane mặc định tắt.
 
 ### Chưa phải đường production hoàn chỉnh
 
-- Live node vẫn dùng TCP/JSON legacy; OBP vNext chưa thay transport mặc định.
-- KQL trong runtime hiện truy vấn local; Standing Need, private multipath và discovery tri thức/chuyên gia qua OBP mới ở foundation vNext/test harness.
-- Distributed PoMV/fidelity chưa được nối end-to-end.
+- Tích hợp sản phẩm vNext đã có sau các gate opt-in/default-off; TCP/JSON legacy
+  chưa được thay hoàn toàn khỏi vai trò live transport mặc định.
+- Distributed KQL one-hop có giới hạn đã có, nhưng multipath/provider chủ động
+  và discovery tri thức/chuyên gia chưa hoàn thành đường production M6.
+- Public UseEvidence đã có sau explicit consent, nhưng distributed fidelity và
+  luồng end-to-end Use -> Outcome -> Benefit vẫn chưa hoàn chỉnh.
+- Base v1 mới phát hành theo owner waiver đã công khai; chưa tuyên bố strict
+  `BASE-GATE-V1 qualified=true`.
 - OBT wallet, transfer và finality chưa vận hành thực.
 - Identity recovery và multi-device sync của giao diện còn chưa hoàn thiện.
 - Dream/FedR/STDP orchestration chưa chạy thường trực trong node.
-- Mobile, browser extension, bot và glasses mới ở mức scaffold.
+- Mobile đã là bản BootstrapOnly/Limited với nhiều bằng chứng Android emulator,
+  nhưng các gate `ReadyOffline`, physical-device, networking và store release
+  vẫn còn mở.
+- Browser extension, bot và glasses vẫn ở mức scaffold.
 - BCI mới là research direction.
 
 ### Giao diện hiện có
@@ -481,7 +520,8 @@ flowchart LR
 | **REST/WebSocket API** | Hoạt động local | API cho knowledge, AI, network, graph, data và runtime events |
 | **Web Dashboard** | Hoạt động | Dashboard, Explorer, Encode, Chat, Graph, PoMV, Network, Files, Analytics... |
 | **Desktop** | Hoạt động ở source | Tauri nhúng node/API, system tray, setup wizard và event bridge |
-| **Mobile / Extension / Bot / Glasses** | Scaffold | Thiết kế và điểm tích hợp tương lai |
+| **Mobile** | BootstrapOnly/Limited | Flutter + native host + Rust core; private capture/media và Android Registry Local Import mới hoàn thành một phần, các gate production còn mở |
+| **Extension / Bot / Glasses** | Scaffold | Thiết kế và điểm tích hợp tương lai |
 
 ---
 
@@ -578,6 +618,13 @@ OneBrain/
 │   ├── onebrain-api/         # Local REST/WebSocket API
 │   ├── onebrain-desktop/     # Tauri Desktop
 │   ├── onebrain-web/         # React/Vite Web Dashboard
+│   ├── onebrain-mobile/      # UI Flutter/native host cho autonomous mobile node
+│   ├── onebrain-mobile-core/ # Runtime/bootstrap/storage profile bằng Rust cho mobile
+│   ├── onebrain-mobile-bridge/ # C ABI/JNI bridge ổn định cho mobile
+│   ├── onebrain-base-contract/ # Contract ngữ nghĩa Base v1 được sinh tự động
+│   ├── onebrain-base-abi/    # C ABI projection ổn định của Base v1
+│   ├── onebrain-archive/     # Archive/restore mã hóa của Base
+│   ├── onebrain-relay/       # Dịch vụ relay outbound-first
 │   └── onebrain-seed/        # Discovery/relay seed prototype
 ├── docs/
 │   ├── specs/                # Đặc tả legacy và vNext
@@ -596,6 +643,7 @@ OneBrain/
 
 | Tài liệu | Nội dung |
 |---|---|
+| [Trạng thái dự án hiện tại](docs/PROJECT_STATUS.vi.md) | Tiến độ có ngày chốt, phần việc còn lại, ngoại lệ release, audit nhánh/worktree local và bằng chứng validation |
 | [Tổng quan kỹ thuật](docs/README.md) | Crate, module và liên kết code ↔ spec |
 | [Research Baseline v7.1](docs/research/ONEBRAIN_RESEARCH_BASELINE_V7_1.md) | Nền tảng nghiên cứu và các quyết định kiến trúc |
 | [Foundation Implementation Plan](docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md) | Milestone, task, gate và evidence |
@@ -611,11 +659,17 @@ OneBrain/
 
 ### Giai đoạn 1 — Foundation
 
+**Trạng thái:** đã triển khai và freeze ở phạm vi repository; strict gate Base
+v1 vẫn mở vì bản phát hành hiện tại chỉ theo owner waiver.
+
 - Chuẩn hóa KU, typed identity, object/event/feed và storage boundary.
 - Hoàn thiện local KU/KQL/AI vertical slice.
 - Đóng băng contract vNext và evidence gates.
 
 ### Giai đoạn 2 — Runtime integration
+
+**Trạng thái:** implementation/bằng chứng P0-P3 và DR-M5 đã hoàn tất; việc đưa
+vNext thành đường chạy sản phẩm mặc định vẫn còn mở.
 
 - Nối foundation vNext vào `OneBrainNode` sau feature flag/canary.
 - Thay live TCP demo bằng authenticated OBP reconciliation.
@@ -624,6 +678,9 @@ OneBrain/
 - Bổ sung end-to-end test cho node, seed, API, Web và Desktop.
 
 ### Giai đoạn 3 — Open network
+
+**Trạng thái:** đã có bằng chứng production-reference P5/Registry theo owner
+waiver, nhưng các giới hạn strict qualification và operator rollout vẫn còn mở.
 
 - Vận hành test network qua nhiều carrier và điều kiện partition thực tế.
 - Hoàn thiện provider discovery, reconciliation, fidelity và observability.

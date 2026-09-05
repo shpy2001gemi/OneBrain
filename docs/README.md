@@ -4,6 +4,11 @@
 
 OneBrain encodes human knowledge into compact, language-agnostic **Knowledge Units (KU)** that live, metabolize, and evolve across a peer-to-peer network — no central servers, no cloud dependency.
 
+> [!IMPORTANT]
+> This file is a technical index, not a release-completion claim. See the dated
+> [Project Status](PROJECT_STATUS.md) ([Tiếng Việt](PROJECT_STATUS.vi.md)) for current progress, remaining work,
+> release caveats, and the local Git branch/worktree audit.
+
 ```text
 Text → CoreDna → Epigenetics → Expression
                       ↓
@@ -105,9 +110,10 @@ cargo build --features persist
 
 | Document | Nội dung |
 |----------|----------|
+| [Current Project Status](PROJECT_STATUS.md) | Snapshot tiến độ hiện tại, việc còn mở, ranh giới Base v1 owner-waiver/strict release, branch/worktree audit và validation evidence |
 | [Research Baseline — KU v7.1](research/ONEBRAIN_RESEARCH_BASELINE_V7_1.md) | Baseline 1.5 cho nghiên cứu KU-centric và partition autonomy; §46.3/§56.1 chốt Receptor, Mapping, discovery, OBP-RP, reconciliation, identity, GC và migration; OBT ngoài critical path |
 | [Foundation Implementation Plan — KU v7.1](research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md) | Kế hoạch thực thi chi tiết: dependency graph, 8 milestone (M0–M7), 99 task có acceptance criteria, Anti-Gravity Reunion MVP, verification/migration/rollout gates và topological work-package queue |
-| [vNext Foundation Contracts](specs/vnext/README.md) | Contract đang triển khai cho WP-001/WP-002: field ownership, normative vocabulary, negative assertions và canonical codec/domain profile |
+| [vNext Foundation Contracts](specs/vnext/README.md) | Contract/foundation index đã hoàn tất ở phạm vi repository; product defaults và production rollout vẫn là gate riêng |
 | [Legacy/vNext Product Boundary ADR](specs/vnext/LEGACY_VNEXT_PRODUCT_BOUNDARY_ADR_V1.md) | Chốt ranh giới additive: KQL/DHT/PoMV/OBT legacy không được ngầm đổi nghĩa thành vNext; wallet hiện là simulated/non-economic |
 | [vNext Product Integration Profile v1](specs/vnext/VNEXT_PRODUCT_INTEGRATION_PROFILE_V1.md) | Contract P1.1 cho 14 endpoint additive, 18 DTO, CID/continuation encoding, lifecycle/error semantics và proposal/PoMV firewalls |
 | [Feed Event Signer Custody Profile v1](specs/vnext/FEED_SIGNER_CUSTODY_PROFILE_V1.md) | Contract P1.2 tách FeedID signer khỏi NodeID/ActorID, proof-of-possession trước side effect và không fallback khi signer lỗi |
