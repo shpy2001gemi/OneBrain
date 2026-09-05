@@ -53,10 +53,14 @@
 - `python scripts/ci/validate_vnext_contracts.py` — PASS (99 tasks, 18 ADRs,
   37 negative assertions; existing canonical contracts unchanged).
 - `git diff --check` — PASS.
+- Local file-link check — PASS (47 links across the four handoff deliverables).
 - No source/application/mobile changes. No runtime tests or production
   encode/verify/Registry-sync/reward implementation claims.
 - README pointer stays on `KU-REV-001`; `KU-REV-002` waits for accepted merge.
-- Branch content checkpoint and push confirmation are recorded before handoff.
+- Audited content checkpoint: `c89f848`, pushed successfully to
+  `origin/codex/ku-rev-001-canonical-audit`. The final branch tip also contains
+  the ledger-only follow-up recording this checkpoint; resolve the tracked
+  branch for that tip rather than treating this content hash as a merge commit.
 
 ### Protocol
 
