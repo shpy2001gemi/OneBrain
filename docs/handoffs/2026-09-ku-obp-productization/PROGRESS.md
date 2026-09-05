@@ -6,7 +6,8 @@
 ## Current checkpoint
 
 - Current task: `KU-REV-001`
-- Current branch: none; create `codex/ku-rev-001-canonical-audit`
+- Current branch: `codex/ku-rev-001-canonical-audit`
+- Starting main commit: `3704da6b68237f50998f73c02bc5a2c59d27def8` (clean and equal to fetched `origin/main`)
 - Last accepted task: handoff package creation
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -15,7 +16,7 @@
 
 | Order | Task | State | Branch | Dependency | Merge commit/evidence |
 |---:|---|---|---|---|---|
-| 1 | `KU-REV-001` | Planned | `codex/ku-rev-001-canonical-audit` | — | — |
+| 1 | `KU-REV-001` | Review | `codex/ku-rev-001-canonical-audit` | — | [Authority audit](outputs/KU_AUTHORITY_AUDIT.md); owner D-011–D-014; validation below. |
 | 2 | `KU-REV-002` | Planned | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | — |
 | 3 | `KU-CON-001` | Planned | `codex/ku-con-001-product-contract` | `KU-REV-002` | — |
 | 4 | `KU-RUN-001` | Planned | `codex/ku-run-001-shared-service` | `KU-CON-001` | — |
@@ -37,6 +38,31 @@
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | — |
 
 ## Per-task update protocol
+
+### KU-REV-001 review evidence — 2026-09-05
+
+- Starting main: `3704da6b68237f50998f73c02bc5a2c59d27def8`, clean and equal to
+  fetched `origin/main` before branching.
+- Deliverable: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md), including
+  authority/ownership/lifecycle/storage, legacy contradictions, owner-resolved
+  direction and outstanding specification work.
+- Owner clarification: [D-011–D-014](DECISIONS.md#d-011--deterministic-identity-after-semantic-normalization).
+  Direct encode/verify OBT issuance is the requested new direction; the earlier
+  benefit-only restriction is not to be silently retained in future design.
+  Reward amounts, admission, replay prevention and settlement remain unspecified.
+- `python scripts/ci/validate_vnext_contracts.py` — PASS (99 tasks, 18 ADRs,
+  37 negative assertions; existing canonical contracts unchanged).
+- `git diff --check` — PASS.
+- Local file-link check — PASS (47 links across the four handoff deliverables).
+- No source/application/mobile changes. No runtime tests or production
+  encode/verify/Registry-sync/reward implementation claims.
+- README pointer stays on `KU-REV-001`; `KU-REV-002` waits for accepted merge.
+- Audited content checkpoint: `c89f848`, pushed successfully to
+  `origin/codex/ku-rev-001-canonical-audit`. The final branch tip also contains
+  the ledger-only follow-up recording this checkpoint; resolve the tracked
+  branch for that tip rather than treating this content hash as a merge commit.
+
+### Protocol
 
 When a task begins:
 

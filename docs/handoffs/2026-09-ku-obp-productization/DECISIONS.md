@@ -4,6 +4,13 @@
 > This file controls planning and product wording; it does not supersede a
 > frozen protocol contract or founder directive.
 
+The owner clarification in D-011 through D-014 was recorded on 2026-09-05
+after this package was created. It revises the requested product direction.
+D-014 explicitly requests a change to the earlier benefit-only OBT issuance
+direction. It is not a claim that the frozen contracts or production ledger
+already implement that change; the exact conflicting references and required
+contract work are recorded in the KU authority audit.
+
 ## D-001 — Resume KU now
 
 KU review and local product work may start immediately. OBP is not an
@@ -113,3 +120,73 @@ validated and pushed with an updated handoff ledger. Merge and local branch
 deletion require explicit owner instruction. Accepted tasks are merged before
 dependent tasks branch, unless `MASTER_PLAN.md` explicitly permits parallel
 work.
+
+## D-011 — Deterministic identity after semantic normalization
+
+The owner explicitly selected: "Cùng ngữ nghĩa chuẩn hóa → cùng CID".
+AI and rule-based extraction must converge to the same semantic content
+identity when their normalized semantic representation is identical under the
+same versioned canonical profile. This is not a promise that arbitrary models
+interpret the same natural-language text identically.
+
+Registry standardization alone is insufficient. The product contract must
+name the semantic identity boundary, supported normalization rules, unresolved
+concept behavior and cross-encoder conformance evidence. Source/model/node/run
+provenance remains separate from semantic identity. Existing generic ObjectCID
+bytes, which include disclosure, references and other envelope fields, must
+not silently acquire a different meaning. Existing alternative interpretations
+and original immutable bytes remain preserved.
+
+## D-012 — Regular Registry releases and node-assisted distribution
+
+The owner requires a standard Concept Registry updated regularly, obtainable
+from publisher servers and other nodes. The target must retain signed immutable
+releases, exact release verification, CCID stability, atomic activation and
+offline usability with an already active valid release.
+
+The large release currently has distribution policy
+`MIRROR_OR_OFFLINE_ONLY_NO_OBP_GOSSIP`. Peer-assisted package/chunk transport,
+release discovery, update cadence, delta compatibility and historical release
+reproducibility need explicit contract coverage before implementation. A peer
+or mirror supplies bytes; it does not acquire release-signing or KU authority.
+No particular update interval or network transport is approved by this entry.
+
+## D-013 — Delegated encode and independent verify work
+
+The owner requires nodes without a local AI encoder to request encoding from
+capable nodes, and capable nodes to opt into automatically discovering and
+claiming eligible encode/verify work. A local rule-based route remains useful
+within its supported domain.
+
+The target consumes the capability Definition/Manifest/Offer/Permit/Execution
+separation and blind fidelity attempts. Worker participation does not imply
+unrestricted source access or publication. Job ownership, bounded claims,
+expiry/reassignment, restart recovery and signed work evidence need a product
+contract; legacy encoding gossip is not accepted as its vNext implementation.
+
+## D-014 — Direct OBT issuance for accepted encode/verify work
+
+The owner explicitly selected: "Phát hành OBT trực tiếp từ encode/verify".
+The requested reward trigger is accepted encoding or verification work, without
+waiting for a later BenefitEvent. Do not replace this requirement with a
+fee/bounty or a benefit-contingent ContributionReceipt.
+
+This changes the earlier benefit-only issuance direction in Research Baseline
+§1.5, §3.1 and §3.5, and requires a versioned canonical economic amendment to
+the current no-reward boundaries in FID-001 §6, FID-002 §6 and FID-003 §5.
+The owner has resolved the direction; the issuance mechanism remains to be
+specified. No additional confirmation of this same choice is required.
+
+Acceptance evidence must feed a separate reward-authorization/ledger boundary;
+a returned result or signature is not itself mint authorization. Define work
+admission, accepted correct verification (including evidenced mismatch),
+duplicate-work/replay handling, correlated-worker abuse, bounded issuance,
+disputes and partition-safe settlement before enabling payouts. Exact amounts,
+formula, supply policy and finality mechanism remain open, not inherited from
+legacy raw-text-length or agreement-bonus rules.
+
+OBT must still not become KU truth, fidelity, discovery or adoption authority.
+Local KU operations remain usable when rewards are unavailable. This direction
+does not enable a production wallet/network lane or authorize rewriting legacy
+history. KU-REV-001 records the amendment and gaps; implementation requires
+explicitly scoped specification and implementation tasks beyond that audit.

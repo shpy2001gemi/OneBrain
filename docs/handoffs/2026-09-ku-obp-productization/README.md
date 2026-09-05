@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **OWNER-APPROVED DIRECTION / ready to start `KU-REV-001`**
+> Status: **`KU-REV-001` ready for review / owner encoding and reward direction recorded**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -43,6 +43,15 @@ the selected task explicitly requires a section from it.
 
 **Current task:** [`KU-REV-001`](tasks/01-KU-REV-001.md)
 **Suggested branch:** `codex/ku-rev-001-canonical-audit`
+
+Audit output: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md).
+The current task remains `KU-REV-001` until owner-approved merge. The owner has
+clarified normalized-semantic CID convergence, regularly updated Registry
+distribution from publishers/peers, delegated encode/verify work and direct
+OBT issuance for accepted work; see [D-011–D-014](DECISIONS.md#d-011--deterministic-identity-after-semantic-normalization).
+The economic choice changes the earlier benefit-only direction and needs a
+versioned specification amendment before implementation. This audit does not
+enable minting or change canonical bytes, application code or rollout state.
 
 Copy/paste prompt:
 
