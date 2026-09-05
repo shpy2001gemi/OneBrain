@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-CON-001` approved and merged / next: `KU-RUN-001`**
+> Status: **`KU-CON-001` approved and merged / `KU-RUN-001` blocked on registration scope**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -42,7 +42,12 @@ Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
 **Current task:** [`KU-RUN-001`](tasks/04-KU-RUN-001.md)
-**Suggested branch:** `codex/ku-run-001-shared-service`
+**Current branch:** `codex/ku-run-001-shared-service`
+
+KU-RUN-001 preflight found the approved domain and Base payload registrations
+still absent. The concrete proposed scope extension and fresh gate evidence
+are recorded in [PROGRESS.md](PROGRESS.md#ku-run-001-registration-preflight--2026-09-05).
+The current task stays KU-RUN-001; runtime implementation has not begun.
 
 Audit output: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md).
 Runtime review: [KU_RUNTIME_GAP_MAP.md](outputs/KU_RUNTIME_GAP_MAP.md).
@@ -50,8 +55,8 @@ Runtime review: [KU_RUNTIME_GAP_MAP.md](outputs/KU_RUNTIME_GAP_MAP.md).
 The [KU-CON-001 contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md)
 is approved for KU-PC-A/B/C under [D-015](DECISIONS.md#d-015--ku-product-contract-accepted).
 Domain/payload registration and golden vectors remain technical gates before
-runtime dispatch. Merge `2cbc8f2` is on `origin/main`; KU-RUN-001 is the next
-implementation task and has not started. Fresh evidence is in [PROGRESS.md](PROGRESS.md).
+runtime dispatch. Merge `2cbc8f2` is on `origin/main`; KU-RUN-001 preflight is
+recorded on its task branch. Fresh evidence is in [PROGRESS.md](PROGRESS.md).
 The owner-approved audit merge is `25d008d` on `origin/main`. The owner has
 clarified normalized-semantic CID convergence, regularly updated Registry
 distribution from publishers/peers, delegated encode/verify work and direct
