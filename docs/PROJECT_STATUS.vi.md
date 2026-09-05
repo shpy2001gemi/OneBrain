@@ -2,9 +2,11 @@
 
 [English](PROJECT_STATUS.md)
 
-> Snapshot: **2026-09-05 (Asia/Saigon)**  
+> Snapshot: **2026-09-05 (Asia/Saigon)**
+>
 > Nguồn được audit: `main` / `origin/main` tại
-> `c65f1739fcd0ac6b7a9518ed44c0ee6f81df41f1`  
+> `c65f1739fcd0ac6b7a9518ed44c0ee6f81df41f1`
+>
 > Phạm vi: trạng thái repository, nhánh/worktree Git local, các tuyên bố
 > qualification trong source, validator hiện tại và bằng chứng CI gần nhất.
 
@@ -71,7 +73,7 @@ Lịch sử và gate distributed runtime nằm trong
 
 ## Audit nhánh Git local
 
-Sau `git fetch --all --prune`:
+Audit trước khi dọn, sau `git fetch --all --prune`, cho thấy:
 
 | Kiểm tra | Kết quả |
 |---|---:|
@@ -84,8 +86,18 @@ Sau `git fetch --all --prune`:
 | Worktree tạm đã mất thư mục và có metadata prunable | 2 |
 
 **Không có nhánh local nào chưa hoàn thành theo nghĩa Git.** Tip của mọi nhánh
-local đều là ancestor của `origin/main`. Có thể dọn 45 nhánh khác `main` sau khi
-các worktree gắn với chúng được remove hoặc detach có chủ đích.
+local đều là ancestor của `origin/main`. Cả 45 nhánh khác `main` là nhánh lịch
+sử tích hợp/release và đủ điều kiện để dọn khỏi local.
+
+Kết quả dọn dẹp ngày 2026-09-05:
+
+| Trạng thái local hiện tại | Kết quả |
+|---|---:|
+| Nhánh local | 1 (`main`) |
+| Worktree đã đăng ký | 1 (repository chính) |
+| Stash | 0 |
+| Commit chỉ còn reachable từ local ref | 0 |
+| Remote branch bị xóa | 0 |
 
 Hai chênh lệch dễ gây hiểu nhầm không phải code chưa merge:
 
@@ -105,9 +117,11 @@ Các nhóm nhánh đã nằm trong `origin/main`:
 | Task 28 | 4 | Preparation, external request root, prebuilt Registry và request handoff |
 | Documentation/history | 2 | English README và nhánh chuyển Mermaid/PDF cũ |
 
-Audit này **không dọn worktree**. Hai đăng ký bootstrap tạm bị mất thư mục là
-ứng viên an toàn cho một lần `git worktree prune` sau; các worktree còn lại là
-thư mục thật và nên được retire có chủ đích.
+Quá trình dọn đã prune hai đăng ký bootstrap tạm bị mất, gỡ chín worktree phụ
+sạch theo đúng thứ tự phụ thuộc và xóa cả 45 nhánh local đã merge. Một thư mục
+Base candidate đã mất đăng ký Git cần xử lý long-path; thư mục trống bị giữ bởi
+một phiên Ubuntu `wslhost` mồ côi nên chỉ cặp process cũ đã được xác minh đó bị
+dừng trước khi xóa. Remote branch và tag không bị thay đổi.
 
 ## Bằng chứng validation của snapshot
 

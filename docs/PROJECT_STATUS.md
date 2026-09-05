@@ -2,9 +2,11 @@
 
 [Tiếng Việt](PROJECT_STATUS.vi.md)
 
-> Snapshot: **2026-09-05 (Asia/Saigon)**  
+> Snapshot: **2026-09-05 (Asia/Saigon)**
+>
 > Audited source: `main` / `origin/main` at
-> `c65f1739fcd0ac6b7a9518ed44c0ee6f81df41f1`  
+> `c65f1739fcd0ac6b7a9518ed44c0ee6f81df41f1`
+>
 > Scope: repository state, local Git branches/worktrees, source-controlled
 > qualification claims, current validators, and recent CI evidence.
 
@@ -71,7 +73,7 @@ The distributed-runtime history and gates remain in
 
 ## Local Git branch audit
 
-After `git fetch --all --prune`:
+The pre-cleanup audit after `git fetch --all --prune` found:
 
 | Check | Result |
 |---|---:|
@@ -83,10 +85,19 @@ After `git fetch --all --prune`:
 | Existing worktrees | 10, all clean |
 | Missing temporary worktrees with prunable metadata | 2 |
 
-**No local branch is unfinished in the Git sense.** Every local branch tip is
-already an ancestor of `origin/main`. The 45 non-`main` branches are historical
-integration/release branches and may be retired after their attached worktrees
-are deliberately removed or detached.
+**No local branch was unfinished in the Git sense.** Every local branch tip was
+already an ancestor of `origin/main`. The 45 non-`main` branches were historical
+integration/release branches eligible for local retirement.
+
+Cleanup completed on 2026-09-05:
+
+| Current local state | Result |
+|---|---:|
+| Local branches | 1 (`main`) |
+| Registered worktrees | 1 (the primary repository) |
+| Stashes | 0 |
+| Commits reachable only from local refs | 0 |
+| Remote branches deleted | 0 |
 
 Two apparent divergences are not unmerged work:
 
@@ -107,9 +118,12 @@ Branch families already contained in `origin/main`:
 | Task 28 | 4 | Preparation, external request root, prebuilt Registry, and request handoff |
 | Documentation/history | 2 | English README and the older Mermaid/PDF conversion branch |
 
-Worktree cleanup was **not** performed during this audit. Two missing temporary
-bootstrap registrations are safe candidates for a later `git worktree prune`;
-the other worktrees are real directories and should be retired intentionally.
+Cleanup pruned the two missing temporary bootstrap registrations, removed nine
+clean auxiliary worktrees in dependency-safe order, and deleted all 45 merged
+local branches. One already-deregistered Base candidate directory required
+long-path cleanup; its empty directory was held by an orphan Ubuntu `wslhost`
+session, so only that verified stale process pair was stopped before removal.
+Remote branches and tags were not changed.
 
 ## Validation evidence for this snapshot
 

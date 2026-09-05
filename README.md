@@ -62,9 +62,10 @@ Snapshot: **2026-09-05**, audited at `main` commit `c65f1739fcd0`.
 | Mobile | BootstrapOnly/Limited; MOB-05A and Android MOB-05B through Local Import implemented | MOB-05C, private KU completion, iOS/peer providers, physical-device gates, networking, and store release |
 | M6 / M7 / BCI | Future gated milestones | Active distributed KQL, Outcome/Benefit, production OBT, and BCI safety/implementation |
 
-All **46 local branch tips are already contained in `origin/main`**; there is no
-local branch with unmerged commits. The detailed progress, remaining work,
-release caveats, and worktree inventory are maintained in
+The cleanup audit found that all **46 former local branch tips were contained in
+`origin/main`**; there were no unmerged commits. Local Git has since been reduced
+to one branch and one worktree: `main`. The detailed progress, remaining work,
+release caveats, and cleanup record are maintained in
 [`docs/PROJECT_STATUS.md`](docs/PROJECT_STATUS.md).
 
 ---

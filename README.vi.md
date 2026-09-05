@@ -61,9 +61,10 @@ Snapshot: **2026-09-05**, audit tại commit `main` `c65f1739fcd0`.
 | Mobile | BootstrapOnly/Limited; đã triển khai MOB-05A và phần Android MOB-05B đến Local Import | MOB-05C, private KU, iOS/peer provider, physical-device, networking và store release |
 | M6 / M7 / BCI | Các milestone tương lai có gate riêng | Active distributed KQL, Outcome/Benefit, OBT production và an toàn/triển khai BCI |
 
-Toàn bộ **46 đầu nhánh local đều đã nằm trong `origin/main`**; không có nhánh
-local nào còn commit chưa merge. Tiến độ chi tiết, phần việc còn lại, ngoại lệ
-release và kiểm kê worktree được duy trì tại
+Audit dọn dẹp xác nhận toàn bộ **46 đầu nhánh local trước đó đều đã nằm trong
+`origin/main`**; không có commit chưa merge. Git local hiện chỉ còn một nhánh và
+một worktree: `main`. Tiến độ chi tiết, phần việc còn lại, ngoại lệ release và
+biên bản dọn dẹp được duy trì tại
 [`docs/PROJECT_STATUS.vi.md`](docs/PROJECT_STATUS.vi.md).
 
 ---
