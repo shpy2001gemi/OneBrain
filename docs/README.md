@@ -111,6 +111,7 @@ cargo build --features persist
 | Document | Nội dung |
 |----------|----------|
 | [Current Project Status](PROJECT_STATUS.md) | Snapshot tiến độ hiện tại, việc còn mở, ranh giới Base v1 owner-waiver/strict release, branch/worktree audit và validation evidence |
+| [KU Review + OBP Productization Handoff](handoffs/2026-09-ku-obp-productization/README.md) | Gói bắt đầu gọn cho conversation mới: quyết định owner, capability boundary, dependency graph, progress ledger, prompt và 20 task tách theo nhánh |
 | [Research Baseline — KU v7.1](research/ONEBRAIN_RESEARCH_BASELINE_V7_1.md) | Baseline 1.5 cho nghiên cứu KU-centric và partition autonomy; §46.3/§56.1 chốt Receptor, Mapping, discovery, OBP-RP, reconciliation, identity, GC và migration; OBT ngoài critical path |
 | [Foundation Implementation Plan — KU v7.1](research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md) | Kế hoạch thực thi chi tiết: dependency graph, 8 milestone (M0–M7), 99 task có acceptance criteria, Anti-Gravity Reunion MVP, verification/migration/rollout gates và topological work-package queue |
 | [vNext Foundation Contracts](specs/vnext/README.md) | Contract/foundation index đã hoàn tất ở phạm vi repository; product defaults và production rollout vẫn là gate riêng |

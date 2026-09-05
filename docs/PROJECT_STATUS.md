@@ -5,7 +5,7 @@
 > Snapshot: **2026-09-05 (Asia/Saigon)**
 >
 > Audited source: `main` / `origin/main` at
-> `c65f1739fcd0ac6b7a9518ed44c0ee6f81df41f1`
+> `409fca34db8faaf238b899a2481175d922113b99` before this documentation update
 >
 > Scope: repository state, local Git branches/worktrees, source-controlled
 > qualification claims, current validators, and recent CI evidence.
@@ -40,7 +40,8 @@ The annotated `base-v1.0.0-owner-waiver.1` tag records:
 - disclosed exceptions for late evidence assembly, corrected frozen test-target
   names, existing all-features Clippy findings, and dependency-policy triage.
 
-`main` is five workflow/handoff commits ahead of that candidate. Current CI at
+The synchronized baseline is seven workflow/handoff commits ahead of that
+candidate. CI at
 `c65f1739fcd0` includes a successful
 [three-OS candidate run](https://github.com/shpy2001gemi/OneBrain/actions/runs/33592237276)
 and successful nightly parser fuzz. The tag contains a PGP signature, but this machine cannot
@@ -48,23 +49,37 @@ verify it because the signer's public key is not installed locally; therefore
 this audit records the tag and its contents without claiming independent local
 signature verification.
 
+## Owner-approved implementation direction
+
+On 2026-09-05, the owner decided to resume KU review/product development and
+apply one contract across CLI, local Web, and Desktop. The outbound-first OBP
+core remains a stable foundation, but productization runs as a separate lane;
+the legacy `onebrain-seed` must not be presented as a secure vNext seeder and
+the new lane remains default-off until its acceptance gate passes.
+
+The compact entry point for a new conversation is
+[`handoffs/2026-09-ku-obp-productization/README.md`](handoffs/2026-09-ku-obp-productization/README.md).
+It contains the owner decisions, capability boundary, dependency graph,
+progress ledger, prompts, and 20 independently bounded branch tasks. The
+current task is `KU-REV-001`; no implementation branch has been created.
+
 ## Remaining implementation priorities
 
-1. **Resolve the Base v1 strict-release decision.** Preserve the disclosed
-   waiver boundary, or run the approved strict process before creating
-   `base-v1.0.0`; do not silently reinterpret the waiver as strict
-   qualification.
-2. **Finish the mobile offline critical path.** Complete MOB-05B/MOB-05C,
-   connect deterministic canonical KU encode/preview/private Save, finish local
-   Library/search/KQL/export/backup, close media storage/recovery, then execute
-   physical-device and store-release gates.
-3. **Close production-network entry gates.** Resolve Registry/P5 limitations,
-   explicit operator approval, provider evidence, and mobile carrier mailbox
-   before enabling normal peer networking or seeding by default.
-4. **Open M6 only after those gates.** Implement active distributed KQL and the
-   end-to-end Outcome/Benefit evidence flow without expanding authority.
-5. **Keep M7/OBT and BCI outside current completion claims.** Both remain future
-   milestones with additional policy, safety, and qualification requirements.
+1. **Review KU and freeze its product contract.** Execute `KU-REV-001`,
+   `KU-REV-002`, then `KU-CON-001` before changing public behavior.
+2. **Put KU behind one shared local service.** After contract freeze, project
+   the same semantics through local REST/private WS, CLI, local Web, and
+   Desktop; KU must remain useful with zero peers.
+3. **Productize OBP in a separate lane.** Connect existing lifecycle,
+   bootstrap/discovery, reservation, route/outbox, and failover components to
+   the normal node aggregate and shared product API; remain opt-in/default-off
+   until real acceptance evidence passes.
+4. **Integrate KU -> OBP only after both lanes pass QA.** Preserve
+   `encode ≠ publish`, `proposal ≠ materialize`, `materialize ≠ adopt`, and
+   never turn relay/delivery evidence into authority.
+5. **Keep other lanes outside current scope.** The strict Base decision,
+   mobile, M6 active multipath KQL, Outcome/Benefit, M7/OBT, and BCI retain
+   separate gates; resumed mobile work must follow the mobile build contract.
 
 The detailed mobile order remains in
 [`WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md`](research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md).
@@ -128,6 +143,10 @@ Remote branches and tags were not changed.
 ## Validation evidence for this snapshot
 
 - `python scripts/ci/validate_vnext_contracts.py` — **PASS**.
+- Focused OBP assessment on baseline `409fca3`: 378 `ku-net` persist/QUIC
+  tests, 18 `onebrain-node` vNext runtime tests, 4 Anti-Gravity Reunion tests,
+  31 `onebrain-relay` tests, and 184 `onebrain-node` outbound-first tests —
+  **PASS**.
 - `python scripts/ci/validate_mobile_build_contracts.py` — **PASS** with 98
   evidence rows, 123 mobile features, 112 screens, 62 components, 13 patterns,
   and no broken links or source-guard failures.

@@ -5,7 +5,7 @@
 > Snapshot: **2026-09-05 (Asia/Saigon)**
 >
 > Nguồn được audit: `main` / `origin/main` tại
-> `c65f1739fcd0ac6b7a9518ed44c0ee6f81df41f1`
+> `409fca34db8faaf238b899a2481175d922113b99` trước cập nhật tài liệu này
 >
 > Phạm vi: trạng thái repository, nhánh/worktree Git local, các tuyên bố
 > qualification trong source, validator hiện tại và bằng chứng CI gần nhất.
@@ -42,29 +42,44 @@ Annotated tag `base-v1.0.0-owner-waiver.1` ghi nhận:
 - các ngoại lệ công khai gồm evidence assembly muộn, sửa tên frozen test target,
   các phát hiện Clippy all-features đã tồn tại và dependency-policy triage.
 
-`main` đi trước candidate này năm commit về workflow/handoff. CI hiện tại tại
+Baseline đã đồng bộ đi trước candidate này bảy commit về workflow/handoff. CI
+tại
 `c65f1739fcd0` có
 [run candidate ba hệ điều hành](https://github.com/shpy2001gemi/OneBrain/actions/runs/33592237276)
 và nightly parser fuzz thành công. Tag có chữ ký PGP, nhưng máy này chưa thể verify vì chưa cài public key
 của signer; do đó audit chỉ ghi nhận tag và nội dung tag, không tuyên bố đã tự
 verify chữ ký trên máy local.
 
+## Hướng triển khai đã được owner chấp thuận
+
+Ngày 2026-09-05, owner quyết định quay lại review/phát triển KU và áp dụng cùng
+một contract cho CLI, local Web và Desktop. Phần core outbound-first của OBP
+được giữ làm nền ổn định, nhưng productization chạy thành lane riêng; không
+được xem legacy `onebrain-seed` là secure vNext seeder và không bật mặc định
+trước acceptance gate.
+
+Điểm bắt đầu gọn cho conversation mới là
+[`handoffs/2026-09-ku-obp-productization/README.md`](handoffs/2026-09-ku-obp-productization/README.md).
+Gói này chứa quyết định, capability boundary, dependency graph, progress ledger,
+prompt và 20 task/nhánh độc lập. Task hiện tại là `KU-REV-001`; chưa tạo nhánh
+implementation.
+
 ## Ưu tiên triển khai còn lại
 
-1. **Chốt quyết định về strict release Base v1.** Giữ nguyên ranh giới waiver
-   đã công khai, hoặc chạy đúng quy trình strict được duyệt trước khi tạo
-   `base-v1.0.0`; không diễn giải ngầm waiver thành strict qualification.
-2. **Hoàn tất critical path offline của mobile.** Đóng MOB-05B/MOB-05C; nối
-   deterministic canonical KU encode/preview/private Save; hoàn tất Library,
-   search, local KQL, export, backup và media storage/recovery; sau đó chạy gate
-   physical-device và store release.
-3. **Đóng entry gate của production network.** Xử lý các giới hạn Registry/P5,
-   explicit operator approval, provider evidence và mobile carrier mailbox
-   trước khi bật peer networking hoặc seeding mặc định.
-4. **Chỉ mở M6 sau các gate trên.** Triển khai active distributed KQL và luồng
-   Outcome/Benefit end-to-end mà không mở rộng authority.
-5. **Giữ M7/OBT và BCI ngoài mọi claim hoàn tất hiện tại.** Cả hai cần thêm các
-   milestone policy, safety và qualification riêng.
+1. **Review và khóa product contract KU.** Thực hiện `KU-REV-001`,
+   `KU-REV-002`, rồi `KU-CON-001` trước khi thay đổi public behavior.
+2. **Đưa KU vào một shared local service.** Sau contract, nối cùng semantics
+   qua local REST/private WS, CLI, local Web và Desktop; KU phải vẫn hữu dụng
+   khi không có peer.
+3. **Productize OBP ở lane riêng.** Nối lifecycle, bootstrap/discovery,
+   reservation, route/outbox/failover đã có vào normal node aggregate và cùng
+   product API; giữ opt-in/default-off đến khi acceptance thực tế đạt.
+4. **Chỉ tích hợp KU -> OBP sau khi hai lane đều qua QA.** Luồng phải giữ rõ
+   `encode ≠ publish`, `proposal ≠ materialize`, `materialize ≠ adopt` và
+   không biến relay/delivery thành authority.
+5. **Giữ các lane khác ngoài scope hiện tại.** Strict Base decision, mobile,
+   M6 active multipath KQL, Outcome/Benefit, M7/OBT và BCI vẫn là gate/milestone
+   riêng; mobile khi mở lại phải theo mobile build contract.
 
 Thứ tự mobile chi tiết nằm trong
 [`WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md`](research/WIP_MOBILE_APP_IMPLEMENTATION_PLAN_V1.md).
@@ -126,6 +141,9 @@ dừng trước khi xóa. Remote branch và tag không bị thay đổi.
 ## Bằng chứng validation của snapshot
 
 - `python scripts/ci/validate_vnext_contracts.py` — **PASS**.
+- Focused OBP assessment trên baseline `409fca3`: `ku-net` persist/QUIC 378
+  test, `onebrain-node` vNext runtime 18 test, Anti-Gravity Reunion 4 test,
+  `onebrain-relay` 31 test và `onebrain-node` outbound-first 184 test — **PASS**.
 - `python scripts/ci/validate_mobile_build_contracts.py` — **PASS** với 98 dòng
   evidence, 123 tính năng mobile, 112 screen, 62 component, 13 pattern và không
   có broken link hoặc source-guard failure.
