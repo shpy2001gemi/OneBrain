@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-REV-001` merged / ready to execute `KU-REV-002` with D-011–D-014**
+> Status: **`KU-REV-001` merged / `KU-REV-002` ready for review with D-011–D-014**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -45,6 +45,9 @@ the selected task explicitly requires a section from it.
 **Suggested branch:** `codex/ku-rev-002-runtime-map`
 
 Audit output: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md).
+Runtime review: [KU_RUNTIME_GAP_MAP.md](outputs/KU_RUNTIME_GAP_MAP.md).
+`KU-REV-002` remains the current task until its accepted merge; the next
+dependent task is `KU-CON-001`. Fresh test evidence is in [PROGRESS.md](PROGRESS.md).
 The owner-approved audit merge is `25d008d` on `origin/main`. The owner has
 clarified normalized-semantic CID convergence, regularly updated Registry
 distribution from publishers/peers, delegated encode/verify work and direct
