@@ -99,6 +99,10 @@
   qualification, full-size Registry qualification or D-011–D-014 completion.
 - Merge of this review branch is not yet authorized. Keep the current pointer
   at `KU-REV-002`; `KU-CON-001` depends on its accepted merge.
+- Audited content checkpoint: `496d340`, pushed successfully to
+  `origin/codex/ku-rev-002-runtime-map`. The branch tip additionally contains
+  the ledger-only commit recording this checkpoint; resolve that tracked
+  branch for its final tip. This content checkpoint is not a merge commit.
 
 ### Protocol
 
