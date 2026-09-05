@@ -5,10 +5,9 @@
 
 ## Current checkpoint
 
-- Current task: `KU-CON-001`
-- Current branch: `codex/ku-con-001-product-contract`
-- Starting main: `d8effb772b0cb7766e91b799dd598061a81a9df5` (clean, pushed and synchronized)
-- Last accepted task: `KU-REV-002`, merge `b87226311d57278e488fd55cbbcbd16dfd54e200` on `origin/main`
+- Current task: `KU-RUN-001`
+- Current branch: none; create `codex/ku-run-001-shared-service`
+- Last accepted task: `KU-CON-001`, merge `2cbc8f263961d5a6368ef2c7bdc5a77f209d5b21` on `origin/main`
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
 
@@ -18,7 +17,7 @@
 |---:|---|---|---|---|---|
 | 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | — | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011–D-014. |
 | 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; merge `b872263` on `origin/main`. |
-| 3 | `KU-CON-001` | Review | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge pending. |
+| 3 | `KU-CON-001` | Merged | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge `2cbc8f2` on `origin/main`. |
 | 4 | `KU-RUN-001` | Planned | `codex/ku-run-001-shared-service` | `KU-CON-001` | — |
 | 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001` | — |
 | 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
@@ -163,6 +162,11 @@
   unchanged; no runtime or rollout was enabled.
 - Added a mutation test binding acceptance to D-015, the reviewed commit and
   all three approved items. Approval cannot erase technical dispatch gates.
+- Approved contract tip `9f67022` was clean, pushed and synchronized before
+  merge. Merged and pushed `2cbc8f263961d5a6368ef2c7bdc5a77f209d5b21`
+  to main. Current task advances to KU-RUN-001, which has not started.
+  Preserve the registration/vector gates before dispatch; no branch deletion
+  or runtime/default-rollout change was requested or performed.
 - Re-ran the same six-module unittest command from the review evidence:
   PASS, 102 tests (34 KU contract tests and 68 existing contract tests).
 - `python scripts/ci/validate_vnext_contracts.py` — PASS, including 480
