@@ -146,6 +146,15 @@ This directory owns the cross-crate contracts that must be stable before vNext r
 - [vNext contract validator](../../../scripts/ci/validate_vnext_contracts.py)
 - [Foundation CI workflow](../../../.github/workflows/vnext-foundation.yml)
 
+## Approved KU product contract
+
+[Shared KU product workflow](KU_PRODUCT_WORKFLOW_PROFILE_V1.md)
+(`KU-CON-001`) specifies the local service and semantic comparison identity
+accepted under D-015. It is an approved additive contract, not implementation
+or a new foundation release. Its machine inventory and mutation checks establish
+contract consistency; domain/payload registration and golden vectors remain
+technical gates, with distribution/work/economic dependencies tracked separately.
+
 ## Normative precedence
 
 If documents disagree, use this order until replaced by a newer signed/merged ADR:

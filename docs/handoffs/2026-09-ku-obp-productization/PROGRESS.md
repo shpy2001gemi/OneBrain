@@ -6,7 +6,8 @@
 ## Current checkpoint
 
 - Current task: `KU-CON-001`
-- Current branch: none; create `codex/ku-con-001-product-contract`
+- Current branch: `codex/ku-con-001-product-contract`
+- Starting main: `d8effb772b0cb7766e91b799dd598061a81a9df5` (clean, pushed and synchronized)
 - Last accepted task: `KU-REV-002`, merge `b87226311d57278e488fd55cbbcbd16dfd54e200` on `origin/main`
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -17,7 +18,7 @@
 |---:|---|---|---|---|---|
 | 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | — | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011–D-014. |
 | 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; merge `b872263` on `origin/main`. |
-| 3 | `KU-CON-001` | Planned | `codex/ku-con-001-product-contract` | `KU-REV-002` | — |
+| 3 | `KU-CON-001` | Review | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge pending. |
 | 4 | `KU-RUN-001` | Planned | `codex/ku-run-001-shared-service` | `KU-CON-001` | — |
 | 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001` | — |
 | 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
@@ -104,6 +105,69 @@
   `origin/codex/ku-rev-002-runtime-map`. The branch tip additionally contains
   the ledger-only commit recording this checkpoint; resolve that tracked
   branch for its final tip. This content checkpoint is not a merge commit.
+
+### KU-CON-001 review evidence — 2026-09-05
+
+- Starting main: `d8effb772b0cb7766e91b799dd598061a81a9df5`, clean, pushed
+  and synchronized after KU-REV-002 merge `b872263` and handoff update.
+- Deliverables: [owner-review profile](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md),
+  [machine inventory](../../../src/test-vectors/vnext/ku-product-workflow-v1.json),
+  [focused validator](../../../scripts/ci/validate_ku_product_contract.py),
+  [mutation tests](../../../scripts/ci/test_validate_ku_product_contract.py).
+  The global vNext validator includes the candidate check; normative coverage
+  and specification index mark this as contract evidence only.
+- Proposed review items are KU-PC-A (separate finite normalized semantic
+  identity/domain), KU-PC-B (11 local operations and 18 typed bounded DTOs),
+  KU-PC-C (private local revision journal). New domains/command IDs/routes are
+  not allocated or activated. Owner acceptance plus explicit registration,
+  compatibility and golden-vector gates precede runtime dispatch.
+- D-012 publisher/peer Registry distribution, D-013 durable delegated work and
+  blind verification, and D-014 direct work-based issuance remain mandatory
+  linked specification/implementation dependencies. D-014 does not wait for
+  BenefitEvent and does not fall back to bounty or simulated legacy balances.
+- `python scripts/ci/validate_ku_product_contract.py` — PASS:
+  11 operations, 18 DTOs, 11 valid/invalid DTO fixtures. Fixture byte/hash values
+  are shape examples, not golden canonical/hash conformance evidence.
+- `python -m unittest scripts.ci.test_validate_ku_product_contract
+  scripts.ci.test_validate_vnext_product_profile
+  scripts.ci.test_validate_vnext_ws_profile
+  scripts.ci.test_validate_vnext_cli_profile
+  scripts.ci.test_validate_vnext_desktop_web_ux_profile
+  scripts.ci.test_validate_base_v1_runtime_interface` — PASS: 101 tests,
+  including 33 new KU tests with mutation subcases and 68 existing contract tests.
+- `python scripts/ci/validate_vnext_contracts.py` — PASS: the candidate plus
+  existing 99 tasks, 18 ADRs, 37 negative assertions, 841 normative lines and
+  479 specification links. Existing canonical profile/domain/IDL inventories
+  and generated runtime declarations unchanged.
+- `git diff --check` — PASS. Only candidate specification/inventory,
+  contract validators/tests and handoff/index/coverage files changed. No
+  application runtime, screen, mobile, networking or rollout implementation.
+- Local file-link check — PASS: 53 links across the candidate profile and
+  changed handoff README/PROGRESS files, in addition to the global link gate.
+- Current pointer remains KU-CON-001 pending owner review and merge. This is
+  completion of the owner-reviewable deliverables, not approval/freeze of new
+  public behavior and not implementation of KU-RUN-001.
+- Reviewed content checkpoint: `8b6aa9d`, pushed successfully to
+  `origin/codex/ku-con-001-product-contract`. The final tracked tip additionally
+  contains the ledger-only commit recording this checkpoint. This is not a
+  merge commit or owner acceptance of KU-PC-A/B/C.
+
+### KU-CON-001 owner acceptance — 2026-09-05
+
+- Owner answered "đồng ý" after the completed review at `b5956e8`.
+  [D-015](DECISIONS.md#d-015--ku-product-contract-accepted) records acceptance
+  of KU-PC-A/B/C and merge of the reviewed task. The preceding review section
+  is historical evidence of the candidate before this acceptance.
+- Profile and machine inventory now report owner approval with registration
+  pending. Existing byte formats and numeric domain/payload inventories remain
+  unchanged; no runtime or rollout was enabled.
+- Added a mutation test binding acceptance to D-015, the reviewed commit and
+  all three approved items. Approval cannot erase technical dispatch gates.
+- Re-ran the same six-module unittest command from the review evidence:
+  PASS, 102 tests (34 KU contract tests and 68 existing contract tests).
+- `python scripts/ci/validate_vnext_contracts.py` — PASS, including 480
+  specification links and unchanged canonical inventories.
+- `git diff --check` — PASS.
 
 ### Protocol
 

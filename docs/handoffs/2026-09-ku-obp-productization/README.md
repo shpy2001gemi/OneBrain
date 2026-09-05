@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-REV-002` merged / ready for `KU-CON-001` with D-011–D-014**
+> Status: **`KU-CON-001` approved under D-015 / merge in progress**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -47,7 +47,10 @@ the selected task explicitly requires a section from it.
 Audit output: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md).
 Runtime review: [KU_RUNTIME_GAP_MAP.md](outputs/KU_RUNTIME_GAP_MAP.md).
 `KU-REV-002` was merged as `b872263` after the owner requested the next task.
-`KU-CON-001` is now dependency-ready. Fresh test evidence is in [PROGRESS.md](PROGRESS.md).
+The [KU-CON-001 contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md)
+is approved for KU-PC-A/B/C under [D-015](DECISIONS.md#d-015--ku-product-contract-accepted).
+Domain/payload registration and golden vectors remain technical gates before
+runtime dispatch; fresh evidence is in [PROGRESS.md](PROGRESS.md).
 The owner-approved audit merge is `25d008d` on `origin/main`. The owner has
 clarified normalized-semantic CID convergence, regularly updated Registry
 distribution from publishers/peers, delegated encode/verify work and direct

@@ -1,0 +1,1072 @@
+{
+  "format": "onebrain/ku-product-workflow/1",
+  "profile_id": "KU_PRODUCT_WORKFLOW_PROFILE_V1",
+  "version": "1.0",
+  "status": "owner_approved_pending_registration",
+  "implementation_enabled": false,
+  "approval": {
+    "required": [
+      "KU-PC-A",
+      "KU-PC-B",
+      "KU-PC-C"
+    ],
+    "accepted": true,
+    "base_local_command_ids": {},
+    "rest_endpoints": [],
+    "ws_events": [],
+    "domain_registry_allocated": false,
+    "decision": "D-015",
+    "reviewed_commit": "b5956e8e3d27598d118c0529ac416e54549b981e"
+  },
+  "identity": {
+    "profile": "ku-semantic-content/1.0",
+    "proposed_domain": "semantic-content/1",
+    "algorithm": "BLAKE3-256",
+    "preimage": "UTF8(onebrain:vnext:semantic-content:1) || NUL || canonical_semantic_root",
+    "canonical_profile": "onebrain/canonical/1",
+    "semantic_root_version": [
+      1,
+      0
+    ],
+    "artifact_domain": "object/1",
+    "artifact_bytes_preserved": true,
+    "semantic_cid_is_artifact_alias": false,
+    "private_fingerprint_public": false,
+    "normalize": [
+      "resolved_ccid16",
+      "extract_source_spans_to_private_binding",
+      "alpha_normalize_sem_v1",
+      "reduce_checked_exact_rationals",
+      "reject_non_nfc"
+    ],
+    "preserve": [
+      "statement_order",
+      "argument_order",
+      "constraints",
+      "negation",
+      "modality",
+      "condition",
+      "time",
+      "location",
+      "perspective",
+      "tolerance",
+      "source_unit_ccid",
+      "unit_dimension",
+      "unit_scale",
+      "unit_offset"
+    ],
+    "exclude": [
+      "source_spans",
+      "source_artifact_cid",
+      "model_commitment",
+      "node_id",
+      "run_id",
+      "registry_release_root",
+      "disclosure_class",
+      "reward",
+      "assessment"
+    ],
+    "unresolved_concepts": "needs_resolution_no_fallback",
+    "profile_change": "new_identity_domain_version"
+  },
+  "registry": {
+    "signed_release_required": true,
+    "pin_for_whole_run": true,
+    "replay_uses_original_release": true,
+    "hot_refresh_during_run": false
+  },
+  "limits": {
+    "payload_bytes": 1048576,
+    "page_items": 256,
+    "work_units": 1000000,
+    "text_bytes": 4096,
+    "limitations": 64,
+    "limitation_bytes": 128,
+    "continuation_chars": 2048
+  },
+  "privacy": {
+    "default_destination": "LOCAL_ONLY",
+    "save_destinations": [
+      "LOCAL_ONLY",
+      "NEGOTIATED_ENCRYPTED"
+    ],
+    "source_bytes": "exact_private",
+    "private_failures": "encrypted_private_quarantine",
+    "plaintext_fallback": false,
+    "authority_from_client": false,
+    "source_path_argument": false
+  },
+  "operation_protocol": {
+    "durable_order": [
+      "reserve_operation",
+      "management_capability_registration",
+      "prepare",
+      "confirm_or_cancel",
+      "reconcile"
+    ],
+    "reservation_binds": [
+      "operation_id",
+      "operation_kind",
+      "process_generation",
+      "dataset_generation",
+      "principal_id"
+    ],
+    "prepare_requires_reservation": true,
+    "confirm_requires_idempotency_key": true,
+    "retry_requires_reconcile": true,
+    "unknown_outcome_requires_reconcile": true,
+    "states": [
+      "reserved",
+      "prepared",
+      "confirming",
+      "committed",
+      "canceled",
+      "failed",
+      "unknown_outcome"
+    ],
+    "transitions": [
+      "reserved->prepared",
+      "reserved->canceled",
+      "prepared->confirming",
+      "prepared->canceled",
+      "confirming->committed",
+      "confirming->failed",
+      "confirming->unknown_outcome",
+      "unknown_outcome->committed",
+      "unknown_outcome->failed"
+    ]
+  },
+  "idempotency": {
+    "scope": [
+      "principal",
+      "operation_id",
+      "idempotency_key",
+      "dataset_generation"
+    ],
+    "binds": [
+      "command",
+      "object_set",
+      "destination",
+      "source_bindings",
+      "registry_profile",
+      "predecessor",
+      "expected_revision_frontier"
+    ],
+    "exact_replay": "same_receipt",
+    "changed_reuse": "conflict_no_write",
+    "unknown_outcome": "reconcile_before_retry",
+    "committed_means": "all_objects_provenance_revision_and_receipt_durable",
+    "partial_visibility": false
+  },
+  "continuation": {
+    "prefix": "obc1.",
+    "binds": [
+      "principal",
+      "dataset_generation",
+      "store_set",
+      "query_filter",
+      "sort_index_version",
+      "snapshot_frontier",
+      "last_full_cid"
+    ],
+    "changed_context": "conflict",
+    "evicted_snapshot": "expired",
+    "coverage": [
+      "local_only",
+      "partial"
+    ]
+  },
+  "revision": {
+    "owner": "private_local_journal",
+    "predecessor_exact": true,
+    "expected_frontier_required": true,
+    "concurrent_successors": "preserve_branches",
+    "identical_successor": "same_artifact_no_self_cycle",
+    "replicated_authority": false
+  },
+  "firewalls": {
+    "save_publishes": false,
+    "display_creates_use": false,
+    "preview_writes_accepted": false,
+    "save_materializes_mapping": false,
+    "save_adopts": false,
+    "result_authorizes_reward": false,
+    "reward_blocks_local_ku": false,
+    "semantic_alias_grants_disclosure": false,
+    "legacy_dual_write": false,
+    "new_ws_payloads": false
+  },
+  "errors": [
+    {
+      "id": 1,
+      "name": "InvalidRequest",
+      "retryable": false,
+      "reconcile_before_retry": false,
+      "rest_code": "invalid_request"
+    },
+    {
+      "id": 2,
+      "name": "NotFound",
+      "retryable": false,
+      "reconcile_before_retry": false,
+      "rest_code": "not_found"
+    },
+    {
+      "id": 3,
+      "name": "Conflict",
+      "retryable": false,
+      "reconcile_before_retry": false,
+      "rest_code": "conflict"
+    },
+    {
+      "id": 4,
+      "name": "Expired",
+      "retryable": false,
+      "reconcile_before_retry": false,
+      "rest_code": "expired"
+    },
+    {
+      "id": 5,
+      "name": "RateLimited",
+      "retryable": true,
+      "reconcile_before_retry": true,
+      "rest_code": "rate_limited"
+    },
+    {
+      "id": 6,
+      "name": "CapabilityDisabled",
+      "retryable": false,
+      "reconcile_before_retry": false,
+      "rest_code": "capability_disabled"
+    },
+    {
+      "id": 7,
+      "name": "DependencyUnavailable",
+      "retryable": true,
+      "reconcile_before_retry": true,
+      "rest_code": "dependency_unavailable"
+    },
+    {
+      "id": 8,
+      "name": "IncompatibleProfile",
+      "retryable": false,
+      "reconcile_before_retry": false,
+      "rest_code": "conflict"
+    },
+    {
+      "id": 9,
+      "name": "ResourceExhausted",
+      "retryable": true,
+      "reconcile_before_retry": true,
+      "rest_code": "rate_limited"
+    },
+    {
+      "id": 10,
+      "name": "CorruptState",
+      "retryable": false,
+      "reconcile_before_retry": false,
+      "rest_code": "internal_error"
+    },
+    {
+      "id": 11,
+      "name": "ReprovisionRequired",
+      "retryable": false,
+      "reconcile_before_retry": false,
+      "rest_code": "dependency_unavailable"
+    },
+    {
+      "id": 12,
+      "name": "UnknownOutcome",
+      "retryable": true,
+      "reconcile_before_retry": true,
+      "rest_code": "dependency_unavailable"
+    },
+    {
+      "id": 13,
+      "name": "InternalError",
+      "retryable": false,
+      "reconcile_before_retry": true,
+      "rest_code": "internal_error"
+    }
+  ],
+  "types": {
+    "ObjectCID": {
+      "kind": "hex",
+      "bytes": 32,
+      "role": "ObjectCID"
+    },
+    "SemanticContentCID": {
+      "kind": "hex",
+      "bytes": 32,
+      "role": "SemanticContentCID"
+    },
+    "SourceArtifactCID": {
+      "kind": "hex",
+      "bytes": 32,
+      "role": "SourceArtifactCID"
+    },
+    "ReleaseRoot": {
+      "kind": "hex",
+      "bytes": 32,
+      "role": "ReleaseRoot"
+    },
+    "ImplementationCommitment": {
+      "kind": "hex",
+      "bytes": 32,
+      "role": "ImplementationCommitment"
+    },
+    "RevisionFrontier": {
+      "kind": "hex",
+      "bytes": 32,
+      "role": "RevisionFrontier"
+    },
+    "OperationId": {
+      "kind": "hex",
+      "bytes": 32,
+      "role": "OperationId"
+    },
+    "IdempotencyKey": {
+      "kind": "hex",
+      "bytes": 32,
+      "role": "IdempotencyKey"
+    },
+    "RequestId": {
+      "kind": "hex",
+      "bytes": 32,
+      "role": "RequestId"
+    },
+    "PolicyCID": {
+      "kind": "hex",
+      "bytes": 32,
+      "role": "PolicyCID"
+    },
+    "CCID": {
+      "kind": "hex",
+      "bytes": 16,
+      "role": "CCID"
+    },
+    "Text": {
+      "kind": "string",
+      "max_bytes": 4096
+    },
+    "Limitation": {
+      "kind": "string",
+      "max_bytes": 128
+    },
+    "Continuation": {
+      "kind": "string",
+      "max_bytes": 2048
+    },
+    "U64": {
+      "kind": "integer",
+      "min": 0,
+      "max": 18446744073709551615
+    },
+    "PageLimit": {
+      "kind": "integer",
+      "min": 1,
+      "max": 256
+    },
+    "CanonicalPreview": {
+      "kind": "base64",
+      "max_decoded_bytes": 1048576
+    },
+    "Disclosure": {
+      "kind": "enum",
+      "values": [
+        "LOCAL_ONLY",
+        "NEGOTIATED_ENCRYPTED"
+      ]
+    },
+    "Validity": {
+      "kind": "enum",
+      "values": [
+        "ready",
+        "needs_resolution",
+        "rejected"
+      ]
+    },
+    "Coverage": {
+      "kind": "enum",
+      "values": [
+        "local_only",
+        "partial"
+      ]
+    },
+    "Lifecycle": {
+      "kind": "enum",
+      "values": [
+        "disabled",
+        "requested",
+        "active",
+        "degraded"
+      ]
+    },
+    "BaseState": {
+      "kind": "enum",
+      "values": [
+        "reserved",
+        "prepared",
+        "confirming",
+        "committed",
+        "canceled",
+        "failed",
+        "unknown_outcome"
+      ]
+    },
+    "False": {
+      "kind": "literal",
+      "value": false
+    },
+    "Boolean": {
+      "kind": "boolean"
+    },
+    "BaseError": {
+      "kind": "enum",
+      "values": [
+        "InvalidRequest",
+        "NotFound",
+        "Conflict",
+        "Expired",
+        "RateLimited",
+        "CapabilityDisabled",
+        "DependencyUnavailable",
+        "IncompatibleProfile",
+        "ResourceExhausted",
+        "CorruptState",
+        "ReprovisionRequired",
+        "UnknownOutcome",
+        "InternalError"
+      ]
+    },
+    "ExportMode": {
+      "kind": "enum",
+      "values": [
+        "canonical_public_exchange",
+        "encrypted_base_archive"
+      ]
+    },
+    "InputMode": {
+      "kind": "enum",
+      "values": [
+        "resolved_semantic_draft",
+        "local_rule",
+        "local_ai"
+      ]
+    },
+    "ObjectIDs": {
+      "kind": "array",
+      "items": "ObjectCID",
+      "max_items": 256
+    },
+    "Sources": {
+      "kind": "array",
+      "items": "SourceArtifactCID",
+      "max_items": 256
+    },
+    "Limitations": {
+      "kind": "array",
+      "items": "Limitation",
+      "max_items": 64
+    },
+    "KuViews": {
+      "kind": "array",
+      "items": "KuSummaryV1",
+      "max_items": 256
+    },
+    "PreparedArtifacts": {
+      "kind": "array",
+      "items": "KuPreparedArtifactV1",
+      "max_items": 256
+    },
+    "ArtifactDisclosure": {
+      "kind": "enum",
+      "values": [
+        "PUBLIC",
+        "ROUTE_MINIMAL",
+        "LOCAL_ONLY",
+        "NEGOTIATED_ENCRYPTED"
+      ]
+    },
+    "ArtifactValidity": {
+      "kind": "enum",
+      "values": [
+        "accepted_known",
+        "accepted_opaque"
+      ]
+    }
+  },
+  "dtos": {
+    "KuPrepareV1": {
+      "required": {
+        "operation_id": "OperationId",
+        "idempotency_key": "IdempotencyKey",
+        "input_mode": "InputMode",
+        "source_refs": "Sources",
+        "registry_release_root": "ReleaseRoot",
+        "semantic_profile": "Text",
+        "implementation_commitment": "ImplementationCommitment",
+        "destination": "Disclosure"
+      },
+      "optional": {
+        "draft_ref": "ObjectCID"
+      },
+      "additional_fields": false
+    },
+    "KuPreparedV1": {
+      "required": {
+        "operation_id": "OperationId",
+        "validity": "Validity",
+        "object_cids": "ObjectIDs",
+        "registry_release_root": "ReleaseRoot",
+        "semantic_profile": "Text",
+        "destination": "Disclosure",
+        "limitations": "Limitations",
+        "executable": "False",
+        "artifacts": "PreparedArtifacts"
+      },
+      "optional": {},
+      "additional_fields": false
+    },
+    "KuOperationRefV1": {
+      "required": {
+        "operation_id": "OperationId"
+      },
+      "optional": {},
+      "additional_fields": false
+    },
+    "KuSaveV1": {
+      "required": {
+        "operation_id": "OperationId",
+        "idempotency_key": "IdempotencyKey",
+        "object_cids": "ObjectIDs"
+      },
+      "optional": {},
+      "additional_fields": false
+    },
+    "KuReceiptV1": {
+      "required": {
+        "operation_id": "OperationId",
+        "state": "BaseState",
+        "object_cids": "ObjectIDs",
+        "limitations": "Limitations",
+        "published": "False",
+        "authorizes_reward": "False"
+      },
+      "optional": {},
+      "additional_fields": false
+    },
+    "KuGetV1": {
+      "required": {
+        "object_cid": "ObjectCID"
+      },
+      "optional": {},
+      "additional_fields": false
+    },
+    "KuViewV1": {
+      "required": {
+        "object_cid": "ObjectCID",
+        "disclosure_class": "ArtifactDisclosure",
+        "artifact_validity": "ArtifactValidity",
+        "coverage": "Coverage",
+        "limitations": "Limitations",
+        "executable": "False",
+        "canonical_bytes": "CanonicalPreview"
+      },
+      "optional": {
+        "semantic_content_cid": "SemanticContentCID",
+        "fidelity_policy_cid": "PolicyCID",
+        "fidelity_frontier": "RevisionFrontier"
+      },
+      "additional_fields": false
+    },
+    "KuListV1": {
+      "required": {
+        "limit": "PageLimit"
+      },
+      "optional": {
+        "continuation": "Continuation"
+      },
+      "additional_fields": false
+    },
+    "KuSearchV1": {
+      "required": {
+        "query": "Text",
+        "limit": "PageLimit"
+      },
+      "optional": {
+        "continuation": "Continuation"
+      },
+      "additional_fields": false
+    },
+    "KuPageV1": {
+      "required": {
+        "items": "KuViews",
+        "coverage": "Coverage",
+        "snapshot_frontier": "RevisionFrontier",
+        "limitations": "Limitations"
+      },
+      "optional": {
+        "continuation": "Continuation"
+      },
+      "additional_fields": false
+    },
+    "KuReviseV1": {
+      "required": {
+        "preparation": "KuPrepareV1",
+        "predecessor_object_cid": "ObjectCID",
+        "expected_revision_frontier": "RevisionFrontier"
+      },
+      "optional": {},
+      "additional_fields": false
+    },
+    "KuExportV1": {
+      "required": {
+        "object_cids": "ObjectIDs",
+        "mode": "ExportMode"
+      },
+      "optional": {},
+      "additional_fields": false
+    },
+    "KuExportViewV1": {
+      "required": {
+        "mode": "ExportMode",
+        "object_cids": "ObjectIDs",
+        "limitations": "Limitations",
+        "requires_base_management": "Boolean"
+      },
+      "optional": {
+        "public_records": "CanonicalPreview",
+        "archive_operation_id": "OperationId"
+      },
+      "additional_fields": false
+    },
+    "KuStatusV1": {
+      "required": {
+        "lifecycle": "Lifecycle",
+        "coverage": "Coverage",
+        "limitations": "Limitations",
+        "registry_ready": "Boolean",
+        "local_encoder_ready": "Boolean",
+        "remote_encoding_enabled": "False",
+        "direct_issuance_enabled": "False"
+      },
+      "optional": {
+        "receipt": "KuReceiptV1"
+      },
+      "additional_fields": false
+    },
+    "KuFailureV1": {
+      "required": {
+        "code": "BaseError",
+        "retryable": "Boolean",
+        "reconcile_before_retry": "Boolean",
+        "limitations": "Limitations"
+      },
+      "optional": {},
+      "additional_fields": false
+    },
+    "KuStatusRequestV1": {
+      "required": {},
+      "optional": {
+        "operation_id": "OperationId"
+      },
+      "additional_fields": false
+    },
+    "KuPreparedArtifactV1": {
+      "required": {
+        "object_cid": "ObjectCID",
+        "semantic_content_cid": "SemanticContentCID",
+        "canonical_preview": "CanonicalPreview"
+      },
+      "optional": {},
+      "additional_fields": false
+    },
+    "KuSummaryV1": {
+      "required": {
+        "object_cid": "ObjectCID",
+        "disclosure_class": "ArtifactDisclosure",
+        "artifact_validity": "ArtifactValidity",
+        "coverage": "Coverage",
+        "limitations": "Limitations",
+        "executable": "False"
+      },
+      "optional": {
+        "semantic_content_cid": "SemanticContentCID",
+        "fidelity_policy_cid": "PolicyCID",
+        "fidelity_frontier": "RevisionFrontier"
+      },
+      "additional_fields": false
+    }
+  },
+  "operations": [
+    {
+      "name": "prepare",
+      "base_boundary": "reserve_prepare",
+      "request": "KuPrepareV1",
+      "response": "KuPreparedV1",
+      "effect": "private_staging",
+      "visibility": "authenticated_local_private",
+      "surfaces": [
+        "node",
+        "rest",
+        "cli",
+        "web",
+        "desktop"
+      ],
+      "wire_id": null
+    },
+    {
+      "name": "preview",
+      "base_boundary": "query",
+      "request": "KuOperationRefV1",
+      "response": "KuPreparedV1",
+      "effect": "none",
+      "visibility": "authenticated_local_private",
+      "surfaces": [
+        "node",
+        "rest",
+        "cli",
+        "web",
+        "desktop"
+      ],
+      "wire_id": null
+    },
+    {
+      "name": "save",
+      "base_boundary": "confirm",
+      "request": "KuSaveV1",
+      "response": "KuReceiptV1",
+      "effect": "atomic_private_save",
+      "visibility": "authenticated_local_private",
+      "surfaces": [
+        "node",
+        "rest",
+        "cli",
+        "web",
+        "desktop"
+      ],
+      "wire_id": null
+    },
+    {
+      "name": "get",
+      "base_boundary": "query",
+      "request": "KuGetV1",
+      "response": "KuViewV1",
+      "effect": "none",
+      "visibility": "authenticated_local_private",
+      "surfaces": [
+        "node",
+        "rest",
+        "cli",
+        "web",
+        "desktop"
+      ],
+      "wire_id": null
+    },
+    {
+      "name": "list",
+      "base_boundary": "query",
+      "request": "KuListV1",
+      "response": "KuPageV1",
+      "effect": "none",
+      "visibility": "authenticated_local_private",
+      "surfaces": [
+        "node",
+        "rest",
+        "cli",
+        "web",
+        "desktop"
+      ],
+      "wire_id": null
+    },
+    {
+      "name": "search",
+      "base_boundary": "query",
+      "request": "KuSearchV1",
+      "response": "KuPageV1",
+      "effect": "none",
+      "visibility": "authenticated_local_private",
+      "surfaces": [
+        "node",
+        "rest",
+        "cli",
+        "web",
+        "desktop"
+      ],
+      "wire_id": null
+    },
+    {
+      "name": "revise",
+      "base_boundary": "reserve_prepare",
+      "request": "KuReviseV1",
+      "response": "KuPreparedV1",
+      "effect": "private_staging",
+      "visibility": "authenticated_local_private",
+      "surfaces": [
+        "node",
+        "rest",
+        "cli",
+        "web",
+        "desktop"
+      ],
+      "wire_id": null
+    },
+    {
+      "name": "export",
+      "base_boundary": "query_or_CreateArchive",
+      "request": "KuExportV1",
+      "response": "KuExportViewV1",
+      "effect": "explicit_export",
+      "visibility": "authenticated_local_private",
+      "surfaces": [
+        "node",
+        "rest",
+        "cli",
+        "web",
+        "desktop"
+      ],
+      "wire_id": null
+    },
+    {
+      "name": "status",
+      "base_boundary": "status",
+      "request": "KuStatusRequestV1",
+      "response": "KuStatusV1",
+      "effect": "none",
+      "visibility": "authenticated_local_private",
+      "surfaces": [
+        "node",
+        "rest",
+        "cli",
+        "web",
+        "desktop"
+      ],
+      "wire_id": null
+    },
+    {
+      "name": "cancel",
+      "base_boundary": "cancel",
+      "request": "KuOperationRefV1",
+      "response": "KuReceiptV1",
+      "effect": "cancel_staging",
+      "visibility": "authenticated_local_private",
+      "surfaces": [
+        "node",
+        "rest",
+        "cli",
+        "web",
+        "desktop"
+      ],
+      "wire_id": null
+    },
+    {
+      "name": "reconcile",
+      "base_boundary": "reconcile",
+      "request": "KuOperationRefV1",
+      "response": "KuReceiptV1",
+      "effect": "journal_recovery",
+      "visibility": "authenticated_local_private",
+      "surfaces": [
+        "node",
+        "rest",
+        "cli",
+        "web",
+        "desktop"
+      ],
+      "wire_id": null
+    }
+  ],
+  "dependencies": [
+    {
+      "decision": "D-011",
+      "work": "semantic_domain_registration_and_golden_vectors",
+      "blocks": [
+        "semantic_identity_dispatch"
+      ],
+      "required": true
+    },
+    {
+      "decision": "D-012",
+      "work": "signed_registry_publisher_peer_distribution",
+      "blocks": [
+        "automatic_registry_sync"
+      ],
+      "required": true
+    },
+    {
+      "decision": "D-013",
+      "work": "durable_capability_worker_claims",
+      "blocks": [
+        "remote_encode",
+        "automatic_work_claims"
+      ],
+      "required": true
+    },
+    {
+      "decision": "D-013",
+      "work": "durable_blind_fidelity_attempts",
+      "blocks": [
+        "remote_verify"
+      ],
+      "required": true
+    },
+    {
+      "decision": "D-014",
+      "work": "economic_amendment_and_accepted_work_settlement",
+      "blocks": [
+        "direct_obt_issuance"
+      ],
+      "required": true,
+      "trigger": "accepted_encode_or_verify",
+      "requires_later_benefit_event": false,
+      "correct_mismatch_eligible": true,
+      "separate_reward_authorization": true
+    }
+  ],
+  "fixtures": [
+    {
+      "name": "ready_private_preview_dto_shape_only",
+      "dto": "KuPreparedV1",
+      "valid": true,
+      "value": {
+        "operation_id": "0101010101010101010101010101010101010101010101010101010101010101",
+        "validity": "ready",
+        "object_cids": [
+          "0101010101010101010101010101010101010101010101010101010101010101"
+        ],
+        "registry_release_root": "0101010101010101010101010101010101010101010101010101010101010101",
+        "semantic_profile": "ku-semantic-content/1.0",
+        "destination": "LOCAL_ONLY",
+        "limitations": [],
+        "executable": false,
+        "artifacts": [
+          {
+            "object_cid": "0101010101010101010101010101010101010101010101010101010101010101",
+            "semantic_content_cid": "0101010101010101010101010101010101010101010101010101010101010101",
+            "canonical_preview": "oA=="
+          }
+        ]
+      }
+    },
+    {
+      "name": "uppercase_object_cid",
+      "dto": "KuGetV1",
+      "valid": false,
+      "value": {
+        "object_cid": "ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB"
+      }
+    },
+    {
+      "name": "truncated_object_cid",
+      "dto": "KuGetV1",
+      "valid": false,
+      "value": {
+        "object_cid": "0101010101010101"
+      }
+    },
+    {
+      "name": "private_save_cannot_select_public",
+      "dto": "KuPrepareV1",
+      "valid": false,
+      "value": {
+        "operation_id": "0101010101010101010101010101010101010101010101010101010101010101",
+        "idempotency_key": "0101010101010101010101010101010101010101010101010101010101010101",
+        "registry_release_root": "0101010101010101010101010101010101010101010101010101010101010101",
+        "implementation_commitment": "0101010101010101010101010101010101010101010101010101010101010101",
+        "input_mode": "local_rule",
+        "source_refs": [
+          "0101010101010101010101010101010101010101010101010101010101010101"
+        ],
+        "semantic_profile": "ku-semantic-content/1.0",
+        "destination": "PUBLIC"
+      }
+    },
+    {
+      "name": "unknown_authority_field",
+      "dto": "KuGetV1",
+      "valid": false,
+      "value": {
+        "object_cid": "0101010101010101010101010101010101010101010101010101010101010101",
+        "authorized": true
+      }
+    },
+    {
+      "name": "bounded_page",
+      "dto": "KuListV1",
+      "valid": true,
+      "value": {
+        "limit": 256,
+        "continuation": "obc1.AQ"
+      }
+    },
+    {
+      "name": "oversized_page",
+      "dto": "KuListV1",
+      "valid": false,
+      "value": {
+        "limit": 257
+      }
+    },
+    {
+      "name": "boolean_is_not_integer",
+      "dto": "KuListV1",
+      "valid": false,
+      "value": {
+        "limit": true
+      }
+    },
+    {
+      "name": "unknown_outcome_requires_reconcile",
+      "dto": "KuFailureV1",
+      "valid": true,
+      "value": {
+        "code": "UnknownOutcome",
+        "retryable": true,
+        "reconcile_before_retry": true,
+        "limitations": []
+      }
+    },
+    {
+      "name": "unknown_outcome_blind_retry",
+      "dto": "KuFailureV1",
+      "valid": false,
+      "value": {
+        "code": "UnknownOutcome",
+        "retryable": true,
+        "reconcile_before_retry": false,
+        "limitations": []
+      }
+    },
+    {
+      "name": "private_archive_requires_management",
+      "dto": "KuExportViewV1",
+      "valid": false,
+      "value": {
+        "mode": "encrypted_base_archive",
+        "object_cids": [
+          "0101010101010101010101010101010101010101010101010101010101010101"
+        ],
+        "limitations": [],
+        "requires_base_management": false,
+        "archive_operation_id": "0101010101010101010101010101010101010101010101010101010101010101"
+      }
+    }
+  ],
+  "base_envelope_fields": [
+    "profile_major",
+    "profile_minor",
+    "process_generation",
+    "dataset_generation",
+    "request_id",
+    "operation_id",
+    "idempotency_key",
+    "lifecycle",
+    "coverage",
+    "limitations",
+    "retryable",
+    "resource_budget",
+    "payload_discriminator",
+    "compatibility_digest"
+  ]
+}

@@ -990,6 +990,21 @@
         }
       ],
       "rationale": "Source-of-record direction is enforced by the traced ADR/task graph plus boundary-specific property tests; the matrix itself is the architectural rationale against reverse dependencies."
+    },
+    {
+      "path": "docs/specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md",
+      "expected_statement_lines": 5,
+      "evidence": [
+        {
+          "path": "scripts/ci/validate_ku_product_contract.py",
+          "needle": "def validate_contract"
+        },
+        {
+          "path": "scripts/ci/test_validate_ku_product_contract.py",
+          "needle": "test_all_side_effect_firewalls_are_fail_closed"
+        }
+      ],
+      "rationale": "Owner-approved KU-PC-A/B/C contract consistency and mutation evidence only; domain/payload registration and golden vectors remain technical gates before runtime dispatch. Existing frozen byte families are unchanged."
     }
   ]
 }
