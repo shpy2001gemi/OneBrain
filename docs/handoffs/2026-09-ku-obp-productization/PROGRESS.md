@@ -254,6 +254,9 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
 - `python scripts/ci/validate_vnext_contracts.py` — PASS: existing contract
   inventories, including 21 foundation domains and 27 Base runtime operations.
 - `git diff --check` — PASS. Local file-link check for README/PROGRESS — PASS.
+- Preflight content checkpoint `8464770` was pushed to
+  `origin/codex/ku-run-001-shared-service`; the branch also includes the
+  ledger-only follow-up recording this checkpoint. No merge or branch deletion.
 - Source, canonical contracts, generated declarations, tests and rollout state
   are unchanged. Only README/PROGRESS handoff records changed. Runtime tests,
   workspace check and Rust format are not claimed; KU-RUN-001 remains
