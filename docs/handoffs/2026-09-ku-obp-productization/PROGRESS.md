@@ -5,10 +5,9 @@
 
 ## Current checkpoint
 
-- Current task: `KU-REV-001`
-- Current branch: `codex/ku-rev-001-canonical-audit`
-- Starting main commit: `3704da6b68237f50998f73c02bc5a2c59d27def8` (clean and equal to fetched `origin/main`)
-- Last accepted task: handoff package creation
+- Current task: `KU-REV-002`
+- Current branch: none; create `codex/ku-rev-002-runtime-map`
+- Last accepted task: `KU-REV-001`, owner-approved merge `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
 
@@ -16,7 +15,7 @@
 
 | Order | Task | State | Branch | Dependency | Merge commit/evidence |
 |---:|---|---|---|---|---|
-| 1 | `KU-REV-001` | Review | `codex/ku-rev-001-canonical-audit` | — | [Authority audit](outputs/KU_AUTHORITY_AUDIT.md); owner D-011–D-014; validation below. |
+| 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | — | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011–D-014. |
 | 2 | `KU-REV-002` | Planned | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | — |
 | 3 | `KU-CON-001` | Planned | `codex/ku-con-001-product-contract` | `KU-REV-002` | — |
 | 4 | `KU-RUN-001` | Planned | `codex/ku-run-001-shared-service` | `KU-CON-001` | — |
@@ -56,7 +55,9 @@
 - Local file-link check — PASS (47 links across the four handoff deliverables).
 - No source/application/mobile changes. No runtime tests or production
   encode/verify/Registry-sync/reward implementation claims.
-- README pointer stays on `KU-REV-001`; `KU-REV-002` waits for accepted merge.
+- Owner explicitly authorized merge and KU-REV-002 in this conversation.
+  Revalidated the clean, pushed audit tip, merged and pushed `25d008d` to main;
+  README pointer now advances to `KU-REV-002`. No branch deletion requested.
 - Audited content checkpoint: `c89f848`, pushed successfully to
   `origin/codex/ku-rev-001-canonical-audit`. The final branch tip also contains
   the ledger-only follow-up recording this checkpoint; resolve the tracked

@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-REV-001` ready for review / owner encoding and reward direction recorded**
+> Status: **`KU-REV-001` merged / ready to execute `KU-REV-002` with D-011–D-014**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -41,11 +41,11 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`KU-REV-001`](tasks/01-KU-REV-001.md)
-**Suggested branch:** `codex/ku-rev-001-canonical-audit`
+**Current task:** [`KU-REV-002`](tasks/02-KU-REV-002.md)
+**Suggested branch:** `codex/ku-rev-002-runtime-map`
 
 Audit output: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md).
-The current task remains `KU-REV-001` until owner-approved merge. The owner has
+The owner-approved audit merge is `25d008d` on `origin/main`. The owner has
 clarified normalized-semantic CID convergence, regularly updated Registry
 distribution from publishers/peers, delegated encode/verify work and direct
 OBT issuance for accepted work; see [D-011–D-014](DECISIONS.md#d-011--deterministic-identity-after-semantic-normalization).
@@ -57,7 +57,7 @@ Copy/paste prompt:
 
 ```text
 Read AGENTS.md and docs/handoffs/2026-09-ku-obp-productization/README.md,
-then execute only KU-REV-001 from tasks/01-KU-REV-001.md. Follow its exact
+then execute only KU-REV-002 from tasks/02-KU-REV-002.md. Follow its exact
 read set, scope, branch and acceptance criteria. Update PROGRESS.md and the
 Current task pointer in README.md before handing off. Do not merge or delete
 the task branch without my explicit instruction.
