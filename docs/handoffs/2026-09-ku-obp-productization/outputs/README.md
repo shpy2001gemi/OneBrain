@@ -7,7 +7,7 @@ test artifacts remain in their normal repository locations.
 Expected named outputs include:
 
 - `KU_AUTHORITY_AUDIT.md` from `KU-REV-001`;
-- `KU_RUNTIME_EVIDENCE_MAP.md` from `KU-REV-002`;
+- [KU_RUNTIME_GAP_MAP.md](KU_RUNTIME_GAP_MAP.md) from `KU-REV-002` (the task's declared filename);
 - per-task evidence summaries when the corresponding task contract requires
   one and an existing canonical evidence location does not already exist.
 

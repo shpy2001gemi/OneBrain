@@ -6,7 +6,8 @@
 ## Current checkpoint
 
 - Current task: `KU-REV-002`
-- Current branch: none; create `codex/ku-rev-002-runtime-map`
+- Current branch: `codex/ku-rev-002-runtime-map`
+- Starting main: `80119e1311b1e95171e5613e0335ad3ef69fa2a4` (clean, pushed and synchronized)
 - Last accepted task: `KU-REV-001`, owner-approved merge `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -16,7 +17,7 @@
 | Order | Task | State | Branch | Dependency | Merge commit/evidence |
 |---:|---|---|---|---|---|
 | 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | — | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011–D-014. |
-| 2 | `KU-REV-002` | Planned | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | — |
+| 2 | `KU-REV-002` | Review | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; focused evidence below. |
 | 3 | `KU-CON-001` | Planned | `codex/ku-con-001-product-contract` | `KU-REV-002` | — |
 | 4 | `KU-RUN-001` | Planned | `codex/ku-run-001-shared-service` | `KU-CON-001` | — |
 | 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001` | — |
@@ -62,6 +63,46 @@
   `origin/codex/ku-rev-001-canonical-audit`. The final branch tip also contains
   the ledger-only follow-up recording this checkpoint; resolve the tracked
   branch for that tip rather than treating this content hash as a merge commit.
+
+### KU-REV-002 review evidence — 2026-09-05
+
+- Starting main: `80119e1311b1e95171e5613e0335ad3ef69fa2a4`, clean and equal
+  to `origin/main`. This includes the authorized KU-REV-001 merge `25d008d`
+  and its handoff pointer update.
+- Deliverable: [KU_RUNTIME_GAP_MAP.md](outputs/KU_RUNTIME_GAP_MAP.md).
+  Maps semantic identity, Registry, canonical/public/private storage, Base
+  operations, Mapping/adoption, existing interfaces, migration and delegated
+  work/reward gaps. D-011–D-014 remain required future direction.
+- Changed only handoff documentation. No source fixes, public contract
+  changes, rollout changes, minting, mobile implementation or migrations.
+- Fresh focused results (Cargo run from `src/`, all with `--locked`):
+
+| Command | Result | Evidence boundary |
+|---|---|---|
+| `cargo test --locked -p onebrain-node --lib vnext_local_runtime` | PASS: 1 | Local slice fixture; persistent Need reopen, in-memory Mapping after reopen. |
+| `cargo test --locked -q -p onebrain-node --lib` | PASS: 104 | Default-feature node components; includes the preceding local test, Registry, migration, workflow and reward firewall. |
+| `cargo test --locked -q -p onebrain-node --test base_runtime_facade --test canonical_exchange --test durable_data_recovery --test p0_capability_truth` | PASS: 9 + 5 + 4 + 1 | Base uses test adapters; source recovery uses in-memory Vault plus disk staging. |
+| `cargo test --locked -q -p onebrain-node --test vnext_index_parity` | PASS: 3 | Canonical index parity and legacy mutation fence. |
+| `cargo test --locked -q -p onebrain-api --test base_contract` | PASS: 8 | Base HTTP contract; test local adapter does not implement KU operations. |
+| `cargo test --locked -q -p onebrain-api --features vnext-network-runtime --lib vnext_api` | PASS: 7 | Feature-enabled Need and explicit Public Use HTTP fixtures; 10 other tests filtered out. |
+| `cargo test --locked -q -p onebrain-node --features vnext-network-runtime --lib vnext_distributed_kql` | PASS: 3 | Two local test peers, private match/restart dedup, lifecycle tombstones and legacy plaintext rejection; 167 other tests filtered out. |
+| `cargo test --locked -q -p ku-encoder --lib` | PASS: 137 | Controlled encoder/resolver/builder tests; no live Ollama or shared T1/AI canonical identity conformance. |
+| `cargo test --locked -q -p ku-ai --lib vnext_` | PASS: 21 | Executor/fidelity component tests; no durable distributed worker settlement. |
+| `npm run test:vnext` (from `src/onebrain-web`) | PASS: 2 | Receipt tests only; no full browser or Desktop GUI run. |
+
+- `python scripts/ci/validate_vnext_contracts.py` — PASS (99 tasks, 18 ADRs,
+  37 negative assertions; existing canonical contracts unchanged).
+- `git diff --check` — PASS. Local file-link check — PASS (104 links across
+  the four changed handoff files).
+- Existing compiler dead-code/unused-import warnings were observed; no fixes made within
+  this read-only audit. No claim of whole-workspace, live multi-node
+  qualification, full-size Registry qualification or D-011–D-014 completion.
+- Merge of this review branch is not yet authorized. Keep the current pointer
+  at `KU-REV-002`; `KU-CON-001` depends on its accepted merge.
+- Audited content checkpoint: `496d340`, pushed successfully to
+  `origin/codex/ku-rev-002-runtime-map`. The branch tip additionally contains
+  the ledger-only commit recording this checkpoint; resolve that tracked
+  branch for its final tip. This content checkpoint is not a merge commit.
 
 ### Protocol
 
