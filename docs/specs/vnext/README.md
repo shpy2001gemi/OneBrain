@@ -146,6 +146,15 @@ This directory owns the cross-crate contracts that must be stable before vNext r
 - [vNext contract validator](../../../scripts/ci/validate_vnext_contracts.py)
 - [Foundation CI workflow](../../../.github/workflows/vnext-foundation.yml)
 
+## Pending KU product review
+
+[Shared KU product workflow candidate](KU_PRODUCT_WORKFLOW_PROFILE_V1.md)
+(`KU-CON-001`) specifies the local service and proposed semantic comparison
+identity under D-011–D-014. It is an owner-review candidate, not part of the
+frozen foundation release. Its machine inventory and mutation checks establish
+contract consistency only; identity-domain/payload registration, runtime and
+economic implementation require their explicit approval and acceptance gates.
+
 ## Normative precedence
 
 If documents disagree, use this order until replaced by a newer signed/merged ADR:

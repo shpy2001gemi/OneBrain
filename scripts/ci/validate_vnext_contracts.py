@@ -17,6 +17,17 @@ from urllib.parse import urlsplit
 
 import blake3
 
+if __package__:
+    from .validate_ku_product_contract import (
+        KuContractError,
+        validate_contract as validate_ku_product_candidate,
+    )
+else:
+    from validate_ku_product_contract import (
+        KuContractError,
+        validate_contract as validate_ku_product_candidate,
+    )
+
 
 ROOT = Path(__file__).resolve().parents[2]
 PLAN = ROOT / "docs/research/ONEBRAIN_FOUNDATION_IMPLEMENTATION_PLAN_V7_1.md"
@@ -8780,6 +8791,10 @@ def main() -> int:
         assertions = validate_negative_assertions()
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
+        try:
+            ku_operations, ku_dtos, ku_fixtures = validate_ku_product_candidate()
+        except (KuContractError, KeyError, TypeError, OSError, json.JSONDecodeError) as error:
+            raise ContractError(f"KU product candidate: {error}") from error
         ws_events, ws_topics = validate_private_websocket_profile()
         cli_commands = validate_vnext_cli_profile()
         ux_receipt_vectors = validate_vnext_desktop_web_ux_profile()
@@ -8892,6 +8907,7 @@ def main() -> int:
 
     print(
         "vNext contracts OK: "
+        f"{ku_operations} KU candidate operations/{ku_dtos} DTOs/{ku_fixtures} fixtures, "
         f"{len(tasks)} tasks, {adrs} ADRs, {assertions} negative assertions, "
         f"{vector_count} foundation vectors/{domains} domains, "
         f"{base_signer_domains} Base signer domains/{base_archive_classes} archive classes, "
