@@ -147,6 +147,10 @@
 - Current pointer remains KU-CON-001 pending owner review and merge. This is
   completion of the owner-reviewable deliverables, not approval/freeze of new
   public behavior and not implementation of KU-RUN-001.
+- Reviewed content checkpoint: `8b6aa9d`, pushed successfully to
+  `origin/codex/ku-con-001-product-contract`. The final tracked tip additionally
+  contains the ledger-only commit recording this checkpoint. This is not a
+  merge commit or owner acceptance of KU-PC-A/B/C.
 
 ### Protocol
 
