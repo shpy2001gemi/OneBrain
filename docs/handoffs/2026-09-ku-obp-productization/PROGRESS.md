@@ -18,7 +18,7 @@
 |---:|---|---|---|---|---|
 | 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | — | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011–D-014. |
 | 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; merge `b872263` on `origin/main`. |
-| 3 | `KU-CON-001` | Review | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Candidate contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C proposed, not frozen; evidence below. |
+| 3 | `KU-CON-001` | Review | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge pending. |
 | 4 | `KU-RUN-001` | Planned | `codex/ku-run-001-shared-service` | `KU-CON-001` | — |
 | 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001` | — |
 | 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
@@ -151,6 +151,23 @@
   `origin/codex/ku-con-001-product-contract`. The final tracked tip additionally
   contains the ledger-only commit recording this checkpoint. This is not a
   merge commit or owner acceptance of KU-PC-A/B/C.
+
+### KU-CON-001 owner acceptance — 2026-09-05
+
+- Owner answered "đồng ý" after the completed review at `b5956e8`.
+  [D-015](DECISIONS.md#d-015--ku-product-contract-accepted) records acceptance
+  of KU-PC-A/B/C and merge of the reviewed task. The preceding review section
+  is historical evidence of the candidate before this acceptance.
+- Profile and machine inventory now report owner approval with registration
+  pending. Existing byte formats and numeric domain/payload inventories remain
+  unchanged; no runtime or rollout was enabled.
+- Added a mutation test binding acceptance to D-015, the reviewed commit and
+  all three approved items. Approval cannot erase technical dispatch gates.
+- Re-ran the same six-module unittest command from the review evidence:
+  PASS, 102 tests (34 KU contract tests and 68 existing contract tests).
+- `python scripts/ci/validate_vnext_contracts.py` — PASS, including 480
+  specification links and unchanged canonical inventories.
+- `git diff --check` — PASS.
 
 ### Protocol
 

@@ -190,3 +190,26 @@ Local KU operations remain usable when rewards are unavailable. This direction
 does not enable a production wallet/network lane or authorize rewriting legacy
 history. KU-REV-001 records the amendment and gaps; implementation requires
 explicitly scoped specification and implementation tasks beyond that audit.
+
+## D-015 — KU product contract accepted
+
+After review of KU-CON-001 at `b5956e8e3d27598d118c0529ac416e54549b981e`,
+the owner answered "đồng ý" on 2026-09-05. This accepts KU-PC-A, KU-PC-B and
+KU-PC-C in [the KU product profile](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md)
+and the merge of the reviewed task.
+
+- KU-PC-A: separate SemanticContentCID under `semantic-content/1`, with the
+  exact finite normalization and private provenance separation in profile §2;
+  existing ObjectCID and legacy bytes retain their meanings.
+- KU-PC-B: the shared local workflow, 11 operations and 18 bounded DTOs,
+  private save and explicit prepare/confirm/reconcile semantics.
+- KU-PC-C: immutable predecessor/successor artifacts with a private local
+  revision journal, preserving concurrent successors without replicated
+  supersession authority.
+
+Domain registration, golden equality/separation vectors, generated Base
+payload registration and compatibility history remain required technical
+gates before runtime dispatch. Acceptance does not allocate unspecified
+numeric IDs, routes or WS events or enable an implementation/rollout lane.
+D-012–D-014 retain their separate required distribution, work and economic
+specification dependencies. Do not ask the owner to approve KU-PC-A/B/C again.

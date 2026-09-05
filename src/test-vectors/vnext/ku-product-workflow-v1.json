@@ -2,7 +2,7 @@
   "format": "onebrain/ku-product-workflow/1",
   "profile_id": "KU_PRODUCT_WORKFLOW_PROFILE_V1",
   "version": "1.0",
-  "status": "owner_review_candidate",
+  "status": "owner_approved_pending_registration",
   "implementation_enabled": false,
   "approval": {
     "required": [
@@ -10,11 +10,13 @@
       "KU-PC-B",
       "KU-PC-C"
     ],
-    "accepted": false,
+    "accepted": true,
     "base_local_command_ids": {},
     "rest_endpoints": [],
     "ws_events": [],
-    "domain_registry_allocated": false
+    "domain_registry_allocated": false,
+    "decision": "D-015",
+    "reviewed_commit": "b5956e8e3d27598d118c0529ac416e54549b981e"
   },
   "identity": {
     "profile": "ku-semantic-content/1.0",

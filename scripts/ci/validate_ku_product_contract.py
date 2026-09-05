@@ -1,4 +1,4 @@
-"""Validate the owner-review KU inventory, not runtime/hash conformance."""
+"""Validate the owner-approved KU inventory, not runtime/hash conformance."""
 from __future__ import annotations
 
 import base64
@@ -105,8 +105,8 @@ def validate_contract(profile: dict | None = None) -> tuple[int, int, int]:
     p = load_profile() if profile is None else profile
     base = json.loads(BASE.read_text(encoding="utf-8"))
     require(p["format"] == "onebrain/ku-product-workflow/1" and p["profile_id"] == "KU_PRODUCT_WORKFLOW_PROFILE_V1" and p["version"] == "1.0", "candidate identity")
-    require(p["status"] == "owner_review_candidate" and p["implementation_enabled"] is False, "candidate cannot silently enable implementation")
-    require(p["approval"] == {"required": ["KU-PC-A", "KU-PC-B", "KU-PC-C"], "accepted": False, "base_local_command_ids": {}, "rest_endpoints": [], "ws_events": [], "domain_registry_allocated": False}, "unapproved wire/domain allocation")
+    require(p["status"] == "owner_approved_pending_registration" and p["implementation_enabled"] is False, "approval cannot silently enable implementation")
+    require(p["approval"] == {"required": ["KU-PC-A", "KU-PC-B", "KU-PC-C"], "accepted": True, "decision": "D-015", "reviewed_commit": "b5956e8e3d27598d118c0529ac416e54549b981e", "base_local_command_ids": {}, "rest_endpoints": [], "ws_events": [], "domain_registry_allocated": False}, "approval evidence or unapproved wire/domain allocation")
     identity = p["identity"]
     require(identity["profile"] == "ku-semantic-content/1.0" and identity["proposed_domain"] == "semantic-content/1" and identity["algorithm"] == "BLAKE3-256", "semantic identity profile/domain")
     require(identity["preimage"] == "UTF8(onebrain:vnext:semantic-content:1) || NUL || canonical_semantic_root" and identity["canonical_profile"] == "onebrain/canonical/1" and identity["semantic_root_version"] == [1, 0], "semantic preimage drift")
@@ -265,6 +265,6 @@ def validate_contract(profile: dict | None = None) -> tuple[int, int, int]:
 if __name__ == "__main__":
     try:
         operations, dtos, fixtures = validate_contract()
-        print(f"KU candidate OK: {operations} operations, {dtos} DTOs, {fixtures} DTO fixtures; not runtime qualification")
+        print(f"KU contract OK: {operations} operations, {dtos} DTOs, {fixtures} DTO fixtures; registration pending, not runtime qualification")
     except (KuContractError, KeyError, TypeError, OSError, json.JSONDecodeError) as error:
-        raise SystemExit(f"KU candidate invalid: {error}")
+        raise SystemExit(f"KU contract invalid: {error}")

@@ -1004,7 +1004,7 @@
           "needle": "test_all_side_effect_firewalls_are_fail_closed"
         }
       ],
-      "rationale": "Owner-review candidate contract consistency and mutation evidence only; proposed identity/domain, payload registration and production runtime remain unapproved/unimplemented. Existing frozen byte families are unchanged."
+      "rationale": "Owner-approved KU-PC-A/B/C contract consistency and mutation evidence only; domain/payload registration and golden vectors remain technical gates before runtime dispatch. Existing frozen byte families are unchanged."
     }
   ]
 }

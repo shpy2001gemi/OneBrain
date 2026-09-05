@@ -25,12 +25,18 @@ class KuProductContractTests(unittest.TestCase):
         with self.assertRaisesRegex(KuContractError, reason):
             validate_contract(p)
 
-    def test_candidate_and_dto_fixtures_pass(self) -> None:
+    def test_approved_contract_and_dto_fixtures_pass(self) -> None:
         self.assertEqual(validate_contract(self.profile), (11, 18, 11))
 
-    def test_no_silent_freeze_or_enable(self) -> None:
+    def test_approval_does_not_silently_enable_implementation(self) -> None:
         self.mutate(("implementation_enabled",), True, "silently enable")
         self.mutate(("status",), "frozen", "silently enable")
+
+    def test_owner_approval_is_bound_to_reviewed_items_and_commit(self) -> None:
+        self.mutate(("approval", "accepted"), False, "approval evidence")
+        self.mutate(("approval", "decision"), "D-014", "approval evidence")
+        self.mutate(("approval", "reviewed_commit"), "0" * 40, "approval evidence")
+        self.mutate(("approval", "required"), ["KU-PC-A"], "approval evidence")
 
     def test_no_unapproved_numeric_wire_or_domain_id(self) -> None:
         self.mutate(("approval", "base_local_command_ids"), {"save": 99}, "unapproved")

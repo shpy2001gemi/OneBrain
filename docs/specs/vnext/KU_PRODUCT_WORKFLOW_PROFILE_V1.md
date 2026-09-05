@@ -1,28 +1,29 @@
 # OneBrain vNext — Shared KU product workflow v1
 
-> Task: `KU-CON-001` — owner review candidate, **not frozen or enabled**.
-> Proposed profile: `KU_PRODUCT_WORKFLOW_PROFILE_V1`, version `1.0`.
+> Task: `KU-CON-001` — **owner approved**, registration and implementation pending.
+> Profile: `KU_PRODUCT_WORKFLOW_PROFILE_V1`, version `1.0`.
 > Machine inventory: [ku-product-workflow-v1.json](../../../src/test-vectors/vnext/ku-product-workflow-v1.json).
 > Baseline: `d8effb772b0cb7766e91b799dd598061a81a9df5`.
 
 ## 1. Authority and approval boundary
 
-This candidate specifies a local KU service for node, REST, CLI, Web and
-Desktop. Requirements below describe the proposed contract after owner
-acceptance; they do not claim current implementation. The
+This profile specifies a local KU service for node, REST, CLI, Web and
+Desktop. The owner accepted KU-PC-A/B/C on 2026-09-05 in
+[D-015](../../handoffs/2026-09-ku-obp-productization/DECISIONS.md#d-015--ku-product-contract-accepted).
+Requirements below are the approved contract; they do not claim current implementation. The
 [authority audit](../../handoffs/2026-09-ku-obp-productization/outputs/KU_AUTHORITY_AUDIT.md),
 [runtime map](../../handoffs/2026-09-ku-obp-productization/outputs/KU_RUNTIME_GAP_MAP.md)
 and [D-011–D-014](../../handoffs/2026-09-ku-obp-productization/DECISIONS.md#d-011--deterministic-identity-after-semantic-normalization)
 are the traceability baseline. No existing canonical bytes or contracts are
-reinterpreted by placing this candidate in the specification directory.
+reinterpreted by accepting this additive profile.
 
-| Review item | Concrete proposal | Approval/implementation condition |
+| Accepted item | Approved design | Remaining implementation condition |
 |---|---|---|
-| KU-PC-A | Add a typed `SemanticContentCID` under proposed digest domain `semantic-content/1`, for the finite normalization in §2. | Owner acceptance, append-only domain registration and golden separation/equality vectors before production hashing. No numeric domain/schema ID is allocated here. |
-| KU-PC-B | Add the eleven local operations and typed DTOs in the machine inventory, with private save and explicit preparation/confirmation. | Owner acceptance and generated Base payload registration/compatibility revision before dispatch; the candidate has no assigned local-command IDs, new REST paths, CLI spellings or WS events. |
-| KU-PC-C | Add a private durable revision journal/projection that relates exact predecessor/successor objects without changing either object. | Included in KU-PC-B review. It is local management metadata, not an Assembly revision event or replicated author claim. Replicated supersession requires a separate event contract. |
+| KU-PC-A | Add a typed `SemanticContentCID` under digest domain `semantic-content/1`, for the finite normalization in §2. | Append-only domain registration and golden separation/equality vectors before production hashing. No numeric domain/schema ID is allocated here. |
+| KU-PC-B | Add the eleven local operations and typed DTOs in the machine inventory, with private save and explicit preparation/confirmation. | Generated Base payload registration/compatibility revision before dispatch; no local-command IDs, new REST paths, CLI spellings or WS events are assigned here. |
+| KU-PC-C | Add a private durable revision journal/projection that relates exact predecessor/successor objects without changing either object. | Local management metadata, not an Assembly revision event or replicated author claim. Replicated supersession requires a separate event contract. |
 
-An accepted candidate still requires those registration/vector gates before
+The approved contract still requires those registration/vector gates before
 KU-RUN-001 can dispatch new payloads. `BaseLocalCommandV1.kind` is a closed
 registration boundary, not permission to invent numbers. A future API adapter
 uses `/api/vnext/...` and the existing envelopes; it does not reinterpret
@@ -30,7 +31,7 @@ uses `/api/vnext/...` and the existing envelopes; it does not reinterpret
 
 Change-control traceability:
 
-| Candidate clause | Existing owner / affected contract | Required migration or downgrade |
+| Contract clause | Existing owner / affected contract | Required migration or downgrade |
 |---|---|---|
 | KU-PC-A, §2 | FND-001 ownership; FND-003 canonical/domain profile; KU-001 SEM; OBJ-001/002 object identity; D-011 | New typed comparison digest and domain vectors; preserve every original ObjectCID/legacy byte family. Unsupported profile has no semantic comparison identity. |
 | KU-PC-B, §§3–6 | [product integration ADR](VNEXT_PRODUCT_INTEGRATION_ADR_V1.md), DR-P1.1/P3 projections; Base Task 14 IDL and history; D-008 | Additive negotiated payload registration and generated projections; old hosts reject unknown operations and keep legacy reads explicit. Existing routes and numeric discriminators retain meaning. |
@@ -47,7 +48,7 @@ References, retrieval, authority, import and storage dedup use the exact
 artifact CID; semantic comparison is not an alias that can bypass disclosure.
 Implementations MUST NOT use SemanticContentCID as an ObjectCID or disclosure grant.
 
-For a newly resolved draft under proposed profile `ku-semantic-content/1.0`:
+For a newly resolved draft under profile `ku-semantic-content/1.0`:
 
 1. Retain the original source bytes without normalization in private staging
    or an already consented SourceArtifact. Both AI and rules produce the same
@@ -231,12 +232,12 @@ artifacts readable and reports unsupported new operations.
 
 ## 6. Surface, error and notification projection
 
-The machine inventory owns proposed DTO fields and types; it is an inventory,
+The machine inventory owns approved DTO fields and types; it is an inventory,
 not an alternate canonical serializer or generated Base IDL. REST/CLI/Web/
 Desktop adapters project the same service result. Exact Base errors retain
 their discriminator, retryability and reconcile requirement. The outer REST
 mapping reuses the existing eight error codes and keeps the typed Base error
-in proposed local `KuFailureV1`; unknown outcomes never collapse into an
+in local `KuFailureV1`; unknown outcomes never collapse into an
 ordinary retryable HTTP 503 without `reconcile_before_retry`.
 
 No new WS topic/event is proposed. Existing private WS remains bounded hints
@@ -268,7 +269,7 @@ artifact and produce the required acceptance separately.
 
 ## 8. Validation and implementation acceptance
 
-The candidate validator checks operation/DTO cross-references, bounded types,
+The contract validator checks operation/DTO cross-references, bounded types,
 Base lifecycle/errors, approval status, private save, identity/provenance
 separation, continuation context and linked dependencies. Mutation tests
 exercise violations and valid/invalid DTO fixtures. They establish contract
