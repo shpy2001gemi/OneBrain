@@ -264,6 +264,9 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
 
 ### KU-RUN-001 review evidence — 2026-09-06
 
+- Implementation checkpoint `b608a82` is pushed to
+  `origin/codex/ku-run-001-shared-service`. The branch tip also contains this
+  ledger-only follow-up recording that checkpoint; neither commit is a merge.
 - D-016 supersedes the historical preflight blocker above. The owner approved
   its registration scope and reported `onebrain.live`; no DNS/deployment work
   was needed or performed.
