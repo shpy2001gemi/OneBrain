@@ -7,8 +7,10 @@
 
 - Current task: `KU-RUN-001`
 - Current branch: `codex/ku-run-001-shared-service`
-- Current state: `Review`; D-016 registration and KU-RUN-001 implementation gates pass
-- Last accepted task: `KU-CON-001`, merge `2cbc8f263961d5a6368ef2c7bdc5a77f209d5b21` on `origin/main`
+- Current state: `Review`; owner accepted KU-RUN-001 under D-017, explicit merge pending
+- Last accepted task: `KU-RUN-001`, implementation `b608a82`, handoff `0d50550`; not merged
+- Last merged task: `KU-CON-001`, merge `2cbc8f263961d5a6368ef2c7bdc5a77f209d5b21` on `origin/main`
+- Next task after authorized merge: `KU-ENC-001`, then `KU-ENC-002`; model qualification in `KU-ENC-003`
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
 
@@ -19,12 +21,12 @@
 | 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | — | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011–D-014. |
 | 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; merge `b872263` on `origin/main`. |
 | 3 | `KU-CON-001` | Merged | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge `2cbc8f2` on `origin/main`. |
-| 4 | `KU-RUN-001` | Review | `codex/ku-run-001-shared-service` | `KU-CON-001` | [Implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md); starting main `91cc715`; no merge. |
-| 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001` | — |
+| 4 | `KU-RUN-001` | Review | `codex/ku-run-001-shared-service` | `KU-CON-001` | Owner accepted under D-017; [implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md); explicit merge pending. |
+| 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | — |
 | 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
 | 7 | `KU-WEB-001` | Planned | `codex/ku-web-001-workflow` | `KU-API-001` | — |
 | 8 | `KU-DESK-001` | Planned | `codex/ku-desk-001-workflow` | `KU-WEB-001` | — |
-| 9 | `KU-QA-001` | Planned | `codex/ku-qa-001-cross-surface` | `KU-CLI-001`, `KU-DESK-001` | — |
+| 9 | `KU-QA-001` | Planned | `codex/ku-qa-001-cross-surface` | `KU-CLI-001`, `KU-DESK-001`, `KU-ENC-003` | — |
 | 10 | `OBP-PROD-001` | Planned | `codex/obp-prod-001-product-contract` | `KU-CON-001` | — |
 | 11 | `OBP-PROD-002` | Planned | `codex/obp-prod-002-node-lifecycle` | `OBP-PROD-001` | — |
 | 12 | `OBP-PROD-003` | Planned | `codex/obp-prod-003-discovery` | `OBP-PROD-002` | — |
@@ -36,6 +38,9 @@
 | 18 | `OBP-QA-001` | Planned | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | — |
 | 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | — |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | — |
+| 21 | `KU-ENC-001` | Planned | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | [Research and overlap map](outputs/KU_ENCODER_FRAMEWORK_RESEARCH.md); D-017. |
+| 22 | `KU-ENC-002` | Planned | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Shared provider/workflow implementation. |
+| 23 | `KU-ENC-003` | Planned | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Real-model/resource evidence; reuse MOB-06 mobile ownership. |
 
 ## Per-task update protocol
 
@@ -290,6 +295,26 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
   unqualified. Network and default rollout are unchanged.
 - Current task remains KU-RUN-001 for owner review. Do not merge/delete the
   branch or start KU-API-001 without the corresponding instruction.
+
+### Encoder framework research and task amendment — 2026-09-06
+
+- Owner accepted KU-RUN-001 and requested the D-017 framework research and
+  backlog amendment. Runtime remains unchanged and unmerged.
+- [Research output](outputs/KU_ENCODER_FRAMEWORK_RESEARCH.md) records source
+  findings from legacy tool and v2 extraction paths, unsafe semantic defaults,
+  available structured adapter, overlap with AI-001/AI-003/FID/MOB-06 and the
+  shared framework gap. Official Ollama/llama.cpp/Anthropic references were
+  checked; no live model or latency/accuracy benchmark was run.
+- Added KU-ENC-001/002/003; supplemented API, QA and integration acceptance,
+  dependency graph and indexes. Research includes a candidate workflow,
+  prompt guidance, data responsibilities, resource policy and evaluation plan.
+  New machine schema and production implementation remain future task outputs.
+- This documentation-only amendment stays on the accepted task's handoff
+  branch. It grants no mobile implementation, runtime rollout or merge action.
+- Validation passed: 200 local links, 23 task files with an acyclic dependency
+  graph and the new API/QA gates, global vNext contract validator and
+  `git diff --check`. All changes are handoff Markdown; no runtime test rerun
+  or live-model/mobile performance claim is needed for this documentation edit.
 
 ### Protocol
 

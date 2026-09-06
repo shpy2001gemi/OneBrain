@@ -13,7 +13,11 @@ flowchart TD
     K1["KU-REV-001\nCanonical audit"] --> K2["KU-REV-002\nCode/evidence map"]
     K2 --> K3["KU-CON-001\nProduct contract freeze"]
     K3 --> K4["KU-RUN-001\nShared node service"]
-    K4 --> K5["KU-API-001\nREST/WS projection"]
+    K4 --> E1["KU-ENC-001\nShared encoder contract"]
+    E1 --> E2["KU-ENC-002\nWorkflow-controlled encoder"]
+    E2 --> E3["KU-ENC-003\nModel/resource qualification"]
+    E2 --> K5["KU-API-001\nREST/WS projection"]
+    E3 --> K9
     K5 --> K6["KU-CLI-001"]
     K5 --> K7["KU-WEB-001"]
     K7 --> K8["KU-DESK-001"]
@@ -51,6 +55,11 @@ and legacy boundaries.
 ### Phase B — KU shared implementation and surfaces
 
 4. `KU-RUN-001`: implement the node-owned local KU service.
+   Before the model-backed product surface, D-017 inserts `KU-ENC-001` for the
+   shared extraction/compiler contract and `KU-ENC-002` for its implementation.
+   `KU-ENC-003` qualifies real model/resource tuples; it may run alongside API
+   projection after the shared runtime is merged, but blocks model-ready and
+   cross-surface encoder qualification claims.
 5. `KU-API-001`: expose the contract once through local authenticated REST/WS.
 6. `KU-CLI-001`, then `KU-WEB-001` and `KU-DESK-001` on separate branches.
 7. `KU-QA-001`: prove the same operation has the same identity, state and error
@@ -93,6 +102,9 @@ does not enable the lane by default or qualify mobile/browser platforms.
 - `KU-CLI-001` and `KU-WEB-001` may branch in parallel after `KU-API-001` is
   merged. `KU-DESK-001` starts after the Web surface is accepted because the
   Desktop application embeds it.
+- `KU-ENC-003` and `KU-API-001` can use the same frozen KU-ENC-002 service
+  without editing its semantic contract independently. Mobile integration
+  remains in MOB-06; these tasks do not create another mobile tool orchestrator.
 - The OBP planning lane may begin after `KU-CON-001`, but implementation must
   not modify unfinished KU service code.
 - No two active branches should edit the same public contract file. If they

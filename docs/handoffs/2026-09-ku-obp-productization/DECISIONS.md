@@ -228,3 +228,31 @@ The owner also reports owning the Internet domain `onebrain.live`. This is
 infrastructure context for later separately scoped hosting/discovery work;
 it does not change the cryptographic `semantic-content/1` domain or authorize
 DNS, deployment, listener or rollout changes in KU-RUN-001.
+
+## D-017 — Shared local encoder framework and KU-RUN acceptance
+
+On 2026-09-06 the owner approved the completed KU-RUN-001 task and requested
+research plus task coverage for a shared local/personal-AI encoding framework.
+The owner described the earlier move from model-controlled tools to structured
+extraction followed by workflow-controlled execution, with improved observed
+speed. That observation is owner history, not a fresh measured benchmark.
+
+AI proposes concepts, relations and grounded structured fields. Workflow owns
+tool selection/calls, Registry lookup, validation, compilation and persistence.
+The framework must support different models and resource-limited platforms
+without loosening semantic or authority rules. Exact normalized-semantic
+identity remains D-011; equal raw text across different models is a convergence
+target to measure, not a newly approved canonical equivalence rule.
+
+The [research and overlap map](outputs/KU_ENCODER_FRAMEWORK_RESEARCH.md)
+identifies a shared framework gap beyond KU-RUN-001 and beyond completed
+AI-001/AI-003/FID components. Add KU-ENC-001/002/003 for contract, shared runtime
+and qualification; reuse MOB-06 for mobile providers and physical-device
+evidence. Supplement API and cross-surface tasks rather than duplicating their
+semantics. Research candidate schemas, budgets and thresholds still need the
+normal contract task; this decision does not freeze unspecified fields.
+
+KU-RUN-001 acceptance is recorded against implementation `b608a82` and handoff
+tip `0d50550`. The owner did not explicitly request merge or branch deletion in
+this message, so both remain pending. This follow-up changes research/backlog
+documentation only, not the accepted runtime or mobile implementation.

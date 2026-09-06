@@ -23,7 +23,9 @@ consent, privacy, provenance or authority boundaries.
 
 An end-to-end CLI/Web/Desktop journey and evidence for:
 
-1. deterministic local KU encode and preview;
+1. deterministic local compile of an approved resolved semantic draft and
+   exact preview; model-assisted raw-text extraction uses the shared encoder
+   and qualified KU-ENC-003 profiles, with its measured convergence limits;
 2. private local save without network side effects;
 3. explicit prepare/confirm publication intent;
 4. durable outbound intent bound to an expected peer;

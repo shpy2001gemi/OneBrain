@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-CON-001` approved and merged / `KU-RUN-001` ready for review**
+> Status: **`KU-RUN-001` owner accepted, merge pending / shared encoder work added under D-017**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -45,10 +45,16 @@ the selected task explicitly requires a section from it.
 **Current branch:** `codex/ku-run-001-shared-service`
 
 KU-RUN-001 implements the D-016 registration and node-owned local service.
-The task branch is ready for review; see the
+The owner accepted it under D-017; explicit merge remains pending. See the
 [implementation evidence and limits](outputs/KU_RUN_001_IMPLEMENTATION.md)
-and [PROGRESS.md](PROGRESS.md). Keep this pointer until owner acceptance and
-an explicitly authorized merge; KU-API-001 has not started.
+and [PROGRESS.md](PROGRESS.md). Keep this pointer until an explicitly
+authorized merge. The next task after merge is KU-ENC-001, followed by the
+shared encoder runtime; KU-API-001 has not started.
+
+The new [encoder framework research](outputs/KU_ENCODER_FRAMEWORK_RESEARCH.md)
+maps the old tool-driven/v2 paths, existing AI/mobile tasks and the shared gap.
+KU-ENC-001/002/003 cover contract, workflow implementation and model/resource
+qualification. Model proposals carry no execution or persistence authority.
 
 Audit output: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md).
 Runtime review: [KU_RUNTIME_GAP_MAP.md](outputs/KU_RUNTIME_GAP_MAP.md).
@@ -70,10 +76,10 @@ Copy/paste prompt:
 
 ```text
 Read AGENTS.md and docs/handoffs/2026-09-ku-obp-productization/README.md,
-then execute only KU-RUN-001 from tasks/04-KU-RUN-001.md. Follow its exact
-read set, scope, branch and acceptance criteria. Update PROGRESS.md and the
-Current task pointer in README.md before handing off. Do not merge or delete
-the task branch without my explicit instruction.
+then follow the Current checkpoint in PROGRESS.md. KU-RUN-001 is accepted;
+do not repeat implementation or infer merge permission. After an explicitly
+authorized merge, advance to KU-ENC-001 from tasks/21-KU-ENC-001.md, not
+KU-API-001. Follow the selected task's read set, scope and acceptance criteria.
 ```
 
 More prompts are in [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md).
@@ -87,7 +93,7 @@ More prompts are in [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md).
 | [MASTER_PLAN.md](MASTER_PLAN.md) | Two-lane dependency graph, sequencing and shared exit gates |
 | [PROGRESS.md](PROGRESS.md) | Authoritative status/branch/commit ledger for this workstream |
 | [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md) | Short prompts for starting, reviewing or merging one task |
-| [`tasks/README.md`](tasks/README.md) | Index of all 20 independently executable tasks |
+| [`tasks/README.md`](tasks/README.md) | Index of all 23 independently executable tasks |
 | [`outputs/README.md`](outputs/README.md) | Naming and placement rules for task audit/evidence outputs |
 
 ## Working rules
