@@ -6,8 +6,12 @@
 ## Current checkpoint
 
 - Current task: `KU-RUN-001`
-- Current branch: none; create `codex/ku-run-001-shared-service`
-- Last accepted task: `KU-CON-001`, merge `2cbc8f263961d5a6368ef2c7bdc5a77f209d5b21` on `origin/main`
+- Current branch: `codex/ku-run-001-shared-service`
+- Current state: `Review`; owner accepted KU-RUN-001 under D-017, explicit merge pending
+- Last accepted task: `KU-RUN-001`, implementation `b608a82`, handoff `0d50550`; not merged
+- Last merged task: `KU-CON-001`, merge `2cbc8f263961d5a6368ef2c7bdc5a77f209d5b21` on `origin/main`
+- Next task after authorized merge: `KU-ENC-001`, then `KU-ENC-002`; model qualification in `KU-ENC-003`
+- Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
 
@@ -18,12 +22,12 @@
 | 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | — | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011–D-014. |
 | 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; merge `b872263` on `origin/main`. |
 | 3 | `KU-CON-001` | Merged | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge `2cbc8f2` on `origin/main`. |
-| 4 | `KU-RUN-001` | Planned | `codex/ku-run-001-shared-service` | `KU-CON-001` | — |
-| 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001` | — |
+| 4 | `KU-RUN-001` | Review | `codex/ku-run-001-shared-service` | `KU-CON-001` | Owner accepted under D-017; [implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md); explicit merge pending. |
+| 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | — |
 | 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
 | 7 | `KU-WEB-001` | Planned | `codex/ku-web-001-workflow` | `KU-API-001` | — |
 | 8 | `KU-DESK-001` | Planned | `codex/ku-desk-001-workflow` | `KU-WEB-001` | — |
-| 9 | `KU-QA-001` | Planned | `codex/ku-qa-001-cross-surface` | `KU-CLI-001`, `KU-DESK-001` | — |
+| 9 | `KU-QA-001` | Planned | `codex/ku-qa-001-cross-surface` | `KU-CLI-001`, `KU-DESK-001`, `KU-ENC-003` | — |
 | 10 | `OBP-PROD-001` | Planned | `codex/obp-prod-001-product-contract` | `KU-CON-001` | — |
 | 11 | `OBP-PROD-002` | Planned | `codex/obp-prod-002-node-lifecycle` | `OBP-PROD-001` | — |
 | 12 | `OBP-PROD-003` | Planned | `codex/obp-prod-003-discovery` | `OBP-PROD-002` | — |
@@ -35,6 +39,9 @@
 | 18 | `OBP-QA-001` | Planned | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | — |
 | 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | — |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | — |
+| 21 | `KU-ENC-001` | Planned | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | [Research and overlap map](outputs/KU_ENCODER_FRAMEWORK_RESEARCH.md); D-017. |
+| 22 | `KU-ENC-002` | Planned | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Shared provider/workflow implementation. |
+| 23 | `KU-ENC-003` | Planned | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Real-model/resource evidence; reuse MOB-06 mobile ownership. |
 
 ## Per-task update protocol
 
@@ -172,6 +179,143 @@
 - `python scripts/ci/validate_vnext_contracts.py` — PASS, including 480
   specification links and unchanged canonical inventories.
 - `git diff --check` — PASS.
+
+### KU-RUN-001 registration preflight — 2026-09-05
+
+- Started from `91cc715b547b71941f6d66fea2093fc2326eb481`, clean and equal
+  to freshly fetched `origin/main`; created the exact task branch
+  `codex/ku-run-001-shared-service`. State moved through `In progress` during
+  preflight to `Blocked`. Current task remains KU-RUN-001.
+- Read the start/resume prompts, repository instructions, handoff
+  README/decisions/progress, task, authority audit, runtime gap map and approved
+  KU profile. Inspected the implicated Base interface/ownership/storage/canonical
+  profiles, inventories, validator and local adapter dispatch boundary.
+  This is prerequisite evidence, not the completed runtime required-read or
+  implementation acceptance gate.
+
+#### Missing gate and scope boundary
+
+1. [KU profile §1](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md#1-authority-and-approval-boundary)
+   requires domain registration and golden equality/separation vectors before
+   production hashing, and generated Base payload registration/compatibility
+   revision before dispatch. D-015 accepts KU-PC-A/B/C but expressly retains
+   those gates; their approval is not being reopened.
+2. The [KU inventory](../../../src/test-vectors/vnext/ku-product-workflow-v1.json)
+   still has `owner_approved_pending_registration`,
+   `implementation_enabled: false`, an empty `base_local_command_ids`,
+   `domain_registry_allocated: false`, and null operation wire IDs. The
+   [KU validator](../../../scripts/ci/validate_ku_product_contract.py)
+   explicitly requires these values. Its successful result proves contract
+   consistency in that pending state, not readiness to dispatch.
+3. [Canonical §6.2](../../specs/vnext/CANONICAL_PROFILE_V1.md#62-reserved-v1-domains)
+   calls addition of a domain a contract change. The current canonical
+   inventory has no `semantic-content` entry. The
+   [Base IDL](../../../src/test-vectors/vnext/base-v1-runtime-interface-v1.json)
+   has no generated KU operation DTOs. Its generic `BaseLocalCommandV1.kind`
+   is not an allocated KU discriminator. [Base §§8–9](../../specs/vnext/BASE_V1_RUNTIME_INTERFACE_PROFILE.md#8-generated-projections)
+   require generated projections and append-only history with a profile-minor
+   increment for additive registration.
+4. The selected task scopes runtime service implementation. The handoff
+   [working rules](README.md#working-rules) state: "Any wider change requires
+   an explicit scope revision." The task does not explicitly assign the
+   outstanding canonical/IDL registration changes. Treating implementation
+   as permission to change those frozen inventories would silently expand
+   that scope. This is a missing prerequisite/scope assignment, not a new
+   conflict with the owner's approved semantic design.
+5. [The Base adapter](../../../src/onebrain-node/src/base_runtime.rs) currently
+   defaults to `UnavailableBaseLocalOperationAdapter`; local confirmation
+   passes a `BaseLocalCommandV1` to that adapter. Installing a hand-written KU
+   dispatcher with invented IDs would bypass the gate and would not satisfy
+   the approved service contract.
+
+#### Concrete proposed scope extension, pending owner direction
+
+Extend KU-RUN-001 with a prerequisite registration phase, then continue its
+existing runtime objective on the same branch:
+
+1. Register the already approved `semantic-content/1` domain in the canonical
+   contract/inventory and typed core domain declarations; add golden canonical
+   byte/hash equality and separation vectors for the finite approved
+   normalization. Preserve existing domains, IDs and original artifact bytes.
+2. Register the approved eleven operation payload mappings and eighteen DTOs
+   in the Base machine IDL; append discriminator history, advance the additive
+   profile/compatibility declarations and regenerate affected projections.
+   Add old-host rejection and generation/history drift checks. Do not allocate
+   REST routes, CLI commands or WS events in this phase.
+3. Update the KU inventory/validator to recognize registered state only when
+   those exact registrations and vector gates pass. Then implement the
+   node-owned service, encrypted atomic/recoverable save and all existing
+   KU-RUN-001 acceptance cases. Keep API/UI, OBP orchestration, mobile
+   implementation and D-012–D-014 distribution/work/reward changes excluded.
+
+Owner direction is requested only for this scope extension. No request to
+approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
+
+#### Fresh validation and evidence limit
+
+- `python scripts/ci/validate_ku_product_contract.py` — PASS: 11 operations,
+  18 DTOs, 11 fixtures; tool explicitly reports registration pending.
+- `python -m unittest scripts.ci.test_validate_ku_product_contract
+  scripts.ci.test_validate_base_v1_runtime_interface` — PASS: 74 tests.
+- `python scripts/ci/validate_vnext_contracts.py` — PASS: existing contract
+  inventories, including 21 foundation domains and 27 Base runtime operations.
+- `git diff --check` — PASS. Local file-link check for README/PROGRESS — PASS.
+- Preflight content checkpoint `8464770` was pushed to
+  `origin/codex/ku-run-001-shared-service`; the branch also includes the
+  ledger-only follow-up recording this checkpoint. No merge or branch deletion.
+- Source, canonical contracts, generated declarations, tests and rollout state
+  are unchanged. Only README/PROGRESS handoff records changed. Runtime tests,
+  workspace check and Rust format are not claimed; KU-RUN-001 remains
+  incomplete and cannot be marked Review on this evidence.
+
+### KU-RUN-001 review evidence — 2026-09-06
+
+- Implementation checkpoint `b608a82` is pushed to
+  `origin/codex/ku-run-001-shared-service`. The branch tip also contains this
+  ledger-only follow-up recording that checkpoint; neither commit is a merge.
+- D-016 supersedes the historical preflight blocker above. The owner approved
+  its registration scope and reported `onebrain.live`; no DNS/deployment work
+  was needed or performed.
+- Delivered registered semantic identity/goldens, Base 1.2 payload/DTO/history
+  generation, authenticated node-owned KU service, encrypted recoverable
+  private save, snapshot index/revisions and typed lifecycle/recovery fences.
+  Full evidence and integration limits:
+  [KU_RUN_001_IMPLEMENTATION.md](outputs/KU_RUN_001_IMPLEMENTATION.md).
+- Validation: node library **117 PASS**, core foundation **196 PASS**, semantic
+  golden suite **2 PASS** plus child run, Base contract **21 PASS**, Base facade/
+  exchange/recovery/capability/index integration **22 PASS**. Six real process
+  kills verify partial-save visibility and exact recovery without model replay.
+- Whole-workspace `cargo check --workspace --locked -q` and
+  `cargo fmt --all -- --check` pass. Generated `--check`, global vNext contract
+  validator and **85 Python tests** pass. Existing TypeScript conformance and
+  both Dart conformance tests pass outside the mobile subtree.
+- Host input/Registry/public-read ports are explicit. Test encoders are
+  controlled fixtures; no live AI, automatic Registry synchronization, remote
+  work, minting or product UI qualification is claimed. Private export is a
+  Base management reservation; portable KU metadata/archive round-trip remains
+  unqualified. Network and default rollout are unchanged.
+- Current task remains KU-RUN-001 for owner review. Do not merge/delete the
+  branch or start KU-API-001 without the corresponding instruction.
+
+### Encoder framework research and task amendment — 2026-09-06
+
+- Owner accepted KU-RUN-001 and requested the D-017 framework research and
+  backlog amendment. Runtime remains unchanged and unmerged.
+- [Research output](outputs/KU_ENCODER_FRAMEWORK_RESEARCH.md) records source
+  findings from legacy tool and v2 extraction paths, unsafe semantic defaults,
+  available structured adapter, overlap with AI-001/AI-003/FID/MOB-06 and the
+  shared framework gap. Official Ollama/llama.cpp/Anthropic references were
+  checked; no live model or latency/accuracy benchmark was run.
+- Added KU-ENC-001/002/003; supplemented API, QA and integration acceptance,
+  dependency graph and indexes. Research includes a candidate workflow,
+  prompt guidance, data responsibilities, resource policy and evaluation plan.
+  New machine schema and production implementation remain future task outputs.
+- This documentation-only amendment stays on the accepted task's handoff
+  branch. It grants no mobile implementation, runtime rollout or merge action.
+- Validation passed: 200 local links, 23 task files with an acyclic dependency
+  graph and the new API/QA gates, global vNext contract validator and
+  `git diff --check`. All changes are handoff Markdown; no runtime test rerun
+  or live-model/mobile performance claim is needed for this documentation edit.
 
 ### Protocol
 

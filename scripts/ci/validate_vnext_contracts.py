@@ -2917,9 +2917,9 @@ def validate_base_v1_freeze() -> int:
                     )
             names.add(name)
     if "pub const BASE_V1_RELEASE_VERSION" not in source or not all(
-        needle in source for needle in ("major: 1", "minor: 0", "patch: 0", "prerelease: None")
+        needle in source for needle in ("major: 1", "minor: 2", "patch: 0", "prerelease: None")
     ) or "base_version: BASE_V1_RELEASE_VERSION" not in runtime:
-        raise ContractError("compiled Base v1.0.0 candidate version drift")
+        raise ContractError("compiled Base v1.2.0 candidate version drift")
     for path in (
         BASE_V1_FREEZE_DOCUMENT,
         ROOT / "docs/security/BASE_V1_RELEASE_SIGNER_POLICY.md",
@@ -2980,8 +2980,8 @@ def validate_vectors() -> tuple[int, int, int, int]:
         raise ContractError("duplicate foundation vector IDs")
 
     domains = [row.get("domain") for row in vectors["domain_digests"]]
-    if len(domains) != 21 or len(set(domains)) != 21:
-        raise ContractError("foundation vectors must cover 21 unique reserved domains")
+    if len(domains) != 22 or len(set(domains)) != 22:
+        raise ContractError("foundation vectors must cover 22 unique reserved domains")
 
     try:
         schema_vectors = json.loads(read(IDENTITY_OBJECT_VECTORS))

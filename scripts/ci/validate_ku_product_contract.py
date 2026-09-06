@@ -105,7 +105,7 @@ def validate_contract(profile: dict | None = None) -> tuple[int, int, int]:
     p = load_profile() if profile is None else profile
     base = json.loads(BASE.read_text(encoding="utf-8"))
     require(p["format"] == "onebrain/ku-product-workflow/1" and p["profile_id"] == "KU_PRODUCT_WORKFLOW_PROFILE_V1" and p["version"] == "1.0", "candidate identity")
-    require(p["status"] == "owner_approved_pending_registration" and p["implementation_enabled"] is False, "approval cannot silently enable implementation")
+    require(p["status"] == "registered" and p["implementation_enabled"] is True, "registered implementation gate drift")
     require(p["approval"] == {"required": ["KU-PC-A", "KU-PC-B", "KU-PC-C"], "accepted": True, "decision": "D-015", "reviewed_commit": "b5956e8e3d27598d118c0529ac416e54549b981e", "base_local_command_ids": {}, "rest_endpoints": [], "ws_events": [], "domain_registry_allocated": False}, "approval evidence or unapproved wire/domain allocation")
     identity = p["identity"]
     require(identity["profile"] == "ku-semantic-content/1.0" and identity["proposed_domain"] == "semantic-content/1" and identity["algorithm"] == "BLAKE3-256", "semantic identity profile/domain")
@@ -234,7 +234,7 @@ def validate_contract(profile: dict | None = None) -> tuple[int, int, int]:
     require(len(ops) == len(boundaries) and {o["name"] for o in ops} == boundaries.keys(), "operation inventory")
     for op in ops:
         require((op["base_boundary"], op["effect"]) == boundaries[op["name"]], "operation side-effect boundary")
-        require(op["wire_id"] is None and op["visibility"] == "authenticated_local_private" and op["surfaces"] == ["node", "rest", "cli", "web", "desktop"], "operation authority/surface drift")
+        require(op["wire_id"] == 0x4b01 + ["prepare", "preview", "save", "get", "list", "search", "revise", "export", "status", "cancel", "reconcile"].index(op["name"]) and op["visibility"] == "authenticated_local_private" and op["surfaces"] == ["node", "rest", "cli", "web", "desktop"], "operation authority/surface drift")
         require(op["request"] in dtos and op["response"] in dtos, "operation DTO reference")
         require((op["request"], op["response"]) == dto_bindings[op["name"]], "operation DTO binding")
     deps = p["dependencies"]
@@ -259,12 +259,20 @@ def validate_contract(profile: dict | None = None) -> tuple[int, int, int]:
         except KuContractError:
             accepted = False
         require(type(f["valid"]) is bool and accepted == f["valid"], f"fixture result drift: {f['name']}")
+    import sys
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from scripts.ci.validate_ku_registration import validate_registration
+    try:
+        validate_registration(p, base)
+    except ValueError as error:
+        raise KuContractError(str(error)) from error
     return len(ops), len(dtos), len(fixtures)
 
 
 if __name__ == "__main__":
     try:
         operations, dtos, fixtures = validate_contract()
-        print(f"KU contract OK: {operations} operations, {dtos} DTOs, {fixtures} DTO fixtures; registration pending, not runtime qualification")
+        print(f"KU contract OK: {operations} registered operations, {dtos} DTOs, {fixtures} DTO fixtures; runtime qualification requires separate tests")
     except (KuContractError, KeyError, TypeError, OSError, json.JSONDecodeError) as error:
         raise SystemExit(f"KU contract invalid: {error}")

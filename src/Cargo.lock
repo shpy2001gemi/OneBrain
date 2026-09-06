@@ -3360,8 +3360,10 @@ dependencies = [
 name = "onebrain-base-contract"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "blake3",
  "onebrain-archive",
+ "serde",
  "serde_json",
  "thiserror 2.0.18",
  "zeroize",
@@ -3450,6 +3452,7 @@ dependencies = [
 name = "onebrain-node"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "blake3",
  "ciborium",
  "ed25519-dalek",

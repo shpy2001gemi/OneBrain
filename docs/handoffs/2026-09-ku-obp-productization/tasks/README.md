@@ -26,6 +26,13 @@ explicitly changes the order.
 | 18 | [`OBP-QA-001`](18-OBP-QA-001.md) | Prove bounded outbound-first product claims |
 | 19 | [`OBP-MIG-001`](19-OBP-MIG-001.md) | Retire the legacy seed product path safely |
 | 20 | [`INT-KU-OBP-001`](20-INT-KU-OBP-001.md) | Prove the opt-in KU-to-peer product journey |
+| 21 | [`KU-ENC-001`](21-KU-ENC-001.md) | Specify shared extraction, prompts, context and semantic compiler |
+| 22 | [`KU-ENC-002`](22-KU-ENC-002.md) | Implement bounded workflow-controlled local encoding |
+| 23 | [`KU-ENC-003`](23-KU-ENC-003.md) | Qualify multiple models and constrained hosts |
+
+Rows 21–23 were added under D-017; numbers preserve existing file identities.
+Execution follows the dependency graph: KU-RUN-001 → KU-ENC-001 → KU-ENC-002
+before KU-API-001, with KU-ENC-003 required for model qualification and KU-QA.
 
 Task state, branch tip and merge evidence are recorded only in
 [`../PROGRESS.md`](../PROGRESS.md); do not create a second status ledger.

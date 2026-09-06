@@ -27,10 +27,11 @@ pub enum ReservedDomain {
     Manifest,
     TestVector,
     Signature,
+    SemanticContent,
 }
 
 impl ReservedDomain {
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::Object,
         Self::Event,
         Self::FeedInception,
@@ -52,6 +53,7 @@ impl ReservedDomain {
         Self::Manifest,
         Self::TestVector,
         Self::Signature,
+        Self::SemanticContent,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -77,6 +79,7 @@ impl ReservedDomain {
             Self::Manifest => "manifest",
             Self::TestVector => "test-vector",
             Self::Signature => "signature",
+            Self::SemanticContent => "semantic-content",
         }
     }
 
@@ -112,6 +115,7 @@ impl ReservedDomain {
             Self::Manifest => DigestClass::Manifest,
             Self::TestVector => DigestClass::Vector,
             Self::Signature => DigestClass::PreimageOnly,
+            Self::SemanticContent => DigestClass::SemanticContent,
         }
     }
 
@@ -144,6 +148,7 @@ pub enum DigestClass {
     Manifest,
     Vector,
     PreimageOnly,
+    SemanticContent,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -308,6 +313,7 @@ digest_kind!(LeaseKind, LeaseCid, Lease);
 digest_kind!(CheckpointKind, CheckpointCid, Checkpoint);
 digest_kind!(ManifestKind, ManifestCid, Manifest);
 digest_kind!(VectorKind, VectorCid, Vector);
+digest_kind!(SemanticContentKind, SemanticContentCid, SemanticContent);
 
 /// Construct the exact bytes signed by a vNext signed-record schema.
 pub fn signature_message(

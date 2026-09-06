@@ -213,3 +213,64 @@ gates before runtime dispatch. Acceptance does not allocate unspecified
 numeric IDs, routes or WS events or enable an implementation/rollout lane.
 D-012–D-014 retain their separate required distribution, work and economic
 specification dependencies. Do not ask the owner to approve KU-PC-A/B/C again.
+
+## D-016 — KU-RUN-001 registration scope accepted
+
+On 2026-09-05 the owner answered "đồng ý" to the concrete registration scope
+extension recorded in PROGRESS.md at `9fb94dd`. KU-RUN-001 now includes the
+approved semantic domain and golden vectors, generated Base KU payload/DTO
+registration, append-only history and compatibility revision, and corresponding
+validator changes, followed by the original runtime implementation and gates.
+No further approval of these prerequisite changes is needed. Existing task
+exclusions and default-off network policy remain in effect.
+
+The owner also reports owning the Internet domain `onebrain.live`. This is
+infrastructure context for later separately scoped hosting/discovery work;
+it does not change the cryptographic `semantic-content/1` domain or authorize
+DNS, deployment, listener or rollout changes in KU-RUN-001.
+
+## D-017 — Shared local encoder framework and KU-RUN acceptance
+
+On 2026-09-06 the owner approved the completed KU-RUN-001 task and requested
+research plus task coverage for a shared local/personal-AI encoding framework.
+The owner described the earlier move from model-controlled tools to structured
+extraction followed by workflow-controlled execution, with improved observed
+speed. That observation is owner history, not a fresh measured benchmark.
+
+AI proposes concepts, relations and grounded structured fields. Workflow owns
+tool selection/calls, Registry lookup, validation, compilation and persistence.
+The framework must support different models and resource-limited platforms
+without loosening semantic or authority rules. Exact normalized-semantic
+identity remains D-011; equal raw text across different models is a convergence
+target to measure, not a newly approved canonical equivalence rule.
+
+The [research and overlap map](outputs/KU_ENCODER_FRAMEWORK_RESEARCH.md)
+identifies a shared framework gap beyond KU-RUN-001 and beyond completed
+AI-001/AI-003/FID components. Add KU-ENC-001/002/003 for contract, shared runtime
+and qualification; reuse MOB-06 for mobile providers and physical-device
+evidence. Supplement API and cross-surface tasks rather than duplicating their
+semantics. Research candidate schemas, budgets and thresholds still need the
+normal contract task; this decision does not freeze unspecified fields.
+
+KU-RUN-001 acceptance is recorded against implementation `b608a82` and handoff
+tip `0d50550`. The owner did not explicitly request merge or branch deletion in
+this message, so both remain pending. This follow-up changes research/backlog
+documentation only, not the accepted runtime or mobile implementation.
+
+## D-018 — Encoder framework direction and task sequence accepted
+
+After the research/backlog checkpoint `e513552`, the owner answered
+"tôi đồng ý". This accepts the proposed shared framework direction and the
+KU-ENC-001 → KU-ENC-002 → KU-ENC-003 sequence, including reuse of MOB-06 and
+the updated API/QA dependencies. Do not request approval of that direction
+again. KU-ENC-001 now has an accepted design brief; its precise schema,
+compiler coverage and measurable qualification thresholds remain its outputs.
+
+The accepted boundary is grounded model proposals with workflow-owned tools,
+Registry resolution, validation and canonical compilation. Exact identity is
+guaranteed for equal validated semantics under the same profile; cross-model
+raw-text convergence is measured. Limited hardware does not relax these rules.
+
+This acceptance does not explicitly instruct a merge, branch deletion,
+deployment or mobile implementation. The prepared KU-RUN branch remains
+available for the explicit merge step required by the handoff instructions.

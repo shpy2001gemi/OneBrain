@@ -2,8 +2,8 @@
   "format": "onebrain/ku-product-workflow/1",
   "profile_id": "KU_PRODUCT_WORKFLOW_PROFILE_V1",
   "version": "1.0",
-  "status": "owner_approved_pending_registration",
-  "implementation_enabled": false,
+  "status": "registered",
+  "implementation_enabled": true,
   "approval": {
     "required": [
       "KU-PC-A",
@@ -714,7 +714,7 @@
         "web",
         "desktop"
       ],
-      "wire_id": null
+      "wire_id": 19201
     },
     {
       "name": "preview",
@@ -730,7 +730,7 @@
         "web",
         "desktop"
       ],
-      "wire_id": null
+      "wire_id": 19202
     },
     {
       "name": "save",
@@ -746,7 +746,7 @@
         "web",
         "desktop"
       ],
-      "wire_id": null
+      "wire_id": 19203
     },
     {
       "name": "get",
@@ -762,7 +762,7 @@
         "web",
         "desktop"
       ],
-      "wire_id": null
+      "wire_id": 19204
     },
     {
       "name": "list",
@@ -778,7 +778,7 @@
         "web",
         "desktop"
       ],
-      "wire_id": null
+      "wire_id": 19205
     },
     {
       "name": "search",
@@ -794,7 +794,7 @@
         "web",
         "desktop"
       ],
-      "wire_id": null
+      "wire_id": 19206
     },
     {
       "name": "revise",
@@ -810,7 +810,7 @@
         "web",
         "desktop"
       ],
-      "wire_id": null
+      "wire_id": 19207
     },
     {
       "name": "export",
@@ -826,7 +826,7 @@
         "web",
         "desktop"
       ],
-      "wire_id": null
+      "wire_id": 19208
     },
     {
       "name": "status",
@@ -842,7 +842,7 @@
         "web",
         "desktop"
       ],
-      "wire_id": null
+      "wire_id": 19209
     },
     {
       "name": "cancel",
@@ -858,7 +858,7 @@
         "web",
         "desktop"
       ],
-      "wire_id": null
+      "wire_id": 19210
     },
     {
       "name": "reconcile",
@@ -874,7 +874,7 @@
         "web",
         "desktop"
       ],
-      "wire_id": null
+      "wire_id": 19211
     }
   ],
   "dependencies": [
@@ -1068,5 +1068,45 @@
     "resource_budget",
     "payload_discriminator",
     "compatibility_digest"
-  ]
+  ],
+  "registration": {
+    "decision": "D-016",
+    "base_profile_minor": 2,
+    "local_payload_ids": {
+      "prepare": 19201,
+      "preview": 19202,
+      "save": 19203,
+      "get": 19204,
+      "list": 19205,
+      "search": 19206,
+      "revise": 19207,
+      "export": 19208,
+      "status": 19209,
+      "cancel": 19210,
+      "reconcile": 19211
+    },
+    "dto_ids": {
+      "KuPrepareV1": 19457,
+      "KuPreparedV1": 19458,
+      "KuOperationRefV1": 19459,
+      "KuSaveV1": 19460,
+      "KuReceiptV1": 19461,
+      "KuGetV1": 19462,
+      "KuViewV1": 19463,
+      "KuListV1": 19464,
+      "KuSearchV1": 19465,
+      "KuPageV1": 19466,
+      "KuReviseV1": 19467,
+      "KuExportV1": 19468,
+      "KuExportViewV1": 19469,
+      "KuStatusV1": 19470,
+      "KuFailureV1": 19471,
+      "KuStatusRequestV1": 19472,
+      "KuPreparedArtifactV1": 19473,
+      "KuSummaryV1": 19474
+    },
+    "domain": "semantic-content/1",
+    "golden_vectors": "ku-semantic-content-v1.json",
+    "golden_sha256": "9e8664535ee9449998d6d7259314b5550829b77cd374fecbbdf5eb529299a1d0"
+  }
 }

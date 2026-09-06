@@ -131,6 +131,7 @@ Typed ID wrappers MUST be used in Rust/API code even though all current digests 
 | `checkpoint` | `CheckpointCID` | Signed FeedCheckpoint. |
 | `manifest` | `ManifestCID` | Object/chunk/archive manifest. |
 | `test-vector` | `VectorCID` | Conformance fixture identity. |
+| `semantic-content` | `SemanticContentCID` | KU-PC-A finite normalized SEM comparison identity; private provenance excluded, never an ObjectCID alias. Added by KU-RUN-001 under D-016. |
 
 Adding or renaming a domain is a contract change and requires a registry entry plus golden collision-separation vectors.
 

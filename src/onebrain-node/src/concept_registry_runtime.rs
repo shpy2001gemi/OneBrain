@@ -447,7 +447,7 @@ fn load_registry_artifact(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::fs;
 
     use super::*;
@@ -547,7 +547,7 @@ mod tests {
         }
     }
 
-    fn install_signed_release(root: &std::path::Path) -> SigningKey {
+    pub(crate) fn install_signed_release(root: &std::path::Path) -> SigningKey {
         let source_dir = root.join("source");
         let registry_root = root.join("registry");
         fs::create_dir_all(&source_dir).unwrap();
