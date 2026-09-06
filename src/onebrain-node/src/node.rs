@@ -1228,6 +1228,18 @@ impl OneBrainNode {
             .and_then(|runtime| runtime.services().ok())
     }
 
+    /// Cloneable authenticated KU handle; release the node mutex before invoking it.
+    pub fn ku_services(
+        &self,
+        principal: [u8; 32],
+        proof: &[u8],
+    ) -> Result<crate::ku_product::KuServices, crate::base_runtime::BaseServiceError> {
+        self.base_runtime
+            .as_ref()
+            .ok_or_else(crate::ku_product::unavailable)?
+            .ku_services(principal, proof)
+    }
+
     pub fn issue_base_management_grant(
         &self,
         principal: [u8; 32],

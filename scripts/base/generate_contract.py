@@ -608,11 +608,18 @@ def render_dart(idl: dict[str, object]) -> str:
 
 def render_all(idl: dict[str, object]) -> dict[str, str]:
     validate_idl(idl)
-    return {
+    outputs = {
         "rust": render_rust(idl),
         "typescript": render_typescript(idl),
         "dart": render_dart(idl),
     }
+    if "ku_payloads" in idl:
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from scripts.base import ku_payloads
+        for target in outputs:
+            outputs[target] += "\n" + getattr(ku_payloads, f"render_{target}")(idl["ku_payloads"])
+    return outputs
 
 
 def write_outputs(
@@ -720,6 +727,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         idl = _load_json(IDL_PATH, "Base runtime machine IDL")
         verify_task14_baseline(arguments.baseline_receipt.resolve(), idl)
+        if "ku_payloads" in idl:
+            from scripts.ci.validate_ku_registration import validate_registration
+            try:
+                validate_registration(_load_json(ROOT / "src/test-vectors/vnext/ku-product-workflow-v1.json", "KU product contract"), idl)
+            except ValueError as error:
+                raise GenerationError(str(error)) from error
         outputs = render_all(idl)
         write_outputs(outputs, OUTPUT_PATHS, check=arguments.check)
     except GenerationError as error:

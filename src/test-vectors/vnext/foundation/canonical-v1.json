@@ -55,7 +55,8 @@
     { "id": "domain-checkpoint", "domain": "checkpoint", "canonical_hex": "a0", "digest_hex": "2f8dec5e8a00902dbf9897c063cf1728d8e59f81153cc2c81864f912bc6eca31" },
     { "id": "domain-manifest", "domain": "manifest", "canonical_hex": "a0", "digest_hex": "0ee0b1474de8693f1a7c7ebca13ef4fbfa982fccecc045802c40e73767d9114d" },
     { "id": "domain-test-vector", "domain": "test-vector", "canonical_hex": "a0", "digest_hex": "59b4e63b34e0556de9ca1025e56cadbb54197db91fa5aa3940c1af1d3e90e25b" },
-    { "id": "domain-signature", "domain": "signature", "canonical_hex": "a0", "digest_hex": "869d6a104f64433a5c173003022bdc40c294ceabc13ba031e6d091293a840650" }
+    { "id": "domain-signature", "domain": "signature", "canonical_hex": "a0", "digest_hex": "869d6a104f64433a5c173003022bdc40c294ceabc13ba031e6d091293a840650" },
+    {"id": "domain-semantic-content", "domain": "semantic-content", "canonical_hex": "a0", "digest_hex": "4b6160440776adfebaba4b9ce675c5450f1c6d6d05b33687e5164948554c9e3f"}
   ],
   "envelopes": [
     { "id": "envelope-base", "canonical_hex": "a400070101020003a0", "schema_id": 7, "schema_major": 1, "known_body_fields": [0, 1], "known_critical_extensions": [42] },

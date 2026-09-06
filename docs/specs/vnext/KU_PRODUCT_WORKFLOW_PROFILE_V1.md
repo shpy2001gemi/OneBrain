@@ -1,6 +1,6 @@
 # OneBrain vNext — Shared KU product workflow v1
 
-> Task: `KU-CON-001` — **owner approved**, registration and implementation pending.
+> Task: `KU-CON-001` — **owner approved**; additive registration implemented by `KU-RUN-001` under D-016.
 > Profile: `KU_PRODUCT_WORKFLOW_PROFILE_V1`, version `1.0`.
 > Machine inventory: [ku-product-workflow-v1.json](../../../src/test-vectors/vnext/ku-product-workflow-v1.json).
 > Baseline: `d8effb772b0cb7766e91b799dd598061a81a9df5`.
@@ -23,8 +23,10 @@ reinterpreted by accepting this additive profile.
 | KU-PC-B | Add the eleven local operations and typed DTOs in the machine inventory, with private save and explicit preparation/confirmation. | Generated Base payload registration/compatibility revision before dispatch; no local-command IDs, new REST paths, CLI spellings or WS events are assigned here. |
 | KU-PC-C | Add a private durable revision journal/projection that relates exact predecessor/successor objects without changing either object. | Local management metadata, not an Assembly revision event or replicated author claim. Replicated supersession requires a separate event contract. |
 
-The approved contract still requires those registration/vector gates before
-KU-RUN-001 can dispatch new payloads. `BaseLocalCommandV1.kind` is a closed
+The registration/vector gates are now bound by the machine inventory's
+`registration` record, Base profile 1.2 and the independent semantic golden
+corpus. The original D-015 approval snapshot remains historical evidence.
+`BaseLocalCommandV1.kind` is a closed
 registration boundary, not permission to invent numbers. A future API adapter
 uses `/api/vnext/...` and the existing envelopes; it does not reinterpret
 `/api/encode`, `/api/kus`, `/api/kql` or the read-only six-stage workflow.

@@ -86,6 +86,39 @@ and verify that neither a partial record nor a false accepted state remains.
 
 ## 6. Acceptance evidence
 
+### Additive KU local journal boundary (D-016)
+
+Private Vault purpose byte 4 identifies bounded local metadata, separate from
+accepted (1), quarantine (2) and staging (3). Its record-kind byte remains
+Object; the 32-byte binding is local metadata identity, never an ObjectCID.
+Seal/open accepts at most 8 MiB plaintext plus the existing 41-byte overhead.
+This API provides authenticated encryption only and cannot accept a canonical
+object. Existing sealed records, purpose values and canonical hashes retain
+their meaning.
+
+KU-RUN-001 uses one owner-specific subdirectory `ku-product-v1` under the active
+dataset's VAULT owner. `objects.redb` is its sole PrivateVault acceptance owner;
+`journal.redb` holds encrypted preparation, provenance, revision and commit
+metadata, bound to dataset and operation. The existing Base operation journal
+stores only an opaque KU marker and operation ID for its prepared command.
+The Base journal retains its established operation/principal metadata and
+receipts; source bytes, canonical previews, binding provenance and semantic
+fingerprints stay in the encrypted KU journal.
+
+Save writes the finite validated object set, then its encrypted commit marker,
+then the Base receipt. KU reads require the complete commit marker; interrupted
+object writes are not listed as accepted product results. Reconciliation repairs
+only an explicitly confirmed exact staged command. Interrupted preparation
+without a confirmation key resolves to failure without running the encoder.
+An authenticated same-dataset prepared marker can retain Prepared across a
+process restart; its full encrypted bundle must still validate before use.
+Committed reopen verifies the Vault records before rebuilding the local index.
+Cancellation retains encrypted staging as evidence and never removes accepted
+objects. Metadata has finite capacity (1,024 operations, 64 MiB ciphertext); no
+automatic retention/deletion or archive schema is introduced by this change.
+
+### Conformance checks
+
 - Valid object bytes round-trip exactly and duplicate insertion is idempotent.
 - Malformed canonical bytes never enter the accepted namespace.
 - A changed payload under the same claimed CID cannot replace accepted bytes and

@@ -43,6 +43,7 @@ pub mod resolution;
 pub mod revocation;
 pub mod schema_registry;
 pub mod semantic;
+pub mod semantic_content;
 pub mod source_text;
 pub mod storage;
 pub mod use_evidence;
@@ -121,7 +122,8 @@ pub use checkpoint_compaction::{
 };
 pub use content_id::{
     signature_message, CheckpointCid, EventCid, FeedHeadCid, FeedIdMaterial, LeaseCid, ManifestCid,
-    MappingKernelCid, ObjectCid, PermitCid, ReservedDomain, SelectorCid, TypedDigest, VectorCid,
+    MappingKernelCid, ObjectCid, PermitCid, ReservedDomain, SelectorCid, SemanticContentCid,
+    TypedDigest, VectorCid,
 };
 pub use event::{
     decode_knowledge_event, event_author_feed, EventReadiness, EventReplayGuard,

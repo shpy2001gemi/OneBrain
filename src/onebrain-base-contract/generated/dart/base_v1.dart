@@ -2,7 +2,7 @@
 import 'dart:typed_data';
 
 const int baseRuntimeProfileMajor = 1;
-const int baseRuntimeProfileMinor = 1;
+const int baseRuntimeProfileMinor = 2;
 
 extension type const BaseCapabilitySet(List<int> value) {}
 
@@ -695,6 +695,47 @@ final class FeedAuthorPublicIdV1 {
   final Uint8List value;
 }
 
+enum KuDtoKindV1 {
+  kuPrepareV1(19457),
+  kuPreparedV1(19458),
+  kuOperationRefV1(19459),
+  kuSaveV1(19460),
+  kuReceiptV1(19461),
+  kuGetV1(19462),
+  kuViewV1(19463),
+  kuListV1(19464),
+  kuSearchV1(19465),
+  kuPageV1(19466),
+  kuReviseV1(19467),
+  kuExportV1(19468),
+  kuExportViewV1(19469),
+  kuStatusV1(19470),
+  kuFailureV1(19471),
+  kuStatusRequestV1(19472),
+  kuPreparedArtifactV1(19473),
+  kuSummaryV1(19474);
+
+  const KuDtoKindV1(this.discriminator);
+  final int discriminator;
+}
+
+enum KuOperationKindV1 {
+  prepare(19201),
+  preview(19202),
+  save(19203),
+  get(19204),
+  list(19205),
+  search(19206),
+  revise(19207),
+  export(19208),
+  status(19209),
+  cancel(19210),
+  reconcile(19211);
+
+  const KuOperationKindV1(this.discriminator);
+  final int discriminator;
+}
+
 final class MigrationVectorBindingV1 {
   const MigrationVectorBindingV1({
     required this.vector_id,
@@ -862,3 +903,315 @@ enum TopicKindV1 {
   const TopicKindV1(this.discriminator);
   final int discriminator;
 }
+
+// Registered KU local payload declarations.
+typedef KuPayloadObjectCID = String;
+typedef KuPayloadSemanticContentCID = String;
+typedef KuPayloadSourceArtifactCID = String;
+typedef KuPayloadReleaseRoot = String;
+typedef KuPayloadImplementationCommitment = String;
+typedef KuPayloadRevisionFrontier = String;
+typedef KuPayloadOperationId = String;
+typedef KuPayloadIdempotencyKey = String;
+typedef KuPayloadRequestId = String;
+typedef KuPayloadPolicyCID = String;
+typedef KuPayloadCCID = String;
+typedef KuPayloadText = String;
+typedef KuPayloadLimitation = String;
+typedef KuPayloadContinuation = String;
+typedef KuPayloadU64 = int;
+typedef KuPayloadPageLimit = int;
+typedef KuPayloadCanonicalPreview = String;
+enum KuPayloadDisclosure { vLOCALONLY("LOCAL_ONLY"), vNEGOTIATEDENCRYPTED("NEGOTIATED_ENCRYPTED");
+const KuPayloadDisclosure(this.wireValue); final String wireValue;
+}
+enum KuPayloadValidity { vReady("ready"), vNeedsResolution("needs_resolution"), vRejected("rejected");
+const KuPayloadValidity(this.wireValue); final String wireValue;
+}
+enum KuPayloadCoverage { vLocalOnly("local_only"), vPartial("partial");
+const KuPayloadCoverage(this.wireValue); final String wireValue;
+}
+enum KuPayloadLifecycle { vDisabled("disabled"), vRequested("requested"), vActive("active"), vDegraded("degraded");
+const KuPayloadLifecycle(this.wireValue); final String wireValue;
+}
+enum KuPayloadBaseState { vReserved("reserved"), vPrepared("prepared"), vConfirming("confirming"), vCommitted("committed"), vCanceled("canceled"), vFailed("failed"), vUnknownOutcome("unknown_outcome");
+const KuPayloadBaseState(this.wireValue); final String wireValue;
+}
+typedef KuPayloadFalse = bool;
+typedef KuPayloadBoolean = bool;
+enum KuPayloadBaseError { vInvalidRequest("InvalidRequest"), vNotFound("NotFound"), vConflict("Conflict"), vExpired("Expired"), vRateLimited("RateLimited"), vCapabilityDisabled("CapabilityDisabled"), vDependencyUnavailable("DependencyUnavailable"), vIncompatibleProfile("IncompatibleProfile"), vResourceExhausted("ResourceExhausted"), vCorruptState("CorruptState"), vReprovisionRequired("ReprovisionRequired"), vUnknownOutcome("UnknownOutcome"), vInternalError("InternalError");
+const KuPayloadBaseError(this.wireValue); final String wireValue;
+}
+enum KuPayloadExportMode { vCanonicalPublicExchange("canonical_public_exchange"), vEncryptedBaseArchive("encrypted_base_archive");
+const KuPayloadExportMode(this.wireValue); final String wireValue;
+}
+enum KuPayloadInputMode { vResolvedSemanticDraft("resolved_semantic_draft"), vLocalRule("local_rule"), vLocalAi("local_ai");
+const KuPayloadInputMode(this.wireValue); final String wireValue;
+}
+typedef KuPayloadObjectIDs = List<KuPayloadObjectCID>;
+typedef KuPayloadSources = List<KuPayloadSourceArtifactCID>;
+typedef KuPayloadLimitations = List<KuPayloadLimitation>;
+typedef KuPayloadKuViews = List<KuPayloadKuSummaryV1>;
+typedef KuPayloadPreparedArtifacts = List<KuPayloadKuPreparedArtifactV1>;
+enum KuPayloadArtifactDisclosure { vPUBLIC("PUBLIC"), vROUTEMINIMAL("ROUTE_MINIMAL"), vLOCALONLY("LOCAL_ONLY"), vNEGOTIATEDENCRYPTED("NEGOTIATED_ENCRYPTED");
+const KuPayloadArtifactDisclosure(this.wireValue); final String wireValue;
+}
+enum KuPayloadArtifactValidity { vAcceptedKnown("accepted_known"), vAcceptedOpaque("accepted_opaque");
+const KuPayloadArtifactValidity(this.wireValue); final String wireValue;
+}
+final class KuPayloadKuPrepareV1 {
+const KuPayloadKuPrepareV1({
+required this.operation_id,
+required this.idempotency_key,
+required this.input_mode,
+required this.source_refs,
+required this.registry_release_root,
+required this.semantic_profile,
+required this.implementation_commitment,
+required this.destination,
+this.draft_ref,
+});
+final KuPayloadOperationId operation_id;
+final KuPayloadIdempotencyKey idempotency_key;
+final KuPayloadInputMode input_mode;
+final KuPayloadSources source_refs;
+final KuPayloadReleaseRoot registry_release_root;
+final KuPayloadText semantic_profile;
+final KuPayloadImplementationCommitment implementation_commitment;
+final KuPayloadDisclosure destination;
+final KuPayloadObjectCID? draft_ref;
+}
+final class KuPayloadKuPreparedV1 {
+const KuPayloadKuPreparedV1({
+required this.operation_id,
+required this.validity,
+required this.object_cids,
+required this.registry_release_root,
+required this.semantic_profile,
+required this.destination,
+required this.limitations,
+required this.executable,
+required this.artifacts,
+});
+final KuPayloadOperationId operation_id;
+final KuPayloadValidity validity;
+final KuPayloadObjectIDs object_cids;
+final KuPayloadReleaseRoot registry_release_root;
+final KuPayloadText semantic_profile;
+final KuPayloadDisclosure destination;
+final KuPayloadLimitations limitations;
+final KuPayloadFalse executable;
+final KuPayloadPreparedArtifacts artifacts;
+}
+final class KuPayloadKuOperationRefV1 {
+const KuPayloadKuOperationRefV1({
+required this.operation_id,
+});
+final KuPayloadOperationId operation_id;
+}
+final class KuPayloadKuSaveV1 {
+const KuPayloadKuSaveV1({
+required this.operation_id,
+required this.idempotency_key,
+required this.object_cids,
+});
+final KuPayloadOperationId operation_id;
+final KuPayloadIdempotencyKey idempotency_key;
+final KuPayloadObjectIDs object_cids;
+}
+final class KuPayloadKuReceiptV1 {
+const KuPayloadKuReceiptV1({
+required this.operation_id,
+required this.state,
+required this.object_cids,
+required this.limitations,
+required this.published,
+required this.authorizes_reward,
+});
+final KuPayloadOperationId operation_id;
+final KuPayloadBaseState state;
+final KuPayloadObjectIDs object_cids;
+final KuPayloadLimitations limitations;
+final KuPayloadFalse published;
+final KuPayloadFalse authorizes_reward;
+}
+final class KuPayloadKuGetV1 {
+const KuPayloadKuGetV1({
+required this.object_cid,
+});
+final KuPayloadObjectCID object_cid;
+}
+final class KuPayloadKuViewV1 {
+const KuPayloadKuViewV1({
+required this.object_cid,
+required this.disclosure_class,
+required this.artifact_validity,
+required this.coverage,
+required this.limitations,
+required this.executable,
+required this.canonical_bytes,
+this.semantic_content_cid,
+this.fidelity_policy_cid,
+this.fidelity_frontier,
+});
+final KuPayloadObjectCID object_cid;
+final KuPayloadArtifactDisclosure disclosure_class;
+final KuPayloadArtifactValidity artifact_validity;
+final KuPayloadCoverage coverage;
+final KuPayloadLimitations limitations;
+final KuPayloadFalse executable;
+final KuPayloadCanonicalPreview canonical_bytes;
+final KuPayloadSemanticContentCID? semantic_content_cid;
+final KuPayloadPolicyCID? fidelity_policy_cid;
+final KuPayloadRevisionFrontier? fidelity_frontier;
+}
+final class KuPayloadKuListV1 {
+const KuPayloadKuListV1({
+required this.limit,
+this.continuation,
+});
+final KuPayloadPageLimit limit;
+final KuPayloadContinuation? continuation;
+}
+final class KuPayloadKuSearchV1 {
+const KuPayloadKuSearchV1({
+required this.query,
+required this.limit,
+this.continuation,
+});
+final KuPayloadText query;
+final KuPayloadPageLimit limit;
+final KuPayloadContinuation? continuation;
+}
+final class KuPayloadKuPageV1 {
+const KuPayloadKuPageV1({
+required this.items,
+required this.coverage,
+required this.snapshot_frontier,
+required this.limitations,
+this.continuation,
+});
+final KuPayloadKuViews items;
+final KuPayloadCoverage coverage;
+final KuPayloadRevisionFrontier snapshot_frontier;
+final KuPayloadLimitations limitations;
+final KuPayloadContinuation? continuation;
+}
+final class KuPayloadKuReviseV1 {
+const KuPayloadKuReviseV1({
+required this.preparation,
+required this.predecessor_object_cid,
+required this.expected_revision_frontier,
+});
+final KuPayloadKuPrepareV1 preparation;
+final KuPayloadObjectCID predecessor_object_cid;
+final KuPayloadRevisionFrontier expected_revision_frontier;
+}
+final class KuPayloadKuExportV1 {
+const KuPayloadKuExportV1({
+required this.object_cids,
+required this.mode,
+});
+final KuPayloadObjectIDs object_cids;
+final KuPayloadExportMode mode;
+}
+final class KuPayloadKuExportViewV1 {
+const KuPayloadKuExportViewV1({
+required this.mode,
+required this.object_cids,
+required this.limitations,
+required this.requires_base_management,
+this.public_records,
+this.archive_operation_id,
+});
+final KuPayloadExportMode mode;
+final KuPayloadObjectIDs object_cids;
+final KuPayloadLimitations limitations;
+final KuPayloadBoolean requires_base_management;
+final KuPayloadCanonicalPreview? public_records;
+final KuPayloadOperationId? archive_operation_id;
+}
+final class KuPayloadKuStatusV1 {
+const KuPayloadKuStatusV1({
+required this.lifecycle,
+required this.coverage,
+required this.limitations,
+required this.registry_ready,
+required this.local_encoder_ready,
+required this.remote_encoding_enabled,
+required this.direct_issuance_enabled,
+this.receipt,
+});
+final KuPayloadLifecycle lifecycle;
+final KuPayloadCoverage coverage;
+final KuPayloadLimitations limitations;
+final KuPayloadBoolean registry_ready;
+final KuPayloadBoolean local_encoder_ready;
+final KuPayloadFalse remote_encoding_enabled;
+final KuPayloadFalse direct_issuance_enabled;
+final KuPayloadKuReceiptV1? receipt;
+}
+final class KuPayloadKuFailureV1 {
+const KuPayloadKuFailureV1({
+required this.code,
+required this.retryable,
+required this.reconcile_before_retry,
+required this.limitations,
+});
+final KuPayloadBaseError code;
+final KuPayloadBoolean retryable;
+final KuPayloadBoolean reconcile_before_retry;
+final KuPayloadLimitations limitations;
+}
+final class KuPayloadKuStatusRequestV1 {
+const KuPayloadKuStatusRequestV1({
+this.operation_id,
+});
+final KuPayloadOperationId? operation_id;
+}
+final class KuPayloadKuPreparedArtifactV1 {
+const KuPayloadKuPreparedArtifactV1({
+required this.object_cid,
+required this.semantic_content_cid,
+required this.canonical_preview,
+});
+final KuPayloadObjectCID object_cid;
+final KuPayloadSemanticContentCID semantic_content_cid;
+final KuPayloadCanonicalPreview canonical_preview;
+}
+final class KuPayloadKuSummaryV1 {
+const KuPayloadKuSummaryV1({
+required this.object_cid,
+required this.disclosure_class,
+required this.artifact_validity,
+required this.coverage,
+required this.limitations,
+required this.executable,
+this.semantic_content_cid,
+this.fidelity_policy_cid,
+this.fidelity_frontier,
+});
+final KuPayloadObjectCID object_cid;
+final KuPayloadArtifactDisclosure disclosure_class;
+final KuPayloadArtifactValidity artifact_validity;
+final KuPayloadCoverage coverage;
+final KuPayloadLimitations limitations;
+final KuPayloadFalse executable;
+final KuPayloadSemanticContentCID? semantic_content_cid;
+final KuPayloadPolicyCID? fidelity_policy_cid;
+final KuPayloadRevisionFrontier? fidelity_frontier;
+}
+const kuOperationIds = <String, int>{
+'prepare': 19201,
+'preview': 19202,
+'save': 19203,
+'get': 19204,
+'list': 19205,
+'search': 19206,
+'revise': 19207,
+'export': 19208,
+'status': 19209,
+'cancel': 19210,
+'reconcile': 19211,
+};
+const kuDtoIds = <String, int>{"KuPrepareV1": 19457, "KuPreparedV1": 19458, "KuOperationRefV1": 19459, "KuSaveV1": 19460, "KuReceiptV1": 19461, "KuGetV1": 19462, "KuViewV1": 19463, "KuListV1": 19464, "KuSearchV1": 19465, "KuPageV1": 19466, "KuReviseV1": 19467, "KuExportV1": 19468, "KuExportViewV1": 19469, "KuStatusV1": 19470, "KuFailureV1": 19471, "KuStatusRequestV1": 19472, "KuPreparedArtifactV1": 19473, "KuSummaryV1": 19474};

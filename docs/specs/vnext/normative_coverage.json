@@ -924,7 +924,7 @@
         },
         {
           "path": "src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json",
-          "needle": "bdfb630138e6c4dbb012825c47a59aec176d093ea828d0d52609bedb632feba7"
+          "needle": "3d6354d69f8d1a6ad8045ee8d879288992d6d3d8a5c0140d87dc7c6017ee9a90"
         },
         {
           "path": "src/test-vectors/vnext/base-v1-compatibility-v1.json",

@@ -213,3 +213,18 @@ gates before runtime dispatch. Acceptance does not allocate unspecified
 numeric IDs, routes or WS events or enable an implementation/rollout lane.
 D-012–D-014 retain their separate required distribution, work and economic
 specification dependencies. Do not ask the owner to approve KU-PC-A/B/C again.
+
+## D-016 — KU-RUN-001 registration scope accepted
+
+On 2026-09-05 the owner answered "đồng ý" to the concrete registration scope
+extension recorded in PROGRESS.md at `9fb94dd`. KU-RUN-001 now includes the
+approved semantic domain and golden vectors, generated Base KU payload/DTO
+registration, append-only history and compatibility revision, and corresponding
+validator changes, followed by the original runtime implementation and gates.
+No further approval of these prerequisite changes is needed. Existing task
+exclusions and default-off network policy remain in effect.
+
+The owner also reports owning the Internet domain `onebrain.live`. This is
+infrastructure context for later separately scoped hosting/discovery work;
+it does not change the cryptographic `semantic-content/1` domain or authorize
+DNS, deployment, listener or rollout changes in KU-RUN-001.

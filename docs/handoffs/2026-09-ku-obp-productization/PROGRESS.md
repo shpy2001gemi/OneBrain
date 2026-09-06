@@ -7,7 +7,7 @@
 
 - Current task: `KU-RUN-001`
 - Current branch: `codex/ku-run-001-shared-service`
-- Current state: `Blocked`; registration contract scope needs an explicit revision
+- Current state: `Review`; D-016 registration and KU-RUN-001 implementation gates pass
 - Last accepted task: `KU-CON-001`, merge `2cbc8f263961d5a6368ef2c7bdc5a77f209d5b21` on `origin/main`
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -19,7 +19,7 @@
 | 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | — | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011–D-014. |
 | 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; merge `b872263` on `origin/main`. |
 | 3 | `KU-CON-001` | Merged | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge `2cbc8f2` on `origin/main`. |
-| 4 | `KU-RUN-001` | Blocked | `codex/ku-run-001-shared-service` | `KU-CON-001` | [Registration preflight and proposed scope extension](#ku-run-001-registration-preflight--2026-09-05); starting main `91cc715`. |
+| 4 | `KU-RUN-001` | Review | `codex/ku-run-001-shared-service` | `KU-CON-001` | [Implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md); starting main `91cc715`; no merge. |
 | 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001` | — |
 | 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
 | 7 | `KU-WEB-001` | Planned | `codex/ku-web-001-workflow` | `KU-API-001` | — |
@@ -261,6 +261,32 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
   are unchanged. Only README/PROGRESS handoff records changed. Runtime tests,
   workspace check and Rust format are not claimed; KU-RUN-001 remains
   incomplete and cannot be marked Review on this evidence.
+
+### KU-RUN-001 review evidence — 2026-09-06
+
+- D-016 supersedes the historical preflight blocker above. The owner approved
+  its registration scope and reported `onebrain.live`; no DNS/deployment work
+  was needed or performed.
+- Delivered registered semantic identity/goldens, Base 1.2 payload/DTO/history
+  generation, authenticated node-owned KU service, encrypted recoverable
+  private save, snapshot index/revisions and typed lifecycle/recovery fences.
+  Full evidence and integration limits:
+  [KU_RUN_001_IMPLEMENTATION.md](outputs/KU_RUN_001_IMPLEMENTATION.md).
+- Validation: node library **117 PASS**, core foundation **196 PASS**, semantic
+  golden suite **2 PASS** plus child run, Base contract **21 PASS**, Base facade/
+  exchange/recovery/capability/index integration **22 PASS**. Six real process
+  kills verify partial-save visibility and exact recovery without model replay.
+- Whole-workspace `cargo check --workspace --locked -q` and
+  `cargo fmt --all -- --check` pass. Generated `--check`, global vNext contract
+  validator and **85 Python tests** pass. Existing TypeScript conformance and
+  both Dart conformance tests pass outside the mobile subtree.
+- Host input/Registry/public-read ports are explicit. Test encoders are
+  controlled fixtures; no live AI, automatic Registry synchronization, remote
+  work, minting or product UI qualification is claimed. Private export is a
+  Base management reservation; portable KU metadata/archive round-trip remains
+  unqualified. Network and default rollout are unchanged.
+- Current task remains KU-RUN-001 for owner review. Do not merge/delete the
+  branch or start KU-API-001 without the corresponding instruction.
 
 ### Protocol
 

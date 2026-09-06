@@ -28,9 +28,9 @@ class KuProductContractTests(unittest.TestCase):
     def test_approved_contract_and_dto_fixtures_pass(self) -> None:
         self.assertEqual(validate_contract(self.profile), (11, 18, 11))
 
-    def test_approval_does_not_silently_enable_implementation(self) -> None:
-        self.mutate(("implementation_enabled",), True, "silently enable")
-        self.mutate(("status",), "frozen", "silently enable")
+    def test_registered_implementation_state_is_explicit(self) -> None:
+        self.mutate(("implementation_enabled",), False, "implementation gate")
+        self.mutate(("status",), "owner_approved_pending_registration", "implementation gate")
 
     def test_owner_approval_is_bound_to_reviewed_items_and_commit(self) -> None:
         self.mutate(("approval", "accepted"), False, "approval evidence")

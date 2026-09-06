@@ -2,6 +2,7 @@
 
 mod compatibility;
 mod generated;
+pub mod ku_payload;
 mod negotiation;
 mod operation;
 

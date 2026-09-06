@@ -38,6 +38,16 @@ impl<B> Clone for SharedVNextValidatedSink<B> {
 }
 
 impl<B: AtomicVerifiedBackend> SharedVNextValidatedSink<B> {
+    /// Exact read through the existing acceptance owner; no second store is opened.
+    pub fn get_object(&self, cid: ObjectCid) -> Result<Option<Vec<u8>>, String> {
+        self.0
+            .lock()
+            .map_err(|_| "VNEXT_VALIDATED_SINK_LOCK_POISONED".to_string())?
+            .store()
+            .get_object(cid)
+            .map_err(|error| error.to_string())
+    }
+
     pub fn new(sink: VNextValidatedSink<B>) -> Self {
         Self(Arc::new(Mutex::new(sink)))
     }

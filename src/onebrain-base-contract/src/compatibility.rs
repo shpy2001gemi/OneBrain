@@ -13,12 +13,12 @@ use crate::{
 };
 use crate::{BaseContractError, BoundedAscii, BoundedVec};
 
-/// Frozen source version of the Task 27 Base v1 qualification candidate.
+/// Development source version after the additive KU-RUN-001 registration.
 /// Qualification remains a separate runtime state and is never implied by
 /// this version value.
 pub const BASE_V1_RELEASE_VERSION: crate::BaseReleaseVersion = crate::BaseReleaseVersion {
     major: 1,
-    minor: 0,
+    minor: 2,
     patch: 0,
     prerelease: None,
 };

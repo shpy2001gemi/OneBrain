@@ -2,7 +2,7 @@
 
 > **Status:** Frozen
 > **Profile ID:** `BASE_V1_RUNTIME_INTERFACE_V1`
-> **Profile version:** `1.1`
+> **Profile version:** `1.2`
 > **Product API projection:** `VNEXT_PRODUCT_INTEGRATION_PROFILE_V1/1.1`
 > **Machine IDL:** [`base-v1-runtime-interface-v1.json`](../../../src/test-vectors/vnext/base-v1-runtime-interface-v1.json)
 > **Discriminator history:** [`base-v1-runtime-interface-history-v1.json`](../../../src/test-vectors/vnext/base-v1-runtime-interface-history-v1.json)
@@ -30,6 +30,25 @@ The archive command semantics are those frozen by the
 [Base v1 Storage Integrity Profile](BASE_V1_STORAGE_INTEGRITY_PROFILE.md) and
 its machine archive vector. This interface transports bounded opaque capabilities; it does
 not make filesystems or Rust readers/writers part of the public contract.
+
+### Additive KU registration (D-016)
+
+Base profile 1.2 registers the eleven local KU payload kinds `0x4b01..0x4b0b`
+and eighteen DTO kinds `0x4c01..0x4c12` in the machine IDL and append-only
+history. `ku_payloads` is the generated declaration source for bounded UTF-8
+JSON payloads; canonical object bytes remain separately validated binary data.
+Rust performs payload validation; TypeScript and Dart declarations retain the
+same IDs and wire values for later adapters. The existing Base operation,
+request, response and management discriminators retain their meanings.
+
+The development Base candidate advances to 1.2.0 with a changed domain and
+feature compatibility digest. Qualification remains separate. Older hosts
+cannot dispatch these registered payloads; adapters require negotiated Base
+minor 2 and preserve the existing envelopes and session fences. The host-only
+`ku_services` constructor authenticates the principal and returns a weak,
+generation-bound service. Generic local-command dispatch cannot bypass KU
+validation, confirmation or cancellation rules. Product API and C ABI profile
+versions remain unchanged; no transport adapter is introduced here.
 
 ## 2. Closed operation surface
 

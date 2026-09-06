@@ -110,6 +110,7 @@ enum VaultPurpose {
     Accepted = 1,
     Quarantine = 2,
     Staging = 3,
+    LocalMetadata = 4,
 }
 
 fn vault_aad(purpose: VaultPurpose, kind: StoredRecordKind, cid: [u8; 32]) -> Vec<u8> {
@@ -187,6 +188,40 @@ pub struct PrivateVault<B> {
 }
 
 impl<B: AtomicVerifiedBackend> PrivateVault<B> {
+    /// Node-owned encrypted local journals, with a purpose distinct from accepted
+    /// canonical data. This never grants an accepted-object write capability.
+    pub fn seal_local_metadata(
+        &self,
+        binding: [u8; 32],
+        bytes: &[u8],
+    ) -> Result<Vec<u8>, VerifiedStoreError> {
+        if bytes.len() > 8 * 1024 * 1024 {
+            return Err(VerifiedStoreError::VaultCrypto);
+        }
+        self.cipher.seal(
+            VaultPurpose::LocalMetadata,
+            StoredRecordKind::Object,
+            binding,
+            bytes,
+        )
+    }
+
+    pub fn open_local_metadata(
+        &self,
+        binding: [u8; 32],
+        sealed: &[u8],
+    ) -> Result<Vec<u8>, VerifiedStoreError> {
+        if sealed.len() > 8 * 1024 * 1024 + 41 {
+            return Err(VerifiedStoreError::VaultCrypto);
+        }
+        self.cipher.open(
+            VaultPurpose::LocalMetadata,
+            StoredRecordKind::Object,
+            binding,
+            sealed,
+        )
+    }
+
     pub fn new(backend: B, key: VaultKey) -> Self {
         Self {
             store: ValidatedStore::new(backend),
@@ -732,6 +767,41 @@ fn verify_vault_cid(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn local_metadata_is_bound_private_and_separate_from_accepted_records() {
+        use super::*;
+        use crate::foundation::InMemoryVerifiedBackend;
+        let vault = PrivateVault::new(
+            InMemoryVerifiedBackend::default(),
+            VaultKey::from_bytes([17; 32]),
+        );
+        let binding = [18; 32];
+        let raw = b"private operation provenance";
+        let sealed = vault.seal_local_metadata(binding, raw).unwrap();
+        assert_eq!(vault.seal_local_metadata(binding, raw).unwrap(), sealed);
+        assert_eq!(vault.open_local_metadata(binding, &sealed).unwrap(), raw);
+        assert!(!sealed.windows(raw.len()).any(|w| w == raw));
+        assert!(vault.open_local_metadata([19; 32], &sealed).is_err());
+        let mut changed = sealed.clone();
+        changed[25] ^= 1;
+        assert!(vault.open_local_metadata(binding, &changed).is_err());
+        assert!(vault
+            .cipher
+            .open(
+                VaultPurpose::Accepted,
+                StoredRecordKind::Object,
+                binding,
+                &sealed
+            )
+            .is_err());
+        assert!(vault
+            .get_object(ObjectCid::from_bytes(binding))
+            .unwrap()
+            .is_none());
+        assert!(vault
+            .seal_local_metadata(binding, &vec![0; 8 * 1024 * 1024 + 1])
+            .is_err());
+    }
     use super::*;
     use crate::foundation::{
         CanonicalValue, InMemoryVerifiedBackend, KnowledgeObjectEnvelope, ObjectKind, SchemaVersion,

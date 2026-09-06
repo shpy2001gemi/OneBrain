@@ -630,6 +630,23 @@ impl BaseOperationStore {
         operation_id: BaseOperationId,
         principal_digest: [u8; 32],
     ) -> Result<BaseOperationReceiptV1, BaseOperationStoreError> {
+        self.cancel_with_policy(operation_id, principal_digest, false)
+    }
+
+    pub(crate) fn cancel_before_confirmation(
+        &self,
+        operation_id: BaseOperationId,
+        principal_digest: [u8; 32],
+    ) -> Result<BaseOperationReceiptV1, BaseOperationStoreError> {
+        self.cancel_with_policy(operation_id, principal_digest, true)
+    }
+
+    fn cancel_with_policy(
+        &self,
+        operation_id: BaseOperationId,
+        principal_digest: [u8; 32],
+        prepared_only: bool,
+    ) -> Result<BaseOperationReceiptV1, BaseOperationStoreError> {
         base_ops_failpoint("before_begin_write")?;
         let mut records = self.lock_records()?;
         base_ops_failpoint("after_begin_write_before_mutation")?;
@@ -643,6 +660,14 @@ impl BaseOperationStore {
         }
         if current.state == BaseOperationStateV1::Canceled {
             return self.receipt(&current);
+        }
+        if prepared_only
+            && !matches!(
+                current.state,
+                BaseOperationStateV1::Reserved | BaseOperationStateV1::Prepared
+            )
+        {
+            return Err(BaseOperationStoreError::Conflict);
         }
         if matches!(
             current.state,
@@ -1584,13 +1609,22 @@ fn load_records(
         if record.process_generation != process_generation
             || record.dataset_generation != dataset_generation
         {
+            let durable_ku_preparation = record.state == BaseOperationStateV1::Prepared
+                && record.dataset_generation == dataset_generation
+                && record.command.len() == crate::ku_product::KU_PREPARED_MARKER.len() + 32
+                && record
+                    .command
+                    .starts_with(crate::ku_product::KU_PREPARED_MARKER)
+                && record.command.ends_with(&record.operation_id);
             if !record.state.is_terminal() {
                 record.revision = next_revision(record.revision)?;
                 record.process_generation = process_generation;
                 record.dataset_generation = dataset_generation;
-                record.state = BaseOperationStateV1::UnknownOutcome;
-                record.error = Some(BaseErrorCodeV1::UnknownOutcome.discriminator());
-                record.reconcile_required = true;
+                if !durable_ku_preparation {
+                    record.state = BaseOperationStateV1::UnknownOutcome;
+                    record.error = Some(BaseErrorCodeV1::UnknownOutcome.discriminator());
+                    record.reconcile_required = true;
+                }
                 let envelope = envelope(record.clone())?;
                 let revision_path = operation
                     .path()

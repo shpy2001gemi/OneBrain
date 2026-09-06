@@ -686,6 +686,47 @@ pub struct SemanticFrameSet {
 }
 
 impl SemanticFrameSet {
+    /// All Registry-dependent CCIDs, including units in range bounds and tolerance.
+    pub fn concept_ccids(&self) -> Result<BTreeSet<ConceptCcid>, SemanticError> {
+        self.validate_shape()?;
+        let mut result = BTreeSet::new();
+        for statement in &self.statements {
+            result.insert(statement.operator_or_predicate);
+            visit_statement_terms(statement, &mut |term| {
+                match term {
+                    TermRef::Concept(ccid) => {
+                        result.insert(*ccid);
+                    }
+                    TermRef::Variable {
+                        type_constraint: Some(ccid),
+                        ..
+                    }
+                    | TermRef::Receptor {
+                        expected_type: Some(ccid),
+                        ..
+                    } => {
+                        result.insert(*ccid);
+                    }
+                    TermRef::Literal(LiteralValue::Quantity(q)) => {
+                        result.insert(q.source_unit.unit);
+                    }
+                    _ => {}
+                }
+                Ok(())
+            })?;
+            if let Some(q) = &statement.qualifiers.tolerance {
+                result.insert(q.source_unit.unit);
+            }
+            for constraint in &statement.constraints {
+                if let ConstraintExpression::Range { lower, upper, .. } = &constraint.expression {
+                    result.insert(lower.source_unit.unit);
+                    result.insert(upper.source_unit.unit);
+                }
+            }
+        }
+        Ok(result)
+    }
+
     /// Decode the frozen semantic profile from an already canonical value.
     /// The final round-trip check rejects unknown fields, non-normalized IDs,
     /// unreduced ratios, and every other alternate representation.
