@@ -3,7 +3,13 @@
 //! PrivateVault remains the canonical acceptance owner. The encrypted journal
 //! records the complete bundle before writes and publishes one commit marker
 //! only after every record has survived acceptance. Reads require that marker.
+use ku_encoder::extraction::{
+    ExtractionCheckpoint, ExtractionError, ExtractionJob, ExtractionJournal,
+};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -27,6 +33,7 @@ use crate::concept_registry_runtime::{
 use crate::dataset_path::{BaseStorageOwnerId, DatasetGenerationId, DatasetPathResolver};
 
 const JOURNAL: TableDefinition<&[u8], &[u8]> = TableDefinition::new("ku_private_journal_v1");
+const EXTRACTION: TableDefinition<&[u8], &[u8]> = TableDefinition::new("ku_private_extraction_v1");
 const MAX_OPERATIONS: usize = 1024;
 const MAX_JOURNAL_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SNAPSHOTS: usize = 32;
@@ -49,6 +56,25 @@ pub trait KuInputProvider: Send + Sync {
         registry: &ConceptRegistryReaderLease,
         budget: &ResourceBudgetV1,
     ) -> Result<KuResolvedInput, BaseServiceError>;
+    /// New extraction adapters override this finite async port. The default keeps
+    /// already-resolved host draft providers source-compatible.
+    fn resolve_async<'a>(
+        &'a self,
+        principal: [u8; 32],
+        request: &'a KuPrepareV1,
+        registry: &'a ConceptRegistryReaderLease,
+        budget: &'a ResourceBudgetV1,
+        _execution: KuExtractionExecution<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<KuResolvedInput, BaseServiceError>> + Send + 'a>> {
+        Box::pin(async move { self.resolve(principal, request, registry, budget) })
+    }
+}
+
+pub struct KuExtractionExecution<'a> {
+    pub journal: &'a dyn ExtractionJournal,
+    pub process: [u8; 32],
+    pub dataset: [u8; 32],
+    pub canceled: Arc<AtomicBool>,
 }
 
 /// Resolved input is unaccepted producer output. The service still validates
@@ -57,12 +83,30 @@ pub struct KuResolvedInput {
     pub drafts: Vec<SemanticFrameSet>,
     pub source_objects: Vec<Vec<u8>>,
     pub bindings: Vec<KuConceptBinding>,
+    pub needs_resolution: bool,
+    pub extraction_budget: Option<ku_encoder::extraction::WorkBudget>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct KuConceptBinding {
     pub label: String,
     pub selected: Option<[u8; 16]>,
+}
+
+fn charge_extraction(
+    budget: &mut Option<ku_encoder::extraction::WorkBudget>,
+    work: usize,
+) -> Result<(), BaseServiceError> {
+    if let Some(budget) = budget {
+        budget.charge(work).map_err(|e| {
+            if e.0 == "canceled" {
+                conflict()
+            } else {
+                resource()
+            }
+        })?;
+    }
+    Ok(())
 }
 
 /// Read-only view of the already owned public acceptance store.
@@ -148,6 +192,29 @@ struct Cursor {
     last_cid: [u8; 32],
 }
 
+struct ExtractionFlight<'a> {
+    store: &'a KuStore,
+    operation: [u8; 32],
+    cancel: Arc<AtomicBool>,
+}
+impl Drop for ExtractionFlight<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.store.extracting.lock() {
+            active.remove(&self.operation);
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExtractionEnvelope {
+    principal: [u8; 32],
+    dataset: [u8; 32],
+    operation: [u8; 32],
+    sources: Vec<[u8; 32]>,
+    checkpoint: ExtractionCheckpoint,
+}
+
 #[derive(Default)]
 struct Catalog {
     keys: BTreeMap<[u8; 32], OperationId>,
@@ -166,6 +233,9 @@ pub(crate) struct KuStore {
     vault: PrivateVault<RedbVerifiedBackend>,
     journal: Database,
     dataset: DatasetGenerationId,
+    process: [u8; 32],
+    extracting: Mutex<BTreeMap<[u8; 32], Arc<AtomicBool>>>,
+    canceled: Mutex<BTreeSet<[u8; 32]>>,
     inputs: Arc<dyn KuInputProvider>,
     registry: Option<Arc<ConceptRegistryGenerationManager>>,
     releases: Mutex<BTreeMap<[u8; 32], ConceptRegistryReaderLease>>,
@@ -177,9 +247,130 @@ pub(crate) struct KuStore {
 }
 
 impl KuStore {
+    fn begin_extraction(
+        &self,
+        operation: OperationId,
+    ) -> Result<ExtractionFlight<'_>, BaseServiceError> {
+        let canceled = self.canceled.lock().map_err(|_| corrupt())?;
+        if canceled.contains(&operation.0) {
+            return Err(conflict());
+        }
+        let mut active = self.extracting.lock().map_err(|_| corrupt())?;
+        if active.contains_key(&operation.0) {
+            return Err(conflict());
+        }
+        if active.len() >= MAX_OPERATIONS {
+            return Err(resource());
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        active.insert(operation.0, cancel.clone());
+        Ok(ExtractionFlight {
+            store: self,
+            operation: operation.0,
+            cancel,
+        })
+    }
+
+    fn extraction_key(&self, operation: [u8; 32]) -> [u8; 32] {
+        let mut h = blake3::Hasher::new_derive_key("onebrain:ku:private-extraction-binding:1");
+        h.update(&self.dataset.0);
+        h.update(&operation);
+        *h.finalize().as_bytes()
+    }
+
+    fn mark_extraction_prepared(
+        &self,
+        principal: [u8; 32],
+        operation: OperationId,
+        remaining: Option<&ku_encoder::extraction::WorkBudget>,
+        work_limit: u64,
+    ) -> Result<(), BaseServiceError> {
+        let tx = self.journal.begin_read().map_err(|_| corrupt())?;
+        let table = tx.open_table(EXTRACTION).map_err(|_| corrupt())?;
+        let value = table.get(operation.0.as_slice()).map_err(|_| corrupt())?;
+        let Some(value) = value else {
+            return Ok(());
+        };
+        let envelope = self.decode_extraction(operation.0, value.value())?;
+        if envelope.principal != principal {
+            return Err(not_found());
+        }
+        let mut checkpoint = envelope.checkpoint;
+        // Reopening a prepared bundle must not revive an old process attempt.
+        if checkpoint.process != self.process {
+            return Ok(());
+        }
+        checkpoint.phase = "prepared".into();
+        if let Some(remaining) = remaining {
+            checkpoint.work_charged = work_limit.saturating_sub(remaining.remaining());
+            let maximum = if checkpoint.contexts[0]["resource_profile"] == "standard" {
+                120_000
+            } else {
+                30_000
+            };
+            checkpoint.elapsed_ms = maximum - remaining.remaining_deadline_ms().min(maximum);
+        }
+        for attempt in &mut checkpoint.attempts {
+            attempt["phase"] = "prepared".into();
+            attempt["work_units_charged"] = checkpoint.work_charged.into();
+            if let Some(remaining) = remaining {
+                attempt["remaining_deadline_ms"] = remaining.remaining_deadline_ms().into();
+            }
+        }
+        let job = ExtractionJob {
+            principal,
+            operation: operation.0,
+            process: self.process,
+            dataset: self.dataset.0,
+            contexts: checkpoint.contexts.clone(),
+        };
+        drop(value);
+        drop(table);
+        drop(tx);
+        ExtractionJournal::store(self, &job, &checkpoint).map_err(|_| unknown())?;
+        if let Some(remaining) = remaining {
+            if let Err(error) = remaining.clone().charge(0) {
+                checkpoint.phase = "failed".into();
+                checkpoint.reason = error.0.into();
+                let maximum = if checkpoint.contexts[0]["resource_profile"] == "standard" {
+                    120_000
+                } else {
+                    30_000
+                };
+                checkpoint.elapsed_ms = maximum;
+                for attempt in &mut checkpoint.attempts {
+                    attempt["phase"] = "failed".into();
+                    attempt["reason"] = "budget_exhausted".into();
+                    attempt["remaining_deadline_ms"] = 0.into();
+                }
+                ExtractionJournal::store(self, &job, &checkpoint).map_err(|_| unknown())?;
+                return Err(resource());
+            }
+        }
+        Ok(())
+    }
+
+    fn decode_extraction(
+        &self,
+        operation: [u8; 32],
+        sealed: &[u8],
+    ) -> Result<ExtractionEnvelope, BaseServiceError> {
+        let plaintext = zeroize::Zeroizing::new(
+            self.vault
+                .open_local_metadata(self.extraction_key(operation), sealed)
+                .map_err(|_| corrupt())?,
+        );
+        let envelope: ExtractionEnvelope =
+            serde_json::from_slice(&plaintext).map_err(|_| corrupt())?;
+        if envelope.operation != operation || envelope.dataset != self.dataset.0 {
+            return Err(corrupt());
+        }
+        Ok(envelope)
+    }
     pub(crate) fn open(
         paths: &dyn DatasetPathResolver,
         config: KuRuntimeConfig,
+        process: [u8; 32],
     ) -> Result<Self, BaseServiceError> {
         let root = paths
             .owner_path(BaseStorageOwnerId::VAULT)
@@ -193,12 +384,16 @@ impl KuStore {
         let tx = journal.begin_write().map_err(|_| corrupt())?;
         {
             tx.open_table(JOURNAL).map_err(|_| corrupt())?;
+            tx.open_table(EXTRACTION).map_err(|_| corrupt())?;
         }
         tx.commit().map_err(|_| corrupt())?;
         let store = Self {
             vault,
             journal,
             dataset: paths.current_generation(),
+            process,
+            extracting: Mutex::new(BTreeMap::new()),
+            canceled: Mutex::new(BTreeSet::new()),
             inputs: config.inputs,
             registry: config.registry,
             public: config.public,
@@ -215,6 +410,24 @@ impl KuStore {
                 store.verify_committed(&bundle)?;
             }
             store.index_bundle(&bundle)?;
+        }
+        {
+            let tx = store.journal.begin_read().map_err(|_| corrupt())?;
+            let table = tx.open_table(EXTRACTION).map_err(|_| corrupt())?;
+            let mut total = 0usize;
+            for (i, row) in table.iter().map_err(|_| corrupt())?.enumerate() {
+                let (key, value) = row.map_err(|_| corrupt())?;
+                total = total
+                    .checked_add(value.value().len())
+                    .ok_or_else(resource)?;
+                if i >= MAX_OPERATIONS || total > MAX_JOURNAL_BYTES {
+                    return Err(resource());
+                }
+                store.decode_extraction(
+                    key.value().try_into().map_err(|_| corrupt())?,
+                    value.value(),
+                )?;
+            }
         }
         Ok(store)
     }
@@ -247,6 +460,25 @@ impl KuStore {
         value
             .map(|v| self.decode_bundle(operation, v.value()))
             .transpose()
+    }
+
+    fn require_extraction_prepared(
+        &self,
+        principal: [u8; 32],
+        operation: OperationId,
+    ) -> Result<(), BaseServiceError> {
+        let tx = self.journal.begin_read().map_err(|_| corrupt())?;
+        let table = tx.open_table(EXTRACTION).map_err(|_| corrupt())?;
+        if let Some(value) = table.get(operation.0.as_slice()).map_err(|_| corrupt())? {
+            let evidence = self.decode_extraction(operation.0, value.value())?;
+            if evidence.principal != principal {
+                return Err(not_found());
+            }
+            if evidence.checkpoint.phase != "prepared" {
+                return Err(conflict());
+            }
+        }
+        Ok(())
     }
 
     fn decode_bundle(
@@ -307,6 +539,16 @@ impl KuStore {
             }
             if count >= MAX_OPERATIONS || total > MAX_JOURNAL_BYTES {
                 return Err(resource());
+            }
+            let extraction = tx.open_table(EXTRACTION).map_err(|_| unknown())?;
+            for row in extraction.iter().map_err(|_| unknown())? {
+                let (_, value) = row.map_err(|_| unknown())?;
+                total = total
+                    .checked_add(value.value().len())
+                    .ok_or_else(resource)?;
+                if total > MAX_JOURNAL_BYTES {
+                    return Err(resource());
+                }
             }
             table
                 .insert(bundle.request.operation_id.0.as_slice(), sealed.as_slice())
@@ -372,6 +614,7 @@ impl KuStore {
         if b.principal != principal {
             return Err(not_found());
         }
+        self.require_extraction_prepared(principal, operation)?;
         self.validate_bundle(&b)?;
         Ok(b)
     }
@@ -436,14 +679,13 @@ impl KuStore {
             .is_some_and(|b| b.principal == principal))
     }
 
-    pub(crate) fn prepare(
+    pub(crate) async fn prepare(
         &self,
         principal: [u8; 32],
         request: KuPrepareV1,
         revision: Option<(ObjectCID, RevisionFrontier)>,
         budget: &ResourceBudgetV1,
     ) -> Result<KuPreparedV1, BaseServiceError> {
-        let _guard = self.mutation.lock().map_err(|_| corrupt())?;
         request.validate().map_err(|_| invalid())?;
         let (predecessor, expected_frontier) = revision
             .map(|(a, b)| (Some(a), Some(b)))
@@ -458,6 +700,7 @@ impl KuStore {
                 return Err(conflict());
             }
             self.validate_bundle(&existing)?;
+            self.require_extraction_prepared(principal, request.operation_id)?;
             return Ok(existing.preview);
         }
         if self
@@ -492,8 +735,43 @@ impl KuStore {
                 return Err(conflict());
             }
         }
-        let input = self.inputs.resolve(principal, &request, &release, budget)?;
-        if input.drafts.is_empty()
+        let flight = self.begin_extraction(request.operation_id)?;
+        let mut input = self
+            .inputs
+            .resolve_async(
+                principal,
+                &request,
+                &release,
+                budget,
+                KuExtractionExecution {
+                    journal: self,
+                    process: self.process,
+                    dataset: self.dataset.0,
+                    canceled: flight.cancel.clone(),
+                },
+            )
+            .await?;
+        // Inference holds no service mutation lock. Revalidate the mutation and
+        // cancellation frontier after the await and before any prepared write.
+        let mut extraction_budget = input.extraction_budget.take();
+        charge_extraction(&mut extraction_budget, 0)?;
+        let _guard = self.mutation.lock().map_err(|_| corrupt())?;
+        if flight.cancel.load(Ordering::Acquire) {
+            return Err(conflict());
+        }
+        if self
+            .catalog
+            .lock()
+            .map_err(|_| corrupt())?
+            .keys
+            .contains_key(&request.idempotency_key.0)
+        {
+            return Err(conflict());
+        }
+        if predecessor.is_some() && self.frontier(principal)? != expected_frontier.unwrap() {
+            return Err(conflict());
+        }
+        if (input.drafts.is_empty() && !input.needs_resolution)
             || input.drafts.len() > budget.max_items as usize
             || input.drafts.len() > 256
             || input.source_objects.len() != request.source_refs.len()
@@ -504,6 +782,7 @@ impl KuStore {
         let mut source_sizes = BTreeMap::new();
         let mut total = 0usize;
         for (bytes, cid) in input.source_objects.iter().zip(&request.source_refs) {
+            charge_extraction(&mut extraction_budget, bytes.len())?;
             total = total.checked_add(bytes.len()).ok_or_else(resource)?;
             if total > budget.max_bytes as usize {
                 return Err(resource());
@@ -516,13 +795,15 @@ impl KuStore {
             source_sizes.insert(cid.0, source.raw_bytes.len());
         }
         let selected = validate_bindings(&release, &input.bindings)?;
+        charge_extraction(&mut extraction_budget, input.bindings.len() * 1024)?;
         let mut artifacts = Vec::new();
         let mut private_semantic_inputs = Vec::new();
         let mut original_statement_ids = Vec::new();
-        let mut unresolved = false;
+        let mut unresolved = input.needs_resolution;
         let mut seen = BTreeSet::new();
         let mut work = 0u64;
         for draft in &input.drafts {
+            charge_extraction(&mut extraction_budget, draft.statements.len())?;
             work = work
                 .checked_add(draft.statements.len() as u64)
                 .ok_or_else(resource)?;
@@ -558,6 +839,10 @@ impl KuStore {
                 .checked_add(bytes.len())
                 .and_then(|n| n.checked_add(normalized.private_input_bytes.len()))
                 .ok_or_else(resource)?;
+            charge_extraction(
+                &mut extraction_budget,
+                bytes.len() + normalized.private_input_bytes.len(),
+            )?;
             if total > budget.max_bytes as usize {
                 return Err(resource());
             }
@@ -586,7 +871,9 @@ impl KuStore {
             registry_release_root: request.registry_release_root,
             semantic_profile: request.semantic_profile.clone(),
             destination: request.destination,
-            limitations: if unresolved {
+            limitations: if input.needs_resolution {
+                vec!["extraction_incomplete".into()]
+            } else if unresolved {
                 vec!["unresolved_ccid".into()]
             } else {
                 vec!["fidelity_unassessed".into()]
@@ -614,7 +901,18 @@ impl KuStore {
         };
         self.validate_bundle(&bundle)?;
         self.inputs.check_access(principal, &sources)?;
+        charge_extraction(&mut extraction_budget, total)?;
         self.write_bundle(&bundle)?;
+        if extraction_budget.is_some() {
+            failpoint("after_extraction_bundle")?;
+        }
+        charge_extraction(&mut extraction_budget, 0)?;
+        self.mark_extraction_prepared(
+            principal,
+            bundle.request.operation_id,
+            extraction_budget.as_ref(),
+            budget.max_work_units,
+        )?;
         failpoint("after_prepared_journal")?;
         Ok(preview)
     }
@@ -818,7 +1116,14 @@ impl KuStore {
         principal: [u8; 32],
         operation: OperationId,
     ) -> Result<Option<KuReceiptV1>, BaseServiceError> {
-        let b = self.owned_bundle(principal, operation)?;
+        // Extraction can be interrupted before any prepared bundle exists.
+        let Some(b) = self.read_bundle(operation)? else {
+            return Ok(None);
+        };
+        if b.principal != principal {
+            return Err(not_found());
+        }
+        self.validate_bundle(&b)?;
         if b.committed {
             self.verify_committed(&b)?;
             self.index_bundle(&b)?;
@@ -862,6 +1167,21 @@ impl KuStore {
         operation: OperationId,
     ) -> Result<(), BaseServiceError> {
         let _guard = self.mutation.lock().map_err(|_| corrupt())?;
+        {
+            let mut canceled = self.canceled.lock().map_err(|_| corrupt())?;
+            if !canceled.contains(&operation.0) && canceled.len() >= MAX_OPERATIONS {
+                return Err(resource());
+            }
+            canceled.insert(operation.0);
+            if let Some(signal) = self
+                .extracting
+                .lock()
+                .map_err(|_| corrupt())?
+                .get(&operation.0)
+            {
+                signal.store(true, Ordering::Release);
+            }
+        }
         let Some(mut b) = self.read_bundle(operation)? else {
             return Ok(());
         };
@@ -1136,6 +1456,128 @@ impl KuStore {
     }
 }
 
+impl ExtractionJournal for KuStore {
+    fn load(&self, job: &ExtractionJob) -> Result<Option<ExtractionCheckpoint>, ExtractionError> {
+        if job.dataset != self.dataset.0 {
+            return Err(ExtractionError("dataset_binding"));
+        }
+        let tx = self
+            .journal
+            .begin_read()
+            .map_err(|_| ExtractionError("journal_unavailable"))?;
+        let table = tx
+            .open_table(EXTRACTION)
+            .map_err(|_| ExtractionError("journal_unavailable"))?;
+        let value = table
+            .get(job.operation.as_slice())
+            .map_err(|_| ExtractionError("journal_unavailable"))?;
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        let e = self
+            .decode_extraction(job.operation, value.value())
+            .map_err(|_| ExtractionError("journal_corrupt"))?;
+        if e.principal != job.principal {
+            return Err(ExtractionError("source_unavailable"));
+        }
+        Ok(Some(e.checkpoint))
+    }
+    fn store(
+        &self,
+        job: &ExtractionJob,
+        checkpoint: &ExtractionCheckpoint,
+    ) -> Result<(), ExtractionError> {
+        let error = || ExtractionError("journal_unavailable");
+        if job.dataset != self.dataset.0 || job.process != self.process {
+            return Err(ExtractionError("dataset_binding"));
+        }
+        if checkpoint.calls > 32
+            || checkpoint.work_charged > 1_000_000
+            || checkpoint.input_tokens > 262144
+            || checkpoint.output_tokens > 65536
+        {
+            return Err(ExtractionError("resource"));
+        }
+        let sources = job
+            .contexts
+            .iter()
+            .map(|c| {
+                decode_hex::<32>(c["source_ref"].as_str().unwrap_or(""))
+                    .map_err(|_| ExtractionError("source_binding"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        // Revocation may prevent storing new source-bearing checkpoints; no
+        // model output can bypass this existing custody port at the write edge.
+        self.inputs
+            .check_access(job.principal, &sources)
+            .map_err(|_| ExtractionError("source_revoked"))?;
+        let envelope = ExtractionEnvelope {
+            principal: job.principal,
+            dataset: job.dataset,
+            operation: job.operation,
+            sources,
+            checkpoint: checkpoint.clone(),
+        };
+        let plaintext =
+            zeroize::Zeroizing::new(serde_json::to_vec(&envelope).map_err(|_| error())?);
+        if plaintext.len() > 8 * 1024 * 1024 {
+            return Err(ExtractionError("resource"));
+        }
+        let sealed = self
+            .vault
+            .seal_local_metadata(self.extraction_key(job.operation), &plaintext)
+            .map_err(|_| error())?;
+        let tx = self.journal.begin_write().map_err(|_| error())?;
+        {
+            let mut table = tx.open_table(EXTRACTION).map_err(|_| error())?;
+            if let Some(old) = table.get(job.operation.as_slice()).map_err(|_| error())? {
+                let old = self
+                    .decode_extraction(job.operation, old.value())
+                    .map_err(|_| ExtractionError("journal_corrupt"))?;
+                if old.principal != job.principal
+                    || old.checkpoint.binding != checkpoint.binding
+                    || old.checkpoint.calls > checkpoint.calls
+                    || old.checkpoint.input_tokens > checkpoint.input_tokens
+                    || old.checkpoint.output_tokens > checkpoint.output_tokens
+                    || old.checkpoint.work_charged > checkpoint.work_charged
+                    || old.checkpoint.elapsed_ms > checkpoint.elapsed_ms
+                {
+                    return Err(ExtractionError("checkpoint_regression"));
+                }
+            }
+            let mut total = sealed.len();
+            let mut count = 0;
+            for row in table.iter().map_err(|_| error())? {
+                let (key, value) = row.map_err(|_| error())?;
+                if key.value() != job.operation {
+                    count += 1;
+                    total = total.checked_add(value.value().len()).ok_or_else(error)?;
+                }
+            }
+            let bundles = tx.open_table(JOURNAL).map_err(|_| error())?;
+            for row in bundles.iter().map_err(|_| error())? {
+                let (_, value) = row.map_err(|_| error())?;
+                total = total.checked_add(value.value().len()).ok_or_else(error)?;
+            }
+            if count >= MAX_OPERATIONS || total > MAX_JOURNAL_BYTES {
+                return Err(ExtractionError("resource"));
+            }
+            table
+                .insert(job.operation.as_slice(), sealed.as_slice())
+                .map_err(|_| error())?;
+        }
+        tx.commit().map_err(|_| error())?;
+        let phase = match checkpoint.phase.as_str() {
+            "extracting" => "after_extraction_reservation",
+            "candidate_recorded" => "after_extraction_candidate",
+            "validated" => "after_extraction_validated",
+            _ => "after_extraction_checkpoint",
+        };
+        failpoint(phase).map_err(|_| error())?;
+        Ok(())
+    }
+}
+
 fn validate_bindings(
     release: &ConceptRegistryReaderLease,
     bindings: &[KuConceptBinding],
@@ -1209,7 +1651,7 @@ fn known_kinds() -> Vec<KnownObjectKind> {
         .map(|k| KnownObjectKind::new(ObjectKind(k.id), 1))
         .collect()
 }
-fn decode_object(
+pub(crate) fn decode_object(
     bytes: &[u8],
 ) -> Result<ku_core::foundation::ValidatedKnowledgeObject, BaseServiceError> {
     decode_knowledge_object(bytes, ResourceProfile::ObjectV1, &known_kinds(), &[])
@@ -1290,7 +1732,7 @@ fn incompatible() -> BaseServiceError {
         "ku_profile_unsupported",
     )
 }
-fn not_found() -> BaseServiceError {
+pub(crate) fn not_found() -> BaseServiceError {
     BaseServiceError::new(BaseErrorCodeV1::NotFound, "ku_not_found")
 }
 fn expired() -> BaseServiceError {

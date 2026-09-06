@@ -26,10 +26,13 @@ struct Inputs {
 
 impl Inputs {
     fn new() -> Self {
+        Self::with_text("Exact PRIVATE source: water\r\n")
+    }
+    fn with_text(text: &str) -> Self {
         let reference = |id| ObjectReference::new(1, [id; 32]);
         let source = SourceArtifact {
             source_kind: SourceArtifactKind::Text,
-            raw_bytes: b"Exact PRIVATE source: water\r\n".to_vec(),
+            raw_bytes: text.as_bytes().to_vec(),
             media_type_commitment: [2; 32],
             capture_adapter: reference(1),
             capture_sequence: 1,
@@ -112,6 +115,8 @@ impl KuInputProvider for Inputs {
             })
             .collect();
         Ok(KuResolvedInput {
+            extraction_budget: None,
+            needs_resolution: false,
             drafts,
             source_objects: vec![self.source.clone()],
             bindings: vec![KuConceptBinding {
@@ -142,9 +147,314 @@ fn registry(root: &std::path::Path) -> Arc<ConceptRegistryGenerationManager> {
     Arc::new(ConceptRegistryGenerationManager::open(config).unwrap())
 }
 
+impl crate::ku_extraction::KuExtractionSources for Inputs {
+    fn check_access(
+        &self,
+        principal: [u8; 32],
+        sources: &[[u8; 32]],
+    ) -> Result<(), BaseServiceError> {
+        KuInputProvider::check_access(self, principal, sources)
+    }
+    fn read_source(
+        &self,
+        principal: [u8; 32],
+        source: [u8; 32],
+        max_bytes: usize,
+    ) -> Result<Vec<u8>, BaseServiceError> {
+        KuInputProvider::check_access(self, principal, &[source])?;
+        if self.source.len() > max_bytes {
+            return Err(resource());
+        }
+        Ok(self.source.clone())
+    }
+}
+
+struct FixtureInference {
+    manifest: serde_json::Value,
+    calls: AtomicUsize,
+    pending: bool,
+    entered: tokio::sync::Notify,
+}
+impl FixtureInference {
+    fn new(pending: bool) -> Self {
+        Self {
+            manifest: serde_json::json!({"profile":"ku-extraction-provider/1.0","provider_id":"node-fixture","backend_build_sha256":"aa".repeat(32),"mode":"json_schema","tools_enabled":false,"max_context_tokens":8192,"peak_bytes_reservation":16777216,"schema_bundle_sha256":ku_encoder::extraction::ExtractionWorkflow::bundle_hash(),"model_artifact_sha256":"bb".repeat(32),"tokenizer_sha256":"cc".repeat(32),"supported_schema_keywords":["type"],"temperature_milli":0}),
+            calls: AtomicUsize::new(0),
+            pending,
+            entered: tokio::sync::Notify::new(),
+        }
+    }
+}
+#[async_trait::async_trait]
+impl ku_encoder::extraction::ExtractionProvider for FixtureInference {
+    fn manifest(&self) -> &serde_json::Value {
+        &self.manifest
+    }
+    fn input_tokens(
+        &self,
+        _: &ku_encoder::extraction::ProviderRequest,
+    ) -> Result<u32, ku_encoder::extraction::ExtractionError> {
+        Ok(100)
+    }
+    async fn extract(
+        &self,
+        request: ku_encoder::extraction::ProviderRequest,
+    ) -> Result<Vec<u8>, ku_encoder::extraction::ExtractionError> {
+        self.calls.fetch_add(1, Ordering::AcqRel);
+        self.entered.notify_one();
+        if self.pending {
+            std::future::pending::<()>().await;
+        }
+        let input = request.input;
+        let unit = &input["required_units"][0];
+        let option = input["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|o| o["lookup_label"] == "water")
+            .unwrap();
+        let candidate = serde_json::json!({"profile":"ku-extraction/1.0","attempt_id":input["attempt_id"],"context_sha256":input["context_sha256"],
+            "concepts":[{"key":"p","label":"water","evidence":option["mention"]}],
+            "statements":[{"key":"s","predicate":"p","arguments":[{"kind":"text","value":unit["span"]["quote"],"evidence":unit["span"]}],"evidence":[unit["span"]],"negation":{"value":false,"evidence":[]},"modality":{"value":"asserted","evidence":[]}}],
+            "coverage":[{"unit":unit["key"],"status":"represented","statements":["s"],"reason":"none"}]});
+        Ok(serde_json::to_vec(&candidate).unwrap())
+    }
+}
+
+#[tokio::test]
+async fn shared_model_adapter_uses_signed_registry_and_durable_exact_preparation() {
+    let temp = tempfile::tempdir().unwrap();
+    let reg = registry(temp.path());
+    let source = Arc::new(Inputs::with_text("water"));
+    let provider = Arc::new(FixtureInference::new(false));
+    let workflow = Arc::new(
+        ku_encoder::extraction::ExtractionWorkflow::new(provider.clone(), 16 * 1024 * 1024)
+            .unwrap(),
+    );
+    let inputs = Arc::new(
+        crate::ku_extraction::SharedKuExtractionInputs::new(
+            source.clone(),
+            workflow,
+            InputMode::LocalAi,
+            "constrained",
+        )
+        .unwrap(),
+    );
+    let commitment = inputs.implementation(InputMode::LocalAi).unwrap();
+    let rt = runtime(temp.path(), inputs.clone(), Some(reg.clone()), 11).unwrap();
+    let service = rt.ku_services(PRINCIPAL, b"host-proof").unwrap();
+    let mut r = request(service.reserve().await.unwrap(), &source, &reg, 1);
+    r.input_mode = InputMode::LocalAi;
+    r.draft_ref = None;
+    r.implementation_commitment = ImplementationCommitment(commitment);
+    let KuResponseV1::Prepare(prepared) = service
+        .invoke(KuRequestV1::Prepare(r.clone()), budget())
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(prepared.validity, Validity::Ready);
+    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
+    assert!(list(&service).await.items.is_empty());
+    drop(rt);
+    let rt = runtime(temp.path(), inputs, Some(reg), 11).unwrap();
+    let service = rt.ku_services(PRINCIPAL, b"host-proof").unwrap();
+    let KuResponseV1::Prepare(replayed) = service
+        .invoke(KuRequestV1::Prepare(r.clone()), budget())
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(prepared, replayed);
+    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
+    assert_eq!(
+        save(&service, &r, &prepared).await.state,
+        BaseState::Committed
+    );
+}
+
+#[tokio::test]
+async fn cancel_reaches_running_model_without_waiting_for_service_mutation_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let reg = registry(temp.path());
+    let source = Arc::new(Inputs::with_text("water"));
+    let provider = Arc::new(FixtureInference::new(true));
+    let workflow = Arc::new(
+        ku_encoder::extraction::ExtractionWorkflow::new(provider.clone(), 16 * 1024 * 1024)
+            .unwrap(),
+    );
+    let inputs = Arc::new(
+        crate::ku_extraction::SharedKuExtractionInputs::new(
+            source.clone(),
+            workflow,
+            InputMode::LocalAi,
+            "constrained",
+        )
+        .unwrap(),
+    );
+    let commitment = inputs.implementation(InputMode::LocalAi).unwrap();
+    let rt = runtime(temp.path(), inputs.clone(), Some(reg.clone()), 11).unwrap();
+    let service = rt.ku_services(PRINCIPAL, b"host-proof").unwrap();
+    let mut r = request(service.reserve().await.unwrap(), &source, &reg, 1);
+    r.input_mode = InputMode::LocalAi;
+    r.draft_ref = None;
+    r.implementation_commitment = ImplementationCommitment(commitment);
+    let prep = service.invoke(KuRequestV1::Prepare(r.clone()), budget());
+    let cancel = async {
+        provider.entered.notified().await;
+        service
+            .invoke(
+                KuRequestV1::Cancel(KuOperationRefV1 {
+                    operation_id: r.operation_id,
+                }),
+                budget(),
+            )
+            .await
+    };
+    let (prep, cancel) = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        tokio::join!(prep, cancel)
+    })
+    .await
+    .unwrap();
+    assert!(prep.is_err());
+    let KuResponseV1::Cancel(receipt) = cancel.unwrap() else {
+        panic!()
+    };
+    assert_eq!(receipt.state, BaseState::Canceled);
+    assert!(list(&service).await.items.is_empty());
+    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
+    drop(rt);
+    let rt = runtime(temp.path(), inputs, Some(reg), 11).unwrap();
+    let service = rt.ku_services(PRINCIPAL, b"host-proof").unwrap();
+    assert!(service
+        .invoke(KuRequestV1::Prepare(r), budget())
+        .await
+        .is_err());
+    assert_eq!(provider.calls.load(Ordering::Acquire), 1);
+}
+
+#[tokio::test]
+async fn shared_no_llm_encoder_prepares_exact_sem_then_saves_via_existing_vault_only() {
+    use crate::ku_extraction::SharedKuExtractionInputs;
+    use ku_encoder::extraction::{ExtractionWorkflow, NoLlmProvider};
+    let temp = tempfile::tempdir().unwrap();
+    let reg = registry(temp.path());
+    let source = Arc::new(Inputs::with_text(
+        "@ku1 (\"PRIVATE left\") [water] (\"PRIVATE right\")",
+    ));
+    let workflow = Arc::new(
+        ExtractionWorkflow::new(Arc::new(NoLlmProvider::new()), 16 * 1024 * 1024).unwrap(),
+    );
+    let inputs = Arc::new(
+        SharedKuExtractionInputs::new(source.clone(), workflow, InputMode::LocalRule, "no_llm")
+            .unwrap(),
+    );
+    let commitment = inputs.implementation(InputMode::LocalRule).unwrap();
+    let rt = runtime(temp.path(), inputs.clone(), Some(reg.clone()), 11).unwrap();
+    let service = rt.ku_services(PRINCIPAL, b"host-proof").unwrap();
+    let mut r = request(service.reserve().await.unwrap(), &source, &reg, 1);
+    r.input_mode = InputMode::LocalRule;
+    r.draft_ref = None;
+    r.implementation_commitment = ImplementationCommitment(commitment);
+    let KuResponseV1::Prepare(p) = service
+        .invoke(KuRequestV1::Prepare(r.clone()), budget())
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(p.validity, Validity::Ready);
+    assert_eq!(p.artifacts.len(), 1);
+    assert!(list(&service).await.items.is_empty());
+    let KuResponseV1::Prepare(replay) = service
+        .invoke(KuRequestV1::Prepare(r.clone()), budget())
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(replay, p);
+    let receipt = save(&service, &r, &p).await;
+    assert_eq!(receipt.state, BaseState::Committed);
+    assert!(!receipt.published && !receipt.authorizes_reward);
+    drop(rt);
+    // Same encryption key reopens both prepared and extraction journals. Existing
+    // KU results remain readable even when the source grant has been revoked.
+    source.allowed.store(false, Ordering::Release);
+    let rt = runtime(temp.path(), inputs, None, 11).unwrap();
+    let service = rt.ku_services(PRINCIPAL, b"host-proof").unwrap();
+    assert_eq!(list(&service).await.items.len(), 1);
+    drop(rt);
+    let mut files = vec![temp.path().to_path_buf()];
+    let mut checked = 0;
+    while let Some(path) = files.pop() {
+        if path.is_dir() {
+            for entry in std::fs::read_dir(path).unwrap() {
+                files.push(entry.unwrap().path());
+            }
+        } else if path.file_name().is_some_and(|n| n == "journal.redb") {
+            let raw = std::fs::read(path).unwrap();
+            assert!(!raw
+                .windows(b"PRIVATE left".len())
+                .any(|w| w == b"PRIVATE left"));
+            checked += 1;
+        }
+    }
+    assert!(checked > 0);
+}
+
+#[tokio::test]
+async fn shared_no_llm_arbitrary_prose_has_no_artifacts_and_cannot_save() {
+    use ku_encoder::extraction::{ExtractionWorkflow, NoLlmProvider};
+    let temp = tempfile::tempdir().unwrap();
+    let reg = registry(temp.path());
+    let source = Arc::new(Inputs::with_text("water is clear"));
+    let inputs = Arc::new(
+        crate::ku_extraction::SharedKuExtractionInputs::new(
+            source.clone(),
+            Arc::new(
+                ExtractionWorkflow::new(Arc::new(NoLlmProvider::new()), 16 * 1024 * 1024).unwrap(),
+            ),
+            InputMode::LocalRule,
+            "no_llm",
+        )
+        .unwrap(),
+    );
+    let commitment = inputs.implementation(InputMode::LocalRule).unwrap();
+    let rt = runtime(temp.path(), inputs, Some(reg.clone()), 11).unwrap();
+    let service = rt.ku_services(PRINCIPAL, b"host-proof").unwrap();
+    let mut r = request(service.reserve().await.unwrap(), &source, &reg, 1);
+    r.input_mode = InputMode::LocalRule;
+    r.draft_ref = None;
+    r.implementation_commitment = ImplementationCommitment(commitment);
+    let KuResponseV1::Prepare(p) = service
+        .invoke(KuRequestV1::Prepare(r.clone()), budget())
+        .await
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_eq!(p.validity, Validity::NeedsResolution);
+    assert!(p.object_cids.is_empty() && p.artifacts.is_empty());
+    assert!(service
+        .invoke(
+            KuRequestV1::Save(KuSaveV1 {
+                operation_id: r.operation_id,
+                idempotency_key: r.idempotency_key,
+                object_cids: vec![]
+            }),
+            budget()
+        )
+        .await
+        .is_err());
+    assert!(list(&service).await.items.is_empty());
+}
+
 fn runtime(
     root: &std::path::Path,
-    input: Arc<Inputs>,
+    input: Arc<dyn KuInputProvider>,
     registry: Option<Arc<ConceptRegistryGenerationManager>>,
     key: u8,
 ) -> Result<BaseRuntime, BaseServiceError> {
@@ -737,6 +1047,135 @@ async fn real_process_kills_at_every_save_boundary_reconcile_without_model_repla
                 "plaintext in {filename}"
             );
         }
+    }
+}
+
+#[test]
+fn extraction_crash_child_worker() {
+    let Some(root) = std::env::var_os("ONEBRAIN_EXTRACTION_TEST_ROOT") else {
+        return;
+    };
+    let root = std::path::PathBuf::from(root);
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let reg = registry(&root);
+            let source = Arc::new(Inputs::with_text("water"));
+            let provider = Arc::new(FixtureInference::new(false));
+            let workflow = Arc::new(
+                ku_encoder::extraction::ExtractionWorkflow::new(provider, 16 * 1024 * 1024)
+                    .unwrap(),
+            );
+            let inputs = Arc::new(
+                crate::ku_extraction::SharedKuExtractionInputs::new(
+                    source.clone(),
+                    workflow,
+                    InputMode::LocalAi,
+                    "constrained",
+                )
+                .unwrap(),
+            );
+            let commitment = inputs.implementation(InputMode::LocalAi).unwrap();
+            let rt = runtime(&root, inputs, Some(reg.clone()), 11).unwrap();
+            let service = rt.ku_services(PRINCIPAL, b"host-proof").unwrap();
+            let mut r = request(service.reserve().await.unwrap(), &source, &reg, 1);
+            r.input_mode = InputMode::LocalAi;
+            r.draft_ref = None;
+            r.implementation_commitment = ImplementationCommitment(commitment);
+            std::fs::write(
+                root.join("extraction_operation.json"),
+                serde_json::to_vec(&r).unwrap(),
+            )
+            .unwrap();
+            let phase = std::env::var("ONEBRAIN_EXTRACTION_TEST_PHASE").unwrap();
+            FAILPOINT.with(|p| *p.borrow_mut() = Some(format!("crash:{phase}")));
+            service
+                .invoke(KuRequestV1::Prepare(r), budget())
+                .await
+                .unwrap();
+            panic!("expected process kill");
+        });
+}
+
+#[tokio::test]
+async fn extraction_process_kills_never_resample_or_expose_partial_artifacts() {
+    for phase in [
+        "after_extraction_reservation",
+        "after_extraction_candidate",
+        "after_extraction_validated",
+        "after_extraction_bundle",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "ku_product::tests::extraction_crash_child_worker",
+                "--nocapture",
+            ])
+            .env("ONEBRAIN_EXTRACTION_TEST_ROOT", temp.path())
+            .env("ONEBRAIN_EXTRACTION_TEST_PHASE", phase)
+            .output()
+            .unwrap();
+        assert_eq!(
+            status.status.code(),
+            Some(86),
+            "{phase}: {}",
+            String::from_utf8_lossy(&status.stderr)
+        );
+        let r: KuPrepareV1 = serde_json::from_slice(
+            &std::fs::read(temp.path().join("extraction_operation.json")).unwrap(),
+        )
+        .unwrap();
+        let reg = registry(temp.path());
+        let source = Arc::new(Inputs::with_text("water"));
+        let provider = Arc::new(FixtureInference::new(false));
+        let workflow = Arc::new(
+            ku_encoder::extraction::ExtractionWorkflow::new(provider.clone(), 16 * 1024 * 1024)
+                .unwrap(),
+        );
+        let inputs = Arc::new(
+            crate::ku_extraction::SharedKuExtractionInputs::new(
+                source,
+                workflow,
+                InputMode::LocalAi,
+                "constrained",
+            )
+            .unwrap(),
+        );
+        let rt = runtime(temp.path(), inputs, Some(reg), 11).unwrap();
+        let service = rt.ku_services(PRINCIPAL, b"host-proof").unwrap();
+        assert!(list(&service).await.items.is_empty());
+        assert!(service
+            .invoke(KuRequestV1::Prepare(r.clone()), budget())
+            .await
+            .is_err());
+        assert!(service
+            .invoke(
+                KuRequestV1::Preview(KuOperationRefV1 {
+                    operation_id: r.operation_id
+                }),
+                budget()
+            )
+            .await
+            .is_err());
+        let KuResponseV1::Reconcile(receipt) = service
+            .invoke(
+                KuRequestV1::Reconcile(KuOperationRefV1 {
+                    operation_id: r.operation_id,
+                }),
+                budget(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(receipt.state, BaseState::Failed, "{phase}");
+        assert!(receipt.object_cids.is_empty());
+        assert_eq!(provider.calls.load(Ordering::Acquire), 0);
+        assert!(list(&service).await.items.is_empty());
     }
 }
 

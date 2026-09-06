@@ -436,7 +436,13 @@ impl BaseRuntime {
             .transpose()?;
         let ku = config
             .ku
-            .map(|config| crate::ku_product::KuStore::open(dataset_generations.as_ref(), config))
+            .map(|config| {
+                crate::ku_product::KuStore::open(
+                    dataset_generations.as_ref(),
+                    config,
+                    process_generation.0,
+                )
+            })
             .transpose()?;
         let core = Arc::new(BaseServiceCore {
             ku,
@@ -776,9 +782,12 @@ impl BaseServices {
                 authorizes_reward: false,
             })
         };
+        let preparation_store = &store;
+        let preparation_budget = &budget;
         let prepare = |preparation: KuPrepareV1,
-                       revision: Option<(ObjectCID, RevisionFrontier)>|
-         -> Result<KuPreparedV1, BaseServiceError> {
+                       revision: Option<(ObjectCID, RevisionFrontier)>| async move {
+            let store = preparation_store;
+            let budget = preparation_budget;
             let id = preparation.operation_id;
             if store
                 .operation_kind(BaseOperationId(id.0), principal)
@@ -798,7 +807,7 @@ impl BaseServices {
             if state == State::Prepared && !ku.is_prepared(principal, id)? {
                 return Err(crate::ku_product::corrupt());
             }
-            let preview = ku.prepare(principal, preparation, revision, &budget)?;
+            let preview = ku.prepare(principal, preparation, revision, budget).await?;
             let mut exact = crate::ku_product::KU_PREPARED_MARKER.to_vec();
             exact.extend_from_slice(&id.0);
             store
@@ -813,11 +822,14 @@ impl BaseServices {
             Ok(preview)
         };
         let response = match request {
-            KuRequestV1::Prepare(r) => KuResponseV1::Prepare(prepare(r, None)?),
-            KuRequestV1::Revise(r) => KuResponseV1::Revise(prepare(
-                r.preparation,
-                Some((r.predecessor_object_cid, r.expected_revision_frontier)),
-            )?),
+            KuRequestV1::Prepare(r) => KuResponseV1::Prepare(prepare(r, None).await?),
+            KuRequestV1::Revise(r) => KuResponseV1::Revise(
+                prepare(
+                    r.preparation,
+                    Some((r.predecessor_object_cid, r.expected_revision_frontier)),
+                )
+                .await?,
+            ),
             KuRequestV1::Preview(r) => {
                 let state = store
                     .reconcile(BaseOperationId(r.operation_id.0), principal)

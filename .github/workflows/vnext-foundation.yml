@@ -542,6 +542,12 @@ jobs:
       - name: Test local provenance-preserving Receptor encoder
         run: cargo test --locked -p ku-encoder vnext_receptor_encoder
 
+      - name: Test shared KU extraction and bounded local provider
+        run: |
+          cargo test --locked -p ku-encoder --lib extraction
+          cargo test --locked -p ku-ai --lib bounded_structured_tests
+          cargo test --locked -p onebrain-node --lib ku_product::tests -- --test-threads=1
+
       - name: Test consent-gated private local observation intake
         run: cargo test --locked -p ku-encoder vnext_observation_intake
 

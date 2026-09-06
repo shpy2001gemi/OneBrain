@@ -7,11 +7,11 @@
 
 - Current task: `KU-ENC-002`
 - Current branch: `codex/ku-enc-002-shared-encoder`
-- Current state: `Planned`; owner authorized starting the shared encoder implementation
-- Reviewed contract commit: `a6f0a00`; handoff-only metadata follows on the same branch
+- Current state: `Review`; native compiler/workflow and node integration ready for owner review
+- Current evidence: [KU-ENC-002 implementation and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
 - Last accepted task: `KU-ENC-001`, contract `a6f0a00`, reviewed handoff `e4c1bb6`, D-019
 - Last merged task: `KU-ENC-001`, merge `22599d036f903c5b5be2cb3f445ab6904e92896c` on `origin/main`
-- Following tasks: `KU-ENC-002`, then model qualification in `KU-ENC-003`
+- Following task: model qualification in `KU-ENC-003` after owner-approved merge
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -41,10 +41,25 @@
 | 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | — |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | — |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
-| 22 | `KU-ENC-002` | Planned | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Shared provider/workflow implementation. |
+| 22 | `KU-ENC-002` | Review | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Starting main `5faf50cd8b1319c63bc1eabd7b294a94d410821b`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |
 | 23 | `KU-ENC-003` | Planned | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Real-model/resource evidence; reuse MOB-06 mobile ownership. |
 
 ## Per-task update protocol
+
+### KU-ENC-002 review evidence — 2026-09-06
+
+- Shared native strict validator/compiler, 48 oracle cases, two complete/partial
+  multi-chunk jobs, bounded provider and durable node integration implemented.
+- Native suites: 153 encoder, 123 node, 109 AI and seven existing SEM tests pass.
+  KU coverage includes four real extraction process-kill phases plus the existing
+  save crash matrix. Inference/token manifests are explicitly fixtures.
+- Workspace check, format, generated bundle, 62 Python tests and global vNext
+  validator pass. Clippy uses the existing warning policy, not zero-warning gates.
+- [Evidence](outputs/KU_ENC_002_IMPLEMENTATION.md) records the first planner's
+  single whole-source scope, unavailable unit/review authority and unqualified
+  real-model/device behavior. KU-ENC-003 carries those qualification inputs.
+- No new Base IDL/canonical semantics, default rollout, mobile implementation,
+  model download or KU-ENC-002 merge.
 
 ### KU-REV-001 review evidence — 2026-09-05
 

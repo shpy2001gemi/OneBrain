@@ -22,7 +22,8 @@ pub trait ModelBackend: Send + Sync {
 
     /// Send a chat request with a JSON Schema for structured output.
     ///
-    /// The response is guaranteed to conform to the provided schema.
+    /// Schema enforcement depends on the backend. Callers must validate the
+    /// returned value and its semantics; parsed JSON alone is not conformance.
     async fn chat_structured(
         &self,
         messages: &[ChatMessage],
