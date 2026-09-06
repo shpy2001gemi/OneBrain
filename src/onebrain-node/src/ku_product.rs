@@ -43,6 +43,14 @@ pub(crate) const KU_PREPARED_MARKER: &[u8] = b"onebrain:ku:prepared:1\0";
 /// Host-only source/encoder port. Ordinary product handles cannot install a port,
 /// supply authority booleans, or bypass its current custody/consent assessment.
 pub trait KuInputProvider: Send + Sync {
+    fn editor(
+        &self,
+        _principal: [u8; 32],
+        _request: crate::ku_manual::ManualEditorRequest,
+        _budget: &ResourceBudgetV1,
+    ) -> Result<crate::ku_manual::ManualEditorResponse, BaseServiceError> {
+        Err(unavailable())
+    }
     fn implementation(&self, mode: InputMode) -> Option<[u8; 32]>;
     fn check_access(
         &self,
@@ -136,6 +144,13 @@ pub struct KuServices {
 }
 
 impl KuServices {
+    pub async fn editor(
+        &self,
+        request: crate::ku_manual::ManualEditorRequest,
+        budget: ResourceBudgetV1,
+    ) -> Result<crate::ku_manual::ManualEditorResponse, BaseServiceError> {
+        self.base.ku_editor(request, budget).await
+    }
     pub async fn reserve(&self) -> Result<OperationId, BaseServiceError> {
         self.base.ku_reserve().await
     }
@@ -236,7 +251,7 @@ pub(crate) struct KuStore {
     process: [u8; 32],
     extracting: Mutex<BTreeMap<[u8; 32], Arc<AtomicBool>>>,
     canceled: Mutex<BTreeSet<[u8; 32]>>,
-    inputs: Arc<dyn KuInputProvider>,
+    pub(crate) inputs: Arc<dyn KuInputProvider>,
     registry: Option<Arc<ConceptRegistryGenerationManager>>,
     releases: Mutex<BTreeMap<[u8; 32], ConceptRegistryReaderLease>>,
     public: Option<Arc<dyn KuPublicReader>>,

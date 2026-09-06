@@ -4,6 +4,10 @@ Task: KU-API-001. This additive transport projects the registered
 [KU workflow](KU_PRODUCT_WORKFLOW_PROFILE_V1.md), without new Base IDs or
 canonical semantics. Existing REST paths and WS vocabulary remain unchanged.
 
+KU-WEB-001 adds a separately specified opt-in [manual editor transport](KU_LOCAL_EDITOR_PROFILE_V1.md).
+The three operations routes below retain their KU-API-001 meanings; the editor
+is a host input adapter and is unavailable unless explicitly installed.
+
 ## Routes and payloads
 
 All routes require the existing constant-time local Bearer authentication.

@@ -9,6 +9,10 @@ license = "MIT"
 name = "onebrain_api"
 path = "src/lib.rs"
 
+[[example]]
+name = "ku_local_web"
+required-features = ["base-v1"]
+
 [features]
 default = ["base-v1"]
 base-v1 = ["onebrain-node/base-v1"]

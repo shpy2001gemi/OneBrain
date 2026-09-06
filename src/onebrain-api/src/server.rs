@@ -572,6 +572,7 @@ impl ApiServer {
         {
             api_routes = api_routes
                 .route("/api/vnext/ku/status", get(crate::ku_api::status))
+                .route("/api/vnext/ku/editor", post(crate::ku_api::editor))
                 .route("/api/vnext/ku/reservations", post(crate::ku_api::reserve))
                 .route("/api/vnext/ku/operations", post(crate::ku_api::invoke));
             api_routes = api_routes

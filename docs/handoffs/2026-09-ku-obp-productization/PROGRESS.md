@@ -6,14 +6,14 @@
 ## Current checkpoint
 
 - Current task: `KU-WEB-001`
-- Current branch: `main` (handoff closure; Web branch not created)
-- Planned task branch: `codex/ku-web-001-workflow`
-- Current state: `Planned`; owner will start Web MVP in a new conversation
-- Starting main: use freshly synchronized `main` including API merge `3eba370df1df91627595e0acbf7645d94ea75276` and this handoff closure
+- Current branch: `codex/ku-web-001-workflow`
+- Review task branch: `codex/ku-web-001-workflow`
+- Current state: `Review`; bounded manual Web workflow and host integration implemented
+- Starting main: `798eabfee8acaa8cb473aa99fa52ccfd6f124f7e`, clean and equal to fetched `origin/main`
 - Prerequisite evidence: [KU-API-001 implementation and limits](outputs/KU_API_001_IMPLEMENTATION.md)
 - Last accepted task: `KU-API-001`, implementation `29c34d1`, reviewed tip `423b7b8`, D-022
 - Last merged task: `KU-API-001`, merge `3eba370df1df91627595e0acbf7645d94ea75276` on `origin/main`
-- Next action: start only KU-WEB-001 in the owner's new conversation, following task 07 and D-021's early MVP priority
+- Next action: owner review of KU-WEB-001; merge/branch deletion and next task remain unauthorized
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -28,7 +28,7 @@
 | 4 | `KU-RUN-001` | Merged | `codex/ku-run-001-shared-service` | `KU-CON-001` | Owner-authorized merge `d141701` on `origin/main`; [implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md). |
 | 5 | `KU-API-001` | Merged | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | D-022; merge `3eba370` on `origin/main`; [API implementation and verification](outputs/KU_API_001_IMPLEMENTATION.md). |
 | 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
-| 7 | `KU-WEB-001` | Planned | `codex/ku-web-001-workflow` | `KU-API-001` | — |
+| 7 | `KU-WEB-001` | Review | `codex/ku-web-001-workflow` | `KU-API-001` | [Implementation and run instructions](outputs/KU_WEB_001_IMPLEMENTATION.md); unmerged. |
 | 8 | `KU-DESK-001` | Planned | `codex/ku-desk-001-workflow` | `KU-WEB-001` | — |
 | 9 | `KU-QA-001` | Planned | `codex/ku-qa-001-cross-surface` | `KU-CLI-001`, `KU-DESK-001`, `KU-ENC-003` | — |
 | 10 | `OBP-PROD-001` | Planned | `codex/obp-prod-001-product-contract` | `KU-CON-001` | — |
@@ -423,6 +423,29 @@ this handoff-only update.
   usable production source pipeline.
 - No Web branch or implementation started, holdout opened, model run, rollout
   enabled or branch deleted during closure. KU-ENC-003 remains separate.
+
+### KU-WEB-001 implementation review — 2026-09-06
+
+- Started from clean `main` at `798eabfee8acaa8cb473aa99fa52ccfd6f124f7e`,
+  equal to fetched `origin/main`; exact task branch `codex/ku-web-001-workflow`.
+- Implemented the local `/ku` manual create/preview/validate/save/search/inspect/
+  revise journey, plus the scoped opt-in host editor and loopback launch example.
+  [Evidence and run instructions](outputs/KU_WEB_001_IMPLEMENTATION.md) specify
+  real host prerequisites and the finite predicate/text editor's limitations.
+- Added the versioned editor transport contract before implementation. Native
+  source custody, signed Registry selection, generated KU payloads, canonical
+  validation, encrypted persistence and Base generation fences retain authority.
+  No new Base IDs, canonical bytes, network lane, model or default rollout.
+- API default suite: 24 library + 8 integration tests pass; node KU suite: 19
+  pass. Host example and feature-disabled API compile. Web: 8 component/transport
+  tests, 2 existing receipt tests, automated accessibility, production build and
+  lint pass under the existing non-KU warning policy. Generated Base, global
+  vNext and format/diff checks pass. Full details and evidence limits are linked.
+- Operator Registry/source/Vault provisioning is required. No production dataset
+  or full physical-browser/assistive-technology run is claimed; source/Registry
+  fixtures appear only in tests. New VI/EN holdouts and KU-ENC-003 remain untouched.
+- Ready for owner review. Keep this task current and preserve its branch;
+  no merge, deletion, deployment or next-task start is included.
 
 ### Update protocol
 

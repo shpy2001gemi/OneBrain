@@ -1,5 +1,5 @@
 //! Thin, private REST projection of the node-owned KU service.
-//! No source intake, extraction, Registry selection, storage or WS authority lives here.
+//! Source custody, editor, extraction, Registry and storage authority stay in the node.
 use axum::body::to_bytes;
 use axum::extract::{Request, State};
 use axum::http::{header, StatusCode};
@@ -426,6 +426,36 @@ pub async fn reserve(State(state): State<AppState>, request: Request) -> Respons
             meta(),
             DEFAULT_BYTES,
         ),
+        Err(e) => failure(e),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EditorRequest {
+    session: Session,
+    budget: Budget,
+    request: onebrain_node::ku_manual::ManualEditorRequest,
+}
+
+pub async fn editor(State(state): State<AppState>, request: Request) -> Response {
+    let (body, size) = match body::<EditorRequest>(request).await {
+        Ok(v) => v,
+        Err(e) => return failure(e),
+    };
+    let budget = match body.budget.service_budget(size) {
+        Ok(v) => v,
+        Err(e) => return failure(e),
+    };
+    let (ku, session) = match service(&state).await {
+        Ok(v) => v,
+        Err(e) => return failure(e),
+    };
+    if let Err(e) = body.session.check(&session) {
+        return failure(e);
+    }
+    match ku.editor(body.request, budget).await {
+        Ok(value) => success(session, value, meta(), body.budget.max_bytes),
         Err(e) => failure(e),
     }
 }

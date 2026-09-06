@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-API-001` merged / `KU-WEB-001` ready for a new conversation**
+> Status: **`KU-API-001` merged / `KU-WEB-001` ready for review**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -41,9 +41,9 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`KU-WEB-001`](tasks/07-KU-WEB-001.md) — Planned
-**Current branch:** `main`; Web implementation has not started.
-**Next task branch:** `codex/ku-web-001-workflow`
+**Current task:** [`KU-WEB-001`](tasks/07-KU-WEB-001.md) — Review
+**Current branch:** `codex/ku-web-001-workflow`; local manual Web implementation ready for review.
+**Review branch:** `codex/ku-web-001-workflow`
 **MVP direction:** [D-021](DECISIONS.md#d-021--prioritize-an-early-open-source-concept--mvp).
 The separate `codex/ku-enc-003-model-qualification` branch remains blocked on
 locked qualification inputs; it is preserved at `4a8f29d` and has no model runs.
@@ -51,8 +51,9 @@ locked qualification inputs; it is preserved at `4a8f29d` and has no model runs.
 KU-API-001 now projects the eleven registered operations through three private
 REST routes. Read its [implementation evidence and integration limits](outputs/KU_API_001_IMPLEMENTATION.md).
 The owner accepted it under [D-022](DECISIONS.md#d-022--ku-api-001-accepted-and-merged-web-handoff-next);
-merge `3eba370` is on `origin/main`. The Web MVP is next in the owner's new
-conversation; host source intake and UI remain product integration work, and
+merge `3eba370` is on `origin/main`. The Web manual MVP is implemented on its separate task branch; see
+[run instructions and implementation limits](outputs/KU_WEB_001_IMPLEMENTATION.md).
+Operator-provisioned source custody/Registry inputs remain required and
 arbitrary-text AI remains unqualified.
 
 KU-RUN-001 implements the D-016 registration and node-owned local service.
@@ -102,15 +103,13 @@ Copy/paste prompt:
 
 ```text
 Read AGENTS.md, then docs/handoffs/2026-09-ku-obp-productization/README.md,
-PROGRESS.md and tasks/07-KU-WEB-001.md in that handoff folder.
-Execute only KU-WEB-001 on codex/ku-web-001-workflow, starting from clean,
-updated main. Follow its required read set and D-021's early local MVP priority.
-Read KU_LOCAL_REST_PROFILE_V1.md and outputs/KU_API_001_IMPLEMENTATION.md
-before choosing the intake/editor integration. Preserve host authority and
-honest unqualified-AI states. Keep the new VI/EN holdouts private and separate.
-Complete focused tests/build, document how to run the MVP and its limits,
-update README/PROGRESS, and push the task branch. Do not merge or delete it
-without my explicit instruction.
+PROGRESS.md, tasks/07-KU-WEB-001.md and outputs/KU_WEB_001_IMPLEMENTATION.md.
+Review KU-WEB-001 on the clean pushed codex/ku-web-001-workflow branch.
+Check the local editor contract, host-admitted source/Registry authority,
+private Web transport, explicit save/reconciliation and revision boundaries.
+Preserve honest unqualified-AI states and keep VI/EN holdouts private.
+Run focused verification and report findings. Do not merge/delete the branch
+or advance to another task without my explicit instruction.
 ```
 
 More prompts are in [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md).

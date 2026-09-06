@@ -680,6 +680,35 @@ pub struct BaseServices {
 }
 
 impl BaseServices {
+    pub(crate) async fn ku_editor(
+        &self,
+        request: crate::ku_manual::ManualEditorRequest,
+        budget: ResourceBudgetV1,
+    ) -> Result<crate::ku_manual::ManualEditorResponse, BaseServiceError> {
+        let lease = self.lease(Admission::NewWork)?;
+        validate_budget(&budget)?;
+        if budget.max_bytes < 16384 || budget.max_items == 0 || budget.max_work_units < 1024 {
+            return Err(crate::ku_product::resource());
+        }
+        let ku = lease
+            .core
+            .ku
+            .as_ref()
+            .ok_or_else(crate::ku_product::unavailable)?;
+        ku.check_dataset(self.dataset_generation)?;
+        if let crate::ku_manual::ManualEditorRequest::Draft(input) = &request {
+            let receipt = lease
+                .core
+                .current_store()?
+                .reconcile(BaseOperationId(input.operation_id.0), self.principal)
+                .map_err(store_error)?
+                .receipt;
+            if receipt.state != crate::base_operation_store::BaseOperationStateV1::Reserved {
+                return Err(crate::ku_product::conflict());
+            }
+        }
+        ku.inputs.editor(self.principal, request, &budget)
+    }
     pub(crate) async fn ku_reserve(
         &self,
     ) -> Result<onebrain_base_contract::ku::OperationId, BaseServiceError> {
