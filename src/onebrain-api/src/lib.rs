@@ -5,6 +5,8 @@ compile_error!("legacy-read-compat requires base-v1");
 
 pub mod error;
 pub mod handlers;
+#[cfg(feature = "base-v1")]
+pub mod ku_api;
 pub mod server;
 pub mod types;
 pub mod vnext_api;

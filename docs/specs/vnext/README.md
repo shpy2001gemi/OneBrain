@@ -160,6 +160,10 @@ or a new foundation release. Its machine inventory and mutation checks establish
 contract consistency; domain/payload registration and golden vectors remain
 technical gates, with distribution/work/economic dependencies tracked separately.
 
+[Local KU REST projection](KU_LOCAL_REST_PROFILE_V1.md) defines the additive
+KU-API-001 transport over the registered service, including session fences,
+bounded envelopes and unqualified-model reporting. It adds no WS events.
+
 ## Normative precedence
 
 If documents disagree, use this order until replaced by a newer signed/merged ADR:

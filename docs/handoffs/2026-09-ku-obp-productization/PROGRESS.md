@@ -5,14 +5,16 @@
 
 ## Current checkpoint
 
-- Current task: `KU-ENC-003`
-- Current branch: `main`; no next-task branch created
-- Planned task branch: `codex/ku-enc-003-model-qualification`
-- Current state: `Planned`; owner will start this task in a new conversation
+- Current task: `KU-API-001`
+- Current branch: `codex/ku-api-001-local-api`
+- Planned task branch: `codex/ku-api-001-local-api`
+- Current state: `Review`; API implementation complete, pending owner review/merge
+- Implementation checkpoint: `29c34d1`, pushed to `origin/codex/ku-api-001-local-api`; branch tip additionally records this ledger checkpoint
+- Starting main: `ca1d4c22f61864a5bde53edf5c399e6ffdbc1943`, clean and equal to freshly fetched `origin/main`
 - Prerequisite evidence: [KU-ENC-002 implementation and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
 - Last accepted task: `KU-ENC-002`, implementation `16408c6`, reviewed tip `a687600`, D-020
 - Last merged task: `KU-ENC-002`, merge `dc04b71b48b27588800b682ef1e71d4506945db1` on `origin/main`
-- Next action: new conversation executes `tasks/23-KU-ENC-003.md`; no qualification work started here
+- Next action: review KU-API-001 using its [implementation evidence](outputs/KU_API_001_IMPLEMENTATION.md); owner acceptance/merge precedes KU-WEB-001
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -25,7 +27,7 @@
 | 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; merge `b872263` on `origin/main`. |
 | 3 | `KU-CON-001` | Merged | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge `2cbc8f2` on `origin/main`. |
 | 4 | `KU-RUN-001` | Merged | `codex/ku-run-001-shared-service` | `KU-CON-001` | Owner-authorized merge `d141701` on `origin/main`; [implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md). |
-| 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | — |
+| 5 | `KU-API-001` | Review | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | D-021; [API implementation and verification](outputs/KU_API_001_IMPLEMENTATION.md). |
 | 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
 | 7 | `KU-WEB-001` | Planned | `codex/ku-web-001-workflow` | `KU-API-001` | — |
 | 8 | `KU-DESK-001` | Planned | `codex/ku-desk-001-workflow` | `KU-WEB-001` | — |
@@ -43,7 +45,7 @@
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | — |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
 | 22 | `KU-ENC-002` | Merged | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Owner accepted under D-020; merge `dc04b71` on `origin/main`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |
-| 23 | `KU-ENC-003` | Planned | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Real-model/resource evidence; reuse MOB-06 mobile ownership. |
+| 23 | `KU-ENC-003` | Blocked | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Separate branch retained at `4a8f29d`; artifact preflight only, no model runs/qualified tuples. Owner reports new VI/EN workbooks; contents and reviewer/locked-run evidence unverified. |
 
 ## Per-task update protocol
 
@@ -381,6 +383,31 @@ is needed. Merge remains a separate explicit instruction under D-010; do not
 start the dependent KU-ENC-002 branch before that merge.
 Generated bundle integrity, global vNext validation and diff checks pass for
 this handoff-only update.
+
+### KU-API-001 review evidence — 2026-09-06
+
+- Implementation checkpoint `29c34d1` was pushed successfully. The following
+  ledger-only commit records that content checkpoint; neither is a merge.
+- D-021 owner follow-up authorized the early local API/Web MVP path. API work
+  starts from `ca1d4c22f61864a5bde53edf5c399e6ffdbc1943` on its own branch;
+  the qualification branch remains preserved separately at `4a8f29d`.
+- Added the versioned local KU REST projection and three authenticated routes
+  for all eleven registered operations. No new Base/DTO IDs, canonical bytes,
+  extraction implementation, Registry authority or WS vocabulary.
+- [Implementation evidence](outputs/KU_API_001_IMPLEMENTATION.md) records
+  API behavior, host integration needs, bounded/private envelopes and the
+  explicit unqualified-model status. Host intake and Web UI remain the next
+  product integration step; a complete runnable Web demo is not claimed here.
+- Default API suite: 22 library plus 8 integration tests pass. Opt-in network
+  library suite: 24 pass. Feature-disabled check, workspace format, generated
+  Base projections, global vNext contracts and diff checks pass.
+- New tests exercise exact save/read/replay, pagination and revisions,
+  cancellation without the node mutex, auth/generation/privacy rejection,
+  unavailable dependencies, export boundaries, unresolved and unqualified AI
+  requests, response overflow and all Base error policies.
+- Owner's new holdout files were not opened; no inference, download, rollout,
+  merge or branch deletion. Current pointer remains KU-API-001 for review;
+  KU-WEB-001 follows the accepted API merge.
 
 ### Update protocol
 
