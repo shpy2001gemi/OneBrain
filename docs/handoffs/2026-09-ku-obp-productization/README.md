@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-RUN-001` merged / `KU-ENC-001` ready for review**
+> Status: **`KU-RUN-001` merged / `KU-ENC-001` owner accepted, merge pending**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -58,7 +58,9 @@ qualification. Model proposals carry no execution or persistence authority.
 KU-ENC-001 now provides the [shared framework contract](../../specs/vnext/KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md)
 and [review evidence](outputs/KU_ENC_001_CONTRACT.md): closed schemas, vi/en
 prompts, 48 corpus cases, bounded resource/lifecycle rules and qualification gates.
-The branch remains the current review task; production integration is KU-ENC-002.
+The owner accepted the reviewed contract under [D-019](DECISIONS.md#d-019--ku-enc-001-contract-accepted-after-owner-review).
+The branch remains the current task pending its explicit merge; production
+integration is KU-ENC-002 after that merge.
 
 Audit output: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md).
 Runtime review: [KU_RUNTIME_GAP_MAP.md](outputs/KU_RUNTIME_GAP_MAP.md).

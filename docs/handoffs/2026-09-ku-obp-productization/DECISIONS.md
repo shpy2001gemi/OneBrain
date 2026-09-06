@@ -274,3 +274,23 @@ raw-text convergence is measured. Limited hardware does not relax these rules.
 This acceptance does not explicitly instruct a merge, branch deletion,
 deployment or mobile implementation. The prepared KU-RUN branch remains
 available for the explicit merge step required by the handoff instructions.
+
+## D-019 — KU-ENC-001 contract accepted after owner review
+
+The owner stated "tôi đã review và đồng ý" after the KU-ENC-001 handoff at
+`e4c1bb6`, accepting reviewed contract commit `a6f0a00`. This accepts the
+[shared extraction framework](../../specs/vnext/KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md),
+its six closed DTO schemas, vi/en prompts, supported/unsupported semantic
+surface, source/Registry bindings, compile rules, resource/lifecycle policy,
+private evidence contract, corpus and predeclared qualification gates.
+
+Do not request approval of this contract or the D-018 direction again.
+The accepted bundle is preserved byte-for-byte; its creation-time
+`contract-review` metadata is superseded for approval status by this decision.
+Production integration remains KU-ENC-002 and measured model/resource
+qualification remains KU-ENC-003, with existing mobile ownership unchanged.
+
+This message accepts the reviewed task. It does not explicitly instruct a
+merge or branch deletion under D-010. Keep the task in Review with owner
+acceptance recorded until its merge exists on main; the earlier explicit
+merge instruction applied to KU-RUN-001.
