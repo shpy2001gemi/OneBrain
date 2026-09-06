@@ -5,16 +5,15 @@
 
 ## Current checkpoint
 
-- Current task: `KU-API-001`
-- Current branch: `codex/ku-api-001-local-api`
-- Planned task branch: `codex/ku-api-001-local-api`
-- Current state: `Review`; API implementation complete, pending owner review/merge
-- Implementation checkpoint: `29c34d1`, pushed to `origin/codex/ku-api-001-local-api`; branch tip additionally records this ledger checkpoint
-- Starting main: `ca1d4c22f61864a5bde53edf5c399e6ffdbc1943`, clean and equal to freshly fetched `origin/main`
-- Prerequisite evidence: [KU-ENC-002 implementation and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
-- Last accepted task: `KU-ENC-002`, implementation `16408c6`, reviewed tip `a687600`, D-020
-- Last merged task: `KU-ENC-002`, merge `dc04b71b48b27588800b682ef1e71d4506945db1` on `origin/main`
-- Next action: review KU-API-001 using its [implementation evidence](outputs/KU_API_001_IMPLEMENTATION.md); owner acceptance/merge precedes KU-WEB-001
+- Current task: `KU-WEB-001`
+- Current branch: `main` (handoff closure; Web branch not created)
+- Planned task branch: `codex/ku-web-001-workflow`
+- Current state: `Planned`; owner will start Web MVP in a new conversation
+- Starting main: use freshly synchronized `main` including API merge `3eba370df1df91627595e0acbf7645d94ea75276` and this handoff closure
+- Prerequisite evidence: [KU-API-001 implementation and limits](outputs/KU_API_001_IMPLEMENTATION.md)
+- Last accepted task: `KU-API-001`, implementation `29c34d1`, reviewed tip `423b7b8`, D-022
+- Last merged task: `KU-API-001`, merge `3eba370df1df91627595e0acbf7645d94ea75276` on `origin/main`
+- Next action: start only KU-WEB-001 in the owner's new conversation, following task 07 and D-021's early MVP priority
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -27,7 +26,7 @@
 | 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; merge `b872263` on `origin/main`. |
 | 3 | `KU-CON-001` | Merged | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge `2cbc8f2` on `origin/main`. |
 | 4 | `KU-RUN-001` | Merged | `codex/ku-run-001-shared-service` | `KU-CON-001` | Owner-authorized merge `d141701` on `origin/main`; [implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md). |
-| 5 | `KU-API-001` | Review | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | D-021; [API implementation and verification](outputs/KU_API_001_IMPLEMENTATION.md). |
+| 5 | `KU-API-001` | Merged | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | D-022; merge `3eba370` on `origin/main`; [API implementation and verification](outputs/KU_API_001_IMPLEMENTATION.md). |
 | 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
 | 7 | `KU-WEB-001` | Planned | `codex/ku-web-001-workflow` | `KU-API-001` | — |
 | 8 | `KU-DESK-001` | Planned | `codex/ku-desk-001-workflow` | `KU-WEB-001` | — |
@@ -408,6 +407,22 @@ this handoff-only update.
 - Owner's new holdout files were not opened; no inference, download, rollout,
   merge or branch deletion. Current pointer remains KU-API-001 for review;
   KU-WEB-001 follows the accepted API merge.
+
+### KU-API-001 merge and Web handoff — 2026-09-06
+
+- Owner reviewed and accepted tip `423b7b8`, authorizing merge and handoff
+  closure under D-022. The task branch was clean, pushed and synchronized.
+- Fresh `cargo test --locked -q -p onebrain-api`: 22 library and 8 integration
+  tests pass. Generated Base check, global vNext contracts, workspace format
+  and diff checks also pass. No runtime changes were made during closure.
+- Merged and pushed `3eba370df1df91627595e0acbf7645d94ea75276` to main.
+  API task is Merged; current pointer advances to KU-WEB-001, still Planned.
+- The next conversation should build the small local Web journey under D-021,
+  accounting for API host-intake/Registry dependencies and unqualified AI.
+  It must not invent client-side authority or treat fixture evidence as a
+  usable production source pipeline.
+- No Web branch or implementation started, holdout opened, model run, rollout
+  enabled or branch deleted during closure. KU-ENC-003 remains separate.
 
 ### Update protocol
 

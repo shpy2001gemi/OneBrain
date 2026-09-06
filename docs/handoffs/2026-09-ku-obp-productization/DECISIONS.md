@@ -348,3 +348,20 @@ Owner follow-up: the owner answered "tôi đồng ý" to starting KU-API-001, th
 KU-WEB-001. KU-API-001 is authorized now; dependent Web work follows the accepted
 API merge. The qualification branch is retained separately; no merge, deployment
 or default AI enablement is authorized by this direction.
+
+## D-022 — KU-API-001 accepted and merged; Web handoff next
+
+The owner reviewed implementation `29c34d1` and handoff tip `423b7b8`, then
+stated: "tôi đã review và đồng ý. hãy thực hiện. sau đó cập nhật tài liệu hand
+off để tôi làm task kế ở conversation mới".
+
+This accepts KU-API-001 and authorizes its merge and handoff closure. Fresh
+API tests, generated Base projections, format and global contract checks pass.
+Merge `3eba370df1df91627595e0acbf7645d94ea75276` is pushed to `origin/main`.
+The accepted implementation retains its documented host-intake and real-model
+qualification limits; no default rollout or model qualification is implied.
+
+KU-WEB-001 is next under D-021. Leave it Planned for the owner's new
+conversation, using branch `codex/ku-web-001-workflow` from updated main. Do
+not begin Web implementation during this closure. Preserve the separate
+KU-ENC-003 branch and private holdouts. No branch deletion was requested.

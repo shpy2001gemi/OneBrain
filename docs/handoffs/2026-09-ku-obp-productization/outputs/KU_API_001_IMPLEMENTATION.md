@@ -81,5 +81,7 @@ mutex. No fixture is a model-quality or production-custody claim.
 Existing unused-code/import warnings remain in dependency/feature builds; this
 is not a zero-warning claim or a remote CI execution claim.
 
-Review the branch before the owner-approved merge. KU-WEB-001 follows that
-accepted merge; this task does not merge or delete branches.
+Closure: the owner accepted reviewed tip `423b7b8` under D-022. Merge `3eba370`
+is on `origin/main`; fresh default API tests and contract/format checks pass.
+KU-WEB-001 is the next Planned task for the owner's new conversation. These
+accepted implementation limits remain in force after merge.

@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-ENC-002` merged / `KU-API-001` ready for review**
+> Status: **`KU-API-001` merged / `KU-WEB-001` ready for a new conversation**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -41,16 +41,19 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`KU-API-001`](tasks/05-KU-API-001.md) — Review
-**Current branch:** `codex/ku-api-001-local-api`
+**Current task:** [`KU-WEB-001`](tasks/07-KU-WEB-001.md) — Planned
+**Current branch:** `main`; Web implementation has not started.
+**Next task branch:** `codex/ku-web-001-workflow`
 **MVP direction:** [D-021](DECISIONS.md#d-021--prioritize-an-early-open-source-concept--mvp).
 The separate `codex/ku-enc-003-model-qualification` branch remains blocked on
 locked qualification inputs; it is preserved at `4a8f29d` and has no model runs.
 
 KU-API-001 now projects the eleven registered operations through three private
 REST routes. Read its [implementation evidence and integration limits](outputs/KU_API_001_IMPLEMENTATION.md).
-The Web MVP is next after accepted API merge; host source intake and UI remain
-product integration work, and arbitrary-text AI remains unqualified.
+The owner accepted it under [D-022](DECISIONS.md#d-022--ku-api-001-accepted-and-merged-web-handoff-next);
+merge `3eba370` is on `origin/main`. The Web MVP is next in the owner's new
+conversation; host source intake and UI remain product integration work, and
+arbitrary-text AI remains unqualified.
 
 KU-RUN-001 implements the D-016 registration and node-owned local service.
 The owner authorized merge `d141701`, now on `origin/main`. See the
@@ -98,12 +101,16 @@ enable minting or change canonical bytes, application code or rollout state.
 Copy/paste prompt:
 
 ```text
-Read AGENTS.md and docs/handoffs/2026-09-ku-obp-productization/README.md,
-then review KU-API-001 from tasks/05-KU-API-001.md on its existing branch.
-Follow its required read set, including KU_LOCAL_REST_PROFILE_V1.md.
-Inspect the diff and run focused validation. Report findings; do not modify,
-merge or delete a branch without owner instruction. Preserve the separate qualification
-branch and do not open the owner's new holdout files in this API task.
+Read AGENTS.md, then docs/handoffs/2026-09-ku-obp-productization/README.md,
+PROGRESS.md and tasks/07-KU-WEB-001.md in that handoff folder.
+Execute only KU-WEB-001 on codex/ku-web-001-workflow, starting from clean,
+updated main. Follow its required read set and D-021's early local MVP priority.
+Read KU_LOCAL_REST_PROFILE_V1.md and outputs/KU_API_001_IMPLEMENTATION.md
+before choosing the intake/editor integration. Preserve host authority and
+honest unqualified-AI states. Keep the new VI/EN holdouts private and separate.
+Complete focused tests/build, document how to run the MVP and its limits,
+update README/PROGRESS, and push the task branch. Do not merge or delete it
+without my explicit instruction.
 ```
 
 More prompts are in [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md).
