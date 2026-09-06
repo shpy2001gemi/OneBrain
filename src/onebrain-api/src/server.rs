@@ -282,6 +282,11 @@ impl ApiServer {
         self.state.vnext_ws.clone()
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_state(&self) -> AppState {
+        self.state.clone()
+    }
+
     /// Set the directory containing built web dashboard files.
     /// If set, the server will serve the web dashboard at `/`.
     pub fn with_web_dir(mut self, path: PathBuf) -> Self {
@@ -566,6 +571,10 @@ impl ApiServer {
         #[cfg(feature = "base-v1")]
         {
             api_routes = api_routes
+                .route("/api/vnext/ku/status", get(crate::ku_api::status))
+                .route("/api/vnext/ku/reservations", post(crate::ku_api::reserve))
+                .route("/api/vnext/ku/operations", post(crate::ku_api::invoke));
+            api_routes = api_routes
                 .route(
                     "/api/base/v1/capabilities",
                     get(handlers::get_base_capabilities),
@@ -672,11 +681,19 @@ async fn auth_middleware(
             if constant_time_eq(token.as_bytes(), state.api_token.as_bytes()) {
                 next.run(req).await
             } else {
+                #[cfg(feature = "base-v1")]
+                if path.starts_with("/api/vnext/ku/") {
+                    return crate::ku_api::authentication_error(StatusCode::FORBIDDEN);
+                }
                 let body = ApiErrorResponse::new("AUTH_INVALID_TOKEN", "Invalid API token");
                 (StatusCode::FORBIDDEN, Json(body)).into_response()
             }
         }
         _ => {
+            #[cfg(feature = "base-v1")]
+            if path.starts_with("/api/vnext/ku/") {
+                return crate::ku_api::authentication_error(StatusCode::UNAUTHORIZED);
+            }
             let body =
                 ApiErrorResponse::new("AUTH_REQUIRED", "Missing or malformed Authorization header");
             (StatusCode::UNAUTHORIZED, Json(body)).into_response()

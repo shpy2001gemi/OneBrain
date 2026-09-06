@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-ENC-002` merged / `KU-ENC-003` awaits a new conversation**
+> Status: **`KU-ENC-002` merged / `KU-API-001` ready for review**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -41,15 +41,23 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`KU-ENC-003`](tasks/23-KU-ENC-003.md) — Planned, not started
-**Current branch:** `main`
-**Planned task branch:** `codex/ku-enc-003-model-qualification` — create in the new conversation
+**Current task:** [`KU-API-001`](tasks/05-KU-API-001.md) — Review
+**Current branch:** `codex/ku-api-001-local-api`
+**MVP direction:** [D-021](DECISIONS.md#d-021--prioritize-an-early-open-source-concept--mvp).
+The separate `codex/ku-enc-003-model-qualification` branch remains blocked on
+locked qualification inputs; it is preserved at `4a8f29d` and has no model runs.
+
+KU-API-001 now projects the eleven registered operations through three private
+REST routes. Read its [implementation evidence and integration limits](outputs/KU_API_001_IMPLEMENTATION.md).
+The Web MVP is next after accepted API merge; host source intake and UI remain
+product integration work, and arbitrary-text AI remains unqualified.
 
 KU-RUN-001 implements the D-016 registration and node-owned local service.
 The owner authorized merge `d141701`, now on `origin/main`. See the
 [implementation evidence and limits](outputs/KU_RUN_001_IMPLEMENTATION.md)
 and [PROGRESS.md](PROGRESS.md). The owner authorized starting KU-ENC-001,
-followed by the shared encoder runtime; KU-API-001 has not started.
+followed by the shared encoder runtime. The owner now authorized KU-API-001
+as the next local MVP step, followed by KU-WEB-001 after API acceptance/merge.
 
 The new [encoder framework research](outputs/KU_ENCODER_FRAMEWORK_RESEARCH.md)
 maps the old tool-driven/v2 paths, existing AI/mobile tasks and the shared gap.
@@ -65,7 +73,7 @@ starting KU-ENC-002 to implement the shared encoder against this contract.
 
 KU-ENC-002 provides the native compiler/workflow and node integration, accepted
 under [D-020](DECISIONS.md#d-020--ku-enc-002-accepted-and-closed) and merged into
-`origin/main` at `dc04b71`. The owner will start KU-ENC-003 in a new conversation.
+`origin/main` at `dc04b71`. Qualification continues on its separate task branch.
 Read the [implementation evidence and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
 for test results, offline behavior, current source/Registry boundaries and the
 remaining real-model qualification work. Model/tool/storage authority remains
@@ -91,13 +99,11 @@ Copy/paste prompt:
 
 ```text
 Read AGENTS.md and docs/handoffs/2026-09-ku-obp-productization/README.md,
-then execute KU-ENC-003 from tasks/23-KU-ENC-003.md.
-Follow its required read set, scope and qualification gates, including
-outputs/KU_ENC_002_IMPLEMENTATION.md. Verify clean synchronized main, then
-create codex/ku-enc-003-model-qualification from main and record its starting
-commit. Update the handoff and push the task branch; do not merge or delete
-it without owner instruction. KU-ENC-001, KU-ENC-002 and KU-RUN-001 are merged;
-do not repeat them. Do not substitute mock results for real-model evidence.
+then review KU-API-001 from tasks/05-KU-API-001.md on its existing branch.
+Follow its required read set, including KU_LOCAL_REST_PROFILE_V1.md.
+Inspect the diff and run focused validation. Report findings; do not modify,
+merge or delete a branch without owner instruction. Preserve the separate qualification
+branch and do not open the owner's new holdout files in this API task.
 ```
 
 More prompts are in [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md).
