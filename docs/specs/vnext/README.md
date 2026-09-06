@@ -9,6 +9,11 @@ This directory owns the cross-crate contracts that must be stable before vNext r
 
 ## Contract index
 
+The productization lane adds the [shared KU extraction framework](KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md)
+under KU-ENC-001 (contract review): bounded model proposals, host-owned resolution
+and SEM compilation, version-bound schemas/prompts, conformance corpus and model
+qualification gates. It changes no frozen Foundation object or Base registration.
+
 | Task | Contract | Status | Evidence |
 |---|---|---|---|
 | `FND-001` | [Field Ownership Matrix v1](FIELD_OWNERSHIP_MATRIX_V1.md) | Complete | Ownership domains, object/event/view split, storage classes and CID-cycle rules. |

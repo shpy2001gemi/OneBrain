@@ -15,6 +15,7 @@ on:
       - "formal/tla/**"
       - "scripts/ci/**"
       - "scripts/concept_registry/**"
+      - "scripts/encoder/**"
       - "scripts/runner/**"
       - "src/**"
       - "src/ku-core/**"
@@ -45,6 +46,7 @@ on:
       - "formal/tla/**"
       - "scripts/ci/**"
       - "scripts/concept_registry/**"
+      - "scripts/encoder/**"
       - "scripts/runner/**"
       - "src/**"
       - "src/ku-core/**"
@@ -232,6 +234,8 @@ jobs:
         working-directory: .
         run: |
           python scripts/ci/validate_vnext_contracts.py
+          python -m scripts.encoder.generate_bundle --check
+          python -m unittest scripts.encoder.test_contract
           python -m unittest scripts.ci.test_validate_vnext_product_profile
           python -m unittest scripts.ci.test_validate_vnext_ws_profile
           python -m unittest scripts.ci.test_validate_vnext_cli_profile

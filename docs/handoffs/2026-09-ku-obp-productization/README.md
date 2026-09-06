@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-RUN-001` merged / `KU-ENC-001` is the current task**
+> Status: **`KU-RUN-001` merged / `KU-ENC-001` ready for review**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -54,6 +54,11 @@ The new [encoder framework research](outputs/KU_ENCODER_FRAMEWORK_RESEARCH.md)
 maps the old tool-driven/v2 paths, existing AI/mobile tasks and the shared gap.
 KU-ENC-001/002/003 cover contract, workflow implementation and model/resource
 qualification. Model proposals carry no execution or persistence authority.
+
+KU-ENC-001 now provides the [shared framework contract](../../specs/vnext/KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md)
+and [review evidence](outputs/KU_ENC_001_CONTRACT.md): closed schemas, vi/en
+prompts, 48 corpus cases, bounded resource/lifecycle rules and qualification gates.
+The branch remains the current review task; production integration is KU-ENC-002.
 
 Audit output: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md).
 Runtime review: [KU_RUNTIME_GAP_MAP.md](outputs/KU_RUNTIME_GAP_MAP.md).

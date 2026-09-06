@@ -5,6 +5,12 @@ src/fuzz/corpus/** -text
 *.sh text eol=lf
 scripts/ci/vnext_namespace_seccomp.json text eol=lf
 
+# KU extraction bundle hashes must survive cross-platform checkouts unchanged.
+docs/specs/vnext/ku-encoder-v1/** text eol=lf
+docs/specs/vnext/KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md text eol=lf
+scripts/encoder/*.py text eol=lf
+scripts/ci/validate_ku_encoder_contract.py text eol=lf
+
 # Generated ABI input and output are byte-compared on Linux, Windows, and macOS.
 src/onebrain-base-abi/cbindgen.toml text eol=lf
 src/onebrain-base-abi/include/onebrain_base_v1.h text eol=lf

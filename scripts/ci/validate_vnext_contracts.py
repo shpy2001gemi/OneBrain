@@ -18,11 +18,13 @@ from urllib.parse import urlsplit
 import blake3
 
 if __package__:
+    from .validate_ku_encoder_contract import validate_contract as validate_ku_encoder_profile
     from .validate_ku_product_contract import (
         KuContractError,
         validate_contract as validate_ku_product_profile,
     )
 else:
+    from validate_ku_encoder_contract import validate_contract as validate_ku_encoder_profile
     from validate_ku_product_contract import (
         KuContractError,
         validate_contract as validate_ku_product_profile,
@@ -8795,6 +8797,10 @@ def main() -> int:
             ku_operations, ku_dtos, ku_fixtures = validate_ku_product_profile()
         except (KuContractError, KeyError, TypeError, OSError, json.JSONDecodeError) as error:
             raise ContractError(f"KU product contract: {error}") from error
+        try:
+            encoder_cases, encoder_jobs, encoder_artifacts = validate_ku_encoder_profile()
+        except (ValueError, KeyError, TypeError, OSError) as error:
+            raise ContractError(f"KU encoder contract: {error}") from error
         ws_events, ws_topics = validate_private_websocket_profile()
         cli_commands = validate_vnext_cli_profile()
         ux_receipt_vectors = validate_vnext_desktop_web_ux_profile()
@@ -8908,6 +8914,7 @@ def main() -> int:
     print(
         "vNext contracts OK: "
         f"{ku_operations} KU contract operations/{ku_dtos} DTOs/{ku_fixtures} fixtures, "
+        f"{encoder_cases} encoder cases/{encoder_jobs} jobs/{encoder_artifacts} generated artifacts, "
         f"{len(tasks)} tasks, {adrs} ADRs, {assertions} negative assertions, "
         f"{vector_count} foundation vectors/{domains} domains, "
         f"{base_signer_domains} Base signer domains/{base_archive_classes} archive classes, "

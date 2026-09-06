@@ -1,0 +1,258 @@
+{
+  "profile": "ku-extraction/1.0",
+  "examples": [
+    {
+      "id": "en-assertion",
+      "context": {
+        "profile": "ku-extraction/1.0",
+        "attempt_id": "1111111111111111111111111111111111111111111111111111111111111111",
+        "context_sha256": "218900f27ca652eea36f4488dfb813e48379a3d5c15ae099e69092cc53c1a9fc",
+        "windows": [
+          {
+            "key": "focus",
+            "start": 0,
+            "end": 15,
+            "role": "focus",
+            "text": "Water is clear."
+          }
+        ],
+        "required_units": [
+          {
+            "key": "unit",
+            "span": {
+              "start": 0,
+              "end": 15,
+              "quote": "Water is clear."
+            }
+          }
+        ],
+        "options": [
+          {
+            "key": "predicate",
+            "lookup_label": "is",
+            "mention": {
+              "start": 6,
+              "end": 8,
+              "quote": "is"
+            }
+          }
+        ]
+      },
+      "candidate": {
+        "profile": "ku-extraction/1.0",
+        "attempt_id": "1111111111111111111111111111111111111111111111111111111111111111",
+        "context_sha256": "218900f27ca652eea36f4488dfb813e48379a3d5c15ae099e69092cc53c1a9fc",
+        "concepts": [
+          {
+            "key": "p",
+            "label": "is",
+            "evidence": {
+              "start": 6,
+              "end": 8,
+              "quote": "is"
+            }
+          }
+        ],
+        "statements": [
+          {
+            "key": "s",
+            "evidence": [
+              {
+                "start": 0,
+                "end": 15,
+                "quote": "Water is clear."
+              }
+            ],
+            "predicate": "p",
+            "arguments": [
+              {
+                "kind": "text",
+                "value": "Water",
+                "evidence": {
+                  "start": 0,
+                  "end": 5,
+                  "quote": "Water"
+                }
+              },
+              {
+                "kind": "text",
+                "value": "clear",
+                "evidence": {
+                  "start": 9,
+                  "end": 14,
+                  "quote": "clear"
+                }
+              }
+            ],
+            "negation": {
+              "value": false,
+              "evidence": []
+            },
+            "modality": {
+              "value": "asserted",
+              "evidence": []
+            }
+          }
+        ],
+        "coverage": [
+          {
+            "unit": "unit",
+            "status": "represented",
+            "statements": [
+              "s"
+            ],
+            "reason": "none"
+          }
+        ]
+      }
+    },
+    {
+      "id": "vi-assertion",
+      "context": {
+        "profile": "ku-extraction/1.0",
+        "attempt_id": "1111111111111111111111111111111111111111111111111111111111111111",
+        "context_sha256": "be0a26343fcf776144fbee39e9178bfcab4a0039a8ea6acd8e4a1e835698ad6c",
+        "windows": [
+          {
+            "key": "focus",
+            "start": 0,
+            "end": 22,
+            "role": "focus",
+            "text": "Nước có màu xanh."
+          }
+        ],
+        "required_units": [
+          {
+            "key": "unit",
+            "span": {
+              "start": 0,
+              "end": 22,
+              "quote": "Nước có màu xanh."
+            }
+          }
+        ],
+        "options": [
+          {
+            "key": "predicate",
+            "lookup_label": "có màu",
+            "mention": {
+              "start": 8,
+              "end": 16,
+              "quote": "có màu"
+            }
+          }
+        ]
+      },
+      "candidate": {
+        "profile": "ku-extraction/1.0",
+        "attempt_id": "1111111111111111111111111111111111111111111111111111111111111111",
+        "context_sha256": "be0a26343fcf776144fbee39e9178bfcab4a0039a8ea6acd8e4a1e835698ad6c",
+        "concepts": [
+          {
+            "key": "p",
+            "label": "có màu",
+            "evidence": {
+              "start": 8,
+              "end": 16,
+              "quote": "có màu"
+            }
+          }
+        ],
+        "statements": [
+          {
+            "key": "s",
+            "evidence": [
+              {
+                "start": 0,
+                "end": 22,
+                "quote": "Nước có màu xanh."
+              }
+            ],
+            "predicate": "p",
+            "arguments": [
+              {
+                "kind": "text",
+                "value": "Nước",
+                "evidence": {
+                  "start": 0,
+                  "end": 7,
+                  "quote": "Nước"
+                }
+              },
+              {
+                "kind": "text",
+                "value": "xanh",
+                "evidence": {
+                  "start": 17,
+                  "end": 21,
+                  "quote": "xanh"
+                }
+              }
+            ],
+            "negation": {
+              "value": false,
+              "evidence": []
+            },
+            "modality": {
+              "value": "asserted",
+              "evidence": []
+            }
+          }
+        ],
+        "coverage": [
+          {
+            "unit": "unit",
+            "status": "represented",
+            "statements": [
+              "s"
+            ],
+            "reason": "none"
+          }
+        ]
+      }
+    },
+    {
+      "id": "vi-unsupported-quantifier",
+      "context": {
+        "profile": "ku-extraction/1.0",
+        "attempt_id": "1111111111111111111111111111111111111111111111111111111111111111",
+        "context_sha256": "71b0d3112839f5766696a58338e30f32116f4fb4c8c3e81058f1dee251e262bd",
+        "windows": [
+          {
+            "key": "focus",
+            "start": 0,
+            "end": 35,
+            "role": "focus",
+            "text": "Mọi nước đều có màu xanh."
+          }
+        ],
+        "required_units": [
+          {
+            "key": "unit",
+            "span": {
+              "start": 0,
+              "end": 35,
+              "quote": "Mọi nước đều có màu xanh."
+            }
+          }
+        ],
+        "options": []
+      },
+      "candidate": {
+        "profile": "ku-extraction/1.0",
+        "attempt_id": "1111111111111111111111111111111111111111111111111111111111111111",
+        "context_sha256": "71b0d3112839f5766696a58338e30f32116f4fb4c8c3e81058f1dee251e262bd",
+        "concepts": [],
+        "statements": [],
+        "coverage": [
+          {
+            "unit": "unit",
+            "status": "unsupported",
+            "statements": [],
+            "reason": "unsupported_semantics"
+          }
+        ]
+      }
+    }
+  ]
+}

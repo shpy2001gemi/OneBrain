@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ku-extraction/1.0 Attempt",
+  "$ref": "#/$defs/Attempt",
+  "$defs": {
+    "Attempt": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "const": "ku-extraction-attempt/1.0"
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "principal_binding": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "process_generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "dataset_generation": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "context_sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "registry_root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "bundle_sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "provider_manifest_sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "admitted",
+            "extracting",
+            "candidate_recorded",
+            "resolving",
+            "validated",
+            "prepared",
+            "interrupted",
+            "failed",
+            "canceled"
+          ]
+        },
+        "calls_reserved": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "input_tokens_reserved": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 262144
+        },
+        "output_tokens_reserved": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65536
+        },
+        "work_units_charged": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "remaining_deadline_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 120000
+        },
+        "candidate_sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "resolution_sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "none",
+            "dependency_unavailable",
+            "invalid_candidate",
+            "source_revoked",
+            "budget_exhausted",
+            "interrupted",
+            "canceled"
+          ]
+        }
+      },
+      "required": [
+        "profile",
+        "attempt_id",
+        "operation_id",
+        "principal_binding",
+        "process_generation",
+        "dataset_generation",
+        "source_ref",
+        "context_sha256",
+        "registry_root",
+        "bundle_sha256",
+        "provider_manifest_sha256",
+        "phase",
+        "calls_reserved",
+        "input_tokens_reserved",
+        "output_tokens_reserved",
+        "work_units_charged",
+        "remaining_deadline_ms",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

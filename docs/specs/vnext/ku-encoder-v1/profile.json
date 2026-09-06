@@ -1,0 +1,113 @@
+{
+  "profile": "ku-extraction/1.0",
+  "status": "contract-review",
+  "production_enabled": false,
+  "semantic_profile": "SEM-1.0",
+  "roots": {
+    "context": "Context",
+    "candidate": "Candidate",
+    "resolution": "Resolution",
+    "attempt": "Attempt",
+    "provider": "ProviderManifest",
+    "input": "ProviderInput"
+  },
+  "provider_modes": [
+    "rules",
+    "json_schema",
+    "grammar",
+    "bounded_json"
+  ],
+  "max_context_calls": 2,
+  "max_chunks_per_job": 16,
+  "max_job_statements": 256,
+  "max_payload_bytes": 1048576,
+  "max_source_bytes": 786432,
+  "max_job_work_units": 1000000,
+  "max_parallel_calls": 1,
+  "resource_profiles": {
+    "no_llm": {
+      "job_calls": 0,
+      "call_input_tokens": 0,
+      "call_output_tokens": 0,
+      "job_input_tokens": 0,
+      "job_output_tokens": 0,
+      "deadline_ms": 30000
+    },
+    "constrained": {
+      "job_calls": 8,
+      "call_input_tokens": 4096,
+      "call_output_tokens": 2048,
+      "job_input_tokens": 32768,
+      "job_output_tokens": 16384,
+      "deadline_ms": 30000
+    },
+    "standard": {
+      "job_calls": 32,
+      "call_input_tokens": 8192,
+      "call_output_tokens": 2048,
+      "job_input_tokens": 262144,
+      "job_output_tokens": 65536,
+      "deadline_ms": 120000
+    }
+  },
+  "phase_base_states": {
+    "admitted": "reserved",
+    "extracting": "reserved",
+    "candidate_recorded": "reserved",
+    "resolving": "reserved",
+    "validated": "reserved",
+    "prepared": "prepared",
+    "interrupted": "unknown",
+    "failed": "failed",
+    "canceled": "canceled"
+  },
+  "features": {
+    "concept": "TermRef::Concept",
+    "text": "Literal::Text",
+    "boolean": "Literal::Boolean",
+    "quantity": "Literal::Quantity",
+    "statement_reference": "TermRef::Statement",
+    "predicate_and_ordered_arguments": "StatementFrame",
+    "negation": "StatementQualifiers::negated",
+    "modality": "StatementQualifiers::modality",
+    "condition": "StatementQualifiers::condition",
+    "time": "StatementQualifiers::time",
+    "location": "StatementQualifiers::location",
+    "perspective": "StatementQualifiers::perspective",
+    "tolerance": "StatementQualifiers::tolerance",
+    "source_spans": "StatementQualifiers::source_spans"
+  },
+  "unsupported": [
+    "variables_and_quantifiers",
+    "receptor_slots",
+    "typed_constraints",
+    "bytes_literal",
+    "object_reference_term",
+    "cyclic_statement_references",
+    "implicit_unit",
+    "localized_or_exponent_number",
+    "confidence_as_truth",
+    "automatic_core_dna_lowering"
+  ],
+  "qualification": {
+    "min_blind_sources_per_language": 100,
+    "languages": [
+      "vi",
+      "en"
+    ],
+    "repeats_per_source": 3,
+    "critical_safety_failures_allowed": 0,
+    "conformance_pass_percent": 100,
+    "same_sem_identity_percent": 100,
+    "supported_source_complete_precision_percent": 98,
+    "supported_source_complete_recall_percent": 90,
+    "unsupported_abstention_percent": 99,
+    "repeat_semantic_agreement_percent": 95,
+    "cross_model_semantic_agreement_percent": 90,
+    "p95_complete_latency_constrained_ms": 30000,
+    "p95_complete_latency_standard_ms": 120000,
+    "max_budget_overruns": 0,
+    "max_successful_late_callbacks": 0,
+    "min_supported_sources_per_feature": 10
+  }
+}

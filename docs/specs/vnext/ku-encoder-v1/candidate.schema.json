@@ -1,0 +1,412 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ku-extraction/1.0 Candidate",
+  "$ref": "#/$defs/Candidate",
+  "$defs": {
+    "Candidate": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "const": "ku-extraction/1.0"
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "context_sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "concepts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Concept"
+          },
+          "minItems": 0,
+          "maxItems": 128
+        },
+        "statements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Statement"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "coverage": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Coverage"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "profile",
+        "attempt_id",
+        "context_sha256",
+        "concepts",
+        "statements",
+        "coverage"
+      ],
+      "additionalProperties": false
+    },
+    "Concept": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "evidence": {
+          "$ref": "#/$defs/Span"
+        },
+        "option_proposal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "Coverage": {
+      "type": "object",
+      "properties": {
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "represented",
+            "unresolved",
+            "unsupported"
+          ]
+        },
+        "statements": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32,
+            "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "none",
+            "ambiguous_concept",
+            "missing_context",
+            "unsupported_semantics",
+            "unreadable",
+            "no_statement",
+            "budget_exhausted",
+            "unresolved_scope"
+          ]
+        }
+      },
+      "required": [
+        "unit",
+        "status",
+        "statements",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "Quantity": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "quantity"
+        },
+        "number": {
+          "$ref": "#/$defs/Span"
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        },
+        "unit_evidence": {
+          "$ref": "#/$defs/Span"
+        }
+      },
+      "required": [
+        "kind",
+        "number",
+        "unit",
+        "unit_evidence"
+      ],
+      "additionalProperties": false
+    },
+    "Span": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 786432
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 786432
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "quote"
+      ],
+      "additionalProperties": false
+    },
+    "Statement": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Span"
+          },
+          "minItems": 1,
+          "maxItems": 8
+        },
+        "predicate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Term"
+          },
+          "minItems": 1,
+          "maxItems": 16
+        },
+        "negation": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "boolean"
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Span"
+              },
+              "minItems": 0,
+              "maxItems": 4
+            }
+          },
+          "required": [
+            "value",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "modality": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "string",
+              "enum": [
+                "asserted",
+                "observed",
+                "reported",
+                "possible",
+                "necessary",
+                "desired"
+              ]
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Span"
+              },
+              "minItems": 0,
+              "maxItems": 4
+            }
+          },
+          "required": [
+            "value",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "condition": {
+          "type": "object",
+          "properties": {
+            "statement": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+            },
+            "evidence": {
+              "$ref": "#/$defs/Span"
+            }
+          },
+          "required": [
+            "statement",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        "time": {
+          "$ref": "#/$defs/Term"
+        },
+        "location": {
+          "$ref": "#/$defs/Term"
+        },
+        "perspective": {
+          "$ref": "#/$defs/Term"
+        },
+        "tolerance": {
+          "$ref": "#/$defs/Quantity"
+        }
+      },
+      "required": [
+        "key",
+        "evidence",
+        "predicate",
+        "arguments",
+        "negation",
+        "modality"
+      ],
+      "additionalProperties": false
+    },
+    "Term": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "concept"
+            },
+            "concept": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+            },
+            "evidence": {
+              "$ref": "#/$defs/Span"
+            }
+          },
+          "required": [
+            "kind",
+            "concept",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "evidence": {
+              "$ref": "#/$defs/Span"
+            }
+          },
+          "required": [
+            "kind",
+            "value",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "boolean"
+            },
+            "value": {
+              "type": "boolean"
+            },
+            "evidence": {
+              "$ref": "#/$defs/Span"
+            }
+          },
+          "required": [
+            "kind",
+            "value",
+            "evidence"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "$ref": "#/$defs/Quantity"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "statement"
+            },
+            "statement": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32,
+              "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+            },
+            "evidence": {
+              "$ref": "#/$defs/Span"
+            }
+          },
+          "required": [
+            "kind",
+            "statement",
+            "evidence"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

@@ -7,7 +7,7 @@
 
 - Current task: `KU-ENC-001`
 - Current branch: `codex/ku-enc-001-framework-contract`
-- Current state: `Planned`; prerequisite merge complete, owner authorized starting this task
+- Current state: `Review`; shared encoder contract, schemas, prompts and corpus validated
 - Last accepted task: `KU-RUN-001`, implementation `b608a82`
 - Last merged task: `KU-RUN-001`, merge `d1417018a236798a910ceb625fbe5fd0b10dc406` on `origin/main`
 - Following tasks: `KU-ENC-002`, then model qualification in `KU-ENC-003`
@@ -39,7 +39,7 @@
 | 18 | `OBP-QA-001` | Planned | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | — |
 | 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | — |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | — |
-| 21 | `KU-ENC-001` | Planned | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | [Research and overlap map](outputs/KU_ENCODER_FRAMEWORK_RESEARCH.md); D-017. |
+| 21 | `KU-ENC-001` | Review | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Starting main `5d8fba0`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md); D-018. |
 | 22 | `KU-ENC-002` | Planned | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Shared provider/workflow implementation. |
 | 23 | `KU-ENC-003` | Planned | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Real-model/resource evidence; reuse MOB-06 mobile ownership. |
 
@@ -317,8 +317,6 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
   `git diff --check`. All changes are handoff Markdown; no runtime test rerun
   or live-model/mobile performance claim is needed for this documentation edit.
 
-### Protocol
-
 ### KU-RUN-001 merge and encoder handoff — 2026-09-06
 
 - Owner explicitly authorized merging KU-RUN-001 into main and starting
@@ -328,6 +326,23 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
   and pushed `origin/main`. No branch deletion or rollout change.
 - README/progress pointer advances to KU-ENC-001; the accepted direction is
   D-018. No further merge or framework-direction approval is required here.
+
+### KU-ENC-001 contract review — 2026-09-06
+
+- Started from synchronized main `5d8fba077076597da163d5f17b8e290f28eb12c9`.
+- [Framework contract](../../specs/vnext/KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md)
+  and [review evidence](outputs/KU_ENC_001_CONTRACT.md) define one host-controlled
+  extraction path, six DTO schemas, vi/en prompts, eight generated artifacts,
+  48 cases/two jobs, explicit unsupported semantics and qualification gates.
+- Validation: 18 encoder tests, 44 KU/product regression tests, seven existing
+  Rust SEM tests, generated bundle
+  and Base checks, global vNext validator, independent Draft202012 comparison
+  and diff/link/dependency checks. Commands and evidence boundaries are recorded
+  in the review output.
+- No production inference/compiler, real model/hardware qualification, mobile
+  implementation/evidence, accepted bytes, IDL registrations or rollout changes.
+- Task remains Review on its own branch; no merge/deletion or KU-ENC-002 start
+  is included in this contract handoff.
 
 ### Update protocol
 
