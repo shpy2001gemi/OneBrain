@@ -9,6 +9,7 @@
 - Current branch: `codex/ku-api-001-local-api`
 - Planned task branch: `codex/ku-api-001-local-api`
 - Current state: `Review`; API implementation complete, pending owner review/merge
+- Implementation checkpoint: `29c34d1`, pushed to `origin/codex/ku-api-001-local-api`; branch tip additionally records this ledger checkpoint
 - Starting main: `ca1d4c22f61864a5bde53edf5c399e6ffdbc1943`, clean and equal to freshly fetched `origin/main`
 - Prerequisite evidence: [KU-ENC-002 implementation and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
 - Last accepted task: `KU-ENC-002`, implementation `16408c6`, reviewed tip `a687600`, D-020
@@ -385,6 +386,8 @@ this handoff-only update.
 
 ### KU-API-001 review evidence — 2026-09-06
 
+- Implementation checkpoint `29c34d1` was pushed successfully. The following
+  ledger-only commit records that content checkpoint; neither is a merge.
 - D-021 owner follow-up authorized the early local API/Web MVP path. API work
   starts from `ca1d4c22f61864a5bde53edf5c399e6ffdbc1943` on its own branch;
   the qualification branch remains preserved separately at `4a8f29d`.
