@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-ENC-001` merged / `KU-ENC-002` is in review**
+> Status: **`KU-ENC-002` merged / `KU-ENC-003` awaits a new conversation**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -41,8 +41,9 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`KU-ENC-002`](tasks/22-KU-ENC-002.md)
-**Current branch:** `codex/ku-enc-002-shared-encoder`
+**Current task:** [`KU-ENC-003`](tasks/23-KU-ENC-003.md) — Planned, not started
+**Current branch:** `main`
+**Planned task branch:** `codex/ku-enc-003-model-qualification` — create in the new conversation
 
 KU-RUN-001 implements the D-016 registration and node-owned local service.
 The owner authorized merge `d141701`, now on `origin/main`. See the
@@ -62,8 +63,10 @@ The owner accepted the reviewed contract under [D-019](DECISIONS.md#d-019--ku-en
 The owner-authorized merge `22599d0` is on `origin/main`. The owner authorized
 starting KU-ENC-002 to implement the shared encoder against this contract.
 
-KU-ENC-002 now provides the native compiler/workflow and node integration on
-its review branch. Read the [implementation evidence and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
+KU-ENC-002 provides the native compiler/workflow and node integration, accepted
+under [D-020](DECISIONS.md#d-020--ku-enc-002-accepted-and-closed) and merged into
+`origin/main` at `dc04b71`. The owner will start KU-ENC-003 in a new conversation.
+Read the [implementation evidence and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
 for test results, offline behavior, current source/Registry boundaries and the
 remaining real-model qualification work. Model/tool/storage authority remains
 separate, and default rollout has not changed.
@@ -88,10 +91,13 @@ Copy/paste prompt:
 
 ```text
 Read AGENTS.md and docs/handoffs/2026-09-ku-obp-productization/README.md,
-then review KU-ENC-002 from tasks/22-KU-ENC-002.md on its named branch.
-Read outputs/KU_ENC_002_IMPLEMENTATION.md, inspect the diff and run its focused
-acceptance commands. Do not modify, merge or delete the branch without explicit
-owner instruction. KU-ENC-001 and KU-RUN-001 are merged; do not repeat that work.
+then execute KU-ENC-003 from tasks/23-KU-ENC-003.md.
+Follow its required read set, scope and qualification gates, including
+outputs/KU_ENC_002_IMPLEMENTATION.md. Verify clean synchronized main, then
+create codex/ku-enc-003-model-qualification from main and record its starting
+commit. Update the handoff and push the task branch; do not merge or delete
+it without owner instruction. KU-ENC-001, KU-ENC-002 and KU-RUN-001 are merged;
+do not repeat them. Do not substitute mock results for real-model evidence.
 ```
 
 More prompts are in [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md).

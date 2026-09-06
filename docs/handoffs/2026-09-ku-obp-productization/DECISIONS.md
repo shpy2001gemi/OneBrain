@@ -294,3 +294,20 @@ This message accepts the reviewed task. It does not explicitly instruct a
 merge or branch deletion under D-010. Keep the task in Review with owner
 acceptance recorded until its merge exists on main; the earlier explicit
 merge instruction applied to KU-RUN-001.
+
+## D-020 — KU-ENC-002 accepted and closed
+
+After reviewing implementation `16408c6` and handoff tip `a687600`, the owner
+stated: "tôi đẫ review và đồng ý. hãy hoàn thành task này, task kế tiếp tôi sẽ
+mở conversation mới để thực hiện ."
+
+This accepts KU-ENC-002 and directs completion of the current task, including
+its merge and handoff closure. Fresh focused tests and contract gates passed;
+merge `dc04b71b48b27588800b682ef1e71d4506945db1` is on `origin/main`.
+The accepted [implementation evidence](outputs/KU_ENC_002_IMPLEMENTATION.md)
+retains its explicit source-planner, unit/review-authority and qualification
+limits. Acceptance does not qualify a real model/device or enable default rollout.
+
+KU-ENC-003 is the next planned task. The owner will open its new conversation;
+do not start qualification, create that branch or dispatch another task during
+this closure. No branch deletion was requested.

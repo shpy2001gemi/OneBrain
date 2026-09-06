@@ -2,6 +2,8 @@
 
 Date: 2026-09-06. Branch: `codex/ku-enc-002-shared-encoder`.
 Starting main: `5faf50cd8b1319c63bc1eabd7b294a94d410821b`.
+Accepted and merged under D-020: `dc04b71b48b27588800b682ef1e71d4506945db1`
+on `origin/main`. Implementation `16408c6`; reviewed handoff `a687600`.
 Authority: D-018/D-019 and the owner's instruction to merge KU-ENC-001 and
 implement KU-ENC-002. Contract merge `22599d0` is on `origin/main`.
 

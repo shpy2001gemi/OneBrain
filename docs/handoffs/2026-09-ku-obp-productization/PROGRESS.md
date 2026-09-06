@@ -5,14 +5,14 @@
 
 ## Current checkpoint
 
-- Current task: `KU-ENC-002`
-- Current branch: `codex/ku-enc-002-shared-encoder`
-- Current state: `Review`; native compiler/workflow and node integration ready for owner review
-- Current evidence: [KU-ENC-002 implementation and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
-- Implementation checkpoint: `16408c6`; the following commit only records this handoff pointer
-- Last accepted task: `KU-ENC-001`, contract `a6f0a00`, reviewed handoff `e4c1bb6`, D-019
-- Last merged task: `KU-ENC-001`, merge `22599d036f903c5b5be2cb3f445ab6904e92896c` on `origin/main`
-- Following task: model qualification in `KU-ENC-003` after owner-approved merge
+- Current task: `KU-ENC-003`
+- Current branch: `main`; no next-task branch created
+- Planned task branch: `codex/ku-enc-003-model-qualification`
+- Current state: `Planned`; owner will start this task in a new conversation
+- Prerequisite evidence: [KU-ENC-002 implementation and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
+- Last accepted task: `KU-ENC-002`, implementation `16408c6`, reviewed tip `a687600`, D-020
+- Last merged task: `KU-ENC-002`, merge `dc04b71b48b27588800b682ef1e71d4506945db1` on `origin/main`
+- Next action: new conversation executes `tasks/23-KU-ENC-003.md`; no qualification work started here
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -42,12 +42,20 @@
 | 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | — |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | — |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
-| 22 | `KU-ENC-002` | Review | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Starting main `5faf50cd8b1319c63bc1eabd7b294a94d410821b`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |
+| 22 | `KU-ENC-002` | Merged | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Owner accepted under D-020; merge `dc04b71` on `origin/main`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |
 | 23 | `KU-ENC-003` | Planned | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Real-model/resource evidence; reuse MOB-06 mobile ownership. |
 
 ## Per-task update protocol
 
 ### KU-ENC-002 review evidence — 2026-09-06
+
+Closure: the owner reviewed, accepted and requested completion of KU-ENC-002,
+reserving the next task for a new conversation (D-020). Clean reviewed tip
+`a687600` matched its fetched remote. Fresh extraction (16), node KU (19),
+bounded HTTP (3), format, generated-bundle, global vNext and diff checks passed.
+Merge `dc04b71b48b27588800b682ef1e71d4506945db1` was pushed to `origin/main`.
+KU-ENC-003 remains Planned; its branch and conversation were not created.
+Task branches are retained; no cleanup was requested.
 
 - Shared native strict validator/compiler, 48 oracle cases, two complete/partial
   multi-chunk jobs, bounded provider and durable node integration implemented.
@@ -59,8 +67,9 @@
 - [Evidence](outputs/KU_ENC_002_IMPLEMENTATION.md) records the first planner's
   single whole-source scope, unavailable unit/review authority and unqualified
   real-model/device behavior. KU-ENC-003 carries those qualification inputs.
-- No new Base IDL/canonical semantics, default rollout, mobile implementation,
-  model download or KU-ENC-002 merge.
+- Review-stage scope included no new Base IDL/canonical semantics, default
+  rollout, mobile implementation or model download. The subsequent merge is
+  recorded above.
 
 ### KU-REV-001 review evidence — 2026-09-05
 
