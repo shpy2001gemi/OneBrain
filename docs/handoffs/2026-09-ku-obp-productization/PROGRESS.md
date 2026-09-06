@@ -13,7 +13,8 @@
 - Prerequisite evidence: [KU-ENC-002 implementation and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
 - Last accepted task: `KU-ENC-002`, implementation `16408c6`, reviewed tip `a687600`, D-020
 - Last merged task: `KU-ENC-002`, merge `dc04b71b48b27588800b682ef1e71d4506945db1` on `origin/main`
-- Next action: obtain evaluation inputs using the [data guide](outputs/KU_ENC_003_DATA_GUIDE.vi.md), then resume the [qualification checkpoint](outputs/KU_ENC_003_QUALIFICATION.md) on this branch
+- Next qualification action: validate the owner-reported new VI/EN workbook structure locally without disclosing source text or gold, then establish independent review and a locked run using the [qualification checkpoint](outputs/KU_ENC_003_QUALIFICATION.md). Paths and reviewer evidence are not supplied yet.
+- Product priority: early open-source concept/MVP under [D-021](DECISIONS.md#d-021--prioritize-an-early-open-source-concept--mvp). KU-API-001 followed by KU-WEB-001 is already dependency-ready for local supported workflows; full encoder qualification is not a prerequisite for starting that product path. No new implementation task has started in this checkpoint.
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -47,6 +48,24 @@
 | 23 | `KU-ENC-003` | Blocked | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | [Preflight and missing gates](outputs/KU_ENC_003_QUALIFICATION.md); no real-model runs or qualified tuples. |
 
 ## Per-task update protocol
+
+### Owner dataset preparation and MVP direction — 2026-09-06
+
+- Owner reports two new workbooks with 100 VI / 100 EN sources, separate from
+  the development workbook reviewed and revised outside Git. Only headers of
+  the new files were supplied. Both match the nine source fields and ten
+  pre-encode label fields; newline descriptions/localized captions are not new
+  field identifiers. Contents, source independence, feature coverage, reviewer
+  identity and immutable commitments remain unverified.
+- The reviewed older 100-row workbook and AI-proposed corrections are
+  development material, not independent gold. New holdout text/labels have not
+  been opened here or copied into the repository.
+- [D-021](DECISIONS.md#d-021--prioritize-an-early-open-source-concept--mvp)
+  records the owner's early MVP priority and the existing API/Web route. A
+  bounded local demo need not wait for every model/device/product lane. Keep
+  qualified-model claims distinct from runnable draft/read/save capabilities.
+- Current qualification pointer and measured evidence remain unchanged: zero
+  model runs, zero qualified tuples. No implementation, rollout or merge.
 
 ### KU-ENC-003 qualification preflight — 2026-09-06
 

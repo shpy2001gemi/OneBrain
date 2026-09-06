@@ -46,6 +46,14 @@ the selected task explicitly requires a section from it.
 **Checkpoint:** [qualification evidence and missing gates](outputs/KU_ENC_003_QUALIFICATION.md)
 **Owner preparation:** [mẫu nguồn và cách đánh giá](outputs/KU_ENC_003_DATA_GUIDE.vi.md)
 
+**Delivery priority:** [D-021](DECISIONS.md#d-021--prioritize-an-early-open-source-concept--mvp)
+records the owner's request for an early open-source concept/MVP. The existing
+KU-API-001 → KU-WEB-001 path can deliver a small local draft/preview/validate/
+save/search journey without waiting for all model qualification. Model-ready
+claims still require KU-ENC-003. The owner reports new VI/EN workbooks with
+100 sources each; only matching column headers have been reviewed, not the
+holdout contents, independence or gold labels.
+
 KU-RUN-001 implements the D-016 registration and node-owned local service.
 The owner authorized merge `d141701`, now on `origin/main`. See the
 [implementation evidence and limits](outputs/KU_RUN_001_IMPLEMENTATION.md)
@@ -67,7 +75,8 @@ starting KU-ENC-002 to implement the shared encoder against this contract.
 KU-ENC-002 provides the native compiler/workflow and node integration, accepted
 under [D-020](DECISIONS.md#d-020--ku-enc-002-accepted-and-closed) and merged into
 `origin/main` at `dc04b71`. KU-ENC-003 has started on its task branch; the
-holdout/evaluator inputs are missing, and only artifact preflight has run.
+locked holdout/evaluator evidence remains missing, and only artifact preflight
+has run. Newly prepared workbooks are owner-reported, not yet validated inputs.
 Read the [implementation evidence and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
 for test results, offline behavior, current source/Registry boundaries and the
 remaining real-model qualification work. Model/tool/storage authority remains

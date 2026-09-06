@@ -5,10 +5,14 @@ Starting main: `ca1d4c22f61864a5bde53edf5c399e6ffdbc1943`, clean and equal to
 freshly fetched `origin/main` before branch creation.
 
 **Qualification is blocked, not completed. No model/profile is qualified.**
-The owner has no identified holdout/evaluator and requested source examples and
-evaluation instructions. The [Vietnamese data guide](KU_ENC_003_DATA_GUIDE.vi.md)
-answers that request. Its illustrative examples are development material and
-must never be relabeled blind evidence.
+At initial preflight the owner had no identified holdout/evaluator and requested
+examples. Subsequently the owner reports new VI/EN workbooks with 100 sources
+each; their supplied headers match the expected source/annotation fields.
+No contents, independent reviewer evidence or locked commitments for these new
+files have been inspected. The [Vietnamese data guide](KU_ENC_003_DATA_GUIDE.vi.md)
+and the older workbook revised with AI assistance are development material and
+must never be relabeled blind evidence. See the owner's early MVP priority in
+[D-021](../DECISIONS.md#d-021--prioritize-an-early-open-source-concept--mvp).
 
 ## Delivered and measured
 
@@ -43,14 +47,14 @@ The entry requirement in
 [framework §7](../../../specs/vnext/KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md#7-conformance-and-model-qualification)
 is: “KU-ENC-003 must lock a blind holdout before any model run”.
 The public 48-case mapping corpus and guide examples cannot satisfy this.
-The owner explicitly reported that they do not yet know the source dataset and
-asked for examples and how to evaluate it. No new threshold or authority rule
-has been inferred to bypass that missing prerequisite.
+The owner has since prepared new workbooks, but their existence is not a locked
+qualification run. No new threshold or authority rule has been inferred to
+bypass that missing prerequisite.
 
 | Task acceptance item | Checkpoint status |
 |---|---|
 | Complete reproducible qualification runner/report | Partial: artifact preflight only; not an inference, grading or qualification-publishing runner. |
-| Source split/labels/evaluator independence | Missing; guide and collection template delivered. No holdout commitment or blind transcript fabricated. |
+| Source split/labels/evaluator independence | New VI/EN workbooks owner-reported; only headers reviewed. Contents, reviewer independence and locked split/labels remain unverified. No holdout commitment or blind transcript fabricated. |
 | Two model families, repetitions, raw-text agreement | Two families have verified local artifacts; no inference or agreement numbers. |
 | No-LLM baseline | Existing finite rule remains available; native regression is conformance only, not a measured holdout/resource baseline. |
 | vi/en quality, coverage, abstention, confidence intervals | Unmeasured; no gold labels or independent assessments substituted. |

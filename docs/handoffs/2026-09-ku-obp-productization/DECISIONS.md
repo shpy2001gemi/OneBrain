@@ -311,3 +311,35 @@ limits. Acceptance does not qualify a real model/device or enable default rollou
 KU-ENC-003 is the next planned task. The owner will open its new conversation;
 do not start qualification, create that branch or dispatch another task during
 this closure. No branch deletion was requested.
+
+## D-021 — Prioritize an early open-source concept / MVP
+
+The owner stated that the project needs a concept/MVP soon so contributors can
+see it and participate; the initial author should not attempt to perfect the
+whole system alone. This is a delivery-priority direction, not acceptance of
+unmeasured encoder quality or a change to canonical semantics.
+
+Use a small, runnable local KU journey as the first product milestone. The
+existing dependency graph already permits KU-API-001 after KU-RUN-001 and
+KU-ENC-002, followed by KU-WEB-001. KU-ENC-003 is a qualification dependency of
+KU-QA-001, not an entry dependency of API/Web implementation. Keep qualification
+work from unnecessarily blocking that product path. The initial demonstration
+can expose supported no-LLM/manual draft work and honest unresolved states;
+arbitrary-text AI readiness requires the existing qualification evidence.
+
+Suggested demonstration: create a local draft, preview and validate it, save
+explicitly, then search and inspect the saved KU. Provide runnable instructions,
+known limits and bounded contribution opportunities. Defer additional product
+surfaces and broad capability claims from this first demonstration, without
+marking their tasks complete or changing their eventual acceptance criteria.
+
+The owner also reports two newly collected workbooks, each with 100 sources,
+and supplied only their column headers. Both have matching machine field names
+in `Nguon` and `Nhan_truoc_encode`; explanatory text differs by language. The
+new workbook contents, independence, reviewer status and locked hashes have
+not been inspected. Keep them separate from the development examples and
+annotation exercises already reviewed in this task.
+
+This checkpoint records the priority and available product path. It does not
+start another implementation task, close KU-ENC-003, enable a model, merge a
+branch or deploy a product.
