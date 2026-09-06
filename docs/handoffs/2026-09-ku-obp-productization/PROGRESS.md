@@ -14,7 +14,7 @@
 - Prerequisite evidence: [KU-API-001 implementation and limits](outputs/KU_API_001_IMPLEMENTATION.md)
 - Last accepted task: `KU-API-001`, implementation `29c34d1`, reviewed tip `423b7b8`, D-022
 - Last merged task: `KU-API-001`, merge `3eba370df1df91627595e0acbf7645d94ea75276` on `origin/main`
-- Next action: owner review of KU-WEB-001; merge/branch deletion and next task remain unauthorized
+- Next action: owner direction on the [requested Ollama MVP activation amendment](outputs/KU_WEB_001_OLLAMA_AMENDMENT.md); the manual implementation remains Review, and AI follow-up is paused at the documented contract conflict
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -424,6 +424,22 @@ this handoff-only update.
   usable production source pipeline.
 - No Web branch or implementation started, holdout opened, model run, rollout
   enabled or branch deleted during closure. KU-ENC-003 remains separate.
+
+### KU-WEB-001 Ollama follow-up — 2026-09-06
+
+- Owner requests actual Ollama inference, model selection (`qwen3:8b`) and text
+  encoding through the previously designed shared framework. This expands the
+  manual MVP; it does not accept the existing manual-only deliverable as final.
+- [Concrete amendment and exact conflict](outputs/KU_WEB_001_OLLAMA_AMENDMENT.md)
+  proposes a local experimental lane with `model_qualified: false`, preserving
+  technical admission/custody/validation/recovery controls. The existing REST
+  contract explicitly rejects AI before full qualification; owner direction is
+  required before changing that activation rule. No request to reapprove the
+  shared architecture or to merge/delete the branch is being made.
+- Installed `qwen3:8b` was confirmed by `ollama list`; no inference/model download,
+  holdout read or runtime change. Qualification branch and corpus stay separate.
+- The reviewed manual implementation remains at `ac5ce80` plus handoff `f316e5a`.
+  This follow-up records the requested change; it does not claim AI completion.
 
 ### KU-WEB-001 implementation review — 2026-09-06
 

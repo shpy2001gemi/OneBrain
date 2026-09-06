@@ -42,7 +42,10 @@ Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
 **Current task:** [`KU-WEB-001`](tasks/07-KU-WEB-001.md) — Review
-**Current branch:** `codex/ku-web-001-workflow`; local manual Web implementation ready for review.
+**Current branch:** `codex/ku-web-001-workflow`; manual Web implementation ready for review.
+**Owner follow-up:** actual Ollama (`qwen3:8b`) text encoding requested; see the
+[activation-contract amendment](outputs/KU_WEB_001_OLLAMA_AMENDMENT.md). AI
+implementation is paused pending direction on this documented conflict.
 **Review branch:** `codex/ku-web-001-workflow`
 **MVP direction:** [D-021](DECISIONS.md#d-021--prioritize-an-early-open-source-concept--mvp).
 The separate `codex/ku-enc-003-model-qualification` branch remains blocked on
