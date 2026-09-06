@@ -5,12 +5,12 @@
 
 ## Current checkpoint
 
-- Current task: `KU-ENC-001`
-- Current branch: `codex/ku-enc-001-framework-contract`
-- Current state: `Review`; owner accepted KU-ENC-001 under D-019, merge pending
+- Current task: `KU-ENC-002`
+- Current branch: `codex/ku-enc-002-shared-encoder`
+- Current state: `Planned`; owner authorized starting the shared encoder implementation
 - Reviewed contract commit: `a6f0a00`; handoff-only metadata follows on the same branch
 - Last accepted task: `KU-ENC-001`, contract `a6f0a00`, reviewed handoff `e4c1bb6`, D-019
-- Last merged task: `KU-RUN-001`, merge `d1417018a236798a910ceb625fbe5fd0b10dc406` on `origin/main`
+- Last merged task: `KU-ENC-001`, merge `22599d036f903c5b5be2cb3f445ab6904e92896c` on `origin/main`
 - Following tasks: `KU-ENC-002`, then model qualification in `KU-ENC-003`
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
@@ -40,7 +40,7 @@
 | 18 | `OBP-QA-001` | Planned | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | — |
 | 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | — |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | — |
-| 21 | `KU-ENC-001` | Review | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner accepted contract `a6f0a00` / handoff `e4c1bb6` under D-019; merge pending; [contract evidence](outputs/KU_ENC_001_CONTRACT.md). |
+| 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
 | 22 | `KU-ENC-002` | Planned | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Shared provider/workflow implementation. |
 | 23 | `KU-ENC-003` | Planned | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Real-model/resource evidence; reuse MOB-06 mobile ownership. |
 
@@ -358,6 +358,12 @@ Generated bundle integrity, global vNext validation and diff checks pass for
 this handoff-only update.
 
 ### Update protocol
+
+Merge update: owner explicitly authorized merging KU-ENC-001 and starting
+KU-ENC-002. Clean synchronized tip `7a360a7` passed fresh generated-bundle,
+62 Python tests, global vNext and diff checks. Merge
+`22599d036f903c5b5be2cb3f445ab6904e92896c` was pushed to main. No branch deletion
+or rollout change was requested or performed.
 
 When a task begins:
 

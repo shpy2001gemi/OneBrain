@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-RUN-001` merged / `KU-ENC-001` owner accepted, merge pending**
+> Status: **`KU-ENC-001` merged / `KU-ENC-002` is the current task**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -41,8 +41,8 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`KU-ENC-001`](tasks/21-KU-ENC-001.md)
-**Current branch:** `codex/ku-enc-001-framework-contract`
+**Current task:** [`KU-ENC-002`](tasks/22-KU-ENC-002.md)
+**Current branch:** `codex/ku-enc-002-shared-encoder`
 
 KU-RUN-001 implements the D-016 registration and node-owned local service.
 The owner authorized merge `d141701`, now on `origin/main`. See the
@@ -59,8 +59,8 @@ KU-ENC-001 now provides the [shared framework contract](../../specs/vnext/KU_EXT
 and [review evidence](outputs/KU_ENC_001_CONTRACT.md): closed schemas, vi/en
 prompts, 48 corpus cases, bounded resource/lifecycle rules and qualification gates.
 The owner accepted the reviewed contract under [D-019](DECISIONS.md#d-019--ku-enc-001-contract-accepted-after-owner-review).
-The branch remains the current task pending its explicit merge; production
-integration is KU-ENC-002 after that merge.
+The owner-authorized merge `22599d0` is on `origin/main`. The owner authorized
+starting KU-ENC-002 to implement the shared encoder against this contract.
 
 Audit output: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md).
 Runtime review: [KU_RUNTIME_GAP_MAP.md](outputs/KU_RUNTIME_GAP_MAP.md).
