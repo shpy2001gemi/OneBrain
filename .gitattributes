@@ -11,6 +11,12 @@ docs/specs/vnext/KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md text eol=lf
 scripts/encoder/*.py text eol=lf
 scripts/ci/validate_ku_encoder_contract.py text eol=lf
 
+# Native extraction implementation commitments bind these exact source bytes.
+src/ku-encoder/src/extraction/*.rs text eol=lf
+src/ku-ai/src/backend/ollama.rs text eol=lf
+src/onebrain-node/src/ku_extraction.rs text eol=lf
+src/Cargo.lock text eol=lf
+
 # Generated ABI input and output are byte-compared on Linux, Windows, and macOS.
 src/onebrain-base-abi/cbindgen.toml text eol=lf
 src/onebrain-base-abi/include/onebrain_base_v1.h text eol=lf

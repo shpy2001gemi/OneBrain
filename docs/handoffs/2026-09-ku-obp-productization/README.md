@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-ENC-001` merged / `KU-ENC-002` is the current task**
+> Status: **`KU-ENC-001` merged / `KU-ENC-002` is in review**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -62,6 +62,12 @@ The owner accepted the reviewed contract under [D-019](DECISIONS.md#d-019--ku-en
 The owner-authorized merge `22599d0` is on `origin/main`. The owner authorized
 starting KU-ENC-002 to implement the shared encoder against this contract.
 
+KU-ENC-002 now provides the native compiler/workflow and node integration on
+its review branch. Read the [implementation evidence and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
+for test results, offline behavior, current source/Registry boundaries and the
+remaining real-model qualification work. Model/tool/storage authority remains
+separate, and default rollout has not changed.
+
 Audit output: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md).
 Runtime review: [KU_RUNTIME_GAP_MAP.md](outputs/KU_RUNTIME_GAP_MAP.md).
 `KU-REV-002` was merged as `b872263` after the owner requested the next task.
@@ -82,10 +88,10 @@ Copy/paste prompt:
 
 ```text
 Read AGENTS.md and docs/handoffs/2026-09-ku-obp-productization/README.md,
-then execute KU-ENC-001 from tasks/21-KU-ENC-001.md on its named branch.
-Follow its required read set, scope and acceptance criteria. Update the
-handoff and push the task branch; do not merge or delete it without explicit
-owner instruction. KU-RUN-001 is already merged; do not repeat that work.
+then review KU-ENC-002 from tasks/22-KU-ENC-002.md on its named branch.
+Read outputs/KU_ENC_002_IMPLEMENTATION.md, inspect the diff and run its focused
+acceptance commands. Do not modify, merge or delete the branch without explicit
+owner instruction. KU-ENC-001 and KU-RUN-001 are merged; do not repeat that work.
 ```
 
 More prompts are in [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md).

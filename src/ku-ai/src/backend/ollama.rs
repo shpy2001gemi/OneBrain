@@ -28,6 +28,111 @@ pub struct OllamaBackend {
 }
 
 impl OllamaBackend {
+    /// Bounded raw structured output for workflow-controlled extraction. Keeps
+    /// candidate JSON intact so the host can reject duplicate keys and validate
+    /// semantics. This route never supplies tools or includes private error bodies.
+    pub async fn chat_structured_bounded(
+        &self,
+        messages: &[ChatMessage],
+        schema: &serde_json::Value,
+        options: &InferenceOptions,
+        max_response_bytes: usize,
+        deadline: Duration,
+    ) -> Result<Vec<u8>, AiError> {
+        if max_response_bytes == 0
+            || max_response_bytes > 1_048_576
+            || deadline.is_zero()
+            || deadline > Duration::from_secs(120)
+            || options.max_tokens.is_none_or(|n| n == 0 || n > 2048)
+        {
+            return Err(AiError::InferenceError("structured_budget".into()));
+        }
+        // Private extraction is local-only, including redirects and proxy use.
+        // Require a literal loopback address so DNS cannot change the destination.
+        let endpoint = reqwest::Url::parse(&self.url("/api/chat"))
+            .map_err(|_| AiError::InferenceError("structured_local_endpoint".into()))?;
+        let local = endpoint
+            .host_str()
+            .and_then(|host| {
+                host.trim_matches(['[', ']'])
+                    .parse::<std::net::IpAddr>()
+                    .ok()
+            })
+            .is_some_and(|ip| ip.is_loopback());
+        if !local
+            || endpoint.scheme() != "http"
+            || !endpoint.username().is_empty()
+            || endpoint.password().is_some()
+        {
+            return Err(AiError::InferenceError("structured_local_endpoint".into()));
+        }
+        let client = Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(deadline)
+            .build()
+            .map_err(|_| AiError::InferenceError("structured_transport".into()))?;
+        let request = OllamaChatRequest {
+            model: self.llm_model.clone(),
+            messages: Self::to_ollama_messages(messages),
+            stream: false,
+            think: Some(false),
+            options: Some(Self::to_ollama_options(options)),
+            tools: None,
+            format: Some(schema.clone()),
+        };
+        let request = serde_json::to_vec(&request)
+            .map_err(|_| AiError::InferenceError("structured_request".into()))?;
+        if request.len() > 1_048_576 {
+            return Err(AiError::InferenceError("structured_request_bytes".into()));
+        }
+        let result = tokio::time::timeout(deadline, async {
+            let mut response = client
+                .post(endpoint)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(request)
+                .send()
+                .await
+                .map_err(|_| AiError::InferenceError("structured_transport".into()))?;
+            if !response.status().is_success() {
+                return Err(AiError::InferenceError("structured_http_status".into()));
+            }
+            // Includes the outer Ollama envelope and escaped candidate string.
+            // Both the HTTP body and extracted candidate obey this finite cap.
+            if response
+                .content_length()
+                .is_some_and(|n| n > max_response_bytes as u64)
+            {
+                return Err(AiError::InferenceError("structured_response_bytes".into()));
+            }
+            let mut raw = Vec::new();
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|_| AiError::InferenceError("structured_transport".into()))?
+            {
+                if chunk.len() > max_response_bytes.saturating_sub(raw.len()) {
+                    return Err(AiError::InferenceError("structured_response_bytes".into()));
+                }
+                raw.extend_from_slice(&chunk);
+            }
+            let response: OllamaChatResponse = serde_json::from_slice(&raw)
+                .map_err(|_| AiError::InferenceError("structured_envelope".into()))?;
+            let message = response
+                .message
+                .ok_or_else(|| AiError::InferenceError("structured_missing_message".into()))?;
+            if message.tool_calls.is_some_and(|calls| !calls.is_empty()) {
+                return Err(AiError::InferenceError("structured_tool_response".into()));
+            }
+            if message.content.is_empty() || message.content.len() > max_response_bytes {
+                return Err(AiError::InferenceError("structured_response_bytes".into()));
+            }
+            Ok(message.content.into_bytes())
+        })
+        .await;
+        result.unwrap_or_else(|_| Err(AiError::InferenceError("structured_deadline".into())))
+    }
+
     /// Create a new Ollama backend.
     ///
     /// # Arguments
@@ -117,6 +222,121 @@ impl OllamaBackend {
                 arguments: tc.function.arguments,
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod bounded_structured_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    fn server(body: String, status: u16) -> (String, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let thread = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut raw = Vec::new();
+            let mut buf = [0; 4096];
+            loop {
+                let n = socket.read(&mut buf).unwrap();
+                assert!(n > 0);
+                raw.extend_from_slice(&buf[..n]);
+                if let Some(end) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let header = std::str::from_utf8(&raw[..end]).unwrap();
+                    let len = header
+                        .lines()
+                        .find_map(|l| {
+                            l.to_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|s| s.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap();
+                    if raw.len() >= end + 4 + len {
+                        let request: serde_json::Value =
+                            serde_json::from_slice(&raw[end + 4..end + 4 + len]).unwrap();
+                        assert!(request.get("tools").is_none());
+                        assert_eq!(request["think"], false);
+                        assert!(request["format"].is_object());
+                        assert_eq!(request["options"]["num_predict"], 64);
+                        break;
+                    }
+                }
+                assert!(raw.len() <= 1048576);
+            }
+            let response=format!("HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len());
+            let _ = socket.write_all(response.as_bytes());
+        });
+        (url, thread)
+    }
+    async fn call(body: String, status: u16, cap: usize) -> Result<Vec<u8>, AiError> {
+        let (url, thread) = server(body, status);
+        let backend = OllamaBackend::new(url, "fixture", "unused", 5).unwrap();
+        let result = backend
+            .chat_structured_bounded(
+                &[ChatMessage::user("PRIVATE source")],
+                &serde_json::json!({"type":"object"}),
+                &InferenceOptions {
+                    max_tokens: Some(64),
+                    ..Default::default()
+                },
+                cap,
+                Duration::from_secs(2),
+            )
+            .await;
+        thread.join().unwrap();
+        result
+    }
+    #[tokio::test]
+    async fn raw_candidate_preserves_duplicate_keys_for_host_validation() {
+        let content = "{\"a\":1,\"a\":2}";
+        let body = serde_json::json!({"message":{"content":content}}).to_string();
+        assert_eq!(call(body, 200, 1024).await.unwrap(), content.as_bytes());
+    }
+    #[tokio::test]
+    async fn private_route_rejects_remote_and_dns_endpoints_before_dispatch() {
+        for endpoint in [
+            "http://192.0.2.1:11434",
+            "http://localhost:11434",
+            "https://example.com",
+        ] {
+            let backend = OllamaBackend::new(endpoint, "fixture", "unused", 5).unwrap();
+            let error = backend
+                .chat_structured_bounded(
+                    &[ChatMessage::user("PRIVATE source")],
+                    &serde_json::json!({"type":"object"}),
+                    &InferenceOptions {
+                        max_tokens: Some(64),
+                        ..Default::default()
+                    },
+                    1024,
+                    Duration::from_secs(1),
+                )
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("structured_local_endpoint"));
+        }
+    }
+    #[tokio::test]
+    async fn response_cap_tools_and_http_errors_fail_without_private_bodies() {
+        let body =
+            serde_json::json!({"message":{"content":"PRIVATE response".repeat(100)}}).to_string();
+        assert!(call(body, 200, 100)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("structured_response_bytes"));
+        let body=serde_json::json!({"message":{"content":"PRIVATE response","tool_calls":[{"function":{"name":"save_ku","arguments":{}}}]}}).to_string();
+        let error = call(body, 200, 1024).await.unwrap_err().to_string();
+        assert!(error.contains("structured_tool_response"));
+        assert!(!error.contains("PRIVATE"));
+        let error = call("PRIVATE error".into(), 500, 1024)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("structured_http_status"));
+        assert!(!error.contains("PRIVATE"));
     }
 }
 

@@ -16,6 +16,10 @@ async-trait = "0.1"
 regex = "1"
 ed25519-dalek = "2"
 blake3 = "1"
+sha2 = "0.10"
+num-bigint = "0.4"
+num-integer = "0.1"
+num-traits = "0.2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

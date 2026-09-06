@@ -106,6 +106,7 @@ ku-net = { path = "../ku-net" }
 ku-kql = { path = "../ku-kql", features = ["storage"] }
 ku-ai = { path = "../ku-ai" }
 ku-encoder = { path = "../ku-encoder" }
+regex = "1"
 ku-mediator = { path = "../ku-mediator" }
 onebrain-protocol = { path = "../onebrain-protocol" }
 onebrain-archive = { path = "../onebrain-archive" }
@@ -132,6 +133,7 @@ rustls = { version = "0.23.41", default-features = false, features = ["aws_lc_rs
 libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
+async-trait = "0.1"
 ed25519-dalek = "2"
 tempfile = "3"
 ku-net = { path = "../ku-net", features = ["persist"] }

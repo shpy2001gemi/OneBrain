@@ -25,6 +25,7 @@ pub mod derived_projection;
 pub mod display;
 pub mod error;
 pub mod identity_recovery;
+pub mod ku_extraction;
 pub mod ku_product;
 pub mod mdns_discovery;
 pub mod network;
