@@ -1005,6 +1005,25 @@
         }
       ],
       "rationale": "Owner-approved KU-PC-A/B/C contract consistency and mutation evidence only; domain/payload registration and golden vectors remain technical gates before runtime dispatch. Existing frozen byte families are unchanged."
+    },
+    {
+      "path": "docs/specs/vnext/KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md",
+      "expected_statement_lines": 6,
+      "evidence": [
+        {
+          "path": "scripts/ci/validate_ku_encoder_contract.py",
+          "needle": "def validate_contract"
+        },
+        {
+          "path": "scripts/encoder/test_contract.py",
+          "needle": "test_grounded_quote_is_not_semantic_truth_proof"
+        },
+        {
+          "path": "scripts/encoder/test_contract.py",
+          "needle": "test_budget_counts_failed_calls_and_repair_in_one_total"
+        }
+      ],
+      "rationale": "KU-ENC-001 contract/corpus evidence for the bounded extraction surface and host authority only; native compiler, durable integration and real model/device qualification remain KU-ENC-002/003 and existing mobile gates."
     }
   ]
 }

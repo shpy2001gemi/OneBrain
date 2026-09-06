@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ku-extraction/1.0 ProviderManifest",
+  "$ref": "#/$defs/ProviderManifest",
+  "$defs": {
+    "ProviderManifest": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "const": "ku-extraction-provider/1.0"
+        },
+        "provider_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "backend_build_sha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "rules",
+            "json_schema",
+            "grammar",
+            "bounded_json"
+          ]
+        },
+        "tools_enabled": {
+          "const": false
+        },
+        "max_context_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 262144
+        },
+        "peak_bytes_reservation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 68719476736
+        },
+        "schema_bundle_sha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "model_artifact_sha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "tokenizer_sha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "grammar_sha256": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "supported_schema_keywords": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "minItems": 0,
+          "maxItems": 32
+        },
+        "temperature_milli": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2000
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "profile",
+        "provider_id",
+        "backend_build_sha256",
+        "mode",
+        "tools_enabled",
+        "max_context_tokens",
+        "peak_bytes_reservation",
+        "schema_bundle_sha256",
+        "supported_schema_keywords",
+        "temperature_milli"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

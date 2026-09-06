@@ -1,0 +1,24 @@
+{
+  "profile": "ku-extraction/1.0",
+  "hash_algorithm": "sha256",
+  "artifacts": {
+    "docs/specs/vnext/KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md": "cbb6f04b20355a07c8078c91a97a4d7cd8e5ae84ec5e564c713157de984e9641",
+    "docs/specs/vnext/ku-encoder-v1/attempt.schema.json": "4600d95cd9e1ae0c7dc3cc78941303c917d80d11e51451dd80d6d91a0742c041",
+    "docs/specs/vnext/ku-encoder-v1/candidate.schema.json": "d7745bcb01379c5266a4680d83ca1d00011ad26bfea9eb09c70b1171c81dbd63",
+    "docs/specs/vnext/ku-encoder-v1/context.schema.json": "bcc697cc9dae4a07746388a9737b7e2928e3bd051db9d3adbc783f8b93ab748f",
+    "docs/specs/vnext/ku-encoder-v1/corpus.json": "78d615bd3f2075666229d55108afb8bc143c243c04c8c5fd92de24eba7b7a775",
+    "docs/specs/vnext/ku-encoder-v1/examples.json": "b3bbcc7be47723f1410c27e4c98cfb9cadefabc2e32103d35e617cab2cc4e318",
+    "docs/specs/vnext/ku-encoder-v1/input.schema.json": "d6a82332217cbcd867bbd2bf0d0b2d45ccf13841415468b720938b7359da214c",
+    "docs/specs/vnext/ku-encoder-v1/profile.json": "63f806785e64fab40ad80a49f37085504392cdb51535bfc373d7147b1a1450e8",
+    "docs/specs/vnext/ku-encoder-v1/prompt.en.txt": "5f97526b81d02fefee968d9971dc9602b3466694173b0ec8bd60f71080534222",
+    "docs/specs/vnext/ku-encoder-v1/prompt.vi.txt": "afd5e1e66ea282daaeefe34a868626ecfd17b5cc3e3dd36b752cfa28fe1288b6",
+    "docs/specs/vnext/ku-encoder-v1/provider.schema.json": "1f5dd974719454752050453269723d535e3c9754e80051fd512c520f17c7b0cc",
+    "docs/specs/vnext/ku-encoder-v1/resolution.schema.json": "e3902311f14e7cda2ef015514ead0dc83a1cd2bc58269ae6ca4c9b5924fe5ca1",
+    "docs/specs/vnext/ku-encoder-v1/schema.json": "5accd9b704ac741f26d55b6e712011b43e6c4b59496871c5c6a4773e29b062cf",
+    "scripts/ci/validate_ku_encoder_contract.py": "a72614cc67d290bff2420ae8fd5d5db80582c8c62138137013a91b54c03dc5eb",
+    "scripts/encoder/contract.py": "2f21e3695e234baaae1c9e128aad715f74528ff29871a9ccab93712623354d09",
+    "scripts/encoder/generate_bundle.py": "27436676c18414fb1201ba7db8d25fde09ad783332a4925ef4ad2b5ba08923b8",
+    "scripts/encoder/schema.py": "33ff8ddf515c6d5d1cb6dd3cf5f2612d3c8ddad040e1ed9f51c099364875c50d",
+    "scripts/encoder/test_contract.py": "3fc0862633c42c6e520d76cd2aad844018b4b024fee81f9a8d02d4fa83dafbd0"
+  }
+}

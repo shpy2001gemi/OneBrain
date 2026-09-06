@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ku-extraction/1.0 ProviderInput",
+  "$ref": "#/$defs/ProviderInput",
+  "$defs": {
+    "ProviderInput": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "const": "ku-extraction/1.0"
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "required_units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Unit"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "context_sha256": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "windows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/ProviderWindow"
+          }
+        },
+        "options": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/ProviderOption"
+          }
+        }
+      },
+      "required": [
+        "profile",
+        "attempt_id",
+        "required_units",
+        "context_sha256",
+        "windows",
+        "options"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderOption": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        },
+        "lookup_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "mention": {
+          "$ref": "#/$defs/Span"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "key",
+        "lookup_label",
+        "mention"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderWindow": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 786432
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 786432
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "focus",
+            "context"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 786432
+        }
+      },
+      "required": [
+        "key",
+        "start",
+        "end",
+        "role",
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "Span": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 786432
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 786432
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "quote"
+      ],
+      "additionalProperties": false
+    },
+    "Unit": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        },
+        "span": {
+          "$ref": "#/$defs/Span"
+        }
+      },
+      "required": [
+        "key",
+        "span"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

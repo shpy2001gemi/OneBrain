@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ku-extraction/1.0 Context",
+  "$ref": "#/$defs/Context",
+  "$defs": {
+    "Context": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "const": "ku-extraction/1.0"
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "source_text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 786432
+        },
+        "registry_root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "resource_profile": {
+          "type": "string",
+          "enum": [
+            "no_llm",
+            "constrained",
+            "standard"
+          ]
+        },
+        "windows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Window"
+          },
+          "minItems": 1,
+          "maxItems": 16
+        },
+        "required_units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Unit"
+          },
+          "minItems": 1,
+          "maxItems": 64
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Option"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "profile",
+        "attempt_id",
+        "source_ref",
+        "source_text",
+        "registry_root",
+        "resource_profile",
+        "windows",
+        "required_units",
+        "options"
+      ],
+      "additionalProperties": false
+    },
+    "Option": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        },
+        "ccid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "lookup_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "mention": {
+          "$ref": "#/$defs/Span"
+        },
+        "unit": {
+          "type": "object",
+          "properties": {
+            "dimension": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": -128,
+                "maximum": 127
+              },
+              "minItems": 7,
+              "maxItems": 7
+            },
+            "scale": {
+              "$ref": "#/$defs/Ratio"
+            },
+            "offset": {
+              "$ref": "#/$defs/Ratio"
+            }
+          },
+          "required": [
+            "dimension",
+            "scale",
+            "offset"
+          ],
+          "additionalProperties": false
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      },
+      "required": [
+        "key",
+        "ccid",
+        "lookup_label",
+        "mention"
+      ],
+      "additionalProperties": false
+    },
+    "Ratio": {
+      "type": "object",
+      "properties": {
+        "numerator": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^-?(0|[1-9][0-9]*)$"
+        },
+        "denominator": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[1-9][0-9]*$"
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "additionalProperties": false
+    },
+    "Span": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 786432
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 786432
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "quote"
+      ],
+      "additionalProperties": false
+    },
+    "Unit": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        },
+        "span": {
+          "$ref": "#/$defs/Span"
+        }
+      },
+      "required": [
+        "key",
+        "span"
+      ],
+      "additionalProperties": false
+    },
+    "Window": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}$"
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 786432
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 786432
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "focus",
+            "context"
+          ]
+        }
+      },
+      "required": [
+        "key",
+        "start",
+        "end",
+        "role"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
