@@ -9,6 +9,7 @@
 - Current branch: `codex/ku-enc-002-shared-encoder`
 - Current state: `Review`; native compiler/workflow and node integration ready for owner review
 - Current evidence: [KU-ENC-002 implementation and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
+- Implementation checkpoint: `16408c6`; the following commit only records this handoff pointer
 - Last accepted task: `KU-ENC-001`, contract `a6f0a00`, reviewed handoff `e4c1bb6`, D-019
 - Last merged task: `KU-ENC-001`, merge `22599d036f903c5b5be2cb3f445ab6904e92896c` on `origin/main`
 - Following task: model qualification in `KU-ENC-003` after owner-approved merge
