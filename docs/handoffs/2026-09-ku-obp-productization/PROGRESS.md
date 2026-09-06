@@ -50,6 +50,9 @@
 
 ### KU-ENC-003 qualification preflight — 2026-09-06
 
+- Content checkpoint `89c5f33` pushed to
+  `origin/codex/ku-enc-003-model-qualification`; the branch tip additionally
+  contains this ledger-only receipt. No merge or qualification completion.
 - Created the exact task branch from clean synchronized main `ca1d4c2`.
 - Owner reported no identified holdout and requested examples/how to evaluate.
   Delivered the Vietnamese [data guide](outputs/KU_ENC_003_DATA_GUIDE.vi.md).
