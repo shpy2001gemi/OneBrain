@@ -10,7 +10,7 @@
 - Review task branch: `codex/ku-web-001-workflow`
 - Current state: `Review`; D-023 experimental Ollama extension implemented and verified
 - Starting main: `798eabfee8acaa8cb473aa99fa52ccfd6f124f7e`, clean and equal to fetched `origin/main`
-- Implementation checkpoint: `ac5ce80`, pushed to `origin/codex/ku-web-001-workflow`; the branch tip adds this ledger-only record
+- Implementation checkpoint: `5e540e5` (D-023 experimental Ollama), following manual milestone `ac5ce80`; the branch tip adds this ledger-only record
 - Prerequisite evidence: [KU-API-001 implementation and limits](outputs/KU_API_001_IMPLEMENTATION.md)
 - Last accepted task: `KU-API-001`, implementation `29c34d1`, reviewed tip `423b7b8`, D-022
 - Last merged task: `KU-API-001`, merge `3eba370df1df91627595e0acbf7645d94ea75276` on `origin/main`
@@ -48,6 +48,22 @@
 | 23 | `KU-ENC-003` | Blocked | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Separate branch retained at `4a8f29d`; artifact preflight only, no model runs/qualified tuples. Owner reports new VI/EN workbooks; contents and reviewer/locked-run evidence unverified. |
 
 ## Per-task update protocol
+
+### KU-WEB-001 experimental Ollama review evidence — 2026-09-06
+
+Owner D-023 approved the addition. Implementation `5e540e5` adds governed text
+intake, installed Qwen3 selection, the shared extraction workflow and an isolated
+Windows Ollama worker with exact tokenizer/artifact and resource controls.
+The actual `qwen3:8b` development probe passed intake → ready preview → explicit
+private save → restart/read, with inference/validation taking 109.037 seconds.
+The test Registry is synthetic and confined to temporary integration tests.
+
+Verification: 27 API library + 8 integration, 22 node KU, 18 encoder extraction,
+10 Web component/transport tests and the real owned-worker shutdown probe pass.
+Web build/lint, host example, feature-disabled API, generated Base projections,
+vNext contracts and format/whitespace checks pass. Existing unrelated warnings
+remain. See [run instructions, pins and precise evidence limits](outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md).
+AI remains unqualified; no holdout, mobile, rollout or merge work was performed.
 
 ### KU-ENC-002 review evidence — 2026-09-06
 
