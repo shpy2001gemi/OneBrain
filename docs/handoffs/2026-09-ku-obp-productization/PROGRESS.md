@@ -6,13 +6,14 @@
 ## Current checkpoint
 
 - Current task: `KU-ENC-003`
-- Current branch: `main`; no next-task branch created
+- Current branch: `codex/ku-enc-003-model-qualification`
 - Planned task branch: `codex/ku-enc-003-model-qualification`
-- Current state: `Planned`; owner will start this task in a new conversation
+- Current state: `Blocked`; missing locked holdout and independent evaluator inputs
+- Starting main: `ca1d4c22f61864a5bde53edf5c399e6ffdbc1943`, clean and equal to freshly fetched `origin/main`
 - Prerequisite evidence: [KU-ENC-002 implementation and limits](outputs/KU_ENC_002_IMPLEMENTATION.md)
 - Last accepted task: `KU-ENC-002`, implementation `16408c6`, reviewed tip `a687600`, D-020
 - Last merged task: `KU-ENC-002`, merge `dc04b71b48b27588800b682ef1e71d4506945db1` on `origin/main`
-- Next action: new conversation executes `tasks/23-KU-ENC-003.md`; no qualification work started here
+- Next action: obtain evaluation inputs using the [data guide](outputs/KU_ENC_003_DATA_GUIDE.vi.md), then resume the [qualification checkpoint](outputs/KU_ENC_003_QUALIFICATION.md) on this branch
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -43,9 +44,29 @@
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | — |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
 | 22 | `KU-ENC-002` | Merged | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Owner accepted under D-020; merge `dc04b71` on `origin/main`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |
-| 23 | `KU-ENC-003` | Planned | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Real-model/resource evidence; reuse MOB-06 mobile ownership. |
+| 23 | `KU-ENC-003` | Blocked | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | [Preflight and missing gates](outputs/KU_ENC_003_QUALIFICATION.md); no real-model runs or qualified tuples. |
 
 ## Per-task update protocol
+
+### KU-ENC-003 qualification preflight — 2026-09-06
+
+- Created the exact task branch from clean synchronized main `ca1d4c2`.
+- Owner reported no identified holdout and requested examples/how to evaluate.
+  Delivered the Vietnamese [data guide](outputs/KU_ENC_003_DATA_GUIDE.vi.md).
+- Delivered a read-only artifact preflight runner and nine integrity/route
+  tests. Existing local Qwen/Gemma layers verified; zero inference calls and
+  zero qualified tuples. Detailed bindings stay outside Git. See the
+  [evidence boundary and resume instructions](outputs/KU_ENC_003_QUALIFICATION.md).
+- Missing prerequisite: framework §7 requires a locked independent holdout
+  before any model run. Public fixtures and guide examples are not substitutes.
+  Exact tokenizer, worker/resource controls and the full qualification harness
+  also remain unfinished. State is Blocked, not Review; pointer stays here.
+- 27 Python tests, generated bundle and global vNext validation pass.
+  `cargo test --locked -q -p ku-encoder --lib extraction::` from `src`:
+  16 pass. Diff and local file-link checks pass for the five changed handoff
+  documents. These are regression/inventory gates, not model qualification.
+- No runtime, canonical bundle, mobile evidence, rollout, downloads, source
+  disclosure, merge or branch deletion. This is a partial checkpoint.
 
 ### KU-ENC-002 review evidence — 2026-09-06
 
