@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-RUN-001` owner accepted, merge pending / shared encoder work added under D-017**
+> Status: **`KU-RUN-001` merged / `KU-ENC-001` is the current task**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -41,15 +41,14 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`KU-RUN-001`](tasks/04-KU-RUN-001.md)
-**Current branch:** `codex/ku-run-001-shared-service`
+**Current task:** [`KU-ENC-001`](tasks/21-KU-ENC-001.md)
+**Current branch:** `codex/ku-enc-001-framework-contract`
 
 KU-RUN-001 implements the D-016 registration and node-owned local service.
-The owner accepted it under D-017; explicit merge remains pending. See the
+The owner authorized merge `d141701`, now on `origin/main`. See the
 [implementation evidence and limits](outputs/KU_RUN_001_IMPLEMENTATION.md)
-and [PROGRESS.md](PROGRESS.md). Keep this pointer until an explicitly
-authorized merge. The next task after merge is KU-ENC-001, followed by the
-shared encoder runtime; KU-API-001 has not started.
+and [PROGRESS.md](PROGRESS.md). The owner authorized starting KU-ENC-001,
+followed by the shared encoder runtime; KU-API-001 has not started.
 
 The new [encoder framework research](outputs/KU_ENCODER_FRAMEWORK_RESEARCH.md)
 maps the old tool-driven/v2 paths, existing AI/mobile tasks and the shared gap.
@@ -76,10 +75,10 @@ Copy/paste prompt:
 
 ```text
 Read AGENTS.md and docs/handoffs/2026-09-ku-obp-productization/README.md,
-then follow the Current checkpoint in PROGRESS.md. KU-RUN-001 is accepted;
-do not repeat implementation or infer merge permission. After an explicitly
-authorized merge, advance to KU-ENC-001 from tasks/21-KU-ENC-001.md, not
-KU-API-001. Follow the selected task's read set, scope and acceptance criteria.
+then execute KU-ENC-001 from tasks/21-KU-ENC-001.md on its named branch.
+Follow its required read set, scope and acceptance criteria. Update the
+handoff and push the task branch; do not merge or delete it without explicit
+owner instruction. KU-RUN-001 is already merged; do not repeat that work.
 ```
 
 More prompts are in [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md).

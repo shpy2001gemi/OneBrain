@@ -5,12 +5,12 @@
 
 ## Current checkpoint
 
-- Current task: `KU-RUN-001`
-- Current branch: `codex/ku-run-001-shared-service`
-- Current state: `Review`; owner accepted KU-RUN-001 under D-017, explicit merge pending
-- Last accepted task: `KU-RUN-001`, implementation `b608a82`, handoff `0d50550`; not merged
-- Last merged task: `KU-CON-001`, merge `2cbc8f263961d5a6368ef2c7bdc5a77f209d5b21` on `origin/main`
-- Next task after authorized merge: `KU-ENC-001`, then `KU-ENC-002`; model qualification in `KU-ENC-003`
+- Current task: `KU-ENC-001`
+- Current branch: `codex/ku-enc-001-framework-contract`
+- Current state: `Planned`; prerequisite merge complete, owner authorized starting this task
+- Last accepted task: `KU-RUN-001`, implementation `b608a82`
+- Last merged task: `KU-RUN-001`, merge `d1417018a236798a910ceb625fbe5fd0b10dc406` on `origin/main`
+- Following tasks: `KU-ENC-002`, then model qualification in `KU-ENC-003`
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -22,7 +22,7 @@
 | 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | — | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011–D-014. |
 | 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; merge `b872263` on `origin/main`. |
 | 3 | `KU-CON-001` | Merged | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge `2cbc8f2` on `origin/main`. |
-| 4 | `KU-RUN-001` | Review | `codex/ku-run-001-shared-service` | `KU-CON-001` | Owner accepted under D-017; [implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md); explicit merge pending. |
+| 4 | `KU-RUN-001` | Merged | `codex/ku-run-001-shared-service` | `KU-CON-001` | Owner-authorized merge `d141701` on `origin/main`; [implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md). |
 | 5 | `KU-API-001` | Planned | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | — |
 | 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
 | 7 | `KU-WEB-001` | Planned | `codex/ku-web-001-workflow` | `KU-API-001` | — |
@@ -318,6 +318,18 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
   or live-model/mobile performance claim is needed for this documentation edit.
 
 ### Protocol
+
+### KU-RUN-001 merge and encoder handoff — 2026-09-06
+
+- Owner explicitly authorized merging KU-RUN-001 into main and starting
+  KU-ENC-001. Fresh generated/global contract checks, 13 KU runtime tests,
+  workspace check and format passed on the clean synchronized branch.
+- Merged tip `13e03f3` with merge `d1417018a236798a910ceb625fbe5fd0b10dc406`
+  and pushed `origin/main`. No branch deletion or rollout change.
+- README/progress pointer advances to KU-ENC-001; the accepted direction is
+  D-018. No further merge or framework-direction approval is required here.
+
+### Update protocol
 
 When a task begins:
 
