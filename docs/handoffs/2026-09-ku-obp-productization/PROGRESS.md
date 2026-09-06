@@ -10,6 +10,7 @@
 - Review task branch: `codex/ku-web-001-workflow`
 - Current state: `Review`; bounded manual Web workflow and host integration implemented
 - Starting main: `798eabfee8acaa8cb473aa99fa52ccfd6f124f7e`, clean and equal to fetched `origin/main`
+- Implementation checkpoint: `ac5ce80`, pushed to `origin/codex/ku-web-001-workflow`; the branch tip adds this ledger-only record
 - Prerequisite evidence: [KU-API-001 implementation and limits](outputs/KU_API_001_IMPLEMENTATION.md)
 - Last accepted task: `KU-API-001`, implementation `29c34d1`, reviewed tip `423b7b8`, D-022
 - Last merged task: `KU-API-001`, merge `3eba370df1df91627595e0acbf7645d94ea75276` on `origin/main`
@@ -426,6 +427,8 @@ this handoff-only update.
 
 ### KU-WEB-001 implementation review — 2026-09-06
 
+- Implementation checkpoint `ac5ce80` was pushed successfully. The branch tip
+  additionally contains this ledger-only record; neither commit is a merge.
 - Started from clean `main` at `798eabfee8acaa8cb473aa99fa52ccfd6f124f7e`,
   equal to fetched `origin/main`; exact task branch `codex/ku-web-001-workflow`.
 - Implemented the local `/ku` manual create/preview/validate/save/search/inspect/
@@ -437,7 +440,8 @@ this handoff-only update.
   validation, encrypted persistence and Base generation fences retain authority.
   No new Base IDs, canonical bytes, network lane, model or default rollout.
 - API default suite: 24 library + 8 integration tests pass; node KU suite: 19
-  pass. Host example and feature-disabled API compile. Web: 8 component/transport
+  pass; opt-in network-feature API library suite: 26 pass. Host example and
+  feature-disabled API compile. Web: 8 component/transport
   tests, 2 existing receipt tests, automated accessibility, production build and
   lint pass under the existing non-KU warning policy. Generated Base, global
   vNext and format/diff checks pass. Full details and evidence limits are linked.
