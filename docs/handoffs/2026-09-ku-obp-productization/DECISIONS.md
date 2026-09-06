@@ -256,3 +256,21 @@ KU-RUN-001 acceptance is recorded against implementation `b608a82` and handoff
 tip `0d50550`. The owner did not explicitly request merge or branch deletion in
 this message, so both remain pending. This follow-up changes research/backlog
 documentation only, not the accepted runtime or mobile implementation.
+
+## D-018 — Encoder framework direction and task sequence accepted
+
+After the research/backlog checkpoint `e513552`, the owner answered
+"tôi đồng ý". This accepts the proposed shared framework direction and the
+KU-ENC-001 → KU-ENC-002 → KU-ENC-003 sequence, including reuse of MOB-06 and
+the updated API/QA dependencies. Do not request approval of that direction
+again. KU-ENC-001 now has an accepted design brief; its precise schema,
+compiler coverage and measurable qualification thresholds remain its outputs.
+
+The accepted boundary is grounded model proposals with workflow-owned tools,
+Registry resolution, validation and canonical compilation. Exact identity is
+guaranteed for equal validated semantics under the same profile; cross-model
+raw-text convergence is measured. Limited hardware does not relax these rules.
+
+This acceptance does not explicitly instruct a merge, branch deletion,
+deployment or mobile implementation. The prepared KU-RUN branch remains
+available for the explicit merge step required by the handoff instructions.

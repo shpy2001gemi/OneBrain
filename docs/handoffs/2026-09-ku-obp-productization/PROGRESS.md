@@ -11,6 +11,7 @@
 - Last accepted task: `KU-RUN-001`, implementation `b608a82`, handoff `0d50550`; not merged
 - Last merged task: `KU-CON-001`, merge `2cbc8f263961d5a6368ef2c7bdc5a77f209d5b21` on `origin/main`
 - Next task after authorized merge: `KU-ENC-001`, then `KU-ENC-002`; model qualification in `KU-ENC-003`
+- Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
 
