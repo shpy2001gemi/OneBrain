@@ -60,6 +60,8 @@ fn selected_ccid<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<String
 )]
 pub enum ManualEditorRequest {
     Catalog {},
+    Models {},
+    EncodeText(crate::ku_ollama::TextIntake),
     Resolve { label: String },
     Draft(ManualDraft),
 }
@@ -75,6 +77,11 @@ pub struct ManualCandidate {
 #[derive(Serialize)]
 #[serde(untagged)]
 pub enum ManualEditorResponse {
+    Models {
+        models: Vec<crate::ku_ollama::LocalModel>,
+        limitations: Vec<String>,
+        consent_text: String,
+    },
     Catalog {
         sources: Vec<ManualSource>,
         limitations: Vec<String>,
@@ -114,7 +121,7 @@ impl ManualKuInputs {
         registry: Arc<ConceptRegistryGenerationManager>,
         admitted: Vec<(String, Vec<u8>)>,
     ) -> Result<Self, BaseServiceError> {
-        if admitted.is_empty() || admitted.len() > 64 {
+        if admitted.len() > 64 {
             return Err(invalid());
         }
         let mut sources = BTreeMap::new();
@@ -215,6 +222,9 @@ impl KuInputProvider for ManualKuInputs {
             ]
         };
         match request {
+            ManualEditorRequest::Models {} | ManualEditorRequest::EncodeText(_) => {
+                Err(unavailable())
+            }
             ManualEditorRequest::Catalog {} => {
                 if self.sources.len() > budget.max_items as usize {
                     return Err(invalid());

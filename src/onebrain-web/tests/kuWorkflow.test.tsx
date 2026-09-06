@@ -42,6 +42,8 @@ function fixture(
     loseSave?: boolean;
     noEditor?: boolean;
     reserveLoss?: boolean;
+    ai?: boolean;
+    prepareWait?: Promise<void>;
   } = {},
 ) {
   let saved = false;
@@ -115,6 +117,34 @@ function fixture(
             { status: 503 },
           );
         switch (body.request.action) {
+          case "models":
+            payload = {
+              models: options.ai
+                ? [
+                    {
+                      model: "qwen3:8b",
+                      implementation_commitment: "9".repeat(64),
+                      experimental: true,
+                    },
+                  ]
+                : [],
+              limitations: [],
+              consent_text:
+                "I consent to local experimental encoding and private retention.",
+            };
+            break;
+          case "encode_text":
+            payload = {
+              operation_id: currentOp,
+              idempotency_key: currentOp,
+              source_refs: [source],
+              input_mode: "local_ai",
+              registry_release_root: "8".repeat(64),
+              implementation_commitment: "9".repeat(64),
+              semantic_profile: "ku-semantic-content/1.0",
+              destination: "LOCAL_ONLY",
+            };
+            break;
           case "catalog":
             payload = {
               sources: [{ source_ref: source, label: "Host source" }],
@@ -143,6 +173,9 @@ function fixture(
       } else {
         switch (body.request.operation) {
           case "prepare":
+            if (options.prepareWait) await options.prepareWait;
+            payload = prepared();
+            break;
           case "revise":
           case "preview":
             payload = prepared();
@@ -157,6 +190,12 @@ function fixture(
             break;
           case "reconcile":
             payload = receipt();
+            break;
+          case "status":
+            payload = {
+              lifecycle: "active",
+              receipt: { ...receipt(), state: "confirming" },
+            };
             break;
           case "list":
           case "search":
@@ -224,6 +263,90 @@ async function preview() {
   );
 }
 describe("local KU component journey", () => {
+  it("requires consent, selects qwen3 and saves only after AI preview", async () => {
+    const f = fixture({ ai: true });
+    render(<KuWorkflowPage client={f.client} />);
+    await screen.findByRole("option", { name: "qwen3:8b — experimental" });
+    const encode = screen.getByRole("button", {
+      name: "Encode and preview",
+    }) as HTMLButtonElement;
+    fireEvent.change(screen.getByLabelText("Source text to encode"), {
+      target: { value: "Copper is conductive." },
+    });
+    expect(encode.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(encode.disabled).toBe(false);
+    fireEvent.click(encode);
+    await screen.findByRole("heading", { name: "Exact prepared preview" });
+    const intake = f.calls.find(
+      (c) => c.body?.request?.action === "encode_text",
+    )!;
+    expect(intake.body.request.payload).toEqual({
+      operation_id: op,
+      idempotency_key: op,
+      model: "qwen3:8b",
+      text: "Copper is conductive.",
+      consent: true,
+    });
+    expect(f.calls.some((c) => c.body?.request?.operation === "save")).toBe(
+      false,
+    );
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Save exact preview privately",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save exact preview privately" }),
+    );
+    await waitFor(() =>
+      expect(f.calls.some((c) => c.body?.request?.operation === "save")).toBe(
+        true,
+      ),
+    );
+  });
+  it("can cancel a running AI call and discards its late preview", async () => {
+    let release!: () => void;
+    const f = fixture({
+      ai: true,
+      prepareWait: new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    });
+    render(<KuWorkflowPage client={f.client} />);
+    await screen.findByRole("option", { name: "qwen3:8b — experimental" });
+    fireEvent.change(screen.getByLabelText("Source text to encode"), {
+      target: { value: "Copper is conductive." },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Encode and preview" }));
+    await waitFor(() =>
+      expect(
+        f.calls.some((c) => c.body?.request?.operation === "prepare"),
+      ).toBe(true),
+    );
+    const cancel = screen.getByRole("button", {
+      name: "Cancel pending draft",
+    }) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(false);
+    fireEvent.click(cancel);
+    await waitFor(() =>
+      expect(f.calls.some((c) => c.body?.request?.operation === "cancel")).toBe(
+        true,
+      ),
+    );
+    release();
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("canceled"),
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Exact prepared preview" }),
+    ).toBeNull();
+  });
   it("has labelled controls, keyboard access and no automated accessibility violations", async () => {
     const f = fixture();
     const { container } = render(

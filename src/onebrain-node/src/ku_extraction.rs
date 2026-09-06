@@ -163,10 +163,16 @@ impl KuInputProvider for SharedKuExtractionInputs {
                 | "call_tokens"
                 | "call_budget"
                 | "aggregate_budget"
-                | "deadline" => crate::ku_product::resource(),
+                | "deadline" => BaseServiceError::new(
+                    onebrain_base_contract::BaseErrorCodeV1::ResourceExhausted,
+                    e.0,
+                ),
                 "source_unavailable" | "source_revoked" => crate::ku_product::not_found(),
                 "journal_unavailable" | "journal_corrupt" => crate::ku_product::unknown(),
-                _ => crate::ku_product::unavailable(),
+                _ => BaseServiceError::new(
+                    onebrain_base_contract::BaseErrorCodeV1::DependencyUnavailable,
+                    e.0,
+                ),
             })
         })
     }

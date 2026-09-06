@@ -34,6 +34,8 @@ use crate::dataset_path::{BaseStorageOwnerId, DatasetGenerationId, DatasetPathRe
 
 const JOURNAL: TableDefinition<&[u8], &[u8]> = TableDefinition::new("ku_private_journal_v1");
 const EXTRACTION: TableDefinition<&[u8], &[u8]> = TableDefinition::new("ku_private_extraction_v1");
+const TEXT_INTAKE: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("ku_private_text_intake_v1");
 const MAX_OPERATIONS: usize = 1024;
 const MAX_JOURNAL_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SNAPSHOTS: usize = 32;
@@ -43,6 +45,25 @@ pub(crate) const KU_PREPARED_MARKER: &[u8] = b"onebrain:ku:prepared:1\0";
 /// Host-only source/encoder port. Ordinary product handles cannot install a port,
 /// supply authority booleans, or bypass its current custody/consent assessment.
 pub trait KuInputProvider: Send + Sync {
+    fn experimental_ai_allowed(&self, _commitment: [u8; 32]) -> bool {
+        false
+    }
+    fn supports_implementation(&self, mode: InputMode, commitment: [u8; 32]) -> bool {
+        self.implementation(mode) == Some(commitment)
+    }
+    fn capture_text(
+        &self,
+        _principal: [u8; 32],
+        _input: crate::ku_ollama::TextIntake,
+    ) -> Result<crate::ku_ollama::TextIntakeRecord, BaseServiceError> {
+        Err(unavailable())
+    }
+    fn restore_text(
+        &self,
+        _record: crate::ku_ollama::TextIntakeRecord,
+    ) -> Result<(), BaseServiceError> {
+        Err(unavailable())
+    }
     fn editor(
         &self,
         _principal: [u8; 32],
@@ -144,6 +165,9 @@ pub struct KuServices {
 }
 
 impl KuServices {
+    pub fn experimental_ai_allowed(&self, commitment: [u8; 32]) -> Result<bool, BaseServiceError> {
+        self.base.ku_experimental_ai_allowed(commitment)
+    }
     pub async fn editor(
         &self,
         request: crate::ku_manual::ManualEditorRequest,
@@ -262,6 +286,87 @@ pub(crate) struct KuStore {
 }
 
 impl KuStore {
+    fn intake_key(&self, operation: [u8; 32]) -> [u8; 32] {
+        let mut hash = blake3::Hasher::new_derive_key("onebrain:ku:private-text-intake:1");
+        hash.update(&self.dataset.0);
+        hash.update(&operation);
+        *hash.finalize().as_bytes()
+    }
+    fn decode_intake(
+        &self,
+        key: [u8; 32],
+        sealed: &[u8],
+    ) -> Result<crate::ku_ollama::TextIntakeRecord, BaseServiceError> {
+        let bytes = zeroize::Zeroizing::new(
+            self.vault
+                .open_local_metadata(self.intake_key(key), sealed)
+                .map_err(|_| corrupt())?,
+        );
+        let record: crate::ku_ollama::TextIntakeRecord =
+            serde_json::from_slice(&bytes).map_err(|_| corrupt())?;
+        if record.input.operation_id.0 != key {
+            return Err(corrupt());
+        }
+        Ok(record)
+    }
+    pub(crate) fn editor(
+        &self,
+        principal: [u8; 32],
+        request: crate::ku_manual::ManualEditorRequest,
+        budget: &ResourceBudgetV1,
+    ) -> Result<crate::ku_manual::ManualEditorResponse, BaseServiceError> {
+        let crate::ku_manual::ManualEditorRequest::EncodeText(input) = request else {
+            return self.inputs.editor(principal, request, budget);
+        };
+        let _guard = self.mutation.lock().map_err(|_| corrupt())?;
+        let operation = input.operation_id.0;
+        let tx = self.journal.begin_write().map_err(|_| corrupt())?;
+        let record;
+        {
+            let mut table = tx.open_table(TEXT_INTAKE).map_err(|_| corrupt())?;
+            if let Some(value) = table.get(operation.as_slice()).map_err(|_| corrupt())? {
+                let old = self.decode_intake(operation, value.value())?;
+                if old.principal != principal {
+                    return Err(not_found());
+                }
+                if serde_json::to_vec(&old.input).ok() != serde_json::to_vec(&input).ok() {
+                    return Err(conflict());
+                }
+                self.inputs.restore_text(old.clone())?;
+                return Ok(crate::ku_manual::ManualEditorResponse::Draft(
+                    old.preparation,
+                ));
+            }
+            record = self.inputs.capture_text(principal, input)?;
+            let bytes =
+                zeroize::Zeroizing::new(serde_json::to_vec(&record).map_err(|_| invalid())?);
+            if bytes.len() as u64 > budget.max_bytes {
+                return Err(resource());
+            }
+            let sealed = self
+                .vault
+                .seal_local_metadata(self.intake_key(operation), &bytes)
+                .map_err(|_| corrupt())?;
+            let mut total = sealed.len();
+            let mut count = 0;
+            for row in table.iter().map_err(|_| corrupt())? {
+                let (_, value) = row.map_err(|_| corrupt())?;
+                total += value.value().len();
+                count += 1;
+            }
+            if count >= 256 || total > 8 * 1024 * 1024 {
+                return Err(resource());
+            }
+            table
+                .insert(operation.as_slice(), sealed.as_slice())
+                .map_err(|_| corrupt())?;
+        }
+        tx.commit().map_err(|_| unknown())?;
+        self.inputs.restore_text(record.clone())?;
+        Ok(crate::ku_manual::ManualEditorResponse::Draft(
+            record.preparation,
+        ))
+    }
     fn begin_extraction(
         &self,
         operation: OperationId,
@@ -400,6 +505,7 @@ impl KuStore {
         {
             tx.open_table(JOURNAL).map_err(|_| corrupt())?;
             tx.open_table(EXTRACTION).map_err(|_| corrupt())?;
+            tx.open_table(TEXT_INTAKE).map_err(|_| corrupt())?;
         }
         tx.commit().map_err(|_| corrupt())?;
         let store = Self {
@@ -417,6 +523,23 @@ impl KuStore {
             paging: Mutex::new(Paging::default()),
             catalog: Mutex::new(Catalog::default()),
         };
+        {
+            let tx = store.journal.begin_read().map_err(|_| corrupt())?;
+            let table = tx.open_table(TEXT_INTAKE).map_err(|_| corrupt())?;
+            let mut total = 0usize;
+            for (i, row) in table.iter().map_err(|_| corrupt())?.enumerate() {
+                let (key, value) = row.map_err(|_| corrupt())?;
+                total += value.value().len();
+                if i >= 256 || total > 8 * 1024 * 1024 {
+                    return Err(resource());
+                }
+                let record = store.decode_intake(
+                    key.value().try_into().map_err(|_| corrupt())?,
+                    value.value(),
+                )?;
+                store.inputs.restore_text(record)?;
+            }
+        }
         // Authentication failure, a damaged record or a partial committed bundle
         // is a typed open failure, never an empty store with reconstructed success.
         for bundle in store.bundles()? {
@@ -736,8 +859,9 @@ impl KuStore {
         if (request.input_mode == InputMode::ResolvedSemanticDraft) != request.draft_ref.is_some() {
             return Err(invalid());
         }
-        if self.inputs.implementation(request.input_mode)
-            != Some(request.implementation_commitment.0)
+        if !self
+            .inputs
+            .supports_implementation(request.input_mode, request.implementation_commitment.0)
         {
             return Err(unavailable());
         }

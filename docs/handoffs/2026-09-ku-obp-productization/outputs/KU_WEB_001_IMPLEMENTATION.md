@@ -1,5 +1,9 @@
 # KU-WEB-001 local manual workflow
 
+This document records the original manual milestone. The owner-approved D-023
+[Ollama addition and current run instructions](KU_WEB_001_OLLAMA_IMPLEMENTATION.md)
+supersede the original no-inference/raw-intake limitations below.
+
 The `/ku` page now projects the node-owned KU workflow: create a manual draft,
 look up and explicitly select a Registry concept, preview/validate, explicitly
 save privately, search/list, inspect exact accepted bytes and prepare a revision.

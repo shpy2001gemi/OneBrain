@@ -696,18 +696,36 @@ impl BaseServices {
             .as_ref()
             .ok_or_else(crate::ku_product::unavailable)?;
         ku.check_dataset(self.dataset_generation)?;
-        if let crate::ku_manual::ManualEditorRequest::Draft(input) = &request {
+        let operation = match &request {
+            crate::ku_manual::ManualEditorRequest::Draft(input) => Some(input.operation_id.0),
+            crate::ku_manual::ManualEditorRequest::EncodeText(input) => Some(input.operation_id.0),
+            _ => None,
+        };
+        if let Some(operation) = operation {
             let receipt = lease
                 .core
                 .current_store()?
-                .reconcile(BaseOperationId(input.operation_id.0), self.principal)
+                .reconcile(BaseOperationId(operation), self.principal)
                 .map_err(store_error)?
                 .receipt;
             if receipt.state != crate::base_operation_store::BaseOperationStateV1::Reserved {
                 return Err(crate::ku_product::conflict());
             }
         }
-        ku.inputs.editor(self.principal, request, &budget)
+        ku.editor(self.principal, request, &budget)
+    }
+    pub(crate) fn ku_experimental_ai_allowed(
+        &self,
+        commitment: [u8; 32],
+    ) -> Result<bool, BaseServiceError> {
+        let lease = self.lease(Admission::NewWork)?;
+        let ku = lease
+            .core
+            .ku
+            .as_ref()
+            .ok_or_else(crate::ku_product::unavailable)?;
+        ku.check_dataset(self.dataset_generation)?;
+        Ok(ku.inputs.experimental_ai_allowed(commitment))
     }
     pub(crate) async fn ku_reserve(
         &self,

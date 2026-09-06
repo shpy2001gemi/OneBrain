@@ -44,6 +44,22 @@ export interface Candidates {
   candidates: { ccid: string }[];
   limitations: string[];
 }
+export interface Models {
+  models: {
+    model: string;
+    implementation_commitment: Preparation["implementation_commitment"];
+    experimental: true;
+  }[];
+  limitations: string[];
+  consent_text: string;
+}
+export interface TextIntake {
+  operation_id: OperationRef["operation_id"];
+  idempotency_key: Preparation["idempotency_key"];
+  model: string;
+  text: string;
+  consent: boolean;
+}
 export interface Draft {
   operation_id: OperationRef["operation_id"];
   idempotency_key: Preparation["idempotency_key"];
@@ -73,6 +89,7 @@ interface Operations {
   search: [Search, Page];
   cancel: [OperationRef, Receipt];
   reconcile: [OperationRef, Receipt];
+  status: [OperationRef, Status];
 }
 // Dedicated private transport: never use the legacy debug-logging request path.
 export function createKuClient(
@@ -135,6 +152,18 @@ export function createKuClient(
   }
   return {
     status: () => request<Status>("status"),
+    models: (session: Session) =>
+      request<Models>("editor", {
+        session,
+        budget,
+        request: { action: "models", payload: {} },
+      }),
+    encodeText: (session: Session, payload: TextIntake) =>
+      request<Preparation>("editor", {
+        session,
+        budget,
+        request: { action: "encode_text", payload },
+      }),
     reserve: (session: Session) =>
       request<OperationRef>("reservations", { session }),
     catalog: (session: Session) =>

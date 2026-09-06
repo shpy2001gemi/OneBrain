@@ -8,13 +8,13 @@
 - Current task: `KU-WEB-001`
 - Current branch: `codex/ku-web-001-workflow`
 - Review task branch: `codex/ku-web-001-workflow`
-- Current state: `Review`; bounded manual Web workflow and host integration implemented
+- Current state: `Review`; D-023 experimental Ollama extension implemented and verified
 - Starting main: `798eabfee8acaa8cb473aa99fa52ccfd6f124f7e`, clean and equal to fetched `origin/main`
 - Implementation checkpoint: `ac5ce80`, pushed to `origin/codex/ku-web-001-workflow`; the branch tip adds this ledger-only record
 - Prerequisite evidence: [KU-API-001 implementation and limits](outputs/KU_API_001_IMPLEMENTATION.md)
 - Last accepted task: `KU-API-001`, implementation `29c34d1`, reviewed tip `423b7b8`, D-022
 - Last merged task: `KU-API-001`, merge `3eba370df1df91627595e0acbf7645d94ea75276` on `origin/main`
-- Next action: owner direction on the [requested Ollama MVP activation amendment](outputs/KU_WEB_001_OLLAMA_AMENDMENT.md); the manual implementation remains Review, and AI follow-up is paused at the documented contract conflict
+- Next action: review the manual and experimental Ollama additions on the pushed task branch; do not merge or delete without explicit owner instruction
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -29,7 +29,7 @@
 | 4 | `KU-RUN-001` | Merged | `codex/ku-run-001-shared-service` | `KU-CON-001` | Owner-authorized merge `d141701` on `origin/main`; [implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md). |
 | 5 | `KU-API-001` | Merged | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | D-022; merge `3eba370` on `origin/main`; [API implementation and verification](outputs/KU_API_001_IMPLEMENTATION.md). |
 | 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
-| 7 | `KU-WEB-001` | Review | `codex/ku-web-001-workflow` | `KU-API-001` | [Implementation and run instructions](outputs/KU_WEB_001_IMPLEMENTATION.md); unmerged. |
+| 7 | `KU-WEB-001` | Review | `codex/ku-web-001-workflow` | `KU-API-001` | [Manual implementation](outputs/KU_WEB_001_IMPLEMENTATION.md), [Ollama integration and run instructions](outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md); D-023, unmerged. |
 | 8 | `KU-DESK-001` | Planned | `codex/ku-desk-001-workflow` | `KU-WEB-001` | — |
 | 9 | `KU-QA-001` | Planned | `codex/ku-qa-001-cross-surface` | `KU-CLI-001`, `KU-DESK-001`, `KU-ENC-003` | — |
 | 10 | `OBP-PROD-001` | Planned | `codex/obp-prod-001-product-contract` | `KU-CON-001` | — |

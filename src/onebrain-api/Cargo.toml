@@ -39,6 +39,8 @@ futures = "0.3"
 reqwest = { version = "0.12", features = ["json", "native-tls"] }
 
 [dev-dependencies]
+async-trait = "0.1"
+ku-encoder = { path = "../ku-encoder" }
 ed25519-dalek = "2"
 onebrain-base-abi = { path = "../onebrain-base-abi" }
 onebrain-archive = { path = "../onebrain-archive" }

@@ -11,7 +11,7 @@ ku-ai = { path = "../ku-ai" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["sync", "time"] }
+tokio = { version = "1", features = ["sync", "time", "macros"] }
 async-trait = "0.1"
 regex = "1"
 ed25519-dalek = "2"
@@ -20,6 +20,11 @@ sha2 = "0.10"
 num-bigint = "0.4"
 num-integer = "0.1"
 num-traits = "0.2"
+tokenizers = { version = "0.23.2", default-features = false, features = ["fancy-regex"] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_JobObjects", "Win32_System_Threading", "Win32_Foundation", "Win32_Security"] }

@@ -1,8 +1,11 @@
 //! Explicit local host integration; reads operator-owned inputs, never test fixtures.
 use ku_core::foundation::VaultKey;
+use ku_encoder::extraction::{ExtractionProvider, ManagedOllamaProvider};
 use onebrain_api::{base_runtime_config_for_api_token, ApiServer};
 use onebrain_node::concept_registry_runtime::ConceptRegistryGenerationManager;
 use onebrain_node::ku_manual::ManualKuInputs;
+use onebrain_node::ku_ollama::OllamaKuInputs;
+use onebrain_node::ku_product::KuInputProvider;
 use onebrain_node::ku_product::KuRuntimeConfig;
 use onebrain_node::{ConceptRegistryMode, NodeConfig, OneBrainNode};
 use serde::Deserialize;
@@ -16,9 +19,20 @@ struct Config {
     registry_public_key: String,
     vault_key_file: PathBuf,
     api_token_file: PathBuf,
+    #[serde(default)]
     sources: Vec<Source>,
+    #[serde(default)]
+    ollama: Option<Ollama>,
     web_dir: PathBuf,
     port: u16,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Ollama {
+    executable: PathBuf,
+    models_dir: PathBuf,
+    models: Vec<String>,
+    memory_limit_bytes: u64,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,8 +61,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("usage: ku_local_web <trusted-host-config.json>")?;
     let config: Config =
         serde_json::from_slice(&read_bounded(std::path::Path::new(&path), 65536)?)?;
-    if config.sources.is_empty() || config.sources.len() > 64 {
-        return Err("host needs 1..64 admitted sources".into());
+    if config.sources.len() > 64 {
+        return Err("host supports at most 64 manual sources".into());
     }
     let token = String::from_utf8(read_bounded(&config.api_token_file, 1024)?)?
         .trim()
@@ -82,6 +96,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ManualKuInputs::new([0; 32], registry.clone(), sources)
             .map_err(|_| "invalid host source admission")?,
     );
+    let providers = if let Some(ollama) = config.ollama {
+        if ollama.models.is_empty() || ollama.models.len() > 8 {
+            return Err("admit 1..8 installed models".into());
+        }
+        let gate = Arc::new(tokio::sync::Semaphore::new(1));
+        println!("Verifying installed Ollama artifacts; model quality remains unqualified.");
+        let mut providers: Vec<(String, Arc<dyn ExtractionProvider>, u64)> = Vec::new();
+        for name in ollama.models {
+            let provider = ManagedOllamaProvider::open(
+                ollama.executable.clone(),
+                ollama.models_dir.clone(),
+                &name,
+                ollama.memory_limit_bytes,
+                gate.clone(),
+            );
+            match provider {
+                Ok(provider) => {
+                    providers.push((name, Arc::new(provider), ollama.memory_limit_bytes))
+                }
+                Err(error) => eprintln!(
+                    "Experimental model unavailable ({}); existing private KU remains readable.",
+                    error.0
+                ),
+            }
+        }
+        providers
+    } else {
+        Vec::new()
+    };
+    let inputs: Arc<dyn KuInputProvider> = Arc::new(
+        OllamaKuInputs::new([0; 32], inputs, registry.clone(), providers)
+            .map_err(|_| "local text custody installation failed")?,
+    );
     std::fs::create_dir_all(&node_config.data_dir)?;
     let mut node = OneBrainNode::new(node_config).await?;
     let mut base = base_runtime_config_for_api_token(&token);
@@ -93,7 +140,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     node.install_base_runtime(base)?;
     println!(
-        "Local manual KU: http://127.0.0.1:{}/ku — AI unqualified; no publication",
+        "Local KU: http://127.0.0.1:{}/ku — AI unqualified; no publication",
         config.port
     );
     ApiServer::new(node, token, config.port)

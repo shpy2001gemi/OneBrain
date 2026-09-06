@@ -365,3 +365,15 @@ KU-WEB-001 is next under D-021. Leave it Planned for the owner's new
 conversation, using branch `codex/ku-web-001-workflow` from updated main. Do
 not begin Web implementation during this closure. Preserve the separate
 KU-ENC-003 branch and private holdouts. No branch deletion was requested.
+
+## D-023 — Experimental local Ollama MVP approved
+
+The owner answered “tôi đồng ý bổ sung” to the concrete Ollama amendment at
+`4a0a1bf`. KU-WEB-001 now includes text intake, installed-model selection
+(initially `qwen3:8b`) and actual shared-workflow inference before full KU-ENC-003
+quality qualification. Retain `model_qualified: false`, opt-in host activation,
+technical resource/tokenizer/custody/validation/recovery controls and explicit
+private save. This supersedes the blanket pre-qualification REST inference ban
+only for this experimental host lane. It does not qualify a tuple or approve
+mobile, default rollout, publication, merge, branch deletion or holdout use.
+No further approval of this same exception is needed.

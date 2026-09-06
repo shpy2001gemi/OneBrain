@@ -1,7 +1,8 @@
 # KU-WEB-001 — requested Ollama MVP amendment
 
-Status: proposed resolution of the current activation-contract conflict;
-implementation has not started. Owner request, 2026-09-06: the Web MVP must
+Status: owner approved under D-023; implementation and development verification complete.
+See [Ollama implementation and run instructions](KU_WEB_001_OLLAMA_IMPLEMENTATION.md).
+The owner accepted this amendment after checkpoint `4a0a1bf`. Owner request, 2026-09-06: the Web MVP must
 support Ollama, model selection including `qwen3:8b`, and text encoding through
 the previously designed architecture. This requests actual inference, not a
 manual editor presented as AI, and expands the current Web deliverable.

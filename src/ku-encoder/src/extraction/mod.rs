@@ -3,7 +3,11 @@
 //! This module never routes through the legacy encoder/defaults. Host custody,
 //! signed Registry lookup and consent are separate from structural conformance.
 mod compiler;
+mod managed_ollama;
+mod ollama_worker;
 mod provider;
+mod qwen_tokenizer;
+pub use managed_ollama::ManagedOllamaProvider;
 mod rules;
 mod schema;
 mod workflow;

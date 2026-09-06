@@ -3,6 +3,10 @@
 KU-WEB-001 additive host integration for the [local REST profile](KU_LOCAL_REST_PROFILE_V1.md).
 No Base discriminator, canonical schema, authority or rollout changes.
 
+D-023 adds opt-in `models` and `encode_text` actions through
+[the experimental Ollama profile](KU_EXPERIMENTAL_OLLAMA_PROFILE_V1.md).
+The manual actions and their custody requirements below retain their meaning.
+
 The opt-in host installs `ManualKuInputs` with one principal, a verified signed
 Registry and a bounded set of canonical private Text SourceArtifacts explicitly
 admitted by the local operator. Admission is a host custody decision; decoding a

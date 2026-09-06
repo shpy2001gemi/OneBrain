@@ -63,9 +63,11 @@ previously admitted opaque references through host-installed custody ports.
 
 Use the existing vNext success envelope. `data` contains `session`, `payload`
 (the generated result), and `model_qualified: false`. This release has no
-qualified real-model tuple; AI prepare/revise is rejected before dispatch.
+qualified real-model tuple; AI prepare/revise is rejected before dispatch unless
+the host explicitly admits the exact experimental implementation under D-023
+and [the experimental Ollama profile](KU_EXPERIMENTAL_OLLAMA_PROFILE_V1.md).
 Existing rule and resolved-draft requests use `KuServices::invoke` unchanged.
-Enabling real AI requires the separate measured qualification integration.
+Qualified/default AI still requires the separate measured qualification integration.
 
 `meta.lifecycle`, `coverage`, `limitations`, and nullable `continuation` preserve
 the result's relevant service values. Prepared validity is distinct from Base

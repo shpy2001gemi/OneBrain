@@ -15,6 +15,12 @@ use onebrain_node::{ConceptRegistryMode, NodeConfig};
 use std::{fs, path::Path, sync::Arc};
 
 pub(super) fn registry(root: &Path) -> Arc<ConceptRegistryGenerationManager> {
+    registry_for_label(root, "water")
+}
+pub(super) fn registry_for_label(
+    root: &Path,
+    label: &str,
+) -> Arc<ConceptRegistryGenerationManager> {
     let source = root.join("source");
     fs::create_dir_all(&source).unwrap();
     let obr_path = source.join("registry.obr");
@@ -27,11 +33,11 @@ pub(super) fn registry(root: &Path) -> Arc<ConceptRegistryGenerationManager> {
     bytes.extend_from_slice(&[7; 16]);
     bytes.extend_from_slice(&283u32.to_le_bytes());
     bytes.extend_from_slice(&[0, 0]);
-    bytes.extend_from_slice(&5u16.to_le_bytes());
-    bytes.extend_from_slice(b"water");
+    bytes.extend_from_slice(&(label.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(label.as_bytes());
     bytes.extend_from_slice(&1u16.to_le_bytes());
-    bytes.extend_from_slice(&5u16.to_le_bytes());
-    bytes.extend_from_slice(b"water");
+    bytes.extend_from_slice(&(label.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(label.as_bytes());
     fs::write(&obr_path, &bytes).unwrap();
     let checksum = *blake3::hash(&bytes).as_bytes();
     let index = |path: &Path, magic: [u8; 4], key: [u8; 16]| {
@@ -52,7 +58,9 @@ pub(super) fn registry(root: &Path) -> Arc<ConceptRegistryGenerationManager> {
             file_size: bytes.len() as u64,
         }
     };
-    let label_key = blake3::hash(b"water").as_bytes()[..16].try_into().unwrap();
+    let label_key = blake3::hash(label.as_bytes()).as_bytes()[..16]
+        .try_into()
+        .unwrap();
     let label_index = index(
         &IndexedConceptRegistry::label_index_path(&obr_path),
         LABEL_INDEX_MAGIC,

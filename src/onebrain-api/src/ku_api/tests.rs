@@ -710,6 +710,158 @@ async fn errors_keep_all_base_retry_and_reconcile_policies() {
 // Signed registry fixtures are authored only for temporary integration tests.
 mod registry_fixture;
 use registry_fixture::registry;
+mod experimental_text;
+
+/// Development-only integration: genuine installed model, synthetic signed
+/// Registry, fresh explicit consent/text. Never opens qualification holdouts.
+#[cfg(windows)]
+#[tokio::test]
+#[ignore = "requires explicitly configured local Ollama artifacts; real inference"]
+async fn experimental_ollama_real_text_roundtrip() {
+    use ku_encoder::extraction::ManagedOllamaProvider;
+    use onebrain_node::{ku_manual::ManualKuInputs, ku_ollama::OllamaKuInputs};
+    let dir = tempfile::tempdir().unwrap();
+    let registry = registry_fixture::registry_for_label(dir.path(), "is");
+    let model = std::env::var("KU_OLLAMA_MODEL").unwrap_or_else(|_| "qwen3:8b".into());
+    let memory = 12 * 1024u64.pow(3);
+    let started = std::time::Instant::now();
+    let provider = Arc::new(
+        ManagedOllamaProvider::open(
+            std::env::var_os("KU_OLLAMA_EXE")
+                .expect("set KU_OLLAMA_EXE")
+                .into(),
+            std::env::var_os("KU_OLLAMA_MODELS")
+                .expect("set KU_OLLAMA_MODELS")
+                .into(),
+            &model,
+            memory,
+            Arc::new(tokio::sync::Semaphore::new(1)),
+        )
+        .unwrap(),
+    );
+    eprintln!(
+        "Verified development model artifacts in {:?}",
+        started.elapsed()
+    );
+    eprintln!(
+        "Development provider pins: {}",
+        ku_encoder::extraction::ExtractionProvider::manifest(provider.as_ref())
+    );
+    let config = NodeConfig {
+        data_dir: dir.path().join("node"),
+        concept_registry_mode: onebrain_node::ConceptRegistryMode::Disabled,
+        ..Default::default()
+    };
+    std::fs::create_dir_all(&config.data_dir).unwrap();
+    let make_inputs = || {
+        Arc::new(
+            OllamaKuInputs::new(
+                [0; 32],
+                Arc::new(ManualKuInputs::new([0; 32], registry.clone(), vec![]).unwrap()),
+                registry.clone(),
+                vec![(model.clone(), provider.clone(), memory)],
+            )
+            .unwrap(),
+        )
+    };
+    let make_runtime = || {
+        let mut runtime = base_runtime_config_for_api_token(TOKEN);
+        runtime.ku = Some(KuRuntimeConfig {
+            vault_key: VaultKey::from_bytes([8; 32]),
+            registry: Some(registry.clone()),
+            inputs: make_inputs(),
+            public: None,
+        });
+        runtime
+    };
+    let mut node = OneBrainNode::new(config.clone()).await.unwrap();
+    node.install_base_runtime(make_runtime()).unwrap();
+    let server = ApiServer::new(node, TOKEN.into(), 0);
+    let f = Fixture {
+        _dir: dir,
+        state: server.test_state(),
+        router: server.build_router(),
+        inputs: Arc::new(Inputs::new()),
+        root: registry
+            .reader_lease()
+            .status()
+            .release_aggregate_root
+            .clone()
+            .unwrap(),
+    };
+    let session = f.session().await;
+    let (code, models) = edit(&f, &session, "models", json!({})).await;
+    assert_eq!(code, StatusCode::OK, "{models}");
+    assert_eq!(models["data"]["model_qualified"], false);
+    let op = f.reserve(&session).await;
+    let mut intake = json!({"operation_id":op,"idempotency_key":op,"model":model,"text":"Copper is conductive.","consent":false});
+    assert_eq!(
+        edit(&f, &session, "encode_text", intake.clone()).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    intake["consent"] = true.into();
+    let (code, template) = edit(&f, &session, "encode_text", intake.clone()).await;
+    assert_eq!(code, StatusCode::OK, "{template}");
+    assert_eq!(
+        edit(&f, &session, "encode_text", intake.clone()).await.1["data"]["payload"],
+        template["data"]["payload"]
+    );
+    intake["text"] = "Changed text".into();
+    assert_eq!(
+        edit(&f, &session, "encode_text", intake).await.0,
+        StatusCode::CONFLICT
+    );
+    let inference = std::time::Instant::now();
+    let (code, preview) = f
+        .invoke(&session, "prepare", template["data"]["payload"].clone())
+        .await;
+    eprintln!(
+        "Development inference and validation: {:?}; HTTP {}",
+        inference.elapsed(),
+        code
+    );
+    assert_eq!(code, StatusCode::OK, "{preview}");
+    assert_eq!(preview["data"]["payload"]["validity"], "ready", "{preview}");
+    let ids = preview["data"]["payload"]["object_cids"].clone();
+    let (code, saved) = f
+        .invoke(
+            &session,
+            "save",
+            json!({"operation_id":op,"idempotency_key":op,"object_cids":ids}),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{saved}");
+    assert_eq!(saved["data"]["payload"]["state"], "committed");
+    // Reopen the exact private journal with fresh custody, then read accepted KU.
+    drop(f.router);
+    drop(f.state);
+    let mut node = OneBrainNode::new(config).await.unwrap();
+    node.install_base_runtime(make_runtime()).unwrap();
+    let server = ApiServer::new(node, TOKEN.into(), 0);
+    let router = server.build_router();
+    let (_, status) = call(
+        router.clone(),
+        Method::GET,
+        "/api/vnext/ku/status",
+        None,
+        Some(TOKEN),
+    )
+    .await;
+    let (code, view) = call(
+        router,
+        Method::POST,
+        "/api/vnext/ku/operations",
+        Some(envelope(
+            &status["data"]["session"],
+            "get",
+            json!({"object_cid":ids[0]}),
+        )),
+        Some(TOKEN),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{view}");
+    assert_eq!(view["data"]["payload"]["disclosure_class"], "LOCAL_ONLY");
+}
 
 async fn edit(f: &Fixture, session: &Value, action: &str, payload: Value) -> (StatusCode, Value) {
     call(f.router.clone(), Method::POST, "/api/vnext/ku/editor",

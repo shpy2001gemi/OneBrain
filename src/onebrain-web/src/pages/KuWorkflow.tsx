@@ -13,6 +13,7 @@ import type {
   View,
   OperationRef,
   Meta,
+  Models,
 } from "../api/ku";
 import "./kuWorkflow.css";
 
@@ -42,6 +43,14 @@ export function KuWorkflowPage({
   const [session, setSession] = useState<Session>();
   const [status, setStatus] = useState<Status>();
   const [catalog, setCatalog] = useState<Catalog>();
+  const [models, setModels] = useState<Models>();
+  const [model, setModel] = useState("");
+  const [sourceText, setSourceText] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [encoding, setEncoding] = useState(false);
+  const [canceling, setCanceling] = useState(false);
+  const canceled = useRef(false);
+  const [operationState, setOperationState] = useState("");
   const [source, setSource] = useState("");
   const [label, setLabel] = useState("");
   const [text, setText] = useState("");
@@ -114,6 +123,7 @@ export function KuWorkflowPage({
         const results = await Promise.allSettled([
           client.catalog(result.data.session),
           client.invoke(result.data.session, "list", { limit: 20 }),
+          client.models(result.data.session),
         ]);
         if (!live) return;
         if (results[0].status === "fulfilled")
@@ -125,6 +135,15 @@ export function KuWorkflowPage({
         if (results[1].status === "fulfilled")
           setPage(results[1].value.data.payload);
         else setError(describeError(results[1].reason));
+        if (results[2].status === "fulfilled") {
+          const available = results[2].value.data.payload;
+          setModels(available);
+          setModel(
+            available.models.find((m) => m.model === "qwen3:8b")?.model ??
+              available.models[0]?.model ??
+              "",
+          );
+        }
       } catch (e) {
         if (live) setError(describeError(e));
       }
@@ -133,6 +152,31 @@ export function KuWorkflowPage({
       live = false;
     };
   }, [client]);
+  useEffect(() => {
+    if (!encoding || !pending || !session) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      try {
+        const result = await client.invoke(session, "status", {
+          operation_id: pending.operation_id,
+        });
+        if (live)
+          setOperationState(result.data.payload.receipt?.state ?? "pending");
+      } catch (e) {
+        if (live) {
+          setError(describeError(e));
+          setUncertain(true);
+        }
+      }
+      if (live) timer = setTimeout(() => void poll(), 2000);
+    };
+    timer = setTimeout(() => void poll(), 2000);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [client, encoding, pending, session]);
   const lockedDraft =
     !!pending &&
     !["committed", "canceled", "failed"].includes(receipt?.state ?? "");
@@ -147,7 +191,7 @@ export function KuWorkflowPage({
     setActiveQuery(term);
     setMetadata(result.meta);
   }
-  async function prepare() {
+  async function prepare(ai = false) {
     if (!session || lockedDraft || uncertain) return;
     const op = (await client.reserve(session)).data.payload.operation_id;
     // This page's idempotency key is the original server-reserved operation ID.
@@ -158,14 +202,25 @@ export function KuWorkflowPage({
     setPending(work);
     setPrepared(undefined);
     setReceipt(undefined);
+    canceled.current = false;
+    setOperationState("");
+    setEncoding(ai);
     try {
-      const draft = await client.draft(session, {
-        ...work,
-        source_ref: source as Preparation["source_refs"][number],
-        predicate_label: label,
-        ...(selection ? { selected_ccid: selection } : {}),
-        argument_text: text,
-      });
+      const draft = ai
+        ? await client.encodeText(session, {
+            ...work,
+            model,
+            text: sourceText,
+            consent,
+          })
+        : await client.draft(session, {
+            ...work,
+            source_ref: source as Preparation["source_refs"][number],
+            predicate_label: label,
+            ...(selection ? { selected_ccid: selection } : {}),
+            argument_text: text,
+          });
+      if (canceled.current) return;
       const result = revision
         ? await client.invoke(session, "revise", {
             preparation: draft.data.payload,
@@ -173,12 +228,33 @@ export function KuWorkflowPage({
             expected_revision_frontier: revision.frontier,
           })
         : await client.invoke(session, "prepare", draft.data.payload);
+      if (canceled.current) return;
       setPrepared(result.data.payload);
       setMetadata(result.meta);
       setUncertain(false);
     } catch (e) {
+      if (canceled.current) return;
       setUncertain(true);
       throw e;
+    } finally {
+      setEncoding(false);
+    }
+  }
+  async function cancel() {
+    if (!session || !pending || canceling) return;
+    canceled.current = true;
+    setCanceling(true);
+    setPrepared(undefined);
+    try {
+      const result = await client.invoke(session, "cancel", {
+        operation_id: pending.operation_id,
+      });
+      setReceipt(result.data.payload);
+      setUncertain(result.data.payload.state !== "canceled");
+    } catch (e) {
+      record(e, true);
+    } finally {
+      setCanceling(false);
     }
   }
   async function reconcile() {
@@ -213,7 +289,8 @@ export function KuWorkflowPage({
       <header className="page-header">
         <h1>Local KU workspace</h1>
         <p>
-          Create a manual statement, review its validation, then save privately.
+          Encode text with local Ollama or write a manual statement, review
+          validation, then save privately.
         </p>
       </header>
       <aside
@@ -256,6 +333,18 @@ export function KuWorkflowPage({
                   "Manual editor unavailable; saved local work remains accessible.",
                 );
               }
+              try {
+                const available = (await client.models(current)).data.payload;
+                setModels(available);
+                setModel((m) =>
+                  available.models.some((v) => v.model === m)
+                    ? m
+                    : (available.models[0]?.model ?? ""),
+                );
+              } catch {
+                setModels(undefined);
+                setModel("");
+              }
             })
           }
         >
@@ -264,13 +353,87 @@ export function KuWorkflowPage({
       </aside>
       <div role="alert">{error}</div>
       <div role="status" aria-live="polite">
-        {busy
-          ? "Working locally…"
-          : receipt
-            ? `Operation ${receipt.state}. Published: ${receipt.published}. Reward authorized: ${receipt.authorizes_reward}. ${receipt.limitations.join(" · ")}`
-            : ""}
+        {encoding
+          ? `Encoding with ${model} locally… ${operationState ? `Host operation: ${operationState}.` : ""} You can cancel while the worker is running.`
+          : busy
+            ? "Working locally…"
+            : receipt
+              ? `Operation ${receipt.state}. Published: ${receipt.published}. Reward authorized: ${receipt.authorizes_reward}. ${receipt.limitations.join(" · ")}`
+              : ""}
       </div>
       <section className="glass-card" aria-labelledby="ku-editor-title">
+        <h2>Encode text with Ollama</h2>
+        <p>
+          Experimental · model quality unqualified. The host validates source
+          spans, coverage and Registry concepts before a KU can be saved.
+        </p>
+        {!models?.models.length && (
+          <p>
+            Ollama is not admitted on this host. Enable the experimental Ollama
+            configuration with an installed Qwen3 model and a verified signed
+            Registry.
+          </p>
+        )}
+        <fieldset disabled={busy || lockedDraft || !models?.models.length}>
+          <legend>Local AI text intake</legend>
+          <label htmlFor="ku-model">Installed Ollama model</label>
+          <select
+            id="ku-model"
+            className="input"
+            value={model}
+            onChange={(e) => {
+              setModel(e.target.value);
+              setConsent(false);
+            }}
+          >
+            <option value="">Choose a model</option>
+            {models?.models.map((m) => (
+              <option value={m.model} key={m.model}>
+                {m.model} — experimental
+              </option>
+            ))}
+          </select>
+          <label htmlFor="ku-source-text">Source text to encode</label>
+          <textarea
+            id="ku-source-text"
+            className="input"
+            rows={6}
+            maxLength={8192}
+            value={sourceText}
+            onChange={(e) => {
+              setSourceText(e.target.value);
+              setConsent(false);
+            }}
+          />
+          <p>
+            {new TextEncoder().encode(sourceText).length} / 8192 UTF-8 bytes.
+            Start with a short, complete statement.
+          </p>
+          <label htmlFor="ku-consent">
+            <input
+              id="ku-consent"
+              type="checkbox"
+              checked={consent}
+              onChange={(e) => setConsent(e.target.checked)}
+            />{" "}
+            {models?.consent_text ??
+              "Permit local encoding and private source retention"}
+          </label>
+          <button
+            className="btn btn-primary"
+            disabled={
+              !session ||
+              !model ||
+              !sourceText.trim() ||
+              new TextEncoder().encode(sourceText).length > 8192 ||
+              !consent ||
+              uncertain
+            }
+            onClick={() => void run(() => prepare(true))}
+          >
+            Encode and preview
+          </button>
+        </fieldset>
         <h2 id="ku-editor-title" tabIndex={-1} ref={editorRef}>
           {revision
             ? "Revise as a new private artifact"
@@ -369,7 +532,7 @@ export function KuWorkflowPage({
             disabled={
               !session || !source || !label || !text.trim() || uncertain
             }
-            onClick={() => void run(prepare)}
+            onClick={() => void run(() => prepare())}
           >
             Preview and validate
           </button>
@@ -392,7 +555,8 @@ export function KuWorkflowPage({
             Operation ID: {pending.operation_id}
             <br />
             Keep this ID for recovery before closing this page. Private draft
-            and operation state are held in memory only.
+            and session are held in this page's memory. Submitted AI source and
+            consent are retained privately by the host.
           </p>
         )}
         {(pending || uncertain) && (
@@ -407,17 +571,13 @@ export function KuWorkflowPage({
             <button
               className="btn"
               disabled={
-                busy || !session || !pending || uncertain || !lockedDraft
+                canceling ||
+                !session ||
+                !pending ||
+                !lockedDraft ||
+                (busy && !encoding)
               }
-              onClick={() =>
-                void run(async () => {
-                  const result = await client.invoke(session!, "cancel", {
-                    operation_id: pending!.operation_id,
-                  });
-                  setReceipt(result.data.payload);
-                  setPrepared(undefined);
-                }, true)
-              }
+              onClick={() => void cancel()}
             >
               Cancel pending draft
             </button>

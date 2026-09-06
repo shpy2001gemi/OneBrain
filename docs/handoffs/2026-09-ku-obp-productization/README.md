@@ -42,10 +42,10 @@ Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
 **Current task:** [`KU-WEB-001`](tasks/07-KU-WEB-001.md) — Review
-**Current branch:** `codex/ku-web-001-workflow`; manual Web implementation ready for review.
+**Current branch:** `codex/ku-web-001-workflow`; manual and experimental Ollama Web implementation ready for review.
 **Owner follow-up:** actual Ollama (`qwen3:8b`) text encoding requested; see the
-[activation-contract amendment](outputs/KU_WEB_001_OLLAMA_AMENDMENT.md). AI
-implementation is paused pending direction on this documented conflict.
+[activation-contract amendment](outputs/KU_WEB_001_OLLAMA_AMENDMENT.md). The owner approved this exception under D-023. The extension is implemented; see
+[Ollama run instructions and real-model evidence](outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md).
 **Review branch:** `codex/ku-web-001-workflow`
 **MVP direction:** [D-021](DECISIONS.md#d-021--prioritize-an-early-open-source-concept--mvp).
 The separate `codex/ku-enc-003-model-qualification` branch remains blocked on
@@ -56,8 +56,9 @@ REST routes. Read its [implementation evidence and integration limits](outputs/K
 The owner accepted it under [D-022](DECISIONS.md#d-022--ku-api-001-accepted-and-merged-web-handoff-next);
 merge `3eba370` is on `origin/main`. The Web manual MVP is implemented on its separate task branch; see
 [run instructions and implementation limits](outputs/KU_WEB_001_IMPLEMENTATION.md).
-Operator-provisioned source custody/Registry inputs remain required and
-arbitrary-text AI remains unqualified.
+The experimental host captures user text with explicit consent; signed Registry
+and secret provisioning remain operator responsibilities. Real `qwen3:8b`
+development inference, private save and restart/read passed; AI remains unqualified.
 
 KU-RUN-001 implements the D-016 registration and node-owned local service.
 The owner authorized merge `d141701`, now on `origin/main`. See the
@@ -106,10 +107,13 @@ Copy/paste prompt:
 
 ```text
 Read AGENTS.md, then docs/handoffs/2026-09-ku-obp-productization/README.md,
-PROGRESS.md, tasks/07-KU-WEB-001.md and outputs/KU_WEB_001_IMPLEMENTATION.md.
+PROGRESS.md, tasks/07-KU-WEB-001.md, outputs/KU_WEB_001_IMPLEMENTATION.md and
+outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md.
 Review KU-WEB-001 on the clean pushed codex/ku-web-001-workflow branch.
 Check the local editor contract, host-admitted source/Registry authority,
 private Web transport, explicit save/reconciliation and revision boundaries.
+Also check the D-023 experimental Ollama profile, exact tokenizer/artifact pins,
+owned Windows worker lifecycle, durable text consent and model-outage reads.
 Preserve honest unqualified-AI states and keep VI/EN holdouts private.
 Run focused verification and report findings. Do not merge/delete the branch
 or advance to another task without my explicit instruction.

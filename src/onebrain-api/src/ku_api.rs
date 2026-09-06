@@ -473,23 +473,29 @@ pub async fn invoke(State(state): State<AppState>, request: Request) -> Response
     if request.validate().is_err() {
         return failure(invalid());
     }
-    let ai = match &request {
-        KuRequestV1::Prepare(p) => p.input_mode == InputMode::LocalAi,
-        KuRequestV1::Revise(p) => p.preparation.input_mode == InputMode::LocalAi,
-        _ => false,
-    };
-    if ai {
-        return failure(BaseServiceError::new(
-            BaseErrorCodeV1::CapabilityDisabled,
-            "real_model_unqualified",
-        ));
-    }
     let (ku, session) = match service(&state).await {
         Ok(v) => v,
         Err(e) => return failure(e),
     };
     if let Err(e) = body.session.check(&session) {
         return failure(e);
+    }
+    let preparation = match &request {
+        KuRequestV1::Prepare(p) => Some(p),
+        KuRequestV1::Revise(p) => Some(&p.preparation),
+        _ => None,
+    };
+    if let Some(p) = preparation.filter(|p| p.input_mode == InputMode::LocalAi) {
+        match ku.experimental_ai_allowed(p.implementation_commitment.0) {
+            Ok(true) => {}
+            Ok(false) => {
+                return failure(BaseServiceError::new(
+                    BaseErrorCodeV1::CapabilityDisabled,
+                    "real_model_unqualified",
+                ))
+            }
+            Err(error) => return failure(error),
+        }
     }
     match ku.invoke(request, budget).await {
         Ok(value) => project(session, value, body.budget.max_bytes),
