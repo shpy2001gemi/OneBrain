@@ -8,6 +8,7 @@
 - Current task: `KU-ENC-001`
 - Current branch: `codex/ku-enc-001-framework-contract`
 - Current state: `Review`; shared encoder contract, schemas, prompts and corpus validated
+- Reviewed contract commit: `a6f0a00`; handoff-only metadata follows on the same branch
 - Last accepted task: `KU-RUN-001`, implementation `b608a82`
 - Last merged task: `KU-RUN-001`, merge `d1417018a236798a910ceb625fbe5fd0b10dc406` on `origin/main`
 - Following tasks: `KU-ENC-002`, then model qualification in `KU-ENC-003`
@@ -39,7 +40,7 @@
 | 18 | `OBP-QA-001` | Planned | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | — |
 | 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | — |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | — |
-| 21 | `KU-ENC-001` | Review | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Starting main `5d8fba0`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md); D-018. |
+| 21 | `KU-ENC-001` | Review | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Contract `a6f0a00`, starting main `5d8fba0`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md); D-018. |
 | 22 | `KU-ENC-002` | Planned | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Shared provider/workflow implementation. |
 | 23 | `KU-ENC-003` | Planned | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Real-model/resource evidence; reuse MOB-06 mobile ownership. |
 
@@ -330,6 +331,8 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
 ### KU-ENC-001 contract review — 2026-09-06
 
 - Started from synchronized main `5d8fba077076597da163d5f17b8e290f28eb12c9`.
+- Reviewed contract commit: `a6f0a00`. All 18 manifest artifact hashes were
+  compared against exact Git index blobs to verify LF portability before commit.
 - [Framework contract](../../specs/vnext/KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md)
   and [review evidence](outputs/KU_ENC_001_CONTRACT.md) define one host-controlled
   extraction path, six DTO schemas, vi/en prompts, eight generated artifacts,

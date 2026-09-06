@@ -3,6 +3,7 @@
 > State: Review, 2026-09-06
 > Branch: `codex/ku-enc-001-framework-contract`
 > Starting main: `5d8fba077076597da163d5f17b8e290f28eb12c9`
+> Reviewed contract: `a6f0a00`; subsequent handoff metadata does not change the bundle.
 
 ## Kết quả
 
