@@ -58,6 +58,9 @@ use crate::vnext_runtime_rollout::{
     VNextRuntimeRolloutError, VNextRuntimeRolloutSnapshot,
 };
 
+#[cfg(feature = "vnext-outbound-first")]
+pub mod obp;
+
 pub const MAX_PRODUCT_BACKGROUND_WORKERS: usize = 8;
 #[cfg(test)]
 const VNEXT_STARTUP_ARTIFACTS: &[&str] = &[
@@ -136,6 +139,8 @@ impl VNextProductStoragePaths {
     fn startup_artifacts(&self) -> Vec<PathBuf> {
         vec![
             self.identity.join("vnext_identity.key"),
+            #[cfg(feature = "vnext-outbound-first")]
+            self.operational.join("vnext_obp_commands.redb"),
             self.private_kql.join("vnext_private_need_vault.redb"),
             self.private_kql.join("vnext_distributed_kql.redb"),
             self.private_kql.join("vnext_standing_needs.redb"),
@@ -316,6 +321,8 @@ pub struct VNextProductRuntime {
 }
 
 struct VNextProductServiceCore {
+    #[cfg(feature = "vnext-outbound-first")]
+    obp: obp::Owner,
     #[cfg(feature = "vnext-outbound-first")]
     outbound_first: Mutex<Option<Arc<OutboundFirstOwner>>>,
     lifecycle: Mutex<VNextServiceLifecycle>,
@@ -534,6 +541,10 @@ impl VNextProductRuntime {
             .transpose()?;
         startup_trace.push(VNextStartupPhase::StoresOpened);
 
+        #[cfg(feature = "vnext-outbound-first")]
+        let obp = obp::Owner::open(&paths.operational.join("vnext_obp_commands.redb"))
+            .map_err(|_| VNextProductRuntimeError::OutboundFirst("obp_store_unavailable"))?;
+
         let network = Arc::new(
             VNextNetworkRuntime::start_prepared_with_paths(
                 &paths.network,
@@ -564,6 +575,8 @@ impl VNextProductRuntime {
                 owner.attach_network(Arc::downgrade(&network), rollout.clone())?;
                 network.install_product_routing(owner.clone())?;
             }
+            #[cfg(feature = "vnext-outbound-first")]
+            obp.restore_policy(outbound_first.as_ref()).await.map_err(|_| VNextProductRuntimeError::OutboundFirst("obp_policy_recovery"))?;
             network.start_product_outbound()?;
 
             let rehydrated_private_needs = distributed_kql
@@ -622,6 +635,8 @@ impl VNextProductRuntime {
             let startup_artifacts = artifact_guard.commit();
             let last_network_status = Arc::new(Mutex::new(last_network_status));
             let core = Arc::new(VNextProductServiceCore {
+                #[cfg(feature = "vnext-outbound-first")]
+                obp,
                 #[cfg(feature = "vnext-outbound-first")]
                 outbound_first: Mutex::new(outbound_first),
                 lifecycle: Mutex::new(VNextServiceLifecycle {

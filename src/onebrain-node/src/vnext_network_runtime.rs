@@ -1113,6 +1113,9 @@ impl VNextNetworkRuntime {
         connector.connect(peer).await
     }
 
+    #[cfg(feature = "vnext-outbound-first")]
+    pub(crate) fn wake_product_outbox(&self) { self.outbound_notify.notify_one(); }
+
     pub fn outbound_intent(
         &self,
         id: &[u8; 32],

@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 import blake3
 
 if __package__:
+    from .validate_obp_local_api import validate_contract as validate_obp_local_api_profile
     from .validate_obp_product_contract import validate_contract as validate_obp_product_profile
     from .validate_ku_encoder_contract import validate_contract as validate_ku_encoder_profile
     from .validate_ku_product_contract import (
@@ -25,6 +26,7 @@ if __package__:
         validate_contract as validate_ku_product_profile,
     )
 else:
+    from validate_obp_local_api import validate_contract as validate_obp_local_api_profile
     from validate_obp_product_contract import validate_contract as validate_obp_product_profile
     from validate_ku_encoder_contract import validate_contract as validate_ku_encoder_profile
     from validate_ku_product_contract import (
@@ -8797,6 +8799,7 @@ def main() -> int:
         product_endpoints, product_dtos = validate_product_integration_profile()
         try:
             obp_operations, obp_dtos, obp_fixtures = validate_obp_product_profile()
+            obp_api_routes, obp_api_operations, obp_api_fixtures = validate_obp_local_api_profile()
         except (ValueError, KeyError, TypeError, OSError) as error:
             raise ContractError(f"OBP product contract: {error}") from error
         try:
@@ -8920,6 +8923,7 @@ def main() -> int:
     print(
         "vNext contracts OK: "
         f"{obp_operations} OBP contract operations/{obp_dtos} DTOs/{obp_fixtures} fixtures, "
+        f"{obp_api_routes} accepted OBP API routes/{obp_api_operations} operations/{obp_api_fixtures} fixtures (D-029), "
         f"{ku_operations} KU contract operations/{ku_dtos} DTOs/{ku_fixtures} fixtures, "
         f"{encoder_cases} encoder cases/{encoder_jobs} jobs/{encoder_artifacts} generated artifacts, "
         f"{len(tasks)} tasks, {adrs} ADRs, {assertions} negative assertions, "

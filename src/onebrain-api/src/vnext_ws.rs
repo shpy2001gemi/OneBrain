@@ -170,8 +170,33 @@ impl Default for VNextWsHub {
 
 #[derive(Default)]
 struct HubState {
+    #[cfg(feature = "vnext-outbound-first")]
+    obp: obp::State,
     pending: BTreeMap<[u8; TOKEN_BYTES], PendingTicket>,
     active: BTreeMap<[u8; TOKEN_BYTES], ActiveSession>,
+}
+
+impl HubState {
+    fn pending_count(&self) -> usize {
+        #[cfg(feature = "vnext-outbound-first")]
+        {
+            self.pending.len() + self.obp.pending.len()
+        }
+        #[cfg(not(feature = "vnext-outbound-first"))]
+        {
+            self.pending.len()
+        }
+    }
+    fn active_count(&self) -> usize {
+        #[cfg(feature = "vnext-outbound-first")]
+        {
+            self.active.len() + self.obp.active.len()
+        }
+        #[cfg(not(feature = "vnext-outbound-first"))]
+        {
+            self.active.len()
+        }
+    }
 }
 
 struct PendingTicket {
@@ -254,8 +279,8 @@ impl VNextWsHub {
         let now = Instant::now();
         let mut state = self.lock();
         prune_expired(&mut state, now);
-        if state.pending.len() >= self.limits.max_pending_tickets
-            || state.active.len() >= self.limits.max_active_sessions
+        if state.pending_count() >= self.limits.max_pending_tickets
+            || state.active_count() >= self.limits.max_active_sessions
         {
             return Err(VNextHttpError::new(
                 StatusCode::TOO_MANY_REQUESTS,
@@ -308,7 +333,7 @@ impl VNextWsHub {
         let pending = state.pending.remove(&ticket).ok_or(())?;
         if pending.ticket_expires <= now
             || pending.session_expires <= now
-            || state.active.len() >= self.limits.max_active_sessions
+            || state.active_count() >= self.limits.max_active_sessions
             || state.active.contains_key(&pending.client_session)
         {
             return Err(());
@@ -610,6 +635,8 @@ fn enqueue(session: &mut ActiveSession, draft: EventDraft) -> DeliveryOutcome {
 }
 
 fn prune_expired(state: &mut HubState, now: Instant) {
+    #[cfg(feature = "vnext-outbound-first")]
+    state.obp.prune(now);
     state
         .pending
         .retain(|_, pending| pending.ticket_expires > now && pending.session_expires > now);
@@ -631,6 +658,8 @@ fn fresh_token(state: &HubState, ticket: bool) -> Result<[u8; TOKEN_BYTES], VNex
                     .values()
                     .any(|pending| pending.client_session == bytes)
         };
+        #[cfg(feature = "vnext-outbound-first")]
+        let collision = collision || state.obp.contains(&bytes);
         if bytes != [0; TOKEN_BYTES] && !collision {
             return Ok(bytes);
         }
@@ -1149,3 +1178,6 @@ mod tests {
         task.abort();
     }
 }
+
+#[cfg(feature = "vnext-outbound-first")]
+pub(crate) mod obp;

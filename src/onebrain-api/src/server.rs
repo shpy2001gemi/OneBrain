@@ -146,6 +146,8 @@ pub struct AppState {
     pub vnext_rest: VNextRestCoordinator,
     /// Bounded, per-client vNext WebSocket tickets and event queues.
     pub vnext_ws: VNextWsHub,
+    #[cfg(feature = "vnext-outbound-first")]
+    pub obp_binding: Option<crate::obp_api::Binding>,
     /// Runtime gate for the separately compiled bounded legacy read view.
     pub legacy_read_compat_enabled: bool,
     #[cfg(feature = "base-v1")]
@@ -232,6 +234,11 @@ pub struct ApiServer {
 }
 
 impl ApiServer {
+    #[cfg(feature = "vnext-outbound-first")]
+    pub fn with_obp_binding(mut self, binding: crate::obp_api::Binding) -> Self {
+        self.state.obp_binding=Some(binding); self
+    }
+
     /// Create a new server, wrapping the node in an `Arc<Mutex<_>>`.
     pub fn new(mut node: OneBrainNode, api_token: String, port: u16) -> Self {
         #[cfg(feature = "base-v1")]
@@ -249,6 +256,8 @@ impl ApiServer {
                 event_broadcast,
                 vnext_rest: VNextRestCoordinator::default(),
                 vnext_ws: VNextWsHub::default(),
+                #[cfg(feature = "vnext-outbound-first")]
+                obp_binding: None,
                 legacy_read_compat_enabled: false,
                 #[cfg(feature = "base-v1")]
                 base_management: BaseRestManagementCoordinator::default(),
@@ -269,6 +278,8 @@ impl ApiServer {
                 event_broadcast,
                 vnext_rest: VNextRestCoordinator::default(),
                 vnext_ws: VNextWsHub::default(),
+                #[cfg(feature = "vnext-outbound-first")]
+                obp_binding: None,
                 legacy_read_compat_enabled: false,
                 #[cfg(feature = "base-v1")]
                 base_management: BaseRestManagementCoordinator::default(),
@@ -433,6 +444,12 @@ impl ApiServer {
                 "/api/vnext/pomv/views/{target}",
                 get(crate::vnext_api::get_metabolic_view),
             )
+            .route("/api/vnext/obp/status", get(crate::obp_api::status))
+            .route("/api/vnext/obp/query", post(crate::obp_api::query))
+            .route("/api/vnext/obp/commands", post(crate::obp_api::commands))
+            .route("/api/vnext/obp/reconcile", post(crate::obp_api::reconcile))
+            .route("/api/vnext/obp/ws/tickets", post(crate::obp_api::tickets))
+            .route("/api/vnext/obp/ws", get(crate::obp_api::upgrade))
             .route(
                 "/api/vnext/runtime/status",
                 get(crate::vnext_api::get_runtime_status),
@@ -665,6 +682,7 @@ async fn auth_middleware(
     next: Next,
 ) -> Response {
     let path = req.uri().path();
+    if path == "/api/vnext/obp/ws" { return next.run(req).await; }
     // Skip auth for WebSocket paths and static web files
     if path.starts_with("/ws/") || !path.starts_with("/api/") {
         return next.run(req).await;
@@ -682,6 +700,7 @@ async fn auth_middleware(
             if constant_time_eq(token.as_bytes(), state.api_token.as_bytes()) {
                 next.run(req).await
             } else {
+                if path.starts_with("/api/vnext/obp/") { return crate::obp_api::auth_error(StatusCode::FORBIDDEN); }
                 #[cfg(feature = "base-v1")]
                 if path.starts_with("/api/vnext/ku/") {
                     return crate::ku_api::authentication_error(StatusCode::FORBIDDEN);
@@ -691,6 +710,7 @@ async fn auth_middleware(
             }
         }
         _ => {
+            if path.starts_with("/api/vnext/obp/") { return crate::obp_api::auth_error(StatusCode::UNAUTHORIZED); }
             #[cfg(feature = "base-v1")]
             if path.starts_with("/api/vnext/ku/") {
                 return crate::ku_api::authentication_error(StatusCode::UNAUTHORIZED);

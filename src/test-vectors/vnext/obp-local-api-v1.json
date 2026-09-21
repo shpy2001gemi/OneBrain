@@ -1,0 +1,954 @@
+{
+  "format": "onebrain/obp-local-api/1",
+  "status": "accepted-local-implementation",
+  "handlers_registered": true,
+  "owner_acceptance": "D-029",
+  "parent": "onebrain/obp-product-orchestration/1",
+  "frozen_inputs": {
+    "docs/specs/vnext/OBP_PRODUCT_ORCHESTRATION_PROFILE_V1.md": "1132a5325a94536243d531b0b160abc43fea46afffe8a3be73a9f1eac0d969d6",
+    "src/test-vectors/vnext/obp-product-orchestration-v1.json": "47738c8b67b849c878be9ae6d5e44308ab47a7b8c7d11b399d12df1df28253ed",
+    "docs/specs/vnext/VNEXT_REST_API_PROFILE_V1.md": "c7bb32544fc0cc2ce9d265359d00be828ee2bc59d7ee3b58101e748719c7d970",
+    "docs/specs/vnext/VNEXT_PRIVATE_WEBSOCKET_PROFILE_V1.md": "723e18c5869dd2dc4a3270bd679d8ea42ae21ef8d9963ff33e3b8cfa1e4469f8",
+    "src/test-vectors/vnext/private-websocket-profile-v1.json": "473d24f0acb300715a1730ffef682f4f9d136e78f158965835d4a448a257e91d"
+  },
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/api/vnext/obp/status",
+      "access": "product_read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/vnext/obp/query",
+      "access": "product_read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/vnext/obp/commands",
+      "access": "operation_access"
+    },
+    {
+      "method": "POST",
+      "path": "/api/vnext/obp/reconcile",
+      "access": "product_read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/vnext/obp/ws/tickets",
+      "access": "product_read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/vnext/obp/ws",
+      "access": "single_use_endpoint_bound_ticket"
+    }
+  ],
+  "operations": [
+    {
+      "name": "status",
+      "request": "ObpStatusRequestV1",
+      "response": "ObpStatusV1",
+      "access": "product_read",
+      "effect": "none",
+      "route_class": "status"
+    },
+    {
+      "name": "configure",
+      "request": "ObpConfigureV1",
+      "response": "ObpStatusV1",
+      "access": "host_management",
+      "effect": "durable_local_configuration",
+      "route_class": "commands"
+    },
+    {
+      "name": "source_admit",
+      "request": "ObpSourceAdmitV1",
+      "response": "ObpSourceV1",
+      "access": "host_management",
+      "effect": "bounded_admission",
+      "route_class": "commands"
+    },
+    {
+      "name": "source_set_enabled",
+      "request": "ObpSourceToggleV1",
+      "response": "ObpSourceV1",
+      "access": "host_management",
+      "effect": "durable_source_policy",
+      "route_class": "commands"
+    },
+    {
+      "name": "refresh",
+      "request": "ObpRefreshV1",
+      "response": "ObpStatusV1",
+      "access": "product_control",
+      "effect": "bounded_discovery",
+      "route_class": "commands"
+    },
+    {
+      "name": "source_list",
+      "request": "ObpPageRequestV1",
+      "response": "ObpSourcePageV1",
+      "access": "product_read",
+      "effect": "none",
+      "route_class": "query"
+    },
+    {
+      "name": "reservation_list",
+      "request": "ObpPageRequestV1",
+      "response": "ObpReservationPageV1",
+      "access": "product_read",
+      "effect": "none",
+      "route_class": "query"
+    },
+    {
+      "name": "route_request",
+      "request": "ObpRouteRequestV1",
+      "response": "ObpRouteV1",
+      "access": "product_control",
+      "effect": "bounded_expected_peer_connection",
+      "route_class": "commands"
+    },
+    {
+      "name": "route_status",
+      "request": "ObpRouteRefV1",
+      "response": "ObpRouteV1",
+      "access": "product_read",
+      "effect": "none",
+      "route_class": "query"
+    },
+    {
+      "name": "intent_status",
+      "request": "ObpIntentRefV1",
+      "response": "ObpIntentV1",
+      "access": "product_read",
+      "effect": "none",
+      "route_class": "query"
+    },
+    {
+      "name": "intent_retry",
+      "request": "ObpIntentRetryV1",
+      "response": "ObpIntentV1",
+      "access": "product_control",
+      "effect": "schedule_existing_pending_intent",
+      "route_class": "commands"
+    },
+    {
+      "name": "network_kill",
+      "request": "ObpNetworkFenceV1",
+      "response": "ObpStatusV1",
+      "access": "host_management",
+      "effect": "existing_network_generation_kill",
+      "route_class": "commands"
+    },
+    {
+      "name": "network_reenable",
+      "request": "ObpNetworkFenceV1",
+      "response": "ObpStatusV1",
+      "access": "host_management",
+      "effect": "explicit_existing_network_generation_advance",
+      "route_class": "commands"
+    }
+  ],
+  "limits": {
+    "payload_bytes": 1048576,
+    "json_depth": 16,
+    "page_items": 256,
+    "continuation_characters": 2048,
+    "operation_records": 4096,
+    "operation_bytes": 16777216,
+    "concurrent_commands": 4,
+    "management_grants": 32,
+    "management_ttl_seconds": 300,
+    "input_refs": 8,
+    "input_bytes": 1048576,
+    "input_ttl_seconds": 300,
+    "snapshots": 32,
+    "snapshot_bytes": 1048576,
+    "snapshot_ttl_seconds": 60
+  },
+  "authentication": {
+    "bearer": "existing_constant_time_local",
+    "principal": "host_installed",
+    "control_grant": "host_installed_revocable",
+    "management_header": "X-OneBrain-OBP-Management",
+    "management_token_prefix": "obm1.",
+    "management_token_bytes": 32,
+    "management_mint_route": false,
+    "default_control_grant": false,
+    "host_intake": "in_process_typed_reference_only",
+    "raw_upload_route": false
+  },
+  "operation_states": [
+    "admitted",
+    "completed",
+    "failed_no_effect",
+    "reconcile_required"
+  ],
+  "ws": {
+    "profile": "OBP_PRIVATE_WEBSOCKET_PROFILE_V1",
+    "topics": [
+      "network"
+    ],
+    "events": [
+      "subscription_ready",
+      "network_state"
+    ],
+    "shared_hub_limits": {
+      "pending_tickets": 128,
+      "active_sessions": 64,
+      "queue_frames": 32,
+      "client_frame_bytes": 4096,
+      "ticket_ttl_seconds": 30,
+      "session_ttl_seconds": 900,
+      "token_bytes": 32
+    },
+    "ticket_endpoint_bound": true,
+    "broadcast": false,
+    "autonomous_polling": false,
+    "network_fields": {
+      "compiled": "Boolean",
+      "requested": "Boolean",
+      "active": "Boolean",
+      "kill_switch": "Boolean",
+      "signer_ready": "Boolean",
+      "source_count": "Count",
+      "usable_reservations": "Count",
+      "authenticated_routes": "Count",
+      "pending_intents": "Count",
+      "advertisement_state": "AdvertisementState",
+      "claims_global_completion": "False",
+      "authorizes_reward": "False"
+    }
+  },
+  "errors": [
+    {
+      "reason": "invalid_payload",
+      "code": "invalid_request",
+      "http": 400,
+      "outcome": "not_admitted",
+      "reconcile_before_retry": false,
+      "retryable": false
+    },
+    {
+      "reason": "local_not_found",
+      "code": "not_found",
+      "http": 404,
+      "outcome": "not_admitted",
+      "reconcile_before_retry": false,
+      "retryable": false
+    },
+    {
+      "reason": "generation_conflict",
+      "code": "conflict",
+      "http": 409,
+      "outcome": "not_admitted",
+      "reconcile_before_retry": false,
+      "retryable": false
+    },
+    {
+      "reason": "idempotency_conflict",
+      "code": "conflict",
+      "http": 409,
+      "outcome": "not_admitted",
+      "reconcile_before_retry": false,
+      "retryable": false
+    },
+    {
+      "reason": "session_conflict",
+      "code": "conflict",
+      "http": 409,
+      "outcome": "not_admitted",
+      "reconcile_before_retry": false,
+      "retryable": false
+    },
+    {
+      "reason": "input_expired",
+      "code": "expired",
+      "http": 410,
+      "outcome": "not_admitted",
+      "reconcile_before_retry": false,
+      "retryable": false
+    },
+    {
+      "reason": "snapshot_expired",
+      "code": "expired",
+      "http": 410,
+      "outcome": "not_admitted",
+      "reconcile_before_retry": false,
+      "retryable": false
+    },
+    {
+      "reason": "admission_limit",
+      "code": "rate_limited",
+      "http": 429,
+      "outcome": "not_admitted",
+      "reconcile_before_retry": false,
+      "retryable": true
+    },
+    {
+      "reason": "feature_disabled",
+      "code": "capability_disabled",
+      "http": 503,
+      "outcome": "not_admitted",
+      "reconcile_before_retry": false,
+      "retryable": false
+    },
+    {
+      "reason": "dependency_unavailable",
+      "code": "dependency_unavailable",
+      "http": 503,
+      "outcome": "not_admitted",
+      "reconcile_before_retry": false,
+      "retryable": true
+    },
+    {
+      "reason": "outcome_unknown",
+      "code": "dependency_unavailable",
+      "http": 503,
+      "outcome": "unknown",
+      "reconcile_before_retry": true,
+      "retryable": true
+    },
+    {
+      "reason": "storage_corrupt",
+      "code": "internal_error",
+      "http": 500,
+      "outcome": "unknown",
+      "reconcile_before_retry": true,
+      "retryable": false
+    },
+    {
+      "reason": "response_overflow",
+      "code": "internal_error",
+      "http": 500,
+      "outcome": "unknown",
+      "reconcile_before_retry": true,
+      "retryable": false
+    }
+  ],
+  "fixtures": [
+    {
+      "name": "configure",
+      "kind": "commands",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "configure",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1,
+          "outbound_first_requested": false,
+          "advertise_reachability": false
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "source_admit",
+      "kind": "commands",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "source_admit",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1,
+          "input_ref": "3333333333333333333333333333333333333333333333333333333333333333",
+          "kind": "relay_endpoint"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "source_set_enabled",
+      "kind": "commands",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "source_set_enabled",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1,
+          "source_id": "3333333333333333333333333333333333333333333333333333333333333333",
+          "enabled": false
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "refresh",
+      "kind": "commands",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "refresh",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "source_list",
+      "kind": "query",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "source_list",
+        "payload": {
+          "limit": 1
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "reservation_list",
+      "kind": "query",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "reservation_list",
+        "payload": {
+          "limit": 1
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "route_request",
+      "kind": "commands",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "route_request",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1,
+          "expected_peer": "3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "route_status",
+      "kind": "query",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "route_status",
+        "payload": {
+          "route_id": "3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "intent_status",
+      "kind": "query",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "intent_status",
+        "payload": {
+          "intent_id": "3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "intent_retry",
+      "kind": "commands",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "intent_retry",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1,
+          "intent_id": "3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "network_kill",
+      "kind": "commands",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "network_kill",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "network_reenable",
+      "kind": "commands",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "network_reenable",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "read_reconcile",
+      "kind": "reconcile",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333"
+      },
+      "valid": true
+    },
+    {
+      "name": "ticket_scope",
+      "kind": "tickets",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "subscriptions": [
+          "network"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "name": "raw_address",
+      "kind": "commands",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "configure",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1,
+          "outbound_first_requested": false,
+          "advertise_reachability": false,
+          "endpoint": "192.168.1.1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "caller_authority",
+      "kind": "commands",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "configure",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1,
+          "outbound_first_requested": false,
+          "advertise_reachability": false
+        },
+        "authorized": true
+      },
+      "valid": false
+    },
+    {
+      "name": "null_session",
+      "kind": "commands",
+      "value": {
+        "session": null,
+        "operation": "configure",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1,
+          "outbound_first_requested": false,
+          "advertise_reachability": false
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "missing_generation",
+      "kind": "commands",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "configure",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "outbound_first_requested": false,
+          "advertise_reachability": false
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "wrong_operation_class",
+      "kind": "query",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "configure",
+        "payload": {
+          "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+          "expected_generation": 1,
+          "outbound_first_requested": false,
+          "advertise_reachability": false
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "unbounded_page",
+      "kind": "query",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "source_list",
+        "payload": {
+          "limit": 257
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "null_continuation",
+      "kind": "query",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "operation": "source_list",
+        "payload": {
+          "limit": 1,
+          "continuation": null
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "old_ws_topic",
+      "kind": "tickets",
+      "value": {
+        "session": {
+          "process_generation": "1111111111111111111111111111111111111111111111111111111111111111",
+          "dataset_generation": "2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "subscriptions": [
+          "runtime"
+        ]
+      },
+      "valid": false
+    },
+    {
+      "name": "redacted_snapshot",
+      "kind": "event",
+      "value": {
+        "profile": "OBP_PRIVATE_WEBSOCKET_PROFILE_V1",
+        "event_type": "network_state",
+        "sequence": 1,
+        "timestamp": 1,
+        "lifecycle": "disabled",
+        "coverage": "local_only",
+        "limitations": [],
+        "data": {
+          "compiled": true,
+          "requested": false,
+          "active": false,
+          "kill_switch": false,
+          "signer_ready": false,
+          "source_count": 0,
+          "usable_reservations": 0,
+          "authenticated_routes": 0,
+          "pending_intents": 0,
+          "advertisement_state": "disabled",
+          "claims_global_completion": false,
+          "authorizes_reward": false
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "ws_peer_leak",
+      "kind": "event",
+      "value": {
+        "profile": "OBP_PRIVATE_WEBSOCKET_PROFILE_V1",
+        "event_type": "network_state",
+        "sequence": 1,
+        "timestamp": 1,
+        "lifecycle": "disabled",
+        "coverage": "local_only",
+        "limitations": [],
+        "data": {
+          "compiled": true,
+          "requested": false,
+          "active": false,
+          "kill_switch": false,
+          "signer_ready": false,
+          "source_count": 0,
+          "usable_reservations": 0,
+          "authenticated_routes": 0,
+          "pending_intents": 0,
+          "advertisement_state": "disabled",
+          "claims_global_completion": false,
+          "authorizes_reward": false,
+          "expected_peer": "4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "ws_address_leak",
+      "kind": "event",
+      "value": {
+        "profile": "OBP_PRIVATE_WEBSOCKET_PROFILE_V1",
+        "event_type": "network_state",
+        "sequence": 1,
+        "timestamp": 1,
+        "lifecycle": "disabled",
+        "coverage": "local_only",
+        "limitations": [],
+        "data": {
+          "compiled": true,
+          "requested": false,
+          "active": false,
+          "kill_switch": false,
+          "signer_ready": false,
+          "source_count": 0,
+          "usable_reservations": 0,
+          "authenticated_routes": 0,
+          "pending_intents": 0,
+          "advertisement_state": "disabled",
+          "claims_global_completion": false,
+          "authorizes_reward": false,
+          "endpoint": "127.0.0.1"
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "ws_reward_claim",
+      "kind": "event",
+      "value": {
+        "profile": "OBP_PRIVATE_WEBSOCKET_PROFILE_V1",
+        "event_type": "network_state",
+        "sequence": 1,
+        "timestamp": 1,
+        "lifecycle": "disabled",
+        "coverage": "local_only",
+        "limitations": [],
+        "data": {
+          "compiled": true,
+          "requested": false,
+          "active": false,
+          "kill_switch": false,
+          "signer_ready": false,
+          "source_count": 0,
+          "usable_reservations": 0,
+          "authenticated_routes": 0,
+          "pending_intents": 0,
+          "advertisement_state": "disabled",
+          "claims_global_completion": false,
+          "authorizes_reward": true
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "admitted_command",
+      "kind": "outcome",
+      "value": {
+        "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+        "operation": "refresh",
+        "state": "admitted",
+        "reconcile_before_retry": true
+      },
+      "valid": true
+    },
+    {
+      "name": "unknown_command",
+      "kind": "outcome",
+      "value": {
+        "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+        "operation": "refresh",
+        "state": "reconcile_required",
+        "reconcile_before_retry": true
+      },
+      "valid": true
+    },
+    {
+      "name": "completed_command",
+      "kind": "outcome",
+      "value": {
+        "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+        "operation": "refresh",
+        "state": "completed",
+        "reconcile_before_retry": false,
+        "result": {
+          "compiled": true,
+          "requested": false,
+          "active": false,
+          "kill_switch": false,
+          "signer_ready": false,
+          "generation": 1,
+          "lifecycle": "disabled",
+          "source_count": 0,
+          "usable_reservations": 0,
+          "authenticated_routes": 0,
+          "pending_intents": 0,
+          "advertisement_state": "disabled",
+          "coverage": "partial",
+          "limitations": [],
+          "claims_global_completion": false,
+          "authorizes_reward": false
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "no_effect_command",
+      "kind": "outcome",
+      "value": {
+        "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+        "operation": "refresh",
+        "state": "failed_no_effect",
+        "reconcile_before_retry": false,
+        "failure": {
+          "reason": "invalid_payload",
+          "code": "invalid_request",
+          "http": 400,
+          "outcome": "not_admitted",
+          "reconcile_before_retry": false,
+          "retryable": false
+        }
+      },
+      "valid": true
+    },
+    {
+      "name": "unknown_success_invention",
+      "kind": "outcome",
+      "value": {
+        "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+        "operation": "refresh",
+        "state": "admitted",
+        "reconcile_before_retry": true,
+        "result": {
+          "compiled": true,
+          "requested": false,
+          "active": false,
+          "kill_switch": false,
+          "signer_ready": false,
+          "generation": 1,
+          "lifecycle": "disabled",
+          "source_count": 0,
+          "usable_reservations": 0,
+          "authenticated_routes": 0,
+          "pending_intents": 0,
+          "advertisement_state": "disabled",
+          "coverage": "partial",
+          "limitations": [],
+          "claims_global_completion": false,
+          "authorizes_reward": false
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "unknown_blind_retry",
+      "kind": "outcome",
+      "value": {
+        "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+        "operation": "refresh",
+        "state": "admitted",
+        "reconcile_before_retry": false
+      },
+      "valid": false
+    },
+    {
+      "name": "completed_without_result",
+      "kind": "outcome",
+      "value": {
+        "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+        "operation": "refresh",
+        "state": "completed",
+        "reconcile_before_retry": false
+      },
+      "valid": false
+    },
+    {
+      "name": "failed_unknown_lie",
+      "kind": "outcome",
+      "value": {
+        "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+        "operation": "refresh",
+        "state": "failed_no_effect",
+        "reconcile_before_retry": false,
+        "failure": {
+          "reason": "outcome_unknown",
+          "code": "dependency_unavailable",
+          "http": 503,
+          "outcome": "unknown",
+          "reconcile_before_retry": true,
+          "retryable": true
+        }
+      },
+      "valid": false
+    },
+    {
+      "name": "completed_wrong_dto",
+      "kind": "outcome",
+      "value": {
+        "idempotency_key": "3333333333333333333333333333333333333333333333333333333333333333",
+        "operation": "refresh",
+        "state": "completed",
+        "reconcile_before_retry": false,
+        "result": {
+          "expected_peer": "4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      },
+      "valid": false
+    }
+  ]
+}
