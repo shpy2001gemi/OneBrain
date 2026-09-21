@@ -2,6 +2,7 @@
 
 > State: Review — implementation validated; transport accepted under D-029
 > Branch: `codex/obp-api-001-network-api`
+> Implementation: `de04a57`, pushed to origin; latest branch tip includes handoff
 > Depends on: `OBP-PROD-004` merged — satisfied at `2c39117`
 
 ## Objective

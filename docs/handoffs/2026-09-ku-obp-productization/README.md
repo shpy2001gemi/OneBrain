@@ -54,7 +54,8 @@ the selected task explicitly requires a section from it.
 **Current task:** [`OBP-API-001`](tasks/14-OBP-API-001.md) — implementation under
 the accepted D-029 transport. Read the
 [implementation evidence](outputs/OBP_API_001_IMPLEMENTATION.md).
-Local changes are on `codex/obp-api-001-network-api` from `836af91`; keep them.
+Implementation `de04a57` is pushed on `codex/obp-api-001-network-api`, based on
+`836af91`; the task is in Review and awaits owner merge direction.
 Task 004 merge `2c39117` satisfies the dependency. D-029 satisfies the separate
 notification transport review; shared façade and handlers are implemented locally.
 

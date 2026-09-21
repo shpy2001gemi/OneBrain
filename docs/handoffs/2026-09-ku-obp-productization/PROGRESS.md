@@ -11,8 +11,9 @@
   [Implementation evidence and limits](outputs/OBP_API_001_IMPLEMENTATION.md).
   Verification passed: node 252 unit + 22 integration; API 44 unit/one ignored
   + eight Base integration; API feature-off 16; ku-net 315; Python 19 and vNext
-  validator. Branch `codex/obp-api-001-network-api` is ready for publication under
-  D-010. No merge is authorized by D-029; dependent tasks remain Planned.
+  validator. Implementation `de04a57` is published on
+  `origin/codex/obp-api-001-network-api` under D-010. No merge is authorized by
+  D-029; dependent tasks remain Planned.
   The transport-review entry below is historical; approval is already satisfied.
 
 - 2026-09-21 OBP-API-001 — `Review` of the transport prerequisite only.

@@ -4,6 +4,8 @@
 `codex/obp-api-001-network-api`, baseline `836af91`. D-029 accepts the complete
 [REST/WS transport](../../../specs/vnext/OBP_LOCAL_API_PROFILE_V1.md).
 Task 004 is already merged and published under D-028. This task is not merged.
+Implementation commit `de04a57` is pushed to `origin/codex/obp-api-001-network-api`.
+The follow-up handoff commit records publication; main remains at `836af91`.
 
 ## Implementation
 
