@@ -1,8 +1,9 @@
 # OBP-API-001 — Local networking API and private event projection
 
-> State: Planned
+> State: Review — implementation validated; transport accepted under D-029
 > Branch: `codex/obp-api-001-network-api`
-> Depends on: `OBP-PROD-004` merged
+> Implementation: `de04a57`, pushed to origin; latest branch tip includes handoff
+> Depends on: `OBP-PROD-004` merged — satisfied at `2c39117`
 
 ## Objective
 
@@ -35,3 +36,14 @@ feature/kill and bounded operator-action contract.
 ## Excluded
 
 CLI/Web/Desktop presentation, mobile, remote administration and rollout.
+
+
+## Current transport prerequisite
+
+[Concrete REST/WS proposal](../../../specs/vnext/OBP_LOCAL_API_PROFILE_V1.md)
+and [review evidence](../outputs/OBP_API_001_TRANSPORT_REVIEW.md).
+The owner accepted the full transport, including the separate notification
+projection, under D-029. The node-owned façade and six handlers are implemented
+and validated. See [implementation evidence](../outputs/OBP_API_001_IMPLEMENTATION.md)
+for exact commands, results and limitations. D-010 permits branch publication;
+the API task awaits explicit owner merge direction before dependent work.

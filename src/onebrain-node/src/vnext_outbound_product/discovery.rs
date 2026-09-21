@@ -108,6 +108,7 @@ pub struct DiscoverySourceStatus {
 }
 
 struct Source {
+    enabled: bool,
     input: DiscoveryInput,
     status: DiscoverySourceStatus,
     manifest: Option<ValidatedBootstrapManifest>,
@@ -180,6 +181,10 @@ pub(crate) fn cached_inputs(
 }
 
 impl DiscoveryInput {
+    pub(crate) fn product_identity(&self) -> Result<([u8; 32], &'static str), &'static str> {
+        self.identity()
+    }
+
     fn identity(&self) -> Result<([u8; 32], &'static str), &'static str> {
         match self {
             Self::ManualPeer { invitation, .. } => {
@@ -258,6 +263,63 @@ pub(crate) fn validate_inputs(inputs: &[DiscoveryInput]) -> Result<(), &'static 
 }
 
 impl DiscoveryOwner {
+    pub(crate) fn request_refresh(&mut self) {
+        for source in &mut self.sources {
+            source.next_refresh = Instant::now();
+        }
+    }
+    pub(crate) fn enabled_relay_ids(&self) -> BTreeSet<NodeId> {
+        self.sources
+            .iter()
+            .filter(|s| s.enabled)
+            .flat_map(|s| s.records.iter().copied())
+            .collect()
+    }
+    pub(crate) async fn toggle_product_source(
+        &mut self,
+        id: [u8; 32],
+        enabled: bool,
+    ) -> Result<DiscoverySourceStatus, &'static str> {
+        let source = self
+            .sources
+            .iter_mut()
+            .find(|s| s.status.source_id == id)
+            .ok_or("source_missing")?;
+        source.enabled = enabled;
+        source.status.state = if enabled { "configured" } else { "disabled" };
+        source.next_refresh = Instant::now();
+        if !enabled {
+            source.advertisement = None;
+            source.peer_verified = false;
+            source.status.admitted_records = 0;
+        }
+        let result = source.status.clone();
+        *self.statuses.write().await = self.sources.iter().map(|s| s.status.clone()).collect();
+        Ok(result)
+    }
+    pub(crate) async fn add_product_source(
+        &mut self,
+        input: DiscoveryInput,
+    ) -> Result<DiscoverySourceStatus, &'static str> {
+        let (id, _) = input.identity()?;
+        if self.sources.len() >= 8 || self.sources.iter().any(|s| s.status.source_id == id) {
+            return Err("source_limit_or_duplicate");
+        }
+        let mut added = Self::new(
+            vec![input],
+            ReachabilityAdmission::new(self.replay.clone()),
+            self.replay.clone(),
+            self.preparer.clone(),
+            self.dial.clone(),
+            self.possession.clone(),
+            self.sessions.clone(),
+        )?;
+        let source = added.sources.pop().ok_or("source_missing")?;
+        let result = source.status.clone();
+        self.sources.push(source);
+        *self.statuses.write().await = self.sources.iter().map(|s| s.status.clone()).collect();
+        Ok(result)
+    }
     #[cfg(test)]
     pub(super) fn force_refresh_for_test(&mut self) {
         for source in &mut self.sources {
@@ -297,6 +359,7 @@ impl DiscoveryOwner {
                     None
                 };
                 Ok(Source {
+                    enabled: true,
                     input,
                     status: DiscoverySourceStatus {
                         source_id,
@@ -342,6 +405,7 @@ impl DiscoveryOwner {
     ) -> Vec<ku_net::vnext_reachability_crypto::ValidatedReachabilityAdvertisement> {
         self.sources
             .iter()
+            .filter(|source| source.enabled)
             .filter_map(|source| source.advertisement.as_ref())
             .filter(|ad| ad.canonical().expires_at > now)
             .cloned()
@@ -353,6 +417,7 @@ impl DiscoveryOwner {
     ) -> Vec<ku_net::vnext_reachability_crypto::KnownPeerIdentity> {
         self.sources
             .iter()
+            .filter(|source| source.enabled)
             .filter_map(|source| match &source.input {
                 DiscoveryInput::ManualPeer { invitation, .. } => {
                     decode_manual_peer_invitation(invitation)
@@ -394,6 +459,9 @@ impl DiscoveryOwner {
         let slice = deadline.saturating_duration_since(Instant::now()) / count;
         let mut signatures = SignatureBudget::default();
         for source in &mut self.sources {
+            if !source.enabled {
+                continue;
+            }
             if !current() {
                 return Err(ReachabilityError::NetworkChanged);
             }
@@ -483,6 +551,11 @@ impl DiscoveryOwner {
             .map(|relay| relay.canonical().relay_node_id)
             .collect();
         for source in &mut self.sources {
+            if !source.enabled {
+                source.status.state = "disabled";
+                source.status.admitted_records = 0;
+                continue;
+            }
             source.status.admitted_records = source.records.intersection(&live).count()
                 + usize::from(
                     source.peer_verified

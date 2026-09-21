@@ -1,6 +1,7 @@
 //! Node-owned outbound-first lifecycle, discovery and standing reservations.
 //! Construction never publishes or fabricates a live route; routing is separate.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -107,7 +108,7 @@ impl OutboundFirstDependencies {
 }
 
 /// Redacted local projection; no transport, signer, raw candidate or store escapes.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct OutboundFirstStatus {
     pub compiled: bool,
     pub requested: bool,
@@ -136,10 +137,11 @@ pub struct OutboundReservationStatus {
 }
 
 pub(crate) struct OutboundFirstOwner {
+    product_enabled: AtomicBool,
+    product_advertise: AtomicBool,
     pub(crate) manager: ReachabilityManager,
     route: routing::RoutingOwner,
     grant: watch::Receiver<bool>,
-    pub(crate) advertise: bool,
     limitation: Mutex<&'static str>,
     discovery: tokio::sync::Mutex<discovery::DiscoveryOwner>,
     pub(crate) source_statuses: Arc<RwLock<Vec<DiscoverySourceStatus>>>,
@@ -271,10 +273,11 @@ impl OutboundFirstOwner {
             ports.optional_paths,
         )?;
         Ok(Self {
+            product_enabled: AtomicBool::new(true),
+            product_advertise: AtomicBool::new(ports.advertise_reachability),
             manager,
             route,
             grant: ports.execution_grant,
-            advertise: ports.advertise_reachability,
             limitation: Mutex::new("candidate_collection_pending"),
             discovery: tokio::sync::Mutex::new(discovery_owner),
             source_statuses,
@@ -291,8 +294,87 @@ impl OutboundFirstOwner {
         })
     }
 
+    pub(crate) async fn configure_product(&self, enabled: bool, advertise: bool) {
+        self.product_enabled.store(enabled, Ordering::Release);
+        // Drain any publication already in progress before acknowledging opt-out.
+        let _standing = self.standing.lock().await;
+        self.product_advertise.store(advertise, Ordering::Release);
+        if !enabled {
+            let _ = self.manager.advance_network_epoch();
+            self.manager.reservations.close_all().await;
+        }
+    }
+    pub(crate) async fn admit_product_source(
+        &self,
+        input: DiscoveryInput,
+        current: &(dyn Fn() -> bool + Send + Sync),
+    ) -> Result<DiscoverySourceStatus, &'static str> {
+        let mut discovery = self.discovery.lock().await;
+        if !current() {
+            return Err("grant_revoked");
+        }
+        discovery.add_product_source(input).await
+    }
+    pub(crate) async fn toggle_product_source(
+        &self,
+        id: [u8; 32],
+        enabled: bool,
+    ) -> Result<DiscoverySourceStatus, &'static str> {
+        self.toggle_product_source_guarded(id, enabled, &|| true)
+            .await
+    }
+    pub(crate) async fn toggle_product_source_guarded(
+        &self,
+        id: [u8; 32],
+        enabled: bool,
+        current: &(dyn Fn() -> bool + Send + Sync),
+    ) -> Result<DiscoverySourceStatus, &'static str> {
+        let mut discovery = self.discovery.lock().await;
+        if !current() {
+            return Err("grant_revoked");
+        }
+        let status = discovery.toggle_product_source(id, enabled).await?;
+        if !enabled {
+            self.manager
+                .advance_network_epoch()
+                .map_err(|_| "network_epoch")?;
+            self.manager.reservations.close_all().await;
+            self.manager
+                .discovery
+                .write()
+                .await
+                .retain_product_relays(&discovery.enabled_relay_ids());
+        }
+        Ok(status)
+    }
+    pub(crate) async fn refresh_product(
+        &self,
+        current: &(dyn Fn() -> bool + Send + Sync),
+    ) -> Result<(), &'static str> {
+        let mut discovery = self.discovery.lock().await;
+        discovery.request_refresh();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "clock")?
+            .as_secs();
+        tokio::time::timeout(
+            Duration::from_secs(20),
+            discovery.refresh_until(
+                &self.manager.discovery,
+                now,
+                &|| current() && self.granted(),
+                std::time::Instant::now() + Duration::from_secs(20),
+            ),
+        )
+        .await
+        .map_err(|_| "deadline")?
+        .map_err(|_| "refresh")
+    }
+
     pub(crate) fn granted(&self) -> bool {
-        self.grant.has_changed().is_ok() && *self.grant.borrow()
+        self.product_enabled.load(Ordering::Acquire)
+            && self.grant.has_changed().is_ok()
+            && *self.grant.borrow()
     }
 
     pub(crate) fn limitation(&self) -> &'static str {
@@ -347,7 +429,7 @@ impl OutboundFirstOwner {
                             self.discovery.lock().await.refresh_until(&self.manager.discovery, now, &current, std::time::Instant::now() + Duration::from_secs(8)).await?;
                             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|_| crate::vnext_reachability_manager::ReachabilityError::CorruptState)?.as_secs();
                             let mut standing = self.standing.lock().await;
-                            standing.maintain(&self.manager, self.advertise, now, &current).await?;
+                            standing.maintain(&self.manager, self.product_advertise.load(Ordering::Acquire), now, &current).await?;
                             *self.advertisement_status.write().await = (standing.advertisement_state, standing.published_expiry());
                             *self.reservation_statuses.write().await = standing.reservation_statuses.values().cloned().collect();
                             self.record(standing.limitation.unwrap_or("route_requires_fresh_peer_advertisement"));

@@ -497,3 +497,15 @@ previous no-push restriction for this publication. It does not authorize model
 tuning, live-host changes, networking activation or default rollout. OBP-API-001
 becomes dependency-ready after the actual task-004 merge; no API implementation
 is part of this merge/publication action.
+
+
+## D-029 — Accept OBP local API transport
+
+On 2026-09-21 the owner replied “chấp nhận đề xuất” to the concrete
+OBP_LOCAL_API_PROFILE_V1 proposal and its REST/WS transport review request.
+This accepts the six routes, unchanged 13 operation mappings, host capabilities,
+input-reference boundary, durable command/reconciliation contract and separately
+scoped aggregate WS projection. Implement OBP-API-001 on its existing local branch
+and original retained workspace. No further approval of this transport is needed.
+The accepted scope does not enable networking, change the live host or models,
+authorize default rollout, mobile implementation or merge this task.

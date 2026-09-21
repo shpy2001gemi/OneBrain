@@ -5,6 +5,34 @@
 
 ## Current checkpoint
 
+- 2026-09-22 OBP-API-001 continuation verification at `bcca300`: original tree
+  initially clean; remote API/main tips verified directly. Fresh offline/locked
+  reruns passed: node 252 unit + 22 integration; API 44 unit/one ignored + eight
+  Base integration; feature-off 16; ku-net 315; Python 19 and vNext validator.
+  [Updated evidence](outputs/OBP_API_001_IMPLEMENTATION.md#continuation-verification--2026-09-22).
+  Corrected the stale next-action pointer. Implementation remains unchanged in
+  Review; API merge requires owner direction, CLI/Web remain Planned.
+
+- 2026-09-22 OBP-API-001 — `Review`, implementation under accepted D-029 transport.
+  Shared node façade, durable command/reconciliation journal, host grants/input
+  references and six REST/WS routes are implemented in the original workspace.
+  [Implementation evidence and limits](outputs/OBP_API_001_IMPLEMENTATION.md).
+  Verification passed: node 252 unit + 22 integration; API 44 unit/one ignored
+  + eight Base integration; API feature-off 16; ku-net 315; Python 19 and vNext
+  validator. Implementation `de04a57` is published on
+  `origin/codex/obp-api-001-network-api` under D-010. No merge is authorized by
+  D-029; dependent tasks remain Planned.
+  The transport-review entry below is historical; approval is already satisfied.
+
+- 2026-09-21 OBP-API-001 — `Review` of the transport prerequisite only.
+  [Concrete proposal and evidence](outputs/OBP_API_001_TRANSPORT_REVIEW.md):
+  six routes, 13 operations, management/input/reconciliation boundaries and a
+  separately scoped private WS projection. 19 contract tests and aggregate
+  vNext validation passed; 35 transport fixtures. No handlers implemented.
+  Original tree retained on `codex/obp-api-001-network-api`, baseline `836af91`;
+  these changes are local and uncommitted. Notification transport review remains
+  required by the accepted OBP profile before this complete extension is implemented.
+
 - 2026-09-21 D-028 — `OBP-PROD-004` Merged and pushed to `origin/main`.
   Implementation `8f7d327`; merge `2c39117183f167ef4d333757b050d6306043e068`.
   Atomic push published main and `codex/obp-prod-004-routing`, including the
@@ -73,12 +101,13 @@
 - 2026-09-08 owner follow-up: [headless tests and portable proposal experiments](outputs/KU_ENCODER_MODEL_PORTABILITY_EXPERIMENT.md); two requested sources tested locally with Qwen3 8b/1.7b and a separate 3b reviewer. Semantic defects remain explicitly reported; prototype proposals are not canonical KU or integrated Web behavior. Shared preflight now brings span/number/structural compilation errors into the bounded repair allowance.
 - Local follow-up: [schema diagnostics and repair feedback](outputs/KU_WEB_001_SCHEMA_DIAGNOSTICS.md) implemented and tested after owner authorization; these follow-up edits remain uncommitted.
 - Real Vietnamese follow-up remains unsuccessful on the current Web/host Candidate path: the two exact owner sources failed `duplicate_id` (379.26s, water) and `oneof` (451.29s, car) in the 2026-09-08 rebuilt-host API tests. Both test reservations were canceled; neither yielded a validated preview or saved/shared KU. Number/span preflight now reaches the existing repair allowance; earlier `unsupported_number` evidence remains historical. See the [model-portability report](outputs/KU_ENCODER_MODEL_PORTABILITY_EXPERIMENT.md) for separate proposal results and remaining semantic representation gaps.
-- Current task: `OBP-API-001` — `Planned`, dependency-ready; implementation not started.
-- Current branch: `main` in the original workspace.
+- Current task: `OBP-API-001` — `Review` (D-029 transport accepted; implementation validated).
+- Current branch: `codex/obp-api-001-network-api` in the original workspace.
 - Completed review branch: `codex/obp-prod-004-routing`, implementation `8f7d327`.
 - Retained baseline: `437dba0`, merged at `3216f1d` under D-027; now published.
 - Last merge: `2c39117` (OBP-PROD-004, D-028), pushed to `origin/main`.
-- Next action: read task 14 and its contract/transport prerequisites before API work.
+- Next action: owner review/merge direction for the implemented OBP-API-001.
+  D-029 transport approval is satisfied; CLI/Web remain Planned until API merge.
   Keep semantic tuning deferred and preserve the live host.
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
@@ -101,7 +130,7 @@
 | 11 | `OBP-PROD-002` | Merged | `codex/obp-prod-002-node-lifecycle` | `OBP-PROD-001` accepted, D-025 local waiver | [Lifecycle evidence](outputs/OBP_PROD_002_IMPLEMENTATION.md); 219 unit + 20 integration tests; no activation; local merge `3216f1d`, D-027. |
 | 12 | `OBP-PROD-003` | Merged | `codex/obp-prod-003-discovery` | `OBP-PROD-002` local evidence, D-026 | [Discovery evidence](outputs/OBP_PROD_003_IMPLEMENTATION.md); 234 node unit + 22 integration tests; local merge `3216f1d`, D-027. |
 | 13 | `OBP-PROD-004` | Merged | `codex/obp-prod-004-routing` | `OBP-PROD-003` | [Routing evidence](outputs/OBP_PROD_004_IMPLEMENTATION.md); merge `2c39117` on `origin/main`, D-028. |
-| 14 | `OBP-API-001` | Planned | `codex/obp-api-001-network-api` | `OBP-PROD-004` | â€” |
+| 14 | `OBP-API-001` | Review | `codex/obp-api-001-network-api` | `OBP-PROD-004` merged `2c39117` | [Implementation evidence](outputs/OBP_API_001_IMPLEMENTATION.md); validated, merge pending owner direction. |
 | 15 | `OBP-CLI-001` | Planned | `codex/obp-cli-001-networking` | `OBP-API-001` | â€” |
 | 16 | `OBP-WEB-001` | Planned | `codex/obp-web-001-networking` | `OBP-API-001` | â€” |
 | 17 | `OBP-DESK-001` | Planned | `codex/obp-desk-001-networking` | `OBP-WEB-001` | â€” |

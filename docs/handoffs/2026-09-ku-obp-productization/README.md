@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **Baseline through OBP-PROD-004 merged and pushed (D-028); OBP-API-001 Planned**
+> Status: **Baseline through OBP-PROD-004 merged and pushed (D-028); OBP-API-001 implementation in Review under D-029**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -12,7 +12,8 @@ per task so a new conversation does not need the history that produced it.
 Latest owner direction (2026-09-21, D-028): merge task 004 and push the complete
 retained baseline. Completed: implementation `8f7d327`, merge `2c39117` on
 `origin/main`; routing branch also pushed. Original workspace remains
-`C:/Users/shpy2/Documents/OneBrain`, now on `main`. Start with
+`C:/Users/shpy2/Documents/OneBrain`; merge closed on `main`, and current transport
+work is on `codex/obp-api-001-network-api`. Start with
 [NEXT_CONVERSATION.md](NEXT_CONVERSATION.md). Semantic quality work remains
 deferred; the live host and default-off networking remain unchanged.
 
@@ -50,10 +51,13 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`OBP-API-001`](tasks/14-OBP-API-001.md) — Planned,
-dependency-ready after task 004 merge `2c39117`. Read its own contract and
-transport prerequisites before implementation. Completed routing evidence:
-[OBP-PROD-004](outputs/OBP_PROD_004_IMPLEMENTATION.md).
+**Current task:** [`OBP-API-001`](tasks/14-OBP-API-001.md) — implementation under
+the accepted D-029 transport. Read the
+[implementation evidence](outputs/OBP_API_001_IMPLEMENTATION.md).
+Implementation `de04a57` is pushed on `codex/obp-api-001-network-api`, based on
+`836af91`; the task is in Review and awaits owner merge direction.
+Task 004 merge `2c39117` satisfies the dependency. D-029 satisfies the separate
+notification transport review; shared façade and handlers are implemented locally.
 
 The following Web/encoder checkpoints are historical context; they do not override the current task or the new handoff.
 **Historical Web branch:** `codex/ku-web-001-workflow`; manual and experimental Ollama Web implementation ready for review.

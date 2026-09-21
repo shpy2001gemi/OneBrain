@@ -1074,6 +1074,11 @@ impl OneBrainNode {
 
     /// Typed product façade for API/CLI/Desktop integration. Raw subsystem
     /// runtime references are deliberately not exposed.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub fn obp_host(&self) -> Option<crate::vnext_product_runtime::obp::Host> {
+        self.vnext_product_runtime.as_ref().map(|r|r.obp_host())
+    }
+
     #[cfg(feature = "vnext-network-runtime")]
     pub fn vnext_product_services(&self) -> Option<VNextProductServices> {
         self.vnext_product_runtime

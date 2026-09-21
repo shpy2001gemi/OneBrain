@@ -422,6 +422,11 @@ impl RelayDiscovery {
         }
     }
 
+    /// Trusted local source-policy removal. Retains replay floors and grants no new admission.
+    pub fn retain_product_relays(&mut self, allowed: &BTreeSet<NodeId>) {
+        self.relays.retain(|id, _| allowed.contains(id));
+    }
+
     fn source_is_live(&self, source: &RelayDiscoverySource, now: u64) -> bool {
         source
             .live_lease()

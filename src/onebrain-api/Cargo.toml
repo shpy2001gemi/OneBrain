@@ -24,6 +24,7 @@ default = ["base-v1"]
 base-v1 = ["onebrain-node/base-v1"]
 legacy-read-compat = ["onebrain-node/legacy-read-compat"]
 vnext-network-runtime = ["onebrain-node/vnext-network-runtime"]
+vnext-outbound-first = ["vnext-network-runtime", "onebrain-node/vnext-outbound-first"]
 
 [dependencies]
 onebrain-node = { path = "../onebrain-node" }
