@@ -28,6 +28,7 @@ mod cache;
 mod discovery;
 #[cfg(test)]
 mod discovery_tests;
+mod routing;
 mod standing;
 pub use discovery::{
     DiscoveryInput, DiscoveryRecordSource, DiscoverySourceStatus, DiscoveryTransport,
@@ -46,6 +47,7 @@ pub struct OutboundFirstDependencies {
     pub(crate) advertise_reachability: bool,
     discovery_inputs: Vec<DiscoveryInput>,
     capability_ceiling: Option<[u8; 32]>,
+    optional_paths: Option<Arc<dyn crate::vnext_connection_planner::OptionalPeerPaths>>,
 }
 
 impl OutboundFirstDependencies {
@@ -63,6 +65,7 @@ impl OutboundFirstDependencies {
             advertise_reachability: false,
             discovery_inputs: Vec::new(),
             capability_ceiling: None,
+            optional_paths: None,
         }
     }
 
@@ -83,6 +86,14 @@ impl OutboundFirstDependencies {
     /// not opt in to publication; `with_advertising(true)` remains separate.
     pub fn with_advertisement_capabilities(mut self, ceiling: [u8; 32]) -> Self {
         self.capability_ceiling = Some(ceiling);
+        self
+    }
+
+    pub fn with_optional_paths(
+        mut self,
+        paths: Arc<dyn crate::vnext_connection_planner::OptionalPeerPaths>,
+    ) -> Self {
+        self.optional_paths = Some(paths);
         self
     }
 
@@ -126,6 +137,7 @@ pub struct OutboundReservationStatus {
 
 pub(crate) struct OutboundFirstOwner {
     pub(crate) manager: ReachabilityManager,
+    route: routing::RoutingOwner,
     grant: watch::Receiver<bool>,
     pub(crate) advertise: bool,
     limitation: Mutex<&'static str>,
@@ -154,7 +166,7 @@ impl OutboundFirstOwner {
             ReachabilityAdmission::new(replay.clone()),
         ));
         client
-            .attach_shared_quic_transport(transport)
+            .attach_shared_quic_transport(transport.clone())
             .map_err(|_| "shared_transport")?;
         let preparer = Arc::new(
             ku_net::vnext_reachability_crypto::ReachabilityAdmissionPreparer::new(
@@ -227,7 +239,7 @@ impl OutboundFirstOwner {
             ReachabilityAdmission::new(recovery),
             replay.clone(),
             preparer,
-            validator,
+            validator.clone(),
             Arc::new(
                 crate::vnext_reachability_manager::ProductionRelayPossessionClient::new(
                     signer.clone(),
@@ -247,12 +259,20 @@ impl OutboundFirstOwner {
             reservations,
             ports.gatherer,
             ports.publisher,
-            signer,
+            signer.clone(),
             policy,
         )
         .map_err(|_| "reachability_owner")?;
+        let route = routing::RoutingOwner::new(
+            validator,
+            transport,
+            signer,
+            &manager,
+            ports.optional_paths,
+        )?;
         Ok(Self {
             manager,
+            route,
             grant: ports.execution_grant,
             advertise: ports.advertise_reachability,
             limitation: Mutex::new("candidate_collection_pending"),
@@ -288,7 +308,14 @@ impl OutboundFirstOwner {
         }
     }
 
-    pub(crate) async fn run(
+    pub(crate) async fn run(&self, cancel: watch::Receiver<bool>, rollout: VNextRuntimeRollout) {
+        tokio::join!(
+            self.run_maintenance(cancel.clone(), rollout.clone()),
+            self.run_inbound(cancel, rollout)
+        );
+    }
+
+    async fn run_maintenance(
         &self,
         mut cancel: watch::Receiver<bool>,
         rollout: VNextRuntimeRollout,
@@ -323,7 +350,7 @@ impl OutboundFirstOwner {
                             standing.maintain(&self.manager, self.advertise, now, &current).await?;
                             *self.advertisement_status.write().await = (standing.advertisement_state, standing.published_expiry());
                             *self.reservation_statuses.write().await = standing.reservation_statuses.values().cloned().collect();
-                            self.record(standing.limitation.unwrap_or("routing_orchestration_pending"));
+                            self.record(standing.limitation.unwrap_or("route_requires_fresh_peer_advertisement"));
                             Ok::<(), crate::vnext_reachability_manager::ReachabilityError>(())
                         }) => result,
                     };

@@ -5,7 +5,28 @@
 
 ## Current checkpoint
 
-- 2026-09-21 OBP-PROD-003 — `Review`: discovery, signed cache recovery,
+- 2026-09-21 OBP-PROD-004 — `Review`: node-owned routing, durable outbox
+  checkpoint/restart and bounded alternate-relay delivery implemented locally.
+  242 node unit + 22 integration tests passed; six OBP contract tests and aggregate
+  validator passed. Feature-off/network-only/outbound-first builds and 29 focused
+  product tests pass; 315 ku-net tests cover the shared carrier and new bounded
+  multi-peer demultiplexing/pump lifetime checks.
+  [Evidence and limitations](outputs/OBP_PROD_004_IMPLEMENTATION.md).
+  Current task changes remain uncommitted on `codex/obp-prod-004-routing` in the
+  original tree. No remote push, model tuning or live networking activation.
+  Task 004 is not merged; OBP-API-001's merge prerequisite remains in force.
+
+- 2026-09-21 D-027: owner authorized merge and continuation. Complete retained
+  baseline committed as `437dba0`, merged into local main as
+  `3216f1ddf0cd72098924ccdf9fb0ef6b30186b78`. No remote push. Original workspace
+  retained; task 004 now In progress on `codex/obp-prod-004-routing`.
+  Fresh verification: node 234 unit + 22 integration; CLI 42 unit + 2 integration;
+  encoder extraction 70 passed/1 opt-in ignored; KU API 21 passed/1 opt-in ignored;
+  Web 22 tests and build; six OBP contract tests, aggregate validator and diff check.
+  Task 003 merge prerequisite is satisfied. Historical unmerged checkpoints below
+  describe their original observation dates, not the current Git state.
+
+- 2026-09-21 OBP-PROD-003 â€” `Review`: discovery, signed cache recovery,
   standing reservations/renewal and separately opted-in advertisements are
   implemented locally under D-026. 234 node unit + 22 integration tests pass,
   including real loopback TLS renewal/keepalive/closure. Core tests, feature
@@ -27,13 +48,13 @@
   20 integration tests passed, feature checks and contract validators passed.
   [Lifecycle evidence](outputs/OBP_PROD_002_IMPLEMENTATION.md).
 
-- 2026-09-20 OBP-PROD-001 — `Review`: [orchestration proposal](outputs/OBP_PROD_001_CONTRACT.md)
+- 2026-09-20 OBP-PROD-001 â€” `Review`: [orchestration proposal](outputs/OBP_PROD_001_CONTRACT.md)
   defines 13 logical operations, 18 DTOs and 26 fixtures. Six mutation tests and
   aggregate vNext validation pass. Original dirty tree, including completed CLI,
   retained on `codex/obp-prod-001-product-contract`; no commits/push/merge.
   Historical review gate superseded by D-025: contract accepted, local task 002 authorized before merge.
 
-- 2026-09-20 KU-CLI-001 — `Review`: all eleven shared KU operations plus
+- 2026-09-20 KU-CLI-001 â€” `Review`: all eleven shared KU operations plus
   reservation implemented in `onebrain ku`. 42 CLI unit and 2 integration tests
   pass, including the isolated real API/node workflow; default/no-default checks,
   format and vNext contracts pass. [Evidence](outputs/KU_CLI_001_IMPLEMENTATION.md).
@@ -45,24 +66,22 @@
   Next: KU-CLI-001, then the dependency-ready OBP framework lane. No merge or v2
   host activation is claimed. [New-conversation handoff](NEXT_CONVERSATION.md).
 
-- 2026-09-20 shared semantic selection continuation — `Review`: common Rust host assembly, sparse LLM choices and mechanically constrained repair are implemented and activated locally. Qwen3 8b passed 5/5 through the actual Web API (52.32 s mean; admission <0.1 s); Gemma E4B passed 4/5 (43.19 s), 12B passed 5/5 (78.58 s) via the development adapter. Fifteen selection tests, five API tests, twenty Web tests, build and contract validation passed. Three legacy jobs remain readable; new drafts are explicitly unassessed and no KU save/share occurred. Ollama 0.34.2; earlier baseline 0.33.3. See [selection implementation and limits](outputs/KU_SEMANTIC_SELECTION_IMPLEMENTATION.md).
+- 2026-09-20 shared semantic selection continuation â€” `Review`: common Rust host assembly, sparse LLM choices and mechanically constrained repair are implemented and activated locally. Qwen3 8b passed 5/5 through the actual Web API (52.32 s mean; admission <0.1 s); Gemma E4B passed 4/5 (43.19 s), 12B passed 5/5 (78.58 s) via the development adapter. Fifteen selection tests, five API tests, twenty Web tests, build and contract validation passed. Three legacy jobs remain readable; new drafts are explicitly unassessed and no KU save/share occurred. Ollama 0.34.2; earlier baseline 0.33.3. See [selection implementation and limits](outputs/KU_SEMANTIC_SELECTION_IMPLEMENTATION.md).
 
-- 2026-09-09 shared semantic selection — historical checkpoint (superseded by September 20 `Review`): owner approved sparse LLM choices and host mechanics consistently across platforms. Common architecture, Rust assembler/targeted repair and unassessed draft state are implemented; 45 encoder, five API and 20 Web tests passed. Real-model comparisons and local host activation are pending. See [selection implementation](outputs/KU_SEMANTIC_SELECTION_IMPLEMENTATION.md).
-- 2026-09-09 owner-requested Gemma 4 comparison — `Review`: development-only chat transport ran the same native DraftJob/prompt/schema flow on five public cases per model. E4B passed 3/5 meanings (66.57 s mean); 12B passed 5/5 (179.78 s mean). E4B missed a preposition and linked the wrong contrast endpoints despite mechanical readiness. All 20 calls had thinking disabled. No Web provider admission or canonical KU behavior changed; read-only live-host check passed. See [Gemma evidence and limits](outputs/KU_GEMMA4_DEVELOPMENT_PROBE.md).
-- 2026-09-08 staged-draft follow-up — `Review`: shared draft workflow, encrypted background jobs and Web interface are implemented and activated on the local owner host. Qwen3 8b preserved all five inspected development meanings; 1.7b retained review issues on all five. Actual Web API originals passed (water 170.95 s, car 126.06 s; start replies 0.085/0.071 s), without resampling on reads/repeated start or any KU save/share. See [implementation and limitations](outputs/KU_REVIEW_DRAFT_IMPLEMENTATION.md). Complete canonical lowering and broad model portability remain unfinished; draft readiness does not claim those outcomes.
+- 2026-09-09 shared semantic selection â€” historical checkpoint (superseded by September 20 `Review`): owner approved sparse LLM choices and host mechanics consistently across platforms. Common architecture, Rust assembler/targeted repair and unassessed draft state are implemented; 45 encoder, five API and 20 Web tests passed. Real-model comparisons and local host activation are pending. See [selection implementation](outputs/KU_SEMANTIC_SELECTION_IMPLEMENTATION.md).
+- 2026-09-09 owner-requested Gemma 4 comparison â€” `Review`: development-only chat transport ran the same native DraftJob/prompt/schema flow on five public cases per model. E4B passed 3/5 meanings (66.57 s mean); 12B passed 5/5 (179.78 s mean). E4B missed a preposition and linked the wrong contrast endpoints despite mechanical readiness. All 20 calls had thinking disabled. No Web provider admission or canonical KU behavior changed; read-only live-host check passed. See [Gemma evidence and limits](outputs/KU_GEMMA4_DEVELOPMENT_PROBE.md).
+- 2026-09-08 staged-draft follow-up â€” `Review`: shared draft workflow, encrypted background jobs and Web interface are implemented and activated on the local owner host. Qwen3 8b preserved all five inspected development meanings; 1.7b retained review issues on all five. Actual Web API originals passed (water 170.95 s, car 126.06 s; start replies 0.085/0.071 s), without resampling on reads/repeated start or any KU save/share. See [implementation and limitations](outputs/KU_REVIEW_DRAFT_IMPLEMENTATION.md). Complete canonical lowering and broad model portability remain unfinished; draft readiness does not claim those outcomes.
 - 2026-09-08 owner follow-up: [headless tests and portable proposal experiments](outputs/KU_ENCODER_MODEL_PORTABILITY_EXPERIMENT.md); two requested sources tested locally with Qwen3 8b/1.7b and a separate 3b reviewer. Semantic defects remain explicitly reported; prototype proposals are not canonical KU or integrated Web behavior. Shared preflight now brings span/number/structural compilation errors into the bounded repair allowance.
 - Local follow-up: [schema diagnostics and repair feedback](outputs/KU_WEB_001_SCHEMA_DIAGNOSTICS.md) implemented and tested after owner authorization; these follow-up edits remain uncommitted.
 - Real Vietnamese follow-up remains unsuccessful on the current Web/host Candidate path: the two exact owner sources failed `duplicate_id` (379.26s, water) and `oneof` (451.29s, car) in the 2026-09-08 rebuilt-host API tests. Both test reservations were canceled; neither yielded a validated preview or saved/shared KU. Number/span preflight now reaches the existing repair allowance; earlier `unsupported_number` evidence remains historical. See the [model-portability report](outputs/KU_ENCODER_MODEL_PORTABILITY_EXPERIMENT.md) for separate proposal results and remaining semantic representation gaps.
-- Current task: `OBP-PROD-003` — Review, local implementation/test evidence under D-026
-- Current branch: `codex/obp-prod-003-discovery`
-- Review task branch: `codex/obp-prod-003-discovery` (includes all uncommitted CLI/Web/semantic work)
-- Current state: `Review` for OBP discovery/lifecycle; OBP contract accepted and CLI in `Review`; prior Web/semantic implementation accepted for this stage under D-024, still unmerged
-- Starting main: `798eabfee8acaa8cb473aa99fa52ccfd6f124f7e`, clean and equal to fetched `origin/main`
-- Implementation checkpoint: `5e540e5` (D-023 experimental Ollama), following manual milestone `ac5ce80`; the branch tip adds this ledger-only record
-- Prerequisite evidence: [KU-API-001 implementation and limits](outputs/KU_API_001_IMPLEMENTATION.md)
-- Last accepted task: `KU-API-001`, implementation `29c34d1`, reviewed tip `423b7b8`, D-022
-- Last merged task: `KU-API-001`, merge `3eba370df1df91627595e0acbf7645d94ea75276` on `origin/main`
-- Next action: review OBP-PROD-003 evidence; task 004 requires task 003 merge or explicit local exception. Preserve the full dirty tree and keep semantic tuning deferred.
+- Current task: `OBP-PROD-004` — `Review`
+- Current/review branch: `codex/obp-prod-004-routing`
+- Current state: routing integration implemented/tested locally; task-004 changes uncommitted.
+- Starting commit: local merge `3216f1ddf0cd72098924ccdf9fb0ef6b30186b78`, D-027.
+- Retained baseline commit: `437dba0`; includes all prior CLI/Web/semantic and OBP work.
+- Last local merge: KU baseline and OBP-PROD-001..003, `3216f1d`; no remote push.
+- Last recorded remote merge remains KU-API-001 `3eba370`; no new origin state is claimed.
+- Next action: review task 004; OBP-API-001 follows only after its merge prerequisite or explicit owner exception. Keep semantic tuning deferred.
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -71,26 +90,26 @@
 
 | Order | Task | State | Branch | Dependency | Merge commit/evidence |
 |---:|---|---|---|---|---|
-| 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | — | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011–D-014. |
-| 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011–D-014; merge `b872263` on `origin/main`. |
+| 1 | `KU-REV-001` | Merged | `codex/ku-rev-001-canonical-audit` | â€” | `25d008d211f450d15ba1a63cacc0368298ed3e7a` on `origin/main`; [authority audit](outputs/KU_AUTHORITY_AUDIT.md), D-011â€“D-014. |
+| 2 | `KU-REV-002` | Merged | `codex/ku-rev-002-runtime-map` | `KU-REV-001` | [Runtime gap map](outputs/KU_RUNTIME_GAP_MAP.md), including owner D-011â€“D-014; merge `b872263` on `origin/main`. |
 | 3 | `KU-CON-001` | Merged | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge `2cbc8f2` on `origin/main`. |
 | 4 | `KU-RUN-001` | Merged | `codex/ku-run-001-shared-service` | `KU-CON-001` | Owner-authorized merge `d141701` on `origin/main`; [implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md). |
 | 5 | `KU-API-001` | Merged | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | D-022; merge `3eba370` on `origin/main`; [API implementation and verification](outputs/KU_API_001_IMPLEMENTATION.md). |
-| 6 | `KU-CLI-001` | Review | `codex/ku-cli-001-workflow` | `KU-API-001` | [Local implementation and tests](outputs/KU_CLI_001_IMPLEMENTATION.md), uncommitted/unmerged. |
-| 7 | `KU-WEB-001` | Review | `codex/ku-web-001-workflow` | `KU-API-001` | [Manual implementation](outputs/KU_WEB_001_IMPLEMENTATION.md), [Ollama integration and run instructions](outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md); D-023, unmerged. |
-| 8 | `KU-DESK-001` | Planned | `codex/ku-desk-001-workflow` | `KU-WEB-001` | — |
-| 9 | `KU-QA-001` | Planned | `codex/ku-qa-001-cross-surface` | `KU-CLI-001`, `KU-DESK-001`, `KU-ENC-003` | — |
-| 10 | `OBP-PROD-001` | Review | `codex/obp-prod-001-product-contract` | `KU-CON-001` | [Contract proposal and tests](outputs/OBP_PROD_001_CONTRACT.md); accepted under D-025, uncommitted/unmerged. |
-| 11 | `OBP-PROD-002` | Review | `codex/obp-prod-002-node-lifecycle` | `OBP-PROD-001` accepted, D-025 local waiver | [Lifecycle evidence](outputs/OBP_PROD_002_IMPLEMENTATION.md); 219 unit + 20 integration tests, no merge/activation. |
-| 12 | `OBP-PROD-003` | Review | `codex/obp-prod-003-discovery` | `OBP-PROD-002` local evidence, D-026 | [Discovery evidence](outputs/OBP_PROD_003_IMPLEMENTATION.md); 234 node unit + 22 integration tests, uncommitted/unmerged. |
-| 13 | `OBP-PROD-004` | Planned | `codex/obp-prod-004-routing` | `OBP-PROD-003` | — |
-| 14 | `OBP-API-001` | Planned | `codex/obp-api-001-network-api` | `OBP-PROD-004` | — |
-| 15 | `OBP-CLI-001` | Planned | `codex/obp-cli-001-networking` | `OBP-API-001` | — |
-| 16 | `OBP-WEB-001` | Planned | `codex/obp-web-001-networking` | `OBP-API-001` | — |
-| 17 | `OBP-DESK-001` | Planned | `codex/obp-desk-001-networking` | `OBP-WEB-001` | — |
-| 18 | `OBP-QA-001` | Planned | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | — |
-| 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | — |
-| 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | — |
+| 6 | `KU-CLI-001` | Merged | `codex/ku-cli-001-workflow` | `KU-API-001` | [Local implementation and tests](outputs/KU_CLI_001_IMPLEMENTATION.md); local merge `3216f1d`, D-027. |
+| 7 | `KU-WEB-001` | Merged | `codex/ku-web-001-workflow` | `KU-API-001` | [Manual implementation](outputs/KU_WEB_001_IMPLEMENTATION.md), [Ollama integration and run instructions](outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md); D-023; local merge `3216f1d`, D-027. |
+| 8 | `KU-DESK-001` | Planned | `codex/ku-desk-001-workflow` | `KU-WEB-001` | â€” |
+| 9 | `KU-QA-001` | Planned | `codex/ku-qa-001-cross-surface` | `KU-CLI-001`, `KU-DESK-001`, `KU-ENC-003` | â€” |
+| 10 | `OBP-PROD-001` | Merged | `codex/obp-prod-001-product-contract` | `KU-CON-001` | [Contract proposal and tests](outputs/OBP_PROD_001_CONTRACT.md); accepted under D-025; local merge `3216f1d`, D-027. |
+| 11 | `OBP-PROD-002` | Merged | `codex/obp-prod-002-node-lifecycle` | `OBP-PROD-001` accepted, D-025 local waiver | [Lifecycle evidence](outputs/OBP_PROD_002_IMPLEMENTATION.md); 219 unit + 20 integration tests; no activation; local merge `3216f1d`, D-027. |
+| 12 | `OBP-PROD-003` | Merged | `codex/obp-prod-003-discovery` | `OBP-PROD-002` local evidence, D-026 | [Discovery evidence](outputs/OBP_PROD_003_IMPLEMENTATION.md); 234 node unit + 22 integration tests; local merge `3216f1d`, D-027. |
+| 13 | `OBP-PROD-004` | Review | `codex/obp-prod-004-routing` | `OBP-PROD-003` | [Routing evidence](outputs/OBP_PROD_004_IMPLEMENTATION.md); local tests, uncommitted. |
+| 14 | `OBP-API-001` | Planned | `codex/obp-api-001-network-api` | `OBP-PROD-004` | â€” |
+| 15 | `OBP-CLI-001` | Planned | `codex/obp-cli-001-networking` | `OBP-API-001` | â€” |
+| 16 | `OBP-WEB-001` | Planned | `codex/obp-web-001-networking` | `OBP-API-001` | â€” |
+| 17 | `OBP-DESK-001` | Planned | `codex/obp-desk-001-networking` | `OBP-WEB-001` | â€” |
+| 18 | `OBP-QA-001` | Planned | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | â€” |
+| 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | â€” |
+| 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | â€” |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
 | 22 | `KU-ENC-002` | Merged | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Owner accepted under D-020; merge `dc04b71` on `origin/main`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |
 | 23 | `KU-ENC-003` | Blocked | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Separate branch retained at `4a8f29d`; artifact preflight only, no model runs/qualified tuples. Owner reports new VI/EN workbooks; contents and reviewer/locked-run evidence unverified. |
@@ -98,7 +117,7 @@
 
 ## Per-task update protocol
 
-### KU-WEB-001 reserved reconciliation feedback — 2026-09-07
+### KU-WEB-001 reserved reconciliation feedback â€” 2026-09-07
 
 Owner reported that checking an error's recorded outcome cleared the error and
 only displayed `reserved`. Web now retains the original error during reconcile,
@@ -108,7 +127,7 @@ successful preparation. Thirteen Web tests pass, including reserved recovery,
 editor unlocking after cancellation, and no automatic inference/save replay.
 This UI correction does not resolve the separate model `oneof` schema failure.
 
-### KU-WEB-001 semantic guidance and timeout — 2026-09-07
+### KU-WEB-001 semantic guidance and timeout â€” 2026-09-07
 
 Owner approved semantic-analysis guidance and requested a higher experimental
 timeout. The local Ollama policy now allows 10 minutes, retains standard token
@@ -123,7 +142,7 @@ development preview/save/restart-read passed with 139.519s inference/validation
 using an isolated test Registry. Local owner host rebuilt/restarted and checked
 ready. Changes remain in the current review working tree; no merge or push.
 
-### KU-WEB-001 timeout feedback — 2026-09-07
+### KU-WEB-001 timeout feedback â€” 2026-09-07
 
 Owner local testing reported `ResourceExhausted / deadline`. Web feedback now
 explains the 120-second workflow timeout, displays browser-observed progress and
@@ -132,13 +151,13 @@ the production build pass; backend limits and model quality status are unchanged
 See [timeout feedback evidence](outputs/KU_WEB_001_TIMEOUT_FEEDBACK.md).
 This follow-up remains in the current task working tree for review.
 
-### KU-WEB-001 experimental Ollama review evidence — 2026-09-06
+### KU-WEB-001 experimental Ollama review evidence â€” 2026-09-06
 
 Owner D-023 approved the addition. Implementation `5e540e5` adds governed text
 intake, installed Qwen3 selection, the shared extraction workflow and an isolated
 Windows Ollama worker with exact tokenizer/artifact and resource controls.
-The actual `qwen3:8b` development probe passed intake → ready preview → explicit
-private save → restart/read, with inference/validation taking 109.037 seconds.
+The actual `qwen3:8b` development probe passed intake â†’ ready preview â†’ explicit
+private save â†’ restart/read, with inference/validation taking 109.037 seconds.
 The test Registry is synthetic and confined to temporary integration tests.
 
 Verification: 27 API library + 8 integration, 22 node KU, 18 encoder extraction,
@@ -148,7 +167,7 @@ vNext contracts and format/whitespace checks pass. Existing unrelated warnings
 remain. See [run instructions, pins and precise evidence limits](outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md).
 AI remains unqualified; no holdout, mobile, rollout or merge work was performed.
 
-### KU-ENC-002 review evidence — 2026-09-06
+### KU-ENC-002 review evidence â€” 2026-09-06
 
 Closure: the owner reviewed, accepted and requested completion of KU-ENC-002,
 reserving the next task for a new conversation (D-020). Clean reviewed tip
@@ -172,21 +191,21 @@ Task branches are retained; no cleanup was requested.
   rollout, mobile implementation or model download. The subsequent merge is
   recorded above.
 
-### KU-REV-001 review evidence — 2026-09-05
+### KU-REV-001 review evidence â€” 2026-09-05
 
 - Starting main: `3704da6b68237f50998f73c02bc5a2c59d27def8`, clean and equal to
   fetched `origin/main` before branching.
 - Deliverable: [KU_AUTHORITY_AUDIT.md](outputs/KU_AUTHORITY_AUDIT.md), including
   authority/ownership/lifecycle/storage, legacy contradictions, owner-resolved
   direction and outstanding specification work.
-- Owner clarification: [D-011–D-014](DECISIONS.md#d-011--deterministic-identity-after-semantic-normalization).
+- Owner clarification: [D-011â€“D-014](DECISIONS.md#d-011--deterministic-identity-after-semantic-normalization).
   Direct encode/verify OBT issuance is the requested new direction; the earlier
   benefit-only restriction is not to be silently retained in future design.
   Reward amounts, admission, replay prevention and settlement remain unspecified.
-- `python scripts/ci/validate_vnext_contracts.py` — PASS (99 tasks, 18 ADRs,
+- `python scripts/ci/validate_vnext_contracts.py` â€” PASS (99 tasks, 18 ADRs,
   37 negative assertions; existing canonical contracts unchanged).
-- `git diff --check` — PASS.
-- Local file-link check — PASS (47 links across the four handoff deliverables).
+- `git diff --check` â€” PASS.
+- Local file-link check â€” PASS (47 links across the four handoff deliverables).
 - No source/application/mobile changes. No runtime tests or production
   encode/verify/Registry-sync/reward implementation claims.
 - Owner explicitly authorized merge and KU-REV-002 in this conversation.
@@ -197,7 +216,7 @@ Task branches are retained; no cleanup was requested.
   the ledger-only follow-up recording this checkpoint; resolve the tracked
   branch for that tip rather than treating this content hash as a merge commit.
 
-### KU-REV-002 review evidence — 2026-09-05
+### KU-REV-002 review evidence â€” 2026-09-05
 
 - Starting main: `80119e1311b1e95171e5613e0335ad3ef69fa2a4`, clean and equal
   to `origin/main`. This includes the authorized KU-REV-001 merge `25d008d`
@@ -205,7 +224,7 @@ Task branches are retained; no cleanup was requested.
 - Deliverable: [KU_RUNTIME_GAP_MAP.md](outputs/KU_RUNTIME_GAP_MAP.md).
   Maps semantic identity, Registry, canonical/public/private storage, Base
   operations, Mapping/adoption, existing interfaces, migration and delegated
-  work/reward gaps. D-011–D-014 remain required future direction.
+  work/reward gaps. D-011â€“D-014 remain required future direction.
 - Changed only handoff documentation. No source fixes, public contract
   changes, rollout changes, minting, mobile implementation or migrations.
 - Fresh focused results (Cargo run from `src/`, all with `--locked`):
@@ -223,14 +242,14 @@ Task branches are retained; no cleanup was requested.
 | `cargo test --locked -q -p ku-ai --lib vnext_` | PASS: 21 | Executor/fidelity component tests; no durable distributed worker settlement. |
 | `npm run test:vnext` (from `src/onebrain-web`) | PASS: 2 | Receipt tests only; no full browser or Desktop GUI run. |
 
-- `python scripts/ci/validate_vnext_contracts.py` — PASS (99 tasks, 18 ADRs,
+- `python scripts/ci/validate_vnext_contracts.py` â€” PASS (99 tasks, 18 ADRs,
   37 negative assertions; existing canonical contracts unchanged).
-- `git diff --check` — PASS. Local file-link check — PASS (104 links across
+- `git diff --check` â€” PASS. Local file-link check â€” PASS (104 links across
   the four changed handoff files).
 - Existing compiler dead-code/unused-import warnings were observed; no fixes made within
   this read-only audit. No claim of whole-workspace, live multi-node
-  qualification, full-size Registry qualification or D-011–D-014 completion.
-- After this review was reported, the owner requested "làm task kế tiếp".
+  qualification, full-size Registry qualification or D-011â€“D-014 completion.
+- After this review was reported, the owner requested "lÃ m task káº¿ tiáº¿p".
   Treated this as authorization for the prerequisite merge and KU-CON-001;
   rechecked the clean/pushed branch and contract/diff gates, then merged and
   pushed `b872263` to main. No branch deletion requested.
@@ -239,7 +258,7 @@ Task branches are retained; no cleanup was requested.
   the ledger-only commit recording this checkpoint; resolve that tracked
   branch for its final tip. This content checkpoint is not a merge commit.
 
-### KU-CON-001 review evidence — 2026-09-05
+### KU-CON-001 review evidence â€” 2026-09-05
 
 - Starting main: `d8effb772b0cb7766e91b799dd598061a81a9df5`, clean, pushed
   and synchronized after KU-REV-002 merge `b872263` and handoff update.
@@ -258,7 +277,7 @@ Task branches are retained; no cleanup was requested.
   blind verification, and D-014 direct work-based issuance remain mandatory
   linked specification/implementation dependencies. D-014 does not wait for
   BenefitEvent and does not fall back to bounty or simulated legacy balances.
-- `python scripts/ci/validate_ku_product_contract.py` — PASS:
+- `python scripts/ci/validate_ku_product_contract.py` â€” PASS:
   11 operations, 18 DTOs, 11 valid/invalid DTO fixtures. Fixture byte/hash values
   are shape examples, not golden canonical/hash conformance evidence.
 - `python -m unittest scripts.ci.test_validate_ku_product_contract
@@ -266,16 +285,16 @@ Task branches are retained; no cleanup was requested.
   scripts.ci.test_validate_vnext_ws_profile
   scripts.ci.test_validate_vnext_cli_profile
   scripts.ci.test_validate_vnext_desktop_web_ux_profile
-  scripts.ci.test_validate_base_v1_runtime_interface` — PASS: 101 tests,
+  scripts.ci.test_validate_base_v1_runtime_interface` â€” PASS: 101 tests,
   including 33 new KU tests with mutation subcases and 68 existing contract tests.
-- `python scripts/ci/validate_vnext_contracts.py` — PASS: the candidate plus
+- `python scripts/ci/validate_vnext_contracts.py` â€” PASS: the candidate plus
   existing 99 tasks, 18 ADRs, 37 negative assertions, 841 normative lines and
   479 specification links. Existing canonical profile/domain/IDL inventories
   and generated runtime declarations unchanged.
-- `git diff --check` — PASS. Only candidate specification/inventory,
+- `git diff --check` â€” PASS. Only candidate specification/inventory,
   contract validators/tests and handoff/index/coverage files changed. No
   application runtime, screen, mobile, networking or rollout implementation.
-- Local file-link check — PASS: 53 links across the candidate profile and
+- Local file-link check â€” PASS: 53 links across the candidate profile and
   changed handoff README/PROGRESS files, in addition to the global link gate.
 - Current pointer remains KU-CON-001 pending owner review and merge. This is
   completion of the owner-reviewable deliverables, not approval/freeze of new
@@ -285,9 +304,9 @@ Task branches are retained; no cleanup was requested.
   contains the ledger-only commit recording this checkpoint. This is not a
   merge commit or owner acceptance of KU-PC-A/B/C.
 
-### KU-CON-001 owner acceptance — 2026-09-05
+### KU-CON-001 owner acceptance â€” 2026-09-05
 
-- Owner answered "đồng ý" after the completed review at `b5956e8`.
+- Owner answered "Ä‘á»“ng Ã½" after the completed review at `b5956e8`.
   [D-015](DECISIONS.md#d-015--ku-product-contract-accepted) records acceptance
   of KU-PC-A/B/C and merge of the reviewed task. The preceding review section
   is historical evidence of the candidate before this acceptance.
@@ -303,11 +322,11 @@ Task branches are retained; no cleanup was requested.
   or runtime/default-rollout change was requested or performed.
 - Re-ran the same six-module unittest command from the review evidence:
   PASS, 102 tests (34 KU contract tests and 68 existing contract tests).
-- `python scripts/ci/validate_vnext_contracts.py` — PASS, including 480
+- `python scripts/ci/validate_vnext_contracts.py` â€” PASS, including 480
   specification links and unchanged canonical inventories.
-- `git diff --check` — PASS.
+- `git diff --check` â€” PASS.
 
-### KU-RUN-001 registration preflight — 2026-09-05
+### KU-RUN-001 registration preflight â€” 2026-09-05
 
 - Started from `91cc715b547b71941f6d66fea2093fc2326eb481`, clean and equal
   to freshly fetched `origin/main`; created the exact task branch
@@ -322,7 +341,7 @@ Task branches are retained; no cleanup was requested.
 
 #### Missing gate and scope boundary
 
-1. [KU profile §1](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md#1-authority-and-approval-boundary)
+1. [KU profile Â§1](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md#1-authority-and-approval-boundary)
    requires domain registration and golden equality/separation vectors before
    production hashing, and generated Base payload registration/compatibility
    revision before dispatch. D-015 accepts KU-PC-A/B/C but expressly retains
@@ -334,12 +353,12 @@ Task branches are retained; no cleanup was requested.
    [KU validator](../../../scripts/ci/validate_ku_product_contract.py)
    explicitly requires these values. Its successful result proves contract
    consistency in that pending state, not readiness to dispatch.
-3. [Canonical §6.2](../../specs/vnext/CANONICAL_PROFILE_V1.md#62-reserved-v1-domains)
+3. [Canonical Â§6.2](../../specs/vnext/CANONICAL_PROFILE_V1.md#62-reserved-v1-domains)
    calls addition of a domain a contract change. The current canonical
    inventory has no `semantic-content` entry. The
    [Base IDL](../../../src/test-vectors/vnext/base-v1-runtime-interface-v1.json)
    has no generated KU operation DTOs. Its generic `BaseLocalCommandV1.kind`
-   is not an allocated KU discriminator. [Base §§8–9](../../specs/vnext/BASE_V1_RUNTIME_INTERFACE_PROFILE.md#8-generated-projections)
+   is not an allocated KU discriminator. [Base Â§Â§8â€“9](../../specs/vnext/BASE_V1_RUNTIME_INTERFACE_PROFILE.md#8-generated-projections)
    require generated projections and append-only history with a profile-minor
    increment for additive registration.
 4. The selected task scopes runtime service implementation. The handoff
@@ -373,20 +392,20 @@ existing runtime objective on the same branch:
    those exact registrations and vector gates pass. Then implement the
    node-owned service, encrypted atomic/recoverable save and all existing
    KU-RUN-001 acceptance cases. Keep API/UI, OBP orchestration, mobile
-   implementation and D-012–D-014 distribution/work/reward changes excluded.
+   implementation and D-012â€“D-014 distribution/work/reward changes excluded.
 
 Owner direction is requested only for this scope extension. No request to
 approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
 
 #### Fresh validation and evidence limit
 
-- `python scripts/ci/validate_ku_product_contract.py` — PASS: 11 operations,
+- `python scripts/ci/validate_ku_product_contract.py` â€” PASS: 11 operations,
   18 DTOs, 11 fixtures; tool explicitly reports registration pending.
 - `python -m unittest scripts.ci.test_validate_ku_product_contract
-  scripts.ci.test_validate_base_v1_runtime_interface` — PASS: 74 tests.
-- `python scripts/ci/validate_vnext_contracts.py` — PASS: existing contract
+  scripts.ci.test_validate_base_v1_runtime_interface` â€” PASS: 74 tests.
+- `python scripts/ci/validate_vnext_contracts.py` â€” PASS: existing contract
   inventories, including 21 foundation domains and 27 Base runtime operations.
-- `git diff --check` — PASS. Local file-link check for README/PROGRESS — PASS.
+- `git diff --check` â€” PASS. Local file-link check for README/PROGRESS â€” PASS.
 - Preflight content checkpoint `8464770` was pushed to
   `origin/codex/ku-run-001-shared-service`; the branch also includes the
   ledger-only follow-up recording this checkpoint. No merge or branch deletion.
@@ -395,7 +414,7 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
   workspace check and Rust format are not claimed; KU-RUN-001 remains
   incomplete and cannot be marked Review on this evidence.
 
-### KU-RUN-001 review evidence — 2026-09-06
+### KU-RUN-001 review evidence â€” 2026-09-06
 
 - Implementation checkpoint `b608a82` is pushed to
   `origin/codex/ku-run-001-shared-service`. The branch tip also contains this
@@ -424,7 +443,7 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
 - Current task remains KU-RUN-001 for owner review. Do not merge/delete the
   branch or start KU-API-001 without the corresponding instruction.
 
-### Encoder framework research and task amendment — 2026-09-06
+### Encoder framework research and task amendment â€” 2026-09-06
 
 - Owner accepted KU-RUN-001 and requested the D-017 framework research and
   backlog amendment. Runtime remains unchanged and unmerged.
@@ -444,7 +463,7 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
   `git diff --check`. All changes are handoff Markdown; no runtime test rerun
   or live-model/mobile performance claim is needed for this documentation edit.
 
-### KU-RUN-001 merge and encoder handoff — 2026-09-06
+### KU-RUN-001 merge and encoder handoff â€” 2026-09-06
 
 - Owner explicitly authorized merging KU-RUN-001 into main and starting
   KU-ENC-001. Fresh generated/global contract checks, 13 KU runtime tests,
@@ -454,7 +473,7 @@ approve KU-PC-A/B/C again, merge, delete branches or enable default rollout.
 - README/progress pointer advances to KU-ENC-001; the accepted direction is
   D-018. No further merge or framework-direction approval is required here.
 
-### KU-ENC-001 contract review — 2026-09-06
+### KU-ENC-001 contract review â€” 2026-09-06
 
 - Started from synchronized main `5d8fba077076597da163d5f17b8e290f28eb12c9`.
 - Reviewed contract commit: `a6f0a00`. All 18 manifest artifact hashes were
@@ -483,7 +502,7 @@ start the dependent KU-ENC-002 branch before that merge.
 Generated bundle integrity, global vNext validation and diff checks pass for
 this handoff-only update.
 
-### KU-API-001 review evidence — 2026-09-06
+### KU-API-001 review evidence â€” 2026-09-06
 
 - Implementation checkpoint `29c34d1` was pushed successfully. The following
   ledger-only commit records that content checkpoint; neither is a merge.
@@ -508,7 +527,7 @@ this handoff-only update.
   merge or branch deletion. Current pointer remains KU-API-001 for review;
   KU-WEB-001 follows the accepted API merge.
 
-### KU-API-001 merge and Web handoff — 2026-09-06
+### KU-API-001 merge and Web handoff â€” 2026-09-06
 
 - Owner reviewed and accepted tip `423b7b8`, authorizing merge and handoff
   closure under D-022. The task branch was clean, pushed and synchronized.
@@ -524,7 +543,7 @@ this handoff-only update.
 - No Web branch or implementation started, holdout opened, model run, rollout
   enabled or branch deleted during closure. KU-ENC-003 remains separate.
 
-### KU-WEB-001 Ollama follow-up — 2026-09-06
+### KU-WEB-001 Ollama follow-up â€” 2026-09-06
 
 - Owner requests actual Ollama inference, model selection (`qwen3:8b`) and text
   encoding through the previously designed shared framework. This expands the
@@ -540,7 +559,7 @@ this handoff-only update.
 - The reviewed manual implementation remains at `ac5ce80` plus handoff `f316e5a`.
   This follow-up records the requested change; it does not claim AI completion.
 
-### KU-WEB-001 implementation review — 2026-09-06
+### KU-WEB-001 implementation review â€” 2026-09-06
 
 - Implementation checkpoint `ac5ce80` was pushed successfully. The branch tip
   additionally contains this ledger-only record; neither commit is a merge.
@@ -567,6 +586,11 @@ this handoff-only update.
   no merge, deletion, deployment or next-task start is included.
 
 ### Update protocol
+
+D-027 continuation exception: current baseline merge is local only and explicitly
+identified as such; task-004 review does not authorize remote publication. The
+older push/clean-main checklist below must not discard the retained workspace
+or trigger an unsolicited push.
 
 Merge update: owner explicitly authorized merging KU-ENC-001 and starting
 KU-ENC-002. Clean synchronized tip `7a360a7` passed fresh generated-bundle,
@@ -597,7 +621,7 @@ After owner-approved merge:
 
 ## Blocker protocol
 
-### 2026-09-20 — KU-SEM-001 (historical gate; D-024 defers further work)
+### 2026-09-20 â€” KU-SEM-001 (historical gate; D-024 defers further work)
 
 Owner approved the separate draft/selection v2 representation and implementation.
 Shared encoder, node dispatch and Web rendering have been added in the original

@@ -735,6 +735,87 @@ impl PublicUseEvidencePublisher {
         Ok(report)
     }
 
+    /// Domain consent already committed this durable publication. Resolve its
+    /// exact peer before copying immutable bytes into the existing network outbox.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub(crate) async fn flush_pending_routed(
+        &self,
+        network: &VNextNetworkRuntime,
+        limit: usize,
+    ) -> Result<PublicUseFlushReport, DistributedPomvError> {
+        if limit == 0 || limit > MAX_FLUSH_BATCH {
+            return Err(DistributedPomvError::InvalidLimit);
+        }
+        let pending = {
+            let read = self.database.begin_read().map_err(storage)?;
+            let table = read.open_table(PUBLICATIONS).map_err(storage)?;
+            let mut pending = Vec::new();
+            for entry in table.iter().map_err(storage)? {
+                let (key, value) = entry.map_err(storage)?;
+                let stored = decode_stored_publication(value.value())?;
+                if !stored.exported_to_network_outbox {
+                    let key: [u8; PUBLICATION_KEY_BYTES] = key
+                        .value()
+                        .try_into()
+                        .map_err(|_| DistributedPomvError::CorruptPublication)?;
+                    pending.push((key, publication_from_stored(&stored)?));
+                    if pending.len() == limit {
+                        break;
+                    }
+                }
+            }
+            pending
+        };
+        let mut report = PublicUseFlushReport::default();
+        for (key, publication) in pending {
+            report.scanned_publications += 1;
+            let Ok(route) = network
+                .connect_product_route(publication.expected_peer)
+                .await
+            else {
+                continue;
+            };
+            if route.authenticated().responder != publication.expected_peer
+                || route.authenticated().initiator.as_bytes() != &network.status().principal
+            {
+                route.close();
+                continue;
+            }
+            let result = (|| {
+                for (kind, bytes) in [
+                    (
+                        ReconcileManifestKind::FeedInception,
+                        &publication.feed_bytes,
+                    ),
+                    (ReconcileManifestKind::Object, &publication.object_bytes),
+                    (ReconcileManifestKind::Event, &publication.event_bytes),
+                ] {
+                    let intent = OutboundTransferIntent::new(
+                        publication.expected_peer,
+                        route.carrier().connected_socket(),
+                        publication.selector,
+                        publication.namespace,
+                        DisclosureClass::Public,
+                        kind,
+                        bytes.clone(),
+                    )
+                    .map_err(|e| DistributedPomvError::Outbox(e.to_string()))?;
+                    match network.enqueue_outbound(&intent)? {
+                        OutboxEnqueueOutcome::Added => report.added_intents += 1,
+                        OutboxEnqueueOutcome::Existing => report.existing_intents += 1,
+                        OutboxEnqueueOutcome::RouteUpdated => report.route_updated_intents += 1,
+                    }
+                }
+                self.mark_exported(key)?;
+                report.exported_publications += 1;
+                Ok::<(), DistributedPomvError>(())
+            })();
+            route.close();
+            result?;
+        }
+        Ok(report)
+    }
+
     fn mark_exported(&self, key: [u8; PUBLICATION_KEY_BYTES]) -> Result<(), DistributedPomvError> {
         let write = self.database.begin_write().map_err(storage)?;
         {

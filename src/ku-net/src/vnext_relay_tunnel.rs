@@ -300,11 +300,88 @@ pub struct AuthenticatedOuterRelayConnection {
     control_transaction: AsyncMutex<()>,
     pending_control: Arc<Mutex<BTreeMap<[u8; 16], oneshot::Sender<RelayWireFrameV1>>>>,
     notifications: AsyncMutex<mpsc::Receiver<RelayWireFrameV1>>,
+    connect_inbox: ConnectRequestInbox,
     opaque_notifications: AsyncMutex<mpsc::Receiver<Vec<u8>>>,
     opaque_receive: AsyncMutex<()>,
-    opaque_backlog: AsyncMutex<BTreeMap<[u8; 32], VecDeque<Vec<u8>>>>,
+    opaque_backlog: Mutex<BTreeMap<[u8; 32], VecDeque<Vec<u8>>>>,
+    opaque_changed: tokio::sync::Notify,
     reader_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     close_signal: tokio::sync::watch::Sender<bool>,
+}
+
+type ConnectScope = (NodeId, NodeId, [u8; 32], [u8; 32]);
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NotificationScope {
+    Connect(ConnectScope),
+    Association([u8; 16]),
+}
+
+#[derive(Default)]
+struct ConnectRequestInbox {
+    backlog: Mutex<VecDeque<(NotificationScope, RelayWireFrameV1)>>,
+    changed: tokio::sync::Notify,
+}
+
+impl ConnectRequestInbox {
+    async fn receive(
+        &self,
+        notifications: &AsyncMutex<mpsc::Receiver<RelayWireFrameV1>>,
+        expected: NotificationScope,
+    ) -> Result<RelayWireFrameV1, OuterRelayIoError> {
+        loop {
+            let changed = self.changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            {
+                let mut backlog = self.backlog.lock().map_err(|_| OuterRelayIoError::Closed)?;
+                if let Some(index) = backlog.iter().position(|(scope, _)| *scope == expected) {
+                    return Ok(backlog.remove(index).expect("existing scope").1);
+                }
+            }
+            let frame = tokio::select! {
+                _ = &mut changed => continue,
+                frame = async { notifications.lock().await.recv().await } => frame.ok_or(OuterRelayIoError::Closed)?,
+            };
+            let scope = match frame.kind() {
+                RelayWireKindV1::ConnectRequest => {
+                    let onebrain_protocol::ConnectivitySignalingV1::RelayConnectRequest(request) =
+                        onebrain_protocol::decode_connectivity_signaling(frame.payload())
+                            .map_err(|_| OuterRelayIoError::InvalidFrame)?
+                    else {
+                        return Err(OuterRelayIoError::InvalidFrame);
+                    };
+                    NotificationScope::Connect((
+                        request.initiator_node_id,
+                        request.target_node_id,
+                        request.initiator_reservation_id,
+                        request.target_reservation_id,
+                    ))
+                }
+                RelayWireKindV1::Association => NotificationScope::Association(frame.request_id()),
+                _ => return Err(OuterRelayIoError::InvalidFrame),
+            };
+            if scope == expected {
+                return Ok(frame);
+            }
+            // No await between receiving and retaining another peer's frame:
+            // cancellation cannot consume that peer's request.
+            {
+                let mut backlog = self.backlog.lock().map_err(|_| OuterRelayIoError::Closed)?;
+                if backlog.len() >= RELAY_SOCKET_FRAME_LIMIT
+                    || backlog
+                        .iter()
+                        .map(|(_, frame)| frame.payload().len())
+                        .sum::<usize>()
+                        + frame.payload().len()
+                        > RELAY_SOCKET_BYTE_LIMIT
+                {
+                    return Err(OuterRelayIoError::InvalidFrame);
+                }
+                backlog.push_back((scope, frame));
+            }
+            self.changed.notify_waiters();
+        }
+    }
 }
 
 enum OuterRelayConnection {
@@ -382,9 +459,11 @@ impl AuthenticatedOuterRelayConnection {
             control_transaction: AsyncMutex::new(()),
             pending_control,
             notifications: AsyncMutex::new(notification_rx),
+            connect_inbox: ConnectRequestInbox::default(),
             opaque_notifications: AsyncMutex::new(opaque_rx),
             opaque_receive: AsyncMutex::new(()),
-            opaque_backlog: AsyncMutex::new(BTreeMap::new()),
+            opaque_backlog: Mutex::new(BTreeMap::new()),
+            opaque_changed: tokio::sync::Notify::new(),
             reader_task: Mutex::new(Some(reader_task)),
             close_signal: tokio::sync::watch::channel(false).0,
         })
@@ -568,6 +647,45 @@ impl AuthenticatedOuterRelayConnection {
             .ok_or(OuterRelayIoError::Closed)
     }
 
+    /// Demultiplex hints only. The association client still authenticates the
+    /// complete signed request against the exact admitted reservation pair.
+    pub(crate) async fn receive_connect_request_for(
+        &self,
+        initiator: NodeId,
+        initiator_reservation: [u8; 32],
+        target_reservation: [u8; 32],
+    ) -> Result<RelayWireFrameV1, OuterRelayIoError> {
+        if !self.is_open() {
+            return Err(OuterRelayIoError::Closed);
+        }
+        self.connect_inbox
+            .receive(
+                &self.notifications,
+                NotificationScope::Connect((
+                    initiator,
+                    self.client_node_id,
+                    initiator_reservation,
+                    target_reservation,
+                )),
+            )
+            .await
+    }
+
+    pub(crate) async fn receive_association_for(
+        &self,
+        request_id: [u8; 16],
+    ) -> Result<RelayWireFrameV1, OuterRelayIoError> {
+        if !self.is_open() {
+            return Err(OuterRelayIoError::Closed);
+        }
+        self.connect_inbox
+            .receive(
+                &self.notifications,
+                NotificationScope::Association(request_id),
+            )
+            .await
+    }
+
     pub async fn request_control_frame(
         &self,
         frame: &RelayWireFrameV1,
@@ -630,36 +748,54 @@ impl AuthenticatedOuterRelayConnection {
             return Err(OuterRelayIoError::InvalidFrame);
         }
         loop {
-            if let Some(payload) = self.pop_opaque_backlog(association_id).await {
+            let changed = self.opaque_changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            if let Some(payload) = self.pop_opaque_backlog(association_id)? {
                 return Ok(payload);
             }
-            let _receive = self.opaque_receive.lock().await;
-            if let Some(payload) = self.pop_opaque_backlog(association_id).await {
-                return Ok(payload);
-            }
-            let (observed, payload) = split_delivered_opaque(self.receive_raw_opaque().await?)?;
+            let raw = tokio::select! {
+                _ = &mut changed => continue,
+                raw = async {
+                    let _receive = self.opaque_receive.lock().await;
+                    self.receive_raw_opaque().await
+                } => raw?,
+            };
+            let (observed, payload) = split_delivered_opaque(raw)?;
             if observed == association_id {
                 return Ok(payload);
             }
-            let mut backlog = self.opaque_backlog.lock().await;
-            let total = backlog.values().map(VecDeque::len).sum::<usize>();
-            let queue = backlog.entry(observed).or_default();
-            if total >= 256 || queue.len() >= 64 {
-                return Err(OuterRelayIoError::InvalidFrame);
+            {
+                let mut backlog = self
+                    .opaque_backlog
+                    .lock()
+                    .map_err(|_| OuterRelayIoError::Closed)?;
+                let total = backlog.values().map(VecDeque::len).sum::<usize>();
+                let queue = backlog.entry(observed).or_default();
+                if total >= 256 || queue.len() >= 64 {
+                    return Err(OuterRelayIoError::InvalidFrame);
+                }
+                queue.push_back(payload);
             }
-            queue.push_back(payload);
+            self.opaque_changed.notify_waiters();
         }
     }
 
-    async fn pop_opaque_backlog(&self, association_id: [u8; 32]) -> Option<Vec<u8>> {
-        let mut backlog = self.opaque_backlog.lock().await;
+    fn pop_opaque_backlog(
+        &self,
+        association_id: [u8; 32],
+    ) -> Result<Option<Vec<u8>>, OuterRelayIoError> {
+        let mut backlog = self
+            .opaque_backlog
+            .lock()
+            .map_err(|_| OuterRelayIoError::Closed)?;
         let payload = backlog
             .get_mut(&association_id)
             .and_then(VecDeque::pop_front);
         if backlog.get(&association_id).is_some_and(VecDeque::is_empty) {
             backlog.remove(&association_id);
         }
-        payload
+        Ok(payload)
     }
 
     async fn receive_raw_opaque(&self) -> Result<Vec<u8>, OuterRelayIoError> {
@@ -1611,6 +1747,7 @@ struct Shared {
     recv_waker: Mutex<Option<Waker>>,
     terminal: Mutex<Option<io::ErrorKind>>,
     closed: AtomicBool,
+    socket_closed: tokio::sync::Notify,
     frame_limit: usize,
     byte_limit: usize,
     global: RelaySocketGlobalBudget,
@@ -1664,6 +1801,7 @@ impl RelayDatagramSocket {
             recv_waker: Mutex::new(None),
             terminal: Mutex::new(None),
             closed: AtomicBool::new(false),
+            socket_closed: tokio::sync::Notify::new(),
             frame_limit,
             byte_limit,
             global,
@@ -1684,6 +1822,13 @@ impl RelayDatagramSocket {
             .ok()
             .and_then(|guard| *guard)
             .map(io::Error::from)
+    }
+}
+
+impl Drop for RelayDatagramSocket {
+    fn drop(&mut self) {
+        self.shared.closed.store(true, Ordering::Release);
+        self.shared.socket_closed.notify_waiters();
     }
 }
 
@@ -1829,7 +1974,16 @@ impl UdpPoller for RelayWritePoller {
 
 impl RelaySocketDriver {
     pub async fn recv_outbound(&mut self) -> Option<OwnedRelayTransmit> {
-        let queued = self.send_rx.recv().await?;
+        let closed = self.shared.socket_closed.notified();
+        tokio::pin!(closed);
+        closed.as_mut().enable();
+        if self.shared.closed.load(Ordering::Acquire) {
+            return None;
+        }
+        let queued = tokio::select! {
+            _ = &mut closed => return None,
+            queued = self.send_rx.recv() => queued?,
+        };
         self.shared
             .send_bytes
             .fetch_sub(queued.value.contents.len(), Ordering::AcqRel);
@@ -1969,6 +2123,21 @@ mod tests {
             .unwrap();
     }
 
+    #[tokio::test]
+    async fn dropping_inner_socket_releases_waiting_pump() {
+        let (socket, mut driver) = RelayDatagramSocket::pair(
+            "127.0.0.1:41000".parse().unwrap(),
+            RelaySocketGlobalBudget::standard(),
+        );
+        drop(socket);
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), driver.recv_outbound())
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+
     #[test]
     fn vnext_relay_tunnel_worker_failure_is_terminal() {
         let (socket, driver) = RelayDatagramSocket::pair(
@@ -1986,5 +2155,108 @@ mod tests {
             })
             .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
+    }
+}
+
+#[cfg(test)]
+mod connect_demux_tests {
+    use super::*;
+    use onebrain_protocol::{
+        encode_connectivity_signaling, ConnectivitySignalingV1, RelayConnectRequestV1,
+    };
+
+    fn request(marker: u8) -> (NotificationScope, RelayWireFrameV1) {
+        let request = RelayConnectRequestV1 {
+            format: 1,
+            initiator_node_id: NodeId::from_bytes([marker; 32]),
+            target_node_id: NodeId::from_bytes([9; 32]),
+            initiator_reservation_id: [marker; 32],
+            target_reservation_id: [10; 32],
+            nonce: [marker; 32],
+            sequence: 1,
+            issued_at: 100,
+            expires_at: 120,
+            initiator_signature: [1; 64],
+        };
+        let scope = (
+            request.initiator_node_id,
+            request.target_node_id,
+            request.initiator_reservation_id,
+            request.target_reservation_id,
+        );
+        let bytes =
+            encode_connectivity_signaling(&ConnectivitySignalingV1::RelayConnectRequest(request))
+                .unwrap();
+        (
+            NotificationScope::Connect(scope),
+            RelayWireFrameV1::new(RelayWireKindV1::ConnectRequest, [marker; 16], bytes).unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn simultaneous_peers_receive_their_own_reservation_pair() {
+        let inbox = ConnectRequestInbox::default();
+        let (tx, rx) = mpsc::channel(8);
+        let rx = AsyncMutex::new(rx);
+        let (a, frame_a) = request(1);
+        let (b, frame_b) = request(2);
+        tx.send(frame_b).await.unwrap();
+        tx.send(frame_a).await.unwrap();
+        let (a, b) = tokio::time::timeout(Duration::from_secs(1), async {
+            tokio::join!(inbox.receive(&rx, a), inbox.receive(&rx, b))
+        })
+        .await
+        .unwrap();
+        assert_eq!(a.unwrap().request_id(), [1; 16]);
+        assert_eq!(b.unwrap().request_id(), [2; 16]);
+        assert!(inbox.backlog.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn association_notifications_are_retained_by_request_id() {
+        let inbox = ConnectRequestInbox::default();
+        let (tx, rx) = mpsc::channel(8);
+        let rx = AsyncMutex::new(rx);
+        let (a, frame_a) = request(1);
+        tx.send(RelayWireFrameV1::new(RelayWireKindV1::Association, [2; 16], vec![1]).unwrap())
+            .await
+            .unwrap();
+        tx.send(frame_a).await.unwrap();
+        assert_eq!(inbox.receive(&rx, a).await.unwrap().request_id(), [1; 16]);
+        assert_eq!(
+            inbox
+                .receive(&rx, NotificationScope::Association([2; 16]))
+                .await
+                .unwrap()
+                .payload(),
+            &[1]
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_waiter_preserves_other_peer_and_backlog_is_bounded() {
+        let inbox = ConnectRequestInbox::default();
+        let (tx, rx) = mpsc::channel(128);
+        let rx = AsyncMutex::new(rx);
+        let (a, _) = request(1);
+        let (b, frame_b) = request(2);
+        tx.send(frame_b).await.unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), inbox.receive(&rx, a))
+                .await
+                .is_err()
+        );
+        assert_eq!(inbox.receive(&rx, b).await.unwrap().request_id(), [2; 16]);
+        for _ in 0..=RELAY_SOCKET_FRAME_LIMIT {
+            tx.send(request(2).1).await.unwrap();
+        }
+        assert!(matches!(
+            inbox.receive(&rx, a).await,
+            Err(OuterRelayIoError::InvalidFrame)
+        ));
+        assert_eq!(
+            inbox.backlog.lock().unwrap().len(),
+            RELAY_SOCKET_FRAME_LIMIT
+        );
     }
 }

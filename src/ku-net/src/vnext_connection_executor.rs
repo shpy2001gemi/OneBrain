@@ -606,7 +606,11 @@ impl RelayAssociationClient for ProductionRelayAssociationClient {
             }
             let request_frame = tokio::time::timeout_at(
                 tokio::time::Instant::from_std(deadline),
-                outer.receive_control_frame(),
+                outer.receive_connect_request_for(
+                    initiator.node_id,
+                    initiator_reservation.canonical().reservation_id,
+                    target_reservation.canonical().reservation_id,
+                ),
             )
             .await
             .map_err(|_| {
@@ -653,7 +657,7 @@ impl RelayAssociationClient for ProductionRelayAssociationClient {
                 })?;
             let association_frame = tokio::time::timeout_at(
                 tokio::time::Instant::from_std(deadline),
-                outer.receive_control_frame(),
+                outer.receive_association_for(request_frame.request_id()),
             )
             .await
             .map_err(|_| {
