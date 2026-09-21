@@ -1,6 +1,6 @@
 # OBP-CLI-001 — Networking CLI workflow
 
-> State: Planned
+> State: Review (local, uncommitted)
 > Branch: `codex/obp-cli-001-networking`
 > Depends on: `OBP-API-001` merged
 
@@ -35,3 +35,13 @@ controls allowed by the frozen contract.
 ## Excluded
 
 New protocol semantics, UI, default enablement and raw private-key handling.
+
+## Registered projection
+
+[Exact CLI syntax and boundaries](../../../specs/vnext/OBP_LOCAL_CLI_PROJECTION_V1.md)
+map the accepted 13 API operations plus metadata reconciliation. Under the accepted
+API, removal is source disable preserving replay floors; intent cancellation,
+peer-directory and outbox-list have no operation and are not invented here.
+Host intake/grants remain in-process prerequisites; no REST upload or raw dial.
+
+[Implementation evidence and verification](../outputs/OBP_CLI_001_IMPLEMENTATION.md).

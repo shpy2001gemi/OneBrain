@@ -38,6 +38,9 @@ struct CliArgs {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Bounded OBP operations through the authenticated local node-owned API.
+    #[cfg(feature = "vnext-outbound-first")]
+    Obp(cli::obp::ObpArgs),
     /// Private KU workflow through the authenticated local shared service.
     Ku(cli::ku::KuArgs),
     /// Inspect the offline-first Base runtime contract.
@@ -145,6 +148,8 @@ async fn main() {
     };
 
     match command {
+        #[cfg(feature = "vnext-outbound-first")]
+        Commands::Obp(args) => exit_on_client_error(cli::obp::execute(args).await),
         Commands::Ku(args) => exit_on_client_error(cli::ku::execute(args).await),
         Commands::Base(BaseArgs {
             command: BaseCommand::Status,

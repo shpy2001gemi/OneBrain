@@ -1464,3 +1464,39 @@ graph TD
 | **8. Onboarding** | Step 2, 4 | — (CLI only) | Setup wizard, `help [cmd]` |
 | **9. Status** | Step 3, 5, 6 | — (combines existing) | Enhanced `status` |
 | **10. Blob Store** | Step 1, 3 | `store_blob()`, `list_blobs()`, `get_blob_meta()`, `export_blob()`, `delete_blob_file()`, `blob_stats()`, `blob_gc()`, `blob_add_ku_ref()` | `blob list`, `blob store`, `blob detail`, `blob export`, `blob delete`, `blob stats`, `blob gc` |
+
+## Local OBP workflow (OBP-CLI-001)
+
+Build the client with `cargo build --offline --locked --manifest-path src/Cargo.toml
+-p onebrain-cli --features vnext-outbound-first` (one shell line). Compilation
+does not activate networking. The separately provisioned host owns the service.
+
+See [exact command/DTO/confirmation contract](../../docs/specs/vnext/OBP_LOCAL_CLI_PROJECTION_V1.md).
+`onebrain obp --help` lists all commands; JSON stdout preserves the API envelope.
+Set `ONEBRAIN_API_TOKEN` using your host's credential provisioning. Management
+actions additionally use host-issued `ONEBRAIN_OBP_MANAGEMENT_TOKEN`; the CLI
+cannot create that capability or discovery input references.
+
+Example in a shell with UTF-8 redirection, against an explicitly provisioned host:
+
+```text
+onebrain obp status > context.json
+onebrain obp source-list --context-file context.json --payload-file page.json
+onebrain obp route-request --context-file context.json --payload-file route.json
+onebrain obp reconcile --context-file fresh-context.json --idempotency-key <original-64-hex-key>
+```
+
+`page.json` is `{"limit":100}`; append the returned opaque `continuation` for
+the next page with the same context. `route.json` is the accepted ObpRouteRequestV1
+DTO: idempotency_key, expected_generation and exact expected_peer. Read generation
+from status and retain the original request. Every mutation previews the request
+and requires typing its exact key on stdin. No automatic retry or key generation.
+After uncertainty, retain the original context, read fresh status, compare dataset
+identity and reconcile; an absent key in a new dataset does not prove no effect.
+A completed command is not guaranteed delivery.
+
+For source intake, the host first verifies/registers typed DiscoveryInput and
+returns input_ref; `source-admit` sends only that reference and its kind in the
+accepted DTO. `source-set-enabled` with enabled=false is reversible disable, not
+deletion. There is no raw-file/QR upload, raw-address connect, intent-cancel, peer
+directory or outbox-list API in this version.

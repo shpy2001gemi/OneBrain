@@ -14,6 +14,8 @@ mod identity;
 mod knowledge;
 pub(crate) mod ku;
 mod network;
+#[cfg(feature = "vnext-outbound-first")]
+pub(crate) mod obp;
 mod social;
 mod tags;
 #[cfg(test)]

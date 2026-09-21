@@ -522,3 +522,17 @@ The API branch is retained; no branch deletion was requested.
 OBP-API-001 is Merged. Advance the handoff to OBP-CLI-001, Planned; CLI/Web API
 merge prerequisites are satisfied. This closure does not start either task,
 activate networking, change the live host/models, implement mobile or enable rollout.
+
+## D-031 — Accept and close OBP-CLI-001
+
+On 2026-09-22, after the local CLI implementation and evidence were presented,
+the owner stated "tôi duyệt tất cả. hãy tiếp tục". This accepts the complete
+reviewed OBP-CLI-001 work and directs its closure through commit, merge and
+publication under the workstream policy. Preserve the original workspace and
+retained branches. Record the actual merge in PROGRESS after it exists.
+
+The accepted CLI scope is the 13 existing API operations plus metadata reconcile,
+with host-issued input references/capabilities and exact confirmation/recovery
+boundaries. No new raw intake, protocol operation, live-host activation, model
+tuning, networking opt-in, mobile implementation or default rollout is included.
+The next handoff pointer is OBP-WEB-001, Planned; this closure implements no Web UI.
