@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [features]
 default = ["base-v1"]
+vnext-outbound-first = ["vnext-network-runtime", "onebrain-node/vnext-outbound-first", "onebrain-api/vnext-outbound-first"]
 base-v1 = ["onebrain-node/base-v1", "onebrain-api/base-v1"]
 legacy-read-compat = ["onebrain-node/legacy-read-compat", "onebrain-api/legacy-read-compat"]
 vnext-network-runtime = [
@@ -35,4 +36,5 @@ serde_json = "1"
 zeroize = "1"
 
 [dev-dependencies]
+axum = "0.8"
 tempfile = "3"
