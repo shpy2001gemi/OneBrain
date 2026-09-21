@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **KU-CLI-001 implemented locally; OBP-PROD-001 accepted; OBP-PROD-002/003 implemented/tested locally (D-025/D-026), unmerged**
+> Status: **Retained baseline through OBP-PROD-003 merged locally (D-027); OBP-PROD-004 implemented/tested locally, in Review**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -9,10 +9,10 @@ This folder is the compact starting point for future conversations. It records
 the decision, the evidence boundary, the dependency order and one bounded file
 per task so a new conversation does not need the history that produced it.
 
-Latest owner direction (2026-09-20): proceed with the product framework and defer
-semantic quality gaps to contributors. Start with [NEXT_CONVERSATION.md](NEXT_CONVERSATION.md).
-The full local baseline is in `C:/Users/shpy2/Documents/OneBrain`, including untracked
-files. V2 remains inactive on the live host; acceptance does not qualify a model.
+Latest owner direction (2026-09-21, D-027): merge the retained baseline and continue
+the product framework; semantic quality gaps remain deferred to contributors. Start with [NEXT_CONVERSATION.md](NEXT_CONVERSATION.md).
+The full local baseline is in `C:/Users/shpy2/Documents/OneBrain`, on `codex/obp-prod-004-routing`; preserve its uncommitted task-004 files.
+Local merge: `3216f1d`; no remote push. V2 remains inactive on the live host; acceptance does not qualify a model.
 
 ## Owner-approved decision
 
@@ -48,11 +48,11 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`OBP-PROD-001`](tasks/10-OBP-PROD-001.md) — Review;
-[contract proposal and checks](outputs/OBP_PROD_001_CONTRACT.md) on
-`codex/obp-prod-001-product-contract`. The entire original dirty baseline and
-[completed CLI implementation](outputs/KU_CLI_001_IMPLEMENTATION.md) remain in
-the same tree. No commit, push or merge occurred. Contract acceptance is pending.
+**Current task:** [`OBP-PROD-004`](tasks/13-OBP-PROD-004.md) — Review;
+[routing implementation and checks](outputs/OBP_PROD_004_IMPLEMENTATION.md) on
+`codex/obp-prod-004-routing`. The retained baseline was merged locally as
+`3216f1d` under D-027. Task-004 changes remain uncommitted in the original tree;
+no remote push or live-host activation. OBP-API-001 retains its prerequisite.
 
 The following Web/encoder checkpoints are historical context; they do not override the current task or the new handoff.
 **Historical Web branch:** `codex/ku-web-001-workflow`; manual and experimental Ollama Web implementation ready for review.
@@ -116,7 +116,7 @@ branch. Merge `2cbc8f2` is on `origin/main`; runtime review evidence is in
 The owner-approved audit merge is `25d008d` on `origin/main`. The owner has
 clarified normalized-semantic CID convergence, regularly updated Registry
 distribution from publishers/peers, delegated encode/verify work and direct
-OBT issuance for accepted work; see [D-011–D-014](DECISIONS.md#d-011--deterministic-identity-after-semantic-normalization).
+OBT issuance for accepted work; see [D-011â€“D-014](DECISIONS.md#d-011--deterministic-identity-after-semantic-normalization).
 The economic choice changes the earlier benefit-only direction and needs a
 versioned specification amendment before implementation. This audit does not
 enable minting or change canonical bytes, application code or rollout state.

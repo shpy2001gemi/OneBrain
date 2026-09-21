@@ -559,6 +559,13 @@ impl VNextProductRuntime {
                 })
                 .transpose()?;
 
+            #[cfg(feature = "vnext-outbound-first")]
+            if let Some(owner) = outbound_first.as_ref() {
+                owner.attach_network(Arc::downgrade(&network), rollout.clone())?;
+                network.install_product_routing(owner.clone())?;
+            }
+            network.start_product_outbound()?;
+
             let rehydrated_private_needs = distributed_kql
                 .as_mut()
                 .map(|kql| {
@@ -1098,7 +1105,6 @@ impl VNextProductServices {
         let network = core.network()?;
         let mut limitations = Vec::new();
         if requested {
-            limitations.push("routing_orchestration_pending");
             if !granted {
                 limitations.push("execution_grant_unavailable");
             }
@@ -1129,7 +1135,11 @@ impl VNextProductServices {
                 0
             },
             usable_reservations,
-            authenticated_routes: network.authenticated_route_count()?,
+            authenticated_routes: if requested {
+                network.authenticated_routed_route_count()?
+            } else {
+                network.authenticated_route_count()?
+            },
             pending_intents: network.outbound_pending_count()?,
             advertisement_state: if let Some(owner) = &owner {
                 if !active {
@@ -1151,7 +1161,11 @@ impl VNextProductServices {
             } else {
                 "disabled"
             },
-            coverage: "local_only",
+            coverage: if usable_reservations > 0 {
+                "partial"
+            } else {
+                "local_only"
+            },
             limitations,
             claims_global_completion: false,
             authorizes_reward: false,
@@ -1923,6 +1937,14 @@ impl BoundedProductWorkers {
                                 };
                                 // Missing authenticated routes are retryable;
                                 // durable publications remain unexported.
+                                #[cfg(feature = "vnext-outbound-first")]
+                                if network.product_routing_enabled() {
+                                    tokio::select! {
+                                        _ = cancellation.cancelled() => break,
+                                        _ = tokio::time::timeout(Duration::from_secs(20), publisher.flush_pending_routed(network, publication_flush_batch)) => {},
+                                    }
+                                    continue;
+                                }
                                 let _ = publisher.flush_pending(
                                     network,
                                     publication_flush_batch,

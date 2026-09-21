@@ -32,6 +32,10 @@ const ROUTE_SEQUENCE: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_route_sequence_v1");
 const DURABLE_CHECKPOINT: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("vnext_durable_checkpoint_v1");
+// Internal mutation guard; the acknowledged checkpoint remains byte-for-byte
+// unchanged between acknowledgements. This table tracks legitimate later writes.
+const CHECKPOINT_STATE: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("vnext_checkpoint_current_state_v1");
 const MAGIC_V1: &[u8; 8] = b"OBOUTV1\0";
 const MAGIC_V2: &[u8; 8] = b"OBOUTV2\0";
 const MAGIC_V3: &[u8; 8] = b"OBOUTV3\0";
@@ -227,7 +231,9 @@ impl OutboundOutbox {
             write.open_table(TOMBSTONES).map_err(backend)?;
             write.open_table(ROUTE_SEQUENCE).map_err(backend)?;
             write.open_table(DURABLE_CHECKPOINT).map_err(backend)?;
+            write.open_table(CHECKPOINT_STATE).map_err(backend)?;
         }
+        validate_checkpoint_state(&write)?;
         write.commit().map_err(backend)?;
         if first_create {
             sync_parent(&path)?;
@@ -245,6 +251,7 @@ impl OutboundOutbox {
         validate_intent(intent)?;
         dr_m5_failpoint::hit("TX-OUT-001", "before_begin_write");
         let write = self.db.begin_write().map_err(backend)?;
+        validate_checkpoint_state(&write)?;
         dr_m5_failpoint::hit("TX-OUT-001", "after_begin_write_before_mutation");
         let outcome;
         {
@@ -271,9 +278,8 @@ impl OutboundOutbox {
                         outcome = OutboxEnqueueOutcome::Existing;
                     } else {
                         stored.last_known_addr = intent.last_known_addr;
-                        if stored.state == OutboundIntentState::Pending {
-                            stored.transport_attempts = 0;
-                        }
+                        // Location is not intent identity. A new route cannot
+                        // replenish the durable retry allowance.
                         touch(&mut stored);
                         let encoded = encode_intent(&stored)?;
                         table
@@ -295,6 +301,7 @@ impl OutboundOutbox {
             }
         }
         dr_m5_failpoint::hit("TX-OUT-001", "after_mutation_before_commit");
+        refresh_checkpoint_state(&write)?;
         write.commit().map_err(backend)?;
         dr_m5_failpoint::hit("TX-OUT-001", "after_commit_before_next_side_effect");
         dr_m5_failpoint::hit("TX-OUT-001", "after_next_side_effect_before_ack");
@@ -505,6 +512,7 @@ impl OutboundOutbox {
         dr_m5_failpoint::hit("TX-OUT-CHK-001", "before_begin_write");
         let mut write = self.db.begin_write().map_err(backend)?;
         write.set_durability(Durability::Immediate);
+        validate_checkpoint_state(&write)?;
         dr_m5_failpoint::hit("TX-OUT-CHK-001", "after_begin_write_before_mutation");
 
         let intent = {
@@ -592,6 +600,7 @@ impl OutboundOutbox {
                 .map_err(backend)?;
         }
         dr_m5_failpoint::hit("TX-OUT-CHK-001", "after_mutation_before_commit");
+        refresh_checkpoint_state(&write)?;
         write.commit().map_err(backend)?;
         dr_m5_failpoint::hit("TX-OUT-CHK-001", "after_commit_before_next_side_effect");
         Ok(checkpoint)
@@ -645,10 +654,35 @@ impl OutboundOutbox {
             hasher.update(&(value.value().len() as u64).to_be_bytes());
             hasher.update(value.value());
         }
-        if *hasher.finalize().as_bytes() != checkpoint.outbox_state_root {
+        let guard = read.open_table(CHECKPOINT_STATE).map_err(backend)?;
+        let expected_root = match guard
+            .get(expected_peer.as_bytes().as_slice())
+            .map_err(backend)?
+        {
+            Some(value) => decode_checkpoint_guard(value.value(), &checkpoint)?,
+            None => checkpoint.outbox_state_root,
+        };
+        if *hasher.finalize().as_bytes() != expected_root {
             return Err(OutboundOutboxError::InvalidCheckpoint);
         }
         Ok(Some(checkpoint))
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub(crate) fn checkpoint_route_roots(&self) -> Result<Vec<[u8; 32]>, OutboundOutboxError> {
+        let read = self.db.begin_read().map_err(backend)?;
+        let table = read.open_table(DURABLE_CHECKPOINT).map_err(backend)?;
+        if table.len().map_err(backend)? > MAX_OUTBOX_RECORDS {
+            return Err(OutboundOutboxError::RecordLimit);
+        }
+        table
+            .iter()
+            .map_err(backend)?
+            .map(|entry| {
+                let (_, value) = entry.map_err(backend)?;
+                Ok(decode_checkpoint(value.value())?.route_journal_root)
+            })
+            .collect()
     }
 
     /// Remove old terminal payloads while atomically retaining bounded audit
@@ -668,21 +702,26 @@ impl OutboundOutbox {
             .map_err(|_| OutboundOutboxError::CompactionFenced)?;
         dr_m5_failpoint::hit("TX-CMP-OUT-001", "before_begin_write");
         let write = self.db.begin_write().map_err(backend)?;
+        validate_checkpoint_state(&write)?;
         dr_m5_failpoint::hit("TX-CMP-OUT-001", "after_begin_write_before_mutation");
+        let pinned = checkpoint_intents(&write)?;
         let mut terminal = Vec::new();
         let mut pending_count = 0u64;
+        let mut pinned_terminal = 0u64;
         {
             let table = write.open_table(OUTBOX).map_err(backend)?;
             for entry in table.iter().map_err(backend)? {
                 let (key, value) = entry.map_err(backend)?;
                 let intent = decode_intent(value.value())?;
-                if intent.state.is_terminal() {
+                if intent.state.is_terminal() && !pinned.contains(&intent.id) {
                     terminal.push((
                         intent.terminal_sequence,
                         key.value().to_vec(),
                         encode_tombstone(&intent),
                         intent.canonical_bytes.len() as u64,
                     ));
+                } else if intent.state.is_terminal() {
+                    pinned_terminal += 1;
                 } else {
                     pending_count = pending_count.saturating_add(1);
                 }
@@ -709,6 +748,7 @@ impl OutboundOutbox {
             }
         }
         dr_m5_failpoint::hit("TX-CMP-OUT-001", "after_mutation_before_commit");
+        refresh_checkpoint_state(&write)?;
         permit
             .run_if_current(|| write.commit())
             .map_err(|_| OutboundOutboxError::CompactionFenced)?
@@ -721,7 +761,7 @@ impl OutboundOutbox {
             removed_records: remove_count as u64,
             removed_payload_bytes,
             retained_pending: pending_count,
-            retained_terminal: terminal.len().saturating_sub(remove_count) as u64,
+            retained_terminal: terminal.len().saturating_sub(remove_count) as u64 + pinned_terminal,
             audit_tombstones,
             audit_root,
         })
@@ -808,6 +848,7 @@ impl OutboundOutbox {
     ) -> Result<T, OutboundOutboxError> {
         dr_m5_failpoint::hit(boundary, "before_begin_write");
         let write = self.db.begin_write().map_err(backend)?;
+        validate_checkpoint_state(&write)?;
         dr_m5_failpoint::hit(boundary, "after_begin_write_before_mutation");
         let result;
         {
@@ -830,6 +871,7 @@ impl OutboundOutbox {
                 .map_err(backend)?;
         }
         dr_m5_failpoint::hit(boundary, "after_mutation_before_commit");
+        refresh_checkpoint_state(&write)?;
         write.commit().map_err(backend)?;
         dr_m5_failpoint::hit(boundary, "after_commit_before_next_side_effect");
         dr_m5_failpoint::hit(boundary, "after_next_side_effect_before_ack");
@@ -844,6 +886,7 @@ impl OutboundOutbox {
     ) -> Result<T, OutboundOutboxError> {
         dr_m5_failpoint::hit(boundary, "before_begin_write");
         let write = self.db.begin_write().map_err(backend)?;
+        validate_checkpoint_state(&write)?;
         dr_m5_failpoint::hit(boundary, "after_begin_write_before_mutation");
         let result;
         {
@@ -862,11 +905,142 @@ impl OutboundOutbox {
                 .map_err(backend)?;
         }
         dr_m5_failpoint::hit(boundary, "after_mutation_before_commit");
+        refresh_checkpoint_state(&write)?;
         write.commit().map_err(backend)?;
         dr_m5_failpoint::hit(boundary, "after_commit_before_next_side_effect");
         dr_m5_failpoint::hit(boundary, "after_next_side_effect_before_ack");
         Ok(result)
     }
+}
+
+fn checkpoint_intents(
+    write: &redb::WriteTransaction,
+) -> Result<std::collections::BTreeSet<[u8; 32]>, OutboundOutboxError> {
+    let table = write.open_table(DURABLE_CHECKPOINT).map_err(backend)?;
+    table
+        .iter()
+        .map_err(backend)?
+        .map(|entry| {
+            let (_, bytes) = entry.map_err(backend)?;
+            Ok(decode_checkpoint(bytes.value())?.acknowledged_intent_id)
+        })
+        .collect()
+}
+
+fn current_peer_roots(
+    write: &redb::WriteTransaction,
+) -> Result<std::collections::BTreeMap<NodeId, [u8; 32]>, OutboundOutboxError> {
+    let mut hashes = std::collections::BTreeMap::<NodeId, blake3::Hasher>::new();
+    let table = write.open_table(OUTBOX).map_err(backend)?;
+    if table.len().map_err(backend)? > MAX_OUTBOX_RECORDS {
+        return Err(OutboundOutboxError::RecordLimit);
+    }
+    for entry in table.iter().map_err(backend)? {
+        let (key, bytes) = entry.map_err(backend)?;
+        let intent = decode_intent(bytes.value())?;
+        if key.value() != intent.id {
+            return Err(OutboundOutboxError::InvalidRecord);
+        }
+        let hash = hashes.entry(intent.expected_peer).or_insert_with(|| {
+            let mut hash = blake3::Hasher::new();
+            hash.update(b"onebrain:vnext:outbox-state:1\0");
+            hash
+        });
+        hash.update(key.value());
+        hash.update(&(bytes.value().len() as u64).to_be_bytes());
+        hash.update(bytes.value());
+    }
+    Ok(hashes
+        .into_iter()
+        .map(|(peer, hash)| (peer, *hash.finalize().as_bytes()))
+        .collect())
+}
+
+fn decode_checkpoint_guard(
+    bytes: &[u8],
+    checkpoint: &DurableCheckpointV1,
+) -> Result<[u8; 32], OutboundOutboxError> {
+    if bytes.len() != 64 || bytes[..32] != checkpoint.checkpoint_digest {
+        return Err(OutboundOutboxError::InvalidCheckpoint);
+    }
+    array32(&bytes[32..])
+}
+
+// Validate before every mutation so unrelated writes cannot repair corruption.
+// Old checkpoints migrate only while their exact original state still matches.
+fn validate_checkpoint_state(write: &redb::WriteTransaction) -> Result<(), OutboundOutboxError> {
+    let checkpoints = write.open_table(DURABLE_CHECKPOINT).map_err(backend)?;
+    let guards = write.open_table(CHECKPOINT_STATE).map_err(backend)?;
+    let sequences = write.open_table(ROUTE_SEQUENCE).map_err(backend)?;
+    if checkpoints.len().map_err(backend)? > MAX_OUTBOX_RECORDS
+        || guards.len().map_err(backend)? > checkpoints.len().map_err(backend)?
+        || sequences.len().map_err(backend)? != checkpoints.len().map_err(backend)?
+    {
+        return Err(OutboundOutboxError::InvalidCheckpoint);
+    }
+    if checkpoints.is_empty().map_err(backend)? {
+        return Ok(());
+    }
+    let roots = current_peer_roots(write)?;
+    let intents = write.open_table(OUTBOX).map_err(backend)?;
+    for entry in checkpoints.iter().map_err(backend)? {
+        let (key, value) = entry.map_err(backend)?;
+        let checkpoint = decode_checkpoint(value.value())?;
+        if key.value() != checkpoint.expected_peer.as_bytes() {
+            return Err(OutboundOutboxError::InvalidCheckpoint);
+        }
+        let intent = intents
+            .get(checkpoint.acknowledged_intent_id.as_slice())
+            .map_err(backend)?
+            .ok_or(OutboundOutboxError::InvalidCheckpoint)?;
+        let intent = decode_intent(intent.value())?;
+        let sequence = sequences
+            .get(key.value())
+            .map_err(backend)?
+            .ok_or(OutboundOutboxError::InvalidCheckpoint)?;
+        if intent.expected_peer != checkpoint.expected_peer
+            || intent.state != OutboundIntentState::Acknowledged
+            || decode_u64(sequence.value())? != checkpoint.acknowledged_sequence
+        {
+            return Err(OutboundOutboxError::InvalidCheckpoint);
+        }
+        let root = match guards.get(key.value()).map_err(backend)? {
+            Some(guard) => decode_checkpoint_guard(guard.value(), &checkpoint)?,
+            None => checkpoint.outbox_state_root,
+        };
+        if roots.get(&checkpoint.expected_peer) != Some(&root) {
+            return Err(OutboundOutboxError::InvalidCheckpoint);
+        }
+    }
+    for entry in guards.iter().map_err(backend)? {
+        let (key, _) = entry.map_err(backend)?;
+        if checkpoints.get(key.value()).map_err(backend)?.is_none() {
+            return Err(OutboundOutboxError::InvalidCheckpoint);
+        }
+    }
+    Ok(())
+}
+
+fn refresh_checkpoint_state(write: &redb::WriteTransaction) -> Result<(), OutboundOutboxError> {
+    let checkpoints = write.open_table(DURABLE_CHECKPOINT).map_err(backend)?;
+    if checkpoints.is_empty().map_err(backend)? {
+        return Ok(());
+    }
+    let roots = current_peer_roots(write)?;
+    let mut guards = write.open_table(CHECKPOINT_STATE).map_err(backend)?;
+    for entry in checkpoints.iter().map_err(backend)? {
+        let (key, value) = entry.map_err(backend)?;
+        let checkpoint = decode_checkpoint(value.value())?;
+        let root = roots
+            .get(&checkpoint.expected_peer)
+            .ok_or(OutboundOutboxError::InvalidCheckpoint)?;
+        let mut bytes = checkpoint.checkpoint_digest.to_vec();
+        bytes.extend_from_slice(root);
+        guards
+            .insert(key.value(), bytes.as_slice())
+            .map_err(backend)?;
+    }
+    Ok(())
 }
 
 impl PortableArchiveRows for OutboundOutbox {
@@ -885,6 +1059,15 @@ impl PortableArchiveRows for OutboundOutbox {
             (1u8, read.open_table(OUTBOX).map_err(archive_error)?),
             (2u8, read.open_table(META).map_err(archive_error)?),
             (3u8, read.open_table(TOMBSTONES).map_err(archive_error)?),
+            (4u8, read.open_table(ROUTE_SEQUENCE).map_err(archive_error)?),
+            (
+                5u8,
+                read.open_table(DURABLE_CHECKPOINT).map_err(archive_error)?,
+            ),
+            (
+                6u8,
+                read.open_table(CHECKPOINT_STATE).map_err(archive_error)?,
+            ),
         ] {
             for row in table.iter().map_err(archive_error)? {
                 let (key, value) = row.map_err(archive_error)?;
@@ -908,6 +1091,9 @@ impl PortableArchiveRows for OutboundOutbox {
             1 => restore_table_value(&write, OUTBOX, row)?,
             2 => restore_table_value(&write, META, row)?,
             3 => restore_table_value(&write, TOMBSTONES, row)?,
+            4 => restore_table_value(&write, ROUTE_SEQUENCE, row)?,
+            5 => restore_table_value(&write, DURABLE_CHECKPOINT, row)?,
+            6 => restore_table_value(&write, CHECKPOINT_STATE, row)?,
             _ => {
                 return Err(NodeError::ArchiveCapability(
                     "outbox archive table is unknown".into(),
@@ -918,6 +1104,9 @@ impl PortableArchiveRows for OutboundOutbox {
     }
 
     fn reconcile_restored_rows(&self) -> Result<(), NodeError> {
+        let write = self.db.begin_write().map_err(archive_error)?;
+        validate_checkpoint_state(&write).map_err(|e| NodeError::Storage(e.to_string()))?;
+        drop(write);
         // Pending records remain pending. Scheduler admission later validates
         // their exact target and authenticated route; nothing is sent here.
         self.stats()
@@ -961,6 +1150,27 @@ fn validate_archive_row(row: &PortableArchiveRow) -> Result<(), NodeError> {
                 })?;
             decode_tombstone(id, &row.value)
                 .map_err(|error| NodeError::Storage(error.to_string()))?;
+        }
+        4 => {
+            if row.key.len() != 32
+                || decode_u64(&row.value).map_err(|e| NodeError::Storage(e.to_string()))? == 0
+            {
+                return Err(NodeError::ArchiveCapability("checkpoint sequence".into()));
+            }
+        }
+        5 => {
+            let checkpoint =
+                decode_checkpoint(&row.value).map_err(|e| NodeError::Storage(e.to_string()))?;
+            if row.key != checkpoint.expected_peer.as_bytes()
+                || encode_checkpoint(&checkpoint) != row.value
+            {
+                return Err(NodeError::ArchiveCapability("checkpoint row".into()));
+            }
+        }
+        6 => {
+            if row.key.len() != 32 || row.value.len() != 64 {
+                return Err(NodeError::ArchiveCapability("checkpoint state row".into()));
+            }
         }
         _ => {
             return Err(NodeError::ArchiveCapability(
@@ -1439,6 +1649,7 @@ fn decode_checkpoint(bytes: &[u8]) -> Result<DurableCheckpointV1, OutboundOutbox
         || checkpoint.route_journal_root == [0; 32]
         || checkpoint.created_at_unix_seconds == 0
         || checkpoint.checkpoint_digest != checkpoint_digest(&checkpoint)
+        || encode_checkpoint(&checkpoint) != bytes
     {
         return Err(OutboundOutboxError::InvalidCheckpoint);
     }
@@ -1566,6 +1777,7 @@ mod tests {
         let outbox = OutboundOutbox::open(&directory.path().join("outbox.redb")).unwrap();
         let first = intent("127.0.0.1:5001".parse().unwrap());
         outbox.enqueue(&first).unwrap();
+        outbox.record_transport_attempt(&first.id).unwrap();
         let moved = intent("127.0.0.1:5002".parse().unwrap());
         assert_eq!(first.id, moved.id);
         assert_eq!(
@@ -1576,6 +1788,156 @@ mod tests {
             outbox.get(&first.id).unwrap().unwrap().last_known_addr,
             moved.last_known_addr
         );
+        assert_eq!(
+            outbox.get(&first.id).unwrap().unwrap().transport_attempts,
+            1
+        );
+        outbox.mark_retry_exhausted(&first.id, 1).unwrap();
+        outbox.enqueue(&first).unwrap();
+        assert_eq!(
+            outbox.get(&first.id).unwrap().unwrap().state,
+            OutboundIntentState::RetryExhausted
+        );
+    }
+
+    #[test]
+    fn checkpoint_survives_legitimate_outbox_change_after_acknowledgement() {
+        let directory = tempfile::tempdir().unwrap();
+        let outbox = OutboundOutbox::open(&directory.path().join("outbox.redb")).unwrap();
+        let first = intent("127.0.0.1:5001".parse().unwrap());
+        outbox.enqueue(&first).unwrap();
+        let acknowledged = outbox
+            .apply_receipt_and_checkpoint(
+                &first.id,
+                ReconcileReceiptStatus::ValidatedStored,
+                3,
+                1,
+                [9; 32],
+            )
+            .unwrap();
+        assert_eq!(
+            outbox.latest_checkpoint(first.expected_peer).unwrap(),
+            Some(acknowledged.clone())
+        );
+        let next = OutboundTransferIntent::new(
+            first.expected_peer,
+            first.last_known_addr,
+            first.selector,
+            first.namespace,
+            first.disclosure,
+            first.kind,
+            b"next-canonical-intent".to_vec(),
+        )
+        .unwrap();
+        outbox.enqueue(&next).unwrap();
+        assert_eq!(
+            outbox.latest_checkpoint(first.expected_peer).unwrap(),
+            Some(acknowledged)
+        );
+        assert_eq!(
+            outbox.get(&first.id).unwrap().unwrap().state,
+            OutboundIntentState::Acknowledged
+        );
+        assert_eq!(
+            outbox.get(&next.id).unwrap().unwrap().state,
+            OutboundIntentState::Pending
+        );
+    }
+
+    #[test]
+    fn checkpoint_archive_compaction_and_reopen_preserve_exact_boundary() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("outbox.redb");
+        let outbox = OutboundOutbox::open(&path).unwrap();
+        let first = intent("127.0.0.1:5001".parse().unwrap());
+        outbox.enqueue(&first).unwrap();
+        let checkpoint = outbox
+            .apply_receipt_and_checkpoint(
+                &first.id,
+                ReconcileReceiptStatus::ValidatedStored,
+                3,
+                1,
+                [9; 32],
+            )
+            .unwrap();
+        let pending = OutboundTransferIntent::new(
+            first.expected_peer,
+            first.last_known_addr,
+            first.selector,
+            first.namespace,
+            first.disclosure,
+            first.kind,
+            b"remaining".to_vec(),
+        )
+        .unwrap();
+        outbox.enqueue(&pending).unwrap();
+        outbox.record_transport_attempt(&pending.id).unwrap();
+        let switch = OperationalCompactionSwitch::new_disabled();
+        switch.enable();
+        let report = outbox
+            .compact_terminal(&switch.acquire().unwrap(), 0, 8)
+            .unwrap();
+        assert_eq!(report.retained_pending, 1);
+        assert_eq!(report.retained_terminal, 1);
+        assert_eq!(report.removed_records, 0);
+        let restored = OutboundOutbox::open(&directory.path().join("restored.redb")).unwrap();
+        for row in outbox.archive_rows().unwrap() {
+            restored.restore_row(&row).unwrap();
+        }
+        restored.reconcile_restored_rows().unwrap();
+        assert_eq!(
+            restored.latest_checkpoint(first.expected_peer).unwrap(),
+            Some(checkpoint.clone())
+        );
+        assert_eq!(
+            restored
+                .get(&pending.id)
+                .unwrap()
+                .unwrap()
+                .transport_attempts,
+            1
+        );
+        drop(outbox);
+        let reopened = OutboundOutbox::open(&path).unwrap();
+        assert_eq!(
+            reopened.latest_checkpoint(first.expected_peer).unwrap(),
+            Some(checkpoint)
+        );
+        assert_eq!(reopened.pending_fair(8).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn corrupt_checkpoint_guard_is_not_healed_by_later_writes() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("outbox.redb");
+        let outbox = OutboundOutbox::open(&path).unwrap();
+        let first = intent("127.0.0.1:5001".parse().unwrap());
+        outbox.enqueue(&first).unwrap();
+        outbox
+            .apply_receipt_and_checkpoint(
+                &first.id,
+                ReconcileReceiptStatus::ValidatedStored,
+                3,
+                1,
+                [9; 32],
+            )
+            .unwrap();
+        let write = outbox.db.begin_write().unwrap();
+        {
+            let mut table = write.open_table(CHECKPOINT_STATE).unwrap();
+            table
+                .insert(
+                    first.expected_peer.as_bytes().as_slice(),
+                    [0u8; 64].as_slice(),
+                )
+                .unwrap();
+        }
+        write.commit().unwrap();
+        assert!(outbox.latest_checkpoint(first.expected_peer).is_err());
+        assert!(outbox.enqueue(&first).is_err());
+        assert!(outbox.reconcile_restored_rows().is_err());
+        drop(outbox);
+        assert!(OutboundOutbox::open(&path).is_err());
     }
 
     #[test]

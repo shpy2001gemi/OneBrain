@@ -118,6 +118,7 @@ struct Source {
     cached: Vec<Vec<u8>>,
     pex: Option<LiveSessionLease>,
     peer_verified: bool,
+    advertisement: Option<ku_net::vnext_reachability_crypto::ValidatedReachabilityAdvertisement>,
 }
 
 pub(crate) struct DiscoveryOwner {
@@ -315,6 +316,7 @@ impl DiscoveryOwner {
                         .map_err(|_| "discovery_cache")?,
                     pex,
                     peer_verified: false,
+                    advertisement: None,
                 })
             })
             .collect::<Result<Vec<_>, &'static str>>()?;
@@ -332,6 +334,34 @@ impl DiscoveryOwner {
             dial,
             possession,
         })
+    }
+
+    pub(crate) fn peer_advertisements(
+        &self,
+        now: u64,
+    ) -> Vec<ku_net::vnext_reachability_crypto::ValidatedReachabilityAdvertisement> {
+        self.sources
+            .iter()
+            .filter_map(|source| source.advertisement.as_ref())
+            .filter(|ad| ad.canonical().expires_at > now)
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn peer_identities(
+        &self,
+    ) -> Vec<ku_net::vnext_reachability_crypto::KnownPeerIdentity> {
+        self.sources
+            .iter()
+            .filter_map(|source| match &source.input {
+                DiscoveryInput::ManualPeer { invitation, .. } => {
+                    decode_manual_peer_invitation(invitation)
+                        .ok()
+                        .map(|peer| peer.identity().clone())
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     /// One bounded round. Each source gets a fair slice of the existing 20s
@@ -854,9 +884,10 @@ async fn refresh_source(
             if !current() {
                 return Err(ReachabilityError::NetworkChanged);
             }
-            admission
+            let advertisement = admission
                 .register_prepared_advertisement(prepared, peer.identity(), &reservations, now)
                 .map_err(ReachabilityError::Admission)?;
+            source.advertisement = Some(advertisement);
             replay
                 .cache_signed(source.status.source_id, peer.canonical_advertisement(), now)
                 .map_err(ReachabilityError::Admission)?;

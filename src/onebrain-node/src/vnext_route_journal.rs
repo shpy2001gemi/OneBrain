@@ -157,11 +157,37 @@ impl RouteJournal {
     }
 
     pub fn append(&self, entry: RouteJournalEntryV1) -> Result<[u8; 32], RouteJournalError> {
-        let encoded = entry.canonical_bytes()?;
         let mut state = self
             .state
             .write()
             .map_err(|_| RouteJournalError::LockPoisoned)?;
+        self.append_locked(&mut state, entry)
+    }
+
+    pub(crate) fn append_routed(
+        &self,
+        peer: NodeId,
+        path: RoutePathKindV1,
+        receipt: [u8; 32],
+        now: u64,
+    ) -> Result<[u8; 32], RouteJournalError> {
+        let mut state = self
+            .state
+            .write()
+            .map_err(|_| RouteJournalError::LockPoisoned)?;
+        let sequence = state.entries.len() as u64 + 1;
+        self.append_locked(
+            &mut state,
+            RouteJournalEntryV1::routed(peer, path, receipt, sequence, now),
+        )
+    }
+
+    fn append_locked(
+        &self,
+        state: &mut JournalState,
+        entry: RouteJournalEntryV1,
+    ) -> Result<[u8; 32], RouteJournalError> {
+        let encoded = entry.canonical_bytes()?;
         if state
             .by_peer_sequence
             .get(&entry.peer)
@@ -202,6 +228,26 @@ impl RouteJournal {
             .read()
             .map_err(|_| RouteJournalError::LockPoisoned)?;
         root_for(&state.entries)
+    }
+
+    /// A checkpoint binds a historical prefix, not a future route appended
+    /// during failover. Validate that exact prefix without rewriting it.
+    pub(crate) fn contains_root(&self, expected: [u8; 32]) -> Result<bool, RouteJournalError> {
+        let state = self
+            .state
+            .read()
+            .map_err(|_| RouteJournalError::LockPoisoned)?;
+        let mut hash = blake3::Hasher::new();
+        hash.update(b"onebrain:vnext:route-journal:1\0");
+        for entry in &state.entries {
+            let bytes = entry.canonical_bytes()?;
+            hash.update(&(bytes.len() as u64).to_be_bytes());
+            hash.update(&bytes);
+            if hash.finalize().as_bytes() == &expected {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     pub fn len(&self) -> Result<usize, RouteJournalError> {

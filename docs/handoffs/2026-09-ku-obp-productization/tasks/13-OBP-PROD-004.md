@@ -1,8 +1,8 @@
 # OBP-PROD-004 — Automatic routing, outbox and relay failover
 
-> State: Planned
+> State: Review
 > Branch: `codex/obp-prod-004-routing`
-> Depends on: `OBP-PROD-003` merged
+> Depends on: `OBP-PROD-003` merged — satisfied locally at `3216f1d` (D-027)
 
 ## Objective
 
@@ -41,3 +41,8 @@ alternate-path failover and checkpoint resume.
 ## Excluded
 
 Public API/UI, default rollout, mailbox/push-wake delivery and wire redesign.
+
+## Local evidence
+
+[Implementation, verification and limits](../outputs/OBP_PROD_004_IMPLEMENTATION.md).
+Task-004 changes remain uncommitted; no merge, remote push or activation.

@@ -80,6 +80,20 @@ pub trait ExpectedPeerCarrierSelector: Send + Sync {
     }
 }
 
+/// Optional host-owned LAN/signaling integration. The host obtains a current
+/// platform execution grant and uses the existing admitted private-candidate or
+/// coordinated-punch executor. Returning a sealed carrier does not authenticate
+/// its peer. Absence removes these optimizations, never the relay baseline.
+pub trait OptionalPeerPaths: Send + Sync {
+    fn select<'a>(
+        &'a self,
+        peer: NodeId,
+        advertisement: &'a ValidatedReachabilityAdvertisement,
+        path: RoutePathKindV1,
+        deadline: Instant,
+    ) -> ReachabilityFuture<'a, Result<Option<SelectedCarrier>, RouteFailure>>;
+}
+
 /// Production direct-path selector. Public candidates are re-resolved at the
 /// moment of dialing and the resulting socket is sealed by the connection
 /// executor; caller-supplied addresses never enter this path.
@@ -88,6 +102,8 @@ pub struct ProductionExpectedPeerCarrierSelector {
     executor: Arc<ConnectionPlannerExecutor>,
     route_deadline: Duration,
     relay: Option<ProductionRelaySelectionContext>,
+    optional_paths: Option<Arc<dyn OptionalPeerPaths>>,
+    last_relay: Mutex<BTreeMap<NodeId, NodeId>>,
 }
 
 struct ProductionRelaySelectionContext {
@@ -170,7 +186,14 @@ impl ProductionExpectedPeerCarrierSelector {
             executor,
             route_deadline,
             relay: None,
+            optional_paths: None,
+            last_relay: Mutex::new(BTreeMap::new()),
         })
+    }
+
+    pub fn with_optional_paths(mut self, paths: Arc<dyn OptionalPeerPaths>) -> Self {
+        self.optional_paths = Some(paths);
+        self
     }
 
     pub fn with_relay(
@@ -257,7 +280,20 @@ impl ProductionExpectedPeerCarrierSelector {
     {
         let context = self.relay.as_ref().ok_or(RouteFailure::RelayUnavailable)?;
         let mut attempts = Vec::new();
-        for remote in advertisement.reservations() {
+        let previous = self
+            .last_relay
+            .lock()
+            .map_err(|_| RouteFailure::RelayUnavailable)?
+            .get(&expected_peer)
+            .copied();
+        let mut remotes: Vec<_> = advertisement.reservations().iter().collect();
+        remotes.sort_by_key(|remote| {
+            (
+                Some(remote.canonical().relay_node_id) == previous,
+                remote.canonical().relay_node_id,
+            )
+        });
+        for remote in remotes {
             if Instant::now() >= deadline {
                 return Err(RouteFailure::RelayUnavailable);
             }
@@ -292,109 +328,126 @@ impl ProductionExpectedPeerCarrierSelector {
             let signer = Arc::clone(&context.signer);
             let connect_sequences = Arc::clone(&context.connect_sequences);
             let remote = remote.clone();
-            attempts.push(Box::pin(async move {
-                // Allocate only when this candidate is actually attempted.
-                // Each relay reservation pair is a distinct replay scope, so
-                // a second relay must start at sequence one independently.
-                let local_value = local.canonical();
-                let remote_value = remote.canonical();
-                let scope = (
-                    *local_value.target_node_id.as_bytes(),
-                    *expected_peer.as_bytes(),
-                    local_value.reservation_id,
-                    remote_value.reservation_id,
-                );
-                let now = unix_now_seconds()?;
-                // The relay binds the association to both reservations and
-                // both authenticated outer sessions. Do not additionally
-                // reduce that data-plane lifetime to the 30-second replay
-                // skew window: a routed session is expected to outlive its
-                // connect handshake and the relay enforces the authoritative
-                // upper bounds when it signs the association.
-                let expires_at = relay_association_request_expiry(
-                    local_value.expires_at,
-                    remote_value.expires_at,
-                    now,
-                )?;
-                let sequence = connect_sequences.next(scope, expires_at, now)?;
-                let mut nonce = [0u8; 32];
-                OsRng.fill_bytes(&mut nonce);
-                let mut request = RelayConnectRequestV1 {
-                    format: 1,
-                    initiator_node_id: local_value.target_node_id,
-                    target_node_id: expected_peer,
-                    initiator_reservation_id: local_value.reservation_id,
-                    target_reservation_id: remote_value.reservation_id,
-                    nonce,
-                    sequence,
-                    issued_at: now,
-                    expires_at,
-                    initiator_signature: [0; 64],
-                };
-                let root = ConnectivitySignalingV1::RelayConnectRequest(request.clone());
-                let (domain, unsigned) = connectivity_signing_parts(
-                    &root,
-                    ConnectivitySignatureRoleV1::RelayConnectInitiator,
-                )
-                .map_err(|_| RouteFailure::RelayDenied)?;
-                request.initiator_signature = signer
-                    .sign_reachability_message(domain, &unsigned)
-                    .map_err(|_| RouteFailure::RelayDenied)?;
-                let public = outer.public_endpoint();
-                let candidate = RelayCandidateV1 {
-                    relay_node_id: relay_id,
-                    reservation_id: local_value.reservation_id,
-                    transport: outer.transport(),
-                    endpoint: ReachabilityEndpointV1 {
-                        host: public.host.clone(),
-                        port: public.port,
-                    },
-                    priority: 1,
-                    expires_at,
-                };
-                let association = executor
-                    .associate_relay(&request, &local, &remote, Arc::clone(&outer), deadline)
-                    .await
-                    .map_err(|error| {
-                        RouteFailure::RelayPathFailed(format!("outbound association: {error:?}"))
-                    })?;
-                let action = ConnectionPlannerExecutor::admitted_relay_action(
-                    candidate.clone(),
-                    &association,
-                )
-                .map_err(|error| {
-                    RouteFailure::RelayPathFailed(format!(
-                        "outbound association binding: {error:?}"
-                    ))
-                })?;
-                let admitted = AdmittedRelayExecution::from_validated_association(
-                    descriptor,
-                    local,
-                    remote,
-                    association,
-                    outer,
-                )
-                .map_err(|error| {
-                    RouteFailure::RelayPathFailed(format!("outbound admitted path: {error:?}"))
-                })?;
-                executor
-                    .execute(
-                        action,
-                        AdmittedExecutionInput::Relay(admitted),
-                        Vec::new(),
-                        deadline,
+            let tcp = outer.transport() == onebrain_protocol::RelayTransportV1::TlsTcp443;
+            attempts.push((
+                Some(relay_id) == previous,
+                tcp,
+                relay_id,
+                Box::pin(async move {
+                    // Allocate only when this candidate is actually attempted.
+                    // Each relay reservation pair is a distinct replay scope, so
+                    // a second relay must start at sequence one independently.
+                    let local_value = local.canonical();
+                    let remote_value = remote.canonical();
+                    let scope = (
+                        *local_value.target_node_id.as_bytes(),
+                        *expected_peer.as_bytes(),
+                        local_value.reservation_id,
+                        remote_value.reservation_id,
+                    );
+                    let now = unix_now_seconds()?;
+                    // The relay binds the association to both reservations and
+                    // both authenticated outer sessions. Do not additionally
+                    // reduce that data-plane lifetime to the 30-second replay
+                    // skew window: a routed session is expected to outlive its
+                    // connect handshake and the relay enforces the authoritative
+                    // upper bounds when it signs the association.
+                    let expires_at = relay_association_request_expiry(
+                        local_value.expires_at,
+                        remote_value.expires_at,
+                        now,
+                    )?;
+                    let sequence = connect_sequences.next(scope, expires_at, now)?;
+                    let mut nonce = [0u8; 32];
+                    OsRng.fill_bytes(&mut nonce);
+                    let mut request = RelayConnectRequestV1 {
+                        format: 1,
+                        initiator_node_id: local_value.target_node_id,
+                        target_node_id: expected_peer,
+                        initiator_reservation_id: local_value.reservation_id,
+                        target_reservation_id: remote_value.reservation_id,
+                        nonce,
+                        sequence,
+                        issued_at: now,
+                        expires_at,
+                        initiator_signature: [0; 64],
+                    };
+                    let root = ConnectivitySignalingV1::RelayConnectRequest(request.clone());
+                    let (domain, unsigned) = connectivity_signing_parts(
+                        &root,
+                        ConnectivitySignatureRoleV1::RelayConnectInitiator,
                     )
-                    .await
+                    .map_err(|_| RouteFailure::RelayDenied)?;
+                    request.initiator_signature = signer
+                        .sign_reachability_message(domain, &unsigned)
+                        .map_err(|_| RouteFailure::RelayDenied)?;
+                    let public = outer.public_endpoint();
+                    let mut candidate = RelayCandidateV1 {
+                        relay_node_id: relay_id,
+                        reservation_id: local_value.reservation_id,
+                        transport: outer.transport(),
+                        endpoint: ReachabilityEndpointV1 {
+                            host: public.host.clone(),
+                            port: public.port,
+                        },
+                        priority: 1,
+                        expires_at,
+                    };
+                    let association = executor
+                        .associate_relay(&request, &local, &remote, Arc::clone(&outer), deadline)
+                        .await
+                        .map_err(|error| {
+                            RouteFailure::RelayPathFailed(format!(
+                                "outbound association: {error:?}"
+                            ))
+                        })?;
+                    // The signed association is also capped by both outer sessions.
+                    candidate.expires_at =
+                        candidate.expires_at.min(association.canonical().expires_at);
+                    let action = ConnectionPlannerExecutor::admitted_relay_action(
+                        candidate.clone(),
+                        &association,
+                    )
                     .map_err(|error| {
-                        RouteFailure::RelayPathFailed(format!("outbound inner carrier: {error:?}"))
-                    })
-            })
-                as ReachabilityFuture<'static, Result<SelectedCarrier, RouteFailure>>);
+                        RouteFailure::RelayPathFailed(format!(
+                            "outbound association binding: {error:?}"
+                        ))
+                    })?;
+                    let admitted = AdmittedRelayExecution::from_validated_association(
+                        descriptor,
+                        local,
+                        remote,
+                        association,
+                        outer,
+                    )
+                    .map_err(|error| {
+                        RouteFailure::RelayPathFailed(format!("outbound admitted path: {error:?}"))
+                    })?;
+                    executor
+                        .execute(
+                            action,
+                            AdmittedExecutionInput::Relay(admitted),
+                            Vec::new(),
+                            deadline,
+                        )
+                        .await
+                        .map_err(|error| {
+                            RouteFailure::RelayPathFailed(format!(
+                                "outbound inner carrier: {error:?}"
+                            ))
+                        })
+                })
+                    as ReachabilityFuture<'static, Result<SelectedCarrier, RouteFailure>>,
+            ));
         }
         if attempts.is_empty() {
             return Err(RouteFailure::RelayUnavailable);
         }
-        Ok(attempts)
+        attempts.sort_by_key(|(previous, tcp, relay, _)| (*previous, *tcp, *relay));
+        Ok(attempts
+            .into_iter()
+            .map(|(_, _, _, attempt)| attempt)
+            .collect())
     }
 
     async fn select_relay(
@@ -556,26 +609,89 @@ impl ExpectedPeerCarrierSelector for ProductionExpectedPeerCarrierSelector {
                 return Err(route_failure_runtime(RouteFailure::PeerIdentityMismatch));
             }
             let deadline = Instant::now() + self.route_deadline;
-            match self.select_direct(advertisement, deadline).await {
-                Ok(selected) => {
-                    runtime
-                        .connect_expected_selected(expected_peer, selected)
-                        .await
-                }
-                Err(direct_failure) => {
-                    if self.relay.is_none() {
-                        Err(route_failure_runtime(direct_failure))
-                    } else {
-                        self.connect_relay_authenticated(
-                            runtime,
-                            expected_peer,
-                            advertisement,
-                            deadline,
-                        )
-                        .await
+            // LAN/private paths require an explicitly supplied admitted host port.
+            if let Some(paths) = self.optional_paths.as_ref() {
+                let until = deadline.min(Instant::now() + Duration::from_millis(2500));
+                if let Ok(Ok(Some(selected))) = tokio::time::timeout_at(
+                    until.into(),
+                    paths.select(expected_peer, advertisement, RoutePathKindV1::Direct, until),
+                )
+                .await
+                {
+                    if selected.selection().path_kind() != RoutePathKindV1::Direct {
+                        return Err(route_failure_runtime(RouteFailure::PeerIdentityMismatch));
+                    }
+                    if let Ok(Ok(session)) = tokio::time::timeout_at(
+                        until.into(),
+                        runtime.connect_expected_selected(expected_peer, selected),
+                    )
+                    .await
+                    {
+                        return Ok(session);
                     }
                 }
             }
+            let until = deadline.min(Instant::now() + Duration::from_millis(2500));
+            let mut last = route_failure_runtime(RouteFailure::DirectTimeout);
+            if let Ok(Ok(selected)) =
+                tokio::time::timeout_at(until.into(), self.select_direct(advertisement, until))
+                    .await
+            {
+                match tokio::time::timeout_at(
+                    until.into(),
+                    runtime.connect_expected_selected(expected_peer, selected),
+                )
+                .await
+                {
+                    Ok(Ok(session)) => return Ok(session),
+                    Ok(Err(error)) => last = error,
+                    Err(_) => {}
+                }
+            }
+            if let Some(paths) = self.optional_paths.as_ref() {
+                let until = deadline.min(Instant::now() + Duration::from_secs(5));
+                if let Ok(Ok(Some(selected))) = tokio::time::timeout_at(
+                    until.into(),
+                    paths.select(
+                        expected_peer,
+                        advertisement,
+                        RoutePathKindV1::HolePunched,
+                        until,
+                    ),
+                )
+                .await
+                {
+                    if selected.selection().path_kind() != RoutePathKindV1::HolePunched {
+                        return Err(route_failure_runtime(RouteFailure::PeerIdentityMismatch));
+                    }
+                    if let Ok(Ok(session)) = tokio::time::timeout_at(
+                        until.into(),
+                        runtime.connect_expected_selected(expected_peer, selected),
+                    )
+                    .await
+                    {
+                        return Ok(session);
+                    }
+                }
+            }
+            if self.relay.is_none() {
+                return Err(last);
+            }
+            let session = self
+                .connect_relay_authenticated(runtime, expected_peer, advertisement, deadline)
+                .await?;
+            if let VerifiedCarrierIdentity::Relay { relay_node_id, .. } = session.carrier() {
+                let mut last = self
+                    .last_relay
+                    .lock()
+                    .map_err(|_| VNextNetworkRuntimeError::ReplayGuard)?;
+                if last.len() >= 256 && !last.contains_key(&expected_peer) {
+                    session.close();
+                    return Err(route_failure_runtime(RouteFailure::BudgetExceeded));
+                }
+                last.insert(expected_peer, *relay_node_id);
+            }
+            Ok(session)
         })
     }
 }
@@ -795,6 +911,16 @@ impl RoutedVNextSession {
             checkpoint: None,
             admission: None,
         })
+    }
+
+    pub(crate) fn into_runtime_parts(
+        mut self,
+    ) -> Result<(OBPConnection, AuthenticatedSession, SessionAdmission), RoutedSessionError> {
+        let admission = self
+            .admission
+            .take()
+            .ok_or(RoutedSessionError::InvalidCarrier)?;
+        Ok((self.connection, self.authenticated, admission))
     }
 
     pub fn expected_peer(&self) -> NodeId {

@@ -484,3 +484,16 @@ the older clean-main start rule does not apply to this continuation baseline.
 No merge, push, publication, host activation, qualification or canonical change
 is implied. KU-SEM-001 remains an accepted local implementation with deferred
 quality work, not a merged task or a qualified model.
+
+
+## D-028 — Merge routing and publish the retained baseline
+
+On 2026-09-21 the owner explicitly instructed “Merge 004 và push tất cả luôn.”
+This authorizes committing all retained task-004 changes in the original
+workspace, merging OBP-PROD-004 into local main, and pushing main and the routing
+branch to origin, including the complete D-027 baseline through task 003.
+The original baseline at 3216f1d must remain an ancestor. This supersedes the
+previous no-push restriction for this publication. It does not authorize model
+tuning, live-host changes, networking activation or default rollout. OBP-API-001
+becomes dependency-ready after the actual task-004 merge; no API implementation
+is part of this merge/publication action.

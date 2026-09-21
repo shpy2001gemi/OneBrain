@@ -25,3 +25,7 @@ src/onebrain-base-abi/include/onebrain_base_v1.h text eol=lf
 src/onebrain-mobile/assets/fonts/*.ttf -text
 src/onebrain-mobile/assets/licenses/*.txt -text
 src/onebrain-mobile/test/goldens/*.png -text
+
+# Semantic selection artifacts are byte-compared by the offline contract validator.
+docs/specs/vnext/ku-semantic-selection-v1/** text eol=lf
+docs/specs/vnext/ku-semantic-selection-v2/** text eol=lf
