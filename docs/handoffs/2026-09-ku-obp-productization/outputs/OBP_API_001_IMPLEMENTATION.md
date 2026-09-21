@@ -100,3 +100,23 @@ pass. Final strict GET/session-shape checks passed in both feature modes.
 The final full API rerun also passed after tightening WebSocket shutdown:
 overflow retains its admission slot until actual socket exit, sends have bounded
 deadlines, and a test verifies slot release only after receiver teardown.
+
+## Continuation verification — 2026-09-22
+
+Reopened the original workspace at `bcca300` with a clean working tree.
+`git ls-remote` confirmed the API branch at `bcca300` and main at `836af91`;
+the published `2c39117` merge is an ancestor of main. Implementation `de04a57`
+remains intact and unmerged. D-029 transport approval remains satisfied.
+
+Fresh offline/locked reruns of the commands above passed: node 252 unit and
+22 integration tests; API 44 unit (one existing real-Ollama opt-in test ignored),
+eight Base integration tests and 16 feature-off tests; ku-net 315 tests.
+The 19 Python contract
+tests and aggregate vNext validator also passed. Feature-off builds retain the
+existing unused/dead-code warnings.
+
+Corrected the stale current `Next action` in PROGRESS, which still requested
+transport review and implementation. OBP-API-001 remains Review pending owner
+merge direction under D-010/D-029; dependent CLI/Web tasks remain Planned.
+This continuation changes handoff documentation only. No model inference,
+live-host change, network activation, rollout or qualification was performed.

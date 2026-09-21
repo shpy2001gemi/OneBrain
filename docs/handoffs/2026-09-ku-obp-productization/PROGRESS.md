@@ -5,6 +5,14 @@
 
 ## Current checkpoint
 
+- 2026-09-22 OBP-API-001 continuation verification at `bcca300`: original tree
+  initially clean; remote API/main tips verified directly. Fresh offline/locked
+  reruns passed: node 252 unit + 22 integration; API 44 unit/one ignored + eight
+  Base integration; feature-off 16; ku-net 315; Python 19 and vNext validator.
+  [Updated evidence](outputs/OBP_API_001_IMPLEMENTATION.md#continuation-verification--2026-09-22).
+  Corrected the stale next-action pointer. Implementation remains unchanged in
+  Review; API merge requires owner direction, CLI/Web remain Planned.
+
 - 2026-09-22 OBP-API-001 — `Review`, implementation under accepted D-029 transport.
   Shared node façade, durable command/reconciliation journal, host grants/input
   references and six REST/WS routes are implemented in the original workspace.
@@ -98,7 +106,8 @@
 - Completed review branch: `codex/obp-prod-004-routing`, implementation `8f7d327`.
 - Retained baseline: `437dba0`, merged at `3216f1d` under D-027; now published.
 - Last merge: `2c39117` (OBP-PROD-004, D-028), pushed to `origin/main`.
-- Next action: owner review of the concrete transport proposal, then shared façade and API implementation.
+- Next action: owner review/merge direction for the implemented OBP-API-001.
+  D-029 transport approval is satisfied; CLI/Web remain Planned until API merge.
   Keep semantic tuning deferred and preserve the live host.
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
