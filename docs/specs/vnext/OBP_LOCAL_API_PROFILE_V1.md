@@ -1,6 +1,6 @@
 # Local OBP API transport v1
 
-Task: OBP-API-001. Status: **accepted under D-029; implementation validated and in Review**.
+Task: OBP-API-001. Status: **accepted under D-029; implementation merged under D-030 (`7d37a30`)**.
 This document completes the transport specification prerequisite of the accepted
 [OBP composition](OBP_PRODUCT_ORCHESTRATION_PROFILE_V1.md), not its implementation.
 The [machine inventory](../../../src/test-vectors/vnext/obp-local-api-v1.json)

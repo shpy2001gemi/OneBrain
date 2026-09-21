@@ -3,9 +3,9 @@
 2026-09-22. Original workspace `C:/Users/shpy2/Documents/OneBrain`, branch
 `codex/obp-api-001-network-api`, baseline `836af91`. D-029 accepts the complete
 [REST/WS transport](../../../specs/vnext/OBP_LOCAL_API_PROFILE_V1.md).
-Task 004 is already merged and published under D-028. This task is not merged.
+Task 004 is merged under D-028. This API task is merged as `7d37a30` under D-030.
 Implementation commit `de04a57` is pushed to `origin/codex/obp-api-001-network-api`.
-The follow-up handoff commit records publication; main remains at `836af91`.
+Reviewed handoff tip `c4aafb9` and the complete implementation are included in that merge.
 
 ## Implementation
 
@@ -120,3 +120,14 @@ transport review and implementation. OBP-API-001 remains Review pending owner
 merge direction under D-010/D-029; dependent CLI/Web tasks remain Planned.
 This continuation changes handoff documentation only. No model inference,
 live-host change, network activation, rollout or qualification was performed.
+
+
+## Merge closure — 2026-09-22, D-030
+
+The owner requested "merge và push tất cả" after the fresh continuation checks
+above. Fetch confirmed clean synchronized API/main tips before merge. Reviewed
+API tip `c4aafb9` merged without conflicts as
+`7d37a3066a561a38867352b3fab2e08387940ba6`; runtime content is unchanged.
+Main and the retained API branch are published. The handoff advances to
+OBP-CLI-001, Planned; no dependent implementation began during closure.
+Earlier pending-merge statements in the dated verification section are historical.

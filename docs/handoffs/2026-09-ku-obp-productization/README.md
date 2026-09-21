@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **Baseline through OBP-PROD-004 merged and pushed (D-028); OBP-API-001 implementation in Review under D-029**
+> Status: **Baseline through OBP-API-001 merged and pushed (D-030); OBP-CLI-001 Planned**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -9,11 +9,10 @@ This folder is the compact starting point for future conversations. It records
 the decision, the evidence boundary, the dependency order and one bounded file
 per task so a new conversation does not need the history that produced it.
 
-Latest owner direction (2026-09-21, D-028): merge task 004 and push the complete
-retained baseline. Completed: implementation `8f7d327`, merge `2c39117` on
-`origin/main`; routing branch also pushed. Original workspace remains
-`C:/Users/shpy2/Documents/OneBrain`; merge closed on `main`, and current transport
-work is on `codex/obp-api-001-network-api`. Start with
+Latest owner direction (2026-09-22, D-030): merge and push all retained API work.
+Completed: reviewed tip `c4aafb9`, implementation `de04a57`, merge `7d37a30`
+on `origin/main`. Original workspace remains `C:/Users/shpy2/Documents/OneBrain`,
+now on `main`; the API branch is retained. Start with
 [NEXT_CONVERSATION.md](NEXT_CONVERSATION.md). Semantic quality work remains
 deferred; the live host and default-off networking remain unchanged.
 
@@ -51,13 +50,12 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`OBP-API-001`](tasks/14-OBP-API-001.md) — implementation under
-the accepted D-029 transport. Read the
-[implementation evidence](outputs/OBP_API_001_IMPLEMENTATION.md).
-Implementation `de04a57` is pushed on `codex/obp-api-001-network-api`, based on
-`836af91`; the task is in Review and awaits owner merge direction.
-Task 004 merge `2c39117` satisfies the dependency. D-029 satisfies the separate
-notification transport review; shared façade and handlers are implemented locally.
+**Current task:** [`OBP-CLI-001`](tasks/15-OBP-CLI-001.md) — Planned.
+API dependency is satisfied by merge `7d37a30` under D-030. The accepted D-029
+transport and shared node façade are implemented; read the
+[API evidence and limits](outputs/OBP_API_001_IMPLEMENTATION.md).
+OBP-WEB-001 is also dependency-ready and remains Planned. This closure starts
+neither task; use the declared task branch for the next implementation.
 
 The following Web/encoder checkpoints are historical context; they do not override the current task or the new handoff.
 **Historical Web branch:** `codex/ku-web-001-workflow`; manual and experimental Ollama Web implementation ready for review.

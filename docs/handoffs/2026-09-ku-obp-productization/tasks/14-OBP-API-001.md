@@ -1,6 +1,6 @@
 # OBP-API-001 — Local networking API and private event projection
 
-> State: Review — implementation validated; transport accepted under D-029
+> State: Merged — `7d37a30` on `origin/main`, D-030; transport accepted under D-029
 > Branch: `codex/obp-api-001-network-api`
 > Implementation: `de04a57`, pushed to origin; latest branch tip includes handoff
 > Depends on: `OBP-PROD-004` merged — satisfied at `2c39117`
@@ -46,4 +46,4 @@ The owner accepted the full transport, including the separate notification
 projection, under D-029. The node-owned façade and six handlers are implemented
 and validated. See [implementation evidence](../outputs/OBP_API_001_IMPLEMENTATION.md)
 for exact commands, results and limitations. D-010 permits branch publication;
-the API task awaits explicit owner merge direction before dependent work.
+D-030 authorizes merge/publication, completed at `7d37a30`. CLI/Web merge prerequisites are satisfied; both remain Planned.

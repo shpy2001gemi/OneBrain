@@ -509,3 +509,16 @@ scoped aggregate WS projection. Implement OBP-API-001 on its existing local bran
 and original retained workspace. No further approval of this transport is needed.
 The accepted scope does not enable networking, change the live host or models,
 authorize default rollout, mobile implementation or merge this task.
+
+
+## D-030 — Merge and publish OBP-API-001
+
+On 2026-09-22, after continuation verification at `c4aafb9`, the owner instructed
+"merge và push tất cả". This authorizes merging the complete reviewed API branch
+and publishing main plus all retained task changes. Implementation `de04a57`
+merged without conflicts as `7d37a3066a561a38867352b3fab2e08387940ba6`.
+The API branch is retained; no branch deletion was requested.
+
+OBP-API-001 is Merged. Advance the handoff to OBP-CLI-001, Planned; CLI/Web API
+merge prerequisites are satisfied. This closure does not start either task,
+activate networking, change the live host/models, implement mobile or enable rollout.
