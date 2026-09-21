@@ -5,6 +5,9 @@ No Base discriminator, canonical schema, authority or rollout changes.
 
 D-023 adds opt-in `models` and `encode_text` actions through
 [the experimental Ollama profile](KU_EXPERIMENTAL_OLLAMA_PROFILE_V1.md).
+The owner-approved [review-draft profile](KU_REVIEW_DRAFT_PROFILE_V1.md) adds
+private `review_start/list/get/resume/cancel` background work through the same
+authenticated envelope. Draft readiness does not authorize canonical KU saving.
 The manual actions and their custody requirements below retain their meaning.
 
 The opt-in host installs `ManualKuInputs` with one principal, a verified signed
@@ -59,3 +62,11 @@ private, not publication, Use, adoption, fidelity acceptance or reward issuance.
 The bounded `ku_local_web` host example is an explicit launch, with operator
 provided Registry trust key, admitted sources and Vault key. It is not default
 CLI/Desktop lifecycle integration or a self-provisioning production installation.
+
+The [shared semantic selection extension](KU_SEMANTIC_SELECTION_PROFILE_V1.md)
+uses the same private review-job transport and node lifecycle. New jobs expose
+`draft_extracted` when host assembly succeeds, with semantic/factual verification
+`unassessed`; clients must not translate that into the older self-reviewed
+`draft_ready`. Model wire choices and assembly rules live in the common encoder,
+not in Web/CLI/Desktop or platform bridges. Previously recorded drafts remain
+readable with their original profile and state.

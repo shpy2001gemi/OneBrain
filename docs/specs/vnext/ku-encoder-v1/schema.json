@@ -791,7 +791,7 @@
         "remaining_deadline_ms": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 120000
+          "maximum": 600000
         },
         "candidate_sha256": {
           "type": "string",

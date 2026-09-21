@@ -10,9 +10,15 @@ if str(ROOT) not in sys.path:
 from scripts.encoder.contract import BUNDLE, DEFS, evaluate, assemble, typed
 from scripts.encoder.generate_bundle import run
 from scripts.encoder.schema import ContractError, require, strict_loads
+from scripts.encoder.generate_selection_v2_schema import DEST as SELECTION_V2, schemas as selection_v2_schemas
+import json
 
 
 def validate_contract():
+    for name, value in selection_v2_schemas().items():
+        expected = json.dumps(value, ensure_ascii=False, indent=2) + '\n'
+        require((SELECTION_V2 / name).read_bytes() == expected.encode('utf-8'),
+                'selection_v2_schema_drift: ' + name)
     generated = run(check=True)
     profile = strict_loads((BUNDLE / 'profile.json').read_bytes())
     require(profile['profile'] == DEFS['Context']['properties']['profile']['const'] ==
@@ -33,8 +39,15 @@ def validate_contract():
     limits = DEFS['Attempt']['properties']
     standard = profile['resource_profiles']['standard']
     for field, setting in [('calls_reserved', 'job_calls'), ('input_tokens_reserved', 'job_input_tokens'),
-                           ('output_tokens_reserved', 'job_output_tokens'), ('remaining_deadline_ms', 'deadline_ms')]:
+                           ('output_tokens_reserved', 'job_output_tokens')]:
         require(limits[field]['maximum'] == standard[setting], 'attempt_budget_drift')
+    require(profile['experimental_host_overrides'] == {'ollama_cpu_deadline_ms': 600000},
+            'experimental_deadline_policy')
+    require(standard['deadline_ms'] == 120000 and
+            profile['resource_profiles']['constrained']['deadline_ms'] == 30000,
+            'qualification_deadline_drift')
+    require(limits['remaining_deadline_ms']['maximum'] ==
+            profile['experimental_host_overrides']['ollama_cpu_deadline_ms'], 'attempt_budget_drift')
     require(set(profile['phase_base_states']) == set(limits['phase']['enum']), 'phase_map_drift')
     for bounds in profile['resource_profiles'].values():
         require(bounds['job_input_tokens'] <= bounds['job_calls'] * bounds['call_input_tokens'] and

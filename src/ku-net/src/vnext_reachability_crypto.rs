@@ -181,6 +181,10 @@ impl ConfiguredBootstrapSource {
         &self.identity.source_id
     }
 
+    pub fn public_key(&self) -> &[u8; 32] {
+        &self.identity.public_key
+    }
+
     pub fn fetch_endpoint(&self) -> &DiscoveryEndpointV1 {
         &self.fetch_endpoint
     }
@@ -777,6 +781,12 @@ impl ReachabilityAdmission {
     }
 
     /// Release expired PoP work without changing any admitted sequence floor.
+    /// Cancel unfinished proof work without changing any durable replay floor.
+    pub(crate) fn cancel_pending_descriptors(&mut self) {
+        self.pending_descriptors.clear();
+        self.pending_challenges = 0;
+    }
+
     pub fn expire_pending_descriptors(&mut self, now: u64) -> usize {
         let expired: Vec<_> = self
             .pending_descriptors

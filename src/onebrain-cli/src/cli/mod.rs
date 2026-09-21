@@ -12,6 +12,7 @@ mod help;
 pub mod helpers;
 mod identity;
 mod knowledge;
+pub(crate) mod ku;
 mod network;
 mod social;
 mod tags;

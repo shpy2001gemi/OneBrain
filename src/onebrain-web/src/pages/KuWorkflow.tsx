@@ -16,25 +16,14 @@ import type {
   Models,
 } from "../api/ku";
 import "./kuWorkflow.css";
+import { describeKuError as describeError } from "./kuFeedback";
+import { KuReviewDraft } from "./KuReviewDraft";
 
 const defaultClient = createKuClient(getPrivateApiConnection);
 type Pending = {
   operation_id: OperationRef["operation_id"];
   idempotency_key: Preparation["idempotency_key"];
 };
-function describeError(e: unknown) {
-  const failure = e instanceof KuError ? e.failure : undefined;
-  return [
-    e instanceof Error ? e.message : "Local operation failed",
-    failure?.code,
-    ...(failure?.limitations ?? []),
-    failure
-      ? `Retryable: ${failure.retryable}; reconcile before retry: ${failure.reconcile_before_retry}`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
 export function KuWorkflowPage({
   client = defaultClient,
 }: {
@@ -48,6 +37,9 @@ export function KuWorkflowPage({
   const [sourceText, setSourceText] = useState("");
   const [consent, setConsent] = useState(false);
   const [encoding, setEncoding] = useState(false);
+  const [encodeStep, setEncodeStep] = useState("");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const encodeStarted = useRef<number | undefined>(undefined);
   const [canceling, setCanceling] = useState(false);
   const canceled = useRef(false);
   const [operationState, setOperationState] = useState("");
@@ -70,7 +62,7 @@ export function KuWorkflowPage({
   const [query, setQuery] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
   const [recovery, setRecovery] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState<ReturnType<typeof describeError>>();
   const [editorError, setEditorError] = useState("");
   const [metadata, setMetadata] = useState<Meta>();
   const [busy, setBusy] = useState(false);
@@ -86,7 +78,7 @@ export function KuWorkflowPage({
     if (lock.current) return;
     lock.current = true;
     setBusy(true);
-    setError("");
+    if (action !== reconcile) setError(undefined);
     try {
       await action();
     } catch (e) {
@@ -153,6 +145,14 @@ export function KuWorkflowPage({
     };
   }, [client]);
   useEffect(() => {
+    if (!encoding) return;
+    const timer = setInterval(() => {
+      if (encodeStarted.current !== undefined)
+        setElapsedSeconds(Math.floor((performance.now() - encodeStarted.current) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [encoding]);
+  useEffect(() => {
     if (!encoding || !pending || !session) return;
     let live = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -204,6 +204,9 @@ export function KuWorkflowPage({
     setReceipt(undefined);
     canceled.current = false;
     setOperationState("");
+    encodeStarted.current = ai ? performance.now() : undefined;
+    setElapsedSeconds(0);
+    setEncodeStep(ai ? "Submitting source and consent to the host" : "");
     setEncoding(ai);
     try {
       const draft = ai
@@ -221,6 +224,7 @@ export function KuWorkflowPage({
             argument_text: text,
           });
       if (canceled.current) return;
+      if (ai) setEncodeStep("Source accepted; waiting for extraction and host validation");
       const result = revision
         ? await client.invoke(session, "revise", {
             preparation: draft.data.payload,
@@ -230,6 +234,7 @@ export function KuWorkflowPage({
         : await client.invoke(session, "prepare", draft.data.payload);
       if (canceled.current) return;
       setPrepared(result.data.payload);
+      if (ai) setEncodeStep("Host returned the validation result");
       setMetadata(result.meta);
       setUncertain(false);
     } catch (e) {
@@ -237,12 +242,15 @@ export function KuWorkflowPage({
       setUncertain(true);
       throw e;
     } finally {
+      if (encodeStarted.current !== undefined)
+        setElapsedSeconds(Math.floor((performance.now() - encodeStarted.current) / 1000));
       setEncoding(false);
     }
   }
   async function cancel() {
     if (!session || !pending || canceling) return;
     canceled.current = true;
+    setEncodeStep("Cancellation requested; waiting for the host outcome");
     setCanceling(true);
     setPrepared(undefined);
     try {
@@ -351,22 +359,86 @@ export function KuWorkflowPage({
           Refresh host status
         </button>
       </aside>
-      <div role="alert">{error}</div>
+      <div role="alert">
+        {error && (
+          <>
+            <h2>{error.title}</h2>
+            <p>{error.explanation}</p>
+            <p>{error.context}</p>
+            {error.diagnostics.length > 0 && (
+              <section aria-label="Schema validation issues">
+                <h3>Fields that need repair</h3>
+                <ul>{error.diagnostics.map((issue, index) => <li key={index} className="ku-id">{issue}</li>)}</ul>
+              </section>
+            )}
+            {encodeStep && <p>Last observed step: {encodeStep}. Browser elapsed time: {elapsedSeconds}s.</p>}
+            <p>{error.recovery}</p>
+            {pending && (
+              <button className="btn" disabled={busy} onClick={() => void run(reconcile)}>
+                Check recorded outcome
+              </button>
+            )}
+            <details>
+              <summary>Technical error details</summary>
+              <p>{error.technical}</p>
+            </details>
+          </>
+        )}
+      </div>
       <div role="status" aria-live="polite">
         {encoding
-          ? `Encoding with ${model} locally… ${operationState ? `Host operation: ${operationState}.` : ""} You can cancel while the worker is running.`
+          ? `Encoding with ${model} locally… ${elapsedSeconds}s elapsed in this browser. ${encodeStep}. ${operationState ? `Host operation: ${operationState}.` : ""} You can cancel while the worker is running.`
           : busy
             ? "Working locally…"
             : receipt
               ? `Operation ${receipt.state}. Published: ${receipt.published}. Reward authorized: ${receipt.authorizes_reward}. ${receipt.limitations.join(" · ")}`
               : ""}
+        {!encoding && !busy && receipt && (
+          <section aria-label="Recorded operation outcome">
+            <h2>Recorded outcome: {receipt.state}</h2>
+            <p>{({
+              reserved: "The host still has a reservation for this operation. No prepared preview or committed KU is recorded. Reserved does not prove that AI is still running. Checking the outcome does not repair the earlier error or rerun AI.",
+              prepared: "A prepared result is recorded. Review its validation below; it has not been saved yet.",
+              committed: "The host recorded a completed private save. Do not repeat Save for this operation.",
+              canceled: "The host confirmed cancellation. You can edit the source and start a new encoding attempt.",
+              failed: "The host recorded a failed operation. No successful save is confirmed. Review the earlier error before starting a new attempt.",
+              confirming: "The host is confirming the operation. Check again before retrying or assuming that saving failed.",
+              unknown_outcome: "The host cannot yet establish the final outcome. Keep the operation ID and reconcile again; do not start a duplicate save.",
+            } as const)[receipt.state]}</p>
+            <p className="ku-id">Operation ID: {receipt.operation_id}</p>
+            {receipt.state === "reserved" && (
+              <>
+                <p>Cancel this reservation to unlock the editor. Cancellation does not fix the model's invalid output; retrying the same input may encounter the same error.</p>
+                <button className="btn" disabled={canceling || !session || !pending}
+                  onClick={() => void cancel()}>
+                  Cancel reservation and unlock editor
+                </button>
+              </>
+            )}
+          </section>
+        )}
       </div>
+      {session && models?.limitations.includes("review_drafts_available") && <KuReviewDraft client={client} models={models} session={session}/>}
       <section className="glass-card" aria-labelledby="ku-editor-title">
+        <details open={!models?.limitations.includes("review_drafts_available") || !!pending}>
+        <summary>Encode trực tiếp sang KU · luồng thử nghiệm cũ</summary>
         <h2>Encode text with Ollama</h2>
         <p>
           Experimental · model quality unqualified. The host validates source
           spans, coverage and Registry concepts before a KU can be saved.
         </p>
+        <details className="ku-explanation">
+          <summary>What happens to my sentence?</summary>
+          <ol>
+            <li>The host retains the exact source and your consent privately, then prepares bounded text windows.</li>
+            <li>Ollama proposes structured claims, relations, arguments and references to the exact source spans. It receives instructions and a JSON schema as well as your sentence.</li>
+            <li>The host checks the response format, source quotes and coverage, resolves concepts against the signed Registry, and compiles accepted content into canonical KU bytes. A bounded repair call may share the same time budget.</li>
+            <li>You review the returned validation result. Only Save commits the prepared KU privately.</li>
+          </ol>
+          <p>This extracts what the source says. It does not browse for evidence or certify that the claim is scientifically true. A proposed claim can remain unresolved or be rejected.</p>
+          <p>The current experimental worker uses CPU and starts a separate model worker for each call. Even a short sentence requires model loading and processing the instructions/schema. The shared workflow budget is 600 seconds (10 minutes); repeated timeouts require a model or runtime adjustment, not repeated clicks.</p>
+          <p>The API returns an aggregate outcome, not token streaming or individual internal stages. Elapsed time is measured by this browser and is not a percentage of completion.</p>
+        </details>
         {!models?.models.length && (
           <p>
             Ollama is not admitted on this host. Enable the experimental Ollama
@@ -434,6 +506,7 @@ export function KuWorkflowPage({
             Encode and preview
           </button>
         </fieldset>
+        </details>
         <h2 id="ku-editor-title" tabIndex={-1} ref={editorRef}>
           {revision
             ? "Revise as a new private artifact"
@@ -592,6 +665,11 @@ export function KuWorkflowPage({
             {prepared.destination} · Executable: {String(prepared.executable)}
           </p>
           <p>{prepared.limitations.join(" · ")}</p>
+          <p>
+            {prepared.validity === "ready"
+              ? `${prepared.artifacts.length} artifact(s) passed host preparation and are available for review. Preparation alone does not save or verify the truth of the source.`
+              : "The host has not produced a complete saveable result. Review the validation limitations; do not treat an unresolved preview as an accepted KU."}
+          </p>
           <p className="ku-id">
             Registry: {prepared.registry_release_root} · Profile:{" "}
             {prepared.semantic_profile}

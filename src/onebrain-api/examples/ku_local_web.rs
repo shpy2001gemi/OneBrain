@@ -125,10 +125,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         Vec::new()
     };
-    let inputs: Arc<dyn KuInputProvider> = Arc::new(
-        OllamaKuInputs::new([0; 32], inputs, registry.clone(), providers)
-            .map_err(|_| "local text custody installation failed")?,
-    );
+    let inputs = OllamaKuInputs::new([0; 32], inputs, registry.clone(), providers)
+        .map_err(|_| "local text custody installation failed")?;
+    // Explicit host gate for headless development; never read from user source.
+    let inputs: Arc<dyn KuInputProvider> = Arc::new(if std::env::var("KU_SELECTION").as_deref() == Ok("2") {
+        inputs.with_selection_v2()
+    } else { inputs });
     std::fs::create_dir_all(&node_config.data_dir)?;
     let mut node = OneBrainNode::new(node_config).await?;
     let mut base = base_runtime_config_for_api_token(&token);

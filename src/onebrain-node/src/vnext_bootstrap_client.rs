@@ -17,7 +17,7 @@ use onebrain_protocol::HostAddressV1;
 use reqwest::{Client, StatusCode};
 
 const DEFAULT_GLOBAL_BUDGET: Duration = Duration::from_secs(20);
-const MAX_MANIFEST_BYTES: usize = 1_048_576;
+const MAX_MANIFEST_BYTES: usize = 65_536;
 static PROVIDER_INSTALL: OnceLock<Result<(), String>> = OnceLock::new();
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -159,7 +159,7 @@ impl VNextBootstrapClient {
     }
 }
 
-async fn fetch_sealed(
+pub(crate) async fn fetch_sealed(
     token: &ValidatedPublicDialEndpoint,
     max_bytes: usize,
 ) -> Result<Vec<u8>, BootstrapClientError> {

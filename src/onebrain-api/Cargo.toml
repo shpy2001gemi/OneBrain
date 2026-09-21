@@ -13,6 +13,12 @@ path = "src/lib.rs"
 name = "ku_local_web"
 required-features = ["base-v1"]
 
+# Build the same host for staging without replacing a running Windows binary.
+[[example]]
+name = "ku_local_web_staging"
+path = "examples/ku_local_web.rs"
+required-features = ["base-v1"]
+
 [features]
 default = ["base-v1"]
 base-v1 = ["onebrain-node/base-v1"]

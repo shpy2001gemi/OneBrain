@@ -71,6 +71,8 @@ pub mod vnext_network_runtime;
 pub mod vnext_observability;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_operational_compaction;
+#[cfg(feature = "vnext-outbound-first")]
+pub mod vnext_outbound_product;
 #[cfg(feature = "vnext-network-runtime")]
 pub mod vnext_outbox;
 #[cfg(feature = "vnext-production-canary-harness")]

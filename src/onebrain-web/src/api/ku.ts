@@ -60,6 +60,49 @@ export interface TextIntake {
   text: string;
   consent: boolean;
 }
+export interface ReviewClaim {
+  alternatives?: { quote: string; cue: string; exclusivity: string; branches: {surface: {quote:string}; borrowed?: {quote:string}; origin:string}[] }[];
+  ellipses?: {surface:{quote:string};borrowed:{quote:string};origin:string}[];
+  references?: {via:{quote:string};to:{quote:string};target_kind:string;target_id?:string;status?:string}[];
+  comparisons?: {property:string;cue:string;target_kind:string;target?:{quote:string};origin:string}[];
+  evidence_spans?: {role:string;quote:string;start:number;end:number}[];
+  subject: string;
+  predicate: string;
+  arguments: string[];
+  frequency: string[];
+  negation: string[];
+  condition: string[];
+  time: string[];
+  location: string[];
+  modality: string[];
+  approximation: string[];
+  numbers: { value_quote: string; unit_quote: string; counted_entity_quote: string }[];
+  relations: { statement: number; kind: string; quote: string }[];
+  evidence: string;
+}
+export interface ReviewJob {
+  operation_id: string;
+  source: string;
+  model: string;
+  canonical_ku: false;
+  factual_verification: string;
+  semantic_verification?: string;
+  job: {
+    state: string;
+    calls: number;
+    charged_ms: number;
+    active?: { window: number } | null;
+    issues: string[];
+    windows: {
+      start: number; end: number; state: string;
+      revisions: {
+        draft: { profile?: string; statements: ReviewClaim[]; unresolved: { quote: string; reason: string }[] };
+        validation: { issues: string[]; uncovered: string[] };
+      }[];
+      reviews: { unresolved: { quote: string; reason: string }[]; missing: string[] }[];
+    }[];
+  };
+}
 export interface Draft {
   operation_id: OperationRef["operation_id"];
   idempotency_key: Preparation["idempotency_key"];
@@ -164,6 +207,16 @@ export function createKuClient(
         budget,
         request: { action: "encode_text", payload },
       }),
+    reviewStart: (session: Session, payload: TextIntake) =>
+      request<{review_job: ReviewJob}>("editor", {session, budget, request:{action:"review_start",payload}}),
+    reviewGet: (session: Session, operation_id: string) =>
+      request<{review_job: ReviewJob}>("editor", {session, budget, request:{action:"review_get",payload:{operation_id}}}),
+    reviewList: (session: Session) =>
+      request<{review_jobs: {operation_id:string; model:string; state:string; created_ms:number}[]}>("editor", {session, budget, request:{action:"review_list",payload:{}}}),
+    reviewResume: (session: Session, operation_id: string) =>
+      request<{review_job: ReviewJob}>("editor", {session, budget, request:{action:"review_resume",payload:{operation_id}}}),
+    reviewCancel: (session: Session, operation_id: string) =>
+      request<{review_job: ReviewJob}>("editor", {session, budget, request:{action:"review_cancel",payload:{operation_id}}}),
     reserve: (session: Session) =>
       request<OperationRef>("reservations", { session }),
     catalog: (session: Session) =>

@@ -62,6 +62,11 @@ pub enum ManualEditorRequest {
     Catalog {},
     Models {},
     EncodeText(crate::ku_ollama::TextIntake),
+    ReviewStart(crate::ku_ollama::TextIntake),
+    ReviewGet { operation_id: OperationId },
+    ReviewList {},
+    ReviewResume { operation_id: OperationId },
+    ReviewCancel { operation_id: OperationId },
     Resolve { label: String },
     Draft(ManualDraft),
 }
@@ -77,6 +82,12 @@ pub struct ManualCandidate {
 #[derive(Serialize)]
 #[serde(untagged)]
 pub enum ManualEditorResponse {
+    ReviewList {
+        review_jobs: Vec<serde_json::Value>,
+    },
+    Review {
+        review_job: serde_json::Value,
+    },
     Models {
         models: Vec<crate::ku_ollama::LocalModel>,
         limitations: Vec<String>,
@@ -222,9 +233,13 @@ impl KuInputProvider for ManualKuInputs {
             ]
         };
         match request {
-            ManualEditorRequest::Models {} | ManualEditorRequest::EncodeText(_) => {
-                Err(unavailable())
-            }
+            ManualEditorRequest::Models {}
+            | ManualEditorRequest::EncodeText(_)
+            | ManualEditorRequest::ReviewStart(_)
+            | ManualEditorRequest::ReviewGet { .. }
+            | ManualEditorRequest::ReviewList { .. }
+            | ManualEditorRequest::ReviewResume { .. }
+            | ManualEditorRequest::ReviewCancel { .. } => Err(unavailable()),
             ManualEditorRequest::Catalog {} => {
                 if self.sources.len() > budget.max_items as usize {
                     return Err(invalid());

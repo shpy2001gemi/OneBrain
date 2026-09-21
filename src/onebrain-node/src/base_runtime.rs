@@ -69,6 +69,7 @@ pub struct BaseServiceError {
     pub reason: &'static str,
     pub retryable: bool,
     pub reconcile_before_retry: bool,
+    pub validation_diagnostics: Vec<String>,
 }
 
 impl BaseServiceError {
@@ -80,6 +81,7 @@ impl BaseServiceError {
             reason,
             retryable: code.retryable(),
             reconcile_before_retry: code.reconcile_before_retry(),
+            validation_diagnostics: Vec::new(),
         }
     }
 
@@ -685,7 +687,16 @@ impl BaseServices {
         request: crate::ku_manual::ManualEditorRequest,
         budget: ResourceBudgetV1,
     ) -> Result<crate::ku_manual::ManualEditorResponse, BaseServiceError> {
-        let lease = self.lease(Admission::NewWork)?;
+        use crate::ku_manual::ManualEditorRequest as Editor;
+        let recovery = matches!(
+            &request,
+            Editor::ReviewGet { .. } | Editor::ReviewCancel { .. } | Editor::ReviewList { .. }
+        );
+        let lease = self.lease(if recovery {
+            Admission::Recovery
+        } else {
+            Admission::NewWork
+        })?;
         validate_budget(&budget)?;
         if budget.max_bytes < 16384 || budget.max_items == 0 || budget.max_work_units < 1024 {
             return Err(crate::ku_product::resource());
@@ -699,6 +710,8 @@ impl BaseServices {
         let operation = match &request {
             crate::ku_manual::ManualEditorRequest::Draft(input) => Some(input.operation_id.0),
             crate::ku_manual::ManualEditorRequest::EncodeText(input) => Some(input.operation_id.0),
+            Editor::ReviewStart(input) => Some(input.operation_id.0),
+            Editor::ReviewResume { operation_id } => Some(operation_id.0),
             _ => None,
         };
         if let Some(operation) = operation {
@@ -708,11 +721,59 @@ impl BaseServices {
                 .reconcile(BaseOperationId(operation), self.principal)
                 .map_err(store_error)?
                 .receipt;
-            if receipt.state != crate::base_operation_store::BaseOperationStateV1::Reserved {
+            let draft_recovery = matches!(&request, Editor::ReviewResume { .. })
+                && receipt.state
+                    == crate::base_operation_store::BaseOperationStateV1::UnknownOutcome;
+            if receipt.state != crate::base_operation_store::BaseOperationStateV1::Reserved
+                && !draft_recovery
+            {
                 return Err(crate::ku_product::conflict());
             }
         }
-        ku.editor(self.principal, request, &budget)
+        let start = match request {
+            Editor::ReviewList {} => return ku.review_list(self.principal, &budget),
+            Editor::ReviewGet { operation_id } => {
+                return ku.review_get(self.principal, operation_id.0)
+            }
+            Editor::ReviewCancel { operation_id } => {
+                ku.review_cancel(self.principal, operation_id.0)?;
+                return ku.review_get(self.principal, operation_id.0);
+            }
+            Editor::ReviewStart(input) => {
+                let id = input.operation_id.0;
+                if !ku.review_start(self.principal, input, &budget)? {
+                    return ku.review_get(self.principal, id);
+                }
+                id
+            }
+            Editor::ReviewResume { operation_id } => {
+                ku.review_resume(self.principal, operation_id.0)?;
+                operation_id.0
+            }
+            other => return ku.editor(self.principal, other, &budget),
+        };
+        let worker_lease = self.lease(Admission::NewWork)?;
+        let principal = self.principal;
+        let response = ku.review_get(principal, start)?;
+        let cancel = {
+            // Admission and drain share this fence, so no worker can join
+            // after drain has signaled the existing review jobs.
+            let lifecycle = worker_lease
+                .core
+                .lifecycle
+                .lock()
+                .map_err(|_| internal_error())?;
+            if lifecycle.state != BaseRuntimeLifecycle::Open {
+                return Err(crate::ku_product::conflict());
+            }
+            ku.review_admit(start)?
+        };
+        tokio::spawn(async move {
+            if let Some(ku) = worker_lease.core.ku.as_ref() {
+                ku.run_review(principal, start, cancel).await;
+            }
+        });
+        Ok(response)
     }
     pub(crate) fn ku_experimental_ai_allowed(
         &self,
@@ -1645,6 +1706,9 @@ impl BaseServiceCore {
             }
             lifecycle.state = BaseRuntimeLifecycle::Draining;
         }
+        if let Some(ku) = &self.ku {
+            ku.interrupt_reviews();
+        }
         loop {
             if self
                 .lifecycle
@@ -1677,6 +1741,9 @@ impl BaseServiceCore {
     fn close_best_effort(&self) {
         if let Ok(mut lifecycle) = self.lifecycle.lock() {
             lifecycle.state = BaseRuntimeLifecycle::Closed;
+        }
+        if let Some(ku) = &self.ku {
+            ku.interrupt_reviews();
         }
         if let Ok(mut subscriptions) = self.subscriptions.lock() {
             subscriptions.clear();

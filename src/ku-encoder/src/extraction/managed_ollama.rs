@@ -21,6 +21,24 @@ pub struct ManagedOllamaProvider {
     gate: Arc<Semaphore>,
     _locks: Vec<File>,
 }
+
+// Preserve reviewed schema property order on the inference wire. Ordinary Value
+// uses sorted maps, which can change grammar decoding on installed Ollama builds.
+// Canonical hashing and host validation continue to use ordinary sorted Values.
+#[derive(serde::Serialize)]
+struct GenerateBody {
+    #[serde(flatten)]
+    fields: Value,
+    format: Box<serde_json::value::RawValue>,
+}
+#[cfg(test)]
+fn generate_body(fields: Value) -> Result<GenerateBody> {
+    let format = serde_json::from_str(include_str!(
+        "../../../../docs/specs/vnext/ku-encoder-v1/candidate.schema.json"
+    ))
+    .map_err(|_| ExtractionError("schema"))?;
+    Ok(GenerateBody { fields, format })
+}
 fn open(path: &Path) -> Result<File> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
@@ -98,6 +116,36 @@ fn schema_shape(schema: &Value) -> Result<String> {
         Some("string" | "boolean" | "integer") => Ok(schema["type"].as_str().unwrap().into()),
         _ => Err(ExtractionError("schema")),
     }
+}
+
+// Position hints only: parsing a substring does not establish its semantic role.
+fn numeric_spans(input: &Value) -> Result<Vec<Value>> {
+    let numbers = regex::Regex::new(r"-?[0-9]+(?:[.,/][0-9]+)*(?:[eE][+-]?[0-9]+)?")
+        .map_err(|_| ExtractionError("schema"))?;
+    let mut spans = Vec::new();
+    for window in input["windows"]
+        .as_array()
+        .ok_or(ExtractionError("context"))?
+    {
+        let text = window["text"].as_str().ok_or(ExtractionError("context"))?;
+        let offset = window["start"].as_u64().ok_or(ExtractionError("context"))?;
+        for number in numbers.find_iter(text) {
+            let previous = text[..number.start()].chars().next_back();
+            if previous
+                .is_some_and(|c| c.is_ascii_digit() || ['.', ',', '/', '+', '-'].contains(&c))
+                || super::compiler::exact_number(number.as_str()).is_err()
+            {
+                continue;
+            }
+            require(spans.len() < 1024, "call_tokens")?;
+            spans.push(json!([
+                offset + number.start() as u64,
+                offset + number.end() as u64,
+                number.as_str()
+            ]));
+        }
+    }
+    Ok(spans)
 }
 impl ManagedOllamaProvider {
     /// Host configuration, never a browser endpoint or filesystem path.
@@ -225,7 +273,7 @@ impl ManagedOllamaProvider {
         let (tokenizer, tokenizer_hash) = tokenizer.ok_or(ExtractionError("unsupported_model"))?;
         let backend_hash = artifact_sha256(
             &json!({"binary":binary_hash,"cpu_runtime":runtime_pins,"installed_manifest":manifest,
-            "provider":include_str!("managed_ollama.rs"),"worker":include_str!("ollama_worker.rs"),"tokenizer":include_str!("qwen_tokenizer.rs")}),
+            "provider":include_str!("managed_ollama.rs"),"semantic_guide":include_str!("ollama_semantic_guide.txt"),"worker":include_str!("ollama_worker.rs"),"tokenizer":include_str!("qwen_tokenizer.rs")}),
         )?;
         let manifest = json!({"profile":"ku-extraction-provider/1.0","provider_id":format!("experimental-ollama-{model}"),
             "backend_build_sha256":backend_hash,"mode":"json_schema","tools_enabled":false,"max_context_tokens":8192,
@@ -251,7 +299,11 @@ impl ManagedOllamaProvider {
             "../../../../docs/specs/vnext/ku-encoder-v1/candidate.schema.json"
         ))
         .map_err(|_| ExtractionError("schema"))?;
-        let system = include_str!("../../../../docs/specs/vnext/ku-encoder-v1/prompt.en.txt");
+        let system = format!(
+            "{}\n{}",
+            include_str!("../../../../docs/specs/vnext/ku-encoder-v1/prompt.en.txt"),
+            include_str!("ollama_semantic_guide.txt")
+        );
         let glossary = schema["$defs"]
             .as_object()
             .ok_or(ExtractionError("schema"))?
@@ -277,10 +329,11 @@ impl ManagedOllamaProvider {
             }
         }
         let user = format!(
-            "SCHEMA\nReturn Candidate JSON. Structural glossary (? means optional; | means alternatives; no extra fields). Full bounds enforced by the supplied JSON schema.\n{glossary}\nEXAMPLE\n{}\nCONTEXT\n{}\nBYTE_SPANS\n{}\nThese are exact [start,end,quote] for words in CONTEXT. Copy these offsets for word evidence; whole-unit spans are already in required_units. Multiword evidence must include intervening bytes.\nERRORS\n{}",
+            "SCHEMA\nReturn Candidate JSON. Structural glossary (? means optional; | means alternatives; no extra fields). Full bounds enforced by the supplied JSON schema.\n{glossary}\nEXAMPLE\n{}\nCONTEXT\n{}\nBYTE_SPANS\n{}\nThese are exact [start,end,quote] for words in CONTEXT. Copy these offsets for word evidence; whole-unit spans are already in required_units. Multiword evidence must include intervening bytes.\nNUMBER_SPANS\n{}\nExact numeric substrings only, not semantic decisions. Select number evidence separately from the unit, even when printed together. The host performs arithmetic; do not compute or normalize source numbers.\nERRORS\n{}",
             examples["examples"][0]["candidate"],
             request.input,
             json!(spans),
+            json!(numeric_spans(&request.input)?),
             json!(request.repair_errors)
         );
         require(user.len() + system.len() <= 1_048_576, "payload_bytes")?;
@@ -301,13 +354,58 @@ impl ExtractionProvider for ManagedOllamaProvider {
         u32::try_from(n).map_err(|_| ExtractionError("call_tokens"))
     }
     async fn extract(&self, request: ProviderRequest) -> Result<Vec<u8>> {
+        self.generate(
+            self.prompt(&request)?,
+            include_str!("../../../../docs/specs/vnext/ku-encoder-v1/candidate.schema.json"),
+            request.deadline,
+            request.output_tokens,
+            request.max_response_bytes,
+        )
+        .await
+    }
+    fn review_task_tokens(&self, request: &review_draft::TaskRequest) -> Result<u32> {
+        u32::try_from(
+            self.tokenizer
+                .encode(request.prompt()?, false)
+                .map_err(|_| ExtractionError("tokenizer"))?
+                .len(),
+        )
+        .map_err(|_| ExtractionError("call_tokens"))
+    }
+    async fn review_task(&self, request: review_draft::TaskRequest) -> Result<Vec<u8>> {
+        let schema = request.wire_schema()?;
+        self.generate(
+            request.prompt()?,
+            &schema,
+            request.deadline,
+            2048,
+            1_048_576,
+        )
+        .await
+    }
+}
+impl ManagedOllamaProvider {
+    async fn generate(
+        &self,
+        prompt: String,
+        schema: &str,
+        timeout: Duration,
+        output_tokens: u32,
+        max_response_bytes: usize,
+    ) -> Result<Vec<u8>> {
         let _permit = self
             .gate
             .try_acquire()
             .map_err(|_| ExtractionError("memory_admission"))?;
-        let expected_tokens = self.input_tokens(&request)?;
+        let expected_tokens = u32::try_from(
+            self.tokenizer
+                .encode(prompt.clone(), false)
+                .map_err(|_| ExtractionError("tokenizer"))?
+                .len(),
+        )
+        .map_err(|_| ExtractionError("call_tokens"))?;
         require(
-            request.output_tokens <= 2048 && expected_tokens + request.output_tokens <= 8192,
+            output_tokens <= 2048 && expected_tokens + output_tokens <= 8192,
             "call_tokens",
         )?;
         let listener = std::net::TcpListener::bind("127.0.0.1:0")
@@ -328,11 +426,11 @@ impl ExtractionProvider for ManagedOllamaProvider {
         let client = reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
-            .timeout(request.deadline)
+            .timeout(timeout)
             .build()
             .map_err(|_| ExtractionError("worker_unavailable"))?;
         let url = format!("http://127.0.0.1:{port}");
-        let deadline = tokio::time::Instant::now() + request.deadline;
+        let deadline = tokio::time::Instant::now() + timeout;
         tokio::time::timeout_at(deadline, async {
             let startup_deadline = tokio::time::Instant::now() + Duration::from_secs(10);
             loop {
@@ -340,18 +438,17 @@ impl ExtractionProvider for ManagedOllamaProvider {
                 require(tokio::time::Instant::now() < startup_deadline,"worker_startup_failed")?;
                 tokio::time::sleep(Duration::from_millis(100)).await;
             }
-            let schema: Value = serde_json::from_str(include_str!("../../../../docs/specs/vnext/ku-encoder-v1/candidate.schema.json")).map_err(|_|ExtractionError("schema"))?;
-            let body = json!({"model":self.model,"prompt":self.prompt(&request)?,"raw":true,"stream":false,"format":schema,"keep_alive":0,
-                "options":{"num_ctx":8192,"num_predict":request.output_tokens,"temperature":0,"seed":1,"num_gpu":0}});
+            let body = GenerateBody { fields: json!({"model":self.model,"prompt":prompt,"raw":true,"stream":false,"keep_alive":0,
+                "options":{"num_ctx":8192,"num_predict":output_tokens,"temperature":0,"seed":1,"num_gpu":0}}), format: serde_json::from_str(schema).map_err(|_| ExtractionError("schema"))? };
             let mut response = client.post(format!("{url}/api/generate")).json(&body).send().await.map_err(|_|ExtractionError("provider_failed"))?;
             require(response.status().is_success(),"provider_failed")?;
             let mut bytes = Vec::new();
             while let Some(chunk) = response.chunk().await.map_err(|_|ExtractionError("provider_failed"))? {
-                require(bytes.len() + chunk.len() <= request.max_response_bytes.min(1_048_576),"payload_bytes")?; bytes.extend_from_slice(&chunk);
+                require(bytes.len() + chunk.len() <= max_response_bytes.min(1_048_576),"payload_bytes")?; bytes.extend_from_slice(&chunk);
             }
             let result: Value = serde_json::from_slice(&bytes).map_err(|_|ExtractionError("provider_failed"))?;
             require(result["model"] == self.model && result["done"] == true && result["done_reason"] == "stop" && result["prompt_eval_count"].as_u64() == Some(expected_tokens as u64)
-                && result["eval_count"].as_u64().is_some_and(|n|n <= request.output_tokens as u64)
+                && result["eval_count"].as_u64().is_some_and(|n|n <= output_tokens as u64)
                 && result.get("tool_calls").is_none(),"provider_token_binding")?;
             let output = result["response"].as_str().ok_or(ExtractionError("provider_failed"))?;
             Ok(output.as_bytes().to_vec())
@@ -362,6 +459,41 @@ impl ExtractionProvider for ManagedOllamaProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn numeric_hints_split_attached_units_without_rewriting_unsupported_notation() {
+        let text = "Giá 12kg; 1,000; 3e2; .5; +6; -3.5m; 1/2s";
+        let spans = numeric_spans(&json!({"windows":[{"start":7,"text":text}]})).unwrap();
+        assert_eq!(
+            spans
+                .iter()
+                .map(|s| s[2].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec!["12", "-3.5", "1/2"]
+        );
+        for span in spans {
+            assert_eq!(
+                &text[span[0].as_u64().unwrap() as usize - 7
+                    ..span[1].as_u64().unwrap() as usize - 7],
+                span[2].as_str().unwrap()
+            );
+        }
+    }
+    #[test]
+    fn generation_wire_retains_reviewed_schema_without_changing_its_meaning() {
+        let source =
+            include_str!("../../../../docs/specs/vnext/ku-encoder-v1/candidate.schema.json");
+        let bytes =
+            serde_json::to_string(&generate_body(json!({"model":"test","raw":true})).unwrap())
+                .unwrap();
+        assert!(bytes.contains(source.trim()));
+        let decoded: Value = serde_json::from_str(&bytes).unwrap();
+        assert_eq!(
+            decoded["format"],
+            serde_json::from_str::<Value>(source).unwrap()
+        );
+        assert_eq!(decoded["model"], "test");
+        assert_eq!(decoded["raw"], true);
+    }
     #[test]
     fn experimental_model_requires_valid_tag_and_existing_local_artifacts() {
         for name in [

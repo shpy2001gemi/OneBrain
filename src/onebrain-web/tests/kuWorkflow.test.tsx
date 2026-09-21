@@ -44,9 +44,12 @@ function fixture(
     reserveLoss?: boolean;
     ai?: boolean;
     prepareWait?: Promise<void>;
+    prepareFailure?: "deadline" | "resource" | "oneof" | "concept_label" | "duplicate_id";
+    reservedAfterFailure?: boolean;
   } = {},
 ) {
   let saved = false;
+  let failed = false;
   let currentOp = op;
   let currentSession = { ...session };
   const calls: { path: string; body: any; init: RequestInit }[] = [];
@@ -71,7 +74,7 @@ function fixture(
   });
   const receipt = () => ({
     operation_id: currentOp,
-    state: saved ? "committed" : "prepared",
+    state: saved ? "committed" : failed ? options.reservedAfterFailure ? "reserved" : "failed" : "prepared",
     object_cids: saved ? [object] : [],
     limitations: [],
     published: false,
@@ -174,6 +177,18 @@ function fixture(
         switch (body.request.operation) {
           case "prepare":
             if (options.prepareWait) await options.prepareWait;
+            if (options.prepareFailure) {
+              failed = true;
+              return new Response(JSON.stringify({
+                ok: false,
+                error: { code: "rate_limited", failure: {
+                  code: ["oneof", "concept_label", "duplicate_id"].includes(options.prepareFailure) ? "DependencyUnavailable" : "ResourceExhausted", retryable: true,
+                  reconcile_before_retry: true, limitations: options.prepareFailure === "oneof"
+                    ? ["oneof", "schema: $.statements[0].arguments[0].unit: missing_field; include this required field"]
+                    : [options.prepareFailure],
+                } },
+              }), { status: 429 });
+            }
             payload = prepared();
             break;
           case "revise":
@@ -263,6 +278,91 @@ async function preview() {
   );
 }
 describe("local KU component journey", () => {
+  it("explains duplicate internal identifiers without implying a transport outage", async () => {
+    const f = fixture({ ai: true, prepareFailure: "duplicate_id" });
+    render(<KuWorkflowPage client={f.client} />);
+    await screen.findByRole("option", { name: "qwen3:8b — experimental" });
+    fireEvent.change(screen.getByLabelText("Source text to encode"), { target: { value: "Water boils." } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Encode and preview" }));
+    await screen.findByRole("heading", { name: "AI output repeats an internal identifier" });
+    expect(screen.getByRole("alert").textContent).toContain("Distinct items need distinct keys");
+    expect(screen.queryByRole("heading", { name: "Exact prepared preview" })).toBeNull();
+  });
+  it("explains concept label failures even when an older host has no field diagnostics", async () => {
+    const f = fixture({ ai: true, prepareFailure: "concept_label" });
+    render(<KuWorkflowPage client={f.client} />);
+    await screen.findByRole("option", { name: "qwen3:8b — experimental" });
+    fireEvent.change(screen.getByLabelText("Source text to encode"), { target: { value: "Water boils." } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Encode and preview" }));
+    await screen.findByRole("heading", { name: "AI concept label differs from its source evidence" });
+    expect(screen.getByRole("alert").textContent).toContain("does not establish that the concept is missing from the Registry");
+    expect(screen.getByRole("alert").textContent).toContain("does not mean Ollama is disconnected");
+    expect(screen.queryByRole("heading", { name: "Exact prepared preview" })).toBeNull();
+  });
+  it("shows field-level schema diagnostics without opening technical details", async () => {
+    const f = fixture({ ai: true, prepareFailure: "oneof" });
+    render(<KuWorkflowPage client={f.client} />);
+    await screen.findByRole("option", { name: "qwen3:8b — experimental" });
+    fireEvent.change(screen.getByLabelText("Source text to encode"), { target: { value: "Water boils." } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Encode and preview" }));
+    await screen.findByRole("heading", { name: "AI output does not match the KU schema" });
+    expect(screen.getByRole("region", { name: "Schema validation issues" }).textContent).toContain("$.statements[0].arguments[0].unit: missing_field");
+    expect(screen.queryByRole("heading", { name: "Exact prepared preview" })).toBeNull();
+    expect(f.calls.filter(c => c.body?.request?.operation === "save")).toHaveLength(0);
+  });
+  it("keeps the original failure visible and explains a reserved reconciliation without replay", async () => {
+    const f = fixture({ ai: true, prepareFailure: "resource", reservedAfterFailure: true });
+    render(<KuWorkflowPage client={f.client} />);
+    await screen.findByRole("option", { name: "qwen3:8b — experimental" });
+    fireEvent.change(screen.getByLabelText("Source text to encode"), { target: { value: "Water boils." } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    const encode = screen.getByRole("button", { name: "Encode and preview" }) as HTMLButtonElement;
+    fireEvent.click(encode);
+    await screen.findByRole("heading", { name: "Local operation could not finish" });
+    fireEvent.click(screen.getByRole("button", { name: "Check recorded outcome" }));
+    await screen.findByRole("heading", { name: "Recorded outcome: reserved" });
+    expect(screen.getByRole("alert").textContent).toContain("ResourceExhausted");
+    expect(screen.getByRole("status").textContent).toContain("does not prove that AI is still running");
+    expect(encode.matches(":disabled")).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel reservation and unlock editor" }));
+    await screen.findByRole("heading", { name: "Recorded outcome: canceled" });
+    await waitFor(() => expect(encode.disabled).toBe(false));
+    expect(screen.getByLabelText("Source text to encode").getAttribute("disabled")).toBeNull();
+    expect(f.calls.filter(c => c.body?.request?.operation === "prepare")).toHaveLength(1);
+    expect(f.calls.filter(c => c.body?.request?.operation === "save")).toHaveLength(0);
+  });
+  it.each(["deadline", "resource"] as const)(
+    "explains %s without replaying inference and unlocks only after reconciliation",
+    async (reason) => {
+      const f = fixture({ ai: true, prepareFailure: reason });
+      render(<KuWorkflowPage client={f.client} />);
+      await screen.findByRole("option", { name: "qwen3:8b — experimental" });
+      fireEvent.change(screen.getByLabelText("Source text to encode"), {
+        target: { value: "Water boils." },
+      });
+      fireEvent.click(screen.getByRole("checkbox"));
+      const encode = screen.getByRole("button", { name: "Encode and preview" }) as HTMLButtonElement;
+      fireEvent.click(encode);
+      await screen.findByRole("heading", { name: reason === "deadline"
+        ? "Encoding timed out" : "Local operation could not finish" });
+      const alert = screen.getByRole("alert");
+      expect(alert.textContent).toContain(reason);
+      if (reason === "deadline") expect(alert.textContent).toContain("600-second (10-minute)");
+      else expect(alert.textContent).not.toContain("600-second (10-minute)");
+      expect(alert.textContent).toContain("Source accepted");
+      expect(encode.disabled).toBe(true);
+      expect(screen.queryByRole("heading", { name: "Exact prepared preview" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Check recorded outcome" }));
+      await waitFor(() => expect(encode.disabled).toBe(false));
+      expect(screen.getByRole("status").textContent).toContain("failed");
+      expect(f.calls.filter(c => c.body?.request?.action === "encode_text")).toHaveLength(1);
+      expect(f.calls.filter(c => c.body?.request?.operation === "prepare")).toHaveLength(1);
+      expect(f.calls.filter(c => c.body?.request?.operation === "save")).toHaveLength(0);
+    },
+  );
   it("requires consent, selects qwen3 and saves only after AI preview", async () => {
     const f = fixture({ ai: true });
     render(<KuWorkflowPage client={f.client} />);
@@ -360,6 +460,10 @@ describe("local KU component journey", () => {
     expect(document.activeElement).toBe(
       screen.getByRole("button", { name: "Refresh host status" }),
     );
+    await user.tab();
+    expect(document.activeElement?.textContent).toBe("Encode trực tiếp sang KU · luồng thử nghiệm cũ");
+    await user.tab();
+    expect(document.activeElement?.textContent).toBe("What happens to my sentence?");
     await user.tab();
     expect(document.activeElement).toBe(
       screen.getByLabelText("Admitted source"),

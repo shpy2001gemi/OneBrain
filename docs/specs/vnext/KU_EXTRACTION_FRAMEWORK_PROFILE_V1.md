@@ -10,6 +10,12 @@ SEM compilation and all KU service calls. Rules and AI use the same boundary.
 The framework is shared across platforms; provider adapters only implement local
 inference mechanics. It does not introduce another orchestrator or KU format.
 
+The owner-approved [semantic selection extension](KU_SEMANTIC_SELECTION_PROFILE_V1.md)
+defines a sparse model wire format and host assembly for private drafts across
+all platforms. It keeps LLM semantic choices separate from mechanical JSON,
+number/anchor/ID work and from independent verification. Its versioned draft
+workflow does not replace the canonical Candidate contract below.
+
 ## 1. Authority and scope
 
 The [SEM profile](SEMANTIC_PRIMITIVES_V1.md),
@@ -232,6 +238,15 @@ job. Constrained jobs allow 8 calls, 4,096 input/2,048 output tokens per call an
 per call and 120 seconds total. Aggregate input/output token ceilings include
 failed calls, transport retries, adapter warm-up requests and repairs; they are
 not renewed when a provider or context changes. No-LLM permits zero calls.
+
+Owner D-023 follow-up (2026-09-07) adds an opt-in experimental local Ollama
+deadline of 600 seconds with standard token/work ceilings. See the
+[experimental host profile](KU_EXPERIMENTAL_OLLAMA_PROFILE_V1.md). This policy is
+explicitly selected by the host and bound into its implementation commitment.
+The generic Attempt remaining-time representation and WorkBudget capacity permit
+600,000 ms; standard/constrained execution and quality qualification thresholds
+remain 120/30 seconds. Planning, extraction and final preparation carry actual
+elapsed time and cannot refund it by assuming the old 120-second maximum.
 
 Before dispatch, atomically reserve the maximum call input/output tokens and
 increment attempt/job counters in private durable state. Charge work for source

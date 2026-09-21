@@ -5,16 +5,64 @@
 
 ## Current checkpoint
 
-- Current task: `KU-WEB-001`
-- Current branch: `codex/ku-web-001-workflow`
-- Review task branch: `codex/ku-web-001-workflow`
-- Current state: `Review`; D-023 experimental Ollama extension implemented and verified
+- 2026-09-21 OBP-PROD-003 — `Review`: discovery, signed cache recovery,
+  standing reservations/renewal and separately opted-in advertisements are
+  implemented locally under D-026. 234 node unit + 22 integration tests pass,
+  including real loopback TLS renewal/keepalive/closure. Core tests, feature
+  checks and validators pass. [Evidence and limits](outputs/OBP_PROD_003_IMPLEMENTATION.md).
+  Original dirty tree retained on `codex/obp-prod-003-discovery`; no merge,
+  publication, model tuning or live networking activation. Task 004's merge
+  prerequisite is not waived by D-026.
+
+- 2026-09-20 D-026: owner explicitly authorized OBP-PROD-003 local work before
+  task 002 merge. Implementation is in progress on `codex/obp-prod-003-discovery`
+  in the original dirty tree. Fresh task-002 verification: 219 unit + 20
+  integration tests, six contract tests and aggregate vNext validation pass.
+  No Git publication, model tuning or live network activation is authorized.
+
+- 2026-09-20 D-025: owner accepted OBP-PROD-001 and explicitly authorized
+  OBP-PROD-002 local implementation before merge. Work remains on the original
+  dirty tree under `codex/obp-prod-002-node-lifecycle`; no Git publication or
+  live-host activation. Task 002 is locally implemented/tested: 219 unit and
+  20 integration tests passed, feature checks and contract validators passed.
+  [Lifecycle evidence](outputs/OBP_PROD_002_IMPLEMENTATION.md).
+
+- 2026-09-20 OBP-PROD-001 — `Review`: [orchestration proposal](outputs/OBP_PROD_001_CONTRACT.md)
+  defines 13 logical operations, 18 DTOs and 26 fixtures. Six mutation tests and
+  aggregate vNext validation pass. Original dirty tree, including completed CLI,
+  retained on `codex/obp-prod-001-product-contract`; no commits/push/merge.
+  Historical review gate superseded by D-025: contract accepted, local task 002 authorized before merge.
+
+- 2026-09-20 KU-CLI-001 — `Review`: all eleven shared KU operations plus
+  reservation implemented in `onebrain ku`. 42 CLI unit and 2 integration tests
+  pass, including the isolated real API/node workflow; default/no-default checks,
+  format and vNext contracts pass. [Evidence](outputs/KU_CLI_001_IMPLEMENTATION.md).
+  Original dirty baseline retained on `codex/ku-cli-001-workflow`; uncommitted,
+  no model tuning, live-host change, push or merge. Next lane: OBP-PROD-001 contract.
+
+- 2026-09-20 D-024: owner accepts the current semantic foundation for this stage.
+  Further fidelity work is Deferred to the [contributor backlog](outputs/KU_SEM_001_CONTRIBUTOR_BACKLOG.md).
+  Next: KU-CLI-001, then the dependency-ready OBP framework lane. No merge or v2
+  host activation is claimed. [New-conversation handoff](NEXT_CONVERSATION.md).
+
+- 2026-09-20 shared semantic selection continuation — `Review`: common Rust host assembly, sparse LLM choices and mechanically constrained repair are implemented and activated locally. Qwen3 8b passed 5/5 through the actual Web API (52.32 s mean; admission <0.1 s); Gemma E4B passed 4/5 (43.19 s), 12B passed 5/5 (78.58 s) via the development adapter. Fifteen selection tests, five API tests, twenty Web tests, build and contract validation passed. Three legacy jobs remain readable; new drafts are explicitly unassessed and no KU save/share occurred. Ollama 0.34.2; earlier baseline 0.33.3. See [selection implementation and limits](outputs/KU_SEMANTIC_SELECTION_IMPLEMENTATION.md).
+
+- 2026-09-09 shared semantic selection — historical checkpoint (superseded by September 20 `Review`): owner approved sparse LLM choices and host mechanics consistently across platforms. Common architecture, Rust assembler/targeted repair and unassessed draft state are implemented; 45 encoder, five API and 20 Web tests passed. Real-model comparisons and local host activation are pending. See [selection implementation](outputs/KU_SEMANTIC_SELECTION_IMPLEMENTATION.md).
+- 2026-09-09 owner-requested Gemma 4 comparison — `Review`: development-only chat transport ran the same native DraftJob/prompt/schema flow on five public cases per model. E4B passed 3/5 meanings (66.57 s mean); 12B passed 5/5 (179.78 s mean). E4B missed a preposition and linked the wrong contrast endpoints despite mechanical readiness. All 20 calls had thinking disabled. No Web provider admission or canonical KU behavior changed; read-only live-host check passed. See [Gemma evidence and limits](outputs/KU_GEMMA4_DEVELOPMENT_PROBE.md).
+- 2026-09-08 staged-draft follow-up — `Review`: shared draft workflow, encrypted background jobs and Web interface are implemented and activated on the local owner host. Qwen3 8b preserved all five inspected development meanings; 1.7b retained review issues on all five. Actual Web API originals passed (water 170.95 s, car 126.06 s; start replies 0.085/0.071 s), without resampling on reads/repeated start or any KU save/share. See [implementation and limitations](outputs/KU_REVIEW_DRAFT_IMPLEMENTATION.md). Complete canonical lowering and broad model portability remain unfinished; draft readiness does not claim those outcomes.
+- 2026-09-08 owner follow-up: [headless tests and portable proposal experiments](outputs/KU_ENCODER_MODEL_PORTABILITY_EXPERIMENT.md); two requested sources tested locally with Qwen3 8b/1.7b and a separate 3b reviewer. Semantic defects remain explicitly reported; prototype proposals are not canonical KU or integrated Web behavior. Shared preflight now brings span/number/structural compilation errors into the bounded repair allowance.
+- Local follow-up: [schema diagnostics and repair feedback](outputs/KU_WEB_001_SCHEMA_DIAGNOSTICS.md) implemented and tested after owner authorization; these follow-up edits remain uncommitted.
+- Real Vietnamese follow-up remains unsuccessful on the current Web/host Candidate path: the two exact owner sources failed `duplicate_id` (379.26s, water) and `oneof` (451.29s, car) in the 2026-09-08 rebuilt-host API tests. Both test reservations were canceled; neither yielded a validated preview or saved/shared KU. Number/span preflight now reaches the existing repair allowance; earlier `unsupported_number` evidence remains historical. See the [model-portability report](outputs/KU_ENCODER_MODEL_PORTABILITY_EXPERIMENT.md) for separate proposal results and remaining semantic representation gaps.
+- Current task: `OBP-PROD-003` — Review, local implementation/test evidence under D-026
+- Current branch: `codex/obp-prod-003-discovery`
+- Review task branch: `codex/obp-prod-003-discovery` (includes all uncommitted CLI/Web/semantic work)
+- Current state: `Review` for OBP discovery/lifecycle; OBP contract accepted and CLI in `Review`; prior Web/semantic implementation accepted for this stage under D-024, still unmerged
 - Starting main: `798eabfee8acaa8cb473aa99fa52ccfd6f124f7e`, clean and equal to fetched `origin/main`
 - Implementation checkpoint: `5e540e5` (D-023 experimental Ollama), following manual milestone `ac5ce80`; the branch tip adds this ledger-only record
 - Prerequisite evidence: [KU-API-001 implementation and limits](outputs/KU_API_001_IMPLEMENTATION.md)
 - Last accepted task: `KU-API-001`, implementation `29c34d1`, reviewed tip `423b7b8`, D-022
 - Last merged task: `KU-API-001`, merge `3eba370df1df91627595e0acbf7645d94ea75276` on `origin/main`
-- Next action: review the manual and experimental Ollama additions on the pushed task branch; do not merge or delete without explicit owner instruction
+- Next action: review OBP-PROD-003 evidence; task 004 requires task 003 merge or explicit local exception. Preserve the full dirty tree and keep semantic tuning deferred.
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -28,13 +76,13 @@
 | 3 | `KU-CON-001` | Merged | `codex/ku-con-001-product-contract` | `KU-REV-002` | [Approved contract](../../specs/vnext/KU_PRODUCT_WORKFLOW_PROFILE_V1.md); KU-PC-A/B/C accepted under D-015; merge `2cbc8f2` on `origin/main`. |
 | 4 | `KU-RUN-001` | Merged | `codex/ku-run-001-shared-service` | `KU-CON-001` | Owner-authorized merge `d141701` on `origin/main`; [implementation evidence](outputs/KU_RUN_001_IMPLEMENTATION.md). |
 | 5 | `KU-API-001` | Merged | `codex/ku-api-001-local-api` | `KU-RUN-001`, `KU-ENC-002` | D-022; merge `3eba370` on `origin/main`; [API implementation and verification](outputs/KU_API_001_IMPLEMENTATION.md). |
-| 6 | `KU-CLI-001` | Planned | `codex/ku-cli-001-workflow` | `KU-API-001` | — |
+| 6 | `KU-CLI-001` | Review | `codex/ku-cli-001-workflow` | `KU-API-001` | [Local implementation and tests](outputs/KU_CLI_001_IMPLEMENTATION.md), uncommitted/unmerged. |
 | 7 | `KU-WEB-001` | Review | `codex/ku-web-001-workflow` | `KU-API-001` | [Manual implementation](outputs/KU_WEB_001_IMPLEMENTATION.md), [Ollama integration and run instructions](outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md); D-023, unmerged. |
 | 8 | `KU-DESK-001` | Planned | `codex/ku-desk-001-workflow` | `KU-WEB-001` | — |
 | 9 | `KU-QA-001` | Planned | `codex/ku-qa-001-cross-surface` | `KU-CLI-001`, `KU-DESK-001`, `KU-ENC-003` | — |
-| 10 | `OBP-PROD-001` | Planned | `codex/obp-prod-001-product-contract` | `KU-CON-001` | — |
-| 11 | `OBP-PROD-002` | Planned | `codex/obp-prod-002-node-lifecycle` | `OBP-PROD-001` | — |
-| 12 | `OBP-PROD-003` | Planned | `codex/obp-prod-003-discovery` | `OBP-PROD-002` | — |
+| 10 | `OBP-PROD-001` | Review | `codex/obp-prod-001-product-contract` | `KU-CON-001` | [Contract proposal and tests](outputs/OBP_PROD_001_CONTRACT.md); accepted under D-025, uncommitted/unmerged. |
+| 11 | `OBP-PROD-002` | Review | `codex/obp-prod-002-node-lifecycle` | `OBP-PROD-001` accepted, D-025 local waiver | [Lifecycle evidence](outputs/OBP_PROD_002_IMPLEMENTATION.md); 219 unit + 20 integration tests, no merge/activation. |
+| 12 | `OBP-PROD-003` | Review | `codex/obp-prod-003-discovery` | `OBP-PROD-002` local evidence, D-026 | [Discovery evidence](outputs/OBP_PROD_003_IMPLEMENTATION.md); 234 node unit + 22 integration tests, uncommitted/unmerged. |
 | 13 | `OBP-PROD-004` | Planned | `codex/obp-prod-004-routing` | `OBP-PROD-003` | — |
 | 14 | `OBP-API-001` | Planned | `codex/obp-api-001-network-api` | `OBP-PROD-004` | — |
 | 15 | `OBP-CLI-001` | Planned | `codex/obp-cli-001-networking` | `OBP-API-001` | — |
@@ -46,8 +94,43 @@
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
 | 22 | `KU-ENC-002` | Merged | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Owner accepted under D-020; merge `dc04b71` on `origin/main`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |
 | 23 | `KU-ENC-003` | Blocked | `codex/ku-enc-003-model-qualification` | `KU-ENC-002` | Separate branch retained at `4a8f29d`; artifact preflight only, no model runs/qualified tuples. Owner reports new VI/EN workbooks; contents and reviewer/locked-run evidence unverified. |
+| 24 | `KU-SEM-001` | Deferred | `codex/ku-web-001-workflow` (local) | Shared selection follow-up | D-024 accepts implemented foundation; remaining quality work deferred. [Evidence](outputs/KU_SEM_001_IMPLEMENTATION.md), [backlog](outputs/KU_SEM_001_CONTRIBUTOR_BACKLOG.md). Unmerged; v2 host activation not accepted. |
 
 ## Per-task update protocol
+
+### KU-WEB-001 reserved reconciliation feedback — 2026-09-07
+
+Owner reported that checking an error's recorded outcome cleared the error and
+only displayed `reserved`. Web now retains the original error during reconcile,
+explains each recorded state, and places explicit reservation cancellation beside
+the reserved outcome. Reserved is not interpreted as running inference or a
+successful preparation. Thirteen Web tests pass, including reserved recovery,
+editor unlocking after cancellation, and no automatic inference/save replay.
+This UI correction does not resolve the separate model `oneof` schema failure.
+
+### KU-WEB-001 semantic guidance and timeout — 2026-09-07
+
+Owner approved semantic-analysis guidance and requested a higher experimental
+timeout. The local Ollama policy now allows 10 minutes, retains standard token
+limits, and preserves elapsed-time accounting through preparation. The provider
+adds a pinned semantic guide while retaining the reviewed system prompt.
+See [implementation and async follow-up scope](outputs/KU_WEB_001_SEMANTIC_TIMEOUT.md).
+The owner-described async encoding/sharing direction remains a follow-up design
+requirement; the current host still awaits preparation and does not publish.
+Validation passed: 20 shared extraction tests, 12 KU API tests, 22 node KU tests,
+18 Python contract tests, 12 Web tests, build and vNext validator. Real qwen3:8b
+development preview/save/restart-read passed with 139.519s inference/validation
+using an isolated test Registry. Local owner host rebuilt/restarted and checked
+ready. Changes remain in the current review working tree; no merge or push.
+
+### KU-WEB-001 timeout feedback — 2026-09-07
+
+Owner local testing reported `ResourceExhausted / deadline`. Web feedback now
+explains the 120-second workflow timeout, displays browser-observed progress and
+elapsed time, and offers reconciliation without replay. Twelve Web tests and
+the production build pass; backend limits and model quality status are unchanged.
+See [timeout feedback evidence](outputs/KU_WEB_001_TIMEOUT_FEEDBACK.md).
+This follow-up remains in the current task working tree for review.
 
 ### KU-WEB-001 experimental Ollama review evidence — 2026-09-06
 
@@ -513,6 +596,24 @@ After owner-approved merge:
    the owner requested cleanup.
 
 ## Blocker protocol
+
+### 2026-09-20 — KU-SEM-001 (historical gate; D-024 defers further work)
+
+Owner approved the separate draft/selection v2 representation and implementation.
+Shared encoder, node dispatch and Web rendering have been added in the original
+working tree; [implementation evidence](outputs/KU_SEM_001_IMPLEMENTATION.md)
+records checks and failed development iterations. The activation gate remains
+unaccepted because the real-model rocket/reference outputs still lose meaning.
+No canonical conflict was silently resolved, no independent verifier is claimed,
+and no commit/push/merge or live-host restart was performed. Continue from the
+original dirty baseline, preserving failed raw reports and v1 records.
+
+Continuation: predicate/qualifier overlap now dispatches a finite-choice repair.
+The real Gemma replay accepted that repair and retained both revisions, but the
+rocket case still fails reference/future meaning checks. Encoder checks are now
+70 passed/one ignored, API 8 passed; final staging build and validator passed.
+The completed Qwen transport retry (1/6) and Gemma comparison (2/3) remain known
+development evidence only. See the linked report for commitments and limitations.
 
 Record the exact canonical conflict, missing authority, failing gate or external
 dependency here. Do not replace `Blocked` with an inferred product behavior.

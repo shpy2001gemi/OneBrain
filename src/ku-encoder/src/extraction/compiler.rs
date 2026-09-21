@@ -36,6 +36,55 @@ fn index<'a>(rows: &'a Value, field: &str) -> Result<BTreeMap<&'a str, &'a Value
     Ok(result)
 }
 
+/// Source-grounding preflight for schema-checked candidates, before the repair
+/// allowance is closed. Never reflect model labels or source quotes in errors.
+pub(crate) fn concept_label_diagnostics(
+    candidate: &Value,
+    b: &mut WorkBudget,
+) -> Result<Vec<String>> {
+    let mut diagnostics = Vec::new();
+    for (i, concept) in array(&candidate["concepts"]).iter().enumerate() {
+        b.charge(text(&concept["label"]).len() + text(&concept["evidence"]["quote"]).len() + 1)?;
+        if concept["label"] != concept["evidence"]["quote"] {
+            diagnostics.push(format!("grounding: $.concepts[{i}].label: concept_label; copy evidence.quote exactly from the source; preserve case, accents and spelling; do not translate or normalize; keep evidence offsets faithful to the source"));
+            if diagnostics.len() == 8 {
+                break;
+            }
+        }
+    }
+    Ok(diagnostics)
+}
+
+pub(crate) fn duplicate_id_diagnostics(
+    candidate: &Value,
+    b: &mut WorkBudget,
+) -> Result<Vec<String>> {
+    let mut diagnostics = Vec::new();
+    for (collection, field) in [
+        ("concepts", "key"),
+        ("statements", "key"),
+        ("coverage", "unit"),
+    ] {
+        let mut seen = BTreeMap::new();
+        for (i, row) in array(&candidate[collection]).iter().enumerate() {
+            let key = text(&row[field]);
+            b.charge(key.len() + 1)?;
+            if let Some(first) = seen.insert(key, i) {
+                let fix = if collection == "coverage" {
+                    "emit one coverage entry per required unit; combine its statement references"
+                } else {
+                    "use distinct keys for distinct items and update references; reuse an existing item by reference"
+                };
+                diagnostics.push(format!("grounding: $.{collection}[{i}].{field}: duplicate_id; duplicates $.{collection}[{first}].{field}; {fix}"));
+                if diagnostics.len() == 8 {
+                    return Ok(diagnostics);
+                }
+            }
+        }
+    }
+    Ok(diagnostics)
+}
+
 pub(crate) fn exact_number(value: &str) -> Result<ExactRatio> {
     require(value.len() <= 64, "unsupported_number")?;
     let regex = regex::Regex::new(r"\A-?(?:0|[1-9][0-9]*)(?:\.[0-9]+|/[1-9][0-9]*)?\z")
@@ -52,6 +101,92 @@ pub(crate) fn exact_number(value: &str) -> Result<ExactRatio> {
         (value.to_owned(), "1".into())
     };
     big_ratio(&numerator, &denominator)
+}
+
+/// Check model-owned structure and source evidence without granting any Registry
+/// binding. The normal compilation with verified resolution still follows.
+pub(crate) fn candidate_preflight(
+    context: &Value,
+    candidate: &Value,
+    b: &mut WorkBudget,
+    diagnostics: &mut Vec<String>,
+) -> Result<()> {
+    let checked_context = Context::new(context, b)?;
+    fn walk(
+        v: &Value,
+        path: &str,
+        context: &Context<'_>,
+        b: &mut WorkBudget,
+        diagnostics: &mut Vec<String>,
+        depth: usize,
+    ) -> Result<()> {
+        b.charge(1)?;
+        require(depth <= 32, "schema_depth")?;
+        if let Some(object) = v.as_object() {
+            if object.contains_key("start")
+                && object.contains_key("end")
+                && object.contains_key("quote")
+            {
+                if let Err(error) = context.span(v, b) {
+                    if !matches!(error.0, "resource" | "deadline" | "canceled") {
+                        diagnostics.push(format!("grounding: {path}: {}; use an exact source quote and UTF-8 byte offsets from admitted windows",error.0).chars().take(240).collect());
+                    }
+                    return Err(error);
+                }
+            }
+            if v["kind"] == "quantity" {
+                b.charge(text(&v["number"]["quote"]).len())?;
+                if let Err(error) = exact_number(text(&v["number"]["quote"])) {
+                    diagnostics.push(format!("grounding: {path}.number.quote: {}; select only the numeric source substring (e.g. 12, -3.5, 1/2); unit and approximation words belong outside number; never change source text",error.0).chars().take(240).collect());
+                    return Err(error);
+                }
+            }
+            // Candidate schema has already rejected unknown properties. Do not
+            // inspect arbitrary model objects through this private helper.
+            for (key, child) in object {
+                walk(
+                    child,
+                    &format!("{path}.{key}"),
+                    context,
+                    b,
+                    diagnostics,
+                    depth + 1,
+                )?;
+            }
+        } else if let Some(items) = v.as_array() {
+            for (i, child) in items.iter().enumerate() {
+                walk(
+                    child,
+                    &format!("{path}[{i}]"),
+                    context,
+                    b,
+                    diagnostics,
+                    depth + 1,
+                )?;
+            }
+        }
+        Ok(())
+    }
+    walk(candidate, "$", &checked_context, b, diagnostics, 0)?;
+    let resolution = serde_json::json!({"attempt_id":context["attempt_id"],"context_sha256":hash(context)?,"bindings":[]});
+    if let Err(error) = compile(context, candidate, &resolution, b) {
+        if !matches!(error.0, "resource" | "deadline" | "canceled") {
+            let hint=match error.0 {
+                "literal_quote"=>"copy text.value from its exact evidence.quote",
+                "unknown_concept"|"unknown_statement"=>"each reference must name an item in this candidate; use distinct local keys and update every reference",
+                "coverage_set"|"coverage_statement"|"orphan_statement"=>"cover every required unit once and link all of its statements; do not add unsupported independent facts",
+                _=>"recheck source evidence, reference targets, qualifier scope and complete coverage against the schema; return a full replacement",
+            };
+            diagnostics.push(
+                format!("grounding: $: {}; {hint}", error.0)
+                    .chars()
+                    .take(240)
+                    .collect(),
+            );
+        }
+        return Err(error);
+    }
+    Ok(())
 }
 fn big_ratio(n: &str, d: &str) -> Result<ExactRatio> {
     let n = n

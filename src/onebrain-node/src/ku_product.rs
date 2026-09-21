@@ -37,6 +37,7 @@ const EXTRACTION: TableDefinition<&[u8], &[u8]> = TableDefinition::new("ku_priva
 const TEXT_INTAKE: TableDefinition<&[u8], &[u8]> =
     TableDefinition::new("ku_private_text_intake_v1");
 const MAX_OPERATIONS: usize = 1024;
+mod review_jobs;
 const MAX_JOURNAL_BYTES: usize = 64 * 1024 * 1024;
 const MAX_SNAPSHOTS: usize = 32;
 const MAX_CURSORS: usize = 1024;
@@ -45,6 +46,14 @@ pub(crate) const KU_PREPARED_MARKER: &[u8] = b"onebrain:ku:prepared:1\0";
 /// Host-only source/encoder port. Ordinary product handles cannot install a port,
 /// supply authority booleans, or bypass its current custody/consent assessment.
 pub trait KuInputProvider: Send + Sync {
+    /// Host activation gate; never selected by a private source or model reply.
+    fn review_selection_v2(&self) -> bool { false }
+    fn review_provider(
+        &self,
+        _model: &str,
+    ) -> Option<Arc<dyn ku_encoder::extraction::ExtractionProvider>> {
+        None
+    }
     fn experimental_ai_allowed(&self, _commitment: [u8; 32]) -> bool {
         false
     }
@@ -269,6 +278,8 @@ struct Paging {
 }
 
 pub(crate) struct KuStore {
+    review_running: Mutex<BTreeMap<[u8; 32], Arc<AtomicBool>>>,
+    review_gate: tokio::sync::Semaphore,
     vault: PrivateVault<RedbVerifiedBackend>,
     journal: Database,
     dataset: DatasetGenerationId,
@@ -423,12 +434,7 @@ impl KuStore {
         checkpoint.phase = "prepared".into();
         if let Some(remaining) = remaining {
             checkpoint.work_charged = work_limit.saturating_sub(remaining.remaining());
-            let maximum = if checkpoint.contexts[0]["resource_profile"] == "standard" {
-                120_000
-            } else {
-                30_000
-            };
-            checkpoint.elapsed_ms = maximum - remaining.remaining_deadline_ms().min(maximum);
+            checkpoint.elapsed_ms = remaining.elapsed_ms();
         }
         for attempt in &mut checkpoint.attempts {
             attempt["phase"] = "prepared".into();
@@ -452,12 +458,7 @@ impl KuStore {
             if let Err(error) = remaining.clone().charge(0) {
                 checkpoint.phase = "failed".into();
                 checkpoint.reason = error.0.into();
-                let maximum = if checkpoint.contexts[0]["resource_profile"] == "standard" {
-                    120_000
-                } else {
-                    30_000
-                };
-                checkpoint.elapsed_ms = maximum;
+                checkpoint.elapsed_ms = remaining.elapsed_ms();
                 for attempt in &mut checkpoint.attempts {
                     attempt["phase"] = "failed".into();
                     attempt["reason"] = "budget_exhausted".into();
@@ -509,6 +510,8 @@ impl KuStore {
         }
         tx.commit().map_err(|_| corrupt())?;
         let store = Self {
+            review_running: Mutex::new(BTreeMap::new()),
+            review_gate: tokio::sync::Semaphore::new(1),
             vault,
             journal,
             dataset: paths.current_generation(),
@@ -523,6 +526,7 @@ impl KuStore {
             paging: Mutex::new(Paging::default()),
             catalog: Mutex::new(Catalog::default()),
         };
+        store.recover_review_jobs()?;
         {
             let tx = store.journal.begin_read().map_err(|_| corrupt())?;
             let table = tx.open_table(TEXT_INTAKE).map_err(|_| corrupt())?;
@@ -1306,6 +1310,7 @@ impl KuStore {
         operation: OperationId,
     ) -> Result<(), BaseServiceError> {
         let _guard = self.mutation.lock().map_err(|_| corrupt())?;
+        self.cancel_review_if_present(principal, operation.0)?;
         {
             let mut canceled = self.canceled.lock().map_err(|_| corrupt())?;
             if !canceled.contains(&operation.0) && canceled.len() >= MAX_OPERATIONS {
@@ -1631,6 +1636,11 @@ impl ExtractionJournal for KuStore {
             return Err(ExtractionError("dataset_binding"));
         }
         if checkpoint.calls > 32
+            || checkpoint.validation_diagnostics.len() > 8
+            || checkpoint.validation_diagnostics.iter().any(|s| {
+                !(s.starts_with("schema: ") || s.starts_with("grounding: "))
+                    || s.chars().count() > 240
+            })
             || checkpoint.work_charged > 1_000_000
             || checkpoint.input_tokens > 262144
             || checkpoint.output_tokens > 65536

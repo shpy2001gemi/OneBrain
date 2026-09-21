@@ -208,7 +208,15 @@ fn failure(error: BaseServiceError) -> Response {
         code,
         retryable: error.retryable,
         reconcile_before_retry: error.reconcile_before_retry,
-        limitations: vec![error.reason.into()],
+        limitations: std::iter::once(error.reason.into())
+            .chain(
+                error
+                    .validation_diagnostics
+                    .iter()
+                    .take(8)
+                    .map(|s| s.chars().take(240).collect()),
+            )
+            .collect(),
     };
     private_response(
         (

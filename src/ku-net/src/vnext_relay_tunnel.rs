@@ -304,6 +304,7 @@ pub struct AuthenticatedOuterRelayConnection {
     opaque_receive: AsyncMutex<()>,
     opaque_backlog: AsyncMutex<BTreeMap<[u8; 32], VecDeque<Vec<u8>>>>,
     reader_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    close_signal: tokio::sync::watch::Sender<bool>,
 }
 
 enum OuterRelayConnection {
@@ -313,7 +314,7 @@ enum OuterRelayConnection {
         control_send: AsyncMutex<quinn::SendStream>,
     },
     TlsTcp443 {
-        control_send: AsyncMutex<tokio::io::WriteHalf<TlsStream<TcpStream>>>,
+        control_send: Arc<AsyncMutex<Option<tokio::io::WriteHalf<TlsStream<TcpStream>>>>>,
     },
 }
 
@@ -385,6 +386,7 @@ impl AuthenticatedOuterRelayConnection {
             opaque_receive: AsyncMutex::new(()),
             opaque_backlog: AsyncMutex::new(BTreeMap::new()),
             reader_task: Mutex::new(Some(reader_task)),
+            close_signal: tokio::sync::watch::channel(false).0,
         })
     }
 
@@ -434,7 +436,7 @@ impl AuthenticatedOuterRelayConnection {
             established_at,
             expires_at,
             OuterRelayConnection::TlsTcp443 {
-                control_send: AsyncMutex::new(send),
+                control_send: Arc::new(AsyncMutex::new(Some(send))),
             },
             Box::pin(recv),
         )
@@ -483,6 +485,7 @@ impl AuthenticatedOuterRelayConnection {
 
     pub fn close(&self) {
         self.open.store(false, Ordering::Release);
+        self.close_signal.send_replace(true);
         if let OuterRelayConnection::Quic { connection, .. } = &self.inner {
             connection.close(0u32.into(), b"outer relay closed");
         }
@@ -490,6 +493,13 @@ impl AuthenticatedOuterRelayConnection {
             if let Some(reader) = reader.take() {
                 reader.abort();
             }
+        }
+        if let OuterRelayConnection::TlsTcp443 { control_send } = &self.inner {
+            if let Ok(mut send) = control_send.try_lock() {
+                send.take();
+            }
+            // A busy writer is cancelled by close_signal and drops its half
+            // through CloseTlsWriter below. No detached cleanup task is needed.
         }
     }
 
@@ -504,19 +514,45 @@ impl AuthenticatedOuterRelayConnection {
         &self,
         frame: &RelayWireFrameV1,
     ) -> Result<(), OuterRelayIoError> {
+        let mut closed = self.close_signal.subscribe();
         if !self.is_open() {
             return Err(OuterRelayIoError::Closed);
         }
         let bytes = frame.encode();
-        match &self.inner {
-            OuterRelayConnection::Quic { control_send, .. } => {
-                let mut send = control_send.lock().await;
-                write_stream_frame(&mut *send, &bytes).await
+        let write = async {
+            match &self.inner {
+                OuterRelayConnection::Quic { control_send, .. } => {
+                    let mut send = control_send.lock().await;
+                    write_stream_frame(&mut *send, &bytes).await
+                }
+                OuterRelayConnection::TlsTcp443 { control_send } => {
+                    struct CloseTlsWriter<'a> {
+                        guard: tokio::sync::MutexGuard<
+                            'a,
+                            Option<tokio::io::WriteHalf<TlsStream<TcpStream>>>,
+                        >,
+                        open: &'a AtomicBool,
+                    }
+                    impl Drop for CloseTlsWriter<'_> {
+                        fn drop(&mut self) {
+                            if !self.open.load(Ordering::Acquire) {
+                                self.guard.take();
+                            }
+                        }
+                    }
+                    let mut send = CloseTlsWriter {
+                        guard: control_send.lock().await,
+                        open: &self.open,
+                    };
+                    let send = send.guard.as_mut().ok_or(OuterRelayIoError::Closed)?;
+                    write_stream_frame(send, &bytes).await
+                }
             }
-            OuterRelayConnection::TlsTcp443 { control_send } => {
-                let mut send = control_send.lock().await;
-                write_stream_frame(&mut *send, &bytes).await
-            }
+        };
+        tokio::select! {
+            biased;
+            _ = closed.changed() => Err(OuterRelayIoError::Closed),
+            result = write => result,
         }
     }
 

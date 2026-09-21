@@ -345,9 +345,37 @@ pub async fn admit_relay_records(
     now: u64,
     deadline: Instant,
 ) -> Result<RelayDiscoveryDelta, ReachabilityError> {
+    admit_relay_records_guarded(
+        discovery,
+        preparer,
+        possession,
+        source,
+        records,
+        now,
+        deadline,
+        &|| true,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn admit_relay_records_guarded(
+    discovery: &Arc<RwLock<RelayDiscovery>>,
+    preparer: &RelayDiscoveryPreparer,
+    possession: &dyn RelayPossessionClient,
+    source: RelayDiscoverySource,
+    records: &[Vec<u8>],
+    now: u64,
+    deadline: Instant,
+    current: &(dyn Fn() -> bool + Send + Sync),
+) -> Result<RelayDiscoveryDelta, ReachabilityError> {
+    if !current() {
+        return Err(ReachabilityError::NetworkChanged);
+    }
     if records.is_empty() || Instant::now() >= deadline {
         return Err(ReachabilityError::Deadline);
     }
+    let started = Instant::now();
     let lengths: Vec<_> = records.iter().map(Vec::len).collect();
     let permit = discovery
         .write()
@@ -368,13 +396,27 @@ pub async fn admit_relay_records(
             return Err(ReachabilityError::Discovery(error));
         }
     };
-    let staged = discovery
-        .write()
-        .await
-        .stage_prepared(permit, prepared, now)
-        .map_err(ReachabilityError::Discovery)?;
+    let staged = {
+        let mut discovery = discovery.write().await;
+        if !current() {
+            discovery
+                .abort_preparation(permit, now)
+                .map_err(ReachabilityError::Discovery)?;
+            return Err(ReachabilityError::NetworkChanged);
+        }
+        discovery
+            .stage_prepared(
+                permit,
+                prepared,
+                now.saturating_add(started.elapsed().as_secs()),
+            )
+            .map_err(ReachabilityError::Discovery)?
+    };
     let mut aggregate = RelayDiscoveryDelta::default();
     for mut descriptor in staged {
+        if !current() {
+            return Err(ReachabilityError::NetworkChanged);
+        }
         if let Err(error) = preparer.prepare_possession(&mut descriptor, deadline).await {
             discovery
                 .write()
@@ -394,11 +436,22 @@ pub async fn admit_relay_records(
                 return Err(ReachabilityError::Discovery(error));
             }
         };
-        let delta = discovery
-            .write()
-            .await
-            .commit_descriptor(descriptor, &proofs, now)
-            .map_err(ReachabilityError::Discovery)?;
+        let delta = {
+            let mut discovery = discovery.write().await;
+            if !current() || Instant::now() >= deadline {
+                discovery
+                    .abort_descriptor(descriptor, now)
+                    .map_err(ReachabilityError::Discovery)?;
+                return Err(ReachabilityError::NetworkChanged);
+            }
+            discovery
+                .commit_descriptor(
+                    descriptor,
+                    &proofs,
+                    now.saturating_add(started.elapsed().as_secs()),
+                )
+                .map_err(ReachabilityError::Discovery)?
+        };
         aggregate.admitted.extend(delta.admitted);
         aggregate.refreshed.extend(delta.refreshed);
         aggregate.rejected = aggregate.rejected.saturating_add(delta.rejected);
@@ -699,6 +752,8 @@ impl RelayReservationClient for ProductionRelayReservationClient {
 pub struct ActiveRelayReservation {
     reservation: ValidatedRelayReservation,
     outer: Arc<AuthenticatedOuterRelayConnection>,
+    keepalive_sequence: u64,
+    last_keepalive: Instant,
 }
 
 impl ActiveRelayReservation {
@@ -719,6 +774,25 @@ pub struct RelayReservationManager {
 }
 
 impl RelayReservationManager {
+    pub(crate) async fn usable_count(&self) -> Result<usize, ReachabilityError> {
+        let now = unix_now()?;
+        Ok(self
+            .active
+            .read()
+            .await
+            .values()
+            .filter(|entry| entry.outer.is_open() && entry.reservation.canonical().expires_at > now)
+            .count())
+    }
+    /// Local shutdown closes carriers without depending on a remote revocation
+    /// acknowledgement. No live reservation survives a product-owner restart.
+    pub(crate) async fn close_all(&self) {
+        let active = std::mem::take(&mut *self.active.write().await);
+        for reservation in active.into_values() {
+            reservation.outer.close();
+        }
+    }
+
     pub fn new(
         client: Arc<dyn RelayReservationClient>,
         routes: Arc<dyn RelayDialRouteProvider>,
@@ -739,6 +813,20 @@ impl RelayReservationManager {
         request: RelayReserveRequestV1,
         deadline: Instant,
     ) -> Result<ValidatedRelayReservation, ReachabilityError> {
+        self.ensure_route_reservation_guarded(relay, request, deadline, &|| true)
+            .await
+    }
+
+    pub(crate) async fn ensure_route_reservation_guarded(
+        &self,
+        relay: &ValidatedRelayDescriptor,
+        request: RelayReserveRequestV1,
+        deadline: Instant,
+        current: &(dyn Fn() -> bool + Send + Sync),
+    ) -> Result<ValidatedRelayReservation, ReachabilityError> {
+        if !current() {
+            return Err(ReachabilityError::NetworkChanged);
+        }
         if Instant::now() >= deadline || request.relay_node_id != relay.canonical().relay_node_id {
             return Err(ReachabilityError::Deadline);
         }
@@ -753,27 +841,59 @@ impl RelayReservationManager {
             }
         }
         let routes = self.routes.route_set_for(relay, deadline).await?;
+        if !current() {
+            return Err(ReachabilityError::NetworkChanged);
+        }
         let outer = self.client.authenticate(relay, &routes, deadline).await?;
+        struct CloseUnlessRetained(Option<Arc<AuthenticatedOuterRelayConnection>>);
+        impl Drop for CloseUnlessRetained {
+            fn drop(&mut self) {
+                if let Some(outer) = &self.0 {
+                    outer.close();
+                }
+            }
+        }
+        let mut cleanup = CloseUnlessRetained(Some(outer.clone()));
+        if !current() {
+            return Err(ReachabilityError::NetworkChanged);
+        }
         if !outer.is_open() || outer.relay_node_id() != relay.canonical().relay_node_id {
             return Err(ReachabilityError::Io);
         }
-        let reservation = self.client.reserve(relay, &outer, request).await?;
-        if reservation.canonical().relay_node_id != relay.canonical().relay_node_id {
+        let reservation = self.client.reserve(relay, &outer, request.clone()).await?;
+        let granted = reservation.canonical();
+        if granted.relay_node_id != request.relay_node_id
+            || granted.target_node_id != request.target_node_id
+            || granted.reservation_id != request.reservation_id
+            || granted.transport_scope != request.transport_scope
+            || granted.issued_at != request.issued_at
+            || granted.expires_at != request.expires_at
+            || granted.target_signature != request.target_reservation_signature
+        {
             return Err(ReachabilityError::CorruptState);
         }
         let mut active = self.active.write().await;
+        if !current() {
+            return Err(ReachabilityError::NetworkChanged);
+        }
         if !active.contains_key(&reservation.canonical().relay_node_id)
             && active.len() >= self.policy.max_relay_reservations
         {
             return Err(ReachabilityError::ReservationCapacity);
         }
-        active.insert(
+        let previous = active.insert(
             reservation.canonical().relay_node_id,
             ActiveRelayReservation {
                 reservation: reservation.clone(),
                 outer,
+                keepalive_sequence: request.sequence,
+                last_keepalive: Instant::now(),
             },
         );
+        if let Some(previous) = previous {
+            previous.outer.close();
+        }
+        cleanup.0 = None;
         Ok(reservation)
     }
 
@@ -907,10 +1027,76 @@ impl RelayReservationManager {
     }
 
     pub async fn invalidate_closed(&self) {
-        self.active
-            .write()
+        let now = unix_now().unwrap_or(u64::MAX);
+        self.active.write().await.retain(|_, value| {
+            let live = value.outer.is_open() && value.reservation.canonical().expires_at > now;
+            if !live {
+                value.outer.close();
+            }
+            live
+        });
+    }
+
+    /// Each reservation continues from its signed reserve sequence. An unknown
+    /// keepalive result closes that carrier; it is never retried as success.
+    pub(crate) async fn maintain_keepalives(
+        &self,
+        current: &(dyn Fn() -> bool + Send + Sync),
+    ) -> Result<(), ReachabilityError> {
+        self.invalidate_closed().await;
+        let due: Vec<_> = self
+            .active
+            .read()
             .await
-            .retain(|_, value| value.outer.is_open());
+            .iter()
+            .filter(|(_, entry)| entry.last_keepalive.elapsed() >= self.policy.keepalive_interval)
+            .map(|(id, entry)| {
+                (
+                    *id,
+                    entry.reservation.clone(),
+                    entry.outer.clone(),
+                    entry.keepalive_sequence,
+                )
+            })
+            .collect();
+        for (id, reservation, outer, previous) in due {
+            if !current() {
+                return Err(ReachabilityError::NetworkChanged);
+            }
+            let next = previous
+                .checked_add(1)
+                .ok_or(ReachabilityError::CorruptState)?;
+            // Cancellation can occur at either await below. Never retain a
+            // carrier whose last control result is unknown.
+            struct CloseOnCancel(Option<Arc<AuthenticatedOuterRelayConnection>>);
+            impl Drop for CloseOnCancel {
+                fn drop(&mut self) {
+                    if let Some(outer) = &self.0 {
+                        outer.close();
+                    }
+                }
+            }
+            let mut cleanup = CloseOnCancel(Some(outer.clone()));
+            let result = tokio::time::timeout(
+                self.policy.relay_connect_timeout,
+                self.client.keepalive(&reservation, &outer, next),
+            )
+            .await;
+            let mut active = self.active.write().await;
+            if matches!(result, Ok(Ok(()))) && current() {
+                if let Some(entry) = active.get_mut(&id) {
+                    if entry.reservation.digest() == reservation.digest() {
+                        entry.keepalive_sequence = next;
+                        entry.last_keepalive = Instant::now();
+                        cleanup.0 = None;
+                    }
+                }
+            } else {
+                outer.close();
+                active.remove(&id);
+            }
+        }
+        Ok(())
     }
 }
 
@@ -986,6 +1172,25 @@ impl ReachabilityManager {
                     let _ = (&self.signer, &self.resolver, &self.discovery, self.policy);
                 }
             }
+        }
+    }
+
+    pub(crate) async fn maintenance_once(&self) -> Result<(), ReachabilityError> {
+        let epoch = self.current_epoch();
+        let gathered = self.gatherer.gather(epoch).await?;
+        gathered.validate()?;
+        if gathered.epoch != epoch || self.current_epoch() != epoch {
+            return Err(ReachabilityError::NetworkChanged);
+        }
+        self.reservations.invalidate_closed().await;
+        Ok(())
+    }
+}
+
+impl Drop for RelayReservationManager {
+    fn drop(&mut self) {
+        for reservation in self.active.get_mut().values() {
+            reservation.outer.close();
         }
     }
 }

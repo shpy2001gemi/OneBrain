@@ -30,6 +30,8 @@ explicitly changes the order.
 | 22 | [`KU-ENC-002`](22-KU-ENC-002.md) | Implement bounded workflow-controlled local encoding |
 | 23 | [`KU-ENC-003`](23-KU-ENC-003.md) | Qualify multiple models and constrained hosts |
 
+| 24 | [`KU-SEM-001`](24-KU-SEM-001.md) | Private structured semantic drafts; foundation accepted, fidelity backlog deferred |
+
 Rows 21–23 were added under D-017; numbers preserve existing file identities.
 Execution follows the dependency graph: KU-RUN-001 → KU-ENC-001 → KU-ENC-002
 before KU-API-001, with KU-ENC-003 required for model qualification and KU-QA.

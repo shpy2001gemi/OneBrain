@@ -1,8 +1,8 @@
 # OBP-PROD-002 — Node-owned outbound-first lifecycle
 
-> State: Planned
+> State: Review — local implementation/tested under D-025; not merged
 > Branch: `codex/obp-prod-002-node-lifecycle`
-> Depends on: `OBP-PROD-001` merged
+> Depends on: `OBP-PROD-001` accepted; D-025 permits local work before merge
 
 ## Objective
 
@@ -41,3 +41,9 @@ shutdown, rollback and restart recovery.
 ## Excluded
 
 Discovery orchestration, automatic route planning, public API/UI and rollout.
+
+## Local evidence
+
+See [implementation and tests](../outputs/OBP_PROD_002_IMPLEMENTATION.md): 219 unit
+and 20 integration tests pass, feature-reduced builds and contracts pass.
+Discovery/routing remain excluded. All prior dirty changes are preserved.

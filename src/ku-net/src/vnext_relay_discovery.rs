@@ -427,6 +427,20 @@ impl RelayDiscovery {
             .live_lease()
             .is_none_or(|lease| self.sessions.is_live(lease, now))
     }
+
+    /// Start a new bounded scheduling round after the previous round has been
+    /// joined or cancelled. Outstanding permits become invalid. Replay floors
+    /// and still-fresh admitted relays survive; work charges are per round.
+    pub fn begin_refresh_round(&mut self, now: u64) {
+        self.admission.cancel_pending_descriptors();
+        self.permits.clear();
+        self.staged.clear();
+        self.sources.clear();
+        self.total_records = 0;
+        self.signature_checks = 0;
+        self.active_dns_jobs = 0;
+        self.relays.retain(|_, relay| relay.canonical().expires_at > now);
+    }
 }
 
 pub trait VerifiedRelayDiscovery {
@@ -628,6 +642,11 @@ impl VerifiedRelayDiscovery for RelayDiscovery {
         proofs: &[RelayPossessionProofV1],
         now: u64,
     ) -> Result<RelayDiscoveryDelta, RelayDiscoveryLimitation> {
+        if !self.relays.contains_key(&staged.pending.canonical().relay_node_id)
+            && self.relays.len() >= self.policy.max_total_records {
+            self.abort_descriptor(staged, now)?;
+            return Err(RelayDiscoveryLimitation::RecordLimit);
+        }
         if staged.possession_dials.len() != staged.pending.challenges().len()
             || !self.staged.remove(&staged.stage_id)
         {

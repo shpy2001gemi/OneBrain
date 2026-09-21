@@ -171,6 +171,8 @@ pub struct OllamaKuInputs {
     registry: Arc<ConceptRegistryGenerationManager>,
     custody: Arc<Custody>,
     models: BTreeMap<String, SharedKuExtractionInputs>,
+    review_providers: BTreeMap<String, Arc<dyn ExtractionProvider>>,
+    selection_v2: bool,
 }
 impl OllamaKuInputs {
     pub fn new(
@@ -187,9 +189,13 @@ impl OllamaKuInputs {
             captured: Mutex::default(),
         });
         let mut models = BTreeMap::new();
+        let mut review_providers = BTreeMap::new();
         for (name, provider, memory) in providers {
-            let workflow =
-                Arc::new(ExtractionWorkflow::new(provider, memory).map_err(|_| unavailable())?);
+            review_providers.insert(name.clone(), provider.clone());
+            let workflow = Arc::new(
+                ExtractionWorkflow::new_experimental_ollama(provider, memory)
+                    .map_err(|_| unavailable())?,
+            );
             let input = SharedKuExtractionInputs::new(
                 custody.clone(),
                 workflow,
@@ -207,7 +213,13 @@ impl OllamaKuInputs {
             registry,
             custody,
             models,
+            review_providers,
+            selection_v2: false,
         })
+    }
+    pub fn with_selection_v2(mut self) -> Self {
+        self.selection_v2 = true;
+        self
     }
     fn model(&self, request: &KuPrepareV1) -> Result<&SharedKuExtractionInputs, BaseServiceError> {
         self.models
@@ -219,6 +231,10 @@ impl OllamaKuInputs {
     }
 }
 impl KuInputProvider for OllamaKuInputs {
+    fn review_selection_v2(&self) -> bool { self.selection_v2 }
+    fn review_provider(&self, model: &str) -> Option<Arc<dyn ExtractionProvider>> {
+        self.review_providers.get(model).cloned()
+    }
     fn experimental_ai_allowed(&self, commitment: [u8; 32]) -> bool {
         self.models
             .values()
@@ -329,7 +345,7 @@ impl KuInputProvider for OllamaKuInputs {
                             })
                         })
                         .collect::<Result<_, BaseServiceError>>()?,
-                    limitations: vec!["experimental_model_unqualified".into(), "local_only".into()],
+                    limitations: vec!["experimental_model_unqualified".into(), "local_only".into(), "review_drafts_available".into()],
                     consent_text: CONSENT.into(),
                 })
             }

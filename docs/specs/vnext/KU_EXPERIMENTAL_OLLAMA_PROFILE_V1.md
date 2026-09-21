@@ -38,7 +38,17 @@ Denied/unresolved consent creates no source. No signed ObservationEvent or
 Receptor proposal is fabricated for this text-extraction path.
 
 The provider reuses `ExtractionWorkflow` and `SharedKuExtractionInputs` with
-the standard limits. It uses the reviewed system prompt, full Candidate schema
+the standard token/work limits and an owner-approved experimental 600,000 ms
+aggregate deadline (2026-09-07 follow-up). This explicit host constructor policy
+is bound into the implementation commitment; standard/constrained qualification
+deadlines stay unchanged. Source planning, inference, repair, validation and
+preparation use the same deadline policy, including already charged elapsed time.
+The generic WorkBudget and Attempt remaining-time representation permit up to
+600,000 ms so they can carry this policy. That representation ceiling does not
+raise other profiles' execution budgets. Final preparation records actual elapsed
+time from the returned workflow budget, never a hard-coded standard maximum.
+It uses the reviewed system prompt, an additional experimental semantic analysis
+guide, full Candidate schema
 as Ollama's structured format, and one Candidate example from the reviewed bundle.
 The prompt's SCHEMA block is a compact structural glossary derived mechanically
 from all reviewed schema definitions, preserving fields, required/optional status,
@@ -73,7 +83,65 @@ are opened under read-only sharing while the host lives to prevent mutation on
 Windows; no model download. CPU-only worker operation bounds native process RAM;
 admission reserves 4 GiB for bounded host tokenizers/parsers and gives the remaining
 configured reservation to the Windows job. Startup has a 10-second ceiling inside
-the 120-second job deadline. Reservations are not measured quality or cross-device qualification.
+the 600-second experimental job deadline. Reservations are not measured quality or cross-device qualification.
+
+The semantic guide explains proposition boundaries, predicate/argument roles,
+qualifier scope and source-grounded references using simple, conditional and
+multi-proposition examples. It cannot extend the Candidate schema: an unstated
+numeric tolerance, unresolved pronoun or unrepresentable relation must remain
+unresolved/unsupported. Original evidence and complete coverage remain mandatory.
+The guide bytes are pinned with the provider source. Thinking remains disabled
+through the existing empty closed thinking block in the raw ChatML template.
+
+Schema repair diagnostics are bounded to eight messages of at most 240 characters
+each, with schema-owned field paths, array positions, expected types and fixed
+validation reasons. They never reflect candidate values or unknown property names.
+An invalid Candidate remains rejected by the original validator. A charged,
+deadline/cancellation-aware diagnostic walk supplies details for the existing
+single repair call, whose complete rendered prompt is token-counted again.
+Diagnostics are retained in the encrypted extraction checkpoint (default-empty
+for older checkpoints) and projected through the existing private KU failure
+limitations. The Web shows them next to the failure without requiring expansion.
+No raw candidate is exposed, and no extra inference calls or automatic save are
+authorized by diagnostics. Earlier failures cannot acquire retroactive detail.
+
+Source-grounding preflight also checks that each concept label equals its evidence
+quote before recording the candidate and closing the existing repair allowance.
+`concept_label` details use `grounding:` plus schema-owned paths and fixed repair
+instructions to preserve original spelling, case and accents. The same diagnostic
+bounds and private checkpoint/API projection apply. Host compilation still checks
+exact source bytes, spans and label equality; it never normalizes model output to
+make it pass. This preflight does not claim that a Registry binding exists.
+
+The experimental generate request retains the reviewed Candidate schema's JSON
+property order using a raw JSON value for `format`. Local Ollama 0.33.3 probes
+showed order-sensitive decoding for Span objects. This wire compatibility measure
+does not alter schema meaning, bounds, required fields, canonical sorted hashing,
+or host validation. It is not a guarantee of model conformance or semantic quality.
+
+Candidate preflight also rejects repeated concept/statement keys and repeated
+coverage units before closing the same bounded repair allowance. Diagnostics use
+collection positions, not model-generated identifiers. Distinct items require
+distinct keys and updated references; coverage retains one entry per required
+unit. The host does not deduplicate or merge model content automatically.
+
+Owner follow-up (2026-09-08): development tests run headlessly with deliberately
+supplied cases and inspect provider proposals without requiring a Web rebuild.
+The shared workflow now preflights source spans, number lexemes and candidate
+compilation using empty bindings before closing the existing repair allowance.
+No verified Registry resolution is invented by that preflight, and the final
+authority-bound compile remains mandatory. Numeric source hints contain exact
+substring offsets (including the number in an attached-unit token), without
+asserting units or meanings. Frequency/typicality must not be silently lowered
+to an unconditional claim in this restricted extraction profile.
+
+The opt-in `extraction_probe` development example uses synthetic source/Registry
+context and no storage authority. Its caller-selected private report intentionally
+retains source, per-call proposals, metrics and repair errors. This explicit test
+artifact is separate from runtime logs/APIs; it must not process secrets or blind
+holdouts. A separate semantic-review proposal experiment under `scripts/encoder`
+tests a portable, quote-based task with host-computed anchors and future independent
+verification. That experiment is not an admitted KU input format or a Web feature.
 
 The host can restore encrypted text custody with zero admitted models. Missing,
 changed or removed model artifacts disable new AI work while existing private

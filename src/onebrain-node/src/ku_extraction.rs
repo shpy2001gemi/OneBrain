@@ -110,11 +110,12 @@ impl KuInputProvider for SharedKuExtractionInputs {
         >,
     > {
         Box::pin(async move {
+            let mut diagnostics = Vec::new();
             let result=async {
                 let started=std::time::Instant::now();
                 require(request.input_mode==self.mode,"resource_profile")?;
                 require(request.source_refs.len()==1,"source_scope_unsupported")?;
-                let mut work=WorkBudget::new(budget.max_work_units,std::time::Duration::from_secs(if self.resource_profile=="standard" {120}else{30}),execution.canceled.clone())?;
+                let mut work=WorkBudget::new(budget.max_work_units,std::time::Duration::from_millis(self.workflow.deadline_ms(&self.resource_profile)?),execution.canceled.clone())?;
                 let source_ids:Vec<_>=request.source_refs.iter().map(|s|s.0).collect();
                 self.sources.check_access(principal,&source_ids).map_err(|_|ExtractionError("source_unavailable"))?;
                 verify_registry(registry,request.registry_release_root.0)?;
@@ -142,8 +143,16 @@ impl KuInputProvider for SharedKuExtractionInputs {
                 }
                 let job=ExtractionJob {principal,operation:request.operation_id.0,process:execution.process,dataset:execution.dataset,contexts};
                 let authority=NodeAuthority {sources:self.sources.as_ref(),registry,root:request.registry_release_root.0};
-                let output=self.workflow.run_admitted(&job,&authority,execution.journal,budget.max_work_units,
-                    budget.max_work_units-work.remaining(),started.elapsed().as_millis() as u64,execution.canceled).await?;
+                let output=match self.workflow.run_admitted(&job,&authority,execution.journal,budget.max_work_units,
+                    budget.max_work_units-work.remaining(),started.elapsed().as_millis() as u64,execution.canceled).await {
+                    Ok(output) => output,
+                    Err(error) => {
+                        if let Some(checkpoint) = execution.journal.load(&job)? {
+                            diagnostics = checkpoint.validation_diagnostics.into_iter().take(8).collect();
+                        }
+                        return Err(error);
+                    }
+                };
                 let mut bindings=Vec::new();
                 for (context,resolution) in job.contexts.iter().zip(&output.resolutions) {
                     for binding in resolution["bindings"].as_array().ok_or(ExtractionError("resolution"))? {
@@ -153,26 +162,30 @@ impl KuInputProvider for SharedKuExtractionInputs {
                 }
                 Ok(KuResolvedInput {drafts:output.drafts,source_objects,bindings,needs_resolution:output.needs_resolution,extraction_budget:Some(output.budget)})
             }.await;
-            result.map_err(|e: ExtractionError| match e.0 {
-                "canceled" | "replay_binding" | "reconcile_required" | "interrupted" => {
-                    crate::ku_product::conflict()
-                }
-                "resource"
-                | "source_context_limit"
-                | "memory_admission"
-                | "call_tokens"
-                | "call_budget"
-                | "aggregate_budget"
-                | "deadline" => BaseServiceError::new(
-                    onebrain_base_contract::BaseErrorCodeV1::ResourceExhausted,
-                    e.0,
-                ),
-                "source_unavailable" | "source_revoked" => crate::ku_product::not_found(),
-                "journal_unavailable" | "journal_corrupt" => crate::ku_product::unknown(),
-                _ => BaseServiceError::new(
-                    onebrain_base_contract::BaseErrorCodeV1::DependencyUnavailable,
-                    e.0,
-                ),
+            result.map_err(|e: ExtractionError| {
+                let mut error = match e.0 {
+                    "canceled" | "replay_binding" | "reconcile_required" | "interrupted" => {
+                        crate::ku_product::conflict()
+                    }
+                    "resource"
+                    | "source_context_limit"
+                    | "memory_admission"
+                    | "call_tokens"
+                    | "call_budget"
+                    | "aggregate_budget"
+                    | "deadline" => BaseServiceError::new(
+                        onebrain_base_contract::BaseErrorCodeV1::ResourceExhausted,
+                        e.0,
+                    ),
+                    "source_unavailable" | "source_revoked" => crate::ku_product::not_found(),
+                    "journal_unavailable" | "journal_corrupt" => crate::ku_product::unknown(),
+                    _ => BaseServiceError::new(
+                        onebrain_base_contract::BaseErrorCodeV1::DependencyUnavailable,
+                        e.0,
+                    ),
+                };
+                error.validation_diagnostics = diagnostics;
+                error
             })
         })
     }

@@ -1,6 +1,6 @@
 # OBP-PROD-001 — Freeze the OBP product orchestration contract
 
-> State: Planned
+> State: Review — contract accepted under D-025; local runtime implementation authorized before merge
 > Branch: `codex/obp-prod-001-product-contract`
 > Depends on: `KU-CON-001` merged
 
@@ -48,3 +48,10 @@ vectors that define:
 ## Excluded
 
 Runtime wiring, API handlers, UI, mobile/browser carriers and default rollout.
+
+## Deliverables for review
+
+[Profile](../../../specs/vnext/OBP_PRODUCT_ORCHESTRATION_PROFILE_V1.md),
+[machine inventory](../../../../src/test-vectors/vnext/obp-product-orchestration-v1.json),
+[evidence and review boundary](../outputs/OBP_PROD_001_CONTRACT.md).
+No runtime implementation is authorized by this proposal's existence.

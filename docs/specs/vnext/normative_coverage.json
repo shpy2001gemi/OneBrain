@@ -1024,6 +1024,52 @@
         }
       ],
       "rationale": "KU-ENC-001 contract/corpus evidence for the bounded extraction surface and host authority only; native compiler, durable integration and real model/device qualification remain KU-ENC-002/003 and existing mobile gates."
+    },
+    {
+      "path": "docs/specs/vnext/KU_SEMANTIC_SELECTION_PROFILE_V1.md",
+      "expected_statement_lines": 5,
+      "evidence": [
+        {
+          "path": "src/ku-encoder/src/extraction/semantic_selection/tests.rs",
+          "needle": "selection_host_builds_defaults_numbers_and_source_without_model_bookkeeping"
+        },
+        {
+          "path": "src/ku-encoder/src/extraction/semantic_selection/tests.rs",
+          "needle": "selection_link_resolution_uses_quoted_target_not_first_claim"
+        },
+        {
+          "path": "src/ku-encoder/src/extraction/semantic_selection/tests.rs",
+          "needle": "selection_repair_decoder_exposes_only_declared_fields_on_short_and_long_sources"
+        },
+        {
+          "path": "src/ku-encoder/src/extraction/semantic_selection/tests.rs",
+          "needle": "selection_success_is_unassessed_one_call_and_survives_read_after_restart"
+        },
+        {
+          "path": "src/onebrain-api/src/ku_api/tests/experimental_text.rs",
+          "needle": "review_draft_background_poll_restart_without_model_and_no_save"
+        }
+      ],
+      "rationale": "Shared Rust selection/assembly and checked repair tests enforce source-grounded mechanical boundaries below clients; durable node/API tests preserve unassessed draft status, reads without resampling and no KU save. Independent verification and future platform adapter integration remain explicit separate gates, not implementation claims."
+    },
+    {
+      "path": "docs/specs/vnext/KU_SEMANTIC_SELECTION_PROFILE_V2.md",
+      "expected_statement_lines": 1,
+      "evidence": [
+        {
+          "path": "src/ku-encoder/src/extraction/semantic_selection_v2/tests.rs",
+          "needle": "rocket_keeps_or_ellipsis_reference_and_unspecified_comparison"
+        },
+        {
+          "path": "src/ku-encoder/src/extraction/semantic_selection_v2/tests.rs",
+          "needle": "selectors_cannot_escape_scope_and_atomic_patch_cannot_delete_a_branch"
+        },
+        {
+          "path": "src/onebrain-api/src/ku_api/tests/experimental_text.rs",
+          "needle": "review_draft_v2_background_poll_restart_without_model_and_no_save"
+        }
+      ],
+      "rationale": "Private draft representation, grounding and lifecycle evidence only; semantic fidelity, independent verification and canonical lowering remain separate gates."
     }
   ]
 }

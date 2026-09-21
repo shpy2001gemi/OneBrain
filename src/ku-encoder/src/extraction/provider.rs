@@ -8,7 +8,7 @@ use serde_json::Value;
 /// against the reviewed ProviderManifest schema before dispatch.
 pub struct ProviderRequest {
     pub input: Value,
-    pub repair_errors: Vec<&'static str>,
+    pub repair_errors: Vec<String>,
     pub deadline: Duration,
     pub output_tokens: u32,
     pub max_response_bytes: usize,
@@ -21,6 +21,13 @@ pub trait ExtractionProvider: Send + Sync {
     /// The host must supply a tokenizer bound to the manifest's tokenizer hash.
     fn input_tokens(&self, request: &ProviderRequest) -> Result<u32>;
     async fn extract(&self, request: ProviderRequest) -> Result<Vec<u8>>;
+    /// Separate, opt-in draft task; no Candidate/SEM admission is implied.
+    fn review_task_tokens(&self, _request: &review_draft::TaskRequest) -> Result<u32> {
+        Err(ExtractionError("review_draft_unavailable"))
+    }
+    async fn review_task(&self, _request: review_draft::TaskRequest) -> Result<Vec<u8>> {
+        Err(ExtractionError("review_draft_unavailable"))
+    }
 }
 
 /// Adapter-owned tokenizer integration. An unavailable tokenizer is a dependency

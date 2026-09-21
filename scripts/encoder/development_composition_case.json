@@ -1,0 +1,3 @@
+[
+  {"id":"vi-three-propositions","text":"Cảm biến ghi 12kg. Đèn không sáng, nhưng quạt chạy.","review":{"must_preserve":["Cảm biến","12kg","Đèn","không","quạt","nhưng"],"expected":"three propositions; negation on lamp only; contrast with fan, no invented causation; explicit kg unit"}}
+]

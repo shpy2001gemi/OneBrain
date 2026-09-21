@@ -241,12 +241,25 @@ async fn legacy_tcp_bind_failure_rolls_back_successful_vnext_startup() {
 
     let mut node = OneBrainNode::new(config).await.unwrap();
     node.set_vnext_identity_signer(Arc::new(SigningKey::from_bytes(&[0x51; 32])));
-    node.set_vnext_product_dependencies(product_dependencies())
-        .unwrap();
+    let dependencies = product_dependencies();
+    #[cfg(feature = "vnext-outbound-first")]
+    let (dependencies, _grant) = outbound_product::requested(dependencies);
+    node.set_vnext_product_dependencies(dependencies).unwrap();
     let error = node.start_network().await.unwrap_err().to_string();
     assert!(error.contains("Failed to bind TCP"));
     assert!(node.listener_addr().is_none());
     assert!(node.vnext_listener_addr().is_none());
+    #[cfg(feature = "vnext-outbound-first")]
+    {
+        assert!(!outbound_product::has_file(
+            directory.path(),
+            "vnext_reachability_replay.redb"
+        ));
+        assert!(!outbound_product::has_file(
+            directory.path(),
+            "vnext_route_journal.redb"
+        ));
+    }
     for file in [
         "vnext_identity.key",
         "vnext_private_need_vault.redb",
@@ -260,5 +273,106 @@ async fn legacy_tcp_bind_failure_rolls_back_successful_vnext_startup() {
         "vnext_outbox.redb",
     ] {
         assert!(!directory.path().join(file).exists(), "unexpected {file}");
+    }
+}
+
+#[cfg(feature = "vnext-outbound-first")]
+mod outbound_product {
+    use super::*;
+    use ku_net::vnext_reachability_crypto::SystemPublicEndpointResolver;
+    use ku_net::vnext_relay_discovery::ReachabilityFuture;
+    use onebrain_node::vnext_outbound_product::OutboundFirstDependencies;
+    use onebrain_node::vnext_reachability_manager::{
+        AdvertisementPublisher, CandidateGatherer, GatheredCandidates, NetworkEpoch,
+        PrivateCandidateSet, ReachabilityError,
+    };
+    use onebrain_protocol::ReachabilityAdvertisementV1;
+
+    struct LocalPorts;
+    impl CandidateGatherer for LocalPorts {
+        fn gather(
+            &self,
+            epoch: NetworkEpoch,
+        ) -> ReachabilityFuture<'_, Result<GatheredCandidates, ReachabilityError>> {
+            Box::pin(async move {
+                Ok(GatheredCandidates {
+                    private: PrivateCandidateSet::local(vec![], epoch)?,
+                    public: vec![],
+                    direct: vec![],
+                    relay: vec![],
+                    epoch,
+                    observed_at: 1,
+                })
+            })
+        }
+    }
+    impl AdvertisementPublisher for LocalPorts {
+        fn publish<'a>(
+            &'a self,
+            _: &'a ReachabilityAdvertisementV1,
+        ) -> ReachabilityFuture<'a, Result<(), ReachabilityError>> {
+            panic!("lifecycle must not publish")
+        }
+    }
+
+    pub(super) fn requested(
+        dependencies: VNextProductRuntimeDependencies,
+    ) -> (
+        VNextProductRuntimeDependencies,
+        tokio::sync::watch::Sender<bool>,
+    ) {
+        let (grant, receiver) = tokio::sync::watch::channel(true);
+        let ports = OutboundFirstDependencies::new(
+            Arc::new(LocalPorts),
+            Arc::new(LocalPorts),
+            Arc::new(SystemPublicEndpointResolver::new(4).unwrap()),
+            receiver,
+        );
+        (dependencies.with_outbound_first(ports), grant)
+    }
+
+    pub(super) fn has_file(root: &std::path::Path, name: &str) -> bool {
+        std::fs::read_dir(root).unwrap().any(|entry| {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                has_file(&entry.path(), name)
+            } else {
+                entry.file_name() == name
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn real_node_owns_outbound_lifecycle_and_snapshot_works_under_node_lock() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config = NodeConfig::default();
+        config.port = 0;
+        config.data_dir = directory.path().to_path_buf();
+        config.concept_registry_mode = ConceptRegistryMode::Disabled;
+        config.vnext.enabled.object_event_v1 = true;
+        config.vnext.enabled.obp_rp = true;
+        let mut node = OneBrainNode::new(config).await.unwrap();
+        node.set_vnext_identity_signer(Arc::new(SigningKey::from_bytes(&[0x61; 32])));
+        let (dependencies, _grant) = requested(product_dependencies());
+        node.set_vnext_product_dependencies(dependencies).unwrap();
+        node.start_network().await.unwrap();
+        assert!(has_file(directory.path(), "vnext_reachability_replay.redb"));
+        let services = node.vnext_product_services().unwrap();
+        let node = tokio::sync::Mutex::new(node);
+        let mut locked = node.lock().await;
+        let status = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            services.outbound_first_status(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(status.requested && status.active);
+        assert_eq!(services.status().unwrap().active_product_workers, 1);
+        locked.shutdown_network().await;
+        assert!(matches!(
+            services.outbound_first_status().await,
+            Err(onebrain_node::VNextProductRuntimeError::Stopped)
+        ));
     }
 }

@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **`KU-API-001` merged / `KU-WEB-001` ready for review**
+> Status: **KU-CLI-001 implemented locally; OBP-PROD-001 accepted; OBP-PROD-002/003 implemented/tested locally (D-025/D-026), unmerged**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -8,6 +8,11 @@
 This folder is the compact starting point for future conversations. It records
 the decision, the evidence boundary, the dependency order and one bounded file
 per task so a new conversation does not need the history that produced it.
+
+Latest owner direction (2026-09-20): proceed with the product framework and defer
+semantic quality gaps to contributors. Start with [NEXT_CONVERSATION.md](NEXT_CONVERSATION.md).
+The full local baseline is in `C:/Users/shpy2/Documents/OneBrain`, including untracked
+files. V2 remains inactive on the live host; acceptance does not qualify a model.
 
 ## Owner-approved decision
 
@@ -31,6 +36,8 @@ See [DECISIONS.md](DECISIONS.md) for the exact allowed and forbidden claims.
 
 ## Start here in a new conversation
 
+**Latest continuation handoff:** [Product framework / OBP contract review](NEXT_CONVERSATION.md). This supersedes the previous semantic-tuning continuation.
+
 Read only these files first:
 
 1. repository `AGENTS.md`;
@@ -41,12 +48,23 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`KU-WEB-001`](tasks/07-KU-WEB-001.md) — Review
-**Current branch:** `codex/ku-web-001-workflow`; manual and experimental Ollama Web implementation ready for review.
+**Current task:** [`OBP-PROD-001`](tasks/10-OBP-PROD-001.md) — Review;
+[contract proposal and checks](outputs/OBP_PROD_001_CONTRACT.md) on
+`codex/obp-prod-001-product-contract`. The entire original dirty baseline and
+[completed CLI implementation](outputs/KU_CLI_001_IMPLEMENTATION.md) remain in
+the same tree. No commit, push or merge occurred. Contract acceptance is pending.
+
+The following Web/encoder checkpoints are historical context; they do not override the current task or the new handoff.
+**Historical Web branch:** `codex/ku-web-001-workflow`; manual and experimental Ollama Web implementation ready for review.
 **Owner follow-up:** actual Ollama (`qwen3:8b`) text encoding requested; see the
 [activation-contract amendment](outputs/KU_WEB_001_OLLAMA_AMENDMENT.md). The owner approved this exception under D-023. The extension is implemented; see
 [Ollama run instructions and real-model evidence](outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md).
-**Review branch:** `codex/ku-web-001-workflow`
+**Latest development evidence (2026-09-08):** [headless tests and portable proposal experiments](outputs/KU_ENCODER_MODEL_PORTABILITY_EXPERIMENT.md). The owner's two Vietnamese sources still fail the current Candidate path; the separate lightweight proposal experiment is not integrated into Web or canonical KU.
+**Owner-approved follow-up, ready for review:** [durable review-draft implementation and tests](outputs/KU_REVIEW_DRAFT_IMPLEMENTATION.md). Background jobs, retained semantic drafts and checked repairs are active in the local Web. Qwen3 8b passed five inspected development meanings and both original sources through the actual Web API; 1.7b still needs review on all five. Recent jobs retain both original results for inspection. A draft is not a saveable KU; broad model portability remains unproven.
+**Gemma 4 comparison (2026-09-09):** [actual native draft tests](outputs/KU_GEMMA4_DEVELOPMENT_PROBE.md) with the same prompts: E4B passed 3/5 inspected meanings, 12B passed 5/5; mean CPU times 66.57/179.78 seconds. Thinking was disabled in all 20 calls. This is development evidence; Gemma is not yet admitted by the Web adapter.
+**Latest implementation checkpoint (2026-09-20):** shared selection host activated locally; Qwen3 8b passed 5/5 public development meanings through the real Web API (52.32 s mean, admission below 0.1 s); old jobs remain readable. E4B passed 4/5 after constrained repairs; 12B passed 5/5 (78.58 s mean). All three use the same executor. Independent semantic verification is not yet integrated; Gemma remains development-only. See the [current implementation report](outputs/KU_SEMANTIC_SELECTION_IMPLEMENTATION.md).
+**Latest owner-approved architecture (2026-09-09):** [shared semantic selection](../../specs/vnext/KU_SEMANTIC_SELECTION_PROFILE_V1.md) assigns sparse meaning choices to the LLM and full-draft assembly, numbers, anchoring and targeted repair scope to common Rust code. New drafts are explicitly unassessed; independent verification remains a separate integration gate. Read [implementation and current model evidence](outputs/KU_SEMANTIC_SELECTION_IMPLEMENTATION.md) before continuing. These follow-up edits are local and uncommitted, not part of the earlier pushed milestone.
+**Historical Web review branch:** `codex/ku-web-001-workflow`
 **MVP direction:** [D-021](DECISIONS.md#d-021--prioritize-an-early-open-source-concept--mvp).
 The separate `codex/ku-enc-003-model-qualification` branch remains blocked on
 locked qualification inputs; it is preserved at `4a8f29d` and has no model runs.
@@ -103,21 +121,7 @@ The economic choice changes the earlier benefit-only direction and needs a
 versioned specification amendment before implementation. This audit does not
 enable minting or change canonical bytes, application code or rollout state.
 
-Copy/paste prompt:
-
-```text
-Read AGENTS.md, then docs/handoffs/2026-09-ku-obp-productization/README.md,
-PROGRESS.md, tasks/07-KU-WEB-001.md, outputs/KU_WEB_001_IMPLEMENTATION.md and
-outputs/KU_WEB_001_OLLAMA_IMPLEMENTATION.md.
-Review KU-WEB-001 on the clean pushed codex/ku-web-001-workflow branch.
-Check the local editor contract, host-admitted source/Registry authority,
-private Web transport, explicit save/reconciliation and revision boundaries.
-Also check the D-023 experimental Ollama profile, exact tokenizer/artifact pins,
-owned Windows worker lifecycle, durable text consent and model-outage reads.
-Preserve honest unqualified-AI states and keep VI/EN holdouts private.
-Run focused verification and report findings. Do not merge/delete the branch
-or advance to another task without my explicit instruction.
-```
+Copy/paste prompt: use the Vietnamese prompt in [NEXT_CONVERSATION.md](NEXT_CONVERSATION.md).
 
 More prompts are in [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md).
 
@@ -130,10 +134,14 @@ More prompts are in [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md).
 | [MASTER_PLAN.md](MASTER_PLAN.md) | Two-lane dependency graph, sequencing and shared exit gates |
 | [PROGRESS.md](PROGRESS.md) | Authoritative status/branch/commit ledger for this workstream |
 | [NEW_CONVERSATION_PROMPTS.md](NEW_CONVERSATION_PROMPTS.md) | Short prompts for starting, reviewing or merging one task |
-| [`tasks/README.md`](tasks/README.md) | Index of all 23 independently executable tasks |
+| [`tasks/README.md`](tasks/README.md) | Index of all 24 tasks |
 | [`outputs/README.md`](outputs/README.md) | Naming and placement rules for task audit/evidence outputs |
 
 ## Working rules
+
+For the current continuation, D-024 and NEXT_CONVERSATION.md override the clean-main
+start and automatic push instructions below. Preserve the dirty baseline and do not
+publish Git changes without owner authorization.
 
 - One task, one branch, one primary objective.
 - Branch from an up-to-date clean `main`; use the exact `codex/` branch in the
