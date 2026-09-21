@@ -1,0 +1,4 @@
+[
+  {"id":"vi-boiling-usually","text":"Nước thường sôi ở 100oC ở gần mặt nước biển","review":{"must_preserve":["thường","100oC","gần mặt nước biển"],"current_profile":"unsupported frequency must not become unconditional equality; do not invent pressure or unit aliases"}},
+  {"id":"vi-car-usually","text":"Xe oto cá nhân thường có 4 bánh","review":{"must_preserve":["Xe oto cá nhân","thường","4 bánh"],"current_profile":"unsupported typicality must not become a universal rule; wheel count is not an invented SI unit"}}
+]

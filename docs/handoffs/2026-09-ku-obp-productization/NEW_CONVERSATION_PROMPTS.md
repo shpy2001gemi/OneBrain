@@ -1,5 +1,7 @@
 # New conversation prompts
 
+Latest continuation: [NEXT_CONVERSATION.md](NEXT_CONVERSATION.md) (D-024, KU-CLI-001). Use its prompt instead of historical Web/semantic review prompts below.
+
 Replace `<TASK_FILE>`, `<TASK_ID>` and `<BRANCH>` with values from
 `PROGRESS.md`. These prompts intentionally avoid asking a new conversation to
 read all historical plans.

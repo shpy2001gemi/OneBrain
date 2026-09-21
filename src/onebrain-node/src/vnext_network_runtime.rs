@@ -356,6 +356,13 @@ pub(crate) struct PreparedVNextIdentity {
     public_key: [u8; 32],
 }
 
+impl PreparedVNextIdentity {
+    #[cfg(feature = "vnext-outbound-first")]
+    pub(crate) fn reachability_signer(&self) -> Arc<dyn SessionIdentitySigner> {
+        Arc::clone(&self.signer)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct VNextNetworkStoragePaths {
     pub admission_root: PathBuf,
@@ -624,6 +631,14 @@ impl VNextNetworkRuntime {
         let outbox = OutboundOutbox::open(&paths.outbox)
             .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))?;
 
+        #[cfg(feature = "vnext-outbound-first")]
+        let route_journal = RouteJournal::open(
+            &paths.admission_root.join("vnext_route_journal.redb"),
+            4_096,
+            16 * 1024 * 1024,
+        )
+        .map_err(|error| VNextNetworkRuntimeError::Journal(error.to_string()))?;
+
         let transport = Arc::new(
             QuicTransport::bind(TransportConfig {
                 bind_addr,
@@ -642,13 +657,6 @@ impl VNextNetworkRuntime {
                 .map_err(|error| VNextNetworkRuntimeError::Config(format!("{error:?}")))?,
         ));
         let routes = AuthenticatedRouteDirectory::default();
-        #[cfg(feature = "vnext-outbound-first")]
-        let route_journal = RouteJournal::open(
-            &paths.admission_root.join("vnext_route_journal.redb"),
-            4_096,
-            16 * 1024 * 1024,
-        )
-        .map_err(|error| VNextNetworkRuntimeError::Journal(error.to_string()))?;
         let counters = Arc::new(RuntimeCounters::default());
         let observability = Arc::new(VNextObservability::default());
         let outbox_stats = outbox
@@ -816,6 +824,15 @@ impl VNextNetworkRuntime {
 
     pub(crate) fn observability(&self) -> Arc<VNextObservability> {
         Arc::clone(&self.observability)
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub(crate) fn outbound_pending_count(&self) -> Result<u64, VNextNetworkRuntimeError> {
+        self.outbound
+            .outbox
+            .stats()
+            .map(|stats| stats.pending)
+            .map_err(|error| VNextNetworkRuntimeError::Outbox(error.to_string()))
     }
 
     pub fn inventory_root(

@@ -19,6 +19,28 @@ fn corpus() -> Value {
 }
 
 #[test]
+fn schema_diagnostics_locate_term_errors_without_reflecting_private_values() {
+    let mut value = corpus()["cases"][0]["candidate"].clone();
+    value["statements"][0]["arguments"][0] = json!({"kind":"quantity","number":{"start":0,"end":1,"quote":"PRIVATE_QUOTE"},"PRIVATE_FIELD":"PRIVATE_VALUE"});
+    assert_eq!(
+        check(&value, "Candidate", &mut budget()),
+        Err(ExtractionError("oneof"))
+    );
+    let issues = schema::candidate_diagnostics(&value, &mut budget()).unwrap();
+    let text = issues.join("\n");
+    assert!(text.contains("$.statements[0].arguments[0].unit: missing_field"));
+    assert!(text.contains("unit_evidence: missing_field"));
+    assert!(text.contains("unknown_field"));
+    assert!(!text.contains("PRIVATE"));
+    assert!(issues.len() <= 8 && issues.iter().all(|s| s.len() <= 240));
+    assert!(schema::candidate_diagnostics(
+        &value,
+        &mut WorkBudget::new(0, Duration::from_secs(1), Arc::new(AtomicBool::new(false))).unwrap()
+    )
+    .is_err());
+}
+
+#[test]
 fn native_compiler_matches_all_reviewed_corpus_oracles() {
     let corpus = corpus();
     for row in corpus["cases"].as_array().unwrap() {

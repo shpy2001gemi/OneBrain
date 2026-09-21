@@ -13,6 +13,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
+#[cfg(feature = "vnext-outbound-first")]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use ku_core::foundation::{
     FeedEventSigner, NodeId, ObjectReference, SelectorCid, ValidatedFeedInception,
@@ -44,6 +46,12 @@ use crate::vnext_network_runtime::{
 use crate::vnext_observability::{
     VNextObservability, VNextObservabilitySnapshot, VNextReasonCode, VNextRegistryTelemetryState,
 };
+#[cfg(feature = "vnext-outbound-first")]
+use crate::vnext_outbound_product::{
+    OutboundFirstDependencies, OutboundFirstOwner, OutboundFirstStatus,
+};
+#[cfg(feature = "vnext-outbound-first")]
+use crate::vnext_reachability_replay_store::RedbReachabilityReplayStore;
 use crate::vnext_route_authority::{AuthenticatedRoute, LocalPolicyRegistry, LocalPolicyVersion};
 use crate::vnext_runtime_rollout::{
     VNextRuntimeGenerationLease, VNextRuntimeLane, VNextRuntimeLaneRequest, VNextRuntimeRollout,
@@ -138,6 +146,12 @@ impl VNextProductStoragePaths {
             self.network.inventory.clone(),
             self.network.provenance.clone(),
             self.network.outbox.clone(),
+            #[cfg(feature = "vnext-outbound-first")]
+            self.network.admission_root.join("vnext_route_journal.redb"),
+            #[cfg(feature = "vnext-outbound-first")]
+            self.network
+                .admission_root
+                .join("vnext_reachability_replay.redb"),
         ]
     }
 }
@@ -148,6 +162,8 @@ impl VNextProductStoragePaths {
 pub struct VNextProductRuntimeDependencies {
     private_need_vault_key: LocalNeedVaultKey,
     policies: LocalPolicyRegistry,
+    #[cfg(feature = "vnext-outbound-first")]
+    outbound_first: Option<OutboundFirstDependencies>,
 }
 
 impl VNextProductRuntimeDependencies {
@@ -155,7 +171,33 @@ impl VNextProductRuntimeDependencies {
         Self {
             private_need_vault_key,
             policies,
+            #[cfg(feature = "vnext-outbound-first")]
+            outbound_first: None,
         }
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub fn with_outbound_first(mut self, ports: OutboundFirstDependencies) -> Self {
+        self.outbound_first = Some(ports);
+        self
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub(crate) fn validate_outbound_first(
+        &self,
+        config: &VNextFeatureConfig,
+    ) -> Result<(), VNextProductRuntimeError> {
+        if let Some(ports) = &self.outbound_first {
+            ports
+                .validate()
+                .map_err(VNextProductRuntimeError::OutboundFirst)?;
+            if !config.enabled.object_event_v1 || !config.enabled.obp_rp || !ports.granted() {
+                return Err(VNextProductRuntimeError::OutboundFirst(
+                    "feature_or_execution_grant_unavailable",
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -188,6 +230,8 @@ pub enum VNextShutdownPhase {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VNextProductWorkerKind {
+    #[cfg(feature = "vnext-outbound-first")]
+    Reachability,
     DistributedKql,
     PublicUsePublication,
     DistributedPomv,
@@ -272,6 +316,8 @@ pub struct VNextProductRuntime {
 }
 
 struct VNextProductServiceCore {
+    #[cfg(feature = "vnext-outbound-first")]
+    outbound_first: Mutex<Option<Arc<OutboundFirstOwner>>>,
     lifecycle: Mutex<VNextServiceLifecycle>,
     drained: Notify,
     network: Mutex<Option<Arc<VNextNetworkRuntime>>>,
@@ -372,6 +418,13 @@ impl VNextProductRuntime {
         dependencies: VNextProductRuntimeDependencies,
         identity_signer: Option<Arc<dyn SessionIdentitySigner>>,
     ) -> Result<Self, VNextProductRuntimeError> {
+        // Dataset resolvers may create owner directories. Reject unsupported
+        // requests before asking them for any paths.
+        config
+            .validate()
+            .map_err(|error| VNextProductRuntimeError::Configuration(error.to_string()))?;
+        #[cfg(feature = "vnext-outbound-first")]
+        dependencies.validate_outbound_first(config)?;
         Self::start_with_paths(
             VNextProductStoragePaths::from_resolver(resolver)?,
             bind_addr,
@@ -390,6 +443,8 @@ impl VNextProductRuntime {
         identity_signer: Option<Arc<dyn SessionIdentitySigner>>,
     ) -> Result<Self, VNextProductRuntimeError> {
         let mut startup_trace = Vec::with_capacity(8);
+        #[cfg(feature = "vnext-outbound-first")]
+        dependencies.validate_outbound_first(config)?;
         config
             .validate()
             .map_err(|error| VNextProductRuntimeError::Configuration(error.to_string()))?;
@@ -414,6 +469,8 @@ impl VNextProductRuntime {
         let VNextProductRuntimeDependencies {
             private_need_vault_key,
             policies,
+            #[cfg(feature = "vnext-outbound-first")]
+            outbound_first,
         } = dependencies;
         let policy_versions = policies.versions();
         let signer_mode = if identity_signer.is_some() {
@@ -431,6 +488,24 @@ impl VNextProductRuntime {
             prepare_vnext_identity_caller_owned(identity_signer)?
         };
         startup_trace.push(VNextStartupPhase::SignerAndVaultValidated);
+        #[cfg(feature = "vnext-outbound-first")]
+        let outbound_prepared = outbound_first
+            .map(|ports| {
+                let replay = RedbReachabilityReplayStore::open_validated(
+                    &paths
+                        .network
+                        .admission_root
+                        .join("vnext_reachability_replay.redb"),
+                    budgets.storage_hard_watermark_bytes,
+                )
+                .map_err(|_| VNextProductRuntimeError::OutboundFirst("replay_unavailable"))?;
+                Ok::<_, VNextProductRuntimeError>((
+                    ports,
+                    prepared_identity.reachability_signer(),
+                    replay,
+                ))
+            })
+            .transpose()?;
 
         // A never-requested lane has no owner. A provisioned lane stays open
         // behind its durable generation fence so it can be re-enabled without
@@ -470,95 +545,125 @@ impl VNextProductRuntime {
             )
             .await?,
         );
-        startup_trace.push(VNextStartupPhase::AuthenticatedQuicStarted);
-        let last_network_status = network.status();
-        let observability = network.observability();
-        let local_addr = network.local_addr();
+        let result = async {
+            startup_trace.push(VNextStartupPhase::AuthenticatedQuicStarted);
+            let last_network_status = network.status();
+            let observability = network.observability();
+            let local_addr = network.local_addr();
+            #[cfg(feature = "vnext-outbound-first")]
+            let outbound_first = outbound_prepared
+                .map(|(ports, signer, replay)| {
+                    OutboundFirstOwner::new(ports, signer, replay, network.shared_transport())
+                        .map(Arc::new)
+                        .map_err(VNextProductRuntimeError::OutboundFirst)
+                })
+                .transpose()?;
 
-        let rehydrated_private_needs = distributed_kql
-            .as_mut()
-            .map(|kql| {
-                kql.rehydrate_private_needs()
-                    .map_err(VNextProductRuntimeError::from)
-            })
-            .transpose()?
-            .unwrap_or_default();
-        startup_trace.push(VNextStartupPhase::PrivateNeedsRehydrated);
+            let rehydrated_private_needs = distributed_kql
+                .as_mut()
+                .map(|kql| {
+                    kql.rehydrate_private_needs()
+                        .map_err(VNextProductRuntimeError::from)
+                })
+                .transpose()?
+                .unwrap_or_default();
+            startup_trace.push(VNextStartupPhase::PrivateNeedsRehydrated);
 
-        // Recover the logical publication outbox before scheduling retries.
-        // Routes are session-derived, so startup records durable pending work;
-        // the publication worker may retry it only after a route is available.
-        let startup_pending_publications =
-            if lanes.public_use_evidence_publish && lanes_network_enabled(&rollout)? {
-                if let Some(public_use) = public_use.as_ref() {
-                    match public_use.flush_pending(&network, budgets.publication_flush_batch) {
-                        Ok(_) | Err(DistributedPomvError::AuthenticatedRouteUnavailable) => {}
-                        Err(error) => return Err(error.into()),
+            // Recover the logical publication outbox before scheduling retries.
+            // Routes are session-derived, so startup records durable pending work;
+            // the publication worker may retry it only after a route is available.
+            let startup_pending_publications =
+                if lanes.public_use_evidence_publish && lanes_network_enabled(&rollout)? {
+                    if let Some(public_use) = public_use.as_ref() {
+                        match public_use.flush_pending(&network, budgets.publication_flush_batch) {
+                            Ok(_) | Err(DistributedPomvError::AuthenticatedRouteUnavailable) => {}
+                            Err(error) => return Err(error.into()),
+                        }
+                        public_use.pending_publication_count()?
+                    } else {
+                        0
                     }
-                    public_use.pending_publication_count()?
                 } else {
                     0
-                }
-            } else {
-                0
-            };
-        startup_trace.push(VNextStartupPhase::PublicationOutboxDrained);
+                };
+            startup_trace.push(VNextStartupPhase::PublicationOutboxDrained);
 
-        let mut workers = BoundedProductWorkers::new(MAX_PRODUCT_BACKGROUND_WORKERS);
-        workers.start_lane_workers(
-            provisioned_lanes,
-            budgets.worker_poll_interval_millis,
-            public_use
-                .as_ref()
-                .map(|publisher| (Arc::clone(publisher), Arc::clone(&network))),
-            budgets.publication_flush_batch,
-            rollout.clone(),
-        )?;
-        startup_trace.push(VNextStartupPhase::WorkersStarted);
-        startup_trace.push(VNextStartupPhase::Running);
-        let startup_data_dir_created = !artifact_guard.data_dir_preexisting;
-        let startup_artifacts = artifact_guard.commit();
-        let last_network_status = Arc::new(Mutex::new(last_network_status));
-        let core = Arc::new(VNextProductServiceCore {
-            lifecycle: Mutex::new(VNextServiceLifecycle {
-                accepting: true,
-                in_flight: 0,
-            }),
-            drained: Notify::new(),
-            network: Mutex::new(Some(network)),
-            distributed_kql: OptionalKqlOwner {
-                runtime: Mutex::new(distributed_kql),
-            },
-            public_use: Mutex::new(public_use),
-            distributed_pomv: Mutex::new(distributed_pomv.map(Arc::new)),
-            policy_versions,
-            rollout,
-            budgets,
-            storage,
-            signer_mode,
-            startup_trace,
-            rehydrated_private_needs,
-            startup_pending_publications,
-            active_product_workers: workers.len(),
-            max_product_workers: workers.capacity(),
-            worker_cancellation: workers.cancellation.subscribe(),
-            worker_poll_ticks: Arc::clone(&workers.poll_ticks),
-            observability,
-        });
+            let mut workers = BoundedProductWorkers::new(MAX_PRODUCT_BACKGROUND_WORKERS);
+            workers.start_lane_workers(
+                provisioned_lanes,
+                budgets.worker_poll_interval_millis,
+                public_use
+                    .as_ref()
+                    .map(|publisher| (Arc::clone(publisher), Arc::clone(&network))),
+                budgets.publication_flush_batch,
+                rollout.clone(),
+            )?;
+            #[cfg(feature = "vnext-outbound-first")]
+            if let Some(owner) = outbound_first.as_ref() {
+                let owner = Arc::clone(owner);
+                let rollout = rollout.clone();
+                workers.spawn(
+                    VNextProductWorkerKind::Reachability,
+                    move |cancel| async move {
+                        owner.run(cancel.receiver, rollout).await;
+                    },
+                )?;
+            }
+            startup_trace.push(VNextStartupPhase::WorkersStarted);
+            startup_trace.push(VNextStartupPhase::Running);
+            let startup_data_dir_created = !artifact_guard.data_dir_preexisting;
+            let startup_artifacts = artifact_guard.commit();
+            let last_network_status = Arc::new(Mutex::new(last_network_status));
+            let core = Arc::new(VNextProductServiceCore {
+                #[cfg(feature = "vnext-outbound-first")]
+                outbound_first: Mutex::new(outbound_first),
+                lifecycle: Mutex::new(VNextServiceLifecycle {
+                    accepting: true,
+                    in_flight: 0,
+                }),
+                drained: Notify::new(),
+                network: Mutex::new(Some(Arc::clone(&network))),
+                distributed_kql: OptionalKqlOwner {
+                    runtime: Mutex::new(distributed_kql),
+                },
+                public_use: Mutex::new(public_use),
+                distributed_pomv: Mutex::new(distributed_pomv.map(Arc::new)),
+                policy_versions,
+                rollout,
+                budgets,
+                storage,
+                signer_mode,
+                startup_trace,
+                rehydrated_private_needs,
+                startup_pending_publications,
+                active_product_workers: workers.len(),
+                max_product_workers: workers.capacity(),
+                worker_cancellation: workers.cancellation.subscribe(),
+                worker_poll_ticks: Arc::clone(&workers.poll_ticks),
+                observability,
+            });
 
-        Ok(Self {
-            core: Some(core),
-            last_network_status,
-            local_addr,
-            workers,
-            state: VNextProductRuntimeState::Running,
-            shutdown_trace: Vec::with_capacity(5),
-            rehydrated_private_needs,
-            startup_pending_publications,
-            startup_artifacts,
-            startup_data_dir_created,
-            data_dir: paths.operational,
-        })
+            Ok(Self {
+                core: Some(core),
+                last_network_status,
+                local_addr,
+                workers,
+                state: VNextProductRuntimeState::Running,
+                shutdown_trace: Vec::with_capacity(5),
+                rehydrated_private_needs,
+                startup_pending_publications,
+                startup_artifacts,
+                startup_data_dir_created,
+                data_dir: paths.operational.clone(),
+            })
+        }
+        .await;
+        if result.is_err() {
+            if let Ok(mut network) = Arc::try_unwrap(network) {
+                network.shutdown().await;
+            }
+        }
+        result
     }
 
     pub fn services(&self) -> VNextProductServices {
@@ -591,6 +696,17 @@ impl VNextProductRuntime {
         let Some(core) = self.core.take() else {
             return;
         };
+        #[cfg(feature = "vnext-outbound-first")]
+        {
+            let owner = core
+                .outbound_first
+                .lock()
+                .ok()
+                .and_then(|mut owner| owner.take());
+            if let Some(owner) = owner {
+                owner.close().await;
+            }
+        }
         if let Some(network) = core.take_network() {
             let mut last_network_status = network.status();
             if let Ok(mut network) = Arc::try_unwrap(network) {
@@ -835,6 +951,213 @@ pub struct VNextProductServices {
 }
 
 impl VNextProductServices {
+    /// Bounded (at most eight), redacted host-local source snapshot. Public
+    /// pagination and management capabilities belong to OBP-API-001.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub async fn outbound_first_sources(
+        &self,
+    ) -> Result<Vec<crate::vnext_outbound_product::DiscoverySourceStatus>, VNextProductRuntimeError>
+    {
+        let lease = self.lease()?;
+        let owner = lease
+            .core
+            .outbound_first
+            .lock()
+            .map_err(|_| VNextProductRuntimeError::SubsystemLockPoisoned("reachability"))?
+            .clone();
+        let Some(owner) = owner else {
+            return Ok(vec![]);
+        };
+        let mut sources = owner.source_statuses.read().await.clone();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| VNextProductRuntimeError::OutboundFirst("clock_unavailable"))?
+            .as_secs();
+        let enabled = owner.granted()
+            && lease
+                .core
+                .rollout
+                .snapshot()?
+                .lane(VNextRuntimeLane::Network)
+                .enabled;
+        for source in &mut sources {
+            if !enabled {
+                source.state = "disabled";
+            } else if source
+                .expires_at_unix_seconds
+                .is_some_and(|expiry| expiry <= now)
+            {
+                source.state = "expired";
+                source.admitted_records = 0;
+            }
+        }
+        Ok(sources)
+    }
+
+    #[cfg(feature = "vnext-outbound-first")]
+    pub async fn outbound_first_reservations(
+        &self,
+    ) -> Result<
+        Vec<crate::vnext_outbound_product::OutboundReservationStatus>,
+        VNextProductRuntimeError,
+    > {
+        let lease = self.lease()?;
+        let owner = lease
+            .core
+            .outbound_first
+            .lock()
+            .map_err(|_| VNextProductRuntimeError::SubsystemLockPoisoned("reachability"))?
+            .clone();
+        let Some(owner) = owner else {
+            return Ok(vec![]);
+        };
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| VNextProductRuntimeError::OutboundFirst("clock_unavailable"))?
+            .as_secs();
+        let active = owner.granted()
+            && lease
+                .core
+                .rollout
+                .snapshot()?
+                .lane(VNextRuntimeLane::Network)
+                .enabled;
+        let mut statuses: std::collections::BTreeMap<_, _> = owner
+            .reservation_statuses
+            .read()
+            .await
+            .iter()
+            .map(|status| (status.relay_node_id, status.clone()))
+            .collect();
+        for status in statuses.values_mut() {
+            if !active {
+                status.state = "revoked";
+            } else if status.expires_at_unix_seconds > 0 && status.expires_at_unix_seconds <= now {
+                status.state = "expired";
+            }
+        }
+        for entry in owner
+            .manager
+            .reservations
+            .active_reservations()
+            .await
+            .into_iter()
+            .map(
+                |entry| crate::vnext_outbound_product::OutboundReservationStatus {
+                    relay_node_id: entry.canonical().relay_node_id,
+                    state: if entry.canonical().expires_at <= now {
+                        "expired"
+                    } else if !active {
+                        "revoked"
+                    } else {
+                        "active"
+                    },
+                    expires_at_unix_seconds: entry.canonical().expires_at,
+                    limitations: if active {
+                        vec![]
+                    } else {
+                        vec!["network_execution_unavailable"]
+                    },
+                },
+            )
+        {
+            statuses.insert(entry.relay_node_id, entry);
+        }
+        Ok(statuses.into_values().collect())
+    }
+
+    /// Independent local snapshot through the existing weak service handle.
+    /// This read never requests a lane or starts discovery.
+    #[cfg(feature = "vnext-outbound-first")]
+    pub async fn outbound_first_status(
+        &self,
+    ) -> Result<OutboundFirstStatus, VNextProductRuntimeError> {
+        let lease = self.lease()?;
+        let core = &lease.core;
+        let owner = core
+            .outbound_first
+            .lock()
+            .map_err(|_| VNextProductRuntimeError::SubsystemLockPoisoned("reachability"))?
+            .clone();
+        let usable_reservations = if let Some(owner) = &owner {
+            owner
+                .manager
+                .reservations
+                .usable_count()
+                .await
+                .map_err(|_| {
+                    VNextProductRuntimeError::OutboundFirst("reservation_state_unavailable")
+                })?
+        } else {
+            0
+        };
+        let lane = core.rollout.snapshot()?.lane(VNextRuntimeLane::Network);
+        let requested = owner.is_some();
+        let granted = owner.as_ref().is_some_and(|owner| owner.granted());
+        let active = requested && granted && lane.enabled;
+        let network = core.network()?;
+        let mut limitations = Vec::new();
+        if requested {
+            limitations.push("routing_orchestration_pending");
+            if !granted {
+                limitations.push("execution_grant_unavailable");
+            }
+            if let Some(owner) = &owner {
+                let limitation = owner.limitation();
+                if !limitations.contains(&limitation) {
+                    limitations.push(limitation);
+                }
+            }
+        }
+        Ok(OutboundFirstStatus {
+            compiled: true,
+            requested,
+            active,
+            kill_switch: lane.requested && !lane.enabled,
+            signer_ready: true,
+            generation: lane.generation,
+            lifecycle: if !requested || !lane.enabled {
+                "disabled"
+            } else if active {
+                "degraded"
+            } else {
+                "requested"
+            },
+            source_count: if let Some(owner) = &owner {
+                owner.source_statuses.read().await.len()
+            } else {
+                0
+            },
+            usable_reservations,
+            authenticated_routes: network.authenticated_route_count()?,
+            pending_intents: network.outbound_pending_count()?,
+            advertisement_state: if let Some(owner) = &owner {
+                if !active {
+                    "disabled"
+                } else {
+                    let (state, expiry) = *owner.advertisement_status.read().await;
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_err(|_| VNextProductRuntimeError::OutboundFirst("clock_unavailable"))?
+                        .as_secs();
+                    if state == "published" && expiry.is_some_and(|expiry| expiry <= now) {
+                        "expired"
+                    } else if state == "published" && usable_reservations == 0 {
+                        "degraded"
+                    } else {
+                        state
+                    }
+                }
+            } else {
+                "disabled"
+            },
+            coverage: "local_only",
+            limitations,
+            claims_global_completion: false,
+            authorizes_reward: false,
+        })
+    }
+
     fn lease(&self) -> Result<VNextServiceLease, VNextProductRuntimeError> {
         self.core
             .upgrade()
@@ -1298,6 +1621,7 @@ impl crate::base_runtime::BaseLocalOperationAdapter for VNextProductServices {
                 reason: "unsupported_vnext_base_query",
                 retryable: false,
                 reconcile_before_retry: false,
+                validation_diagnostics: Vec::new(),
             });
         }
         let status = self
@@ -1307,6 +1631,7 @@ impl crate::base_runtime::BaseLocalOperationAdapter for VNextProductServices {
                 reason: "vnext_runtime_status_unavailable",
                 retryable: true,
                 reconcile_before_retry: true,
+                validation_diagnostics: Vec::new(),
             })?;
         let bytes = serde_json::to_vec(&serde_json::json!({
             "profile": "vnext.runtime.status.v1",
@@ -1324,6 +1649,7 @@ impl crate::base_runtime::BaseLocalOperationAdapter for VNextProductServices {
             reason: "vnext_runtime_status_encoding_failed",
             retryable: false,
             reconcile_before_retry: true,
+            validation_diagnostics: Vec::new(),
         })?;
         let payload =
             onebrain_base_contract::TypedPayloadV1::try_from_bytes(bytes).map_err(|_| {
@@ -1332,6 +1658,7 @@ impl crate::base_runtime::BaseLocalOperationAdapter for VNextProductServices {
                     reason: "vnext_runtime_status_too_large",
                     retryable: true,
                     reconcile_before_retry: true,
+                    validation_diagnostics: Vec::new(),
                 }
             })?;
         Ok((payload, None))
@@ -1346,6 +1673,7 @@ impl crate::base_runtime::BaseLocalOperationAdapter for VNextProductServices {
             reason: "vnext_mutation_requires_generated_base_command",
             retryable: false,
             reconcile_before_retry: false,
+            validation_diagnostics: Vec::new(),
         })
     }
 }
@@ -1512,6 +1840,12 @@ struct BoundedProductWorkers {
     poll_ticks: Arc<AtomicU64>,
 }
 
+impl Drop for BoundedProductWorkers {
+    fn drop(&mut self) {
+        self.cancel_and_abort();
+    }
+}
+
 impl BoundedProductWorkers {
     fn new(max_workers: usize) -> Self {
         let (cancellation, _) = watch::channel(false);
@@ -1644,6 +1978,9 @@ impl BoundedProductWorkers {
 
 #[derive(Debug, Error)]
 pub enum VNextProductRuntimeError {
+    #[cfg(feature = "vnext-outbound-first")]
+    #[error("outbound-first lifecycle unavailable: {0}")]
+    OutboundFirst(&'static str),
     #[error("vNext product runtime is stopped")]
     Stopped,
     #[error("vNext product service lifecycle lock is poisoned")]
@@ -1733,7 +2070,7 @@ mod tests {
         }
     }
 
-    fn dependencies(marker: u8) -> VNextProductRuntimeDependencies {
+    pub(super) fn dependencies(marker: u8) -> VNextProductRuntimeDependencies {
         let version = LocalPolicyVersion::new(1).unwrap();
         let policies = LocalPolicyRegistry::new([(
             version,
@@ -1753,7 +2090,7 @@ mod tests {
         )
     }
 
-    fn all_lanes_config() -> VNextFeatureConfig {
+    pub(super) fn all_lanes_config() -> VNextFeatureConfig {
         let mut config = VNextFeatureConfig::default();
         config.enabled.object_event_v1 = true;
         config.enabled.obp_rp = true;
@@ -2439,3 +2776,7 @@ mod tests {
         runtime.shutdown().await;
     }
 }
+
+#[cfg(all(test, feature = "vnext-outbound-first"))]
+#[path = "vnext_outbound_product/lifecycle_tests.rs"]
+mod outbound_lifecycle_tests;

@@ -74,6 +74,9 @@ struct Provider {
     candidate: Value,
     calls: AtomicUsize,
     invalid_first: bool,
+    invalid_label_calls: usize,
+    duplicate_calls: usize,
+    invalid_number_calls: usize,
     pending: bool,
     journal: Arc<Journal>,
 }
@@ -94,8 +97,52 @@ impl ExtractionProvider for Provider {
         if self.pending {
             std::future::pending::<()>().await;
         }
+        if self.invalid_number_calls > 0 && n > 0 {
+            assert!(request.repair_errors.iter().any(
+                |e| e.contains("$.statements[0].arguments[0].number.quote: unsupported_number")
+            ));
+        }
+        if n < self.invalid_number_calls {
+            let mut broken = self.candidate.clone();
+            broken["statements"][0]["arguments"][0] = json!({"kind":"quantity","number":{"start":0,"end":5,"quote":"Water"},"unit":broken["concepts"][0]["key"],"unit_evidence":broken["concepts"][0]["evidence"]});
+            return Ok(serde_json::to_vec(&broken).unwrap());
+        }
+        if self.duplicate_calls > 0 && n > 0 {
+            assert!(request
+                .repair_errors
+                .iter()
+                .any(|e| e.contains("$.concepts[1].key: duplicate_id")));
+        }
+        if n < self.duplicate_calls {
+            let mut broken = self.candidate.clone();
+            let duplicate = broken["concepts"][0].clone();
+            broken["concepts"].as_array_mut().unwrap().push(duplicate);
+            return Ok(serde_json::to_vec(&broken).unwrap());
+        }
+        if self.invalid_label_calls > 0 && n > 0 {
+            assert!(request
+                .repair_errors
+                .iter()
+                .any(|e| e.contains("$.concepts[0].label: concept_label")));
+            assert!(!request.repair_errors.join(" ").contains("PRIVATE_LABEL"));
+        }
+        if n < self.invalid_label_calls {
+            let mut broken = self.candidate.clone();
+            broken["concepts"][0]["label"] = "PRIVATE_LABEL".into();
+            return Ok(serde_json::to_vec(&broken).unwrap());
+        }
         if self.invalid_first && n == 0 {
-            return Ok(b"{\"PRIVATE invalid".to_vec());
+            let mut broken = self.candidate.clone();
+            broken["statements"][0]["arguments"][0] =
+                json!({"kind":"quantity","number":{"start":0,"end":1,"quote":"PRIVATE"}});
+            return Ok(serde_json::to_vec(&broken).unwrap());
+        }
+        if self.invalid_first && n == 1 {
+            assert!(request
+                .repair_errors
+                .iter()
+                .any(|e| e.contains("$.statements[0].arguments[0].unit: missing_field")));
+            assert!(!request.repair_errors.join(" ").contains("PRIVATE"));
         }
         Ok(serde_json::to_vec(&self.candidate).unwrap())
     }
@@ -108,6 +155,9 @@ fn fixture(invalid_first: bool, pending: bool) -> (Value, Arc<Provider>, Arc<Jou
         candidate: row["candidate"].clone(),
         calls: AtomicUsize::new(0),
         invalid_first,
+        invalid_label_calls: 0,
+        duplicate_calls: 0,
+        invalid_number_calls: 0,
         pending,
         journal: journal.clone(),
     });
@@ -116,6 +166,90 @@ fn fixture(invalid_first: bool, pending: bool) -> (Value, Arc<Provider>, Arc<Jou
         allowed: AtomicBool::new(true),
     };
     (row, provider, journal, authority)
+}
+
+#[tokio::test]
+async fn numeric_source_errors_repair_before_candidate_recording() {
+    for invalid_calls in [1, 2] {
+        let (row, mut p, j, a) = fixture(false, false);
+        Arc::get_mut(&mut p).unwrap().invalid_number_calls = invalid_calls;
+        let w = ExtractionWorkflow::new(p.clone(), 1024).unwrap();
+        let result = w
+            .run(
+                &job(&row),
+                &a,
+                j.as_ref(),
+                1_000_000,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await;
+        assert_eq!(p.calls.load(Ordering::Acquire), 2);
+        if invalid_calls == 1 {
+            assert_eq!(result.unwrap().drafts.len(), 1);
+        } else {
+            assert_eq!(result.err().unwrap().0, "unsupported_number");
+            let state = j.state.lock().unwrap().clone().unwrap();
+            assert!(state.candidates.is_empty());
+            assert!(!state.validation_diagnostics.join(" ").contains("Water"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn duplicate_ids_receive_bounded_repair_and_cannot_be_recorded() {
+    for invalid_calls in [1, 2] {
+        let (row, mut p, j, a) = fixture(false, false);
+        Arc::get_mut(&mut p).unwrap().duplicate_calls = invalid_calls;
+        let w = ExtractionWorkflow::new(p.clone(), 1024).unwrap();
+        let result = w
+            .run(
+                &job(&row),
+                &a,
+                j.as_ref(),
+                1_000_000,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await;
+        assert_eq!(p.calls.load(Ordering::Acquire), 2);
+        let state = j.state.lock().unwrap().clone().unwrap();
+        if invalid_calls == 1 {
+            assert_eq!(result.unwrap().drafts.len(), 1);
+        } else {
+            assert_eq!(result.err().unwrap().0, "duplicate_id");
+            assert!(state.candidates.is_empty());
+            assert!(state.validation_diagnostics.iter().all(|d| d.len() <= 240));
+        }
+    }
+}
+
+#[tokio::test]
+async fn concept_label_mismatch_is_repairable_but_never_silently_normalized() {
+    for invalid_calls in [1, 2] {
+        let (row, mut p, j, a) = fixture(false, false);
+        Arc::get_mut(&mut p).unwrap().invalid_label_calls = invalid_calls;
+        let w = ExtractionWorkflow::new(p.clone(), 1024).unwrap();
+        let result = w
+            .run(
+                &job(&row),
+                &a,
+                j.as_ref(),
+                1_000_000,
+                Arc::new(AtomicBool::new(false)),
+            )
+            .await;
+        assert_eq!(p.calls.load(Ordering::Acquire), 2);
+        let state = j.state.lock().unwrap().clone().unwrap();
+        if invalid_calls == 1 {
+            assert_eq!(result.unwrap().drafts.len(), 1);
+            assert!(state.validation_diagnostics.is_empty());
+        } else {
+            assert_eq!(result.err().unwrap().0, "concept_label");
+            assert!(state.candidates.is_empty());
+            assert_eq!(state.validation_diagnostics.len(), 1);
+            assert!(state.validation_diagnostics[0].chars().count() <= 240);
+            assert!(!state.validation_diagnostics[0].contains("PRIVATE_LABEL"));
+        }
+    }
 }
 
 #[tokio::test]
@@ -303,6 +437,67 @@ async fn pending_provider_hits_the_remaining_aggregate_deadline() {
     assert_eq!(state.calls, 1);
     assert!(state.candidates.is_empty());
     assert_eq!(state.phase, "failed");
+}
+
+#[tokio::test]
+async fn experimental_deadline_is_pinned_and_still_bounds_pending_calls() {
+    let (row, mut provider, journal, authority) = fixture(false, true);
+    assert!(ExtractionWorkflow::new_experimental_ollama(provider.clone(), 1024).is_err());
+    Arc::get_mut(&mut provider).unwrap().manifest["provider_id"] =
+        json!("experimental-ollama-qwen3:test-only");
+    let standard = ExtractionWorkflow::new(provider.clone(), 1024).unwrap();
+    let experimental = ExtractionWorkflow::new_experimental_ollama(provider.clone(), 1024).unwrap();
+    assert_eq!(standard.deadline_ms("standard").unwrap(), 120_000);
+    assert_eq!(standard.deadline_ms("constrained").unwrap(), 30_000);
+    assert_eq!(experimental.deadline_ms("standard").unwrap(), 600_000);
+    assert!(experimental.deadline_ms("constrained").is_err());
+    assert_ne!(
+        standard.implementation_commitment().unwrap(),
+        experimental.implementation_commitment().unwrap()
+    );
+    let started = Instant::now();
+    let result = experimental
+        .run_admitted(
+            &job(&row),
+            &authority,
+            journal.as_ref(),
+            1_000_000,
+            0,
+            599_900,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await;
+    assert!(matches!(result, Err(ExtractionError("deadline"))));
+    assert!(started.elapsed() < Duration::from_secs(2));
+    let state = journal.state.lock().unwrap().clone().unwrap();
+    assert_eq!(state.calls, 1);
+    assert!(state.candidates.is_empty());
+    assert_eq!(state.phase, "failed");
+}
+
+#[tokio::test]
+async fn experimental_work_can_finish_after_the_original_two_minute_budget() {
+    let (row, mut provider, journal, authority) = fixture(false, false);
+    Arc::get_mut(&mut provider).unwrap().manifest["provider_id"] =
+        json!("experimental-ollama-qwen3:test-only");
+    let workflow = ExtractionWorkflow::new_experimental_ollama(provider, 1024).unwrap();
+    let output = workflow
+        .run_admitted(
+            &job(&row),
+            &authority,
+            journal.as_ref(),
+            1_000_000,
+            0,
+            120_100,
+            Arc::new(AtomicBool::new(false)),
+        )
+        .await
+        .unwrap();
+    assert!(!output.needs_resolution);
+    assert!(!output.drafts.is_empty());
+    assert!(output.budget.remaining_deadline_ms() > 450_000);
+    assert!(output.budget.elapsed_ms() >= 120_100);
+    assert!(journal.state.lock().unwrap().as_ref().unwrap().elapsed_ms >= 120_100);
 }
 
 #[test]

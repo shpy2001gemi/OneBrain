@@ -292,6 +292,9 @@ pub struct OBPConnection {
 }
 
 impl OBPConnection {
+    pub fn is_open(&self) -> bool {
+        self.inner.close_reason().is_none()
+    }
     #[allow(dead_code)]
     pub(crate) fn from_authenticated_quinn(inner: QuinnConnection) -> Self {
         Self { inner }

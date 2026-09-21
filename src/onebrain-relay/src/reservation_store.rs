@@ -365,7 +365,7 @@ impl ReservationStore {
         {
             return Err(ReservationError::ConnectionMismatch);
         }
-        if keepalive.sequence != stored.last_keepalive_sequence + 1 {
+        if stored.last_keepalive_sequence.checked_add(1) != Some(keepalive.sequence) {
             return Err(ReservationError::Replay);
         }
         verify_control(
@@ -374,12 +374,24 @@ impl ReservationStore {
             client.client_public_key,
             keepalive.target_signature,
         )?;
-        self.persist_control_sequence(
-            keepalive.target_node_id,
-            keepalive.sequence,
-            &encode_relay_control(&RelayControlV1::Keepalive(keepalive.clone()))
-                .map_err(|_| ReservationError::Codec)?,
-        )?;
+        if let Some(durable) = &self.durable {
+            // Keepalive is scoped to the exact reservation/carrier. Reserve
+            // requests have a separate per-target sequence; sharing their
+            // durable key makes the next renewal collide with a keepalive.
+            // Existing reserve floor keys remain unchanged.
+            let mut key = b"keepalive:".to_vec();
+            key.extend_from_slice(keepalive.target_node_id.as_bytes());
+            key.extend_from_slice(&keepalive.reservation_id);
+            key.extend_from_slice(&keepalive.sequence.to_be_bytes());
+            durable
+                .create_new(
+                    DurableStateKind::ControlFloor,
+                    &key,
+                    &encode_relay_control(&RelayControlV1::Keepalive(keepalive.clone()))
+                        .map_err(|_| ReservationError::Codec)?,
+                )
+                .map_err(|_| ReservationError::State)?;
+        }
         let stored = self
             .reservations
             .get_mut(&keepalive.reservation_id)
@@ -407,7 +419,7 @@ impl ReservationStore {
         if revoke.relay_node_id != self.relay_node_id
             || revoke.target_node_id != client.client_node_id
             || stored.bound_outer_connection != client.outer_connection_binding
-            || revoke.sequence != stored.last_keepalive_sequence + 1
+            || stored.last_keepalive_sequence.checked_add(1) != Some(revoke.sequence)
         {
             return Err(ReservationError::ConnectionMismatch);
         }

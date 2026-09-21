@@ -4,6 +4,10 @@ Task: KU-API-001. This additive transport projects the registered
 [KU workflow](KU_PRODUCT_WORKFLOW_PROFILE_V1.md), without new Base IDs or
 canonical semantics. Existing REST paths and WS vocabulary remain unchanged.
 
+KU-WEB-001 adds a separately specified opt-in [manual editor transport](KU_LOCAL_EDITOR_PROFILE_V1.md).
+The three operations routes below retain their KU-API-001 meanings; the editor
+is a host input adapter and is unavailable unless explicitly installed.
+
 ## Routes and payloads
 
 All routes require the existing constant-time local Bearer authentication.
@@ -59,9 +63,11 @@ previously admitted opaque references through host-installed custody ports.
 
 Use the existing vNext success envelope. `data` contains `session`, `payload`
 (the generated result), and `model_qualified: false`. This release has no
-qualified real-model tuple; AI prepare/revise is rejected before dispatch.
+qualified real-model tuple; AI prepare/revise is rejected before dispatch unless
+the host explicitly admits the exact experimental implementation under D-023
+and [the experimental Ollama profile](KU_EXPERIMENTAL_OLLAMA_PROFILE_V1.md).
 Existing rule and resolved-draft requests use `KuServices::invoke` unchanged.
-Enabling real AI requires the separate measured qualification integration.
+Qualified/default AI still requires the separate measured qualification integration.
 
 `meta.lifecycle`, `coverage`, `limitations`, and nullable `continuation` preserve
 the result's relevant service values. Prepared validity is distinct from Base

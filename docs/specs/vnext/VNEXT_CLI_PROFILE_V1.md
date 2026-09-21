@@ -7,6 +7,10 @@
 
 ## 1. Boundary and command inventory
 
+The separately additive [local KU projection](KU_LOCAL_CLI_PROJECTION_V1.md)
+implements KU-CLI-001 through the shared KU REST service. The frozen P3.3
+inventory and Public Use confirmation rules below retain their meanings.
+
 The additive CLI surface is:
 
 | Group | Commands |

@@ -36,6 +36,8 @@ pub struct ExtractionCheckpoint {
     pub reason: String,
     pub contexts: Vec<Value>,
     pub attempts: Vec<Value>,
+    #[serde(default)]
+    pub validation_diagnostics: Vec<String>,
 }
 
 /// Uses the node's existing encrypted KU journal. Implementations must atomically
@@ -86,6 +88,7 @@ pub struct ExtractionWorkflow {
     gate: Semaphore,
     provider: Arc<dyn ExtractionProvider>,
     admitted_memory_bytes: u64,
+    experimental_ollama: bool,
 }
 
 impl ExtractionWorkflow {
@@ -218,7 +221,44 @@ impl ExtractionWorkflow {
             gate: Semaphore::new(1),
             provider,
             admitted_memory_bytes,
+            experimental_ollama: false,
         })
+    }
+    /// Explicit owner-authorized local host policy; never selected by model output.
+    pub fn new_experimental_ollama(
+        provider: Arc<dyn ExtractionProvider>,
+        admitted_memory_bytes: u64,
+    ) -> Result<Self> {
+        require(
+            provider.manifest()["provider_id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("experimental-ollama-qwen3:"))
+                && provider.manifest()["mode"] == "json_schema",
+            "experimental_provider",
+        )?;
+        let mut workflow = Self::new(provider, admitted_memory_bytes)?;
+        workflow.experimental_ollama = true;
+        Ok(workflow)
+    }
+    /// Shared by source planning and extraction; existing elapsed time is still charged.
+    pub fn deadline_ms(&self, profile: &str) -> Result<u64> {
+        require(
+            matches!(profile, "no_llm" | "constrained" | "standard"),
+            "resource_profile",
+        )?;
+        let limits: Value = serde_json::from_str(include_str!(
+            "../../../../docs/specs/vnext/ku-encoder-v1/profile.json"
+        ))
+        .map_err(|_| ExtractionError("schema"))?;
+        if self.experimental_ollama {
+            require(profile == "standard", "resource_profile")?;
+            return limits["experimental_host_overrides"]["ollama_cpu_deadline_ms"]
+                .as_u64()
+                .ok_or(ExtractionError("schema"));
+        }
+        limits["resource_profiles"][profile]["deadline_ms"]
+            .as_u64()
+            .ok_or(ExtractionError("schema"))
     }
     pub fn bundle_hash() -> String {
         hex(&Sha256::digest(include_bytes!(
@@ -244,7 +284,7 @@ impl ExtractionWorkflow {
     }
     pub fn implementation_commitment(&self) -> Result<[u8; 32]> {
         unhex(&hash(
-            &json!({"bundle":Self::bundle_hash(),"native":Self::native_source_hash(),"provider":self.provider.manifest(),"memory":self.admitted_memory_bytes}),
+            &json!({"bundle":Self::bundle_hash(),"native":Self::native_source_hash(),"provider":self.provider.manifest(),"memory":self.admitted_memory_bytes,"experimental_ollama":self.experimental_ollama}),
         )?)
     }
     pub async fn run(
@@ -301,9 +341,7 @@ impl ExtractionWorkflow {
         ))
         .map_err(|_| ExtractionError("schema"))?;
         let limits = &limits["resource_profiles"][profile];
-        let max_ms = limits["deadline_ms"]
-            .as_u64()
-            .ok_or(ExtractionError("schema"))?;
+        let max_ms = self.deadline_ms(profile)?;
         let started = Instant::now();
         let binding = hash(
             &json!({"job":job,"provider":self.provider.manifest(),"bundle":Self::bundle_hash(),"implementation":hex(&self.implementation_commitment()?)}),
@@ -349,6 +387,7 @@ impl ExtractionWorkflow {
                 reason: "none".into(),
                 contexts: job.contexts.clone(),
                 attempts: vec![],
+                validation_diagnostics: vec![],
             },
         };
         state.elapsed_ms = state
@@ -376,7 +415,8 @@ impl ExtractionWorkflow {
             allowance,
             Duration::from_millis(max_ms - prior_ms),
             cancel.clone(),
-        )?;
+        )?
+        .with_prior_elapsed_ms(prior_ms);
         let execute=async {
             for context in &job.contexts {check(context,"Context",&mut budget)?;authority.check_context(job,context,&mut budget)?;}
             validate_manifest(&job.contexts,&mut budget)?;
@@ -422,13 +462,30 @@ impl ExtractionWorkflow {
                             _=canceled=>return Err(ExtractionError("canceled")),
                         };
                         budget.charge(1)?; // Reject canceled/deadline callbacks before parsing or journal updates.
-                        match parse(&raw,&mut budget).and_then(|candidate| {check(&candidate,"Candidate",&mut budget)?;Ok(candidate)}) {
+                        state.validation_diagnostics.clear();
+                        match parse(&raw,&mut budget).and_then(|candidate| {
+                            if let Err(error) = check(&candidate,"Candidate",&mut budget) {
+                                if !matches!(error.0,"resource"|"canceled"|"deadline") {
+                                    state.validation_diagnostics = super::schema::candidate_diagnostics(&candidate, &mut budget)?;
+                                }
+                                return Err(error);
+                            }
+                            state.validation_diagnostics = super::compiler::duplicate_id_diagnostics(&candidate, &mut budget)?;
+                            require(state.validation_diagnostics.is_empty(), "duplicate_id")?;
+                            state.validation_diagnostics = super::compiler::concept_label_diagnostics(&candidate, &mut budget)?;
+                            require(state.validation_diagnostics.is_empty(), "concept_label")?;
+                            super::compiler::candidate_preflight(context, &candidate, &mut budget, &mut state.validation_diagnostics)?;
+                            Ok(candidate)
+                        }) {
                             Ok(candidate)=>{
                                 state.candidates.push(candidate);state.phase="candidate_recorded".into();
                                 state.work_charged=initial_work+allowance-budget.remaining();state.elapsed_ms=prior_ms+started.elapsed().as_millis() as u64;
                                 authority.check_context(job,context,&mut budget)?;self.checkpoint(job,&mut state,journal,max_ms,&mut budget,initial_work,allowance)?;break;
                             }
-                            Err(e) if state.context_calls[i]<2 && !matches!(e.0,"resource"|"canceled"|"deadline")=>errors=vec![e.0],
+                            Err(e) if state.context_calls[i]<2 && !matches!(e.0,"resource"|"canceled"|"deadline")=>{
+                                errors=vec![e.0.to_owned()];
+                                errors.extend(state.validation_diagnostics.clone());
+                            },
                             Err(e)=>return Err(e),
                         }
                     }

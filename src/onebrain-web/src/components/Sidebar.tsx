@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { LayoutDashboard, Search, Zap, MessageSquare, Menu, X, Network, Activity, Globe2, Coins, Users, Monitor, Database, Settings, Compass, FolderOpen, BarChart3, HelpCircle, FileEdit, HardDrive } from 'lucide-react';
 
 const navItemsA = [
+  { to: '/ku', icon: FileEdit, labelKey: 'Local KU workspace' },
   { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard' },
   { to: '/explorer', icon: Search, labelKey: 'nav.explorer' },
   { to: '/encode', icon: Zap, labelKey: 'nav.encode' },

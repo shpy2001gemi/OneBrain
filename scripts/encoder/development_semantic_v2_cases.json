@@ -1,0 +1,10 @@
+[
+  {"id":"vi-rocket-or-reference","text":"Tên lửa có thể sử dụng nhiên liệu lỏng hoặc rắn . Trong đó , nhiên liệu rắn sẽ an toàn hơn."},
+  {"id":"vi-alternative","text":"Máy dùng pin hoặc điện."},
+  {"id":"vi-comparison-explicit","text":"Xe đỏ nhanh hơn xe xanh."},
+  {"id":"vi-number-word","text":"Xe có bốn bánh."},
+  {"id":"vi-ambiguous-reference","text":"Lan gặp Mai. Cô ấy cười."},
+  {"id":"vi-negated-alternative","text":"Máy không dùng pin hoặc điện."},
+  {"id":"en-condition-alternative","text":"If it rains, the team may use a bus or a train."},
+  {"id":"vi-and","text":"Hộp chứa bi xanh và bi đỏ."}
+]

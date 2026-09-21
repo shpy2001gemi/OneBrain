@@ -1,8 +1,8 @@
 # OBP-PROD-003 — Bootstrap, discovery and reservation orchestration
 
-> State: Planned
+> State: Review — implemented/tested locally under D-026, unmerged
 > Branch: `codex/obp-prod-003-discovery`
-> Depends on: `OBP-PROD-002` merged
+> Depends on: `OBP-PROD-002` local implementation/test evidence; D-026 permits local work before merge
 
 ## Objective
 
@@ -43,3 +43,11 @@ its initial seed source.
 ## Excluded
 
 Automatic outbox routing, product API/UI, global discovery claims and mobile.
+
+## Local evidence — 2026-09-21
+
+[Implementation, tests and limits](../outputs/OBP_PROD_003_IMPLEMENTATION.md).
+234 node unit tests and 22 integration tests pass, including production TLS
+reservation renewal/keepalive and carrier closure on loopback. Core discovery,
+relay, feature checks and contract validators pass. No live-host activation or
+Git publication; all earlier dirty changes remain in the original tree.

@@ -5,6 +5,72 @@
 
 ---
 
+## Shared local KU commands (KU-CLI-001)
+
+`onebrain ku` connects to an existing authenticated local host. It does not
+start a second node or open its stores. See the
+[CLI projection](../../docs/specs/vnext/KU_LOCAL_CLI_PROJECTION_V1.md) and
+[REST contract](../../docs/specs/vnext/KU_LOCAL_REST_PROFILE_V1.md).
+
+Set `ONEBRAIN_API_TOKEN` in the local environment. Then, for example:
+
+```powershell
+onebrain ku status
+onebrain ku reserve
+onebrain ku prepare --payload-file prepare.json
+onebrain ku preview --operation-id <64-lowercase-hex-operation-id>
+onebrain ku save --payload-file save.json
+onebrain ku list --limit 20
+onebrain ku search --query water --limit 20
+onebrain ku get --object-cid <64-lowercase-hex-object-cid>
+onebrain ku status --operation-id <original-operation-id>
+onebrain ku reconcile --operation-id <original-operation-id>
+onebrain ku revise --payload-file revise.json
+onebrain ku cancel --operation-id <operation-id>
+onebrain ku export --payload-file export.json
+```
+
+Angle-bracket values above are placeholders, not valid IDs. Copy full typed
+identifiers from the host responses. `ObjectCID`, `SemanticContentCID`, source
+reference, operation ID, release root and idempotency key retain distinct roles;
+never substitute a semantic comparison ID for an object reference.
+
+Payload files contain the exact generated DTO, without the REST envelope:
+
+| File | Required contents |
+|---|---|
+| `prepare.json` | `KuPrepareV1`: reserved `operation_id`, stable 32-byte hex `idempotency_key`, `input_mode`, admitted `source_refs`, pinned `registry_release_root`, `semantic_profile: "ku-semantic-content/1.0"`, host `implementation_commitment`, private `destination`; `draft_ref` only for a host-admitted resolved draft. |
+| `save.json` | `KuSaveV1`: original `operation_id`, original `idempotency_key`, complete exact `object_cids` from the ready preview. |
+| `revise.json` | `KuReviseV1`: new `preparation` DTO, exact `predecessor_object_cid`, `expected_revision_frontier` from the local snapshot. Save remains separate. |
+| `export.json` | `KuExportV1`: `object_cids` and `mode` (`canonical_public_exchange` or `encrypted_base_archive`). |
+
+Use `LOCAL_ONLY` for ordinary private preparation. The other admitted private
+destination is `NEGOTIATED_ENCRYPTED`; PUBLIC is not a save option. Optional
+fields must be omitted rather than null. Host provisioning of custody, signed
+Registry and Vault remains required; CLI does not invent those references.
+Semantic review drafts are unaccepted producer output and cannot be supplied as
+resolved draft references merely because a draft job is ready.
+
+`--api-url` accepts a loopback origin (default `http://127.0.0.1:4280`).
+`--max-items` (1–256), `--max-bytes` (32768–1048576), and
+`--max-work-units` (1–1000000) bound each request. `--continuation` on list/search
+passes the exact opaque `obc1` token with the same query context; pages are never
+automatically drained. stdout contains the JSON envelope; stderr explains scope.
+Protect redirected output because previews and identifiers can be private.
+
+Preparation and preview never save. Save is explicit and private. Cancel prompts
+for the exact operation ID, has no `--yes` bypass, and cannot undo committed work.
+Export does not publish: public mode reads already-public records only; encrypted
+archive mode still needs separate Base management/sink/secret authorization.
+The CLI does not claim a completed archive merely from an archive operation ID.
+
+On timeout/lost reply, retain the original operation and idempotency identities,
+read status, then reconcile. Do not repeat prepare/save blindly. Typed Base
+failure fields remain visible even when the outer HTTP error is `conflict`.
+Stale fences fail rather than auto-retry. Local empty/partial pages do not claim
+network absence; pending preparation does not mean committed KU, delivery or
+reward. Model readiness does not mean model qualification.
+
 ## 1. Overview
 
 OneBrain CLI is the **first interface** of the system — runs directly in the terminal.

@@ -123,6 +123,16 @@ async fn validated_route(
     now: u64,
     probe_tag: u8,
 ) -> ValidatedRelayDialSet {
+    let descriptor = validated_descriptor(record, relay_key, now, probe_tag).await;
+    alternate_route(descriptor, address, relay_key, now, probe_tag)
+}
+
+async fn validated_descriptor(
+    record: &[u8],
+    relay_key: &SigningKey,
+    now: u64,
+    probe_tag: u8,
+) -> ValidatedRelayDescriptor {
     let preparer = ReachabilityAdmissionPreparer::new(Arc::new(PublicTestResolver), 1).unwrap();
     let prepared = preparer
         .prepare_descriptor(record, now, Instant::now() + Duration::from_secs(2))
@@ -150,7 +160,7 @@ async fn validated_route(
     let descriptor = admission
         .complete_descriptor_admission(pending, &proofs, now)
         .unwrap();
-    alternate_route(descriptor, address, relay_key, now, probe_tag)
+    descriptor
 }
 
 fn alternate_route(
@@ -228,6 +238,155 @@ async fn three_real_hosts_concurrently_authenticate_to_both_live_relays() {
         .unwrap()
         .unwrap();
     tokio::time::timeout(Duration::from_secs(5), server_c)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+struct FixtureRoute(ValidatedRelayDialSet);
+impl onebrain_node::vnext_reachability_manager::RelayDialRouteProvider for FixtureRoute {
+    fn route_set_for<'a>(
+        &'a self,
+        _: &'a ValidatedRelayDescriptor,
+        _: Instant,
+    ) -> ku_net::vnext_relay_discovery::ReachabilityFuture<
+        'a,
+        Result<ValidatedRelayDialSet, onebrain_node::vnext_reachability_manager::ReachabilityError>,
+    > {
+        Box::pin(async { Ok(self.0.clone()) })
+    }
+}
+
+fn signed_request(
+    target: &SigningKey,
+    relay: &SigningKey,
+    sequence: u64,
+    now: u64,
+    ttl: u64,
+) -> onebrain_protocol::RelayReserveRequestV1 {
+    use onebrain_protocol::*;
+    let mut request = RelayReserveRequestV1 {
+        format: 1,
+        relay_node_id: principal_node_id(relay.verifying_key().as_bytes()),
+        target_node_id: principal_node_id(target.verifying_key().as_bytes()),
+        reservation_id: [sequence as u8; 32],
+        transport_scope: vec![RelayTransportV1::TlsTcp443],
+        sequence,
+        issued_at: now,
+        expires_at: now + ttl,
+        target_reservation_signature: [0; 64],
+        target_request_signature: [0; 64],
+    };
+    let grant = RelayReservationV1 {
+        format: 1,
+        relay_node_id: request.relay_node_id,
+        target_node_id: request.target_node_id,
+        reservation_id: request.reservation_id,
+        transport_scope: request.transport_scope.clone(),
+        issued_at: now,
+        expires_at: now + ttl,
+        target_signature: [0; 64],
+        relay_signature: [0; 64],
+    };
+    request.target_reservation_signature = target
+        .sign(
+            &reachability_signing_bytes(
+                &ReachabilityObjectV1::RelayReservation(grant),
+                ReachabilitySignatureRoleV1::ReservationTarget,
+            )
+            .unwrap(),
+        )
+        .to_bytes();
+    request.target_request_signature = target
+        .sign(
+            &relay_control_signing_bytes(
+                &RelayControlV1::Reserve(request.clone()),
+                RelayControlSignatureRoleV1::ReserveRequestTarget,
+            )
+            .unwrap(),
+        )
+        .to_bytes();
+    request
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn reservation_owner_renews_over_real_tls_and_closes_replaced_carriers() {
+    use onebrain_node::vnext_reachability_manager::{
+        ProductionRelayReservationClient, RelayReservationManager, VNextReachabilityPolicy,
+    };
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let (bytes, address, relay, server, _dir) =
+        start_relay(SigningKey::from_bytes(&[105; 32]), now).await;
+    let descriptor = validated_descriptor(&bytes, &relay, now, 123).await;
+    let route = alternate_route(descriptor.clone(), address, &relay, now, 123);
+    let target = Arc::new(SigningKey::from_bytes(&[115; 32]));
+    let client = Arc::new(ProductionRelayReservationClient::new(target.clone()));
+    let manager = RelayReservationManager::new(
+        client.clone(),
+        Arc::new(FixtureRoute(route.clone())),
+        VNextReachabilityPolicy::default(),
+    )
+    .unwrap();
+    let first = manager
+        .ensure_route_reservation(
+            &descriptor,
+            signed_request(&target, &relay, 1, now, 120),
+            Instant::now() + Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+    let (_, first_outer) = manager
+        .active_for(first.canonical().relay_node_id)
+        .await
+        .unwrap();
+    let second = manager
+        .ensure_route_reservation(
+            &descriptor,
+            signed_request(&target, &relay, 2, now, 900),
+            Instant::now() + Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+    assert_ne!(first.digest(), second.digest());
+    assert!(!first_outer.is_open());
+    assert_eq!(manager.active_count().await, 1);
+    assert_eq!(manager.keepalive_all(3).await.unwrap(), 1);
+    let (_, second_outer) = manager
+        .active_for(second.canonical().relay_node_id)
+        .await
+        .unwrap();
+    second_outer.close();
+    manager.invalidate_closed().await;
+    assert_eq!(manager.active_count().await, 0);
+    let next_manager = RelayReservationManager::new(
+        client,
+        Arc::new(FixtureRoute(route)),
+        VNextReachabilityPolicy::default(),
+    )
+    .unwrap();
+    let third = next_manager
+        .ensure_route_reservation(
+            &descriptor,
+            signed_request(&target, &relay, 3, now, 900),
+            Instant::now() + Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        next_manager.keepalive_all(4).await.unwrap(),
+        1,
+        "new grant continues from its reserve sequence"
+    );
+    next_manager
+        .active_for(third.canonical().relay_node_id)
+        .await
+        .unwrap()
+        .1
+        .close();
+    tokio::time::timeout(Duration::from_secs(5), server)
         .await
         .unwrap()
         .unwrap();

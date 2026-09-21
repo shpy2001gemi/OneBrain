@@ -1,0 +1,1004 @@
+{
+  "format": "onebrain/obp-product-orchestration/1",
+  "status": "accepted-local-implementation",
+  "runtime_implementation_authorized": true,
+  "owner_decision": "D-025",
+  "wire_changes": false,
+  "new_rest_routes": [],
+  "new_ws_events": [],
+  "limits": {
+    "payload_bytes": 1048576,
+    "page_items": 256,
+    "continuation_characters": 2048,
+    "worker_ceiling": 8
+  },
+  "defaults": {
+    "outbound_first_requested": false,
+    "advertise_reachability": false
+  },
+  "frozen_inputs": {
+    "docs/specs/vnext/OUTBOUND_FIRST_REACHABILITY_PROFILE_V1.md": "dc3a82b3b1810fd802d8f09e1bd2d90853b724122764cf75b96d7073da475bf1",
+    "src/test-vectors/vnext/outbound-first-reachability-v1.json": "a5a73dc3769ff794ec5d2a7c1b5e427f85fc65546441adc663327746fea89afa",
+    "docs/specs/vnext/RUNTIME_OWNERSHIP_PROFILE_V1.md": "c76fa8f7043fef4bb262874515475525c4aa6b9bda3553334d878bbd04fe929c",
+    "docs/specs/vnext/RUNTIME_LIFECYCLE_PROFILE_V1.md": "f3bd7249ec929bebe1944ddb1979f10407aad9e2decad1d4c4dc70c975726749",
+    "docs/specs/vnext/RUNTIME_FEATURE_BUDGET_PROFILE_V1.md": "0d17e358e7417ce032e3d7beb3d6ff1b858edd0f39b7977e78d858e5c5f3a130",
+    "docs/specs/vnext/MIXED_VERSION_RUNTIME_ROLLBACK_PROFILE_V1.md": "2fe7b0b553f381fcf3fd2cd05bc4bcd3be37aaaa9010c13a73bdaacb942a48b3",
+    "docs/specs/vnext/ROUTE_AUTHORITY_BOUNDARY_PROFILE_V1.md": "c7d880b192256f758819bfb66ef8a0645f1a2233df7f1a04a8050d5a77645798"
+  },
+  "core_limits": {
+    "bootstrap_manifest_bytes": 65536,
+    "relay_descriptor_bytes": 16384,
+    "relay_reservation_bytes": 8192,
+    "reachability_advertisement_bytes": 32768,
+    "endpoints_per_object": 8,
+    "protocol_versions_per_object": 8,
+    "transports_per_object": 2,
+    "resolved_addresses_per_endpoint": 8,
+    "resolved_addresses_per_object": 32,
+    "discovery_source_keys": 8,
+    "records_per_source": 64,
+    "bytes_per_source": 1048576,
+    "total_records": 256,
+    "signature_checks_per_source": 64,
+    "signature_checks_total": 256,
+    "canonical_parse_depth": 12,
+    "bootstrap_fetch_concurrency": 4,
+    "pex_peers": 8,
+    "direct_candidates": 8,
+    "relay_candidates": 6,
+    "attempts": 12,
+    "concurrent_checks": 4,
+    "relay_reservations_min": 2,
+    "relay_reservations_target": 3,
+    "relay_reservations_max": 3,
+    "pending_possession_descriptors": 32,
+    "pending_possession_challenges": 256,
+    "possession_challenge_validity_s": 30,
+    "rendezvous_records": 256,
+    "relay_control_nonce_cache": 4096,
+    "route_deadline_ms": 20000,
+    "direct_timeout_ms": 2500,
+    "hole_punch_timeout_ms": 5000,
+    "route_probe_bytes": 1048576,
+    "relay_connect_timeout_ms": 5000,
+    "route_journal_receipts": 4096,
+    "route_journal_bytes": 16777216,
+    "receipt_attempts": 16,
+    "bootstrap_validity_s": 86400,
+    "descriptor_validity_s": 600,
+    "reservation_validity_s": 900,
+    "advertisement_validity_s": 300,
+    "clock_skew_s": 30,
+    "candidate_signal_candidates": 8,
+    "relay_datagram_bytes": 1350,
+    "relay_frame_bytes": 1408,
+    "relay_fragment_count": 8,
+    "relay_reassemblies": 64,
+    "relay_reassembly_bytes": 1048576,
+    "relay_reassembly_timeout_ms": 2000,
+    "relay_send_queue_frames": 64,
+    "relay_receive_queue_frames": 64,
+    "relay_queue_bytes": 1048576,
+    "relay_global_queue_frames": 1024,
+    "relay_global_queue_bytes": 16777216,
+    "relay_global_reassemblies": 512,
+    "relay_global_reassembly_bytes": 8388608,
+    "relay_bytes_per_second_per_reservation": 1048576,
+    "relay_burst_bytes": 2097152,
+    "relay_pending_handshakes": 64,
+    "relay_active_outer_connections": 256,
+    "relay_outer_connections_per_source": 8,
+    "relay_handshake_timeout_ms": 5000,
+    "relay_partial_frame_timeout_ms": 3000,
+    "relay_preauth_bytes_per_source": 65536,
+    "keepalive_interval_s": 20,
+    "probe_interval_s": 2,
+    "reservation_refresh_margin_s": 180,
+    "hole_punch_start_delay_ms": 500,
+    "hole_punch_interval_ms": 200,
+    "hole_punch_attempts": 10,
+    "control_message_bytes": 65536
+  },
+  "types": {
+    "NodeID": {
+      "kind": "hex",
+      "bytes": 32
+    },
+    "SourceID": {
+      "kind": "hex",
+      "bytes": 32
+    },
+    "InputRef": {
+      "kind": "hex",
+      "bytes": 32
+    },
+    "IntentID": {
+      "kind": "hex",
+      "bytes": 32
+    },
+    "RouteID": {
+      "kind": "hex",
+      "bytes": 32
+    },
+    "ReceiptDigest": {
+      "kind": "hex",
+      "bytes": 32
+    },
+    "CheckpointDigest": {
+      "kind": "hex",
+      "bytes": 32
+    },
+    "SnapshotFrontier": {
+      "kind": "hex",
+      "bytes": 32
+    },
+    "IdempotencyKey": {
+      "kind": "hex",
+      "bytes": 32
+    },
+    "Boolean": {
+      "kind": "boolean"
+    },
+    "False": {
+      "kind": "literal",
+      "value": false
+    },
+    "Generation": {
+      "kind": "integer",
+      "min": 1,
+      "max": 18446744073709551615
+    },
+    "Count": {
+      "kind": "integer",
+      "min": 0,
+      "max": 18446744073709551615
+    },
+    "PageLimit": {
+      "kind": "integer",
+      "min": 1,
+      "max": 256
+    },
+    "Limitation": {
+      "kind": "string",
+      "max_bytes": 128
+    },
+    "Continuation": {
+      "kind": "string",
+      "max_bytes": 2048
+    },
+    "Limitations": {
+      "kind": "array",
+      "items": "Limitation",
+      "max_items": 64
+    },
+    "Lifecycle": {
+      "kind": "enum",
+      "values": [
+        "disabled",
+        "requested",
+        "active",
+        "degraded"
+      ]
+    },
+    "Coverage": {
+      "kind": "enum",
+      "values": [
+        "local_only",
+        "partial"
+      ]
+    },
+    "SourceState": {
+      "kind": "enum",
+      "values": [
+        "configured",
+        "refreshing",
+        "usable",
+        "expired",
+        "unavailable",
+        "rejected",
+        "disabled"
+      ]
+    },
+    "SourceKind": {
+      "kind": "enum",
+      "values": [
+        "relay_endpoint",
+        "configured_bootstrap",
+        "signed_manifest",
+        "manual_invitation",
+        "authenticated_pex",
+        "rendezvous",
+        "cache"
+      ]
+    },
+    "ReservationState": {
+      "kind": "enum",
+      "values": [
+        "pending",
+        "active",
+        "refreshing",
+        "expired",
+        "denied",
+        "revoked"
+      ]
+    },
+    "AdvertisementState": {
+      "kind": "enum",
+      "values": [
+        "disabled",
+        "pending",
+        "published",
+        "expired",
+        "degraded"
+      ]
+    },
+    "RouteState": {
+      "kind": "enum",
+      "values": [
+        "discovering",
+        "direct_checking",
+        "hole_punching",
+        "relay_connecting",
+        "peer_authenticating",
+        "connected",
+        "path_limited"
+      ]
+    },
+    "IntentState": {
+      "kind": "enum",
+      "values": [
+        "pending",
+        "acknowledged",
+        "dead_letter",
+        "retry_exhausted"
+      ]
+    },
+    "PathKind": {
+      "kind": "enum",
+      "values": [
+        "direct",
+        "hole-punched",
+        "relay-udp",
+        "relay-tcp-443"
+      ]
+    },
+    "RouteFailure": {
+      "kind": "enum",
+      "values": [
+        "NoBootstrapReachable",
+        "CandidateExpired",
+        "DirectTimeout",
+        "HolePunchFailed",
+        "RelayDenied",
+        "RelayUnavailable",
+        "PeerIdentityMismatch",
+        "NetworkChanged",
+        "BudgetExceeded",
+        "PathLimited"
+      ]
+    },
+    "SourceItems": {
+      "kind": "array",
+      "items": "ObpSourceV1",
+      "max_items": 256
+    },
+    "ReservationItems": {
+      "kind": "array",
+      "items": "ObpReservationV1",
+      "max_items": 256
+    }
+  },
+  "dtos": {
+    "ObpStatusRequestV1": {
+      "required": {},
+      "optional": {}
+    },
+    "ObpStatusV1": {
+      "required": {
+        "compiled": "Boolean",
+        "requested": "Boolean",
+        "active": "Boolean",
+        "kill_switch": "Boolean",
+        "signer_ready": "Boolean",
+        "generation": "Generation",
+        "lifecycle": "Lifecycle",
+        "source_count": "Count",
+        "usable_reservations": "Count",
+        "authenticated_routes": "Count",
+        "pending_intents": "Count",
+        "advertisement_state": "AdvertisementState",
+        "coverage": "Coverage",
+        "limitations": "Limitations",
+        "claims_global_completion": "False",
+        "authorizes_reward": "False"
+      },
+      "optional": {}
+    },
+    "ObpConfigureV1": {
+      "required": {
+        "idempotency_key": "IdempotencyKey",
+        "expected_generation": "Generation",
+        "outbound_first_requested": "Boolean",
+        "advertise_reachability": "Boolean"
+      },
+      "optional": {}
+    },
+    "ObpSourceAdmitV1": {
+      "required": {
+        "idempotency_key": "IdempotencyKey",
+        "expected_generation": "Generation",
+        "input_ref": "InputRef",
+        "kind": "SourceKind"
+      },
+      "optional": {}
+    },
+    "ObpSourceToggleV1": {
+      "required": {
+        "idempotency_key": "IdempotencyKey",
+        "expected_generation": "Generation",
+        "source_id": "SourceID",
+        "enabled": "Boolean"
+      },
+      "optional": {}
+    },
+    "ObpRefreshV1": {
+      "required": {
+        "idempotency_key": "IdempotencyKey",
+        "expected_generation": "Generation"
+      },
+      "optional": {}
+    },
+    "ObpPageRequestV1": {
+      "required": {
+        "limit": "PageLimit"
+      },
+      "optional": {
+        "continuation": "Continuation"
+      }
+    },
+    "ObpSourceV1": {
+      "required": {
+        "source_id": "SourceID",
+        "kind": "SourceKind",
+        "state": "SourceState",
+        "admitted_records": "Count",
+        "limitations": "Limitations"
+      },
+      "optional": {
+        "expires_at_unix_seconds": "Count"
+      }
+    },
+    "ObpReservationV1": {
+      "required": {
+        "relay_node_id": "NodeID",
+        "state": "ReservationState",
+        "expires_at_unix_seconds": "Count",
+        "limitations": "Limitations"
+      },
+      "optional": {}
+    },
+    "ObpSourcePageV1": {
+      "required": {
+        "items": "SourceItems",
+        "snapshot_frontier": "SnapshotFrontier",
+        "coverage": "Coverage",
+        "limitations": "Limitations",
+        "claims_global_completion": "False",
+        "authorizes_reward": "False"
+      },
+      "optional": {
+        "continuation": "Continuation"
+      }
+    },
+    "ObpReservationPageV1": {
+      "required": {
+        "items": "ReservationItems",
+        "snapshot_frontier": "SnapshotFrontier",
+        "coverage": "Coverage",
+        "limitations": "Limitations",
+        "claims_global_completion": "False",
+        "authorizes_reward": "False"
+      },
+      "optional": {
+        "continuation": "Continuation"
+      }
+    },
+    "ObpRouteRequestV1": {
+      "required": {
+        "idempotency_key": "IdempotencyKey",
+        "expected_generation": "Generation",
+        "expected_peer": "NodeID"
+      },
+      "optional": {}
+    },
+    "ObpRouteRefV1": {
+      "required": {
+        "route_id": "RouteID"
+      },
+      "optional": {}
+    },
+    "ObpRouteV1": {
+      "required": {
+        "route_id": "RouteID",
+        "expected_peer": "NodeID",
+        "state": "RouteState",
+        "generation": "Generation",
+        "coverage": "Coverage",
+        "limitations": "Limitations",
+        "claims_global_completion": "False",
+        "authorizes_reward": "False"
+      },
+      "optional": {
+        "authenticated_peer": "NodeID",
+        "path_kind": "PathKind",
+        "route_receipt_digest": "ReceiptDigest",
+        "failure": "RouteFailure"
+      }
+    },
+    "ObpIntentRefV1": {
+      "required": {
+        "intent_id": "IntentID"
+      },
+      "optional": {}
+    },
+    "ObpIntentRetryV1": {
+      "required": {
+        "idempotency_key": "IdempotencyKey",
+        "expected_generation": "Generation",
+        "intent_id": "IntentID"
+      },
+      "optional": {}
+    },
+    "ObpIntentV1": {
+      "required": {
+        "intent_id": "IntentID",
+        "expected_peer": "NodeID",
+        "state": "IntentState",
+        "transport_attempts": "Count",
+        "validation_retries": "Count",
+        "coverage": "Coverage",
+        "limitations": "Limitations",
+        "claims_global_completion": "False",
+        "authorizes_reward": "False"
+      },
+      "optional": {
+        "acknowledged_sequence": "Count",
+        "checkpoint_digest": "CheckpointDigest"
+      }
+    },
+    "ObpNetworkFenceV1": {
+      "required": {
+        "idempotency_key": "IdempotencyKey",
+        "expected_generation": "Generation"
+      },
+      "optional": {}
+    }
+  },
+  "operations": [
+    {
+      "name": "status",
+      "request": "ObpStatusRequestV1",
+      "response": "ObpStatusV1",
+      "access": "product_read",
+      "effect": "none"
+    },
+    {
+      "name": "configure",
+      "request": "ObpConfigureV1",
+      "response": "ObpStatusV1",
+      "access": "host_management",
+      "effect": "durable_local_configuration"
+    },
+    {
+      "name": "source_admit",
+      "request": "ObpSourceAdmitV1",
+      "response": "ObpSourceV1",
+      "access": "host_management",
+      "effect": "bounded_admission"
+    },
+    {
+      "name": "source_set_enabled",
+      "request": "ObpSourceToggleV1",
+      "response": "ObpSourceV1",
+      "access": "host_management",
+      "effect": "durable_source_policy"
+    },
+    {
+      "name": "refresh",
+      "request": "ObpRefreshV1",
+      "response": "ObpStatusV1",
+      "access": "product_control",
+      "effect": "bounded_discovery"
+    },
+    {
+      "name": "source_list",
+      "request": "ObpPageRequestV1",
+      "response": "ObpSourcePageV1",
+      "access": "product_read",
+      "effect": "none"
+    },
+    {
+      "name": "reservation_list",
+      "request": "ObpPageRequestV1",
+      "response": "ObpReservationPageV1",
+      "access": "product_read",
+      "effect": "none"
+    },
+    {
+      "name": "route_request",
+      "request": "ObpRouteRequestV1",
+      "response": "ObpRouteV1",
+      "access": "product_control",
+      "effect": "bounded_expected_peer_connection"
+    },
+    {
+      "name": "route_status",
+      "request": "ObpRouteRefV1",
+      "response": "ObpRouteV1",
+      "access": "product_read",
+      "effect": "none"
+    },
+    {
+      "name": "intent_status",
+      "request": "ObpIntentRefV1",
+      "response": "ObpIntentV1",
+      "access": "product_read",
+      "effect": "none"
+    },
+    {
+      "name": "intent_retry",
+      "request": "ObpIntentRetryV1",
+      "response": "ObpIntentV1",
+      "access": "product_control",
+      "effect": "schedule_existing_pending_intent"
+    },
+    {
+      "name": "network_kill",
+      "request": "ObpNetworkFenceV1",
+      "response": "ObpStatusV1",
+      "access": "host_management",
+      "effect": "existing_network_generation_kill"
+    },
+    {
+      "name": "network_reenable",
+      "request": "ObpNetworkFenceV1",
+      "response": "ObpStatusV1",
+      "access": "host_management",
+      "effect": "explicit_existing_network_generation_advance"
+    }
+  ],
+  "fixtures": [
+    {
+      "name": "safe_default",
+      "dto": "ObpStatusV1",
+      "valid": true,
+      "value": {
+        "compiled": true,
+        "requested": false,
+        "active": false,
+        "kill_switch": false,
+        "signer_ready": false,
+        "generation": 1,
+        "lifecycle": "disabled",
+        "source_count": 0,
+        "usable_reservations": 0,
+        "authenticated_routes": 0,
+        "pending_intents": 0,
+        "advertisement_state": "disabled",
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false
+      }
+    },
+    {
+      "name": "pending_source_outage",
+      "dto": "ObpStatusV1",
+      "valid": true,
+      "value": {
+        "compiled": true,
+        "requested": true,
+        "active": true,
+        "kill_switch": false,
+        "signer_ready": true,
+        "generation": 1,
+        "lifecycle": "degraded",
+        "source_count": 0,
+        "usable_reservations": 0,
+        "authenticated_routes": 0,
+        "pending_intents": 1,
+        "advertisement_state": "disabled",
+        "coverage": "partial",
+        "limitations": [
+          "NoBootstrapReachable"
+        ],
+        "claims_global_completion": false,
+        "authorizes_reward": false
+      }
+    },
+    {
+      "name": "relay_is_not_peer",
+      "dto": "ObpRouteV1",
+      "valid": true,
+      "value": {
+        "route_id": "0101010101010101010101010101010101010101010101010101010101010101",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "peer_authenticating",
+        "generation": 1,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false
+      }
+    },
+    {
+      "name": "authenticated_tcp_fallback",
+      "dto": "ObpRouteV1",
+      "valid": true,
+      "value": {
+        "route_id": "0101010101010101010101010101010101010101010101010101010101010101",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "connected",
+        "generation": 1,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false,
+        "authenticated_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "path_kind": "relay-tcp-443",
+        "route_receipt_digest": "0303030303030303030303030303030303030303030303030303030303030303"
+      }
+    },
+    {
+      "name": "wrong_peer",
+      "dto": "ObpRouteV1",
+      "valid": false,
+      "value": {
+        "route_id": "0101010101010101010101010101010101010101010101010101010101010101",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "connected",
+        "generation": 1,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false,
+        "authenticated_peer": "0404040404040404040404040404040404040404040404040404040404040404",
+        "path_kind": "relay-tcp-443",
+        "route_receipt_digest": "0303030303030303030303030303030303030303030303030303030303030303"
+      }
+    },
+    {
+      "name": "no_transcript_receipt",
+      "dto": "ObpRouteV1",
+      "valid": false,
+      "value": {
+        "route_id": "0101010101010101010101010101010101010101010101010101010101010101",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "connected",
+        "generation": 1,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false
+      }
+    },
+    {
+      "name": "carrier_claims_peer_early",
+      "dto": "ObpRouteV1",
+      "valid": false,
+      "value": {
+        "route_id": "0101010101010101010101010101010101010101010101010101010101010101",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "peer_authenticating",
+        "generation": 1,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false,
+        "authenticated_peer": "0202020202020202020202020202020202020202020202020202020202020202"
+      }
+    },
+    {
+      "name": "bounded_path_limited",
+      "dto": "ObpRouteV1",
+      "valid": true,
+      "value": {
+        "route_id": "0101010101010101010101010101010101010101010101010101010101010101",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "path_limited",
+        "generation": 1,
+        "coverage": "partial",
+        "limitations": [
+          "attempt_budget_exhausted"
+        ],
+        "claims_global_completion": false,
+        "authorizes_reward": false,
+        "failure": "PathLimited"
+      }
+    },
+    {
+      "name": "sleeping_target_pending",
+      "dto": "ObpIntentV1",
+      "valid": true,
+      "value": {
+        "intent_id": "0505050505050505050505050505050505050505050505050505050505050505",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "pending",
+        "transport_attempts": 1,
+        "validation_retries": 0,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false
+      }
+    },
+    {
+      "name": "durable_authenticated_ack",
+      "dto": "ObpIntentV1",
+      "valid": true,
+      "value": {
+        "intent_id": "0505050505050505050505050505050505050505050505050505050505050505",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "acknowledged",
+        "transport_attempts": 1,
+        "validation_retries": 0,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false,
+        "acknowledged_sequence": 1,
+        "checkpoint_digest": "0606060606060606060606060606060606060606060606060606060606060606"
+      }
+    },
+    {
+      "name": "ack_without_checkpoint",
+      "dto": "ObpIntentV1",
+      "valid": false,
+      "value": {
+        "intent_id": "0505050505050505050505050505050505050505050505050505050505050505",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "acknowledged",
+        "transport_attempts": 1,
+        "validation_retries": 0,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false
+      }
+    },
+    {
+      "name": "pending_with_checkpoint",
+      "dto": "ObpIntentV1",
+      "valid": false,
+      "value": {
+        "intent_id": "0505050505050505050505050505050505050505050505050505050505050505",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "pending",
+        "transport_attempts": 1,
+        "validation_retries": 0,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false,
+        "checkpoint_digest": "0606060606060606060606060606060606060606060606060606060606060606"
+      }
+    },
+    {
+      "name": "zero_sequence_ack",
+      "dto": "ObpIntentV1",
+      "valid": false,
+      "value": {
+        "intent_id": "0505050505050505050505050505050505050505050505050505050505050505",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "acknowledged",
+        "transport_attempts": 1,
+        "validation_retries": 0,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false,
+        "acknowledged_sequence": 0,
+        "checkpoint_digest": "0606060606060606060606060606060606060606060606060606060606060606"
+      }
+    },
+    {
+      "name": "global_claim",
+      "dto": "ObpStatusV1",
+      "valid": false,
+      "value": {
+        "compiled": true,
+        "requested": false,
+        "active": false,
+        "kill_switch": false,
+        "signer_ready": false,
+        "generation": 1,
+        "lifecycle": "disabled",
+        "source_count": 0,
+        "usable_reservations": 0,
+        "authenticated_routes": 0,
+        "pending_intents": 0,
+        "advertisement_state": "disabled",
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": true,
+        "authorizes_reward": false
+      }
+    },
+    {
+      "name": "reward_claim",
+      "dto": "ObpIntentV1",
+      "valid": false,
+      "value": {
+        "intent_id": "0505050505050505050505050505050505050505050505050505050505050505",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "pending",
+        "transport_attempts": 1,
+        "validation_retries": 0,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": true
+      }
+    },
+    {
+      "name": "private_endpoint_leak",
+      "dto": "ObpRouteV1",
+      "valid": false,
+      "value": {
+        "route_id": "0101010101010101010101010101010101010101010101010101010101010101",
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "state": "connected",
+        "generation": 1,
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false,
+        "authenticated_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "path_kind": "relay-tcp-443",
+        "route_receipt_digest": "0303030303030303030303030303030303030303030303030303030303030303",
+        "endpoint": "192.168.1.2"
+      }
+    },
+    {
+      "name": "disabled_cannot_be_active",
+      "dto": "ObpStatusV1",
+      "valid": false,
+      "value": {
+        "compiled": true,
+        "requested": false,
+        "active": true,
+        "kill_switch": false,
+        "signer_ready": false,
+        "generation": 1,
+        "lifecycle": "disabled",
+        "source_count": 0,
+        "usable_reservations": 0,
+        "authenticated_routes": 0,
+        "pending_intents": 0,
+        "advertisement_state": "disabled",
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false
+      }
+    },
+    {
+      "name": "kill_overrides_request",
+      "dto": "ObpStatusV1",
+      "valid": true,
+      "value": {
+        "compiled": true,
+        "requested": true,
+        "active": false,
+        "kill_switch": true,
+        "signer_ready": false,
+        "generation": 2,
+        "lifecycle": "disabled",
+        "source_count": 0,
+        "usable_reservations": 0,
+        "authenticated_routes": 0,
+        "pending_intents": 0,
+        "advertisement_state": "disabled",
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false
+      }
+    },
+    {
+      "name": "kill_cannot_be_active",
+      "dto": "ObpStatusV1",
+      "valid": false,
+      "value": {
+        "compiled": true,
+        "requested": true,
+        "active": true,
+        "kill_switch": true,
+        "signer_ready": false,
+        "generation": 1,
+        "lifecycle": "disabled",
+        "source_count": 0,
+        "usable_reservations": 0,
+        "authenticated_routes": 0,
+        "pending_intents": 0,
+        "advertisement_state": "disabled",
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false
+      }
+    },
+    {
+      "name": "empty_local_sources",
+      "dto": "ObpSourcePageV1",
+      "valid": true,
+      "value": {
+        "items": [],
+        "snapshot_frontier": "0707070707070707070707070707070707070707070707070707070707070707",
+        "coverage": "partial",
+        "limitations": [],
+        "claims_global_completion": false,
+        "authorizes_reward": false
+      }
+    },
+    {
+      "name": "explicit_null_rejected",
+      "dto": "ObpPageRequestV1",
+      "valid": false,
+      "value": {
+        "limit": 1,
+        "continuation": null
+      }
+    },
+    {
+      "name": "oversized_page_rejected",
+      "dto": "ObpPageRequestV1",
+      "valid": false,
+      "value": {
+        "limit": 257
+      }
+    },
+    {
+      "name": "authority_injection",
+      "dto": "ObpRouteRequestV1",
+      "valid": false,
+      "value": {
+        "idempotency_key": "0808080808080808080808080808080808080808080808080808080808080808",
+        "expected_generation": 1,
+        "expected_peer": "0202020202020202020202020202020202020202020202020202020202020202",
+        "authorized": true
+      }
+    },
+    {
+      "name": "host_input_admission",
+      "dto": "ObpSourceAdmitV1",
+      "valid": true,
+      "value": {
+        "idempotency_key": "0808080808080808080808080808080808080808080808080808080808080808",
+        "expected_generation": 1,
+        "input_ref": "0909090909090909090909090909090909090909090909090909090909090909",
+        "kind": "manual_invitation"
+      }
+    },
+    {
+      "name": "source_path_rejected",
+      "dto": "ObpSourceAdmitV1",
+      "valid": false,
+      "value": {
+        "idempotency_key": "0808080808080808080808080808080808080808080808080808080808080808",
+        "expected_generation": 1,
+        "input_ref": "C:/private/config",
+        "kind": "configured_bootstrap"
+      }
+    },
+    {
+      "name": "explicit_reenable",
+      "dto": "ObpNetworkFenceV1",
+      "valid": true,
+      "value": {
+        "idempotency_key": "0808080808080808080808080808080808080808080808080808080808080808",
+        "expected_generation": 2
+      }
+    }
+  ]
+}

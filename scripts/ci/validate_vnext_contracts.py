@@ -18,12 +18,14 @@ from urllib.parse import urlsplit
 import blake3
 
 if __package__:
+    from .validate_obp_product_contract import validate_contract as validate_obp_product_profile
     from .validate_ku_encoder_contract import validate_contract as validate_ku_encoder_profile
     from .validate_ku_product_contract import (
         KuContractError,
         validate_contract as validate_ku_product_profile,
     )
 else:
+    from validate_obp_product_contract import validate_contract as validate_obp_product_profile
     from validate_ku_encoder_contract import validate_contract as validate_ku_encoder_profile
     from validate_ku_product_contract import (
         KuContractError,
@@ -8794,6 +8796,10 @@ def main() -> int:
         vector_count, domains, schema_vectors, event_vectors = validate_vectors()
         product_endpoints, product_dtos = validate_product_integration_profile()
         try:
+            obp_operations, obp_dtos, obp_fixtures = validate_obp_product_profile()
+        except (ValueError, KeyError, TypeError, OSError) as error:
+            raise ContractError(f"OBP product contract: {error}") from error
+        try:
             ku_operations, ku_dtos, ku_fixtures = validate_ku_product_profile()
         except (KuContractError, KeyError, TypeError, OSError, json.JSONDecodeError) as error:
             raise ContractError(f"KU product contract: {error}") from error
@@ -8913,6 +8919,7 @@ def main() -> int:
 
     print(
         "vNext contracts OK: "
+        f"{obp_operations} OBP contract operations/{obp_dtos} DTOs/{obp_fixtures} fixtures, "
         f"{ku_operations} KU contract operations/{ku_dtos} DTOs/{ku_fixtures} fixtures, "
         f"{encoder_cases} encoder cases/{encoder_jobs} jobs/{encoder_artifacts} generated artifacts, "
         f"{len(tasks)} tasks, {adrs} ADRs, {assertions} negative assertions, "

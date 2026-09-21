@@ -365,3 +365,122 @@ KU-WEB-001 is next under D-021. Leave it Planned for the owner's new
 conversation, using branch `codex/ku-web-001-workflow` from updated main. Do
 not begin Web implementation during this closure. Preserve the separate
 KU-ENC-003 branch and private holdouts. No branch deletion was requested.
+
+## D-023 — Experimental local Ollama MVP approved
+
+The owner answered “tôi đồng ý bổ sung” to the concrete Ollama amendment at
+`4a0a1bf`. KU-WEB-001 now includes text intake, installed-model selection
+(initially `qwen3:8b`) and actual shared-workflow inference before full KU-ENC-003
+quality qualification. Retain `model_qualified: false`, opt-in host activation,
+technical resource/tokenizer/custody/validation/recovery controls and explicit
+private save. This supersedes the blanket pre-qualification REST inference ban
+only for this experimental host lane. It does not qualify a tuple or approve
+mobile, default rollout, publication, merge, branch deletion or holdout use.
+No further approval of this same exception is needed.
+
+### D-023 follow-up — semantic guidance, longer experimental deadline and async direction
+
+On 2026-09-07 the owner approved preserving detailed semantic analysis guidance
+and examples for multiple related propositions, then requested a higher timeout.
+The local experimental host uses a bounded 10-minute aggregate deadline, with
+standard token/work/memory controls and unchanged qualification thresholds.
+The owner also described the eventual product direction: consented KU encoding
+and sharing run asynchronously so the user need not wait on the page. This is a
+follow-up design requirement, not evidence that a durable background queue or
+publication consent is implemented. Encoding consent and authorized publication
+must remain separately enforced. The current local host retains explicit save
+and no publication. No new task, merge, default rollout or holdout use is implied.
+
+### D-023 follow-up — autonomous development tests and model portability
+
+On 2026-09-08 the owner requested agent-run development tests for “Nước thường
+sôi ở 100oC ở gần mặt nước biển” and “Xe oto cá nhân thường có 4 bánh”, without
+repeated Web builds/manual owner testing. The owner prioritizes portable prompts,
+instructions and task architecture for personal models of varying speed/ability,
+with later AI-assisted verification of approximate proposals. This authorizes
+bounded local development experiments and shared workflow fixes, not labeling
+approximate/unverified proposals as canonical or Registry-resolved KU. Preserve
+source, uncertainty and scope through later verification. The review-proposal
+experiment is documented separately and does not silently expand the accepted
+Candidate/SEM mapping, model admission, publication or qualification surface.
+
+### D-023 follow-up — staged review drafts approved
+
+On 2026-09-08 the owner approved the proposed implementation of semantic drafts,
+host-owned identifiers/anchors/numeric mechanics, checked field-level repairs and
+durable background jobs, with agent-run development tests before Web activation.
+The additive [review-draft profile](../../specs/vnext/KU_REVIEW_DRAFT_PROFILE_V1.md)
+records the scope and lifecycle. Drafts and reviewer suggestions remain private
+unaccepted producer output. This approval does not collapse draft readiness into
+canonical KU readiness or enable automatic publication/reward authority.
+
+### D-023 follow-up — shared semantic selection and host mechanics
+
+On 2026-09-09 the owner approved reducing model work to semantic selections,
+host-owned JSON/defaults/anchors/numeric parsing, targeted repairs and separate
+verification, explicitly requiring the common architecture to govern every
+platform. The [shared selection contract](../../specs/vnext/KU_SEMANTIC_SELECTION_PROFILE_V1.md)
+records the boundary and unassessed draft state. This authorizes the common
+implementation and development tests; it does not qualify models, implement
+mobile, authorize publication or change canonical KU/SEM semantics.
+
+### D-023 follow-up — KU-SEM-001 private representation v2
+
+On 2026-09-20 the owner approved the
+[representation proposal](outputs/KU_SEM_001_REPRESENTATION_PROPOSAL.md) and
+implementation: alternatives, ellipsis/reference, comparison and explicit versus
+inferred provenance in a separately versioned private draft. Shared Rust semantics,
+durable node lifecycle and unassessed status remain mandatory. V1 records remain
+readable; unavailable old commitments cannot resume under changed code. This does
+not approve canonical changes or bypass inspected headless evidence before host
+activation. The active [v2 contract](../../specs/vnext/KU_SEMANTIC_SELECTION_PROFILE_V2.md)
+records the bounded initial surface and unresolved cases.
+
+## D-027 — Merge the retained baseline and continue routing
+
+On 2026-09-21 the owner instructed “vây hãy merge rồi làm tiếp” in response
+to the task-004 merge prerequisite. This authorizes committing the complete
+retained KU/Web/CLI and OBP-001..003 working-tree baseline and merging it into
+local main, then continuing OBP-PROD-004 on its task branch in the original
+workspace. The previous no-commit/no-merge restriction is superseded for this
+baseline. No remote push, live-host/network activation, model tuning or model
+qualification is implied. Task 004 remains bounded by its existing contract;
+public API work remains a subsequent task.
+
+## D-025 — Accept OBP composition and authorize local lifecycle implementation
+
+On 2026-09-20 the owner accepted the concrete OBP-PROD-001 proposal and replied
+“Chấp nhận, triển khai tại local chưa merge” to the explicit contract-review and
+task-002 merge-prerequisite question. OBP-PROD-002 may therefore be implemented
+and tested on the complete original dirty tree before merge. This supersedes
+its `001 merged` prerequisite for this local continuation. No commit, push,
+merge, production activation or network opt-in was authorized. Frozen wire
+contracts and the deferred discovery/routing/API task boundaries still apply.
+
+## D-026 — Authorize local discovery orchestration before lifecycle merge
+
+On 2026-09-20 the owner answered “Cho phép 003 local, chưa merge” after
+reviewing the task-003 `OBP-PROD-002 merged` prerequisite. OBP-PROD-003 may
+be implemented and tested on the complete original dirty tree before task 002
+is merged. This exception is limited to task 003. Preserve all uncommitted
+work, opt-in networking, frozen wire/authority semantics and the live host.
+No commit, push, merge, model tuning or live networking activation is authorized.
+Automatic routing and public API remain later tasks with their own prerequisites.
+
+## D-024 — Accept the semantic foundation and advance product framework work
+
+On 2026-09-20 the owner stated that this part is sufficient for now, prioritized
+quickly building the framework for other functions, and asked for a new-conversation
+handoff. Remaining defects/upgrades will be shared with open-source contributors.
+This accepts the implemented KU-SEM-001 foundation for this development stage and
+defers further fidelity tuning; it does not assert the failed cases are fixed.
+
+Advance the continuation pointer to KU-CLI-001, the next dependency-ready planned
+KU surface. Follow the [new-conversation handoff](NEXT_CONVERSATION.md); retain
+[semantic gaps](outputs/KU_SEM_001_CONTRIBUTOR_BACKLOG.md) for later contributors.
+Do not repeatedly request approval to move on or make semantic perfection a gate
+for unrelated framework work. Preserve the complete original dirty working tree;
+the older clean-main start rule does not apply to this continuation baseline.
+No merge, push, publication, host activation, qualification or canonical change
+is implied. KU-SEM-001 remains an accepted local implementation with deferred
+quality work, not a merged task or a qualified model.

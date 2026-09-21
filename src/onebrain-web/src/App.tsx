@@ -21,6 +21,7 @@ const DiscoveryPage = lazy(() => import('./pages/Discovery').then(m => ({ defaul
 const CollectionsPage = lazy(() => import('./pages/Collections').then(m => ({ default: m.CollectionsPage })));
 const AnalyticsPage = lazy(() => import('./pages/Analytics').then(m => ({ default: m.AnalyticsPage })));
 const DraftsPage = lazy(() => import('./pages/Drafts').then(m => ({ default: m.DraftsPage })));
+const KuWorkflowPage = lazy(() => import('./pages/KuWorkflow').then(m => ({ default: m.KuWorkflowPage })));
 const FilesPage = lazy(() => import('./pages/Files').then(m => ({ default: m.FilesPage })));
 const HelpPage = lazy(() => import('./pages/Help').then(m => ({ default: m.HelpPage })));
 
@@ -41,7 +42,7 @@ export default function App() {
     <ErrorBoundary>
     <BrowserRouter>
       <AuthGate>
-        {setupDone ? (
+        {setupDone || window.location.pathname === '/ku' ? (
           <Suspense fallback={<LoadingFallback />}>
             <Routes>
               <Route element={<AppShell />}>
@@ -61,6 +62,7 @@ export default function App() {
                 <Route path="/collections" element={<CollectionsPage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />
                 <Route path="/drafts" element={<DraftsPage />} />
+                <Route path="/ku" element={<KuWorkflowPage />} />
                 <Route path="/files" element={<FilesPage />} />
                 <Route path="/help" element={<HelpPage />} />
                 <Route path="*" element={

@@ -105,6 +105,146 @@ pub(crate) fn check(value: &Value, root: &str, budget: &mut WorkBudget) -> Resul
     validate(value, &definitions[root], definitions, budget, 0)
 }
 
+/// Validate an embedded, host-owned standalone schema; never a model schema.
+pub(crate) fn check_embedded(value: &Value, schema: &Value, budget: &mut WorkBudget) -> Result<()> {
+    validate(value, schema, &Value::Null, budget, 0)
+}
+
+/// Bounded repair guidance. Paths contain schema-owned keys and array positions,
+/// never source values or unrecognized provider-controlled property names.
+pub(crate) fn candidate_diagnostics(value: &Value, budget: &mut WorkBudget) -> Result<Vec<String>> {
+    fn walk(
+        v: &Value,
+        s: &Value,
+        defs: &Value,
+        path: &str,
+        depth: usize,
+        budget: &mut WorkBudget,
+        out: &mut Vec<String>,
+    ) -> Result<()> {
+        if out.len() >= 8 {
+            return Ok(());
+        }
+        budget.charge(1)?;
+        require(depth <= 32, "schema_depth")?;
+        if let Some(key) = s["$ref"].as_str() {
+            return walk(
+                v,
+                &defs[key.trim_start_matches("#/$defs/")],
+                defs,
+                path,
+                depth + 1,
+                budget,
+                out,
+            );
+        }
+        let error = match validate(v, s, defs, budget, depth) {
+            Ok(()) => return Ok(()),
+            Err(e) if matches!(e.0, "resource" | "deadline" | "canceled") => return Err(e),
+            Err(e) => e,
+        };
+        let mut add = |message: String| {
+            if out.len() < 8 {
+                out.push(format!("schema: {message}").chars().take(240).collect());
+            }
+        };
+        if let Some(branches) = s["oneOf"].as_array() {
+            add(format!("{path}: oneof; use exactly one Term kind: concept, text, boolean, quantity, statement; do not combine fields from different kinds"));
+            for branch in branches {
+                let resolved = if let Some(key) = branch["$ref"].as_str() {
+                    &defs[key.trim_start_matches("#/$defs/")]
+                } else {
+                    branch
+                };
+                let kind = &resolved["properties"]["kind"]["const"];
+                if !kind.is_null() && v.get("kind") == Some(kind) {
+                    return walk(v, resolved, defs, path, depth + 1, budget, out);
+                }
+            }
+            return Ok(());
+        }
+        if s["type"] == "object" && v.is_object() {
+            let props = s["properties"]
+                .as_object()
+                .ok_or(ExtractionError("schema"))?;
+            for key in s["required"].as_array().ok_or(ExtractionError("schema"))? {
+                let key = key.as_str().ok_or(ExtractionError("schema"))?;
+                if v.get(key).is_none() && out.len() < 8 {
+                    out.push(
+                        format!("schema: {path}.{key}: missing_field; include this required field")
+                            .chars()
+                            .take(240)
+                            .collect(),
+                    );
+                }
+            }
+            if v.as_object()
+                .unwrap()
+                .keys()
+                .any(|key| !props.contains_key(key))
+                && out.len() < 8
+            {
+                let allowed = props
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                out.push(
+                    format!("schema: {path}: unknown_field; allowed fields: {allowed}")
+                        .chars()
+                        .take(240)
+                        .collect(),
+                );
+            }
+            for (key, schema) in props {
+                if let Some(child) = v.get(key) {
+                    walk(
+                        child,
+                        schema,
+                        defs,
+                        &format!("{path}.{key}"),
+                        depth + 1,
+                        budget,
+                        out,
+                    )?;
+                }
+            }
+            return Ok(());
+        }
+        if s["type"] == "array" && v.is_array() && error.0 != "array_bound" {
+            for (index, child) in v.as_array().unwrap().iter().enumerate() {
+                if out.len() >= 8 {
+                    break;
+                }
+                walk(
+                    child,
+                    &s["items"],
+                    defs,
+                    &format!("{path}[{index}]"),
+                    depth + 1,
+                    budget,
+                    out,
+                )?;
+            }
+            return Ok(());
+        }
+        let expected = if let Some(value) = s.get("const").or_else(|| s.get("enum")) {
+            value.to_string()
+        } else {
+            s["type"].as_str().unwrap_or("schema").into()
+        };
+        add(format!(
+            "{path}: {}; expected {expected}; obey the supplied schema bounds",
+            error.0
+        ));
+        Ok(())
+    }
+    let defs = &source()["$defs"];
+    let mut out = Vec::new();
+    walk(value, &defs["Candidate"], defs, "$", 0, budget, &mut out)?;
+    Ok(out)
+}
+
 fn validate(v: &Value, s: &Value, defs: &Value, b: &mut WorkBudget, depth: usize) -> Result<()> {
     b.charge(1)?;
     require(depth <= 32, "schema_depth")?;

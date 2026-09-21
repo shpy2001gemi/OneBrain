@@ -9,10 +9,22 @@ This directory owns the cross-crate contracts that must be stable before vNext r
 
 ## Contract index
 
+Product continuation: [local KU CLI projection](KU_LOCAL_CLI_PROJECTION_V1.md)
+is implemented through the shared service. The additive
+[OBP orchestration proposal](OBP_PRODUCT_ORCHESTRATION_PROFILE_V1.md) is ready
+for owner review, with machine-checked DTO/state fixtures; it does not authorize
+runtime wiring or default network activation.
+
 The productization lane adds the [shared KU extraction framework](KU_EXTRACTION_FRAMEWORK_PROFILE_V1.md)
 under KU-ENC-001 (contract review): bounded model proposals, host-owned resolution
 and SEM compilation, version-bound schemas/prompts, conformance corpus and model
 qualification gates. It changes no frozen Foundation object or Base registration.
+
+The owner-approved [shared semantic selection profile](KU_SEMANTIC_SELECTION_PROFILE_V1.md)
+extends private drafts with sparse LLM choices, deterministic host assembly and
+targeted repair. Web/Desktop/CLI and future mobile use the same Rust executor;
+extraction, independent semantic verification and canonical KU preparation remain
+distinct stages. This is not mobile implementation evidence or model qualification.
 
 | Task | Contract | Status | Evidence |
 |---|---|---|---|
@@ -186,6 +198,10 @@ A change to a public field, ownership domain, canonical token or negative assert
 5. avoid adding OBT, seed, bridge, provider or route state to knowledge authority.
 
 ## Completion evidence for WP-001
+
+Shared private draft extension: [Semantic selection v2](KU_SEMANTIC_SELECTION_PROFILE_V2.md)
+preserves alternatives, ellipsis, references and comparison proposals without
+changing canonical SEM. Activation and model evidence remain separate gates.
 
 - Every required family in `FND-001` has separate semantic, authority, availability, runtime and derived-view ownership.
 - The CID graph rules prohibit self-reference and object↔view identity cycles.

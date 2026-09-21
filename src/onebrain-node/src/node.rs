@@ -458,6 +458,12 @@ impl OneBrainNode {
             ));
         }
         let bind_addr: SocketAddr = ([0, 0, 0, 0], self.config.port).into();
+        #[cfg(feature = "vnext-outbound-first")]
+        if let Some(dependencies) = self.vnext_product_dependencies.as_ref() {
+            dependencies
+                .validate_outbound_first(&self.config.vnext)
+                .map_err(|error| NodeError::Config(error.to_string()))?;
+        }
         #[cfg(feature = "vnext-network-runtime")]
         let mut pending_vnext = if self
             .config

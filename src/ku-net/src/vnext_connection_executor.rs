@@ -234,6 +234,9 @@ impl fmt::Debug for AuthenticatedRouteConnection {
 }
 
 impl AuthenticatedRouteConnection {
+    pub fn is_live(&self) -> bool {
+        self.connection.is_open()
+    }
     pub fn session(&self) -> &AuthenticatedSession {
         &self.session
     }

@@ -173,6 +173,9 @@ struct Fixture {
 }
 impl Fixture {
     async fn new() -> Self {
+        Self::configured(false).await
+    }
+    async fn configured(manual: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let registry = registry(dir.path());
         let root = registry
@@ -192,8 +195,22 @@ impl Fixture {
         let mut runtime = base_runtime_config_for_api_token(TOKEN);
         runtime.ku = Some(KuRuntimeConfig {
             vault_key: VaultKey::from_bytes([8; 32]),
-            registry: Some(registry),
-            inputs: inputs.clone(),
+            registry: Some(registry.clone()),
+            inputs: if manual {
+                Arc::new(
+                    onebrain_node::ku_manual::ManualKuInputs::new(
+                        [0; 32],
+                        registry,
+                        vec![(
+                            "Operator-admitted test source".into(),
+                            inputs.source.clone(),
+                        )],
+                    )
+                    .unwrap(),
+                )
+            } else {
+                inputs.clone()
+            },
             public: None,
         });
         node.install_base_runtime(runtime).unwrap();
@@ -693,3 +710,322 @@ async fn errors_keep_all_base_retry_and_reconcile_policies() {
 // Signed registry fixtures are authored only for temporary integration tests.
 mod registry_fixture;
 use registry_fixture::registry;
+mod experimental_text;
+
+/// Development-only integration: genuine installed model, synthetic signed
+/// Registry, fresh explicit consent/text. Never opens qualification holdouts.
+#[cfg(windows)]
+#[tokio::test]
+#[ignore = "requires explicitly configured local Ollama artifacts; real inference"]
+async fn experimental_ollama_real_text_roundtrip() {
+    use ku_encoder::extraction::ManagedOllamaProvider;
+    use onebrain_node::{ku_manual::ManualKuInputs, ku_ollama::OllamaKuInputs};
+    let dir = tempfile::tempdir().unwrap();
+    let registry = registry_fixture::registry_for_label(dir.path(), "is");
+    let model = std::env::var("KU_OLLAMA_MODEL").unwrap_or_else(|_| "qwen3:8b".into());
+    let memory = 12 * 1024u64.pow(3);
+    let started = std::time::Instant::now();
+    let provider = Arc::new(
+        ManagedOllamaProvider::open(
+            std::env::var_os("KU_OLLAMA_EXE")
+                .expect("set KU_OLLAMA_EXE")
+                .into(),
+            std::env::var_os("KU_OLLAMA_MODELS")
+                .expect("set KU_OLLAMA_MODELS")
+                .into(),
+            &model,
+            memory,
+            Arc::new(tokio::sync::Semaphore::new(1)),
+        )
+        .unwrap(),
+    );
+    eprintln!(
+        "Verified development model artifacts in {:?}",
+        started.elapsed()
+    );
+    eprintln!(
+        "Development provider pins: {}",
+        ku_encoder::extraction::ExtractionProvider::manifest(provider.as_ref())
+    );
+    let config = NodeConfig {
+        data_dir: dir.path().join("node"),
+        concept_registry_mode: onebrain_node::ConceptRegistryMode::Disabled,
+        ..Default::default()
+    };
+    std::fs::create_dir_all(&config.data_dir).unwrap();
+    let make_inputs = || {
+        Arc::new(
+            OllamaKuInputs::new(
+                [0; 32],
+                Arc::new(ManualKuInputs::new([0; 32], registry.clone(), vec![]).unwrap()),
+                registry.clone(),
+                vec![(model.clone(), provider.clone(), memory)],
+            )
+            .unwrap(),
+        )
+    };
+    let make_runtime = || {
+        let mut runtime = base_runtime_config_for_api_token(TOKEN);
+        runtime.ku = Some(KuRuntimeConfig {
+            vault_key: VaultKey::from_bytes([8; 32]),
+            registry: Some(registry.clone()),
+            inputs: make_inputs(),
+            public: None,
+        });
+        runtime
+    };
+    let mut node = OneBrainNode::new(config.clone()).await.unwrap();
+    node.install_base_runtime(make_runtime()).unwrap();
+    let server = ApiServer::new(node, TOKEN.into(), 0);
+    let f = Fixture {
+        _dir: dir,
+        state: server.test_state(),
+        router: server.build_router(),
+        inputs: Arc::new(Inputs::new()),
+        root: registry
+            .reader_lease()
+            .status()
+            .release_aggregate_root
+            .clone()
+            .unwrap(),
+    };
+    let session = f.session().await;
+    let (code, models) = edit(&f, &session, "models", json!({})).await;
+    assert_eq!(code, StatusCode::OK, "{models}");
+    assert_eq!(models["data"]["model_qualified"], false);
+    let op = f.reserve(&session).await;
+    let mut intake = json!({"operation_id":op,"idempotency_key":op,"model":model,"text":"Copper is conductive.","consent":false});
+    assert_eq!(
+        edit(&f, &session, "encode_text", intake.clone()).await.0,
+        StatusCode::BAD_REQUEST
+    );
+    intake["consent"] = true.into();
+    let (code, template) = edit(&f, &session, "encode_text", intake.clone()).await;
+    assert_eq!(code, StatusCode::OK, "{template}");
+    assert_eq!(
+        edit(&f, &session, "encode_text", intake.clone()).await.1["data"]["payload"],
+        template["data"]["payload"]
+    );
+    intake["text"] = "Changed text".into();
+    assert_eq!(
+        edit(&f, &session, "encode_text", intake).await.0,
+        StatusCode::CONFLICT
+    );
+    let inference = std::time::Instant::now();
+    let (code, preview) = f
+        .invoke(&session, "prepare", template["data"]["payload"].clone())
+        .await;
+    eprintln!(
+        "Development inference and validation: {:?}; HTTP {}",
+        inference.elapsed(),
+        code
+    );
+    assert_eq!(code, StatusCode::OK, "{preview}");
+    assert_eq!(preview["data"]["payload"]["validity"], "ready", "{preview}");
+    let ids = preview["data"]["payload"]["object_cids"].clone();
+    let (code, saved) = f
+        .invoke(
+            &session,
+            "save",
+            json!({"operation_id":op,"idempotency_key":op,"object_cids":ids}),
+        )
+        .await;
+    assert_eq!(code, StatusCode::OK, "{saved}");
+    assert_eq!(saved["data"]["payload"]["state"], "committed");
+    // Reopen the exact private journal with fresh custody, then read accepted KU.
+    drop(f.router);
+    drop(f.state);
+    let mut node = OneBrainNode::new(config).await.unwrap();
+    node.install_base_runtime(make_runtime()).unwrap();
+    let server = ApiServer::new(node, TOKEN.into(), 0);
+    let router = server.build_router();
+    let (_, status) = call(
+        router.clone(),
+        Method::GET,
+        "/api/vnext/ku/status",
+        None,
+        Some(TOKEN),
+    )
+    .await;
+    let (code, view) = call(
+        router,
+        Method::POST,
+        "/api/vnext/ku/operations",
+        Some(envelope(
+            &status["data"]["session"],
+            "get",
+            json!({"object_cid":ids[0]}),
+        )),
+        Some(TOKEN),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{view}");
+    assert_eq!(view["data"]["payload"]["disclosure_class"], "LOCAL_ONLY");
+}
+
+async fn edit(f: &Fixture, session: &Value, action: &str, payload: Value) -> (StatusCode, Value) {
+    call(f.router.clone(), Method::POST, "/api/vnext/ku/editor",
+        Some(json!({"session":session,"budget":{"max_items":64,"max_bytes":1048576,"max_work_units":1000000},"request":{"action":action,"payload":payload}})), Some(TOKEN)).await
+}
+
+#[tokio::test]
+async fn manual_editor_real_provider_journey_and_revision() {
+    let f = Fixture::configured(true).await;
+    let session = f.session().await;
+    let (code, catalog) = edit(&f, &session, "catalog", json!({})).await;
+    assert_eq!(code, StatusCode::OK, "{catalog}");
+    assert_eq!(
+        catalog["data"]["payload"]["sources"][0]["source_ref"],
+        json!(f.inputs.cid)
+    );
+    let (code, concepts) = edit(&f, &session, "resolve", json!({"label":"water"})).await;
+    assert_eq!(code, StatusCode::OK, "{concepts}");
+    assert_eq!(
+        concepts["data"]["payload"]["candidates"][0]["ccid"],
+        "07".repeat(16)
+    );
+    let mut predecessor = None;
+    let mut frontier = None;
+    for text in [
+        "Manual private first assertion",
+        "Manual private revised assertion",
+    ] {
+        let op = f.reserve(&session).await;
+        let input = json!({"operation_id":op,"idempotency_key":op,"source_ref":f.inputs.cid,"predicate_label":"water","selected_ccid":"07".repeat(16),"argument_text":text});
+        let (code, admitted) = edit(&f, &session, "draft", input.clone()).await;
+        assert_eq!(code, StatusCode::OK, "{admitted}");
+        let (_, replay) = edit(&f, &session, "draft", input.clone()).await;
+        assert_eq!(admitted, replay);
+        let mut changed = input.clone();
+        changed["argument_text"] = json!("changed");
+        assert_eq!(
+            edit(&f, &session, "draft", changed).await.0,
+            StatusCode::CONFLICT
+        );
+        let preparation = admitted["data"]["payload"].clone();
+        let (code, prepared) = if let Some(cid) = &predecessor {
+            f.invoke(&session,"revise",json!({"preparation":preparation,"predecessor_object_cid":cid,"expected_revision_frontier":frontier})).await
+        } else {
+            f.invoke(&session, "prepare", preparation).await
+        };
+        assert_eq!(code, StatusCode::OK, "{prepared}");
+        assert_eq!(prepared["data"]["payload"]["validity"], "ready");
+        let artifacts = prepared["data"]["payload"]["artifacts"].as_array().unwrap();
+        assert_eq!(artifacts.len(), 1);
+        let (_, before) = f.invoke(&session, "list", json!({"limit":20})).await;
+        assert_eq!(
+            before["data"]["payload"]["items"].as_array().unwrap().len(),
+            usize::from(predecessor.is_some())
+        );
+        let save = json!({"operation_id":op,"idempotency_key":op,"object_cids":prepared["data"]["payload"]["object_cids"]});
+        let (code, receipt) = f.invoke(&session, "save", save.clone()).await;
+        assert_eq!(code, StatusCode::OK, "{receipt}");
+        assert_eq!(receipt["data"]["payload"]["state"], "committed");
+        assert_eq!(receipt["data"]["payload"]["published"], false);
+        let (_, repeated) = f.invoke(&session, "save", save).await;
+        assert_eq!(receipt, repeated);
+        let cid = prepared["data"]["payload"]["object_cids"][0].clone();
+        let (_, view) = f.invoke(&session, "get", json!({"object_cid":cid})).await;
+        assert_eq!(
+            view["data"]["payload"]["canonical_bytes"],
+            artifacts[0]["canonical_preview"]
+        );
+        let (_, page) = f
+            .invoke(
+                &session,
+                "search",
+                json!({"query":"Manual private","limit":20}),
+            )
+            .await;
+        frontier = Some(page["data"]["payload"]["snapshot_frontier"].clone());
+        predecessor = Some(cid);
+    }
+    assert_eq!(
+        f.inputs.calls.load(Ordering::SeqCst),
+        0,
+        "fixture encoder must never execute"
+    );
+    let (_, page) = f.invoke(&session, "list", json!({"limit":20})).await;
+    assert_eq!(
+        page["data"]["payload"]["items"].as_array().unwrap().len(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn manual_editor_unresolved_auth_and_closed_input() {
+    let f = Fixture::configured(true).await;
+    let session = f.session().await;
+    assert_eq!(
+        edit(&f, &session, "catalog", json!({"authorized":true}))
+            .await
+            .0,
+        StatusCode::BAD_REQUEST
+    );
+    let op = f.reserve(&session).await;
+    let input = json!({"operation_id":op,"idempotency_key":op,"source_ref":f.inputs.cid,"predicate_label":"missing-private-label","argument_text":"PRIVATE-MANUAL-INPUT"});
+    for (field, value) in [
+        ("authorized", json!(true)),
+        ("argument_text", json!("x".repeat(4097))),
+        ("predicate_label", json!("x".repeat(257))),
+        ("operation_id", json!("ee".repeat(32))),
+        ("selected_ccid", Value::Null),
+        ("source_ref", json!("ff".repeat(32))),
+        ("selected_ccid", json!("ff".repeat(16))),
+        ("argument_text", json!("e\u{301}")),
+    ] {
+        let mut invalid = input.clone();
+        invalid[field] = value;
+        let (code, failure) = edit(&f, &session, "draft", invalid).await;
+        assert!(code.is_client_error(), "{failure}");
+        assert!(!failure.to_string().contains("PRIVATE-MANUAL-INPUT"));
+    }
+    let mut stale = session.clone();
+    stale["process_generation"] = json!("ff".repeat(32));
+    assert_eq!(
+        edit(&f, &stale, "catalog", json!({})).await.0,
+        StatusCode::CONFLICT
+    );
+    let (code, admitted) = edit(&f, &session, "draft", input).await;
+    assert_eq!(code, StatusCode::OK, "{admitted}");
+    let (code, prepared) = f
+        .invoke(&session, "prepare", admitted["data"]["payload"].clone())
+        .await;
+    assert_eq!(code, StatusCode::OK, "{prepared}");
+    assert_eq!(prepared["data"]["payload"]["validity"], "needs_resolution");
+    assert_eq!(prepared["data"]["payload"]["artifacts"], json!([]));
+    assert_ne!(
+        f.invoke(
+            &session,
+            "save",
+            json!({"operation_id":op,"idempotency_key":op,"object_cids":[]})
+        )
+        .await
+        .0,
+        StatusCode::OK
+    );
+    assert_eq!(
+        f.invoke(&session, "cancel", json!({"operation_id":op}))
+            .await
+            .0,
+        StatusCode::OK
+    );
+    for token in [None, Some("incorrect")] {
+        let (code, _) = call(
+            f.router.clone(),
+            Method::POST,
+            "/api/vnext/ku/editor",
+            Some(json!({})),
+            token,
+        )
+        .await;
+        assert!(code == StatusCode::UNAUTHORIZED || code == StatusCode::FORBIDDEN);
+    }
+    let old = Fixture::new().await;
+    assert_eq!(
+        edit(&old, &old.session().await, "catalog", json!({}))
+            .await
+            .0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+}

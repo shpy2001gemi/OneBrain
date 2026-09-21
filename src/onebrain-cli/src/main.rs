@@ -38,6 +38,8 @@ struct CliArgs {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Private KU workflow through the authenticated local shared service.
+    Ku(cli::ku::KuArgs),
     /// Inspect the offline-first Base runtime contract.
     Base(BaseArgs),
     /// Start an OneBrain node
@@ -143,6 +145,7 @@ async fn main() {
     };
 
     match command {
+        Commands::Ku(args) => exit_on_client_error(cli::ku::execute(args).await),
         Commands::Base(BaseArgs {
             command: BaseCommand::Status,
         }) => println!(

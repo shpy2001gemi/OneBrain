@@ -41,6 +41,12 @@ function getToken(): string {
   return TOKEN || localStorage.getItem('ob_api_token') || '';
 }
 
+/** Shared local authentication configuration; KU payloads bypass debug logging. */
+export async function getPrivateApiConnection() {
+  await ensureConfig();
+  return { baseUrl: API_BASE, token: getToken() };
+}
+
 export function setToken(token: string) {
   TOKEN = token;
   localStorage.setItem('ob_api_token', token);

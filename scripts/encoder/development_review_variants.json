@@ -1,0 +1,5 @@
+[
+  {"id":"vi-negation-contrast","text":"Đèn không sáng, nhưng quạt chạy.","review":{"expected":"two propositions, lamp negation only, fan runs positively, explicit contrast, exact lowercase quạt"}},
+  {"id":"vi-condition","text":"Nếu trời mưa, đường trơn.","review":{"expected":"rain condition and slippery-road consequence, preserve Nếu and condition scope, do not assert current rain"}},
+  {"id":"vi-composition","text":"Cảm biến ghi 12kg. Đèn không sáng, nhưng quạt chạy.","review":{"expected":"three propositions, exact kg, lamp negation only, contrast, no invented cause"}}
+]

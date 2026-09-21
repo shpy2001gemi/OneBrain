@@ -1,0 +1,90 @@
+.ku-workflow {
+  max-width: 1100px;
+  margin-inline: auto;
+}
+.ku-review-claim { border: 1px solid var(--ob-glass-border); border-radius: 12px; padding: 16px; margin-block: 12px; }
+.ku-review-claim dt { font-weight: 600; margin-top: 8px; }
+.ku-review-claim dd { margin-left: 0; overflow-wrap: anywhere; }
+.ku-review-claim blockquote { border-left: 3px solid var(--ob-accent, #00cfe8); padding-left: 12px; margin: 12px 0 0; }
+.ku-review-draft .btn { margin: 12px 8px 8px 0; }
+.ku-review-draft code { overflow-wrap: anywhere; }
+.ku-workflow .glass-card {
+  margin-bottom: 20px;
+  padding: 24px;
+}
+.ku-workflow h2 {
+  margin-bottom: 12px;
+  font-size: 1.2rem;
+}
+.ku-workflow p {
+  margin-block: 10px;
+  line-height: 1.6;
+}
+.ku-workflow label {
+  display: block;
+  margin-block: 12px 6px;
+  font-weight: 600;
+}
+.ku-workflow fieldset {
+  border: 1px solid var(--ob-glass-border);
+  padding: 16px;
+  margin-block: 16px;
+  min-width: 0;
+}
+.ku-workflow fieldset .btn {
+  margin-block: 10px;
+}
+.ku-workflow .input {
+  width: 100%;
+}
+.ku-workflow .ku-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-block: 10px;
+}
+.ku-workflow .ku-actions .input {
+  flex: 1;
+  min-width: 180px;
+}
+.ku-workflow .ku-id,
+.ku-workflow pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ku-workflow .ku-results {
+  padding-left: 20px;
+}
+.ku-workflow li {
+  margin-block: 16px;
+}
+.ku-workflow [role="alert"]:not(:empty) {
+  border: 1px solid var(--ob-error);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.ku-workflow [role="status"]:not(:empty) {
+  padding: 12px;
+}
+.ku-workflow :focus-visible {
+  outline: 2px solid var(--ob-accent-light);
+  outline-offset: 4px;
+}
+.ku-workflow button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.ku-workflow summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.ku-workflow .ku-explanation {
+  border: 1px solid var(--ob-glass-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.ku-workflow .ku-explanation ol {
+  padding-left: 24px;
+  line-height: 1.6;
+}

@@ -1,5 +1,5 @@
 //! Thin, private REST projection of the node-owned KU service.
-//! No source intake, extraction, Registry selection, storage or WS authority lives here.
+//! Source custody, editor, extraction, Registry and storage authority stay in the node.
 use axum::body::to_bytes;
 use axum::extract::{Request, State};
 use axum::http::{header, StatusCode};
@@ -208,7 +208,15 @@ fn failure(error: BaseServiceError) -> Response {
         code,
         retryable: error.retryable,
         reconcile_before_retry: error.reconcile_before_retry,
-        limitations: vec![error.reason.into()],
+        limitations: std::iter::once(error.reason.into())
+            .chain(
+                error
+                    .validation_diagnostics
+                    .iter()
+                    .take(8)
+                    .map(|s| s.chars().take(240).collect()),
+            )
+            .collect(),
     };
     private_response(
         (
@@ -430,6 +438,36 @@ pub async fn reserve(State(state): State<AppState>, request: Request) -> Respons
     }
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EditorRequest {
+    session: Session,
+    budget: Budget,
+    request: onebrain_node::ku_manual::ManualEditorRequest,
+}
+
+pub async fn editor(State(state): State<AppState>, request: Request) -> Response {
+    let (body, size) = match body::<EditorRequest>(request).await {
+        Ok(v) => v,
+        Err(e) => return failure(e),
+    };
+    let budget = match body.budget.service_budget(size) {
+        Ok(v) => v,
+        Err(e) => return failure(e),
+    };
+    let (ku, session) = match service(&state).await {
+        Ok(v) => v,
+        Err(e) => return failure(e),
+    };
+    if let Err(e) = body.session.check(&session) {
+        return failure(e);
+    }
+    match ku.editor(body.request, budget).await {
+        Ok(value) => success(session, value, meta(), body.budget.max_bytes),
+        Err(e) => failure(e),
+    }
+}
+
 pub async fn invoke(State(state): State<AppState>, request: Request) -> Response {
     let (body, size) = match body::<OperationRequest>(request).await {
         Ok(v) => v,
@@ -443,23 +481,29 @@ pub async fn invoke(State(state): State<AppState>, request: Request) -> Response
     if request.validate().is_err() {
         return failure(invalid());
     }
-    let ai = match &request {
-        KuRequestV1::Prepare(p) => p.input_mode == InputMode::LocalAi,
-        KuRequestV1::Revise(p) => p.preparation.input_mode == InputMode::LocalAi,
-        _ => false,
-    };
-    if ai {
-        return failure(BaseServiceError::new(
-            BaseErrorCodeV1::CapabilityDisabled,
-            "real_model_unqualified",
-        ));
-    }
     let (ku, session) = match service(&state).await {
         Ok(v) => v,
         Err(e) => return failure(e),
     };
     if let Err(e) = body.session.check(&session) {
         return failure(e);
+    }
+    let preparation = match &request {
+        KuRequestV1::Prepare(p) => Some(p),
+        KuRequestV1::Revise(p) => Some(&p.preparation),
+        _ => None,
+    };
+    if let Some(p) = preparation.filter(|p| p.input_mode == InputMode::LocalAi) {
+        match ku.experimental_ai_allowed(p.implementation_commitment.0) {
+            Ok(true) => {}
+            Ok(false) => {
+                return failure(BaseServiceError::new(
+                    BaseErrorCodeV1::CapabilityDisabled,
+                    "real_model_unqualified",
+                ))
+            }
+            Err(error) => return failure(error),
+        }
     }
     match ku.invoke(request, budget).await {
         Ok(value) => project(session, value, body.budget.max_bytes),

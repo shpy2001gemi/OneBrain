@@ -9,6 +9,16 @@ license = "MIT"
 name = "onebrain_api"
 path = "src/lib.rs"
 
+[[example]]
+name = "ku_local_web"
+required-features = ["base-v1"]
+
+# Build the same host for staging without replacing a running Windows binary.
+[[example]]
+name = "ku_local_web_staging"
+path = "examples/ku_local_web.rs"
+required-features = ["base-v1"]
+
 [features]
 default = ["base-v1"]
 base-v1 = ["onebrain-node/base-v1"]
@@ -35,6 +45,8 @@ futures = "0.3"
 reqwest = { version = "0.12", features = ["json", "native-tls"] }
 
 [dev-dependencies]
+async-trait = "0.1"
+ku-encoder = { path = "../ku-encoder" }
 ed25519-dalek = "2"
 onebrain-base-abi = { path = "../onebrain-base-abi" }
 onebrain-archive = { path = "../onebrain-archive" }

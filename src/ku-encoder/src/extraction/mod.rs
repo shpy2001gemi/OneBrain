@@ -3,7 +3,14 @@
 //! This module never routes through the legacy encoder/defaults. Host custody,
 //! signed Registry lookup and consent are separate from structural conformance.
 mod compiler;
+mod managed_ollama;
+mod ollama_worker;
 mod provider;
+mod qwen_tokenizer;
+pub mod review_draft;
+pub mod semantic_selection;
+pub mod semantic_selection_v2;
+pub use managed_ollama::ManagedOllamaProvider;
 mod rules;
 mod schema;
 mod workflow;
@@ -51,22 +58,35 @@ pub struct WorkBudget {
     remaining: u64,
     deadline: Instant,
     canceled: Arc<AtomicBool>,
+    started: Instant,
+    elapsed_before_ms: u64,
 }
 
 impl WorkBudget {
     pub fn new(work: u64, timeout: Duration, canceled: Arc<AtomicBool>) -> Result<Self> {
         require(
-            work <= 1_000_000 && timeout <= Duration::from_secs(120),
+            work <= 1_000_000 && timeout <= Duration::from_secs(600),
             "resource",
         )?;
+        let started = Instant::now();
         Ok(Self {
             remaining: work,
-            deadline: Instant::now() + timeout,
+            deadline: started + timeout,
             canceled,
+            started,
+            elapsed_before_ms: 0,
         })
     }
     pub fn remaining(&self) -> u64 {
         self.remaining
+    }
+    pub(crate) fn with_prior_elapsed_ms(mut self, elapsed_ms: u64) -> Self {
+        self.elapsed_before_ms = elapsed_ms;
+        self
+    }
+    pub fn elapsed_ms(&self) -> u64 {
+        self.elapsed_before_ms
+            .saturating_add(self.started.elapsed().as_millis() as u64)
     }
     pub fn remaining_deadline_ms(&self) -> u64 {
         self.deadline

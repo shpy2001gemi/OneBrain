@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "properties": {
+    "numbers": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "properties": {
+          "statement": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 63
+          },
+          "value_quote": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "unit_quote": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "counted_entity_quote": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "statement",
+          "value_quote",
+          "unit_quote",
+          "counted_entity_quote"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "numbers"
+  ],
+  "additionalProperties": false
+}
