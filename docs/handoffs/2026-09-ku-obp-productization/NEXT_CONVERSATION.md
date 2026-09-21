@@ -1,62 +1,47 @@
-# Next conversation — review routing, then follow dependencies
+# Next conversation — OBP API prerequisites
 
-Current checkpoint: 2026-09-21. Owner said “vây hãy merge rồi làm tiếp”.
-D-027 records the local merge and continuation. KU-CLI/Web/semantic baseline and
-OBP-PROD-001..003 were preserved in commit `437dba0`, then merged locally as
-`3216f1ddf0cd72098924ccdf9fb0ef6b30186b78`. No remote push occurred.
+Current checkpoint: 2026-09-21. Under D-028, the owner requested merging 004
+and pushing all retained work. Implementation `8f7d327` was merged into main as
+`2c39117183f167ef4d333757b050d6306043e068`. Main and the routing branch were
+pushed atomically to origin, including the full D-027 baseline at `3216f1d`.
 
-## Correct workspace and baseline
+## Workspace and read set
 
-Use `C:/Users/shpy2/Documents/OneBrain`, branch `codex/obp-prod-004-routing`.
-Task-004 implementation, tests and evidence are uncommitted in this original tree.
-Inspect status and retain every change. Do not substitute main, another worktree,
-a fresh checkout or HEAD alone for this workspace. Do not reset, clean or stash
-away its changes. D-027 supersedes the earlier prohibition on the specific baseline
-merge; it does not authorize remote publication or live networking activation.
-
-## Read set
+Use the original `C:/Users/shpy2/Documents/OneBrain` workspace, now on `main`.
+Inspect status and preserve any subsequent changes; do not substitute another
+worktree or discard the retained baseline.
 
 1. Repository `AGENTS.md` and applicable subtree rules.
-2. Current checkpoint and ledger in [PROGRESS.md](PROGRESS.md), D-024..D-027 in
-   [DECISIONS.md](DECISIONS.md).
-3. Accepted [OBP product profile](../../specs/vnext/OBP_PRODUCT_ORCHESTRATION_PROFILE_V1.md)
-   and [contract evidence](outputs/OBP_PROD_001_CONTRACT.md).
-4. [Lifecycle evidence](outputs/OBP_PROD_002_IMPLEMENTATION.md),
-   [discovery evidence](outputs/OBP_PROD_003_IMPLEMENTATION.md), and current
-   [routing evidence and limits](outputs/OBP_PROD_004_IMPLEMENTATION.md).
-5. [Task 004](tasks/13-OBP-PROD-004.md), then the next task's own prerequisite and scope.
+2. [PROGRESS.md](PROGRESS.md), [DECISIONS.md](DECISIONS.md), especially D-024..D-028.
+3. [Accepted OBP profile](../../specs/vnext/OBP_PRODUCT_ORCHESTRATION_PROFILE_V1.md).
+4. [Routing evidence and limits](outputs/OBP_PROD_004_IMPLEMENTATION.md), and the
+   task-001..003 evidence it builds on.
+5. [OBP-API-001](tasks/14-OBP-API-001.md) and its own required read set.
 
-## Current work and next gate
+## Next task and boundaries
 
-OBP-PROD-004 is in Review: the existing product owner feeds expected-peer routing
-into durable outbox delivery, with authenticated relay alternatives, atomic
-acknowledged checkpoints, restart/compaction/archive preservation, generation
-fences and bounded retry. 242 node unit and 22 integration tests passed, as did
-six OBP contract tests and the aggregate vNext validator. See evidence for focused
-checks, feature builds and the boundary between loopback tests and qualification.
+OBP-PROD-004 is Merged. Fresh verification passed: 242 node unit tests,
+22 integration tests, 315 ku-net tests, six OBP contract tests and aggregate
+vNext validation. These are local integration results, not Internet/NAT or
+cross-platform qualification.
 
-Task 004 is not committed, merged or published. OBP-API-001 follows after task 004
-is merged or the owner explicitly grants a local prerequisite exception. Do not
-infer that the earlier merge of tasks 001..003 waives this new gate. Public API/UI,
-mobile, cross-platform NAT qualification and default rollout remain separate.
-Optional LAN/hole-punch paths require admitted host capabilities; fresh verified
-manual invitations remain the peer source. No live host has been activated.
+OBP-API-001 remains Planned. Its task-004 merge dependency is now satisfied;
+its exact routes, authentication/capability binding, host intake and reconciliation
+transport prerequisites still apply before handlers. API implementation was not
+started as part of the merge/push action.
 
-KU semantic foundation remains accepted for this development stage under D-024;
-known quality gaps remain in the [contributor backlog](outputs/KU_SEM_001_CONTRIBUTOR_BACKLOG.md).
-Do not run model experiments or reopen semantic tuning. Preserve the running
+Keep semantic tuning deferred under D-024. Preserve the running
 `C:/Users/shpy2/Documents/OneBrainLocal` host, Registry, jobs, keys and Ollama.
-Do not enable networking, change models or claim model/platform qualification.
+Do not enable networking, change models, activate v2 or claim qualification.
+Mobile and default rollout remain separate scopes.
 
 ## Copy into a new conversation
 
 ```text
 Hãy đọc AGENTS.md và docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md
 trên working tree gốc C:/Users/shpy2/Documents/OneBrain.
-Baseline đầy đủ qua OBP-PROD-003 đã merge local tại 3216f1d theo D-027, chưa push.
-OBP-PROD-004 đã triển khai và kiểm tra local, đang Review; các thay đổi task 004
-còn chưa commit trên codex/obp-prod-004-routing. Đọc evidence và PROGRESS hiện tại,
-giữ mọi thay đổi và tiếp tục đúng dependency/task scope. OBP-API-001 còn điều kiện
-004 merged hoặc ngoại lệ rõ ràng từ owner. Không thay baseline bằng main/worktree
-khác, không tuning model, không tự bật networking hay thay đổi live host.
+Baseline đầy đủ qua OBP-PROD-004 đã merge tại 2c39117 và push origin/main theo D-028.
+Đọc PROGRESS và evidence hiện tại, giữ mọi thay đổi phát sinh.
+Tiếp tục OBP-API-001 theo đúng prerequisite và task scope; điều kiện 004 merged đã đạt.
+Không tuning model, không tự bật networking hay thay đổi live host.
 ```

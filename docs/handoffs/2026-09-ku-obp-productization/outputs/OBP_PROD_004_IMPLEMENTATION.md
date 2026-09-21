@@ -2,8 +2,9 @@
 
 Date: 2026-09-21. Original workspace: `C:/Users/shpy2/Documents/OneBrain`.
 Branch: `codex/obp-prod-004-routing`; base: local merge
-`3216f1ddf0cd72098924ccdf9fb0ef6b30186b78` (D-027). Task-004 changes are
-uncommitted. No remote push, live-host activation, model tuning or rollout change.
+`3216f1ddf0cd72098924ccdf9fb0ef6b30186b78` (D-027). Implementation committed as `8f7d327`, merged as `2c39117` and pushed to
+`origin/main` under D-028, together with the routing branch and retained baseline.
+No live-host activation, model tuning or rollout change.
 
 ## Implementation
 
@@ -93,4 +94,14 @@ warnings. The final product-focused rerun passed 29 tests.
 - The relay-loss test is between acknowledged batches. It is not a new exhaustive
   packet drop/delay/reorder or multi-host canary qualification campaign.
 - Public API/UI/operator surfaces belong to OBP-API-001 and later tasks. Task 004
-  is not merged or published; the next task retains its merge prerequisite.
+  is merged and published under D-028; OBP-API-001 is dependency-ready, not implemented.
+
+
+## Merge verification — 2026-09-21, D-028
+
+Fresh pre-merge rerun: 242 node unit tests, 22 node integration tests, 315 ku-net
+tests, six OBP contract mutation tests, aggregate vNext validator and staged
+whitespace checks all passed. Merge was conflict-free in the original workspace.
+Atomic push published main and the routing branch; baseline 3216f1d is retained
+in merge ancestry. Earlier feature-build evidence above remains applicable;
+no implementation changes were made during this merge action.

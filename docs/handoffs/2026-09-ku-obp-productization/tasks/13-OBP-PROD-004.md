@@ -1,6 +1,6 @@
 # OBP-PROD-004 — Automatic routing, outbox and relay failover
 
-> State: Review
+> State: Merged
 > Branch: `codex/obp-prod-004-routing`
 > Depends on: `OBP-PROD-003` merged — satisfied locally at `3216f1d` (D-027)
 
@@ -45,4 +45,5 @@ Public API/UI, default rollout, mailbox/push-wake delivery and wire redesign.
 ## Local evidence
 
 [Implementation, verification and limits](../outputs/OBP_PROD_004_IMPLEMENTATION.md).
-Task-004 changes remain uncommitted; no merge, remote push or activation.
+Implementation `8f7d327`, merged as `2c39117` and pushed to `origin/main`
+under D-028. Routing branch also pushed. No live-host/network activation.

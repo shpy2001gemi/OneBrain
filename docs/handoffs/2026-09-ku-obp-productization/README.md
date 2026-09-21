@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **Retained baseline through OBP-PROD-003 merged locally (D-027); OBP-PROD-004 implemented/tested locally, in Review**
+> Status: **Baseline through OBP-PROD-004 merged and pushed (D-028); OBP-API-001 Planned**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -9,10 +9,12 @@ This folder is the compact starting point for future conversations. It records
 the decision, the evidence boundary, the dependency order and one bounded file
 per task so a new conversation does not need the history that produced it.
 
-Latest owner direction (2026-09-21, D-027): merge the retained baseline and continue
-the product framework; semantic quality gaps remain deferred to contributors. Start with [NEXT_CONVERSATION.md](NEXT_CONVERSATION.md).
-The full local baseline is in `C:/Users/shpy2/Documents/OneBrain`, on `codex/obp-prod-004-routing`; preserve its uncommitted task-004 files.
-Local merge: `3216f1d`; no remote push. V2 remains inactive on the live host; acceptance does not qualify a model.
+Latest owner direction (2026-09-21, D-028): merge task 004 and push the complete
+retained baseline. Completed: implementation `8f7d327`, merge `2c39117` on
+`origin/main`; routing branch also pushed. Original workspace remains
+`C:/Users/shpy2/Documents/OneBrain`, now on `main`. Start with
+[NEXT_CONVERSATION.md](NEXT_CONVERSATION.md). Semantic quality work remains
+deferred; the live host and default-off networking remain unchanged.
 
 ## Owner-approved decision
 
@@ -48,11 +50,10 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`OBP-PROD-004`](tasks/13-OBP-PROD-004.md) — Review;
-[routing implementation and checks](outputs/OBP_PROD_004_IMPLEMENTATION.md) on
-`codex/obp-prod-004-routing`. The retained baseline was merged locally as
-`3216f1d` under D-027. Task-004 changes remain uncommitted in the original tree;
-no remote push or live-host activation. OBP-API-001 retains its prerequisite.
+**Current task:** [`OBP-API-001`](tasks/14-OBP-API-001.md) — Planned,
+dependency-ready after task 004 merge `2c39117`. Read its own contract and
+transport prerequisites before implementation. Completed routing evidence:
+[OBP-PROD-004](outputs/OBP_PROD_004_IMPLEMENTATION.md).
 
 The following Web/encoder checkpoints are historical context; they do not override the current task or the new handoff.
 **Historical Web branch:** `codex/ku-web-001-workflow`; manual and experimental Ollama Web implementation ready for review.
