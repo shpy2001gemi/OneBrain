@@ -3,7 +3,8 @@
 2026-09-22. Original workspace `C:/Users/shpy2/Documents/OneBrain`, branch
 `codex/obp-cli-001-networking`, clean starting main `b66780f`. API `de04a57`
 remains unchanged in merge `7d37a30` under D-030. D-029 approval is satisfied.
-These CLI changes are retained locally, uncommitted; no push or merge occurred.
+Accepted under D-031: implementation `e0dcc7d`, merge `04bcb30`, published
+with the retained CLI branch. Earlier local-state descriptions are historical.
 
 ## Implementation
 
@@ -104,3 +105,10 @@ multi-host discovery, NAT failover, public advertisement, live peer delivery,
 cross-platform qualification or rollout acceptance. Those remain separate tasks.
 Model tuning, mobile, Web implementation and default networking remain outside
 scope. Existing API/node evidence is retained, not relabeled as a fresh full rerun.
+
+## Merge closure — D-031
+
+Fresh checks passed: CLI 51 unit + two integration, Python 25, vNext validator
+and whitespace. Implementation `e0dcc7d` merged without conflict as `04bcb30`.
+Main and the CLI branch are published. Next: OBP-WEB-001, Planned. No live-host
+or API/node implementation changes occurred.

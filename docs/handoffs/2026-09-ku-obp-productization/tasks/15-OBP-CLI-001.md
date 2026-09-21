@@ -1,6 +1,6 @@
 # OBP-CLI-001 — Networking CLI workflow
 
-> State: Review (local, uncommitted)
+> State: Merged (D-031, `04bcb30`)
 > Branch: `codex/obp-cli-001-networking`
 > Depends on: `OBP-API-001` merged
 
