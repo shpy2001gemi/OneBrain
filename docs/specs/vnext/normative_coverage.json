@@ -556,7 +556,7 @@
         },
         {
           "path": "src/onebrain-desktop/src/tray.rs",
-          "needle": "crate::commands::shutdown_node(node).await"
+          "needle": "crate::commands::finish_exit(app, restart).await"
         }
       ],
       "rationale": "Separate UI trust surfaces, source-checked semantic labels, cross-language consent-receipt vectors and process-level graceful restart enforce the P3.4 boundaries without changing legacy endpoint meaning."

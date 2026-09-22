@@ -1,7 +1,26 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { setToken } from '../api/client';
 import { api } from '../api/client';
-import { isTauri } from '../api/tauri';
+import { getApiConfig, isTauri } from '../api/tauri';
+
+function DesktopAuthGate({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState('Waiting for the local Desktop backend');
+  useEffect(() => {
+    let active = true;
+    const cleanups: (() => void)[] = [];
+    const read = async () => {
+      try { await getApiConfig(); if (active) setReady(true); }
+      catch { if (active) setError('Local backend is starting or unavailable. If it does not become ready, use the tray Restart action.'); }
+    };
+    void import('@tauri-apps/api/event').then(async ({ listen }) => {
+      const cleanup = await listen('backend-ready', () => { void read(); });
+      if (active) { cleanups.push(cleanup); void read(); } else cleanup();
+    }).catch(() => { if (active) setError('Desktop credential handoff unavailable'); });
+    return () => { active = false; cleanups.forEach(cleanup => cleanup()); };
+  }, []);
+  return ready ? <>{children}</> : <main className="glass-card" role="status">{error}</main>;
+}
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const [hasToken, setHasToken] = useState(() => !!localStorage.getItem('ob_api_token'));
@@ -11,7 +30,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   // Desktop mode: skip auth (managed by Tauri backend)
   if (isTauri()) {
-    return <>{children}</>;
+    return <DesktopAuthGate>{children}</DesktopAuthGate>;
   }
 
   const handleSubmit = async () => {

@@ -1,5 +1,11 @@
 # 🖥️ OneBrain Desktop — Thiết kế Kiến trúc
 
+> Historical scaffold design. For the OBP networking surface, the accepted
+> [Desktop projection](../../docs/specs/vnext/OBP_LOCAL_DESKTOP_PROJECTION_V1.md)
+> and [implementation notes](README.md#obp-desk-001) supersede the old startup,
+> authentication and event examples below. OBP uses authenticated REST/private WS,
+> defaults off, and never starts or tunes a model from the shell.
+
 > **Tauri 2.x + React (onebrain-web) + Rust (onebrain-node)**
 > Mỗi user chạy node riêng trên máy cá nhân — đúng triết lý phi tập trung.
 

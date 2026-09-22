@@ -1,59 +1,61 @@
-# Next conversation — OBP Desktop integration
+# Next conversation — Accepted OBP Desktop, Git closure pending
 
-OBP-WEB-001 is accepted and merged under D-032: implementation `cade635`,
-merge `7f49eeb`. Main and the retained Web branch are published. CLI merge
-`04bcb30` and API merge `7d37a30` remain unchanged in ancestry. D-029 transport
-approval is satisfied; do not ask again.
+OBP-DESK-001 review is owner-accepted under D-033 and remains locally in Review on
+`codex/obp-desk-001-networking`, original `C:/Users/shpy2/Documents/OneBrain`.
+Starting main was `636c113`; all changes remain uncommitted. Inspect Git status
+and preserve every change and retained branch. No push or merge has occurred.
 
-Use original `C:/Users/shpy2/Documents/OneBrain` on main. Inspect Git status
-and preserve any subsequent changes. Retain Web/CLI/API branches.
+Web merge `7f49eeb` (D-032), CLI `04bcb30` and API `7d37a30` remain ancestors.
+D-029 transport approval is satisfied; do not ask again. API/node/CLI code is unchanged.
 
 ## Read set
 
-1. AGENTS.md and applicable subtree rules.
-2. [PROGRESS](PROGRESS.md), [DECISIONS](DECISIONS.md), D-024..D-032 and [README](README.md).
-3. [Task 17 — OBP-DESK-001](tasks/17-OBP-DESK-001.md), including Desktop shell,
-   supervision, local authentication, packaging and lifecycle/budget references.
-4. [Web projection](../../specs/vnext/OBP_LOCAL_WEB_PROJECTION_V1.md),
+1. AGENTS.md, [PROGRESS](PROGRESS.md), [DECISIONS](DECISIONS.md), [README](README.md).
+2. [Task 17](tasks/17-OBP-DESK-001.md),
+   [Desktop projection](../../specs/vnext/OBP_LOCAL_DESKTOP_PROJECTION_V1.md),
+   [Desktop evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md), and
+   [Desktop build/host notes](../../../src/onebrain-desktop/README.md).
+3. [Web projection](../../specs/vnext/OBP_LOCAL_WEB_PROJECTION_V1.md),
    [Web evidence](outputs/OBP_WEB_001_IMPLEMENTATION.md),
-   [API/private WS](../../specs/vnext/OBP_LOCAL_API_PROFILE_V1.md) and
-   [product contract](../../specs/vnext/OBP_PRODUCT_ORCHESTRATION_PROFILE_V1.md).
-5. [API evidence](outputs/OBP_API_001_IMPLEMENTATION.md),
-   [CLI evidence](outputs/OBP_CLI_001_IMPLEMENTATION.md), and applicable runtime
-   ownership, lifecycle, concurrency and resource-budget profiles named by task 17.
+   [API/private WS](../../specs/vnext/OBP_LOCAL_API_PROFILE_V1.md),
+   [product contract](../../specs/vnext/OBP_PRODUCT_ORCHESTRATION_PROFILE_V1.md),
+   [API evidence](outputs/OBP_API_001_IMPLEMENTATION.md),
+   [CLI evidence](outputs/OBP_CLI_001_IMPLEMENTATION.md).
+4. Runtime ownership, lifecycle, concurrency, budgets and rollback contracts.
 
-## Next task and boundaries
+## Current result and next action
 
-OBP-DESK-001 is Planned, dependency-ready. When implementation is requested,
-use `codex/obp-desk-001-networking` from updated main. This closure implements
-no Desktop changes. Reuse one node-owned service; no second identity/runtime.
-Preserve disabled/kill generation, durable intent, local credential handoff,
-sleep/resume and clean-exit semantics. Exact interactions must be registered
-before adding any new product behavior.
+Owner review is accepted. Git closure awaits explicit owner direction; do not
+request another approval of the same implementation or transport. One supervisor owns the
+supplied node, shared API router and event bridge. Credential handoff is local,
+memory-only and gated on listener readiness. Windows suspend/resume/interface
+changes withdraw execution, stop networking and require explicit Restart.
+The existing shared node stores retain identity, disabled generations and pending
+intent. Desktop persists one bounded credential-free command recovery record;
+restart only restores reconciliation, never replay. Tray status remains scoped.
 
-Web supports the 13 accepted operations and metadata reconcile. Host intake,
-control and management remain explicit in-process prerequisites. No upload,
-capability minting, raw-address fallback, peer-directory, outbox-list,
-source-delete or intent-cancel endpoint exists. Unknown outcomes retain the
-original key/context; WS gaps only refresh reads. Source disable retains replay
-floors. Advertising remains a separate explicit opt-in with host preview.
+Tests pass: six OBP Desktop integration tests, four feature-off tests, 89 Web
+tests, two receipt tests, 35 Python tests, Web build/lint and vNext validator.
+Windows Tauri debug asset build passes. See evidence for feature/build details.
+Native OS event APIs are wired; real sleep/network-switch, native WebView E2E,
+installer signing, macOS/Linux networking and NAT qualification are not claimed.
+The stock host remains local-only without native hooks; custom network hosts
+fail closed. OBP provisioning remains an explicit in-process host prerequisite.
 
-Fresh closure checks: 82 Web tests, build, 25 Python tests and vNext validator.
-Prior receipt, lint and isolated Chromium/axe evidence retains its stated scope;
-no new real-node/browser, multi-host/NAT or platform qualification is claimed.
-
-Preserve OneBrainLocal, Registry, jobs, keys and Ollama. Keep D-024 tuning
-Deferred. No networking activation, live-host change, mobile, v2 host activation,
-default rollout or qualification claim is included.
+OBP-QA-001 stays Planned until the Desktop merge prerequisite is met. Do not
+start another task or publish/merge these local changes without owner direction.
+Preserve OneBrainLocal, Registry, jobs, keys, Ollama and deferred D-024 tuning.
+No networking activation, mobile, v2 host activation or default rollout is included.
 
 ## Copy into a new conversation
 
 ```text
 Hãy đọc AGENTS.md và docs/handoffs/2026-09-ku-obp-productization/NEXT_CONVERSATION.md
 trên working tree gốc C:/Users/shpy2/Documents/OneBrain.
-OBP-WEB-001 đã merge tại 7f49eeb và push theo D-032; API/CLI giữ nguyên.
-D-029 đã chấp thuận, không hỏi lại transport approval. Đọc PROGRESS, task 17,
-Web/API/private-WS và lifecycle contracts/evidence; kiểm tra git status, giữ mọi
-thay đổi rồi triển khai OBP-DESK-001 đúng scope. Không tuning model, không tự bật
-networking hay thay đổi live host. Desktop phải dùng một shared node-owned service.
+OBP-DESK-001 đang Review local trên codex/obp-desk-001-networking; giữ toàn bộ
+thay đổi chưa commit. Đọc PROGRESS, task 17, Desktop projection/evidence và
+Web/API/private-WS/lifecycle contracts. Review đã được duyệt theo D-033;
+không yêu cầu duyệt lại. Git closure chờ chỉ thị rõ ràng.
+D-029 đã duyệt, không hỏi lại. Không tuning model, bật networking hay đổi live host.
+Desktop phải dùng một shared node-owned service. Chưa merge hoặc bắt đầu OBP-QA-001.
 ```

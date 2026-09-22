@@ -1,6 +1,6 @@
 # OBP-DESK-001 — Desktop networking integration
 
-> State: Planned
+> State: Review
 > Branch: `codex/obp-desk-001-networking`
 > Depends on: `OBP-WEB-001` merged
 
@@ -35,3 +35,14 @@ process lifecycle, local credential boundary and sleep/resume behavior.
 ## Excluded
 
 Mobile, browser/WASM carrier, default enablement and release qualification.
+
+## Registered Desktop interactions
+
+See [Desktop projection](../../../specs/vnext/OBP_LOCAL_DESKTOP_PROJECTION_V1.md).
+The existing explicit Restart action reconstructs dependencies after native
+lifecycle fencing. Host provisioning remains in-process; no automatic network
+activation or new OBP operation is included.
+
+[Implementation evidence and platform limits](../outputs/OBP_DESK_001_IMPLEMENTATION.md).
+Owner accepted review under D-033. All changes remain local/uncommitted;
+Git closure awaits explicit direction and no merge is claimed.
