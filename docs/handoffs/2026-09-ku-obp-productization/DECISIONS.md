@@ -1,5 +1,16 @@
 # Decisions and claim boundary
 
+## D-032 — Accept OBP-WEB-001 review and close the task
+
+The owner stated “tôi đã duyệt review” after the completed Web implementation
+and evidence were presented, then directed continuation after usage reset.
+This accepts OBP-WEB-001 and its closure through commit, merge and publication.
+Preserve the reviewed implementation and retained task branches. Record the
+actual merge in PROGRESS once it exists; hand off OBP-DESK-001 as Planned.
+This closure does not implement Desktop, activate networking, change the live
+host or models, qualify platforms, or enable default rollout. D-029 remains
+satisfied without another transport approval.
+
 > Authority: owner-approved workstream direction, 2026-09-05.
 > This file controls planning and product wording; it does not supersede a
 > frozen protocol contract or founder directive.

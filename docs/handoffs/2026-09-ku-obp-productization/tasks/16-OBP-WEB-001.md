@@ -1,6 +1,6 @@
 # OBP-WEB-001 — Local Web networking workflow
 
-> State: Planned
+> State: Review — local implementation, 2026-09-22
 > Branch: `codex/obp-web-001-networking`
 > Depends on: `OBP-API-001` merged
 
@@ -16,6 +16,11 @@ the accepted local API/private event stream.
 - accepted OBP product/API contracts
 - current Web design tokens, component/pattern rules and network-related UI
 - private WebSocket security/backpressure profile
+
+Registered interactions: [Web projection](../../../specs/vnext/OBP_LOCAL_WEB_PROJECTION_V1.md).
+Implementation and verification: [evidence](../outputs/OBP_WEB_001_IMPLEMENTATION.md).
+API/node/CLI implementation remains unchanged. Host provisioning, raw import,
+peer-directory/outbox-list and live-host activation remain outside this adapter.
 
 ## Deliverable
 
