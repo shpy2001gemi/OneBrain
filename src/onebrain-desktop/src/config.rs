@@ -122,7 +122,7 @@ impl Default for DesktopConfig {
             concept_registry_cache_capacity: default_registry_cache_capacity(),
             concept_registry_release_root: None,
             concept_registry_release_public_key: None,
-            auto_start: true,
+            auto_start: false,
             first_run_done: false,
         }
     }

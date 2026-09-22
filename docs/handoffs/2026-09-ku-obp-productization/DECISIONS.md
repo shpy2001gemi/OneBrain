@@ -1,5 +1,36 @@
 # Decisions and claim boundary
 
+## D-034 — Merge and publish OBP-DESK-001
+
+After accepting Desktop review under D-033, the owner explicitly instructed
+“merge và push nhé”. This authorizes committing the complete reviewed local
+OBP-DESK-001 changes, merging the retained Desktop branch into main and publishing
+both branches. Record the actual merge only after it exists. D-033's pending Git
+closure condition is satisfied by this instruction.
+
+Preserve the original workspace and all retained branches. Advance the handoff
+to OBP-QA-001, Planned, after the merge; do not start QA during this closure.
+The accepted implementation limits remain. No live-host change, networking
+activation, model tuning, mobile, qualification or default rollout is authorized.
+
+## D-033 — Accept OBP-DESK-001 review
+
+The owner stated “tôi đồng ý duyệt review” after the local Desktop implementation,
+verification results and explicit platform limits were presented. This accepts
+the reviewed OBP-DESK-001 implementation and its registered Desktop projection.
+No further approval of the same implementation or D-029 transport is required.
+
+The accepted scope uses one shared node-owned service, local credential handoff,
+Windows lifecycle fencing, explicit process restart and durable client recovery.
+The stated native WebView, real sleep/network-switch, other-OS and NAT qualification
+limits remain. API/node/CLI and the live host remain unchanged.
+
+This message approves review; it does not explicitly request commit, publication,
+merge, branch deletion or next-task implementation. Under D-010 and the current
+handoff, retain the local changes and record owner acceptance while the task stays
+Review until an actual authorized merge exists. OBP-QA-001 remains Planned.
+No networking activation, model tuning, mobile or default rollout is authorized.
+
 ## D-032 — Accept OBP-WEB-001 review and close the task
 
 The owner stated “tôi đã duyệt review” after the completed Web implementation

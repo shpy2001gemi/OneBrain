@@ -3612,10 +3612,16 @@ dependencies = [
 name = "onebrain-desktop"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "dirs",
+ "ed25519-dalek",
+ "futures",
  "hostname",
+ "ku-core",
+ "ku-kql",
  "onebrain-api",
  "onebrain-node",
+ "onebrain-protocol",
  "open",
  "rand 0.8.6",
  "reqwest 0.12.28",
@@ -3630,9 +3636,14 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-store",
  "tauri-plugin-window-state",
+ "tempfile",
  "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
  "toml 0.8.2",
+ "tower-http",
  "tracing",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5972,6 +5983,7 @@ dependencies = [
  "bytes",
  "futures-core",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

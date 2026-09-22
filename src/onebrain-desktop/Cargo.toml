@@ -21,6 +21,11 @@ test = false
 
 [features]
 default = []
+vnext-outbound-first = [
+    "vnext-network-runtime",
+    "onebrain-node/vnext-outbound-first",
+    "onebrain-api/vnext-outbound-first",
+]
 vnext-network-runtime = [
     "onebrain-node/vnext-network-runtime",
     "onebrain-api/vnext-network-runtime",
@@ -57,3 +62,18 @@ dirs = "6"
 reqwest = { version = "0.12", features = ["json"] }
 hostname = "0.4"
 open = "5"
+axum = "0.8"
+tower-http = { version = "0.6", features = ["cors"] }
+tempfile = "3"
+tokio-util = { version = "0.7", features = ["rt"] }
+
+[dev-dependencies]
+ku-core = { path = "../ku-core" }
+ku-kql = { path = "../ku-kql" }
+ed25519-dalek = "2"
+tokio-tungstenite = "0.29"
+futures = "0.3"
+onebrain-protocol = { path = "../onebrain-protocol" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Power", "Win32_UI_WindowsAndMessaging", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock"] }

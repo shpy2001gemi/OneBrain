@@ -5,7 +5,7 @@ use onebrain_node::OneBrainNode;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
 use tokio::sync::Mutex;
 
 // ─── API / Node Info ───────────────────────────────────────────────────────
@@ -13,13 +13,24 @@ use tokio::sync::Mutex;
 /// Return the API base URL and bearer token so the frontend can call the
 /// REST/WebSocket API directly.
 #[tauri::command]
-pub async fn get_api_config(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+pub async fn get_api_config(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    local_main(&window)?;
+    if !state.supervisor.ready() {
+        return Err("Desktop backend unavailable; restart required after lifecycle change".into());
+    }
     let port = state
         .api_port
         .get()
         .copied()
-        .unwrap_or(state.config.api_port);
-    let token = state.api_token.get().cloned().unwrap_or_default();
+        .ok_or("desktop_backend_starting")?;
+    let token = state
+        .api_token
+        .get()
+        .cloned()
+        .ok_or("desktop_backend_starting")?;
 
     Ok(json!({
         "baseUrl": format!("http://127.0.0.1:{}", port),
@@ -86,16 +97,113 @@ pub(crate) async fn shutdown_node(node: Option<Arc<Mutex<OneBrainNode>>>) {
 /// caller-owned vNext runtime dependencies are rebuilt safely.
 #[tauri::command]
 pub async fn restart_node(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    shutdown_node(state.node.get().cloned()).await;
-    app.restart()
+    let _ = state;
+    finish_exit(app, true).await;
+    Ok(())
 }
 
 /// Gracefully quit the application.
 #[tauri::command]
 pub async fn quit_app(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
-    shutdown_node(state.node.get().cloned()).await;
-    app.exit(0);
+    let _ = state;
+    finish_exit(app, false).await;
     Ok(())
+}
+
+pub(crate) async fn finish_exit(app: tauri::AppHandle, restart: bool) {
+    let state = app.state::<AppState>();
+    state.supervisor.fence();
+    let startup = state.startup.lock().unwrap().take();
+    if let Some(task) = startup {
+        task.abort();
+        let _ = task.await;
+    }
+    state.supervisor.shutdown().await;
+    // Kept as a defensive final node drain for an initialization interruption.
+    shutdown_node(state.node.get().cloned()).await;
+    if state
+        .exit_started
+        .swap(true, std::sync::atomic::Ordering::SeqCst)
+    {
+        return;
+    }
+    if restart {
+        app.restart();
+    } else {
+        app.exit(0);
+    }
+}
+
+fn local_main(window: &tauri::WebviewWindow) -> Result<(), String> {
+    let url = window.url().map_err(|_| "desktop_origin_unavailable")?;
+    let packaged = matches!(
+        (url.scheme(), url.host_str()),
+        ("tauri", Some("localhost")) | ("http", Some("tauri.localhost"))
+    );
+    let dev = cfg!(debug_assertions)
+        && url.scheme() == "http"
+        && url.host_str() == Some("localhost")
+        && url.port() == Some(5173);
+    if window.label() == "main" && (packaged || dev) {
+        Ok(())
+    } else {
+        Err("desktop_local_main_required".into())
+    }
+}
+
+#[tauri::command]
+pub fn desktop_lifecycle_status(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<&'static str, String> {
+    local_main(&window)?;
+    Ok(if state.supervisor.stopped() {
+        "Restart required after lifecycle change or startup failure"
+    } else if state
+        .lifecycle_unavailable
+        .load(std::sync::atomic::Ordering::SeqCst)
+    {
+        "Local-only mode; native lifecycle adapter unavailable, peer networking disabled"
+    } else if state.supervisor.ready() {
+        "Local API ready; network state is separate"
+    } else {
+        "Local backend starting"
+    })
+}
+
+#[tauri::command]
+pub async fn desktop_recovery_load(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    local_main(&window)?;
+    let _guard = state.recovery_lock.lock().await;
+    crate::recovery::load(&crate::config::DesktopConfig::config_dir().join("obp-pending-v1.json"))
+        .map_err(str::to_owned)
+}
+#[tauri::command]
+pub async fn desktop_recovery_save(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+    record: String,
+) -> Result<(), String> {
+    local_main(&window)?;
+    let _guard = state.recovery_lock.lock().await;
+    crate::recovery::save(
+        &crate::config::DesktopConfig::config_dir().join("obp-pending-v1.json"),
+        &record,
+    )
+    .map_err(str::to_owned)
+}
+#[tauri::command]
+pub async fn desktop_recovery_clear(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    local_main(&window)?;
+    let _guard = state.recovery_lock.lock().await;
+    crate::recovery::clear(&crate::config::DesktopConfig::config_dir().join("obp-pending-v1.json"))
+        .map_err(str::to_owned)
 }
 
 // ─── First-Run Wizard ──────────────────────────────────────────────────────

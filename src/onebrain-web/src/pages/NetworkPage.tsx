@@ -5,6 +5,9 @@ import type { ObpClient, Page, Recovery, Result, Snapshot } from '../api/obp';
 import { hexId, operations, sourceKinds, validate } from '../api/obpContract';
 import type { Fields } from '../api/obpContract';
 import './obpNetwork.css';
+import { loadObpRecovery, saveObpRecovery, clearObpRecovery } from '../api/obpRecovery';
+import { DesktopLifecycle } from '../components/DesktopLifecycle';
+import { isTauri } from '../api/tauri';
 
 const defaultClient = createObpClient(getPrivateApiConnection);
 export const recoveryKey = 'obp.web.pending.v1';
@@ -63,9 +66,29 @@ export function NetworkPage({ client = defaultClient }: { client?: ObpClient }) 
     finally { locked.current = false; if (mounted.current) setBusy(false); }
   };
   useEffect(() => {
+    if (!isTauri()) return;
+    let active = true;
+    let unlisten: (() => void) | undefined;
+    void import('@tauri-apps/api/event').then(async ({ listen }) => {
+      const cleanup = await listen('desktop-lifecycle', () => {
+        stopStream.current?.(); stopStream.current = undefined;
+        setManagement(''); setPreview(undefined); setConfirmation('');
+        setStream('Desktop lifecycle changed — restart required; retain pending command for reconciliation');
+        clearDetails(); snapshotRef.current = undefined; setSnapshot(undefined);
+        readEpoch.current++;
+      });
+      if (active) unlisten = cleanup; else cleanup();
+    }).catch(() => { if (active) setError('Desktop lifecycle listener unavailable; refresh local observations'); });
+    return () => { active = false; unlisten?.(); };
+  }, [clearDetails]);
+  useEffect(() => {
     mounted.current = true;
-    try { const stored = sessionStorage.getItem(recoveryKey); if (stored) setPending(readRecovery(stored)); }
-    catch { setStorageBlocked(true); setError('Recovery storage is unavailable or invalid. Commands are blocked; preserve this tab for operator recovery.'); }
+    setStorageBlocked(true);
+    void loadObpRecovery().then(stored => {
+      if (!mounted.current) return;
+      if (stored) setPending(readRecovery(stored));
+      setStorageBlocked(false);
+    }).catch(() => { if (mounted.current) { setStorageBlocked(true); setError('Recovery storage is unavailable or invalid. Commands are blocked; retain the original key for operator recovery.'); } });
     void refresh();
     // This ref owns the latest socket, not a DOM node captured at mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -101,7 +124,7 @@ export function NetworkPage({ client = defaultClient }: { client?: ObpClient }) 
     if (operations.find(o => o.name === preview.operation)?.access === 'host_management' && !canManage) {
       throw new ObpError('Host-issued management capability required before confirmation');
     }
-    sessionStorage.setItem(recoveryKey, JSON.stringify(preview)); setPending(preview); setPreview(undefined); setConfirmation('');
+    await saveObpRecovery(JSON.stringify(preview)); setPending(preview); setPreview(undefined); setConfirmation('');
     const record = preview;
     try {
       const result = await client.command(record, management); setOutcome(result.data);
@@ -140,7 +163,7 @@ export function NetworkPage({ client = defaultClient }: { client?: ObpClient }) 
   const button = (operation: string, extra: Fields = {}, disabled = false, title?: string) => <button className="btn" disabled={!canMutate || disabled || (operations.find(o => o.name === operation)?.access === 'host_management' && !canManage)} onClick={() => void run(() => prepare(operation, extra))}>{title || labels[operation]}</button>;
   const resolved = ['completed', 'failed_no_effect', 'not_admitted'].includes(String(outcome?.state));
   return <div className="page obp-network" aria-busy={busy}>
-    <header className="page-header"><h1>Network</h1><p>Local node observations · outbound reachability</p></header>
+    <header className="page-header"><DesktopLifecycle /><h1>Network</h1><p>Local node observations · outbound reachability</p></header>
     <p>DNS/IP locates a source. Cryptographic identity authenticates the exact peer. A relay provides availability, not trust or delivery. These bounded observations never prove global completeness or authorize rewards. KU remains usable offline.</p>
     <div className="obp-actions"><button className="btn" disabled={busy} onClick={() => void run(refresh)}>Refresh observations</button><button className="btn" disabled={busy || !available} onClick={() => void run(connectHints)}>Connect private hints</button></div>
     <p role="status">{stream}</p><div role="alert">{error}</div>
@@ -153,7 +176,7 @@ export function NetworkPage({ client = defaultClient }: { client?: ObpClient }) 
       {preview && !pending && <><p>This action can change local policy or schedule bounded traffic. Confirm only the previewed action.</p><label htmlFor="obp-confirm">Type the exact idempotency key</label><input ref={confirmInput} id="obp-confirm" className="input" maxLength={64} autoComplete="off" value={confirmation} onChange={e => setConfirmation(e.target.value)} /><div className="obp-actions"><button className="btn" disabled={busy || confirmation !== preview.payload.idempotency_key} onClick={() => void run(dispatch)}>Confirm command</button><button className="btn" disabled={busy} onClick={() => setPreview(undefined)}>Discard preview</button></div></>}
       {pending && <><p>Retained in this tab for refresh/restart recovery. No automatic replay. An unknown or missing outcome does not establish that an effect never happened.</p><button className="btn" disabled={busy} onClick={() => void run(async () => { const r = await client.reconcile(pending); setOutcome(r.data); await refresh(); })}>Reconcile original key</button>
         {outcome && <><Details value={Object.fromEntries(Object.entries(outcome).filter(([k]) => !['result', 'failure'].includes(k)))} /><p>{outcome.state === 'completed' ? 'Recorded command completed. Metadata alone does not supply its result or prove delivery. Inspect current route/intent separately.' : outcome.state === 'failed_no_effect' || outcome.state === 'not_admitted' ? 'This attempt reports no effect. Review the failure before preparing a new action.' : 'Outcome unresolved. Preserve this key; do not resubmit.'}</p>{!!outcome.failure && <Details value={outcome.failure as Fields} />}</>}
-        {resolved && <button className="btn" disabled={busy} onClick={() => void run(async () => { sessionStorage.removeItem(recoveryKey); setPending(undefined); setOutcome(undefined); })}>Acknowledge recorded outcome</button>}</>}
+        {resolved && <button className="btn" disabled={busy} onClick={() => void run(async () => { await clearObpRecovery(); setPending(undefined); setOutcome(undefined); })}>Acknowledge recorded outcome</button>}</>}
     </section>}
     <div className="obp-grid">
       <section className="glass-card" aria-labelledby="obp-sources"><h2 id="obp-sources">Bootstrap and source health</h2><p>Import uses an existing host-issued input reference. File/QR/pasted invitation intake is unavailable here; the trusted host must validate and register it first.</p>

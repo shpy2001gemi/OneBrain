@@ -9,34 +9,62 @@
 //! - [`setup`] — first-run wizard backend helpers
 
 mod commands;
-mod config;
+pub mod config;
 mod events;
+mod local_listener;
+mod platform;
+mod recovery;
 mod setup;
 mod state;
+pub mod supervisor;
 mod tray;
 
 use config::DesktopConfig;
 use onebrain_node::OneBrainNode;
 use state::AppState;
+use std::future::Future;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
-use tokio::sync::Mutex;
 
-/// Generate a 32-character hex token for API authentication.
+/// Generate a 256-bit random hex token for API authentication.
 fn generate_token() -> String {
     use rand::Rng;
     let mut rng = rand::thread_rng();
-    let bytes: [u8; 16] = rng.gen();
+    let bytes: [u8; 32] = rng.gen();
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// Main entry point — builds and runs the Tauri application.
 pub fn run() {
-    // ── 1. Load or create default config (sync) ────────────────────────
-    let config = DesktopConfig::load().unwrap_or_default();
-    let node_config = config.to_node_config();
-    std::fs::create_dir_all(&node_config.data_dir).ok();
+    run_host(true, |config, supervisor| async move {
+        let mut node = OneBrainNode::new(config.to_node_config())
+            .await
+            .map_err(|_| "desktop_node_init_failed")?;
+        if config.auto_start && !supervisor.stopped() {
+            node.start_network()
+                .await
+                .map_err(|_| "desktop_network_start_failed")?;
+        }
+        Ok(supervisor::HostNode::local(node))
+    });
+}
 
+/// Trusted embedding port. A host supplies custody, policy and explicit execution
+/// grants here, using the same node. The packaged default installs no OBP grants.
+pub fn run_with_host<F, Fut>(host: F)
+where
+    F: FnOnce(DesktopConfig, Arc<supervisor::Supervisor>) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<supervisor::HostNode, &'static str>> + Send + 'static,
+{
+    run_host(false, host);
+}
+
+fn run_host<F, Fut>(local_fallback: bool, host: F)
+where
+    F: FnOnce(DesktopConfig, Arc<supervisor::Supervisor>) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<supervisor::HostNode, &'static str>> + Send + 'static,
+{
+    let config = DesktopConfig::load().unwrap_or_default();
     // ── 2. Build the Tauri app ─────────────────────────────────────────
     tauri::Builder::default()
         // ── Plugins ────────────────────────────────────────────────────
@@ -71,84 +99,70 @@ pub fn run() {
             // Set up the system tray.
             tray::setup_tray(app)?;
 
-            // Spawn the async initialisation task.
+            let state = app.state::<AppState>();
+            let supervisor = state.supervisor.clone();
+            let mut cfg = config.clone();
+            match platform::NativeEvents::register(supervisor.clone(), app.handle().clone()) {
+                Ok(events) => {
+                    let _ = state.native_events.set(events);
+                }
+                Err(reason) => {
+                    if local_fallback {
+                        // The stock host has no vNext dependencies; preserve local
+                        // usefulness while refusing legacy automatic networking.
+                        cfg.auto_start = false;
+                        state
+                            .lifecycle_unavailable
+                            .store(true, std::sync::atomic::Ordering::SeqCst);
+                    } else {
+                        supervisor.fence();
+                    }
+                    tracing::error!(reason);
+                }
+            }
             let handle = app.handle().clone();
-            let cfg = config.clone();
-            tauri::async_runtime::spawn(async move {
-                // Create the node.
-                let mut node = match OneBrainNode::new(node_config).await {
-                    Ok(n) => n,
-                    Err(e) => {
-                        eprintln!("[onebrain-desktop] Failed to init node: {}", e);
+            let startup = tauri::async_runtime::spawn(async move {
+                if supervisor.stopped() {
+                    return;
+                }
+                let boot = match host(cfg.clone(), supervisor.clone()).await {
+                    Ok(boot) => boot,
+                    Err(reason) => {
+                        supervisor.fence();
+                        tracing::error!(reason);
                         return;
                     }
                 };
-
-                // Start P2P networking (best-effort — may fail if offline).
-                match node.start_network().await {
-                    Ok(addr) => {
-                        println!("[onebrain-desktop] Network started on {}", addr);
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "[onebrain-desktop] Network start failed (continuing): {}",
-                            e
-                        );
-                    }
-                }
-
-                // Check Ollama connectivity.
-                let ollama_ok = setup::check_ollama(&cfg.ollama_url).await;
-                if ollama_ok {
-                    println!("[onebrain-desktop] Ollama reachable at {}", cfg.ollama_url);
-                } else {
-                    eprintln!(
-                        "[onebrain-desktop] Ollama NOT reachable at {} — AI features disabled",
-                        cfg.ollama_url
-                    );
-                }
-
-                // Wrap in Arc<Mutex> for shared access.
-                let shared = Arc::new(Mutex::new(node));
                 let token = generate_token();
-                let api_port = cfg.api_port;
-
-                // Spawn the REST/WebSocket API server.
-                let api_node = shared.clone();
-                let api_token = token.clone();
-                tokio::spawn(async move {
-                    let server =
-                        onebrain_api::ApiServer::with_shared_node(api_node, api_token, api_port);
-                    if let Err(e) = server.start().await {
-                        eprintln!("[onebrain-desktop] API server error: {}", e);
+                let (node, port) = match supervisor.start(boot, token.clone(), cfg.api_port).await {
+                    Ok(ready) => ready,
+                    Err(reason) => {
+                        supervisor.fence();
+                        tracing::error!(reason);
+                        return;
                     }
-                });
-
-                // Spawn the event bridge (NodeEvent → Tauri event).
-                let event_handle = handle.clone();
-                let event_node = shared.clone();
-                tokio::spawn(async move {
-                    events::run_event_bridge(event_handle, event_node).await;
-                });
-
-                // Publish node-related state to AppState's OnceLock fields.
-                if let Some(state) = handle.try_state::<AppState>() {
-                    let _ = state.node.set(shared);
-                    let _ = state.api_port.set(api_port);
-                    let _ = state.api_token.set(token);
+                };
+                let task = tokio::spawn(events::run_event_bridge(handle.clone(), node.clone()));
+                supervisor.own_auxiliary(task).await;
+                let state = handle.state::<AppState>();
+                let _ = state.node.set(node);
+                let _ = state.api_port.set(port);
+                let _ = state.api_token.set(token);
+                if supervisor.ready() {
+                    let _ = handle.emit("backend-ready", ());
                 }
-
-                // Notify the frontend that the backend is ready.
-                let _ = handle.emit("backend-ready", ());
-
-                println!("[onebrain-desktop] Initialisation complete");
             });
+            *state.startup.lock().unwrap() = Some(startup);
 
             Ok(())
         })
         // ── IPC Command Handlers ───────────────────────────────────────
         .invoke_handler(tauri::generate_handler![
             commands::get_api_config,
+            commands::desktop_recovery_load,
+            commands::desktop_recovery_save,
+            commands::desktop_recovery_clear,
+            commands::desktop_lifecycle_status,
             commands::get_node_data_dir,
             commands::get_app_version,
             commands::is_first_run,
@@ -170,6 +184,31 @@ pub fn run() {
             }
         })
         // ── Run ────────────────────────────────────────────────────────
-        .run(tauri::generate_context!())
-        .expect("error while running OneBrain Desktop");
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry, ()>::new("local-navigation")
+                .on_navigation(|_webview, url| {
+                    matches!(
+                        (url.scheme(), url.host_str()),
+                        ("tauri", Some("localhost")) | ("http", Some("tauri.localhost"))
+                    ) || (cfg!(debug_assertions)
+                        && url.scheme() == "http"
+                        && url.host_str() == Some("localhost")
+                        && url.port() == Some(5173))
+                })
+                .build(),
+        )
+        .build(tauri::generate_context!())
+        .expect("error while building OneBrain Desktop")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                let state = app.state::<AppState>();
+                if !state.exit_started.load(std::sync::atomic::Ordering::SeqCst) {
+                    api.prevent_exit();
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        commands::finish_exit(app, false).await;
+                    });
+                }
+            }
+        });
 }

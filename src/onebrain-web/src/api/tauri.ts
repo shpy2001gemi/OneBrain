@@ -13,49 +13,17 @@ interface ApiConfig {
   token: string;
 }
 
-let cachedConfig: ApiConfig | null = null;
-
-/**
- * Get API configuration.
- * In Tauri: waits for backend to be ready, then fetches from IPC.
- * In browser: reads from localStorage.
- */
+/** Memory-only IPC handoff. Never fall back to a browser credential or port. */
 export async function getApiConfig(): Promise<ApiConfig> {
   if (!isTauri()) {
-    // Browser mode: use localStorage
-    return {
-      baseUrl: localStorage.getItem('ob_api_base') || 'http://127.0.0.1:4280',
-      token: localStorage.getItem('ob_api_token') || '',
-    };
+    return { baseUrl: localStorage.getItem('ob_api_base') || 'http://127.0.0.1:4280', token: localStorage.getItem('ob_api_token') || '' };
   }
-
-  if (cachedConfig) return cachedConfig;
-
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-
-    // Retry until backend is ready (OnceLock populated)
-    for (let i = 0; i < 30; i++) {
-      const cfg = await invoke<ApiConfig & { ready?: boolean }>('get_api_config');
-      if (cfg.token) {
-        cachedConfig = { baseUrl: cfg.baseUrl, token: cfg.token };
-        return cachedConfig;
-      }
-      // Backend not ready yet — wait and retry
-      await new Promise(r => setTimeout(r, 500));
-    }
-
-    // Final attempt
-    const cfg = await invoke<ApiConfig>('get_api_config');
-    cachedConfig = cfg;
-    return cfg;
-  } catch {
-    // Fallback if IPC fails
-    return {
-      baseUrl: 'http://127.0.0.1:4280',
-      token: '',
-    };
-  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  const cfg = await invoke<ApiConfig & { ready: boolean }>('get_api_config');
+  const url = new URL(cfg.baseUrl);
+  if (!cfg.ready || !/^[0-9a-f]{64}$/.test(cfg.token) || url.protocol !== 'http:' || url.hostname !== '127.0.0.1'
+      || !url.port || url.origin !== cfg.baseUrl) throw new Error('Desktop local handoff unavailable');
+  return { baseUrl: cfg.baseUrl, token: cfg.token };
 }
 
 /**

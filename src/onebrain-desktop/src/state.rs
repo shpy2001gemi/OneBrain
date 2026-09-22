@@ -15,6 +15,12 @@ use tokio::sync::Mutex;
 /// the background setup task completes — commands should check `.get()`
 /// before using them.
 pub struct AppState {
+    pub supervisor: Arc<crate::supervisor::Supervisor>,
+    pub startup: std::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
+    pub native_events: OnceLock<crate::platform::NativeEvents>,
+    pub exit_started: std::sync::atomic::AtomicBool,
+    pub lifecycle_unavailable: std::sync::atomic::AtomicBool,
+    pub recovery_lock: Mutex<()>,
     /// Desktop configuration (always available).
     pub config: DesktopConfig,
     /// The shared OneBrain node instance (set after async init).
@@ -30,6 +36,12 @@ impl AppState {
     /// Node fields are left empty and set later via [`OnceLock::set`].
     pub fn new(config: DesktopConfig) -> Self {
         Self {
+            supervisor: Arc::new(crate::supervisor::Supervisor::default()),
+            startup: std::sync::Mutex::new(None),
+            native_events: OnceLock::new(),
+            exit_started: std::sync::atomic::AtomicBool::new(false),
+            lifecycle_unavailable: std::sync::atomic::AtomicBool::new(false),
+            recovery_lock: Mutex::new(()),
             config,
             node: OnceLock::new(),
             api_port: OnceLock::new(),

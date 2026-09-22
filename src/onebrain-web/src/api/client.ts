@@ -13,7 +13,7 @@ import { logDebug } from '../components/DebugConsole';
 import { isTauri, getApiConfig } from './tauri';
 
 let API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:4280';
-let TOKEN = localStorage.getItem('ob_api_token') || '';
+let TOKEN = isTauri() ? '' : localStorage.getItem('ob_api_token') || '';
 let configReady: Promise<void> | null = null;
 
 /** Get the current API base URL (e.g. http://127.0.0.1:4280). */
@@ -38,18 +38,19 @@ function ensureConfig(): Promise<void> {
 }
 
 function getToken(): string {
-  return TOKEN || localStorage.getItem('ob_api_token') || '';
+  return isTauri() ? TOKEN : TOKEN || localStorage.getItem('ob_api_token') || '';
 }
 
 /** Shared local authentication configuration; KU payloads bypass debug logging. */
 export async function getPrivateApiConnection() {
+  if (isTauri()) return getApiConfig();
   await ensureConfig();
   return { baseUrl: API_BASE, token: getToken() };
 }
 
 export function setToken(token: string) {
   TOKEN = token;
-  localStorage.setItem('ob_api_token', token);
+  if (!isTauri()) localStorage.setItem('ob_api_token', token);
 }
 
 // Used by future logout flow

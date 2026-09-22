@@ -3753,11 +3753,21 @@ def validate_vnext_desktop_web_ux_profile(
         ),
         "src/onebrain-desktop/src/commands.rs": (
             "shutdown_network().await",
-            "shutdown_node(state.node.get().cloned()).await;\n    app.restart()",
-            "shutdown_node(state.node.get().cloned()).await;\n    app.exit(0)",
+            "finish_exit(app, true).await;",
+            "finish_exit(app, false).await;",
+            "state.supervisor.shutdown().await;",
+            "shutdown_node(state.node.get().cloned()).await;",
+            "app.restart();",
+            "app.exit(0);",
         ),
         "src/onebrain-desktop/src/tray.rs": (
-            "crate::commands::shutdown_node(node).await;\n                    app.exit(0)",
+            "crate::commands::finish_exit(app, restart).await;",
+        ),
+        "src/onebrain-desktop/src/supervisor.rs": (
+            "self.fence();",
+            "node.lock().await.shutdown_network().await;",
+            "self.stop_sockets.cancel();",
+            "with_graceful_shutdown(stop.cancelled_owned())",
         ),
     }
     for relative, needles in source_contract.items():
