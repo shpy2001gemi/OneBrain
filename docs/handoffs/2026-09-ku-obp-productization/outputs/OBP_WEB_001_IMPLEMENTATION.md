@@ -3,7 +3,8 @@
 2026-09-22. Original workspace `C:/Users/shpy2/Documents/OneBrain`, branch
 `codex/obp-web-001-networking`, clean starting main `2d4d5f4`. CLI merge `04bcb30`
 and API merge `7d37a30` remain ancestors. D-029 transport approval is satisfied.
-Status: Review, local/uncommitted; no push or merge in this continuation.
+Status: Merged under D-032. Implementation `cade635`, merge `7f49eeb`; main
+and retained Web branch published. Earlier local-state descriptions are historical.
 
 ## Implementation
 
@@ -116,3 +117,13 @@ files and no new OBP warnings. Build and vNext contracts pass.
   JS integer ranges fail closed rather than rounding a durable generation.
 - No mobile/Desktop lifecycle, model tuning, default rollout or automatic
   networking activation is included. The branch awaits owner review.
+
+
+## Owner acceptance and merge closure — D-032
+
+The owner accepted the review and directed continuation. Fresh checks passed:
+82 Web tests, production build, 25 Python tests and aggregate vNext validation.
+Implementation `cade635` merged without conflicts as `7f49eeb`. Main and the
+retained Web branch are published. API/node/CLI content remains unchanged;
+OBP-DESK-001 is Planned. No next-task implementation, model tuning, live-host
+change, networking activation or rollout occurred.

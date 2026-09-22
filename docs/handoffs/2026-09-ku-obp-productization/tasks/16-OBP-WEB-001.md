@@ -1,6 +1,6 @@
 # OBP-WEB-001 — Local Web networking workflow
 
-> State: Review — local implementation, 2026-09-22
+> State: Merged — `7f49eeb`, owner acceptance D-032
 > Branch: `codex/obp-web-001-networking`
 > Depends on: `OBP-API-001` merged
 
