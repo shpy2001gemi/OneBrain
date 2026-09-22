@@ -1,0 +1,21 @@
+.obp-network { max-width: 1240px; margin-inline: auto; }
+.obp-network p { line-height: 1.6; margin-block: var(--ob-gap-sm); color: var(--ob-text-secondary); }
+.obp-network h2 { font-size: 1.15rem; margin-bottom: var(--ob-gap-md); }
+.obp-network .glass-card { margin-block: var(--ob-gap-md); min-width: 0; }
+.obp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ob-gap-md); }
+.obp-actions { display: flex; flex-wrap: wrap; gap: var(--ob-gap-sm); margin-block: var(--ob-gap-md); }
+.obp-network label { display: block; margin-block: var(--ob-gap-md) var(--ob-gap-sm); font-weight: 600; }
+.obp-network fieldset { min-width: 0; border: 1px solid var(--ob-glass-border); padding: var(--ob-gap-md); margin-block: var(--ob-gap-md); }
+.obp-network legend { padding-inline: var(--ob-gap-sm); }
+.obp-network pre, .obp-network dd { overflow-wrap: anywhere; white-space: pre-wrap; }
+.obp-network pre { padding: var(--ob-gap-md); background: var(--ob-bg-secondary); }
+.obp-details { display: grid; gap: var(--ob-gap-sm); margin-block: var(--ob-gap-md); }
+.obp-details > div { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 2fr); gap: var(--ob-gap-md); }
+.obp-details dt { color: var(--ob-text-secondary); }
+.obp-network article { border-top: 1px solid var(--ob-glass-border); padding-block: var(--ob-gap-sm); }
+.obp-network [role=alert]:not(:empty) { border: 1px solid var(--ob-error); padding: var(--ob-gap-md); margin-block: var(--ob-gap-md); }
+.obp-network :focus-visible { outline: 2px solid var(--ob-accent-light); outline-offset: 3px; }
+.obp-network button:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+.obp-network select option { background: var(--ob-bg-secondary); }
+@media (max-width: 760px) { .obp-grid { grid-template-columns: minmax(0, 1fr); } .obp-network .glass-card { padding: var(--ob-gap-md); } .obp-details > div { grid-template-columns: minmax(0, 1fr); gap: 2px; } }
+@media (prefers-reduced-motion: reduce) { .obp-network, .obp-network * { animation: none; transition: none; } }
