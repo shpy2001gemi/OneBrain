@@ -1,6 +1,6 @@
 # OBP-DESK-001 — Desktop networking integration
 
-> State: Review
+> State: Merged
 > Branch: `codex/obp-desk-001-networking`
 > Depends on: `OBP-WEB-001` merged
 
@@ -44,5 +44,5 @@ lifecycle fencing. Host provisioning remains in-process; no automatic network
 activation or new OBP operation is included.
 
 [Implementation evidence and platform limits](../outputs/OBP_DESK_001_IMPLEMENTATION.md).
-Owner accepted review under D-033. All changes remain local/uncommitted;
-Git closure awaits explicit direction and no merge is claimed.
+Owner accepted review under D-033 and authorized merge/publication under D-034.
+Implementation `410a6a0` merged as `7e4fc14`; the Desktop branch is retained.

@@ -5,6 +5,13 @@
 
 ## Current checkpoint
 
+- D-034 closure: accepted Desktop implementation `410a6a0` merged without
+  conflicts as `7e4fc14e9ba4082e425d474ef9f7da26129106b0`. Fresh checks passed:
+  six Desktop integration tests, 89 Web tests, 35 Python tests and vNext validator.
+  Main and the retained Desktop branch are published in this closure.
+  Current task: OBP-QA-001, Planned. No QA execution or live-host activation.
+  Earlier local/uncommitted Desktop Review entries below are historical.
+
 - D-033: owner accepted OBP-DESK-001 review (“tôi đồng ý duyệt review”).
   Implementation and evidence are unchanged. State remains Review with owner
   acceptance recorded, pending explicit Git closure direction. Original working
@@ -165,14 +172,14 @@
 - 2026-09-08 owner follow-up: [headless tests and portable proposal experiments](outputs/KU_ENCODER_MODEL_PORTABILITY_EXPERIMENT.md); two requested sources tested locally with Qwen3 8b/1.7b and a separate 3b reviewer. Semantic defects remain explicitly reported; prototype proposals are not canonical KU or integrated Web behavior. Shared preflight now brings span/number/structural compilation errors into the bounded repair allowance.
 - Local follow-up: [schema diagnostics and repair feedback](outputs/KU_WEB_001_SCHEMA_DIAGNOSTICS.md) implemented and tested after owner authorization; these follow-up edits remain uncommitted.
 - Real Vietnamese follow-up remains unsuccessful on the current Web/host Candidate path: the two exact owner sources failed `duplicate_id` (379.26s, water) and `oneof` (451.29s, car) in the 2026-09-08 rebuilt-host API tests. Both test reservations were canceled; neither yielded a validated preview or saved/shared KU. Number/span preflight now reaches the existing repair allowance; earlier `unsupported_number` evidence remains historical. See the [model-portability report](outputs/KU_ENCODER_MODEL_PORTABILITY_EXPERIMENT.md) for separate proposal results and remaining semantic representation gaps.
-- Current task: `OBP-DESK-001` — `Review` (owner accepted D-033; merge pending).
-- Current branch: `codex/obp-desk-001-networking` in the original workspace; Web, CLI and API branches retained.
+- Current task: `OBP-QA-001` — `Planned` (Desktop merged under D-034).
+- Current branch: `main` in the original workspace; Desktop/Web/CLI/API branches retained.
 - Completed review branch: `codex/obp-prod-004-routing`, implementation `8f7d327`.
 - Retained baseline: `437dba0`, merged at `3216f1d` under D-027; now published.
-- Last merge: `7f49eeb` (OBP-WEB-001, D-032), published to `origin/main` in this closure.
-- Next action: Git closure of owner-accepted OBP-DESK-001 when explicitly directed (D-033).
-  Preserve all local changes. D-029 remains satisfied; no transport reapproval.
-  OBP-QA-001 awaits the actual Desktop merge; no next-task work is started.
+- Last merge: `7e4fc14` (OBP-DESK-001, D-034).
+- Next action: OBP-QA-001 when requested, from updated main on its declared branch.
+  Read task 18 and accepted Desktop/Web/API/lifecycle evidence. Keep networking
+  default-off and distinguish local preflight from independent-network evidence.
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**
 - Mobile work authorized by this package: **no**
@@ -197,7 +204,7 @@
 | 14 | `OBP-API-001` | Merged | `codex/obp-api-001-network-api` | `OBP-PROD-004` merged `2c39117` | [Implementation evidence](outputs/OBP_API_001_IMPLEMENTATION.md); merge `7d37a30` on `origin/main`, D-030. |
 | 15 | `OBP-CLI-001` | Merged | `codex/obp-cli-001-networking` | `OBP-API-001` | [Evidence](outputs/OBP_CLI_001_IMPLEMENTATION.md); implementation `e0dcc7d`, merge `04bcb30`, D-031. |
 | 16 | `OBP-WEB-001` | Merged | `codex/obp-web-001-networking` | `OBP-API-001` | [Evidence](outputs/OBP_WEB_001_IMPLEMENTATION.md); implementation `cade635`, merge `7f49eeb`, D-032. |
-| 17 | `OBP-DESK-001` | Review | `codex/obp-desk-001-networking` | `OBP-WEB-001` | [Local evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md); uncommitted, no merge. |
+| 17 | `OBP-DESK-001` | Merged | `codex/obp-desk-001-networking` | `OBP-WEB-001` | [Evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md); implementation `410a6a0`, merge `7e4fc14`, D-034. |
 | 18 | `OBP-QA-001` | Planned | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | â€” |
 | 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | â€” |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | â€” |

@@ -3,7 +3,8 @@
 2026-09-22. Original workspace `C:/Users/shpy2/Documents/OneBrain`, branch
 `codex/obp-desk-001-networking`, clean starting main `636c113`. Web merge
 `7f49eeb`, CLI merge `04bcb30` and API merge `7d37a30` remain ancestors.
-D-029 is satisfied. Work remains local/uncommitted; no push or merge.
+D-029 is satisfied. Merged under D-034: implementation `410a6a0`, merge
+`7e4fc14`. Earlier local/uncommitted descriptions below are historical.
 
 ## Implementation
 
@@ -130,3 +131,12 @@ The owner stated “tôi đồng ý duyệt review”. The implementation and ev
 are accepted with their stated limits. No code changed during this acceptance
 record. Work remains local/uncommitted, with no publication or merge. The task
 stays Review pending explicit Git closure direction; OBP-QA-001 is not started.
+
+## Merge closure — D-034
+
+The owner instructed “merge và push nhé” after D-033 acceptance. Fresh verification
+passed: six Desktop integration tests, 89 Web tests, 35 Python tests and aggregate
+vNext validator. Implementation `410a6a0` merged without conflict as
+`7e4fc14e9ba4082e425d474ef9f7da26129106b0`. Main and the retained Desktop branch
+are published by this closure. API/node/CLI content is unchanged. Next pointer:
+OBP-QA-001, Planned. No QA execution, live-host change, activation or rollout.

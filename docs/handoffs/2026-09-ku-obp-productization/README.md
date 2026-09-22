@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **OBP-DESK-001 review accepted (D-033), Git closure pending**
+> Status: **OBP-DESK-001 merged (D-034); OBP-QA-001 Planned**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -9,12 +9,12 @@ This folder is the compact starting point for future conversations. It records
 the decision, the evidence boundary, the dependency order and one bounded file
 per task so a new conversation does not need the history that produced it.
 
-Current implementation: OBP-DESK-001 review is owner-accepted under D-033,
-remaining in local Review pending explicit Git closure direction on
-`codex/obp-desk-001-networking`; preserve the uncommitted original tree.
+Latest closure (D-034): accepted Desktop implementation `410a6a0` merged as
+`7e4fc14`. Main and the retained Desktop branch are published in this closure.
 See [Desktop evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md) and
-[NEXT_CONVERSATION.md](NEXT_CONVERSATION.md). No live-host activation or merge.
+[NEXT_CONVERSATION.md](NEXT_CONVERSATION.md). The live host remains unchanged.
 
+Historical Web closure follows:
 Latest closure (D-032): accepted OBP-WEB-001 implementation `cade635` merged
 as `7f49eeb`. Main and retained Web branch are published. Read the
 [Web evidence](outputs/OBP_WEB_001_IMPLEMENTATION.md) and updated
@@ -62,11 +62,11 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`OBP-DESK-001`](tasks/17-OBP-DESK-001.md) — Review; Web merged under D-032.
+**Current task:** [`OBP-QA-001`](tasks/18-OBP-QA-001.md) — Planned; Desktop merged under D-034.
 The API dependency was satisfied by `7d37a30` under D-030; CLI is now merged
 at `04bcb30` under D-031. Read the accepted API and private-WS contracts plus
 current Web design rules before further edits. Current Web evidence supersedes
-the earlier Planned checkpoint; Desktop is now in local Review.
+the earlier Planned checkpoint; Desktop is merged under D-034.
 
 The following Web/encoder checkpoints are historical context; they do not override the current task or the new handoff.
 **Historical Web branch:** `codex/ku-web-001-workflow`; manual and experimental Ollama Web implementation ready for review.
