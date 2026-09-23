@@ -15,6 +15,7 @@ import hmac
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -2374,9 +2375,11 @@ def _deterministic_raw_archive(root: Path, epoch: int) -> bytes:
     return encoded
 
 
-def _verified_child_receipts_from_raw(root: Path) -> list[dict[str, object]]:
+def _child_receipt_digests_from_raw(root: Path) -> list[dict[str, object]]:
     receipts: list[dict[str, object]] = []
     for path in sorted(root.glob("child-*.json")):
+        if path.is_symlink() or not path.is_file():
+            raise P5ExecutionError("persisted child receipt is not a regular file")
         encoded = path.read_bytes().rstrip(b"\n")
         try:
             value = json.loads(encoded)
@@ -2384,10 +2387,46 @@ def _verified_child_receipts_from_raw(root: Path) -> list[dict[str, object]]:
             raise P5ExecutionError(f"persisted child receipt is invalid: {path.name}") from error
         if not isinstance(value, dict) or canonical_json(value) != encoded:
             raise P5ExecutionError(f"persisted child receipt is noncanonical: {path.name}")
-        receipts.append(value)
-    if {str(value.get("host_id")) for value in receipts} != set(REQUIRED_HOSTS):
+        host_id = value.get("host_id")
+        sequence = value.get("sequence")
+        if (
+            host_id not in REQUIRED_HOSTS
+            or isinstance(sequence, bool)
+            or not isinstance(sequence, int)
+            or path.name != f"child-{sequence:06d}-{host_id}.json"
+        ):
+            raise P5ExecutionError("persisted child receipt path/identity mismatch")
+        receipts.append({
+            "host_id": host_id,
+            "sequence": sequence,
+            "receipt_blake3": blake3.blake3(encoded).hexdigest(),
+        })
+    if {str(value["host_id"]) for value in receipts} != set(REQUIRED_HOSTS):
         raise P5ExecutionError("persisted child receipt coverage is incomplete")
     return receipts
+
+
+def assert_public_aggregate_privacy(aggregate: Mapping[str, object], inventory: Mapping[str, object]) -> None:
+    """Keep restricted receipt endpoints out of the signed public aggregate."""
+    forbidden_keys = {"peer_endpoints", "bind", "ssh_destination", "interface", "private_key", "password", "raw_error"}
+    ipv4 = re.compile(r"(?<![0-9A-Za-z])(?:[0-9]{1,3}\.){3}[0-9]{1,3}(?![0-9A-Za-z])")
+    hosts = inventory.get("hosts", [])
+    destinations = {
+        str(row["ssh_destination"]).split("@")[-1]
+        for row in hosts if isinstance(row, dict) and isinstance(row.get("ssh_destination"), str)
+    }
+    pending: list[object] = [aggregate]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            if forbidden_keys.intersection(value):
+                raise P5ExecutionError("public P5 aggregate contains a restricted field")
+            pending.extend(value.values())
+        elif isinstance(value, list):
+            pending.extend(value)
+        elif isinstance(value, str):
+            if ipv4.search(value) or any(destination and destination in value for destination in destinations):
+                raise P5ExecutionError("public P5 aggregate contains a host address")
 
 
 def build_signed_production_aggregate(
@@ -2424,7 +2463,7 @@ def build_signed_production_aggregate(
         routes.append(route)
     raw_manifest_blake3, raw_object_count = _raw_manifest(raw_root)
     aggregate: dict[str, object] = {
-        "child_receipts": _verified_child_receipts_from_raw(raw_root),
+        "child_receipt_digests": _child_receipt_digests_from_raw(raw_root),
         "cleanup_complete": cleanup_complete,
         "controller_public_key": controller.public_key().public_bytes_raw().hex(),
         "evidence_authority": _evidence_authority(inventory),
@@ -2446,6 +2485,7 @@ def build_signed_production_aggregate(
     aggregate["qualification"] = derive_qualification(aggregate)
     if not aggregate["qualification"]["multi_host_qualified"]:
         raise P5ExecutionError("real evidence does not derive production-reference qualification")
+    assert_public_aggregate_privacy(aggregate, inventory)
     aggregate_blake3 = blake3.blake3(canonical_json(aggregate)).hexdigest()
     aggregate["aggregate_blake3"] = aggregate_blake3
     aggregate["controller_signature"] = controller.sign(

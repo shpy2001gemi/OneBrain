@@ -983,9 +983,19 @@ def _verify_p5_aggregate_v2(
         != inv.get("controller_application_public_key")
     ):
         raise SoakEvidenceError("P5 V2 aggregate session/controller binding mismatch")
-    child_receipts = aggregate.get("child_receipts")
-    if not isinstance(child_receipts, list) or len(child_receipts) < 3:
-        raise SoakEvidenceError("P5 V2 signed child receipt set is incomplete")
+    if "child_receipts" in aggregate:
+        raise SoakEvidenceError("P5 V2 public aggregate embeds restricted child receipts")
+    child_digests = aggregate.get("child_receipt_digests")
+    if not isinstance(child_digests, list) or len(child_digests) < 3:
+        raise SoakEvidenceError("P5 V2 child receipt digest set is incomplete")
+    try:
+        controller.assert_public_aggregate_privacy(aggregate, inv)
+    except controller.P5ExecutionError as error:
+        raise SoakEvidenceError(str(error)) from error
+    raw_manifest, raw_count = _verify_p5_v2_raw_binding(aggregate, raw_evidence_root)
+    raw_child_paths = sorted(raw_evidence_root.glob("child-*.json"))
+    if len(raw_child_paths) != len(child_digests):
+        raise SoakEvidenceError("P5 V2 raw child receipt count differs from public digests")
     child_hosts: set[str] = set()
     inventory_signers = {
         str(row.get("host_id", row.get("physical_host_id", ""))): str(row.get("receipt_public_key", ""))
@@ -1002,7 +1012,17 @@ def _verify_p5_aggregate_v2(
         )
     except (KeyError, ValueError) as error:
         raise SoakEvidenceError("P5 V2 inventory child signer set is invalid") from error
-    for receipt in child_receipts:
+    observed_digests: list[dict[str, object]] = []
+    for path in raw_child_paths:
+        if path.is_symlink() or not path.is_file():
+            raise SoakEvidenceError("P5 V2 raw child receipt is not a regular file")
+        encoded = path.read_bytes().rstrip(b"\n")
+        try:
+            receipt = json.loads(encoded)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise SoakEvidenceError("P5 V2 raw child receipt is invalid JSON") from error
+        if not isinstance(receipt, dict) or encoded != controller.canonical_json(receipt):
+            raise SoakEvidenceError("P5 V2 raw child receipt is not canonical")
         if not isinstance(receipt, dict) or receipt.get("format") != 2:
             raise SoakEvidenceError("P5 V2 child receipt format mismatch")
         if receipt.get("evidence_authority") != authority:
@@ -1010,6 +1030,10 @@ def _verify_p5_aggregate_v2(
         host_id = receipt.get("host_id")
         if host_id not in {"host-a", "host-b", "host-c"}:
             raise SoakEvidenceError("P5 V2 child host is invalid")
+        sequence = receipt.get("sequence")
+        if (isinstance(sequence, bool) or not isinstance(sequence, int)
+                or path.name != f"child-{sequence:06d}-{host_id}.json"):
+            raise SoakEvidenceError("P5 V2 child receipt path/sequence mismatch")
         if receipt.get("request_digest") != aggregate.get("request_digest"):
             raise SoakEvidenceError("P5 V2 child request binding mismatch")
         if receipt.get("inventory_blake3") != authority.get("inventory_blake3"):
@@ -1026,14 +1050,18 @@ def _verify_p5_aggregate_v2(
         except controller.P5ExecutionError as error:
             raise SoakEvidenceError(f"P5 V2 child receipt is invalid: {error}") from error
         child_hosts.add(str(host_id))
+        observed_digests.append({
+            "host_id": host_id,
+            "sequence": sequence,
+            "receipt_blake3": blake3.blake3(encoded).hexdigest(),
+        })
+    if child_digests != observed_digests:
+        raise SoakEvidenceError("P5 V2 public child receipt digests do not match restricted raw receipts")
     if child_hosts != {"host-a", "host-b", "host-c"}:
         raise SoakEvidenceError("P5 V2 child host coverage is incomplete")
     qualification = controller.derive_qualification(aggregate)
     if aggregate.get("qualification") != qualification or not qualification["multi_host_qualified"]:
         raise SoakEvidenceError("P5 V2 qualification is not derived production evidence")
-    raw_manifest, raw_count = _verify_p5_v2_raw_binding(
-        aggregate, raw_evidence_root
-    )
     unsigned_aggregate = {
         key: value for key, value in aggregate.items()
         if key not in {"controller_signature", "aggregate_blake3"}
@@ -1055,7 +1083,7 @@ def _verify_p5_aggregate_v2(
         "session_id": request["session_id"],
         "aggregate_blake3": aggregate_blake3,
         "raw_manifest_blake3": raw_manifest,
-        "verified_child_receipts": len(child_receipts),
+        "verified_child_receipts": len(observed_digests),
         "verified_raw_objects": raw_count,
         "multi_host_qualified": True,
         "limitations": aggregate.get("limitations", []),

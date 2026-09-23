@@ -787,7 +787,8 @@ class P5MultiHostV2Tests(unittest.TestCase):
             raw = Path(temporary)
             for index, host in enumerate(runner.REQUIRED_HOSTS, 1):
                 (raw / f"child-{index:06d}-{host}.json").write_bytes(
-                    runner.canonical_json({"format": 2, "host_id": host, "sequence": index}) + b"\n"
+                    runner.canonical_json({"format": 2, "host_id": host, "sequence": index,
+                                           "result": {"peer_endpoints": ["203.0.113.8:443"]}}) + b"\n"
                 )
             inventory = {
                 "provider_evidence": [{"host_id": host} for host in runner.REQUIRED_HOSTS],
@@ -817,8 +818,20 @@ class P5MultiHostV2Tests(unittest.TestCase):
                 cleanup_complete=True,
             )
             self.assertTrue(aggregate["qualification"]["multi_host_qualified"])
-            self.assertEqual(len(aggregate["child_receipts"]), 3)
+            self.assertEqual(len(aggregate["child_receipt_digests"]), 3)
+            self.assertNotIn("child_receipts", aggregate)
+            self.assertNotIn("203.0.113.8", runner.canonical_json(aggregate).decode())
             self.assertEqual(aggregate["evidence_authority"]["provider_evidence_status"], "owner-telephone-verified-provider-document-pending")
+
+    def test_public_aggregate_privacy_rejects_embedded_endpoint(self) -> None:
+        inventory = {"hosts": [{"ssh_destination": "runner@example.test"}]}
+        with self.assertRaisesRegex(runner.P5ExecutionError, "restricted field"):
+            runner.assert_public_aggregate_privacy(
+                {"child_receipts": [{"result": {"peer_endpoints": ["203.0.113.8:443"]}}]},
+                inventory,
+            )
+        with self.assertRaisesRegex(runner.P5ExecutionError, "host address"):
+            runner.assert_public_aggregate_privacy({"routes": [{"path": "203.0.113.8:443"}]}, inventory)
 
     def test_all_direct_missing_edge_and_wrong_peer_reject(self) -> None:
         value = _aggregate()
