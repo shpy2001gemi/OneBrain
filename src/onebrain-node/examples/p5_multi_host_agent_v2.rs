@@ -110,7 +110,20 @@ fn runner_data_root(host_id: &str) -> PathBuf {
 
 #[cfg(any(unix, test))]
 fn relay_reservation_cursor(relay_key: &str) -> PathBuf {
+    PathBuf::from(AGENT_STATE_ROOT).join(format!("relay-global-reservation-{relay_key}.cursor"))
+}
+
+#[cfg(any(unix, test))]
+fn legacy_relay_reservation_cursor(relay_key: &str) -> PathBuf {
     PathBuf::from(AGENT_STATE_ROOT).join(format!("relay-reservation-{relay_key}.cursor"))
+}
+
+#[cfg(any(unix, test))]
+fn relay_reservation_cursor_binding(local_public: [u8; 32], relay_node: NodeId) -> [u8; 32] {
+    let mut bytes = b"onebrain/p5/relay-global-reservation-cursor/v1\0".to_vec();
+    bytes.extend_from_slice(&local_public);
+    bytes.extend_from_slice(relay_node.as_bytes());
+    *blake3::hash(&bytes).as_bytes()
 }
 
 #[cfg(any(unix, test))]
@@ -178,7 +191,6 @@ struct AgentRuntimeState {
     reservations: Arc<RelayReservationManager>,
     relay_sequences: BTreeMap<String, DurableSequenceCursor>,
     advertisement_sequence: DurableSequenceCursor,
-    cursor_binding: [u8; 32],
     selector: ProductionExpectedPeerCarrierSelector,
     executor: Arc<ConnectionPlannerExecutor>,
     selector_transport: Arc<QuicTransport>,
@@ -326,7 +338,6 @@ impl AgentRuntimeState {
             reservations,
             relay_sequences: BTreeMap::new(),
             advertisement_sequence,
-            cursor_binding: binding,
             selector,
             executor,
             selector_transport,
@@ -1743,9 +1754,13 @@ fn ensure_reservations(
         let cursor = match state.relay_sequences.entry(relay_key.clone()) {
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
             std::collections::btree_map::Entry::Vacant(entry) => {
+                let path = relay_reservation_cursor(&relay_key);
+                if !path.exists() && legacy_relay_reservation_cursor(&relay_key).exists() {
+                    return Err("legacy relay request cursor requires preserved-floor migration".into());
+                }
                 entry.insert(DurableSequenceCursor::open(
-                    relay_reservation_cursor(&relay_key),
-                    state.cursor_binding,
+                    path,
+                    relay_reservation_cursor_binding(state.identity.public_key(), relay_id),
                 )?)
             }
         };
@@ -2164,6 +2179,16 @@ fn print_compiled_binding() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     use ku_net::vnext_reachability_crypto::ReachabilityReplayStore;
+
+    #[test]
+    fn relay_request_cursor_binding_is_identity_scoped_across_sessions() {
+        let relay = NodeId::from_bytes([9; 32]);
+        let binding = relay_reservation_cursor_binding([7; 32], relay);
+        assert_eq!(binding, relay_reservation_cursor_binding([7; 32], relay));
+        assert_ne!(binding, relay_reservation_cursor_binding([8; 32], relay));
+        assert_ne!(binding, relay_reservation_cursor_binding([7; 32], NodeId::from_bytes([10; 32])));
+        assert_ne!(relay_reservation_cursor("ab"), legacy_relay_reservation_cursor("ab"));
+    }
 
     #[tokio::test]
     async fn relay_inbound_acceptance_is_not_pinned_to_the_first_authenticated_relay_failure() {

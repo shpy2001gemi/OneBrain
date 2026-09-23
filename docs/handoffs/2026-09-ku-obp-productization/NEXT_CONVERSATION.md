@@ -1,5 +1,19 @@
 # Next conversation — OBP-QA-001 relay renewal review / independent-network evidence
 
+**Latest signed attempt, 2026-09-23 14:05 UTC:** read
+[the signed happy-case attempt and cleanup](outputs/OBP_QA_001_SIGNED_HAPPY_ATTEMPT_20260923.md)
+first. Candidate `85adf65` was installed on a/b/c, complete V2 authority
+verified and four cross-host relay probes passed with a signed sequence-1→2→3
+history. A signed session passed bootstrap, prepare, reachability start and
+relay matrix but failed at `ensure-reservations` with host-b `Io`; it then
+received signed cleanup/finalization on all three hosts. Temporary listeners
+are stopped, normal relays remain fenced, and all earlier runs/staging plus
+the 11 archived old session cursors per host are retained. A further local
+correction for durable reservation sequence recovery and stable node cursor
+binding is under test; it has **not** been deployed. No happy-case completion,
+fault qualification or two-consumer-network acceptance exists. Keep branch
+`codex/obp-qa-001-nat-canary`; do not reset relay DBs or start OBP-MIG-001.
+
 **Latest execution, 13:11 UTC:** read
 [installed candidate / successor admission blocker](outputs/OBP_QA_001_INSTALLED_SUCCESSOR_BLOCKER.md)
 first. All three hosts now have candidate `2dc5581`, matching restricted SSH

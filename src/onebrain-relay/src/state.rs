@@ -101,6 +101,34 @@ impl DurableRelayState {
             .map(|value| value.value().to_vec()))
     }
 
+    /// Recover the monotonic reservation request floor for one target. Keys
+    /// are the target NodeID followed by its big-endian sequence. Other
+    /// control entries, including descriptor activation, are ignored.
+    pub fn highest_reservation_request_sequence(
+        &self,
+        target: &[u8; 32],
+    ) -> Result<Option<u64>, DurableStateError> {
+        let read = self
+            .database
+            .begin_read()
+            .map_err(|_| DurableStateError::Corrupt)?;
+        let table = read
+            .open_table(CONTROL)
+            .map_err(|_| DurableStateError::Corrupt)?;
+        let mut highest: Option<u64> = None;
+        for entry in table.iter().map_err(|_| DurableStateError::Corrupt)? {
+            let (key, _) = entry.map_err(|_| DurableStateError::Corrupt)?;
+            let bytes = key.value();
+            if bytes.len() == 40 && bytes.starts_with(target) {
+                let sequence = u64::from_be_bytes(
+                    bytes[32..].try_into().map_err(|_| DurableStateError::Corrupt)?,
+                );
+                highest = Some(highest.map_or(sequence, |value| value.max(sequence)));
+            }
+        }
+        Ok(highest)
+    }
+
     /// Replace only the descriptor floor and fence its old activation together.
     /// The caller validates the signed contiguous successor before this CAS.
     pub(crate) fn advance_descriptor(

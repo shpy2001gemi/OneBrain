@@ -5,6 +5,16 @@
 
 ## Current checkpoint
 
+- 2026-09-23 14:05 UTC [signed V2 happy-case attempt](outputs/OBP_QA_001_SIGNED_HAPPY_ATTEMPT_20260923.md):
+  immutable `85adf65` installed on a/b/c, exact Base/Registry/bundle/P5
+  authority verified, four sequence-3 cross-host probes passed. Signed
+  bootstrap/prepare/reachability/matrix passed, but reservations failed closed
+  at host-b. Signed cleanup and finalization succeeded on all three hosts;
+  relay listeners are stopped and the prior cursor files preserved in typed
+  maintenance archives. A durable relay-sequence and stable node-cursor
+  correction is in progress locally; no full happy case, fault qualification,
+  independent consumer-network evidence or OBP-MIG-001 start exists.
+
 - 2026-09-23 13:11 UTC [installed candidate and successor blocker](outputs/OBP_QA_001_INSTALLED_SUCCESSOR_BLOCKER.md):
   all three immutable installations/public exports match `2dc5581`; identities
   preserved. D-036 placement wrappers retained with historical signature binding.
