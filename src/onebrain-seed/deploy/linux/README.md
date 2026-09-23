@@ -1,5 +1,10 @@
-# OneBrain Seed — Linux Deployment
-# systemd service + Docker cho production.
+# OneBrain legacy seed compatibility — Linux Deployment
+
+This TCP/JSON daemon is retained for explicit rollback only. It is not the
+vNext `onebrain-relay`. The service and container run examples pass
+`--legacy-seed-compat` explicitly; the image itself does not opt in. These
+examples are for the approved compatibility window, not vNext production
+deployment.
 
 ## Quick Start (Console)
 
@@ -8,7 +13,7 @@
 cargo build --release -p onebrain-seed
 
 # Run
-./target/release/onebrain-seed --port 4242 --name "Seed-VN1" --max-peers 10000
+./target/release/onebrain-seed --legacy-seed-compat --port 4242 --name "Seed-VN1" --max-peers 10000
 ```
 
 ## systemd Service (Production)
@@ -49,7 +54,7 @@ docker run -d \
   --restart unless-stopped \
   -p 4242:4242 \
   onebrain-seed \
-  --port 4242 --name "Seed-VN1" --max-peers 10000
+  --legacy-seed-compat --port 4242 --name "Seed-VN1" --max-peers 10000
 ```
 
 ## Firewall (UFW)

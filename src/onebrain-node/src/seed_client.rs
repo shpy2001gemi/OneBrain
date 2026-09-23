@@ -1,5 +1,6 @@
-//! Seed node client — connects to n1.onebrain.live / n2.onebrain.live
-//! for peer discovery and relay.
+//! Legacy TCP/JSON seed client — compatibility only, not vNext discovery.
+//! Connects to n1.onebrain.live / n2.onebrain.live only when the caller
+//! explicitly opts into the legacy compatibility path.
 //!
 //! The seed client registers with a seed node, receives its external
 //! address, queries the peer list, and can relay messages to other

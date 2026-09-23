@@ -1,10 +1,15 @@
 # OBP-MIG-001 — Retire the legacy seed product path
 
-> State: Planned
+> State: Review — local compatibility gate and vNext-only startup verified
 > Branch: `codex/obp-mig-001-retire-legacy-seed`
 > Depends on: `OBP-QA-001` merged
 
 ## Objective
+
+Current [migration inventory and verification](../outputs/OBP_MIG_001_IMPLEMENTATION.md)
+records the explicit legacy compatibility flag, vNext-only CLI startup,
+retained rollback state and verification. Work stays on the declared
+branch; no live daemon or remote node was changed.
 
 Remove the legacy TCP/JSON `SeedClient`/`onebrain-seed` path from the normal
 product workflow only after vNext product parity is accepted, while retaining

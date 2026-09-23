@@ -30,7 +30,7 @@ pub(crate) fn cmd_help(args: &str) {
         println!("  ║  unpin <cid>             Unpin KU                             ║");
         println!("  ║                                                               ║");
         println!("  ║  ── Network ──                                                ║");
-        println!("  ║  connect <ip:port>       Connect to peer                      ║");
+        println!("  ║  connect <ip:port>       Legacy peer (--legacy-seed-compat)     ║");
         println!("  ║  peers                   Show connected peers                 ║");
         println!("  ║  status                  Show node status                     ║");
         println!("  ║  workflow [stage]        Inspect vNext KU workflow            ║");

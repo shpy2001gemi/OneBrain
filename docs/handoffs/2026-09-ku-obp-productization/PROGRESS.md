@@ -5,6 +5,36 @@
 
 ## Current checkpoint
 
+- 2026-09-24 OBP-MIG-001 — `Review`: final local verification passed after
+  the [migration map](outputs/OBP_MIG_001_IMPLEMENTATION.md) was completed.
+  CLI feature-on 52+2 and base-only 43+2, plus one real-process default-start
+  test in each mode; seed integration 1, node runtime 8,
+  node library 253 (two threads), Desktop lifecycle 6 and no-default vNext
+  CLI check passed. The aggregate vNext validator, focused Rust format,
+  whitespace and link checks passed. A first parallel node-library run had
+  one unrelated PoMV timeout; focused and bounded two-thread reruns passed.
+  No default OBP opt-in, live host or durable data was modified. All
+  changes remain local and uncommitted on the declared migration branch;
+  owner review and D-010 Git closure are separate steps.
+
+- 2026-09-24 OBP-MIG-001 — `In progress` on
+  `codex/obp-mig-001-retire-legacy-seed` from published main `940fa61`.
+  [Migration inventory, rollback map and tests](outputs/OBP_MIG_001_IMPLEMENTATION.md):
+  legacy seed/mDNS/UPnP startup and REPL connect now require explicit
+  `--legacy-seed-compat`; vNext opt-in uses node-owned vNext-only startup;
+  standalone `onebrain-seed` refuses to bind without the flag. Old config,
+  peer memory, daemon package and legacy listener compatibility remain. CLI
+  feature-on 52+2, base-only 43+2, seed integration and node runtime 8 pass.
+  Node library passes 253 with two threads after one unrelated PoMV timeout
+  in a parallel run. No live host, default OBP activation or remote state
+  changed. Final contract/format/packaging checks remain before Review.
+
+- 2026-09-24 main publication: D-041 QA merge `d695e4a` and handoff closure
+  commit `940fa619925c6b1903525141d2244eb6d4e19009` were published to
+  `origin/main`; the retained QA branch remains published at `fb5b71b`.
+  Task 18 is `Merged`; its consumer-NAT gate was skipped and remains
+  unqualified. Task 19 is dependency-ready.
+
 - 2026-09-24 D-041 Git closure: validated QA tip `fb5b71b` was published on
   `origin/codex/obp-qa-001-nat-canary` and merged locally without conflicts as
   `d695e4ae976c53fceffdc103580c9462997a5389`. Task 18 is `Merged`
@@ -397,7 +427,7 @@
 | 16 | `OBP-WEB-001` | Merged | `codex/obp-web-001-networking` | `OBP-API-001` | [Evidence](outputs/OBP_WEB_001_IMPLEMENTATION.md); implementation `cade635`, merge `7f49eeb`, D-032. |
 | 17 | `OBP-DESK-001` | Merged | `codex/obp-desk-001-networking` | `OBP-WEB-001` | [Evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md); implementation `410a6a0`, merge `7e4fc14`, D-034. |
 | 18 | `OBP-QA-001` | Merged | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | D-041 merge `d695e4a`; [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md); consumer NAT skipped/unqualified; Linux P5 `c453f3e` qualified separately. |
-| 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | â€” |
+| 19 | `OBP-MIG-001` | Review | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` merged `d695e4a` | [Local migration map and tests](outputs/OBP_MIG_001_IMPLEMENTATION.md). |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | â€” |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
 | 22 | `KU-ENC-002` | Merged | `codex/ku-enc-002-shared-encoder` | `KU-ENC-001`, `KU-RUN-001` | Owner accepted under D-020; merge `dc04b71` on `origin/main`; [implementation and verification](outputs/KU_ENC_002_IMPLEMENTATION.md). |

@@ -2,6 +2,9 @@
 
 > **Status: 🔴 Planning — chưa implement**
 
+This historical proposal concerns the legacy seed prototype. It is not a
+vNext relay design or deployment plan.
+
 ## Mục tiêu
 
 Chạy lightweight seed node trên embedded hardware:

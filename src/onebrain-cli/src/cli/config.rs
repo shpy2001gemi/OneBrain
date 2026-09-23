@@ -16,9 +16,9 @@ pub(crate) fn cmd_config(node: &mut OneBrainNode, args: &str) {
         println!("  ollama_url: {}", config_view.ollama_url);
         println!("  model:      {}", config_view.model);
         if config_view.seeds.is_empty() {
-            println!("  seeds:      []");
+            println!("  legacy seeds: []");
         } else {
-            println!("  seeds:      [{}]", config_view.seeds.join(", "));
+            println!("  legacy seeds: [{}]", config_view.seeds.join(", "));
         }
         println!();
         println!("  ── Derived Paths ──");

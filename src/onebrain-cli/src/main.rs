@@ -76,7 +76,11 @@ enum Commands {
         /// Pinned Ed25519 release signer public key (64 lowercase hex digits).
         #[arg(long, requires = "concept_registry_release_root")]
         concept_registry_release_public_key: Option<String>,
-        #[arg(long, value_delimiter = ',')]
+        /// Explicitly enable the legacy TCP/JSON seed discovery path.
+        #[arg(long, default_value_t = false)]
+        legacy_seed_compat: bool,
+        /// Legacy peer addresses; only valid in legacy seed compatibility mode.
+        #[arg(long, value_delimiter = ',', requires = "legacy_seed_compat")]
         seeds: Vec<SocketAddr>,
 
         /// Enable the REST/WebSocket API server for Web Dashboard
@@ -171,6 +175,7 @@ async fn main() {
             concept_registry_cache_capacity,
             concept_registry_release_root,
             concept_registry_release_public_key,
+            legacy_seed_compat,
             seeds,
             api,
             api_port,
@@ -243,7 +248,17 @@ async fn main() {
                 println!("  Registry: {}", config.obr_path().display());
             }
             println!("  Policy:   {}", config.concept_registry_mode);
-            println!("  Seeds:    {:?}", config.seeds);
+            println!(
+                "  Legacy seed compatibility: {}",
+                if legacy_seed_compat {
+                    "enabled"
+                } else {
+                    "disabled"
+                }
+            );
+            if legacy_seed_compat {
+                println!("  Legacy seeds: {:?}", config.seeds);
+            }
             if api {
                 println!("  API:      http://127.0.0.1:{}", api_port);
             }
@@ -288,55 +303,71 @@ async fn main() {
             }
             println!("  \u{2713} Node initialized successfully");
 
-            match node.start_network().await {
-                Ok(addr) => println!("  \u{2713} TCP listener started on {}", addr),
+            #[cfg(feature = "vnext-network-runtime")]
+            let network_start = if vnext.requested() && !legacy_seed_compat {
+                node.start_vnext_network_only()
+                    .await
+                    .map(|addr| ("vNext", addr))
+            } else {
+                node.start_network().await.map(|addr| ("Legacy TCP", addr))
+            };
+            #[cfg(not(feature = "vnext-network-runtime"))]
+            let network_start = node.start_network().await.map(|addr| ("Legacy TCP", addr));
+            match network_start {
+                Ok((kind, addr)) => println!("  \u{2713} {kind} listener started on {addr}"),
                 Err(e) => eprintln!(
                     "  \u{26a0} Network start failed: {} (continuing without networking)",
                     e
                 ),
             }
 
-            for seed_addr in &seed_addrs {
-                if let Err(e) = node.connect_to_seed(*seed_addr).await {
-                    eprintln!("  \u{26a0} Failed to connect to seed {}: {}", seed_addr, e);
+            if legacy_seed_compat {
+                for seed_addr in &seed_addrs {
+                    if let Err(e) = node.connect_to_seed(*seed_addr).await {
+                        eprintln!(
+                            "  \u{26a0} Failed to connect to legacy peer {}: {}",
+                            seed_addr, e
+                        );
+                    }
                 }
-            }
 
-            let mdns = mdns_discovery::try_mdns_discovery(&config.name, config.port).await;
-            println!("  {}", mdns.message);
-            for peer_addr in &mdns.discovered_peers {
-                println!("    LAN peer: {}", peer_addr);
-            }
+                let mdns = mdns_discovery::try_mdns_discovery(&config.name, config.port).await;
+                println!("  {}", mdns.message);
+                for peer_addr in &mdns.discovered_peers {
+                    println!("    LAN peer: {}", peer_addr);
+                }
 
-            let upnp_result = upnp::try_upnp_map(config.port).await;
-            println!("  {}", upnp_result.message);
+                let upnp_result = upnp::try_upnp_map(config.port).await;
+                println!("  {}", upnp_result.message);
 
-            let peer_id = generate_peer_id();
-            let mut seed = SeedClient::new(peer_id.clone(), config.name.clone(), config.port);
-            match seed.connect().await {
-                Ok(_) => {
-                    if let Some(stream) = seed.stream() {
-                        SeedClient::run_background(stream, peer_id.clone(), node.event_tx.clone())
+                let peer_id = generate_peer_id();
+                let mut seed = SeedClient::new(peer_id.clone(), config.name.clone(), config.port);
+                match seed.connect().await {
+                    Ok(_) => {
+                        if let Some(stream) = seed.stream() {
+                            SeedClient::run_background(
+                                stream,
+                                peer_id.clone(),
+                                node.event_tx.clone(),
+                            )
                             .await;
-                    }
-                    match seed.get_peers().await {
-                        Ok(peers) => {
-                            println!("  \u{2713} Found {} peer(s) online", peers.len());
-                            for p in &peers {
-                                let short_id = if p.peer_id.len() >= 8 {
-                                    &p.peer_id[..8]
-                                } else {
-                                    &p.peer_id
-                                };
-                                println!("    - {} ({})", p.name, short_id);
-                            }
                         }
-                        Err(e) => println!("  \u{26a0} Could not get peer list: {}", e),
+                        match seed.get_peers().await {
+                            Ok(peers) => {
+                                println!("  \u{2713} Found {} legacy peer(s) online", peers.len());
+                                for p in &peers {
+                                    let short_id = if p.peer_id.len() >= 8 {
+                                        &p.peer_id[..8]
+                                    } else {
+                                        &p.peer_id
+                                    };
+                                    println!("    - {} ({})", p.name, short_id);
+                                }
+                            }
+                            Err(e) => println!("  \u{26a0} Could not get legacy peer list: {}", e),
+                        }
                     }
-                }
-                Err(e) => {
-                    println!("  \u{26a0} Seed connection failed: {}", e);
-                    println!("  \u{26a0} Running in offline/LAN-only mode");
+                    Err(e) => println!("  \u{26a0} Legacy seed connection failed: {}", e),
                 }
             }
 
@@ -394,7 +425,9 @@ async fn main() {
                 println!();
 
                 // REPL uses shared node — lock per-command, not permanently
-                if let Err(e) = cli::run_repl_shared(shared_node.clone(), &api_token).await {
+                if let Err(e) =
+                    cli::run_repl_shared(shared_node.clone(), &api_token, legacy_seed_compat).await
+                {
                     eprintln!("REPL error: {}", e);
                 }
             } else {
@@ -403,7 +436,7 @@ async fn main() {
                 println!("Tip: Use --api to enable Web Dashboard");
                 println!();
 
-                if let Err(e) = cli::run_repl(&mut node, &api_token).await {
+                if let Err(e) = cli::run_repl(&mut node, &api_token, legacy_seed_compat).await {
                     eprintln!("REPL error: {}", e);
                 }
             }
@@ -421,6 +454,38 @@ fn exit_on_client_error(result: Result<(), String>) {
 #[cfg(test)]
 mod vnext_command_tests {
     use super::*;
+
+    #[test]
+    fn legacy_seed_compatibility_requires_explicit_start_opt_in() {
+        let default = CliArgs::try_parse_from(["onebrain", "start"]).unwrap();
+        assert!(matches!(
+            default.command,
+            Some(Commands::Start {
+                legacy_seed_compat: false,
+                seeds,
+                ..
+            }) if seeds.is_empty()
+        ));
+        assert!(
+            CliArgs::try_parse_from(["onebrain", "start", "--seeds", "127.0.0.1:4242"]).is_err()
+        );
+        let rollback = CliArgs::try_parse_from([
+            "onebrain",
+            "start",
+            "--legacy-seed-compat",
+            "--seeds",
+            "127.0.0.1:4242",
+        ])
+        .unwrap();
+        assert!(matches!(
+            rollback.command,
+            Some(Commands::Start {
+                legacy_seed_compat: true,
+                seeds,
+                ..
+            }) if seeds == vec!["127.0.0.1:4242".parse().unwrap()]
+        ));
+    }
 
     #[test]
     fn p3_cli_command_inventory_is_parseable() {

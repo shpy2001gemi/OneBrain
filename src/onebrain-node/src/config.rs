@@ -62,7 +62,7 @@ pub struct NodeConfig {
     pub ollama_url: String,
     /// Ollama model name.
     pub model: String,
-    /// Seed peer addresses for initial discovery.
+    /// Retained legacy peer addresses; never vNext bootstrap authority.
     pub seeds: Vec<SocketAddr>,
     /// Explicit Concept Registry path. When absent, use data_dir/concepts.obr.
     #[serde(default)]
@@ -132,7 +132,7 @@ impl NodeConfig {
             .unwrap_or_else(|| self.data_dir.join("concepts.obr"))
     }
 
-    /// Default seed node domains for peer discovery.
+    /// Legacy seed domains retained for compatibility, not vNext bootstrap.
     pub fn default_seed_domains() -> Vec<String> {
         vec![
             "n1.onebrain.live".to_string(),

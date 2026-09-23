@@ -1,6 +1,9 @@
-# onebrain-seed
+# onebrain-seed — legacy compatibility only
 
-OneBrain Seed Node — lightweight P2P relay and peer discovery server.
+Legacy TCP/JSON peer discovery and relay server. It is **not** the vNext
+`onebrain-relay` and supplies no signed vNext bootstrap, identity or route
+authority. Keep it only for an explicitly approved rollback/compatibility
+window. The daemon refuses to start without `--legacy-seed-compat`.
 
 ## Kiến trúc
 
@@ -40,7 +43,7 @@ onebrain-seed/
 cargo build --release -p onebrain-seed
 
 # Chạy
-onebrain-seed --port 4242 --name "Seed-N1" --max-peers 10000
+onebrain-seed --legacy-seed-compat --port 4242 --name "Seed-N1" --max-peers 10000
 ```
 
 ## Cross-compile
