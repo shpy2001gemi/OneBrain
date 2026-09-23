@@ -3,6 +3,11 @@
 This is the compact product-planning view. It intentionally separates code and
 test evidence from user-facing orchestration and release qualification.
 
+2026-09-24 D-041: task 18 merged as `d695e4a` using the owner-accepted
+[functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md).
+Consumer-NAT qualification was explicitly skipped and remains unclaimed.
+OBP-MIG-001 is the next task; the Linux P5 qualification remains separate.
+
 2026-09-23 16:09 UTC: D-039 [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md)
 advances task 18 to Review based on working code and focused tests. The live
 two-relay integration test now checks domain exchange in both directions and

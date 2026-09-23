@@ -1,4 +1,11 @@
-# Next conversation — OBP-QA-001 functional review
+# Next conversation — OBP-MIG-001 legacy seed migration
+
+**Latest Git closure, 2026-09-24:** QA tip `fb5b71b` was published on the
+retained branch and merged as `d695e4a` under D-041. Task 18 is `Merged` by
+the accepted functional criterion. Consumer-NAT qualification was explicitly
+skipped and remains false; the Linux P5 three-host qualification is separate.
+Task 19 is next. See [its task](tasks/19-OBP-MIG-001.md) and the top of
+[PROGRESS](PROGRESS.md). Main publication is recorded separately after push.
 
 **Latest owner instruction, 2026-09-24:** D-041 directs completing task 18
 under the accepted functional criteria and moving to OBP-MIG-001. The three

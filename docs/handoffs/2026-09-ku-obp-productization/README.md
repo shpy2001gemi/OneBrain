@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **OBP-QA-001 Review accepted under D-040; Linux P5 qualified; consumer-NAT qualification unclaimed**
+> Status: **OBP-QA-001 merged under D-041; Linux P5 qualified; consumer-NAT qualification skipped and unclaimed**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -9,21 +9,22 @@ This folder is the compact starting point for future conversations. It records
 the decision, the evidence boundary, the dependency order and one bounded file
 per task so a new conversation does not need the history that produced it.
 
-Latest: D-040 accepts the D-039 [functional review](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md).
-The branch changes remain local pending separate Git closure. D-039
+Latest: D-041 closed the D-039/D-040 [functional review](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md)
+with QA tip `fb5b71b`, merge `d695e4a`, and an explicit skipped consumer-NAT
+qualification gate. D-039
 uses working code and functional tests for task 18 review. A bidirectional
 two-relay domain exchange test and focused node/Desktop/API/CLI/Web checks pass.
-Consumer-NAT and native platform qualification remain unclaimed; task 19 has
-not started. The earlier [two-VPS product admission](outputs/OBP_QA_001_VPS_PRODUCT_ADMISSION_20260923.md)
+Consumer-NAT and native platform qualification remain unclaimed; task 19 is
+dependency-ready. The earlier [two-VPS product admission](outputs/OBP_QA_001_VPS_PRODUCT_ADMISSION_20260923.md)
 checked the owner's selected hosts remotely. No product scenario ran: the
 source-free P5 bundle has no product assembly and Linux custom Desktop network
 startup is fenced. VPS network independence does not establish consumer NAT.
 The separate [three-host Linux P5 lane](outputs/OBP_QA_001_P5_PRODUCTION_20260923.md)
 is qualified on exact candidate `c453f3e`.
 
-Current QA work: [acceptance v1](outputs/OBP_QA_001_ACCEPTANCE_V1.md) separates
+Current QA record: [acceptance v1](outputs/OBP_QA_001_ACCEPTANCE_V1.md) separates
 local preflight from independent-network product evidence and exact-candidate
-P5 qualification. Resume the retained QA branch; task 19 remains unstarted.
+P5 qualification. The retained QA branch remains published; task 19 is next.
 
 Latest 13:11 UTC: [installation and successor admission blocker](outputs/OBP_QA_001_INSTALLED_SUCCESSOR_BLOCKER.md).
 Candidate `2dc5581` is installed on all three hosts; four sequence-2 probes fail
@@ -93,7 +94,7 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`OBP-QA-001`](tasks/18-OBP-QA-001.md) — Review under D-039 functional criteria. D-036 accepts reuse of the already supplied three-physical-host placement; do not require new placement proof. Local preflight is not network qualification.
+**Current task:** [`OBP-MIG-001`](tasks/19-OBP-MIG-001.md) — Planned after D-041 task 18 merge. D-036 accepts reuse of the already supplied three-physical-host placement for the separate P5 record; local preflight is not consumer-NAT qualification.
 The API dependency was satisfied by `7d37a30` under D-030; CLI is now merged
 at `04bcb30` under D-031. Read the accepted API and private-WS contracts plus
 current Web design rules before further edits. Current Web evidence supersedes

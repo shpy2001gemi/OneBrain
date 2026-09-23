@@ -5,6 +5,15 @@
 
 ## Current checkpoint
 
+- 2026-09-24 D-041 Git closure: validated QA tip `fb5b71b` was published on
+  `origin/codex/obp-qa-001-nat-canary` and merged locally without conflicts as
+  `d695e4ae976c53fceffdc103580c9462997a5389`. Task 18 is `Merged`
+  under D-039/D-040 functional acceptance, with D-041's consumer-NAT gate
+  explicitly skipped (`consumer_nat_qualified=false`). The separate Linux P5
+  qualification on `c453f3e` is unchanged. Main publication is recorded after
+  it completes; task 19 becomes dependency-ready but has not started at this
+  checkpoint.
+
 - 2026-09-24 D-041: owner directed task 18 closure and progression to task 19,
   skipping consumer-NAT qualification because the existing VPS cannot prove
   ordinary consumer NAT or run the supported product host. D-039/D-040
@@ -387,7 +396,7 @@
 | 15 | `OBP-CLI-001` | Merged | `codex/obp-cli-001-networking` | `OBP-API-001` | [Evidence](outputs/OBP_CLI_001_IMPLEMENTATION.md); implementation `e0dcc7d`, merge `04bcb30`, D-031. |
 | 16 | `OBP-WEB-001` | Merged | `codex/obp-web-001-networking` | `OBP-API-001` | [Evidence](outputs/OBP_WEB_001_IMPLEMENTATION.md); implementation `cade635`, merge `7f49eeb`, D-032. |
 | 17 | `OBP-DESK-001` | Merged | `codex/obp-desk-001-networking` | `OBP-WEB-001` | [Evidence](outputs/OBP_DESK_001_IMPLEMENTATION.md); implementation `410a6a0`, merge `7e4fc14`, D-034. |
-| 18 | `OBP-QA-001` | Blocked | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | [Local preflight](outputs/OBP_QA_001_PREFLIGHT.md) passed; independent-network/P5 evidence missing. |
+| 18 | `OBP-QA-001` | Merged | `codex/obp-qa-001-nat-canary` | `OBP-CLI-001`, `OBP-DESK-001` | D-041 merge `d695e4a`; [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md); consumer NAT skipped/unqualified; Linux P5 `c453f3e` qualified separately. |
 | 19 | `OBP-MIG-001` | Planned | `codex/obp-mig-001-retire-legacy-seed` | `OBP-QA-001` | â€” |
 | 20 | `INT-KU-OBP-001` | Planned | `codex/int-ku-obp-001-product-journey` | `KU-QA-001`, `OBP-QA-001` | â€” |
 | 21 | `KU-ENC-001` | Merged | `codex/ku-enc-001-framework-contract` | `KU-RUN-001` | Owner-authorized merge `22599d0` on `origin/main`; [contract evidence](outputs/KU_ENC_001_CONTRACT.md), D-019. |
