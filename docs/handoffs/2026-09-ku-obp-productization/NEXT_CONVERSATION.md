@@ -1,5 +1,15 @@
 # Next conversation — OBP-QA-001 independent consumer-network evidence
 
+**Latest admission, 2026-09-23 15:44 UTC:** read the
+[two-VPS product admission](outputs/OBP_QA_001_VPS_PRODUCT_ADMISSION_20260923.md).
+The owner selected two of the existing VPS and asserted network independence.
+Read-only remote checks on a/c/b passed; no product host executable is installed
+in the checked environment or P5 bundle. Linux custom Desktop networking is
+fenced by the missing native lifecycle adapter. No product scenario 01..10 ran;
+do not relabel the P5 session as a product run. Two VPS do not prove ordinary
+consumer NAT. Task 18 stays Blocked, P5 qualification remains valid, and task
+19 is unstarted. Preserve all remote state and default-off networking.
+
 **Latest result, 2026-09-23 15:26 UTC:** read the
 [Linux P5 production-reference qualification](outputs/OBP_QA_001_P5_PRODUCTION_20260923.md)
 first. Exact candidate `c453f3e` was installed on the three approved hosts;

@@ -1,5 +1,17 @@
 # Decisions and claim boundary
 
+## D-038 — Use two existing VPS for the product scenario attempt
+
+On 2026-09-23, after being told the available three P5 machines are VPS rather
+than ordinary consumer hosts, the owner directed: “hãy dùng 2 trong 3 vps .
+3 vps đso đang ở mạng độc lập với nhau”. This selects the existing independent
+VPS networks for a scoped product staging attempt without requesting new SSH
+approval. It does not itself provide a node-owned product host assembly, Linux
+native Desktop lifecycle support or measurements of ordinary consumer NAT.
+The [remote admission result](outputs/OBP_QA_001_VPS_PRODUCT_ADMISSION_20260923.md)
+records those gates. Keep P5 qualification distinct, the accepted scenario
+oracles unchanged, default networking off and OBP-MIG-001 unstarted.
+
 ## D-037 — Approve descriptor-history correction; prioritize real happy case
 
 On 2026-09-23 the owner accepted the concrete correction proposal and said

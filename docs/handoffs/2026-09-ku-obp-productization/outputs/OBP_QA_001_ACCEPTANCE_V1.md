@@ -8,6 +8,9 @@ Execution update (2026-09-23): the separate exact-candidate Linux P5 V2
 three-host gate [qualified](OBP_QA_001_P5_PRODUCTION_20260923.md) on `c453f3e`.
 The ten two-consumer-network product scenarios below remain unrun. The original
 local-preflight and future-run instructions retain their historical scope.
+The owner's later two-VPS selection received a
+[read-only remote admission audit](OBP_QA_001_VPS_PRODUCT_ADMISSION_20260923.md);
+no product scenario was executed or accepted from that VPS topology.
 
 ## Evidence lanes
 

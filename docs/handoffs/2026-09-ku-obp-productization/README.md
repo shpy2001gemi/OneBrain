@@ -1,6 +1,6 @@
 # KU review and OBP productization handoff
 
-> Status: **OBP-QA-001 Blocked: local preflight passed; independent-network evidence missing**
+> Status: **OBP-QA-001 Blocked: Linux P5 qualified; two-consumer product scenarios unrun**
 > Owner decision: 2026-09-05
 > Baseline: `main` / `origin/main` at `409fca34db8faaf238b899a2481175d922113b99` before this handoff package
 > Scope: review KU and expose it consistently through CLI, local Web and Desktop while productizing the already implemented OBP outbound-first core as a separate lane.
@@ -8,6 +8,13 @@
 This folder is the compact starting point for future conversations. It records
 the decision, the evidence boundary, the dependency order and one bounded file
 per task so a new conversation does not need the history that produced it.
+
+Latest: [two-VPS product admission](outputs/OBP_QA_001_VPS_PRODUCT_ADMISSION_20260923.md)
+checked the owner's selected hosts remotely. No product scenario ran: the
+source-free P5 bundle has no product assembly and Linux custom Desktop network
+startup is fenced. VPS network independence does not establish consumer NAT.
+The separate [three-host Linux P5 lane](outputs/OBP_QA_001_P5_PRODUCTION_20260923.md)
+is qualified on exact candidate `c453f3e`. Task 18 remains Blocked.
 
 Current QA work: [acceptance v1](outputs/OBP_QA_001_ACCEPTANCE_V1.md) separates
 local preflight from independent-network product evidence and exact-candidate

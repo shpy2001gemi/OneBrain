@@ -5,6 +5,15 @@
 
 ## Current checkpoint
 
+- 2026-09-23 15:44 UTC [two-VPS product admission](outputs/OBP_QA_001_VPS_PRODUCT_ADMISSION_20260923.md):
+  owner selected two of the approved VPS as application-node roles and asserted
+  their networks are independent. Read-only pinned-SSH checks on a/c and relay
+  host b passed. The P5 bundle has no product host, and Linux custom Desktop
+  network startup is deliberately fenced by the missing native lifecycle
+  adapter. No OBP-QA-V1-01..10 product scenario was executed or relabeled from
+  P5. VPS topology does not prove ordinary consumer NAT. Task 18 remains
+  `Blocked`; Linux P5 qualification remains valid and task 19 unstarted.
+
 - 2026-09-23 15:26 UTC [Linux P5 production-reference qualification](outputs/OBP_QA_001_P5_PRODUCTION_20260923.md):
   exact `c453f3e` bundle installed on a/b/c; fresh signed Base/Registry/P5 V2
   authority, sequence-7 relay history and four cross-host probes verified.
