@@ -179,7 +179,7 @@ async fn serve_relay(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn durable_delivery_moves_to_pre_reserved_alternate_tls_relay() {
+async fn bidirectional_durable_delivery_moves_to_pre_reserved_alternate_tls_relay() {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -306,13 +306,18 @@ async fn durable_delivery_moves_to_pre_reserved_alternate_tls_relay() {
             .unwrap();
     let optional = Arc::new(UnavailableOptionalPaths::default());
     let selector = ProductionExpectedPeerCarrierSelector::new(
-        dial,
+        dial.clone(),
         executor(&left, &left_key),
         Duration::from_secs(20),
     )
     .unwrap()
     .with_optional_paths(optional.clone())
-    .with_relay(discovery, left_reservations.clone(), left_key.clone(), 1)
+    .with_relay(
+        discovery.clone(),
+        left_reservations.clone(),
+        left_key.clone(),
+        1,
+    )
     .unwrap();
     left.install_product_routing(Arc::new(RelayPort {
         runtime: Arc::downgrade(&left),
@@ -388,6 +393,129 @@ async fn durable_delivery_moves_to_pre_reserved_alternate_tls_relay() {
     let feed = ku_core::foundation::decode_feed_inception(&tests::feed_and_event().0).unwrap();
     assert_eq!(right.feed_inception_branch_count(feed.feed_id).unwrap(), 1);
     assert_eq!(left.outbound_pending_count().unwrap(), 0);
+    // The other application node can initiate its own domain intent through
+    // the same pre-reserved relay. The receiver's durable domain state, rather
+    // than a successful route alone, is the completion oracle.
+    let left_peer = principal_node_id(left_key.verifying_key().as_bytes());
+    let left_advertisement_reservations = left_reservations.active_reservations().await;
+    let mut left_advertisement = ReachabilityAdvertisementV1 {
+        format: 1,
+        target_node_id: left_peer,
+        relay_reservations: left_advertisement_reservations
+            .iter()
+            .map(|reservation| reservation.canonical().clone())
+            .collect(),
+        optional_public_candidates: vec![],
+        capability_ceiling: [10; 32],
+        sequence: 1,
+        issued_at: now,
+        expires_at: now + 200,
+        target_signature: [0; 64],
+    };
+    left_advertisement.target_signature = left_key
+        .sign(
+            &reachability_signing_bytes(
+                &ReachabilityObjectV1::Advertisement(left_advertisement.clone()),
+                ReachabilitySignatureRoleV1::AdvertisementTarget,
+            )
+            .unwrap(),
+        )
+        .to_bytes();
+    let left_identity = KnownPeerIdentity::from_public_key(*left_key.verifying_key().as_bytes());
+    let prepared = preparer
+        .prepare_advertisement(
+            &encode_reachability_object(&ReachabilityObjectV1::Advertisement(left_advertisement))
+                .unwrap(),
+            &left_identity,
+            &left_advertisement_reservations,
+            now,
+            Instant::now() + Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+    let left_advertisement =
+        ReachabilityAdmission::new(Arc::new(InMemoryReachabilityReplayStore::default()))
+            .register_prepared_advertisement(
+                prepared,
+                &left_identity,
+                &left_advertisement_reservations,
+                now,
+            )
+            .unwrap();
+    let reverse_selector = ProductionExpectedPeerCarrierSelector::new(
+        dial,
+        executor(&right, &right_key),
+        Duration::from_secs(20),
+    )
+    .unwrap()
+    .with_optional_paths(Arc::new(UnavailableOptionalPaths::default()))
+    .with_relay(discovery, right_reservations.clone(), right_key.clone(), 1)
+    .unwrap();
+    right
+        .install_product_routing(Arc::new(RelayPort {
+            runtime: Arc::downgrade(&right),
+            selector: reverse_selector,
+            advertisement: left_advertisement,
+        }))
+        .unwrap();
+    let reverse_intent = OutboundTransferIntent::new(
+        left_peer,
+        "127.0.0.1:1".parse().unwrap(),
+        SelectorCid::from_bytes([44; 32]),
+        NamespaceCommitment::from_bytes([5; 32]),
+        DisclosureClass::Public,
+        ReconcileManifestKind::FeedInception,
+        tests::feed_and_event().0,
+    )
+    .unwrap();
+    right.enqueue_outbound(&reverse_intent).unwrap();
+    let reverse_relay = descriptors[1].clone();
+    let reverse_relay_id = reverse_relay.canonical().relay_node_id;
+    let (reverse_remote, _) = right_reservations
+        .active_for(reverse_relay_id)
+        .await
+        .unwrap();
+    let (reverse_local, reverse_outer) = left_reservations
+        .active_for(reverse_relay_id)
+        .await
+        .unwrap();
+    let reverse_serve = tokio::spawn(serve_relay(
+        left.clone(),
+        executor(&left, &left_key),
+        reverse_relay,
+        reverse_remote,
+        reverse_local,
+        reverse_outer,
+        KnownPeerIdentity::from_public_key(*right_key.verifying_key().as_bytes()),
+    ));
+    let reverse_report =
+        tokio::time::timeout(Duration::from_secs(25), right.deliver_outbound_once(1))
+            .await
+            .unwrap()
+            .unwrap();
+    assert_eq!(reverse_report.acknowledged, 1, "{reverse_report:?}");
+    tokio::time::timeout(Duration::from_secs(5), reverse_serve)
+        .await
+        .unwrap()
+        .unwrap();
+    let reverse_route = right
+        .authenticated_routed_route(left_peer)
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        reverse_route.carrier,
+        VerifiedCarrierIdentity::Relay { relay_node_id, .. } if relay_node_id == reverse_relay_id
+    ));
+    assert_eq!(left.feed_inception_branch_count(feed.feed_id).unwrap(), 1);
+    assert_eq!(right.outbound_pending_count().unwrap(), 0);
+    assert_eq!(
+        right
+            .outbound_checkpoint(left_peer)
+            .unwrap()
+            .unwrap()
+            .acknowledged_sequence(),
+        1
+    );
     assert_eq!(
         *optional.0.lock().unwrap(),
         vec![

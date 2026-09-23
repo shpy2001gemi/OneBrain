@@ -1,5 +1,52 @@
 # Decisions and claim boundary
 
+## D-041 — Close functional QA and advance past consumer NAT qualification
+
+On 2026-09-24 the owner instructed: “hãy làm những việc cần làm để hoàn thành
+qualification consumer NAT . nếu 3 vps không đủ thì bỏ qua luôn để mà làm tiếp
+hoàn thành task hiện tại để làm task kế tiếp”. The two-VPS admission already
+establishes that the available VPS cannot demonstrate ordinary consumer NAT;
+there is also no supported product host assembly on them. Do not spend another
+run or weaken the scenario oracle to call them consumer hosts. Skip this
+qualification gate for the current task, while retaining the unrun scenarios
+and an explicit `consumer_nat_qualified=false` claim.
+
+This instruction closes OBP-QA-001 under the approved D-039/D-040 functional
+criteria and directs progression to its dependent task. Under D-010, finish
+the validated QA branch, publish it, merge it into main and then start
+OBP-MIG-001 on its declared branch. Record actual Git results only after they
+exist. The separate exact-candidate Linux P5 qualification remains intact.
+No default networking, model tuning, platform qualification or remote-state
+change is authorized by skipping consumer NAT.
+
+## D-040 — Accept OBP-QA-001 functional review
+
+On 2026-09-24 the owner stated “tôi duyêt review” after the D-039 functional
+acceptance result and test scope were presented. This accepts the OBP-QA-001
+functional review. Task 18 remains in `Review` until a separate Git closure
+instruction and actual closure occur. No commit, merge, push, qualification
+promotion or start of OBP-MIG-001 follows from this review acceptance.
+
+The result retains its stated limits: the two-consumer-network scenarios and
+native platform observations did not run, while the separate Linux P5 V2
+qualification on `c453f3e` remains valid. Networking stays default-off, and
+the three-host staging, runs and durable state remain preserved.
+
+## D-039 — Accept functional QA without strict external evidence
+
+On 2026-09-23 the owner decided: “code, test tính năng hoạt động đúng thiết kế
+là được, không cần nghiêm ngặt evident.” For OBP-QA-001, correct code and
+functional tests of the accepted design are sufficient for review. The strict
+two-consumer-network scenario collection in acceptance v1 is no longer a task
+completion prerequisite. Record the actual test result and scope plainly;
+local or VPS tests must not be described as ordinary consumer-NAT evidence.
+
+The separate exact-candidate Linux P5 three-host qualification remains valid
+and retains its own authority rules. This decision changes no protocol,
+node-owned service ownership, default-off networking, tuning or platform claim.
+Keep old staging and runs. OBP-MIG-001 remains unstarted in this continuation.
+See [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md).
+
 ## D-038 — Use two existing VPS for the product scenario attempt
 
 On 2026-09-23, after being told the available three P5 machines are VPS rather

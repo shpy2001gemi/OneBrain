@@ -3,6 +3,13 @@
 This is the compact product-planning view. It intentionally separates code and
 test evidence from user-facing orchestration and release qualification.
 
+2026-09-23 16:09 UTC: D-039 [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md)
+advances task 18 to Review based on working code and focused tests. The live
+two-relay integration test now checks domain exchange in both directions and
+durable acknowledgement after alternate-relay recovery. Consumer-NAT and native
+platform qualification remain unclaimed; the earlier Blocked wording below
+describes the superseded strict-evidence task criterion.
+
 2026-09-23 15:26 UTC: [Linux P5 production-reference qualification](outputs/OBP_QA_001_P5_PRODUCTION_20260923.md)
 passed on exact `c453f3e` across three hosts with all 13 faults and ten exit
 oracles. Task 18 remains Blocked on two independent consumer networks, two

@@ -5,6 +5,42 @@
 
 ## Current checkpoint
 
+- 2026-09-24 D-041: owner directed task 18 closure and progression to task 19,
+  skipping consumer-NAT qualification because the existing VPS cannot prove
+  ordinary consumer NAT or run the supported product host. D-039/D-040
+  functional review is accepted; `consumer_nat_qualified=false` and all ten
+  independent-network product scenarios remain unrun. This is an explicit
+  skipped gate, not qualification. QA branch publication and merge are
+  directed under D-010 but have not yet been recorded at this checkpoint.
+  Linux P5 qualification on `c453f3e` remains valid and separate.
+
+- 2026-09-24 D-040: owner accepted the OBP-QA-001 functional review under
+  D-039. Task 18 remains `Review` with the tested local scope and unclaimed
+  consumer-NAT/native-platform qualification stated in
+  [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md).
+  The QA branch and its local changes remain intact; no commit, merge, push,
+  remote operation, default networking change, tuning or task 19 start.
+
+- 2026-09-24 continuation: re-ran the renamed bidirectional two-relay node
+  test and aggregate vNext validator; both passed. Updated the acceptance-v1
+  test pointer and clarified historical `Blocked` text in task 18. Functional
+  Review under D-039 and its qualification limits are unchanged. All edits
+  remain local on `codex/obp-qa-001-nat-canary`; no remote action, Git
+  publication, default networking change, tuning or task 19 start.
+
+- 2026-09-23 16:09 UTC D-039 [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md):
+  owner accepts correct code and functional tests without strict external
+  evidence as the OBP-QA-001 review criterion. Extended the live two-relay
+  integration test to verify a separate B→A domain intent, authenticated
+  relay path, durable receiver state and sender checkpoint after the existing
+  A→B failover journey. Fresh runs passed: node 253, Desktop 6, API 44/one
+  ignored, CLI 51 + 2, Web 89 and vNext contracts. Task 18 advances from
+  `Blocked` to `Review` for functional QA. The consumer-network scenarios
+  remain unrun and carry no NAT/platform qualification claim. The separate
+  Linux P5 exact-candidate qualification remains valid. No remote state,
+  networking default, tuning or task 19 changed; work remains local on the
+  retained QA branch.
+
 - 2026-09-23 15:44 UTC [two-VPS product admission](outputs/OBP_QA_001_VPS_PRODUCT_ADMISSION_20260923.md):
   owner selected two of the approved VPS as application-node roles and asserted
   their networks are independent. Read-only pinned-SSH checks on a/c and relay

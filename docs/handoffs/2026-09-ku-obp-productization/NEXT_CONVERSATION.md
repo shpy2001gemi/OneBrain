@@ -1,4 +1,32 @@
-# Next conversation — OBP-QA-001 independent consumer-network evidence
+# Next conversation — OBP-QA-001 functional review
+
+**Latest owner instruction, 2026-09-24:** D-041 directs completing task 18
+under the accepted functional criteria and moving to OBP-MIG-001. The three
+existing VPS cannot qualify ordinary consumer NAT, so that gate is explicitly
+skipped for task closure, with `consumer_nat_qualified=false`; no scenario is
+relabeled as passed. Publish and merge the QA branch under D-010, record the
+actual Git result, then start task 19. Linux P5 qualification is separate.
+Preserve old remote staging/runs, default-off networking and the shared
+node-owned service. Earlier review-only instructions below are historical.
+
+**Latest owner decision, 2026-09-24:** D-040 accepts the D-039 functional
+review. Task 18 remains `Review` with local changes on
+`codex/obp-qa-001-nat-canary`; Git closure has not occurred. No new
+consumer-NAT/native-platform qualification is claimed. Do not repeat this
+review request. P5 Linux qualification, remote state, default-off networking
+and the unstarted OBP-MIG-001 remain as recorded below.
+
+**Latest owner decision and QA result, 2026-09-23 16:09 UTC:** D-039 accepts
+correct code and functional tests without strict external evidence as the task
+18 review criterion. Read [functional acceptance v2](outputs/OBP_QA_001_FUNCTIONAL_ACCEPTANCE_V2.md)
+and the top of [PROGRESS](PROGRESS.md). The two-relay integration test now
+checks A→B failover and a separate B→A durable domain exchange. Fresh node,
+Desktop, API, CLI, Web and contract tests pass. Task 18 is `Review` under the
+revised functional criterion; it has no consumer-NAT or native-platform
+qualification claim. P5 Linux qualification on `c453f3e` remains separate and
+valid. All prior staging/runs remain; no remote state, default networking,
+tuning or OBP-MIG-001 changed. Historical `Blocked` instructions below apply
+to the earlier strict evidence criterion and are superseded by D-039.
 
 **Latest admission, 2026-09-23 15:44 UTC:** read the
 [two-VPS product admission](outputs/OBP_QA_001_VPS_PRODUCT_ADMISSION_20260923.md).
@@ -172,10 +200,11 @@ above supersedes the earlier no-runtime-edits checkpoint.
 
 ## Remaining task
 
-Complete task 18 only with verified independent-network evidence. Ten scenario
-procedures and the local collector are ready. Local passing tests do not prove
-consumer NAT, independent relay operation, real relay shutdown, native WebView
-parity, real sleep/network switch or production qualification.
+Review task 18 under D-039 functional acceptance v2. Ten original scenario
+procedures and the local collector remain available for later independent
+consumer-network qualification. Local passing tests do not prove consumer NAT,
+real relay shutdown on independent hosts, native WebView parity, real
+sleep/network switch or production qualification.
 
 The two-consumer product lane needs two independent consumer networks and two
 independently configured vNext relays, supported explicit host assembly and
