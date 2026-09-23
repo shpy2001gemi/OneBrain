@@ -5,6 +5,63 @@
 
 ## Current checkpoint
 
+- 2026-09-23 13:11 UTC [installed candidate and successor blocker](outputs/OBP_QA_001_INSTALLED_SUCCESSOR_BLOCKER.md):
+  all three immutable installations/public exports match `2dc5581`; identities
+  preserved. D-036 placement wrappers retained with historical signature binding.
+  Host-b's future timesyncd timestamp corrected; bounded skew now near zero, NTP
+  still unsynchronized. Both relays durably renewed to sequence 2. Four actual
+  restricted-SSH probes fail `SequenceRollback` because cold admission has no
+  predecessor-history input. Relay-b/c and candidate-only listeners are stopped;
+  new units/configs are safely fenced by `NotActivated`, state/backups retained.
+  47 evidence file commitments and identity preservation verified. Versioned
+  history-admission correction proposed for review; no new runtime edit/commit,
+  complete V2 request, signed session/fault or qualification. Task 18 Blocked,
+  task 19 unstarted. Earlier no-installation/clock-unmodified entries are historical.
+
+- 2026-09-23 D-036: owner explicitly reaffirmed the already supplied/accepted
+  placement of the three VPS on three separate physical machines. New placement
+  collection is no longer a prerequisite; reuse retained evidence with original
+  dates/provenance and provider-document-pending status. Earlier external topology
+  blocker entries are superseded. Remaining work: clock maintenance, installed
+  candidate/public exports, fresh relay descriptors/probes and complete V2
+  admission/execution. Task 18 is still incomplete; task 19 remains unstarted.
+
+- 2026-09-23 08:39 UTC [admission continuation](outputs/OBP_QA_001_ADMISSION_RECHECK.md):
+  new read-only SSH collection confirms host-b remains about 25,388 seconds ahead,
+  NTP off and relay running. Host-a search remains permission-limited; b/c still
+  expose August placement receipts. All three collected file hashes verify.
+  Added canonical V2 input completion order; current physical placement evidence
+  remains an external dependency. No host mutation or signed session/fault.
+  Task 18 remains Blocked; task 19 unstarted. Existing approvals remain accepted.
+
+- 2026-09-23 08:35 UTC [retained authority recheck](outputs/OBP_QA_001_AUTHORITY_RECHECK.md):
+  all five local checks pass for clean candidate `2dc5581`, signed Base request,
+  rehashed Registry binding, canonical native bundle and approved policy identity/
+  interval. Existing WSL dependency environment used after a retained system-Python
+  import failure. No SSH, signing, host mutation or session/fault operation.
+  Current topology, host-b clock and complete V2 admission remain unresolved;
+  task 18 remains Blocked and task 19 unstarted. This is not qualification.
+
+- 2026-09-23 08:30 UTC admission recheck: [fresh read-only SSH diagnostics](outputs/OBP_QA_001_ADMISSION_RECHECK.md)
+  confirm host-b remains ~25,388 seconds ahead. Timesyncd is installed but
+  disabled; VMware time sync is disabled. Relay remains running; P5 agent/signers
+  are inactive. Host-a/c report NTP synchronized. Bounded host search found no
+  new provider receipt; host-a search is partial/permission-limited. Initial SSH
+  timeouts and successful bounded retries are retained separately. No host clock,
+  service, runtime, signed session or fault mutation. Task 18 remains Blocked.
+
+- 2026-09-23 D-035 execution: candidate `2dc5581e74387953b21051c930e52a8044ce0503`
+  (tree `f08092d800615181da4ccc50db997606edb6f03b`) committed locally on the
+  retained QA branch. [Rebuild/staging evidence](outputs/OBP_QA_001_CANDIDATE_2DC5581.md):
+  fresh Base/Registry bindings verified; rebuilt bundle passed canonical checks
+  and all three remote staging verifiers; six native loopback preflights passed.
+  Fresh guest evidence does not prove physical independence. Found remote b/c
+  placement receipts are still August 13 telephone attestations. New measured
+  blocker: host-b clock ahead ~25,388 seconds, NTP off. No installed service,
+  identity/state, clock, signed session or fault changed. Task 18 remains Blocked;
+  next work is admissible topology/clock prerequisites and complete fresh V2
+  admission. User requested autonomous investigation; no repeat approval request.
+
 - 2026-09-23 D-035: owner approved the reviewed relay renewal correction and
   creation of a new local immutable QA candidate, followed by rebuild and fresh
   exact-candidate authority preparation. The reviewed source hashes still match
@@ -224,8 +281,9 @@
 - Completed review branch: `codex/obp-prod-004-routing`, implementation `8f7d327`.
 - Retained baseline: `437dba0`, merged at `3216f1d` under D-027; now published.
 - Last merge: `7e4fc14` (OBP-DESK-001, D-034).
-- Next action: review the local relay renewal correction and authorize a new immutable
-  candidate; then rebuild/rebind V2 authority and collect the missing independent-network evidence.
+- Next action: resolve current topology/clock admission prerequisites, then complete
+  candidate-bound host/relay evidence and V2 authority for `2dc5581`; collect the
+  separate independent-consumer-network evidence. Review/commit/rebuild is complete.
   Keep task 18 current, networking default-off and task 19 unstarted.
 - Encoder framework direction and sequence: owner accepted at `e513552` under D-018; no further direction approval needed
 - Default rollout change authorized: **no**

@@ -420,6 +420,21 @@ class P5MultiHostV2Tests(unittest.TestCase):
         with self.assertRaisesRegex(runner.P5ExecutionError, "freshness window"):
             runner._require_relay_descriptor_freshness(inventory, expires_at - 179, 180)
 
+    def test_descriptor_histories_are_bounded_consistent_and_command_bound(self) -> None:
+        receipts = _probe_receipts()
+        for row in receipts:
+            row.update(format=3, descriptor_history_hex=["aabb"])
+        inputs = runner._inventory_relay_descriptors({"public_probe_sets": receipts})
+        self.assertEqual(runner._relay_descriptor_parameters(inputs)["relay_descriptor_histories"], {"01": ["aabb"], "02": ["aabb"]})
+        for bad in (["AA"], ["00"] * 16, ["00" * 8192], None):
+            changed = json.loads(json.dumps(receipts))
+            changed[0]["descriptor_history_hex"] = bad
+            with self.assertRaises(runner.P5ExecutionError):
+                runner._inventory_relay_descriptors({"public_probe_sets": changed})
+        receipts[0]["descriptor_history_hex"] = ["ccdd"]
+        with self.assertRaises(runner.P5ExecutionError):
+            runner._inventory_relay_descriptors({"public_probe_sets": receipts})
+
     def test_relay_descriptor_validity_must_match_across_probe_receipts(self) -> None:
         receipts = _probe_receipts()
         receipts[1]["descriptor_expires_at"] = int(receipts[1]["descriptor_expires_at"]) - 1

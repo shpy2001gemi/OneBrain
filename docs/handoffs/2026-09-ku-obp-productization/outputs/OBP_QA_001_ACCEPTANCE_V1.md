@@ -6,6 +6,15 @@ Use the existing node-owned service for API, CLI, local Web and Desktop.
 
 ## Evidence lanes
 
+Continuation D-036 (2026-09-23): the owner explicitly retains the previously
+supplied and accepted placement of the existing three VPS on three separate
+physical hosts. Reuse those placement inputs for the current P5 continuation;
+no replacement provider confirmation is required. This supersedes the blanket
+historical-attestation reuse prohibition below for these accepted placement
+inputs only. Preserve their original dates/provenance and explicit
+owner-telephone/provider-document-pending status. Current candidate bindings,
+relay probes and all execution evidence must still satisfy canonical V2 gates.
+
 | Lane | Required evidence | Meaning |
 |---|---|---|
 | Local preflight | Temporary stores, deterministic custody, loopback carriers, adapter fixtures and offline validators | Regression evidence only. One workstation cannot prove independent hosts/networks, real NAT, relay operators or platform qualification. |

@@ -1,5 +1,68 @@
 # Next conversation — OBP-QA-001 relay renewal review / independent-network evidence
 
+**Latest execution, 13:11 UTC:** read
+[installed candidate / successor admission blocker](outputs/OBP_QA_001_INSTALLED_SUCCESSOR_BLOCKER.md)
+first. All three hosts now have candidate `2dc5581`, matching restricted SSH
+paths/public exports and unchanged identities. Host-b clock is near controller
+time after repairing timesyncd's future recorded timestamp; NTP is enabled but
+still unsynchronized. D-036 placement wrappers were retained byte-for-byte and
+historical signature/inventory binding checked. Four real successor probes fail
+`SequenceRollback`: the closed probe input and fresh P5 discovery lack a verified
+predecessor-history path. No signed V2 session/fault has run.
+
+**Remote state:** relay-b/c are stopped, their new units/configs bind sequence 2,
+and normal startup is fenced by `NotActivated`. Candidate-only listeners are
+stopped. Preserve the sequence-2 durable floors, renewal-20260923-09 artifacts,
+all previous generations and maintenance backups. Do not reset state or restart
+old binaries. The report contains a concrete versioned-history correction
+proposal requiring specification review before extending the closed inputs and
+a new immutable-candidate decision before replacing `2dc5581`. Host-a sudo was
+successfully exercised using the owner-provided credential; do not ask again
+for SSH/sudo approval. No credential belongs in handoff/evidence.
+
+**Latest owner decision D-036:** the owner has already supplied and accepted
+the existing three VPS on three separate physical machines. Reuse that placement
+evidence; do not request or search for replacement placement proof as a gate.
+This supersedes the fresh-topology external-blocker language below and in linked
+historical reports. Preserve original dates/provenance and explicit
+`owner-telephone-verified-provider-document-pending` status. Complete canonical
+V2 binding using those accepted inputs; no verifier bypass or new provider claim.
+Next technical work: host-b clock maintenance, candidate-bound installation and
+public exports, fresh relay renewal/probes, then complete signed V2 admission.
+The two-consumer-network product lane and actual P5 execution remain outstanding.
+
+**Latest continuation, 08:39 UTC:** [admission recheck and V2 input order](outputs/OBP_QA_001_ADMISSION_RECHECK.md)
+retains a fresh read-only three-host collection. Host-b is still about 25,388
+seconds ahead with NTP off and relay running; current physical placement evidence
+is still unavailable in the bounded readable search. Host-a search remains partial.
+Do not repeat local regression suites as a substitute for this external evidence
+dependency. No host mutation or signed session/fault was performed.
+
+**Latest local authority audit:** [retained input verification](outputs/OBP_QA_001_AUTHORITY_RECHECK.md)
+passes candidate, signed Base request, current Registry rehash/binding, native
+bundle and approved P5 policy checks at 08:35 UTC. It does not resolve physical
+topology, host-b clock, installed exports, fresh probes or full V2 admission.
+Use the existing WSL `task28-python` environment; system Python lacks `blake3`.
+No new host operation or signed session/fault was attempted.
+
+**Latest admission recheck:** [read-only host diagnosis](outputs/OBP_QA_001_ADMISSION_RECHECK.md)
+confirms host-b remains about 25,388 seconds ahead. Its timesyncd is installed
+but disabled; VMware time sync is also disabled. Existing relay is running.
+No current topology evidence was found in the bounded readable host search.
+Retain the failed SSH attempt and successful retry. Host-wide clock maintenance
+and fresh topology remain prerequisites; no signed session/fault has run.
+
+**Latest result:** [candidate 2dc5581 and admission blockers](outputs/OBP_QA_001_CANDIDATE_2DC5581.md).
+The approved correction is committed locally; immutable bundle and fresh signed
+Base/Registry bindings verify. New bundle is staged/verified on all three hosts,
+with six passing single-host preflights. No push/merge or installed activation.
+Fresh physical-provider evidence is still unavailable; found b/c receipts remain
+August 13 telephone attestations. Host-b is measured ~25,388 seconds ahead with
+NTP off. Do not issue time-shifted frames or reuse old attestations to bypass gates.
+Owner requested autonomy; investigate and act within existing scope without
+asking again for known paths or approved actions. Earlier review/commit-pending
+paragraphs below are historical and superseded by this result.
+
 Owner acceptance D-035 supersedes the review/commit-pending text below: the owner
 approved the correction and new local candidate commit on this same branch,
 followed by rebuild and fresh authority preparation. Do not request it again.

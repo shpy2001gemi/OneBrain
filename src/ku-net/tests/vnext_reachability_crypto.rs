@@ -100,6 +100,69 @@ fn signed_descriptor(key: &SigningKey, sequence: u64, issued_at: u64) -> RelayDe
     descriptor
 }
 
+fn history_bytes(key: &SigningKey, mut value: RelayDescriptorV1) -> Vec<u8> {
+    value.relay_signature = key.sign(&reachability_signing_bytes(
+        &ReachabilityObjectV1::RelayDescriptor(value.clone()), ReachabilitySignatureRoleV1::RelayDescriptor).unwrap()).to_bytes();
+    encode_reachability_object(&ReachabilityObjectV1::RelayDescriptor(value)).unwrap()
+}
+
+#[test]
+fn history_cold_start_requires_fresh_possession_and_never_advances_on_failure() {
+    use ku_net::vnext_reachability_crypto::{DescriptorHistoryReplayStore, VerifiedDescriptorHistory};
+    let key = SigningKey::from_bytes(&[7;32]);
+    let old = history_bytes(&key,signed_descriptor(&key,1,100));
+    let mut value = signed_descriptor(&key,2,10_000);
+    value.previous_descriptor_blake3 = Some(*blake3::hash(&old).as_bytes());
+    let terminal = history_bytes(&key,value);
+    let history = VerifiedDescriptorHistory::verify(&[old],&terminal,10_000).unwrap();
+    let store = Arc::new(InMemoryReachabilityReplayStore::default());
+    let wrapper = Arc::new(DescriptorHistoryReplayStore::new(store.clone()));
+    wrapper.install(vec![history.clone()]).unwrap();
+    let resolver = Arc::new(MutableResolver::default());
+    resolver.set("relay.example",vec!["1.1.1.1".parse().unwrap()]);
+    let preparer = ReachabilityAdmissionPreparer::new(resolver.clone(),1).unwrap();
+    let dial = ReachabilityDialValidator::new(resolver,1).unwrap();
+    let mut admission = ReachabilityAdmission::new(wrapper);
+    let prepared = block_on_ready(preparer.prepare_descriptor(&terminal,10_000,Instant::now()+Duration::from_secs(1))).unwrap();
+    let pending = admission.register_prepared_descriptor(prepared,[9;32],10_000).unwrap();
+    assert!(admission.complete_descriptor_admission(pending.clone(),&[],10_000).is_err());
+    assert!(store.check_sequence_candidate(history.key(),1,None).is_ok());
+    let route = block_on_ready(dial.validate_possession_dial(&pending,0,Instant::now()+Duration::from_secs(1))).unwrap();
+    let proof = RelayPossessionProofV1 { challenge_digest: route.challenge_digest(), connection_binding_digest:[8;32],
+        signature:key.sign(&possession_proof_signing_bytes(route.challenge(),[8;32])).to_bytes() };
+    admission.complete_descriptor_admission(pending,&[proof],10_001).unwrap();
+    assert!(store.check_sequence_candidate(history.key(),1,None).is_err());
+    assert!(store.descriptor_history(&history,false).is_ok());
+    let (seq,digest,_) = history.terminal_floor();
+    store.compare_and_advance_sequence(history.key(),Some(digest),seq+1,[44;32],11_000).unwrap();
+    assert!(store.descriptor_history(&history,true).is_err());
+}
+
+#[test]
+fn history_rejects_forks_keys_gaps_config_changes_and_bounds() {
+    use ku_net::vnext_reachability_crypto::VerifiedDescriptorHistory;
+    let key = SigningKey::from_bytes(&[7;32]);
+    let old = history_bytes(&key,signed_descriptor(&key,1,100));
+    let mut good = signed_descriptor(&key,2,10_000);
+    good.previous_descriptor_blake3=Some(*blake3::hash(&old).as_bytes());
+    let terminal=history_bytes(&key,good.clone());
+    assert!(VerifiedDescriptorHistory::verify(&[old.clone()],&terminal,10_000).is_ok());
+    assert!(VerifiedDescriptorHistory::verify(&[],&terminal,10_000).is_err());
+    assert!(VerifiedDescriptorHistory::verify(&[old.clone()],&terminal,9000).is_err());
+    assert!(VerifiedDescriptorHistory::verify(&[old.clone()],&terminal,11_000).is_err());
+    assert!(VerifiedDescriptorHistory::verify(&vec![old.clone();16],&terminal,10_000).is_err());
+    assert!(VerifiedDescriptorHistory::verify(&[vec![0;8193]],&terminal,10_000).is_err());
+    for mutate in [0,1,2,3] {
+        let mut bad=good.clone();
+        match mutate { 0=>bad.sequence=3, 1=>bad.previous_descriptor_blake3=Some([99;32]), 2=>bad.capacity_policy_digest=[98;32], _=>bad.endpoints[0].port=444 }
+        assert!(VerifiedDescriptorHistory::verify(&[old.clone()],&history_bytes(&key,bad),10_000).is_err());
+    }
+    let wrong=SigningKey::from_bytes(&[8;32]);
+    assert!(VerifiedDescriptorHistory::verify(&[old.clone()],&history_bytes(&wrong,good),10_000).is_err());
+    let mut corrupted=old.clone(); *corrupted.last_mut().unwrap() ^= 1;
+    assert!(VerifiedDescriptorHistory::verify(&[corrupted],&terminal,10_000).is_err());
+}
+
 fn signed_reservation(
     target_key: &SigningKey,
     relay_key: &SigningKey,

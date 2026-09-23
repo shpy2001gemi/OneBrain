@@ -13,9 +13,20 @@ Current QA work: [acceptance v1](outputs/OBP_QA_001_ACCEPTANCE_V1.md) separates
 local preflight from independent-network product evidence and exact-candidate
 P5 qualification. Resume the retained QA branch; task 19 remains unstarted.
 
+Latest 13:11 UTC: [installation and successor admission blocker](outputs/OBP_QA_001_INSTALLED_SUCCESSOR_BLOCKER.md).
+Candidate `2dc5581` is installed on all three hosts; four sequence-2 probes fail
+`SequenceRollback`. Relay-b/c are stopped and fenced; preserve durable successor
+floors. Host-b measured skew is corrected, NTP remains unsynchronized. No signed
+session/fault or qualification. The review/staging-only checkpoints below are historical.
+
 Latest continuation: [local relay renewal correction and evidence](outputs/OBP_QA_001_RELAY_RENEWAL_FIX.md)
 is ready for review. A new immutable candidate and fresh V2 bindings are still
 required before remote use; old staging/runs and all prior local changes remain.
+
+D-035 supersedes that review-pending checkpoint: [candidate `2dc5581`](outputs/OBP_QA_001_CANDIDATE_2DC5581.md)
+is committed/rebuilt and staged on all three hosts. Base/Registry bindings verify;
+six native preflights pass. Current gates include fresh topology evidence and
+host-b's measured ~7-hour clock error; no signed production session has run.
 
 Previous closure (D-034): accepted Desktop implementation `410a6a0` merged as
 `7e4fc14`. Main and the retained Desktop branch are published in this closure.
@@ -70,7 +81,7 @@ Read only these files first:
 Do not load the whole historical distributed-runtime or foundation plan unless
 the selected task explicitly requires a section from it.
 
-**Current task:** [`OBP-QA-001`](tasks/18-OBP-QA-001.md) — Blocked; local preflight passed, independent-network evidence outstanding.
+**Current task:** [`OBP-QA-001`](tasks/18-OBP-QA-001.md) — Blocked on remaining technical admission/execution and product-scenario evidence. D-036 accepts reuse of the already supplied three-physical-host placement; do not require new placement proof. Local preflight is not qualification.
 The API dependency was satisfied by `7d37a30` under D-030; CLI is now merged
 at `04bcb30` under D-031. Read the accepted API and private-WS contracts plus
 current Web design rules before further edits. Current Web evidence supersedes

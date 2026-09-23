@@ -1,5 +1,41 @@
 # Decisions and claim boundary
 
+## D-037 — Approve descriptor-history correction; prioritize real happy case
+
+On 2026-09-23 the owner accepted the concrete correction proposal and said
+“đồng ý duyệt. Mục tiêu mau chóng chạy happy case.” This extends task 18 to the
+shared verified-history admission path, probe/P5 input bindings and focused
+regressions in [the additive profile](../../specs/vnext/P5_DESCRIPTOR_HISTORY_ADMISSION_V1.md).
+Continue necessary local candidate preparation and previously authorized scoped
+three-host execution toward the happy case. Preserve failed runs and durable
+floors. No Git push/merge, default networking, tuning, mobile or task 19.
+Happy-case evidence must remain distinct from full qualification. Existing
+SSH/sudo, D-036 placement reuse and same-key policy approvals remain in force.
+
+## D-036 — Retain the owner-accepted three-physical-host placement evidence
+
+On 2026-09-23 the owner explicitly clarified:
+“trước đso đã chốt và gửi kèm thông tin 3 vps chạy trên 3 máy vật lý khác nhau rồi,
+bạn không cần phải lấy lại bằng chứng đó. Tôi đã quyết định nội dung này.”
+
+The existing three VPS placement on three separate physical machines is an
+owner-accepted fact for this continuation. Reuse the previously supplied placement
+information and retained evidence; do not require another provider contact,
+placement collection or owner confirmation. This supersedes handoff language
+treating new physical-placement evidence as an unresolved external prerequisite.
+
+Keep original evidence bytes, dates and provenance. This decision is not a new
+provider-issued document, a new measurement or provider-document verification.
+Retain `owner-telephone-verified-provider-document-pending`; bind the accepted
+evidence through the canonical V2 authority path for the current candidate.
+Do not weaken a verifier or relabel old probes as current evidence.
+
+Host-b clock correction, exact installed-generation/public exports, fresh relay
+successor descriptors and possession probes, complete signed V2 admission and
+actual session/fault/cleanup evidence remain technical work. The separate
+two-consumer-network product scenarios remain unexecuted. No qualification,
+default rollout, tuning, Git publication or OBP-MIG-001 follows from this decision.
+
 ## D-035 — Accept relay renewal correction and create QA candidate
 
 On 2026-09-23 the owner answered “tôi đồng ý duyệt” to the reviewed
